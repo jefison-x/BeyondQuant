@@ -1,0 +1,101 @@
+{
+  "schema_version": "byq-d15-candidate-start-probe.v1",
+  "sdk": "0.1.5rc1",
+  "runtime_bin": "0.1.5rc1",
+  "selector": "dsh-0.1.5rc1",
+  "platform": {
+    "os": "linux",
+    "arch": "x86_64"
+  },
+  "isolated": "/var/lib/byq/dsh-sessions/dsh-0.1.5rc1",
+  "keyless": true,
+  "status": "PASS",
+  "compatibility_family": "dsh-0.1.5",
+  "runtime_command": [
+    "/usr/local/lib/python3.11/site-packages/deepseek_harness_runtime/runtime/deepseek-harness-sdk-runtime-linux-x64"
+  ],
+  "start_status": "ready",
+  "start_reached_ready": true,
+  "final_status": "idle",
+  "provider_request_seen": true,
+  "tool_count": 8,
+  "tool_names": [
+    "byq_delegate_backtest_analysis",
+    "byq_delegate_factor_research",
+    "byq_delegate_market_research",
+    "byq_delegate_ml_research",
+    "byq_delegate_strategy_research",
+    "mcp__byq__byq_agent_run_start",
+    "skill",
+    "web_search"
+  ],
+  "message_tool_blocked": true,
+  "notification_methods": {
+    "session.event": 20,
+    "session.status": 2
+  },
+  "event_types": {
+    "agent/inbox/spliced": 2,
+    "assistant/message": 2,
+    "request/context": 1,
+    "request/header": 1,
+    "session/title": 1,
+    "step/end": 2,
+    "step/start": 2,
+    "system/message": 1,
+    "tool/call": 1,
+    "tool/result": 1,
+    "turn/end": 1,
+    "turn/start": 1,
+    "user/message": 4
+  },
+  "event_seqs": [
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22
+  ],
+  "event_seq_contiguous": true,
+  "history_kinds": [
+    "session.ready",
+    "session.started",
+    "session.status",
+    "agent.activity",
+    "agent.output.delta",
+    "agent.activity",
+    "turn.completed",
+    "session.status",
+    "session.result"
+  ],
+  "tool_events": {
+    "tool_call_keys": [
+      "arguments",
+      "callId",
+      "name",
+      "step",
+      "turn"
+    ],
+    "tool_call_name": "mcp__byq__byq_agent_run_start",
+    "tool_result_keys": [
+      "message",
+      "step",
+      "turn"
+    ]
+  }
+}

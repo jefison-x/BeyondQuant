@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 CANDIDATES = ROOT / "config/dsh/candidates"
 KEYS = {
     "schema_version", "declaration_id", "status", "production_default",
+    "qualification_target", "target_npm_version", "target_decision",
     "requested_npm_version", "coherent_npm_version", "upstream", "python",
     "runtime", "production_boundary", "qualification", "evidence",
 }
@@ -70,6 +71,14 @@ def load_candidate(path: Path) -> dict:
     _require(value["status"] in STATUSES, f"{path}: unknown candidate status")
     _require(value["production_default"] != identifier,
              f"{path}: candidate cannot be the production default")
+    _require(isinstance(value["qualification_target"], str)
+             and value["qualification_target"].startswith("dsh-v"),
+             f"{path}: qualification target must be a dsh-v release tag")
+    _require(isinstance(value["target_npm_version"], str)
+             and value["target_npm_version"] == value["coherent_npm_version"],
+             f"{path}: target npm version must equal the coherent npm version")
+    _require((ROOT / value["target_decision"]).is_file(),
+             f"{path}: target decision record is missing")
     upstream = value["upstream"]
     _require(isinstance(upstream, dict) and set(upstream) == UPSTREAM_KEYS,
              f"{path}: invalid upstream block")

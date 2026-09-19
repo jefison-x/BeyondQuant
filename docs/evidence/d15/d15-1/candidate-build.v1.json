@@ -1,0 +1,53 @@
+{
+  "schema_version": "byq-d15-candidate-build.v1",
+  "generated_at": "2026-09-19",
+  "release_id": "dsh-0.1.5rc1",
+  "qualification_target": "dsh-v0.1.5-rc.1",
+  "target_npm_version": "0.1.5-rc.1",
+  "baseline_release_id": "dsh-0.1.2rc1",
+  "production_default_unchanged": true,
+  "isolated": true,
+  "image": {
+    "tag": "byq-d15-1-0.1.5rc1-candidate:local",
+    "id": "sha256:96bf63272b988c049656d20e2390e60e21711d2c498e8c9ccf8ccd2af849371f",
+    "size_bytes": 146475193,
+    "registry_pushed": false,
+    "production_traffic": false
+  },
+  "build_inputs": {
+    "dockerfile": {
+      "path": "services/runtime-adapter/Dockerfile.dsh-0.1.5rc1-candidate",
+      "sha256": "07b5cc9082178819e115a31f3ae713c716b4e97295e910ddeb1eccc99990a080"
+    },
+    "requirements_lock": {
+      "path": "services/runtime-adapter/requirements.dsh-0.1.5rc1-candidate.lock",
+      "sha256": "3040ac39eb1ead938b87a59b743ca6b7aa28c61cc880a7ce74451ea1de7e541a"
+    },
+    "probe": {
+      "path": "services/runtime-adapter/tests/d15_candidate_probe.py",
+      "sha256": "8ccff3b76548c84aa9accc71e18bb2f2e631f5bd01a08acd7342c768644ea2de"
+    }
+  },
+  "commands": {
+    "build": "docker build -f services/runtime-adapter/Dockerfile.dsh-0.1.5rc1-candidate -t byq-d15-1-0.1.5rc1-candidate:local .",
+    "runtime_version": "docker run --rm --network none byq-d15-1-0.1.5rc1-candidate:local /bin/sh -c '$BIN --version'",
+    "probe": "docker run --rm --network none --name byq-d15-1-probe byq-d15-1-0.1.5rc1-candidate:local python3 tests/d15_candidate_probe.py"
+  },
+  "observed": {
+    "runtime_version": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1",
+    "python_runtime_bin": "0.1.5rc1",
+    "bundled_runtime_executable": "deepseek-harness-sdk-runtime-linux-x64",
+    "bundled_executable_size_bytes": 274599104,
+    "compatibility_family": "dsh-0.1.5",
+    "profile_patch": "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml (carried forward for the composition probe)"
+  },
+  "boundaries": {
+    "production_default_release": "dsh-0.1.2rc1",
+    "production_compose": "unchanged",
+    "immutable_release_registry": "unchanged (config/dsh/releases/dsh-0.1.5rc1.json absent)",
+    "database_changes": "none",
+    "worker_restarts": "none",
+    "rollback_release": "dsh-0.1.2rc1"
+  }
+}

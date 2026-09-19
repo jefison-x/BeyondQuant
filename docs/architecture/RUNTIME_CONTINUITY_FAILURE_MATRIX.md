@@ -62,7 +62,7 @@ generation-1..N，generation 被替换是正常行为。
   `PAUSED_PENDING_DSH_015_NATIVE_CONTINUITY_QUALIFICATION`。自建 DSH 进程重启编排、
   会话重建、原生会话持久化替代、subagent 持久化与持久 PTY/shell 暂停，直至 D15-G。
   这不是 R3 失败，而是 DSH 0.1.5 原生覆盖这些能力的前提。D15 的测试计划见
-  [D15 stage plan](../roadmap/DSH_015RC2_UPGRADE_PLAN.md)。
+  [D15 stage plan](../roadmap/DSH_015RC1_UPGRADE_PLAN.md)。
 - Gateway trace（`TraceStore`/`LifecycleDelivery`）已核验不依赖 lease（只按 session id +
   sequence）；R1 不修改 Gateway trace 模型。
 
