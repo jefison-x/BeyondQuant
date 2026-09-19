@@ -679,6 +679,60 @@ def test_resume_rehydrates_when_only_runtime_adapter_restarted(monkeypatch, tmp_
     ]
 
 
+def test_create_product_session_projects_fresh_continuity(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    monkeypatch.setattr(main, "trace_store", TraceStore(tmp_path))
+    monkeypatch.setattr(main, "_start_trace_collector", lambda _session: None)
+    monkeypatch.setattr(main, "_adapter_post", lambda *_a, **_k: {"status": "ready", "continuity": "fresh"})
+    monkeypatch.setattr(main, "_catalog_request", lambda *_a, **_k: {"conversation": {
+        "conversation_id": "conversation_new", "runtime_session_id": "runtime-new",
+        "trace_id": "trace-new", "status": "active",
+    }})
+
+    response = TestClient(main.app).post(
+        "/v1/agent/sessions", headers={"Authorization": f"Bearer {TOKEN}"}
+    )
+
+    assert response.status_code == 201
+    assert response.json()["continuity"] == "fresh"
+
+
+def test_resume_product_session_projects_continuity_without_dsh_identity(
+    monkeypatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    monkeypatch.setattr(main, "trace_store", TraceStore(tmp_path))
+    principal = main.Principal(subject=main.PRODUCT_PRINCIPAL)
+    main.product_sessions.add(main.ProductSession(
+        conversation_id="conversation_1", session_id="runtime-private", trace_id="trace-1",
+        principal=principal, workspace_id="workspace_bootstrap_unresolved",
+    ))
+    monkeypatch.setattr(main, "_catalog_request", lambda *_a, **_k: {
+        "conversation": {
+            "conversation_id": "conversation_1", "runtime_session_id": "runtime-private",
+            "trace_id": "trace-1", "status": "active",
+        },
+        "messages": [],
+    })
+    monkeypatch.setattr(main, "_adapter_post", lambda *_a, **_k: {
+        "status": "ready", "resumed_from_run_id": None, "continuity": "reattached",
+    })
+
+    response = TestClient(main.app).post(
+        "/v1/agent/sessions/conversation_1/resume",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["continuity"] == "reattached"
+    # Framework-neutral only: no runtime/DSH private session or generation id.
+    assert "runtime-private" not in str(body)
+    assert "generation-" not in str(body)
+
+
 def test_turn_rehydrates_after_runtime_loss_without_duplicating_user_message(
     monkeypatch, tmp_path: Path,
 ) -> None:

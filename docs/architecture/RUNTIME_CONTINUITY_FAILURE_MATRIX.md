@@ -2,7 +2,8 @@
 
 - Status: Proposed future test matrix (ADR-0079)
 - Date: 2026-09-19
-- Scope: BYQ Runtime Continuity program (R0 lifecycle model; R1 executor lease)
+- Scope: BYQ Runtime Continuity program (R0 lifecycle model; R1 executor lease;
+  R2 durable session identity vs ephemeral runtime generations)
 - Related: ADR-0062, ADR-0064, ADR-0078, ADR-0079, ADR-0023
 
 本文档定义 Runtime Continuity 六个生命周期在故障下的期望行为，作为后续独立阶段
@@ -58,3 +59,17 @@ generation-1..N，generation 被替换是正常行为。
   Agent/Runtime/Terminal 的解耦与跨重启语义；Storage loss 的备份/恢复演练。
 - Gateway trace（`TraceStore`/`LifecycleDelivery`）已核验不依赖 lease（只按 session id +
   sequence）；R1 不修改 Gateway trace 模型。
+
+## 5. Continuity 状态映射（R2）
+
+R2 在 AgentSession/RuntimeGeneration 边界报告一个封闭、框架中立的 continuity status：
+
+| 事件 | continuity | 说明 |
+| --- | --- | --- |
+| 新 session | `fresh` | 无既有 durable 证据 |
+| create/resume 复用存活 in-process generation | `reattached` | Path A；不新建进程 |
+| adapter restart / 进程消失后 rebind | `rehydrated` | Path B；新建 generation，公开上下文经既有恢复合同回灌 |
+| run/generation 在崩溃、watchdog 或硬取消后被终止 | `interrupted` | 旧 generation 标记 interrupted，新 generation 接续同一 durable session |
+
+generation 替换不改变 AgentSession identity、canonical sequence 或 lifecycle-journal 证据。
+Supervisor（R3）与 TerminalAttachment（R4）状态机仍是后续阶段。

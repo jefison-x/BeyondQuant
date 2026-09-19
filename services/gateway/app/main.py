@@ -1204,6 +1204,8 @@ def create_product_session(request: Request) -> dict[str, object]:
         "trace_id": trace_id,
         "title": conversation.get("title"),
         "status": conversation.get("status", body.get("status", "ready")),
+        # ADR-0079 R2: framework-neutral continuity, never a DSH/process schema.
+        "continuity": body.get("continuity"),
     }
 
 
@@ -1388,6 +1390,9 @@ def resume_product_session(session_id: str, request: Request) -> dict[str, objec
         "trace_id": session.trace_id,
         "status": body.get("status"),
         "resumed_from_run_id": body.get("resumed_from_run_id"),
+        # ADR-0079 R2: framework-neutral continuity status for reattach vs
+        # rehydrate vs interrupted; no DSH or process identity is projected.
+        "continuity": body.get("continuity"),
     }
 
 
