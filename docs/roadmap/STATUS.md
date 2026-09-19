@@ -51,8 +51,9 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
 
 ## Runtime Continuity D15：DSH 0.1.5-rc.1 原生连续性资格（2026-09-19，维护）
 
-本批为维护，不推进 Product Phase。维护者要求重排 Runtime Continuity（R-series）路线并执行
-D15 前半段：完成 D15-0 升级 recon、确定资格目标并构建/启动 D15-1 隔离候选，冻结 R3。依
+本批为维护，不推进 Product Phase。维护者要求重排 Runtime Continuity（R-series）路线并推进 D15：
+完成 D15-0 升级 recon、确定资格目标、构建/启动 D15-1 隔离候选并完成 D15-2 Session V3 迁移资格，
+冻结 R3。依
 [ADR-0081](../architecture/adr/ADR-0081-dsh-native-continuity-and-d15-stage.md)（Proposed）：
 
 - **R3 冻结（非回滚）**：状态 `PAUSED_PENDING_DSH_015_NATIVE_CONTINUITY_QUALIFICATION`。保留
@@ -76,14 +77,33 @@ D15 前半段：完成 D15-0 升级 recon、确定资格目标并构建/启动 D
   `docs/evidence/d15/d15-1/`。候选在不可变 `config/dsh/releases` 注册表之外，未 push；
   生产默认 `dsh-0.1.2rc1`、`compose.yml`、既有 0.1.2 制品/证据不变，回滚目标 `dsh-0.1.2rc1`，
   无 DB/Worker 变更。`tool_event_schema` 与 `profile_schema` 由 unknown 转为 probed/compatible。
-- **D15-2..D15-G（PLANNED）**：仅提交测试计划、fixtures 与 acceptance criteria
-  （`docs/evidence/d15/fixtures/manifest.v1.json` 与
-  [D15 阶段计划](DSH_015RC1_UPGRADE_PLAN.md)），不声称资格通过。
+- **D15-2（Session V3 迁移资格 PASS）**：提交 9 个不可变 fixtures
+  （`docs/evidence/d15/fixtures/sessions/index.v1.json`，含 sha256），其中 `f-normal`
+  为隔离运行官方 0.1.2-rc.1 bundled runtime 产生的真实 v0 会话（keyless 合成 loopback
+  provider/MCP，多帧 zstd 无损解压），其余为用官方 0.1.5-rc.1 released-v2 codec 确定性构造的
+  历史 v2 fixtures，`f-continuable` 为经真实 catalog 迁移后再编码的 v3 当前格式 child，
+  `f-old-lifecycle` 附带合成 BYQ lifecycle 证据 sibling。Node harness
+  `scripts/d15/harness/migration_harness.mjs` 仅读原始文件、复制到 scratch 后经第一方
+  `@deepseek-ai/dsh-session-format-catalog`（`sessionFormatV2ToV3`）执行
+  `read → resume → append → close → reopen`：9/9 全阶段 pass、0 blocker、
+  `all_post_migration_stages_pass=true`、序列连续且 message id 保留；`f-forked` 的
+  `isSeeded`/inherited cut（源标记 seq 7 → 目标 inherited count 9）保留。迁移后 v3 store
+  **不可降级**（9/9 记录：0.1.2-rc.1 无 `dsh-session-format` 且按 `session.vN.jsonl` 选代）。
+  fail-closed 证据 `docs/evidence/d15/d15-2/fail-closed.v1.json`：future-version /
+  unclassified-event / malformed-header / refused-surface 均返回文档化拒绝，
+  `treated_as_new_session=false`、`successor_generation_written=false`。台账
+  `session_format_v2_v3` 增加 `observed_status=compatible` 并移出 `not_yet_probed`；
+  `acceptance-matrix` D15-2 置 PASS，D15-3..D15-G 仍 NOT_RUN。D15-2 仅新增测试/证据/文档，
+  但 `scripts/` 与 `tests/` 属于 BYQ build-input inventory，故按仓库规则构建修订推进
+  `post-u8.147 → post-u8.148`（仅重建身份，不改 selector/deployment）。
+- **D15-3..D15-G（PLANNED）**：native session resume、subagent/fork continuity、
+  persistent terminal 与 architecture Go/No-Go 尚未执行；`R3_RESUME = NO`。
 - **路线重排**：`R0 → R1 → R2 → D15 → R3 Thin Runtime Supervisor → R4 TerminalAttachment →
   R5 DurableJob independence → R6 Full Runtime Continuity Qualification → 独立 Production
   Go/No-Go`；R6 完成不隐含生产切换，“兼容 0.1.5-rc.1”与“生产默认 = 0.1.5-rc.1”为独立决策。
 - **构建修订**：D15 改变 runtime build inputs，`.145→.146`，D15-1 新增候选 Dockerfile/锁/探测后
-  推进 `post-u8.146 → post-u8.147`；历史清单与全部证据保留。不部署、不自动合并。
+  推进 `post-u8.146 → post-u8.147`；D15-2 新增 `scripts/`/`tests/` 下的 harness 与 fixtures 后推进
+  `post-u8.147 → post-u8.148`（历史清单与全部证据保留）。不部署、不自动合并。
   `R3_RESUME = NO`，直至 D15-G 完成且有原生连续性证据。
 
 - 当前已完成阶段：**Phase 97**——回测任务拥有 Backend 权威、持久化的可读名称；名称与稳定 Backtest ID 在 Product 目录、

@@ -1,13 +1,18 @@
 {
   "schema_version": "byq-d15-acceptance-matrix.v1",
   "generated_at": "2026-09-19",
-  "notes": "Acceptance criteria for D15-2..D15-G. All results are NOT_RUN until a live candidate exists; no criteria may be marked PASS without committed evidence.",
+  "notes": "Acceptance criteria for D15-2..D15-G. D15-2 is PASS with committed evidence; D15-3..D15-G remain NOT_RUN until a live candidate exists. No criteria may be marked PASS without committed evidence.",
   "result_vocabulary": ["NOT_RUN", "PASS", "FAIL", "BLOCKED"],
   "substages": [
     {
       "id": "D15-2",
       "name": "Session V3 Migration Qualification",
-      "result": "NOT_RUN",
+      "result": "PASS",
+      "evidence": [
+        "docs/evidence/d15/d15-2/migration-results.v1.json",
+        "docs/evidence/d15/d15-2/fail-closed.v1.json",
+        "docs/evidence/d15/fixtures/sessions/index.v1.json"
+      ],
       "criteria": [
         "originals immutable; migrated copies separate and immutable once produced",
         "0.1.2 historical -> migrate -> V3 -> read -> resume -> append -> close -> reopen succeeds",
@@ -16,6 +21,15 @@
         "fork inheritedEventCount/isSeeded preserved",
         "downgrade feasibility explicitly recorded (even when not downgradable)",
         "unknown/future format version fails closed with the documented refusal"
+      ],
+      "criterion_results": [
+        {"criterion": "originals immutable; migrated copies separate and immutable once produced", "result": "PASS", "evidence": "fixtures/sessions/index.v1.json sha256 verified before and after the live harness run; harness copies each original to a fresh scratch directory and writes only session.v3.jsonl there"},
+        {"criterion": "0.1.2 historical -> migrate -> V3 -> read -> resume -> append -> close -> reopen succeeds", "result": "PASS", "evidence": "9/9 fixtures: read/resume/append/close/reopen pass (migration-results.v1.json summary.all_post_migration_stages_pass=true)"},
+        {"criterion": "migration failure is never silently treated as a new session", "result": "PASS", "evidence": "fail-closed.v1.json cases record treated_as_new_session=false and successor_generation_written=false for every refusal; committed fixtures preserve their source session id"},
+        {"criterion": "event identity/order and terminal evidence preserved", "result": "PASS", "evidence": "sequence_continuity=true and missing_from_target=[] for every fixture; interrupted and compacted terminal evidence retained"},
+        {"criterion": "fork inheritedEventCount/isSeeded preserved", "result": "PASS", "evidence": "f-forked isSeeded=true, inherited cut marker seq 7 maps to target inheritedEventCount 9"},
+        {"criterion": "downgrade feasibility explicitly recorded (even when not downgradable)", "result": "PASS", "evidence": "9/9 fixtures downgrade.feasible=false with released-v2 codec and v2-max chain refusals recorded"},
+        {"criterion": "unknown/future format version fails closed with the documented refusal", "result": "PASS", "evidence": "unknown-future-format surfaces SessionFormatUnsupportedMigrationError; malformed-header reports catalog status malformed"}
       ],
       "fixtures": ["F-NORMAL", "F-COMPLETED", "F-INTERRUPTED", "F-COMPACTED", "F-LARGE", "F-SUBAGENT", "F-CONTINUABLE", "F-FORKED", "F-OLD-LIFECYCLE"],
       "evidence_path": "docs/evidence/d15/d15-2"

@@ -1,6 +1,7 @@
 # DSH 0.1.5-rc.1 Native Continuity Upgrade and Qualification (Stage D15)
 
-Status: **PLANNED — D15-0 done, D15-1 candidate built/started/probed, D15-2..D15-G not started**
+Status: **D15-0 done, D15-1 candidate built/started/probed, D15-2 session V3
+migration PASS, D15-3..D15-G not started**
 Relates: ADR-0079, ADR-0081, ADR-0058, ADR-0069, ADR-0003
 Evidence: `docs/evidence/d15/`
 Target decision: [`docs/evidence/d15/target-decision.v1.json`](../evidence/d15/target-decision.v1.json)
@@ -49,30 +50,48 @@ violate the "no second generic agent harness" rule.
 | --- | --- | --- |
 | D15-0 | Upgrade Recon | **DONE** |
 | D15-1 | Candidate Runtime Upgrade | **machinery + isolated build/start DONE; D15-2..D15-G pending** |
-| D15-2 | Session V3 Migration Qualification | planned |
+| D15-2 | Session V3 Migration Qualification | **PASS** |
 | D15-3 | Native Session Resume Qualification | planned |
 | D15-4 | Subagent/Fork Continuity Qualification | planned |
 | D15-5 | Persistent Terminal Qualification | planned |
 | D15-G | Architecture Go/No-Go | planned |
 
-## 3. D15-2 — Session V3 migration
+## 3. D15-2 — Session V3 migration (PASS)
 
-Fixtures: `docs/evidence/d15/fixtures/manifest.v1.json` (`F-*`).
+Fixtures: [`docs/evidence/d15/fixtures/sessions/index.v1.json`](../evidence/d15/fixtures/sessions/index.v1.json)
+(specification: [`fixtures/manifest.v1.json`](../evidence/d15/fixtures/manifest.v1.json)).
 
 Flow per fixture: `0.1.2 historical → migration → V3 → read → resume → append →
 close → reopen`.
 
+Result (2026-09-19): **PASS.** 9/9 fixtures completed every stage, 0 blockers,
+`all_post_migration_stages_pass=true`; 8 migrated (one real v0 store produced by
+the isolated 0.1.2-rc.1 runtime, the rest deterministic released-v2 artifacts)
+and one already-current v3 child. The migrated store is **not downgradable** by
+`0.1.2-rc.1` (9/9 recorded). Fail-closed: future-version, unclassified-event,
+malformed-header and refused-surface cases all surface the documented refusal
+and are never converted to a fresh session.
+
 Acceptance:
 
 1. Originals are immutable; migrated copies are written separately and the
-   historical evidence is never overwritten.
+   historical evidence is never overwritten. **PASS** (sha256 index; harness
+   scratch copies).
 2. Migration preserves event identity/order and terminal evidence; a failure is
-   never silently treated as a new session.
+   never silently treated as a new session. **PASS**.
 3. Explicit downgrade feasibility is recorded; if the migrated form is not
-   downgradable, that is stated rather than assumed.
-4. `inheritedEventCount`/`isSeeded` fork prefixes survive correctly.
+   downgradable, that is stated rather than assumed. **PASS** (not
+   downgradable).
+4. `inheritedEventCount`/`isSeeded` fork prefixes survive correctly. **PASS**
+   (`f-forked`: seeded cut marker seq 7 -> target inherited count 9).
 5. Unknown/future format versions fail closed with the documented refusal, not
-   corruption.
+   corruption. **PASS**.
+
+Evidence: [`docs/evidence/d15/d15-2/`](../evidence/d15/d15-2/README.md)
+(`migration-results.v1.json`, `fail-closed.v1.json`). Harness:
+`scripts/d15/harness/migration_harness.mjs`. D15-2 adds test/evidence/docs under
+the build-input inventory, so per repository rules the production build revision
+advances `post-u8.147` -> `post-u8.148` (no selector/deployment change).
 
 ## 4. D15-3 — Native session resume
 
@@ -155,3 +174,9 @@ D15-1 adds runtime build inputs (candidate Dockerfile, candidate requirements
 lock and probe). Per repository rules the production build revision advances
 `post-u8.146` → `post-u8.147`; the historical `.146` and `.145` manifests and all
 existing evidence are retained.
+
+D15-2 adds test code, fixtures and evidence under `tests/` and `scripts/`, which
+are part of the build-input inventory, so per repository rules the revision
+advances `post-u8.147` -> `post-u8.148`. This is a rebuild identity bump only: no
+selector, `compose.yml`, `deployment.json` or 0.1.2 artifact/evidence change and
+no deployment.

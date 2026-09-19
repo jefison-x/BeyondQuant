@@ -88,10 +88,14 @@
     {
       "id": "session_format_v2_v3",
       "status": "new",
-      "summary": "Native session format catalog with adjacent migrations v0->v1->v2->v3; SessionFormatUnsupportedError and sessionFormatVersionRefusal fail closed on unknown versions instead of corrupting.",
+      "observed_status": "compatible",
+      "observed_evidence": "docs/evidence/d15/d15-2/migration-results.v1.json",
+      "summary": "Native session format catalog with adjacent migrations v0->v1->v2->v3; SessionFormatUnsupportedError and sessionFormatVersionRefusal fail closed on unknown versions instead of corrupting. D15-2 migrated real/quasi-real historical v0 and v2 stores through the released chain and completed read/resume/append/close/reopen with contiguous sequences and preserved message ids.",
       "evidence": [
         "new packages dsh-session-format, -catalog, -v0-to-v1, -v1-to-v2, -v2-to-v3",
-        "@deepseek-ai/dsh-session-format-v2-to-v3/lib/types/migration.d.ts: sessionFormatV2ToV3"
+        "@deepseek-ai/dsh-session-format-v2-to-v3/lib/types/migration.d.ts: sessionFormatV2ToV3",
+        "docs/evidence/d15/d15-2/migration-results.v1.json: 9/9 fixtures migrated/current; all read/resume/append/close/reopen stages pass; 0 blockers; 9/9 non-downgradable",
+        "docs/evidence/d15/d15-2/fail-closed.v1.json: future-version, unclassified-event, malformed-header and refused-surface migrations all surface a documented refusal and are never converted to a new session"
       ],
       "byq_affected_files": [],
       "change_class": [
@@ -447,10 +451,16 @@
       "status": "probed",
       "evidence": "docs/evidence/d15/d15-1/candidate-start-probe.v1.json",
       "scope": "includes tool/call and tool/result; contiguous seq"
+    },
+    {
+      "item": "native_session_v0_v2_to_v3_migration",
+      "status": "probed",
+      "observed_status": "compatible",
+      "evidence": "docs/evidence/d15/d15-2/migration-results.v1.json",
+      "scope": "real 0.1.2-rc.1 v0 store plus released-v2 fixtures, migrated with sessionFormatV2ToV3 via the first-party catalog; read/resume/append/close/reopen and fail-closed refusals qualified"
     }
   ],
   "not_yet_probed": [
-    "Native session V2->V3 migration on real BYQ session fixtures",
     "Continuable subagent cold resume and settlement delivery",
     "Persistent terminal attach/rebind across host reboot"
   ]

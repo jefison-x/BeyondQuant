@@ -2,6 +2,14 @@
   "schema_version": "byq-d15-fixture-manifest.v1",
   "generated_at": "2026-09-19",
   "notes": "Fixture SPECIFICATIONS for D15-2..D15-G. No historical session artifact may be mutated; each fixture declares an immutable origin and a separate working copy.",
+  "realized_in_d15_2": {
+    "index": "docs/evidence/d15/fixtures/sessions/index.v1.json",
+    "directory": "docs/evidence/d15/fixtures/sessions/",
+    "provenance_summary": "F-NORMAL is a real DSH 0.1.2-rc.1 session store captured from an isolated keyless runtime run (released v0 multi-frame zstd, decompressed losslessly). The remaining fixtures are deterministic released-v2/v3 artifacts encoded with the official 0.1.5-rc.1 session-format codecs; F-CONTINUABLE is a v3 current-format child whose continuable activation descriptor remains a D15-4 artifact. F-OLD-LIFECYCLE carries a synthetic BYQ lifecycle-evidence sibling.",
+    "sha256_recorded": true,
+    "migration_evidence": "docs/evidence/d15/d15-2/migration-results.v1.json",
+    "fail_closed_evidence": "docs/evidence/d15/d15-2/fail-closed.v1.json"
+  },
   "immutability_rule": "originals are read-only and never overwritten; migrated/qualified copies are written under a D15 evidence working directory and are themselves immutable once produced",
   "session_fixtures": [
     {"id": "F-NORMAL", "category": "normal", "origin": "historical BYQ 0.1.2 session root (read-only copy)", "format": "v2", "expect": "migrate to v3, read, resume, append, close, reopen with contiguous seq"},
