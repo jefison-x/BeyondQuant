@@ -1,0 +1,487 @@
+{
+  "schema_version": "byq-d15-4-native-observations.v2",
+  "generated_at": "2026-09-20T09:08:06Z",
+  "evidence_class": "native-runtime-isolated",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1",
+    "closure": "agent-loop + jsonl session persistence + @deepseek-ai/dsh-subagent + spawn/fork in-process providers"
+  },
+  "llm": {
+    "class": "scripted-keyless",
+    "real_llm_quality": false,
+    "note": "Scripted keyless in-process adapter. Runtime-continuity evidence only; never semantic model quality."
+  },
+  "harness": {
+    "native_continuable_api": true,
+    "one_os_process_per_generation": true,
+    "byq_subagent_persistence": false,
+    "second_generic_harness": false,
+    "r3_behavior": false
+  },
+  "scenarios": [
+    {
+      "id": "parent-child-identity",
+      "result": "PASS",
+      "check": "childId is a durable SessionId distinct from the root parent; persisted header records the direct parent and origin=subagent; listChildren exposes the continuable child",
+      "operation": "real startContinuable on the native spawn provider",
+      "observation": {
+        "parentId": "d15-4-parent",
+        "childId": "6d8c7101-e9e5-4644-8ec9-90853bba2337",
+        "messageId": "a1f85154-6e17-4989-9ca9-4e0e53f24e06",
+        "distinctIdentity": true,
+        "header": {
+          "id": "6d8c7101-e9e5-4644-8ec9-90853bba2337",
+          "parentSession": "d15-4-parent",
+          "origin": "subagent",
+          "isSeeded": false,
+          "delegationDepth": 1
+        },
+        "descriptor": {
+          "version": 3,
+          "mode": "continuable",
+          "provider": "spawn",
+          "label": "child task",
+          "agentProvider": "mock",
+          "agentModel": "mock"
+        },
+        "descriptorVersion": 3,
+        "childEventTypes": [
+          "subagent/descriptor",
+          "agent/inbox/spliced",
+          "turn/start",
+          "agent/inbox/spliced",
+          "step/start",
+          "system/message",
+          "user/message",
+          "user/message",
+          "request/header",
+          "request/context",
+          "assistant/message",
+          "step/end",
+          "turn/end"
+        ],
+        "childSequenceContiguous": true,
+        "settlementCount": 0,
+        "settlementDeliveries": 1,
+        "created": [
+          {
+            "id": "d15-4-parent",
+            "provider": "mock",
+            "model": "mock"
+          },
+          {
+            "id": "6d8c7101-e9e5-4644-8ec9-90853bba2337",
+            "provider": "mock",
+            "model": "mock"
+          }
+        ],
+        "listChildren": [
+          {
+            "id": "6d8c7101-e9e5-4644-8ec9-90853bba2337",
+            "mode": "continuable",
+            "kind": "child"
+          }
+        ],
+        "adapterRequests": [
+          {
+            "provider": "mock",
+            "model": "mock",
+            "reasoningEffort": "max",
+            "toolNames": []
+          }
+        ]
+      },
+      "fault_applied": false
+    },
+    {
+      "id": "continuable-descriptor",
+      "result": "PASS",
+      "check": "subagent/descriptor v3 is persisted with mode=continuable before the first turn",
+      "operation": "read durable descriptor through SessionPersistence.open",
+      "observation": {
+        "version": 3,
+        "mode": "continuable",
+        "provider": "spawn",
+        "label": "child task",
+        "agentProvider": "mock",
+        "agentModel": "mock"
+      },
+      "fault_applied": false
+    },
+    {
+      "id": "cold-resume",
+      "result": "PASS",
+      "check": "a genuinely new OS process cold-resumes the same durable child via sendMessage with the descriptor reapplied and exactly one new settlement",
+      "operation": "new OS process + parent resume + sendMessage cold resume",
+      "observation": {
+        "parentId": "d15-4-parent",
+        "childId": "6d8c7101-e9e5-4644-8ec9-90853bba2337",
+        "messageId": "9af55404-b3aa-4961-a371-39c8d94c781a",
+        "sameChildId": true,
+        "headerBefore": {
+          "id": "6d8c7101-e9e5-4644-8ec9-90853bba2337",
+          "parentSession": "d15-4-parent",
+          "origin": "subagent",
+          "isSeeded": false,
+          "delegationDepth": 1
+        },
+        "headerAfter": {
+          "id": "6d8c7101-e9e5-4644-8ec9-90853bba2337",
+          "parentSession": "d15-4-parent",
+          "origin": "subagent",
+          "isSeeded": false,
+          "delegationDepth": 1
+        },
+        "descriptorBefore": {
+          "version": 3,
+          "mode": "continuable",
+          "provider": "spawn",
+          "label": "child task",
+          "agentProvider": "mock",
+          "agentModel": "mock"
+        },
+        "descriptorAfter": {
+          "version": 3,
+          "mode": "continuable",
+          "provider": "spawn",
+          "label": "child task",
+          "agentProvider": "mock",
+          "agentModel": "mock"
+        },
+        "inheritedEventCountBefore": 0,
+        "inheritedEventCountAfter": 0,
+        "sequenceContiguousAcrossResume": true,
+        "settlementBefore": 0,
+        "settlementAfter": 0,
+        "settlementDeliveries": 1,
+        "newSettlements": 1,
+        "created": [
+          {
+            "id": "d15-4-parent",
+            "provider": "mock",
+            "model": "mock"
+          },
+          {
+            "id": "6d8c7101-e9e5-4644-8ec9-90853bba2337",
+            "provider": "mock",
+            "model": "mock"
+          }
+        ],
+        "adapterRequests": [
+          {
+            "provider": "mock",
+            "model": "mock",
+            "reasoningEffort": "max",
+            "toolNames": []
+          }
+        ]
+      },
+      "fault_applied": true
+    },
+    {
+      "id": "fork-lineage",
+      "result": "PASS",
+      "check": "the fork is a distinct seeded child with inheritedEventCount exactly the parent balanced completed-turn prefix (last turn/end seq + 1); the full parent log hash and length are equal before/after; the child log is sequence-contiguous",
+      "operation": "real fork provider start over a completed parent turn",
+      "observation": {
+        "parentId": "d15-4-parent",
+        "forkId": "3123c407-c889-4f60-993f-d970c7d02358",
+        "distinctIdentity": true,
+        "header": {
+          "id": "3123c407-c889-4f60-993f-d970c7d02358",
+          "parentSession": "d15-4-parent",
+          "origin": "subagent",
+          "isSeeded": true,
+          "delegationDepth": 1
+        },
+        "isSeeded": true,
+        "inheritedEventCount": 11,
+        "parentLastTurnEndSeq": 10,
+        "parentCompletedTurnPrefixCut": 11,
+        "parentCompletedTurnCount": 1,
+        "parentEventCountBefore": 11,
+        "parentEventCountAfter": 11,
+        "parentLogHashBefore": "sha256:6175fff4927b2ae0a04239370dc3fc3a8c1cfbc285f3d07d6578e233b3358be2",
+        "parentLogHashAfter": "sha256:6175fff4927b2ae0a04239370dc3fc3a8c1cfbc285f3d07d6578e233b3358be2",
+        "parentLogImmutable": true,
+        "childSequenceContiguous": true
+      },
+      "fault_applied": true
+    },
+    {
+      "id": "inheritance",
+      "result": "PASS",
+      "check": "declared provider/model/reasoning-effort/persona are persisted in the descriptor and reapplied to the child on cold resume",
+      "operation": "startContinuable with declared composition + cold resume observation of agent/created",
+      "observation": {
+        "descriptor": {
+          "version": 3,
+          "mode": "continuable",
+          "provider": "spawn",
+          "label": "child task",
+          "agentProvider": "mock",
+          "agentModel": "mock",
+          "agentReasoningEffort": "max",
+          "persona": "d15-4 inherited persona"
+        },
+        "reappliedChild": {
+          "id": "71a7e0f4-3414-4273-8a5b-2cb3b14d2440",
+          "provider": "mock",
+          "model": "mock",
+          "reasoningEffort": "max"
+        }
+      },
+      "fault_applied": true
+    },
+    {
+      "id": "parent-crash",
+      "result": "PASS",
+      "check": "SIGKILL of the executor process is survived by the durable parent identity and the child remains natively resumable with no fabricated completion",
+      "operation": "SIGKILL the owning OS process mid child turn, then a new OS process resumes",
+      "observation": {
+        "crash": {
+          "signal": "SIGKILL",
+          "exit": null,
+          "crashedAsExpected": true
+        },
+        "after": {
+          "parentId": "d15-4-parent",
+          "childId": "0a056705-3218-481c-980a-14722785f3c7",
+          "messageId": "0b134ae6-78c0-4582-bffe-08e926e881da",
+          "sameChildId": true,
+          "headerBefore": {
+            "id": "0a056705-3218-481c-980a-14722785f3c7",
+            "parentSession": "d15-4-parent",
+            "origin": "subagent",
+            "isSeeded": false,
+            "delegationDepth": 1
+          },
+          "headerAfter": {
+            "id": "0a056705-3218-481c-980a-14722785f3c7",
+            "parentSession": "d15-4-parent",
+            "origin": "subagent",
+            "isSeeded": false,
+            "delegationDepth": 1
+          },
+          "descriptorAfter": {
+            "version": 3,
+            "mode": "continuable",
+            "provider": "spawn",
+            "label": "child task",
+            "agentProvider": "mock",
+            "agentModel": "mock"
+          },
+          "childIdRetained": true,
+          "parentSurvived": true,
+          "parentEventCountBefore": 2,
+          "parentEventCountAfter": 2,
+          "newSettlements": 1,
+          "adapterRequests": [
+            {
+              "provider": "mock",
+              "model": "mock",
+              "reasoningEffort": "max",
+              "toolNames": []
+            }
+          ]
+        }
+      },
+      "fault_applied": true
+    },
+    {
+      "id": "child-run-fault",
+      "result": "PASS",
+      "check": "an independent child-run fault (model stream failure, not a SIGKILL) leaves the child id retained, the parent settlement truthful (no fabricated completion), and the child natively resumable in a later OS process",
+      "operation": "real child-run fault on the native spawn provider + cold resume",
+      "observation": {
+        "parentId": "d15-4-parent",
+        "childId": "a192efe0-ca7d-42bf-8998-07d17fec14cb",
+        "adapterRequests": 1,
+        "settlement": {
+          "summary": "Background subagent a192efe0-ca7d-42bf-8998-07d17fec14cb failed before it finished.",
+          "text": "Background subagent a192efe0-ca7d-42bf-8998-07d17fec14cb failed before it finished. It left no closing message."
+        },
+        "childEventTypes": [
+          "subagent/descriptor",
+          "agent/inbox/spliced",
+          "turn/start",
+          "agent/inbox/spliced",
+          "step/start",
+          "system/message",
+          "user/message",
+          "user/message",
+          "request/header",
+          "request/context",
+          "assistant/attempt",
+          "step/end",
+          "turn/end"
+        ],
+        "childIdRetained": true,
+        "parentTruthfulFailure": true,
+        "fabricatedCompletion": false,
+        "descriptor": {
+          "version": 3,
+          "mode": "continuable",
+          "provider": "spawn",
+          "label": "child task",
+          "agentProvider": "mock",
+          "agentModel": "mock"
+        },
+        "resume": {
+          "parentId": "d15-4-parent",
+          "childId": "a192efe0-ca7d-42bf-8998-07d17fec14cb",
+          "sameChildId": true,
+          "childIdRetained": true,
+          "turnEnded": true,
+          "descriptorAfter": {
+            "version": 3,
+            "mode": "continuable",
+            "provider": "spawn",
+            "label": "child task",
+            "agentProvider": "mock",
+            "agentModel": "mock"
+          },
+          "nativelyResumable": true,
+          "childSequenceContiguous": true
+        }
+      },
+      "fault_applied": true
+    },
+    {
+      "id": "child-crash",
+      "result": "BLOCKED",
+      "fault_applied": false,
+      "not_run_reason": "not executed: the composed native spawn provider runs children in-process, so an independent child process cannot be SIGKILLed while the parent executor stays alive. The owning-process SIGKILL is recorded only as native executor evidence (parent-crash) and is NOT used for this item. child-run-fault records a real but different independent child fault. Smallest concrete option: an out-of-process child provider or the isolated runtime-adapter stack with a real DSH child process (the D15-3R dsh-process-interruption pattern). No child persistence substitute was built."
+    },
+    {
+      "id": "byq-adapter-restart",
+      "result": "BLOCKED",
+      "fault_applied": false,
+      "not_run_reason": "not executed from BYQ: the committed byq-product-sdk composition loads byq_delegate_* with enableRunInBackground=false, so @deepseek-ai/dsh-tool-subagent always takes the foreground runtimeCtx.subagents.start() path and never startContinuable(); no committed BYQ harness drives the continuable seam and Dsh015Compatibility inherits the 0.1.2 observation contract. The native seam itself is reachable and qualified below in an evidence-only harness; the BYQ runtime-adapter container-restart projection remains unqualified. Smallest concrete option: an isolated D15 compose stack plus a tool-aware scripted provider, without changing the production composition."
+    },
+    {
+      "id": "host-reboot",
+      "result": "NOT_RUN",
+      "fault_applied": false,
+      "not_run_reason": "not executed: rebooting the maintainer host is not authorized and a container/adapter restart is not a host reboot"
+    }
+  ],
+  "negatives": [
+    {
+      "kind": "non-direct-parent",
+      "rejected": true,
+      "errorCode": "UNAUTHORIZED",
+      "errorClass": "SubagentError",
+      "message": "subagent \"f172c531-ddee-42f6-bb23-6069ad492288\" belongs to another parent session",
+      "root_cleaned": true
+    },
+    {
+      "kind": "stale-parent",
+      "rejected": true,
+      "errorCode": "UNAUTHORIZED",
+      "errorClass": "SubagentError",
+      "message": "subagent \"21772f10-a3b7-413b-9ad9-30b614fbdd03\" belongs to another parent session",
+      "root_cleaned": true
+    },
+    {
+      "kind": "unmaterialized",
+      "rejected": true,
+      "errorCode": "NOT_RESUMABLE",
+      "errorClass": "SubagentError",
+      "message": "subagent \"00000000-0000-4000-8000-00000000dead\" is unavailable",
+      "root_cleaned": true
+    },
+    {
+      "kind": "max-depth",
+      "rejected": true,
+      "errorCode": null,
+      "errorClass": "SubagentDepthError",
+      "message": "subagent depth 2 exceeds maxDepth 1",
+      "root_cleaned": true
+    },
+    {
+      "kind": "child-claims-root",
+      "rejected": true,
+      "errorCode": "DUPLICATE_CHILD",
+      "errorClass": "SubagentError",
+      "message": "subagent \"d15-4-parent\" already exists",
+      "root_cleaned": true
+    },
+    {
+      "kind": "out-of-filter-tool",
+      "rejected": true,
+      "errorCode": null,
+      "errorClass": "Error",
+      "message": "tools.restrict() names unknown global tool \"d15_not_a_registered_tool\"; known global tools: (none)",
+      "root_cleaned": true
+    }
+  ],
+  "required_scenarios": [
+    "parent-child-identity",
+    "continuable-descriptor",
+    "cold-resume",
+    "fork-lineage",
+    "inheritance",
+    "parent-crash",
+    "child-crash",
+    "byq-adapter-restart"
+  ],
+  "uncovered_required": [
+    "child-crash",
+    "byq-adapter-restart"
+  ],
+  "negatives_pass": true,
+  "host_reboot": {
+    "result": "NOT_RUN",
+    "reason": "not executed: rebooting the maintainer host is not authorized and a container/adapter restart is not a host reboot"
+  },
+  "runtime_root_cleaned": true,
+  "cleanup": [
+    {
+      "root": "/tmp/d15-4-native-YA6PMF",
+      "removed": true
+    },
+    {
+      "root": "/tmp/d15-4-fork-057TSb",
+      "removed": true
+    },
+    {
+      "root": "/tmp/d15-4-inherit-bHfOC8",
+      "removed": true
+    },
+    {
+      "root": "/tmp/d15-4-crash-e896ie",
+      "removed": true
+    },
+    {
+      "root": "/tmp/d15-4-childfault-Apt8PS",
+      "removed": true
+    },
+    {
+      "root": "/tmp/d15-4-neg-non-direct-parent-xPattW",
+      "removed": true
+    },
+    {
+      "root": "/tmp/d15-4-neg-stale-parent-ilJZlq",
+      "removed": true
+    },
+    {
+      "root": "/tmp/d15-4-neg-unmaterialized-QC3KTb",
+      "removed": true
+    },
+    {
+      "root": "/tmp/d15-4-neg-max-depth-hM9gPr",
+      "removed": true
+    },
+    {
+      "root": "/tmp/d15-4-neg-child-claims-root-2EqTI8",
+      "removed": true
+    },
+    {
+      "root": "/tmp/d15-4-neg-out-of-filter-tool-h110ve",
+      "removed": true
+    }
+  ],
+  "duration_ms": 4407
+}

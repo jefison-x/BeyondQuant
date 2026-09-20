@@ -1,0 +1,146 @@
+{
+  "schema_version": "byq-d15-4-contract.v1",
+  "generated_at": "2026-09-20",
+  "scope": "D15-4 real native subagent/fork continuity qualification against the fixed DSH 0.1.5rc1 candidate. Not D15-5/D15-G; not R3.",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1"
+  },
+  "required_evidence_class": "native-runtime-isolated",
+  "llm_evidence_class": "scripted-keyless",
+  "llm_evidence_note": "A keyless scripted in-process adapter drives the real candidate agent loop, session persistence and subagent providers. This is runtime-continuity evidence, NOT real-LLM-quality semantic evidence.",
+  "results_vocabulary": ["PASS", "FAIL", "NOT_RUN", "BLOCKED"],
+  "required_coverage_gates_qualification": true,
+  "not_run_requires_reason": true,
+  "closed_scenario_set": true,
+  "negatives_must_all_be_rejected": true,
+  "required_scenarios": [
+    {
+      "id": "parent-child-identity",
+      "description": "the continuable child is a distinct durable SessionId whose header records the exact live direct parent; the child is never the parent identity",
+      "required": true,
+      "requires_fault": false,
+      "assertions": ["distinct_durable_child", "parent_link_recorded", "origin_subagent", "list_children_continuable"]
+    },
+    {
+      "id": "continuable-descriptor",
+      "description": "the versioned subagent/descriptor with mode=continuable is persisted before the first turn",
+      "required": true,
+      "requires_fault": false,
+      "assertions": ["descriptor_version_3", "mode_continuable", "provider_recorded"]
+    },
+    {
+      "id": "cold-resume",
+      "description": "a genuinely new OS process cold-resumes the same durable child from its descriptor with a contiguous log and exactly one settlement",
+      "required": true,
+      "requires_fault": true,
+      "assertions": ["same_child_id", "sequence_contiguous", "settlement_exactly_once", "descriptor_reapplied"]
+    },
+    {
+      "id": "fork-lineage",
+      "description": "the fork provider yields a distinct child seeded with the parent's balanced completed-turn prefix (exact cut) and leaves the full parent log byte-identical and the same length",
+      "required": true,
+      "requires_fault": true,
+      "assertions": ["distinct_identity", "is_seeded", "exact_inherited_cut", "parent_log_immutable", "child_sequence_contiguous"]
+    },
+    {
+      "id": "inheritance",
+      "description": "declared provider/model/reasoning-effort/persona are persisted in the descriptor and reapplied on cold resume",
+      "required": true,
+      "requires_fault": true,
+      "assertions": ["provider_inherited", "model_inherited", "reasoning_inherited", "persona_inherited", "reapplied_on_cold_resume"]
+    },
+    {
+      "id": "parent-crash",
+      "description": "SIGKILL of the owning executor process preserves the durable parent identity and the child stays natively resumable with no fabricated completion",
+      "required": true,
+      "requires_fault": true,
+      "assertions": ["executor_crash_observed", "child_id_retained", "parent_identity_survived", "resumable_after_crash"]
+    },
+    {
+      "id": "child-crash",
+      "description": "a child-only SIGKILL while the parent is alive; truthfully interrupted and natively resumed",
+      "required": true,
+      "requires_fault": true,
+      "assertions": ["child_id_retained", "parent_truthful_failure", "natively_resumable", "no_fabricated_completion"]
+    },
+    {
+      "id": "byq-adapter-restart",
+      "description": "a real isolated BYQ runtime-adapter container restart rebinding a BYQ-delegated continuable child",
+      "required": true,
+      "requires_fault": true,
+      "assertions": ["container_restart_observed", "child_resumed_natively", "same_child_id", "no_duplicate_side_effect"]
+    }
+  ],
+  "optional_scenarios": [
+    {
+      "id": "child-run-fault",
+      "description": "supporting evidence (not a substitute for child-crash): a real independent child-run fault (the child's model stream fails) while the parent process stays alive; the child id is retained, the parent settlement is truthful and the child is natively resumable in a later OS process.",
+      "required": false,
+      "requires_fault": true,
+      "assertions": ["child_id_retained", "parent_truthful_failure", "natively_resumable", "no_fabricated_completion"]
+    },
+    {
+      "id": "host-reboot",
+      "description": "host reboot. NOT executed: rebooting the maintainer host is not authorized and a container/adapter restart is not a host reboot.",
+      "required": false,
+      "requires_fault": true,
+      "assertions": []
+    }
+  ],
+  "required_assertions": [
+    "distinct_durable_child",
+    "parent_link_recorded",
+    "origin_subagent",
+    "list_children_continuable",
+    "descriptor_version_3",
+    "mode_continuable",
+    "provider_recorded",
+    "same_child_id",
+    "sequence_contiguous",
+    "settlement_exactly_once",
+    "descriptor_reapplied",
+    "distinct_identity",
+    "is_seeded",
+    "exact_inherited_cut",
+    "parent_log_immutable",
+    "child_sequence_contiguous",
+    "provider_inherited",
+    "model_inherited",
+    "reasoning_inherited",
+    "persona_inherited",
+    "reapplied_on_cold_resume",
+    "executor_crash_observed",
+    "child_id_retained",
+    "parent_identity_survived",
+    "resumable_after_crash",
+    "parent_truthful_failure",
+    "natively_resumable",
+    "no_fabricated_completion",
+    "container_restart_observed",
+    "child_resumed_natively",
+    "no_duplicate_side_effect"
+  ],
+  "fail_closed": [
+    "missing required scenario",
+    "required scenario not covered by a PASS (BLOCKED/NOT_RUN/FAIL/MISSING do not pass)",
+    "required PASS with a false assertion",
+    "required PASS without fault_applied when the contract requires a fault",
+    "NOT_RUN/BLOCKED without a reason",
+    "duplicate scenario id",
+    "unknown scenario id (closed set)",
+    "candidate mismatch",
+    "non-native evidence class",
+    "llm evidence claims real-llm-quality",
+    "a negative that was not rejected",
+    "missing measured settlement count (not defaulted to pass)",
+    "a descriptor or format-layer artifact alone",
+    "any attempt by the observation to declare its own continuity/coverage rules"
+  ],
+  "notes": {
+    "native_seam": "the native continuable seam is driven by an evidence-only harness; BYQ must not persist subagent state and no second generic harness or R3 behaviour is built",
+    "host_reboot": "kept separate from container/adapter restart and NOT_RUN in this batch",
+    "blocked_items": "child-crash and byq-adapter-restart are required but unreachable in this batch; they stay BLOCKED with their reason and gate the overall verdict"
+  }
+}

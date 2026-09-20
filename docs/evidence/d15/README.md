@@ -2,8 +2,12 @@
 
 Status: **D15-0 complete; D15-1 candidate built, started and keylessly probed in
 isolation; D15-2 session V3 migration qualified (PASS); D15-3 native session
-resume qualified (PASS); D15-4..D15-G not started. No subagent/terminal/Go-No-Go
-pass claims. `R3_RESUME = NO`.**
+resume qualified (PASS); D15-3R real isolated runtime continuity qualified
+(PASS, scripted keyless provider); D15-4 native subagent/fork continuity
+PARTIAL/BLOCKED (six required scenarios PASS in an evidence-only native harness;
+`child-crash` and BYQ `adapter-restart` required items BLOCKED; host reboot
+NOT_RUN). D15-5/D15-G not started. No full D15-4, terminal or Go/No-Go pass
+claims. `R3_RESUME = NO`.**
 
 - Target decision: [`target-decision.v1.json`](target-decision.v1.json)
   (`dsh-v0.1.5-rc.1` / Python `0.1.5rc1` / bundled npm `0.1.5-rc.1`)
@@ -13,9 +17,10 @@ pass claims. `R3_RESUME = NO`.**
 - D15-1 build/start/probe: [`d15-1/README.md`](d15-1/README.md)
 - D15-2 session migration qualification: [`d15-2/README.md`](d15-2/README.md)
 - D15-3 native session resume qualification: [`d15-3/README.md`](d15-3/README.md)
+- D15-4 native subagent/fork continuity (PARTIAL/BLOCKED): [`d15-4/README.md`](d15-4/README.md)
 - Qualification fixture specification: [`fixtures/manifest.v1.json`](fixtures/manifest.v1.json)
 - Realized fixture index (sha256): [`fixtures/sessions/index.v1.json`](fixtures/sessions/index.v1.json)
-- Acceptance-criteria matrix (D15-2/D15-3 `PASS`, D15-4..D15-G `NOT_RUN`): [`acceptance-matrix.v1.json`](acceptance-matrix.v1.json)
+- Acceptance-criteria matrix (D15-2/D15-3 `PASS`, D15-4 `BLOCKED`, D15-5/D15-G `NOT_RUN`): [`acceptance-matrix.v1.json`](acceptance-matrix.v1.json)
 - Stage plan / acceptance criteria: [`../../roadmap/DSH_015RC1_UPGRADE_PLAN.md`](../../roadmap/DSH_015RC1_UPGRADE_PLAN.md)
 
 Production default remains `dsh-0.1.2rc1`. Nothing in this directory changes

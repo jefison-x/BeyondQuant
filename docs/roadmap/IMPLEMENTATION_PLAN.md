@@ -191,6 +191,63 @@ runtime 资格，属必需下一步且尚未完成。结论：原生 session res
 本分支合并 `origin/main` 并改用未使用 id `post-u8.155`（仅重建身份）。D15-4..D15-G（subagent/fork、
 persistent terminal、Go/No-Go）仍为 PLANNED。不部署、不自动合并。
 
+D15-4 原生 subagent/fork 连续性资格（构建修订 `post-u8.165`，维护，不推进 Product Phase）：
+维护者授权 develop/隔离测试/feature push/Draft PR。以固定 `dsh-0.1.5rc1` 候选闭包启动
+**evidence-only Node harness**（`scripts/d15/subagent/native_subagent_harness.mjs`，真实
+`@deepseek-ai/dsh-agent-loop` + JSONL session persistence + `@deepseek-ai/dsh-subagent` +
+spawn/fork in-process provider，每代一个 OS 进程，scripted keyless adapter，标注
+`real_llm_quality=false`），直接驱动原生 `startContinuable`/`Activation`/`authorizeLineage`/
+`listChildren`/`sendMessage`/fork。6 个必需场景 `PASS`：parent/child 身份（`d15-4-parent` 与
+不同 durable child，`header.parentSession`/`origin=subagent`）、v3 continuable descriptor、
+新 OS 进程 cold resume 同一 child 且恰好一次 settlement、seeded fork（`inheritedEventCount=11`、
+parent 不变）、provider/model/reasoning-effort/persona 继承并在 cold resume 重放、SIGKILL 执行
+进程后 parent 身份仍在且 child 可原生恢复；6 个 runtime 反例被拒（non-direct/stale parent
+`UNAUTHORIZED`、unmaterialized `NOT_RESUMABLE`、`maxDepth` `SubagentDepthError`、
+child-claims-root `DUPLICATE_CHILD`、out-of-filter tool）。fail-able observer 以合同为准、
+必需项 `NOT_RUN`/`BLOCKED` 一律非零退出；`negative-controls.v1.json` 23 项控制全部失败，其中
+22 项证明修复前 result-only 门禁会误报 `all_pass=true`（含 required-blocked 场景）。reachability
+probe 真实确认：提交的 BYQ 组合 5 个 `byq_delegate_*` 均 `enableRunInBackground: false`，候选
+`@deepseek-ai/dsh-tool-subagent@0.1.5-rc.1` 仅在 background+continuable 分支调用
+`startContinuable()`，故 continuable 冷恢复路径**不从 BYQ 可达**；`child-crash`（in-process child
+不可单独 SIGKILL）与 BYQ `adapter-restart` 必需项 `BLOCKED`，保留最小具体选项（隔离 compose 栈 +
+tool-aware scripted provider，不改生产组合、不新增 BYQ subagent 持久化），host reboot `NOT_RUN`。
+**不主张完整 D15-4/D15-G/full-D15，`R3_RESUME = NO`。** 新增 `scripts/d15/subagent/`、`tests/` 与
+证据均属 build-input inventory，构建修订推进 `post-u8.164 → .165`（仅重建身份，不改
+selector/deployment/immutable registry/0.1.2 制品与证据）。不部署、不自动合并。
+
+D15-4 早期评审缺陷整改 v2（构建修订 `post-u8.166`，维护，不推进 Product Phase）：`child-crash`
+与 `byq-adapter-restart` 保持 required 且记为具名 `BLOCKED`（不得通过删除必需项或复用
+owning-process SIGKILL 结案）；新增真实支撑场景 `child-run-fault`（child 模型流失败、parent 进程存活，
+settlement 如实 "failed before it finished"、child id 保留且可原生恢复，SLATE 非 SIGKILL 替代）。
+fork-lineage 改为精确不变量：`inheritedEventCount ==` parent 平衡完成回合前缀 cut（`last turn/end
+seq + 1`，实测 `10 → 11`）、父日志**全哈希与长度**前后相等、child 序列连续；observer 新增
+off-by-one/zero/payload-drift/length-mismatch/child-gap 负例控制，全部证明修复前 result-only 门禁
+误报而修复后失败。每个临时根（主根与每个 negative 根）在 `finally` 中删除（含 worker 异常/超时
+路径），`cleanup`/`root_cleaned` 记录实删；移除“native 拒绝即证明不存在的前置门禁会放过”的无依据
+历史断言，唯一 pre-fix 比较仍是 observer 内真实重建的 legacy 算法。证据 v2 追加
+`native-observations.v2.json`/`verdict.v2.json`/`negative-controls.v2.json`/`scenarios/*.v2.json`，
+v1 全部保留不覆盖。新增 build inputs 属 inventory，构建修订推进 `post-u8.165 → .166`（仅重建身份）。
+不部署、不自动合并。
+
+D15-4 早期评审后续：CI 合同测试修正 + 原生接口/接线影响调查（构建修订 `post-u8.167`，维护）：
+`tests/test_dsh_d15_candidate.py` 的 acceptance-matrix 断言不再要求 D15-4 `NOT_RUN`，而是严格接受
+`BLOCKED` **仅当**其携带具名 `uncovered_items`（每项含 status+reason，必须覆盖 child-crash/
+byq-adapter-restart/host-reboot），并断言 D15-G 未开启、`R3_RESUME stays NO`；不回退证据、不宽泛
+接受任意状态。新增 `scripts/d15/subagent/routing_probe.mjs` 真实试验（boot 真实候选
+`@deepseek-ai/dsh-subagent`+spawn provider+`@deepseek-ai/dsh-tool-subagent`，经
+`ctx.tools.execute` 执行并计数 `start`/`startContinuable`）：提交的 BYQ 委派配置
+（`enableRunInBackground:false`、无 `backgroundMode`）为 foreground（start=1、startContinuable=0）；
+`backgroundMode: continuable` 仅 in-process `spawn` provider 可达（startContinuable=1）；无
+`prepareContinuable` 的 out-of-process provider（模型化 dsh-sdk/ACP/Codex/Claude Code）被拒
+`does not support \`backgroundMode: continuable\``。结论：BYQ 到 `startContinuable` 的接线是产品语义
+变更（foreground 结果 → durable background child；影响组合 5 个 delegate 工具、工具结果契约、
+runtime-adapter child-lease 观察、dsh_015 compat 边界），超出本 PR 资格范围，且 0.1.5rc1 无独立进程
+continuable child provider，仍不能解决 child-crash/adapter restart；故 D15-4 保持 `BLOCKED`，
+最小候选兼容 hookup 计划在独立 worktree/feature PR 实施（普通实现，非需授权事项）。证据
+`docs/evidence/d15/d15-4/routing.v1.json` 且 v1/v2 不覆盖。routing probe 采用每 trial 一个 OS 进程
+并在 `finally` 中重试删除根（`runtime_root_cleaned=true`，无泄漏），该清理修订推进构建身份
+`.167 → .168`（仅重建身份）。不部署、不自动合并。
+
 数据就绪续接 needs_attention 重挂（fix，构建修订 `dsh-0.1.2rc1-post-u8.142`）：生产 round-2
 数据就绪续接回合结算为 `needs_attention` 后，`research_tasks.continuation_blocked_reason` 被写成
 `continuation_needs_attention`；原预算路径的按任务级 `continue` 使其永久阻止后续**不同**的

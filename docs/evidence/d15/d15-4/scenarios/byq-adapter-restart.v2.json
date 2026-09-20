@@ -1,0 +1,19 @@
+{
+  "schema_version": "byq-d15-4-native-scenario.v2",
+  "evidence_class": "native-runtime-isolated",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1",
+    "closure": "agent-loop + jsonl session persistence + @deepseek-ai/dsh-subagent + spawn/fork in-process providers"
+  },
+  "llm": {
+    "class": "scripted-keyless",
+    "real_llm_quality": false,
+    "note": "Scripted keyless in-process adapter. Runtime-continuity evidence only; never semantic model quality."
+  },
+  "generated_at": "2026-09-20T09:08:06Z",
+  "id": "byq-adapter-restart",
+  "result": "BLOCKED",
+  "fault_applied": false,
+  "not_run_reason": "not executed from BYQ: the committed byq-product-sdk composition loads byq_delegate_* with enableRunInBackground=false, so @deepseek-ai/dsh-tool-subagent always takes the foreground runtimeCtx.subagents.start() path and never startContinuable(); no committed BYQ harness drives the continuable seam and Dsh015Compatibility inherits the 0.1.2 observation contract. The native seam itself is reachable and qualified below in an evidence-only harness; the BYQ runtime-adapter container-restart projection remains unqualified. Smallest concrete option: an isolated D15 compose stack plus a tool-aware scripted provider, without changing the production composition."
+}

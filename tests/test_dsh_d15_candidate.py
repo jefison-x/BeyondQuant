@@ -224,11 +224,6 @@ class D15CandidateTests(unittest.TestCase):
         self.assertEqual(stages["D15-3R"]["result"], "PASS")
         self.assertTrue(stages["D15-3R"]["evidence"])
         self.assertTrue(stages["D15-3R"]["criterion_results"])
-        for stage_id in ("D15-4", "D15-5", "D15-G"):
-            self.assertEqual(stages[stage_id]["result"], "NOT_RUN")
-        for stage in stages.values():
-            self.assertTrue(stage["criteria"])
-            self.assertTrue(stage["evidence_path"].startswith("docs/evidence/d15/"))
         self.assertTrue(stages["D15-2"]["evidence"])
         self.assertTrue(stages["D15-2"]["criterion_results"])
         self.assertTrue(stages["D15-3"]["evidence"])
@@ -238,6 +233,32 @@ class D15CandidateTests(unittest.TestCase):
             ["Browser disconnect", "Frontend restart", "Gateway restart", "Adapter restart",
              "DSH crash", "RuntimeGeneration replacement", "Host reboot", "executor takeover"],
         )
+
+        # D15-4 is really BLOCKED (not NOT_RUN). A BLOCKED substage is accepted
+        # only when it names its uncovered items with per-item status and reason;
+        # the stage may never silently drop the required unresolved items.
+        d15_4 = stages["D15-4"]
+        self.assertEqual(d15_4["result"], "BLOCKED")
+        uncovered = d15_4.get("uncovered_items")
+        self.assertTrue(uncovered, "a BLOCKED D15-4 must carry named uncovered_items")
+        uncovered_ids = {item["id"] for item in uncovered}
+        for required_uncovered in ("child-crash", "byq-adapter-restart", "host-reboot"):
+            self.assertIn(required_uncovered, uncovered_ids)
+        for item in uncovered:
+            self.assertIn(item["status"], {"BLOCKED", "NOT_RUN"})
+            self.assertTrue(item.get("reason"))
+        self.assertTrue(d15_4["evidence"])
+        self.assertTrue(d15_4["criterion_results"])
+
+        # D15-5 and D15-G are not opened, and R3 stays unopened until D15-G.
+        self.assertEqual(stages["D15-5"]["result"], "NOT_RUN")
+        self.assertEqual(stages["D15-G"]["result"], "NOT_RUN")
+        self.assertNotIn("R3", stages)
+        self.assertIn("R3_RESUME stays NO", matrix["notes"])
+
+        for stage in stages.values():
+            self.assertTrue(stage["criteria"])
+            self.assertTrue(stage["evidence_path"].startswith("docs/evidence/d15/"))
         self.assertEqual(len(stages["D15-5"]["terminal_faults"]), 7)
 
 

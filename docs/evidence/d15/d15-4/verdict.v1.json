@@ -1,0 +1,254 @@
+{
+  "all_pass": false,
+  "candidate": {
+    "npm_packages": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1",
+    "release": "dsh-0.1.5rc1"
+  },
+  "coverage_failures": [
+    "required scenario 'child-crash' is not covered by a PASS (observed BLOCKED)",
+    "required scenario 'byq-adapter-restart' is not covered by a PASS (observed BLOCKED)"
+  ],
+  "evidence_class": "native-runtime-isolated",
+  "exit_code": 1,
+  "failed_scenarios": [],
+  "failures": [],
+  "format_valid": true,
+  "llm_evidence_class": "scripted-keyless",
+  "negatives": [
+    {
+      "errorClass": "SubagentError",
+      "errorCode": "UNAUTHORIZED",
+      "kind": "non-direct-parent",
+      "rejected": true
+    },
+    {
+      "errorClass": "SubagentError",
+      "errorCode": "UNAUTHORIZED",
+      "kind": "stale-parent",
+      "rejected": true
+    },
+    {
+      "errorClass": "SubagentError",
+      "errorCode": "NOT_RESUMABLE",
+      "kind": "unmaterialized",
+      "rejected": true
+    },
+    {
+      "errorClass": "SubagentDepthError",
+      "errorCode": null,
+      "kind": "max-depth",
+      "rejected": true
+    },
+    {
+      "errorClass": "SubagentError",
+      "errorCode": "DUPLICATE_CHILD",
+      "kind": "child-claims-root",
+      "rejected": true
+    },
+    {
+      "errorClass": "Error",
+      "errorCode": null,
+      "kind": "out-of-filter-tool",
+      "rejected": true
+    }
+  ],
+  "negatives_ok": true,
+  "optional_coverage": {
+    "host-reboot": "NOT_RUN"
+  },
+  "optional_scenario_count": 1,
+  "pass_scenarios": [
+    "parent-child-identity",
+    "continuable-descriptor",
+    "cold-resume",
+    "fork-lineage",
+    "inheritance",
+    "parent-crash"
+  ],
+  "qualification_passed": false,
+  "reason_uncovered": [
+    "child-crash",
+    "byq-adapter-restart"
+  ],
+  "required_coverage": {
+    "byq-adapter-restart": "BLOCKED",
+    "child-crash": "BLOCKED",
+    "cold-resume": "PASS",
+    "continuable-descriptor": "PASS",
+    "fork-lineage": "PASS",
+    "inheritance": "PASS",
+    "parent-child-identity": "PASS",
+    "parent-crash": "PASS"
+  },
+  "required_coverage_ok": false,
+  "required_scenario_count": 8,
+  "scenarios": [
+    {
+      "assertions": {
+        "distinct_durable_child": true,
+        "list_children_continuable": true,
+        "origin_subagent": true,
+        "parent_link_recorded": true
+      },
+      "assertions_ok": true,
+      "id": "parent-child-identity",
+      "observation_keys": [
+        "adapterRequests",
+        "childEventTypes",
+        "childId",
+        "childSequenceContiguous",
+        "created",
+        "descriptor",
+        "descriptorVersion",
+        "distinctIdentity",
+        "header",
+        "listChildren",
+        "messageId",
+        "parentId",
+        "settlementCount",
+        "settlementDeliveries"
+      ],
+      "required": true,
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "descriptor_version_3": true,
+        "mode_continuable": true,
+        "provider_recorded": true
+      },
+      "assertions_ok": true,
+      "id": "continuable-descriptor",
+      "observation_keys": [
+        "agentModel",
+        "agentProvider",
+        "label",
+        "mode",
+        "provider",
+        "version"
+      ],
+      "required": true,
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "descriptor_reapplied": true,
+        "same_child_id": true,
+        "sequence_contiguous": true,
+        "settlement_exactly_once": true
+      },
+      "assertions_ok": true,
+      "id": "cold-resume",
+      "observation_keys": [
+        "adapterRequests",
+        "childId",
+        "created",
+        "descriptorAfter",
+        "descriptorBefore",
+        "headerAfter",
+        "headerBefore",
+        "inheritedEventCountAfter",
+        "inheritedEventCountBefore",
+        "messageId",
+        "newSettlements",
+        "parentId",
+        "sameChildId",
+        "sequenceContiguousAcrossResume",
+        "settlementAfter",
+        "settlementBefore",
+        "settlementDeliveries"
+      ],
+      "required": true,
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "distinct_identity": true,
+        "inherited_prefix_nonzero": true,
+        "is_seeded": true,
+        "parent_unchanged": true
+      },
+      "assertions_ok": true,
+      "id": "fork-lineage",
+      "observation_keys": [
+        "childSequenceContiguous",
+        "distinctIdentity",
+        "forkId",
+        "header",
+        "inheritedEventCount",
+        "isSeeded",
+        "parentCompletedTurnCount",
+        "parentEventCountAfter",
+        "parentEventCountBefore",
+        "parentId",
+        "parentUnchanged"
+      ],
+      "required": true,
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "model_inherited": true,
+        "persona_inherited": true,
+        "provider_inherited": true,
+        "reapplied_on_cold_resume": true,
+        "reasoning_inherited": true
+      },
+      "assertions_ok": true,
+      "id": "inheritance",
+      "observation_keys": [
+        "descriptor",
+        "reappliedChild"
+      ],
+      "required": true,
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "child_id_retained": true,
+        "executor_crash_observed": true,
+        "parent_identity_survived": true,
+        "resumable_after_crash": true
+      },
+      "assertions_ok": true,
+      "id": "parent-crash",
+      "observation_keys": [
+        "after",
+        "crash"
+      ],
+      "required": true,
+      "result": "PASS"
+    },
+    {
+      "assertions": {},
+      "assertions_ok": false,
+      "id": "child-crash",
+      "not_run_reason": "not executed: the composed native spawn provider runs children in-process, so a child-only SIGKILL is not isolatable from the parent executor. Smallest concrete option: an out-of-process child provider or the isolated runtime-adapter stack with a real DSH child process (the D15-3R dsh-process-interruption pattern). No child persistence substitute was built.",
+      "required": true,
+      "result": "BLOCKED"
+    },
+    {
+      "assertions": {},
+      "assertions_ok": false,
+      "id": "byq-adapter-restart",
+      "not_run_reason": "not executed from BYQ: the committed byq-product-sdk composition loads byq_delegate_* with enableRunInBackground=false, so @deepseek-ai/dsh-tool-subagent always takes the foreground runtimeCtx.subagents.start() path and never startContinuable(); no committed BYQ harness drives the continuable seam and Dsh015Compatibility inherits the 0.1.2 observation contract. The native seam itself is reachable and qualified below in an evidence-only harness; the BYQ runtime-adapter container-restart projection remains unqualified. Smallest concrete option: an isolated D15 compose stack plus a tool-aware scripted provider, without changing the production composition.",
+      "required": true,
+      "result": "BLOCKED"
+    },
+    {
+      "assertions": {},
+      "assertions_ok": false,
+      "id": "host-reboot",
+      "not_run_reason": "not executed: rebooting the maintainer host is not authorized and a container/adapter restart is not a host reboot",
+      "required": false,
+      "result": "NOT_RUN"
+    }
+  ],
+  "schema_version": "byq-d15-4-verdict.v1",
+  "uncovered_scenarios": [
+    "child-crash",
+    "byq-adapter-restart",
+    "host-reboot"
+  ]
+}

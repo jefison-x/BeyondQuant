@@ -3,8 +3,10 @@
 Status: **D15-0 done, D15-1 candidate built/started/probed, D15-2 session V3
 migration PASS (format layer only), D15-3 native persistence-layer session
 resume PASS, D15-3R real isolated BYQ runtime-continuity qualification PASS
-(scripted keyless provider; service-boundary, not real-LLM-quality), D15-4..D15-G
-not started. `R3_RESUME = NO`.**
+(scripted keyless provider; service-boundary, not real-LLM-quality), D15-4
+PARTIAL/BLOCKED (native subagent/fork seam qualified in an evidence-only
+harness; child-crash and BYQ adapter-restart required items BLOCKED; host reboot
+NOT_RUN), D15-5/D15-G not started. `R3_RESUME = NO`.**
 Relates: ADR-0079, ADR-0081, ADR-0058, ADR-0069, ADR-0003
 Evidence: `docs/evidence/d15/`
 Target decision: [`docs/evidence/d15/target-decision.v1.json`](../evidence/d15/target-decision.v1.json)
@@ -56,7 +58,7 @@ violate the "no second generic agent harness" rule.
 | D15-2 | Session V3 Migration Qualification (format layer) | **PASS** |
 | D15-3 | Native Session Resume Qualification (persistence seam) | **PASS** |
 | D15-3R | Real Isolated BYQ Runtime-Continuity Qualification | **PASS** (scripted keyless provider) |
-| D15-4 | Subagent/Fork Continuity Qualification | planned |
+| D15-4 | Subagent/Fork Continuity Qualification | **PARTIAL/BLOCKED** (native seam PASS; child-crash + BYQ adapter-restart BLOCKED; host reboot NOT_RUN) |
 | D15-5 | Persistent Terminal Qualification | planned |
 | D15-G | Architecture Go/No-Go | planned |
 
@@ -276,6 +278,91 @@ permissions/filter, parent or child crash, adapter restart and host restart.
 Native `ContinuableActivationRegistry`/`Activation` semantics own residency;
 BYQ must not persist subagent conversation state itself.
 
+## 5b. D15-4 — Native subagent / fork continuity (PARTIAL/BLOCKED)
+
+The native continuable-subagent/fork seam was qualified against the fixed
+0.1.5-rc.1 candidate in an **evidence-only** harness
+(`scripts/d15/subagent/native_subagent_harness.mjs`) that boots the real
+`@deepseek-ai/dsh-agent-loop` + JSONL session persistence +
+`@deepseek-ai/dsh-subagent` + spawn/fork providers with one OS process per
+generation and a scripted keyless adapter. Six required scenarios PASS:
+parent/child identity (`d15-4-parent` vs a distinct durable child with
+`header.parentSession`, `origin=subagent`), versioned `subagent/descriptor`
+(mode=continuable), new-OS-process cold resume of the same child with one
+settlement, seeded fork (`inheritedEventCount=11`, parent immutable),
+provider/model/reasoning-effort/persona inheritance reapplied on cold resume,
+and SIGKILL of the owning process with the durable parent identity and child
+still natively resumable. Six runtime negatives are rejected (non-direct/stale
+parent `UNAUTHORIZED`, unmaterialized `NOT_RESUMABLE`, `maxDepth`
+`SubagentDepthError`, child-claims-root `DUPLICATE_CHILD`, out-of-filter tool).
+The fail-able observer separates format validity from qualification and gates on
+required coverage; `negative-controls.v1.json` has 23 controls (22
+defect-targeting, including the pre-fix result-only gate wrongly passing a
+report with required BLOCKED scenarios).
+
+**Reachability (probed for real, `reachability.v1.json`).** The committed BYQ
+composition loads all five `byq_delegate_*` tools with
+`enableRunInBackground: false`, and the candidate
+`@deepseek-ai/dsh-tool-subagent@0.1.5-rc.1` only calls `startContinuable()` on
+the background+continuable branch, so the continuable residency/cold-resume path
+is **not reached from BYQ**; `Dsh015Compatibility` still inherits the 0.1.2
+observation contract. Two required scenarios are therefore **BLOCKED** with the
+smallest concrete option recorded (an isolated D15 compose stack plus a
+tool-aware scripted provider, without changing the production composition or
+adding BYQ subagent persistence): `child-crash` (in-process children are not
+isolatable for a child-only SIGKILL) and `byq-adapter-restart` (no BYQ path
+drives `startContinuable`). `host-reboot` is OPTIONAL `NOT_RUN` and is never
+labelled as a container restart. **No D15-4 full pass, no D15-G pass and no
+full-D15 claim; `R3_RESUME = NO`.**
+
+**Review-fix revision (v2, 2026-09-20).** `child-crash` and
+`byq-adapter-restart` remain **required** and stay named **BLOCKED** (the stage is
+not passed by deleting them). A real *supporting* scenario `child-run-fault` (the
+child's model stream fails while the parent process stays alive) records a
+truthful "failed before it finished" settlement, a retained child id and native
+resumability; the owning-process SIGKILL is kept only as native executor evidence
+and is not used as the child fault or BYQ adapter recovery. `fork-lineage` now
+requires the **exact** inherited cut (`inheritedEventCount == last turn/end seq +
+1`), **full parent-log hash and length equality** before/after and a contiguous
+child log; new observer controls cover off-by-one, zero, payload drift, length
+mismatch and child sequence gap. Every temp root is removed in a `finally`
+(including worker exception/timeout paths) with recorded `cleanup`/`root_cleaned`
+evidence, and the unsupported claim that a native rejection proves a nonexistent
+pre-fix gate is removed (the only pre-fix comparison is the observer's real
+reconstructed legacy algorithm).
+
+**Routing / process-boundary investigation (2026-09-20).** A real trial
+(`scripts/d15/subagent/routing_probe.mjs`, evidence `routing.v1.json`), one OS
+process per trial with every trial temp root removed in a `finally` with retry
+(`runtime_root_cleaned=true`), executes the candidate
+`@deepseek-ai/dsh-tool-subagent` through `ctx.tools.execute`: the
+committed BYQ config (`enableRunInBackground:false`, no `backgroundMode`) is
+foreground (`start=1`, `startContinuable=0`); `backgroundMode:continuable` with
+the in-process `spawn` provider reaches `startContinuable`; any provider without
+`prepareContinuable` (models the out-of-process `dsh-sdk`/ACP/Codex/Claude Code
+backends) is rejected with `does not support \`backgroundMode: continuable\``.
+Only `subagent-spawn-in-process` and `subagent-fork-in-process` implement
+`prepareContinuable`, so **native 0.1.5rc1 provides no independent-process
+continuable child provider**; `@deepseek-ai/dsh-subagent-dsh-sdk` is published at
+rc.1 but is not in the candidate bundled runtime list and also lacks
+`prepareContinuable`. The BYQ hookup to `startContinuable` is a product-semantics
+change (foreground result → durable background child; blast radius: composition,
+delegate tool contract, runtime-adapter child-lease path, 0.1.2 compat boundary).
+It exceeds this PR's qualification scope and still cannot satisfy
+`child-crash`/BYQ adapter restart, so D15-4 stays `BLOCKED`; the minimal
+candidate-compatible hookup is planned for an independent worktree/feature PR.
+The CI contract test now accepts D15-4 `BLOCKED` **only** with named
+`uncovered_items` and asserts D15-G/R3 are not opened.
+
+Evidence: [`docs/evidence/d15/d15-4/`](../evidence/d15/d15-4/README.md)
+v2 (current): `native-observations.v2.json`, `verdict.v2.json` (`all_pass=false`,
+six required PASS + one supporting PASS + two required BLOCKED),
+`negative-controls.v2.json` (28 controls, 27 defect-targeting),
+`reachability.v1.json`, `routing.v1.json`, `scenarios/*.v2.json`; v1 is preserved
+unchanged. Contract/observer:
+`scripts/d15/subagent/{contract.v1.json,observer.py,reachability_probe.mjs,routing_probe.mjs}`
+and `tests/test_dsh_d15_4_subagent.py`.
+
 ## 6. D15-5 — Persistent terminal
 
 Verify page refresh, browser disconnect, frontend restart, gateway restart,
@@ -382,3 +469,28 @@ deployment). The D15-3R scope/approval/Agent-MCP revision changes the same build
 inputs again, advancing `post-u8.162` -> `post-u8.163` (rebuild identity only).
 The D15-3R two-run replay revision changes the same build inputs again,
 advancing `post-u8.163` -> `post-u8.164` (rebuild identity only).
+
+D15-4 adds `scripts/d15/subagent/` (native harness, contract, observer,
+reachability probe), `tests/test_dsh_d15_4_subagent.py` and
+`docs/evidence/d15/d15-4/`, all build-input files, so the revision advances
+`post-u8.164` -> `post-u8.165` (rebuild identity only; no selector,
+`compose.yml`, `deployment.json`, immutable release registry or 0.1.2
+artifact/evidence change and no deployment).
+
+The D15-4 review-fix revision changes the same build inputs again (harness exact
+fork-cut/hash checks, child-run-fault scenario, `finally` temp cleanup; observer
+fork deriver/controls; tests), so the revision advances
+`post-u8.165` -> `post-u8.166` (rebuild identity only; the v1 evidence is
+preserved and no selector, deployment, immutable release registry or 0.1.2
+artifact/evidence changes).
+
+The D15-4 routing/investigation revision adds `scripts/d15/subagent/routing_probe.mjs`,
+updates `tests/test_dsh_d15_candidate.py` and `tests/test_dsh_d15_4_subagent.py`,
+all build-input files, so the revision advances `post-u8.166` -> `post-u8.167`
+(rebuild identity only; no selector, deployment, immutable release registry or
+0.1.2 artifact/evidence change).
+
+The routing-probe cleanup fix (one OS process per trial plus `finally` root
+removal with retry) changes `scripts/d15/subagent/routing_probe.mjs` and
+`tests/test_dsh_d15_4_subagent.py` again, so the revision advances
+`post-u8.167` -> `post-u8.168` (rebuild identity only).

@@ -1,0 +1,59 @@
+{
+  "schema_version": "byq-d15-4-reachability.v1",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm": "0.1.5-rc.1"
+  },
+  "sources": {
+    "composition": "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml",
+    "compat": "services/runtime-adapter/app/compat/dsh_015.py",
+    "tool_subagent_version": "0.1.5-rc.1"
+  },
+  "facts": {
+    "composes_subagent_package": true,
+    "composes_spawn_provider": true,
+    "composes_fork_provider": true,
+    "delegate_tool_count": 5,
+    "enable_run_in_background_false": 5,
+    "enable_run_in_background_true": 0,
+    "compat_inherits_0_1_2_contract": true,
+    "tool_subagent_start_continuable_call_sites": 2,
+    "tool_subagent_foreground_start_call_sites": 2
+  },
+  "interfaces": [
+    {
+      "interface": "byq_delegate_*_foreground_spawn",
+      "status": "REACHABLE_FROM_BYQ_COMPOSITION",
+      "detail": "the composition loads @deepseek-ai/dsh-tool-subagent with provider=spawn; the model-facing byq_delegate_* tools call runtimeCtx.subagents.start() when enableRunInBackground is false"
+    },
+    {
+      "interface": "startContinuable_activation_registry",
+      "status": "NOT_REACHED_FROM_BYQ",
+      "detail": "the candidate tool implementation only calls startContinuable() on the background+continuable branch; every BYQ delegate tool sets enableRunInBackground=false, so the continuable residency/cold-resume path is not driven by the committed BYQ composition"
+    },
+    {
+      "interface": "native_continuable_seam_evidence_harness",
+      "status": "REACHABLE_IN_EVIDENCE_ONLY_NATIVE_HARNESS",
+      "detail": "native_subagent_harness.mjs boots the real candidate agent loop, JSONL persistence, @deepseek-ai/dsh-subagent and the spawn/fork providers, and drives startContinuable/Activation/authorizeLineage/listChildren/sendMessage/cold resume directly"
+    },
+    {
+      "interface": "fork_lineage",
+      "status": "REACHABLE_IN_NATIVE_HARNESS",
+      "detail": "dsh-subagent-fork-in-process public .d.ts is unchanged; its in-process provider is mounted by the native harness and qualified for the seeded-prefix invariant"
+    },
+    {
+      "interface": "byq_child_session_projection",
+      "status": "NOT_REACHED_FROM_BYQ",
+      "detail": "the runtime-adapter observes subagent.started/finished notifications only for ChildLease timeout accounting; the child SessionId is never projected as a BYQ AgentSession identity and no committed BYQ path cold-resumes a continuable child"
+    },
+    {
+      "interface": "byq_adapter_container_restart_child_resume",
+      "status": "BLOCKED_NO_COMPOSE_DRIVEN_DELEGATE_IN_THIS_BATCH",
+      "detail": "a real isolated runtime-adapter container restart with a BYQ-delegated continuable child requires a tool-aware scripted provider plus startContinuable reachability; neither exists in this batch. The smallest concrete option is an isolated D15 compose stack, without changing the production composition or adding BYQ subagent persistence"
+    }
+  ],
+  "production_unchanged": {
+    "selector": true,
+    "note": "probe reads only; it does not edit the composition, selector, deployment or any production file"
+  }
+}
