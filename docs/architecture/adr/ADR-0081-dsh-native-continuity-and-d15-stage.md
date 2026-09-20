@@ -1,12 +1,13 @@
 # ADR-0081：DSH 0.1.5-rc.1 native continuity adoption and the D15 stage
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-19
+- Accepted: 2026-09-19
 - Relates: ADR-0079（Runtime Continuity 与 Session Recovery）、ADR-0058（DSH release bundles 与
   compatibility）、ADR-0069（退役 0.1.1 build lane）、ADR-0003（runtime compatibility review）、
   ADR-0023（执行者身份）、ADR-0062（Post-U8 可靠性边界）
-- Supersedes: 无（不改写任何 Accepted ADR 文本）。本 ADR 只在获维护者接受后取代 R3 的实施顺序，
-  不改变 R0/R1/R2 的已落地语义。
+- Supersedes: 无（不改写任何 Accepted ADR 文本）。本 ADR 已于 2026-09-19 获维护者接受，取代 R3
+  的实施顺序，不改变 R0/R1/R2 的已落地语义。
 - Decision scope: Runtime Continuity 阶段顺序（R3 冻结与重定义、D15 新增、R4/R6 重定义）；
   D15-0/D15-1 的候选隔离边界。不含生产默认 DSH 版本切换、不含数据库/Worker 变更。
 - Qualification target decision: `docs/evidence/d15/target-decision.v1.json`
@@ -95,10 +96,9 @@ session/tool/subagent 的第二持久化。
 - 本 ADR 只改阶段顺序与文档/隔离代码；回滚即丢弃候选声明并保持默认选择器。
 - 不改数据库、不改 domain row、不重启 Worker、不删除任何历史制品或证据。
 
-## Review note（2026-09-20，未改变状态）
+## Review note（2026-09-20，缺口已解决）
 
-状态仍为 **Proposed**。记录的授权缺口：本 ADR 文本写明路线重排须在获维护者接受之后发生，但专项
-[D15 计划](../../roadmap/DSH_015RC1_UPGRADE_PLAN.md) 已实际实现该重排（D15 插在 R2 之后、R3 之前）。
-该差异必须由维护者具名解决（接受为 Accepted，或以具名记录追认当前重排）；D15-2/D15-3 的 `PASS`
-是隔离资格证据，不构成 R3 解冻、生产切换或对本 ADR 的接受。详见
+本 ADR 已于 2026-09-19 获维护者接受（见 #328），状态为 **Accepted**；路线重排（D15 插在 R2 之后、
+R3 之前）现为已授权顺序，此前记录的 Proposed-vs-implemented 缺口已关闭。D15-2/D15-3 的 `PASS`
+仍是隔离资格证据，不构成 R3 解冻或生产切换授权。详见
 [STATUS.md](../../roadmap/STATUS.md) 顶部“权威当前状态”。

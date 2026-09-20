@@ -22,14 +22,13 @@
 |---|---|---|---|---|
 | Product | 最近完成 Phase 97（marker 97） | 未授权任何新的 Product Phase | 维护者阶段性授权 + 本文件 next phase | 一阶段一 worktree/Draft PR；Human Merge Gate；不得自授新 Phase |
 | 数据/资格 | Phase 98 资格与基准冻结已授权（#282，2026-09-17）；Phase 99 `COMPLETE`（#283）；Phase 100 `IN_PROGRESS`（维护者 #285 于 2026-09-17 开启，冻结 Tushare 6000 数据集范围；P100-A 基金 provider 合同已并入 #286）；Phase 101 `COMPLETE` | 继续 Phase 100 切片 P100-B..E（`index_dailybasic`、申万行业、同花顺概念、Product 呈现），每切片独立 worktree/Draft PR | 维护者开启 Phase 100（#285）+ [V1_DATA_BASELINE_CONTRACT](V1_DATA_BASELINE_CONTRACT.md)「6000 积分可接入的数据集（Phase 100 实施范围）」；ADR-0074 为边界 ADR；Phase 98 授权只覆盖前置资格，**不**覆盖 Phase 100 实施范围 | 仅 Tushare、不用 Community；不支持分钟/实时/港股/特色数据；不得以“接口可调用/单次拉取成功”代替覆盖/时点/单位/许可证据；不改生产状态（除非另有部署授权）；HIST/THS 概念在证明历史可见性前保持 blocked |
-| 维护（当前） | D15 资格完整性、验收措辞与状态权威整改（PR #327，不推进 Product Phase）；被委托实现者交付 Draft | 被委托实现者停在 Draft；#327 的合并由原会话既有合并授权按 ADR-0015/0059 预发布 Gate 执行（按次生效，不写成永久规则） | 本次任务委托 develop/push/Draft；**合并授权属原会话既有授权，非本次新授予** | 被委托实现者不得 merge/deploy、不得启动 D15-4/R3、不得覆盖历史证据；`ADR-0081` 保持 Proposed |
+| 维护（当前） | D15 资格完整性、验收措辞与状态权威整改（PR #327，不推进 Product Phase）；被委托实现者交付 Draft | 被委托实现者停在 Draft；#327 的合并由原会话既有合并授权按 ADR-0015/0059 预发布 Gate 执行（按次生效，不写成永久规则） | 本次任务委托 develop/push/Draft；**合并授权属原会话既有授权，非本次新授予** | 被委托实现者不得 merge/deploy、不得启动 D15-4/R3、不得覆盖历史证据；`ADR-0081` 已于 2026-09-19 获维护者接受（Accepted） |
 | 依赖资格（D15） | D15-0/1 完成；D15-2 格式层 `PASS`；D15-3 原生持久层恢复 `PASS`；D15-4..D15-G 未开始；R3 冻结、`R3_RESUME=NO` | 真实隔离 runtime 连续性资格（进程恢复、原目标不丢、domain action 不重复、approval 仍有效、结果可追溯）+ D15-4..D15-G | 维护者 D15 目标决策（2026-09-19）+ 专项 D15 计划 | 不改生产 selector；候选隔离；D15-G 前不恢复 R3 |
 
-**授权缺口（维护者所有，未单方面解决）**：`ADR-0081` 仍为 `Proposed`，其文本写明“路线重排须在接受
-之后”，但专项 D15 计划已实际实现该重排（D15 插在 R2 之后、R3 之前）。这是文档权威与已执行事实
-之间的差异，必须由维护者具名解决：或将 ADR-0081 接受为 Accepted，或以维护者具名记录追认当前
-重排。本整改不得代办该接受，也不得据 D15 的 `PASS` 推断 R3 解冻或生产切换授权。该缺口属于架构
-授权事项，**不得阻塞与 D15 资格完整性/CI 相关的已授权整改**。
+**授权缺口（已解决）**：`ADR-0081` 曾为 `Proposed`，其文本写明“路线重排须在接受之后”，而专项 D15
+计划已实际实现该重排（D15 插在 R2 之后、R3 之前）。维护者已于 2026-09-19 接受 ADR-0081
+（Accepted，见 #328），该缺口已关闭：D15 插在 R2 之后、R3 之前的重排现为已授权顺序。D15-2/D15-3
+的 `PASS` 仍是隔离资格证据，不据此推断 R3 解冻或生产切换授权。
 
 ## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19，历史叙述）
 
@@ -77,7 +76,7 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
 本批为维护，不推进 Product Phase。维护者要求重排 Runtime Continuity（R-series）路线并推进 D15：
 完成 D15-0 升级 recon、确定资格目标、构建/启动 D15-1 隔离候选、完成 D15-2 Session V3 迁移资格，
 并完成 D15-3 原生会话恢复资格，冻结 R3。依
-[ADR-0081](../architecture/adr/ADR-0081-dsh-native-continuity-and-d15-stage.md)（Proposed）：
+[ADR-0081](../architecture/adr/ADR-0081-dsh-native-continuity-and-d15-stage.md)（Accepted，2026-09-19）：
 
 - **R3 冻结（非回滚）**：状态 `PAUSED_PENDING_DSH_015_NATIVE_CONTINUITY_QUALIFICATION`。保留
   既有 R3 代码/测试/文档与框架中立合同，不回滚 R1/R2；暂停自建 DSH 进程重启编排、会话重建、
@@ -722,7 +721,7 @@ Post-Phase 90 Management Action Consistency Maintenance 依据 ADR-0050 将股�
 - 2026-09-19 维护收口（ADR-0047 聚合边界、运行/续接连续性与只读归档审计）已完成并记入本文与
   [实现计划](IMPLEMENTATION_PLAN.md)；它是维护，不推进 Product Phase，也不改变上一条授权状态。
 - ADR-0077（数据就绪自动续接）已于 2026-09-19 获维护者接受（Accepted）；生产当前运行其实现。
-- ADR-0078/0079/0080 已于 2026-09-19 获维护者接受（Accepted）。
+- ADR-0078/0079/0080/0081 已于 2026-09-19 获维护者接受（Accepted）。
 - Phase 82 与 ADR-0047 已完成；50,000 保持原子 readiness 分片上限，不是 Tushare
   额度或完整数据任务上限。
 - ADR-0044 授权的 Phase 75–79、ADR-0045 授权的 Phase 80、ADR-0046 授权的 Phase 81、

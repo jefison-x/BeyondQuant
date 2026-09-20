@@ -135,7 +135,7 @@ epoch fencing、`LifecycleJournal` 证据边界、prompt 幂等、at-most-once �
 Supervisor（R3）与 Terminal（R4）。不部署、不自动合并。
 
 DSH 0.1.5-rc.1 原生连续性资格阶段 D15（feat/docs，构建修订 `dsh-0.1.2rc1-post-u8.155`）：
-按 [ADR-0081](../architecture/adr/ADR-0081-dsh-native-continuity-and-d15-stage.md)（Proposed）与
+按 [ADR-0081](../architecture/adr/ADR-0081-dsh-native-continuity-and-d15-stage.md)（Accepted，2026-09-19）与
 [D15 阶段计划](DSH_015RC1_UPGRADE_PLAN.md)，将 Runtime Continuity 的下一个原生能力步骤
 插在 R2 之后、R3 之前：`R0 → R1 → R2 → D15 → R3 → R4 → R5 → R6 → 独立 Production Go/No-Go`。
 R3 冻结（非回滚）为 `PAUSED_PENDING_DSH_015_NATIVE_CONTINUITY_QUALIFICATION`：保留既有

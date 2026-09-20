@@ -52,12 +52,12 @@ Proposed 只允许规划/验证，不授权越界实现。Accepted 必须记录�
   或等价 secrets 来源）注入，并由 `scripts/dsh/release_secrets.py` guard 与部署前
    `verify_injection` fail closed。既有 release 目录/备份不改写、不轮换 token、不改拓扑；
    已于 2026-09-19 获维护者接受。
-- [ADR-0081](ADR-0081-dsh-native-continuity-and-d15-stage.md)（Proposed）冻结 R3（非回滚）为
+- [ADR-0081](ADR-0081-dsh-native-continuity-and-d15-stage.md)（Accepted）冻结 R3（非回滚）为
   `PAUSED_PENDING_DSH_015_NATIVE_CONTINUITY_QUALIFICATION`，新增 DSH 原生连续性资格阶段
   D15（D15-0..D15-G），要求凡 DSH 0.1.5 原生覆盖的能力（Session V3 迁移、SessionHandle
   持久化、写租约、continuable subagent、persistent terminal）BYQ 只适配/观测/降级而不
   另建；重定义 R3 Thin Runtime Supervisor、R4 TerminalAttachment、R6 全量连续性资格并
-  排序 `R0→R1→R2→D15→R3→R4→R5→R6→独立 Production Go/No-Go`；需维护者接受。
+  排序 `R0→R1→R2→D15→R3→R4→R5→R6→独立 Production Go/No-Go`；已于 2026-09-19 获维护者接受。
 
 
 - ADR-0020 定义 Phase 34 的 Stock Pool identity、不可变 snapshot、lifecycle 和
