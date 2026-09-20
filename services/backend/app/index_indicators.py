@@ -286,6 +286,26 @@ class IndexIndicatorStore(PgStoreMixin):
         )
         return None if row is None or row.get("trade_date") is None else str(row["trade_date"])
 
+    def persisted_fingerprint(self, index_symbol: object | None = None) -> dict[str, Any]:
+        """Deterministic identity/content digest of persisted rows.
+
+        Lets callers prove that a terminal sync rerun neither refetched nor
+        reinserted anything: the digest is unchanged across the rerun.
+        """
+        params: dict[str, Any] = {}
+        clause = ""
+        if index_symbol is not None:
+            clause = " WHERE index_symbol=:index_symbol"
+            params["index_symbol"] = _index_symbol(index_symbol)
+        rows = self._execute(
+            f"""SELECT index_symbol, trade_date, content_sha256
+                FROM market_index_daily_basic{clause}
+                ORDER BY index_symbol, trade_date""",
+            params,
+        )
+        canonical = [[str(row["index_symbol"]), str(row["trade_date"]), str(row["content_sha256"])] for row in rows]
+        return {"row_count": len(canonical), "content_sha256": _canonical_hash(canonical)}
+
     def coverage(self) -> dict[str, Any]:
         """Coverage and quality derived from persisted rows, never from a pull."""
         totals = self._fetch_one(

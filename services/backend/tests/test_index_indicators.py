@@ -148,6 +148,47 @@ def test_incremental_sync_is_idempotent_and_resumes_after_latest() -> None:
     assert len(provider.requests) == 2
 
 
+def test_terminal_rerun_does_not_refetch_or_reinsert() -> None:
+    store = IndexIndicatorStore()
+    provider = FakeIndexProvider([row(trade_date="20240102"), row(trade_date="20240103")])
+    job, _ = store.create_sync_job({
+        "index_symbol": "000300.SH", "mode": "incremental",
+        "start_date": "20240102", "end_date": "20240103", "idempotency_key": "terminal-rerun-1",
+    }, actor="tester")
+    finished = store.run_sync_job(job["job_id"], provider_factory=lambda: provider)
+    assert finished["status"] == "completed" and finished["rows_inserted"] == 2
+
+    fingerprint_before = store.persisted_fingerprint("000300.SH")
+    calls_before = len(provider.requests)
+    terminal = store.run_sync_job(job["job_id"], provider_factory=lambda: provider)
+    calls_after = len(provider.requests)
+    fingerprint_after = store.persisted_fingerprint("000300.SH")
+
+    # No refetch and no reinsert: the terminal rerun short-circuits before the
+    # provider and before any import, so the persisted digest is unchanged.
+    assert calls_after - calls_before == 0
+    assert terminal["job_id"] == job["job_id"]
+    assert terminal["status"] == finished["status"] == "completed"
+    assert fingerprint_after == fingerprint_before
+    assert fingerprint_after["row_count"] == 2
+    # The rerun reports the first run's *cumulative* persisted counters. It must
+    # not be read as a rerun insertion delta (e.g. 2 fresh inserts).
+    assert terminal["rows_inserted"] == finished["rows_inserted"] == 2
+    assert terminal["rows_inserted"] != calls_after - calls_before
+
+
+def test_persisted_fingerprint_is_sensitive_to_real_writes() -> None:
+    store = IndexIndicatorStore()
+    before = store.persisted_fingerprint()
+    import_fixture(store, [row(trade_date="20240102")])
+    after = store.persisted_fingerprint()
+    assert before != after
+    assert before["row_count"] == 0 and after["row_count"] == 1
+    per_index = store.persisted_fingerprint("000300.SH")
+    assert per_index == after
+    assert store.persisted_fingerprint("000905.SH")["content_sha256"] != per_index["content_sha256"]
+
+
 def test_sync_idempotency_key_reuse_and_conflict() -> None:
     store = IndexIndicatorStore()
     payload = {

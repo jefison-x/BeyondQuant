@@ -75,6 +75,9 @@ def main() -> int:
     store = IndexIndicatorStore()
     index_symbols = [item["index_symbol"] for item in SUPPORTED_INDEXES]
     per_index: dict[str, dict[str, object]] = {}
+    first_runs: dict[str, tuple[dict[str, object], dict[str, object], bool, dict[str, object]]] = {}
+
+    # Phase 1: one real first-run sync per index.
     for index_symbol in index_symbols:
         payload = {
             "index_symbol": index_symbol,
@@ -84,22 +87,52 @@ def main() -> int:
             "idempotency_key": f"p100b-{index_symbol}-{START_DATE}-{END_DATE}",
         }
         job, created = store.create_sync_job(payload, actor="phase100b-evidence")
-        rerun, created_again = store.create_sync_job(payload, actor="phase100b-evidence")
         finished = store.run_sync_job(job["job_id"], provider_factory=lambda: counting)
+        first_runs[index_symbol] = (payload, job, created, finished)
+
+    # Global snapshot after all first runs, before any terminal rerun.
+    overall_before = store.persisted_fingerprint()
+
+    # Phase 2: terminal reruns must neither refetch nor reinsert.
+    for index_symbol in index_symbols:
+        payload, job, created, finished = first_runs[index_symbol]
+        rerun, created_again = store.create_sync_job(payload, actor="phase100b-evidence")
+        fingerprint_before = store.persisted_fingerprint(index_symbol)
+        calls_before = counting.index_daily_basic_calls
         terminal = store.run_sync_job(rerun["job_id"], provider_factory=lambda: counting)
+        calls_after = counting.index_daily_basic_calls
+        fingerprint_after = store.persisted_fingerprint(index_symbol)
+
         per_index[index_symbol] = {
-            "job_id": job["job_id"],
-            "created": created,
+            # The first-run job result is cumulative/original state, never a
+            # rerun delta. The terminal rerun returns this same persisted row.
+            "job_result": {
+                "job_id": job["job_id"],
+                "created": created,
+                "status": finished["status"],
+                "effective_start_date": finished["effective_start_date"],
+                "provider_calls": 1,
+                "rows_received": finished["rows_received"],
+                "rows_inserted": finished["rows_inserted"],
+                "rows_kept": finished["rows_kept"],
+            },
             "idempotency_key_reused_returns_same_job": (not created_again) and rerun["job_id"] == job["job_id"],
-            "status": finished["status"],
-            "effective_start_date": finished["effective_start_date"],
-            "rows_received": finished["rows_received"],
-            "rows_inserted": finished["rows_inserted"],
-            "rows_kept": finished["rows_kept"],
-            "terminal_rerun_status": terminal["status"],
-            "terminal_rerun_rows_inserted": terminal["rows_inserted"],
+            "terminal_rerun": {
+                "same_job_id_as_first_run": rerun["job_id"] == job["job_id"],
+                "status": terminal["status"],
+                "provider_call_delta": calls_after - calls_before,
+                "no_refetch": (calls_after - calls_before) == 0,
+                "persisted_fingerprint_before": fingerprint_before,
+                "persisted_fingerprint_after": fingerprint_after,
+                "persisted_fingerprint_unchanged": fingerprint_before == fingerprint_after,
+                "no_reinsert": fingerprint_before["content_sha256"] == fingerprint_after["content_sha256"],
+                # Explicitly cumulative: the job row is returned as persisted
+                # and must NOT be read as a rerun insertion count.
+                "reported_cumulative_rows_inserted": terminal["rows_inserted"],
+            },
         }
 
+    overall_after = store.persisted_fingerprint()
     coverage = store.coverage()
     readiness = store.readiness(
         index_symbols=index_symbols, start_date=sessions[0], end_date=sessions[-1],
@@ -108,6 +141,8 @@ def main() -> int:
     missing_by_index: dict[str, int] = {}
     for item in readiness["coverage"]["missing"]:
         missing_by_index[item["index_symbol"]] = missing_by_index.get(item["index_symbol"], 0) + 1
+    first_run_calls = sum(int(item["job_result"]["provider_calls"]) for item in per_index.values())
+    terminal_call_delta = sum(int(item["terminal_rerun"]["provider_call_delta"]) for item in per_index.values())
     evidence = {
         "schema_version": "phase-100b-index-dailybasic-verification.v1",
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -116,8 +151,23 @@ def main() -> int:
         "window": {"start_date": START_DATE, "end_date": END_DATE, "open_sessions": len(sessions)},
         "isolated_database": True,
         "production_state_changed": False,
+        "verification_note": (
+            "Original isolated run records did not capture a before/after persisted "
+            "fingerprint, so the terminal-rerun no-op proof was regenerated by re-running "
+            "the isolated verification (never production)."
+        ),
         "calendar": authorization,
         "index_daily_basic_provider_calls": counting.index_daily_basic_calls,
+        "terminal_rerun_summary": {
+            "index_count": len(index_symbols),
+            "first_run_provider_calls": first_run_calls,
+            "terminal_rerun_provider_call_delta_total": terminal_call_delta,
+            "no_refetch": terminal_call_delta == 0,
+            "persisted_fingerprint_before": overall_before,
+            "persisted_fingerprint_after": overall_after,
+            "persisted_fingerprint_unchanged": overall_before == overall_after,
+            "no_reinsert": overall_before["content_sha256"] == overall_after["content_sha256"],
+        },
         "per_index_sync": per_index,
         "persisted_coverage": coverage,
         "readiness": {
@@ -139,6 +189,8 @@ def main() -> int:
         "evidence": str(EVIDENCE_PATH.relative_to(REPO_ROOT)),
         "open_sessions": len(sessions),
         "provider_calls": counting.index_daily_basic_calls,
+        "terminal_rerun_provider_call_delta": terminal_call_delta,
+        "persisted_fingerprint_unchanged": overall_before == overall_after,
         "coverage_rows": coverage["row_count"],
         "coverage_indexes": coverage["index_count"],
         "readiness_usable": readiness["coverage"]["usable"],

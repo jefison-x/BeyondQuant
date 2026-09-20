@@ -7,81 +7,189 @@
     "start_date": "20260801"
   },
   "endpoint": "index_dailybasic",
-  "generated_at": "2026-09-20T13:56:44.761249+00:00",
+  "generated_at": "2026-09-20T14:08:55.024326+00:00",
   "index_daily_basic_provider_calls": 6,
   "isolated_database": true,
   "per_index_sync": {
     "000016.SH": {
-      "created": true,
-      "effective_start_date": "20260801",
       "idempotency_key_reused_returns_same_job": true,
-      "job_id": "indexsync_c003a7931fc64f0898061a409fd741e6",
-      "rows_inserted": 35,
-      "rows_kept": 0,
-      "rows_received": 35,
-      "status": "completed",
-      "terminal_rerun_rows_inserted": 35,
-      "terminal_rerun_status": "completed"
+      "job_result": {
+        "created": true,
+        "effective_start_date": "20260801",
+        "job_id": "indexsync_823593fab76b467788c2153dc1e63558",
+        "provider_calls": 1,
+        "rows_inserted": 35,
+        "rows_kept": 0,
+        "rows_received": 35,
+        "status": "completed"
+      },
+      "terminal_rerun": {
+        "no_refetch": true,
+        "no_reinsert": true,
+        "persisted_fingerprint_after": {
+          "content_sha256": "3c9871c9c8ed5b647442f3d3ea99ddc5cec62b2f57d40aeb6ef658ca67f4eb9f",
+          "row_count": 35
+        },
+        "persisted_fingerprint_before": {
+          "content_sha256": "3c9871c9c8ed5b647442f3d3ea99ddc5cec62b2f57d40aeb6ef658ca67f4eb9f",
+          "row_count": 35
+        },
+        "persisted_fingerprint_unchanged": true,
+        "provider_call_delta": 0,
+        "reported_cumulative_rows_inserted": 35,
+        "same_job_id_as_first_run": true,
+        "status": "completed"
+      }
     },
     "000300.SH": {
-      "created": true,
-      "effective_start_date": "20260801",
       "idempotency_key_reused_returns_same_job": true,
-      "job_id": "indexsync_16f77e9b72b34353a97efe43e48fedd2",
-      "rows_inserted": 35,
-      "rows_kept": 0,
-      "rows_received": 35,
-      "status": "completed",
-      "terminal_rerun_rows_inserted": 35,
-      "terminal_rerun_status": "completed"
+      "job_result": {
+        "created": true,
+        "effective_start_date": "20260801",
+        "job_id": "indexsync_14afd2e79c134b328d8f06c0ac84aa8d",
+        "provider_calls": 1,
+        "rows_inserted": 35,
+        "rows_kept": 0,
+        "rows_received": 35,
+        "status": "completed"
+      },
+      "terminal_rerun": {
+        "no_refetch": true,
+        "no_reinsert": true,
+        "persisted_fingerprint_after": {
+          "content_sha256": "221e54a20cb610682c4d1c0d5493082d7fa625703b8f12b244ca067fce4f6f23",
+          "row_count": 35
+        },
+        "persisted_fingerprint_before": {
+          "content_sha256": "221e54a20cb610682c4d1c0d5493082d7fa625703b8f12b244ca067fce4f6f23",
+          "row_count": 35
+        },
+        "persisted_fingerprint_unchanged": true,
+        "provider_call_delta": 0,
+        "reported_cumulative_rows_inserted": 35,
+        "same_job_id_as_first_run": true,
+        "status": "completed"
+      }
     },
     "000688.SH": {
-      "created": true,
-      "effective_start_date": "20260801",
       "idempotency_key_reused_returns_same_job": true,
-      "job_id": "indexsync_f81f3fb1ed7f4264938c9bb1b847bc66",
-      "rows_inserted": 35,
-      "rows_kept": 0,
-      "rows_received": 35,
-      "status": "completed",
-      "terminal_rerun_rows_inserted": 35,
-      "terminal_rerun_status": "completed"
+      "job_result": {
+        "created": true,
+        "effective_start_date": "20260801",
+        "job_id": "indexsync_3f16c88e0c0d4fe18cb5c2f72823224f",
+        "provider_calls": 1,
+        "rows_inserted": 35,
+        "rows_kept": 0,
+        "rows_received": 35,
+        "status": "completed"
+      },
+      "terminal_rerun": {
+        "no_refetch": true,
+        "no_reinsert": true,
+        "persisted_fingerprint_after": {
+          "content_sha256": "6ba31a35f7fb74ec4d35058d8b067149416a0f4c42a0c0e1391a8e3eea674ef5",
+          "row_count": 35
+        },
+        "persisted_fingerprint_before": {
+          "content_sha256": "6ba31a35f7fb74ec4d35058d8b067149416a0f4c42a0c0e1391a8e3eea674ef5",
+          "row_count": 35
+        },
+        "persisted_fingerprint_unchanged": true,
+        "provider_call_delta": 0,
+        "reported_cumulative_rows_inserted": 35,
+        "same_job_id_as_first_run": true,
+        "status": "completed"
+      }
     },
     "000852.SH": {
-      "created": true,
-      "effective_start_date": "20260801",
       "idempotency_key_reused_returns_same_job": true,
-      "job_id": "indexsync_133830c565374506bb1cc86c0a6ed8fb",
-      "rows_inserted": 35,
-      "rows_kept": 0,
-      "rows_received": 35,
-      "status": "completed",
-      "terminal_rerun_rows_inserted": 35,
-      "terminal_rerun_status": "completed"
+      "job_result": {
+        "created": true,
+        "effective_start_date": "20260801",
+        "job_id": "indexsync_e92dcfa2e0e74ac0acd1be2285720104",
+        "provider_calls": 1,
+        "rows_inserted": 35,
+        "rows_kept": 0,
+        "rows_received": 35,
+        "status": "completed"
+      },
+      "terminal_rerun": {
+        "no_refetch": true,
+        "no_reinsert": true,
+        "persisted_fingerprint_after": {
+          "content_sha256": "0b133e665d3b7cfde2dc5a4a6d05601a1081be597828046b8cac4528741eeebc",
+          "row_count": 35
+        },
+        "persisted_fingerprint_before": {
+          "content_sha256": "0b133e665d3b7cfde2dc5a4a6d05601a1081be597828046b8cac4528741eeebc",
+          "row_count": 35
+        },
+        "persisted_fingerprint_unchanged": true,
+        "provider_call_delta": 0,
+        "reported_cumulative_rows_inserted": 35,
+        "same_job_id_as_first_run": true,
+        "status": "completed"
+      }
     },
     "000905.SH": {
-      "created": true,
-      "effective_start_date": "20260801",
       "idempotency_key_reused_returns_same_job": true,
-      "job_id": "indexsync_2b7247b5605044298a5cb5d6246014ce",
-      "rows_inserted": 35,
-      "rows_kept": 0,
-      "rows_received": 35,
-      "status": "completed",
-      "terminal_rerun_rows_inserted": 35,
-      "terminal_rerun_status": "completed"
+      "job_result": {
+        "created": true,
+        "effective_start_date": "20260801",
+        "job_id": "indexsync_1fe9b1d32a5641aaac4d586bde6ef43d",
+        "provider_calls": 1,
+        "rows_inserted": 35,
+        "rows_kept": 0,
+        "rows_received": 35,
+        "status": "completed"
+      },
+      "terminal_rerun": {
+        "no_refetch": true,
+        "no_reinsert": true,
+        "persisted_fingerprint_after": {
+          "content_sha256": "042f8bfe1e4d2a76313e792633ac0d7c05cc00e7fd11583e2bf734df90a93e19",
+          "row_count": 35
+        },
+        "persisted_fingerprint_before": {
+          "content_sha256": "042f8bfe1e4d2a76313e792633ac0d7c05cc00e7fd11583e2bf734df90a93e19",
+          "row_count": 35
+        },
+        "persisted_fingerprint_unchanged": true,
+        "provider_call_delta": 0,
+        "reported_cumulative_rows_inserted": 35,
+        "same_job_id_as_first_run": true,
+        "status": "completed"
+      }
     },
     "399006.SZ": {
-      "created": true,
-      "effective_start_date": "20260801",
       "idempotency_key_reused_returns_same_job": true,
-      "job_id": "indexsync_6b3b983ceecd42acb78d68ba9dad21c6",
-      "rows_inserted": 35,
-      "rows_kept": 0,
-      "rows_received": 35,
-      "status": "completed",
-      "terminal_rerun_rows_inserted": 35,
-      "terminal_rerun_status": "completed"
+      "job_result": {
+        "created": true,
+        "effective_start_date": "20260801",
+        "job_id": "indexsync_260abf0e881d4bcf885f0aa17731b01c",
+        "provider_calls": 1,
+        "rows_inserted": 35,
+        "rows_kept": 0,
+        "rows_received": 35,
+        "status": "completed"
+      },
+      "terminal_rerun": {
+        "no_refetch": true,
+        "no_reinsert": true,
+        "persisted_fingerprint_after": {
+          "content_sha256": "664ac98b97a1b242f2ae1a6098206db2d7ae57dcd834a168303020a7d6dc5204",
+          "row_count": 35
+        },
+        "persisted_fingerprint_before": {
+          "content_sha256": "664ac98b97a1b242f2ae1a6098206db2d7ae57dcd834a168303020a7d6dc5204",
+          "row_count": 35
+        },
+        "persisted_fingerprint_unchanged": true,
+        "provider_call_delta": 0,
+        "reported_cumulative_rows_inserted": 35,
+        "same_job_id_as_first_run": true,
+        "status": "completed"
+      }
     }
   },
   "persisted_coverage": {
@@ -178,7 +286,7 @@
           "endpoint": "index_dailybasic",
           "provider": "tushare",
           "request_fingerprint": "3b3845b8162a4f1ee9f988cef7fa9f9a5fb612c379b8e0a78d7d49a487075a10",
-          "retrieved_at": "2026-09-20T13:56:43.037464+00:00",
+          "retrieved_at": "2026-09-20T14:08:53.280876+00:00",
           "row_count": 35
         },
         "trade_date": "20260803",
@@ -199,7 +307,7 @@
           "endpoint": "index_dailybasic",
           "provider": "tushare",
           "request_fingerprint": "d1ac312cd1f74dc1afe4da8a5d8146a1165176009e2cd106e7e2fb9b5b645480",
-          "retrieved_at": "2026-09-20T13:56:43.349077+00:00",
+          "retrieved_at": "2026-09-20T14:08:53.625581+00:00",
           "row_count": 35
         },
         "trade_date": "20260803",
@@ -220,7 +328,7 @@
           "endpoint": "index_dailybasic",
           "provider": "tushare",
           "request_fingerprint": "67d48bb8e4a549fd900af96c58a6b15ad4f3f1fd1c80a7fd73d2d4a9ba6e8b71",
-          "retrieved_at": "2026-09-20T13:56:43.702571+00:00",
+          "retrieved_at": "2026-09-20T14:08:53.963996+00:00",
           "row_count": 35
         },
         "trade_date": "20260803",
@@ -241,7 +349,7 @@
           "endpoint": "index_dailybasic",
           "provider": "tushare",
           "request_fingerprint": "50f9bf1a48de2b55d5e69ce39845603f69f187520b2d69a1c48136e20395b61c",
-          "retrieved_at": "2026-09-20T13:56:44.033098+00:00",
+          "retrieved_at": "2026-09-20T14:08:54.300727+00:00",
           "row_count": 35
         },
         "trade_date": "20260803",
@@ -262,7 +370,7 @@
           "endpoint": "index_dailybasic",
           "provider": "tushare",
           "request_fingerprint": "909a10f9f39a55a6299b74a822e8349c6b59701a98baed41d620718fee977af9",
-          "retrieved_at": "2026-09-20T13:56:44.374511+00:00",
+          "retrieved_at": "2026-09-20T14:08:54.638214+00:00",
           "row_count": 35
         },
         "trade_date": "20260803",
@@ -286,6 +394,23 @@
     "usable": true
   },
   "schema_version": "phase-100b-index-dailybasic-verification.v1",
+  "terminal_rerun_summary": {
+    "first_run_provider_calls": 6,
+    "index_count": 6,
+    "no_refetch": true,
+    "no_reinsert": true,
+    "persisted_fingerprint_after": {
+      "content_sha256": "cfaba152ffc2fe3020fe40870b759c82cf2bed1fea6792d282033f997ceff567",
+      "row_count": 210
+    },
+    "persisted_fingerprint_before": {
+      "content_sha256": "cfaba152ffc2fe3020fe40870b759c82cf2bed1fea6792d282033f997ceff567",
+      "row_count": 210
+    },
+    "persisted_fingerprint_unchanged": true,
+    "terminal_rerun_provider_call_delta_total": 0
+  },
+  "verification_note": "Original isolated run records did not capture a before/after persisted fingerprint, so the terminal-rerun no-op proof was regenerated by re-running the isolated verification (never production).",
   "window": {
     "end_date": "20260918",
     "open_sessions": 35,
