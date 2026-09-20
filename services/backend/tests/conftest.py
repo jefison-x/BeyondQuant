@@ -200,18 +200,6 @@ def byq_schema_reset_stats() -> dict[str, float]:
     return SCHEMA_RESET_STATS
 
 
-@pytest.fixture
-def byq_force_schema_reset():
-    """Expose the exact reset primitive to isolation regression tests."""
-
-    def _reset() -> None:
-        url = _require_test_database_url()
-        if url is not None:
-            _reset_schema(url)
-
-    return _reset
-
-
 @pytest.fixture(autouse=True)
 def _byq_reset_schema():
     """Arm the deferred, once-per-test schema reset (inert when unset).

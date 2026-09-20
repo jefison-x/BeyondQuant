@@ -100,25 +100,39 @@ schemas/fixtures 复用），保持覆盖与跳过语义等价、cleanup 资源�
 setup 时间可量化下降、失败路径与隔离回归通过。任何 schema/fixture 语义改动需
 单独论证；否则延后。
 
-### CI-B 测量（2026-09-20，隔离 `byq_domain_test` postgres:16 容器 + worktree backend 镜像）
+### CI-B 证据分类（估计 / 本机实测 / 远端实测，2026-09-20）
 
-CI-A 远端基线：`793 passed + 3 skipped` / collected 796 in 1247.96s；仅 ≥1s 的
-call 合计 97.47s、≥1s 的 setup 合计 5.32s，说明成本分散在阈值以下，必须聚合。
+本节严格区分三类证据，**不得把外推当成同条件 old/new 测量**：
 
-本机聚合（同一实现，`--durations-min=1.0` 之外的 setup/call/teardown 全量统计）：
+**(a) 远端同 lane 实测（最强对照，不同 run、同类 ubuntu-24.04 runner）**
+
+- CI-A 基线：run `35475291783`，`793 passed + 3 skipped` / collected 796 in
+  **1247.96s**；backend job 1343s；仅 ≥1s 的 call 合计 97.47s、≥1s 的 setup 合计
+  5.32s，说明成本分散在阈值以下，必须聚合。
+- 本批：run `35483981710` attempt 2（head `b04cd10`，修复前隔离模块），backend job
+  `106006956776`：`800 passed, 3 skipped, 1 warning, 7 subtests passed` in
+  **951.10s**；backend job **1033s**；`[byq-timing] pytest_setup=95.27 (n=803)
+  pytest_call=850.99 (n=809) pytest_teardown=0.43 (n=803) session_wall=951.12`；
+  `schema_resets=568 schema_reset_seconds=665.38 store_bootstraps=2224
+  store_bootstrap_seconds=40.90`；backend phase 980s。
+- 即同 lane 实测：job 1343s→1033s（−310s），pytest 1247.96s→951.10s（−296.9s），
+  且新 run 比基线**多 7 个测试**，方向保守。
+
+**(b) 本机隔离 test DB 实测（postgres:16 容器 + worktree backend 镜像）**
 
 - 单次整库重建（`DROP SCHEMA public CASCADE` + `CREATE SCHEMA public` + 23 个 store 的
   247 条 DDL，116 张表）：DROP+CREATE 25ms，DDL 约 0.92–0.95s，合计约 1.0–1.18s/次；
   对已存在 schema 重跑全部 DDL 仅 74ms；`TRUNCATE` 全部 116 张表 394ms。
-- 即：逐测试重建的开销几乎全部来自“真正创建 118 张表 + 75 个索引”，而不是连接的
-  DROP/CREATE，也不是 fsync（整库重建放进单事务仅从 1078ms 降到 946ms）。
-- 采用延迟重建后整批：`793 passed, 3 skipped` in 926.86s；
-  `pytest_setup=93.31s (n=796)`、`pytest_call=830.12s`、`pytest_teardown=0.28s`；
-  `schema_resets=562`（即 796 个测试中有 234 个从不打开数据库连接）、
-  `store_bootstraps=2224`、`store_bootstrap_seconds≈39s`（不含重建）。
-- 同机对照推算：旧实现为这 234 个纯逻辑测试各多付一次约 1.17s 重建，即约 +274s；
-  新实现约 927s，等价旧实现约 1201s，约低 23%。远端精确对照见本批 PR 的 backend
-  lane `[byq-timing]`/pytest 汇总。
+- 采用延迟重建后整批（修复前隔离模块）：`800 passed, 3 skipped` in **904.40s**；
+  `schema_resets=568`（803 个测试中 **803−568=235** 个从不打开数据库连接）、
+  `store_bootstraps=2224`、`store_bootstrap_seconds≈39.4s`（不含重建）。
+- 本机日志为临时文件（已清理），持久证据是 (a) 的远端 job 与脱敏 artifact。
+
+**(c) 估计（外推，非测量）**
+
+- 若旧实现对这 235 个纯逻辑测试各再付一次约 1.17s 重建，则本机等价旧值约
+  `904.40 + 235×~1.17 ≈ 1179s`；相对本机新值约低 23%。这是**逐 DDL/逐测试外推**，
+  不是同条件 old/new 测量，只用于解释 (a) 的机制；不得单独引用为实测加速。
 
 ### 采用方案（最小、可回退，且不削弱隔离）
 
@@ -143,12 +157,28 @@ call 合计 97.47s、≥1s 的 setup 合计 5.32s，说明成本分散在阈值�
 
 ### CI-B 验收与隔离回归
 
-- 计数/跳过等价：`793 passed, 3 skipped`（collected 796），无新增跳过、无删除断言。
-- 新增 `services/backend/tests/test_schema_isolation.py`：注册迁移真的执行（迁移列存在）、
-  独立连接可见已提交写入（未用全局回滚）、重建能清除已提交脏行并复原 schema、纯逻辑
-  测试不触发重建、用库测试每测试恰好重建一次、前一测试的行对后一测试不可见。
+- **测试/跳过集合**：基线集合为 `793 passed + 3 skipped`（collected 796）；本批集合为
+  `800 passed + 3 skipped`（collected 803 = 796 + 7 个新隔离测试），跳过集合不变（仍 3 个，
+  无新增跳过、无删除断言）。远端 summary/job 见 (a)；脱敏 `checks.log` 位于 run
+  `35483981710` attempt 2 backend job `106006956776` 的 artifact
+  `ci-35483981710-2-backend`。
+- 新增 `services/backend/tests/test_schema_isolation.py`：
+  - **真实失败后自动恢复（有界嵌套 pytest 子进程）**：第一个用例提交脏行并创建动态表
+    （`CREATE TABLE`/`CREATE INDEX`）后**真的失败**；第二个用例**不调用任何手动 reset**，
+    仅靠正常 autouse/首次取用路径自动恢复；断言失败数=1、通过数=1、`schema_resets=2`
+    （证明自动路径每测试恰好执行一次，未用手动 reset 代替），并断言脏行与动态对象已清除、
+    注册表仍在。`conftest.py` 中手动 reset 夹具 `byq_force_schema_reset` 已删除，杜绝替
+    代路径。
+  - **确定性写后读（两类顺序位置）**：生成模块按定义顺序固定 writer 在 reader 之前；
+    reader 首先断言"writer 已运行"（污染前置条件），若顺序被倒置则显式失败而非空证据；
+    两个 variant 分别把 writer/reader 对放在套件不同位置（前置/中间/后置噪声测试之间），
+    并各自断言脏行/动态对象清除与 `schema_resets=2`。嵌套子进程会清除
+    `BYQ_TEST_SHUFFLE_SEED`，确保外层乱序无法倒置该前置条件。
+  - 注册迁移真的执行（迁移列存在）、独立连接可见已提交写入（未用全局回滚）、纯逻辑
+    测试不触发重建、用库测试每测试恰好重建一次。
 - `scripts/ci/local-ci.sh` 在 backend lane 之后以 `BYQ_TEST_SHUFFLE_SEED=1` 固定种子乱序
-  重跑该隔离模块，证明顺序无关。
+  重跑该隔离模块，证明外层模块用例顺序无关（跨用例写后读证据由上述确定性嵌套子进程提供，
+  不依赖乱序顺序）。
 - 聚合统计由 `services/backend/tests/conftest.py` 在 pytest 结束时以单行
   `[byq-timing] pytest_setup=… schema_resets=…` 输出（沿用 CI-A 脱敏日志）。
 
