@@ -131,6 +131,9 @@ and stop disabling background (`enableRunInBackground: true`) on each
 - **Process boundary**: the only continuable providers in the candidate runtime
   are in-process (spawn/fork). No out-of-process provider implements
   `prepareContinuable`, so a continuable child always shares the executor process.
+  `prepareContinuable` is a public provider extension point, so a *new*
+  out-of-process continuable provider is possible in principle, but that is new
+  provider/runtime work (not a wiring change) and remains out of scope.
 
 **Scope decision.** The BYQ→`startContinuable` hookup is a product-semantics
 change (durable background child contract) that **exceeds this PR's qualification
