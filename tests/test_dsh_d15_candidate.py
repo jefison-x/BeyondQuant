@@ -217,9 +217,13 @@ class D15CandidateTests(unittest.TestCase):
     def test_acceptance_matrix_covers_every_planned_substage(self) -> None:
         matrix = json.loads((EVIDENCE / "acceptance-matrix.v1.json").read_text())
         stages = {item["id"]: item for item in matrix["substages"]}
-        self.assertEqual(list(stages), ["D15-2", "D15-3", "D15-4", "D15-5", "D15-G"])
+        self.assertEqual(list(stages),
+                         ["D15-2", "D15-3", "D15-3R", "D15-4", "D15-5", "D15-G"])
         self.assertEqual(stages["D15-2"]["result"], "PASS")
         self.assertEqual(stages["D15-3"]["result"], "PASS")
+        self.assertEqual(stages["D15-3R"]["result"], "PASS")
+        self.assertTrue(stages["D15-3R"]["evidence"])
+        self.assertTrue(stages["D15-3R"]["criterion_results"])
         for stage_id in ("D15-4", "D15-5", "D15-G"):
             self.assertEqual(stages[stage_id]["result"], "NOT_RUN")
         for stage in stages.values():

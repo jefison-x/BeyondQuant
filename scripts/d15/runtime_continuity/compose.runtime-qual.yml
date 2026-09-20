@@ -1,0 +1,145 @@
+# Isolated D15 runtime-continuity qualification stack.
+#
+# Security boundary: dedicated compose project, dedicated network and volumes,
+# loopback-only published ports, fresh synthetic PostgreSQL. It never joins the
+# production `beyondquant` stack, never mounts production volumes and never reads
+# or writes production/Community data. The runtime-adapter is the rebuilt fixed
+# DSH 0.1.5rc1 candidate.
+name: byq-d15-runtime
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: byq_domain
+      POSTGRES_USER: byq_app
+      POSTGRES_PASSWORD: d15-synthetic-db-only
+    volumes:
+      - d15_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U byq_app -d byq_domain"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+    networks: [d15_internal]
+
+  scripted-provider:
+    image: byq-d15-runtime-scripted-provider:local
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8900/healthz',timeout=3)"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+    networks: [d15_internal]
+
+  backend:
+    image: ${D15_BACKEND_IMAGE:-beyondquant-backend:latest}
+    environment:
+      BYQ_DATABASE_URL: postgresql+psycopg://byq_app:d15-synthetic-db-only@postgres:5432/byq_domain
+      BYQ_BOOTSTRAP_ADMIN_USERNAME: d15admin
+      BYQ_BOOTSTRAP_ADMIN_PASSWORD: D15AdminPass123
+      BYQ_CREDENTIAL_RESOLVER_TOKEN: d15-synthetic-resolver-only
+      BYQ_FEEDBACK_HUB_RELAY_TOKEN: d15-synthetic-relay-only
+      BYQ_BACKTEST_OBJECT_ROOT: /var/lib/byq/domain/backtest-objects
+      BYQ_DEPLOYMENT_KIND: d15-runtime-qualification
+    ports:
+      - "127.0.0.1:18000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 15s
+    networks: [d15_internal]
+
+  mcp:
+    image: ${D15_MCP_IMAGE:-beyondquant-mcp:latest}
+    environment:
+      BYQ_BACKEND_URL: http://backend:8000
+      BYQ_MCP_TOKEN: d15-synthetic-mcp-only
+      BYQ_WEB_EVIDENCE_PROVENANCE_POLICY: /app/dsh-0.1.2rc1.web-evidence-provenance.json
+    ports:
+      - "127.0.0.1:18300:8300"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8300/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+    networks: [d15_internal]
+
+  runtime-adapter:
+    image: byq-d15-runtime-candidate:local
+    command: ["python3", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8400"]
+    environment:
+      BYQ_MCP_URL: http://mcp:8300/mcp/v1
+      BYQ_MCP_TOKEN: d15-synthetic-mcp-only
+      BYQ_BACKEND_URL: http://backend:8000
+      BYQ_CREDENTIAL_RESOLVER_TOKEN: d15-synthetic-resolver-only
+      DEEPSEEK_API_KEY: d15-synthetic-key
+      DEEPSEEK_BASE_URL: http://scripted-provider:8900
+      BYQ_DSH_RELEASE_IDENTITY: /opt/byq/releases/candidate.identity.json
+      BYQ_DSH_COMPATIBILITY_RELEASE: dsh-0.1.5rc1
+      DSH_SESSION_ROOT: /var/lib/byq/dsh-sessions/dsh-0.1.5rc1
+      BYQ_DSH_RUN_TIMEOUT_SECONDS: "300"
+      BYQ_DSH_NO_PROGRESS_TIMEOUT_SECONDS: "120"
+    volumes:
+      - d15_sessions:/var/lib/byq/dsh-sessions
+      - ./candidate.identity.json:/opt/byq/releases/candidate.identity.json:ro
+    ports:
+      - "127.0.0.1:18400:8400"
+    depends_on:
+      mcp:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+      scripted-provider:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8400/healthz',timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+    networks: [d15_internal]
+
+  gateway:
+    image: ${D15_GATEWAY_IMAGE:-beyondquant-gateway:latest}
+    environment:
+      BYQ_PRODUCT_TOKEN: d15-synthetic-product-only
+      BYQ_PRODUCT_PRINCIPAL: product-user
+      BYQ_WORKFLOW_TRACE_ROOT: /var/lib/byq/workflow-traces
+      BYQ_BACKEND_URL: http://backend:8000
+      BYQ_PRODUCT_WORKSPACE_ID: workspace_d15_runtime_qualification
+    ports:
+      - "127.0.0.1:18100:8100"
+    volumes:
+      - d15_traces:/var/lib/byq/workflow-traces
+    depends_on:
+      runtime-adapter:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+      mcp:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8100/readyz',timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 15s
+    networks: [d15_internal]
+
+volumes:
+  d15_postgres:
+  d15_sessions:
+  d15_traces:
+
+networks:
+  d15_internal:
+    driver: bridge

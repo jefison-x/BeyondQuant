@@ -1,0 +1,193 @@
+{
+  "after": {
+    "_detail_message_count": 2,
+    "_domain": {
+      "pool_count": 1,
+      "replay_pool_id": "stock_pool_8643c20144ee45a992093c9794662f7e"
+    },
+    "_dsh_pids": [
+      18,
+      46
+    ],
+    "_journal_generations": [
+      {
+        "ended_at": 1789879314.1979663,
+        "executor_epoch": 1,
+        "generation_id": "generation-2c9d74a785344af2afd496fa58fe24e3",
+        "root_run_id": null,
+        "started_at": 1789879304.602041,
+        "state": "closed"
+      },
+      {
+        "ended_at": null,
+        "executor_epoch": 1,
+        "generation_id": "generation-a54daab850ca4f2296c12c8c2fc1785f",
+        "root_run_id": null,
+        "started_at": 1789879315.1551013,
+        "state": "starting"
+      }
+    ],
+    "_provider_calls": 1,
+    "action_receipts": [
+      {
+        "idempotency_key": "message_bb04435f5fef4f34b6825168722fde68",
+        "receipt": {
+          "run_id": "0c790c22e0354566a8b3045c0c16a496",
+          "state": "accepted"
+        },
+        "replay": {
+          "receipt": {
+            "run_id": "0c790c22e0354566a8b3045c0c16a496",
+            "state": "accepted"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "runtime.prompt.idempotent"
+      },
+      {
+        "idempotency_key": "d15-pool-a8bc3455b8114f8a8d1f07cbb5bb6f28",
+        "receipt": {
+          "pool_id": "stock_pool_8643c20144ee45a992093c9794662f7e",
+          "state": "accepted"
+        },
+        "replay": {
+          "receipt": {
+            "pool_id": "stock_pool_8643c20144ee45a992093c9794662f7e",
+            "state": "accepted"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "byq_paper_pool_create"
+      }
+    ],
+    "adapter_generation": "generation-a54daab850ca4f2296c12c8c2fc1785f",
+    "adapter_pid": 3226383,
+    "approval": {
+      "approval_id": "artifact_e010be1cffe64077b26d4ff6a146c688",
+      "bypassed": false,
+      "decided_by": "d15admin",
+      "reuse_denied": true,
+      "state": "approved"
+    },
+    "continuity": "rehydrated",
+    "executor_epoch": 1,
+    "goal": {
+      "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+      "prompt_receipt": {
+        "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+        "root_run_id": "0c790c22e0354566a8b3045c0c16a496"
+      }
+    },
+    "result": {
+      "run_id": "0c790c22e0354566a8b3045c0c16a496",
+      "sequence": 11,
+      "status": "completed",
+      "trace_contiguous": true
+    },
+    "session_id": "conversation_64d5dde6b53448dfaafb5064ee08752c",
+    "trace_id": "byq-trace-5a553b28dedf4ad6a43e124d43d19dfc"
+  },
+  "before": {
+    "_detail_message_count": 2,
+    "_domain": {
+      "pool_count": 1,
+      "replay_pool_id": "stock_pool_b5801dd4f7e643f6a06166a57258b0c9"
+    },
+    "_dsh_pids": [
+      23,
+      61
+    ],
+    "_journal_generations": [
+      {
+        "ended_at": null,
+        "executor_epoch": 1,
+        "generation_id": "generation-2c9d74a785344af2afd496fa58fe24e3",
+        "root_run_id": null,
+        "started_at": 1789879304.602041,
+        "state": "starting"
+      }
+    ],
+    "_provider_calls": 1,
+    "action_receipts": [
+      {
+        "idempotency_key": "message_bb04435f5fef4f34b6825168722fde68",
+        "receipt": {
+          "run_id": "0c790c22e0354566a8b3045c0c16a496",
+          "state": "accepted"
+        },
+        "replay": {
+          "receipt": {
+            "run_id": "0c790c22e0354566a8b3045c0c16a496",
+            "state": "accepted"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "runtime.prompt.idempotent"
+      },
+      {
+        "idempotency_key": "d15-pool-a8bc3455b8114f8a8d1f07cbb5bb6f28",
+        "receipt": {
+          "pool_id": "stock_pool_b5801dd4f7e643f6a06166a57258b0c9",
+          "state": "accepted"
+        },
+        "replay": {
+          "receipt": {
+            "pool_id": "stock_pool_b5801dd4f7e643f6a06166a57258b0c9",
+            "state": "accepted"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "byq_paper_pool_create"
+      }
+    ],
+    "adapter_generation": "generation-2c9d74a785344af2afd496fa58fe24e3",
+    "adapter_pid": 3224989,
+    "approval": {
+      "approval_id": "artifact_e010be1cffe64077b26d4ff6a146c688",
+      "bypassed": false,
+      "decided_by": "d15admin",
+      "reuse_denied": true,
+      "state": "approved"
+    },
+    "continuity": "reattached",
+    "executor_epoch": 1,
+    "goal": {
+      "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+      "prompt_receipt": {
+        "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+        "root_run_id": "0c790c22e0354566a8b3045c0c16a496"
+      }
+    },
+    "result": {
+      "run_id": "0c790c22e0354566a8b3045c0c16a496",
+      "sequence": 9,
+      "status": "completed",
+      "trace_contiguous": true
+    },
+    "session_id": "conversation_64d5dde6b53448dfaafb5064ee08752c",
+    "trace_id": "byq-trace-5a553b28dedf4ad6a43e124d43d19dfc"
+  },
+  "candidate": {
+    "python_sdk": "0.1.5rc1",
+    "release": "dsh-0.1.5rc1",
+    "runtime_bin": "0.1.5rc1",
+    "selector_env": "BYQ_DSH_COMPATIBILITY_RELEASE"
+  },
+  "evidence": [
+    "docs/evidence/d15/d15-runtime/adapter-process-restart.v1.json"
+  ],
+  "fault_applied": true,
+  "generated_at": "2026-09-20T04:41:17Z",
+  "id": "adapter-process-restart",
+  "llm": {
+    "class": "scripted-keyless",
+    "note": "Keyless deterministic loopback provider; service-boundary runtime-continuity evidence, not real-LLM-quality semantic evidence.",
+    "real_llm_quality": false
+  },
+  "result": "PASS",
+  "schema_version": "byq-d15-runtime-scenario.v1"
+}

@@ -7,4 +7,6 @@ paths = [
   '''apps/frontend/src/api/credentialSubmission\.spec\.ts''',
   '''scripts/evidence/h4-strategy-pagination-fixture\.py''',
   '''services/backend/tests/test_credential_receipts\.py''',
+  '''scripts/d15/runtime_continuity/compose\.runtime-qual\.yml''',
+  '''docs/evidence/d15/d15-runtime/.*\.json''',
 ]

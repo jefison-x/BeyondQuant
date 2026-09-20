@@ -1,0 +1,240 @@
+{
+  "after": {
+    "_detail_message_count": 4,
+    "_domain": {
+      "pool_count": 1,
+      "replay_pool_id": "stock_pool_022f6b16776e431ebd513fbebdffa75b"
+    },
+    "_dsh_pids": [
+      272,
+      363
+    ],
+    "_journal_generations": [
+      {
+        "ended_at": 1789879314.1979663,
+        "executor_epoch": 1,
+        "generation_id": "generation-2c9d74a785344af2afd496fa58fe24e3",
+        "root_run_id": null,
+        "started_at": 1789879304.602041,
+        "state": "closed"
+      },
+      {
+        "ended_at": 1789879329.04737,
+        "executor_epoch": 1,
+        "generation_id": "generation-a54daab850ca4f2296c12c8c2fc1785f",
+        "root_run_id": null,
+        "started_at": 1789879315.1551013,
+        "state": "interrupted"
+      },
+      {
+        "ended_at": 1789879340.438618,
+        "executor_epoch": 1,
+        "generation_id": "generation-be29d24ac28b444d8973b6504667eb3d",
+        "root_run_id": null,
+        "started_at": 1789879329.0578504,
+        "state": "closed"
+      },
+      {
+        "ended_at": null,
+        "executor_epoch": 1,
+        "generation_id": "generation-a7f4ec9548e045a08f968fc0b92b487d",
+        "root_run_id": null,
+        "started_at": 1789879340.4481447,
+        "state": "starting"
+      }
+    ],
+    "_provider_calls": 3,
+    "_takeover": {
+      "audit_path": "/var/lib/byq/dsh-sessions/dsh-0.1.5rc1/byq-lifecycle-evidence/executor-state/takeover-audit/20260920T044221Z.2.json",
+      "database_rows_modified": false,
+      "executor_epoch": 2,
+      "previous_epoch": 1,
+      "reason": "D15 runtime qualification executor takeover"
+    },
+    "action_receipts": [
+      {
+        "idempotency_key": "message_bb04435f5fef4f34b6825168722fde68",
+        "receipt": {
+          "run_id": "0c790c22e0354566a8b3045c0c16a496",
+          "state": "accepted"
+        },
+        "replay": {
+          "receipt": {
+            "run_id": "0c790c22e0354566a8b3045c0c16a496",
+            "state": "accepted"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "runtime.prompt.idempotent"
+      },
+      {
+        "idempotency_key": "d15-pool-a8bc3455b8114f8a8d1f07cbb5bb6f28",
+        "receipt": {
+          "pool_id": "stock_pool_022f6b16776e431ebd513fbebdffa75b",
+          "state": "accepted"
+        },
+        "replay": {
+          "receipt": {
+            "pool_id": "stock_pool_022f6b16776e431ebd513fbebdffa75b",
+            "state": "accepted"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "byq_paper_pool_create"
+      }
+    ],
+    "adapter_generation": "generation-a7f4ec9548e045a08f968fc0b92b487d",
+    "adapter_pid": 3226383,
+    "approval": {
+      "approval_id": "artifact_e010be1cffe64077b26d4ff6a146c688",
+      "bypassed": false,
+      "decided_by": "d15admin",
+      "reuse_denied": true,
+      "state": "approved"
+    },
+    "continuity": "reattached",
+    "executor_epoch": 2,
+    "goal": {
+      "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+      "prompt_receipt": {
+        "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+        "root_run_id": "0c790c22e0354566a8b3045c0c16a496"
+      }
+    },
+    "result": {
+      "run_id": "0c790c22e0354566a8b3045c0c16a496",
+      "sequence": 25,
+      "status": "completed",
+      "trace_contiguous": true
+    },
+    "session_id": "conversation_64d5dde6b53448dfaafb5064ee08752c",
+    "trace_id": "byq-trace-5a553b28dedf4ad6a43e124d43d19dfc"
+  },
+  "before": {
+    "_detail_message_count": 4,
+    "_domain": {
+      "pool_count": 1,
+      "replay_pool_id": "stock_pool_d3152047e907447899fdb24b4fcb1d55"
+    },
+    "_dsh_pids": [
+      272,
+      331
+    ],
+    "_journal_generations": [
+      {
+        "ended_at": 1789879314.1979663,
+        "executor_epoch": 1,
+        "generation_id": "generation-2c9d74a785344af2afd496fa58fe24e3",
+        "root_run_id": null,
+        "started_at": 1789879304.602041,
+        "state": "closed"
+      },
+      {
+        "ended_at": 1789879329.04737,
+        "executor_epoch": 1,
+        "generation_id": "generation-a54daab850ca4f2296c12c8c2fc1785f",
+        "root_run_id": null,
+        "started_at": 1789879315.1551013,
+        "state": "interrupted"
+      },
+      {
+        "ended_at": 1789879340.438618,
+        "executor_epoch": 1,
+        "generation_id": "generation-be29d24ac28b444d8973b6504667eb3d",
+        "root_run_id": null,
+        "started_at": 1789879329.0578504,
+        "state": "closed"
+      },
+      {
+        "ended_at": null,
+        "executor_epoch": 1,
+        "generation_id": "generation-a7f4ec9548e045a08f968fc0b92b487d",
+        "root_run_id": null,
+        "started_at": 1789879340.4481447,
+        "state": "starting"
+      }
+    ],
+    "_provider_calls": 3,
+    "action_receipts": [
+      {
+        "idempotency_key": "message_bb04435f5fef4f34b6825168722fde68",
+        "receipt": {
+          "run_id": "0c790c22e0354566a8b3045c0c16a496",
+          "state": "accepted"
+        },
+        "replay": {
+          "receipt": {
+            "run_id": "0c790c22e0354566a8b3045c0c16a496",
+            "state": "accepted"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "runtime.prompt.idempotent"
+      },
+      {
+        "idempotency_key": "d15-pool-a8bc3455b8114f8a8d1f07cbb5bb6f28",
+        "receipt": {
+          "pool_id": "stock_pool_d3152047e907447899fdb24b4fcb1d55",
+          "state": "accepted"
+        },
+        "replay": {
+          "receipt": {
+            "pool_id": "stock_pool_d3152047e907447899fdb24b4fcb1d55",
+            "state": "accepted"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "byq_paper_pool_create"
+      }
+    ],
+    "adapter_generation": "generation-a7f4ec9548e045a08f968fc0b92b487d",
+    "adapter_pid": 3226383,
+    "approval": {
+      "approval_id": "artifact_e010be1cffe64077b26d4ff6a146c688",
+      "bypassed": false,
+      "decided_by": "d15admin",
+      "reuse_denied": true,
+      "state": "approved"
+    },
+    "continuity": "reattached",
+    "executor_epoch": 1,
+    "goal": {
+      "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+      "prompt_receipt": {
+        "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+        "root_run_id": "0c790c22e0354566a8b3045c0c16a496"
+      }
+    },
+    "result": {
+      "run_id": "0c790c22e0354566a8b3045c0c16a496",
+      "sequence": 25,
+      "status": "completed",
+      "trace_contiguous": true
+    },
+    "session_id": "conversation_64d5dde6b53448dfaafb5064ee08752c",
+    "trace_id": "byq-trace-5a553b28dedf4ad6a43e124d43d19dfc"
+  },
+  "candidate": {
+    "python_sdk": "0.1.5rc1",
+    "release": "dsh-0.1.5rc1",
+    "runtime_bin": "0.1.5rc1",
+    "selector_env": "BYQ_DSH_COMPATIBILITY_RELEASE"
+  },
+  "evidence": [
+    "docs/evidence/d15/d15-runtime/executor-takeover.v1.json"
+  ],
+  "fault_applied": true,
+  "generated_at": "2026-09-20T04:41:17Z",
+  "id": "executor-takeover",
+  "llm": {
+    "class": "scripted-keyless",
+    "note": "Keyless deterministic loopback provider; service-boundary runtime-continuity evidence, not real-LLM-quality semantic evidence.",
+    "real_llm_quality": false
+  },
+  "result": "PASS",
+  "schema_version": "byq-d15-runtime-scenario.v1"
+}

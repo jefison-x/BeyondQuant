@@ -2,10 +2,9 @@
 
 Status: **D15-0 done, D15-1 candidate built/started/probed, D15-2 session V3
 migration PASS (format layer only), D15-3 native persistence-layer session
-resume PASS, D15-4..D15-G not started. A real BYQ runtime-level continuity
-qualification (process recovery, goal preservation, domain-action at-most-once,
-approval validity, result traceability) remains a required next step and is not
-done. `R3_RESUME = NO`.**
+resume PASS, D15-3R real isolated BYQ runtime-continuity qualification PASS
+(scripted keyless provider; service-boundary, not real-LLM-quality), D15-4..D15-G
+not started. `R3_RESUME = NO`.**
 Relates: ADR-0079, ADR-0081, ADR-0058, ADR-0069, ADR-0003
 Evidence: `docs/evidence/d15/`
 Target decision: [`docs/evidence/d15/target-decision.v1.json`](../evidence/d15/target-decision.v1.json)
@@ -56,6 +55,7 @@ violate the "no second generic agent harness" rule.
 | D15-1 | Candidate Runtime Upgrade | **machinery + isolated build/start DONE; D15-2..D15-G pending** |
 | D15-2 | Session V3 Migration Qualification (format layer) | **PASS** |
 | D15-3 | Native Session Resume Qualification (persistence seam) | **PASS** |
+| D15-3R | Real Isolated BYQ Runtime-Continuity Qualification | **PASS** (scripted keyless provider) |
 | D15-4 | Subagent/Fork Continuity Qualification | planned |
 | D15-5 | Persistent Terminal Qualification | planned |
 | D15-G | Architecture Go/No-Go | planned |
@@ -182,6 +182,34 @@ evidence-only: the public framework-neutral `fresh/reattached/rehydrated/
 interrupted` contract is unchanged and the DSH session id never becomes the BYQ
 `AgentSession` identity.
 
+## 4b. D15-3R — Real isolated BYQ runtime continuity (PASS)
+
+A real isolated BYQ stack (dedicated compose project `byq-d15-runtime`, dedicated
+network/volumes, fresh PostgreSQL, loopback-only ports) ran the rebuilt fixed
+`dsh-0.1.5rc1` candidate runtime-adapter together with the real Gateway, Backend
+and MCP services. A keyless deterministic loopback provider drove the turns.
+
+Result (2026-09-20): **PASS** for adapter/DSH process interruption+restart,
+Gateway disconnect/reconnect, generation replacement, DSH child interruption and
+executor takeover. Each row records before/after session, goal, approval,
+action-receipts, result, adapter pid, generation and executor epoch; original
+goal retained; redelivery deduplicated with one side effect; approval not
+bypassed; result traceable; generation replacement produced a new generation and
+executor takeover incremented the monotonic epoch `1 -> 2` with an immutable
+audit and no database write.
+
+**Proof boundary.** The provider is scripted and keyless, so this is
+service-boundary runtime-continuity evidence and **not** real-LLM-quality
+semantic evidence. Host reboot is `NOT_RUN` (a container restart is not a host
+reboot). D15-4/D15-5/D15-G and R3 are not in this batch.
+
+Evidence: [`docs/evidence/d15/d15-runtime/`](../evidence/d15/d15-runtime/README.md)
+(`observations.v1.json`, `verdict.v1.json`, `negative-controls.v1.json`,
+`stack.v1.json`, per-row `scenarios/*.v1.json`). Harness:
+`scripts/d15/runtime_continuity/{contract.v1.json,observer.py,scripted_provider.py,run_qualification.py}`
+and `tests/test_dsh_d15_runtime_continuity.py`. The observer is fail-able: 18
+negative controls each force a non-zero exit while a known-good fixture passes.
+
 ## 5. D15-4 — Subagent / fork continuity
 
 Verify parent/child identity, child session persistence, continuable descriptor,
@@ -274,3 +302,10 @@ are taken). The `.155` manifest is created new; no prior immutable manifest
 (`.151`–`.154`) is modified and no `main` history is rewritten. Selector,
 `compose.yml`, `deployment.json`, the immutable release registry and 0.1.2
 artifacts/evidence are unchanged, and no deployment occurs.
+
+D15-3R adds the runtime-continuity harness, observer, contract and tests under
+`scripts/d15/` and `tests/`, which are part of the build-input inventory, so the
+revision advances `post-u8.159` -> `post-u8.160` (`.158`/`.159` were already
+taken by in-flight/main identities). This is a rebuild identity bump only: no
+selector, `compose.yml`, `deployment.json`, immutable release registry or 0.1.2
+artifact/evidence change and no deployment.

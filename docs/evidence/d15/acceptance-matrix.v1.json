@@ -90,6 +90,49 @@
       "evidence_path": "docs/evidence/d15/d15-3"
     },
     {
+      "id": "D15-3R",
+      "name": "Real Isolated BYQ Runtime-Continuity Qualification",
+      "result": "PASS",
+      "layer": "real isolated BYQ services (Gateway + runtime-adapter candidate + Backend + MCP), scripted keyless provider",
+      "proves": "across real process/service faults the durable AgentSession survives, the original goal is retained, the durable prompt/idempotency receipts and the domain idempotency receipts deduplicate redelivery, the persistent approval is not bypassed, the result is traceable, and generation replacement / executor takeover behave as contracted",
+      "does_not_prove": "real-LLM-quality semantic behaviour (the provider is scripted/keyless); D15-4 subagent/fork continuity; D15-5 persistent terminal; host reboot (not executed); production cutover; R3",
+      "criteria": [
+        "an acceptance contract and an independent fail-able observer exist before scenarios run",
+        "the observer fails (non-zero exit) on missing evidence, original-goal drift, duplicate side effect, approval bypass, fabricated continuity and sequence gaps",
+        "adapter/DSH process interruption+restart, Gateway disconnect/reconnect, generation replacement and executor takeover are executed against real services",
+        "before/after capture records session/goal/approval/action-receipts/result plus adapter pid, generation and executor epoch",
+        "durable prompt and domain idempotency receipts deduplicate redelivery with one side effect",
+        "the persistent approval is not bypassed and the initiating actor cannot self-approve",
+        "internal diagnostic continuity never replaces the public fresh/reattached/rehydrated/interrupted contract",
+        "isolated stack uses a dedicated compose project, network, volumes and fresh PostgreSQL; production is untouched",
+        "cleanup removes all isolated containers, networks and volumes"
+      ],
+      "criterion_results": [
+        {"criterion": "acceptance contract + fail-able observer exist first", "result": "PASS", "evidence": "scripts/d15/runtime_continuity/contract.v1.json + observer.py committed with tests; observer exits non-zero on any violation and on unreadable artifacts"},
+        {"criterion": "observer fails on every fail-closed condition", "result": "PASS", "evidence": "negative-controls.v1.json: 18 controls, baseline_all_pass=true, all_controls_pass=true; each control observed_all_pass=false/exit_code=1 while pre_fix_would_pass=true"},
+        {"criterion": "real fault rows executed", "result": "PASS", "evidence": "observations.v1.json and scenarios/: adapter-process-restart, gateway-disconnect-reconnect, generation-replacement, dsh-process-interruption and executor-takeover all PASS"},
+        {"criterion": "before/after capture", "result": "PASS", "evidence": "each scenario records session_id/trace_id/adapter_pid/generation/executor_epoch/goal/approval/action_receipts/result (verdict before_after_captured=true)"},
+        {"criterion": "idempotent redelivery, one side effect", "result": "PASS", "evidence": "verdict no_duplicate_side_effect=true; provider call count unchanged on prompt replay and pool replay returns the same pool_id"},
+        {"criterion": "approval not bypassed", "result": "PASS", "evidence": "verdict approval_not_bypassed=true; expired-approval-reuse and initiator-self-approval negative controls fail the verdict"},
+        {"criterion": "public continuity contract unchanged", "result": "PASS", "evidence": "verdict continuity_truthful=true over fresh/reattached/rehydrated/interrupted; no DSH session id is projected"},
+        {"criterion": "isolation", "result": "PASS", "evidence": "stack.v1.json preflight: dedicated project, loopback-only ports, candidate dsh-0.1.5rc1, adapter image digest; production stack never referenced"},
+        {"criterion": "cleanup", "result": "PASS", "evidence": "stack.v1.json cleanup: containers_before=6, containers_remaining=0, networks_remaining=0, volumes_remaining=0"}
+      ],
+      "failure_rows": ["Adapter restart", "Gateway restart/reconnect", "DSH crash", "RuntimeGeneration replacement", "executor takeover"],
+      "evidence": [
+        "docs/evidence/d15/d15-runtime/observations.v1.json",
+        "docs/evidence/d15/d15-runtime/verdict.v1.json",
+        "docs/evidence/d15/d15-runtime/negative-controls.v1.json",
+        "docs/evidence/d15/d15-runtime/stack.v1.json",
+        "docs/evidence/d15/d15-runtime/scenarios/adapter-process-restart.v1.json",
+        "docs/evidence/d15/d15-runtime/scenarios/gateway-disconnect-reconnect.v1.json",
+        "docs/evidence/d15/d15-runtime/scenarios/generation-replacement.v1.json",
+        "docs/evidence/d15/d15-runtime/scenarios/dsh-process-interruption.v1.json",
+        "docs/evidence/d15/d15-runtime/scenarios/executor-takeover.v1.json"
+      ],
+      "evidence_path": "docs/evidence/d15/d15-runtime"
+    },
+    {
       "id": "D15-4",
       "name": "Subagent/Fork Continuity Qualification",
       "result": "NOT_RUN",

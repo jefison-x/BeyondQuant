@@ -1,0 +1,153 @@
+{
+  "all_controls_pass": true,
+  "baseline_all_pass": true,
+  "baseline_exit_code": 0,
+  "control_count": 18,
+  "controls": [
+    {
+      "control": "missing-required-scenario",
+      "first_failure": "missing required scenario 'adapter-process-restart'",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "passes": true,
+      "pre_fix_would_pass": true
+    },
+    {
+      "control": "duplicate-scenario-id",
+      "first_failure": "duplicate scenario id in observations",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "passes": true,
+      "pre_fix_would_pass": true
+    },
+    {
+      "control": "unknown-scenario-id",
+      "first_failure": "unknown scenario id 'invented-scenario' (closed set)",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "passes": true,
+      "pre_fix_would_pass": true
+    },
+    {
+      "control": "missing-evidence-field",
+      "first_failure": "scenario[adapter-process-restart].after: missing 'goal'",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "passes": true,
+      "pre_fix_would_pass": true
+    },
+    {
+      "control": "original-goal-drift",
+      "first_failure": "scenario[adapter-process-restart]: original goal drifted or prompt receipt was not retained",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "passes": true,
+      "pre_fix_would_pass": true
+    },
+    {
+      "control": "duplicate-side-effect",
+      "first_failure": "scenario[adapter-process-restart].after.action_receipts[0]: duplicate side effect (side_effect_count=2)",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "passes": true,
+      "pre_fix_would_pass": true
+    },
+    {
+      "control": "replay-did-not-deduplicate",
+      "first_failure": "scenario[adapter-process-restart].after.action_receipts[0]: replay did not deduplicate the side effect",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "passes": true,
+      "pre_fix_would_pass": true
+    },
+    {
+      "control": "changed-replay-receipt",
+      "first_failure": "scenario[adapter-process-restart].after.action_receipts[0]: replay did not deduplicate the side effect",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "passes": true,
+      "pre_fix_would_pass": true
+    },
+    {
+      "control": "approval-bypassed",
+      "first_failure": "scenario[adapter-process-restart].after.approval: approval was bypassed",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "passes": true,
+      "pre_fix_would_pass": true
+    },
+    {
+      "control": "expired-approval-reuse",
+      "first_failure": "scenario[adapter-process-restart].after.approval: recorded approval reuse was not denied",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "passes": true,
+      "pre_fix_would_pass": true
+    },
+    {
+      "control": "initiator-self-approval",
+      "first_failure": "scenario[adapter-process-restart].after.approval: initiator self-approved",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "passes": true,
+      "pre_fix_would_pass": true
+    },
+    {
+      "control": "fabricated-fresh-continuity",
+      "first_failure": "scenario[adapter-process-restart]: fabricated continuity 'fresh' after a fault",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "passes": true,
+      "pre_fix_would_pass": true
+    },
+    {
+      "control": "sequence-regression",
+      "first_failure": "scenario[adapter-process-restart]: result sequence regressed or is not contiguous",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "passes": true,
+      "pre_fix_would_pass": true
+    },
+    {
+      "control": "non-contiguous-trace",
+      "first_failure": "scenario[adapter-process-restart]: result was not durably traceable",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "passes": true,
+      "pre_fix_would_pass": true
+    },
+    {
+      "control": "not-run-without-reason",
+      "first_failure": "scenario[adapter-process-restart]: NOT_RUN without a reason",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "passes": true,
+      "pre_fix_would_pass": true
+    },
+    {
+      "control": "candidate-mismatch",
+      "first_failure": "candidate mismatch: expected 'dsh-0.1.5rc1', got {'release': 'dsh-0.1.2rc1'}",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "passes": true,
+      "pre_fix_would_pass": true
+    },
+    {
+      "control": "llm-claims-real-quality",
+      "first_failure": "LLM evidence class must be explicitly keyless/scripted with real_llm_quality=false",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "passes": true,
+      "pre_fix_would_pass": true
+    },
+    {
+      "control": "fault-not-applied",
+      "first_failure": "scenario[adapter-process-restart]: fault_applied is not true (scenario was not actually exercised)",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "passes": true,
+      "pre_fix_would_pass": true
+    }
+  ],
+  "schema_version": "byq-d15-runtime-negative-controls.v1"
+}
