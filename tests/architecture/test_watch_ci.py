@@ -1,10 +1,14 @@
 """Behaviour and negative tests for the bounded CI status watcher.
 
-The negative cases below encode the four CI-A review defects: run-id prefix
+The negative cases below encode the CI-A review defects: run-id prefix
 collisions and foreign/malformed URLs must not be treated as the requested run;
 an expired or superseded run attempt must never inherit the latest rollup; a
 ``gh`` timeout/OSError must fail closed through the structured retry path; and
 ``--once`` must be truly single-shot while the wall-time budget is a real bound.
+A rerun reuses the same run id, so the authoritative attempt status and
+attempt-specific job identity must gate the verdict too: a running or failed
+attempt, a stale attempt's jobs, or an attempt/head change during the read can
+never inherit an old green.
 """
 import importlib.util
 import json
@@ -58,6 +62,31 @@ def run_facts(attempt=1, head=HEAD, name="BeyondQuant CI", repo=REPO, run_id=RUN
         "status": "in_progress",
         "conclusion": None,
         "repository": {"full_name": repo},
+    }
+
+
+def job_url(job_id, run_id=RUN):
+    return f"https://github.com/{REPO}/actions/runs/{run_id}/job/{job_id}"
+
+
+def green_checks(job_ids=(11, 12)):
+    return [check("local-ci", "COMPLETED", "SUCCESS", job_url(job_ids[0])),
+            check("ci-gate", "COMPLETED", "SUCCESS", job_url(job_ids[1]))]
+
+
+def attempt_facts(status="completed", conclusion="success", attempt=2, head=HEAD,
+                  jobs=((21, "local-ci"), (22, "ci-gate"))):
+    return {
+        "id": int(RUN),
+        "run_attempt": int(attempt),
+        "run_number": 465,
+        "head_sha": head,
+        "name": "BeyondQuant CI",
+        "status": status,
+        "conclusion": conclusion,
+        "repository": {"full_name": REPO},
+        "jobs": [{"id": job_id, "name": name, "status": "completed",
+                  "conclusion": "success", "head_sha": head} for job_id, name in jobs],
     }
 
 
@@ -194,6 +223,82 @@ class RunAttemptVerificationTests(unittest.TestCase):
             code, final = watch.run_watch(fetch, HEAD, once=True, emit=lambda _: None)
         self.assertEqual(code, 3)
         self.assertEqual(final["result"], "BLOCKED")
+
+
+class AttemptStatusTests(unittest.TestCase):
+    """A rerun reuses the same run id, so the attempt number alone is not proof
+    that the rollup belongs to the running attempt: the authoritative attempt
+    status and attempt-specific job identity must gate the verdict."""
+
+    def _watch_once(self, observation):
+        return watch.run_watch(lambda _remaining=None: observation, HEAD, once=True,
+                               emit=lambda _: None)
+
+    def test_running_attempt_with_old_green_is_not_pass(self):
+        observation = {"head": HEAD, "checks": green_checks((1, 1)), "run_id": RUN,
+                       "run_attempt": "2",
+                       "run": attempt_facts(status="in_progress", conclusion=None, attempt=2,
+                                            jobs=((21, "local-ci"), (22, "ci-gate")))}
+        code, final = self._watch_once(observation)
+        self.assertNotEqual(code, 0)
+        self.assertNotEqual(final["result"], "PASS")
+        self.assertEqual(final["result"], "PENDING")
+
+    def test_failed_attempt_with_old_green_is_not_pass(self):
+        observation = {"head": HEAD, "checks": green_checks((1, 1)), "run_id": RUN,
+                       "run_attempt": "2",
+                       "run": attempt_facts(status="completed", conclusion="failure", attempt=2,
+                                            jobs=((21, "local-ci"), (22, "ci-gate")))}
+        code, final = self._watch_once(observation)
+        self.assertNotEqual(code, 0)
+        self.assertNotEqual(final["result"], "PASS")
+        self.assertEqual(final["result"], "FAIL")
+
+    def test_stale_attempt_jobs_with_old_green_are_blocked(self):
+        # Attempt 2 is completed+success but the rollup still carries attempt 1
+        # job ids, so check identity cannot be proven and the green is not PASS.
+        observation = {"head": HEAD, "checks": green_checks((1, 2)), "run_id": RUN,
+                       "run_attempt": "2",
+                       "run": attempt_facts(attempt=2, jobs=((21, "local-ci"), (22, "ci-gate")))}
+        code, final = self._watch_once(observation)
+        self.assertNotEqual(final["result"], "PASS")
+        self.assertEqual(final["result"], "BLOCKED")
+
+    def test_attempt_change_during_read_does_not_inherit_old_green(self):
+        # verify_run_attempt sees attempt 2, the rollup is old green, and the
+        # post-read shows attempt 3: the read must fail closed.
+        latest = {"n": 0}
+
+        def fake_gh(args, timeout=None):
+            joined = " ".join(args)
+            if "/jobs" in joined:
+                return {"jobs": [
+                    {"id": 31, "name": "local-ci", "status": "in_progress",
+                     "conclusion": None, "head_sha": HEAD},
+                    {"id": 32, "name": "ci-gate", "status": "in_progress",
+                     "conclusion": None, "head_sha": HEAD},
+                ]}
+            if "/attempts/" in joined:
+                return run_facts(attempt=2)
+            if "/actions/runs/" in joined:
+                latest["n"] += 1
+                return run_facts(attempt=2 if latest["n"] == 1 else 3)
+            return rollup()
+
+        fetch = watch.fetch_pr(REPO, 326, RUN, run_attempt="2", expected_head=HEAD)
+        with mock.patch.object(watch, "_gh_json", side_effect=fake_gh):
+            code, final = watch.run_watch(fetch, HEAD, once=True, emit=lambda _: None)
+        self.assertNotEqual(final["result"], "PASS")
+        self.assertEqual(final["result"], "BLOCKED")
+        self.assertEqual(code, 3)
+
+    def test_current_attempt_success_still_passes(self):
+        observation = {"head": HEAD, "checks": green_checks((21, 22)), "run_id": RUN,
+                       "run_attempt": "2",
+                       "run": attempt_facts(attempt=2, jobs=((21, "local-ci"), (22, "ci-gate")))}
+        code, final = self._watch_once(observation)
+        self.assertEqual(final["result"], "PASS")
+        self.assertEqual(code, 0)
 
 
 class GhJsonFailureTests(unittest.TestCase):

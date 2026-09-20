@@ -72,9 +72,11 @@ Status: maintenance execution plan，非 Product Phase，非永久授权。
    单次、不 sleep、不重试）与有界可恢复观察（`--budget-seconds`，整次调用硬上限，
    含 API 读与失败日志）。`--run-id` 只匹配格式正确且 owner/repo 一致的完整数字
    路径段（避免 123 命中 12345）；`--run-attempt` 通过 Actions API 校验 head、workflow、
-   repo 与 attempt，过期/被取代的 attempt 不继承最新 rollup 或陈旧 green。只在状态
-   变化时输出；对 429/5xx/timeout 做有限指数退避；403、未知、缺失、过期一律
-   BLOCKED/STALE（退出码 3），绝不返回 PASS；失败时用有界脱敏日志。watcher 不是合并授权工具。
+   repo、attempt 状态与该 attempt 的 job 身份，并在读取前后复核 attempt/head：运行中或
+   失败、被取代、job 不属于当前 attempt、或读取窗口内 attempt/head 变化，都不得沿用过
+   去 green。只在状态变化时输出；对 429/5xx/timeout 做有限指数退避；403、未知、缺失、
+   过期一律 BLOCKED/STALE（退出码 3），绝不返回 PASS；失败时用有界脱敏日志。watcher 不是
+   合并授权工具。
 4. 合同/负例测试：workflow 结构（依赖、聚合、取消/cleanup）、缺失矩阵/空计划
    必须失败、contribution API 失败/过期 head 失败、watcher 的 PASS/FAIL/PENDING/
    BLOCKED/STALE、退避与预算有界、单次读取不 sleep、仅在状态变化时输出。
