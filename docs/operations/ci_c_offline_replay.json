@@ -858,7 +858,7 @@
     "estimated_total_saved_minutes": 0.0
   },
   "isolated_narrowing_class_estimates": {
-    "note": "Hypothetical future PR whose only changed path is the listed class; not observed in recent history. Same baseline seconds; ESTIMATE only.",
+    "note": "Hypothetical future PR whose only changed path is the listed class; not observed in recent history. Same baseline seconds; ESTIMATE only. runtime-adapter tests is no longer narrowed: the exact-whitelist fix makes the whole family fail closed, so its dropped-lane estimate is 0.",
     "records": [
       {
         "paths": [
@@ -888,33 +888,7 @@
       },
       {
         "paths": [
-          "services/runtime-adapter/tests/test_chat_admission.py"
-        ],
-        "old_lanes": [
-          "architecture",
-          "backend",
-          "gateway",
-          "runtime",
-          "mcp",
-          "frontend",
-          "integration"
-        ],
-        "new_lanes": [
-          "runtime",
-          "integration"
-        ],
-        "dropped_lanes": [
-          "architecture",
-          "backend",
-          "gateway",
-          "mcp",
-          "frontend"
-        ],
-        "estimated_saved_seconds": 1652
-      },
-      {
-        "paths": [
-          "scripts/dsh/production_observe.py"
+          "scripts/dsh/production_backup.py"
         ],
         "old_lanes": [
           "architecture",
@@ -937,10 +911,35 @@
           "integration"
         ],
         "estimated_saved_seconds": 2243
+      },
+      {
+        "paths": [
+          "services/runtime-adapter/tests/test_chat_admission.py"
+        ],
+        "old_lanes": [
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "new_lanes": [
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "dropped_lanes": [],
+        "estimated_saved_seconds": 0
       }
     ],
-    "estimated_total_saved_seconds": 5453,
-    "estimated_total_saved_minutes": 90.9
+    "estimated_total_saved_seconds": 3801,
+    "estimated_total_saved_minutes": 63.4
   },
   "baseline_lane_seconds": {
     "docs": 26,

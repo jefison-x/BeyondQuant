@@ -204,9 +204,10 @@ class CiRoutingContractTests(unittest.TestCase):
 
         plan = classify(
             "docs/operations/self-hosted-ci.md",
-            "services/runtime-adapter/tests/test_continuation_budget_process.py",
+            "packages/operations/admission.py",
         )
         self.assertEqual(plan["docs"], "yes")
+        self.assertEqual(plan["gateway"], "yes")
         self.assertEqual(plan["runtime"], "yes")
         self.assertEqual(plan["integration"], "yes")
         self.assertEqual(plan["backend"], "no")
@@ -259,32 +260,86 @@ class CiRoutingContractTests(unittest.TestCase):
                 os.chdir(original)
             self.assertIn("integration", [entry["lane"] for entry in result["include"]])
 
-    def test_proven_safe_narrowings_keep_only_required_lanes(self) -> None:
-        # packages/operations is imported only by Gateway and the runtime
-        # adapter; it is a cross-boundary startup gate, so integration stays.
+    def test_exact_whitelist_is_the_only_narrowing(self) -> None:
+        # packages/operations/admission.py is the only audited file in that
+        # directory: imported only by Gateway and the runtime adapter, and it is
+        # a cross-boundary startup gate, so integration stays.
         plan = classify("packages/operations/admission.py")
         self.assertEqual(plan["gateway"], "yes")
         self.assertEqual(plan["runtime"], "yes")
         self.assertEqual(plan["architecture"], "yes")
         self.assertEqual(plan["integration"], "yes")
+        self.assertEqual(plan["unknown"], "no")
         for component in ("backend", "mcp", "frontend"):
             self.assertEqual(plan[component], "no")
 
-        # runtime-adapter tests are test-only: the runtime lane executes them and
-        # the integration candidate qualification mounts them.
-        plan = classify("services/runtime-adapter/tests/test_chat_admission.py")
-        self.assertEqual(plan["runtime"], "yes")
-        self.assertEqual(plan["integration"], "yes")
-        for component in ("backend", "gateway", "mcp", "frontend"):
-            self.assertEqual(plan[component], "no")
+        # Only the exact audited operator scripts are narrowed; each is consumed
+        # solely by root architecture tests.
+        for path in (
+            "scripts/dsh/production_backup.py",
+            "scripts/dsh/production_observe.py",
+            "scripts/dsh/production_session_backup.py",
+        ):
+            with self.subTest(path=path):
+                plan = classify(path)
+                self.assertEqual(plan["architecture"], "yes")
+                self.assertEqual(plan["integration"], "no")
+                self.assertEqual(plan["unknown"], "no")
+                for component in COMPONENTS:
+                    self.assertEqual(plan[component], "no")
 
-        # Operator-only production scripts: no service or CI lane imports them,
-        # only root architecture tests exercise them.
-        plan = classify("scripts/dsh/production_observe.py")
-        self.assertEqual(plan["architecture"], "yes")
-        self.assertEqual(plan["integration"], "no")
+    def test_unreviewed_family_members_fail_closed(self) -> None:
+        # A new file, a non-whitelisted sibling or a nested path in an audited
+        # family is NOT covered by the exact whitelist and must fail closed.
+        for path in (
+            "packages/operations/new_unreviewed.py",
+            "packages/operations/sub/nested.py",
+            "services/runtime-adapter/tests/test_chat_admission.py",
+            "services/runtime-adapter/tests/nested/helper.py",
+            "scripts/dsh/production_new_unreviewed.py",
+            "scripts/dsh/production_application_backup.py",
+            "scripts/dsh/production_restore_check.py",
+            "scripts/dsh/production_nested/helper.py",
+        ):
+            with self.subTest(path=path):
+                self.assert_full_fail_closed(path)
+
+    def test_delete_or_rename_of_whitelisted_file_fails_closed(self) -> None:
+        # With --no-renames a deleted/renamed source path is fed to the
+        # classifier; the exact whitelisted file no longer exists on disk, so it
+        # must be treated as unknown rather than narrowed.
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            for path in (
+                "packages/operations/admission.py",
+                "scripts/dsh/production_backup.py",
+            ):
+                with self.subTest(path=path):
+                    result = subprocess.run(
+                        [str(ROOT / "scripts/ci/classify-changes.sh")],
+                        cwd=folder,
+                        input=path + "\n",
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+                    plan = dict(line.split("=", 1) for line in result.stdout.splitlines())
+                    self.assertEqual(plan["unknown"], "yes", path)
+                    self.assertEqual(plan["docs_only"], "no", path)
+                    self.assertEqual(plan["integration"], "yes", path)
+                    for component in COMPONENTS:
+                        self.assertEqual(plan[component], "yes", f"{path}:{component}")
+
+    def test_mixed_whitelist_and_unreviewed_member_takes_risk_union(self) -> None:
+        plan = classify(
+            "packages/operations/admission.py",
+            "packages/operations/new_unreviewed.py",
+        )
+        # The unreviewed member dominates: full conservative plan.
+        self.assertEqual(plan["unknown"], "yes")
+        self.assertEqual(plan["integration"], "yes")
         for component in COMPONENTS:
-            self.assertEqual(plan[component], "no")
+            self.assertEqual(plan[component], "yes")
 
 
 if __name__ == "__main__":

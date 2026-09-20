@@ -207,54 +207,65 @@ setup 时间可量化下降、失败路径与隔离回归通过。任何 schema/
 - `services/runtime-adapter/app`、`services/runtime-adapter/runtime`：生产 runtime 协议边界，
   由 `runtime` lane 执行，跨边界行为由 integration 的 candidate/F6 资格覆盖 → 保持
   all+integration。
-- `services/runtime-adapter/tests`：仅测试；`runtime` lane 直接执行，integration 的
-  `check_dsh_candidate` 挂载运行；无其它服务或组件 suite 引用 → 收窄为 runtime+integration。
+- `services/runtime-adapter/tests`：审查后**不纳入收窄**。虽是测试，但目录内文件众多且
+  `d15_candidate_probe.py`/`f6_synthetic_runtime.py` 等由 integration 挂载；无法以单文件
+  级更省的证据替代保守覆盖 → 整族显式 fail-closed（full+integration+unknown）。
 - `services/runtime-adapter/Dockerfile*`、`pyproject.toml`、`requirements*.lock`：build identity、
   依赖与容器启动 → 保持保守。
 - `scripts/dsh/*`：`release.py`/`promotion.py`/`build_revision.py`/`historical_inputs.py`/
   `plugin_registry.py`/`web_evidence_provenance.py` 属 build identity/selector → 保持
-  all+integration；`scripts/dsh/production_*.py` 仅由根 architecture 测试与其它 ops 脚本引用，
-  无服务、镜像或 CI lane 导入（候选镜像 COPY 列表不含 `scripts/`）→ 收窄为 architecture。
+  all+integration。仅逐个审计过的 operator 脚本（见下表）收窄为 architecture；其余
+  `scripts/dsh/production_*` 显式 fail-closed（`production_application_backup.py` 与
+  `production_restore_check.py` 无根测试消费者，保持保守）。
 - `packages/contracts/*`：由 backend/gateway/runtime 引入且属共享机器可读契约 → 保持
-  all+integration；`packages/operations/*` 仅 `services/gateway/app/main.py` 与
-  `services/runtime-adapter/app/main.py` 引入，根 `tests/` 覆盖，是 Gateway/Adapter 跨边界
-  启动门 → gateway+runtime+architecture+integration。
+  all+integration；`packages/operations/` 目录下只有 `admission.py` 被逐一审计（仅
+  `services/gateway/app/main.py` 与 `services/runtime-adapter/app/main.py` 引入，根 `tests/`
+  覆盖，是 Gateway/Adapter 跨边界启动门）→ gateway+runtime+architecture+integration；
+  目录内其它文件不推断，显式 fail-closed。
 - 未知/新路径：仍 `unknown=yes` + all+integration，未放宽。
 
-### 收窄（证据支持的最小集）
+### 收窄（精确审计文件白名单，不使用前缀/glob）
 
-| 路径类 | 新选择 | 依据 |
+| 精确文件 | 新选择 | 逐一审计依据 |
 |---|---|---|
-| `packages/operations/*` | gateway+runtime+architecture+integration | 仅两个服务 import；integration 保留跨边界启动门 |
-| `services/runtime-adapter/tests/*` | runtime+integration | 纯测试；runtime lane + candidate 资格挂载 |
-| `scripts/dsh/production_*.py` | architecture | 仅根架构测试覆盖；无服务/镜像/CI 引用 |
+| `packages/operations/admission.py` | gateway+runtime+architecture+integration | 仅 gateway/runtime-app import；根 `tests/test_chat_admission.py`；跨边界启动门保留 integration |
+| `scripts/dsh/production_backup.py` | architecture | 仅根 `tests/test_dsh_production_backup.py` 与同族 operator 脚本引用；无服务/镜像/CI |
+| `scripts/dsh/production_observe.py` | architecture | 仅根 `tests/test_dsh_production_observe.py`；无服务/镜像/CI |
+| `scripts/dsh/production_session_backup.py` | architecture | 仅根 `tests/test_dsh_session_backup.py`；无服务/镜像/CI |
+
+三族各自的**未列入白名单成员**（新文件、同族未审计文件、嵌套子目录、rename 目标、被删除的
+白名单文件）都由显式 guard 归为 `unknown=yes` + all+integration。
 
 delete/rename：`plan.py` 与 `local-ci.sh` 的 diff 增加 `--no-renames`，使移动的旧路径也进入
-风险并集，目的地低风险不能掩盖旧路径。
+风险并集；被删除/改名的白名单文件因 `[ ! -f ]` 也 fail-closed。
 
 ### 离线回放（ESTIMATE，非测量）
 
 - 输入：最近 13 个 PR（含 #326/#329/#327/#324 等）的 changed-file 列表，本地 git 计算，
   **未触发任何新 Full 运行**。
 - 结果：这些 PR 同时改动 build-identity/依赖/契约/runtime-protocol 路径，收窄类不改变其
-  选择（0 lane 变化）；最近 80 个提交中三个收窄类从未单独出现。
+  选择（**13 个 PR 合计 0 lane 变化**）；最近 80 个提交中精确白名单文件从未单独出现。
 - 单类隔离估计（假设未来 PR 只改该类；复用基线 run `35471161872` 的 lane 秒数）：
-  `packages/operations` 约 −1558s、runtime-adapter tests 约 −1652s、production ops 约 −2243s。
+  `packages/operations/admission.py` 约 −1558s、`production_backup.py` 约 −2243s；
+  runtime-adapter tests 已不再收窄，估计为 0。
 - 原始输入/输出：`docs/operations/ci_c_offline_replay.json`。**全部标记为 ESTIMATE，
-  不是测量值，也不是 CI-C 的合并收益声明。**
+  不是测量值；CI-C 未交付整体加速，不得据此声称墙钟收益。**
 
 ### 路由合同与负例
 
-`tests/architecture/test_ci_policy.py` 新增 `CiRoutingContractTests`：未知/新路径 fail-closed；
+`tests/architecture/test_ci_policy.py` 的 `CiRoutingContractTests`：未知/新路径 fail-closed；
 契约、内联 DDL 移除、迁移、lock/依赖、容器启动、runtime-protocol 跨边界、build-identity
 保持覆盖；混合变更取风险并集；delete/rename 取旧+新并做真实 git rename 端到端回放；
-收窄类只保留所需 lane。
+精确白名单文件只保留所需 lane。新增逐族负例：**未审计同族文件/新文件/嵌套子目录/被删除或
+改名的白名单文件/混合变更**都必须 full+integration+`unknown=yes`（这些负例在修复前的
+wildcard 版本上失败，在精确白名单上通过）。
 
 ### 构建身份
 
 本批改动 `scripts/`、`tests/` 等 build inputs → 按规则新建不可变
-`config/dsh/builds/dsh-0.1.2rc1-post-u8.158.json`，selector 与候选 Dockerfile COPY 指向
-`.158`；历史清单与既有证据不改写、不覆盖。
+`config/dsh/builds/dsh-0.1.2rc1-post-u8.158.json`（首个 CI-C 提交）；精确白名单修复再次改动
+build inputs → 再新建 `config/dsh/builds/dsh-0.1.2rc1-post-u8.159.json`，selector 与候选
+Dockerfile COPY 指向 `.159`。`.158` 不覆盖、不删除，历史清单与既有证据保持只读。
 
 验收：负例（未知、移除内联 DDL、契约/迁移）仍触发 integration；新增最小影响的分类负例；
 无漏测；`make dev-check` + 定向合同测试通过；无付费 runner、无安全检查弱化。
