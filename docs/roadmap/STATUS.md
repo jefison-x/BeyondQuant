@@ -22,8 +22,8 @@
 |---|---|---|---|---|
 | Product | 最近完成 Phase 97（marker 97） | 未授权任何新的 Product Phase | 维护者阶段性授权 + 本文件 next phase | 一阶段一 worktree/Draft PR；Human Merge Gate；不得自授新 Phase |
 | 数据/资格 | Phase 98 资格与基准冻结已授权（#282，2026-09-17）；Phase 99 `COMPLETE`（#283）；Phase 100 `IN_PROGRESS`（维护者 #285 于 2026-09-17 开启，冻结 Tushare 6000 数据集范围；P100-A 基金 provider 合同已并入 #286）；Phase 101 `COMPLETE` | 继续 Phase 100 切片 P100-B..E（`index_dailybasic`、申万行业、同花顺概念、Product 呈现），每切片独立 worktree/Draft PR | 维护者开启 Phase 100（#285）+ [V1_DATA_BASELINE_CONTRACT](V1_DATA_BASELINE_CONTRACT.md)「6000 积分可接入的数据集（Phase 100 实施范围）」；ADR-0074 为边界 ADR；Phase 98 授权只覆盖前置资格，**不**覆盖 Phase 100 实施范围 | 仅 Tushare、不用 Community；不支持分钟/实时/港股/特色数据；不得以“接口可调用/单次拉取成功”代替覆盖/时点/单位/许可证据；不改生产状态（除非另有部署授权）；HIST/THS 概念在证明历史可见性前保持 blocked |
-| 维护（当前） | D15 资格完整性、验收措辞与状态权威整改（PR #327，不推进 Product Phase）；被委托实现者交付 Draft | 被委托实现者停在 Draft；#327 的合并由原会话既有合并授权按 ADR-0015/0059 预发布 Gate 执行（按次生效，不写成永久规则） | 本次任务委托 develop/push/Draft；**合并授权属原会话既有授权，非本次新授予** | 被委托实现者不得 merge/deploy、不得启动 D15-4/R3、不得覆盖历史证据；`ADR-0081` 已于 2026-09-19 获维护者接受（Accepted） |
-| 依赖资格（D15） | D15-0/1/2/3/3R 完成（D15-2 格式层、D15-3 原生持久层、D15-3R 隔离 runtime 连续性均 `PASS`）；D15-4 `PARTIAL/BLOCKED`（原生 subagent/fork seam 6 项 + 1 支撑项通过；`child-crash`/BYQ `adapter-restart` `BLOCKED`；host reboot `NOT_RUN`）；D15-5 `PARTIAL/BLOCKED`（真实隔离原生 persistent terminal：page refresh/browser disconnect/frontend restart/gateway restart 四行 `PASS`，跨进程唯一 marker 无重放/丢失、权限不可绕过、错误 terminal 拒绝、stale generation/epoch fenced、清理无孤儿；`adapter-restart` 与 `dsh-runtime-restart` 必需项 `BLOCKED`，host reboot `NOT_RUN`）；R3 冻结、`R3_RESUME=NO` | D15-G（Go/No-Go，须等 D15-4 与 D15-5 两者真实结论）；host reboot 行 `NOT_RUN`，不等同容器重启 | 维护者 D15 目标决策（2026-09-19）+ 专项 D15 计划 | 不改生产 selector；候选隔离；D15-G 前不恢复 R3 |
+| 维护（当前） | D15-G architecture Go/No-Go 维护（独立 worktree/分支 `codex/phase-d15-g`，不推进 Product Phase）；交付结论 `NO_GO`（NOT-PASS） | 被委托实现者停在 Draft；合并由原会话既有授权按 ADR-0015/0059 预发布 Gate 按次执行（不写成永久规则） | 本次任务委托 develop/push/Draft；**合并授权属原会话既有授权，非本次新授予** | 被委托实现者不得 merge/deploy/release/tag/付费/重启主机；不得接受或实现 Proposed ADR-0082/0083；不得覆盖历史证据；`R3_RESUME = NO`、生产 selector 不变 |
+| 依赖资格（D15） | D15-0/1/2/3/3R 完成（D15-2 格式层、D15-3 原生持久层、D15-3R 隔离 runtime 连续性均 `PASS`）；D15-4 `PARTIAL/BLOCKED`（原生 subagent/fork seam 6 项 + 1 支撑项通过；`child-crash`/BYQ `adapter-restart` `BLOCKED`；host reboot `NOT_RUN`）；D15-5 `PARTIAL/BLOCKED`（真实隔离原生 persistent terminal：page refresh/browser disconnect/frontend restart/gateway restart 四行 `PASS`，跨进程唯一 marker 无重放/丢失、权限不可绕过、错误 terminal 拒绝、stale generation/epoch fenced、清理无孤儿；`adapter-restart` 与 `dsh-runtime-restart` 必需项 `BLOCKED`，host reboot `NOT_RUN`）；D15-G `NO_GO`（NOT-PASS，decision contract + fail-able observer；部分 PASS 不得聚合为 GO；child-crash/BYQ adapter restart/terminal adapter restart/DSH runtime restart 四项必需项未过，host reboot `NOT_RUN`；证据 `docs/evidence/d15/d15-g/`）；R3 冻结、`R3_RESUME=NO` | 无：D15-G 已给出 NO_GO，未授权任何后续 D15/R3/生产切换；R3 解冻需 GO 加 R3/R6 原生连续性证据 | 维护者 D15 目标决策（2026-09-19）+ 专项 D15 计划 | 不改生产 selector；候选隔离；NO_GO 后不恢复 R3；不接受/不实现 Proposed ADR-0082/0083 |
 
 **授权缺口（已解决）**：`ADR-0081` 曾为 `Proposed`，其文本写明“路线重排须在接受之后”，而专项 D15
 计划已实际实现该重排（D15 插在 R2 之后、R3 之前）。维护者已于 2026-09-19 接受 ADR-0081
@@ -197,7 +197,22 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
   compose terminal、未持久化 TerminalAttachment，真实拒绝而非伪造 reattach）；host reboot
   `NOT_RUN`。`interface-probe.v1.json` 证实 BYQ 无 terminal wiring；跨进程 reattach 边界以
   Proposed、未实现的 ADR-0083 记录。observer 因必需项未覆盖而非零退出，不主张完整 D15-5。
-- **D15-G（PLANNED）**：architecture Go/No-Go 尚未执行，须等 D15-4 与 D15-5 两者的真实结论；
+- **D15-G（NO_GO / NOT-PASS）**：architecture Go/No-Go 已执行。fail-able decision
+  contract（`scripts/d15/go_no_go/contract.v1.json`）与 observer（`observer.py`）从已提交
+  D15-2..D15-5 证据独立推导每个必需 capability 状态并验证 provenance sha256；只有全部必需
+  capability 为 `PASS` 才给 GO，任一必需项非 PASS 即强制 NO_GO 且必须具名 actionable blocker。
+  只有 atomic required capability 可作 blocker；aggregate capability 为 display-only（由其
+  atomic 成员推导，不得重复计为独立 blocker）；optional capability 为 limitation，不 gate GO、
+  不作 blocker。observer 拒绝把部分 PASS 聚合为 GO、拒绝 claimed 与 derived 不一致、拒绝缺失
+  blocker/证据/自声明字段、拒绝把 aggregate/optional 列为 blocker。`negative-controls.v1.json`
+  19 项控制全部被拒（18 项 defect-targeting，修复前 result-trusting 门禁会误报），已知“全部必需
+  PASS 且 optional host-reboot NOT_RUN”的合成 fixture 得到诚实 GO 并通过。推导结果：
+  root-session-persistence/process-restart-resume/fork-continuity/terminal-client-reattach
+  `PASS`；四个 atomic 必需项 subagent-child-crash、subagent-byq-adapter-restart、
+  terminal-adapter-restart、terminal-dsh-runtime-restart `BLOCKED`；aggregate
+  subagent-resume/terminal-persistence 因成员 `BLOCKED` 而 display `BLOCKED`；optional
+  host-reboot-resume 为 `NOT_RUN` limitation。**NO_GO 仅由四个 atomic 必需 blocker 决定。**
+  证据 `docs/evidence/d15/d15-g/`。GO 不隐含生产切换；Proposed ADR-0082/0083 未接受、未实现；
   `R3_RESUME = NO`。
 - **路线重排**：`R0 → R1 → R2 → D15 → R3 Thin Runtime Supervisor → R4 TerminalAttachment →
   R5 DurableJob independence → R6 Full Runtime Continuity Qualification → 独立 Production
@@ -232,8 +247,12 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
      continuable wiring 再推进 `.168 → .169`。D15-5 新增 `scripts/d15/terminal/`（原生 harness、
      contract、observer、interface probe）、`tests/test_dsh_d15_5_terminal.py`、
      `packages/contracts/terminal_attachment.py` 与 `docs/evidence/d15/d15-5/` 后推进
-     `post-u8.169 → .170`（仅重建身份，历史 manifest 与全部证据保留）。不部署、
-     不自动合并。`R3_RESUME = NO`，直至 D15-G 完成且有原生连续性证据。
+     `post-u8.169 → .170`（仅重建身份，历史 manifest 与全部证据保留）。D15-G 新增
+     `scripts/d15/go_no_go/`（decision contract、fail-able observer、provenance builder）、
+     `tests/test_dsh_d15_g_go_no_go.py` 与 `docs/evidence/d15/d15-g/` 后推进
+     `post-u8.170 → .171`（仅重建身份，历史 manifest 与全部证据保留）。不部署、
+     不自动合并。D15-G 结论为 `NO_GO`（NOT-PASS）；`R3_RESUME = NO`，仅 GO 加 R3/R6 原生
+     连续性证据才可重新评估。
 
 - 当前已完成阶段：**Phase 97**——回测任务拥有 Backend 权威、持久化的可读名称；名称与稳定 Backtest ID 在 Product 目录、
   技术详情和小巴任务投影中分离。名称搜索保持服务端分页，缺省名称来自已验证策略，历史任务由 PostgreSQL 前向修复补齐，

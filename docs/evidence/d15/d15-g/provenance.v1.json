@@ -1,0 +1,68 @@
+{
+  "artifacts": [
+    {
+      "id": "d15_2_verdict",
+      "introduced_by": "29ca9b583278a55892c7b14c691b4e1bb2c36694",
+      "introduced_date": "2026-09-20",
+      "layer": "session-format",
+      "modified_in_d15_g_commit": false,
+      "path": "docs/evidence/d15/d15-2/verdict.v3.json",
+      "sha256": "sha256:5195794c695f0fb458d1f71f60ad8c5822b9590c138af9f75b4f99a8fc59f06b",
+      "stage": "D15-2"
+    },
+    {
+      "id": "d15_3_results",
+      "introduced_by": "539b5e009d26e9c5b9ef84a297ede499632f1307",
+      "introduced_date": "2026-09-20",
+      "layer": "native-persistence-seam",
+      "modified_in_d15_g_commit": false,
+      "path": "docs/evidence/d15/d15-3/native-resume-results.v1.json",
+      "sha256": "sha256:df03722a96d1c99408536f20cce73b0d79da51b70a06349c199217832d3022ca",
+      "stage": "D15-3"
+    },
+    {
+      "id": "d15_runtime_verdict",
+      "introduced_by": "a206319b98e2c9078d42207f0056d83d285b821f",
+      "introduced_date": "2026-09-20",
+      "layer": "real-isolated-services",
+      "modified_in_d15_g_commit": false,
+      "path": "docs/evidence/d15/d15-runtime/verdict.v5.json",
+      "sha256": "sha256:3f1a9380eac06d440665ed0f5981343b038c08f403a48d9fd5a7a28792d6b25a",
+      "stage": "D15-3R"
+    },
+    {
+      "id": "d15_4_verdict",
+      "introduced_by": "940f9843d7ef8570da5e2afe85bff7f77fca5e6c",
+      "introduced_date": "2026-09-20",
+      "layer": "native-subagent-fork",
+      "modified_in_d15_g_commit": false,
+      "path": "docs/evidence/d15/d15-4/verdict.v2.json",
+      "sha256": "sha256:63058ce3a1857c1cf5794f99781171162f94f3f165fa08c4e8b76ff0004830bb",
+      "stage": "D15-4"
+    },
+    {
+      "id": "d15_5_verdict",
+      "introduced_by": "91d86b0788ebffe1736dcb3ca42aad964076c059",
+      "introduced_date": "2026-09-20",
+      "layer": "native-persistent-terminal",
+      "modified_in_d15_g_commit": false,
+      "path": "docs/evidence/d15/d15-5/verdict.v1.json",
+      "sha256": "sha256:fb99ff7fcd3a975ce7487e0627f2a88ed630509ed72f79fca140e75c24f92190",
+      "stage": "D15-5"
+    },
+    {
+      "id": "acceptance_matrix",
+      "introduced_by": "d66dce32b2a90ac21dbcc1263eb8909625dffff3",
+      "introduced_date": "2026-09-20",
+      "layer": "acceptance",
+      "modified_in_d15_g_commit": true,
+      "path": "docs/evidence/d15/acceptance-matrix.v1.json",
+      "sha256": "sha256:1b57e07bd8905284d6540707d2d73f19c1a40b43a8fd3432d9792074f52dcb89",
+      "stage": "D15"
+    }
+  ],
+  "generated_at": "2026-09-20",
+  "generated_from_head": "d66dce32b2a90ac21dbcc1263eb8909625dffff3",
+  "note": "Immutable D15-2..D15-5 evidence reused by the D15-G decision. introduced_by is the last commit that touched the path; modified_in_d15_g_commit marks paths changed by the D15-G commit itself (the D15-G acceptance-matrix annotation). No historical evidence was modified or overwritten.",
+  "schema_version": "byq-d15-g-provenance.v1"
+}

@@ -1,0 +1,87 @@
+{
+  "schema_version": "byq-d15-g-decision-input.v1",
+  "generated_at": "2026-09-20",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "python_sdk": "0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1"
+  },
+  "decision": "NO_GO",
+  "decision_note": "Honest architecture verdict. No required production capability may be claimed from partial PASS. GO is withheld until every required capability is proven PASS; GO would still not authorize a production cutover.",
+  "capabilities": {
+    "root-session-persistence": "PASS",
+    "process-restart-resume": "PASS",
+    "fork-continuity": "PASS",
+    "subagent-child-crash": "BLOCKED",
+    "subagent-byq-adapter-restart": "BLOCKED",
+    "terminal-client-reattach": "PASS",
+    "terminal-adapter-restart": "BLOCKED",
+    "terminal-dsh-runtime-restart": "BLOCKED"
+  },
+  "blockers": [
+    "subagent-byq-adapter-restart",
+    "subagent-child-crash",
+    "terminal-adapter-restart",
+    "terminal-dsh-runtime-restart"
+  ],
+  "aggregates": {
+    "subagent-resume": "BLOCKED",
+    "terminal-persistence": "BLOCKED"
+  },
+  "limitations": [
+    {
+      "id": "host-reboot-resume",
+      "status": "NOT_RUN",
+      "role": "optional-limitation",
+      "reason": "Rebooting the maintainer host is not authorized; the D15-4 and D15-5 contracts mark host-reboot OPTIONAL NOT_RUN. D15-3 only models the host-reboot path at the persistence seam, and a container/adapter restart is not a host reboot. It is a limitation, not a required blocker.",
+      "smallest_option": "An authorized real host reboot qualification in the isolated runtime, owned by R6."
+    }
+  ],
+  "blocker_details": [
+    {
+      "id": "subagent-child-crash",
+      "status": "BLOCKED",
+      "reason": "The composed native spawn provider runs children in-process, so a child-only SIGKILL while the parent executor stays alive is not isolatable. child-run-fault is supporting evidence only and is not used as a substitute.",
+      "smallest_option": "An out-of-process continuable child provider or the isolated runtime-adapter stack with a real DSH child process."
+    },
+    {
+      "id": "subagent-byq-adapter-restart",
+      "status": "BLOCKED",
+      "reason": "The committed byq_delegate_* composition loads with enableRunInBackground=false and never calls startContinuable(); no committed BYQ surface cold-resumes a continuable child after an adapter restart.",
+      "smallest_option": "A product-semantics durable-background-child contract plus a native out-of-process continuable provider; recorded as Proposed ADR-0082 and NOT implemented."
+    },
+    {
+      "id": "terminal-adapter-restart",
+      "status": "BLOCKED",
+      "reason": "An adapter restart kills the DSH runtime; native terminal sessions are process-local and the committed BYQ tree persists no TerminalAttachment, so a fresh adapter rejects the old attachment.",
+      "smallest_option": "A BYQ TerminalAttachment lifecycle over the native owner-scoped ctx.terminals seam (R4); recorded as Proposed ADR-0083 and NOT implemented."
+    },
+    {
+      "id": "terminal-dsh-runtime-restart",
+      "status": "BLOCKED",
+      "reason": "A restarted DSH runtime is a new process and native terminal sessions do not survive it; no BYQ reconnect surface exists.",
+      "smallest_option": "The same BYQ attachment layer plus an explicit lost/interrupted status; never a fabricated reattach."
+    }
+  ],
+  "aggregate_notes": {
+    "subagent-resume": "Display-only aggregate derived from the atomic subagent-child-crash and subagent-byq-adapter-restart capabilities; BLOCKED because a member is BLOCKED. Not an independent actionable blocker.",
+    "terminal-persistence": "Display-only aggregate derived from the atomic terminal-client-reattach, terminal-adapter-restart and terminal-dsh-runtime-restart capabilities; BLOCKED because a member is BLOCKED. Not an independent actionable blocker."
+  },
+  "evidence": {
+    "d15-2": ["docs/evidence/d15/d15-2/verdict.v3.json"],
+    "d15-3": ["docs/evidence/d15/d15-3/native-resume-results.v1.json"],
+    "d15-3R": ["docs/evidence/d15/d15-runtime/verdict.v5.json"],
+    "d15-4": ["docs/evidence/d15/d15-4/verdict.v2.json"],
+    "d15-5": ["docs/evidence/d15/d15-5/verdict.v1.json"],
+    "acceptance": ["docs/evidence/d15/acceptance-matrix.v1.json"]
+  },
+  "provenance": "docs/evidence/d15/d15-g/provenance.v1.json",
+  "constraints": {
+    "r3_resume": "NO",
+    "production_selector": "dsh-0.1.2rc1",
+    "production_default_unchanged": true,
+    "adr_0082": "Proposed, not accepted, not implemented",
+    "adr_0083": "Proposed, not accepted, not implemented",
+    "deployment": "none"
+  }
+}

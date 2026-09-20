@@ -12,9 +12,13 @@ BYQ adapter-restart child rebind still BLOCKED), D15-5 persistent-terminal (PTY)
 PARTIAL/BLOCKED (real isolated native terminal seam; page-refresh,
 browser-disconnect, frontend-restart and gateway-restart PASS; adapter-restart
 and DSH-runtime-restart required items BLOCKED; host reboot NOT_RUN — see §6),
-D15-G PLANNED / NOT_RUN (not started; must wait for both real D15-4 and D15-5
-conclusions). The cross-process terminal reattach boundary is a Proposed,
-unimplemented ADR-0083. `R3_RESUME = NO`.**
+D15-G architecture Go/No-Go **NO_GO (NOT-PASS)**: a fail-able decision contract
+and observer derive the verdict from the committed D15-2..D15-5 evidence and
+reject partial-PASS aggregation; the four atomic required items child-crash, BYQ
+adapter-restart, terminal adapter-restart and terminal DSH-runtime restart did
+not pass, while host reboot stays an OPTIONAL limitation NOT_RUN. The
+cross-process terminal reattach boundary is a Proposed, unimplemented ADR-0083.
+`R3_RESUME = NO`.**
 Relates: ADR-0079, ADR-0081, ADR-0058, ADR-0069, ADR-0003
 Evidence: `docs/evidence/d15/`
 Target decision: [`docs/evidence/d15/target-decision.v1.json`](../evidence/d15/target-decision.v1.json)
@@ -68,7 +72,7 @@ violate the "no second generic agent harness" rule.
 | D15-3R | Real Isolated BYQ Runtime-Continuity Qualification | **PASS** (scripted keyless provider) |
 | D15-4 | Subagent/Fork Continuity Qualification | **PARTIAL/BLOCKED** (native seam PASS; child-crash + BYQ adapter-restart BLOCKED; host reboot NOT_RUN) |
 | D15-5 | Persistent Terminal Qualification | **PARTIAL/BLOCKED** (real native terminal seam; page-refresh/browser-disconnect/frontend-restart/gateway-restart PASS; adapter-restart + DSH runtime restart BLOCKED; host reboot NOT_RUN; see §6) |
-| D15-G | Architecture Go/No-Go | **PLANNED / NOT_RUN** (not started; must wait for both D15-4 and D15-5 real conclusions) |
+| D15-G | Architecture Go/No-Go | **NO_GO (NOT-PASS)** (decision contract + fail-able observer; partial-PASS aggregation rejected; four atomic required blockers child-crash/BYQ-adapter-restart/terminal-adapter-restart/DSH-runtime-restart BLOCKED; host reboot OPTIONAL NOT_RUN) |
 
 ## 3. D15-2 — Session V3 migration (PASS, format layer)
 
@@ -208,12 +212,15 @@ bypassed; result traceable; generation replacement produced a new generation and
 executor takeover incremented the monotonic epoch `1 -> 2` with an immutable
 audit and no database write.
 
-**Proof boundary.** The provider is scripted and keyless, so this is
-service-boundary runtime-continuity evidence and **not** real-LLM-quality
-semantic evidence. Host reboot is `NOT_RUN` (a container restart is not a host
-reboot). D15-4/D15-5/D15-G and R3 were not in this D15-3R batch (historical
-batch scope only; D15-4 was qualified separately as PARTIAL/BLOCKED and D15-5 is
-now PARTIAL/BLOCKED in §6 — D15-G remains NOT_RUN).
+**Proof boundary (historical D15-3R batch).** The provider is scripted and
+keyless, so this is service-boundary runtime-continuity evidence and **not**
+real-LLM-quality semantic evidence. Host reboot is `NOT_RUN` (a container restart
+is not a host reboot). D15-4, D15-5, D15-G and R3 were not in this D15-3R batch.
+This paragraph records only the historical batch scope: D15-4 was qualified
+separately as PARTIAL/BLOCKED (§5b), D15-5 is PARTIAL/BLOCKED (§6), and D15-G was
+subsequently executed and is **NO_GO** — see the current result in §7. The
+"D15-G remains NOT_RUN" wording that appeared here described the batch at the
+time and is superseded by §7.
 
 **Review-fix revision (v2, 2026-09-20).** The observer separates `format_valid`
 (the artifact is well formed) from `all_pass` (the qualification passed). A
@@ -453,13 +460,43 @@ processes, wrapped by an evidence-only BYQ `TerminalAttachment` gate
   `packages/contracts/terminal_attachment.py`.
 - The cross-process reattach boundary is recorded as the **Proposed,
   unimplemented** [ADR-0083](../architecture/adr/ADR-0083-terminal-attachment-boundary.md).
-  D15-G must wait for D15-4 and D15-5; `R3_RESUME = NO`.
+  D15-G waited for D15-4 and D15-5 and is now **NO_GO**; `R3_RESUME = NO`.
 
-## 7. D15-G — Architecture Go/No-Go
+## 7. D15-G — Architecture Go/No-Go (NO_GO / NOT-PASS)
 
-Produce a Go/No-Go report with a capability matrix over D15-2..D15-5 and the
-failure matrix. No production cutover is implied by a Go. R6 completion does not
-imply production cutover either.
+Result (2026-09-20): **NO_GO (NOT-PASS).** A fail-able decision contract
+(`scripts/d15/go_no_go/contract.v1.json`) and observer
+(`scripts/d15/go_no_go/observer.py`) derive the verdict from the committed
+D15-2..D15-5 evidence. GO is granted only when every required capability is
+actually `PASS`; one required non-PASS capability forces NO_GO and must be named
+as an actionable blocker. Only atomic required capabilities can be blockers;
+aggregate capabilities are display-only (derived from their atomic members) and
+optional capabilities are limitations that never gate GO. The observer rejects
+partial-PASS aggregation into GO, a claimed status that differs from the derived
+status, missing blockers, an aggregate/optional listed as a blocker, missing or
+hash-mismatched source evidence and self-declared verdict/coverage fields.
+`negative-controls.v1.json` records 19 controls, all rejected (18
+defect-targeting: the reconstructed pre-fix result-trusting gate passed them),
+while a synthetic fixture with every required capability PASS and an optional
+host-reboot NOT_RUN yields an honest GO and passes.
+
+The capability matrix (`docs/evidence/d15/d15-g/capability-matrix.v1.json`)
+covers D15-2..D15-5 with per-item DSH-native result, BYQ fallback and R-series
+owner, split into required-atomic, derived-aggregate and optional-limitation.
+Derived required capabilities: `root-session-persistence` PASS,
+`process-restart-resume` PASS, `fork-continuity` PASS, `terminal-client-reattach`
+PASS; `subagent-child-crash`, `subagent-byq-adapter-restart`,
+`terminal-adapter-restart` and `terminal-dsh-runtime-restart` BLOCKED. The
+aggregates `subagent-resume` and `terminal-persistence` display BLOCKED because
+they are derived from those atomic members. `host-reboot-resume` is an OPTIONAL
+limitation NOT_RUN (matching the D15-4/D15-5 contracts) and is not a blocker.
+NO_GO is decided solely by the four atomic required blockers: child-crash, BYQ
+adapter-restart, terminal adapter-restart and terminal DSH-runtime restart.
+
+A GO would not imply a production cutover; R6 completion does not imply
+production cutover either. The Proposed ADR-0082/0083 remain not accepted and not
+implemented, R3 stays frozen and the production selector/default are unchanged.
+Evidence: `docs/evidence/d15/d15-g/`.
 
 ## 8. Roadmap reorder
 
@@ -597,3 +634,11 @@ build-input files, so the revision advances `post-u8.169` -> `post-u8.170`
 (rebuild identity only; no selector, `compose.yml`, `deployment.json`, immutable
 release registry or 0.1.2 artifact/evidence change and no deployment). The
 Proposed ADR-0083 remains unimplemented.
+
+D15-G adds `scripts/d15/go_no_go/` (Go/No-Go decision contract, fail-able
+observer, provenance builder), `tests/test_dsh_d15_g_go_no_go.py` and
+`docs/evidence/d15/d15-g/`, all build-input files, so the revision advances
+`post-u8.170` -> `post-u8.171` (rebuild identity only; no selector,
+`compose.yml`, `deployment.json`, immutable release registry or 0.1.2
+artifact/evidence change and no deployment). The Proposed ADR-0082/0083 remain
+not accepted and not implemented; `R3_RESUME = NO`.
