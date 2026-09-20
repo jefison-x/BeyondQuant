@@ -1,0 +1,67 @@
+{
+  "schema_version": "byq-d15-4-continuable-scenario.v1",
+  "evidence_class": "native-runtime-isolated",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1",
+    "closure": "agent-loop + jsonl session persistence + @deepseek-ai/dsh-subagent + spawn-in-process + tool-subagent"
+  },
+  "llm": {
+    "class": "scripted-keyless",
+    "real_llm_quality": false,
+    "note": "Scripted keyless in-process adapter. Runtime-continuity evidence only; never semantic model quality."
+  },
+  "generated_at": "2026-09-20T10:40:02Z",
+  "id": "child-id-persistence",
+  "result": "PASS",
+  "fault_applied": false,
+  "observation": {
+    "childStoreExists": true,
+    "descriptorMode": "continuable",
+    "parentSession": "d15-4-parent-byq_delegate_market_research",
+    "parentId": "d15-4-parent-byq_delegate_market_research",
+    "origin": "subagent",
+    "perTool": [
+      {
+        "tool": "byq_delegate_market_research",
+        "childId": "096c410d-12a4-4be3-a0b3-b11bbc799e2d",
+        "descriptorMode": "continuable",
+        "descriptorVersion": 3,
+        "parentSession": "d15-4-parent-byq_delegate_market_research",
+        "origin": "subagent"
+      },
+      {
+        "tool": "byq_delegate_factor_research",
+        "childId": "34fb44cc-2612-4404-a226-992057f0488c",
+        "descriptorMode": "continuable",
+        "descriptorVersion": 3,
+        "parentSession": "d15-4-parent-byq_delegate_factor_research",
+        "origin": "subagent"
+      },
+      {
+        "tool": "byq_delegate_strategy_research",
+        "childId": "601b49bd-fad5-4423-b5c0-0351b02793b2",
+        "descriptorMode": "continuable",
+        "descriptorVersion": 3,
+        "parentSession": "d15-4-parent-byq_delegate_strategy_research",
+        "origin": "subagent"
+      },
+      {
+        "tool": "byq_delegate_backtest_analysis",
+        "childId": "491cd979-762c-4c99-9a23-1ce962216ef5",
+        "descriptorMode": "continuable",
+        "descriptorVersion": 3,
+        "parentSession": "d15-4-parent-byq_delegate_backtest_analysis",
+        "origin": "subagent"
+      },
+      {
+        "tool": "byq_delegate_ml_research",
+        "childId": "9eb41be3-c2aa-4bfc-8ce7-1500597f6d4a",
+        "descriptorMode": "continuable",
+        "descriptorVersion": 3,
+        "parentSession": "d15-4-parent-byq_delegate_ml_research",
+        "origin": "subagent"
+      }
+    ]
+  }
+}

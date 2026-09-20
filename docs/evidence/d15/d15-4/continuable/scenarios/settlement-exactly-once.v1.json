@@ -1,0 +1,55 @@
+{
+  "schema_version": "byq-d15-4-continuable-scenario.v1",
+  "evidence_class": "native-runtime-isolated",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1",
+    "closure": "agent-loop + jsonl session persistence + @deepseek-ai/dsh-subagent + spawn-in-process + tool-subagent"
+  },
+  "llm": {
+    "class": "scripted-keyless",
+    "real_llm_quality": false,
+    "note": "Scripted keyless in-process adapter. Runtime-continuity evidence only; never semantic model quality."
+  },
+  "generated_at": "2026-09-20T10:40:02Z",
+  "id": "settlement-exactly-once",
+  "result": "PASS",
+  "fault_applied": false,
+  "observation": {
+    "settlementCount": 1,
+    "childTurnCount": 1,
+    "duplicateSettlement": false,
+    "perTool": [
+      {
+        "tool": "byq_delegate_market_research",
+        "settlementCount": 1,
+        "childTurnCount": 1,
+        "duplicateSettlement": false
+      },
+      {
+        "tool": "byq_delegate_factor_research",
+        "settlementCount": 1,
+        "childTurnCount": 1,
+        "duplicateSettlement": false
+      },
+      {
+        "tool": "byq_delegate_strategy_research",
+        "settlementCount": 1,
+        "childTurnCount": 1,
+        "duplicateSettlement": false
+      },
+      {
+        "tool": "byq_delegate_backtest_analysis",
+        "settlementCount": 1,
+        "childTurnCount": 1,
+        "duplicateSettlement": false
+      },
+      {
+        "tool": "byq_delegate_ml_research",
+        "settlementCount": 1,
+        "childTurnCount": 1,
+        "duplicateSettlement": false
+      }
+    ]
+  }
+}

@@ -1,0 +1,134 @@
+{
+  "schema_version": "byq-d15-4-continuable-wiring-contract.v1",
+  "generated_at": "2026-09-20",
+  "scope": "D15-4 candidate-specific BYQ->native startContinuable wiring: the product-semantics contract of routing the committed byq_delegate_* tools onto the native continuable branch against the fixed DSH 0.1.5rc1 candidate. It is not D15-5/D15-G and not R3.",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1"
+  },
+  "evidence_class": "native-runtime-isolated",
+  "llm_evidence_class": "scripted-keyless",
+  "llm_evidence_note": "A keyless scripted in-process adapter drives the real candidate agent loop, JSONL session persistence and continuable-subagent seam. This is runtime-continuity evidence, NOT real-LLM-quality semantic evidence.",
+  "results_vocabulary": ["PASS", "FAIL", "NOT_RUN", "BLOCKED"],
+  "required_coverage_gates_qualification": true,
+  "not_run_requires_reason": true,
+  "negatives_must_all_be_rejected": true,
+  "closed_scenario_set": true,
+  "delegates": [
+    "byq_delegate_market_research",
+    "byq_delegate_factor_research",
+    "byq_delegate_strategy_research",
+    "byq_delegate_backtest_analysis",
+    "byq_delegate_ml_research"
+  ],
+  "expected_candidate_wiring": {
+    "provider": "spawn",
+    "backgroundMode": "continuable",
+    "enableRunInBackground": true
+  },
+  "expected_production_wiring": {
+    "release": "dsh-0.1.2rc1",
+    "provider": "spawn",
+    "backgroundMode": "one-shot",
+    "enableRunInBackground": false
+  },
+  "candidate_patch": "plugins/dsh-byq/profiles/dsh-0.1.5rc1-continuable/byq-product.patch.yml",
+  "production_patch": "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml",
+  "required_scenarios": [
+    {
+      "id": "delegate-result-shape",
+      "description": "the real committed byq_delegate_* tool, composed with the candidate continuable wiring, is executed through ctx.tools.execute and returns the durable continuable shape {kind: continuable, subagentId} while still using provider: spawn",
+      "required": true,
+      "requires_fault": false,
+      "assertions": ["continuable_result_kind", "subagent_id_present", "start_continuable_reached", "provider_spawn_preserved"]
+    },
+    {
+      "id": "child-id-persistence",
+      "description": "the returned subagentId is a durable child session persisted to the session store with a continuable descriptor, header.parentSession equal to the live parent and origin=subagent",
+      "required": true,
+      "requires_fault": false,
+      "assertions": ["child_store_exists", "descriptor_mode_continuable", "parent_link_recorded", "origin_subagent"]
+    },
+    {
+      "id": "settlement-exactly-once",
+      "description": "the parent receives exactly one subagent-settled delivery per completed child turn; re-reading the durable store yields no duplicate settlement",
+      "required": true,
+      "requires_fault": false,
+      "assertions": ["settlement_count_matches_child_turns", "no_duplicate_settlement"]
+    },
+    {
+      "id": "lease-linked-to-original-goal",
+      "description": "the child residency/observation is linked to the ORIGINAL delegation goal: the exact delegation tool call and the original parent goal identity, not a later or unrelated run",
+      "required": true,
+      "requires_fault": false,
+      "assertions": ["delegation_call_id_recorded", "original_goal_recorded", "child_linked_to_goal"]
+    },
+    {
+      "id": "no-orphan-after-parent-end",
+      "description": "after the parent run ends, no child is left running without a settlement; the settled child remains addressable and is never silently dropped",
+      "required": true,
+      "requires_fault": true,
+      "assertions": ["parent_run_ended", "no_unsettled_child", "child_remains_addressable"]
+    },
+    {
+      "id": "adapter-restart-cold-resume",
+      "description": "a genuinely new OS process (the adapter-restart analogue) cold-resumes the same durable continuable child through the native seam: same child id, contiguous log, exactly one settlement for the resumed turn and no duplicate settlement. This is a different capability from a child-only SIGKILL.",
+      "required": true,
+      "requires_fault": true,
+      "assertions": ["new_os_process", "same_child_id", "sequence_contiguous", "settlement_exactly_once", "no_duplicate_settlement"]
+    },
+    {
+      "id": "child-crash",
+      "description": "a child-only SIGKILL while the parent stays alive, truthfully interrupted and natively resumed. BLOCKED when the only continuable provider is in-process and no independent child process exists to isolate.",
+      "required": true,
+      "requires_fault": true,
+      "assertions": ["child_id_retained", "truthful_failure", "natively_resumable", "no_fabricated_completion"]
+    },
+    {
+      "id": "byq-compose-adapter-restart",
+      "description": "a real isolated BYQ compose-stack runtime-adapter container restart rebinds a BYQ-delegated continuable child through a committed BYQ surface. BLOCKED when no BYQ surface cold-resumes the child.",
+      "required": true,
+      "requires_fault": true,
+      "assertions": ["container_restart_observed", "child_resumed_via_byq_surface", "same_child_id", "no_duplicate_settlement"]
+    }
+  ],
+  "optional_scenarios": [
+    {
+      "id": "child-run-fault",
+      "description": "supporting evidence (not a substitute for child-crash): a child model-stream fault while the parent process stays alive records a truthful failure and a retained, natively resumable child",
+      "required": false,
+      "requires_fault": true,
+      "assertions": ["child_id_retained", "parent_truthful_failure", "natively_resumable", "no_fabricated_completion"]
+    },
+    {
+      "id": "host-reboot",
+      "description": "host reboot. NOT executed: rebooting the maintainer host is not authorized and a container/adapter restart is not a host reboot.",
+      "required": false,
+      "requires_fault": true,
+      "assertions": []
+    }
+  ],
+  "fail_closed": [
+    "missing required scenario",
+    "required scenario not covered by a PASS (BLOCKED/NOT_RUN/FAIL/MISSING do not pass)",
+    "required PASS with a false assertion",
+    "required PASS without fault_applied when the contract requires a fault",
+    "NOT_RUN/BLOCKED without a reason",
+    "duplicate scenario id",
+    "unknown scenario id (closed set)",
+    "candidate mismatch",
+    "non-native evidence class",
+    "llm evidence claims real-llm-quality",
+    "a negative that was not rejected",
+    "missing measured settlement count (not defaulted to pass)",
+    "a config-key-only claim presented as product-semantics or cold-resume evidence",
+    "any attempt by the observation to declare its own coverage/continuity rules"
+  ],
+  "notes": {
+    "candidate_specific": "the continuable wiring is generated into a separate candidate profile and image; config/dsh/deployment.json, compose.yml and the production selector dsh-0.1.2rc1 are unchanged",
+    "reversible": "the candidate profile keys are revertible to one-shot; the production 0.1.2 patch is byte-identical to before this change",
+    "process_boundary": "the only continuable provider in the candidate is in-process (spawn/fork); no out-of-process provider implements prepareContinuable, so a continuable child shares the executor process",
+    "no_new_provider": "this stage adds no provider and no R3 behaviour; independent child-process capability stays BLOCKED"
+  }
+}
