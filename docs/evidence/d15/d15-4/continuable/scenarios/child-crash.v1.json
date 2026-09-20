@@ -1,0 +1,19 @@
+{
+  "schema_version": "byq-d15-4-continuable-scenario.v1",
+  "evidence_class": "native-runtime-isolated",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1",
+    "closure": "agent-loop + jsonl session persistence + @deepseek-ai/dsh-subagent + spawn-in-process + tool-subagent"
+  },
+  "llm": {
+    "class": "scripted-keyless",
+    "real_llm_quality": false,
+    "note": "Scripted keyless in-process adapter. Runtime-continuity evidence only; never semantic model quality."
+  },
+  "generated_at": "2026-09-20T10:40:02Z",
+  "id": "child-crash",
+  "result": "BLOCKED",
+  "fault_applied": false,
+  "not_run_reason": "not executed: the only continuable providers in the candidate closure are in-process (spawn/fork), so a child shares the executor process and cannot be independently SIGKILLed while the parent stays alive. The generation-A SIGKILL used by adapter-restart-cold-resume is the owning-process (adapter) fault, NOT a child-only crash. No child process was faked and no persistence substitute was built. Smallest option: a future out-of-process continuable provider."
+}

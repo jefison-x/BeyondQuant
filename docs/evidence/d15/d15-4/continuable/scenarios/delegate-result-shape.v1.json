@@ -1,0 +1,61 @@
+{
+  "schema_version": "byq-d15-4-continuable-scenario.v1",
+  "evidence_class": "native-runtime-isolated",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1",
+    "closure": "agent-loop + jsonl session persistence + @deepseek-ai/dsh-subagent + spawn-in-process + tool-subagent"
+  },
+  "llm": {
+    "class": "scripted-keyless",
+    "real_llm_quality": false,
+    "note": "Scripted keyless in-process adapter. Runtime-continuity evidence only; never semantic model quality."
+  },
+  "generated_at": "2026-09-20T10:40:02Z",
+  "id": "delegate-result-shape",
+  "result": "PASS",
+  "fault_applied": false,
+  "observation": {
+    "resultKind": "continuable",
+    "subagentId": "096c410d-12a4-4be3-a0b3-b11bbc799e2d",
+    "startContinuableCalls": 1,
+    "provider": "spawn",
+    "perTool": [
+      {
+        "tool": "byq_delegate_market_research",
+        "resultKind": "continuable",
+        "subagentId": "096c410d-12a4-4be3-a0b3-b11bbc799e2d",
+        "startContinuableCalls": 1,
+        "startCalls": 0
+      },
+      {
+        "tool": "byq_delegate_factor_research",
+        "resultKind": "continuable",
+        "subagentId": "34fb44cc-2612-4404-a226-992057f0488c",
+        "startContinuableCalls": 1,
+        "startCalls": 0
+      },
+      {
+        "tool": "byq_delegate_strategy_research",
+        "resultKind": "continuable",
+        "subagentId": "601b49bd-fad5-4423-b5c0-0351b02793b2",
+        "startContinuableCalls": 1,
+        "startCalls": 0
+      },
+      {
+        "tool": "byq_delegate_backtest_analysis",
+        "resultKind": "continuable",
+        "subagentId": "491cd979-762c-4c99-9a23-1ce962216ef5",
+        "startContinuableCalls": 1,
+        "startCalls": 0
+      },
+      {
+        "tool": "byq_delegate_ml_research",
+        "resultKind": "continuable",
+        "subagentId": "9eb41be3-c2aa-4bfc-8ce7-1500597f6d4a",
+        "startContinuableCalls": 1,
+        "startCalls": 0
+      }
+    ]
+  }
+}

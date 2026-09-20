@@ -1,0 +1,86 @@
+{
+  "candidate": {
+    "python_sdk": "0.1.5rc1",
+    "release": "dsh-0.1.5rc1",
+    "runtime_bin": "0.1.5rc1"
+  },
+  "evidence_class": "real-isolated-candidate-adapter-container",
+  "generated_at": "2026-09-20",
+  "generation_a": {
+    "child_session_files": [
+      "d15-continuable-root-8261d194b98f46498b40c6923a0d2b2c/sessions/--var-lib-byq-dsh-sessions-dsh-0.1.5rc1-d15-continuable-root-8261d194b98f46498b40c6923a0d2b2c--/423af833-e5f3-40e7-a9b3-f5b2c53544d2/session.lock",
+      "d15-continuable-root-8261d194b98f46498b40c6923a0d2b2c/sessions/--var-lib-byq-dsh-sessions-dsh-0.1.5rc1-d15-continuable-root-8261d194b98f46498b40c6923a0d2b2c--/423af833-e5f3-40e7-a9b3-f5b2c53544d2/session.v3.jsonl.zstd",
+      "d15-continuable-root-8261d194b98f46498b40c6923a0d2b2c/storages/session_projcache/sessions/423af833-e5f3-40e7-a9b3-f5b2c53544d2.json"
+    ],
+    "delegate_result": {
+      "kind": "continuable",
+      "raw_text": "started subagent 423af833-e5f3-40e7-a9b3-f5b2c53544d2",
+      "subagentId": "423af833-e5f3-40e7-a9b3-f5b2c53544d2"
+    },
+    "delegate_tool": "byq_delegate_market_research",
+    "note": "The committed continuable candidate image ran the real runtime-adapter and returned the continuable shape for a real byq_delegate_market_research call; the durable child session v3 was persisted under the DSH home and a subagent.started notification was emitted.",
+    "notification_methods": {
+      "session.event": 31,
+      "session.status": 3,
+      "subagent.started": 1
+    },
+    "provider_requests": 3,
+    "started_children": [
+      "423af833-e5f3-40e7-a9b3-f5b2c53544d2"
+    ],
+    "status": "PASS",
+    "subagent_started_events": [
+      {
+        "method": "subagent.started",
+        "payload": {
+          "childSessionId": "423af833-e5f3-40e7-a9b3-f5b2c53544d2",
+          "parentSessionId": "d15-continuable-root-8261d194b98f46498b40c6923a0d2b2c"
+        }
+      }
+    ]
+  },
+  "generation_b": {
+    "adapter_child_surfaces": [
+      "_subagent_hard_cap_seconds",
+      "_subagent_timeout_seconds",
+      "resume_session"
+    ],
+    "blocked_reason": "a fresh isolated adapter process exposes only the root `resume_session` operation and the byte-identical 0.1.2 Python SDK exposes no child/subagent/continuable operation; there is no committed BYQ surface that reaches, messages or cold-resumes the persisted continuable child. A BYQ adapter restart therefore cannot rebind the child, even though the child session file persists on disk. The owning-process (adapter) restart tested here is NOT a child-only SIGKILL.",
+    "child_has_surface": false,
+    "child_persisted_same_id": true,
+    "child_resumed_via_byq_surface": false,
+    "container_restart_observed": true,
+    "note": "A fresh isolated adapter process exposes only the ROOT `resume_session` operation; the byte-identical 0.1.2 Python SDK exposes no child/subagent/continuable operation. There is no committed BYQ surface to reach or cold-resume the persisted continuable child. The child session file persisted (same id) on disk. The owning-process (adapter) restart tested here is NOT a child-only SIGKILL.",
+    "root_only_surfaces": [
+      "resume_session"
+    ],
+    "root_resume_attempt": {
+      "error": "KeyError: 'unknown BYQ session: d15-continuable-root-8261d194b98f46498b40c6923a0d2b2c'",
+      "ok": false
+    },
+    "sdk_child_surfaces": [],
+    "status": "BLOCKED"
+  },
+  "independent_child_process": "BLOCKED",
+  "isolation": {
+    "command": "docker run --rm --network none --user byq -v <probe>:/app/tests/...:ro -e D15_CONTINUABLE_MARKER=... byq-d15-4-continuable-candidate:local sh -c 'probe a; probe b'",
+    "dockerfile": "services/runtime-adapter/Dockerfile.dsh-0.1.5rc1-continuable-candidate",
+    "image": "byq-d15-4-continuable-candidate:local",
+    "image_id": "sha256:21bc000eab0a1edd1a9dd7568f4d78660318defb2a872bc592bf2a84043aa5eb",
+    "network": "none",
+    "probe": "services/runtime-adapter/tests/d15_continuable_probe.py",
+    "probe_sha256": "sha256:ecaf9521270d02f974b5a3e82f5672d33f69c78e4a8dcbcdd71e33f8bcbe514b",
+    "production_selector_changed": false,
+    "profile_baked": "dsh-0.1.5rc1-continuable/byq-product.patch.yml",
+    "user": "byq"
+  },
+  "llm": {
+    "class": "scripted-keyless",
+    "note": "Keyless loopback synthetic MCP + scripted SSE provider; not real-LLM-quality.",
+    "real_llm_quality": false
+  },
+  "production_unchanged": true,
+  "r3_resume": "NO",
+  "schema_version": "byq-d15-4-continuable-adapter-restart.v1",
+  "scope_note": "This trial runs the real RuntimeAdapter + real bundled 0.1.5-rc.1 runtime in the committed isolated --network none candidate image rather than the full Gateway compose stack, because the decisive question (a committed BYQ surface that resumes the child) is identical at the adapter/SDK boundary and is exercised directly here. The broader D15-3R compose-stack adapter restart is retained separately."
+}

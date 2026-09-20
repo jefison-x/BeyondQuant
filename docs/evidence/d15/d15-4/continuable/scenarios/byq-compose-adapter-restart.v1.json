@@ -1,0 +1,19 @@
+{
+  "schema_version": "byq-d15-4-continuable-scenario.v1",
+  "evidence_class": "native-runtime-isolated",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1",
+    "closure": "agent-loop + jsonl session persistence + @deepseek-ai/dsh-subagent + spawn-in-process + tool-subagent"
+  },
+  "llm": {
+    "class": "scripted-keyless",
+    "real_llm_quality": false,
+    "note": "Scripted keyless in-process adapter. Runtime-continuity evidence only; never semantic model quality."
+  },
+  "generated_at": "2026-09-20T10:40:02Z",
+  "id": "byq-compose-adapter-restart",
+  "result": "BLOCKED",
+  "fault_applied": false,
+  "not_run_reason": "not executed in this native probe: the real isolated compose-stack runtime-adapter container restart is attempted and reported separately by the D15-4 compose runner. The Python SDK surface is byte-identical to 0.1.2 and exposes no continuable-child resume/reachability operation, and the committed adapter has no BYQ surface that cold-resumes a delegated child, so a container restart cannot rebind the child through BYQ. Independent child-process capability stays BLOCKED; no provider or R3 behaviour is added."
+}

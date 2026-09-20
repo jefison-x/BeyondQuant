@@ -1,0 +1,74 @@
+{
+  "schema_version": "byq-d15-4-continuable-scenario.v1",
+  "evidence_class": "native-runtime-isolated",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1",
+    "closure": "agent-loop + jsonl session persistence + @deepseek-ai/dsh-subagent + spawn-in-process + tool-subagent"
+  },
+  "llm": {
+    "class": "scripted-keyless",
+    "real_llm_quality": false,
+    "note": "Scripted keyless in-process adapter. Runtime-continuity evidence only; never semantic model quality."
+  },
+  "generated_at": "2026-09-20T10:40:02Z",
+  "id": "adapter-restart-cold-resume",
+  "result": "PASS",
+  "fault_applied": true,
+  "observation": {
+    "newOsProcess": true,
+    "generationAProcessId": 4032653,
+    "generationBProcessId": 4032664,
+    "sameChildId": true,
+    "sequenceContiguous": true,
+    "resumedSettlementCount": 1,
+    "duplicateSettlement": false,
+    "perTool": [
+      {
+        "tool": "byq_delegate_market_research",
+        "generationAProcessId": 4032653,
+        "generationBProcessId": 4032664,
+        "sameChildId": true,
+        "sequenceContiguous": true,
+        "resumedSettlementCount": 1,
+        "duplicateSettlement": false
+      },
+      {
+        "tool": "byq_delegate_factor_research",
+        "generationAProcessId": 4032675,
+        "generationBProcessId": 4032686,
+        "sameChildId": true,
+        "sequenceContiguous": true,
+        "resumedSettlementCount": 1,
+        "duplicateSettlement": false
+      },
+      {
+        "tool": "byq_delegate_strategy_research",
+        "generationAProcessId": 4032697,
+        "generationBProcessId": 4032708,
+        "sameChildId": true,
+        "sequenceContiguous": true,
+        "resumedSettlementCount": 1,
+        "duplicateSettlement": false
+      },
+      {
+        "tool": "byq_delegate_backtest_analysis",
+        "generationAProcessId": 4032719,
+        "generationBProcessId": 4032751,
+        "sameChildId": true,
+        "sequenceContiguous": true,
+        "resumedSettlementCount": 1,
+        "duplicateSettlement": false
+      },
+      {
+        "tool": "byq_delegate_ml_research",
+        "generationAProcessId": 4032781,
+        "generationBProcessId": 4032792,
+        "sameChildId": true,
+        "sequenceContiguous": true,
+        "resumedSettlementCount": 1,
+        "duplicateSettlement": false
+      }
+    ]
+  }
+}
