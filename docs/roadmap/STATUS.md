@@ -54,7 +54,7 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
 本批为维护，不推进 Product Phase。维护者要求重排 Runtime Continuity（R-series）路线并推进 D15：
 完成 D15-0 升级 recon、确定资格目标、构建/启动 D15-1 隔离候选、完成 D15-2 Session V3 迁移资格，
 并完成 D15-3 原生会话恢复资格，冻结 R3。依
-[ADR-0081](../architecture/adr/ADR-0081-dsh-native-continuity-and-d15-stage.md)（Proposed）：
+[ADR-0081](../architecture/adr/ADR-0081-dsh-native-continuity-and-d15-stage.md)（Accepted，2026-09-19）：
 
 - **R3 冻结（非回滚）**：状态 `PAUSED_PENDING_DSH_015_NATIVE_CONTINUITY_QUALIFICATION`。保留
   既有 R3 代码/测试/文档与框架中立合同，不回滚 R1/R2；暂停自建 DSH 进程重启编排、会话重建、
@@ -687,7 +687,7 @@ Post-Phase 90 Management Action Consistency Maintenance 依据 ADR-0050 将股�
 - 2026-09-19 维护收口（ADR-0047 聚合边界、运行/续接连续性与只读归档审计）已完成并记入本文与
   [实现计划](IMPLEMENTATION_PLAN.md)；它是维护，不推进 Product Phase，也不改变上一条授权状态。
 - ADR-0077（数据就绪自动续接）已于 2026-09-19 获维护者接受（Accepted）；生产当前运行其实现。
-- ADR-0078/0079/0080 已于 2026-09-19 获维护者接受（Accepted）。
+- ADR-0078/0079/0080/0081 已于 2026-09-19 获维护者接受（Accepted）。
 - Phase 82 与 ADR-0047 已完成；50,000 保持原子 readiness 分片上限，不是 Tushare
   额度或完整数据任务上限。
 - ADR-0044 授权的 Phase 75–79、ADR-0045 授权的 Phase 80、ADR-0046 授权的 Phase 81、
