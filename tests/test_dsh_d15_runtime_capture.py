@@ -2,16 +2,16 @@
 
 These exercise the real capture helper functions (not observer JSON fixtures):
 missing durable receipts, replay errors, approval expiry/bypass, trace gaps and
-old-only assistant results must never be turned into a success default.
+old-only assistant results must never be turned into a success default. Runs
+under ``unittest`` (the architecture lane has no pytest).
 """
 
 from __future__ import annotations
 
 import importlib.util
 import sys
+import unittest
 from pathlib import Path
-
-import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 CAPNEG = ROOT / "scripts/d15/runtime_continuity/capture_negatives.py"
@@ -27,67 +27,68 @@ def _load(name: str, path: Path):
     return module
 
 
-def test_capture_negatives_all_fail_and_pre_fix_masked():
-    module = _load("d15_capneg", CAPNEG)
-    result = module.run()
-    assert result["baseline_all_pass"] is True
-    assert result["case_count"] >= 5
-    assert result["all_cases_pass"] is True
-    assert result["all_pass"] is True
-    for case in result["cases"]:
-        assert case["pre_fix_legacy_all_pass"] is True, case
-        assert case["post_fix_all_pass"] is False, case
-        assert case["post_fix_first_failure"], case
+class D15RuntimeCaptureTests(unittest.TestCase):
+    def test_capture_negatives_all_fail_and_pre_fix_masked(self):
+        module = _load("d15_capneg", CAPNEG)
+        result = module.run()
+        self.assertTrue(result["baseline_all_pass"])
+        self.assertGreaterEqual(result["case_count"], 5)
+        self.assertTrue(result["all_cases_pass"])
+        self.assertTrue(result["all_pass"])
+        for case in result["cases"]:
+            self.assertTrue(case["pre_fix_legacy_all_pass"], case)
+            self.assertFalse(case["post_fix_all_pass"], case)
+            self.assertTrue(case["post_fix_first_failure"], case)
 
+    def test_capture_helpers_never_default_to_success(self):
+        runner = _load("d15_rq_helpers", RUNNER)
+        receipt, error = runner.derive_goal_receipt({}, "message-x")
+        self.assertIsNone(receipt)
+        self.assertTrue(error)
 
-def test_capture_helpers_never_default_to_success():
-    runner = _load("d15_rq_helpers", RUNNER)
-    receipt, error = runner.derive_goal_receipt({}, "message-x")
-    assert receipt is None and error
+        run_id, error = runner.derive_replay_run({"_error": "adapter 500"})
+        self.assertIsNone(run_id)
+        self.assertTrue(error)
+        run_id, error = runner.derive_replay_run({})
+        self.assertIsNone(run_id)
+        self.assertTrue(error)
+        run_id, error = runner.derive_replay_run({"run_id": "a" * 32})
+        self.assertEqual(run_id, "a" * 32)
+        self.assertIsNone(error)
 
-    run_id, error = runner.derive_replay_run({"_error": "adapter 500"})
-    assert run_id is None and error
-    run_id, error = runner.derive_replay_run({})
-    assert run_id is None and error
-    run_id, error = runner.derive_replay_run({"run_id": "a" * 32})
-    assert run_id == "a" * 32 and error is None
+    def test_trace_gap_is_not_contiguous(self):
+        runner = _load("d15_rq_trace", RUNNER)
+        events = [
+            {"sequence": 1, "kind": "session.started", "payload": {"run_id": "1" * 32}},
+            {"sequence": 3, "kind": "session.result", "payload": {"run_id": "1" * 32}},
+        ]
+        trace = runner.derive_trace_evidence(events, [], "1" * 32)
+        self.assertFalse(trace["trace_contiguous"])
+        self.assertTrue(trace["errors"])
 
+    def test_only_old_assistant_is_not_target_attribution(self):
+        runner = _load("d15_rq_attr", RUNNER)
+        events = [
+            {"sequence": 1, "kind": "session.started", "payload": {"run_id": "1" * 32}},
+            {"sequence": 2, "kind": "session.result", "payload": {"run_id": "1" * 32}},
+            {"sequence": 3, "kind": "session.started", "payload": {"run_id": "2" * 32}},
+        ]
+        messages = [{"role": "assistant", "workflow_sequence": 2}]  # belongs to run 1
+        trace = runner.derive_trace_evidence(events, messages, "2" * 32)
+        self.assertFalse(trace["completed"])
+        self.assertIsNone(trace["attributed_message_sequence"])
+        self.assertTrue(trace["errors"])
 
-def test_trace_gap_is_not_contiguous():
-    runner = _load("d15_rq_trace", RUNNER)
-    events = [
-        {"sequence": 1, "kind": "session.started", "payload": {"run_id": "1" * 32}},
-        {"sequence": 3, "kind": "session.result", "payload": {"run_id": "1" * 32}},
-    ]
-    trace = runner.derive_trace_evidence(events, [], "1" * 32)
-    assert trace["trace_contiguous"] is False
-    assert trace["errors"]
-
-
-def test_only_old_assistant_is_not_target_attribution():
-    runner = _load("d15_rq_attr", RUNNER)
-    events = [
-        {"sequence": 1, "kind": "session.started", "payload": {"run_id": "1" * 32}},
-        {"sequence": 2, "kind": "session.result", "payload": {"run_id": "1" * 32}},
-        {"sequence": 3, "kind": "session.started", "payload": {"run_id": "2" * 32}},
-    ]
-    messages = [{"role": "assistant", "workflow_sequence": 2}]  # belongs to run 1
-    trace = runner.derive_trace_evidence(events, messages, "2" * 32)
-    assert trace["completed"] is False
-    assert trace["attributed_message_sequence"] is None
-    assert trace["errors"]
-
-
-def test_make_receipt_requires_measured_count_and_origin():
-    runner = _load("d15_rq_receipt", RUNNER)
-    with pytest.raises(Exception):
-        runner.make_receipt("tool", "key", {}, None, runner.ORIGIN_MANUAL)
-    with pytest.raises(Exception):
-        runner.make_receipt("tool", "key", {}, 1, None)
-    receipt = runner.make_receipt("tool", "key", {"state": "accepted"}, 1, runner.ORIGIN_MANUAL)
-    assert receipt["side_effect_count"] == 1
-    assert receipt["origin"] == runner.ORIGIN_MANUAL
+    def test_make_receipt_requires_measured_count_and_origin(self):
+        runner = _load("d15_rq_receipt", RUNNER)
+        with self.assertRaises(Exception):
+            runner.make_receipt("tool", "key", {}, None, runner.ORIGIN_MANUAL)
+        with self.assertRaises(Exception):
+            runner.make_receipt("tool", "key", {}, 1, None)
+        receipt = runner.make_receipt("tool", "key", {"state": "accepted"}, 1, runner.ORIGIN_MANUAL)
+        self.assertEqual(receipt["side_effect_count"], 1)
+        self.assertEqual(receipt["origin"], runner.ORIGIN_MANUAL)
 
 
 if __name__ == "__main__":
-    raise SystemExit(pytest.main([__file__]))
+    unittest.main()

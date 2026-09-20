@@ -35,7 +35,7 @@ def _load(name: str, path: Path):
 def load_modules():
     observer = _load("d15_obs_capture_neg", HERE / "observer.py")
     runner = _load("d15_rq_capture_neg", HERE / "run_qualification.py")
-    contract = json.loads((HERE / "contract.v3.json").read_text(encoding="utf-8"))
+    contract = json.loads((HERE / "contract.v4.json").read_text(encoding="utf-8"))
     return observer, runner, contract
 
 
@@ -110,8 +110,10 @@ def build_cases(observer, runner, contract) -> list[dict]:
     rejected_response = {"artifact": {"artifact_id": "artifact_" + "f" * 32,
                                       "content": {"decision": "approved", "reviewer_principal": "human-owner",
                                                   "execution_authorized": True}}}
-    approval = runner.derive_approval(expired_response, rejected_response,
-                                      {"artifact": {"artifact_id": "artifact_" + "a" * 32}}, None)
+    denial_422 = {"ok": False, "status": 422, "error": "http 422",
+                  "body": {"error": {"code": "product_domain_rejected",
+                                     "message": "strategy version is not approved for execution"}}}
+    approval = runner.derive_approval(expired_response, rejected_response, denial_422, denial_422, 0, 0, None)
     assert approval["state"] == "expired" and approval["bypassed"] is True
 
     def pre_expiry(scenario):
@@ -127,6 +129,48 @@ def build_cases(observer, runner, contract) -> list[dict]:
     add("approval-expiry-bypass",
         "persisted approval is expired and a deny trial created a side effect; old capture hardcoded approved",
         _scenario(observer, contract, pre_expiry), _scenario(observer, contract, post_expiry))
+
+    # 3b. A 500/timeout must NOT count as a denial.
+    server_error = {"ok": False, "status": 500, "error": "http 500",
+                    "body": {"error": {"code": "internal_error", "message": "boom"}}}
+    timeout_error = {"ok": False, "status": 0, "error": "URLError: timed out", "body": None}
+    approval_500 = runner.derive_approval(expired_response, rejected_response, server_error, timeout_error, 0, 0, None)
+    assert approval_500["bypassed"] is True
+    assert approval_500["trials"][1]["denied"] is False
+    assert approval_500["trials"][2]["denied"] is False
+
+    def pre_500(scenario):
+        scenario["after"]["approval"].update({"state": "approved", "bypassed": False,
+                                              "execution_authorized": True, "reuse_denied": True})
+        scenario["after"]["approval"].pop("trials", None)
+
+    def post_500(scenario):
+        scenario["after"]["approval"].update(approval_500)
+        scenario["after"]["capture_ok"] = False
+        scenario["after"]["capture_errors"] = ["a 5xx/timeout is not a definitive denial"]
+
+    add("denial-from-500-timeout",
+        "a 500/timeout was treated as denial; fixed capture requires a definitive 4xx domain rejection",
+        _scenario(observer, contract, pre_500), _scenario(observer, contract, post_500))
+
+    # 3c. A rejected response but an authoritative side effect exists.
+    approval_side = runner.derive_approval(expired_response, rejected_response, denial_422, denial_422, 0, 1, None)
+    assert approval_side["bypassed"] is True
+    assert approval_side["trials"][2]["after_count"] == 1
+
+    def pre_side(scenario):
+        scenario["after"]["approval"].update({"state": "approved", "bypassed": False,
+                                              "execution_authorized": True, "reuse_denied": True})
+        scenario["after"]["approval"].pop("trials", None)
+
+    def post_side(scenario):
+        scenario["after"]["approval"].update(approval_side)
+        scenario["after"]["capture_ok"] = False
+        scenario["after"]["capture_errors"] = ["protected operation created a side effect"]
+
+    add("rejected-response-but-side-effect-exists",
+        "protected operation returned a rejection but the authoritative side-effect count increased",
+        _scenario(observer, contract, pre_side), _scenario(observer, contract, post_side))
 
     # 4. Trace gap.
     gapped_events = [

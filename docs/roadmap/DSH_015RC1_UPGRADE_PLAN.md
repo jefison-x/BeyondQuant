@@ -234,6 +234,24 @@ and `tests/test_dsh_d15_runtime_{continuity,capture}.py`. The observer is
 fail-able: 35 negative controls plus 5 capture-layer negatives each force a
 non-zero exit while a known-good unit fixture passes.
 
+**Scope/approval/Agent-MCP revision (v4, 2026-09-20).** The scripted provider
+emits a real `mcp__byq__byq_research_task_create` tool call through the real
+runtime-adapter → MCP → Backend; the adapter is restarted and the same
+idempotency key re-delivered, returning the same task id with a measured
+side-effect count of 1 (new required scenario `agent-mcp-domain-at-most-once`).
+Approval denial now records the HTTP status/domain code and actually attempts the
+protected backtest operation with the rejected approval, verifying the
+authoritative backtest-job count before/after (invalid reuse 409, protected
+operation 422 `product_domain_rejected`, count `0 -> 0`). Capture negatives add
+`denial-from-500-timeout` and `rejected-response-but-side-effect-exists`. Docs
+explicitly separate a **limited service-boundary observation pass** from a **full
+original-task qualification**: v4 is the former (scripted keyless provider), not
+real-LLM-quality, and v1/v2/v3 are retained history that do not constitute a
+qualification pass. Evidence:
+[`docs/evidence/d15/d15-runtime/`](../evidence/d15/d15-runtime/README.md)
+(`observations.v4.json`, `verdict.v4.json`, `negative-controls.v4.json`,
+`capture-negatives.v4.json`, `stack.v4.json`, `scenarios/*.v4.json`).
+
 ## 5. D15-4 — Subagent / fork continuity
 
 Verify parent/child identity, child session persistence, continuable descriptor,
@@ -344,4 +362,5 @@ The D15-3R capture-layer review-fix revision changes `scripts/d15/runtime_contin
 and `tests/` build inputs again, so the revision advances
 `post-u8.161` -> `post-u8.162` (rebuild identity bump only; no selector,
 deployment, immutable release registry or 0.1.2 artifact/evidence change and no
-deployment).
+deployment). The D15-3R scope/approval/Agent-MCP revision changes the same build
+inputs again, advancing `post-u8.162` -> `post-u8.163` (rebuild identity only).

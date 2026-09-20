@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any
 
 HERE = Path(__file__).resolve().parent
-DEFAULT_CONTRACT = HERE / "contract.v3.json"
+DEFAULT_CONTRACT = HERE / "contract.v4.json"
 
 _RUN_ID = re.compile(r"^[0-9a-f]{32}$")
 
@@ -176,6 +176,22 @@ def _check_approval(approval: object, states: list[str], required_trials: list[s
         if trial.get("state") not in states:
             failures.append(f"{item_ctx}: invalid persisted trial state {trial.get('state')!r}")
             ok = False
+        if kind in {"invalid_reuse", "protected_operation_blocked"}:
+            status = _as_int(trial.get("http_status"))
+            if status is None or not 400 <= status < 500:
+                failures.append(
+                    f"{item_ctx}: denial must be a definitive 4xx client rejection, got {trial.get('http_status')!r}")
+                ok = False
+            if not _is_nonempty_str(trial.get("domain_code")):
+                failures.append(f"{item_ctx}: denial has no domain error code")
+                ok = False
+        if kind == "protected_operation_blocked":
+            before = _as_int(trial.get("before_count"))
+            after = _as_int(trial.get("after_count"))
+            if before is None or after is None or before != after:
+                failures.append(
+                    f"{item_ctx}: protected-operation side-effect count changed ({before!r}->{after!r})")
+                ok = False
     for kind in required_trials:
         if kind not in by_kind:
             failures.append(f"{ctx}.approval: missing required deny trial {kind!r}")
@@ -278,8 +294,35 @@ def _result_attributed_to_target_run(before: dict, after: dict) -> bool:
     return attributed is not None and attributed > 0
 
 
+def _agent_mcp_at_most_once(before: dict, after: dict) -> bool:
+    """The same real Agent->MCP domain object with one side effect across the fault."""
+
+    def find(state: dict) -> dict | None:
+        receipts = state.get("action_receipts") if isinstance(state.get("action_receipts"), list) else []
+        for item in receipts:
+            if isinstance(item, dict) and item.get("origin") == "agent-mcp":
+                return item
+        return None
+
+    first, second = find(before), find(after)
+    if first is None or second is None:
+        return False
+    if first.get("idempotency_key") != second.get("idempotency_key"):
+        return False
+    first_task = (first.get("receipt") or {}).get("task_id") if isinstance(first.get("receipt"), dict) else None
+    second_task = (second.get("receipt") or {}).get("task_id") if isinstance(second.get("receipt"), dict) else None
+    if not _is_nonempty_str(first_task) or first_task != second_task:
+        return False
+    if _as_int(first.get("side_effect_count")) != 1 or _as_int(second.get("side_effect_count")) != 1:
+        return False
+    replay = second.get("replay") if isinstance(second.get("replay"), dict) else {}
+    replay_receipt = replay.get("receipt") if isinstance(replay.get("receipt"), dict) else {}
+    return replay_receipt.get("task_id") == second_task and _as_int(replay.get("side_effect_count")) == 1
+
+
 RELATIONSHIP_CHECKS = {
     "pid_changed": _pid_changed,
+    "agent_mcp_at_most_once": _agent_mcp_at_most_once,
     "pid_stable": _pid_stable,
     "generation_incremented": _generation_incremented,
     "epoch_unchanged": _epoch_unchanged,
@@ -641,8 +684,14 @@ def _state(*, run_id: str, pid: int, generation: str, generation_index: int, epo
             "approval_id": _APPROVAL_ID, "state": "approved", "bypassed": False,
             "decided_by": "human-owner", "execution_authorized": True,
             "trials": [
-                {"kind": "rejected", "state": "rejected", "denied": True, "side_effect_created": False},
-                {"kind": "invalid_reuse", "state": "rejected", "denied": True, "side_effect_created": False},
+                {"kind": "rejected", "state": "rejected", "denied": True, "side_effect_created": False,
+                 "http_status": 201},
+                {"kind": "invalid_reuse", "state": "rejected", "denied": True, "side_effect_created": False,
+                 "http_status": 409, "domain_code": "artifact idempotency key was reused"},
+                {"kind": "protected_operation_blocked", "state": "rejected", "denied": True,
+                 "side_effect_created": False, "http_status": 422,
+                 "domain_code": "strategy version is not approved for execution",
+                 "before_count": 0, "after_count": 0},
             ],
         },
         "action_receipts": [
@@ -658,6 +707,53 @@ def _state(*, run_id: str, pid: int, generation: str, generation_index: int, epo
              "idempotency_key": "d15-runtime-approval-0001",
              "receipt": {"state": "approved", "approval_id": _APPROVAL_ID}, "side_effect_count": 1,
              "replay": {"receipt": {"state": "approved", "approval_id": _APPROVAL_ID}, "side_effect_count": 1}},
+        ],
+        "result": {
+            "run_id": run_id, "status": "completed", "sequence": sequence, "trace_contiguous": True,
+            "target_run_id": run_id, "terminal_kind": "session.result",
+            "attributed_message_sequence": sequence,
+        },
+    }
+
+
+def _agent_mcp_state(*, run_id: str, task_id: str, pid: int, generation: str, generation_index: int,
+                     epoch: int, sequence: int, continuity: str) -> dict:
+    return {
+        "session_id": "byq-session-d15-agentmcp-0001",
+        "trace_id": "byq-trace-d15-agentmcp-0001",
+        "adapter_pid": pid,
+        "adapter_generation": generation,
+        "generation_index": generation_index,
+        "executor_epoch": epoch,
+        "continuity": continuity,
+        "capture_ok": True,
+        "capture_errors": [],
+        "goal": {
+            "content_sha256": "d" * 64,
+            "prompt_receipt": {"root_run_id": run_id, "content_sha256": "d" * 64},
+        },
+        "approval": {
+            "approval_id": _APPROVAL_ID, "state": "approved", "bypassed": False,
+            "decided_by": "human-owner", "execution_authorized": True,
+            "trials": [
+                {"kind": "rejected", "state": "rejected", "denied": True, "side_effect_created": False,
+                 "http_status": 201},
+                {"kind": "invalid_reuse", "state": "rejected", "denied": True, "side_effect_created": False,
+                 "http_status": 409, "domain_code": "artifact idempotency key was reused"},
+                {"kind": "protected_operation_blocked", "state": "rejected", "denied": True,
+                 "side_effect_created": False, "http_status": 422,
+                 "domain_code": "strategy version is not approved for execution",
+                 "before_count": 0, "after_count": 0},
+            ],
+        },
+        "action_receipts": [
+            {"tool": "mcp__byq__byq_research_task_create", "origin": "agent-mcp",
+             "idempotency_key": "d15-mcp-key-0001",
+             "receipt": {"state": "accepted", "task_id": task_id, "trace_id": "byq-trace-d15-agentmcp-0001"},
+             "side_effect_count": 1,
+             "replay": {"receipt": {"state": "accepted", "task_id": task_id,
+                                    "trace_id": "byq-trace-d15-agentmcp-0001"},
+                        "side_effect_count": 1}},
         ],
         "result": {
             "run_id": run_id, "status": "completed", "sequence": sequence, "trace_contiguous": True,
@@ -707,6 +803,14 @@ def valid_fixture(contract: dict) -> dict:
                   after=_state(run_id="5" * 32, pid=2001, generation="generation-g4",
                                generation_index=4, epoch=2, sequence=13, continuity="reattached")),
     ]
+    scenarios.append(_scenario(
+        "agent-mcp-domain-at-most-once", "6" * 32,
+        before=_agent_mcp_state(run_id="6" * 32, task_id="task_" + "7" * 32, pid=2002,
+                                generation="generation-g5", generation_index=5, epoch=1,
+                                sequence=14, continuity="fresh"),
+        after=_agent_mcp_state(run_id="6" * 32, task_id="task_" + "7" * 32, pid=2003,
+                               generation="generation-g6", generation_index=6, epoch=1,
+                               sequence=15, continuity="rehydrated")))
     scenarios.append({
         "id": "host-reboot", "result": "NOT_RUN",
         "not_run_reason": "not executed: host reboot is not authorized and a container restart is not a host reboot",
@@ -801,6 +905,16 @@ def _mutations(fixture: dict) -> list[tuple[str, dict]]:
     add("observation-clears-forbidden-continuity", lambda v: v["scenarios"][0].update(
         {"forbidden_continuity": [], "allowed_continuity": ["fresh"]})
         or v["scenarios"][0]["after"].update({"continuity": "fresh"}))
+    # Agent->MCP and approval protected-operation negatives.
+    add("agent-mcp-missing", lambda v: v["scenarios"].remove(
+        next(s for s in v["scenarios"] if s["id"] == "agent-mcp-domain-at-most-once")))
+    add("agent-mcp-not-at-most-once", lambda v: next(
+        s for s in v["scenarios"] if s["id"] == "agent-mcp-domain-at-most-once")["after"][
+        "action_receipts"][0]["receipt"].update({"task_id": "task_" + "8" * 32}))
+    add("approval-invalid-reuse-500", lambda v: v["scenarios"][0]["after"]["approval"]["trials"][1].update(
+        {"http_status": 500, "domain_code": "internal error"}))
+    add("approval-protected-count-changed", lambda v: v["scenarios"][0]["after"]["approval"]["trials"][2].update(
+        {"after_count": 1}))
     return mutations, defect_targeting
 
 

@@ -1,0 +1,263 @@
+{
+  "schema_version": "byq-d15-runtime-contract.v4",
+  "generated_at": "2026-09-20",
+  "scope": "D15 real isolated BYQ runtime-continuity qualification (fixed DSH 0.1.5rc1 candidate). Not D15-4/D15-5/D15-G; not R3.",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "python_sdk": "0.1.5rc1",
+    "runtime_bin": "0.1.5rc1",
+    "selector_env": "BYQ_DSH_COMPATIBILITY_RELEASE"
+  },
+  "required_evidence_class": "runtime-isolated-stack",
+  "llm_evidence_class": "scripted-keyless",
+  "llm_evidence_note": "A keyless deterministic loopback/scripted provider drives the scenario. This is service-boundary runtime-continuity evidence, NOT real-LLM-quality semantic evidence.",
+  "results_vocabulary": [
+    "PASS",
+    "FAIL",
+    "NOT_RUN",
+    "BLOCKED"
+  ],
+  "continuity_vocabulary": [
+    "fresh",
+    "reattached",
+    "rehydrated",
+    "interrupted"
+  ],
+  "approval_states": [
+    "pending",
+    "approved",
+    "rejected",
+    "expired"
+  ],
+  "action_origin_vocabulary": [
+    "product-api-manual",
+    "agent-mcp"
+  ],
+  "required_approval_trials": [
+    "rejected",
+    "invalid_reuse",
+    "protected_operation_blocked"
+  ],
+  "required_coverage_gates_qualification": true,
+  "not_run_requires_reason": true,
+  "closed_scenario_set": true,
+  "invariants": [
+    "identity_stable",
+    "original_goal_retained",
+    "no_duplicate_side_effect",
+    "approval_not_bypassed",
+    "result_traceable",
+    "before_after_captured",
+    "continuity_truthful",
+    "sequence_contiguous",
+    "recovery_relationship_truthful",
+    "evidence_not_fabricated"
+  ],
+  "required_scenarios": [
+    {
+      "id": "adapter-process-restart",
+      "description": "runtime-adapter/DSH process interruption (SIGKILL) followed by restart and durable-session rebind.",
+      "required": true,
+      "allowed_continuity": [
+        "rehydrated",
+        "interrupted"
+      ],
+      "forbidden_continuity": [
+        "fresh"
+      ],
+      "relationships": [
+        "pid_changed",
+        "generation_incremented",
+        "epoch_unchanged",
+        "goal_receipt_linked",
+        "domain_receipt_linked",
+        "sequence_advanced_or_held",
+        "result_attributed_to_target_run"
+      ]
+    },
+    {
+      "id": "dsh-process-interruption",
+      "description": "the DSH child process is interrupted while a run is active; the lost run is truthfully marked and the durable session remains.",
+      "required": true,
+      "allowed_continuity": [
+        "interrupted",
+        "rehydrated"
+      ],
+      "forbidden_continuity": [
+        "fresh",
+        "reattached"
+      ],
+      "relationships": [
+        "pid_stable",
+        "generation_incremented",
+        "epoch_unchanged",
+        "goal_receipt_linked",
+        "domain_receipt_linked",
+        "result_attributed_to_target_run"
+      ]
+    },
+    {
+      "id": "gateway-disconnect-reconnect",
+      "description": "Gateway disconnect/reconnect; persisted WorkflowTrace survives and the durable session is reachable again.",
+      "required": true,
+      "allowed_continuity": [
+        "reattached",
+        "rehydrated",
+        "interrupted"
+      ],
+      "forbidden_continuity": [
+        "fresh"
+      ],
+      "relationships": [
+        "epoch_unchanged",
+        "goal_receipt_linked",
+        "domain_receipt_linked",
+        "sequence_advanced_or_held",
+        "result_attributed_to_target_run"
+      ]
+    },
+    {
+      "id": "generation-replacement",
+      "description": "explicit RuntimeGeneration replacement (new generation, same durable AgentSession) after a run is terminated.",
+      "required": true,
+      "allowed_continuity": [
+        "interrupted",
+        "rehydrated"
+      ],
+      "forbidden_continuity": [
+        "fresh"
+      ],
+      "relationships": [
+        "generation_incremented",
+        "epoch_unchanged",
+        "goal_receipt_linked",
+        "domain_receipt_linked",
+        "result_attributed_to_target_run"
+      ]
+    },
+    {
+      "id": "executor-takeover",
+      "description": "explicit executor epoch takeover fences the prior writer while the durable session/evidence is retained.",
+      "required": true,
+      "allowed_continuity": [
+        "reattached",
+        "rehydrated",
+        "interrupted"
+      ],
+      "forbidden_continuity": [
+        "fresh"
+      ],
+      "relationships": [
+        "epoch_incremented",
+        "goal_receipt_linked",
+        "domain_receipt_linked",
+        "result_attributed_to_target_run"
+      ]
+    },
+    {
+      "id": "agent-mcp-domain-at-most-once",
+      "description": "real scripted-provider tool call through the runtime-adapter, MCP and Backend; the same domain object with one side effect across an adapter restart",
+      "required": true,
+      "allowed_continuity": [
+        "fresh",
+        "reattached",
+        "rehydrated",
+        "interrupted"
+      ],
+      "forbidden_continuity": [],
+      "relationships": [
+        "pid_changed",
+        "generation_incremented",
+        "epoch_unchanged",
+        "goal_receipt_linked",
+        "agent_mcp_at_most_once",
+        "result_attributed_to_target_run"
+      ]
+    }
+  ],
+  "optional_scenarios": [
+    {
+      "id": "host-reboot",
+      "description": "host reboot. NOT executed in this batch: rebooting the maintainer host is not authorized and a container restart is not a host reboot.",
+      "required": false,
+      "allowed_continuity": [
+        "rehydrated",
+        "interrupted"
+      ],
+      "forbidden_continuity": [
+        "fresh"
+      ],
+      "relationships": [
+        "generation_incremented",
+        "epoch_unchanged",
+        "goal_receipt_linked"
+      ]
+    }
+  ],
+  "required_before_after_fields": [
+    "session_id",
+    "trace_id",
+    "adapter_pid",
+    "adapter_generation",
+    "generation_index",
+    "executor_epoch",
+    "continuity",
+    "capture_ok",
+    "capture_errors",
+    "goal",
+    "approval",
+    "action_receipts",
+    "result"
+  ],
+  "goal_fields": [
+    "content_sha256",
+    "prompt_receipt"
+  ],
+  "approval_fields": [
+    "approval_id",
+    "state",
+    "decided_by"
+  ],
+  "action_receipt_fields": [
+    "idempotency_key",
+    "receipt",
+    "side_effect_count",
+    "origin"
+  ],
+  "result_fields": [
+    "run_id",
+    "status",
+    "sequence",
+    "trace_contiguous",
+    "target_run_id",
+    "terminal_kind",
+    "attributed_message_sequence"
+  ],
+  "fail_closed": [
+    "missing required scenario",
+    "required scenario NOT_RUN/BLOCKED (required coverage gates qualification)",
+    "missing optional scenario reason",
+    "duplicate scenario id",
+    "unknown scenario id",
+    "missing required evidence field",
+    "capture evidence missing or fabricated (capture_ok false / capture_errors non-empty)",
+    "original-goal drift",
+    "duplicate side effect (measured side_effect_count != 1)",
+    "unmeasured side_effect_count",
+    "idempotency receipt changed on replay",
+    "approval bypassed (rejected/expired reused, or initiator self-approval)",
+    "approval trial created a side effect",
+    "fabricated continuity (fresh after a fault)",
+    "trace gap or missing target-run attribution",
+    "unlabeled action origin",
+    "NOT_RUN/BLOCKED without reason",
+    "candidate mismatch",
+    "observation attempts to override contract continuity rules",
+    "missing PID/generation/epoch relationship",
+    "broken receipt/trace linkage",
+    "non-runtime evidence class",
+    "real Agent->MCP domain action not exercised",
+    "denial inferred from a non-definitive error (5xx/timeout)",
+    "protected operation changed the authoritative side-effect count"
+  ]
+}

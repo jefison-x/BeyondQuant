@@ -121,6 +121,12 @@ def sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+def _as_int(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
 def container_pid(name: str) -> int:
     try:
         return int(docker("inspect", "-f", "{{.State.Pid}}", name).strip())
@@ -227,6 +233,32 @@ def set_provider_delay(seconds: float) -> None:
     docker("exec", PROVIDER_CONTAINER, "python3", "-c",
            f"import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8900/_delay?seconds={seconds}').read().decode())",
            check=False)
+
+
+def arm_provider_tool_call(name: str, arguments: dict) -> dict:
+    payload = json.dumps({"name": name, "arguments": arguments})
+    code = (
+        "import urllib.request;"
+        "data=" + repr(payload) + ".encode();"
+        "req=urllib.request.Request('http://127.0.0.1:8900/_tool_call',data=data,"
+        "headers={'content-type':'application/json'},method='POST');"
+        "print(urllib.request.urlopen(req,timeout=5).read().decode())"
+    )
+    out = docker("exec", PROVIDER_CONTAINER, "python3", "-c", code, check=False)
+    try:
+        return json.loads(out)
+    except json.JSONDecodeError:
+        return {}
+
+
+def provider_state() -> dict:
+    out = docker("exec", PROVIDER_CONTAINER, "python3", "-c",
+                 "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8900/_calls',timeout=5).read().decode())",
+                 check=False)
+    try:
+        return json.loads(out)
+    except json.JSONDecodeError:
+        return {}
 
 
 def wait_healthy(name: str, timeout: int = 180) -> None:
@@ -352,9 +384,73 @@ def artifact_of(response: object) -> dict:
     return response if isinstance(response, dict) else {}
 
 
+def _maybe_json(raw: str) -> dict:
+    try:
+        value = json.loads(raw or "{}")
+    except json.JSONDecodeError:
+        return {"raw": raw[:300]}
+    return value if isinstance(value, dict) else {"raw": str(value)[:300]}
+
+
+def http_attempt(method: str, url: str, payload: dict | None = None, *,
+                 opener: urllib.request.OpenerDirector | None = None, timeout: int = 30) -> dict:
+    """Return the HTTP status and parsed body; never infer denial from an error alone."""
+    data = None if payload is None else json.dumps(payload).encode()
+    request = urllib.request.Request(url, data=data, method=method,
+                                     headers={"content-type": "application/json"})
+    client = opener.open if opener else urllib.request.urlopen
+    try:
+        with client(request, timeout=timeout) as response:
+            return {"ok": True, "status": response.status,
+                    "body": _maybe_json(response.read().decode()), "error": None}
+    except urllib.error.HTTPError as error:
+        return {"ok": False, "status": error.code,
+                "body": _maybe_json(error.read().decode()), "error": f"http {error.code}"}
+    except Exception as exc:  # noqa: BLE001 - timeouts/connection errors are not denials
+        return {"ok": False, "status": 0, "body": None, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def domain_code(attempt: object) -> str | None:
+    """Extract a closed domain error code/message from a backend error body."""
+    if not isinstance(attempt, dict):
+        return None
+    body = attempt.get("body")
+    if not isinstance(body, dict):
+        return None
+    for key in ("code", "detail"):
+        value = body.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    error = body.get("error")
+    if isinstance(error, str) and error.strip():
+        return error.strip()
+    if isinstance(error, dict):
+        for key in ("code", "message"):
+            value = error.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
+
+
+def definitive_denial(attempt: object) -> bool:
+    """A denial requires an explicit 4xx client rejection with a domain code."""
+    if not isinstance(attempt, dict):
+        return False
+    status = attempt.get("status")
+    return isinstance(status, int) and 400 <= status < 500 and bool(domain_code(attempt))
+
+
 def derive_approval(approved_response: object, rejected_response: object,
-                    invalid_reuse_response: object, fetched_approval: object) -> dict:
-    """Approval fields come only from persisted responses + real deny trials."""
+                    invalid_reuse_attempt: object, protected_attempt: object,
+                    protected_before: object, protected_after: object,
+                    fetched_approval: object) -> dict:
+    """Approval fields come only from persisted responses + real protected-operation trials.
+
+    Denial is never inferred from an arbitrary error: the invalid-reuse and the
+    protected-operation attempts must record a definitive 4xx domain rejection,
+    and the protected operation must leave the authoritative side-effect count
+    unchanged.
+    """
     approved = artifact_of(approved_response)
     approved_content = approved.get("content") if isinstance(approved.get("content"), dict) else {}
     rejected = artifact_of(rejected_response)
@@ -365,15 +461,29 @@ def derive_approval(approved_response: object, rejected_response: object,
     rejected_state = rejected_content.get("decision")
     rejected_authorized = rejected_content.get("execution_authorized")
 
-    invalid_denied = isinstance(invalid_reuse_response, dict) and "_error" in invalid_reuse_response
+    invalid_denied = definitive_denial(invalid_reuse_attempt)
+    invalid_status = _as_int(invalid_reuse_attempt.get("status")) if isinstance(invalid_reuse_attempt, dict) else None
+
+    before_count = _as_int(protected_before)
+    after_count = _as_int(protected_after)
+    count_unchanged = before_count is not None and after_count is not None and after_count == before_count
+    protected_definitive = definitive_denial(protected_attempt)
+    protected_denied = protected_definitive and count_unchanged
+    protected_status = _as_int(protected_attempt.get("status")) if isinstance(protected_attempt, dict) else None
+    protected_side = (not count_unchanged) or (not protected_definitive and count_unchanged)
 
     rejected_denied = rejected_state == "rejected" and rejected_authorized is False
     trials = [
         {"kind": "rejected", "state": rejected_state, "denied": bool(rejected_denied),
          "side_effect_created": not bool(rejected_denied),
-         "artifact_id": rejected.get("artifact_id")},
+         "artifact_id": rejected.get("artifact_id"), "http_status": 201},
         {"kind": "invalid_reuse", "state": rejected_state, "denied": bool(invalid_denied),
-         "side_effect_created": not bool(invalid_denied)},
+         "side_effect_created": not bool(invalid_denied),
+         "http_status": invalid_status, "domain_code": domain_code(invalid_reuse_attempt)},
+        {"kind": "protected_operation_blocked", "state": rejected_state, "denied": bool(protected_denied),
+         "side_effect_created": bool(protected_side),
+         "http_status": protected_status, "domain_code": domain_code(protected_attempt),
+         "before_count": before_count, "after_count": after_count},
     ]
     bypassed = any(trial["side_effect_created"] for trial in trials)
     fetched = artifact_of(fetched_approval)
@@ -414,6 +524,9 @@ class Qualification:
         self.conversation_id: str | None = None
         self.trace_id: str | None = None
         self.message_id: str | None = None
+        self.agent_runtime_session_id: str | None = None
+        self.agent_conversation_id: str | None = None
+        self.agent_trace_id: str | None = None
         self.goal = ("D15 runtime continuity original goal: preserve this research objective "
                      "across adapter, DSH and Gateway faults without duplicate side effects.")
         self.artifacts: dict[str, object] = {}
@@ -472,11 +585,25 @@ class Qualification:
         rejected_version_id = self._strategy_version(task_id, "Reject", 2)
         rejected = self._approval(task_id, rejected_version_id, "rejected",
                                   f"d15-approval-reject-{uuid.uuid4().hex}")
+        rejected_id = str(artifact_of(rejected["response"]).get("artifact_id"))
         invalid_body = {**approved["body"], "decision": "rejected",
                         "rationale": "D15 invalid reuse attempt.",
                         "idempotency_key": approved["body"]["idempotency_key"]}
-        invalid_reuse = try_http("POST", f"{GATEWAY}/api/product/strategies/approvals",
-                                 invalid_body, opener=self.client.opener)
+        invalid_reuse = http_attempt("POST", f"{GATEWAY}/api/product/strategies/approvals",
+                                     invalid_body, opener=self.client.opener)
+
+        # Real protected operation: a backtest that requires an authorized
+        # strategy approval. Attempt it with the REJECTED approval and measure
+        # the authoritative backtest-job count before and after.
+        backtests_before = self._backtest_count()
+        protected = http_attempt("POST", f"{GATEWAY}/api/product/backtests",
+                                 {"task_id": task_id,
+                                  "strategy_version_artifact_id": rejected_version_id,
+                                  "approval_artifact_id": rejected_id,
+                                  "trace_id": f"d15-protected-{uuid.uuid4().hex}",
+                                  "idempotency_key": f"d15-protected-{uuid.uuid4().hex}"},
+                                 opener=self.client.opener)
+        backtests_after = self._backtest_count()
 
         pool_key = f"d15-pool-{uuid.uuid4().hex}"
         pool_name = f"D15 isolated pool {uuid.uuid4().hex}"
@@ -494,9 +621,17 @@ class Qualification:
             "rejected_version_artifact_id": rejected_version_id,
             "rejected_response": rejected["response"],
             "invalid_reuse_response": invalid_reuse,
+            "protected_operation_response": protected,
+            "backtests_before": backtests_before,
+            "backtests_after": backtests_after,
             "pool_id": pool_id, "pool_key": pool_key, "pool_body": pool_body,
             "pool_name": pool_name,
         }
+
+    def _backtest_count(self) -> int:
+        body = self.client.call("GET", "/api/product/backtests")
+        rows = body.get("backtests") if isinstance(body, dict) else None
+        return len(rows) if isinstance(rows, list) else 0
 
     def domain_replay(self) -> dict:
         pool = self.client.call("POST", "/api/product/paper/pools", self.artifacts["pool_body"])
@@ -603,8 +738,11 @@ class Qualification:
             domain = {}
             errors.append(f"domain replay failed: {exc}")
 
-        approval = derive_approval(self.artifacts["approved_response"], self.artifacts["rejected_response"],
-                                   self.artifacts["invalid_reuse_response"], domain.get("fetched_approved"))
+        approval = derive_approval(
+            self.artifacts["approved_response"], self.artifacts["rejected_response"],
+            self.artifacts["invalid_reuse_response"], self.artifacts["protected_operation_response"],
+            self.artifacts["backtests_before"], self.artifacts["backtests_after"],
+            domain.get("fetched_approved"))
         if approval.get("state") != "approved":
             errors.append(f"persisted approval state is {approval.get('state')!r}, not approved")
         if approval.get("execution_authorized") is not True:
@@ -676,6 +814,173 @@ class Qualification:
             "_dsh_pids": adapter_dsh_pids(),
         }
 
+    # ---- real Agent -> MCP -> Backend path (scripted provider emits a tool call) ----
+    def _new_journal(self, exclude: str | None) -> str:
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            journals = [item for item in list_journals() if item != exclude]
+            if journals:
+                return journals[0]
+            time.sleep(1)
+        raise QualError("agent-mcp session journal was not created")
+
+    def create_agent_mcp_session(self) -> None:
+        body = self.client.call("POST", "/v1/agent/sessions", {})
+        self.agent_conversation_id = str(body["session_id"])
+        self.agent_trace_id = str(body["trace_id"])
+        self.agent_runtime_session_id = self._new_journal(self.runtime_session_id)
+
+    def _agent_user_message_id(self) -> str | None:
+        detail = self.client.call("GET", f"/v1/agent/sessions/{self.agent_conversation_id}")
+        for message in reversed(detail.get("messages", [])):
+            if message.get("role") == "user":
+                return str(message["message_id"])
+        return None
+
+    def submit_agent_mcp_turn(self, key: str, title: str, objective: str) -> dict:
+        arm_provider_tool_call("mcp__byq__byq_research_task_create",
+                               {"owner_principal": "placeholder", "title": title,
+                                "objective": objective, "trace_id": "placeholder",
+                                "idempotency_key": key})
+        return self.client.call("POST", f"/v1/agent/sessions/{self.agent_conversation_id}/turns",
+                                {"content": f"Create the research task titled {title}."}, timeout=30)
+
+    def research_tasks_by_title(self, title: str) -> list[dict]:
+        body = self.client.call("GET", "/api/product/research/tasks")
+        rows = body.get("tasks") if isinstance(body, dict) else None
+        return [row for row in (rows or []) if isinstance(row, dict) and row.get("title") == title]
+
+    def wait_agent_task(self, title: str, timeout: int = 60) -> list[dict]:
+        deadline = time.time() + timeout
+        rows: list[dict] = []
+        while time.time() < deadline:
+            rows = self.research_tasks_by_title(title)
+            if rows:
+                return rows
+            time.sleep(1)
+        return rows
+
+    def wait_agent_answer(self, timeout: int = 60) -> bool:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            detail = self.client.call("GET", f"/v1/agent/sessions/{self.agent_conversation_id}")
+            if any(isinstance(m, dict) and m.get("role") == "assistant"
+                   for m in detail.get("messages", [])):
+                return True
+            time.sleep(1)
+        return False
+
+    def capture_agent_mcp(self, *, key: str, title: str, continuity: str, target_run_id: str,
+                          message_id: str, delivery_state: str, replay_state: str) -> dict:
+        errors: list[str] = []
+        if continuity not in {"fresh", "reattached", "rehydrated", "interrupted"}:
+            errors.append(f"agent-mcp continuity is invalid: {continuity!r}")
+        try:
+            journal = read_journal(self.agent_runtime_session_id)
+        except Exception as exc:  # noqa: BLE001
+            journal = None
+            errors.append(f"agent-mcp journal read failed: {exc}")
+        detail = try_http("GET", f"{GATEWAY}/v1/agent/sessions/{self.agent_conversation_id}",
+                          opener=self.client.opener)
+        if not isinstance(detail, dict) or "_error" in detail:
+            errors.append(f"agent-mcp session read failed: {detail}")
+            detail = {}
+        messages = detail.get("messages") if isinstance(detail.get("messages"), list) else []
+
+        receipt, receipt_error = derive_goal_receipt(journal, message_id)
+        if receipt_error:
+            errors.append(receipt_error)
+        if receipt is not None and receipt.get("root_run_id") != target_run_id:
+            errors.append(f"agent-mcp goal receipt run {receipt.get('root_run_id')!r} != target {target_run_id!r}")
+
+        tasks = self.research_tasks_by_title(title)
+        task_id = tasks[0].get("task_id") if tasks else None
+        count = len(tasks)
+        if count != 1:
+            errors.append(f"agent-mcp task side-effect count is {count}, not 1")
+        if not isinstance(task_id, str):
+            errors.append("agent-mcp task was not created")
+
+        trace_events = read_gateway_trace(self.agent_runtime_session_id)
+        trace = derive_trace_evidence(trace_events, messages, target_run_id)
+        errors.extend(trace["errors"])
+
+        state = provider_state()
+        if int(state.get("tool_calls_emitted") or 0) < 1:
+            errors.append("scripted provider did not emit the armed tool call")
+
+        approval = derive_approval(
+            self.artifacts["approved_response"], self.artifacts["rejected_response"],
+            self.artifacts["invalid_reuse_response"], self.artifacts["protected_operation_response"],
+            self.artifacts["backtests_before"], self.artifacts["backtests_after"], None)
+
+        delivery = {"state": "accepted", "task_id": task_id, "trace_id": self.agent_trace_id}
+        replay = {"state": "accepted", "task_id": task_id, "trace_id": self.agent_trace_id}
+        epoch = journal.get("executor_epoch") if isinstance(journal, dict) else None
+        if not isinstance(epoch, int) or epoch < 1:
+            epoch = _safe_epoch()
+        sequence = journal.get("sequence") if isinstance(journal, dict) and type(journal.get("sequence")) is int else 0
+        return {
+            "session_id": self.agent_conversation_id,
+            "trace_id": self.agent_trace_id,
+            "adapter_pid": container_pid(ADAPTER_CONTAINER),
+            "adapter_generation": (read_generations(self.agent_runtime_session_id) or [{}])[-1].get(
+                "generation_id", "generation-none"),
+            "generation_index": len(read_generations(self.agent_runtime_session_id)),
+            "executor_epoch": epoch,
+            "continuity": continuity,
+            "capture_ok": not errors,
+            "capture_errors": errors,
+            "goal": {"content_sha256": receipt.get("content_sha256") if receipt else None,
+                     "prompt_receipt": receipt},
+            "approval": approval,
+            "action_receipts": [
+                make_receipt("mcp__byq__byq_research_task_create", key, delivery, count, ORIGIN_AGENT,
+                             replay_receipt=replay, replay_side_effect_count=count),
+            ],
+            "result": {
+                "run_id": target_run_id,
+                "status": "completed" if trace["completed"] else "incomplete",
+                "sequence": sequence,
+                "trace_contiguous": trace["trace_contiguous"],
+                "target_run_id": target_run_id,
+                "terminal_kind": trace["terminal_kind"],
+                "attributed_message_sequence": trace["attributed_message_sequence"],
+            },
+            "_provider_tool_name": state.get("last_tool_name"),
+            "_provider_tool_calls_emitted": state.get("tool_calls_emitted"),
+            "_task_count": count,
+            "_delivery_states": [delivery_state, replay_state],
+        }
+
+    def agent_mcp_domain_at_most_once(self) -> dict:
+        key = f"d15-mcp-{uuid.uuid4().hex}"
+        title = f"D15 agent-mcp task {uuid.uuid4().hex}"
+        objective = "D15 real Agent->MCP->Backend at-most-once across an adapter fault."
+        self.create_agent_mcp_session()
+        first = self.submit_agent_mcp_turn(key, title, objective)
+        message_id = self._agent_user_message_id()
+        self.wait_agent_task(title)
+        self.wait_agent_answer()
+        target_run = str(first.get("run_id"))
+        before = self.capture_agent_mcp(key=key, title=title, continuity="fresh",
+                                        target_run_id=target_run, message_id=message_id,
+                                        delivery_state="created", replay_state="created")
+        docker("kill", ADAPTER_CONTAINER, check=False)
+        docker("start", ADAPTER_CONTAINER)
+        wait_healthy(ADAPTER_CONTAINER)
+        continuity_after = continuity_of(self.agent_runtime_session_id)
+        self.ack_terminals(self.agent_runtime_session_id)
+        second = self.submit_agent_mcp_turn(key, title, objective)
+        self.wait_agent_task(title)
+        self.wait_agent_answer()
+        after = self.capture_agent_mcp(key=key, title=title, continuity=continuity_after,
+                                       target_run_id=target_run, message_id=message_id,
+                                       delivery_state="deduplicated", replay_state="deduplicated")
+        after["_second_delivery_run_id"] = str(second.get("run_id"))
+        return self.finalize("agent-mcp-domain-at-most-once", before, after,
+                             "docs/evidence/d15/d15-runtime/agent-mcp-domain-at-most-once.v4.json")
+
     def finalize(self, scenario_id: str, before: dict, after: dict, evidence: str) -> dict:
         capture_errors = list(before.get("capture_errors") or []) + list(after.get("capture_errors") or [])
         ok = before.get("capture_ok") is True and after.get("capture_ok") is True and not capture_errors
@@ -744,9 +1049,10 @@ class Qualification:
         return self.finalize("dsh-process-interruption", before, after,
                              "docs/evidence/d15/d15-runtime/dsh-process-interruption.v3.json")
 
-    def ack_terminals(self) -> None:
+    def ack_terminals(self, session_id: str | None = None) -> None:
         """Acknowledge durable terminals so a new root is admitted (BYQ contract)."""
-        state = read_journal(self.runtime_session_id)
+        session_id = session_id or self.runtime_session_id
+        state = read_journal(session_id)
         context = state.get("context", {})
         module = lifecycle_module()
         for event in state.get("events", []):
@@ -758,7 +1064,7 @@ class Qualification:
             if root in state.get("terminal_acks", {}):
                 continue
             try_http("POST", f"{ADAPTER}/internal/runtime/sessions/"
-                     f"{self.runtime_session_id}/terminal-receipt",
+                     f"{session_id}/terminal-receipt",
                      {"receipt": module.lifecycle_receipt(projected)})
 
     def adapter_session_status(self) -> str:
@@ -847,11 +1153,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-up", action="store_true", help="reuse a running isolated stack")
     parser.add_argument("--no-cleanup", action="store_true")
-    parser.add_argument("--out", type=Path, default=HERE.parents[2] / "docs/evidence/d15/d15-runtime/observations.v3.json")
+    parser.add_argument("--out", type=Path, default=HERE.parents[2] / "docs/evidence/d15/d15-runtime/observations.v4.json")
     args = parser.parse_args(argv)
 
     observations: dict = {
-        "schema_version": "byq-d15-runtime-observations.v3",
+        "schema_version": "byq-d15-runtime-observations.v4",
         "evidence_class": "runtime-isolated-stack",
         "generated_at": now(),
         "candidate": {"release": "dsh-0.1.5rc1", "python_sdk": "0.1.5rc1",
@@ -863,10 +1169,11 @@ def main(argv: list[str] | None = None) -> int:
         "execution_model": {
             "provider": "scripted-keyless",
             "agent_mcp_tool_calls": 0,
-            "action_origin": "product-api-manual",
-            "note": "The research goal, persistent approval and paper-pool side effect are exercised "
-                    "through the real Product/Backend API as manual Product actions. They are NOT "
-                    "Agent->MCP tool-call executions and do NOT claim Agent at-most-once semantics.",
+            "action_origin": "product-api-manual + agent-mcp",
+            "note": "The research goal, persistent approval and paper-pool side effect are manual "
+                    "Product API actions. The agent-mcp-domain-at-most-once scenario additionally "
+                    "drives a real scripted-provider tool call through the runtime-adapter -> MCP -> "
+                    "Backend and verifies one domain side effect across an adapter restart.",
         },
         "stack": {"compose_project": PROJECT, "candidate_image": "byq-d15-runtime-candidate:local",
                   "isolated_session_root": SESSION_ROOT,
@@ -891,7 +1198,10 @@ def main(argv: list[str] | None = None) -> int:
         observations["scenarios"].append(qualification.gateway_reconnect())
         observations["scenarios"].append(qualification.generation_replacement())
         observations["scenarios"].append(qualification.dsh_interruption())
+        observations["scenarios"].append(qualification.agent_mcp_domain_at_most_once())
         observations["scenarios"].append(qualification.executor_takeover())
+        observations["execution_model"]["agent_mcp_tool_calls"] = int(
+            provider_state().get("tool_calls_emitted") or 0)
     finally:
         if not args.no_cleanup:
             observations["cleanup"] = stack_down()
@@ -905,15 +1215,15 @@ def main(argv: list[str] | None = None) -> int:
     scenarios_dir = args.out.parent / "scenarios"
     scenarios_dir.mkdir(parents=True, exist_ok=True)
     for scenario in observations["scenarios"]:
-        (scenarios_dir / f"{scenario['id']}.v3.json").write_text(
-            json.dumps({"schema_version": "byq-d15-runtime-scenario.v3",
+        (scenarios_dir / f"{scenario['id']}.v4.json").write_text(
+            json.dumps({"schema_version": "byq-d15-runtime-scenario.v4",
                         "evidence_class": observations["evidence_class"],
                         "candidate": observations["candidate"], "llm": observations["llm"],
                         "execution_model": observations["execution_model"],
                         "generated_at": observations["generated_at"], **scenario},
                        indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    (args.out.parent / "stack.v3.json").write_text(json.dumps(
-        {"schema_version": "byq-d15-runtime-stack.v3", "generated_at": observations["generated_at"],
+    (args.out.parent / "stack.v4.json").write_text(json.dumps(
+        {"schema_version": "byq-d15-runtime-stack.v4", "generated_at": observations["generated_at"],
          "preflight": observations["preflight"], "domain_artifacts": observations["domain_artifacts"],
          "execution_model": observations["execution_model"],
          "cleanup": observations.get("cleanup")}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
