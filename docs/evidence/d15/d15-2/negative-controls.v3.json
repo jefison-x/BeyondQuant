@@ -1,0 +1,480 @@
+{
+  "schema_version": "byq-d15-2-negative-controls.v3",
+  "generated_at": "2026-09-20T00:37:17.726Z",
+  "harness": "scripts/d15/harness/migration_harness.mjs (BYQ_D15_2_FAULT)",
+  "note": "Every control invokes the real harness CLI and observes its process exit code and verdict.v3. Result-layer faults leave all stage statuses passing, so the recorded legacy_exit_code=0 proves the pre-fix gate would have reported PASS on a broken invariant. The completeness controls (empty/drop/duplicate/extra/missing-evidence/requirements-missing) prove the manifest-driven required-set gate fails.",
+  "repro": {
+    "input": "computeVerdict([], {cases:[one-only valid refusal]})",
+    "pre_fix_observed": {
+      "all_pass": true,
+      "exit_code": 0
+    },
+    "post_fix_observed": {
+      "all_pass": false,
+      "exit_code": 1,
+      "failing_invariants": [
+        "manifest_conformance"
+      ]
+    },
+    "legacy_exit_code": 1,
+    "repro_fixed": true
+  },
+  "all_controls_pass": true,
+  "controls": [
+    {
+      "fault": null,
+      "injects": "none",
+      "expectation": "real qualification passes and exits 0",
+      "expected": {
+        "exit_code": 0,
+        "all_pass": true,
+        "fail_closed_pass": true,
+        "failing_invariants": [],
+        "blocked_count": 0
+      },
+      "observed": {
+        "exit_code": 0,
+        "all_pass": true,
+        "fail_closed_pass": true,
+        "failing_invariants": [],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 0
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "sequence",
+      "injects": "sequence_continuity=false and reopen.sequence_contiguous=false on f-completed",
+      "expectation": "sequence invariant fails; legacy stage-only gate would still pass",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "failing_invariants": [
+          "sequence_continuity"
+        ],
+        "legacy_exit_code": 0
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": true,
+        "failing_invariants": [
+          "sequence_continuity"
+        ],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 0
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "ids",
+      "injects": "missing_from_target on f-completed",
+      "expectation": "id invariant fails; legacy stage-only gate would still pass",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "failing_invariants": [
+          "id_continuity"
+        ],
+        "legacy_exit_code": 0
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": true,
+        "failing_invariants": [
+          "id_continuity"
+        ],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 0
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "context",
+      "injects": "missing_system_prompts on f-completed",
+      "expectation": "context invariant fails; legacy stage-only gate would still pass",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "failing_invariants": [
+          "context_preservation"
+        ],
+        "legacy_exit_code": 0
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": true,
+        "failing_invariants": [
+          "context_preservation"
+        ],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 0
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "reopen",
+      "injects": "appended_missing_from_reopen on f-completed",
+      "expectation": "append/reopen invariant fails; legacy stage-only gate would still pass",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "failing_invariants": [
+          "append_reopen"
+        ],
+        "legacy_exit_code": 0
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": true,
+        "failing_invariants": [
+          "append_reopen"
+        ],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 0
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "blockers",
+      "injects": "an extra non-migration blocker on f-completed",
+      "expectation": "no-blockers invariant fails; legacy stage-only exit ignores it and would pass",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "failing_invariants": [
+          "no_blockers"
+        ],
+        "legacy_exit_code": 0,
+        "blocked_count": 0
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": true,
+        "failing_invariants": [
+          "no_blockers"
+        ],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 0
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "fail_closed",
+      "injects": "documented_refusal=false on the first rejection case",
+      "expectation": "rejection-case verdict fails; the pre-fix exit code ignored fail-closed entirely",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": false,
+        "failing_invariants": [],
+        "legacy_exit_code": 0
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": false,
+        "failing_invariants": [],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 0
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "blocked_migration",
+      "injects": "a real unclassified event into the f-completed source store",
+      "expectation": "the real pipeline blocks the migration and the gate fails",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "failing_invariants_includes": [
+          "migration_completed",
+          "no_blockers"
+        ],
+        "blocked_count": 1,
+        "legacy_exit_code": 1
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": true,
+        "failing_invariants": [
+          "migration_completed",
+          "stage_states",
+          "sequence_continuity",
+          "id_continuity",
+          "context_preservation",
+          "append_reopen",
+          "non_downgradable",
+          "no_blockers"
+        ],
+        "blocked_count": 1,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 1
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "empty_fixtures",
+      "injects": "zero fixtures collected",
+      "expectation": "manifest conformance fails on an empty required fixture set",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "failing_invariants": [
+          "manifest_conformance"
+        ],
+        "blocked_count": 0,
+        "legacy_exit_code": 1
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": true,
+        "failing_invariants": [
+          "manifest_conformance"
+        ],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": false,
+        "legacy_exit_code": 1
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "drop_fixture",
+      "injects": "remove the required f-completed fixture",
+      "expectation": "manifest conformance fails on a missing required fixture; legacy stage-only gate would pass",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "failing_invariants": [
+          "manifest_conformance"
+        ],
+        "legacy_exit_code": 0
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": true,
+        "failing_invariants": [
+          "manifest_conformance"
+        ],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 0
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "duplicate_fixture",
+      "injects": "duplicate f-normal",
+      "expectation": "manifest conformance fails on a duplicate fixture",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "failing_invariants": [
+          "manifest_conformance"
+        ],
+        "legacy_exit_code": 0
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": true,
+        "failing_invariants": [
+          "manifest_conformance"
+        ],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 0
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "extra_fixture",
+      "injects": "append an unexpected f-unexpected fixture",
+      "expectation": "manifest conformance fails on an unexpected fixture",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "failing_invariants_includes": [
+          "manifest_conformance"
+        ],
+        "legacy_exit_code": 1
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": true,
+        "failing_invariants": [
+          "manifest_conformance",
+          "stage_states",
+          "sequence_continuity",
+          "id_continuity",
+          "context_preservation",
+          "append_reopen"
+        ],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": false,
+        "legacy_exit_code": 1
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "drop_fail_closed",
+      "injects": "remove one required rejection case",
+      "expectation": "manifest conformance fails on a missing required rejection case; legacy stage-only gate would pass",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "failing_invariants": [
+          "manifest_conformance"
+        ],
+        "legacy_exit_code": 0
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": true,
+        "failing_invariants": [
+          "manifest_conformance"
+        ],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 0
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "extra_fail_closed",
+      "injects": "append an unexpected rejection case",
+      "expectation": "manifest conformance fails on an unexpected rejection case; legacy stage-only gate would pass",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "failing_invariants": [
+          "manifest_conformance"
+        ],
+        "legacy_exit_code": 0
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": true,
+        "failing_invariants": [
+          "manifest_conformance"
+        ],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 0
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "missing_evidence",
+      "injects": "delete message_id_preservation from f-completed evidence",
+      "expectation": "missing required evidence fails id/append instead of defaulting to pass; legacy stage-only gate would pass",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "failing_invariants": [
+          "id_continuity",
+          "append_reopen"
+        ],
+        "legacy_exit_code": 0
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": true,
+        "failing_invariants": [
+          "id_continuity",
+          "append_reopen"
+        ],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 0
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "stage_failure",
+      "injects": "set f-completed.append.status='fail' while leaving other evidence intact",
+      "expectation": "the explicit stage-state check fails",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "failing_invariants_includes": [
+          "stage_states"
+        ],
+        "legacy_exit_code": 1
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": true,
+        "failing_invariants": [
+          "stage_states",
+          "append_reopen"
+        ],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": false,
+        "legacy_exit_code": 1
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "requirements_missing",
+      "injects": "evaluate without the required-set manifest",
+      "expectation": "manifest conformance fails when the requirements manifest is absent; legacy stage-only gate would pass",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "failing_invariants": [
+          "manifest_conformance"
+        ],
+        "legacy_exit_code": 0
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": true,
+        "failing_invariants": [
+          "manifest_conformance"
+        ],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 0
+      },
+      "failures": [],
+      "control_pass": true
+    }
+  ]
+}

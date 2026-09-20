@@ -1,14 +1,30 @@
 {
   "schema_version": "byq-d15-acceptance-matrix.v1",
   "generated_at": "2026-09-19",
-  "notes": "Acceptance criteria for D15-2..D15-G. D15-2 and D15-3 are PASS with committed evidence; D15-4..D15-G remain NOT_RUN until a live candidate exists. No criteria may be marked PASS without committed evidence. D15-3 PASS covers native session resume only; R3_RESUME stays NO until D15-G.",
+  "notes": "Acceptance criteria for D15-2..D15-G. D15-2 and D15-3 are PASS with committed evidence; D15-4..D15-G remain NOT_RUN until a live candidate exists. No criteria may be marked PASS without committed evidence. D15-2 PASS is FORMAT-LAYER migration evidence only (codec/catalog; no runtime/SessionHandle/lease, no goal/approval/result continuity). D15-3 PASS covers native persistence-layer session resume across a new OS process only, not BYQ runtime-level semantic recovery. Process recovery, original-goal preservation, domain-action at-most-once, approval validity and result traceability remain a required real isolated runtime qualification. R3_RESUME stays NO until D15-G.",
   "result_vocabulary": ["NOT_RUN", "PASS", "FAIL", "BLOCKED"],
+  "requirements": {
+    "schema_version": "byq-d15-2-requirements.v1",
+    "source_index": "docs/evidence/d15/fixtures/sessions/index.v1.json",
+    "fixtures": ["f-normal", "f-completed", "f-interrupted", "f-compacted", "f-large", "f-subagent", "f-continuable", "f-forked", "f-old-lifecycle"],
+    "stages": ["read", "resume", "append", "close", "reopen"],
+    "fail_closed_cases": ["unknown-future-format", "unclassified-event", "malformed-header", "refused-surface-migration"]
+  },
   "substages": [
     {
       "id": "D15-2",
       "name": "Session V3 Migration Qualification",
       "result": "PASS",
+      "layer": "format",
+      "proves": "session-format decode/migrate/encode/re-read over 9 immutable fixtures",
+      "does_not_prove": "runtime recovery, SessionHandle.flush durability, live lease, AgentSession goal/approval/result continuity",
       "evidence": [
+        "docs/evidence/d15/d15-2/migration-results.v3.json",
+        "docs/evidence/d15/d15-2/verdict.v3.json",
+        "docs/evidence/d15/d15-2/fail-closed.v3.json",
+        "docs/evidence/d15/d15-2/negative-controls.v3.json",
+        "docs/evidence/d15/d15-2/migration-results.v2.json",
+        "docs/evidence/d15/d15-2/verdict.v2.json",
         "docs/evidence/d15/d15-2/migration-results.v1.json",
         "docs/evidence/d15/d15-2/fail-closed.v1.json",
         "docs/evidence/d15/fixtures/sessions/index.v1.json"
@@ -20,24 +36,36 @@
         "event identity/order and terminal evidence preserved",
         "fork inheritedEventCount/isSeeded preserved",
         "downgrade feasibility explicitly recorded (even when not downgradable)",
-        "unknown/future format version fails closed with the documented refusal"
+        "unknown/future format version fails closed with the documented refusal",
+        "the verdict validates the required fixture set (count/uniqueness/no missing/extra) and rejection set from the single acceptance-matrix manifest",
+        "every required stage (read/resume/append/close/reopen) has an explicit success check",
+        "missing required evidence is a failure, never an empty-default pass",
+        "the verdict fails on any broken invariant, rejection case or blocker and the process exit code reflects it",
+        "negative controls prove empty/missing/duplicate/unexpected/missing-evidence/single-stage/rejection faults fail while the pre-fix gate would pass"
       ],
       "criterion_results": [
         {"criterion": "originals immutable; migrated copies separate and immutable once produced", "result": "PASS", "evidence": "fixtures/sessions/index.v1.json sha256 verified before and after the live harness run; harness copies each original to a fresh scratch directory and writes only session.v3.jsonl there"},
-        {"criterion": "0.1.2 historical -> migrate -> V3 -> read -> resume -> append -> close -> reopen succeeds", "result": "PASS", "evidence": "9/9 fixtures: read/resume/append/close/reopen pass (migration-results.v1.json summary.all_post_migration_stages_pass=true)"},
-        {"criterion": "migration failure is never silently treated as a new session", "result": "PASS", "evidence": "fail-closed.v1.json cases record treated_as_new_session=false and successor_generation_written=false for every refusal; committed fixtures preserve their source session id"},
+        {"criterion": "0.1.2 historical -> migrate -> V3 -> read -> resume -> append -> close -> reopen succeeds", "result": "PASS", "evidence": "9/9 fixtures: read/resume/append/close/reopen pass (migration-results.v3.json summary.all_post_migration_stages_pass=true)"},
+        {"criterion": "migration failure is never silently treated as a new session", "result": "PASS", "evidence": "fail-closed.v3.json cases record treated_as_new_session=false and successor_generation_written=false for every refusal; committed fixtures preserve their source session id"},
         {"criterion": "event identity/order and terminal evidence preserved", "result": "PASS", "evidence": "sequence_continuity=true and missing_from_target=[] for every fixture; interrupted and compacted terminal evidence retained"},
         {"criterion": "fork inheritedEventCount/isSeeded preserved", "result": "PASS", "evidence": "f-forked isSeeded=true, inherited cut marker seq 7 maps to target inheritedEventCount 9"},
         {"criterion": "downgrade feasibility explicitly recorded (even when not downgradable)", "result": "PASS", "evidence": "9/9 fixtures downgrade.feasible=false with released-v2 codec and v2-max chain refusals recorded"},
-        {"criterion": "unknown/future format version fails closed with the documented refusal", "result": "PASS", "evidence": "unknown-future-format surfaces SessionFormatUnsupportedMigrationError; malformed-header reports catalog status malformed"}
+        {"criterion": "unknown/future format version fails closed with the documented refusal", "result": "PASS", "evidence": "unknown-future-format surfaces SessionFormatUnsupportedMigrationError; malformed-header reports catalog status malformed"},
+        {"criterion": "the verdict validates the required fixture set (count/uniqueness/no missing/extra) and rejection set from the single acceptance-matrix manifest", "result": "PASS", "evidence": "verdict.v3.json manifest_conformance=true over 9 unique fixtures and 4 unique rejection cases sourced from acceptance-matrix.v1.json requirements; migration_verdict_selfcheck proves empty/missing/duplicate/unexpected all fail"},
+        {"criterion": "every required stage (read/resume/append/close/reopen) has an explicit success check", "result": "PASS", "evidence": "verdict.v3.json stage_states=true checks each of read/resume/append/close/reopen per fixture; stage_failure negative control fails the gate"},
+        {"criterion": "missing required evidence is a failure, never an empty-default pass", "result": "PASS", "evidence": "verdict.v3.json has no empty-default pass path; missing_evidence negative control deletes message_id_preservation and the gate fails id_continuity/append_reopen"},
+        {"criterion": "the verdict fails on any broken invariant, rejection case or blocker and the process exit code reflects it", "result": "PASS", "evidence": "verdict.v3.json: all_pass=true, exit_code=0; migration_verdict.mjs maps all_pass to the process exit code"},
+        {"criterion": "negative controls prove empty/missing/duplicate/unexpected/missing-evidence/single-stage/rejection faults fail while the pre-fix gate would pass", "result": "PASS", "evidence": "negative-controls.v3.json: 16 controls all pass; the pre-fix repro computeVerdict([], {cases:[one valid]}) observed all_pass=true/exit_code=0 while the fixed verdict returns all_pass=false/exit_code=1"}
       ],
-      "fixtures": ["F-NORMAL", "F-COMPLETED", "F-INTERRUPTED", "F-COMPACTED", "F-LARGE", "F-SUBAGENT", "F-CONTINUABLE", "F-FORKED", "F-OLD-LIFECYCLE"],
       "evidence_path": "docs/evidence/d15/d15-2"
     },
     {
       "id": "D15-3",
       "name": "Native Session Resume Qualification",
       "result": "PASS",
+      "layer": "native persistence seam (isolated, per-generation OS processes)",
+      "proves": "a new OS process natively reopens the same persisted DSH session through SessionPersistence/SessionHandle/flock/readColdSessionLog with same id and contiguous log",
+      "does_not_prove": "BYQ runtime-adapter/Gateway/browser process recovery, original-goal preservation, domain-action at-most-once, approval validity or result traceability; the service rows model the fault without running those services",
       "criteria": [
         "every failure-matrix row classified as reattached | rehydrated-native | rehydrated-byq-fallback | interrupted",
         "public fresh/reattached/rehydrated/interrupted contract unchanged",

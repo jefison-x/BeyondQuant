@@ -1,0 +1,49 @@
+{
+  "schema_version": "byq-d15-2-fail-closed.v1",
+  "cases": [
+    {
+      "id": "unknown-future-format",
+      "expectation": "SessionFormatUnsupportedError on read/migrate; no successor written",
+      "refused": true,
+      "error_name": "SessionFormatUnsupportedMigrationError",
+      "error_message": "stored Session uses newer format v99; this build writes v3",
+      "catalog_status": "unsupported",
+      "documented_refusal": true,
+      "treated_as_new_session": false,
+      "successor_generation_written": false
+    },
+    {
+      "id": "unclassified-event",
+      "expectation": "SessionFormatUnsupportedError; not converted to a new session",
+      "refused": true,
+      "error_name": "SessionFormatUnsupportedMigrationError",
+      "error_message": "format v2 to v3 cannot safely transform unclassified event totally/unknown-event",
+      "catalog_status": "migration-required",
+      "documented_refusal": true,
+      "treated_as_new_session": false,
+      "successor_generation_written": false
+    },
+    {
+      "id": "malformed-header",
+      "expectation": "readHeader status 'malformed'; no migration",
+      "refused": true,
+      "error_name": "SessionFormatError",
+      "error_message": "released v2 physical header lacks createdAt",
+      "catalog_status": "malformed",
+      "documented_refusal": true,
+      "treated_as_new_session": false,
+      "successor_generation_written": false
+    },
+    {
+      "id": "refused-surface-migration",
+      "expectation": "unsupported migration refusal; the existing session is not replaced by a new one",
+      "refused": true,
+      "error_name": "SessionFormatUnsupportedMigrationError",
+      "error_message": "format v2 surface before first step cannot acquire a system head without changing chronology",
+      "catalog_status": "migration-required",
+      "documented_refusal": true,
+      "treated_as_new_session": false,
+      "successor_generation_written": false
+    }
+  ]
+}

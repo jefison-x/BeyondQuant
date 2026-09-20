@@ -283,6 +283,8 @@ class D15LiveHarnessTests(unittest.TestCase):
 
     @classmethod
     def _ensure_dependencies(cls) -> None:
+        # A required gate must never silently skip a failed dependency install
+        # and then report PASS; an install failure is a hard test failure.
         if (HARNESS / "node_modules").is_dir():
             return
         try:
@@ -290,8 +292,10 @@ class D15LiveHarnessTests(unittest.TestCase):
                 ["npm", "ci", "--no-audit", "--no-fund"],
                 cwd=HARNESS, check=True, capture_output=True, timeout=420,
             )
-        except (subprocess.SubprocessError, OSError) as error:  # pragma: no cover - offline CI
-            raise unittest.SkipTest(f"npm ci unavailable for the D15-3 harness: {error}") from error
+        except (subprocess.SubprocessError, OSError) as error:
+            raise AssertionError(f"npm ci failed for the D15-3 harness: {error}") from error
+        if not (HARNESS / "node_modules").is_dir():
+            raise AssertionError("npm ci did not create the D15-3 harness node_modules")
 
     def test_live_harness_matches_committed_evidence(self) -> None:
         self._ensure_dependencies()

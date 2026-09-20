@@ -11,7 +11,26 @@
 专属要求，使用测试框架管理的真实浏览器即可；不依赖系统 Chrome 或个人浏览器调试连接。
 真实 Product API、业务断言及按影响要求的浏览器证据仍必须满足。以下历史工具记录不改写。
 
-## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19）
+## 权威当前状态（唯一权威条目，2026-09-20）
+
+本节是 Product、维护与依赖资格三条轨道“当前步骤 / 下一步 / 授权来源 / 停止条件”的唯一权威条目；
+下方同名历史段落只保留当时事实，不再独立表达授权。顶部机器 marker
+（`byq:current-completed-phase=97`）只表示最近完成的 **Product Phase**，不表示独立数据/资格轨道
+状态，也不表示下一 Product Phase 已授权。
+
+| 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
+|---|---|---|---|---|
+| Product | 最近完成 Phase 97（marker 97） | 未授权任何新的 Product Phase | 维护者阶段性授权 + 本文件 next phase | 一阶段一 worktree/Draft PR；Human Merge Gate；不得自授新 Phase |
+| 数据/资格 | Phase 98 资格与基准冻结已授权（#282，2026-09-17）；Phase 99 `COMPLETE`（#283）；Phase 100 `IN_PROGRESS`（维护者 #285 于 2026-09-17 开启，冻结 Tushare 6000 数据集范围；P100-A 基金 provider 合同已并入 #286）；Phase 101 `COMPLETE` | 继续 Phase 100 切片 P100-B..E（`index_dailybasic`、申万行业、同花顺概念、Product 呈现），每切片独立 worktree/Draft PR | 维护者开启 Phase 100（#285）+ [V1_DATA_BASELINE_CONTRACT](V1_DATA_BASELINE_CONTRACT.md)「6000 积分可接入的数据集（Phase 100 实施范围）」；ADR-0074 为边界 ADR；Phase 98 授权只覆盖前置资格，**不**覆盖 Phase 100 实施范围 | 仅 Tushare、不用 Community；不支持分钟/实时/港股/特色数据；不得以“接口可调用/单次拉取成功”代替覆盖/时点/单位/许可证据；不改生产状态（除非另有部署授权）；HIST/THS 概念在证明历史可见性前保持 blocked |
+| 维护（当前） | D15 资格完整性、验收措辞与状态权威整改（PR #327，不推进 Product Phase）；被委托实现者交付 Draft | 被委托实现者停在 Draft；#327 的合并由原会话既有合并授权按 ADR-0015/0059 预发布 Gate 执行（按次生效，不写成永久规则） | 本次任务委托 develop/push/Draft；**合并授权属原会话既有授权，非本次新授予** | 被委托实现者不得 merge/deploy、不得启动 D15-4/R3、不得覆盖历史证据；`ADR-0081` 已于 2026-09-19 获维护者接受（Accepted） |
+| 依赖资格（D15） | D15-0/1 完成；D15-2 格式层 `PASS`；D15-3 原生持久层恢复 `PASS`；D15-4..D15-G 未开始；R3 冻结、`R3_RESUME=NO` | 真实隔离 runtime 连续性资格（进程恢复、原目标不丢、domain action 不重复、approval 仍有效、结果可追溯）+ D15-4..D15-G | 维护者 D15 目标决策（2026-09-19）+ 专项 D15 计划 | 不改生产 selector；候选隔离；D15-G 前不恢复 R3 |
+
+**授权缺口（已解决）**：`ADR-0081` 曾为 `Proposed`，其文本写明“路线重排须在接受之后”，而专项 D15
+计划已实际实现该重排（D15 插在 R2 之后、R3 之前）。维护者已于 2026-09-19 接受 ADR-0081
+（Accepted，见 #328），该缺口已关闭：D15 插在 R2 之后、R3 之前的重排现为已授权顺序。D15-2/D15-3
+的 `PASS` 仍是隔离资格证据，不据此推断 R3 解冻或生产切换授权。
+
+## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19，历史叙述）
 
 本批次为维护，不推进 Product Phase。顶部机器 marker 仍保持最近完成的 Product Phase 97；
 Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 marker 相对本文当前叙述是滞后的——
@@ -49,7 +68,10 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
   Product/`byq_pool_lifecycle` domain 路径，建议 `inactive` 而非不可逆 tombstone）。
   详见 [实现计划](IMPLEMENTATION_PLAN.md) 本轮维护小节。
 
-## Runtime Continuity D15：DSH 0.1.5-rc.1 原生连续性资格（2026-09-19，维护）
+## Runtime Continuity D15：DSH 0.1.5-rc.1 原生连续性资格（2026-09-19，维护，历史叙述）
+
+> 当前权威状态以上方“权威当前状态”条目为准；本段保留 D15 的详细历史事实。D15-2 为格式层证据、
+> D15-3 为原生持久层证据，均不构成 runtime 语义恢复或 R3/生产切换授权。
 
 本批为维护，不推进 Product Phase。维护者要求重排 Runtime Continuity（R-series）路线并推进 D15：
 完成 D15-0 升级 recon、确定资格目标、构建/启动 D15-1 隔离候选、完成 D15-2 Session V3 迁移资格，
@@ -77,7 +99,7 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
   `docs/evidence/d15/d15-1/`。候选在不可变 `config/dsh/releases` 注册表之外，未 push；
   生产默认 `dsh-0.1.2rc1`、`compose.yml`、既有 0.1.2 制品/证据不变，回滚目标 `dsh-0.1.2rc1`，
   无 DB/Worker 变更。`tool_event_schema` 与 `profile_schema` 由 unknown 转为 probed/compatible。
-- **D15-2（Session V3 迁移资格 PASS）**：提交 9 个不可变 fixtures
+- **D15-2（Session V3 迁移资格 PASS，格式层）**：提交 9 个不可变 fixtures
   （`docs/evidence/d15/fixtures/sessions/index.v1.json`，含 sha256），其中 `f-normal`
   为隔离运行官方 0.1.2-rc.1 bundled runtime 产生的真实 v0 会话（keyless 合成 loopback
   provider/MCP，多帧 zstd 无损解压），其余为用官方 0.1.5-rc.1 released-v2 codec 确定性构造的
@@ -86,16 +108,20 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
   `scripts/d15/harness/migration_harness.mjs` 仅读原始文件、复制到 scratch 后经第一方
   `@deepseek-ai/dsh-session-format-catalog`（`sessionFormatV2ToV3`）执行
   `read → resume → append → close → reopen`：9/9 全阶段 pass、0 blocker、
-  `all_post_migration_stages_pass=true`、序列连续且 message id 保留；`f-forked` 的
+  序列连续、message id 保留、system prompt/provider context 保留；`f-forked` 的
   `isSeeded`/inherited cut（源标记 seq 7 → 目标 inherited count 9）保留。迁移后 v3 store
   **不可降级**（9/9 记录：0.1.2-rc.1 无 `dsh-session-format` 且按 `session.vN.jsonl` 选代）。
-  fail-closed 证据 `docs/evidence/d15/d15-2/fail-closed.v1.json`：future-version /
-  unclassified-event / malformed-header / refused-surface 均返回文档化拒绝，
-  `treated_as_new_session=false`、`successor_generation_written=false`。台账
-  `session_format_v2_v3` 增加 `observed_status=compatible` 并移出 `not_yet_probed`；
-  `acceptance-matrix` D15-2 置 PASS，D15-3..D15-G 仍 NOT_RUN。D15-2 仅新增测试/证据/文档，
-  但 `scripts/` 与 `tests/` 属于 BYQ build-input inventory，故按仓库规则构建修订推进
-  `post-u8.147 → post-u8.148`（仅重建身份，不改 selector/deployment）。
+  **这是格式层证据，不是 runtime 恢复**：`resume`= `Session.fromRestore`、`append`= 手工构造/
+  编码事件、`close`/`reopen`= 文件/codec 操作。verdict v2 显式要求全部不变量、全部拒绝用例与
+  全部 blocker 通过，否则进程非零退出；`negative-controls.v2.json` 证明注入的
+  sequence/id/context/reopen/blocker/fail-closed 破坏都会失败，而修复前的“仅看阶段状态”门禁会
+  误报 PASS。fail-closed v2：future-version / unclassified-event / malformed-header /
+  refused-surface 均返回文档化拒绝，`treated_as_new_session=false`、
+  `successor_generation_written=false`。台账 `session_format_v2_v3` 增加
+  `observed_status=compatible` 并移出 `not_yet_probed`；`acceptance-matrix` D15-2 置 PASS，
+  D15-3..D15-G 仍 NOT_RUN。D15-2 仅新增测试/证据/文档，但 `scripts/` 与 `tests/` 属于 BYQ
+  build-input inventory，故按仓库规则构建修订推进 `post-u8.147 → post-u8.148`
+  （仅重建身份，不改 selector/deployment）。
 - **D15-3（Native Session Resume Qualification PASS）**：隔离 Node harness
   `scripts/d15/harness/native_resume_harness.mjs` 以真实 0.1.5-rc.1
   session-persistence seam（`SessionPersistence.create/open`、`SessionHandle`
@@ -107,7 +133,10 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
   存活），adapter restart/generation replacement/host reboot/executor takeover 为 `rehydrated`
   原生恢复，DSH crash 为 `interrupted`（丢失 run 如实标记且同 session 仍可原生恢复）；
   native 不可用对照（未过 `flush()` 屏障的未物化 session）正确不可恢复并需 BYQ fallback。
-  结论：原生 session resume 可用，**R3 不得重复实现**；R3 仅保留调用原生 attach/resume、
+  **证明边界**：D15-3 证明原生持久层可恢复性（新 OS 进程重开同一 session），未运行
+  browser/frontend/Gateway/runtime-adapter 服务，也不证明 runtime 语义恢复——原目标保持、
+  domain action 不重复、approval 仍有效、结果可追溯仍需一次真实隔离 runtime 资格，属必需下一步
+  且尚未完成。结论：原生 session resume 可用，**R3 不得重复实现**；R3 仅保留调用原生 attach/resume、
   epoch fencing、native 不可用时走 BYQ fallback、生命周期观察与清理。公开
   `fresh/reattached/rehydrated/interrupted` 合同不变，native/fallback 机制仅存于内部
   evidence-only 诊断字段（`native_resume_used`/`byq_fallback_used`/`previous_generation_state`/
@@ -122,7 +151,10 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
 - **构建修订**：D15 改变 runtime build inputs，`.145→.146`，D15-1 新增候选 Dockerfile/锁/探测后
   推进 `post-u8.146 → post-u8.147`；D15-2 新增 `scripts/`/`tests/` 下的 harness 与 fixtures 后推进
   `post-u8.147 → post-u8.148`；D15-3 新增 `scripts/d15/` harness、`tests/`、`packages/contracts`
-  分类逻辑与证据后推进 `post-u8.148 → post-u8.149`（仅重建身份；历史清单与全部证据保留）。
+  分类逻辑与证据后推进 `post-u8.148 → post-u8.149`；本轮 D15 资格完整性/验收措辞整改新增
+  `scripts/d15/harness`、`tests/` 与证据后先推进 `post-u8.150 → post-u8.151`，CI-A `#326`
+  并入 `main`（`.154`）后合并 `origin/main` 并改用未使用 id `post-u8.155`（仅重建身份；
+  历史清单与全部证据保留，不修改任何既有 immutable manifest）。
   不部署、不自动合并。`R3_RESUME = NO`，直至 D15-G 完成且有原生连续性证据。
 
 - 当前已完成阶段：**Phase 97**——回测任务拥有 Backend 权威、持久化的可读名称；名称与稳定 Backtest ID 在 Product 目录、
@@ -683,7 +715,9 @@ Post-Phase 90 Management Action Consistency Maintenance 依据 ADR-0050 将股�
 
 ## 当前授权边界
 
-- Phase 49-97 与相应 Accepted ADR/计划均已完成；下一阶段尚未授权。
+- Product Phase 49-97 与相应 Accepted ADR/计划均已完成；**下一 Product Phase 尚未授权**。
+  独立数据/资格轨道 Phase 98 已授权、99/101 完成、100 进行中；当前维护为 D15 整改；完整权威状态
+  见顶部“权威当前状态”。
 - 2026-09-19 维护收口（ADR-0047 聚合边界、运行/续接连续性与只读归档审计）已完成并记入本文与
   [实现计划](IMPLEMENTATION_PLAN.md)；它是维护，不推进 Product Phase，也不改变上一条授权状态。
 - ADR-0077（数据就绪自动续接）已于 2026-09-19 获维护者接受（Accepted）；生产当前运行其实现。

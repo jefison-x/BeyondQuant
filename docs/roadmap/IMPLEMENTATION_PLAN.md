@@ -134,8 +134,8 @@ epoch fencing、`LifecycleJournal` 证据边界、prompt 幂等、at-most-once �
 不改 Gateway trace 模型、Backend/domain schema、MCP、workers、DSH 版本或续接预算。不含
 Supervisor（R3）与 Terminal（R4）。不部署、不自动合并。
 
-DSH 0.1.5-rc.1 原生连续性资格阶段 D15（feat/docs，构建修订 `dsh-0.1.2rc1-post-u8.149`）：
-按 [ADR-0081](../architecture/adr/ADR-0081-dsh-native-continuity-and-d15-stage.md)（Proposed）与
+DSH 0.1.5-rc.1 原生连续性资格阶段 D15（feat/docs，构建修订 `dsh-0.1.2rc1-post-u8.155`）：
+按 [ADR-0081](../architecture/adr/ADR-0081-dsh-native-continuity-and-d15-stage.md)（Accepted，2026-09-19）与
 [D15 阶段计划](DSH_015RC1_UPGRADE_PLAN.md)，将 Runtime Continuity 的下一个原生能力步骤
 插在 R2 之后、R3 之前：`R0 → R1 → R2 → D15 → R3 → R4 → R5 → R6 → 独立 Production Go/No-Go`。
 R3 冻结（非回滚）为 `PAUSED_PENDING_DSH_015_NATIVE_CONTINUITY_QUALIFICATION`：保留既有
@@ -158,9 +158,13 @@ session fixtures（`docs/evidence/d15/fixtures/sessions/index.v1.json`，含 sha
 为隔离运行官方 0.1.2-rc.1 runtime 产生的真实 v0 会话，其余为 released-v2 codec 确定性构造）
 与隔离 Node harness（`scripts/d15/harness/migration_harness.mjs`），经第一方
 `@deepseek-ai/dsh-session-format-catalog`（`sessionFormatV2ToV3`）执行
-`read → resume → append → close → reopen`，9/9 全阶段 pass、0 blocker、序列连续且 message id
-保留，`f-forked` inherited cut 保留，迁移后 v3 不可降级（9/9），fail-closed 拒绝不转为新会话；
-台账 `session_format_v2_v3` 增加 `observed_status=compatible` 并移出 `not_yet_probed`，
+`read → resume → append → close → reopen`，9/9 全阶段 pass、0 blocker、序列连续、message id 与
+system prompt/provider context 保留，`f-forked` inherited cut 保留，迁移后 v3 不可降级（9/9），
+fail-closed 拒绝不转为新会话。**D15-2 是格式层资格，不是 runtime 恢复**（`resume`=
+`Session.fromRestore`、`append`= 手工编码事件、`close`/`reopen`= 文件/codec）。累计 verdict v2 显式
+要求全部不变量/拒绝用例/blocker 通过并据此决定退出码，`negative-controls.v2.json` 证明注入的
+sequence/id/context/reopen/blocker/fail-closed 破坏会失败而修复前的阶段门禁会误报 PASS；台账
+`session_format_v2_v3` 增加 `observed_status=compatible` 并移出 `not_yet_probed`，
 acceptance-matrix D15-2 置 PASS，证据 `docs/evidence/d15/d15-2/`。D15-2 仅新增测试/证据/文档，
 但 `scripts/` 与 `tests/` 属于 BYQ build-input inventory，故按仓库规则构建修订推进
 `.147→.148`（仅重建身份，不改 selector/deployment）。D15-3 交付隔离 Node harness
@@ -175,12 +179,17 @@ generation 原生恢复同一 session（同 id、事件保留、序列连续）�
 `rehydrated` 原生恢复，DSH crash 为 `interrupted`（丢失 run 如实标记且仍可原生恢复）；native
 不可用对照（未过 `flush()` 的未物化 session）正确不可恢复并需 BYQ fallback。公开
 `fresh/reattached/rehydrated/interrupted` 合同不变，native/fallback 机制仅存于内部 evidence-only
-诊断字段，DSH session id 不成为 BYQ AgentSession 身份。结论：原生 session resume 可用、R3 不得
+诊断字段，DSH session id 不成为 BYQ AgentSession 身份。**证明边界**：D15-3 证明原生持久层恢复
+（新 OS 进程重开同一 session），未运行 browser/frontend/Gateway/runtime-adapter 服务，也不证明
+runtime 语义恢复：原目标保持、domain action 不重复、approval 仍有效、结果可追溯仍需一次真实隔离
+runtime 资格，属必需下一步且尚未完成。结论：原生 session resume 可用、R3 不得
 重复实现；R3 冻结与 `R3_RESUME = NO` 不变直至 D15-G。台账 `native_session_resume` 置 compatible
 并移入 probed，acceptance-matrix D15-3 置 PASS，证据 `docs/evidence/d15/d15-3/`。D15-3 新增
 `scripts/`、`tests/`、`packages/contracts` 与证据均属 build-input inventory，故构建修订推进
-`.148→.149`（仅重建身份，不改 selector/deployment）。D15-4..D15-G（subagent/fork、persistent
-terminal、Go/No-Go）仍为 PLANNED。不部署、不自动合并。
+`.148→.149`（仅重建身份，不改 selector/deployment）。本轮 D15 资格完整性/验收措辞整改新增
+`scripts/d15/harness`、`tests/` 与证据，先推进 `.150→.151`；CI-A `#326` 并入 `main`（`.154`）后，
+本分支合并 `origin/main` 并改用未使用 id `post-u8.155`（仅重建身份）。D15-4..D15-G（subagent/fork、
+persistent terminal、Go/No-Go）仍为 PLANNED。不部署、不自动合并。
 
 数据就绪续接 needs_attention 重挂（fix，构建修订 `dsh-0.1.2rc1-post-u8.142`）：生产 round-2
 数据就绪续接回合结算为 `needs_attention` 后，`research_tasks.continuation_blocked_reason` 被写成

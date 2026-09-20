@@ -95,3 +95,10 @@ session/tool/subagent 的第二持久化。
 
 - 本 ADR 只改阶段顺序与文档/隔离代码；回滚即丢弃候选声明并保持默认选择器。
 - 不改数据库、不改 domain row、不重启 Worker、不删除任何历史制品或证据。
+
+## Review note（2026-09-20，缺口已解决）
+
+本 ADR 已于 2026-09-19 获维护者接受（见 #328），状态为 **Accepted**；路线重排（D15 插在 R2 之后、
+R3 之前）现为已授权顺序，此前记录的 Proposed-vs-implemented 缺口已关闭。D15-2/D15-3 的 `PASS`
+仍是隔离资格证据，不构成 R3 解冻或生产切换授权。详见
+[STATUS.md](../../roadmap/STATUS.md) 顶部“权威当前状态”。
