@@ -1,0 +1,23 @@
+{
+  "id": "dsh-runtime-restart",
+  "result": "BLOCKED",
+  "fault_applied": true,
+  "dimensions": {
+    "pty_process": "absent",
+    "attachment": "absent",
+    "io_rebind": "rejected",
+    "terminal_identity": "lost"
+  },
+  "not_run_reason": "A restarted DSH runtime is a new process; native terminal sessions are documented process-local and no committed BYQ terminal wiring rebinds them. Rejected, never a fabricated reattach.",
+  "observation": {
+    "restartedRuntimePid": 4172833,
+    "oldAttachmentId": "att-1-0",
+    "oldSessionId": "pty-1",
+    "oldPtyPidAliveAfterRestart": false,
+    "rebindOk": false,
+    "rebindError": "UNKNOWN_ATTACHMENT",
+    "newRuntimeAttachmentPresent": false,
+    "newRuntimeGeneration": 3,
+    "nativeSessionsInNewRuntime": 0
+  }
+}

@@ -1,0 +1,142 @@
+{
+  "schema_version": "byq-d15-5-contract.v1",
+  "generated_at": "2026-09-20",
+  "scope": "D15-5 persistent-terminal (PTY) continuity qualification against the fixed DSH 0.1.5rc1 candidate. Not D15-G; not R3; not a PTY runtime.",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1"
+  },
+  "required_evidence_class": "native-runtime-isolated",
+  "llm_evidence_class": "not-applicable",
+  "llm_evidence_note": "No model is called in this qualification. The native ctx.terminals PTY seam and an evidence-only BYQ TerminalAttachment gate are driven directly. This is terminal-continuity evidence, NOT real-LLM-quality semantic evidence.",
+  "results_vocabulary": ["PASS", "FAIL", "NOT_RUN", "BLOCKED"],
+  "existence_dimensions": ["pty_process", "attachment", "io_rebind", "terminal_identity"],
+  "required_coverage_gates_qualification": true,
+  "not_run_requires_reason": true,
+  "closed_scenario_set": true,
+  "negatives_must_all_be_rejected": true,
+  "ownership": {
+    "byq": ["attachment_identity", "attachment_state", "authorization", "reconnect"],
+    "dsh": ["pty_process", "shell", "io"],
+    "rule": "BYQ owns TerminalAttachment identity/state/authorization/reconnect; DSH owns PTY/shell/I/O. Terminal lifetime must never define conversation or durable-job lifetime. BYQ must not build a PTY runtime."
+  },
+  "required_fault_rows": [
+    {
+      "id": "page-refresh",
+      "description": "a browser page refresh replaces the client while the DSH runtime keeps running; the SAME attachment and the SAME PTY are rebound with no replay and no loss",
+      "required": true,
+      "requires_fault": true,
+      "expects": "reattach",
+      "assertions": ["same_attachment", "same_session", "same_pty_pid", "pty_process_present", "attachment_present", "io_rebind_ok", "identity_stable", "no_false_reattach"]
+    },
+    {
+      "id": "browser-disconnect",
+      "description": "a browser disconnects without closing the runtime; a later client rebinds the same attachment and PTY",
+      "required": true,
+      "requires_fault": true,
+      "expects": "reattach",
+      "assertions": ["same_attachment", "same_session", "same_pty_pid", "pty_process_present", "attachment_present", "io_rebind_ok", "identity_stable", "no_false_reattach"]
+    },
+    {
+      "id": "frontend-restart",
+      "description": "the whole frontend restarts; the runtime is untouched and the same attachment/PTY is rebound",
+      "required": true,
+      "requires_fault": true,
+      "expects": "reattach",
+      "assertions": ["same_attachment", "same_session", "same_pty_pid", "pty_process_present", "attachment_present", "io_rebind_ok", "identity_stable", "no_false_reattach"]
+    },
+    {
+      "id": "gateway-restart",
+      "description": "a new gateway/client OS process rebinds the persisted attachment to the same PTY; the runtime is untouched",
+      "required": true,
+      "requires_fault": true,
+      "expects": "reattach",
+      "assertions": ["same_attachment", "same_session", "same_pty_pid", "pty_process_present", "attachment_present", "io_rebind_ok", "identity_stable", "no_false_reattach"]
+    },
+    {
+      "id": "adapter-restart",
+      "description": "the BYQ runtime-adapter process (which hosts the DSH runtime) is aborted; the product requirement is that a fresh adapter rebinds the SAME terminal. Native DSH sessions are process-local and no committed BYQ terminal wiring rebinds them, so this is expected BLOCKED with real rejection evidence and never a fabricated reattach",
+      "required": true,
+      "requires_fault": true,
+      "expects": "reattach",
+      "assertions": ["same_attachment", "same_session", "same_pty_pid", "pty_process_present", "attachment_present", "io_rebind_ok", "identity_stable", "no_false_reattach"]
+    },
+    {
+      "id": "dsh-runtime-restart",
+      "description": "the DSH runtime process is restarted; the product requirement is that the terminal attachment is rebound. Native sessions are process-local, so this is expected BLOCKED with real rejection evidence and never a false reattach",
+      "required": true,
+      "requires_fault": true,
+      "expects": "reattach",
+      "assertions": ["same_attachment", "same_session", "same_pty_pid", "pty_process_present", "attachment_present", "io_rebind_ok", "identity_stable", "no_false_reattach"]
+    }
+  ],
+  "optional_fault_rows": [
+    {
+      "id": "host-reboot",
+      "description": "host reboot. NOT executed: rebooting the maintainer host is not authorized and a container/adapter restart is not a host reboot.",
+      "required": false,
+      "requires_fault": true,
+      "assertions": []
+    }
+  ],
+  "required_cross_checks": [
+    {
+      "id": "pty-attachment-separation",
+      "description": "PTY/process existence is distinct from attachment existence: a real external PTY pid exists, the attachment is a registry-minted record, the PTY is reachable only through the attachment, dropping the attachment while the PTY lives makes rebind fail while the pid stays alive, and killing the session ends the PTY",
+      "required": true,
+      "assertions": ["real_external_pty", "attachment_registry_minted", "ptty_reachable_only_via_attachment", "attachment_loss_keeps_pty_alive", "rebind_rejected_after_attachment_loss", "session_kill_ends_pty"]
+    },
+    {
+      "id": "unique-marker-once",
+      "description": "a command issued by one client OS process carries a unique marker; a different client OS process reconnects to the same PTY, does not replay the marker in its send delta, and finds it exactly once in retained scrollback (no replay, no loss)",
+      "required": true,
+      "assertions": ["marker_distinct_value", "first_client_viewport_marker_once", "rebind_send_delta_omits_old_marker", "scrollback_has_marker_once", "second_marker_once", "no_loss"]
+    },
+    {
+      "id": "permission-boundary",
+      "description": "an owner boundary cannot be bypassed: a different Agent owner cannot read or send to another owner's PTY (FOREIGN_SESSION), and a different principal presenting the attachment is rejected",
+      "required": true,
+      "assertions": ["foreign_owner_send_rejected", "foreign_owner_read_rejected", "foreign_principal_rejected"]
+    },
+    {
+      "id": "wrong-terminal-rejected",
+      "description": "an unknown/wrong terminal id is rejected (NO_SESSION) and cannot be used to reach a real PTY",
+      "required": true,
+      "assertions": ["unknown_session_rejected", "wrong_session_does_not_reach_real_pty"]
+    },
+    {
+      "id": "stale-generation-fenced",
+      "description": "a stale runtime generation/executor epoch is fenced: an attachment token carrying an old generation or epoch is rejected, while the current generation/epoch token still rebinds",
+      "required": true,
+      "assertions": ["stale_generation_rejected", "stale_epoch_rejected", "current_token_still_valid"]
+    },
+    {
+      "id": "cleanup-no-orphans",
+      "description": "closing the attachment kills the PTY process tree and runtime shutdown leaves no orphan shell processes",
+      "required": true,
+      "assertions": ["kill_ends_pty", "all_recorded_pids_dead", "runtime_shutdown_no_orphans"]
+    }
+  ],
+  "fail_closed": [
+    "missing required fault row",
+    "required fault row not covered by a PASS",
+    "required fault row PASS with a false dimension or false identity stability",
+    "required fault row PASS without fault_applied when the contract requires a fault",
+    "NOT_RUN/BLOCKED without a reason",
+    "a required cross-check with a false assertion",
+    "unknown scenario id (closed set)",
+    "duplicate scenario id",
+    "candidate mismatch",
+    "non-native evidence class",
+    "llm evidence claims real-llm-quality",
+    "a negative that was not rejected",
+    "a false reattach (session/attachment/pid changed but identity_stable claimed)",
+    "any attempt by the observation to declare its own coverage/continuity rules"
+  ],
+  "notes": {
+    "native_seam": "the real native @deepseek-ai/dsh-terminal service + @deepseek-ai/dsh-terminal-bash backend are driven by an evidence-only harness with one OS process per runtime generation and separate client OS processes; BYQ must not persist terminal state and no second generic harness or R3 behaviour is built",
+    "host_reboot": "kept separate from container/process restart and NOT_RUN in this batch",
+    "blocked_items": "adapter-restart and dsh-runtime-restart require a BYQ TerminalAttachment rehydrate/reconnect path that does not exist; they stay BLOCKED with real rejection evidence and gate the overall verdict"
+  }
+}

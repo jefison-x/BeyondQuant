@@ -23,7 +23,7 @@
 | Product | 最近完成 Phase 97（marker 97） | 未授权任何新的 Product Phase | 维护者阶段性授权 + 本文件 next phase | 一阶段一 worktree/Draft PR；Human Merge Gate；不得自授新 Phase |
 | 数据/资格 | Phase 98 资格与基准冻结已授权（#282，2026-09-17）；Phase 99 `COMPLETE`（#283）；Phase 100 `IN_PROGRESS`（维护者 #285 于 2026-09-17 开启，冻结 Tushare 6000 数据集范围；P100-A 基金 provider 合同已并入 #286）；Phase 101 `COMPLETE` | 继续 Phase 100 切片 P100-B..E（`index_dailybasic`、申万行业、同花顺概念、Product 呈现），每切片独立 worktree/Draft PR | 维护者开启 Phase 100（#285）+ [V1_DATA_BASELINE_CONTRACT](V1_DATA_BASELINE_CONTRACT.md)「6000 积分可接入的数据集（Phase 100 实施范围）」；ADR-0074 为边界 ADR；Phase 98 授权只覆盖前置资格，**不**覆盖 Phase 100 实施范围 | 仅 Tushare、不用 Community；不支持分钟/实时/港股/特色数据；不得以“接口可调用/单次拉取成功”代替覆盖/时点/单位/许可证据；不改生产状态（除非另有部署授权）；HIST/THS 概念在证明历史可见性前保持 blocked |
 | 维护（当前） | D15 资格完整性、验收措辞与状态权威整改（PR #327，不推进 Product Phase）；被委托实现者交付 Draft | 被委托实现者停在 Draft；#327 的合并由原会话既有合并授权按 ADR-0015/0059 预发布 Gate 执行（按次生效，不写成永久规则） | 本次任务委托 develop/push/Draft；**合并授权属原会话既有授权，非本次新授予** | 被委托实现者不得 merge/deploy、不得启动 D15-4/R3、不得覆盖历史证据；`ADR-0081` 已于 2026-09-19 获维护者接受（Accepted） |
-| 依赖资格（D15） | D15-0/1 完成；D15-2 格式层 `PASS`；D15-3 原生持久层恢复 `PASS`；D15-3R 真实隔离 runtime 连续性 `PASS`（scripted keyless provider，非真实 LLM 语义证据）；D15-4 `PARTIAL/BLOCKED`——原生 subagent/fork seam 在 evidence-only harness 中通过 6 项（identity/descriptor/cold-resume/fork/inheritance/parent-crash），`child-crash` 与 BYQ `adapter-restart` 必需项 `BLOCKED`，host reboot `NOT_RUN`；D15-5/D15-G 未开始；R3 冻结、`R3_RESUME=NO` | D15-5/D15-G（persistent terminal、Go/No-Go）；host reboot 行 `NOT_RUN`，不等同容器重启 | 维护者 D15 目标决策（2026-09-19）+ 专项 D15 计划 | 不改生产 selector；候选隔离；D15-G 前不恢复 R3 |
+| 依赖资格（D15） | D15-0/1/2/3/3R 完成（D15-2 格式层、D15-3 原生持久层、D15-3R 隔离 runtime 连续性均 `PASS`）；D15-4 `PARTIAL/BLOCKED`（原生 subagent/fork seam 6 项 + 1 支撑项通过；`child-crash`/BYQ `adapter-restart` `BLOCKED`；host reboot `NOT_RUN`）；D15-5 `PARTIAL/BLOCKED`（真实隔离原生 persistent terminal：page refresh/browser disconnect/frontend restart/gateway restart 四行 `PASS`，跨进程唯一 marker 无重放/丢失、权限不可绕过、错误 terminal 拒绝、stale generation/epoch fenced、清理无孤儿；`adapter-restart` 与 `dsh-runtime-restart` 必需项 `BLOCKED`，host reboot `NOT_RUN`）；R3 冻结、`R3_RESUME=NO` | D15-G（Go/No-Go，须等 D15-4 与 D15-5 两者真实结论）；host reboot 行 `NOT_RUN`，不等同容器重启 | 维护者 D15 目标决策（2026-09-19）+ 专项 D15 计划 | 不改生产 selector；候选隔离；D15-G 前不恢复 R3 |
 
 **授权缺口（已解决）**：`ADR-0081` 曾为 `Proposed`，其文本写明“路线重排须在接受之后”，而专项 D15
 计划已实际实现该重排（D15 插在 R2 之后、R3 之前）。维护者已于 2026-09-19 接受 ADR-0081
@@ -180,8 +180,25 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
   负例必须失败。approval 试验区分 `pre-fault`/`post-fault`：每个恢复场景的 after 在故障后
   真实重试 invalid-reuse 与受保护回测操作并测量权威前后计数。资格证据
   `docs/evidence/d15/d15-runtime/*.v5.json`。
-- **D15-4..D15-G（PLANNED）**：subagent/fork continuity、persistent terminal 与
-  architecture Go/No-Go 尚未执行；`R3_RESUME = NO`。
+- **D15-4（PARTIAL/BLOCKED，历史）**：原生 subagent/fork seam 6 个必需项加 1 个支撑项
+  `PASS`，`child-crash` 与 BYQ `adapter-restart` 必需项 `BLOCKED`，host reboot `NOT_RUN`；
+  证据 `docs/evidence/d15/d15-4/`。BYQ continuable hookup 边界以 Proposed ADR-0082 记录，未实现。
+- **D15-5（PARTIAL/BLOCKED）**：真实隔离原生 persistent terminal（PTY）资格。以候选
+  `@deepseek-ai/dsh-terminal` 的 owner-scoped `TerminalSessionService` + `dsh-terminal-bash`
+  `shell` backend（`bwrap --die-with-parent`）在独立 runtime OS 进程运行，客户端为独立 OS
+  进程，并用 evidence-only BYQ `TerminalAttachment` gate（身份/状态/授权/reconnect，无 PTY/IO）。
+  显式区分四件事：PTY/进程存在、attachment 存在、I/O rebind、稳定 terminal 身份；BYQ 拥有
+  attachment，DSH 拥有 PTY/shell/IO，不构建 PTY runtime，terminal 生命周期不定义 conversation/job。
+  page refresh / browser disconnect / frontend restart / gateway restart 四行 `PASS`：另一客户端
+  OS 进程重绑同一 attachment/session/pid，唯一 marker 跨进程无重放（send delta 不含旧 marker）
+  且无丢失（scrollback 各一次），权限不可绕过（`FOREIGN_SESSION`/`UNAUTHORIZED_PRINCIPAL`），
+  错误 terminal 拒绝（`NO_SESSION`），stale generation/epoch fenced，清理无孤儿。adapter restart
+  与 DSH runtime restart 必需项 `BLOCKED`（native sessions 文档为 process-local，提交的 BYQ 树未
+  compose terminal、未持久化 TerminalAttachment，真实拒绝而非伪造 reattach）；host reboot
+  `NOT_RUN`。`interface-probe.v1.json` 证实 BYQ 无 terminal wiring；跨进程 reattach 边界以
+  Proposed、未实现的 ADR-0083 记录。observer 因必需项未覆盖而非零退出，不主张完整 D15-5。
+- **D15-G（PLANNED）**：architecture Go/No-Go 尚未执行，须等 D15-4 与 D15-5 两者的真实结论；
+  `R3_RESUME = NO`。
 - **路线重排**：`R0 → R1 → R2 → D15 → R3 Thin Runtime Supervisor → R4 TerminalAttachment →
   R5 DurableJob independence → R6 Full Runtime Continuity Qualification → 独立 Production
   Go/No-Go`；R6 完成不隐含生产切换，“兼容 0.1.5-rc.1”与“生产默认 = 0.1.5-rc.1”为独立决策。
@@ -210,9 +227,13 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
     continuable child provider**。BYQ hookup 属产品语义变更、超出本 PR 资格范围且仍不能解决
     child-crash/adapter restart，D15-4 保持 `PARTIAL/BLOCKED`：原生 subagent/fork seam 6 个必需项
     `PASS` 加 1 个支撑项 `child-run-fault` `PASS`（真实每代一 OS 进程、scripted keyless provider），
-    `child-crash` 与 BYQ `adapter-restart` 必需项保持 `BLOCKED`（不以删除或 owning-process SIGKILL
-    冒充），host reboot `NOT_RUN`；observer 因必需项未覆盖而非零退出，不主张完整 D15-4。不部署、
-    不自动合并。`R3_RESUME = NO`，直至 D15-G 完成且有原生连续性证据。
+     `child-crash` 与 BYQ `adapter-restart` 必需项保持 `BLOCKED`（不以删除或 owning-process SIGKILL
+     冒充），host reboot `NOT_RUN`；observer 因必需项未覆盖而非零退出，不主张完整 D15-4。D15-4
+     continuable wiring 再推进 `.168 → .169`。D15-5 新增 `scripts/d15/terminal/`（原生 harness、
+     contract、observer、interface probe）、`tests/test_dsh_d15_5_terminal.py`、
+     `packages/contracts/terminal_attachment.py` 与 `docs/evidence/d15/d15-5/` 后推进
+     `post-u8.169 → .170`（仅重建身份，历史 manifest 与全部证据保留）。不部署、
+     不自动合并。`R3_RESUME = NO`，直至 D15-G 完成且有原生连续性证据。
 
 - 当前已完成阶段：**Phase 97**——回测任务拥有 Backend 权威、持久化的可读名称；名称与稳定 Backtest ID 在 Product 目录、
   技术详情和小巴任务投影中分离。名称搜索保持服务端分页，缺省名称来自已验证策略，历史任务由 PostgreSQL 前向修复补齐，

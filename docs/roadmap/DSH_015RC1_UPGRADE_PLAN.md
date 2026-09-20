@@ -415,6 +415,39 @@ Ownership: BYQ owns `TerminalAttachment` identity/state/authorization/reconnect;
 DSH owns PTY/shell/I/O. Terminal lifetime never defines conversation or durable
 job lifetime.
 
+**Result: `PARTIAL/BLOCKED`.** The real isolated native terminal seam
+(`@deepseek-ai/dsh-terminal` owner-scoped `TerminalSessionService` +
+`@deepseek-ai/dsh-terminal-bash` `shell` backend under `bwrap --die-with-parent`)
+was driven with one runtime OS process per generation and separate client OS
+processes, wrapped by an evidence-only BYQ `TerminalAttachment` gate
+(identity/state/authorization/reconnect; no PTY/shell/I/O). Evidence:
+`docs/evidence/d15/d15-5/`.
+
+- Four client-side rows `PASS` (page refresh, browser disconnect, frontend
+  restart, gateway restart): a different client OS process rebinds the same
+  attachment/session/pid (`io_rebind=ok`, `terminal_identity=stable`).
+- The unique-marker cross-process command test `PASS`es: the first marker appears
+  once in the first client's viewport, zero times in the rebind send delta (no
+  replay) and once in retained scrollback (no loss); the second marker appears
+  once.
+- `permission-boundary` (`FOREIGN_SESSION`/`UNAUTHORIZED_PRINCIPAL`),
+  `wrong-terminal-rejected` (`NO_SESSION`), `stale-generation-fenced`
+  (`STALE_GENERATION`/`STALE_EPOCH`) and `cleanup-no-orphans` (all pids dead,
+  shutdown orphans `0`) all `PASS`. `pty-attachment-separation` proves the four
+  dimensions are independent.
+- `adapter-restart` and `dsh-runtime-restart` stay required `BLOCKED`: native
+  sessions are documented process-local and the committed BYQ tree composes no
+  terminal service and persists no `TerminalAttachment`. Real rejection evidence
+  is recorded; no fabricated reattach. Host reboot is `NOT_RUN`.
+- The fail-able observer (`observer.py`) separates format-valid from
+  qualification-pass and exits non-zero on the two required `BLOCKED` rows; 24
+  negative controls (23 defect-targeting) prove the pre-fix result-only gate
+  wrongly passed. The framework-neutral vocabulary lives in
+  `packages/contracts/terminal_attachment.py`.
+- The cross-process reattach boundary is recorded as the **Proposed,
+  unimplemented** [ADR-0083](../architecture/adr/ADR-0083-terminal-attachment-boundary.md).
+  D15-G must wait for D15-4 and D15-5; `R3_RESUME = NO`.
+
 ## 7. D15-G — Architecture Go/No-Go
 
 Produce a Go/No-Go report with a capability matrix over D15-2..D15-5 and the
@@ -549,3 +582,11 @@ The D15-4 candidate-specific continuable wiring adds
 advances `post-u8.168` -> `post-u8.169` (rebuild identity only; no selector,
 `compose.yml`, `deployment.json`, immutable release registry or 0.1.2
 artifact/evidence change and no deployment).
+
+D15-5 adds `scripts/d15/terminal/` (native terminal harness, acceptance contract,
+fail-able observer, interface probe), `tests/test_dsh_d15_5_terminal.py`,
+`packages/contracts/terminal_attachment.py` and `docs/evidence/d15/d15-5/`, all
+build-input files, so the revision advances `post-u8.169` -> `post-u8.170`
+(rebuild identity only; no selector, `compose.yml`, `deployment.json`, immutable
+release registry or 0.1.2 artifact/evidence change and no deployment). The
+Proposed ADR-0083 remains unimplemented.

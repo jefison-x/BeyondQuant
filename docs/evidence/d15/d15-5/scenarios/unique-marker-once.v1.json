@@ -1,0 +1,26 @@
+{
+  "id": "unique-marker-once",
+  "result": "PASS",
+  "assertions": {
+    "marker_distinct_value": true,
+    "first_client_viewport_marker_once": true,
+    "rebind_send_delta_omits_old_marker": true,
+    "scrollback_has_marker_once": true,
+    "second_marker_once": true,
+    "no_loss": true
+  },
+  "observation": {
+    "marker1": "D15_5_MARK_ONE_9716e9fb9378e6ea",
+    "marker2": "D15_5_MARK_TWO_0602a5163e952fae",
+    "marker1InFirstViewport": 1,
+    "marker1InRebindSendDelta": 0,
+    "marker2InRebindSendDelta": 1,
+    "marker1InScrollback": 1,
+    "marker2InScrollback": 1,
+    "firstRunSessionId": "pty-1",
+    "secondRunSessionId": "pty-1",
+    "firstRunPid": 4172437,
+    "secondRunPid": 4172437,
+    "rebindClientProcess": "separate OS process (node client)"
+  }
+}

@@ -250,8 +250,22 @@ class D15CandidateTests(unittest.TestCase):
         self.assertTrue(d15_4["evidence"])
         self.assertTrue(d15_4["criterion_results"])
 
-        # D15-5 and D15-G are not opened, and R3 stays unopened until D15-G.
-        self.assertEqual(stages["D15-5"]["result"], "NOT_RUN")
+        # D15-5 is really BLOCKED (not NOT_RUN) on the two restart rows; it too
+        # must name its uncovered items and keep the required items unresolved.
+        d15_5 = stages["D15-5"]
+        self.assertEqual(d15_5["result"], "BLOCKED")
+        d15_5_uncovered = d15_5.get("uncovered_items")
+        self.assertTrue(d15_5_uncovered, "a BLOCKED D15-5 must carry named uncovered_items")
+        d15_5_uncovered_ids = {item["id"] for item in d15_5_uncovered}
+        for required_uncovered in ("adapter-restart", "dsh-runtime-restart", "host-reboot"):
+            self.assertIn(required_uncovered, d15_5_uncovered_ids)
+        for item in d15_5_uncovered:
+            self.assertIn(item["status"], {"BLOCKED", "NOT_RUN"})
+            self.assertTrue(item.get("reason"))
+        self.assertTrue(d15_5["evidence"])
+        self.assertTrue(d15_5["criterion_results"])
+
+        # D15-G is not opened, and R3 stays unopened until D15-G.
         self.assertEqual(stages["D15-G"]["result"], "NOT_RUN")
         self.assertNotIn("R3", stages)
         self.assertIn("R3_RESUME stays NO", matrix["notes"])

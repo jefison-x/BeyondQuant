@@ -1,0 +1,25 @@
+{
+  "id": "adapter-restart",
+  "result": "BLOCKED",
+  "fault_applied": true,
+  "dimensions": {
+    "pty_process": "absent",
+    "attachment": "absent",
+    "io_rebind": "rejected",
+    "terminal_identity": "lost"
+  },
+  "not_run_reason": "BYQ runtime-adapter restart aborts the DSH runtime process. Native DSH terminal sessions are process-local and the committed BYQ composition exposes no TerminalAttachment rehydrate/reconnect surface, so a fresh adapter rejects the old attachment. Never a fabricated reattach.",
+  "observation": {
+    "oldRuntimePid": 4172335,
+    "newRuntimePid": 4172690,
+    "oldAttachmentId": "att-1-0",
+    "oldSessionId": "pty-1",
+    "oldPtyPidBeforeRestart": 4172437,
+    "oldPtyPidAliveAfterRuntimeKill": false,
+    "rebindOk": false,
+    "rebindError": "UNKNOWN_ATTACHMENT",
+    "newRuntimeAttachmentPresent": false,
+    "newRuntimeGeneration": 2,
+    "nativeSessionsInNewRuntime": 0
+  }
+}

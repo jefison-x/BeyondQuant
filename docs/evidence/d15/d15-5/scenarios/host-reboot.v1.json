@@ -1,0 +1,13 @@
+{
+  "id": "host-reboot",
+  "result": "NOT_RUN",
+  "fault_applied": false,
+  "dimensions": {
+    "pty_process": "unknown",
+    "attachment": "unknown",
+    "io_rebind": "unknown",
+    "terminal_identity": "unknown"
+  },
+  "not_run_reason": "rebooting the maintainer host is not authorized; a container/adapter/process restart is not a host reboot",
+  "observation": null
+}

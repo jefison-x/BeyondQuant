@@ -1,0 +1,23 @@
+{
+  "id": "pty-attachment-separation",
+  "result": "PASS",
+  "assertions": {
+    "real_external_pty": true,
+    "attachment_registry_minted": true,
+    "ptty_reachable_only_via_attachment": true,
+    "attachment_loss_keeps_pty_alive": true,
+    "rebind_rejected_after_attachment_loss": true,
+    "session_kill_ends_pty": true
+  },
+  "observation": {
+    "attachmentId": "att-1-0",
+    "sessionId": "pty-1",
+    "pid": 4172437,
+    "ptyCmdlineBefore": "bwrap --ro-bind / / --dev /dev --unshare-pid --proc /proc --die-with-parent -- /bin/bash --noprofile --norc -i",
+    "attachmentPresentBefore": true,
+    "detachAccepted": true,
+    "rebindErrorAfterDetach": "ATTACHMENT_DETACHED",
+    "ptyAliveAfterAttachmentLoss": true,
+    "sessionKillEndedPty": true
+  }
+}
