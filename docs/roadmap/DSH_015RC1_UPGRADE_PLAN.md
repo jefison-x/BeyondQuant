@@ -203,12 +203,25 @@ service-boundary runtime-continuity evidence and **not** real-LLM-quality
 semantic evidence. Host reboot is `NOT_RUN` (a container restart is not a host
 reboot). D15-4/D15-5/D15-G and R3 are not in this batch.
 
-Evidence: [`docs/evidence/d15/d15-runtime/`](../evidence/d15/d15-runtime/README.md)
-(`observations.v1.json`, `verdict.v1.json`, `negative-controls.v1.json`,
-`stack.v1.json`, per-row `scenarios/*.v1.json`). Harness:
-`scripts/d15/runtime_continuity/{contract.v1.json,observer.py,scripted_provider.py,run_qualification.py}`
-and `tests/test_dsh_d15_runtime_continuity.py`. The observer is fail-able: 18
-negative controls each force a non-zero exit while a known-good fixture passes.
+**Review-fix revision (v2, 2026-09-20).** The observer now separates
+`format_valid` (the artifact is well formed) from `all_pass` (the qualification
+passed). A REQUIRED scenario left `NOT_RUN`/`BLOCKED` makes the verdict
+non-zero while preserving its status/reason; OPTIONAL scenarios (e.g.
+`host-reboot`) are declared separately and do not gate required coverage.
+`allowed_continuity`/`forbidden_continuity` come only from the trusted contract
+(observations may not relax them). PASS requires real PID/generation/epoch
+relationships and receipt/trace linkage, not field existence. The selfcheck
+executes a reconstructed legacy algorithm to prove the pre-fix behaviour rather
+than asserting it. The isolated stack also rebuilds Backend/Gateway/MCP from the
+branch: the earlier reuse of a stale production image lacked pool idempotency
+and was fixed. Evidence:
+[`docs/evidence/d15/d15-runtime/`](../evidence/d15/d15-runtime/README.md)
+(`observations.v2.json`, `verdict.v2.json`, `negative-controls.v2.json`,
+`stack.v2.json`, per-row `scenarios/*.v2.json`; v1 retained). Harness:
+`scripts/d15/runtime_continuity/{contract.v2.json,observer.py,scripted_provider.py,run_qualification.py}`
+and `tests/test_dsh_d15_runtime_continuity.py`. The observer is fail-able: 27
+negative controls each force a non-zero exit while a known-good unit fixture
+passes.
 
 ## 5. D15-4 — Subagent / fork continuity
 
@@ -309,3 +322,9 @@ revision advances `post-u8.159` -> `post-u8.160` (`.158`/`.159` were already
 taken by in-flight/main identities). This is a rebuild identity bump only: no
 selector, `compose.yml`, `deployment.json`, immutable release registry or 0.1.2
 artifact/evidence change and no deployment.
+
+The D15-3R observer review-fix revision changes `scripts/d15/runtime_continuity/`
+and `tests/` build inputs again, so the revision advances
+`post-u8.160` -> `post-u8.161` (again a rebuild identity bump only; no selector,
+deployment, immutable release registry or 0.1.2 artifact/evidence change and no
+deployment).

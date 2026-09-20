@@ -1,98 +1,118 @@
 # D15 real isolated BYQ runtime-continuity qualification
 
 - Status: **PASS (scripted keyless provider; service-boundary runtime continuity)**
-- Date: 2026-09-20
+- Date: 2026-09-20 (v2 review-fix revision)
 - Candidate: coherent `dsh-0.1.5rc1` / Python SDK `0.1.5rc1` / bundled runtime `0.1.5rc1`
-- Build revision: `post-u8.160` (rebuild identity only; no selector/deployment change)
-- Scope: this batch qualifies **runtime continuity only**. D15-4, D15-5, D15-G and R3
-  are **not** in this batch and no full-D15 completion is claimed.
+- Build revision: `post-u8.161` (rebuild identity only; no selector/deployment change)
+- Scope: runtime continuity only. D15-4, D15-5, D15-G and R3 are **not** in this
+  batch and no full-D15 completion is claimed.
+
+## Review fixes in v2
+
+The v1 observer conflated "the report is well formed" with "the qualification
+passed". v2 separates them and hardens the checks:
+
+- **`format_valid` vs `all_pass`**: `format_valid` means the artifact is well
+  formed and every check that ran passed. `all_pass` is the qualification gate:
+  every REQUIRED scenario must be present and `PASS`. A REQUIRED `NOT_RUN` or
+  `BLOCKED` now yields `all_pass=false` and exit 1 while preserving its status
+  and reason.
+- **OPTIONAL scenarios** are declared separately in the contract
+  (`optional_scenarios`). `host-reboot` is optional and reported `NOT_RUN`; it
+  does not gate the required coverage.
+- **Contract-authoritative continuity**: `allowed_continuity` /
+  `forbidden_continuity` come only from the trusted contract. An observation
+  that declares them is rejected; the previous `setdefault` override is gone.
+- **Recovery relationships / linkage**: PASS requires real relationships, not
+  field existence or a self-reported `fault_applied`. See below.
+- **Honest pre-fix comparison**: `run_selfcheck` executes a reconstructed
+  legacy algorithm and records its actual result (`legacy_algorithm_all_pass`),
+  instead of hardcoding a claim.
 
 ## What is real vs scripted
 
-Real, in an isolated stack (dedicated compose project `byq-d15-runtime`, dedicated
-network/volumes, fresh PostgreSQL, loopback-only ports):
+Real, in an isolated stack (dedicated compose project `byq-d15-runtime`,
+dedicated network/volumes, fresh PostgreSQL, loopback-only ports), with the
+services rebuilt from this branch:
 
-- BYQ Gateway, runtime-adapter (rebuilt fixed 0.1.5rc1 candidate image),
-  Backend and MCP services, all started as separate containers;
+- BYQ Gateway, Backend, MCP and runtime-adapter (fixed 0.1.5rc1 candidate),
+  each a separate container; `stack.v2.json` records every image digest.
 - BYQ Product API entry path (durable login, research task objective, strategy
-  approval, paper-pool side effect) with real PostgreSQL persistence;
-- the runtime-adapter durable lifecycle journal, generation ledger and stable
-  executor epoch on an isolated session volume;
-- real process faults: adapter container SIGKILL+restart, DSH bundled-runtime
-  child SIGKILL, Gateway container restart, explicit executor takeover.
+  approval, paper-pool side effect) on real PostgreSQL.
+- durable lifecycle journal, generation ledger and stable executor epoch.
+- real faults: adapter SIGKILL+restart, DSH child SIGKILL, Gateway restart,
+  explicit executor takeover.
 
-Scripted, and explicitly **not** real-LLM-quality:
+Scripted and explicitly **not** real-LLM-quality: a keyless deterministic
+loopback provider. `llm.class=scripted-keyless`, `llm.real_llm_quality=false`.
 
-- the model provider is a keyless deterministic loopback OpenAI-compatible
-  server that streams a fixed assistant message. It drives real DSH/runtime
-  turns but does not measure model semantics. `observations.v1.json` records
-  `llm.class = scripted-keyless` and `llm.real_llm_quality = false`.
+**Harness defect found and fixed during review:** the first v2 attempt reused
+`beyondquant-backend:latest` (built 2026-09-05), whose `create_pool` had no
+idempotency, so replaying the pool idempotency key created duplicate pools.
+Rebuilding Backend (and Gateway/MCP) from this branch restored real idempotent
+receipts; `observations.v2.json` is the post-fix run.
 
-## Contract and fail-able observer
+## Per-row results (real observations, v2)
 
-- `scripts/d15/runtime_continuity/contract.v1.json` — closed scenario set,
-  invariants, required per-scenario before/after fields and fail-closed list.
-- `scripts/d15/runtime_continuity/observer.py` — independent verdict; exits
-  non-zero on any violation or on an unreadable artifact, and never treats
-  missing evidence as a pass. `--selfcheck` mutates a known-good fixture in
-  every fail-closed way and requires each mutation to fail.
-- `negative-controls.v1.json` — 18 controls, `baseline_all_pass=true`,
-  `all_controls_pass=true`; each control observed `all_pass=false`/`exit_code=1`
-  while `pre_fix_would_pass=true`. For example `missing-evidence-field`
-  fails with `scenario[adapter-process-restart].after: missing 'goal'`.
+| fault row | continuity | pid | generation | epoch |
+| --- | --- | --- | --- | --- |
+| adapter-process-restart | reattached -> rehydrated | 3279144 -> 3280473 | 1 -> 2 | 1 -> 1 |
+| gateway-disconnect-reconnect | reattached -> reattached | 3280473 -> 3280473 | 2 -> 2 | 1 -> 1 |
+| generation-replacement | reattached -> interrupted | 3280473 -> 3280473 | 2 -> 3 | 1 -> 1 |
+| dsh-process-interruption | reattached -> rehydrated | 3280473 -> 3280473 | 3 -> 4 | 1 -> 1 |
+| executor-takeover | reattached -> reattached | 3280473 -> 3280473 | 4 -> 4 | 1 -> 2 |
+| host-reboot (OPTIONAL) | `NOT_RUN` | - | - | - |
 
-## Per-row results (real observations)
-
-| fault row | continuity | adapter pid | generation | epoch | goal | side effect | approval | result |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| adapter-process-restart | `reattached` -> `rehydrated` | 3216725 -> 3218079 | +1 new | 1 -> 1 | retained | dedup (1) | approved | completed, seq 11 |
-| gateway-disconnect-reconnect | `reattached` -> `reattached` | 3218079 -> 3218079 | same | 1 -> 1 | retained | dedup (1) | approved | completed, seq 11 |
-| generation-replacement | `reattached` -> `interrupted` | 3218079 -> 3218079 | +1 new | 1 -> 1 | retained | dedup (1) | approved | completed, seq 18 |
-| dsh-process-interruption | `reattached` -> `rehydrated` | 3218079 -> 3218079 | +1 new | 1 -> 1 | retained | dedup (1) | approved | completed, seq 25 |
-| executor-takeover | `reattached` -> `reattached` | 3218079 -> 3218079 | same | 1 -> 2 | retained | dedup (1) | approved | completed, seq 25 |
-
-- Goal retention is proven by an unchanged durable prompt receipt
-  (`content_sha256` + `root_run_id`) in the lifecycle journal plus the persisted
-  Product conversation message; a prompt replay with the original idempotency
-  key returned the same run id and did not increment the provider call count.
-- No duplicate side effect is proven by replaying the paper-pool idempotency key
-  and observing the same `pool_id` with exactly one owner-scoped pool.
-- Approval not bypassed is proven by the persistent strategy approval artifact
-  remaining `approved` and unbypassed across every process restart; the observer
-  additionally fails `expired-approval-reuse` and `initiator-self-approval`.
-- Traceability is proven by contiguous WorkflowTrace sequences (strictly
-  increasing) and persisted assistant result messages.
-- Executor takeover incremented the monotonic epoch `1 -> 2`, wrote an immutable
-  audit `.../executor-state/takeover-audit/20260920T044040Z.2.json`, modified no
-  database row, and retained the session/evidence.
+Verified relationships: adapter restart changes PID; generation replacement and
+DSH interruption increment the generation index with a new generation id;
+executor takeover increments the monotonic epoch; Gateway reconnect keeps
+identity/generation; the goal prompt receipt links to the result run id; the
+pool and approval replay receipts equal their originals (one side effect); the
+WorkflowTrace sequence is contiguous.
 
 ## Explicitly uncovered / not executed
 
-- **Host reboot**: `NOT_RUN`. Rebooting the maintainer host or production is not
-  authorized; a container restart is not equivalent to a host reboot.
-- **Real-LLM semantic quality**: not measured (scripted provider).
-- **Agent-driven domain side effects via model tool calls**: the domain
-  goal/approval/action were driven through the real Product/Backend/MCP-wired
-  stack, not by a model tool call. The scripted provider emits text only.
-- **D15-4 subagent/fork, D15-5 persistent terminal, D15-G Go/No-Go**: not in
-  this batch.
-- **R3**: remains frozen; `R3_RESUME = NO`.
+- **host-reboot**: OPTIONAL, `NOT_RUN` (host reboot not authorized; a container
+  restart is not a host reboot).
+- **Real-LLM semantics**: not measured (scripted provider).
+- **Model tool-call-driven domain actions**: domain goal/approval/action were
+  driven through the real Product/Backend stack, not by a model tool call.
+- **D15-4/D15-5/D15-G**: not in this batch. **R3**: frozen, `R3_RESUME=NO`.
 
-## Isolation and cleanup
+## Fail-able observer
 
-`stack.v1.json` records the preflight (6 containers, loopback-only published
-ports, candidate pinned, adapter image digest) and cleanup
-(`containers_remaining=0`, `networks_remaining=0`, `volumes_remaining=0`). The
-production `beyondquant` stack, its volumes and the Community repository were
-never referenced or modified.
+`contract.v2.json` (authoritative required/optional scenarios, invariants,
+relationships, fail-closed list) + `observer.py`. Negative controls:
+`negative-controls.v2.json` (27 controls, `all_controls_pass=true`,
+`defect_targeting_pre_fix_passed=true`). For the five defect-targeting controls
+the reconstructed legacy algorithm returns `all_pass=true` while the fixed
+verdict returns `all_pass=false`/exit 1:
 
-## Reproduce
+- `all-required-not-run` (legacy True -> fixed False, format still valid)
+- `single-required-blocked`
+- `reasoned-not-executed`
+- `observation-relaxes-allowed-continuity`
+- `observation-clears-forbidden-continuity`
+
+The synthetic `valid_fixture` is `evidence_class=unit-fixture` and is rejected
+by the runtime verdict (`required_evidence_class=runtime-isolated-stack`); it
+only exercises the observer's unit/negative tests.
+
+## Isolation, cleanup, reproduce
+
+`stack.v2.json`: preflight (6 containers, loopback-only ports, candidate pinned,
+all image digests) and cleanup (`containers_remaining=0`, `networks_remaining=0`,
+`volumes_remaining=0`). Production/Community untouched.
 
 ```bash
-python3 scripts/d15/runtime_continuity/run_qualification.py        # up -> scenarios -> cleanup
+python3 scripts/d15/runtime_continuity/run_qualification.py            # up -> scenarios -> cleanup
 python3 scripts/d15/runtime_continuity/observer.py --selfcheck \
-    --out docs/evidence/d15/d15-runtime/negative-controls.v1.json  # must exit 0
+    --out docs/evidence/d15/d15-runtime/negative-controls.v2.json      # must exit 0
 python3 scripts/d15/runtime_continuity/observer.py \
-    --observations docs/evidence/d15/d15-runtime/observations.v1.json \
-    --out docs/evidence/d15/d15-runtime/verdict.v1.json            # must exit 0
+    --observations docs/evidence/d15/d15-runtime/observations.v2.json \
+    --out docs/evidence/d15/d15-runtime/verdict.v2.json                # must exit 0
 ```
+
+v1 evidence (`observations.v1.json`, `verdict.v1.json`,
+`negative-controls.v1.json`, `stack.v1.json`, `scenarios/*.v1.json`) is retained
+unchanged.

@@ -1,0 +1,19 @@
+{
+  "candidate": {
+    "python_sdk": "0.1.5rc1",
+    "release": "dsh-0.1.5rc1",
+    "runtime_bin": "0.1.5rc1",
+    "selector_env": "BYQ_DSH_COMPATIBILITY_RELEASE"
+  },
+  "evidence_class": "runtime-isolated-stack",
+  "generated_at": "2026-09-20T04:57:32Z",
+  "id": "host-reboot",
+  "llm": {
+    "class": "scripted-keyless",
+    "note": "Keyless deterministic loopback provider; service-boundary runtime-continuity evidence, not real-LLM-quality semantic evidence.",
+    "real_llm_quality": false
+  },
+  "not_run_reason": "not executed: rebooting the maintainer host is not authorized and a container restart is not equivalent to a host reboot",
+  "result": "NOT_RUN",
+  "schema_version": "byq-d15-runtime-scenario.v2"
+}

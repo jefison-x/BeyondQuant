@@ -33,7 +33,7 @@ services:
     networks: [d15_internal]
 
   backend:
-    image: ${D15_BACKEND_IMAGE:-beyondquant-backend:latest}
+    image: ${D15_BACKEND_IMAGE:-byq-d15-runtime-backend:local}
     environment:
       BYQ_DATABASE_URL: postgresql+psycopg://byq_app:d15-synthetic-db-only@postgres:5432/byq_domain
       BYQ_BOOTSTRAP_ADMIN_USERNAME: d15admin
@@ -56,7 +56,7 @@ services:
     networks: [d15_internal]
 
   mcp:
-    image: ${D15_MCP_IMAGE:-beyondquant-mcp:latest}
+    image: ${D15_MCP_IMAGE:-byq-d15-runtime-mcp:local}
     environment:
       BYQ_BACKEND_URL: http://backend:8000
       BYQ_MCP_TOKEN: d15-synthetic-mcp-only
@@ -109,7 +109,7 @@ services:
     networks: [d15_internal]
 
   gateway:
-    image: ${D15_GATEWAY_IMAGE:-beyondquant-gateway:latest}
+    image: ${D15_GATEWAY_IMAGE:-byq-d15-runtime-gateway:local}
     environment:
       BYQ_PRODUCT_TOKEN: d15-synthetic-product-only
       BYQ_PRODUCT_PRINCIPAL: product-user

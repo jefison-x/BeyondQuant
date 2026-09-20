@@ -229,10 +229,12 @@ def goal_receipt(journal: dict, message_id: str) -> dict:
     return {"root_run_id": receipt["root_run_id"], "content_sha256": receipt["content_sha256"]}
 
 
-def make_receipt(tool: str, key: str, receipt: dict, side_effect_count: int = 1) -> dict:
+def make_receipt(tool: str, key: str, receipt: dict, side_effect_count: int = 1,
+                 replay_receipt: dict | None = None) -> dict:
     return {"tool": tool, "idempotency_key": key, "receipt": receipt,
             "side_effect_count": side_effect_count,
-            "replay": {"receipt": receipt, "side_effect_count": side_effect_count}}
+            "replay": {"receipt": receipt if replay_receipt is None else replay_receipt,
+                       "side_effect_count": side_effect_count}}
 
 
 class Qualification:
@@ -283,11 +285,11 @@ class Qualification:
                                     "idempotency_key": f"d15-version-{uuid.uuid4().hex}"})
         version_id = str(version["artifact"]["artifact_id"])
         approval_key = f"d15-approval-{uuid.uuid4().hex}"
-        approval = self.client.call("POST", "/api/product/strategies/approvals",
-                                    {"task_id": task_id, "strategy_version_artifact_id": version_id,
-                                     "decision": "approved", "rationale": "D15 isolated human approval.",
-                                     "trace_id": f"d15-approval-trace-{uuid.uuid4().hex}",
-                                     "idempotency_key": approval_key})
+        approval_body = {"task_id": task_id, "strategy_version_artifact_id": version_id,
+                         "decision": "approved", "rationale": "D15 isolated human approval.",
+                         "trace_id": f"d15-approval-trace-{uuid.uuid4().hex}",
+                         "idempotency_key": approval_key}
+        approval = self.client.call("POST", "/api/product/strategies/approvals", approval_body)
         approval_id = str(approval["artifact"]["artifact_id"])
         pool_key = f"d15-pool-{uuid.uuid4().hex}"
         pool_body = {"idempotency_key": pool_key, "name": "D15 isolated pool",
@@ -298,6 +300,7 @@ class Qualification:
             "task_id": task_id, "strategy_version_artifact_id": version_id,
             "approval_id": approval_id, "approval_key": approval_key,
             "pool_id": pool_id, "pool_key": pool_key, "pool_body": pool_body,
+            "approval_body": approval_body,
         }
 
     def domain_replay(self) -> dict:
@@ -307,10 +310,19 @@ class Qualification:
         pool_ids = [item.get("pool_id") for item in pools.get("pools", [])]
         approval = self.client.call("GET", f"/api/product/strategies/versions/"
                                     f"{self.artifacts['strategy_version_artifact_id']}/approval")
+        approval_replay = try_http("POST", f"{GATEWAY}/api/product/strategies/approvals",
+                                   self.artifacts["approval_body"], opener=self.client.opener)
+        replay_approval_id = None
+        if isinstance(approval_replay, dict) and isinstance(approval_replay.get("artifact"), dict):
+            replay_approval_id = approval_replay["artifact"].get("artifact_id")
+        elif isinstance(approval_replay, dict) and "_error" in approval_replay:
+            replay_approval_id = f"replay-error:{approval_replay['_error'][:120]}"
         return {
             "replay_pool_id": replay_pool_id,
             "pool_count": pool_ids.count(replay_pool_id),
             "approval": approval,
+            "replay_approval_id": replay_approval_id,
+            "approval_replay_matches": replay_approval_id == self.artifacts["approval_id"],
         }
 
     # ---- agent session path ----
@@ -374,6 +386,7 @@ class Qualification:
             "trace_id": self.trace_id,
             "adapter_pid": container_pid(ADAPTER_CONTAINER),
             "adapter_generation": generations[-1]["generation_id"] if generations else "generation-none",
+            "generation_index": len(generations),
             "executor_epoch": journal.get("executor_epoch") or _safe_epoch(),
             "continuity": continuity,
             "goal": {"content_sha256": receipt.get("content_sha256", goal_digest),
@@ -389,7 +402,11 @@ class Qualification:
                 make_receipt("runtime.prompt.idempotent", message_id or self.message_id,
                              {"state": "accepted", "run_id": replay_run or self.artifacts.get("run_id")}),
                 make_receipt("byq_paper_pool_create", self.artifacts["pool_key"],
-                             {"state": "accepted", "pool_id": domain["replay_pool_id"]}),
+                             {"state": "accepted", "pool_id": self.artifacts["pool_id"]},
+                             replay_receipt={"state": "accepted", "pool_id": domain["replay_pool_id"]}),
+                make_receipt("byq_strategy_approval", self.artifacts["approval_key"],
+                             {"state": "approved", "approval_id": self.artifacts["approval_id"]},
+                             replay_receipt={"state": "approved", "approval_id": domain["replay_approval_id"]}),
             ],
             "result": {
                 "run_id": self.artifacts.get("run_id"),
@@ -413,7 +430,7 @@ class Qualification:
         after = self.capture(continuity_of(self.runtime_session_id))
         return {"id": "adapter-process-restart", "result": "PASS", "fault_applied": True,
                 "before": before, "after": after,
-                "evidence": ["docs/evidence/d15/d15-runtime/adapter-process-restart.v1.json"]}
+                "evidence": ["docs/evidence/d15/d15-runtime/adapter-process-restart.v2.json"]}
 
     def _start_product_run(self, content: str) -> dict:
         return self.client.call("POST", f"/v1/agent/sessions/{self.conversation_id}/turns",
@@ -437,7 +454,7 @@ class Qualification:
         after["_submission_run_id"] = (submission or {}).get("run_id")
         return {"id": "generation-replacement", "result": "PASS", "fault_applied": True,
                 "before": before, "after": after,
-                "evidence": ["docs/evidence/d15/d15-runtime/generation-replacement.v1.json"]}
+                "evidence": ["docs/evidence/d15/d15-runtime/generation-replacement.v2.json"]}
 
     def dsh_interruption(self) -> dict:
         before = self.capture(self._current_continuity())
@@ -466,7 +483,7 @@ class Qualification:
         after["_submission_run_id"] = (submission or {}).get("run_id")
         return {"id": "dsh-process-interruption", "result": "PASS", "fault_applied": True,
                 "before": before, "after": after,
-                "evidence": ["docs/evidence/d15/d15-runtime/dsh-process-interruption.v1.json"]}
+                "evidence": ["docs/evidence/d15/d15-runtime/dsh-process-interruption.v2.json"]}
 
     def ack_terminals(self) -> None:
         """Acknowledge durable terminals so a new root is admitted (BYQ contract)."""
@@ -500,7 +517,7 @@ class Qualification:
         after["_gateway_detail_messages"] = len(detail.get("messages", []))
         return {"id": "gateway-disconnect-reconnect", "result": "PASS", "fault_applied": True,
                 "before": before, "after": after,
-                "evidence": ["docs/evidence/d15/d15-runtime/gateway-disconnect-reconnect.v1.json"]}
+                "evidence": ["docs/evidence/d15/d15-runtime/gateway-disconnect-reconnect.v2.json"]}
 
     def executor_takeover(self) -> dict:
         before = self.capture(self._current_continuity())
@@ -515,7 +532,7 @@ class Qualification:
         after["executor_epoch"] = result.get("executor_epoch", after.get("executor_epoch"))
         return {"id": "executor-takeover", "result": "PASS", "fault_applied": True,
                 "before": before, "after": after,
-                "evidence": ["docs/evidence/d15/d15-runtime/executor-takeover.v1.json"]}
+                "evidence": ["docs/evidence/d15/d15-runtime/executor-takeover.v2.json"]}
 
     def _current_continuity(self) -> str:
         body = try_http("GET", f"{ADAPTER}/internal/runtime/operations")
@@ -574,11 +591,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-up", action="store_true", help="reuse a running isolated stack")
     parser.add_argument("--no-cleanup", action="store_true")
-    parser.add_argument("--out", type=Path, default=HERE.parents[2] / "docs/evidence/d15/d15-runtime/observations.v1.json")
+    parser.add_argument("--out", type=Path, default=HERE.parents[2] / "docs/evidence/d15/d15-runtime/observations.v2.json")
     args = parser.parse_args(argv)
 
     observations: dict = {
-        "schema_version": "byq-d15-runtime-observations.v1",
+        "schema_version": "byq-d15-runtime-observations.v2",
+        "evidence_class": "runtime-isolated-stack",
         "generated_at": now(),
         "candidate": {"release": "dsh-0.1.5rc1", "python_sdk": "0.1.5rc1",
                       "runtime_bin": "0.1.5rc1",
@@ -612,18 +630,24 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         if not args.no_cleanup:
             observations["cleanup"] = stack_down()
+    observations["scenarios"].append({
+        "id": "host-reboot", "result": "NOT_RUN",
+        "not_run_reason": "not executed: rebooting the maintainer host is not authorized and a "
+                          "container restart is not equivalent to a host reboot",
+    })
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(observations, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     scenarios_dir = args.out.parent / "scenarios"
     scenarios_dir.mkdir(parents=True, exist_ok=True)
     for scenario in observations["scenarios"]:
-        (scenarios_dir / f"{scenario['id']}.v1.json").write_text(
-            json.dumps({"schema_version": "byq-d15-runtime-scenario.v1",
+        (scenarios_dir / f"{scenario['id']}.v2.json").write_text(
+            json.dumps({"schema_version": "byq-d15-runtime-scenario.v2",
+                        "evidence_class": observations["evidence_class"],
                         "candidate": observations["candidate"], "llm": observations["llm"],
                         "generated_at": observations["generated_at"], **scenario},
                        indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    (args.out.parent / "stack.v1.json").write_text(json.dumps(
-        {"schema_version": "byq-d15-runtime-stack.v1", "generated_at": observations["generated_at"],
+    (args.out.parent / "stack.v2.json").write_text(json.dumps(
+        {"schema_version": "byq-d15-runtime-stack.v2", "generated_at": observations["generated_at"],
          "preflight": observations["preflight"], "domain_artifacts": observations["domain_artifacts"],
          "cleanup": observations.get("cleanup")}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps({"observations": str(args.out),

@@ -150,9 +150,16 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
   generation 替换、executor takeover；逐行记录 before/after session/goal/approval/
   action-receipts/result 与 pid/generation/epoch，原目标保留、重复投递去重（单一副作用）、
   approval 未被绕过、结果可追溯；takeover epoch `1→2` 且不写任何数据库行。observer
-  可失败：18 个负例控制全部非零退出。**这是 scripted keyless provider 的服务边界证据，
-  非真实 LLM 语义证据；host reboot 未执行（`NOT_RUN`）**。D15-4/D15-5/D15-G 与 R3
-  不在本批，不主张完整 D15。证据 `docs/evidence/d15/d15-runtime/`。
+  可失败且区分**格式有效（`format_valid`）与资格通过（`all_pass`）**：REQUIRED 场景
+  `NOT_RUN`/`BLOCKED` 一律使 verdict 非零并保留状态/原因；OPTIONAL（`host-reboot`）单独声明、
+  不 gate 必需覆盖；`allowed/forbidden continuity` 仅来自合同（观察不得放宽）；PASS 需真实
+  PID/generation/epoch 关系与 receipt/trace 链接。27 个负例控制全部非零退出，且对
+  `all-required-not-run`/`single-required-blocked`/`reasoned-not-executed`/放宽 allowed/清空
+  forbidden 五例，重建的旧算法 `all_pass=true` 而修复后为 false（真实执行对比，非硬编码）。
+  本修订还发现并修复隔离栈复用陈旧生产镜像导致 pool 幂等失效的问题，改为从本分支重建
+  Backend/Gateway/MCP。**这是 scripted keyless provider 的服务边界证据，非真实 LLM 语义证据；
+  host reboot 为 OPTIONAL `NOT_RUN`，不等同容器重启**。D15-4/D15-5/D15-G 与 R3 不在本批，
+  不主张完整 D15。证据 `docs/evidence/d15/d15-runtime/*.v2.json`（v1 保留）。
 - **D15-4..D15-G（PLANNED）**：subagent/fork continuity、persistent terminal 与
   architecture Go/No-Go 尚未执行；`R3_RESUME = NO`。
 - **路线重排**：`R0 → R1 → R2 → D15 → R3 Thin Runtime Supervisor → R4 TerminalAttachment →

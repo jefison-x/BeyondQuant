@@ -1,14 +1,26 @@
 #!/usr/bin/env python3
 """Fail-able observer/verdict for the D15 runtime-continuity qualification.
 
-The observer is intentionally strict and independent of the harness that
-produces observations. It reads a contract (single source of truth for required
-scenarios, invariant vocabulary and fail-closed conditions) plus an observations
-artifact, and either exits non-zero on any violation or emits a PASS verdict.
+Separation of concerns (review fix):
+
+* ``format_valid``  — the observations artifact is well formed and every
+  invariant / relationship check that ran has passed. A structurally valid
+  "report" can still be an unqualified run.
+* ``all_pass``      — the **qualification** passed: every REQUIRED scenario is
+  present and PASS, no scenario FAILed and there are no structural violations.
+  A REQUIRED scenario left ``NOT_RUN``/``BLOCKED`` therefore makes the verdict
+  fail (non-zero exit) even though its status/reason is preserved.
+
+The contract is the only source of truth for ``allowed_continuity`` /
+``forbidden_continuity``. Observations may NOT relax or override contract
+criteria; any attempt is rejected.
 
 It never inspects implementation internals and never treats missing evidence as
-a pass. ``--selfcheck`` mutates a known-good fixture in every fail-closed way
-and asserts each mutation is rejected, proving the verdict can actually fail.
+a pass. ``--selfcheck`` mutates a known-good *unit* fixture in every fail-closed
+way and asserts each mutation is rejected. That fixture is a unit test only and
+is never runtime PASS evidence: runtime evidence must carry
+``evidence_class == contract.required_evidence_class`` and real
+PID/generation/epoch relationships plus receipt/trace linkage.
 """
 
 from __future__ import annotations
@@ -16,12 +28,15 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
 
 HERE = Path(__file__).resolve().parent
-DEFAULT_CONTRACT = HERE / "contract.v1.json"
+DEFAULT_CONTRACT = HERE / "contract.v2.json"
+
+_RUN_ID = re.compile(r"^[0-9a-f]{32}$")
 
 
 class Failure(Exception):
@@ -41,11 +56,10 @@ def _is_nonempty_str(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-def _require(mapping: object, key: str, ctx: str, failures: list[str]) -> object:
-    if not isinstance(mapping, dict) or key not in mapping:
-        failures.append(f"{ctx}: missing required field '{key}'")
+def _as_int(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
         return None
-    return mapping[key]
+    return value
 
 
 def _require_before_after(block: object, fields: list[str], ctx: str, failures: list[str]) -> dict:
@@ -101,8 +115,7 @@ def _check_approval(approval: object, states: list[str], ctx: str, failures: lis
         failures.append(f"{ctx}: approval must be an object")
         return False
     ok = True
-    approval_id = approval.get("approval_id")
-    if not _is_nonempty_str(approval_id):
+    if not _is_nonempty_str(approval.get("approval_id")):
         failures.append(f"{ctx}.approval: missing approval_id")
         ok = False
     if approval.get("state") not in states:
@@ -122,14 +135,114 @@ def _check_approval(approval: object, states: list[str], ctx: str, failures: lis
     return ok
 
 
-def _check_scenario(
-    scenario: dict, contract: dict, failures: list[str],
-) -> dict:
+# --------------------------------------------------------------------------
+# Recovery relationship / linkage checks (contract-authoritative).
+# --------------------------------------------------------------------------
+
+def _pid_changed(before: dict, after: dict) -> bool:
+    b, a = _as_int(before.get("adapter_pid")), _as_int(after.get("adapter_pid"))
+    return b is not None and a is not None and b > 0 and a > 0 and b != a
+
+
+def _pid_stable(before: dict, after: dict) -> bool:
+    b, a = _as_int(before.get("adapter_pid")), _as_int(after.get("adapter_pid"))
+    return b is not None and a is not None and b > 0 and a > 0 and b == a
+
+
+def _generation_incremented(before: dict, after: dict) -> bool:
+    b = _as_int(before.get("generation_index"))
+    a = _as_int(after.get("generation_index"))
+    if b is None or a is None or b < 1 or a < 1:
+        return False
+    if a <= b:
+        return False
+    return _is_nonempty_str(after.get("adapter_generation")) \
+        and after.get("adapter_generation") != before.get("adapter_generation")
+
+
+def _epoch_unchanged(before: dict, after: dict) -> bool:
+    b, a = _as_int(before.get("executor_epoch")), _as_int(after.get("executor_epoch"))
+    return b is not None and a is not None and b >= 1 and b == a
+
+
+def _epoch_incremented(before: dict, after: dict) -> bool:
+    b, a = _as_int(before.get("executor_epoch")), _as_int(after.get("executor_epoch"))
+    return b is not None and a is not None and b >= 1 and a > b
+
+
+def _goal_receipt_linked(before: dict, after: dict) -> bool:
+    goal = after.get("goal") if isinstance(after.get("goal"), dict) else {}
+    receipt = goal.get("prompt_receipt") if isinstance(goal.get("prompt_receipt"), dict) else {}
+    root = receipt.get("root_run_id")
+    if not _is_nonempty_str(receipt.get("content_sha256")) or receipt.get("content_sha256") != goal.get("content_sha256"):
+        return False
+    if not isinstance(root, str) or _RUN_ID.fullmatch(root) is None:
+        return False
+    result = after.get("result") if isinstance(after.get("result"), dict) else {}
+    if result.get("run_id") == root:
+        return True
+    for item in after.get("action_receipts", []) if isinstance(after.get("action_receipts"), list) else []:
+        payload = item.get("receipt") if isinstance(item, dict) else None
+        if isinstance(payload, dict) and root in (payload.get("run_id"), payload.get("root_run_id")):
+            return True
+    return False
+
+
+def _domain_receipt_linked(before: dict, after: dict) -> bool:
+    receipts = after.get("action_receipts") if isinstance(after.get("action_receipts"), list) else []
+    approval_id = (after.get("approval") or {}).get("approval_id") if isinstance(after.get("approval"), dict) else None
+    pool_linked = False
+    approval_linked = False
+    for item in receipts:
+        payload = item.get("receipt") if isinstance(item, dict) else None
+        if not isinstance(payload, dict):
+            continue
+        if _is_nonempty_str(payload.get("pool_id")):
+            pool_linked = True
+        if _is_nonempty_str(payload.get("approval_id")) and payload.get("approval_id") == approval_id:
+            approval_linked = True
+    return pool_linked and approval_linked
+
+
+def _sequence_advanced_or_held(before: dict, after: dict) -> bool:
+    b = _as_int((before.get("result") or {}).get("sequence")) if isinstance(before.get("result"), dict) else None
+    a = _as_int((after.get("result") or {}).get("sequence")) if isinstance(after.get("result"), dict) else None
+    return b is not None and a is not None and a >= b
+
+
+RELATIONSHIP_CHECKS = {
+    "pid_changed": _pid_changed,
+    "pid_stable": _pid_stable,
+    "generation_incremented": _generation_incremented,
+    "epoch_unchanged": _epoch_unchanged,
+    "epoch_incremented": _epoch_incremented,
+    "goal_receipt_linked": _goal_receipt_linked,
+    "domain_receipt_linked": _domain_receipt_linked,
+    "sequence_advanced_or_held": _sequence_advanced_or_held,
+}
+
+
+def _check_relationships(spec: dict, before: dict, after: dict, ctx: str,
+                         failures: list[str]) -> dict[str, bool]:
+    out: dict[str, bool] = {}
+    for name in spec.get("relationships", []):
+        check = RELATIONSHIP_CHECKS.get(name)
+        if check is None:
+            failures.append(f"{ctx}: unknown contract relationship {name!r}")
+            out[name] = False
+            continue
+        ok = bool(check(before, after))
+        out[name] = ok
+        if not ok:
+            failures.append(f"{ctx}: recovery relationship '{name}' violated")
+    return out
+
+
+def _check_scenario(scenario: dict, spec: dict, contract: dict, failures: list[str]) -> dict:
     scenario_id = scenario.get("id")
     ctx = f"scenario[{scenario_id}]"
     result = scenario.get("result")
-    vocabulary = contract["results_vocabulary"]
-    if result not in vocabulary:
+    if result not in contract["results_vocabulary"]:
         failures.append(f"{ctx}: invalid result {result!r}")
     checks = {
         "identity_stable": False,
@@ -140,35 +253,40 @@ def _check_scenario(
         "before_after_captured": False,
         "continuity_truthful": False,
         "sequence_contiguous": False,
+        "recovery_relationship_truthful": False,
     }
+    row = {"id": scenario_id, "result": result,
+           "required": bool(spec.get("required", False)), "invariants": checks}
+
+    # Contract criteria are authoritative. An observation may NOT declare them.
+    for forbidden_field in ("allowed_continuity", "forbidden_continuity"):
+        if forbidden_field in scenario:
+            failures.append(f"{ctx}: observation may not declare '{forbidden_field}'; contract criteria are authoritative")
 
     if result in {"NOT_RUN", "BLOCKED"}:
         if contract.get("not_run_requires_reason") and not _is_nonempty_str(scenario.get("not_run_reason")):
             failures.append(f"{ctx}: {result} without a reason")
-        return {"id": scenario_id, "result": result, "invariants": checks}
+        row["not_run_reason"] = scenario.get("not_run_reason")
+        return row
 
     if result != "PASS":
         failures.append(f"{ctx}: result {result!r} is not PASS")
-        return {"id": scenario_id, "result": result, "invariants": checks}
+        return row
 
     if scenario.get("fault_applied") is not True:
         failures.append(f"{ctx}: fault_applied is not true (scenario was not actually exercised)")
 
     before = _require_before_after(
-        scenario.get("before"), contract["required_before_after_fields"],
-        f"{ctx}.before", failures)
+        scenario.get("before"), contract["required_before_after_fields"], f"{ctx}.before", failures)
     after = _require_before_after(
-        scenario.get("after"), contract["required_before_after_fields"],
-        f"{ctx}.after", failures)
+        scenario.get("after"), contract["required_before_after_fields"], f"{ctx}.after", failures)
 
-    # identity_stable
     if _is_nonempty_str(before.get("session_id")) and before.get("session_id") == after.get("session_id") \
             and before.get("trace_id") == after.get("trace_id"):
         checks["identity_stable"] = True
     else:
         failures.append(f"{ctx}: durable session/trace identity changed across the fault")
 
-    # original_goal_retained
     before_goal = before.get("goal") if isinstance(before.get("goal"), dict) else {}
     after_goal = after.get("goal") if isinstance(after.get("goal"), dict) else {}
     for goal_ctx, goal in ((f"{ctx}.before.goal", before_goal), (f"{ctx}.after.goal", after_goal)):
@@ -183,16 +301,11 @@ def _check_scenario(
     else:
         failures.append(f"{ctx}: original goal drifted or prompt receipt was not retained")
 
-    # no_duplicate_side_effect
     checks["no_duplicate_side_effect"] = _check_action_receipts(
-        after.get("action_receipts"), contract["action_receipt_fields"],
-        f"{ctx}.after", failures)
-
-    # approval_not_bypassed
+        after.get("action_receipts"), contract["action_receipt_fields"], f"{ctx}.after", failures)
     checks["approval_not_bypassed"] = _check_approval(
         after.get("approval"), contract["approval_states"], f"{ctx}.after", failures)
 
-    # result_traceable
     after_result = after.get("result") if isinstance(after.get("result"), dict) else {}
     for field in contract["result_fields"]:
         if field not in after_result:
@@ -203,39 +316,45 @@ def _check_scenario(
     else:
         failures.append(f"{ctx}: result was not durably traceable")
 
-    # before_after_captured (all fields + pid/generation/epoch present)
     if all(field in before and field in after for field in contract["required_before_after_fields"]):
         checks["before_after_captured"] = True
     else:
         failures.append(f"{ctx}: before/after capture incomplete")
 
-    # continuity_truthful
-    allowed = set(scenario.get("allowed_continuity", contract["continuity_vocabulary"]))
-    forbidden = set(scenario.get("forbidden_continuity", []))
+    # Contract-authoritative continuity rules (never from the observation).
+    allowed = set(spec.get("allowed_continuity", contract["continuity_vocabulary"]))
+    forbidden = set(spec.get("forbidden_continuity", []))
     continuity = after.get("continuity")
+    row["continuity"] = continuity
     if continuity not in contract["continuity_vocabulary"]:
         failures.append(f"{ctx}: invalid continuity {continuity!r}")
     elif continuity in forbidden:
         failures.append(f"{ctx}: fabricated continuity {continuity!r} after a fault")
     elif continuity not in allowed:
-        failures.append(f"{ctx}: continuity {continuity!r} not in allowed set {sorted(allowed)}")
+        failures.append(f"{ctx}: continuity {continuity!r} not in contract allowed set {sorted(allowed)}")
     else:
         checks["continuity_truthful"] = True
 
-    # sequence_contiguous
-    before_sequence = (before.get("result") or {}).get("sequence") if isinstance(before.get("result"), dict) else None
-    after_sequence = after_result.get("sequence")
-    if isinstance(before_sequence, int) and isinstance(after_sequence, int) \
+    before_result = before.get("result") if isinstance(before.get("result"), dict) else {}
+    before_sequence = _as_int(before_result.get("sequence"))
+    after_sequence = _as_int(after_result.get("sequence"))
+    if before_sequence is not None and after_sequence is not None \
             and after_sequence >= before_sequence and after_result.get("trace_contiguous") is True:
         checks["sequence_contiguous"] = True
     else:
         failures.append(f"{ctx}: result sequence regressed or is not contiguous")
 
-    return {"id": scenario_id, "result": result, "continuity": continuity, "invariants": checks}
+    relationships = _check_relationships(spec, before, after, ctx, failures)
+    checks["recovery_relationship_truthful"] = bool(relationships) and all(relationships.values())
+    row["relationships"] = relationships
+    row["before"] = before
+    row["after"] = after
+    return row
 
 
-def compute_verdict(contract: dict, observations: dict) -> dict:
+def compute_verdict(contract: dict, observations: dict, *, allow_unit_fixture: bool = False) -> dict:
     failures: list[str] = []
+    coverage_failures: list[str] = []
     candidate = contract["candidate"]
 
     if not isinstance(observations, dict):
@@ -243,8 +362,17 @@ def compute_verdict(contract: dict, observations: dict) -> dict:
 
     observed_candidate = observations.get("candidate")
     if not isinstance(observed_candidate, dict) or observed_candidate.get("release") != candidate["release"]:
+        failures.append(f"candidate mismatch: expected {candidate['release']!r}, got {observed_candidate!r}")
+
+    required_class = contract.get("required_evidence_class")
+    observed_class = observations.get("evidence_class")
+    if allow_unit_fixture:
+        if not _is_nonempty_str(observed_class):
+            failures.append("evidence_class must be declared")
+    elif observed_class != required_class:
         failures.append(
-            f"candidate mismatch: expected {candidate['release']!r}, got {observed_candidate!r}")
+            f"evidence_class {observed_class!r} is not runtime evidence {required_class!r}; "
+            "a synthetic/unit fixture is not runtime PASS evidence")
 
     llm = observations.get("llm")
     if not isinstance(llm, dict) or llm.get("class") != contract["llm_evidence_class"] \
@@ -256,14 +384,16 @@ def compute_verdict(contract: dict, observations: dict) -> dict:
         failures.append("scenarios must be a list")
         scenarios_value = []
 
-    required = {item["id"]: item for item in contract["required_scenarios"]}
+    required = {item["id"]: item for item in contract.get("required_scenarios", [])}
+    optional = {item["id"]: item for item in contract.get("optional_scenarios", [])}
+    specs = {**required, **optional}
+
     observed_ids = [item.get("id") if isinstance(item, dict) else None for item in scenarios_value]
     if len(observed_ids) != len(set(map(str, observed_ids))):
         failures.append("duplicate scenario id in observations")
-
     if contract.get("closed_scenario_set"):
         for scenario_id in observed_ids:
-            if scenario_id not in required:
+            if scenario_id not in specs:
                 failures.append(f"unknown scenario id {scenario_id!r} (closed set)")
 
     scenario_results = []
@@ -271,117 +401,239 @@ def compute_verdict(contract: dict, observations: dict) -> dict:
         if not isinstance(item, dict):
             failures.append("scenario entry is not an object")
             continue
-        scenario_id = item.get("id")
-        spec = required.get(scenario_id)
-        merged = dict(item)
-        if spec is not None:
-            merged.setdefault("allowed_continuity", spec["allowed_continuity"])
-            merged.setdefault("forbidden_continuity", spec["forbidden_continuity"])
-        scenario_results.append(_check_scenario(merged, contract, failures))
+        spec = specs.get(item.get("id"), {"required": False})
+        scenario_results.append(_check_scenario(item, spec, contract, failures))
 
     seen_ids = set(observed_ids)
     for scenario_id in required:
         if scenario_id not in seen_ids:
             failures.append(f"missing required scenario {scenario_id!r}")
 
+    rows = {row["id"]: row for row in scenario_results}
+    required_coverage: dict[str, str] = {}
+    for scenario_id in required:
+        row = rows.get(scenario_id)
+        required_coverage[scenario_id] = row["result"] if row is not None else "MISSING"
+        if row is None or row["result"] != "PASS":
+            coverage_failures.append(
+                f"required scenario {scenario_id!r} is not covered by a PASS "
+                f"(observed {required_coverage[scenario_id]})")
+    optional_coverage: dict[str, str] = {}
+    for scenario_id in optional:
+        row = rows.get(scenario_id)
+        optional_coverage[scenario_id] = row["result"] if row is not None else "MISSING"
+
+    required_coverage_ok = contract.get("required_coverage_gates_qualification", True) \
+        and all(value == "PASS" for value in required_coverage.values()) \
+        and len(required_coverage) == len(required)
+
+    failed = [row["id"] for row in scenario_results if row["result"] == "FAIL"]
     pass_scenarios = [row for row in scenario_results if row["result"] == "PASS"]
     uncovered = [row["id"] for row in scenario_results if row["result"] in {"NOT_RUN", "BLOCKED"}]
-    failed = [row["id"] for row in scenario_results if row["result"] == "FAIL"]
 
-    all_pass = not failures and not failed
+    format_valid = not failures
+    all_pass = format_valid and not failed and required_coverage_ok
     return {
-        "schema_version": "byq-d15-runtime-verdict.v1",
+        "schema_version": "byq-d15-runtime-verdict.v2",
         "all_pass": all_pass,
+        "format_valid": format_valid,
+        "qualification_passed": all_pass,
         "exit_code": 0 if all_pass else 1,
         "candidate": candidate,
+        "evidence_class": observed_class,
         "llm_evidence_class": contract["llm_evidence_class"],
         "required_scenario_count": len(required),
+        "optional_scenario_count": len(optional),
+        "required_coverage": required_coverage,
+        "required_coverage_ok": required_coverage_ok,
+        "optional_coverage": optional_coverage,
         "pass_scenarios": [row["id"] for row in pass_scenarios],
         "failed_scenarios": failed,
         "uncovered_scenarios": uncovered,
         "scenarios": scenario_results,
         "failures": failures,
+        "coverage_failures": coverage_failures,
         "invariant_coverage": {
-            invariant: all(row["invariants"][invariant] for row in pass_scenarios)
+            invariant: all(row["invariants"][invariant] for row in pass_scenarios
+                           if invariant in row["invariants"])
             for invariant in contract["invariants"]
         } if pass_scenarios else {invariant: False for invariant in contract["invariants"]},
     }
 
 
 # --------------------------------------------------------------------------
-# Negative controls: a known-good fixture plus every fail-closed mutation.
+# Legacy (pre-fix) algorithm, executed only to prove the pre-fix behaviour.
 # --------------------------------------------------------------------------
 
-def _valid_scenario(scenario_id: str, continuity: str, *, pid: int, generation: str,
-                    epoch: int, sequence: int, approval_state: str = "pending") -> dict:
-    def side(state: dict) -> dict:
-        return state
+def _legacy_check_scenario(scenario: dict, spec: dict, contract: dict, failures: list[str]) -> dict:
+    """Pre-fix scenario check: observed allowed/forbidden override, no relationships."""
+    scenario_id = scenario.get("id")
+    ctx = f"scenario[{scenario_id}]"
+    result = scenario.get("result")
+    if result not in contract["results_vocabulary"]:
+        failures.append(f"{ctx}: invalid result {result!r}")
+    if result in {"NOT_RUN", "BLOCKED"}:
+        if contract.get("not_run_requires_reason") and not _is_nonempty_str(scenario.get("not_run_reason")):
+            failures.append(f"{ctx}: {result} without a reason")
+        return {"id": scenario_id, "result": result}
+    if result != "PASS":
+        failures.append(f"{ctx}: result {result!r} is not PASS")
+        return {"id": scenario_id, "result": result}
+    if scenario.get("fault_applied") is not True:
+        failures.append(f"{ctx}: fault_applied is not true")
+    before = scenario.get("before") if isinstance(scenario.get("before"), dict) else {}
+    after = scenario.get("after") if isinstance(scenario.get("after"), dict) else {}
+    if before.get("session_id") != after.get("session_id") or not _is_nonempty_str(before.get("session_id")):
+        failures.append(f"{ctx}: identity changed")
+    bg = before.get("goal") if isinstance(before.get("goal"), dict) else {}
+    ag = after.get("goal") if isinstance(after.get("goal"), dict) else {}
+    if not _is_nonempty_str(bg.get("content_sha256")) or bg.get("content_sha256") != ag.get("content_sha256") \
+            or ag.get("prompt_receipt") != bg.get("prompt_receipt"):
+        failures.append(f"{ctx}: goal drifted")
+    _check_action_receipts(after.get("action_receipts"), contract["action_receipt_fields"], f"{ctx}.after", failures)
+    _check_approval(after.get("approval"), contract["approval_states"], f"{ctx}.after", failures)
+    ar = after.get("result") if isinstance(after.get("result"), dict) else {}
+    if ar.get("trace_contiguous") is not True or not _is_nonempty_str(ar.get("run_id")):
+        failures.append(f"{ctx}: result not traceable")
+    allowed = set(scenario.get("allowed_continuity", contract["continuity_vocabulary"]))
+    forbidden = set(scenario.get("forbidden_continuity", []))
+    continuity = after.get("continuity")
+    if continuity not in contract["continuity_vocabulary"] or continuity in forbidden or continuity not in allowed:
+        failures.append(f"{ctx}: continuity not truthful")
+    return {"id": scenario_id, "result": result}
 
-    base = {
+
+def legacy_compute_verdict(contract: dict, observations: dict) -> dict:
+    """Execute the pre-fix algorithm to record its (incorrect) behaviour.
+
+    This is a real execution of the historical logic, not a fabricated claim:
+    required NOT_RUN/BLOCKED did not gate PASS and observations could relax the
+    contract continuity rules via ``setdefault``.
+    """
+    failures: list[str] = []
+    required = {item["id"]: item for item in contract.get("required_scenarios", [])}
+    scenarios = observations.get("scenarios") if isinstance(observations.get("scenarios"), list) else []
+    rows = []
+    for item in scenarios:
+        if not isinstance(item, dict):
+            continue
+        merged = dict(item)
+        spec = required.get(item.get("id"))
+        if spec is not None:
+            merged.setdefault("allowed_continuity", spec["allowed_continuity"])
+            merged.setdefault("forbidden_continuity", spec["forbidden_continuity"])
+        rows.append(_legacy_check_scenario(merged, spec or {"required": False}, contract, failures))
+    seen = {row["id"] for row in rows}
+    for scenario_id in required:
+        if scenario_id not in seen:
+            failures.append(f"missing required scenario {scenario_id!r}")
+    failed = [row["id"] for row in rows if row["result"] == "FAIL"]
+    all_pass = not failures and not failed
+    return {"algorithm": "legacy-pre-fix", "all_pass": all_pass, "exit_code": 0 if all_pass else 1,
+            "failures": failures}
+
+
+# --------------------------------------------------------------------------
+# Unit fixture + negative controls.
+# --------------------------------------------------------------------------
+
+_APPROVAL_ID = "agent_approval_" + "b" * 32
+
+
+def _state(*, run_id: str, pid: int, generation: str, generation_index: int, epoch: int,
+           sequence: int, continuity: str) -> dict:
+    pool_id = "stock_pool_" + "c" * 32
+    return {
         "session_id": "byq-session-d15-runtime-0001",
         "trace_id": "byq-trace-d15-runtime-0001",
         "adapter_pid": pid,
         "adapter_generation": generation,
+        "generation_index": generation_index,
         "executor_epoch": epoch,
         "continuity": continuity,
         "goal": {
             "content_sha256": "a" * 64,
-            "prompt_receipt": {"schema_version": "prompt-receipt.v1", "state": "accepted",
-                               "run_id": "run-0001"},
+            "prompt_receipt": {"root_run_id": run_id, "content_sha256": "a" * 64},
         },
         "approval": {
-            "approval_id": "agent_approval_" + "b" * 32,
-            "state": approval_state,
-            "bypassed": False,
+            "approval_id": _APPROVAL_ID, "state": "approved", "bypassed": False,
             "decided_by": "human-owner",
-            "initiator": "byq-product-agent-byq-session-d15-runtime-0001",
         },
-        "action_receipts": [{
-            "tool": "byq_agent_approval_request",
-            "idempotency_key": "d15-runtime-idem-0001",
-            "receipt": {"state": "accepted", "approval_id": "agent_approval_" + "b" * 32},
-            "side_effect_count": 1,
-            "replay": {
-                "receipt": {"state": "accepted", "approval_id": "agent_approval_" + "b" * 32},
-                "side_effect_count": 1,
-            },
-        }],
-        "result": {
-            "run_id": "run-0001",
-            "status": "completed",
-            "sequence": sequence,
-            "trace_contiguous": True,
-        },
+        "action_receipts": [
+            {"tool": "runtime.prompt.idempotent", "idempotency_key": "d15-runtime-idem-0001",
+             "receipt": {"state": "accepted", "run_id": run_id}, "side_effect_count": 1,
+             "replay": {"receipt": {"state": "accepted", "run_id": run_id}, "side_effect_count": 1}},
+            {"tool": "byq_paper_pool_create", "idempotency_key": "d15-runtime-pool-0001",
+             "receipt": {"state": "accepted", "pool_id": pool_id}, "side_effect_count": 1,
+             "replay": {"receipt": {"state": "accepted", "pool_id": pool_id}, "side_effect_count": 1}},
+            {"tool": "byq_strategy_approval", "idempotency_key": "d15-runtime-approval-0001",
+             "receipt": {"state": "approved", "approval_id": _APPROVAL_ID}, "side_effect_count": 1,
+             "replay": {"receipt": {"state": "approved", "approval_id": _APPROVAL_ID}, "side_effect_count": 1}},
+        ],
+        "result": {"run_id": run_id, "status": "completed", "sequence": sequence, "trace_contiguous": True},
     }
+
+
+def _scenario(scenario_id: str, run_id: str, *, before: dict, after: dict) -> dict:
     return {
         "id": scenario_id,
         "result": "PASS",
         "fault_applied": True,
-        "before": copy.deepcopy(base),
-        "after": side(copy.deepcopy(base)),
-        "evidence": [f"docs/evidence/d15/d15-runtime/{scenario_id}.v1.json"],
+        "before": before,
+        "after": after,
+        "evidence": [f"docs/evidence/d15/d15-runtime/scenarios/{scenario_id}.v2.json"],
     }
 
 
 def valid_fixture(contract: dict) -> dict:
-    scenarios = []
-    for index, spec in enumerate(contract["required_scenarios"]):
-        continuity = spec["allowed_continuity"][0]
-        scenarios.append(_valid_scenario(
-            spec["id"], continuity, pid=2000 + index, generation=f"generation-fixture-{index}",
-            epoch=1, sequence=10 + index,
-            approval_state="pending" if index != 3 else "approved"))
+    """Synthetic UNIT fixture. Never runtime PASS evidence (evidence_class=unit-fixture)."""
+    scenarios = [
+        _scenario("adapter-process-restart", "1" * 32,
+                  before=_state(run_id="1" * 32, pid=2000, generation="generation-g1",
+                                generation_index=1, epoch=1, sequence=10, continuity="reattached"),
+                  after=_state(run_id="1" * 32, pid=2001, generation="generation-g2",
+                               generation_index=2, epoch=1, sequence=11, continuity="rehydrated")),
+        _scenario("dsh-process-interruption", "2" * 32,
+                  before=_state(run_id="2" * 32, pid=2001, generation="generation-g2",
+                                generation_index=2, epoch=1, sequence=11, continuity="reattached"),
+                  after=_state(run_id="2" * 32, pid=2001, generation="generation-g3",
+                               generation_index=3, epoch=1, sequence=12, continuity="rehydrated")),
+        _scenario("gateway-disconnect-reconnect", "3" * 32,
+                  before=_state(run_id="3" * 32, pid=2001, generation="generation-g3",
+                                generation_index=3, epoch=1, sequence=12, continuity="reattached"),
+                  after=_state(run_id="3" * 32, pid=2001, generation="generation-g3",
+                               generation_index=3, epoch=1, sequence=12, continuity="reattached")),
+        _scenario("generation-replacement", "4" * 32,
+                  before=_state(run_id="4" * 32, pid=2001, generation="generation-g3",
+                                generation_index=3, epoch=1, sequence=12, continuity="reattached"),
+                  after=_state(run_id="4" * 32, pid=2001, generation="generation-g4",
+                               generation_index=4, epoch=1, sequence=13, continuity="interrupted")),
+        _scenario("executor-takeover", "5" * 32,
+                  before=_state(run_id="5" * 32, pid=2001, generation="generation-g4",
+                                generation_index=4, epoch=1, sequence=13, continuity="reattached"),
+                  after=_state(run_id="5" * 32, pid=2001, generation="generation-g4",
+                               generation_index=4, epoch=2, sequence=13, continuity="reattached")),
+    ]
+    scenarios.append({
+        "id": "host-reboot", "result": "NOT_RUN",
+        "not_run_reason": "not executed: host reboot is not authorized and a container restart is not a host reboot",
+    })
     return {
-        "schema_version": "byq-d15-runtime-observations.v1",
+        "schema_version": "byq-d15-runtime-observations.v2",
+        "evidence_class": "unit-fixture",
         "candidate": dict(contract["candidate"]),
         "llm": {"class": contract["llm_evidence_class"], "real_llm_quality": False,
-                "note": "negative-control fixture"},
+                "note": "negative-control unit fixture (not runtime evidence)"},
         "scenarios": scenarios,
     }
 
 
 def _mutations(fixture: dict) -> list[tuple[str, dict]]:
     mutations: list[tuple[str, dict]] = []
+    defect_targeting = {
+        "all-required-not-run", "single-required-blocked", "reasoned-not-executed",
+        "observation-relaxes-allowed-continuity", "observation-clears-forbidden-continuity",
+    }
 
     def add(name: str, mutate) -> None:
         value = copy.deepcopy(fixture)
@@ -392,21 +644,19 @@ def _mutations(fixture: dict) -> list[tuple[str, dict]]:
     add("duplicate-scenario-id", lambda v: v["scenarios"].append(copy.deepcopy(v["scenarios"][0])))
     add("unknown-scenario-id", lambda v: v["scenarios"][0].update({"id": "invented-scenario"}))
     add("missing-evidence-field", lambda v: v["scenarios"][0]["after"].pop("goal"))
-    add("original-goal-drift", lambda v: v["scenarios"][0]["after"]["goal"].update(
-        {"content_sha256": "c" * 64}))
+    add("original-goal-drift", lambda v: v["scenarios"][0]["after"]["goal"].update({"content_sha256": "c" * 64}))
     add("duplicate-side-effect", lambda v: v["scenarios"][0]["after"]["action_receipts"][0].update(
         {"side_effect_count": 2}))
     add("replay-did-not-deduplicate", lambda v: v["scenarios"][0]["after"]["action_receipts"][0][
         "replay"].update({"side_effect_count": 2}))
     add("changed-replay-receipt", lambda v: v["scenarios"][0]["after"]["action_receipts"][0][
-        "replay"].update({"receipt": {"state": "accepted", "approval_id": "other"}}))
+        "replay"].update({"receipt": {"state": "accepted", "run_id": "9" * 32}}))
     add("approval-bypassed", lambda v: v["scenarios"][0]["after"]["approval"].update({"bypassed": True}))
     add("expired-approval-reuse", lambda v: v["scenarios"][0]["after"]["approval"].update(
         {"state": "expired", "reuse_denied": False}))
     add("initiator-self-approval", lambda v: v["scenarios"][0]["after"]["approval"].update(
-        {"decided_by": v["scenarios"][0]["after"]["approval"]["initiator"]}))
-    add("fabricated-fresh-continuity", lambda v: v["scenarios"][0]["after"].update(
-        {"continuity": "fresh"}))
+        {"decided_by": "byq-product-agent", "initiator": "byq-product-agent"}))
+    add("fabricated-fresh-continuity", lambda v: v["scenarios"][0]["after"].update({"continuity": "fresh"}))
     add("sequence-regression", lambda v: v["scenarios"][0]["after"]["result"].update(
         {"sequence": v["scenarios"][0]["before"]["result"]["sequence"] - 1}))
     add("non-contiguous-trace", lambda v: v["scenarios"][0]["after"]["result"].update(
@@ -414,32 +664,71 @@ def _mutations(fixture: dict) -> list[tuple[str, dict]]:
     add("not-run-without-reason", lambda v: v["scenarios"][0].update(
         {"result": "NOT_RUN", "fault_applied": False}))
     add("candidate-mismatch", lambda v: v.update({"candidate": {"release": "dsh-0.1.2rc1"}}))
-    add("llm-claims-real-quality", lambda v: v["llm"].update(
-        {"class": "real-llm", "real_llm_quality": True}))
+    add("llm-claims-real-quality", lambda v: v["llm"].update({"class": "real-llm", "real_llm_quality": True}))
     add("fault-not-applied", lambda v: v["scenarios"][0].update({"fault_applied": False}))
-    return mutations
+    # Recovery relationship negatives.
+    add("pid-not-changed-after-restart", lambda v: v["scenarios"][0]["after"].update(
+        {"adapter_pid": v["scenarios"][0]["before"]["adapter_pid"]}))
+    add("generation-not-incremented", lambda v: v["scenarios"][3]["after"].update(
+        {"generation_index": v["scenarios"][3]["before"]["generation_index"],
+         "adapter_generation": v["scenarios"][3]["before"]["adapter_generation"]}))
+    add("epoch-not-incremented-on-takeover", lambda v: v["scenarios"][4]["after"].update(
+        {"executor_epoch": v["scenarios"][4]["before"]["executor_epoch"]}))
+    add("broken-receipt-linkage", lambda v: v["scenarios"][0]["after"]["goal"]["prompt_receipt"].update(
+        {"root_run_id": "9" * 32}))
+    # Defect-targeting negatives.
+    add("all-required-not-run", lambda v: [s.update(
+        {"result": "NOT_RUN", "not_run_reason": "not executed",
+         "before": None, "after": None, "fault_applied": False})
+        for s in v["scenarios"] if s["id"] != "host-reboot"])
+    add("single-required-blocked", lambda v: next(
+        s for s in v["scenarios"] if s["id"] == "generation-replacement").update(
+        {"result": "BLOCKED", "not_run_reason": "blocked by environment"}))
+    add("reasoned-not-executed", lambda v: next(
+        s for s in v["scenarios"] if s["id"] == "executor-takeover").update(
+        {"result": "NOT_RUN", "not_run_reason": "not executed in this batch"}))
+    add("observation-relaxes-allowed-continuity", lambda v: v["scenarios"][0].update(
+        {"allowed_continuity": ["fresh"], "forbidden_continuity": []})
+        or v["scenarios"][0]["after"].update({"continuity": "fresh"}))
+    add("observation-clears-forbidden-continuity", lambda v: v["scenarios"][0].update(
+        {"forbidden_continuity": [], "allowed_continuity": ["fresh"]})
+        or v["scenarios"][0]["after"].update({"continuity": "fresh"}))
+    return mutations, defect_targeting
 
 
 def run_selfcheck(contract: dict) -> dict:
     fixture = valid_fixture(contract)
-    baseline = compute_verdict(contract, fixture)
+    baseline = compute_verdict(contract, fixture, allow_unit_fixture=True)
+    legacy_baseline = legacy_compute_verdict(contract, fixture)
+    mutations, defect_targeting = _mutations(fixture)
     controls = []
-    for name, mutated in _mutations(fixture):
-        verdict = compute_verdict(contract, mutated)
+    for name, mutated in mutations:
+        verdict = compute_verdict(contract, mutated, allow_unit_fixture=True)
+        legacy = legacy_compute_verdict(contract, mutated)
         controls.append({
             "control": name,
-            "pre_fix_would_pass": True,
+            "defect_targeting": name in defect_targeting,
+            "pre_fix_reference": "legacy-algorithm-executed",
+            "legacy_algorithm_all_pass": legacy["all_pass"],
+            "legacy_algorithm_exit_code": legacy["exit_code"],
             "observed_all_pass": verdict["all_pass"],
             "observed_exit_code": verdict["exit_code"],
-            "first_failure": verdict["failures"][0] if verdict["failures"] else None,
+            "observed_format_valid": verdict["format_valid"],
+            "first_failure": (verdict["failures"] + verdict["coverage_failures"])[0]
+            if (verdict["failures"] or verdict["coverage_failures"]) else None,
             "passes": verdict["all_pass"] is False,
         })
     all_controls_pass = all(item["passes"] for item in controls)
+    targeting_ok = all(item["legacy_algorithm_all_pass"] is True
+                       for item in controls if item["defect_targeting"])
     result = {
-        "schema_version": "byq-d15-runtime-negative-controls.v1",
+        "schema_version": "byq-d15-runtime-negative-controls.v2",
         "baseline_all_pass": baseline["all_pass"],
         "baseline_exit_code": baseline["exit_code"],
+        "legacy_baseline_all_pass": legacy_baseline["all_pass"],
         "control_count": len(controls),
+        "defect_targeting_controls": sorted(defect_targeting),
+        "defect_targeting_pre_fix_passed": targeting_ok,
         "all_controls_pass": all_controls_pass,
         "controls": controls,
     }
@@ -452,7 +741,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--observations", type=Path)
     parser.add_argument("--out", type=Path)
     parser.add_argument("--selfcheck", action="store_true",
-                        help="run negative controls over a known-good fixture and fail if any does not fail")
+                        help="run negative controls over a known-good unit fixture and fail if any does not fail")
     args = parser.parse_args(argv)
 
     try:
@@ -467,7 +756,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.out:
             args.out.write_text(payload + "\n", encoding="utf-8")
         print(payload)
-        return 0 if result["all_controls_pass"] and result["baseline_all_pass"] else 1
+        return 0 if result["all_controls_pass"] and result["baseline_all_pass"] \
+            and result["defect_targeting_pre_fix_passed"] else 1
 
     if args.observations is None:
         parser.error("--observations is required unless --selfcheck is used")

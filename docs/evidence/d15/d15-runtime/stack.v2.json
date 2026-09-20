@@ -1,0 +1,41 @@
+{
+  "cleanup": {
+    "containers_before": 6,
+    "containers_remaining": 0,
+    "networks_remaining": 0,
+    "volumes_remaining": 0
+  },
+  "domain_artifacts": {
+    "approval_body": {
+      "decision": "approved",
+      "idempotency_key": "d15-approval-1800bc9c79664733b3d2b75811c92949",
+      "rationale": "D15 isolated human approval.",
+      "strategy_version_artifact_id": "artifact_063760d1a130488fa4752be73eb1bfcd",
+      "task_id": "task_916537d575184c6097b972d4b2c889a3",
+      "trace_id": "d15-approval-trace-22fb0e4d393f4fc889f7d7bffa9c132e"
+    },
+    "approval_id": "artifact_5e9c55b6b52d439f88f66b10e2b2de7b",
+    "approval_key": "d15-approval-1800bc9c79664733b3d2b75811c92949",
+    "pool_id": "stock_pool_e9251b6d9ccd401cba90f457d1e4a7f7",
+    "pool_key": "d15-pool-3b4c5658cd7d4762b60bd561cd43676e",
+    "run_id": "b058b591156c4e35b579d756bc481b99",
+    "strategy_version_artifact_id": "artifact_063760d1a130488fa4752be73eb1bfcd",
+    "task_id": "task_916537d575184c6097b972d4b2c889a3"
+  },
+  "generated_at": "2026-09-20T04:57:32Z",
+  "preflight": {
+    "adapter_image": "sha256:36126eb52f48d68d6d2bcb0a3165616d3a279b8d4375939b03693b92d8059ac5",
+    "candidate": "dsh-0.1.5rc1",
+    "containers": 6,
+    "images": {
+      "byq-d15-runtime-backend-1": "sha256:d841fa1de79904e040a6b48cbad73d5910e30974e517ffc385b66a3f50336c5c",
+      "byq-d15-runtime-gateway-1": "sha256:a71019670573353372974d4cafe606d445efdca8030fc1583134168e9a4c35c7",
+      "byq-d15-runtime-mcp-1": "sha256:e9b39bd80a9c77c9cf8742644f325c82575e8384891671e1f2cd92a51e7a95c5",
+      "byq-d15-runtime-postgres-1": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+      "byq-d15-runtime-runtime-adapter-1": "sha256:36126eb52f48d68d6d2bcb0a3165616d3a279b8d4375939b03693b92d8059ac5",
+      "byq-d15-runtime-scripted-provider-1": "sha256:d1b1ae07f37a9b5011b3f7e12fe384f70af10a789df5f460113f73759c8ad330"
+    },
+    "network": "byq-d15-runtime_d15_internal"
+  },
+  "schema_version": "byq-d15-runtime-stack.v2"
+}
