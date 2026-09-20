@@ -40,6 +40,10 @@ FORMAL_MANIFEST_IDS = (
     "formal-attestation",
 )
 AUDIT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.177"
+# The closeout audit revision above is historical and stays immutable. Later
+# maintenance batches that change build inputs advance the *selected* revision;
+# the full-interface re-baseline batch moved it to .178.
+CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.178"
 
 
 def _ledger() -> dict:
@@ -350,10 +354,12 @@ class NoImplementationTests(unittest.TestCase):
 
     def test_audit_build_revision_is_the_next_unused_id(self):
         from scripts.dsh import build_revision as builds
-        self.assertEqual(builds.selected_build_id("dsh-0.1.2rc1"), AUDIT_BUILD_REVISION)
-        self.assertTrue((ROOT / "config/dsh/builds" / f"{AUDIT_BUILD_REVISION}.json").is_file())
+        self.assertEqual(builds.selected_build_id("dsh-0.1.2rc1"), CURRENT_BUILD_REVISION)
+        self.assertTrue((ROOT / "config/dsh/builds" / f"{CURRENT_BUILD_REVISION}.json").is_file())
         dockerfile = (ROOT / "services/runtime-adapter/Dockerfile.post-u8-candidate").read_text()
-        self.assertIn(AUDIT_BUILD_REVISION, dockerfile)
+        self.assertIn(CURRENT_BUILD_REVISION, dockerfile)
+        # The historical closeout revision remains an immutable committed manifest.
+        self.assertTrue((ROOT / "config/dsh/builds" / f"{AUDIT_BUILD_REVISION}.json").is_file())
 
     def test_no_release_manifest_is_committed(self):
         for candidate in Path(ROOT / "config").rglob("*.json"):
