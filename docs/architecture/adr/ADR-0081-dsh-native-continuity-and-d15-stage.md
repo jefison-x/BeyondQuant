@@ -1,12 +1,13 @@
 # ADR-0081：DSH 0.1.5-rc.1 native continuity adoption and the D15 stage
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-19
+- Accepted: 2026-09-19
 - Relates: ADR-0079（Runtime Continuity 与 Session Recovery）、ADR-0058（DSH release bundles 与
   compatibility）、ADR-0069（退役 0.1.1 build lane）、ADR-0003（runtime compatibility review）、
   ADR-0023（执行者身份）、ADR-0062（Post-U8 可靠性边界）
-- Supersedes: 无（不改写任何 Accepted ADR 文本）。本 ADR 只在获维护者接受后取代 R3 的实施顺序，
-  不改变 R0/R1/R2 的已落地语义。
+- Supersedes: 无（不改写任何 Accepted ADR 文本）。本 ADR 已于 2026-09-19 获维护者接受，取代 R3
+  的实施顺序，不改变 R0/R1/R2 的已落地语义。
 - Decision scope: Runtime Continuity 阶段顺序（R3 冻结与重定义、D15 新增、R4/R6 重定义）；
   D15-0/D15-1 的候选隔离边界。不含生产默认 DSH 版本切换、不含数据库/Worker 变更。
 - Qualification target decision: `docs/evidence/d15/target-decision.v1.json`
