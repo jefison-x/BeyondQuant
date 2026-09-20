@@ -201,7 +201,9 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
     tests），推进 `post-u8.165 → .166`（仅重建身份，v1 证据保留）。D15-4 路由/进程边界调查新增
     `scripts/d15/subagent/routing_probe.mjs`、更新 `tests/test_dsh_d15_candidate.py`（D15-4
     `BLOCKED` 仅在带具名 `uncovered_items` 时被接受；D15-G/R3 未开启）与
-    `tests/test_dsh_d15_4_subagent.py`，推进 `post-u8.166 → .167`（仅重建身份）。真实路由试验确认：
+    `tests/test_dsh_d15_4_subagent.py`，推进 `post-u8.166 → .167`；routing probe 清理修订
+    （每 trial 独立 OS 进程 + `finally` 重试删除，`runtime_root_cleaned=true`）再推进 `.167 → .168`
+    （均仅重建身份）。真实路由试验确认：
     提交的 `byq_delegate_*` 配置走 foreground `subagents.start`（`startContinuable=0`）；
     `backgroundMode: continuable` 仅在 in-process `spawn` provider 可达；无 `prepareContinuable`
     的 out-of-process provider（dsh-sdk/ACP/Codex/Claude Code）被拒绝，故 0.1.5rc1 **无独立进程

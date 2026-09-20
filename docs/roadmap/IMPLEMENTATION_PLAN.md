@@ -244,7 +244,9 @@ byq-adapter-restart/host-reboot），并断言 D15-G 未开启、`R3_RESUME stay
 runtime-adapter child-lease 观察、dsh_015 compat 边界），超出本 PR 资格范围，且 0.1.5rc1 无独立进程
 continuable child provider，仍不能解决 child-crash/adapter restart；故 D15-4 保持 `BLOCKED`，
 最小候选兼容 hookup 计划在独立 worktree/feature PR 实施（普通实现，非需授权事项）。证据
-`docs/evidence/d15/d15-4/routing.v1.json` 且 v1/v2 不覆盖。不部署、不自动合并。
+`docs/evidence/d15/d15-4/routing.v1.json` 且 v1/v2 不覆盖。routing probe 采用每 trial 一个 OS 进程
+并在 `finally` 中重试删除根（`runtime_root_cleaned=true`，无泄漏），该清理修订推进构建身份
+`.167 → .168`（仅重建身份）。不部署、不自动合并。
 
 数据就绪续接 needs_attention 重挂（fix，构建修订 `dsh-0.1.2rc1-post-u8.142`）：生产 round-2
 数据就绪续接回合结算为 `needs_attention` 后，`research_tasks.continuation_blocked_reason` 被写成

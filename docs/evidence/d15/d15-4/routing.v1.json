@@ -51,6 +51,21 @@
       "start_continuable_supported_on_service": true
     }
   ],
+  "cleanup": [
+    {
+      "root": "/tmp/d15-4-routing-byq-foreground-HJxzNI",
+      "removed": true
+    },
+    {
+      "root": "/tmp/d15-4-routing-continuable-in-process-Z5cNoo",
+      "removed": true
+    },
+    {
+      "root": "/tmp/d15-4-routing-continuable-out-of-process-li1uue",
+      "removed": true
+    }
+  ],
+  "runtime_root_cleaned": true,
   "conclusions": {
     "byq_foreground_config_reaches_start_continuable": false,
     "byq_foreground_config_is_foreground": true,

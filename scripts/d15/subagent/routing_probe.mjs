@@ -7,20 +7,21 @@
  * reach native `startContinuable`, and does the fixed 0.1.5-rc.1 candidate
  * provide an independent-process *continuable* child provider?
  *
- * It boots the real minimal Cordis topology (agent-loop testkit, session
- * projection, subagent runtime + spawn provider, JSONL persistence), registers
- * the real delegation tool through its own `apply()`, and executes it through
- * `ctx.tools.execute` while counting `subagents.start` / `startContinuable`.
+ * Each trial runs in its own OS process (so async agent work cannot outlive the
+ * trial), and the orchestrator removes every trial store root in a `finally`
+ * with a bounded retry. Evidence-only: no product runtime, no second harness, no
+ * BYQ subagent persistence, no production change.
  *
- * Evidence-only: no product runtime, no second harness, no BYQ subagent
- * persistence, no production change.
- *
- * Usage: node routing_probe.mjs [--out path]
+ * Usage:
+ *   node routing_probe.mjs run [--out <path>] [--keep]
+ *   node routing_probe.mjs worker <trial> <store-root>
  */
 
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { LlmAdapter, ToolCallId } from '@deepseek-ai/dsh-llm'
@@ -29,6 +30,21 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import SubagentRuntime, { SUBAGENT_DESCRIPTOR_VERSION } from '@deepseek-ai/dsh-subagent'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
+
+const TRIALS = {
+  'byq-foreground': {
+    tool: { provider: 'spawn', toolName: 'byq_delegate_test', enableRunInBackground: false },
+    registerStubProvider: false,
+  },
+  'continuable-in-process': {
+    tool: { provider: 'spawn', toolName: 'byq_delegate_test', enableRunInBackground: true, backgroundMode: 'continuable' },
+    registerStubProvider: false,
+  },
+  'continuable-out-of-process': {
+    tool: { provider: 'dsh-sdk-like', toolName: 'byq_delegate_test', enableRunInBackground: true, backgroundMode: 'continuable' },
+    registerStubProvider: true,
+  },
+}
 
 class ScriptedAdapter extends LlmAdapter {
   resolveModel(provider, model) {
@@ -42,7 +58,9 @@ class ScriptedAdapter extends LlmAdapter {
   }
 }
 
-async function boot(storeRoot, { registerStubProvider = false } = {}) {
+async function workerTrial(trialName, storeRoot) {
+  const cfg = TRIALS[trialName]
+  if (!cfg) throw new Error(`unknown trial ${trialName}`)
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
   await ctx.plugin(JsonlSessionPersistence, { root: storeRoot })
@@ -51,7 +69,7 @@ async function boot(storeRoot, { registerStubProvider = false } = {}) {
   await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
   ctx.llm.registerAdapter(['mock'], new ScriptedAdapter())
   const parent = await harness.create(SessionId('routing-parent'), { provider: 'mock', model: 'mock' })
-  if (registerStubProvider) {
+  if (cfg.registerStubProvider) {
     // Models an out-of-process backend: no prepareContinuable, capabilities NONE.
     ctx.subagents.registerProvider({
       name: 'dsh-sdk-like',
@@ -61,74 +79,114 @@ async function boot(storeRoot, { registerStubProvider = false } = {}) {
     })
   }
   const start = ctx.subagents.start.bind(ctx.subagents)
-  const continuablePresent = typeof ctx.subagents.startContinuable === 'function'
-  const startContinuable = continuablePresent ? ctx.subagents.startContinuable.bind(ctx.subagents) : undefined
+  const hasContinuable = typeof ctx.subagents.startContinuable === 'function'
+  const startContinuable = hasContinuable ? ctx.subagents.startContinuable.bind(ctx.subagents) : undefined
   const counts = { start: 0, startContinuable: 0 }
   ctx.subagents.start = (...args) => { counts.start += 1; return start(...args) }
   if (startContinuable) {
     ctx.subagents.startContinuable = (...args) => { counts.startContinuable += 1; return startContinuable(...args) }
   }
-  return { ctx, harness, parent, counts, continuablePresent }
-}
 
-async function trialByName(cfg, skill) {
-  const storeRoot = mkdtempSync(join(tmpdir(), `d15-4-routing-${skill}-`))
+  let applyError = null
+  let result = null
   try {
-    const booted = await boot(storeRoot, { registerStubProvider: cfg.registerStubProvider === true })
-    const { ctx, parent, counts } = booted
-    let applyError = null
-    let result = null
+    ToolSubagent.apply(ctx, cfg.tool)
+  } catch (error) {
+    applyError = { name: error?.constructor?.name ?? 'Error', message: String(error?.message ?? error).slice(0, 300) }
+  }
+  if (applyError === null) {
     try {
-      ToolSubagent.apply(ctx, cfg.tool)
+      result = await ctx.tools.execute({
+        callId: ToolCallId(`routing-${trialName}`),
+        name: cfg.tool.toolName,
+        arguments: { description: 'routing probe', prompt: 'routing probe' },
+        agent: parent,
+        signal: new AbortController().signal,
+      })
     } catch (error) {
-      applyError = { name: error?.constructor?.name ?? 'Error', message: String(error?.message ?? error).slice(0, 300) }
+      result = { error: String(error?.message ?? error).slice(0, 300) }
     }
-    if (applyError === null) {
-      try {
-        result = await ctx.tools.execute({
-          callId: ToolCallId(`routing-${skill}`),
-          name: cfg.tool.toolName,
-          arguments: { description: 'routing probe', prompt: 'routing probe' },
-          agent: parent,
-          signal: new AbortController().signal,
-        })
-      } catch (error) {
-        result = { error: String(error?.message ?? error).slice(0, 300) }
-      }
-    }
-    const kind = result?.value?.kind ?? result?.kind ?? null
-    return {
-      skill,
-      tool_config: cfg.tool,
-      apply_error: applyError,
-      result_kind: kind,
-      start_calls: counts.start,
-      start_continuable_calls: counts.startContinuable,
-      start_continuable_supported_on_service: booted.continuablePresent,
-    }
-  } finally {
-    rmSync(storeRoot, { recursive: true, force: true })
+  }
+  return {
+    skill: trialName,
+    tool_config: cfg.tool,
+    apply_error: applyError,
+    result_kind: result?.value?.kind ?? result?.kind ?? null,
+    start_calls: counts.start,
+    start_continuable_calls: counts.startContinuable,
+    start_continuable_supported_on_service: hasContinuable,
   }
 }
 
-async function main() {
-  const outIndex = process.argv.indexOf('--out')
-  const trials = []
-  try {
-    trials.push(await trialByName({
-      tool: { provider: 'spawn', toolName: 'byq_delegate_test', enableRunInBackground: false },
-    }, 'byq-foreground'))
-    trials.push(await trialByName({
-      tool: { provider: 'spawn', toolName: 'byq_delegate_test', enableRunInBackground: true, backgroundMode: 'continuable' },
-    }, 'continuable-in-process'))
-    trials.push(await trialByName({
-      registerStubProvider: true,
-      tool: { provider: 'dsh-sdk-like', toolName: 'byq_delegate_test', enableRunInBackground: true, backgroundMode: 'continuable' },
-    }, 'continuable-out-of-process'))
-  } catch (error) {
-    process.stderr.write(String(error?.stack ?? error) + '\n')
-    process.exitCode = 1
+function removeRootWithRetry(root, attempts = 40) {
+  // The worker process has exited, so at most a lingering write handle can delay
+  // removal; retry briefly rather than leaking the directory.
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      rmSync(root, { recursive: true, force: true })
+    } catch {
+      // retry below
+    }
+    if (!existsSync(root)) return true
+    const deadline = Date.now() + 50
+    while (Date.now() < deadline) { /* brief spin to let the handle close */ }
+  }
+  return !existsSync(root)
+}
+
+function runWorker(self, trialName, storeRoot) {
+  const result = spawnSync(process.execPath, [self, 'worker', trialName, storeRoot], {
+    encoding: 'utf8', timeout: 120000,
+  })
+  const line = (result.stdout || '').split('\n').find((item) => item.startsWith('@@OBS@@'))
+  return {
+    observation: line ? JSON.parse(line.slice('@@OBS@@'.length)) : null,
+    exit: result.status,
+    crashed: result.status !== 0 || result.signal !== null,
+    stderr: (result.stderr || '').slice(-400),
+  }
+}
+
+function main(argv) {
+  const [mode, ...rest] = argv
+  if (mode === 'worker') {
+    workerTrial(rest[0], rest[1]).then((observation) => {
+      process.stdout.write('@@OBS@@' + JSON.stringify(observation) + '\n')
+    }).catch((error) => {
+      process.stderr.write(String(error?.stack ?? error) + '\n')
+      process.exitCode = 1
+    })
     return
+  }
+  if (mode !== 'run') {
+    process.stderr.write('usage: routing_probe.mjs run [--out path] [--keep] | worker <trial> <store-root>\n')
+    process.exitCode = 2
+    return
+  }
+
+  const outIndex = rest.indexOf('--out')
+  const out = outIndex !== -1 ? rest[outIndex + 1] : null
+  const keep = rest.includes('--keep')
+  const self = fileURLToPath(import.meta.url)
+  const trials = []
+  const cleanup = []
+  try {
+    for (const trialName of Object.keys(TRIALS)) {
+      const storeRoot = mkdtempSync(join(tmpdir(), `d15-4-routing-${trialName}-`))
+      let worker = null
+      try {
+        worker = runWorker(self, trialName, storeRoot)
+      } finally {
+        if (!keep) cleanup.push({ root: storeRoot, removed: removeRootWithRetry(storeRoot) })
+      }
+      trials.push(worker.observation ?? { skill: trialName, error: worker.stderr, crashed: true })
+    }
+  } finally {
+    if (!keep) {
+      for (const entry of cleanup) {
+        if (!entry.removed) entry.removed = removeRootWithRetry(entry.root)
+      }
+    }
   }
 
   const byq = trials.find((t) => t.skill === 'byq-foreground')
@@ -139,6 +197,8 @@ async function main() {
     candidate: { release: 'dsh-0.1.5rc1', npm: '0.1.5-rc.1' },
     descriptor_version: SUBAGENT_DESCRIPTOR_VERSION,
     trials,
+    cleanup,
+    runtime_root_cleaned: keep ? null : cleanup.length > 0 && cleanup.every((item) => item.removed),
     conclusions: {
       byq_foreground_config_reaches_start_continuable: byq?.start_continuable_calls > 0,
       byq_foreground_config_is_foreground: byq?.result_kind === 'foreground' && byq?.start_calls === 1
@@ -147,8 +207,7 @@ async function main() {
         && inProc?.result_kind === 'continuable',
       independent_process_continuable_provider_available:
         outProc?.apply_error === null && outProc?.start_continuable_calls === 1,
-      out_of_process_provider_without_prepareContinuable_rejected:
-        outProc?.apply_error !== null,
+      out_of_process_provider_without_prepareContinuable_rejected: outProc?.apply_error !== null,
     },
     available_interfaces: [
       {
@@ -202,14 +261,11 @@ async function main() {
   }
 
   const text = JSON.stringify(payload, null, 2) + '\n'
-  if (outIndex !== -1 && process.argv[outIndex + 1]) {
-    mkdirSync(dirname(process.argv[outIndex + 1]), { recursive: true })
-    writeFileSync(process.argv[outIndex + 1], text)
+  if (out) {
+    mkdirSync(dirname(out), { recursive: true })
+    writeFileSync(out, text)
   }
   process.stdout.write(text)
 }
 
-main().catch((error) => {
-  process.stderr.write(String(error?.stack ?? error) + '\n')
-  process.exitCode = 1
-})
+main(process.argv.slice(2))

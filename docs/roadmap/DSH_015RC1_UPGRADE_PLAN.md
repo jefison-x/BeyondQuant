@@ -332,8 +332,10 @@ pre-fix gate is removed (the only pre-fix comparison is the observer's real
 reconstructed legacy algorithm).
 
 **Routing / process-boundary investigation (2026-09-20).** A real trial
-(`scripts/d15/subagent/routing_probe.mjs`, evidence `routing.v1.json`) executes
-the candidate `@deepseek-ai/dsh-tool-subagent` through `ctx.tools.execute`: the
+(`scripts/d15/subagent/routing_probe.mjs`, evidence `routing.v1.json`), one OS
+process per trial with every trial temp root removed in a `finally` with retry
+(`runtime_root_cleaned=true`), executes the candidate
+`@deepseek-ai/dsh-tool-subagent` through `ctx.tools.execute`: the
 committed BYQ config (`enableRunInBackground:false`, no `backgroundMode`) is
 foreground (`start=1`, `startContinuable=0`); `backgroundMode:continuable` with
 the in-process `spawn` provider reaches `startContinuable`; any provider without
@@ -487,3 +489,8 @@ updates `tests/test_dsh_d15_candidate.py` and `tests/test_dsh_d15_4_subagent.py`
 all build-input files, so the revision advances `post-u8.166` -> `post-u8.167`
 (rebuild identity only; no selector, deployment, immutable release registry or
 0.1.2 artifact/evidence change).
+
+The routing-probe cleanup fix (one OS process per trial plus `finally` root
+removal with retry) changes `scripts/d15/subagent/routing_probe.mjs` and
+`tests/test_dsh_d15_4_subagent.py` again, so the revision advances
+`post-u8.167` -> `post-u8.168` (rebuild identity only).

@@ -203,6 +203,9 @@ class D15SubagentEvidenceTests(unittest.TestCase):
         self.assertIn("not transparent", wiring["reversible"])
         self.assertTrue(routing["available_interfaces"])
         self.assertTrue(routing["trials"])
+        self.assertTrue(routing["runtime_root_cleaned"])
+        self.assertTrue(routing["cleanup"])
+        self.assertTrue(all(item["removed"] for item in routing["cleanup"]))
 
     def test_negative_controls_evidence_is_recorded(self):
         controls = json.loads((EVIDENCE / "negative-controls.v2.json").read_text(encoding="utf-8"))
@@ -259,7 +262,7 @@ class D15SubagentNativeIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "routing.v1.json"
             result = subprocess.run(
-                ["node", "routing_probe.mjs", "--out", str(out)],
+                ["node", "routing_probe.mjs", "run", "--out", str(out)],
                 cwd=SUBAGENT, capture_output=True, text=True, timeout=300)
             self.assertEqual(result.returncode, 0, result.stderr[-2000:])
             routing = json.loads(out.read_text(encoding="utf-8"))
@@ -269,6 +272,8 @@ class D15SubagentNativeIntegrationTests(unittest.TestCase):
         self.assertTrue(conclusions["continuable_in_process_is_reachable_when_enabled"])
         self.assertFalse(conclusions["independent_process_continuable_provider_available"])
         self.assertTrue(conclusions["out_of_process_provider_without_prepareContinuable_rejected"])
+        self.assertTrue(routing["runtime_root_cleaned"])
+        self.assertTrue(all(item["removed"] for item in routing["cleanup"]))
 
 
 if __name__ == "__main__":
