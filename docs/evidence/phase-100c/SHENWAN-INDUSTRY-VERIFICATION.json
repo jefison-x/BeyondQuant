@@ -1,0 +1,1778 @@
+{
+  "classify_sync": {
+    "SW2014": {
+      "created": true,
+      "job_id": "industrysync_2cb4bae5eabc4d20bb04274ae4900de6",
+      "provider_calls": 1,
+      "rows_inserted": 359,
+      "rows_kept": 0,
+      "rows_quarantined": 0,
+      "rows_received": 359,
+      "rows_updated": 0,
+      "status": "completed"
+    },
+    "SW2021": {
+      "created": true,
+      "job_id": "industrysync_78f7d76b17304fcda79ac00e32605fe1",
+      "provider_calls": 1,
+      "rows_inserted": 511,
+      "rows_kept": 0,
+      "rows_quarantined": 0,
+      "rows_received": 511,
+      "rows_updated": 0,
+      "status": "completed"
+    }
+  },
+  "endpoints": [
+    "index_classify",
+    "index_member_all"
+  ],
+  "generated_at": "2026-09-20T14:48:33.825853+00:00",
+  "isolated_database": true,
+  "member_sync": {
+    "created": true,
+    "job_id": "industrysync_3ca608b92c3a48a28e96dafe7414da8d",
+    "provider_calls": 2,
+    "rows_inserted": 7918,
+    "rows_kept": 0,
+    "rows_quarantined": 1,
+    "rows_received": 7918,
+    "rows_updated": 0,
+    "status": "completed"
+  },
+  "persisted_coverage": {
+    "classify": {
+      "code_count": 642,
+      "groups": [
+        {
+          "level": "L1",
+          "row_count": 28,
+          "src": "SW2014"
+        },
+        {
+          "level": "L2",
+          "row_count": 104,
+          "src": "SW2014"
+        },
+        {
+          "level": "L3",
+          "row_count": 227,
+          "src": "SW2014"
+        },
+        {
+          "level": "L1",
+          "row_count": 31,
+          "src": "SW2021"
+        },
+        {
+          "level": "L2",
+          "row_count": 134,
+          "src": "SW2021"
+        },
+        {
+          "level": "L3",
+          "row_count": 346,
+          "src": "SW2021"
+        }
+      ],
+      "row_count": 870,
+      "schema_version": "shenwan-classify.v1",
+      "source_count": 2
+    },
+    "completeness_claimed": false,
+    "endpoint": "index_classify/index_member_all",
+    "issue_count": 0,
+    "member": {
+      "alias_count": 0,
+      "in_date_max": "20260918",
+      "in_date_min": "19840509",
+      "missing_in_date": 0,
+      "open_count": 5912,
+      "orphan_l3_codes": 0,
+      "out_date_max": "20260820",
+      "out_date_min": "19990831",
+      "overlap_pairs": 0,
+      "row_count": 7918,
+      "scan_truncated": false,
+      "schema_version": "shenwan-member.v1",
+      "settled_count": 2006
+    },
+    "provider": "tushare",
+    "quality": "observed",
+    "schema_version": "shenwan-industry.v1",
+    "scope": "persisted_observations"
+  },
+  "persisted_fingerprint": {
+    "after": {
+      "classify_row_count": 870,
+      "content_sha256": "b66e175179338cfc1683f85525524eda35a617ebb76b3b063b64b78b4e33563f",
+      "member_row_count": 7918
+    },
+    "before": {
+      "classify_row_count": 870,
+      "content_sha256": "b66e175179338cfc1683f85525524eda35a617ebb76b3b063b64b78b4e33563f",
+      "member_row_count": 7918
+    },
+    "unchanged": true
+  },
+  "point_in_time": {
+    "classify_request_params": [
+      "src"
+    ],
+    "date_like_sync_field_rejected": true,
+    "inclusion_exclusion_dates_present": true,
+    "member_request_params": [
+      "is_new"
+    ],
+    "provider_has_as_of_parameter": false,
+    "reconstruction": {
+      "850531.SI": {
+        "as_of": {
+          "20150101": {
+            "intervals": [
+              {
+                "in_date": "20070815",
+                "out_date": null,
+                "ts_code": "002155.SZ"
+              },
+              {
+                "in_date": "20080428",
+                "out_date": null,
+                "ts_code": "002237.SZ"
+              },
+              {
+                "in_date": "19990707",
+                "out_date": "20170628",
+                "ts_code": "600146.SH"
+              },
+              {
+                "in_date": "20140102",
+                "out_date": null,
+                "ts_code": "600311.SH"
+              },
+              {
+                "in_date": "20030812",
+                "out_date": null,
+                "ts_code": "600489.SH"
+              },
+              {
+                "in_date": "20030826",
+                "out_date": null,
+                "ts_code": "600547.SH"
+              },
+              {
+                "in_date": "20130701",
+                "out_date": null,
+                "ts_code": "600687.SH"
+              },
+              {
+                "in_date": "20130701",
+                "out_date": "20220728",
+                "ts_code": "600766.SH"
+              },
+              {
+                "in_date": "20040414",
+                "out_date": null,
+                "ts_code": "600988.SH"
+              },
+              {
+                "in_date": "20080407",
+                "out_date": "20210729",
+                "ts_code": "601899.SH"
+              }
+            ],
+            "member_count": 10,
+            "members": [
+              "002155.SZ",
+              "002237.SZ",
+              "600146.SH",
+              "600311.SH",
+              "600489.SH",
+              "600547.SH",
+              "600687.SH",
+              "600766.SH",
+              "600988.SH",
+              "601899.SH"
+            ]
+          },
+          "20180101": {
+            "intervals": [
+              {
+                "in_date": "20150701",
+                "out_date": "20180615",
+                "ts_code": "000506.SZ"
+              },
+              {
+                "in_date": "20070815",
+                "out_date": null,
+                "ts_code": "002155.SZ"
+              },
+              {
+                "in_date": "20080428",
+                "out_date": null,
+                "ts_code": "002237.SZ"
+              },
+              {
+                "in_date": "20140102",
+                "out_date": null,
+                "ts_code": "600311.SH"
+              },
+              {
+                "in_date": "20030812",
+                "out_date": null,
+                "ts_code": "600489.SH"
+              },
+              {
+                "in_date": "20030826",
+                "out_date": null,
+                "ts_code": "600547.SH"
+              },
+              {
+                "in_date": "20130701",
+                "out_date": null,
+                "ts_code": "600687.SH"
+              },
+              {
+                "in_date": "20130701",
+                "out_date": "20220728",
+                "ts_code": "600766.SH"
+              },
+              {
+                "in_date": "20040414",
+                "out_date": null,
+                "ts_code": "600988.SH"
+              },
+              {
+                "in_date": "20150115",
+                "out_date": null,
+                "ts_code": "601069.SH"
+              },
+              {
+                "in_date": "20080407",
+                "out_date": "20210729",
+                "ts_code": "601899.SH"
+              }
+            ],
+            "member_count": 11,
+            "members": [
+              "000506.SZ",
+              "002155.SZ",
+              "002237.SZ",
+              "600311.SH",
+              "600489.SH",
+              "600547.SH",
+              "600687.SH",
+              "600766.SH",
+              "600988.SH",
+              "601069.SH",
+              "601899.SH"
+            ]
+          },
+          "20200101": {
+            "intervals": [
+              {
+                "in_date": "20190724",
+                "out_date": null,
+                "ts_code": "000975.SZ"
+              },
+              {
+                "in_date": "20070815",
+                "out_date": null,
+                "ts_code": "002155.SZ"
+              },
+              {
+                "in_date": "20080428",
+                "out_date": null,
+                "ts_code": "002237.SZ"
+              },
+              {
+                "in_date": "20140102",
+                "out_date": null,
+                "ts_code": "600311.SH"
+              },
+              {
+                "in_date": "20180601",
+                "out_date": "20210729",
+                "ts_code": "600385.SH"
+              },
+              {
+                "in_date": "20030812",
+                "out_date": null,
+                "ts_code": "600489.SH"
+              },
+              {
+                "in_date": "20030826",
+                "out_date": null,
+                "ts_code": "600547.SH"
+              },
+              {
+                "in_date": "20130701",
+                "out_date": null,
+                "ts_code": "600687.SH"
+              },
+              {
+                "in_date": "20130701",
+                "out_date": "20220728",
+                "ts_code": "600766.SH"
+              },
+              {
+                "in_date": "20040414",
+                "out_date": null,
+                "ts_code": "600988.SH"
+              },
+              {
+                "in_date": "20150115",
+                "out_date": null,
+                "ts_code": "601069.SH"
+              },
+              {
+                "in_date": "20080407",
+                "out_date": "20210729",
+                "ts_code": "601899.SH"
+              }
+            ],
+            "member_count": 12,
+            "members": [
+              "000975.SZ",
+              "002155.SZ",
+              "002237.SZ",
+              "600311.SH",
+              "600385.SH",
+              "600489.SH",
+              "600547.SH",
+              "600687.SH",
+              "600766.SH",
+              "600988.SH",
+              "601069.SH",
+              "601899.SH"
+            ]
+          },
+          "20220101": {
+            "intervals": [
+              {
+                "in_date": "20190724",
+                "out_date": null,
+                "ts_code": "000975.SZ"
+              },
+              {
+                "in_date": "20070815",
+                "out_date": null,
+                "ts_code": "002155.SZ"
+              },
+              {
+                "in_date": "20080428",
+                "out_date": null,
+                "ts_code": "002237.SZ"
+              },
+              {
+                "in_date": "20140102",
+                "out_date": null,
+                "ts_code": "600311.SH"
+              },
+              {
+                "in_date": "20030812",
+                "out_date": null,
+                "ts_code": "600489.SH"
+              },
+              {
+                "in_date": "20030826",
+                "out_date": null,
+                "ts_code": "600547.SH"
+              },
+              {
+                "in_date": "20130701",
+                "out_date": null,
+                "ts_code": "600687.SH"
+              },
+              {
+                "in_date": "20130701",
+                "out_date": "20220728",
+                "ts_code": "600766.SH"
+              },
+              {
+                "in_date": "20040414",
+                "out_date": null,
+                "ts_code": "600988.SH"
+              },
+              {
+                "in_date": "20210730",
+                "out_date": "20220728",
+                "ts_code": "601020.SH"
+              },
+              {
+                "in_date": "20150115",
+                "out_date": null,
+                "ts_code": "601069.SH"
+              }
+            ],
+            "member_count": 11,
+            "members": [
+              "000975.SZ",
+              "002155.SZ",
+              "002237.SZ",
+              "600311.SH",
+              "600489.SH",
+              "600547.SH",
+              "600687.SH",
+              "600766.SH",
+              "600988.SH",
+              "601020.SH",
+              "601069.SH"
+            ]
+          },
+          "20250901": {
+            "intervals": [
+              {
+                "in_date": "20220729",
+                "out_date": null,
+                "ts_code": "000506.SZ"
+              },
+              {
+                "in_date": "20190724",
+                "out_date": null,
+                "ts_code": "000975.SZ"
+              },
+              {
+                "in_date": "20230224",
+                "out_date": null,
+                "ts_code": "001337.SZ"
+              },
+              {
+                "in_date": "20070815",
+                "out_date": null,
+                "ts_code": "002155.SZ"
+              },
+              {
+                "in_date": "20080428",
+                "out_date": null,
+                "ts_code": "002237.SZ"
+              },
+              {
+                "in_date": "20220729",
+                "out_date": null,
+                "ts_code": "300139.SZ"
+              },
+              {
+                "in_date": "20140102",
+                "out_date": null,
+                "ts_code": "600311.SH"
+              },
+              {
+                "in_date": "20030812",
+                "out_date": null,
+                "ts_code": "600489.SH"
+              },
+              {
+                "in_date": "20030826",
+                "out_date": null,
+                "ts_code": "600547.SH"
+              },
+              {
+                "in_date": "20130701",
+                "out_date": null,
+                "ts_code": "600687.SH"
+              },
+              {
+                "in_date": "20040414",
+                "out_date": null,
+                "ts_code": "600988.SH"
+              },
+              {
+                "in_date": "20240730",
+                "out_date": null,
+                "ts_code": "601028.SH"
+              },
+              {
+                "in_date": "20150115",
+                "out_date": null,
+                "ts_code": "601069.SH"
+              }
+            ],
+            "member_count": 13,
+            "members": [
+              "000506.SZ",
+              "000975.SZ",
+              "001337.SZ",
+              "002155.SZ",
+              "002237.SZ",
+              "300139.SZ",
+              "600311.SH",
+              "600489.SH",
+              "600547.SH",
+              "600687.SH",
+              "600988.SH",
+              "601028.SH",
+              "601069.SH"
+            ]
+          }
+        },
+        "member_counts": {
+          "20150101": 10,
+          "20180101": 11,
+          "20200101": 12,
+          "20220101": 11,
+          "20250901": 13
+        },
+        "varies_across_dates": true
+      },
+      "850551.SI": {
+        "as_of": {
+          "20150101": {
+            "intervals": [
+              {
+                "in_date": "19960620",
+                "out_date": null,
+                "ts_code": "000405.SZ"
+              },
+              {
+                "in_date": "19960926",
+                "out_date": null,
+                "ts_code": "000612.SZ"
+              },
+              {
+                "in_date": "19961231",
+                "out_date": null,
+                "ts_code": "000689.SZ"
+              },
+              {
+                "in_date": "19980408",
+                "out_date": null,
+                "ts_code": "000807.SZ"
+              },
+              {
+                "in_date": "20070820",
+                "out_date": null,
+                "ts_code": "002160.SZ"
+              },
+              {
+                "in_date": "20100312",
+                "out_date": null,
+                "ts_code": "002379.SZ"
+              },
+              {
+                "in_date": "20101103",
+                "out_date": null,
+                "ts_code": "002501.SZ"
+              },
+              {
+                "in_date": "20110106",
+                "out_date": null,
+                "ts_code": "002540.SZ"
+              },
+              {
+                "in_date": "20110420",
+                "out_date": null,
+                "ts_code": "002578.SZ"
+              },
+              {
+                "in_date": "20100108",
+                "out_date": null,
+                "ts_code": "300057.SZ"
+              },
+              {
+                "in_date": "20120710",
+                "out_date": null,
+                "ts_code": "300337.SZ"
+              },
+              {
+                "in_date": "19990630",
+                "out_date": null,
+                "ts_code": "600205.SH"
+              },
+              {
+                "in_date": "19991223",
+                "out_date": null,
+                "ts_code": "600219.SH"
+              },
+              {
+                "in_date": "20000719",
+                "out_date": null,
+                "ts_code": "600296.SH"
+              },
+              {
+                "in_date": "20050509",
+                "out_date": null,
+                "ts_code": "600472.SH"
+              },
+              {
+                "in_date": "20020626",
+                "out_date": null,
+                "ts_code": "600595.SH"
+              },
+              {
+                "in_date": "19961111",
+                "out_date": null,
+                "ts_code": "600768.SH"
+              },
+              {
+                "in_date": "19960215",
+                "out_date": null,
+                "ts_code": "600888.SH"
+              },
+              {
+                "in_date": "20120409",
+                "out_date": null,
+                "ts_code": "601388.SH"
+              },
+              {
+                "in_date": "20070430",
+                "out_date": null,
+                "ts_code": "601600.SH"
+              },
+              {
+                "in_date": "20110906",
+                "out_date": null,
+                "ts_code": "601677.SH"
+              }
+            ],
+            "member_count": 21,
+            "members": [
+              "000405.SZ",
+              "000612.SZ",
+              "000689.SZ",
+              "000807.SZ",
+              "002160.SZ",
+              "002379.SZ",
+              "002501.SZ",
+              "002540.SZ",
+              "002578.SZ",
+              "300057.SZ",
+              "300337.SZ",
+              "600205.SH",
+              "600219.SH",
+              "600296.SH",
+              "600472.SH",
+              "600595.SH",
+              "600768.SH",
+              "600888.SH",
+              "601388.SH",
+              "601600.SH",
+              "601677.SH"
+            ]
+          },
+          "20180101": {
+            "intervals": [
+              {
+                "in_date": "19960620",
+                "out_date": null,
+                "ts_code": "000405.SZ"
+              },
+              {
+                "in_date": "19960926",
+                "out_date": null,
+                "ts_code": "000612.SZ"
+              },
+              {
+                "in_date": "19961231",
+                "out_date": null,
+                "ts_code": "000689.SZ"
+              },
+              {
+                "in_date": "19980408",
+                "out_date": null,
+                "ts_code": "000807.SZ"
+              },
+              {
+                "in_date": "20070820",
+                "out_date": null,
+                "ts_code": "002160.SZ"
+              },
+              {
+                "in_date": "20100312",
+                "out_date": null,
+                "ts_code": "002379.SZ"
+              },
+              {
+                "in_date": "20101103",
+                "out_date": null,
+                "ts_code": "002501.SZ"
+              },
+              {
+                "in_date": "20110106",
+                "out_date": null,
+                "ts_code": "002540.SZ"
+              },
+              {
+                "in_date": "20110420",
+                "out_date": null,
+                "ts_code": "002578.SZ"
+              },
+              {
+                "in_date": "20160718",
+                "out_date": "20230703",
+                "ts_code": "002806.SZ"
+              },
+              {
+                "in_date": "20161226",
+                "out_date": null,
+                "ts_code": "002824.SZ"
+              },
+              {
+                "in_date": "20100108",
+                "out_date": null,
+                "ts_code": "300057.SZ"
+              },
+              {
+                "in_date": "20120710",
+                "out_date": null,
+                "ts_code": "300337.SZ"
+              },
+              {
+                "in_date": "19990630",
+                "out_date": null,
+                "ts_code": "600205.SH"
+              },
+              {
+                "in_date": "19991223",
+                "out_date": null,
+                "ts_code": "600219.SH"
+              },
+              {
+                "in_date": "20000719",
+                "out_date": null,
+                "ts_code": "600296.SH"
+              },
+              {
+                "in_date": "20050509",
+                "out_date": null,
+                "ts_code": "600472.SH"
+              },
+              {
+                "in_date": "20020626",
+                "out_date": null,
+                "ts_code": "600595.SH"
+              },
+              {
+                "in_date": "19961111",
+                "out_date": null,
+                "ts_code": "600768.SH"
+              },
+              {
+                "in_date": "19960215",
+                "out_date": null,
+                "ts_code": "600888.SH"
+              },
+              {
+                "in_date": "20120409",
+                "out_date": null,
+                "ts_code": "601388.SH"
+              },
+              {
+                "in_date": "20070430",
+                "out_date": null,
+                "ts_code": "601600.SH"
+              },
+              {
+                "in_date": "20110906",
+                "out_date": null,
+                "ts_code": "601677.SH"
+              }
+            ],
+            "member_count": 23,
+            "members": [
+              "000405.SZ",
+              "000612.SZ",
+              "000689.SZ",
+              "000807.SZ",
+              "002160.SZ",
+              "002379.SZ",
+              "002501.SZ",
+              "002540.SZ",
+              "002578.SZ",
+              "002806.SZ",
+              "002824.SZ",
+              "300057.SZ",
+              "300337.SZ",
+              "600205.SH",
+              "600219.SH",
+              "600296.SH",
+              "600472.SH",
+              "600595.SH",
+              "600768.SH",
+              "600888.SH",
+              "601388.SH",
+              "601600.SH",
+              "601677.SH"
+            ]
+          },
+          "20200101": {
+            "intervals": [
+              {
+                "in_date": "19960620",
+                "out_date": null,
+                "ts_code": "000405.SZ"
+              },
+              {
+                "in_date": "19960926",
+                "out_date": null,
+                "ts_code": "000612.SZ"
+              },
+              {
+                "in_date": "19961231",
+                "out_date": null,
+                "ts_code": "000689.SZ"
+              },
+              {
+                "in_date": "19980408",
+                "out_date": null,
+                "ts_code": "000807.SZ"
+              },
+              {
+                "in_date": "20180619",
+                "out_date": null,
+                "ts_code": "000933.SZ"
+              },
+              {
+                "in_date": "20070820",
+                "out_date": null,
+                "ts_code": "002160.SZ"
+              },
+              {
+                "in_date": "20100312",
+                "out_date": null,
+                "ts_code": "002379.SZ"
+              },
+              {
+                "in_date": "20101103",
+                "out_date": null,
+                "ts_code": "002501.SZ"
+              },
+              {
+                "in_date": "20110106",
+                "out_date": null,
+                "ts_code": "002540.SZ"
+              },
+              {
+                "in_date": "20110420",
+                "out_date": null,
+                "ts_code": "002578.SZ"
+              },
+              {
+                "in_date": "20160718",
+                "out_date": "20230703",
+                "ts_code": "002806.SZ"
+              },
+              {
+                "in_date": "20161226",
+                "out_date": null,
+                "ts_code": "002824.SZ"
+              },
+              {
+                "in_date": "20100108",
+                "out_date": null,
+                "ts_code": "300057.SZ"
+              },
+              {
+                "in_date": "20120710",
+                "out_date": null,
+                "ts_code": "300337.SZ"
+              },
+              {
+                "in_date": "19990630",
+                "out_date": null,
+                "ts_code": "600205.SH"
+              },
+              {
+                "in_date": "19991223",
+                "out_date": null,
+                "ts_code": "600219.SH"
+              },
+              {
+                "in_date": "20000719",
+                "out_date": null,
+                "ts_code": "600296.SH"
+              },
+              {
+                "in_date": "20050509",
+                "out_date": null,
+                "ts_code": "600472.SH"
+              },
+              {
+                "in_date": "20020626",
+                "out_date": null,
+                "ts_code": "600595.SH"
+              },
+              {
+                "in_date": "19961111",
+                "out_date": null,
+                "ts_code": "600768.SH"
+              },
+              {
+                "in_date": "19960215",
+                "out_date": null,
+                "ts_code": "600888.SH"
+              },
+              {
+                "in_date": "20120409",
+                "out_date": null,
+                "ts_code": "601388.SH"
+              },
+              {
+                "in_date": "20070430",
+                "out_date": null,
+                "ts_code": "601600.SH"
+              },
+              {
+                "in_date": "20110906",
+                "out_date": null,
+                "ts_code": "601677.SH"
+              },
+              {
+                "in_date": "20190731",
+                "out_date": "20260630",
+                "ts_code": "603115.SH"
+              },
+              {
+                "in_date": "20180403",
+                "out_date": null,
+                "ts_code": "603876.SH"
+              }
+            ],
+            "member_count": 26,
+            "members": [
+              "000405.SZ",
+              "000612.SZ",
+              "000689.SZ",
+              "000807.SZ",
+              "000933.SZ",
+              "002160.SZ",
+              "002379.SZ",
+              "002501.SZ",
+              "002540.SZ",
+              "002578.SZ",
+              "002806.SZ",
+              "002824.SZ",
+              "300057.SZ",
+              "300337.SZ",
+              "600205.SH",
+              "600219.SH",
+              "600296.SH",
+              "600472.SH",
+              "600595.SH",
+              "600768.SH",
+              "600888.SH",
+              "601388.SH",
+              "601600.SH",
+              "601677.SH",
+              "603115.SH",
+              "603876.SH"
+            ]
+          },
+          "20220101": {
+            "intervals": [
+              {
+                "in_date": "19960620",
+                "out_date": null,
+                "ts_code": "000405.SZ"
+              },
+              {
+                "in_date": "19960926",
+                "out_date": null,
+                "ts_code": "000612.SZ"
+              },
+              {
+                "in_date": "19961231",
+                "out_date": null,
+                "ts_code": "000689.SZ"
+              },
+              {
+                "in_date": "19980408",
+                "out_date": null,
+                "ts_code": "000807.SZ"
+              },
+              {
+                "in_date": "20180619",
+                "out_date": null,
+                "ts_code": "000933.SZ"
+              },
+              {
+                "in_date": "20210730",
+                "out_date": "20220728",
+                "ts_code": "002082.SZ"
+              },
+              {
+                "in_date": "20070820",
+                "out_date": null,
+                "ts_code": "002160.SZ"
+              },
+              {
+                "in_date": "20100312",
+                "out_date": null,
+                "ts_code": "002379.SZ"
+              },
+              {
+                "in_date": "20101103",
+                "out_date": null,
+                "ts_code": "002501.SZ"
+              },
+              {
+                "in_date": "20210730",
+                "out_date": null,
+                "ts_code": "002532.SZ"
+              },
+              {
+                "in_date": "20110106",
+                "out_date": null,
+                "ts_code": "002540.SZ"
+              },
+              {
+                "in_date": "20110420",
+                "out_date": null,
+                "ts_code": "002578.SZ"
+              },
+              {
+                "in_date": "20160718",
+                "out_date": "20230703",
+                "ts_code": "002806.SZ"
+              },
+              {
+                "in_date": "20161226",
+                "out_date": null,
+                "ts_code": "002824.SZ"
+              },
+              {
+                "in_date": "20200506",
+                "out_date": null,
+                "ts_code": "002988.SZ"
+              },
+              {
+                "in_date": "20200814",
+                "out_date": null,
+                "ts_code": "002996.SZ"
+              },
+              {
+                "in_date": "20210129",
+                "out_date": null,
+                "ts_code": "003038.SZ"
+              },
+              {
+                "in_date": "20100108",
+                "out_date": null,
+                "ts_code": "300057.SZ"
+              },
+              {
+                "in_date": "20120710",
+                "out_date": null,
+                "ts_code": "300337.SZ"
+              },
+              {
+                "in_date": "20210730",
+                "out_date": "20220728",
+                "ts_code": "300489.SZ"
+              },
+              {
+                "in_date": "20210415",
+                "out_date": "20220726",
+                "ts_code": "300986.SZ"
+              },
+              {
+                "in_date": "19990630",
+                "out_date": null,
+                "ts_code": "600205.SH"
+              },
+              {
+                "in_date": "19991223",
+                "out_date": null,
+                "ts_code": "600219.SH"
+              },
+              {
+                "in_date": "20000719",
+                "out_date": null,
+                "ts_code": "600296.SH"
+              },
+              {
+                "in_date": "20050509",
+                "out_date": null,
+                "ts_code": "600472.SH"
+              },
+              {
+                "in_date": "20020626",
+                "out_date": null,
+                "ts_code": "600595.SH"
+              },
+              {
+                "in_date": "19961111",
+                "out_date": null,
+                "ts_code": "600768.SH"
+              },
+              {
+                "in_date": "19960215",
+                "out_date": null,
+                "ts_code": "600888.SH"
+              },
+              {
+                "in_date": "20120409",
+                "out_date": null,
+                "ts_code": "601388.SH"
+              },
+              {
+                "in_date": "20070430",
+                "out_date": null,
+                "ts_code": "601600.SH"
+              },
+              {
+                "in_date": "20110906",
+                "out_date": null,
+                "ts_code": "601677.SH"
+              },
+              {
+                "in_date": "20200821",
+                "out_date": null,
+                "ts_code": "601702.SH"
+              },
+              {
+                "in_date": "20190731",
+                "out_date": "20260630",
+                "ts_code": "603115.SH"
+              },
+              {
+                "in_date": "20180403",
+                "out_date": null,
+                "ts_code": "603876.SH"
+              },
+              {
+                "in_date": "20210730",
+                "out_date": null,
+                "ts_code": "603937.SH"
+              },
+              {
+                "in_date": "20210219",
+                "out_date": null,
+                "ts_code": "605208.SH"
+              }
+            ],
+            "member_count": 36,
+            "members": [
+              "000405.SZ",
+              "000612.SZ",
+              "000689.SZ",
+              "000807.SZ",
+              "000933.SZ",
+              "002082.SZ",
+              "002160.SZ",
+              "002379.SZ",
+              "002501.SZ",
+              "002532.SZ",
+              "002540.SZ",
+              "002578.SZ",
+              "002806.SZ",
+              "002824.SZ",
+              "002988.SZ",
+              "002996.SZ",
+              "003038.SZ",
+              "300057.SZ",
+              "300337.SZ",
+              "300489.SZ",
+              "300986.SZ",
+              "600205.SH",
+              "600219.SH",
+              "600296.SH",
+              "600472.SH",
+              "600595.SH",
+              "600768.SH",
+              "600888.SH",
+              "601388.SH",
+              "601600.SH",
+              "601677.SH",
+              "601702.SH",
+              "603115.SH",
+              "603876.SH",
+              "603937.SH",
+              "605208.SH"
+            ]
+          },
+          "20250901": {
+            "intervals": [
+              {
+                "in_date": "19960620",
+                "out_date": null,
+                "ts_code": "000405.SZ"
+              },
+              {
+                "in_date": "19960926",
+                "out_date": null,
+                "ts_code": "000612.SZ"
+              },
+              {
+                "in_date": "19961231",
+                "out_date": null,
+                "ts_code": "000689.SZ"
+              },
+              {
+                "in_date": "19980408",
+                "out_date": null,
+                "ts_code": "000807.SZ"
+              },
+              {
+                "in_date": "20180619",
+                "out_date": null,
+                "ts_code": "000933.SZ"
+              },
+              {
+                "in_date": "20070820",
+                "out_date": null,
+                "ts_code": "002160.SZ"
+              },
+              {
+                "in_date": "20100312",
+                "out_date": null,
+                "ts_code": "002379.SZ"
+              },
+              {
+                "in_date": "20101103",
+                "out_date": null,
+                "ts_code": "002501.SZ"
+              },
+              {
+                "in_date": "20210730",
+                "out_date": null,
+                "ts_code": "002532.SZ"
+              },
+              {
+                "in_date": "20110106",
+                "out_date": null,
+                "ts_code": "002540.SZ"
+              },
+              {
+                "in_date": "20110420",
+                "out_date": null,
+                "ts_code": "002578.SZ"
+              },
+              {
+                "in_date": "20161226",
+                "out_date": null,
+                "ts_code": "002824.SZ"
+              },
+              {
+                "in_date": "20200506",
+                "out_date": null,
+                "ts_code": "002988.SZ"
+              },
+              {
+                "in_date": "20200814",
+                "out_date": null,
+                "ts_code": "002996.SZ"
+              },
+              {
+                "in_date": "20210129",
+                "out_date": null,
+                "ts_code": "003038.SZ"
+              },
+              {
+                "in_date": "20100108",
+                "out_date": null,
+                "ts_code": "300057.SZ"
+              },
+              {
+                "in_date": "20220729",
+                "out_date": null,
+                "ts_code": "300328.SZ"
+              },
+              {
+                "in_date": "20120710",
+                "out_date": null,
+                "ts_code": "300337.SZ"
+              },
+              {
+                "in_date": "19990630",
+                "out_date": null,
+                "ts_code": "600205.SH"
+              },
+              {
+                "in_date": "19991223",
+                "out_date": null,
+                "ts_code": "600219.SH"
+              },
+              {
+                "in_date": "20000719",
+                "out_date": null,
+                "ts_code": "600296.SH"
+              },
+              {
+                "in_date": "20230704",
+                "out_date": null,
+                "ts_code": "600361.SH"
+              },
+              {
+                "in_date": "20050509",
+                "out_date": null,
+                "ts_code": "600472.SH"
+              },
+              {
+                "in_date": "20020626",
+                "out_date": null,
+                "ts_code": "600595.SH"
+              },
+              {
+                "in_date": "20220729",
+                "out_date": null,
+                "ts_code": "600615.SH"
+              },
+              {
+                "in_date": "19961111",
+                "out_date": null,
+                "ts_code": "600768.SH"
+              },
+              {
+                "in_date": "19960215",
+                "out_date": null,
+                "ts_code": "600888.SH"
+              },
+              {
+                "in_date": "20120409",
+                "out_date": null,
+                "ts_code": "601388.SH"
+              },
+              {
+                "in_date": "20070430",
+                "out_date": null,
+                "ts_code": "601600.SH"
+              },
+              {
+                "in_date": "20110906",
+                "out_date": null,
+                "ts_code": "601677.SH"
+              },
+              {
+                "in_date": "20200821",
+                "out_date": null,
+                "ts_code": "601702.SH"
+              },
+              {
+                "in_date": "20190731",
+                "out_date": "20260630",
+                "ts_code": "603115.SH"
+              },
+              {
+                "in_date": "20250221",
+                "out_date": null,
+                "ts_code": "603271.SH"
+              },
+              {
+                "in_date": "20180403",
+                "out_date": null,
+                "ts_code": "603876.SH"
+              },
+              {
+                "in_date": "20210730",
+                "out_date": null,
+                "ts_code": "603937.SH"
+              },
+              {
+                "in_date": "20210219",
+                "out_date": null,
+                "ts_code": "605208.SH"
+              }
+            ],
+            "member_count": 36,
+            "members": [
+              "000405.SZ",
+              "000612.SZ",
+              "000689.SZ",
+              "000807.SZ",
+              "000933.SZ",
+              "002160.SZ",
+              "002379.SZ",
+              "002501.SZ",
+              "002532.SZ",
+              "002540.SZ",
+              "002578.SZ",
+              "002824.SZ",
+              "002988.SZ",
+              "002996.SZ",
+              "003038.SZ",
+              "300057.SZ",
+              "300328.SZ",
+              "300337.SZ",
+              "600205.SH",
+              "600219.SH",
+              "600296.SH",
+              "600361.SH",
+              "600472.SH",
+              "600595.SH",
+              "600615.SH",
+              "600768.SH",
+              "600888.SH",
+              "601388.SH",
+              "601600.SH",
+              "601677.SH",
+              "601702.SH",
+              "603115.SH",
+              "603271.SH",
+              "603876.SH",
+              "603937.SH",
+              "605208.SH"
+            ]
+          }
+        },
+        "member_counts": {
+          "20150101": 21,
+          "20180101": 23,
+          "20200101": 26,
+          "20220101": 36,
+          "20250901": 36
+        },
+        "varies_across_dates": true
+      },
+      "857831.SI": {
+        "as_of": {
+          "20150101": {
+            "intervals": [
+              {
+                "in_date": "19910403",
+                "out_date": null,
+                "ts_code": "000001.SZ"
+              },
+              {
+                "in_date": "19991110",
+                "out_date": null,
+                "ts_code": "600000.SH"
+              },
+              {
+                "in_date": "20030910",
+                "out_date": null,
+                "ts_code": "600015.SH"
+              },
+              {
+                "in_date": "20001219",
+                "out_date": null,
+                "ts_code": "600016.SH"
+              },
+              {
+                "in_date": "20020409",
+                "out_date": null,
+                "ts_code": "600036.SH"
+              },
+              {
+                "in_date": "20070205",
+                "out_date": null,
+                "ts_code": "601166.SH"
+              },
+              {
+                "in_date": "20100805",
+                "out_date": null,
+                "ts_code": "601818.SH"
+              },
+              {
+                "in_date": "20070427",
+                "out_date": null,
+                "ts_code": "601998.SH"
+              }
+            ],
+            "member_count": 8,
+            "members": [
+              "000001.SZ",
+              "600000.SH",
+              "600015.SH",
+              "600016.SH",
+              "600036.SH",
+              "601166.SH",
+              "601818.SH",
+              "601998.SH"
+            ]
+          },
+          "20180101": {
+            "intervals": [
+              {
+                "in_date": "19910403",
+                "out_date": null,
+                "ts_code": "000001.SZ"
+              },
+              {
+                "in_date": "19991110",
+                "out_date": null,
+                "ts_code": "600000.SH"
+              },
+              {
+                "in_date": "20030910",
+                "out_date": null,
+                "ts_code": "600015.SH"
+              },
+              {
+                "in_date": "20001219",
+                "out_date": null,
+                "ts_code": "600016.SH"
+              },
+              {
+                "in_date": "20020409",
+                "out_date": null,
+                "ts_code": "600036.SH"
+              },
+              {
+                "in_date": "20070205",
+                "out_date": null,
+                "ts_code": "601166.SH"
+              },
+              {
+                "in_date": "20100805",
+                "out_date": null,
+                "ts_code": "601818.SH"
+              },
+              {
+                "in_date": "20070427",
+                "out_date": null,
+                "ts_code": "601998.SH"
+              }
+            ],
+            "member_count": 8,
+            "members": [
+              "000001.SZ",
+              "600000.SH",
+              "600015.SH",
+              "600016.SH",
+              "600036.SH",
+              "601166.SH",
+              "601818.SH",
+              "601998.SH"
+            ]
+          },
+          "20200101": {
+            "intervals": [
+              {
+                "in_date": "19910403",
+                "out_date": null,
+                "ts_code": "000001.SZ"
+              },
+              {
+                "in_date": "19991110",
+                "out_date": null,
+                "ts_code": "600000.SH"
+              },
+              {
+                "in_date": "20030910",
+                "out_date": null,
+                "ts_code": "600015.SH"
+              },
+              {
+                "in_date": "20001219",
+                "out_date": null,
+                "ts_code": "600016.SH"
+              },
+              {
+                "in_date": "20020409",
+                "out_date": null,
+                "ts_code": "600036.SH"
+              },
+              {
+                "in_date": "20070205",
+                "out_date": null,
+                "ts_code": "601166.SH"
+              },
+              {
+                "in_date": "20100805",
+                "out_date": null,
+                "ts_code": "601818.SH"
+              },
+              {
+                "in_date": "20191126",
+                "out_date": null,
+                "ts_code": "601916.SH"
+              },
+              {
+                "in_date": "20070427",
+                "out_date": null,
+                "ts_code": "601998.SH"
+              }
+            ],
+            "member_count": 9,
+            "members": [
+              "000001.SZ",
+              "600000.SH",
+              "600015.SH",
+              "600016.SH",
+              "600036.SH",
+              "601166.SH",
+              "601818.SH",
+              "601916.SH",
+              "601998.SH"
+            ]
+          },
+          "20220101": {
+            "intervals": [
+              {
+                "in_date": "19910403",
+                "out_date": null,
+                "ts_code": "000001.SZ"
+              },
+              {
+                "in_date": "19991110",
+                "out_date": null,
+                "ts_code": "600000.SH"
+              },
+              {
+                "in_date": "20030910",
+                "out_date": null,
+                "ts_code": "600015.SH"
+              },
+              {
+                "in_date": "20001219",
+                "out_date": null,
+                "ts_code": "600016.SH"
+              },
+              {
+                "in_date": "20020409",
+                "out_date": null,
+                "ts_code": "600036.SH"
+              },
+              {
+                "in_date": "20070205",
+                "out_date": null,
+                "ts_code": "601166.SH"
+              },
+              {
+                "in_date": "20100805",
+                "out_date": null,
+                "ts_code": "601818.SH"
+              },
+              {
+                "in_date": "20191126",
+                "out_date": null,
+                "ts_code": "601916.SH"
+              },
+              {
+                "in_date": "20070427",
+                "out_date": null,
+                "ts_code": "601998.SH"
+              }
+            ],
+            "member_count": 9,
+            "members": [
+              "000001.SZ",
+              "600000.SH",
+              "600015.SH",
+              "600016.SH",
+              "600036.SH",
+              "601166.SH",
+              "601818.SH",
+              "601916.SH",
+              "601998.SH"
+            ]
+          },
+          "20250901": {
+            "intervals": [
+              {
+                "in_date": "19910403",
+                "out_date": null,
+                "ts_code": "000001.SZ"
+              },
+              {
+                "in_date": "19991110",
+                "out_date": null,
+                "ts_code": "600000.SH"
+              },
+              {
+                "in_date": "20030910",
+                "out_date": null,
+                "ts_code": "600015.SH"
+              },
+              {
+                "in_date": "20001219",
+                "out_date": null,
+                "ts_code": "600016.SH"
+              },
+              {
+                "in_date": "20020409",
+                "out_date": null,
+                "ts_code": "600036.SH"
+              },
+              {
+                "in_date": "20070205",
+                "out_date": null,
+                "ts_code": "601166.SH"
+              },
+              {
+                "in_date": "20100805",
+                "out_date": null,
+                "ts_code": "601818.SH"
+              },
+              {
+                "in_date": "20191126",
+                "out_date": null,
+                "ts_code": "601916.SH"
+              },
+              {
+                "in_date": "20070427",
+                "out_date": null,
+                "ts_code": "601998.SH"
+              }
+            ],
+            "member_count": 9,
+            "members": [
+              "000001.SZ",
+              "600000.SH",
+              "600015.SH",
+              "600016.SH",
+              "600036.SH",
+              "601166.SH",
+              "601818.SH",
+              "601916.SH",
+              "601998.SH"
+            ]
+          }
+        },
+        "member_counts": {
+          "20150101": 8,
+          "20180101": 8,
+          "20200101": 9,
+          "20220101": 9,
+          "20250901": 9
+        },
+        "varies_across_dates": true
+      }
+    }
+  },
+  "points_requirement": {
+    "index_classify": 2000,
+    "index_member_all": 2000
+  },
+  "production_state_changed": false,
+  "provider": "tushare",
+  "provider_call_counts": {
+    "index_classify": 2,
+    "index_member_all": 2
+  },
+  "readiness": {
+    "ambiguous_total": 0,
+    "as_of_date": "20260901",
+    "classify_present": true,
+    "level": "L1",
+    "missing_total": 0,
+    "symbols": [
+      "000506.SZ",
+      "000975.SZ",
+      "001337.SZ",
+      "002155.SZ",
+      "002237.SZ",
+      "300139.SZ",
+      "600311.SH",
+      "600489.SH",
+      "600547.SH",
+      "600687.SH",
+      "600988.SH",
+      "601028.SH",
+      "601069.SH"
+    ],
+    "usable": true
+  },
+  "schema_version": "phase-100c-shenwan-industry-verification.v1",
+  "terminal_rerun": {
+    "classify:SW2014": {
+      "no_refetch": true,
+      "reported_cumulative_rows_inserted": 359,
+      "same_job_id": true,
+      "status": "completed"
+    },
+    "classify:SW2021": {
+      "no_refetch": true,
+      "reported_cumulative_rows_inserted": 511,
+      "same_job_id": true,
+      "status": "completed"
+    },
+    "member:all": {
+      "no_refetch": true,
+      "reported_cumulative_rows_inserted": 7918,
+      "same_job_id": true,
+      "status": "completed"
+    }
+  }
+}

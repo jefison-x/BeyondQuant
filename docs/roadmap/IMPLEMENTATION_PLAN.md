@@ -1218,8 +1218,15 @@ HIST 历史关系可行性调查与深度学习环境资格调查。交付物：
    provenance）、权威存储与按 `idempotency_key` 去重的增量同步、coverage/readiness 与真实 Tushare 验证证据
    （`docs/evidence/phase-100b/INDEX-DAILYBASIC-VERIFICATION.json`）。计量单位为 Tushare 文档口径（市值/股本为
    元/股并显式记录 units，`index_dailybasic` 与 `daily_basic` 的万元/万股口径不同），不接入分钟/实时/港股/特色数据。
-3. **P100-C 行业关系（申万）**：`index_classify`/`index_member_all` 合同与时点可见性实测；可证则接入，
-   否则登记 blocked。
+3. **P100-C 行业关系（申万）**（已交付，Draft PR）：先完成时点可见性实测——官方 `index_member_all` 无
+   as-of 日期参数，日期类参数被静默忽略并返回当前成分（已实测），唯一时点信号是 `in_date`/`out_date`
+   区间与 `is_new=Y/N` 快照；实测确认纳入/剔除日期存在、区间逐股不重叠、跨日期重建成分集合不同，
+   故时点可证，禁止用当前成分回填历史。据此接入 provider 合同（`index_classify`/`index_member_all`，
+   BYQ 边界不接受日期字段）、权威存储（`market_index_classify`/`market_index_member_all`，逐行
+   content hash + provenance）、按 `idempotency_key` 去重的幂等增量同步（open→settled 结算，settled
+   历史永不重写）、`membership_asof` 点-in-time 重建、fail-closed coverage/readiness 与
+   `market_readiness` 的 `industry_membership` 集成；非规范历史别名 quarantine 并计数。真实 Tushare
+   验证证据见 `docs/evidence/phase-100c/`（含 Phase 1 调查结论）。
 4. **P100-D 概念关系（同花顺）**：`ths_index`/`ths_member`；因 `in_date/out_date` 官方“暂无”，
    必须先证明历史可见性再接入，否则维持 blocked。
 5. **P100-E Product 呈现**：Data Center 覆盖/质量/就绪的 UI/小巴可见与可操作（不改边界）。

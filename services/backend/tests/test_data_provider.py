@@ -9,7 +9,9 @@ from app.data_provider import (
     FundBasicRequest,
     FundDailyRequest,
     FundNavRequest,
+    IndexClassifyRequest,
     IndexDailyBasicRequest,
+    IndexMemberAllRequest,
     ProviderAuthorizationError,
     ProviderCredentialsMissing,
     ProviderProtocolError,
@@ -700,3 +702,147 @@ def test_index_daily_basic_rejects_provider_rows_outside_the_contract() -> None:
         instance_with([index_daily_basic_row(trade_date="20240110")]).fetch_index_daily_basic(
             IndexDailyBasicRequest(ts_code="000300.SH", start_date="20240101", end_date="20240105")
         )
+
+
+INDEX_CLASSIFY_TEST_FIELDS = [
+    "index_code", "industry_name", "parent_code", "level", "industry_code", "is_pub", "src",
+]
+INDEX_MEMBER_TEST_FIELDS = [
+    "l1_code", "l1_name", "l2_code", "l2_name", "l3_code", "l3_name",
+    "ts_code", "name", "in_date", "out_date", "is_new",
+]
+
+
+def classify_row(
+    index_code: str = "801050.SI",
+    *,
+    level: str = "L1",
+    parent_code: str = "0",
+    src: str = "SW2021",
+    is_pub: str = "1",
+) -> list[object]:
+    return [index_code, "有色金属", parent_code, level, "110000", is_pub, src]
+
+
+def member_row(
+    ts_code: str = "601899.SH",
+    *,
+    l3_code: str = "850531.SI",
+    in_date: str = "20080407",
+    out_date: object = None,
+    is_new: str = "Y",
+) -> list[object]:
+    return ["801050.SI", "有色金属", "801053.SI", "贵金属", l3_code, "黄金",
+            ts_code, "紫金矿业", in_date, out_date, is_new]
+
+
+def test_index_classify_translates_and_scans_the_request() -> None:
+    transport = FakeTransport([
+        TransportResponse(200, envelope([classify_row()], fields=INDEX_CLASSIFY_TEST_FIELDS)),
+    ])
+    result = provider(transport).fetch_index_classify(IndexClassifyRequest(src="SW2021", level="L1"))
+    assert result.rows[0].index_code == "801050.SI"
+    assert result.rows[0].src == "SW2021" and result.rows[0].level == "L1"
+    assert result.provenance.endpoint == "index_classify"
+    assert transport.calls[0][1]["params"] == {"src": "SW2021", "level": "L1"}
+    assert "fixture-token" not in result.provenance.request_fingerprint
+
+
+def test_index_classify_request_rejects_invalid_input_and_has_no_date_filter() -> None:
+    with pytest.raises(ValueError, match="src"):
+        IndexClassifyRequest(src="SW2099").normalized()
+    with pytest.raises(ValueError, match="level"):
+        IndexClassifyRequest(level="L9").normalized()
+    with pytest.raises(ValueError, match="index_code"):
+        IndexClassifyRequest(index_code="BADCODE").normalized()
+    with pytest.raises(ValueError, match="parent_code"):
+        IndexClassifyRequest(parent_code="BAD").normalized()
+    normalized = IndexClassifyRequest(src="sw2021", level="l1", index_code="801050.si").normalized()
+    assert normalized.provider_params() == {"src": "SW2021", "level": "L1", "index_code": "801050.SI"}
+    assert not ({"trade_date", "start_date", "end_date"} & set(normalized.provider_params()))
+
+
+def test_index_classify_rejects_rows_outside_the_requested_source() -> None:
+    instance = provider(FakeTransport([
+        TransportResponse(200, envelope([classify_row(src="SW2014")], fields=INDEX_CLASSIFY_TEST_FIELDS)),
+    ]))
+    with pytest.raises(ProviderProtocolError, match="another source"):
+        instance.fetch_index_classify(IndexClassifyRequest(src="SW2021"))
+    duplicate = provider(FakeTransport([
+        TransportResponse(200, envelope([classify_row(), classify_row()], fields=INDEX_CLASSIFY_TEST_FIELDS)),
+    ]))
+    with pytest.raises(ProviderProtocolError, match="duplicate"):
+        duplicate.fetch_index_classify(IndexClassifyRequest())
+
+
+def test_index_member_paginates_bounded_and_translates() -> None:
+    first_page = [member_row(f"{i:06d}.SZ", in_date="20200101") for i in range(1, 2001)]
+    second_page = [member_row("999999.SZ", in_date="20200102")]
+    transport = FakeTransport([
+        TransportResponse(200, envelope(first_page, fields=INDEX_MEMBER_TEST_FIELDS)),
+        TransportResponse(200, envelope(second_page, fields=INDEX_MEMBER_TEST_FIELDS)),
+    ])
+    result = provider(transport).fetch_index_member_all(IndexMemberAllRequest(is_new="Y"))
+    assert len(result.rows) == 2001
+    assert result.provenance.endpoint == "index_member_all"
+    assert [call[1]["params"]["offset"] for call in transport.calls] == [0, 2000]
+    assert all(call[1]["params"]["limit"] == 2000 for call in transport.calls)
+    assert all(call[1]["params"]["is_new"] == "Y" for call in transport.calls)
+
+
+def test_index_member_request_rejects_invalid_input_and_has_no_date_filter() -> None:
+    with pytest.raises(ValueError, match="is_new"):
+        IndexMemberAllRequest(is_new="X").normalized()
+    with pytest.raises(ValueError, match="at most one"):
+        IndexMemberAllRequest(l1_code="801050.SI", l3_code="850531.SI").normalized()
+    with pytest.raises(ValueError, match="l1_code"):
+        IndexMemberAllRequest(l1_code="BAD").normalized()
+    with pytest.raises(ValueError, match="ts_code"):
+        IndexMemberAllRequest(ts_code="BAD").normalized()
+    normalized = IndexMemberAllRequest(l3_code="850531.si", is_new="n").normalized()
+    assert normalized.provider_params() == {"is_new": "N", "l3_code": "850531.SI"}
+    assert not ({"trade_date", "start_date", "end_date"} & set(normalized.provider_params()))
+
+
+def test_index_member_rejects_invalid_provider_rows() -> None:
+    def instance_with(items: list[list[object]]) -> TushareProvider:
+        return provider(FakeTransport([
+            TransportResponse(200, envelope(items, fields=INDEX_MEMBER_TEST_FIELDS)),
+        ]))
+
+    with pytest.raises(ProviderProtocolError, match="out_date before in_date"):
+        instance_with([member_row(out_date="20080101", is_new="N")]).fetch_index_member_all(
+            IndexMemberAllRequest(is_new="N")
+        )
+    with pytest.raises(ProviderProtocolError, match="current index-member with an out_date"):
+        instance_with([member_row(out_date="20210101", is_new="Y")]).fetch_index_member_all(
+            IndexMemberAllRequest(is_new="Y")
+        )
+    with pytest.raises(ProviderProtocolError, match="is_new outside the request"):
+        instance_with([member_row(is_new="N", out_date="20210101")]).fetch_index_member_all(
+            IndexMemberAllRequest(is_new="Y")
+        )
+    with pytest.raises(ProviderProtocolError, match="duplicate"):
+        row = member_row()
+        instance_with([row, row]).fetch_index_member_all(IndexMemberAllRequest(is_new="Y"))
+
+
+def test_index_classify_accepts_a_null_publish_flag() -> None:
+    instance = provider(FakeTransport([
+        TransportResponse(200, envelope([classify_row(is_pub=None)], fields=INDEX_CLASSIFY_TEST_FIELDS)),
+    ]))
+    result = instance.fetch_index_classify(IndexClassifyRequest(src="SW2021"))
+    assert result.rows[0].is_pub is None
+
+
+def test_index_member_quarantines_non_canonical_identities_without_failing() -> None:
+    instance = provider(FakeTransport([
+        TransportResponse(200, envelope(
+            [member_row("601899.SH"), member_row("T00018.SH", in_date="20100101")],
+            fields=INDEX_MEMBER_TEST_FIELDS,
+        )),
+    ]))
+    result = instance.fetch_index_member_all(IndexMemberAllRequest(is_new="Y"))
+    assert [row.ts_code for row in result.rows] == ["601899.SH"]
+    assert result.quarantined == ({"ts_code": "T00018.SH", "reason": "non_canonical_symbol"},)
+    assert result.provenance.row_count == 2

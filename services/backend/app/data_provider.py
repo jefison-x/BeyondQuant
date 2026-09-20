@@ -122,6 +122,30 @@ INDEX_DAILY_BASIC_UNITS = {
 }
 MAX_INDEX_DAILY_BASIC_ROWS = 3_000
 _MAX_INDEX_DAILY_BASIC_RANGE_DAYS = 400
+# Tushare Shenwan industry classification. ``index_classify`` is versioned by
+# ``src`` (SW2014/SW2021) and exposes no dates; ``index_member_all`` exposes the
+# only point-in-time signal: an explicit [in_date, out_date) interval per
+# (constituent, third-level industry). The endpoint has NO as-of date parameter:
+# an unknown ``trade_date``/``start_date`` is silently ignored and returns the
+# current constituents, so BYQ never sends a date filter and reconstructs
+# point-in-time membership locally from the persisted intervals instead.
+INDEX_CLASSIFY_FIELDS = (
+    "index_code", "industry_name", "parent_code", "level", "industry_code",
+    "is_pub", "src",
+)
+INDEX_CLASSIFY_SOURCES = ("SW2014", "SW2021")
+INDEX_CLASSIFY_LEVELS = ("L1", "L2", "L3")
+MAX_INDEX_CLASSIFY_ROWS = 1_000
+INDEX_MEMBER_ALL_FIELDS = (
+    "l1_code", "l1_name", "l2_code", "l2_name", "l3_code", "l3_name",
+    "ts_code", "name", "in_date", "out_date", "is_new",
+)
+INDEX_MEMBER_ALL_FLAGS = ("Y", "N")
+MAX_INDEX_MEMBER_ALL_ROWS = 40_000
+_INDEX_MEMBER_PAGE_SIZE = 2_000
+_MAX_INDEX_MEMBER_PAGES = 40
+_SW_INDUSTRY_PATTERN = re.compile(r"^[0-9]{6}\.SI$")
+_SW_PARENT_PATTERN = re.compile(r"^[0-9]{6}$")
 _SYMBOL_PATTERN = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
 _INDEX_SYMBOL_PATTERN = re.compile(r"^[0-9A-Z]{6,12}\.(?:SH|SZ|CSI)$")
 _TUSHARE_HISTORICAL_ALIAS_PATTERN = re.compile(r"^T[0-9]{6}\.(?:SH|SZ|BJ)$")
@@ -194,6 +218,22 @@ def _validate_date(value: str | None, field: str) -> str | None:
     except ValueError as error:
         raise ValueError(f"{field} is not a calendar date") from error
     return value
+
+
+def _sw_industry_code(value: object, field: str) -> str | None:
+    if value is None or str(value).strip() == "":
+        return None
+    code = str(value).strip().upper()
+    if not _SW_INDUSTRY_PATTERN.fullmatch(code):
+        raise ValueError(f"{field} must match NNNNNN.SI")
+    return code
+
+
+def _member_symbol(value: object, field: str) -> str:
+    symbol = str(value).strip().upper()
+    if not (_SYMBOL_PATTERN.fullmatch(symbol) or _TUSHARE_HISTORICAL_ALIAS_PATTERN.fullmatch(symbol)):
+        raise ValueError(f"{field} must match NNNNNN.SH/SZ/BJ or a T-prefixed historical alias")
+    return symbol
 
 
 @dataclass(frozen=True)
@@ -1015,6 +1055,16 @@ def _fund_values(fields: list[str], row: list[Any], contract: tuple[str, ...], l
     return values
 
 
+def _contract_values(fields: list[str], row: list[Any], contract: tuple[str, ...], label: str) -> dict[str, Any]:
+    try:
+        values = dict(zip(fields, row, strict=True))
+    except ValueError as error:
+        raise ProviderProtocolError(f"provider {label} row does not match its fields") from error
+    if any(field not in values for field in contract):
+        raise ProviderProtocolError(f"provider response omitted {label} fields")
+    return values
+
+
 @dataclass(frozen=True)
 class FundBasicItem:
     ts_code: str
@@ -1208,6 +1258,204 @@ class IndexDailyBasic:
 class IndexDailyBasicResult:
     rows: tuple[IndexDailyBasic, ...]
     provenance: Provenance
+
+
+@dataclass(frozen=True)
+class IndexClassifyRequest:
+    """Closed request for Tushare ``index_classify`` Shenwan industry codes.
+
+    The endpoint is bounded reference data (511 SW2021 rows) with no dates and
+    no pagination. It rejects any attempt to pass a date filter.
+    """
+
+    src: str | None = None
+    level: str | None = None
+    index_code: str | None = None
+    parent_code: str | None = None
+
+    def normalized(self) -> "IndexClassifyRequest":
+        src = None if self.src is None else str(self.src).strip().upper()
+        if src is not None and src not in INDEX_CLASSIFY_SOURCES:
+            raise ValueError("index classify src must be SW2014 or SW2021")
+        level = None if self.level is None else str(self.level).strip().upper()
+        if level is not None and level not in INDEX_CLASSIFY_LEVELS:
+            raise ValueError("index classify level must be L1, L2 or L3")
+        index_code = _sw_industry_code(self.index_code, "index_code")
+        parent_code = None
+        if self.parent_code is not None and str(self.parent_code).strip():
+            parent_code = str(self.parent_code).strip()
+            if parent_code != "0" and not _SW_PARENT_PATTERN.fullmatch(parent_code):
+                raise ValueError("index classify parent_code must be 0 or a 6-digit industry code")
+        return IndexClassifyRequest(src, level, index_code, parent_code)
+
+    def provider_params(self) -> dict[str, str]:
+        params: dict[str, str] = {}
+        for key in ("src", "level", "index_code", "parent_code"):
+            value = getattr(self, key)
+            if value is not None:
+                params[key] = value
+        return params
+
+
+@dataclass(frozen=True)
+class IndexClassify:
+    src: str
+    index_code: str
+    industry_name: str
+    parent_code: str
+    level: str
+    industry_code: str
+    is_pub: str | None
+
+    @classmethod
+    def from_row(cls, fields: list[str], row: list[Any]) -> "IndexClassify":
+        values = _contract_values(fields, row, INDEX_CLASSIFY_FIELDS, "index-classify")
+        index_code = str(values["index_code"] or "").strip().upper()
+        if not _SW_INDUSTRY_PATTERN.fullmatch(index_code):
+            raise ProviderProtocolError("provider returned an invalid index-classify code")
+        level = str(values["level"] or "").strip().upper()
+        if level not in INDEX_CLASSIFY_LEVELS:
+            raise ProviderProtocolError("provider returned an invalid index-classify level")
+        src = str(values["src"] or "").strip().upper()
+        if src not in INDEX_CLASSIFY_SOURCES:
+            raise ProviderProtocolError("provider returned an invalid index-classify source")
+        is_pub_value = values.get("is_pub")
+        is_pub = None if is_pub_value is None or str(is_pub_value).strip() == "" else str(is_pub_value).strip()
+        if is_pub not in {None, "0", "1"}:
+            raise ProviderProtocolError("provider returned an invalid index-classify publish flag")
+        parent_code = str(values["parent_code"] or "").strip()
+        if not parent_code or (parent_code != "0" and not _SW_PARENT_PATTERN.fullmatch(parent_code)):
+            raise ProviderProtocolError("provider returned an invalid index-classify parent code")
+        return cls(
+            src, index_code,
+            _bounded_provider_text(values["industry_name"], "industry_name", required=True),  # type: ignore[arg-type]
+            parent_code, level,
+            _bounded_provider_text(values["industry_code"], "industry_code", required=True),  # type: ignore[arg-type]
+            is_pub,
+        )
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "src": self.src, "index_code": self.index_code, "industry_name": self.industry_name,
+            "parent_code": self.parent_code, "level": self.level,
+            "industry_code": self.industry_code, "is_pub": self.is_pub,
+        }
+
+
+@dataclass(frozen=True)
+class IndexClassifyResult:
+    rows: tuple[IndexClassify, ...]
+    provenance: Provenance
+
+
+@dataclass(frozen=True)
+class IndexMemberAllRequest:
+    """Closed request for Tushare ``index_member_all`` Shenwan memberships.
+
+    Point-in-time membership cannot be requested: the provider accepts no
+    as-of date and silently ignores date-like parameters. This contract
+    deliberately exposes no date field and always selects at least one
+    ``is_new`` snapshot (``Y`` current, ``N`` removed) so historical dates can
+    only be reconstructed locally from persisted intervals.
+    """
+
+    l1_code: str | None = None
+    l2_code: str | None = None
+    l3_code: str | None = None
+    ts_code: str | None = None
+    is_new: str = "Y"
+
+    def normalized(self) -> "IndexMemberAllRequest":
+        l1 = _sw_industry_code(self.l1_code, "l1_code")
+        l2 = _sw_industry_code(self.l2_code, "l2_code")
+        l3 = _sw_industry_code(self.l3_code, "l3_code")
+        ts_code = None
+        if self.ts_code is not None and str(self.ts_code).strip():
+            ts_code = _member_symbol(self.ts_code, "index member ts_code")
+        selectors = [value for value in (l1, l2, l3, ts_code) if value is not None]
+        if len(selectors) > 1:
+            raise ValueError("index member accepts at most one industry or constituent selector")
+        is_new = str(self.is_new).strip().upper()
+        if is_new not in INDEX_MEMBER_ALL_FLAGS:
+            raise ValueError("index member is_new must be Y or N")
+        return IndexMemberAllRequest(l1, l2, l3, ts_code, is_new)
+
+    def provider_params(self) -> dict[str, str]:
+        normalized = self.normalized()
+        params: dict[str, str] = {"is_new": normalized.is_new}
+        for key in ("l1_code", "l2_code", "l3_code", "ts_code"):
+            value = getattr(normalized, key)
+            if value is not None:
+                params[key] = value
+        return params
+
+
+@dataclass(frozen=True)
+class IndexMember:
+    l1_code: str
+    l1_name: str
+    l2_code: str
+    l2_name: str
+    l3_code: str
+    l3_name: str
+    ts_code: str
+    name: str
+    in_date: str
+    out_date: str | None
+    is_new: str
+
+    @property
+    def interval_sha256(self) -> str:
+        return sha256("|".join((
+            self.ts_code, self.l3_code, self.in_date, self.out_date or "",
+        )).encode("utf-8")).hexdigest()
+
+    @classmethod
+    def from_row(cls, fields: list[str], row: list[Any]) -> "IndexMember":
+        values = _contract_values(fields, row, INDEX_MEMBER_ALL_FIELDS, "index-member")
+        for level in ("l1_code", "l2_code", "l3_code"):
+            code = str(values[level] or "").strip().upper()
+            if not _SW_INDUSTRY_PATTERN.fullmatch(code):
+                raise ProviderProtocolError(f"provider returned an invalid index-member {level}")
+            values[level] = code
+        ts_code = str(values["ts_code"] or "").strip().upper()
+        if not (_SYMBOL_PATTERN.fullmatch(ts_code) or _TUSHARE_HISTORICAL_ALIAS_PATTERN.fullmatch(ts_code)):
+            raise ProviderProtocolError("provider returned an invalid index-member ts_code")
+        in_date = _provider_date(values["in_date"], "in_date")
+        out_date = _optional_provider_date(values["out_date"], "out_date")
+        if out_date is not None and out_date < in_date:
+            raise ProviderProtocolError("provider returned an index-member interval with out_date before in_date")
+        is_new = str(values["is_new"] or "").strip().upper()
+        if is_new not in INDEX_MEMBER_ALL_FLAGS:
+            raise ProviderProtocolError("provider returned an invalid index-member is_new flag")
+        if is_new == "Y" and out_date is not None:
+            raise ProviderProtocolError("provider returned a current index-member with an out_date")
+        return cls(
+            values["l1_code"],
+            _bounded_provider_text(values["l1_name"], "l1_name", required=True),  # type: ignore[arg-type]
+            values["l2_code"],
+            _bounded_provider_text(values["l2_name"], "l2_name", required=True),  # type: ignore[arg-type]
+            values["l3_code"],
+            _bounded_provider_text(values["l3_name"], "l3_name", required=True),  # type: ignore[arg-type]
+            ts_code,
+            _bounded_provider_text(values["name"], "name", required=True),  # type: ignore[arg-type]
+            in_date, out_date, is_new,
+        )
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "l1_code": self.l1_code, "l1_name": self.l1_name, "l2_code": self.l2_code,
+            "l2_name": self.l2_name, "l3_code": self.l3_code, "l3_name": self.l3_name,
+            "ts_code": self.ts_code, "name": self.name, "in_date": self.in_date,
+            "out_date": self.out_date, "is_new": self.is_new,
+        }
+
+
+@dataclass(frozen=True)
+class IndexMemberAllResult:
+    rows: tuple[IndexMember, ...]
+    provenance: Provenance
+    quarantined: tuple[dict[str, Any], ...] = ()
 
 
 class TushareProvider:
@@ -1800,4 +2048,86 @@ class TushareProvider:
             raise ProviderProtocolError("provider returned duplicate index-daily-basic rows")
         return IndexDailyBasicResult(
             tuple(sorted(items, key=lambda item: (item.trade_date, item.ts_code))), provenance,
+        )
+
+    def fetch_index_classify(self, request: IndexClassifyRequest) -> IndexClassifyResult:
+        normalized = request.normalized()
+        fields, rows, provenance = self._fetch_bounded_dataset(
+            "index_classify", normalized.provider_params(),
+            INDEX_CLASSIFY_FIELDS, MAX_INDEX_CLASSIFY_ROWS,
+        )
+        items = tuple(IndexClassify.from_row(fields, row) for row in rows)
+        if normalized.src is not None and any(item.src != normalized.src for item in items):
+            raise ProviderProtocolError("provider returned index classify rows for another source")
+        if normalized.level is not None and any(item.level != normalized.level for item in items):
+            raise ProviderProtocolError("provider returned index classify rows for another level")
+        if normalized.index_code is not None and any(item.index_code != normalized.index_code for item in items):
+            raise ProviderProtocolError("provider returned index classify rows for another code")
+        if normalized.parent_code is not None and any(item.parent_code != normalized.parent_code for item in items):
+            raise ProviderProtocolError("provider returned index classify rows for another parent")
+        if len({(item.src, item.index_code) for item in items}) != len(items):
+            raise ProviderProtocolError("provider returned duplicate index-classify rows")
+        return IndexClassifyResult(
+            tuple(sorted(items, key=lambda item: (item.src, item.index_code))), provenance,
+        )
+
+    def fetch_index_member_all(self, request: IndexMemberAllRequest) -> IndexMemberAllResult:
+        """Fetch one bounded ``is_new`` snapshot, paging ``offset``/``limit``.
+
+        The provider caps a page at 2000 rows and has no as-of date parameter,
+        so callers must request both ``is_new`` snapshots and reconstruct
+        point-in-time membership locally.
+        """
+        normalized = request.normalized()
+        if not self._config.token:
+            raise ProviderCredentialsMissing("Tushare credentials are not configured")
+        params = normalized.provider_params()
+        fingerprint = sha256(json.dumps(
+            {"api_name": "index_member_all", "params": params, "fields": INDEX_MEMBER_ALL_FIELDS},
+            sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()
+        items: list[IndexMember] = []
+        quarantined: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, str]] = set()
+        pages = 0
+        offset = 0
+        while True:
+            pages += 1
+            if pages > _MAX_INDEX_MEMBER_PAGES:
+                raise ProviderProtocolError("provider index_member_all pagination exceeded its bound")
+            fields, rows = self._request({
+                "api_name": "index_member_all", "token": self._config.token,
+                "params": {**params, "offset": offset, "limit": _INDEX_MEMBER_PAGE_SIZE},
+                "fields": ",".join(INDEX_MEMBER_ALL_FIELDS),
+            })
+            ts_index = fields.index("ts_code")
+            for row in rows:
+                raw_symbol = str(row[ts_index] or "").strip().upper()
+                if not (_SYMBOL_PATTERN.fullmatch(raw_symbol)
+                        or _TUSHARE_HISTORICAL_ALIAS_PATTERN.fullmatch(raw_symbol)):
+                    quarantined.append({"ts_code": raw_symbol, "reason": "non_canonical_symbol"})
+                    if len(quarantined) > MAX_QUARANTINED_SECURITY_MASTER_ROWS:
+                        raise ProviderProtocolError("provider returned too many quarantined index-member identities")
+                    continue
+                item = IndexMember.from_row(fields, row)
+                if item.is_new != normalized.is_new:
+                    raise ProviderProtocolError("provider returned an index-member is_new outside the request")
+                key = (item.ts_code, item.l3_code, item.in_date)
+                if key in seen:
+                    raise ProviderProtocolError("provider returned duplicate index-member intervals")
+                seen.add(key)
+                items.append(item)
+            if len(items) > MAX_INDEX_MEMBER_ALL_ROWS:
+                raise ProviderProtocolError("provider returned too many index-member rows")
+            if len(rows) < _INDEX_MEMBER_PAGE_SIZE:
+                break
+            offset += _INDEX_MEMBER_PAGE_SIZE
+        provenance = Provenance(
+            provider="tushare", endpoint="index_member_all", request_fingerprint=fingerprint,
+            retrieved_at=datetime.now(timezone.utc).isoformat(), cache_hit=False,
+            row_count=len(items) + len(quarantined),
+        )
+        return IndexMemberAllResult(
+            tuple(sorted(items, key=lambda item: (item.ts_code, item.l3_code, item.in_date))),
+            provenance, tuple(quarantined),
         )
