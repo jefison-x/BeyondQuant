@@ -76,7 +76,25 @@ fi
 
 PASS=0
 FAIL=0
-step() { printf '\n==> %s\n' "$1"; }
+# Low-noise, redacted-by-the-caller phase timing. This is measurement only: it
+# never changes selection, ordering or pass/fail, and the next required remote
+# verification produces the baseline without a dedicated Full run. Nested helper
+# functions must print informational lines with plain printf, never step(), so a
+# sub-message cannot close and misattribute its enclosing phase.
+CI_START_EPOCH="$(date +%s)"
+PHASE_NAME=""
+PHASE_START_EPOCH=0
+flush_phase_timing() {
+  [ -n "$PHASE_NAME" ] || return 0
+  printf '[byq-timing] phase="%s" seconds=%s\n' "$PHASE_NAME" "$(( $(date +%s) - PHASE_START_EPOCH ))"
+  PHASE_NAME=""
+}
+step() {
+  flush_phase_timing
+  PHASE_NAME="$1"
+  PHASE_START_EPOCH="$(date +%s)"
+  printf '\n==> %s\n' "$1"
+}
 ok()  { printf '    [PASS] %s\n' "$1"; PASS=$((PASS+1)); }
 bad() { printf '    [FAIL] %s\n' "$1"; FAIL=$((FAIL+1)); }
 
@@ -172,6 +190,9 @@ cleanup_on_exit() {
     [ "$KEEP_POSTGRES" -eq 0 ] || cleanup_args+=(--keep-postgres)
     scripts/ci/cleanup-resources.sh "${cleanup_args[@]}" || exit_code=1
   fi
+  flush_phase_timing
+  printf '[byq-timing] total seconds=%s exit=%s\n' \
+    "$(( $(date +%s) - CI_START_EPOCH ))" "$exit_code"
   exit "$exit_code"
 }
 trap cleanup_on_exit EXIT
@@ -221,7 +242,7 @@ ensure_clean_postgres() {
   docker network inspect "$CI_PG_NET" >/dev/null 2>&1 || \
     docker network create --label "byq.ci.scope=$BYQ_CI_SCOPE" "$CI_PG_NET" >/dev/null
   if ! docker inspect "$CI_PG" >/dev/null 2>&1; then
-    step "postgres: creating clean CI instance ($CI_PG)"
+    printf '\n==> postgres: creating clean CI instance (%s)\n' "$CI_PG"
     docker volume create --label "byq.ci.scope=$BYQ_CI_SCOPE" "$CI_PG_VOL" >/dev/null
     docker run -d --name "$CI_PG" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET" \
       -e POSTGRES_DB=byq_domain -e POSTGRES_USER=byq_app -e POSTGRES_PASSWORD=byq-app-dev \
@@ -238,7 +259,7 @@ ensure_clean_postgres() {
 ensure_ci_backend() {
   RESOURCES_TOUCHED=1
   if ! docker inspect "$CI_BACKEND" >/dev/null 2>&1; then
-    step "backend: starting live MCP contract dependency ($CI_BACKEND)"
+    printf '\n==> backend: starting live MCP contract dependency (%s)\n' "$CI_BACKEND"
     docker run -d --name "$CI_BACKEND" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET" --network-alias backend \
       -e BYQ_DATABASE_URL="postgresql+psycopg://byq_test:byq-test-dev@$CI_PG:5432/byq_domain_test" \
       -e PYTHONDONTWRITEBYTECODE=1 \
@@ -415,7 +436,8 @@ check_backend() {
       -e BYQ_WEB_EVIDENCE_PROVENANCE_POLICY=/opt/byq-evidence/web-evidence-provenance.json \
       -v "$REPO_ROOT/config/dsh/generated/web-evidence-provenance.json:/opt/byq-evidence/web-evidence-provenance.json:ro" \
       -v "$REPO_ROOT/config/dsh/generated/dsh-0.1.2rc1.web-evidence-provenance.json:/opt/byq-evidence/dsh-0.1.2rc1.web-evidence-provenance.json:ro" \
-      "$(ci_image backend)" python -m pytest -q -p no:cacheprovider; then
+      "$(ci_image backend)" python -m pytest -q -p no:cacheprovider \
+      --durations=20 --durations-min=1.0; then
     ok "backend tests"; else bad "backend tests"; fi
   if [ -d "$REPO_ROOT/workers/feedback-publisher/tests" ]; then
     if run_interruptible docker run --rm --name "$CI_BACKEND_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" \
@@ -459,7 +481,8 @@ check_gateway() {
   if run_interruptible docker run --rm --name "$CI_GATEWAY_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/gateway:/app" \
       -v "$REPO_ROOT/packages:/app/packages" -w /app \
-      "$(ci_image gateway)" python -m pytest -q -p no:cacheprovider; then
+      "$(ci_image gateway)" python -m pytest -q -p no:cacheprovider \
+      --durations=10 --durations-min=1.0; then
     ok "gateway tests"; else bad "gateway tests"; fi
 }
 
@@ -476,7 +499,8 @@ check_runtime() {
       -v "$REPO_ROOT/plugins/dsh-byq/runtime:/opt/byq/runtime:ro" \
       -v "$REPO_ROOT/plugins/dsh-byq/skills:/opt/dsh/bundles/dsh-byq/skills:ro" \
       -e BYQ_DSH_PROCESS_OWNERSHIP=session \
-      "$(ci_image runtime-adapter)" python3 -m pytest -q -p no:cacheprovider; then
+      "$(ci_image runtime-adapter)" python3 -m pytest -q -p no:cacheprovider \
+      --durations=10 --durations-min=1.0; then
     ok "runtime-adapter tests"; else bad "runtime-adapter tests"; fi
 }
 
