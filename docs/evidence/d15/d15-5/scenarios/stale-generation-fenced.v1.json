@@ -1,0 +1,15 @@
+{
+  "id": "stale-generation-fenced",
+  "result": "PASS",
+  "assertions": {
+    "stale_generation_rejected": true,
+    "stale_epoch_rejected": true,
+    "current_token_still_valid": true
+  },
+  "observation": {
+    "staleGenerationError": "STALE_GENERATION",
+    "staleEpochError": "STALE_EPOCH",
+    "currentGeneration": 1,
+    "currentEpoch": 1
+  }
+}

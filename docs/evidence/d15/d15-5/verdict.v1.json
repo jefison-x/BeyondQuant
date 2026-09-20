@@ -1,0 +1,417 @@
+{
+  "all_pass": false,
+  "candidate": {
+    "npm_packages": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1",
+    "release": "dsh-0.1.5rc1"
+  },
+  "cross_checks": [
+    {
+      "assertions": {
+        "first_client_viewport_marker_once": true,
+        "marker_distinct_value": true,
+        "no_loss": true,
+        "rebind_send_delta_omits_old_marker": true,
+        "scrollback_has_marker_once": true,
+        "second_marker_once": true
+      },
+      "assertions_ok": true,
+      "id": "unique-marker-once",
+      "observation_keys": [
+        "firstRunPid",
+        "firstRunSessionId",
+        "marker1",
+        "marker1InFirstViewport",
+        "marker1InRebindSendDelta",
+        "marker1InScrollback",
+        "marker2",
+        "marker2InRebindSendDelta",
+        "marker2InScrollback",
+        "rebindClientProcess",
+        "secondRunPid",
+        "secondRunSessionId"
+      ],
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "current_token_still_valid": true,
+        "stale_epoch_rejected": true,
+        "stale_generation_rejected": true
+      },
+      "assertions_ok": true,
+      "id": "stale-generation-fenced",
+      "observation_keys": [
+        "currentEpoch",
+        "currentGeneration",
+        "staleEpochError",
+        "staleGenerationError"
+      ],
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "attachment_loss_keeps_pty_alive": true,
+        "attachment_registry_minted": true,
+        "ptty_reachable_only_via_attachment": true,
+        "real_external_pty": true,
+        "rebind_rejected_after_attachment_loss": true,
+        "session_kill_ends_pty": true
+      },
+      "assertions_ok": true,
+      "id": "pty-attachment-separation",
+      "observation_keys": [
+        "attachmentId",
+        "attachmentPresentBefore",
+        "detachAccepted",
+        "pid",
+        "ptyAliveAfterAttachmentLoss",
+        "ptyCmdlineBefore",
+        "rebindErrorAfterDetach",
+        "sessionId",
+        "sessionKillEndedPty"
+      ],
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "foreign_owner_read_rejected": true,
+        "foreign_owner_send_rejected": true,
+        "foreign_principal_rejected": true
+      },
+      "assertions_ok": true,
+      "id": "permission-boundary",
+      "observation_keys": [
+        "foreignPrincipalError",
+        "foreignReadError",
+        "foreignSendError"
+      ],
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "unknown_session_rejected": true,
+        "wrong_session_does_not_reach_real_pty": true
+      },
+      "assertions_ok": true,
+      "id": "wrong-terminal-rejected",
+      "observation_keys": [
+        "errorCode",
+        "realSessionId",
+        "requestedSessionId"
+      ],
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "all_recorded_pids_dead": true,
+        "kill_ends_pty": true,
+        "runtime_shutdown_no_orphans": true
+      },
+      "assertions_ok": true,
+      "id": "cleanup-no-orphans",
+      "observation_keys": [
+        "killedPid",
+        "killedSessionId",
+        "orphanCount",
+        "pidAliveAfterKill",
+        "recordedPidCount",
+        "runtimeShutdownOrphans"
+      ],
+      "result": "PASS"
+    }
+  ],
+  "cross_checks_ok": true,
+  "evidence_class": "native-runtime-isolated",
+  "existence_dimensions": [
+    "pty_process",
+    "attachment",
+    "io_rebind",
+    "terminal_identity"
+  ],
+  "exit_code": 1,
+  "failed_fault_rows": [],
+  "failures": [],
+  "fault_rows": [
+    {
+      "assertions": {
+        "attachment_present": true,
+        "identity_stable": true,
+        "io_rebind_ok": true,
+        "no_false_reattach": true,
+        "pty_process_present": true,
+        "same_attachment": true,
+        "same_pty_pid": true,
+        "same_session": true
+      },
+      "assertions_ok": true,
+      "dimensions": {
+        "attachment": "present",
+        "io_rebind": "ok",
+        "pty_process": "present",
+        "terminal_identity": "stable"
+      },
+      "id": "page-refresh",
+      "observation_keys": [
+        "attachmentPresent",
+        "description",
+        "expectedAttachmentId",
+        "expectedPid",
+        "expectedSessionId",
+        "fabricatedReattach",
+        "identityStable",
+        "ioRebindOk",
+        "marker1CountInScrollback",
+        "nativeSessions",
+        "observedAttachmentId",
+        "observedPid",
+        "observedSessionId",
+        "ptyCmdline",
+        "ptyProcessPresent",
+        "sameAttachment",
+        "samePtyPid",
+        "sameSession",
+        "status"
+      ],
+      "required": true,
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "attachment_present": true,
+        "identity_stable": true,
+        "io_rebind_ok": true,
+        "no_false_reattach": true,
+        "pty_process_present": true,
+        "same_attachment": true,
+        "same_pty_pid": true,
+        "same_session": true
+      },
+      "assertions_ok": true,
+      "dimensions": {
+        "attachment": "present",
+        "io_rebind": "ok",
+        "pty_process": "present",
+        "terminal_identity": "stable"
+      },
+      "id": "browser-disconnect",
+      "observation_keys": [
+        "attachmentPresent",
+        "description",
+        "expectedAttachmentId",
+        "expectedPid",
+        "expectedSessionId",
+        "fabricatedReattach",
+        "identityStable",
+        "ioRebindOk",
+        "marker1CountInScrollback",
+        "nativeSessions",
+        "observedAttachmentId",
+        "observedPid",
+        "observedSessionId",
+        "ptyCmdline",
+        "ptyProcessPresent",
+        "sameAttachment",
+        "samePtyPid",
+        "sameSession",
+        "status"
+      ],
+      "required": true,
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "attachment_present": true,
+        "identity_stable": true,
+        "io_rebind_ok": true,
+        "no_false_reattach": true,
+        "pty_process_present": true,
+        "same_attachment": true,
+        "same_pty_pid": true,
+        "same_session": true
+      },
+      "assertions_ok": true,
+      "dimensions": {
+        "attachment": "present",
+        "io_rebind": "ok",
+        "pty_process": "present",
+        "terminal_identity": "stable"
+      },
+      "id": "frontend-restart",
+      "observation_keys": [
+        "attachmentPresent",
+        "description",
+        "expectedAttachmentId",
+        "expectedPid",
+        "expectedSessionId",
+        "fabricatedReattach",
+        "identityStable",
+        "ioRebindOk",
+        "marker1CountInScrollback",
+        "nativeSessions",
+        "observedAttachmentId",
+        "observedPid",
+        "observedSessionId",
+        "ptyCmdline",
+        "ptyProcessPresent",
+        "sameAttachment",
+        "samePtyPid",
+        "sameSession",
+        "status"
+      ],
+      "required": true,
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "attachment_present": true,
+        "identity_stable": true,
+        "io_rebind_ok": true,
+        "no_false_reattach": true,
+        "pty_process_present": true,
+        "same_attachment": true,
+        "same_pty_pid": true,
+        "same_session": true
+      },
+      "assertions_ok": true,
+      "dimensions": {
+        "attachment": "present",
+        "io_rebind": "ok",
+        "pty_process": "present",
+        "terminal_identity": "stable"
+      },
+      "id": "gateway-restart",
+      "observation_keys": [
+        "attachmentPresent",
+        "description",
+        "expectedAttachmentId",
+        "expectedPid",
+        "expectedSessionId",
+        "fabricatedReattach",
+        "identityStable",
+        "ioRebindOk",
+        "marker1CountInScrollback",
+        "nativeSessions",
+        "observedAttachmentId",
+        "observedPid",
+        "observedSessionId",
+        "ptyCmdline",
+        "ptyProcessPresent",
+        "sameAttachment",
+        "samePtyPid",
+        "sameSession",
+        "status"
+      ],
+      "required": true,
+      "result": "PASS"
+    },
+    {
+      "assertions": {},
+      "assertions_ok": false,
+      "dimensions": {
+        "attachment": "absent",
+        "io_rebind": "rejected",
+        "pty_process": "absent",
+        "terminal_identity": "lost"
+      },
+      "id": "adapter-restart",
+      "not_run_reason": "BYQ runtime-adapter restart aborts the DSH runtime process. Native DSH terminal sessions are process-local and the committed BYQ composition exposes no TerminalAttachment rehydrate/reconnect surface, so a fresh adapter rejects the old attachment. Never a fabricated reattach.",
+      "required": true,
+      "result": "BLOCKED"
+    },
+    {
+      "assertions": {},
+      "assertions_ok": false,
+      "dimensions": {
+        "attachment": "absent",
+        "io_rebind": "rejected",
+        "pty_process": "absent",
+        "terminal_identity": "lost"
+      },
+      "id": "dsh-runtime-restart",
+      "not_run_reason": "A restarted DSH runtime is a new process; native terminal sessions are documented process-local and no committed BYQ terminal wiring rebinds them. Rejected, never a fabricated reattach.",
+      "required": true,
+      "result": "BLOCKED"
+    },
+    {
+      "assertions": {},
+      "assertions_ok": false,
+      "dimensions": {
+        "attachment": "unknown",
+        "io_rebind": "unknown",
+        "pty_process": "unknown",
+        "terminal_identity": "unknown"
+      },
+      "id": "host-reboot",
+      "not_run_reason": "rebooting the maintainer host is not authorized; a container/adapter/process restart is not a host reboot",
+      "required": false,
+      "result": "NOT_RUN"
+    }
+  ],
+  "format_valid": true,
+  "llm_evidence_class": "not-applicable",
+  "negatives": [
+    {
+      "errorClass": null,
+      "errorCode": "STALE_GENERATION",
+      "kind": "stale-generation",
+      "rejected": true
+    },
+    {
+      "errorClass": null,
+      "errorCode": "STALE_EPOCH",
+      "kind": "stale-epoch",
+      "rejected": true
+    },
+    {
+      "errorClass": null,
+      "errorCode": "FOREIGN_SESSION",
+      "kind": "foreign-owner-send",
+      "rejected": true
+    },
+    {
+      "errorClass": null,
+      "errorCode": "FOREIGN_SESSION",
+      "kind": "foreign-owner-read",
+      "rejected": true
+    },
+    {
+      "errorClass": null,
+      "errorCode": "UNAUTHORIZED_PRINCIPAL",
+      "kind": "foreign-principal",
+      "rejected": true
+    },
+    {
+      "errorClass": null,
+      "errorCode": "NO_SESSION",
+      "kind": "unknown-terminal",
+      "rejected": true
+    }
+  ],
+  "negatives_ok": true,
+  "optional_coverage": {
+    "host-reboot": "NOT_RUN"
+  },
+  "optional_fault_row_count": 1,
+  "qualification_passed": false,
+  "reason_uncovered": [
+    "adapter-restart",
+    "dsh-runtime-restart"
+  ],
+  "required_coverage": {
+    "adapter-restart": "BLOCKED",
+    "browser-disconnect": "PASS",
+    "dsh-runtime-restart": "BLOCKED",
+    "frontend-restart": "PASS",
+    "gateway-restart": "PASS",
+    "page-refresh": "PASS"
+  },
+  "required_coverage_ok": false,
+  "required_fault_row_count": 6,
+  "schema_version": "byq-d15-5-verdict.v1",
+  "uncovered_fault_rows": [
+    "adapter-restart",
+    "dsh-runtime-restart",
+    "host-reboot"
+  ]
+}

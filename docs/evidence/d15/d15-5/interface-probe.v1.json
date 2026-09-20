@@ -1,0 +1,120 @@
+{
+  "schema_version": "byq-d15-5-interface-probe.v1",
+  "generated_at": "2026-09-20T11:46:35.624Z",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm": "0.1.5-rc.1"
+  },
+  "sources": {
+    "composition": "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml",
+    "patch": "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml",
+    "adapter": "services/runtime-adapter/app/main.py",
+    "compat": "services/runtime-adapter/app/compat/dsh_015.py",
+    "ledger": "docs/evidence/d15/compatibility-ledger.v1.json"
+  },
+  "interfaces": [
+    {
+      "interface": "native-pty-service",
+      "package": "@deepseek-ai/dsh-terminal",
+      "status": "REACHABLE_IN_CANDIDATE_CLOSURE",
+      "detail": "owner-scoped TerminalSessionService (ids/publication/authorization/cleanup); PTY mechanics are backend-owned",
+      "version": "0.1.5-rc.2"
+    },
+    {
+      "interface": "native-shell-backend",
+      "package": "@deepseek-ai/dsh-terminal-bash",
+      "status": "REACHABLE_IN_CANDIDATE_CLOSURE",
+      "detail": "registers the `shell` PTY backend type",
+      "version": "0.1.5-rc.2"
+    },
+    {
+      "interface": "native-terminal-tools",
+      "package": "@deepseek-ai/dsh-tool-terminal / @deepseek-ai/dsh-tool-bash-persistent",
+      "status": "BUNDLED_NOT_COMPOSED_BY_BYQ",
+      "detail": "bundled in the 0.1.5 closure but not composed by the committed BYQ composition",
+      "version": "0.1.5-rc.1"
+    },
+    {
+      "interface": "byq-composition-terminal-service",
+      "package": "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml",
+      "status": "NOT_COMPOSED",
+      "detail": "composes @deepseek-ai/dsh-terminal",
+      "fact": false
+    },
+    {
+      "interface": "byq-composition-shell-backend",
+      "package": "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml",
+      "status": "NOT_COMPOSED",
+      "detail": "composes @deepseek-ai/dsh-terminal-bash",
+      "fact": false
+    },
+    {
+      "interface": "byq-product-terminal-tool",
+      "package": "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml",
+      "status": "NOT_COMPOSED",
+      "detail": "composes a model-facing persistent terminal tool",
+      "fact": false
+    },
+    {
+      "interface": "byq-terminal-product-surface",
+      "package": "services/runtime-adapter/app/main.py",
+      "status": "ABSENT",
+      "detail": "runtime-adapter HTTP persistent-terminal/PTY attachment routes (create/attach/read/signal/kill/reconnect); the run-terminal-receipt route is AgentRun terminal-state evidence, not a PTY surface",
+      "route_count": 0,
+      "run_terminal_receipt_routes": 1
+    },
+    {
+      "interface": "byq-terminal-attachment-persistence",
+      "package": "services/runtime-adapter + PostgreSQL",
+      "status": "ABSENT",
+      "detail": "no BYQ TerminalAttachment identity/state/authorization/reconnect persisted anywhere in the committed tree"
+    },
+    {
+      "interface": "byq-permission-fencing-for-terminal",
+      "package": "services/runtime-adapter/app/compat/dsh_015.py",
+      "status": "INHERITS_0_1_2_OBSERVATION_ONLY",
+      "detail": "the 0.1.5 compat boundary still inherits the 0.1.2 observation contract; no terminal gate",
+      "fact": true
+    },
+    {
+      "interface": "cross-process-terminal-reattach",
+      "package": "native + BYQ",
+      "status": "BLOCKED",
+      "detail": "native sessions are documented process-local (do not survive a harness restart) and no committed BYQ wiring rehydrates/rebinds them; adapter/DSH restart therefore cannot rebind",
+      "native_documented_process_local": true
+    }
+  ],
+  "conclusions": {
+    "native_terminal_capability_present_in_candidate": true,
+    "native_sessions_documented_process_local": true,
+    "byq_composes_terminal_service": false,
+    "byq_exposes_terminal_surface": false,
+    "byq_run_terminal_receipt_routes": 1,
+    "byq_persists_terminal_attachment": false,
+    "byq_can_reattach_after_runtime_restart": false,
+    "byq_patch_disables_one_shot_bash_and_pwsh": true,
+    "compat_inherits_0_1_2": true,
+    "ledger_records_persistent_terminal": true,
+    "adapter_mentions_terminals": 1
+  },
+  "blocked_items": [
+    {
+      "id": "byq-terminal-product-surface",
+      "status": "BLOCKED",
+      "reason": "no committed BYQ runtime-adapter terminal routes or Gateable Product API terminal surface exist; adding one is a real architecture boundary change (ADR-0083, Proposed)",
+      "smallest_option": "BYQ TerminalAttachment lifecycle over the native owner-scoped ctx.terminals seam (R4), candidate-specific and reversible"
+    },
+    {
+      "id": "byq-adapter-restart-rebind",
+      "status": "BLOCKED",
+      "reason": "adapter restart aborts the DSH runtime; native sessions are process-local and BYQ has no TerminalAttachment rehydrate/reconnect path",
+      "smallest_option": "BYQ TerminalAttachment persistence + native session reattach where supported, with explicit lost/interrupted status and never a fabricated reattach"
+    },
+    {
+      "id": "dsh-runtime-restart-rebind",
+      "status": "BLOCKED",
+      "reason": "a restarted DSH runtime is a new process; native terminal sessions do not survive it",
+      "smallest_option": "confirmed by the native package contract; requires a BYQ attachment layer plus an explicit non-reattach/lost status"
+    }
+  ]
+}

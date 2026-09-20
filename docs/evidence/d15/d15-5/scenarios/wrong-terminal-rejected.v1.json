@@ -1,0 +1,13 @@
+{
+  "id": "wrong-terminal-rejected",
+  "result": "PASS",
+  "assertions": {
+    "unknown_session_rejected": true,
+    "wrong_session_does_not_reach_real_pty": true
+  },
+  "observation": {
+    "requestedSessionId": "pty-does-not-exist",
+    "errorCode": "NO_SESSION",
+    "realSessionId": "pty-1"
+  }
+}

@@ -1,14 +1,40 @@
 {
   "schema_version": "byq-d15-acceptance-matrix.v1",
   "generated_at": "2026-09-19",
-  "notes": "Acceptance criteria for D15-2..D15-G. D15-2 and D15-3 are PASS with committed evidence; D15-3R is PASS (scripted keyless provider); D15-4 is PARTIAL/BLOCKED with committed evidence (native continuable/fork seam qualified; child-crash and BYQ adapter-restart required items BLOCKED; host reboot NOT_RUN); D15-5/D15-G remain NOT_RUN. No criteria may be marked PASS without committed evidence. D15-2 PASS is FORMAT-LAYER migration evidence only (codec/catalog; no runtime/SessionHandle/lease, no goal/approval/result continuity). D15-3 PASS covers native persistence-layer session resume across a new OS process only, not BYQ runtime-level semantic recovery. Process recovery, original-goal preservation, domain-action at-most-once, approval validity and result traceability remain a required real isolated runtime qualification. R3_RESUME stays NO until D15-G.",
-  "result_vocabulary": ["NOT_RUN", "PASS", "FAIL", "BLOCKED"],
+  "notes": "Acceptance criteria for D15-2..D15-G. D15-2 and D15-3 are PASS with committed evidence; D15-3R is PASS (scripted keyless provider); D15-4 is PARTIAL/BLOCKED with committed evidence (native continuable/fork seam qualified; child-crash and BYQ adapter-restart required items BLOCKED; host reboot NOT_RUN); D15-5 is PARTIAL/BLOCKED with committed evidence (real native persistent terminal for four client-side fault rows and all cross-checks; adapter-restart and dsh-runtime-restart required items BLOCKED because native sessions are process-local and no BYQ TerminalAttachment wiring exists; host reboot NOT_RUN); D15-G remains NOT_RUN. No criteria may be marked PASS without committed evidence. D15-2 PASS is FORMAT-LAYER migration evidence only. D15-3 PASS covers native persistence-layer session resume across a new OS process only. D15-3R is a scripted keyless service-boundary pass. R3_RESUME stays NO until D15-G.",
+  "result_vocabulary": [
+    "NOT_RUN",
+    "PASS",
+    "FAIL",
+    "BLOCKED"
+  ],
   "requirements": {
     "schema_version": "byq-d15-2-requirements.v1",
     "source_index": "docs/evidence/d15/fixtures/sessions/index.v1.json",
-    "fixtures": ["f-normal", "f-completed", "f-interrupted", "f-compacted", "f-large", "f-subagent", "f-continuable", "f-forked", "f-old-lifecycle"],
-    "stages": ["read", "resume", "append", "close", "reopen"],
-    "fail_closed_cases": ["unknown-future-format", "unclassified-event", "malformed-header", "refused-surface-migration"]
+    "fixtures": [
+      "f-normal",
+      "f-completed",
+      "f-interrupted",
+      "f-compacted",
+      "f-large",
+      "f-subagent",
+      "f-continuable",
+      "f-forked",
+      "f-old-lifecycle"
+    ],
+    "stages": [
+      "read",
+      "resume",
+      "append",
+      "close",
+      "reopen"
+    ],
+    "fail_closed_cases": [
+      "unknown-future-format",
+      "unclassified-event",
+      "malformed-header",
+      "refused-surface-migration"
+    ]
   },
   "substages": [
     {
@@ -44,18 +70,66 @@
         "negative controls prove empty/missing/duplicate/unexpected/missing-evidence/single-stage/rejection faults fail while the pre-fix gate would pass"
       ],
       "criterion_results": [
-        {"criterion": "originals immutable; migrated copies separate and immutable once produced", "result": "PASS", "evidence": "fixtures/sessions/index.v1.json sha256 verified before and after the live harness run; harness copies each original to a fresh scratch directory and writes only session.v3.jsonl there"},
-        {"criterion": "0.1.2 historical -> migrate -> V3 -> read -> resume -> append -> close -> reopen succeeds", "result": "PASS", "evidence": "9/9 fixtures: read/resume/append/close/reopen pass (migration-results.v3.json summary.all_post_migration_stages_pass=true)"},
-        {"criterion": "migration failure is never silently treated as a new session", "result": "PASS", "evidence": "fail-closed.v3.json cases record treated_as_new_session=false and successor_generation_written=false for every refusal; committed fixtures preserve their source session id"},
-        {"criterion": "event identity/order and terminal evidence preserved", "result": "PASS", "evidence": "sequence_continuity=true and missing_from_target=[] for every fixture; interrupted and compacted terminal evidence retained"},
-        {"criterion": "fork inheritedEventCount/isSeeded preserved", "result": "PASS", "evidence": "f-forked isSeeded=true, inherited cut marker seq 7 maps to target inheritedEventCount 9"},
-        {"criterion": "downgrade feasibility explicitly recorded (even when not downgradable)", "result": "PASS", "evidence": "9/9 fixtures downgrade.feasible=false with released-v2 codec and v2-max chain refusals recorded"},
-        {"criterion": "unknown/future format version fails closed with the documented refusal", "result": "PASS", "evidence": "unknown-future-format surfaces SessionFormatUnsupportedMigrationError; malformed-header reports catalog status malformed"},
-        {"criterion": "the verdict validates the required fixture set (count/uniqueness/no missing/extra) and rejection set from the single acceptance-matrix manifest", "result": "PASS", "evidence": "verdict.v3.json manifest_conformance=true over 9 unique fixtures and 4 unique rejection cases sourced from acceptance-matrix.v1.json requirements; migration_verdict_selfcheck proves empty/missing/duplicate/unexpected all fail"},
-        {"criterion": "every required stage (read/resume/append/close/reopen) has an explicit success check", "result": "PASS", "evidence": "verdict.v3.json stage_states=true checks each of read/resume/append/close/reopen per fixture; stage_failure negative control fails the gate"},
-        {"criterion": "missing required evidence is a failure, never an empty-default pass", "result": "PASS", "evidence": "verdict.v3.json has no empty-default pass path; missing_evidence negative control deletes message_id_preservation and the gate fails id_continuity/append_reopen"},
-        {"criterion": "the verdict fails on any broken invariant, rejection case or blocker and the process exit code reflects it", "result": "PASS", "evidence": "verdict.v3.json: all_pass=true, exit_code=0; migration_verdict.mjs maps all_pass to the process exit code"},
-        {"criterion": "negative controls prove empty/missing/duplicate/unexpected/missing-evidence/single-stage/rejection faults fail while the pre-fix gate would pass", "result": "PASS", "evidence": "negative-controls.v3.json: 16 controls all pass; the pre-fix repro computeVerdict([], {cases:[one valid]}) observed all_pass=true/exit_code=0 while the fixed verdict returns all_pass=false/exit_code=1"}
+        {
+          "criterion": "originals immutable; migrated copies separate and immutable once produced",
+          "result": "PASS",
+          "evidence": "fixtures/sessions/index.v1.json sha256 verified before and after the live harness run; harness copies each original to a fresh scratch directory and writes only session.v3.jsonl there"
+        },
+        {
+          "criterion": "0.1.2 historical -> migrate -> V3 -> read -> resume -> append -> close -> reopen succeeds",
+          "result": "PASS",
+          "evidence": "9/9 fixtures: read/resume/append/close/reopen pass (migration-results.v3.json summary.all_post_migration_stages_pass=true)"
+        },
+        {
+          "criterion": "migration failure is never silently treated as a new session",
+          "result": "PASS",
+          "evidence": "fail-closed.v3.json cases record treated_as_new_session=false and successor_generation_written=false for every refusal; committed fixtures preserve their source session id"
+        },
+        {
+          "criterion": "event identity/order and terminal evidence preserved",
+          "result": "PASS",
+          "evidence": "sequence_continuity=true and missing_from_target=[] for every fixture; interrupted and compacted terminal evidence retained"
+        },
+        {
+          "criterion": "fork inheritedEventCount/isSeeded preserved",
+          "result": "PASS",
+          "evidence": "f-forked isSeeded=true, inherited cut marker seq 7 maps to target inheritedEventCount 9"
+        },
+        {
+          "criterion": "downgrade feasibility explicitly recorded (even when not downgradable)",
+          "result": "PASS",
+          "evidence": "9/9 fixtures downgrade.feasible=false with released-v2 codec and v2-max chain refusals recorded"
+        },
+        {
+          "criterion": "unknown/future format version fails closed with the documented refusal",
+          "result": "PASS",
+          "evidence": "unknown-future-format surfaces SessionFormatUnsupportedMigrationError; malformed-header reports catalog status malformed"
+        },
+        {
+          "criterion": "the verdict validates the required fixture set (count/uniqueness/no missing/extra) and rejection set from the single acceptance-matrix manifest",
+          "result": "PASS",
+          "evidence": "verdict.v3.json manifest_conformance=true over 9 unique fixtures and 4 unique rejection cases sourced from acceptance-matrix.v1.json requirements; migration_verdict_selfcheck proves empty/missing/duplicate/unexpected all fail"
+        },
+        {
+          "criterion": "every required stage (read/resume/append/close/reopen) has an explicit success check",
+          "result": "PASS",
+          "evidence": "verdict.v3.json stage_states=true checks each of read/resume/append/close/reopen per fixture; stage_failure negative control fails the gate"
+        },
+        {
+          "criterion": "missing required evidence is a failure, never an empty-default pass",
+          "result": "PASS",
+          "evidence": "verdict.v3.json has no empty-default pass path; missing_evidence negative control deletes message_id_preservation and the gate fails id_continuity/append_reopen"
+        },
+        {
+          "criterion": "the verdict fails on any broken invariant, rejection case or blocker and the process exit code reflects it",
+          "result": "PASS",
+          "evidence": "verdict.v3.json: all_pass=true, exit_code=0; migration_verdict.mjs maps all_pass to the process exit code"
+        },
+        {
+          "criterion": "negative controls prove empty/missing/duplicate/unexpected/missing-evidence/single-stage/rejection faults fail while the pre-fix gate would pass",
+          "result": "PASS",
+          "evidence": "negative-controls.v3.json: 16 controls all pass; the pre-fix repro computeVerdict([], {cases:[one valid]}) observed all_pass=true/exit_code=0 while the fixed verdict returns all_pass=false/exit_code=1"
+        }
       ],
       "evidence_path": "docs/evidence/d15/d15-2"
     },
@@ -75,14 +149,47 @@
         "zero stale lease across adapter/host restart"
       ],
       "criterion_results": [
-        {"criterion": "every failure-matrix row classified as reattached | rehydrated-native | rehydrated-byq-fallback | interrupted", "result": "PASS", "evidence": "native-resume-results.v1.json rows: reattached 3 (browser/frontend/gateway), rehydrated-native 4 (adapter restart, generation replacement, host reboot, executor takeover), interrupted 1 (DSH crash with a lost run), rehydrated-byq-fallback 0 for the eight rows; a native-unavailable control rehydrates via BYQ fallback"},
-        {"criterion": "public fresh/reattached/rehydrated/interrupted contract unchanged", "result": "PASS", "evidence": "packages/contracts/runtime_continuity.py CONTINUITY_VERSION=runtime-continuity.v1 and STATUSES unchanged; summary.public_contract_unchanged=true; the manifest public_contract matches"},
-        {"criterion": "internal diagnostic fields are evidence-only and do not leak", "result": "PASS", "evidence": "classifier emits native_resume_used/byq_fallback_used/previous_generation_state/native_session_present in an internal diagnostics dict only; tests assert every decision uses a closed public status and the diagnostics keys are the manifest's internal-only fields"},
-        {"criterion": "DSH session id never becomes BYQ AgentSession identity", "result": "PASS", "evidence": "classify_generation_transition takes no identity; evidence records native_session_present as a boolean only; no DSH session id is projected as a BYQ identity"},
-        {"criterion": "native resume failure falls back without fabricating reattach", "result": "PASS", "evidence": "native-unavailable control: an unmaterialized session is invisible to stat/open (native_resume_available=false) and classifies as rehydrated with byq_fallback_used=true; a lost run classifies interrupted, never reattached"},
-        {"criterion": "zero stale lease across adapter/host restart", "result": "PASS", "evidence": "dsh-crash and host-reboot rows: SIGKILL of the lease holder releases the kernel flock; a new generation opens the same session (lease_released_on_process_death=true); executor-takeover shows SessionAlreadyOwnedError while the old executor lives"}
+        {
+          "criterion": "every failure-matrix row classified as reattached | rehydrated-native | rehydrated-byq-fallback | interrupted",
+          "result": "PASS",
+          "evidence": "native-resume-results.v1.json rows: reattached 3 (browser/frontend/gateway), rehydrated-native 4 (adapter restart, generation replacement, host reboot, executor takeover), interrupted 1 (DSH crash with a lost run), rehydrated-byq-fallback 0 for the eight rows; a native-unavailable control rehydrates via BYQ fallback"
+        },
+        {
+          "criterion": "public fresh/reattached/rehydrated/interrupted contract unchanged",
+          "result": "PASS",
+          "evidence": "packages/contracts/runtime_continuity.py CONTINUITY_VERSION=runtime-continuity.v1 and STATUSES unchanged; summary.public_contract_unchanged=true; the manifest public_contract matches"
+        },
+        {
+          "criterion": "internal diagnostic fields are evidence-only and do not leak",
+          "result": "PASS",
+          "evidence": "classifier emits native_resume_used/byq_fallback_used/previous_generation_state/native_session_present in an internal diagnostics dict only; tests assert every decision uses a closed public status and the diagnostics keys are the manifest's internal-only fields"
+        },
+        {
+          "criterion": "DSH session id never becomes BYQ AgentSession identity",
+          "result": "PASS",
+          "evidence": "classify_generation_transition takes no identity; evidence records native_session_present as a boolean only; no DSH session id is projected as a BYQ identity"
+        },
+        {
+          "criterion": "native resume failure falls back without fabricating reattach",
+          "result": "PASS",
+          "evidence": "native-unavailable control: an unmaterialized session is invisible to stat/open (native_resume_available=false) and classifies as rehydrated with byq_fallback_used=true; a lost run classifies interrupted, never reattached"
+        },
+        {
+          "criterion": "zero stale lease across adapter/host restart",
+          "result": "PASS",
+          "evidence": "dsh-crash and host-reboot rows: SIGKILL of the lease holder releases the kernel flock; a new generation opens the same session (lease_released_on_process_death=true); executor-takeover shows SessionAlreadyOwnedError while the old executor lives"
+        }
       ],
-      "failure_rows": ["Browser disconnect", "Frontend restart", "Gateway restart", "Adapter restart", "DSH crash", "RuntimeGeneration replacement", "Host reboot", "executor takeover"],
+      "failure_rows": [
+        "Browser disconnect",
+        "Frontend restart",
+        "Gateway restart",
+        "Adapter restart",
+        "DSH crash",
+        "RuntimeGeneration replacement",
+        "Host reboot",
+        "executor takeover"
+      ],
       "evidence": [
         "docs/evidence/d15/d15-3/native-resume-results.v1.json",
         "docs/evidence/d15/d15-3/native-resume-observations.v1.json"
@@ -112,34 +219,144 @@
         "cleanup removes all isolated containers, networks and volumes"
       ],
       "criterion_results": [
-        {"criterion": "acceptance contract + fail-able observer exist first", "result": "PASS", "evidence": "scripts/d15/runtime_continuity/contract.v1.json + observer.py committed with tests; observer exits non-zero on any violation and on unreadable artifacts"},
-        {"criterion": "observer fails on every fail-closed condition", "result": "PASS", "evidence": "negative-controls.v1.json: 18 controls, baseline_all_pass=true, all_controls_pass=true; each control observed_all_pass=false/exit_code=1 while pre_fix_would_pass=true"},
-        {"criterion": "real fault rows executed", "result": "PASS", "evidence": "observations.v1.json and scenarios/: adapter-process-restart, gateway-disconnect-reconnect, generation-replacement, dsh-process-interruption and executor-takeover all PASS"},
-        {"criterion": "before/after capture", "result": "PASS", "evidence": "each scenario records session_id/trace_id/adapter_pid/generation/executor_epoch/goal/approval/action_receipts/result (verdict before_after_captured=true)"},
-        {"criterion": "idempotent redelivery, one side effect", "result": "PASS", "evidence": "verdict no_duplicate_side_effect=true; provider call count unchanged on prompt replay and pool replay returns the same pool_id"},
-        {"criterion": "approval not bypassed", "result": "PASS", "evidence": "verdict approval_not_bypassed=true; expired-approval-reuse and initiator-self-approval negative controls fail the verdict"},
-        {"criterion": "public continuity contract unchanged", "result": "PASS", "evidence": "verdict continuity_truthful=true over fresh/reattached/rehydrated/interrupted; no DSH session id is projected"},
-        {"criterion": "isolation", "result": "PASS", "evidence": "stack.v1.json preflight: dedicated project, loopback-only ports, candidate dsh-0.1.5rc1, adapter image digest; production stack never referenced"},
-        {"criterion": "cleanup", "result": "PASS", "evidence": "stack.v2.json cleanup: containers_before=6, containers_remaining=0, networks_remaining=0, volumes_remaining=0"},
-        {"criterion": "format-valid separated from qualification-pass; required NOT_RUN/BLOCKED gates", "result": "PASS", "evidence": "negative-controls.v2.json: all-required-not-run / single-required-blocked / reasoned-not-executed return legacy all_pass=true but fixed all_pass=false/exit 1; verdict.v2.json all_pass=true with optional host-reboot NOT_RUN and required_coverage all PASS"},
-        {"criterion": "contract-authoritative continuity rules", "result": "PASS", "evidence": "negative-controls.v2.json observation-relaxes-allowed-continuity and observation-clears-forbidden-continuity: legacy all_pass=true, fixed rejects the override (exit 1)"},
-        {"criterion": "real recovery relationships and receipt/trace linkage", "result": "PASS", "evidence": "verdict.v2.json recovery_relationship_truthful=true; adapter restart pid 3279144->3280473, generation index 1->2, takeover epoch 1->2; pool/approval replay receipts equal originals"},
-        {"criterion": "honest pre-fix comparison", "result": "PASS", "evidence": "negative-controls.v3.json records legacy_algorithm_all_pass from an executed legacy algorithm, not a hardcoded claim; defect_targeting_pre_fix_passed=true"},
-        {"criterion": "no success defaults for missing capture evidence", "result": "PASS", "evidence": "capture-negatives.v3.json: deleted-journal-receipt and replay-error legacy all_pass=true vs fixed all_pass=false; capture_ok/capture_errors gate PASS"},
-        {"criterion": "approval evidence from persisted responses with real deny trials", "result": "PASS", "evidence": "observations.v3.json approval state/decided_by read from persisted approval; trials rejected + invalid_reuse denied with side_effect_created=false; approval-expiry-bypass capture negative fails"},
-        {"criterion": "real full-sequence continuity and target-run attribution", "result": "PASS", "evidence": "observations.v3.json result.trace_contiguous over the full persisted sequence; result attributed to target run (terminal_kind=session.result, attributed_message_sequence); trace-gap and only-old-assistant-result capture negatives fail"},
-        {"criterion": "measured side_effect_count and labeled action origin", "result": "PASS", "evidence": "observations.v3.json receipts origin=product-api-manual and measured counts=1; unmeasured-side-effect-count and unlabeled-action-origin observer negatives fail"},
-        {"criterion": "manual Product actions distinguished from Agent->MCP", "result": "PASS", "evidence": "observations.v3.json execution_model.agent_mcp_tool_calls=0 and action_origin=product-api-manual; no Agent at-most-once claim"},
-        {"criterion": "v1/v2 are not a qualification pass", "result": "PASS", "evidence": "README.md states v1/v2 capture hardcoded approval, fabricated missing receipts and used sequence>0; only v4 is the qualification evidence"},
-        {"criterion": "real Agent->MCP->Domain at-most-once across a fault", "result": "PASS", "evidence": "observations.v4.json agent-mcp-domain-at-most-once: scripted provider emitted mcp__byq__byq_research_task_create, real MCP->Backend created task_07fd57ffe5c247edbe7821bb87fd741c; after adapter restart (pid 3414070->3418327, generation 1->2) the same idempotency key returned the same task id with measured side_effect_count=1; required scenario gates the verdict"},
-        {"criterion": "authoritative approval denial (protected operation)", "result": "PASS", "evidence": "observations.v4.json approval trials: invalid_reuse 409 product_domain_rejected; protected_operation_blocked 422 product_domain_rejected ('strategy version is not approved for execution') with authoritative backtest count 0->0; rejection decision persisted rejected with execution_authorized=false"},
-        {"criterion": "denial is never inferred from an arbitrary error", "result": "PASS", "evidence": "capture-negatives.v4.json denial-from-500-timeout: legacy all_pass=true -> fixed all_pass=false; rejected-response-but-side-effect-exists: legacy true -> fixed false"},
-        {"criterion": "docs separate limited service-boundary pass from full original-task qualification", "result": "PASS", "evidence": "README.md limited-vs-full table; v5 is a scripted-keyless service-boundary pass, not real-LLM-quality; host reboot NOT_RUN; v1-v4 are not qualification passes"},
-        {"criterion": "two real runs / two real tool responses across the fault", "result": "PASS", "evidence": "observations.v5.json agent-mcp-domain-at-most-once: first run a62526d2.. tool_call_id d15-tool-1 terminal session.result assistant seq 7; second run 5ae86c90.. tool_call_id d15-tool-2 (call_index 1->2) terminal session.result assistant seq 19; both real MCP results reference the same task_14b0bb44.. with side_effect_count 1; delivery/replay receipts carry the two distinct real tool responses"},
-        {"criterion": "agent-mcp replay cannot be synthesized from an existing object", "result": "PASS", "evidence": "capture-negatives.v5.json agent-mcp-second-no-tool / agent-mcp-second-mcp-failed / agent-mcp-only-first-run: legacy all_pass=true -> fixed all_pass=false"},
-        {"criterion": "approval post-fault re-attempt with authoritative counts", "result": "PASS", "evidence": "observations.v5.json approval trials phase=post-fault for invalid_reuse (409 product_domain_rejected) and protected_operation_blocked (422 product_domain_rejected, backtest count 0->0); observer requires the post-fault phase"}
+        {
+          "criterion": "acceptance contract + fail-able observer exist first",
+          "result": "PASS",
+          "evidence": "scripts/d15/runtime_continuity/contract.v1.json + observer.py committed with tests; observer exits non-zero on any violation and on unreadable artifacts"
+        },
+        {
+          "criterion": "observer fails on every fail-closed condition",
+          "result": "PASS",
+          "evidence": "negative-controls.v1.json: 18 controls, baseline_all_pass=true, all_controls_pass=true; each control observed_all_pass=false/exit_code=1 while pre_fix_would_pass=true"
+        },
+        {
+          "criterion": "real fault rows executed",
+          "result": "PASS",
+          "evidence": "observations.v1.json and scenarios/: adapter-process-restart, gateway-disconnect-reconnect, generation-replacement, dsh-process-interruption and executor-takeover all PASS"
+        },
+        {
+          "criterion": "before/after capture",
+          "result": "PASS",
+          "evidence": "each scenario records session_id/trace_id/adapter_pid/generation/executor_epoch/goal/approval/action_receipts/result (verdict before_after_captured=true)"
+        },
+        {
+          "criterion": "idempotent redelivery, one side effect",
+          "result": "PASS",
+          "evidence": "verdict no_duplicate_side_effect=true; provider call count unchanged on prompt replay and pool replay returns the same pool_id"
+        },
+        {
+          "criterion": "approval not bypassed",
+          "result": "PASS",
+          "evidence": "verdict approval_not_bypassed=true; expired-approval-reuse and initiator-self-approval negative controls fail the verdict"
+        },
+        {
+          "criterion": "public continuity contract unchanged",
+          "result": "PASS",
+          "evidence": "verdict continuity_truthful=true over fresh/reattached/rehydrated/interrupted; no DSH session id is projected"
+        },
+        {
+          "criterion": "isolation",
+          "result": "PASS",
+          "evidence": "stack.v1.json preflight: dedicated project, loopback-only ports, candidate dsh-0.1.5rc1, adapter image digest; production stack never referenced"
+        },
+        {
+          "criterion": "cleanup",
+          "result": "PASS",
+          "evidence": "stack.v2.json cleanup: containers_before=6, containers_remaining=0, networks_remaining=0, volumes_remaining=0"
+        },
+        {
+          "criterion": "format-valid separated from qualification-pass; required NOT_RUN/BLOCKED gates",
+          "result": "PASS",
+          "evidence": "negative-controls.v2.json: all-required-not-run / single-required-blocked / reasoned-not-executed return legacy all_pass=true but fixed all_pass=false/exit 1; verdict.v2.json all_pass=true with optional host-reboot NOT_RUN and required_coverage all PASS"
+        },
+        {
+          "criterion": "contract-authoritative continuity rules",
+          "result": "PASS",
+          "evidence": "negative-controls.v2.json observation-relaxes-allowed-continuity and observation-clears-forbidden-continuity: legacy all_pass=true, fixed rejects the override (exit 1)"
+        },
+        {
+          "criterion": "real recovery relationships and receipt/trace linkage",
+          "result": "PASS",
+          "evidence": "verdict.v2.json recovery_relationship_truthful=true; adapter restart pid 3279144->3280473, generation index 1->2, takeover epoch 1->2; pool/approval replay receipts equal originals"
+        },
+        {
+          "criterion": "honest pre-fix comparison",
+          "result": "PASS",
+          "evidence": "negative-controls.v3.json records legacy_algorithm_all_pass from an executed legacy algorithm, not a hardcoded claim; defect_targeting_pre_fix_passed=true"
+        },
+        {
+          "criterion": "no success defaults for missing capture evidence",
+          "result": "PASS",
+          "evidence": "capture-negatives.v3.json: deleted-journal-receipt and replay-error legacy all_pass=true vs fixed all_pass=false; capture_ok/capture_errors gate PASS"
+        },
+        {
+          "criterion": "approval evidence from persisted responses with real deny trials",
+          "result": "PASS",
+          "evidence": "observations.v3.json approval state/decided_by read from persisted approval; trials rejected + invalid_reuse denied with side_effect_created=false; approval-expiry-bypass capture negative fails"
+        },
+        {
+          "criterion": "real full-sequence continuity and target-run attribution",
+          "result": "PASS",
+          "evidence": "observations.v3.json result.trace_contiguous over the full persisted sequence; result attributed to target run (terminal_kind=session.result, attributed_message_sequence); trace-gap and only-old-assistant-result capture negatives fail"
+        },
+        {
+          "criterion": "measured side_effect_count and labeled action origin",
+          "result": "PASS",
+          "evidence": "observations.v3.json receipts origin=product-api-manual and measured counts=1; unmeasured-side-effect-count and unlabeled-action-origin observer negatives fail"
+        },
+        {
+          "criterion": "manual Product actions distinguished from Agent->MCP",
+          "result": "PASS",
+          "evidence": "observations.v3.json execution_model.agent_mcp_tool_calls=0 and action_origin=product-api-manual; no Agent at-most-once claim"
+        },
+        {
+          "criterion": "v1/v2 are not a qualification pass",
+          "result": "PASS",
+          "evidence": "README.md states v1/v2 capture hardcoded approval, fabricated missing receipts and used sequence>0; only v4 is the qualification evidence"
+        },
+        {
+          "criterion": "real Agent->MCP->Domain at-most-once across a fault",
+          "result": "PASS",
+          "evidence": "observations.v4.json agent-mcp-domain-at-most-once: scripted provider emitted mcp__byq__byq_research_task_create, real MCP->Backend created task_07fd57ffe5c247edbe7821bb87fd741c; after adapter restart (pid 3414070->3418327, generation 1->2) the same idempotency key returned the same task id with measured side_effect_count=1; required scenario gates the verdict"
+        },
+        {
+          "criterion": "authoritative approval denial (protected operation)",
+          "result": "PASS",
+          "evidence": "observations.v4.json approval trials: invalid_reuse 409 product_domain_rejected; protected_operation_blocked 422 product_domain_rejected ('strategy version is not approved for execution') with authoritative backtest count 0->0; rejection decision persisted rejected with execution_authorized=false"
+        },
+        {
+          "criterion": "denial is never inferred from an arbitrary error",
+          "result": "PASS",
+          "evidence": "capture-negatives.v4.json denial-from-500-timeout: legacy all_pass=true -> fixed all_pass=false; rejected-response-but-side-effect-exists: legacy true -> fixed false"
+        },
+        {
+          "criterion": "docs separate limited service-boundary pass from full original-task qualification",
+          "result": "PASS",
+          "evidence": "README.md limited-vs-full table; v5 is a scripted-keyless service-boundary pass, not real-LLM-quality; host reboot NOT_RUN; v1-v4 are not qualification passes"
+        },
+        {
+          "criterion": "two real runs / two real tool responses across the fault",
+          "result": "PASS",
+          "evidence": "observations.v5.json agent-mcp-domain-at-most-once: first run a62526d2.. tool_call_id d15-tool-1 terminal session.result assistant seq 7; second run 5ae86c90.. tool_call_id d15-tool-2 (call_index 1->2) terminal session.result assistant seq 19; both real MCP results reference the same task_14b0bb44.. with side_effect_count 1; delivery/replay receipts carry the two distinct real tool responses"
+        },
+        {
+          "criterion": "agent-mcp replay cannot be synthesized from an existing object",
+          "result": "PASS",
+          "evidence": "capture-negatives.v5.json agent-mcp-second-no-tool / agent-mcp-second-mcp-failed / agent-mcp-only-first-run: legacy all_pass=true -> fixed all_pass=false"
+        },
+        {
+          "criterion": "approval post-fault re-attempt with authoritative counts",
+          "result": "PASS",
+          "evidence": "observations.v5.json approval trials phase=post-fault for invalid_reuse (409 product_domain_rejected) and protected_operation_blocked (422 product_domain_rejected, backtest count 0->0); observer requires the post-fault phase"
+        }
       ],
-      "failure_rows": ["Adapter restart", "Gateway restart/reconnect", "DSH crash", "RuntimeGeneration replacement", "executor takeover"],
+      "failure_rows": [
+        "Adapter restart",
+        "Gateway restart/reconnect",
+        "DSH crash",
+        "RuntimeGeneration replacement",
+        "executor takeover"
+      ],
       "evidence": [
         "docs/evidence/d15/d15-runtime/observations.v5.json",
         "docs/evidence/d15/d15-runtime/verdict.v5.json",
@@ -214,17 +431,55 @@
         "parent crash, child crash, adapter restart and host restart handled without second persistence"
       ],
       "criterion_results": [
-        {"criterion": "parent/child durable identity and lineage authorization verified", "result": "PASS", "evidence": "native-observations.v1.json parent-child-identity: child SessionId distinct from d15-4-parent, header.parentSession=d15-4-parent, origin=subagent; non-direct/stale-parent/child-claims-root negatives rejected UNAUTHORIZED/DUPLICATE_CHILD/SubagentDepthError"},
-        {"criterion": "child session persistence and continuable descriptor verified", "result": "PASS", "evidence": "subagent/descriptor version 3 mode=continuable provider=spawn persisted before the first turn"},
-        {"criterion": "cold resume of a continuable child verified", "result": "PASS", "evidence": "cold-resume: a new OS process resumed the same child id with a contiguous log and exactly one settlement; unmaterialized cold resume rejected NOT_RESUMABLE"},
-        {"criterion": "fork lineage distinct from parent; inherited prefix preserved", "result": "PASS", "evidence": "fork-lineage (v2): distinct seeded fork, inheritedEventCount=11 == parent lastTurnEndSeq(10)+1, parent full-log hash and length identical before/after, child sequence contiguous; observer controls fork-inherited-off-by-one/zero, fork-parent-payload-drift, fork-parent-length-mismatch and fork-child-sequence-gap all fail while the pre-fix gate passes"},
-        {"criterion": "model/provider, persona, reasoning effort and tool permissions/filter preserved", "result": "PASS", "evidence": "inheritance: descriptor agentProvider/agentModel/reasoningEffort=max/persona persisted and reapplied on cold resume; max-depth negative rejected SubagentDepthError; out-of-filter tool rejected"},
-        {"criterion": "parent crash, child crash, adapter restart and host restart handled without second persistence", "result": "BLOCKED", "evidence": "parent-crash PASS (SIGKILL executor, parent survived, child resumed, one settlement); child-run-fault PASS (supporting: independent child stream failure, truthful settlement, native resumability); child-crash BLOCKED (in-process child cannot be independently SIGKILLed; owning-process SIGKILL not used as a substitute); byq-adapter-restart BLOCKED (BYQ composition does not reach startContinuable); host-reboot NOT_RUN. Required, never removed: the stage does not pass by deletion"}
+        {
+          "criterion": "parent/child durable identity and lineage authorization verified",
+          "result": "PASS",
+          "evidence": "native-observations.v1.json parent-child-identity: child SessionId distinct from d15-4-parent, header.parentSession=d15-4-parent, origin=subagent; non-direct/stale-parent/child-claims-root negatives rejected UNAUTHORIZED/DUPLICATE_CHILD/SubagentDepthError"
+        },
+        {
+          "criterion": "child session persistence and continuable descriptor verified",
+          "result": "PASS",
+          "evidence": "subagent/descriptor version 3 mode=continuable provider=spawn persisted before the first turn"
+        },
+        {
+          "criterion": "cold resume of a continuable child verified",
+          "result": "PASS",
+          "evidence": "cold-resume: a new OS process resumed the same child id with a contiguous log and exactly one settlement; unmaterialized cold resume rejected NOT_RESUMABLE"
+        },
+        {
+          "criterion": "fork lineage distinct from parent; inherited prefix preserved",
+          "result": "PASS",
+          "evidence": "fork-lineage (v2): distinct seeded fork, inheritedEventCount=11 == parent lastTurnEndSeq(10)+1, parent full-log hash and length identical before/after, child sequence contiguous; observer controls fork-inherited-off-by-one/zero, fork-parent-payload-drift, fork-parent-length-mismatch and fork-child-sequence-gap all fail while the pre-fix gate passes"
+        },
+        {
+          "criterion": "model/provider, persona, reasoning effort and tool permissions/filter preserved",
+          "result": "PASS",
+          "evidence": "inheritance: descriptor agentProvider/agentModel/reasoningEffort=max/persona persisted and reapplied on cold resume; max-depth negative rejected SubagentDepthError; out-of-filter tool rejected"
+        },
+        {
+          "criterion": "parent crash, child crash, adapter restart and host restart handled without second persistence",
+          "result": "BLOCKED",
+          "evidence": "parent-crash PASS (SIGKILL executor, parent survived, child resumed, one settlement); child-run-fault PASS (supporting: independent child stream failure, truthful settlement, native resumability); child-crash BLOCKED (in-process child cannot be independently SIGKILLed; owning-process SIGKILL not used as a substitute); byq-adapter-restart BLOCKED (BYQ composition does not reach startContinuable); host-reboot NOT_RUN. Required, never removed: the stage does not pass by deletion"
+        }
       ],
       "uncovered_items": [
-        {"id": "child-crash", "status": "BLOCKED", "reason": "the composed native spawn provider runs children in-process, so an independent child process cannot be SIGKILLed while the parent executor stays alive; the owning-process SIGKILL is kept only as native executor evidence and is not used for this item", "smallest_option": "an out-of-process child provider or the isolated runtime-adapter stack with a real DSH child process (the D15-3R dsh-process-interruption pattern)"},
-        {"id": "byq-adapter-restart", "status": "BLOCKED", "reason": "real routing trial (docs/evidence/d15/d15-4/routing.v1.json): the committed byq_delegate_* config (enableRunInBackground=false, no backgroundMode) executes the tool foreground and calls subagents.start once, never startContinuable; enabling continuable (backgroundMode: continuable + background) is reachable in-process only, and no out-of-process provider implements prepareContinuable, so a BYQ adapter restart cannot recover an independent-process continuable child", "smallest_option": "a product-semantics change (durable background child contract across composition/tool/runtime-adapter) plus a native out-of-process continuable provider; neither exists in 0.1.5rc1"},
-        {"id": "host-reboot", "status": "NOT_RUN", "reason": "rebooting the maintainer host is not authorized and a container/adapter restart is not a host reboot"}
+        {
+          "id": "child-crash",
+          "status": "BLOCKED",
+          "reason": "the composed native spawn provider runs children in-process, so an independent child process cannot be SIGKILLed while the parent executor stays alive; the owning-process SIGKILL is kept only as native executor evidence and is not used for this item",
+          "smallest_option": "an out-of-process child provider or the isolated runtime-adapter stack with a real DSH child process (the D15-3R dsh-process-interruption pattern)"
+        },
+        {
+          "id": "byq-adapter-restart",
+          "status": "BLOCKED",
+          "reason": "real routing trial (docs/evidence/d15/d15-4/routing.v1.json): the committed byq_delegate_* config (enableRunInBackground=false, no backgroundMode) executes the tool foreground and calls subagents.start once, never startContinuable; enabling continuable (backgroundMode: continuable + background) is reachable in-process only, and no out-of-process provider implements prepareContinuable, so a BYQ adapter restart cannot recover an independent-process continuable child",
+          "smallest_option": "a product-semantics change (durable background child contract across composition/tool/runtime-adapter) plus a native out-of-process continuable provider; neither exists in 0.1.5rc1"
+        },
+        {
+          "id": "host-reboot",
+          "status": "NOT_RUN",
+          "reason": "rebooting the maintainer host is not authorized and a container/adapter restart is not a host reboot"
+        }
       ],
       "evidence": [
         "docs/evidence/d15/d15-4/native-observations.v2.json",
@@ -241,15 +496,97 @@
     {
       "id": "D15-5",
       "name": "Persistent Terminal Qualification",
-      "result": "NOT_RUN",
+      "result": "BLOCKED",
+      "layer": "real native terminal seam (evidence-only Node harness; one runtime OS process per generation, separate client OS processes) + real interface probes",
+      "proves": "against the fixed DSH 0.1.5-rc.1 candidate the real owner-scoped @deepseek-ai/dsh-terminal service + @deepseek-ai/dsh-terminal-bash shell backend rebind the SAME attachment and SAME PTY across page refresh, browser disconnect, frontend restart and gateway restart with no replay and no loss (unique marker), permissions cannot be bypassed (FOREIGN_SESSION/UNAUTHORIZED_PRINCIPAL), a wrong terminal is rejected (NO_SESSION), a stale generation/epoch is fenced, PTY/process existence is distinct from attachment existence, and cleanup leaves no orphans",
+      "does_not_prove": "adapter restart and DSH runtime restart terminal reattach (native sessions are process-local and the committed BYQ tree has no TerminalAttachment persistence, reconnect surface or terminal composition); host reboot; no real-LLM-quality evidence (no model is called); production cutover; R3",
       "criteria": [
         "PTY/process existence separated from attachment existence",
         "I/O rebind separated from stable terminal identity",
         "terminal decoupled from AgentSession lifecycle",
         "BYQ owns TerminalAttachment identity/state/auth/reconnect; DSH owns PTY/shell/I/O",
-        "no false reattach after DSH runtime restart or host reboot"
+        "no false reattach after DSH runtime restart or host reboot",
+        "a unique-marker command run from one client OS process is observed by another with the same PTY/attachment, neither replayed nor lost",
+        "permissions cannot be bypassed, a wrong terminal is rejected and a stale generation/epoch is fenced",
+        "cleanup leaves no orphans"
       ],
-      "terminal_faults": ["page refresh", "browser disconnect", "frontend restart", "gateway restart", "adapter restart", "DSH runtime restart", "host reboot"],
+      "criterion_results": [
+        {
+          "criterion": "PTY/process existence separated from attachment existence",
+          "result": "PASS",
+          "evidence": "pty-attachment-separation: a real bwrap shell pid is alive and is not the registry-minted attachment id; dropping the attachment keeps the pid alive while rebind is rejected ATTACHMENT_DETACHED; killing the session ends the PTY"
+        },
+        {
+          "criterion": "I/O rebind separated from stable terminal identity",
+          "result": "PASS",
+          "evidence": "four required rows: a separate client OS process rebinds the same attachment/session/pid (io_rebind=ok, terminal_identity=stable) while the send delta omits the old marker (no replay) and scrollback retains it once (no loss)"
+        },
+        {
+          "criterion": "terminal decoupled from AgentSession lifecycle",
+          "result": "PASS",
+          "evidence": "the evidence-only BYQ gate mints attachment ids independent of DSH session ids/pids; the native terminal is opened without an agent turn and terminal lifetime is never used as conversation/job lifetime (terminal_attachment.py asserts TERMINAL_LIFETIME_DEFINES_CONVERSATION=false)"
+        },
+        {
+          "criterion": "BYQ owns TerminalAttachment identity/state/auth/reconnect; DSH owns PTY/shell/I/O",
+          "result": "PASS",
+          "evidence": "packages/contracts/terminal_attachment.py declares BYQ_OWNED/DSH_OWNED and BYQ_BUILDS_PTY_RUNTIME=false; the harness gate owns identity/state/auth/reconnect and delegates all PTY/shell/IO to the native service"
+        },
+        {
+          "criterion": "no false reattach after DSH runtime restart or host reboot",
+          "result": "PASS",
+          "evidence": "adapter-restart and dsh-runtime-restart are BLOCKED with real rejection evidence (rebindError, old pid liveness, empty new-runtime session list) and are never reported PASS; host reboot is NOT_RUN; fabricated-reattach observer controls fail"
+        },
+        {
+          "criterion": "a unique-marker command run from one client OS process is observed by another with the same PTY/attachment, neither replayed nor lost",
+          "result": "PASS",
+          "evidence": "unique-marker-once real counts: marker1InFirstViewport=1, marker1InRebindSendDelta=0, marker1InScrollback=1, marker2InRebindSendDelta=1, marker2InScrollback=1"
+        },
+        {
+          "criterion": "permissions cannot be bypassed, a wrong terminal is rejected and a stale generation/epoch is fenced",
+          "result": "PASS",
+          "evidence": "permission-boundary FOREIGN_SESSION/FOREIGN_SESSION/UNAUTHORIZED_PRINCIPAL; wrong-terminal NO_SESSION; stale-generation-fenced STALE_GENERATION/STALE_EPOCH with the current token still valid"
+        },
+        {
+          "criterion": "cleanup leaves no orphans",
+          "result": "PASS",
+          "evidence": "cleanup-no-orphans: kill ends the PTY, all recorded pids dead, runtime shutdown orphans=0; temp_root_removed=true"
+        }
+      ],
+      "uncovered_items": [
+        {
+          "id": "adapter-restart",
+          "status": "BLOCKED",
+          "reason": "BYQ runtime-adapter abort kills the DSH runtime; native terminal sessions are documented process-local and the committed BYQ tree composes no terminal service and persists no TerminalAttachment, so a fresh adapter rejects the old attachment",
+          "smallest_option": "a BYQ TerminalAttachment lifecycle over the native owner-scoped ctx.terminals seam (R4), recorded as the Proposed, unimplemented ADR-0083"
+        },
+        {
+          "id": "dsh-runtime-restart",
+          "status": "BLOCKED",
+          "reason": "a restarted DSH runtime is a new process and native terminal sessions do not survive it",
+          "smallest_option": "requires the same BYQ attachment layer plus an explicit lost/interrupted status; never a fabricated reattach"
+        },
+        {
+          "id": "host-reboot",
+          "status": "NOT_RUN",
+          "reason": "rebooting the maintainer host is not authorized and a container/process restart is not a host reboot"
+        }
+      ],
+      "terminal_faults": [
+        "page refresh",
+        "browser disconnect",
+        "frontend restart",
+        "gateway restart",
+        "adapter restart",
+        "DSH runtime restart",
+        "host reboot"
+      ],
+      "evidence": [
+        "docs/evidence/d15/d15-5/native-terminal-observations.v1.json",
+        "docs/evidence/d15/d15-5/verdict.v1.json",
+        "docs/evidence/d15/d15-5/negative-controls.v1.json",
+        "docs/evidence/d15/d15-5/interface-probe.v1.json",
+        "docs/evidence/d15/d15-5/README.md"
+      ],
       "evidence_path": "docs/evidence/d15/d15-5"
     },
     {

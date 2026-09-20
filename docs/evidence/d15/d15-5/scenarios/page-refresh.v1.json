@@ -1,0 +1,58 @@
+{
+  "id": "page-refresh",
+  "result": "PASS",
+  "fault_applied": true,
+  "dimensions": {
+    "pty_process": "present",
+    "attachment": "present",
+    "io_rebind": "ok",
+    "terminal_identity": "stable"
+  },
+  "observation": {
+    "expectedAttachmentId": "att-1-0",
+    "expectedSessionId": "pty-1",
+    "expectedPid": 4172437,
+    "observedAttachmentId": "att-1-0",
+    "observedSessionId": "pty-1",
+    "observedPid": 4172437,
+    "sameAttachment": true,
+    "sameSession": true,
+    "samePtyPid": true,
+    "ptyProcessPresent": true,
+    "attachmentPresent": true,
+    "ioRebindOk": true,
+    "identityStable": true,
+    "fabricatedReattach": false,
+    "status": {
+      "ok": true,
+      "generation": 1,
+      "epoch": 1,
+      "attachmentPresent": true,
+      "attachmentId": "att-1-0",
+      "sessionId": "pty-1",
+      "pid": 4172437,
+      "pidAlive": true,
+      "ptyCmdline": "bwrap --ro-bind / / --dev /dev --unshare-pid --proc /proc --die-with-parent -- /bin/bash --noprofile --norc -i",
+      "nativeSessions": [
+        {
+          "sessionId": "pty-1",
+          "pid": 4172437,
+          "status": "running"
+        }
+      ],
+      "backends": [
+        "shell"
+      ]
+    },
+    "ptyCmdline": "bwrap --ro-bind / / --dev /dev --unshare-pid --proc /proc --die-with-parent -- /bin/bash --noprofile --norc -i",
+    "nativeSessions": [
+      {
+        "sessionId": "pty-1",
+        "pid": 4172437,
+        "status": "running"
+      }
+    ],
+    "description": "a fresh client process rebinds after a page refresh",
+    "marker1CountInScrollback": 1
+  }
+}

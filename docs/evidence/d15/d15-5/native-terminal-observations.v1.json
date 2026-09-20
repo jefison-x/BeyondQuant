@@ -1,0 +1,483 @@
+{
+  "schema_version": "byq-d15-5-native-observations.v1",
+  "generated_at": "2026-09-20T11:46:13.239Z",
+  "evidence_class": "native-runtime-isolated",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1"
+  },
+  "runtime_model": {
+    "runtime_process": "one OS process per runtime generation (real native terminal service + shell backend)",
+    "client_processes": "each client action is a separate OS process over a Unix socket",
+    "attachment_gate": "evidence-only BYQ TerminalAttachment gate (identity/state/authorization/reconnect); owns no PTY/shell/IO"
+  },
+  "llm": {
+    "class": "not-applicable",
+    "real_llm_quality": false,
+    "note": "no model call; the native terminal seam is driven directly"
+  },
+  "scenarios": [
+    {
+      "id": "page-refresh",
+      "result": "PASS",
+      "fault_applied": true,
+      "dimensions": {
+        "pty_process": "present",
+        "attachment": "present",
+        "io_rebind": "ok",
+        "terminal_identity": "stable"
+      },
+      "observation": {
+        "expectedAttachmentId": "att-1-0",
+        "expectedSessionId": "pty-1",
+        "expectedPid": 4172437,
+        "observedAttachmentId": "att-1-0",
+        "observedSessionId": "pty-1",
+        "observedPid": 4172437,
+        "sameAttachment": true,
+        "sameSession": true,
+        "samePtyPid": true,
+        "ptyProcessPresent": true,
+        "attachmentPresent": true,
+        "ioRebindOk": true,
+        "identityStable": true,
+        "fabricatedReattach": false,
+        "status": {
+          "ok": true,
+          "generation": 1,
+          "epoch": 1,
+          "attachmentPresent": true,
+          "attachmentId": "att-1-0",
+          "sessionId": "pty-1",
+          "pid": 4172437,
+          "pidAlive": true,
+          "ptyCmdline": "bwrap --ro-bind / / --dev /dev --unshare-pid --proc /proc --die-with-parent -- /bin/bash --noprofile --norc -i",
+          "nativeSessions": [
+            {
+              "sessionId": "pty-1",
+              "pid": 4172437,
+              "status": "running"
+            }
+          ],
+          "backends": [
+            "shell"
+          ]
+        },
+        "ptyCmdline": "bwrap --ro-bind / / --dev /dev --unshare-pid --proc /proc --die-with-parent -- /bin/bash --noprofile --norc -i",
+        "nativeSessions": [
+          {
+            "sessionId": "pty-1",
+            "pid": 4172437,
+            "status": "running"
+          }
+        ],
+        "description": "a fresh client process rebinds after a page refresh",
+        "marker1CountInScrollback": 1
+      }
+    },
+    {
+      "id": "browser-disconnect",
+      "result": "PASS",
+      "fault_applied": true,
+      "dimensions": {
+        "pty_process": "present",
+        "attachment": "present",
+        "io_rebind": "ok",
+        "terminal_identity": "stable"
+      },
+      "observation": {
+        "expectedAttachmentId": "att-1-0",
+        "expectedSessionId": "pty-1",
+        "expectedPid": 4172437,
+        "observedAttachmentId": "att-1-0",
+        "observedSessionId": "pty-1",
+        "observedPid": 4172437,
+        "sameAttachment": true,
+        "sameSession": true,
+        "samePtyPid": true,
+        "ptyProcessPresent": true,
+        "attachmentPresent": true,
+        "ioRebindOk": true,
+        "identityStable": true,
+        "fabricatedReattach": false,
+        "status": {
+          "ok": true,
+          "generation": 1,
+          "epoch": 1,
+          "attachmentPresent": true,
+          "attachmentId": "att-1-0",
+          "sessionId": "pty-1",
+          "pid": 4172437,
+          "pidAlive": true,
+          "ptyCmdline": "bwrap --ro-bind / / --dev /dev --unshare-pid --proc /proc --die-with-parent -- /bin/bash --noprofile --norc -i",
+          "nativeSessions": [
+            {
+              "sessionId": "pty-1",
+              "pid": 4172437,
+              "status": "running"
+            }
+          ],
+          "backends": [
+            "shell"
+          ]
+        },
+        "ptyCmdline": "bwrap --ro-bind / / --dev /dev --unshare-pid --proc /proc --die-with-parent -- /bin/bash --noprofile --norc -i",
+        "nativeSessions": [
+          {
+            "sessionId": "pty-1",
+            "pid": 4172437,
+            "status": "running"
+          }
+        ],
+        "description": "a fresh client process rebinds after a browser disconnect",
+        "marker1CountInScrollback": 1
+      }
+    },
+    {
+      "id": "frontend-restart",
+      "result": "PASS",
+      "fault_applied": true,
+      "dimensions": {
+        "pty_process": "present",
+        "attachment": "present",
+        "io_rebind": "ok",
+        "terminal_identity": "stable"
+      },
+      "observation": {
+        "expectedAttachmentId": "att-1-0",
+        "expectedSessionId": "pty-1",
+        "expectedPid": 4172437,
+        "observedAttachmentId": "att-1-0",
+        "observedSessionId": "pty-1",
+        "observedPid": 4172437,
+        "sameAttachment": true,
+        "sameSession": true,
+        "samePtyPid": true,
+        "ptyProcessPresent": true,
+        "attachmentPresent": true,
+        "ioRebindOk": true,
+        "identityStable": true,
+        "fabricatedReattach": false,
+        "status": {
+          "ok": true,
+          "generation": 1,
+          "epoch": 1,
+          "attachmentPresent": true,
+          "attachmentId": "att-1-0",
+          "sessionId": "pty-1",
+          "pid": 4172437,
+          "pidAlive": true,
+          "ptyCmdline": "bwrap --ro-bind / / --dev /dev --unshare-pid --proc /proc --die-with-parent -- /bin/bash --noprofile --norc -i",
+          "nativeSessions": [
+            {
+              "sessionId": "pty-1",
+              "pid": 4172437,
+              "status": "running"
+            }
+          ],
+          "backends": [
+            "shell"
+          ]
+        },
+        "ptyCmdline": "bwrap --ro-bind / / --dev /dev --unshare-pid --proc /proc --die-with-parent -- /bin/bash --noprofile --norc -i",
+        "nativeSessions": [
+          {
+            "sessionId": "pty-1",
+            "pid": 4172437,
+            "status": "running"
+          }
+        ],
+        "description": "a fresh client process rebinds after the frontend restarts",
+        "marker1CountInScrollback": 1
+      }
+    },
+    {
+      "id": "gateway-restart",
+      "result": "PASS",
+      "fault_applied": true,
+      "dimensions": {
+        "pty_process": "present",
+        "attachment": "present",
+        "io_rebind": "ok",
+        "terminal_identity": "stable"
+      },
+      "observation": {
+        "expectedAttachmentId": "att-1-0",
+        "expectedSessionId": "pty-1",
+        "expectedPid": 4172437,
+        "observedAttachmentId": "att-1-0",
+        "observedSessionId": "pty-1",
+        "observedPid": 4172437,
+        "sameAttachment": true,
+        "sameSession": true,
+        "samePtyPid": true,
+        "ptyProcessPresent": true,
+        "attachmentPresent": true,
+        "ioRebindOk": true,
+        "identityStable": true,
+        "fabricatedReattach": false,
+        "status": {
+          "ok": true,
+          "generation": 1,
+          "epoch": 1,
+          "attachmentPresent": true,
+          "attachmentId": "att-1-0",
+          "sessionId": "pty-1",
+          "pid": 4172437,
+          "pidAlive": true,
+          "ptyCmdline": "bwrap --ro-bind / / --dev /dev --unshare-pid --proc /proc --die-with-parent -- /bin/bash --noprofile --norc -i",
+          "nativeSessions": [
+            {
+              "sessionId": "pty-1",
+              "pid": 4172437,
+              "status": "running"
+            }
+          ],
+          "backends": [
+            "shell"
+          ]
+        },
+        "ptyCmdline": "bwrap --ro-bind / / --dev /dev --unshare-pid --proc /proc --die-with-parent -- /bin/bash --noprofile --norc -i",
+        "nativeSessions": [
+          {
+            "sessionId": "pty-1",
+            "pid": 4172437,
+            "status": "running"
+          }
+        ],
+        "description": "a fresh gateway client process rebinds the persisted attachment",
+        "marker1CountInScrollback": 1
+      }
+    },
+    {
+      "id": "adapter-restart",
+      "result": "BLOCKED",
+      "fault_applied": true,
+      "dimensions": {
+        "pty_process": "absent",
+        "attachment": "absent",
+        "io_rebind": "rejected",
+        "terminal_identity": "lost"
+      },
+      "not_run_reason": "BYQ runtime-adapter restart aborts the DSH runtime process. Native DSH terminal sessions are process-local and the committed BYQ composition exposes no TerminalAttachment rehydrate/reconnect surface, so a fresh adapter rejects the old attachment. Never a fabricated reattach.",
+      "observation": {
+        "oldRuntimePid": 4172335,
+        "newRuntimePid": 4172690,
+        "oldAttachmentId": "att-1-0",
+        "oldSessionId": "pty-1",
+        "oldPtyPidBeforeRestart": 4172437,
+        "oldPtyPidAliveAfterRuntimeKill": false,
+        "rebindOk": false,
+        "rebindError": "UNKNOWN_ATTACHMENT",
+        "newRuntimeAttachmentPresent": false,
+        "newRuntimeGeneration": 2,
+        "nativeSessionsInNewRuntime": 0
+      }
+    },
+    {
+      "id": "dsh-runtime-restart",
+      "result": "BLOCKED",
+      "fault_applied": true,
+      "dimensions": {
+        "pty_process": "absent",
+        "attachment": "absent",
+        "io_rebind": "rejected",
+        "terminal_identity": "lost"
+      },
+      "not_run_reason": "A restarted DSH runtime is a new process; native terminal sessions are documented process-local and no committed BYQ terminal wiring rebinds them. Rejected, never a fabricated reattach.",
+      "observation": {
+        "restartedRuntimePid": 4172833,
+        "oldAttachmentId": "att-1-0",
+        "oldSessionId": "pty-1",
+        "oldPtyPidAliveAfterRestart": false,
+        "rebindOk": false,
+        "rebindError": "UNKNOWN_ATTACHMENT",
+        "newRuntimeAttachmentPresent": false,
+        "newRuntimeGeneration": 3,
+        "nativeSessionsInNewRuntime": 0
+      }
+    },
+    {
+      "id": "host-reboot",
+      "result": "NOT_RUN",
+      "fault_applied": false,
+      "dimensions": {
+        "pty_process": "unknown",
+        "attachment": "unknown",
+        "io_rebind": "unknown",
+        "terminal_identity": "unknown"
+      },
+      "not_run_reason": "rebooting the maintainer host is not authorized; a container/adapter/process restart is not a host reboot",
+      "observation": null
+    }
+  ],
+  "cross_checks": [
+    {
+      "id": "unique-marker-once",
+      "result": "PASS",
+      "assertions": {
+        "marker_distinct_value": true,
+        "first_client_viewport_marker_once": true,
+        "rebind_send_delta_omits_old_marker": true,
+        "scrollback_has_marker_once": true,
+        "second_marker_once": true,
+        "no_loss": true
+      },
+      "observation": {
+        "marker1": "D15_5_MARK_ONE_9716e9fb9378e6ea",
+        "marker2": "D15_5_MARK_TWO_0602a5163e952fae",
+        "marker1InFirstViewport": 1,
+        "marker1InRebindSendDelta": 0,
+        "marker2InRebindSendDelta": 1,
+        "marker1InScrollback": 1,
+        "marker2InScrollback": 1,
+        "firstRunSessionId": "pty-1",
+        "secondRunSessionId": "pty-1",
+        "firstRunPid": 4172437,
+        "secondRunPid": 4172437,
+        "rebindClientProcess": "separate OS process (node client)"
+      }
+    },
+    {
+      "id": "stale-generation-fenced",
+      "result": "PASS",
+      "assertions": {
+        "stale_generation_rejected": true,
+        "stale_epoch_rejected": true,
+        "current_token_still_valid": true
+      },
+      "observation": {
+        "staleGenerationError": "STALE_GENERATION",
+        "staleEpochError": "STALE_EPOCH",
+        "currentGeneration": 1,
+        "currentEpoch": 1
+      }
+    },
+    {
+      "id": "pty-attachment-separation",
+      "result": "PASS",
+      "assertions": {
+        "real_external_pty": true,
+        "attachment_registry_minted": true,
+        "ptty_reachable_only_via_attachment": true,
+        "attachment_loss_keeps_pty_alive": true,
+        "rebind_rejected_after_attachment_loss": true,
+        "session_kill_ends_pty": true
+      },
+      "observation": {
+        "attachmentId": "att-1-0",
+        "sessionId": "pty-1",
+        "pid": 4172437,
+        "ptyCmdlineBefore": "bwrap --ro-bind / / --dev /dev --unshare-pid --proc /proc --die-with-parent -- /bin/bash --noprofile --norc -i",
+        "attachmentPresentBefore": true,
+        "detachAccepted": true,
+        "rebindErrorAfterDetach": "ATTACHMENT_DETACHED",
+        "ptyAliveAfterAttachmentLoss": true,
+        "sessionKillEndedPty": true
+      }
+    },
+    {
+      "id": "permission-boundary",
+      "result": "PASS",
+      "assertions": {
+        "foreign_owner_send_rejected": true,
+        "foreign_owner_read_rejected": true,
+        "foreign_principal_rejected": true
+      },
+      "observation": {
+        "foreignSendError": "FOREIGN_SESSION",
+        "foreignReadError": "FOREIGN_SESSION",
+        "foreignPrincipalError": "UNAUTHORIZED_PRINCIPAL"
+      }
+    },
+    {
+      "id": "wrong-terminal-rejected",
+      "result": "PASS",
+      "assertions": {
+        "unknown_session_rejected": true,
+        "wrong_session_does_not_reach_real_pty": true
+      },
+      "observation": {
+        "requestedSessionId": "pty-does-not-exist",
+        "errorCode": "NO_SESSION",
+        "realSessionId": "pty-1"
+      }
+    },
+    {
+      "id": "cleanup-no-orphans",
+      "result": "PASS",
+      "assertions": {
+        "kill_ends_pty": true,
+        "all_recorded_pids_dead": true,
+        "runtime_shutdown_no_orphans": true
+      },
+      "observation": {
+        "killedSessionId": "pty-1",
+        "killedPid": 4172866,
+        "pidAliveAfterKill": false,
+        "recordedPidCount": 1,
+        "orphanCount": 0,
+        "runtimeShutdownOrphans": 0
+      }
+    }
+  ],
+  "negatives": [
+    {
+      "kind": "stale-generation",
+      "rejected": true,
+      "errorCode": "STALE_GENERATION"
+    },
+    {
+      "kind": "stale-epoch",
+      "rejected": true,
+      "errorCode": "STALE_EPOCH"
+    },
+    {
+      "kind": "foreign-owner-send",
+      "rejected": true,
+      "errorCode": "FOREIGN_SESSION"
+    },
+    {
+      "kind": "foreign-owner-read",
+      "rejected": true,
+      "errorCode": "FOREIGN_SESSION"
+    },
+    {
+      "kind": "foreign-principal",
+      "rejected": true,
+      "errorCode": "UNAUTHORIZED_PRINCIPAL"
+    },
+    {
+      "kind": "unknown-terminal",
+      "rejected": true,
+      "errorCode": "NO_SESSION"
+    }
+  ],
+  "notes": [
+    {
+      "byq_composition_composes_terminal": false,
+      "byq_patch_composes_persistent_terminal": false,
+      "byq_patch_disables_tool_bash": true,
+      "native_documented_process_local": true
+    }
+  ],
+  "cleanup": {
+    "temp_root_removed": true,
+    "runtime_restarts": [
+      {
+        "phase": "gen1",
+        "runtimePid": 4172335
+      },
+      {
+        "phase": "gen2-adapter-restart",
+        "runtimePid": 4172690
+      },
+      {
+        "phase": "gen3-dsh-restart",
+        "runtimePid": 4172833
+      }
+    ],
+    "temp_root": "/tmp/d15-5-terminal-dfQhbx"
+  }
+}

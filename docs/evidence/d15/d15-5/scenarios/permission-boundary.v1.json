@@ -1,0 +1,14 @@
+{
+  "id": "permission-boundary",
+  "result": "PASS",
+  "assertions": {
+    "foreign_owner_send_rejected": true,
+    "foreign_owner_read_rejected": true,
+    "foreign_principal_rejected": true
+  },
+  "observation": {
+    "foreignSendError": "FOREIGN_SESSION",
+    "foreignReadError": "FOREIGN_SESSION",
+    "foreignPrincipalError": "UNAUTHORIZED_PRINCIPAL"
+  }
+}

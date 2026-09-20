@@ -8,8 +8,13 @@ PARTIAL/BLOCKED (native subagent/fork seam qualified in an evidence-only
 harness; child-crash and BYQ adapter-restart required items BLOCKED; host reboot
 NOT_RUN), plus a candidate-specific continuable-wiring investigation (product
 semantics PASS in an isolated native harness and real isolated candidate image;
-BYQ adapter-restart child rebind still BLOCKED), D15-5/D15-G not started.
-`R3_RESUME = NO`.**
+BYQ adapter-restart child rebind still BLOCKED), D15-5 persistent-terminal (PTY)
+PARTIAL/BLOCKED (real isolated native terminal seam; page-refresh,
+browser-disconnect, frontend-restart and gateway-restart PASS; adapter-restart
+and DSH-runtime-restart required items BLOCKED; host reboot NOT_RUN — see §6),
+D15-G PLANNED / NOT_RUN (not started; must wait for both real D15-4 and D15-5
+conclusions). The cross-process terminal reattach boundary is a Proposed,
+unimplemented ADR-0083. `R3_RESUME = NO`.**
 Relates: ADR-0079, ADR-0081, ADR-0058, ADR-0069, ADR-0003
 Evidence: `docs/evidence/d15/`
 Target decision: [`docs/evidence/d15/target-decision.v1.json`](../evidence/d15/target-decision.v1.json)
@@ -57,13 +62,13 @@ violate the "no second generic agent harness" rule.
 | id | name | state |
 | --- | --- | --- |
 | D15-0 | Upgrade Recon | **DONE** |
-| D15-1 | Candidate Runtime Upgrade | **machinery + isolated build/start DONE; D15-2..D15-G pending** |
+| D15-1 | Candidate Runtime Upgrade | **machinery + isolated build/start DONE** |
 | D15-2 | Session V3 Migration Qualification (format layer) | **PASS** |
 | D15-3 | Native Session Resume Qualification (persistence seam) | **PASS** |
 | D15-3R | Real Isolated BYQ Runtime-Continuity Qualification | **PASS** (scripted keyless provider) |
 | D15-4 | Subagent/Fork Continuity Qualification | **PARTIAL/BLOCKED** (native seam PASS; child-crash + BYQ adapter-restart BLOCKED; host reboot NOT_RUN) |
-| D15-5 | Persistent Terminal Qualification | planned |
-| D15-G | Architecture Go/No-Go | planned |
+| D15-5 | Persistent Terminal Qualification | **PARTIAL/BLOCKED** (real native terminal seam; page-refresh/browser-disconnect/frontend-restart/gateway-restart PASS; adapter-restart + DSH runtime restart BLOCKED; host reboot NOT_RUN; see §6) |
+| D15-G | Architecture Go/No-Go | **PLANNED / NOT_RUN** (not started; must wait for both D15-4 and D15-5 real conclusions) |
 
 ## 3. D15-2 — Session V3 migration (PASS, format layer)
 
@@ -206,7 +211,9 @@ audit and no database write.
 **Proof boundary.** The provider is scripted and keyless, so this is
 service-boundary runtime-continuity evidence and **not** real-LLM-quality
 semantic evidence. Host reboot is `NOT_RUN` (a container restart is not a host
-reboot). D15-4/D15-5/D15-G and R3 are not in this batch.
+reboot). D15-4/D15-5/D15-G and R3 were not in this D15-3R batch (historical
+batch scope only; D15-4 was qualified separately as PARTIAL/BLOCKED and D15-5 is
+now PARTIAL/BLOCKED in §6 — D15-G remains NOT_RUN).
 
 **Review-fix revision (v2, 2026-09-20).** The observer separates `format_valid`
 (the artifact is well formed) from `all_pass` (the qualification passed). A
@@ -415,6 +422,39 @@ Ownership: BYQ owns `TerminalAttachment` identity/state/authorization/reconnect;
 DSH owns PTY/shell/I/O. Terminal lifetime never defines conversation or durable
 job lifetime.
 
+**Result: `PARTIAL/BLOCKED`.** The real isolated native terminal seam
+(`@deepseek-ai/dsh-terminal` owner-scoped `TerminalSessionService` +
+`@deepseek-ai/dsh-terminal-bash` `shell` backend under `bwrap --die-with-parent`)
+was driven with one runtime OS process per generation and separate client OS
+processes, wrapped by an evidence-only BYQ `TerminalAttachment` gate
+(identity/state/authorization/reconnect; no PTY/shell/I/O). Evidence:
+`docs/evidence/d15/d15-5/`.
+
+- Four client-side rows `PASS` (page refresh, browser disconnect, frontend
+  restart, gateway restart): a different client OS process rebinds the same
+  attachment/session/pid (`io_rebind=ok`, `terminal_identity=stable`).
+- The unique-marker cross-process command test `PASS`es: the first marker appears
+  once in the first client's viewport, zero times in the rebind send delta (no
+  replay) and once in retained scrollback (no loss); the second marker appears
+  once.
+- `permission-boundary` (`FOREIGN_SESSION`/`UNAUTHORIZED_PRINCIPAL`),
+  `wrong-terminal-rejected` (`NO_SESSION`), `stale-generation-fenced`
+  (`STALE_GENERATION`/`STALE_EPOCH`) and `cleanup-no-orphans` (all pids dead,
+  shutdown orphans `0`) all `PASS`. `pty-attachment-separation` proves the four
+  dimensions are independent.
+- `adapter-restart` and `dsh-runtime-restart` stay required `BLOCKED`: native
+  sessions are documented process-local and the committed BYQ tree composes no
+  terminal service and persists no `TerminalAttachment`. Real rejection evidence
+  is recorded; no fabricated reattach. Host reboot is `NOT_RUN`.
+- The fail-able observer (`observer.py`) separates format-valid from
+  qualification-pass and exits non-zero on the two required `BLOCKED` rows; 24
+  negative controls (23 defect-targeting) prove the pre-fix result-only gate
+  wrongly passed. The framework-neutral vocabulary lives in
+  `packages/contracts/terminal_attachment.py`.
+- The cross-process reattach boundary is recorded as the **Proposed,
+  unimplemented** [ADR-0083](../architecture/adr/ADR-0083-terminal-attachment-boundary.md).
+  D15-G must wait for D15-4 and D15-5; `R3_RESUME = NO`.
+
 ## 7. D15-G — Architecture Go/No-Go
 
 Produce a Go/No-Go report with a capability matrix over D15-2..D15-5 and the
@@ -549,3 +589,11 @@ The D15-4 candidate-specific continuable wiring adds
 advances `post-u8.168` -> `post-u8.169` (rebuild identity only; no selector,
 `compose.yml`, `deployment.json`, immutable release registry or 0.1.2
 artifact/evidence change and no deployment).
+
+D15-5 adds `scripts/d15/terminal/` (native terminal harness, acceptance contract,
+fail-able observer, interface probe), `tests/test_dsh_d15_5_terminal.py`,
+`packages/contracts/terminal_attachment.py` and `docs/evidence/d15/d15-5/`, all
+build-input files, so the revision advances `post-u8.169` -> `post-u8.170`
+(rebuild identity only; no selector, `compose.yml`, `deployment.json`, immutable
+release registry or 0.1.2 artifact/evidence change and no deployment). The
+Proposed ADR-0083 remains unimplemented.

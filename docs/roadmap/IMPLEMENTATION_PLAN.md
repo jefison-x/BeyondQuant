@@ -248,6 +248,32 @@ continuable child provider，仍不能解决 child-crash/adapter restart；故 D
 并在 `finally` 中重试删除根（`runtime_root_cleaned=true`，无泄漏），该清理修订推进构建身份
 `.167 → .168`（仅重建身份）。不部署、不自动合并。
 
+D15-5 原生 persistent terminal（PTY）连续性资格（构建修订 `post-u8.170`，维护，不推进 Product
+Phase）：以真实隔离候选闭包启动 evidence-only Node harness（`scripts/d15/terminal/native_terminal_harness.mjs`），
+驱动真实 `@deepseek-ai/dsh-terminal` owner-scoped `TerminalSessionService` + `dsh-terminal-bash`
+`shell` backend（`bwrap --die-with-parent`），**每个 runtime generation 一个 OS 进程**、每个客户端动作
+一个独立 OS 进程（Unix socket），外层为 evidence-only BYQ `TerminalAttachment` gate（身份/状态/授权/
+reconnect，不拥有 PTY/shell/IO）；不调用任何模型（`llm.class=not-applicable`）。显式区分四项：
+PTY/进程存在、attachment 存在、I/O rebind、稳定 terminal 身份。四行 `PASS`：page refresh /
+browser disconnect / frontend restart / gateway restart，另一客户端 OS 进程重绑同一
+attachment/session/pid。跨进程唯一 marker 测试 `PASS`：首标记在首个客户端 viewport 出现一次、
+在 rebind send delta 出现 0 次（不重放）、在 scrollback 出现一次（不丢失），第二标记一次；
+`permission-boundary`（`FOREIGN_SESSION`/`UNAUTHORIZED_PRINCIPAL`）、`wrong-terminal-rejected`
+（`NO_SESSION`）、`stale-generation-fenced`（`STALE_GENERATION`/`STALE_EPOCH`）、
+`cleanup-no-orphans`（pid 全灭、shutdown orphans=0）与 `pty-attachment-separation`（真实 bwrap pid
+≠ registry attachment id；丢 attachment 后 pid 仍活、rebind 被拒；kill 结束 PTY）全部 `PASS`。
+必需项 `adapter-restart` 与 `dsh-runtime-restart` 保持 `BLOCKED`：native sessions 文档为
+process-local，提交的 BYQ 树未 compose terminal、未持久化 `TerminalAttachment`，`interface-probe.v1.json`
+证实无 PTY/attachment 产品面（唯一 `terminal-receipt` 路由是 AgentRun 终态证据）；记录真实拒绝证据
+而非伪造 reattach；host reboot `NOT_RUN`。fail-able observer（`scripts/d15/terminal/observer.py`）
+区分格式有效与资格通过、必需 `BLOCKED` 非零退出，24 项负例控制（23 项 defect-targeting）证明修复前
+result-only 门禁误报。框架中立合同
+`packages/contracts/terminal_attachment.py`（`attached/reattached/rehydrated/lost/interrupted/fenced`
+与 BYQ/DSH 所有权划分）。跨进程 reattach 边界以 Proposed、未实现的
+[ADR-0083](../architecture/adr/ADR-0083-terminal-attachment-boundary.md) 记录。**D15-5 保持
+`PARTIAL/BLOCKED`，不主张完整 D15-5/D15-G/full-D15，`R3_RESUME = NO`。** 新增 build inputs 属
+inventory，构建修订推进 `post-u8.169 → .170`（仅重建身份）。不部署、不自动合并。
+
 数据就绪续接 needs_attention 重挂（fix，构建修订 `dsh-0.1.2rc1-post-u8.142`）：生产 round-2
 数据就绪续接回合结算为 `needs_attention` 后，`research_tasks.continuation_blocked_reason` 被写成
 `continuation_needs_attention`；原预算路径的按任务级 `continue` 使其永久阻止后续**不同**的

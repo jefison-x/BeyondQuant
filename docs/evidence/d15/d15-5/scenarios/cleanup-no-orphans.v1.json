@@ -1,0 +1,17 @@
+{
+  "id": "cleanup-no-orphans",
+  "result": "PASS",
+  "assertions": {
+    "kill_ends_pty": true,
+    "all_recorded_pids_dead": true,
+    "runtime_shutdown_no_orphans": true
+  },
+  "observation": {
+    "killedSessionId": "pty-1",
+    "killedPid": 4172866,
+    "pidAliveAfterKill": false,
+    "recordedPidCount": 1,
+    "orphanCount": 0,
+    "runtimeShutdownOrphans": 0
+  }
+}
