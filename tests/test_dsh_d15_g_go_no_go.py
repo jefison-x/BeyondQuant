@@ -1,8 +1,9 @@
 """D15-G architecture Go/No-Go acceptance tests.
 
 Covers the fail-able Go/No-Go decision contract and observer (partial-PASS
-aggregation rejection, per-capability derivation, provenance verification,
-self-declared-field rejection), the committed evidence (honest NO_GO, named
+aggregation rejection, per-capability derivation, atomic-blocker model with
+derived aggregates and optional limitations, provenance verification,
+self-declared-field rejection), the committed evidence (honest NO_GO, four atomic
 blockers, provenance), and the unchanged constraints (R3_RESUME=NO, production
 selector/default, Proposed ADR-0082/0083 not accepted/implemented).
 
@@ -62,13 +63,28 @@ class D15GoNoGoContractTests(unittest.TestCase):
         self.assertEqual(contract["candidate"]["release"], "dsh-0.1.5rc1")
         ids = [item["id"] for item in contract["required_capabilities"]]
         self.assertEqual(len(ids), len(set(ids)))
-        self.assertEqual(len(ids), 11)
+        self.assertEqual(len(ids), 8)
         for required in ("root-session-persistence", "process-restart-resume",
-                         "host-reboot-resume", "fork-continuity", "subagent-resume",
-                         "subagent-child-crash", "subagent-byq-adapter-restart",
-                         "terminal-client-reattach", "terminal-persistence",
+                         "fork-continuity", "subagent-child-crash",
+                         "subagent-byq-adapter-restart", "terminal-client-reattach",
                          "terminal-adapter-restart", "terminal-dsh-runtime-restart"):
             self.assertIn(required, ids)
+        # host-reboot is an OPTIONAL limitation, never a required capability.
+        self.assertNotIn("host-reboot-resume", ids)
+        self.assertNotIn("subagent-resume", ids)
+        self.assertNotIn("terminal-persistence", ids)
+        aggregate_ids = [item["id"] for item in contract["aggregate_capabilities"]]
+        self.assertEqual(aggregate_ids, ["subagent-resume", "terminal-persistence"])
+        for item in contract["aggregate_capabilities"]:
+            self.assertFalse(item["required"])
+            self.assertFalse(item["actionable"])
+            self.assertTrue(item["derived_from"])
+            for member in item["derived_from"]:
+                self.assertIn(member, ids, item["id"])
+        optional_ids = [item["id"] for item in contract["optional_capabilities"]]
+        self.assertEqual(optional_ids, ["host-reboot-resume"])
+        for item in contract["optional_capabilities"]:
+            self.assertFalse(item["required"])
         # Required items must not pass by deletion.
         by_id = {item["id"]: item for item in contract["required_capabilities"]}
         for required_id in PRIMARY_BLOCKERS:
@@ -94,8 +110,11 @@ class D15GoNoGoContractTests(unittest.TestCase):
         self.assertTrue(verdict["format_valid"])
         self.assertEqual(verdict["verdict"], "GO")
         self.assertTrue(verdict["go_granted"])
+        # The optional host-reboot limitation is NOT_RUN and does not gate GO.
+        self.assertEqual(verdict["derived_optional"]["host-reboot-resume"], "NOT_RUN")
+        self.assertNotIn("host-reboot-resume", verdict["derived_blockers"])
 
-    def test_partial_sources_force_no_go_and_name_blockers(self):
+    def test_partial_sources_force_no_go_and_name_only_atomic_blockers(self):
         observer = _load_observer()
         contract = _contract()
         sources, decision = observer.real_fixture(contract)
@@ -105,8 +124,16 @@ class D15GoNoGoContractTests(unittest.TestCase):
         self.assertFalse(verdict["all_pass"])
         self.assertEqual(verdict["verdict"], "NO_GO")
         self.assertFalse(verdict["go_granted"])
-        for blocker in PRIMARY_BLOCKERS:
-            self.assertIn(blocker, verdict["derived_blockers"])
+        # Exactly the four atomic blockers; aggregates/options are not blockers.
+        self.assertEqual(sorted(verdict["derived_blockers"]), sorted(PRIMARY_BLOCKERS))
+        self.assertNotIn("subagent-resume", verdict["derived_blockers"])
+        self.assertNotIn("terminal-persistence", verdict["derived_blockers"])
+        self.assertNotIn("host-reboot-resume", verdict["derived_blockers"])
+        # Aggregates display BLOCKED, derived from the atomic members.
+        self.assertEqual(verdict["derived_aggregates"]["subagent-resume"], "BLOCKED")
+        self.assertEqual(verdict["derived_aggregates"]["terminal-persistence"], "BLOCKED")
+        # The optional host-reboot is a NOT_RUN limitation.
+        self.assertEqual(verdict["derived_optional"]["host-reboot-resume"], "NOT_RUN")
 
     def test_partial_pass_aggregation_into_go_is_rejected(self):
         observer = _load_observer()
@@ -145,6 +172,32 @@ class D15GoNoGoContractTests(unittest.TestCase):
             self.assertFalse(verdict["all_pass"], field)
             self.assertTrue(any("may not declare" in failure for failure in verdict["failures"]), field)
 
+    def test_aggregate_and_optional_are_not_actionable_blockers(self):
+        observer = _load_observer()
+        contract = _contract()
+        sources, decision = observer.real_fixture(contract)
+        # Listing an aggregate as an independent blocker is rejected.
+        aggregate_blocker = copy.deepcopy(decision)
+        aggregate_blocker["blockers"] = sorted(aggregate_blocker["blockers"] + ["subagent-resume"])
+        verdict = observer.compute_decision(contract, sources, aggregate_blocker)
+        self.assertFalse(verdict["all_pass"])
+        self.assertTrue(any("aggregate/optional capabilities listed as independent actionable blockers"
+                            in failure for failure in verdict["failures"]))
+        # Listing an optional limitation as a blocker is rejected.
+        optional_blocker = copy.deepcopy(decision)
+        optional_blocker["blockers"] = sorted(optional_blocker["blockers"] + ["host-reboot-resume"])
+        verdict = observer.compute_decision(contract, sources, optional_blocker)
+        self.assertFalse(verdict["all_pass"])
+        self.assertTrue(any("aggregate/optional capabilities listed as independent actionable blockers"
+                            in failure for failure in verdict["failures"]))
+        # Mis-stating the optional limitation status is rejected.
+        mismatch = copy.deepcopy(decision)
+        mismatch["limitations"][0]["status"] = "PASS"
+        verdict = observer.compute_decision(contract, sources, mismatch)
+        self.assertFalse(verdict["all_pass"])
+        self.assertTrue(any("limitation 'host-reboot-resume' claimed 'PASS' but derived 'NOT_RUN'"
+                            in failure for failure in verdict["honesty_failures"]))
+
     def test_every_negative_control_is_rejected_and_pre_fix_defects_are_evidenced(self):
         observer = _load_observer()
         contract = _contract()
@@ -152,14 +205,18 @@ class D15GoNoGoContractTests(unittest.TestCase):
         self.assertTrue(result["all_controls_rejected"])
         self.assertTrue(result["known_good_all_pass_fixture_all_pass"])
         self.assertEqual(result["known_good_all_pass_fixture_verdict"], "GO")
+        self.assertEqual(result["known_good_all_pass_fixture_optional"]["host-reboot-resume"], "NOT_RUN")
         self.assertFalse(result["real_partial_fixture_all_pass"])
         self.assertTrue(result["real_partial_fixture_decision_valid"])
         self.assertEqual(result["real_partial_fixture_verdict"], "NO_GO")
+        self.assertEqual(sorted(result["real_partial_fixture_blockers"]), sorted(PRIMARY_BLOCKERS))
         self.assertFalse([item for item in result["controls"] if item["fixed_all_pass"]])
         self.assertGreater(result["defect_targeting_pre_fix_passed_count"], 0)
         defect_names = set(result["defect_targeting_pre_fix_passed"])
         self.assertIn("claim-go-on-partial-sources", defect_names)
         self.assertIn("claim-child-crash-pass", defect_names)
+        self.assertIn("claim-aggregate-pass", defect_names)
+        self.assertIn("optional-listed-as-blocker", defect_names)
 
 
 class D15GoNoGoEvidenceTests(unittest.TestCase):
@@ -174,16 +231,24 @@ class D15GoNoGoEvidenceTests(unittest.TestCase):
         self.assertFalse(verdict["go_claimed"])
         self.assertEqual(verdict["r3_resume"], "NO")
         self.assertEqual(verdict["production_selector"], "dsh-0.1.2rc1")
-        for blocker in PRIMARY_BLOCKERS:
-            self.assertIn(blocker, verdict["derived_blockers"])
-        self.assertIn("host-reboot-resume", verdict["derived_blockers"])
+        self.assertEqual(sorted(verdict["derived_blockers"]), sorted(PRIMARY_BLOCKERS))
+        self.assertEqual(verdict["derived_aggregates"]["subagent-resume"], "BLOCKED")
+        self.assertEqual(verdict["derived_aggregates"]["terminal-persistence"], "BLOCKED")
+        self.assertEqual(verdict["derived_optional"]["host-reboot-resume"], "NOT_RUN")
+        self.assertNotIn("host-reboot-resume", verdict["derived_blockers"])
 
     def test_committed_decision_claims_no_go_and_matches_derived(self):
         decision = _decision()
         self.assertEqual(decision["decision"], "NO_GO")
         self.assertNotEqual(decision["decision"], "GO")
-        for blocker in PRIMARY_BLOCKERS:
-            self.assertIn(blocker, decision["blockers"])
+        self.assertEqual(sorted(decision["blockers"]), sorted(PRIMARY_BLOCKERS))
+        self.assertNotIn("host-reboot-resume", decision["blockers"])
+        self.assertNotIn("subagent-resume", decision["blockers"])
+        self.assertNotIn("terminal-persistence", decision["blockers"])
+        self.assertEqual(decision["aggregates"]["subagent-resume"], "BLOCKED")
+        self.assertEqual(decision["aggregates"]["terminal-persistence"], "BLOCKED")
+        self.assertEqual([item["id"] for item in decision["limitations"]], ["host-reboot-resume"])
+        self.assertEqual(decision["limitations"][0]["status"], "NOT_RUN")
         self.assertEqual(decision["constraints"]["r3_resume"], "NO")
         self.assertEqual(decision["constraints"]["production_selector"], "dsh-0.1.2rc1")
 
@@ -221,11 +286,26 @@ class D15GoNoGoEvidenceTests(unittest.TestCase):
         matrix = json.loads((EVIDENCE / "capability-matrix.v1.json").read_text(encoding="utf-8"))
         stages = {item["stage"] for item in matrix["layer_summary"]}
         self.assertEqual(stages, {"D15-2", "D15-3", "D15-3R", "D15-4", "D15-5"})
-        ids = {item["id"] for item in matrix["capabilities"]}
-        self.assertEqual(len(ids), 11)
-        for item in matrix["capabilities"]:
+        required = {item["id"] for item in matrix["required_capabilities"]}
+        self.assertEqual(len(required), 8)
+        self.assertNotIn("host-reboot-resume", required)
+        for item in matrix["required_capabilities"]:
+            self.assertEqual(item["role"], "required-atomic")
             for key in ("dsh_native_result", "byq_fallback", "r_series_owner", "result", "evidence"):
                 self.assertTrue(item.get(key), item["id"])
+        aggregates = {item["id"] for item in matrix["aggregate_capabilities"]}
+        self.assertEqual(aggregates, {"subagent-resume", "terminal-persistence"})
+        for item in matrix["aggregate_capabilities"]:
+            self.assertEqual(item["role"], "derived-aggregate")
+            self.assertFalse(item["actionable"])
+            self.assertTrue(item["derived_from"])
+            for member in item["derived_from"]:
+                self.assertIn(member, required, item["id"])
+        options = [item for item in matrix["optional_limitations"] if item["id"] == "host-reboot-resume"]
+        self.assertEqual(len(options), 1)
+        self.assertEqual(options[0]["role"], "optional-limitation")
+        self.assertFalse(options[0]["required"])
+        self.assertEqual(options[0]["result"], "NOT_RUN")
         self.assertEqual(set(matrix["primary_named_blockers"]), set(PRIMARY_BLOCKERS))
         self.assertEqual(matrix["constraints"]["r3_resume"], "NO")
 

@@ -1,4 +1,5 @@
 {
+  "aggregate_capability_count": 2,
   "aggregation_rejected": false,
   "all_pass": false,
   "candidate": {
@@ -6,27 +7,25 @@
     "python_sdk": "0.1.5rc1",
     "release": "dsh-0.1.5rc1"
   },
+  "claimed_aggregates": {
+    "subagent-resume": "BLOCKED",
+    "terminal-persistence": "BLOCKED"
+  },
   "claimed_blockers": [
-    "host-reboot-resume",
     "subagent-byq-adapter-restart",
     "subagent-child-crash",
-    "subagent-resume",
     "terminal-adapter-restart",
-    "terminal-dsh-runtime-restart",
-    "terminal-persistence"
+    "terminal-dsh-runtime-restart"
   ],
   "claimed_capabilities": {
     "fork-continuity": "PASS",
-    "host-reboot-resume": "NOT_RUN",
     "process-restart-resume": "PASS",
     "root-session-persistence": "PASS",
     "subagent-byq-adapter-restart": "BLOCKED",
     "subagent-child-crash": "BLOCKED",
-    "subagent-resume": "BLOCKED",
     "terminal-adapter-restart": "BLOCKED",
     "terminal-client-reattach": "PASS",
-    "terminal-dsh-runtime-restart": "BLOCKED",
-    "terminal-persistence": "BLOCKED"
+    "terminal-dsh-runtime-restart": "BLOCKED"
   },
   "constraints": {
     "adr_0082": "Proposed, not accepted, not implemented",
@@ -41,27 +40,28 @@
     "GO",
     "NO_GO"
   ],
+  "derived_aggregates": {
+    "subagent-resume": "BLOCKED",
+    "terminal-persistence": "BLOCKED"
+  },
   "derived_blockers": [
-    "host-reboot-resume",
     "subagent-byq-adapter-restart",
     "subagent-child-crash",
-    "subagent-resume",
     "terminal-adapter-restart",
-    "terminal-dsh-runtime-restart",
-    "terminal-persistence"
+    "terminal-dsh-runtime-restart"
   ],
   "derived_capabilities": {
     "fork-continuity": "PASS",
-    "host-reboot-resume": "NOT_RUN",
     "process-restart-resume": "PASS",
     "root-session-persistence": "PASS",
     "subagent-byq-adapter-restart": "BLOCKED",
     "subagent-child-crash": "BLOCKED",
-    "subagent-resume": "BLOCKED",
     "terminal-adapter-restart": "BLOCKED",
     "terminal-client-reattach": "PASS",
-    "terminal-dsh-runtime-restart": "BLOCKED",
-    "terminal-persistence": "BLOCKED"
+    "terminal-dsh-runtime-restart": "BLOCKED"
+  },
+  "derived_optional": {
+    "host-reboot-resume": "NOT_RUN"
   },
   "exit_code": 1,
   "failures": [],
@@ -70,9 +70,10 @@
   "go_granted": false,
   "honest": true,
   "honesty_failures": [],
+  "optional_capability_count": 1,
   "production_selector": "dsh-0.1.2rc1",
   "r3_resume": "NO",
-  "required_capability_count": 11,
+  "required_capability_count": 8,
   "required_coverage_ok": false,
   "schema_version": "byq-d15-g-verdict.v1",
   "verdict": "NO_GO"

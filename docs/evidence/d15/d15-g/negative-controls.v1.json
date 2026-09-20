@@ -1,6 +1,6 @@
 {
   "all_controls_rejected": true,
-  "control_count": 14,
+  "control_count": 19,
   "controls": [
     {
       "fixed_aggregation_rejected": true,
@@ -49,6 +49,41 @@
       "fixed_all_pass": false,
       "fixed_exit_code": 1,
       "legacy_all_pass": true,
+      "name": "claim-aggregate-pass"
+    },
+    {
+      "fixed_aggregation_rejected": false,
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "aggregate-listed-as-blocker"
+    },
+    {
+      "fixed_aggregation_rejected": false,
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "optional-listed-as-blocker"
+    },
+    {
+      "fixed_aggregation_rejected": false,
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "missing-limitation"
+    },
+    {
+      "fixed_aggregation_rejected": false,
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "limitation-status-mismatch"
+    },
+    {
+      "fixed_aggregation_rejected": false,
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
       "name": "no-go-against-all-pass"
     },
     {
@@ -91,7 +126,7 @@
       "fixed_all_pass": false,
       "fixed_exit_code": 1,
       "legacy_all_pass": true,
-      "name": "claim-pass-on-source-fail"
+      "name": "claim-go-on-source-fail"
     },
     {
       "fixed_aggregation_rejected": false,
@@ -108,29 +143,41 @@
     "claim-dsh-runtime-restart-pass",
     "drop-named-blocker",
     "drop-required-capability",
+    "claim-aggregate-pass",
+    "aggregate-listed-as-blocker",
+    "optional-listed-as-blocker",
+    "missing-limitation",
+    "limitation-status-mismatch",
     "no-go-against-all-pass",
     "self-declared-verdict",
     "self-declared-coverage",
     "candidate-mismatch",
     "go-with-missing-coverage",
-    "claim-pass-on-source-fail",
+    "claim-go-on-source-fail",
     "missing-blocker-list"
   ],
-  "defect_targeting_pre_fix_passed_count": 13,
+  "defect_targeting_pre_fix_passed_count": 18,
   "known_good_all_pass_fixture_all_pass": true,
+  "known_good_all_pass_fixture_optional": {
+    "host-reboot-resume": "NOT_RUN"
+  },
   "known_good_all_pass_fixture_verdict": "GO",
+  "real_partial_fixture_aggregates": {
+    "subagent-resume": "BLOCKED",
+    "terminal-persistence": "BLOCKED"
+  },
   "real_partial_fixture_all_pass": false,
   "real_partial_fixture_blockers": [
-    "host-reboot-resume",
     "subagent-byq-adapter-restart",
     "subagent-child-crash",
-    "subagent-resume",
     "terminal-adapter-restart",
-    "terminal-dsh-runtime-restart",
-    "terminal-persistence"
+    "terminal-dsh-runtime-restart"
   ],
   "real_partial_fixture_decision_valid": true,
   "real_partial_fixture_honest": true,
+  "real_partial_fixture_optional": {
+    "host-reboot-resume": "NOT_RUN"
+  },
   "real_partial_fixture_verdict": "NO_GO",
   "schema_version": "byq-d15-g-negative-controls.v1"
 }

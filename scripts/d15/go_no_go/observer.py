@@ -11,15 +11,20 @@ Separation of concerns:
 * ``verdict`` / ``go_granted`` — the independently derived Go/No-Go decision.
   GO is granted only when EVERY required capability is actually PASS. A single
   BLOCKED/NOT_RUN/FAIL required capability forces NO_GO and that capability must
-  be named as a blocker.
+  be named as an actionable blocker.
+* ``aggregates`` — display-only capabilities derived from their atomic required
+  members; they are never independent actionable blockers.
+* ``limitations`` — optional capabilities (host reboot) reported with their
+  derived status; they never gate GO and are never blockers.
 
 The observer is the Go-gate and exits non-zero when a report aggregates a partial
 PASS into GO, when any required capability is not actually PASS, when a claimed
-status is not the derived status, when a blocker is missing, when source evidence
-is missing/hash-mismatched, or when the report declares its own verdict. A
-truthful NO_GO is `decision_valid=true` but `all_pass=false` (NOT-PASS) and still
-exits non-zero: D15-G decides, it does not qualify. GO never authorizes a
-production cutover.
+status (capability, aggregate or limitation) is not the derived status, when a
+blocker is missing or non-actionable, when source evidence is
+missing/hash-mismatched, or when the report declares its own verdict. A truthful
+NO_GO is `decision_valid=true` but `all_pass=false` (NOT-PASS) and still exits
+non-zero: D15-G decides, it does not qualify. GO never authorizes a production
+cutover.
 """
 
 from __future__ import annotations
@@ -69,21 +74,6 @@ def _coverage_status(coverage: object, capability: str) -> str:
         return "MISSING"
     value = coverage.get(capability)
     return value if value in VALID_STATUS else "MISSING"
-
-
-def _aggregate_coverage(coverage: object) -> str:
-    if not isinstance(coverage, dict) or not coverage:
-        return "MISSING"
-    values = list(coverage.values())
-    if all(value == "PASS" for value in values):
-        return "PASS"
-    if any(value == "BLOCKED" for value in values):
-        return "BLOCKED"
-    if any(value == "FAIL" for value in values):
-        return "FAIL"
-    if any(value == "NOT_RUN" for value in values):
-        return "NOT_RUN"
-    return "MISSING"
 
 
 def _d15_3_row(sources: dict, row_id: str) -> dict | None:
@@ -151,10 +141,6 @@ def _derive_fork_continuity(sources: dict) -> str:
     return "MISSING"
 
 
-def _derive_subagent_resume(sources: dict) -> str:
-    return _aggregate_coverage(sources.get("d15_4_verdict", {}).get("required_coverage"))
-
-
 def _derive_subagent_child_crash(sources: dict) -> str:
     return _coverage_status(sources.get("d15_4_verdict", {}).get("required_coverage"), "child-crash")
 
@@ -170,10 +156,6 @@ def _derive_terminal_client_reattach(sources: dict) -> str:
     return "PASS" if all(value == "PASS" for value in statuses) else "FAIL"
 
 
-def _derive_terminal_persistence(sources: dict) -> str:
-    return _aggregate_coverage(sources.get("d15_5_verdict", {}).get("required_coverage"))
-
-
 def _derive_terminal_adapter_restart(sources: dict) -> str:
     return _coverage_status(sources.get("d15_5_verdict", {}).get("required_coverage"), "adapter-restart")
 
@@ -182,18 +164,22 @@ def _derive_terminal_dsh_runtime_restart(sources: dict) -> str:
     return _coverage_status(sources.get("d15_5_verdict", {}).get("required_coverage"), "dsh-runtime-restart")
 
 
+# Required capabilities only. Aggregate and optional capabilities are never
+# derived here: aggregates are computed from their atomic members and options
+# from their own optional deriver.
 _DERIVERS: dict[str, Callable[[dict], str]] = {
     "root-session-persistence": _derive_root_session_persistence,
     "process-restart-resume": _derive_process_restart_resume,
-    "host-reboot-resume": _derive_host_reboot_resume,
     "fork-continuity": _derive_fork_continuity,
-    "subagent-resume": _derive_subagent_resume,
     "subagent-child-crash": _derive_subagent_child_crash,
     "subagent-byq-adapter-restart": _derive_subagent_adapter_restart,
     "terminal-client-reattach": _derive_terminal_client_reattach,
-    "terminal-persistence": _derive_terminal_persistence,
     "terminal-adapter-restart": _derive_terminal_adapter_restart,
     "terminal-dsh-runtime-restart": _derive_terminal_dsh_runtime_restart,
+}
+
+_OPTIONAL_DERIVERS: dict[str, Callable[[dict], str]] = {
+    "host-reboot-resume": _derive_host_reboot_resume,
 }
 
 
@@ -201,10 +187,38 @@ def derive_capabilities(contract: dict, sources: dict) -> dict[str, str]:
     derived: dict[str, str] = {}
     for capability in contract["required_capabilities"]:
         deriver = _DERIVERS.get(capability["id"])
-        if deriver is None:
-            derived[capability["id"]] = "MISSING"
-        else:
-            derived[capability["id"]] = deriver(sources)
+        derived[capability["id"]] = deriver(sources) if deriver is not None else "MISSING"
+    return derived
+
+
+def derive_optional(contract: dict, sources: dict) -> dict[str, str]:
+    derived: dict[str, str] = {}
+    for capability in contract.get("optional_capabilities", []):
+        deriver = _OPTIONAL_DERIVERS.get(capability["id"])
+        derived[capability["id"]] = deriver(sources) if deriver is not None else "MISSING"
+    return derived
+
+
+def _combine_member_statuses(members: list[str]) -> str:
+    if not members:
+        return "MISSING"
+    if all(value == "PASS" for value in members):
+        return "PASS"
+    if any(value == "FAIL" for value in members):
+        return "FAIL"
+    if any(value == "BLOCKED" for value in members):
+        return "BLOCKED"
+    if any(value == "NOT_RUN" for value in members):
+        return "NOT_RUN"
+    return "MISSING"
+
+
+def derive_aggregates(contract: dict, derived_required: dict[str, str]) -> dict[str, str]:
+    """Aggregates are display-only, derived from their atomic member capabilities."""
+    derived: dict[str, str] = {}
+    for capability in contract.get("aggregate_capabilities", []):
+        members = [derived_required.get(member, "MISSING") for member in capability["derived_from"]]
+        derived[capability["id"]] = _combine_member_statuses(members)
     return derived
 
 
@@ -259,7 +273,62 @@ def compute_decision(contract: dict, sources: dict, decision: dict, *,
         claimed_blockers = sorted(claimed_blockers)
         if claimed_blockers != derived_blockers:
             honesty_failures.append(
-                f"blocker set {claimed_blockers} does not equal the derived blockers {derived_blockers}")
+                f"blocker set {claimed_blockers} does not equal the derived required blockers {derived_blockers}")
+        aggregate_ids = {item["id"] for item in contract.get("aggregate_capabilities", [])}
+        optional_ids = {item["id"] for item in contract.get("optional_capabilities", [])}
+        non_actionable = sorted(set(claimed_blockers) & (aggregate_ids | optional_ids))
+        if non_actionable:
+            failures.append(
+                f"aggregate/optional capabilities listed as independent actionable blockers: {non_actionable}; "
+                "aggregates are derived and options are limitations")
+
+    # Aggregate capabilities are display-only and must be derived from their
+    # atomic members; a decision may not claim a different aggregate status.
+    derived_aggregates = derive_aggregates(contract, derived_capabilities)
+    claimed_aggregates = decision.get("aggregates")
+    if not isinstance(claimed_aggregates, dict):
+        failures.append("decision.aggregates must be an object")
+        claimed_aggregates = {}
+    if set(claimed_aggregates) != set(derived_aggregates):
+        missing = sorted(set(derived_aggregates) - set(claimed_aggregates))
+        extra = sorted(set(claimed_aggregates) - set(derived_aggregates))
+        failures.append(f"aggregate set mismatch: missing={missing} extra={extra} (closed set)")
+    for aggregate_id in sorted(set(claimed_aggregates) & set(derived_aggregates)):
+        claimed = claimed_aggregates.get(aggregate_id)
+        derived = derived_aggregates.get(aggregate_id)
+        if claimed not in VALID_STATUS:
+            failures.append(f"aggregate {aggregate_id!r} has invalid claimed status {claimed!r}")
+        elif claimed != derived:
+            honesty_failures.append(
+                f"aggregate {aggregate_id!r} claimed {claimed!r} but derived {derived!r}")
+
+    # Optional capabilities are limitations: every option must be reported with
+    # its derived status and never treated as a required blocker.
+    derived_optional = derive_optional(contract, sources)
+    claimed_limitations = decision.get("limitations")
+    if not isinstance(claimed_limitations, list):
+        failures.append("decision.limitations must be a list")
+        claimed_limitations = []
+    limitation_by_id: dict[str, dict] = {}
+    for item in claimed_limitations:
+        if not isinstance(item, dict) or not _is_nonempty_str(item.get("id")):
+            failures.append("each limitation must be an object with a non-empty id")
+            continue
+        limitation_by_id[item["id"]] = item
+    if set(limitation_by_id) != set(derived_optional):
+        missing = sorted(set(derived_optional) - set(limitation_by_id))
+        extra = sorted(set(limitation_by_id) - set(derived_optional))
+        failures.append(f"limitation set mismatch: missing={missing} extra={extra} (closed set)")
+    for option_id in sorted(set(limitation_by_id) & set(derived_optional)):
+        claimed = limitation_by_id[option_id].get("status")
+        derived = derived_optional[option_id]
+        if claimed not in VALID_STATUS:
+            failures.append(f"limitation {option_id!r} has invalid claimed status {claimed!r}")
+        elif claimed != derived:
+            honesty_failures.append(
+                f"limitation {option_id!r} claimed {claimed!r} but derived {derived!r}")
+        if not _is_nonempty_str(limitation_by_id[option_id].get("reason")):
+            failures.append(f"limitation {option_id!r} must carry a reason")
 
     if claimed_verdict in contract.get("decision_vocabulary", []) and claimed_verdict != derived_verdict:
         if claimed_verdict == "GO":
@@ -311,8 +380,13 @@ def compute_decision(contract: dict, sources: dict, decision: dict, *,
         "candidate": candidate,
         "decision_vocabulary": list(contract.get("decision_vocabulary", [])),
         "required_capability_count": len(required),
+        "aggregate_capability_count": len(derived_aggregates),
+        "optional_capability_count": len(derived_optional),
         "derived_capabilities": derived_capabilities,
         "claimed_capabilities": {key: claimed_capabilities.get(key) for key in required},
+        "derived_aggregates": derived_aggregates,
+        "claimed_aggregates": {key: claimed_aggregates.get(key) for key in derived_aggregates},
+        "derived_optional": derived_optional,
         "derived_blockers": derived_blockers,
         "claimed_blockers": claimed_blockers,
         "constraints": contract.get("constraints", {}),
@@ -399,31 +473,40 @@ def _sources(d15_4: dict, d15_5: dict, host_reboot_optional: str, *,
     }
 
 
-def _decision(contract: dict, derived: dict[str, str], verdict: str,
+def _decision(contract: dict, sources: dict, verdict: str,
               blockers: list[str] | None = None) -> dict:
+    derived = derive_capabilities(contract, sources)
+    optional = derive_optional(contract, sources)
     return {
         "schema_version": "byq-d15-g-decision-input.v1",
         "candidate": dict(contract["candidate"]),
         "decision": verdict,
-        "capabilities": {key: derived[key] for key in [c["id"] for c in contract["required_capabilities"]]},
+        "capabilities": {c["id"]: derived[c["id"]] for c in contract["required_capabilities"]},
         "blockers": blockers if blockers is not None else sorted(
             key for key, value in derived.items() if value != "PASS"),
+        "aggregates": derive_aggregates(contract, derived),
+        "limitations": [
+            {"id": c["id"], "status": optional[c["id"]], "reason": "injected optional limitation"}
+            for c in contract.get("optional_capabilities", [])
+        ],
         "provenance": "docs/evidence/d15/d15-g/provenance.v1.json",
     }
 
 
 def good_fixture(contract: dict) -> tuple[dict, dict]:
-    """Synthetic ALL-PASS fixture: every required capability PASS, honest GO."""
-    sources = _sources(_ALL_PASS_D15_4, _ALL_PASS_D15_5, "PASS")
-    derived = derive_capabilities(contract, sources)
-    return sources, _decision(contract, derived, "GO")
+    """Synthetic ALL-PASS required fixture with an OPTIONAL host-reboot NOT_RUN.
+
+    The optional limitation does not gate GO, proving options never become
+    blockers and every required capability PASSes.
+    """
+    sources = _sources(_ALL_PASS_D15_4, _ALL_PASS_D15_5, "NOT_RUN")
+    return sources, _decision(contract, sources, "GO")
 
 
 def real_fixture(contract: dict) -> tuple[dict, dict]:
     """Synthetic PARTIAL fixture mirroring the real D15 evidence: honest NO_GO."""
     sources = _sources(_PARTIAL_D15_4, _PARTIAL_D15_5, "NOT_RUN")
-    derived = derive_capabilities(contract, sources)
-    return sources, _decision(contract, derived, "NO_GO")
+    return sources, _decision(contract, sources, "NO_GO")
 
 
 def _mutations(contract: dict) -> list[tuple[str, dict, dict]]:
@@ -444,16 +527,28 @@ def _mutations(contract: dict) -> list[tuple[str, dict, dict]]:
     # The headline defect: a partial-PASS report claiming GO.
     add_partial("claim-go-on-partial-sources", lambda v: v.update({"decision": "GO", "blockers": []}))
     # A required capability marked PASS while its source says BLOCKED.
-    add_partial("claim-child-crash-pass", lambda v: v["capabilities"].update({"child-crash": "PASS"}))
+    add_partial("claim-child-crash-pass", lambda v: v["capabilities"].update({"subagent-child-crash": "PASS"}))
     add_partial("claim-terminal-adapter-restart-pass",
                 lambda v: v["capabilities"].update({"terminal-adapter-restart": "PASS"}))
     add_partial("claim-dsh-runtime-restart-pass",
                 lambda v: v["capabilities"].update({"terminal-dsh-runtime-restart": "PASS"}))
     # Missing blocker while claiming NO_GO.
     add_partial("drop-named-blocker", lambda v: v.update({"blockers": ["subagent-child-crash"]}))
-    # Missing capability and extra capability.
-    add_partial("drop-required-capability", lambda v: v["capabilities"].pop("host-reboot-resume"))
-    # A NO_GO decision that disagrees with an all-PASS source set.
+    # Missing required capability.
+    add_partial("drop-required-capability", lambda v: v["capabilities"].pop("fork-continuity"))
+    # An aggregate is display-only: claiming it PASS while its atomic members are
+    # BLOCKED is rejected, and listing an aggregate as a blocker is rejected.
+    add_partial("claim-aggregate-pass", lambda v: v["aggregates"].update({"subagent-resume": "PASS"}))
+    add_partial("aggregate-listed-as-blocker",
+                lambda v: v.update({"blockers": sorted(v["blockers"] + ["subagent-resume"])}))
+    # An optional capability is a limitation: making it a blocker, dropping it, or
+    # mis-stating its status is rejected.
+    add_partial("optional-listed-as-blocker",
+                lambda v: v.update({"blockers": sorted(v["blockers"] + ["host-reboot-resume"])}))
+    add_partial("missing-limitation", lambda v: v.pop("limitations"))
+    add_partial("limitation-status-mismatch",
+                lambda v: v["limitations"][0].update({"status": "PASS"}))
+    # A NO_GO decision that disagrees with an all-PASS required source set.
     add_good("no-go-against-all-pass", lambda v: v.update({"decision": "NO_GO", "blockers": ["x"]}))
     # Self-declared verdict/coverage fields.
     add_good("self-declared-verdict", lambda v: v.update({"go_authorized": True}))
@@ -465,10 +560,10 @@ def _mutations(contract: dict) -> list[tuple[str, dict, dict]]:
     # A GO decision over a source set that cannot be derived (missing coverage).
     empty_sources = _sources({}, {}, "NOT_RUN")
     add_good("go-with-missing-coverage", lambda v: None, sources=empty_sources)
-    # A required capability in the source is FAIL, claimed PASS.
-    fail_sources = _sources(dict(_ALL_PASS_D15_4, **{"cold-resume": "FAIL"}), _ALL_PASS_D15_5, "PASS")
-    fail_decision = _decision(contract, derive_capabilities(contract, fail_sources), "GO")
-    mutations.append(("claim-pass-on-source-fail", fail_sources, fail_decision))
+    # A required atomic capability in the source is FAIL, claimed GO.
+    fail_sources = _sources(dict(_ALL_PASS_D15_4, **{"child-crash": "FAIL"}), _ALL_PASS_D15_5, "NOT_RUN")
+    fail_decision = _decision(contract, fail_sources, "GO")
+    mutations.append(("claim-go-on-source-fail", fail_sources, fail_decision))
     # MISSING blocker list.
     add_partial("missing-blocker-list", lambda v: v.pop("blockers"))
     return mutations
@@ -497,11 +592,14 @@ def selfcheck(contract: dict) -> dict:
         "schema_version": "byq-d15-g-negative-controls.v1",
         "known_good_all_pass_fixture_all_pass": good["all_pass"],
         "known_good_all_pass_fixture_verdict": good["verdict"],
+        "known_good_all_pass_fixture_optional": good["derived_optional"],
         "real_partial_fixture_all_pass": real["all_pass"],
         "real_partial_fixture_decision_valid": real["decision_valid"],
         "real_partial_fixture_honest": real["honest"],
         "real_partial_fixture_verdict": real["verdict"],
         "real_partial_fixture_blockers": real["derived_blockers"],
+        "real_partial_fixture_aggregates": real["derived_aggregates"],
+        "real_partial_fixture_optional": real["derived_optional"],
         "control_count": len(controls),
         "controls": controls,
         "all_controls_rejected": all_controls_rejected,
@@ -548,6 +646,8 @@ def main(argv: list[str] | None = None) -> int:
             "go_claimed": result["go_claimed"],
             "aggregation_rejected": result["aggregation_rejected"],
             "derived_blockers": result["derived_blockers"],
+            "derived_aggregates": result["derived_aggregates"],
+            "derived_optional": result["derived_optional"],
             "failures": result["failures"],
             "honesty_failures": result["honesty_failures"],
         }, indent=2))

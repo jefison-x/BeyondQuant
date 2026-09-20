@@ -11,24 +11,31 @@
   "capabilities": {
     "root-session-persistence": "PASS",
     "process-restart-resume": "PASS",
-    "host-reboot-resume": "NOT_RUN",
     "fork-continuity": "PASS",
-    "subagent-resume": "BLOCKED",
     "subagent-child-crash": "BLOCKED",
     "subagent-byq-adapter-restart": "BLOCKED",
     "terminal-client-reattach": "PASS",
-    "terminal-persistence": "BLOCKED",
     "terminal-adapter-restart": "BLOCKED",
     "terminal-dsh-runtime-restart": "BLOCKED"
   },
   "blockers": [
-    "host-reboot-resume",
     "subagent-byq-adapter-restart",
     "subagent-child-crash",
-    "subagent-resume",
     "terminal-adapter-restart",
-    "terminal-dsh-runtime-restart",
-    "terminal-persistence"
+    "terminal-dsh-runtime-restart"
+  ],
+  "aggregates": {
+    "subagent-resume": "BLOCKED",
+    "terminal-persistence": "BLOCKED"
+  },
+  "limitations": [
+    {
+      "id": "host-reboot-resume",
+      "status": "NOT_RUN",
+      "role": "optional-limitation",
+      "reason": "Rebooting the maintainer host is not authorized; the D15-4 and D15-5 contracts mark host-reboot OPTIONAL NOT_RUN. D15-3 only models the host-reboot path at the persistence seam, and a container/adapter restart is not a host reboot. It is a limitation, not a required blocker.",
+      "smallest_option": "An authorized real host reboot qualification in the isolated runtime, owned by R6."
+    }
   ],
   "blocker_details": [
     {
@@ -54,14 +61,12 @@
       "status": "BLOCKED",
       "reason": "A restarted DSH runtime is a new process and native terminal sessions do not survive it; no BYQ reconnect surface exists.",
       "smallest_option": "The same BYQ attachment layer plus an explicit lost/interrupted status; never a fabricated reattach."
-    },
-    {
-      "id": "host-reboot-resume",
-      "status": "NOT_RUN",
-      "reason": "Rebooting the maintainer host is not authorized; D15-3 models the host-reboot path only at the persistence seam, and a container/adapter restart is not a host reboot.",
-      "smallest_option": "An authorized real host reboot qualification in the isolated runtime, owned by R6."
     }
   ],
+  "aggregate_notes": {
+    "subagent-resume": "Display-only aggregate derived from the atomic subagent-child-crash and subagent-byq-adapter-restart capabilities; BLOCKED because a member is BLOCKED. Not an independent actionable blocker.",
+    "terminal-persistence": "Display-only aggregate derived from the atomic terminal-client-reattach, terminal-adapter-restart and terminal-dsh-runtime-restart capabilities; BLOCKED because a member is BLOCKED. Not an independent actionable blocker."
+  },
   "evidence": {
     "d15-2": ["docs/evidence/d15/d15-2/verdict.v3.json"],
     "d15-3": ["docs/evidence/d15/d15-3/native-resume-results.v1.json"],

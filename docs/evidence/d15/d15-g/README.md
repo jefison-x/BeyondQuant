@@ -14,11 +14,11 @@
 
 | artifact | what it is |
 | --- | --- |
-| [`decision-input.v1.json`](decision-input.v1.json) | the D15-G report: claimed verdict, per-capability statuses, named blockers |
-| [`capability-matrix.v1.json`](capability-matrix.v1.json) | the D15-2..D15-5 capability/failure matrix with per-item DSH-native result / BYQ fallback / R-series owner |
+| [`decision-input.v1.json`](decision-input.v1.json) | the D15-G report: claimed verdict, per-capability statuses, four atomic blockers, derived aggregates and optional limitations |
+| [`capability-matrix.v1.json`](capability-matrix.v1.json) | the D15-2..D15-5 capability/failure matrix with per-item DSH-native result / BYQ fallback / R-series owner, split into required-atomic, derived-aggregate and optional-limitation |
 | [`provenance.v1.json`](provenance.v1.json) | sha256 + introducing commit for every reused source evidence file |
 | [`verdict.v1.json`](verdict.v1.json) | fail-able observer output: independently derived `verdict=NO_GO`, `decision_valid=true` (the NO_GO is honest), `all_pass=false` (NOT-PASS), `go_granted=false`, exit 1 |
-| [`negative-controls.v1.json`](negative-controls.v1.json) | selfcheck: known-good GO fixture passes; 14 controls all rejected (13 defect-targeting) |
+| [`negative-controls.v1.json`](negative-controls.v1.json) | selfcheck: known-good GO fixture (all required PASS, optional host-reboot NOT_RUN) passes; 19 controls all rejected (18 defect-targeting) |
 | contract + observer | `scripts/d15/go_no_go/contract.v1.json`, `scripts/d15/go_no_go/observer.py`, `scripts/d15/go_no_go/build_provenance.py` |
 
 ## The Go/No-Go contract and fail-able observer
@@ -36,50 +36,68 @@ but `all_pass=false` (NOT-PASS) and exits non-zero. The observer fails
   D15-2..D15-5 evidence. A report may not declare its own verdict or coverage.
 - `verdict` / `go_granted` — GO is granted **only** when every required
   capability is actually `PASS`. One `BLOCKED`/`NOT_RUN`/`FAIL` required
-  capability forces `NO_GO` and must be named as a blocker.
+  capability forces `NO_GO` and must be named as an actionable blocker.
 - `all_pass` — `decision_valid` **and** `go_granted`; the stage is NOT-PASS here.
+
+Blocker model (same-source closed):
+
+- **Required capabilities** are atomic. Only the four atomic required blockers
+  (`subagent-child-crash`, `subagent-byq-adapter-restart`,
+  `terminal-adapter-restart`, `terminal-dsh-runtime-restart`) may be blockers.
+- **Aggregate capabilities** (`subagent-resume`, `terminal-persistence`) are
+  display-only. The observer derives each from its atomic `derived_from` members
+  (`BLOCKED` because a member is `BLOCKED`) and rejects both a mismatched
+  aggregate claim and listing an aggregate as an independent blocker.
+- **Optional capabilities** (`host-reboot-resume`) are limitations reported with
+  their derived status (`NOT_RUN`, matching the D15-4/D15-5 contracts). They
+  never gate GO and are rejected if treated as a blocker or omitted.
 
 The observer rejects, non-zero:
 
 1. `claim-go-on-partial-sources` — a partial report claiming GO
    (`aggregation_rejected=true`; legacy result-trusting gate would pass);
 2. a required capability claimed `PASS` while its source says `BLOCKED`/`FAIL`;
-3. a blocker missing from the named blocker set;
+3. a blocker missing from the atomic blocker set, or an aggregate/optional listed
+   as a blocker;
 4. a claimed capability set that is not the closed required set;
-5. missing or hash-mismatched source evidence;
-6. self-declared `go_authorized`/`coverage` fields;
-7. candidate/decision-vocabulary violations.
+5. a mismatched aggregate claim, or a missing/mis-stated limitation;
+6. missing or hash-mismatched source evidence;
+7. self-declared `go_authorized`/`coverage` fields;
+8. candidate/decision-vocabulary violations.
 
-`negative-controls.v1.json` records 14 controls, all rejected by the fixed
-observer; **13 are defect-targeting** (the reconstructed pre-fix algorithm that
-trusted the report's own verdict/claims passed them). The known-good all-PASS
-synthetic fixture yields an honest `GO` and passes, proving the gate is not
-simply always-fail.
+`negative-controls.v1.json` records 19 controls, all rejected by the fixed
+observer; **18 are defect-targeting** (the reconstructed pre-fix algorithm that
+trusted the report's own verdict/claims passed them). The known-good synthetic
+fixture has every required capability `PASS` **and an optional host-reboot
+`NOT_RUN`** and yields an honest `GO`, proving options do not gate and the gate
+is not simply always-fail.
 
 ## Verdict: NO-GO
 
 Because a required capability that is not PASS must force NO-GO, and the
 following required capabilities did not pass, the derived verdict is **NO_GO**:
 
-| capability | derived | layer |
-| --- | --- | --- |
-| root-session-persistence | PASS | D15-2/D15-3 |
-| process-restart-resume | PASS | D15-3/D15-3R |
-| host-reboot-resume | NOT_RUN | D15-3 (persistence model only) |
-| fork-continuity | PASS | D15-4 |
-| subagent-resume | BLOCKED | D15-4 |
-| subagent-child-crash | BLOCKED | D15-4 |
-| subagent-byq-adapter-restart | BLOCKED | D15-4 |
-| terminal-client-reattach | PASS | D15-5 |
-| terminal-persistence | BLOCKED | D15-5 |
-| terminal-adapter-restart | BLOCKED | D15-5 |
-| terminal-dsh-runtime-restart | BLOCKED | D15-5 |
+| capability | role | derived | layer |
+| --- | --- | --- | --- |
+| root-session-persistence | required-atomic | PASS | D15-2/D15-3 |
+| process-restart-resume | required-atomic | PASS | D15-3/D15-3R |
+| fork-continuity | required-atomic | PASS | D15-4 |
+| subagent-child-crash | required-atomic | BLOCKED | D15-4 |
+| subagent-byq-adapter-restart | required-atomic | BLOCKED | D15-4 |
+| terminal-client-reattach | required-atomic | PASS | D15-5 |
+| terminal-adapter-restart | required-atomic | BLOCKED | D15-5 |
+| terminal-dsh-runtime-restart | required-atomic | BLOCKED | D15-5 |
+| subagent-resume | derived-aggregate | BLOCKED (from atomics) | D15-4 |
+| terminal-persistence | derived-aggregate | BLOCKED (from atomics) | D15-5 |
+| host-reboot-resume | optional-limitation | NOT_RUN | D15-3 persistence model only |
 
-**Primary named blockers:** `subagent-child-crash`,
-`subagent-byq-adapter-restart`, `terminal-adapter-restart`,
-`terminal-dsh-runtime-restart`. **Secondary:** `host-reboot-resume` `NOT_RUN`.
-The aggregate capabilities `subagent-resume` and `terminal-persistence` are
-`BLOCKED` because they contain those required items.
+**The four atomic required blockers are** `subagent-child-crash`,
+`subagent-byq-adapter-restart`, `terminal-adapter-restart` and
+`terminal-dsh-runtime-restart`. The aggregates `subagent-resume` and
+`terminal-persistence` display `BLOCKED` only because they are derived from those
+atomic members; they are not independent actionable blockers. `host-reboot-resume`
+is an **optional limitation** (`NOT_RUN`, matching the D15-4/D15-5 contracts) and
+does not decide the verdict.
 
 ### Why the passing layers do not make this a GO
 

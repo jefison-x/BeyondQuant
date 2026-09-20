@@ -52,17 +52,17 @@
     },
     {
       "id": "acceptance_matrix",
-      "introduced_by": "91d86b0788ebffe1736dcb3ca42aad964076c059",
+      "introduced_by": "d66dce32b2a90ac21dbcc1263eb8909625dffff3",
       "introduced_date": "2026-09-20",
       "layer": "acceptance",
       "modified_in_d15_g_commit": true,
       "path": "docs/evidence/d15/acceptance-matrix.v1.json",
-      "sha256": "sha256:4b614e3022939b72cccd86c49f7b089d486f99f43600f4df2212a3c961a8962f",
+      "sha256": "sha256:1b57e07bd8905284d6540707d2d73f19c1a40b43a8fd3432d9792074f52dcb89",
       "stage": "D15"
     }
   ],
   "generated_at": "2026-09-20",
-  "generated_from_head": "91d86b0788ebffe1736dcb3ca42aad964076c059",
+  "generated_from_head": "d66dce32b2a90ac21dbcc1263eb8909625dffff3",
   "note": "Immutable D15-2..D15-5 evidence reused by the D15-G decision. introduced_by is the last commit that touched the path; modified_in_d15_g_commit marks paths changed by the D15-G commit itself (the D15-G acceptance-matrix annotation). No historical evidence was modified or overwritten.",
   "schema_version": "byq-d15-g-provenance.v1"
 }

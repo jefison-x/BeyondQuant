@@ -200,16 +200,20 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
 - **D15-G（NO_GO / NOT-PASS）**：architecture Go/No-Go 已执行。fail-able decision
   contract（`scripts/d15/go_no_go/contract.v1.json`）与 observer（`observer.py`）从已提交
   D15-2..D15-5 证据独立推导每个必需 capability 状态并验证 provenance sha256；只有全部必需
-  capability 为 `PASS` 才给 GO，任一必需项非 PASS 即强制 NO_GO 且必须具名 blocker。observer
-  拒绝把部分 PASS 聚合为 GO、拒绝 claimed 与 derived 不一致、拒绝缺失 blocker/证据/自声明字段。
-  `negative-controls.v1.json` 14 项控制全部被拒（13 项 defect-targeting，修复前 result-trusting
-  门禁会误报），已知全 PASS 合成 fixture 得到诚实 GO 并通过。推导结果：root-session-persistence/
-  process-restart-resume/fork-continuity/terminal-client-reattach `PASS`；host-reboot-resume
-  `NOT_RUN`；subagent-resume、subagent-child-crash、subagent-byq-adapter-restart、
-  terminal-persistence、terminal-adapter-restart、terminal-dsh-runtime-restart `BLOCKED`。
-  主要具名阻塞项为 child-crash、BYQ adapter restart、terminal adapter restart、DSH runtime
-  restart；host reboot `NOT_RUN`。证据 `docs/evidence/d15/d15-g/`。GO 不隐含生产切换；
-  Proposed ADR-0082/0083 未接受、未实现；`R3_RESUME = NO`。
+  capability 为 `PASS` 才给 GO，任一必需项非 PASS 即强制 NO_GO 且必须具名 actionable blocker。
+  只有 atomic required capability 可作 blocker；aggregate capability 为 display-only（由其
+  atomic 成员推导，不得重复计为独立 blocker）；optional capability 为 limitation，不 gate GO、
+  不作 blocker。observer 拒绝把部分 PASS 聚合为 GO、拒绝 claimed 与 derived 不一致、拒绝缺失
+  blocker/证据/自声明字段、拒绝把 aggregate/optional 列为 blocker。`negative-controls.v1.json`
+  19 项控制全部被拒（18 项 defect-targeting，修复前 result-trusting 门禁会误报），已知“全部必需
+  PASS 且 optional host-reboot NOT_RUN”的合成 fixture 得到诚实 GO 并通过。推导结果：
+  root-session-persistence/process-restart-resume/fork-continuity/terminal-client-reattach
+  `PASS`；四个 atomic 必需项 subagent-child-crash、subagent-byq-adapter-restart、
+  terminal-adapter-restart、terminal-dsh-runtime-restart `BLOCKED`；aggregate
+  subagent-resume/terminal-persistence 因成员 `BLOCKED` 而 display `BLOCKED`；optional
+  host-reboot-resume 为 `NOT_RUN` limitation。**NO_GO 仅由四个 atomic 必需 blocker 决定。**
+  证据 `docs/evidence/d15/d15-g/`。GO 不隐含生产切换；Proposed ADR-0082/0083 未接受、未实现；
+  `R3_RESUME = NO`。
 - **路线重排**：`R0 → R1 → R2 → D15 → R3 Thin Runtime Supervisor → R4 TerminalAttachment →
   R5 DurableJob independence → R6 Full Runtime Continuity Qualification → 独立 Production
   Go/No-Go`；R6 完成不隐含生产切换，“兼容 0.1.5-rc.1”与“生产默认 = 0.1.5-rc.1”为独立决策。

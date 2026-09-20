@@ -1,7 +1,7 @@
 {
   "schema_version": "byq-d15-g-capability-matrix.v1",
   "generated_at": "2026-09-20",
-  "scope": "D15-G capability/failure matrix over D15-2..D15-5. Result is derived by scripts/d15/go_no_go/observer.py from the referenced immutable evidence; no criterion is marked PASS without committed evidence.",
+  "scope": "D15-G capability/failure matrix over D15-2..D15-5. Result is derived by scripts/d15/go_no_go/observer.py from the referenced immutable evidence; no criterion is marked PASS without committed evidence. Only atomic required capabilities can be blockers; aggregates are display-only and options are limitations.",
   "candidate": {
     "release": "dsh-0.1.5rc1",
     "python_sdk": "0.1.5rc1",
@@ -45,10 +45,11 @@
       "evidence": "docs/evidence/d15/d15-5/verdict.v1.json"
     }
   ],
-  "capabilities": [
+  "required_capabilities": [
     {
       "id": "root-session-persistence",
       "stage": "D15-2/D15-3",
+      "role": "required-atomic",
       "required": true,
       "result": "PASS",
       "dsh_native_result": "Session V3 migration PASS (9/9 fixtures); native reopen of the same persisted session id with contiguous log across a genuinely new OS process",
@@ -62,6 +63,7 @@
     {
       "id": "process-restart-resume",
       "stage": "D15-3/D15-3R",
+      "role": "required-atomic",
       "required": true,
       "result": "PASS",
       "dsh_native_result": "adapter restart rehydrated natively at the persistence seam; real isolated adapter/DSH process restart, generation replacement and executor takeover PASS with scripted keyless provider",
@@ -73,22 +75,9 @@
       ]
     },
     {
-      "id": "host-reboot-resume",
-      "stage": "D15-3/D15-4/D15-5",
-      "required": true,
-      "result": "NOT_RUN",
-      "dsh_native_result": "NOT_RUN in the real runtime: no host reboot was executed. D15-3 only models the host-reboot path at the persistence seam (flock released on process death).",
-      "byq_fallback": "none proven end to end; native attach/resume after flock release is expected but unqualified",
-      "r_series_owner": "R6 Full Runtime Continuity Qualification",
-      "evidence": [
-        "docs/evidence/d15/d15-3/native-resume-results.v1.json",
-        "docs/evidence/d15/d15-4/verdict.v2.json",
-        "docs/evidence/d15/d15-5/verdict.v1.json"
-      ]
-    },
-    {
       "id": "fork-continuity",
       "stage": "D15-4",
+      "role": "required-atomic",
       "required": true,
       "result": "PASS",
       "dsh_native_result": "Native fork yields a distinct seeded child with exact inherited cut (inheritedEventCount == last parent turn/end seq + 1), parent log hash+length immutable and child log contiguous",
@@ -97,18 +86,9 @@
       "evidence": ["docs/evidence/d15/d15-4/verdict.v2.json"]
     },
     {
-      "id": "subagent-resume",
-      "stage": "D15-4",
-      "required": true,
-      "result": "BLOCKED",
-      "dsh_native_result": "Six required native scenarios PASS (parent/child identity, continuable descriptor, cold resume, fork lineage, inheritance, parent crash) but child-crash and BYQ adapter-restart required items are BLOCKED",
-      "byq_fallback": "BYQ stays on the foreground delegate path; no BYQ subagent persistence added",
-      "r_series_owner": "R6/composition hookup (Proposed ADR-0082, not accepted, not implemented)",
-      "evidence": ["docs/evidence/d15/d15-4/verdict.v2.json"]
-    },
-    {
       "id": "subagent-child-crash",
       "stage": "D15-4",
+      "role": "required-atomic",
       "required": true,
       "result": "BLOCKED",
       "dsh_native_result": "The native spawn provider runs children in-process; a child-only SIGKILL while the parent executor stays alive is not reachable. child-run-fault is supporting evidence, not a substitute.",
@@ -119,6 +99,7 @@
     {
       "id": "subagent-byq-adapter-restart",
       "stage": "D15-4",
+      "role": "required-atomic",
       "required": true,
       "result": "BLOCKED",
       "dsh_native_result": "The committed byq_delegate_* composition never calls startContinuable(); a fresh adapter exposes only root resume_session and no committed BYQ surface cold-resumes a continuable child",
@@ -133,6 +114,7 @@
     {
       "id": "terminal-client-reattach",
       "stage": "D15-5",
+      "role": "required-atomic",
       "required": true,
       "result": "PASS",
       "dsh_native_result": "page refresh / browser disconnect / frontend restart / gateway restart rebind the SAME attachment/session/PTY in a separate client OS process with no marker replay and no loss",
@@ -141,18 +123,9 @@
       "evidence": ["docs/evidence/d15/d15-5/verdict.v1.json"]
     },
     {
-      "id": "terminal-persistence",
-      "stage": "D15-5",
-      "required": true,
-      "result": "BLOCKED",
-      "dsh_native_result": "Four client-side rows PASS and cross-checks PASS, but adapter-restart and dsh-runtime-restart required rows are BLOCKED because native terminal sessions are process-local",
-      "byq_fallback": "no persisted TerminalAttachment or reconnect surface is composed",
-      "r_series_owner": "R4 TerminalAttachment (Proposed ADR-0083, not accepted, not implemented)",
-      "evidence": ["docs/evidence/d15/d15-5/verdict.v1.json", "docs/evidence/d15/d15-5/interface-probe.v1.json"]
-    },
-    {
       "id": "terminal-adapter-restart",
       "stage": "D15-5",
+      "role": "required-atomic",
       "required": true,
       "result": "BLOCKED",
       "dsh_native_result": "A fresh adapter rejects the old attachment (rebindError, old pid liveness, empty new-runtime session list); never a fabricated reattach",
@@ -163,6 +136,7 @@
     {
       "id": "terminal-dsh-runtime-restart",
       "stage": "D15-5",
+      "role": "required-atomic",
       "required": true,
       "result": "BLOCKED",
       "dsh_native_result": "A restarted DSH runtime is a new process and native terminal sessions do not survive it",
@@ -171,14 +145,52 @@
       "evidence": ["docs/evidence/d15/d15-5/verdict.v1.json"]
     }
   ],
-  "required_non_pass": [
-    "host-reboot-resume",
-    "subagent-byq-adapter-restart",
-    "subagent-child-crash",
-    "subagent-resume",
-    "terminal-adapter-restart",
-    "terminal-dsh-runtime-restart",
-    "terminal-persistence"
+  "aggregate_capabilities": [
+    {
+      "id": "subagent-resume",
+      "stage": "D15-4",
+      "role": "derived-aggregate",
+      "required": false,
+      "actionable": false,
+      "derived_from": ["subagent-child-crash", "subagent-byq-adapter-restart"],
+      "result": "BLOCKED",
+      "derivation": "BLOCKED because an atomic member (subagent-child-crash, subagent-byq-adapter-restart) is BLOCKED; display-only and never an independent actionable blocker",
+      "dsh_native_result": "Six required native scenarios PASS but the atomic child-crash and BYQ adapter-restart capabilities are BLOCKED",
+      "byq_fallback": "BYQ continues to use the foreground delegate path; no BYQ subagent persistence is added",
+      "r_series_owner": "R6/composition hookup (Proposed ADR-0082, not accepted, not implemented)",
+      "evidence": ["docs/evidence/d15/d15-4/verdict.v2.json"]
+    },
+    {
+      "id": "terminal-persistence",
+      "stage": "D15-5",
+      "role": "derived-aggregate",
+      "required": false,
+      "actionable": false,
+      "derived_from": ["terminal-client-reattach", "terminal-adapter-restart", "terminal-dsh-runtime-restart"],
+      "result": "BLOCKED",
+      "derivation": "BLOCKED because an atomic member (terminal-adapter-restart, terminal-dsh-runtime-restart) is BLOCKED; display-only and never an independent actionable blocker",
+      "dsh_native_result": "The atomic terminal-client-reattach capability PASSes but adapter-restart and dsh-runtime-restart are BLOCKED; native terminal sessions are process-local",
+      "byq_fallback": "no persisted TerminalAttachment or reconnect surface is composed",
+      "r_series_owner": "R4 TerminalAttachment (Proposed ADR-0083, not accepted, not implemented)",
+      "evidence": ["docs/evidence/d15/d15-5/verdict.v1.json", "docs/evidence/d15/d15-5/interface-probe.v1.json"]
+    }
+  ],
+  "optional_limitations": [
+    {
+      "id": "host-reboot-resume",
+      "stage": "D15-3/D15-4/D15-5",
+      "role": "optional-limitation",
+      "required": false,
+      "result": "NOT_RUN",
+      "dsh_native_result": "NOT_RUN in the real runtime: no host reboot was executed. The D15-4 and D15-5 contracts mark host-reboot OPTIONAL NOT_RUN; D15-3 only models the host-reboot path at the persistence seam.",
+      "byq_fallback": "none proven end to end; native attach/resume after flock release is expected but unqualified",
+      "r_series_owner": "R6 Full Runtime Continuity Qualification",
+      "evidence": [
+        "docs/evidence/d15/d15-3/native-resume-results.v1.json",
+        "docs/evidence/d15/d15-4/verdict.v2.json",
+        "docs/evidence/d15/d15-5/verdict.v1.json"
+      ]
+    }
   ],
   "primary_named_blockers": [
     "subagent-child-crash",
@@ -186,7 +198,6 @@
     "terminal-adapter-restart",
     "terminal-dsh-runtime-restart"
   ],
-  "secondary_not_run": ["host-reboot-resume"],
   "constraints": {
     "r3_resume": "NO",
     "production_selector": "dsh-0.1.2rc1",
