@@ -7,10 +7,20 @@
 ```bash
 make dev-check
 # 定向测试按改动选择；完整组件与集成套件交给 PR CI。
-python3 scripts/ci/watch-ci.py --pr 123 --expected-head <完整PR-head-SHA>
+# 单次读取（不阻塞）。
+python3 scripts/ci/watch-ci.py --pr 123 --expected-head <完整PR-head-SHA> --once
+# 有界可恢复观察：输出只在状态变化时出现；PENDING(2) 时再次调用，不要长期 sleep。
+python3 scripts/ci/watch-ci.py --pr 123 --expected-head <完整PR-head-SHA> --budget-seconds 90
 ```
 
+watcher 只报告观察到的状态，不是合并授权工具；缺失、过期、403 或未知证据一律
+返回 BLOCKED/STALE（退出码 3），绝不返回 PASS。退出码：0 PASS、1 FAIL、
+2 PENDING/预算耗尽、3 BLOCKED/STALE。
+
 PR 的完整套件分任务并行执行；主线不因合并再次触发 Full。夜间 Full 用于漂移检查。
+每次运行的阶段耗时、pytest 收集/通过/跳过与慢 setup/call/teardown 项由既有入口在
+脱敏日志中产出，可用 `python3 scripts/ci/ci-metrics.py --log <redacted log> --sha <sha> --run <id> --attempt <n>`
+汇总；不为此新增额外 Full 运行。
 `local-ci.sh --all --with-e2e --with-smoke` 保留作本地显式诊断入口。
 
 ## 构建发布

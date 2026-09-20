@@ -153,8 +153,9 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
   推进 `post-u8.146 → post-u8.147`；D15-2 新增 `scripts/`/`tests/` 下的 harness 与 fixtures 后推进
   `post-u8.147 → post-u8.148`；D15-3 新增 `scripts/d15/` harness、`tests/`、`packages/contracts`
   分类逻辑与证据后推进 `post-u8.148 → post-u8.149`；本轮 D15 资格完整性/验收措辞整改新增
-  `scripts/d15/harness`、`tests/` 与证据后推进 `post-u8.150 → post-u8.151`（仅重建身份；
-  历史清单与全部证据保留）。
+  `scripts/d15/harness`、`tests/` 与证据后先推进 `post-u8.150 → post-u8.151`，CI-A `#326`
+  并入 `main`（`.154`）后合并 `origin/main` 并改用未使用 id `post-u8.155`（仅重建身份；
+  历史清单与全部证据保留，不修改任何既有 immutable manifest）。
   不部署、不自动合并。`R3_RESUME = NO`，直至 D15-G 完成且有原生连续性证据。
 
 - 当前已完成阶段：**Phase 97**——回测任务拥有 Backend 权威、持久化的可读名称；名称与稳定 Backtest ID 在 Product 目录、

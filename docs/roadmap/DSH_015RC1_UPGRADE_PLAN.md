@@ -267,9 +267,10 @@ immutable release registry or 0.1.2 artifact/evidence change and no deployment).
 
 The D15-2 verdict-completeness rectification further changes build-input files
 (`scripts/d15/harness/migration_verdict.mjs`,
-`scripts/d15/harness/migration_negative_controls.mjs`, `tests/`), so the `.151`
-manifest is regenerated at the same build id (`.151` is not merged history).
-Decision: keep the branch's current build id `post-u8.151`; no new id is minted
-here. `#326` targets `post-u8.154`; after it merges this branch is rebased and
-bumped to an unused id and re-verified on the new head (separate step). No
-`main`-immutable manifest history is rewritten.
+`scripts/d15/harness/migration_negative_controls.mjs`, `tests/`), so the manifest
+is regenerated. `#326` (CI-A) merged into `main` at `post-u8.154`; this branch
+merged `origin/main` and bumped to the next unused id `post-u8.155` (`.151`–`.154`
+are taken). The `.155` manifest is created new; no prior immutable manifest
+(`.151`–`.154`) is modified and no `main` history is rewritten. Selector,
+`compose.yml`, `deployment.json`, the immutable release registry and 0.1.2
+artifacts/evidence are unchanged, and no deployment occurs.

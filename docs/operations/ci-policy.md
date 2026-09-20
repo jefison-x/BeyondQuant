@@ -52,6 +52,11 @@ source of truth and has architecture tests for representative routes.
   exact-head CLA plus maintainer review for external contributions. Comment/review changes require a rerun;
   merge preflight repeats the live authorization read. This is not proof of copyright ownership.
   Configure both as strict required server-side checks. Skipped/neutral/cancelled is not successful testing.
+- Heavy component/integration lanes depend on both `plan` and `contribution` success, so a fast plan or
+  contribution failure cannot still spend ~20 minutes of runner time. This is an early-fail only: the
+  trusted-base contribution check, its token isolation and fork limits are unchanged, `fail-fast` stays
+  off for the matrix, per-lane cleanup/diagnostics still run, and a skipped lane remains a failed
+  `local-ci`/`ci-gate`.
 - Before authorized pre-release auto-merge, use `check-github-gates.py`; configuration disabled or API
   403/unverifiable rules means keep Draft. Never bypass checks with administrative merge.
 
@@ -68,6 +73,9 @@ Candidate release selectors/attestation remain DSH U1 work; this maintenance doe
 CI disables automatic `.env`/Compose override loading and replaces DB/credentials with test-only values.
 Test output must not be discarded. Workflow output passes through `redact-log.py` before console/log
 storage; only sanitized logs are uploaded for seven days, including failure evidence before resources vanish.
+Existing entry points emit low-noise phase timing (`[byq-timing]`) and pytest `--durations` slow-item
+stats so the next required verification produces the baseline without an extra Full run; a summary tool
+reads the redacted logs without fetching or uploading anything.
 Redaction is defense-in-depth, not permission to print real credentials, raw production logs or entire Env.
 For local saved evidence, pipe through the same redactor with shell `pipefail`; do not persist raw logs.
 

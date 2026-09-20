@@ -46,7 +46,9 @@ AGENTS 为入口，ARCHITECTURE 定义持久边界，Accepted ADR 定义具名�
 10. 运行 `git diff --check`，检查完整 diff，并执行安全和架构自审。
 11. 在 feature branch 上有意识地提交；只有 push/pr 授权覆盖时才 push 该分支。
 12. 授权覆盖时创建以 `main` 为目标的 Draft PR，说明范围、证据、已知限制和剩余决策；否则本地交接。
-13. 已推送时等待远端 CI 并记录结果；未推送时如实记录本地验证，不能冒充远端 CI。只在 feature branch 中修复失败。
+13. 已推送时用 `scripts/ci/watch-ci.py`（精确 PR/head/run、单次读取或有界短观察）
+    等待远端 CI 并记录结果，不用长期 grep+sleep 循环；未推送时如实记录本地验证，不能
+    冒充远端 CI。只在 feature branch 中修复失败。
 14. 最终复核文件、测试、依赖 pin 和边界变更。
 15. 默认停在人工合并门禁；仅本文件明确的预发布例外可进入 auto-merge，绝不直接 push 到 `main`。
 

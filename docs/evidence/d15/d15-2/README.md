@@ -111,9 +111,10 @@ artifact/evidence changes and no deployment.
 
 The D15-2 verdict-completeness rectification adds
 `migration_verdict.mjs`/`migration_negative_controls.mjs` and updates tests, all
-build-input files, so on this branch the revision is `post-u8.151` (see the
-upgrade plan's build-revision section; the branch is rebased/bumped to an unused
-id after `#326` merges).
+build-input files. After `#326` (CI-A) merged into `main` at `post-u8.154`, this
+branch was merged with `origin/main` and bumped to the next unused id
+`post-u8.155` (see the upgrade plan's build-revision section). No prior immutable
+manifest was modified.
 
 ## Harness scope and boundary
 
