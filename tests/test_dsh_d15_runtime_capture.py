@@ -32,7 +32,7 @@ class D15RuntimeCaptureTests(unittest.TestCase):
         module = _load("d15_capneg", CAPNEG)
         result = module.run()
         self.assertTrue(result["baseline_all_pass"])
-        self.assertGreaterEqual(result["case_count"], 5)
+        self.assertGreaterEqual(result["case_count"], 10)
         self.assertTrue(result["all_cases_pass"])
         self.assertTrue(result["all_pass"])
         for case in result["cases"]:

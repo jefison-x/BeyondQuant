@@ -261,6 +261,55 @@ def provider_state() -> dict:
         return {}
 
 
+def tool_call_and_result(history: object, start: int = 0) -> tuple[dict | None, dict | None]:
+    """Return the first real tool call at/after ``start`` and its matching result."""
+    if not isinstance(history, list):
+        return None, None
+    call = None
+    call_pos = None
+    for index in range(max(0, start), len(history)):
+        item = history[index]
+        if isinstance(item, dict) and item.get("stage") == "call":
+            call = item
+            call_pos = index
+            break
+    if call is None:
+        return None, None
+    for index in range(call_pos + 1, len(history)):
+        item = history[index]
+        if isinstance(item, dict) and item.get("stage") == "result" \
+                and item.get("call_id") == call.get("call_id"):
+            return call, item
+    return call, None
+
+
+def tool_result_payload(result: object) -> dict:
+    if isinstance(result, dict) and isinstance(result.get("content"), dict):
+        return result["content"]
+    return {}
+
+
+def tool_result_task_id(result: object) -> str | None:
+    value = tool_result_payload(result).get("task_id")
+    return value if isinstance(value, str) and value else None
+
+
+def tool_result_status(result: object) -> str | None:
+    """Normalize an MCP tool result to ok/error.
+
+    The MCP envelope is ``{"service":"beyondquant-mcp","status":...}`` but a
+    successful domain payload can override ``status`` with its own value (e.g. a
+    research task status of ``planned``), so success is keyed on the service
+    envelope and an explicit ``error`` status.
+    """
+    content = tool_result_payload(result)
+    if content.get("service") != "beyondquant-mcp":
+        return None
+    if content.get("status") == "error":
+        return "error"
+    return "ok"
+
+
 def wait_healthy(name: str, timeout: int = 180) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -441,15 +490,14 @@ def definitive_denial(attempt: object) -> bool:
 
 
 def derive_approval(approved_response: object, rejected_response: object,
-                    invalid_reuse_attempt: object, protected_attempt: object,
-                    protected_before: object, protected_after: object,
-                    fetched_approval: object) -> dict:
+                    verification: object, fetched_approval: object) -> dict:
     """Approval fields come only from persisted responses + real protected-operation trials.
 
     Denial is never inferred from an arbitrary error: the invalid-reuse and the
     protected-operation attempts must record a definitive 4xx domain rejection,
     and the protected operation must leave the authoritative side-effect count
-    unchanged.
+    unchanged. ``verification`` carries an explicit ``phase`` (pre-fault or
+    post-fault) so a pre-fault proof is never reported as a post-fault attempt.
     """
     approved = artifact_of(approved_response)
     approved_content = approved.get("content") if isinstance(approved.get("content"), dict) else {}
@@ -461,11 +509,16 @@ def derive_approval(approved_response: object, rejected_response: object,
     rejected_state = rejected_content.get("decision")
     rejected_authorized = rejected_content.get("execution_authorized")
 
+    verification = verification if isinstance(verification, dict) else {}
+    phase = verification.get("phase")
+    invalid_reuse_attempt = verification.get("invalid_reuse")
+    protected_attempt = verification.get("protected_operation")
+
     invalid_denied = definitive_denial(invalid_reuse_attempt)
     invalid_status = _as_int(invalid_reuse_attempt.get("status")) if isinstance(invalid_reuse_attempt, dict) else None
 
-    before_count = _as_int(protected_before)
-    after_count = _as_int(protected_after)
+    before_count = _as_int(verification.get("backtests_before"))
+    after_count = _as_int(verification.get("backtests_after"))
     count_unchanged = before_count is not None and after_count is not None and after_count == before_count
     protected_definitive = definitive_denial(protected_attempt)
     protected_denied = protected_definitive and count_unchanged
@@ -476,12 +529,12 @@ def derive_approval(approved_response: object, rejected_response: object,
     trials = [
         {"kind": "rejected", "state": rejected_state, "denied": bool(rejected_denied),
          "side_effect_created": not bool(rejected_denied),
-         "artifact_id": rejected.get("artifact_id"), "http_status": 201},
+         "artifact_id": rejected.get("artifact_id"), "http_status": 201, "phase": "durable"},
         {"kind": "invalid_reuse", "state": rejected_state, "denied": bool(invalid_denied),
-         "side_effect_created": not bool(invalid_denied),
+         "side_effect_created": not bool(invalid_denied), "phase": phase,
          "http_status": invalid_status, "domain_code": domain_code(invalid_reuse_attempt)},
         {"kind": "protected_operation_blocked", "state": rejected_state, "denied": bool(protected_denied),
-         "side_effect_created": bool(protected_side),
+         "side_effect_created": bool(protected_side), "phase": phase,
          "http_status": protected_status, "domain_code": domain_code(protected_attempt),
          "before_count": before_count, "after_count": after_count},
     ]
@@ -589,21 +642,6 @@ class Qualification:
         invalid_body = {**approved["body"], "decision": "rejected",
                         "rationale": "D15 invalid reuse attempt.",
                         "idempotency_key": approved["body"]["idempotency_key"]}
-        invalid_reuse = http_attempt("POST", f"{GATEWAY}/api/product/strategies/approvals",
-                                     invalid_body, opener=self.client.opener)
-
-        # Real protected operation: a backtest that requires an authorized
-        # strategy approval. Attempt it with the REJECTED approval and measure
-        # the authoritative backtest-job count before and after.
-        backtests_before = self._backtest_count()
-        protected = http_attempt("POST", f"{GATEWAY}/api/product/backtests",
-                                 {"task_id": task_id,
-                                  "strategy_version_artifact_id": rejected_version_id,
-                                  "approval_artifact_id": rejected_id,
-                                  "trace_id": f"d15-protected-{uuid.uuid4().hex}",
-                                  "idempotency_key": f"d15-protected-{uuid.uuid4().hex}"},
-                                 opener=self.client.opener)
-        backtests_after = self._backtest_count()
 
         pool_key = f"d15-pool-{uuid.uuid4().hex}"
         pool_name = f"D15 isolated pool {uuid.uuid4().hex}"
@@ -619,19 +657,39 @@ class Qualification:
             "approval_body": approved["body"],
             "approved_response": approved["response"],
             "rejected_version_artifact_id": rejected_version_id,
+            "rejected_approval_id": rejected_id,
             "rejected_response": rejected["response"],
-            "invalid_reuse_response": invalid_reuse,
-            "protected_operation_response": protected,
-            "backtests_before": backtests_before,
-            "backtests_after": backtests_after,
+            "invalid_reuse_body": invalid_body,
             "pool_id": pool_id, "pool_key": pool_key, "pool_body": pool_body,
             "pool_name": pool_name,
         }
+        self.artifacts["approval_verification_pre"] = self.verify_approval("pre-fault")
 
     def _backtest_count(self) -> int:
         body = self.client.call("GET", "/api/product/backtests")
         rows = body.get("backtests") if isinstance(body, dict) else None
         return len(rows) if isinstance(rows, list) else 0
+
+    def verify_approval(self, phase: str) -> dict:
+        """Re-attempt the invalid reuse and the protected operation for one phase.
+
+        The authoritative backtest-job count is measured immediately before and
+        after the protected-operation attempt. ``phase`` labels whether this is
+        the pre-fault proof or an actual post-fault re-attempt.
+        """
+        invalid = http_attempt("POST", f"{GATEWAY}/api/product/strategies/approvals",
+                               self.artifacts["invalid_reuse_body"], opener=self.client.opener)
+        before = self._backtest_count()
+        protected = http_attempt("POST", f"{GATEWAY}/api/product/backtests",
+                                 {"task_id": self.artifacts["task_id"],
+                                  "strategy_version_artifact_id": self.artifacts["rejected_version_artifact_id"],
+                                  "approval_artifact_id": self.artifacts["rejected_approval_id"],
+                                  "trace_id": f"d15-protected-{uuid.uuid4().hex}",
+                                  "idempotency_key": f"d15-protected-{uuid.uuid4().hex}"},
+                                 opener=self.client.opener)
+        after = self._backtest_count()
+        return {"phase": phase, "invalid_reuse": invalid, "protected_operation": protected,
+                "backtests_before": before, "backtests_after": after}
 
     def domain_replay(self) -> dict:
         pool = self.client.call("POST", "/api/product/paper/pools", self.artifacts["pool_body"])
@@ -700,7 +758,8 @@ class Qualification:
             time.sleep(1)
         raise QualError("assistant result did not persist")
 
-    def capture(self, continuity: str | None = None, *, message_id: str | None = None) -> dict:
+    def capture(self, continuity: str | None = None, *, message_id: str | None = None,
+                phase: str = "pre-fault") -> dict:
         errors: list[str] = []
         journal = None
         try:
@@ -738,11 +797,17 @@ class Qualification:
             domain = {}
             errors.append(f"domain replay failed: {exc}")
 
+        if phase == "pre-fault":
+            verification = self.artifacts.get("approval_verification_pre")
+        else:
+            try:
+                verification = self.verify_approval(phase)
+            except QualError as exc:
+                verification = {"phase": phase}
+                errors.append(f"post-fault approval re-verification failed: {exc}")
         approval = derive_approval(
             self.artifacts["approved_response"], self.artifacts["rejected_response"],
-            self.artifacts["invalid_reuse_response"], self.artifacts["protected_operation_response"],
-            self.artifacts["backtests_before"], self.artifacts["backtests_after"],
-            domain.get("fetched_approved"))
+            verification, domain.get("fetched_approved"))
         if approval.get("state") != "approved":
             errors.append(f"persisted approval state is {approval.get('state')!r}, not approved")
         if approval.get("execution_authorized") is not True:
@@ -850,107 +915,178 @@ class Qualification:
         rows = body.get("tasks") if isinstance(body, dict) else None
         return [row for row in (rows or []) if isinstance(row, dict) and row.get("title") == title]
 
-    def wait_agent_task(self, title: str, timeout: int = 60) -> list[dict]:
-        deadline = time.time() + timeout
-        rows: list[dict] = []
-        while time.time() < deadline:
-            rows = self.research_tasks_by_title(title)
-            if rows:
-                return rows
-            time.sleep(1)
-        return rows
+    def _agent_user_message_ids(self) -> list[str]:
+        detail = self.client.call("GET", f"/v1/agent/sessions/{self.agent_conversation_id}")
+        return [str(m["message_id"]) for m in detail.get("messages", [])
+                if isinstance(m, dict) and m.get("role") == "user" and isinstance(m.get("message_id"), str)]
 
-    def wait_agent_answer(self, timeout: int = 60) -> bool:
+    def wait_agent_run_complete(self, run_id: str, timeout: int = 60) -> dict:
+        """Wait for THIS run's terminal and its own attributed assistant message."""
         deadline = time.time() + timeout
+        trace: dict = {}
         while time.time() < deadline:
             detail = self.client.call("GET", f"/v1/agent/sessions/{self.agent_conversation_id}")
-            if any(isinstance(m, dict) and m.get("role") == "assistant"
-                   for m in detail.get("messages", [])):
-                return True
+            messages = detail.get("messages") if isinstance(detail.get("messages"), list) else []
+            trace_events = read_gateway_trace(self.agent_runtime_session_id)
+            trace = derive_trace_evidence(trace_events, messages, run_id)
+            if trace.get("completed") and isinstance(trace.get("attributed_message_sequence"), int):
+                return trace
             time.sleep(1)
-        return False
+        return trace
 
-    def capture_agent_mcp(self, *, key: str, title: str, continuity: str, target_run_id: str,
-                          message_id: str, delivery_state: str, replay_state: str) -> dict:
-        errors: list[str] = []
-        if continuity not in {"fresh", "reattached", "rehydrated", "interrupted"}:
-            errors.append(f"agent-mcp continuity is invalid: {continuity!r}")
+    def wait_agent_tool_result(self, history_start: int, timeout: int = 60) -> tuple[dict | None, dict | None]:
+        """Wait for a real tool call at/after the marker and its matching tool result."""
+        deadline = time.time() + timeout
+        call = result = None
+        while time.time() < deadline:
+            history = provider_state().get("tool_history") or []
+            call, result = tool_call_and_result(history, history_start)
+            if call is not None and result is not None:
+                return call, result
+            time.sleep(1)
+        return call, result
+
+    def _agent_run_view(self, run: dict) -> dict:
+        run_id = run.get("run_id")
         try:
             journal = read_journal(self.agent_runtime_session_id)
         except Exception as exc:  # noqa: BLE001
             journal = None
-            errors.append(f"agent-mcp journal read failed: {exc}")
+            return {"receipt": None, "receipt_error": f"agent-mcp journal read failed: {exc}", "trace": {}}
+        receipt, receipt_error = derive_goal_receipt(journal, run.get("message_id"))
         detail = try_http("GET", f"{GATEWAY}/v1/agent/sessions/{self.agent_conversation_id}",
                           opener=self.client.opener)
-        if not isinstance(detail, dict) or "_error" in detail:
-            errors.append(f"agent-mcp session read failed: {detail}")
-            detail = {}
-        messages = detail.get("messages") if isinstance(detail.get("messages"), list) else []
+        messages = detail.get("messages") if isinstance(detail, dict) and isinstance(
+            detail.get("messages"), list) else []
+        trace_events = read_gateway_trace(self.agent_runtime_session_id)
+        trace = derive_trace_evidence(trace_events, messages, run_id)
+        return {"receipt": receipt, "receipt_error": receipt_error, "trace": trace}
 
-        receipt, receipt_error = derive_goal_receipt(journal, message_id)
-        if receipt_error:
-            errors.append(receipt_error)
-        if receipt is not None and receipt.get("root_run_id") != target_run_id:
-            errors.append(f"agent-mcp goal receipt run {receipt.get('root_run_id')!r} != target {target_run_id!r}")
+    def capture_agent_mcp(self, *, key: str, title: str, continuity: str, first_run: dict,
+                          second_run: dict | None = None, phase: str = "pre-fault") -> dict:
+        errors: list[str] = []
+        if continuity not in {"fresh", "reattached", "rehydrated", "interrupted"}:
+            errors.append(f"agent-mcp continuity is invalid: {continuity!r}")
+
+        first_view = self._agent_run_view(first_run)
+        if first_view.get("receipt_error"):
+            errors.append(first_view["receipt_error"])
+        first_receipt = first_view.get("receipt")
+        if first_receipt is not None and first_receipt.get("root_run_id") != first_run.get("run_id"):
+            errors.append(f"first agent-mcp receipt run {first_receipt.get('root_run_id')!r} != {first_run.get('run_id')!r}")
+        errors.extend((first_view.get("trace") or {}).get("errors", []))
+
+        first_task = tool_result_task_id(first_run.get("tool_result"))
+        first_status = tool_result_status(first_run.get("tool_result"))
+        if first_status != "ok" or not first_task:
+            errors.append("first agent-mcp tool result is not an ok MCP receipt")
+
+        second_view = None
+        second_task = second_status = None
+        if second_run is not None:
+            second_view = self._agent_run_view(second_run)
+            if second_view.get("receipt_error"):
+                errors.append(second_view["receipt_error"])
+            errors.extend((second_view.get("trace") or {}).get("errors", []))
+            second_task = tool_result_task_id(second_run.get("tool_result"))
+            second_status = tool_result_status(second_run.get("tool_result"))
+            if second_status != "ok" or not second_task:
+                errors.append("second agent-mcp tool result is not an ok MCP receipt")
+            if second_task != first_task:
+                errors.append(f"second agent-mcp task {second_task!r} != first {first_task!r}")
+            first_call_id = (first_run.get("tool_call") or {}).get("call_id")
+            second_call_id = (second_run.get("tool_call") or {}).get("call_id")
+            if not second_call_id or second_call_id == first_call_id:
+                errors.append("second tool call id is not a distinct real call")
+            first_index = (first_run.get("tool_call") or {}).get("call_index")
+            second_index = (second_run.get("tool_call") or {}).get("call_index")
+            if not (isinstance(first_index, int) and isinstance(second_index, int) and second_index > first_index):
+                errors.append("scripted provider did not emit an incremented second tool call")
 
         tasks = self.research_tasks_by_title(title)
-        task_id = tasks[0].get("task_id") if tasks else None
         count = len(tasks)
         if count != 1:
             errors.append(f"agent-mcp task side-effect count is {count}, not 1")
-        if not isinstance(task_id, str):
-            errors.append("agent-mcp task was not created")
 
-        trace_events = read_gateway_trace(self.agent_runtime_session_id)
-        trace = derive_trace_evidence(trace_events, messages, target_run_id)
-        errors.extend(trace["errors"])
-
-        state = provider_state()
-        if int(state.get("tool_calls_emitted") or 0) < 1:
-            errors.append("scripted provider did not emit the armed tool call")
-
+        if phase == "pre-fault":
+            verification = self.artifacts.get("approval_verification_pre")
+        else:
+            try:
+                verification = self.verify_approval(phase)
+            except QualError as exc:
+                verification = {"phase": phase}
+                errors.append(f"agent-mcp post-fault approval re-verification failed: {exc}")
         approval = derive_approval(
-            self.artifacts["approved_response"], self.artifacts["rejected_response"],
-            self.artifacts["invalid_reuse_response"], self.artifacts["protected_operation_response"],
-            self.artifacts["backtests_before"], self.artifacts["backtests_after"], None)
+            self.artifacts["approved_response"], self.artifacts["rejected_response"], verification, None)
 
-        delivery = {"state": "accepted", "task_id": task_id, "trace_id": self.agent_trace_id}
-        replay = {"state": "accepted", "task_id": task_id, "trace_id": self.agent_trace_id}
+        def run_dict(run: dict, view: dict) -> dict:
+            return {
+                "run_id": run.get("run_id"),
+                "message_id": run.get("message_id"),
+                "tool_call_id": (run.get("tool_call") or {}).get("call_id"),
+                "call_index": (run.get("tool_call") or {}).get("call_index"),
+                "task_id": tool_result_task_id(run.get("tool_result")),
+                "mcp_status": tool_result_status(run.get("tool_result")),
+                "terminal_kind": (view.get("trace") or {}).get("terminal_kind"),
+                "terminal_sequence": (view.get("trace") or {}).get("terminal_sequence"),
+                "assistant_sequence": (view.get("trace") or {}).get("attributed_message_sequence"),
+                "side_effect_count": count,
+            }
+
+        runs = {"first": run_dict(first_run, first_view)}
+        if second_run is not None:
+            runs["second"] = run_dict(second_run, second_view)
+
+        delivery = {"state": "accepted", "task_id": first_task,
+                    "tool_call_id": (first_run.get("tool_call") or {}).get("call_id"),
+                    "trace_id": self.agent_trace_id}
+        if second_run is not None:
+            replay = {"state": "accepted", "task_id": second_task,
+                      "tool_call_id": (second_run.get("tool_call") or {}).get("call_id"),
+                      "trace_id": self.agent_trace_id}
+        else:
+            replay = delivery
+
+        try:
+            journal = read_journal(self.agent_runtime_session_id)
+        except Exception:  # noqa: BLE001
+            journal = None
         epoch = journal.get("executor_epoch") if isinstance(journal, dict) else None
         if not isinstance(epoch, int) or epoch < 1:
             epoch = _safe_epoch()
         sequence = journal.get("sequence") if isinstance(journal, dict) and type(journal.get("sequence")) is int else 0
+        generations = read_generations(self.agent_runtime_session_id)
+        state = provider_state()
         return {
             "session_id": self.agent_conversation_id,
             "trace_id": self.agent_trace_id,
             "adapter_pid": container_pid(ADAPTER_CONTAINER),
-            "adapter_generation": (read_generations(self.agent_runtime_session_id) or [{}])[-1].get(
-                "generation_id", "generation-none"),
-            "generation_index": len(read_generations(self.agent_runtime_session_id)),
+            "adapter_generation": (generations or [{}])[-1].get("generation_id", "generation-none"),
+            "generation_index": len(generations),
             "executor_epoch": epoch,
             "continuity": continuity,
             "capture_ok": not errors,
             "capture_errors": errors,
-            "goal": {"content_sha256": receipt.get("content_sha256") if receipt else None,
-                     "prompt_receipt": receipt},
+            "goal": {"content_sha256": first_receipt.get("content_sha256") if first_receipt else None,
+                     "prompt_receipt": first_receipt},
             "approval": approval,
             "action_receipts": [
                 make_receipt("mcp__byq__byq_research_task_create", key, delivery, count, ORIGIN_AGENT,
                              replay_receipt=replay, replay_side_effect_count=count),
             ],
+            "agent_mcp_runs": runs,
             "result": {
-                "run_id": target_run_id,
-                "status": "completed" if trace["completed"] else "incomplete",
+                "run_id": first_run.get("run_id"),
+                "status": "completed" if (first_view.get("trace") or {}).get("completed") else "incomplete",
                 "sequence": sequence,
-                "trace_contiguous": trace["trace_contiguous"],
-                "target_run_id": target_run_id,
-                "terminal_kind": trace["terminal_kind"],
-                "attributed_message_sequence": trace["attributed_message_sequence"],
+                "trace_contiguous": (first_view.get("trace") or {}).get("trace_contiguous", False),
+                "target_run_id": first_run.get("run_id"),
+                "terminal_kind": (first_view.get("trace") or {}).get("terminal_kind"),
+                "attributed_message_sequence": (first_view.get("trace") or {}).get("attributed_message_sequence"),
             },
             "_provider_tool_name": state.get("last_tool_name"),
             "_provider_tool_calls_emitted": state.get("tool_calls_emitted"),
             "_task_count": count,
-            "_delivery_states": [delivery_state, replay_state],
         }
 
     def agent_mcp_domain_at_most_once(self) -> dict:
@@ -958,28 +1094,42 @@ class Qualification:
         title = f"D15 agent-mcp task {uuid.uuid4().hex}"
         objective = "D15 real Agent->MCP->Backend at-most-once across an adapter fault."
         self.create_agent_mcp_session()
+
+        # First real run: real tool call -> real MCP result -> this run's terminal + assistant.
+        history_start = len(provider_state().get("tool_history") or [])
         first = self.submit_agent_mcp_turn(key, title, objective)
-        message_id = self._agent_user_message_id()
-        self.wait_agent_task(title)
-        self.wait_agent_answer()
-        target_run = str(first.get("run_id"))
+        first_run_id = str(first.get("run_id"))
+        first_message_id = self._agent_user_message_ids()[0]
+        self.wait_agent_run_complete(first_run_id)
+        call_one, result_one = self.wait_agent_tool_result(history_start)
+        first_run = {"run_id": first_run_id, "message_id": first_message_id,
+                     "tool_call": call_one, "tool_result": result_one}
         before = self.capture_agent_mcp(key=key, title=title, continuity="fresh",
-                                        target_run_id=target_run, message_id=message_id,
-                                        delivery_state="created", replay_state="created")
+                                        first_run=first_run, phase="pre-fault")
+
+        # Fault: adapter process restart. The Gateway's trace collector for an
+        # in-memory Product session ends with the adapter stream, so the Gateway
+        # is reconnected to re-establish collection before the second delivery.
         docker("kill", ADAPTER_CONTAINER, check=False)
         docker("start", ADAPTER_CONTAINER)
         wait_healthy(ADAPTER_CONTAINER)
+        docker("restart", GATEWAY_CONTAINER, timeout=120)
+        wait_healthy(GATEWAY_CONTAINER)
         continuity_after = continuity_of(self.agent_runtime_session_id)
         self.ack_terminals(self.agent_runtime_session_id)
+        history_start_2 = len(provider_state().get("tool_history") or [])
         second = self.submit_agent_mcp_turn(key, title, objective)
-        self.wait_agent_task(title)
-        self.wait_agent_answer()
+        second_run_id = str(second.get("run_id"))
+        second_message_id = self._agent_user_message_ids()[-1]
+        self.wait_agent_run_complete(second_run_id)
+        call_two, result_two = self.wait_agent_tool_result(history_start_2)
+        second_run = {"run_id": second_run_id, "message_id": second_message_id,
+                      "tool_call": call_two, "tool_result": result_two}
         after = self.capture_agent_mcp(key=key, title=title, continuity=continuity_after,
-                                       target_run_id=target_run, message_id=message_id,
-                                       delivery_state="deduplicated", replay_state="deduplicated")
-        after["_second_delivery_run_id"] = str(second.get("run_id"))
+                                       first_run=first_run, second_run=second_run, phase="post-fault")
+        after["_second_delivery_run_id"] = second_run_id
         return self.finalize("agent-mcp-domain-at-most-once", before, after,
-                             "docs/evidence/d15/d15-runtime/agent-mcp-domain-at-most-once.v4.json")
+                             "docs/evidence/d15/d15-runtime/agent-mcp-domain-at-most-once.v5.json")
 
     def finalize(self, scenario_id: str, before: dict, after: dict, evidence: str) -> dict:
         capture_errors = list(before.get("capture_errors") or []) + list(after.get("capture_errors") or [])
@@ -994,7 +1144,7 @@ class Qualification:
         docker("kill", ADAPTER_CONTAINER, check=False)
         docker("start", ADAPTER_CONTAINER)
         wait_healthy(ADAPTER_CONTAINER)
-        after = self.capture(continuity_of(self.runtime_session_id))
+        after = self.capture(continuity_of(self.runtime_session_id), phase="post-fault")
         return self.finalize("adapter-process-restart", before, after,
                              "docs/evidence/d15/d15-runtime/adapter-process-restart.v3.json")
 
@@ -1015,7 +1165,7 @@ class Qualification:
                              {"mode": "hard"}, timeout=20)
         finally:
             set_provider_delay(0)
-        after = self.capture(continuity_of(self.runtime_session_id))
+        after = self.capture(continuity_of(self.runtime_session_id), phase="post-fault")
         after["_status_before_cancel"] = active
         after["_submission_run_id"] = (submission or {}).get("run_id")
         return self.finalize("generation-replacement", before, after,
@@ -1042,7 +1192,7 @@ class Qualification:
         finally:
             set_provider_delay(0)
         wait_not_running()
-        after = self.capture(continuity_of(self.runtime_session_id))
+        after = self.capture(continuity_of(self.runtime_session_id), phase="post-fault")
         after["_interrupted_pids"] = pids
         after["_status_before_interrupt"] = active
         after["_submission_run_id"] = (submission or {}).get("run_id")
@@ -1077,7 +1227,7 @@ class Qualification:
         docker("restart", GATEWAY_CONTAINER, timeout=120)
         wait_healthy(GATEWAY_CONTAINER)
         detail = self.client.call("GET", f"/v1/agent/sessions/{self.conversation_id}")
-        after = self.capture(continuity_of(self.runtime_session_id))
+        after = self.capture(continuity_of(self.runtime_session_id), phase="post-fault")
         after["_gateway_detail_messages"] = len(detail.get("messages", []))
         return self.finalize("gateway-disconnect-reconnect", before, after,
                              "docs/evidence/d15/d15-runtime/gateway-disconnect-reconnect.v3.json")
@@ -1089,7 +1239,7 @@ class Qualification:
             "from pathlib import Path;"
             "print(json.dumps(e.takeover(Path('" + evidence_root() +
             "'),reason='D15 runtime qualification executor takeover',operator='d15-runtime-qual')))"))
-        after = self.capture(self._current_continuity())
+        after = self.capture(self._current_continuity(), phase="post-fault")
         after["_takeover"] = {k: result.get(k) for k in
                               ("previous_epoch", "executor_epoch", "reason", "database_rows_modified", "audit_path")}
         after["executor_epoch"] = result.get("executor_epoch", after.get("executor_epoch"))
@@ -1153,11 +1303,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-up", action="store_true", help="reuse a running isolated stack")
     parser.add_argument("--no-cleanup", action="store_true")
-    parser.add_argument("--out", type=Path, default=HERE.parents[2] / "docs/evidence/d15/d15-runtime/observations.v4.json")
+    parser.add_argument("--out", type=Path, default=HERE.parents[2] / "docs/evidence/d15/d15-runtime/observations.v5.json")
     args = parser.parse_args(argv)
 
     observations: dict = {
-        "schema_version": "byq-d15-runtime-observations.v4",
+        "schema_version": "byq-d15-runtime-observations.v5",
         "evidence_class": "runtime-isolated-stack",
         "generated_at": now(),
         "candidate": {"release": "dsh-0.1.5rc1", "python_sdk": "0.1.5rc1",
@@ -1215,15 +1365,15 @@ def main(argv: list[str] | None = None) -> int:
     scenarios_dir = args.out.parent / "scenarios"
     scenarios_dir.mkdir(parents=True, exist_ok=True)
     for scenario in observations["scenarios"]:
-        (scenarios_dir / f"{scenario['id']}.v4.json").write_text(
-            json.dumps({"schema_version": "byq-d15-runtime-scenario.v4",
+        (scenarios_dir / f"{scenario['id']}.v5.json").write_text(
+            json.dumps({"schema_version": "byq-d15-runtime-scenario.v5",
                         "evidence_class": observations["evidence_class"],
                         "candidate": observations["candidate"], "llm": observations["llm"],
                         "execution_model": observations["execution_model"],
                         "generated_at": observations["generated_at"], **scenario},
                        indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    (args.out.parent / "stack.v4.json").write_text(json.dumps(
-        {"schema_version": "byq-d15-runtime-stack.v4", "generated_at": observations["generated_at"],
+    (args.out.parent / "stack.v5.json").write_text(json.dumps(
+        {"schema_version": "byq-d15-runtime-stack.v5", "generated_at": observations["generated_at"],
          "preflight": observations["preflight"], "domain_artifacts": observations["domain_artifacts"],
          "execution_model": observations["execution_model"],
          "cleanup": observations.get("cleanup")}, indent=2, sort_keys=True) + "\n", encoding="utf-8")

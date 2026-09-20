@@ -1,0 +1,2118 @@
+{
+  "candidate": {
+    "python_sdk": "0.1.5rc1",
+    "release": "dsh-0.1.5rc1",
+    "runtime_bin": "0.1.5rc1",
+    "selector_env": "BYQ_DSH_COMPATIBILITY_RELEASE"
+  },
+  "cleanup": {
+    "containers_before": 6,
+    "containers_remaining": 0,
+    "networks_remaining": 0,
+    "volumes_remaining": 0
+  },
+  "domain_artifacts": {
+    "approval_body": {
+      "decision": "approved",
+      "idempotency_key": "d15-approval-9311bf0cd440445cacd4083735560f51",
+      "rationale": "D15 isolated human approved decision.",
+      "strategy_version_artifact_id": "artifact_8fc60be154094702bc7b7a2af68c0421",
+      "task_id": "task_c39e07cf16c34f4e8b756fcc7663f30c",
+      "trace_id": "d15-approval-trace-f3593064b6a2438b8e667fea8d2507c7"
+    },
+    "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+    "approval_key": "d15-approval-9311bf0cd440445cacd4083735560f51",
+    "approval_verification_pre": {
+      "backtests_after": 0,
+      "backtests_before": 0,
+      "invalid_reuse": {
+        "body": {
+          "error": {
+            "code": "product_domain_rejected",
+            "message": "artifact idempotency key was reused",
+            "request_id": "36f9527bd2514d35b15fae438e040da2"
+          }
+        },
+        "error": "http 409",
+        "ok": false,
+        "status": 409
+      },
+      "phase": "pre-fault",
+      "protected_operation": {
+        "body": {
+          "error": {
+            "code": "product_domain_rejected",
+            "message": "strategy version is not approved for execution",
+            "request_id": "e2168f0b14c843efa6f8ad3c7254f54a"
+          }
+        },
+        "error": "http 422",
+        "ok": false,
+        "status": 422
+      }
+    },
+    "approved_response": {
+      "approval": {
+        "decision": "approved",
+        "execution_authorized": true,
+        "execution_outcome": "not_started",
+        "rationale": "D15 isolated human approved decision.",
+        "reviewer_principal": "d15admin",
+        "schema_version": "strategy-approval-v1",
+        "strategy_version_artifact_id": "artifact_8fc60be154094702bc7b7a2af68c0421",
+        "strategy_version_id": "87f17752105a38478d64af68b6acb54d35ae0490cb83d26f3e06cfe4b3dd5ce6"
+      },
+      "artifact": {
+        "artifact_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+        "content": {
+          "decision": "approved",
+          "execution_authorized": true,
+          "execution_outcome": "not_started",
+          "rationale": "D15 isolated human approved decision.",
+          "reviewer_principal": "d15admin",
+          "schema_version": "strategy-approval-v1",
+          "strategy_version_artifact_id": "artifact_8fc60be154094702bc7b7a2af68c0421",
+          "strategy_version_id": "87f17752105a38478d64af68b6acb54d35ae0490cb83d26f3e06cfe4b3dd5ce6"
+        },
+        "content_sha256": "66cf40ffb166baf341f9599d2c1c8e616df4d6494cf5299da33e892b2b1f30e7",
+        "created_at": "2026-09-20T06:23:05.185886+00:00",
+        "experiment_id": null,
+        "kind": "strategy_approval",
+        "lineage": [
+          {
+            "id": "task_c39e07cf16c34f4e8b756fcc7663f30c",
+            "kind": "research_task"
+          },
+          {
+            "id": "artifact_8fc60be154094702bc7b7a2af68c0421",
+            "kind": "artifact"
+          }
+        ],
+        "owner_principal": "d15admin",
+        "status": "validated",
+        "task_id": "task_c39e07cf16c34f4e8b756fcc7663f30c",
+        "trace_id": "d15-approval-trace-f3593064b6a2438b8e667fea8d2507c7",
+        "updated_at": "2026-09-20T06:23:05.189651+00:00",
+        "version": 2,
+        "workspace_id": "workspace_5a66adf9e1074ae198a4d82b5f7f2c03"
+      }
+    },
+    "invalid_reuse_body": {
+      "decision": "rejected",
+      "idempotency_key": "d15-approval-9311bf0cd440445cacd4083735560f51",
+      "rationale": "D15 invalid reuse attempt.",
+      "strategy_version_artifact_id": "artifact_8fc60be154094702bc7b7a2af68c0421",
+      "task_id": "task_c39e07cf16c34f4e8b756fcc7663f30c",
+      "trace_id": "d15-approval-trace-f3593064b6a2438b8e667fea8d2507c7"
+    },
+    "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+    "pool_key": "d15-pool-b6f6d7737ce34dbcb83084dbb2127a51",
+    "pool_name": "D15 isolated pool 0efacf887ce14121a20eb8431a0b9b4c",
+    "rejected_approval_id": "artifact_3ae9ad122317499e8d853f593bf3e660",
+    "rejected_response": {
+      "approval": {
+        "decision": "rejected",
+        "execution_authorized": false,
+        "execution_outcome": "not_started",
+        "rationale": "D15 isolated human rejected decision.",
+        "reviewer_principal": "d15admin",
+        "schema_version": "strategy-approval-v1",
+        "strategy_version_artifact_id": "artifact_37fe62184cbf4859aa220af66feede76",
+        "strategy_version_id": "ce73979a11ce03fe19c48de914a367f79040ae521a5c658674e744a5ce32ce12"
+      },
+      "artifact": {
+        "artifact_id": "artifact_3ae9ad122317499e8d853f593bf3e660",
+        "content": {
+          "decision": "rejected",
+          "execution_authorized": false,
+          "execution_outcome": "not_started",
+          "rationale": "D15 isolated human rejected decision.",
+          "reviewer_principal": "d15admin",
+          "schema_version": "strategy-approval-v1",
+          "strategy_version_artifact_id": "artifact_37fe62184cbf4859aa220af66feede76",
+          "strategy_version_id": "ce73979a11ce03fe19c48de914a367f79040ae521a5c658674e744a5ce32ce12"
+        },
+        "content_sha256": "53afc3b32080d3de04a0c73e34a711f3802ef907f694a3fb22ae7612286f5ad0",
+        "created_at": "2026-09-20T06:23:05.249182+00:00",
+        "experiment_id": null,
+        "kind": "strategy_approval",
+        "lineage": [
+          {
+            "id": "task_c39e07cf16c34f4e8b756fcc7663f30c",
+            "kind": "research_task"
+          },
+          {
+            "id": "artifact_37fe62184cbf4859aa220af66feede76",
+            "kind": "artifact"
+          }
+        ],
+        "owner_principal": "d15admin",
+        "status": "validated",
+        "task_id": "task_c39e07cf16c34f4e8b756fcc7663f30c",
+        "trace_id": "d15-approval-trace-af11ad83a44f4b3fa95fb961910a7885",
+        "updated_at": "2026-09-20T06:23:05.252305+00:00",
+        "version": 2,
+        "workspace_id": "workspace_5a66adf9e1074ae198a4d82b5f7f2c03"
+      }
+    },
+    "rejected_version_artifact_id": "artifact_37fe62184cbf4859aa220af66feede76",
+    "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+    "strategy_version_artifact_id": "artifact_8fc60be154094702bc7b7a2af68c0421",
+    "task_id": "task_c39e07cf16c34f4e8b756fcc7663f30c"
+  },
+  "evidence_class": "runtime-isolated-stack",
+  "execution_model": {
+    "action_origin": "product-api-manual + agent-mcp",
+    "agent_mcp_tool_calls": 2,
+    "note": "The research goal, persistent approval and paper-pool side effect are manual Product API actions. The agent-mcp-domain-at-most-once scenario additionally drives a real scripted-provider tool call through the runtime-adapter -> MCP -> Backend and verifies one domain side effect across an adapter restart.",
+    "provider": "scripted-keyless"
+  },
+  "generated_at": "2026-09-20T06:22:38Z",
+  "llm": {
+    "class": "scripted-keyless",
+    "note": "Keyless deterministic loopback provider; service-boundary runtime-continuity evidence, not real-LLM-quality semantic evidence.",
+    "real_llm_quality": false
+  },
+  "preflight": {
+    "adapter_image": "sha256:36126eb52f48d68d6d2bcb0a3165616d3a279b8d4375939b03693b92d8059ac5",
+    "candidate": "dsh-0.1.5rc1",
+    "containers": 6,
+    "images": {
+      "byq-d15-runtime-backend-1": "sha256:d841fa1de79904e040a6b48cbad73d5910e30974e517ffc385b66a3f50336c5c",
+      "byq-d15-runtime-gateway-1": "sha256:a71019670573353372974d4cafe606d445efdca8030fc1583134168e9a4c35c7",
+      "byq-d15-runtime-mcp-1": "sha256:e9b39bd80a9c77c9cf8742644f325c82575e8384891671e1f2cd92a51e7a95c5",
+      "byq-d15-runtime-postgres-1": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+      "byq-d15-runtime-runtime-adapter-1": "sha256:36126eb52f48d68d6d2bcb0a3165616d3a279b8d4375939b03693b92d8059ac5",
+      "byq-d15-runtime-scripted-provider-1": "sha256:4a6154b6b658851415e26fc3d0a30bd117c04af74cb388758a53c880f80be98d"
+    },
+    "network": "byq-d15-runtime_d15_internal"
+  },
+  "scenarios": [
+    {
+      "after": {
+        "_detail_message_count": 2,
+        "_domain": {
+          "approval_replay_matches": true,
+          "approval_side_effect_count": 1,
+          "pool_side_effect_count": 1,
+          "replay_approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "replay_pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d"
+        },
+        "_dsh_pids": [
+          18,
+          46
+        ],
+        "_journal_generations": [
+          {
+            "ended_at": 1789885394.3100584,
+            "executor_epoch": 1,
+            "generation_id": "generation-e18aeb836d404c77bc4e05d876f120bc",
+            "root_run_id": null,
+            "started_at": 1789885385.3815992,
+            "state": "closed"
+          },
+          {
+            "ended_at": null,
+            "executor_epoch": 1,
+            "generation_id": "generation-90efcd785e114712add5f030194ab795",
+            "root_run_id": null,
+            "started_at": 1789885395.263586,
+            "state": "starting"
+          }
+        ],
+        "_provider_calls": 1,
+        "_trace_event_count": 9,
+        "action_receipts": [
+          {
+            "idempotency_key": "message_edd04c56b8fe4cfe980eb1f8a48addea",
+            "origin": "product-api-manual",
+            "receipt": {
+              "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+              "state": "accepted"
+            },
+            "replay": {
+              "receipt": {
+                "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+                "state": "accepted"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "runtime.prompt.idempotent"
+          },
+          {
+            "idempotency_key": "d15-pool-b6f6d7737ce34dbcb83084dbb2127a51",
+            "origin": "product-api-manual",
+            "receipt": {
+              "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+              "state": "accepted"
+            },
+            "replay": {
+              "receipt": {
+                "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+                "state": "accepted"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "byq_paper_pool_create"
+          },
+          {
+            "idempotency_key": "d15-approval-9311bf0cd440445cacd4083735560f51",
+            "origin": "product-api-manual",
+            "receipt": {
+              "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+              "state": "approved"
+            },
+            "replay": {
+              "receipt": {
+                "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+                "state": "approved"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "byq_strategy_approval"
+          }
+        ],
+        "adapter_generation": "generation-90efcd785e114712add5f030194ab795",
+        "adapter_pid": 3508680,
+        "approval": {
+          "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "bypassed": false,
+          "decided_by": "d15admin",
+          "execution_authorized": true,
+          "fetched_approval": {
+            "artifact_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+            "state": "approved"
+          },
+          "reuse_denied": true,
+          "state": "approved",
+          "trials": [
+            {
+              "artifact_id": "artifact_3ae9ad122317499e8d853f593bf3e660",
+              "denied": true,
+              "http_status": 201,
+              "kind": "rejected",
+              "phase": "durable",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 409,
+              "kind": "invalid_reuse",
+              "phase": "post-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "after_count": 0,
+              "before_count": 0,
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 422,
+              "kind": "protected_operation_blocked",
+              "phase": "post-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            }
+          ]
+        },
+        "capture_errors": [],
+        "capture_ok": true,
+        "continuity": "rehydrated",
+        "executor_epoch": 1,
+        "generation_index": 2,
+        "goal": {
+          "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+          "prompt_receipt": {
+            "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+            "root_run_id": "22d3c287a4804647bbdb9c40bfaa0bac"
+          }
+        },
+        "result": {
+          "attributed_message_sequence": 5,
+          "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "sequence": 11,
+          "status": "completed",
+          "target_run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "terminal_kind": "session.result",
+          "trace_contiguous": true
+        },
+        "session_id": "conversation_d0f9bfa924134ad38a93a70004ffbce8",
+        "trace_id": "byq-trace-5806c739f4104b2ea9e4711e18808b86"
+      },
+      "before": {
+        "_detail_message_count": 2,
+        "_domain": {
+          "approval_replay_matches": true,
+          "approval_side_effect_count": 1,
+          "pool_side_effect_count": 1,
+          "replay_approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "replay_pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d"
+        },
+        "_dsh_pids": [
+          24,
+          62
+        ],
+        "_journal_generations": [
+          {
+            "ended_at": null,
+            "executor_epoch": 1,
+            "generation_id": "generation-e18aeb836d404c77bc4e05d876f120bc",
+            "root_run_id": null,
+            "started_at": 1789885385.3815992,
+            "state": "starting"
+          }
+        ],
+        "_provider_calls": 1,
+        "_trace_event_count": 9,
+        "action_receipts": [
+          {
+            "idempotency_key": "message_edd04c56b8fe4cfe980eb1f8a48addea",
+            "origin": "product-api-manual",
+            "receipt": {
+              "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+              "state": "accepted"
+            },
+            "replay": {
+              "receipt": {
+                "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+                "state": "accepted"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "runtime.prompt.idempotent"
+          },
+          {
+            "idempotency_key": "d15-pool-b6f6d7737ce34dbcb83084dbb2127a51",
+            "origin": "product-api-manual",
+            "receipt": {
+              "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+              "state": "accepted"
+            },
+            "replay": {
+              "receipt": {
+                "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+                "state": "accepted"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "byq_paper_pool_create"
+          },
+          {
+            "idempotency_key": "d15-approval-9311bf0cd440445cacd4083735560f51",
+            "origin": "product-api-manual",
+            "receipt": {
+              "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+              "state": "approved"
+            },
+            "replay": {
+              "receipt": {
+                "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+                "state": "approved"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "byq_strategy_approval"
+          }
+        ],
+        "adapter_generation": "generation-e18aeb836d404c77bc4e05d876f120bc",
+        "adapter_pid": 3507299,
+        "approval": {
+          "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "bypassed": false,
+          "decided_by": "d15admin",
+          "execution_authorized": true,
+          "fetched_approval": {
+            "artifact_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+            "state": "approved"
+          },
+          "reuse_denied": true,
+          "state": "approved",
+          "trials": [
+            {
+              "artifact_id": "artifact_3ae9ad122317499e8d853f593bf3e660",
+              "denied": true,
+              "http_status": 201,
+              "kind": "rejected",
+              "phase": "durable",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 409,
+              "kind": "invalid_reuse",
+              "phase": "pre-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "after_count": 0,
+              "before_count": 0,
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 422,
+              "kind": "protected_operation_blocked",
+              "phase": "pre-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            }
+          ]
+        },
+        "capture_errors": [],
+        "capture_ok": true,
+        "continuity": "reattached",
+        "executor_epoch": 1,
+        "generation_index": 1,
+        "goal": {
+          "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+          "prompt_receipt": {
+            "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+            "root_run_id": "22d3c287a4804647bbdb9c40bfaa0bac"
+          }
+        },
+        "result": {
+          "attributed_message_sequence": 5,
+          "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "sequence": 9,
+          "status": "completed",
+          "target_run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "terminal_kind": "session.result",
+          "trace_contiguous": true
+        },
+        "session_id": "conversation_d0f9bfa924134ad38a93a70004ffbce8",
+        "trace_id": "byq-trace-5806c739f4104b2ea9e4711e18808b86"
+      },
+      "capture_errors": [],
+      "evidence": [
+        "docs/evidence/d15/d15-runtime/adapter-process-restart.v3.json"
+      ],
+      "fault_applied": true,
+      "id": "adapter-process-restart",
+      "result": "PASS"
+    },
+    {
+      "after": {
+        "_detail_message_count": 2,
+        "_domain": {
+          "approval_replay_matches": true,
+          "approval_side_effect_count": 1,
+          "pool_side_effect_count": 1,
+          "replay_approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "replay_pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d"
+        },
+        "_dsh_pids": [
+          18,
+          104
+        ],
+        "_gateway_detail_messages": 2,
+        "_journal_generations": [
+          {
+            "ended_at": 1789885394.3100584,
+            "executor_epoch": 1,
+            "generation_id": "generation-e18aeb836d404c77bc4e05d876f120bc",
+            "root_run_id": null,
+            "started_at": 1789885385.3815992,
+            "state": "closed"
+          },
+          {
+            "ended_at": null,
+            "executor_epoch": 1,
+            "generation_id": "generation-90efcd785e114712add5f030194ab795",
+            "root_run_id": null,
+            "started_at": 1789885395.263586,
+            "state": "starting"
+          }
+        ],
+        "_provider_calls": 1,
+        "_trace_event_count": 9,
+        "action_receipts": [
+          {
+            "idempotency_key": "message_edd04c56b8fe4cfe980eb1f8a48addea",
+            "origin": "product-api-manual",
+            "receipt": {
+              "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+              "state": "accepted"
+            },
+            "replay": {
+              "receipt": {
+                "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+                "state": "accepted"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "runtime.prompt.idempotent"
+          },
+          {
+            "idempotency_key": "d15-pool-b6f6d7737ce34dbcb83084dbb2127a51",
+            "origin": "product-api-manual",
+            "receipt": {
+              "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+              "state": "accepted"
+            },
+            "replay": {
+              "receipt": {
+                "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+                "state": "accepted"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "byq_paper_pool_create"
+          },
+          {
+            "idempotency_key": "d15-approval-9311bf0cd440445cacd4083735560f51",
+            "origin": "product-api-manual",
+            "receipt": {
+              "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+              "state": "approved"
+            },
+            "replay": {
+              "receipt": {
+                "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+                "state": "approved"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "byq_strategy_approval"
+          }
+        ],
+        "adapter_generation": "generation-90efcd785e114712add5f030194ab795",
+        "adapter_pid": 3508680,
+        "approval": {
+          "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "bypassed": false,
+          "decided_by": "d15admin",
+          "execution_authorized": true,
+          "fetched_approval": {
+            "artifact_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+            "state": "approved"
+          },
+          "reuse_denied": true,
+          "state": "approved",
+          "trials": [
+            {
+              "artifact_id": "artifact_3ae9ad122317499e8d853f593bf3e660",
+              "denied": true,
+              "http_status": 201,
+              "kind": "rejected",
+              "phase": "durable",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 409,
+              "kind": "invalid_reuse",
+              "phase": "post-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "after_count": 0,
+              "before_count": 0,
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 422,
+              "kind": "protected_operation_blocked",
+              "phase": "post-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            }
+          ]
+        },
+        "capture_errors": [],
+        "capture_ok": true,
+        "continuity": "reattached",
+        "executor_epoch": 1,
+        "generation_index": 2,
+        "goal": {
+          "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+          "prompt_receipt": {
+            "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+            "root_run_id": "22d3c287a4804647bbdb9c40bfaa0bac"
+          }
+        },
+        "result": {
+          "attributed_message_sequence": 5,
+          "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "sequence": 11,
+          "status": "completed",
+          "target_run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "terminal_kind": "session.result",
+          "trace_contiguous": true
+        },
+        "session_id": "conversation_d0f9bfa924134ad38a93a70004ffbce8",
+        "trace_id": "byq-trace-5806c739f4104b2ea9e4711e18808b86"
+      },
+      "before": {
+        "_detail_message_count": 2,
+        "_domain": {
+          "approval_replay_matches": true,
+          "approval_side_effect_count": 1,
+          "pool_side_effect_count": 1,
+          "replay_approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "replay_pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d"
+        },
+        "_dsh_pids": [
+          18,
+          72
+        ],
+        "_journal_generations": [
+          {
+            "ended_at": 1789885394.3100584,
+            "executor_epoch": 1,
+            "generation_id": "generation-e18aeb836d404c77bc4e05d876f120bc",
+            "root_run_id": null,
+            "started_at": 1789885385.3815992,
+            "state": "closed"
+          },
+          {
+            "ended_at": null,
+            "executor_epoch": 1,
+            "generation_id": "generation-90efcd785e114712add5f030194ab795",
+            "root_run_id": null,
+            "started_at": 1789885395.263586,
+            "state": "starting"
+          }
+        ],
+        "_provider_calls": 1,
+        "_trace_event_count": 9,
+        "action_receipts": [
+          {
+            "idempotency_key": "message_edd04c56b8fe4cfe980eb1f8a48addea",
+            "origin": "product-api-manual",
+            "receipt": {
+              "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+              "state": "accepted"
+            },
+            "replay": {
+              "receipt": {
+                "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+                "state": "accepted"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "runtime.prompt.idempotent"
+          },
+          {
+            "idempotency_key": "d15-pool-b6f6d7737ce34dbcb83084dbb2127a51",
+            "origin": "product-api-manual",
+            "receipt": {
+              "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+              "state": "accepted"
+            },
+            "replay": {
+              "receipt": {
+                "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+                "state": "accepted"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "byq_paper_pool_create"
+          },
+          {
+            "idempotency_key": "d15-approval-9311bf0cd440445cacd4083735560f51",
+            "origin": "product-api-manual",
+            "receipt": {
+              "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+              "state": "approved"
+            },
+            "replay": {
+              "receipt": {
+                "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+                "state": "approved"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "byq_strategy_approval"
+          }
+        ],
+        "adapter_generation": "generation-90efcd785e114712add5f030194ab795",
+        "adapter_pid": 3508680,
+        "approval": {
+          "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "bypassed": false,
+          "decided_by": "d15admin",
+          "execution_authorized": true,
+          "fetched_approval": {
+            "artifact_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+            "state": "approved"
+          },
+          "reuse_denied": true,
+          "state": "approved",
+          "trials": [
+            {
+              "artifact_id": "artifact_3ae9ad122317499e8d853f593bf3e660",
+              "denied": true,
+              "http_status": 201,
+              "kind": "rejected",
+              "phase": "durable",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 409,
+              "kind": "invalid_reuse",
+              "phase": "pre-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "after_count": 0,
+              "before_count": 0,
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 422,
+              "kind": "protected_operation_blocked",
+              "phase": "pre-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            }
+          ]
+        },
+        "capture_errors": [],
+        "capture_ok": true,
+        "continuity": "reattached",
+        "executor_epoch": 1,
+        "generation_index": 2,
+        "goal": {
+          "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+          "prompt_receipt": {
+            "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+            "root_run_id": "22d3c287a4804647bbdb9c40bfaa0bac"
+          }
+        },
+        "result": {
+          "attributed_message_sequence": 5,
+          "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "sequence": 11,
+          "status": "completed",
+          "target_run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "terminal_kind": "session.result",
+          "trace_contiguous": true
+        },
+        "session_id": "conversation_d0f9bfa924134ad38a93a70004ffbce8",
+        "trace_id": "byq-trace-5806c739f4104b2ea9e4711e18808b86"
+      },
+      "capture_errors": [],
+      "evidence": [
+        "docs/evidence/d15/d15-runtime/gateway-disconnect-reconnect.v3.json"
+      ],
+      "fault_applied": true,
+      "id": "gateway-disconnect-reconnect",
+      "result": "PASS"
+    },
+    {
+      "after": {
+        "_detail_message_count": 3,
+        "_domain": {
+          "approval_replay_matches": true,
+          "approval_side_effect_count": 1,
+          "pool_side_effect_count": 1,
+          "replay_approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "replay_pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d"
+        },
+        "_dsh_pids": [
+          158,
+          193
+        ],
+        "_journal_generations": [
+          {
+            "ended_at": 1789885394.3100584,
+            "executor_epoch": 1,
+            "generation_id": "generation-e18aeb836d404c77bc4e05d876f120bc",
+            "root_run_id": null,
+            "started_at": 1789885385.3815992,
+            "state": "closed"
+          },
+          {
+            "ended_at": 1789885408.7398605,
+            "executor_epoch": 1,
+            "generation_id": "generation-90efcd785e114712add5f030194ab795",
+            "root_run_id": null,
+            "started_at": 1789885395.263586,
+            "state": "interrupted"
+          },
+          {
+            "ended_at": null,
+            "executor_epoch": 1,
+            "generation_id": "generation-1531b54b295841f5a7cad54d38a398cc",
+            "root_run_id": null,
+            "started_at": 1789885408.7479506,
+            "state": "starting"
+          }
+        ],
+        "_provider_calls": 2,
+        "_status_before_cancel": "model_or_executor_unqualified",
+        "_submission_run_id": "03632985a4c346d3acb7fef89beba850",
+        "_trace_event_count": 18,
+        "action_receipts": [
+          {
+            "idempotency_key": "message_edd04c56b8fe4cfe980eb1f8a48addea",
+            "origin": "product-api-manual",
+            "receipt": {
+              "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+              "state": "accepted"
+            },
+            "replay": {
+              "receipt": {
+                "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+                "state": "accepted"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "runtime.prompt.idempotent"
+          },
+          {
+            "idempotency_key": "d15-pool-b6f6d7737ce34dbcb83084dbb2127a51",
+            "origin": "product-api-manual",
+            "receipt": {
+              "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+              "state": "accepted"
+            },
+            "replay": {
+              "receipt": {
+                "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+                "state": "accepted"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "byq_paper_pool_create"
+          },
+          {
+            "idempotency_key": "d15-approval-9311bf0cd440445cacd4083735560f51",
+            "origin": "product-api-manual",
+            "receipt": {
+              "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+              "state": "approved"
+            },
+            "replay": {
+              "receipt": {
+                "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+                "state": "approved"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "byq_strategy_approval"
+          }
+        ],
+        "adapter_generation": "generation-1531b54b295841f5a7cad54d38a398cc",
+        "adapter_pid": 3508680,
+        "approval": {
+          "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "bypassed": false,
+          "decided_by": "d15admin",
+          "execution_authorized": true,
+          "fetched_approval": {
+            "artifact_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+            "state": "approved"
+          },
+          "reuse_denied": true,
+          "state": "approved",
+          "trials": [
+            {
+              "artifact_id": "artifact_3ae9ad122317499e8d853f593bf3e660",
+              "denied": true,
+              "http_status": 201,
+              "kind": "rejected",
+              "phase": "durable",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 409,
+              "kind": "invalid_reuse",
+              "phase": "post-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "after_count": 0,
+              "before_count": 0,
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 422,
+              "kind": "protected_operation_blocked",
+              "phase": "post-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            }
+          ]
+        },
+        "capture_errors": [],
+        "capture_ok": true,
+        "continuity": "interrupted",
+        "executor_epoch": 1,
+        "generation_index": 3,
+        "goal": {
+          "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+          "prompt_receipt": {
+            "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+            "root_run_id": "22d3c287a4804647bbdb9c40bfaa0bac"
+          }
+        },
+        "result": {
+          "attributed_message_sequence": 5,
+          "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "sequence": 18,
+          "status": "completed",
+          "target_run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "terminal_kind": "session.result",
+          "trace_contiguous": true
+        },
+        "session_id": "conversation_d0f9bfa924134ad38a93a70004ffbce8",
+        "trace_id": "byq-trace-5806c739f4104b2ea9e4711e18808b86"
+      },
+      "before": {
+        "_detail_message_count": 2,
+        "_domain": {
+          "approval_replay_matches": true,
+          "approval_side_effect_count": 1,
+          "pool_side_effect_count": 1,
+          "replay_approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "replay_pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d"
+        },
+        "_dsh_pids": [
+          18,
+          136
+        ],
+        "_journal_generations": [
+          {
+            "ended_at": 1789885394.3100584,
+            "executor_epoch": 1,
+            "generation_id": "generation-e18aeb836d404c77bc4e05d876f120bc",
+            "root_run_id": null,
+            "started_at": 1789885385.3815992,
+            "state": "closed"
+          },
+          {
+            "ended_at": null,
+            "executor_epoch": 1,
+            "generation_id": "generation-90efcd785e114712add5f030194ab795",
+            "root_run_id": null,
+            "started_at": 1789885395.263586,
+            "state": "starting"
+          }
+        ],
+        "_provider_calls": 1,
+        "_trace_event_count": 9,
+        "action_receipts": [
+          {
+            "idempotency_key": "message_edd04c56b8fe4cfe980eb1f8a48addea",
+            "origin": "product-api-manual",
+            "receipt": {
+              "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+              "state": "accepted"
+            },
+            "replay": {
+              "receipt": {
+                "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+                "state": "accepted"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "runtime.prompt.idempotent"
+          },
+          {
+            "idempotency_key": "d15-pool-b6f6d7737ce34dbcb83084dbb2127a51",
+            "origin": "product-api-manual",
+            "receipt": {
+              "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+              "state": "accepted"
+            },
+            "replay": {
+              "receipt": {
+                "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+                "state": "accepted"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "byq_paper_pool_create"
+          },
+          {
+            "idempotency_key": "d15-approval-9311bf0cd440445cacd4083735560f51",
+            "origin": "product-api-manual",
+            "receipt": {
+              "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+              "state": "approved"
+            },
+            "replay": {
+              "receipt": {
+                "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+                "state": "approved"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "byq_strategy_approval"
+          }
+        ],
+        "adapter_generation": "generation-90efcd785e114712add5f030194ab795",
+        "adapter_pid": 3508680,
+        "approval": {
+          "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "bypassed": false,
+          "decided_by": "d15admin",
+          "execution_authorized": true,
+          "fetched_approval": {
+            "artifact_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+            "state": "approved"
+          },
+          "reuse_denied": true,
+          "state": "approved",
+          "trials": [
+            {
+              "artifact_id": "artifact_3ae9ad122317499e8d853f593bf3e660",
+              "denied": true,
+              "http_status": 201,
+              "kind": "rejected",
+              "phase": "durable",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 409,
+              "kind": "invalid_reuse",
+              "phase": "pre-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "after_count": 0,
+              "before_count": 0,
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 422,
+              "kind": "protected_operation_blocked",
+              "phase": "pre-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            }
+          ]
+        },
+        "capture_errors": [],
+        "capture_ok": true,
+        "continuity": "reattached",
+        "executor_epoch": 1,
+        "generation_index": 2,
+        "goal": {
+          "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+          "prompt_receipt": {
+            "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+            "root_run_id": "22d3c287a4804647bbdb9c40bfaa0bac"
+          }
+        },
+        "result": {
+          "attributed_message_sequence": 5,
+          "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "sequence": 11,
+          "status": "completed",
+          "target_run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "terminal_kind": "session.result",
+          "trace_contiguous": true
+        },
+        "session_id": "conversation_d0f9bfa924134ad38a93a70004ffbce8",
+        "trace_id": "byq-trace-5806c739f4104b2ea9e4711e18808b86"
+      },
+      "capture_errors": [],
+      "evidence": [
+        "docs/evidence/d15/d15-runtime/generation-replacement.v3.json"
+      ],
+      "fault_applied": true,
+      "id": "generation-replacement",
+      "result": "PASS"
+    },
+    {
+      "after": {
+        "_detail_message_count": 4,
+        "_domain": {
+          "approval_replay_matches": true,
+          "approval_side_effect_count": 1,
+          "pool_side_effect_count": 1,
+          "replay_approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "replay_pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d"
+        },
+        "_dsh_pids": [
+          272,
+          306
+        ],
+        "_interrupted_pids": [
+          158,
+          246
+        ],
+        "_journal_generations": [
+          {
+            "ended_at": 1789885394.3100584,
+            "executor_epoch": 1,
+            "generation_id": "generation-e18aeb836d404c77bc4e05d876f120bc",
+            "root_run_id": null,
+            "started_at": 1789885385.3815992,
+            "state": "closed"
+          },
+          {
+            "ended_at": 1789885408.7398605,
+            "executor_epoch": 1,
+            "generation_id": "generation-90efcd785e114712add5f030194ab795",
+            "root_run_id": null,
+            "started_at": 1789885395.263586,
+            "state": "interrupted"
+          },
+          {
+            "ended_at": 1789885419.7642622,
+            "executor_epoch": 1,
+            "generation_id": "generation-1531b54b295841f5a7cad54d38a398cc",
+            "root_run_id": null,
+            "started_at": 1789885408.7479506,
+            "state": "closed"
+          },
+          {
+            "ended_at": null,
+            "executor_epoch": 1,
+            "generation_id": "generation-c0a47a1b00f644d4a8536571b0778d69",
+            "root_run_id": null,
+            "started_at": 1789885419.7691853,
+            "state": "starting"
+          }
+        ],
+        "_provider_calls": 3,
+        "_status_before_interrupt": "model_or_executor_unqualified",
+        "_submission_run_id": "d11f87837cd14bf285b224a536188df1",
+        "_trace_event_count": 25,
+        "action_receipts": [
+          {
+            "idempotency_key": "message_edd04c56b8fe4cfe980eb1f8a48addea",
+            "origin": "product-api-manual",
+            "receipt": {
+              "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+              "state": "accepted"
+            },
+            "replay": {
+              "receipt": {
+                "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+                "state": "accepted"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "runtime.prompt.idempotent"
+          },
+          {
+            "idempotency_key": "d15-pool-b6f6d7737ce34dbcb83084dbb2127a51",
+            "origin": "product-api-manual",
+            "receipt": {
+              "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+              "state": "accepted"
+            },
+            "replay": {
+              "receipt": {
+                "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+                "state": "accepted"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "byq_paper_pool_create"
+          },
+          {
+            "idempotency_key": "d15-approval-9311bf0cd440445cacd4083735560f51",
+            "origin": "product-api-manual",
+            "receipt": {
+              "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+              "state": "approved"
+            },
+            "replay": {
+              "receipt": {
+                "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+                "state": "approved"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "byq_strategy_approval"
+          }
+        ],
+        "adapter_generation": "generation-c0a47a1b00f644d4a8536571b0778d69",
+        "adapter_pid": 3508680,
+        "approval": {
+          "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "bypassed": false,
+          "decided_by": "d15admin",
+          "execution_authorized": true,
+          "fetched_approval": {
+            "artifact_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+            "state": "approved"
+          },
+          "reuse_denied": true,
+          "state": "approved",
+          "trials": [
+            {
+              "artifact_id": "artifact_3ae9ad122317499e8d853f593bf3e660",
+              "denied": true,
+              "http_status": 201,
+              "kind": "rejected",
+              "phase": "durable",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 409,
+              "kind": "invalid_reuse",
+              "phase": "post-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "after_count": 0,
+              "before_count": 0,
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 422,
+              "kind": "protected_operation_blocked",
+              "phase": "post-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            }
+          ]
+        },
+        "capture_errors": [],
+        "capture_ok": true,
+        "continuity": "rehydrated",
+        "executor_epoch": 1,
+        "generation_index": 4,
+        "goal": {
+          "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+          "prompt_receipt": {
+            "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+            "root_run_id": "22d3c287a4804647bbdb9c40bfaa0bac"
+          }
+        },
+        "result": {
+          "attributed_message_sequence": 5,
+          "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "sequence": 25,
+          "status": "completed",
+          "target_run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "terminal_kind": "session.result",
+          "trace_contiguous": true
+        },
+        "session_id": "conversation_d0f9bfa924134ad38a93a70004ffbce8",
+        "trace_id": "byq-trace-5806c739f4104b2ea9e4711e18808b86"
+      },
+      "before": {
+        "_detail_message_count": 3,
+        "_domain": {
+          "approval_replay_matches": true,
+          "approval_side_effect_count": 1,
+          "pool_side_effect_count": 1,
+          "replay_approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "replay_pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d"
+        },
+        "_dsh_pids": [
+          158,
+          219
+        ],
+        "_journal_generations": [
+          {
+            "ended_at": 1789885394.3100584,
+            "executor_epoch": 1,
+            "generation_id": "generation-e18aeb836d404c77bc4e05d876f120bc",
+            "root_run_id": null,
+            "started_at": 1789885385.3815992,
+            "state": "closed"
+          },
+          {
+            "ended_at": 1789885408.7398605,
+            "executor_epoch": 1,
+            "generation_id": "generation-90efcd785e114712add5f030194ab795",
+            "root_run_id": null,
+            "started_at": 1789885395.263586,
+            "state": "interrupted"
+          },
+          {
+            "ended_at": null,
+            "executor_epoch": 1,
+            "generation_id": "generation-1531b54b295841f5a7cad54d38a398cc",
+            "root_run_id": null,
+            "started_at": 1789885408.7479506,
+            "state": "starting"
+          }
+        ],
+        "_provider_calls": 2,
+        "_trace_event_count": 18,
+        "action_receipts": [
+          {
+            "idempotency_key": "message_edd04c56b8fe4cfe980eb1f8a48addea",
+            "origin": "product-api-manual",
+            "receipt": {
+              "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+              "state": "accepted"
+            },
+            "replay": {
+              "receipt": {
+                "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+                "state": "accepted"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "runtime.prompt.idempotent"
+          },
+          {
+            "idempotency_key": "d15-pool-b6f6d7737ce34dbcb83084dbb2127a51",
+            "origin": "product-api-manual",
+            "receipt": {
+              "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+              "state": "accepted"
+            },
+            "replay": {
+              "receipt": {
+                "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+                "state": "accepted"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "byq_paper_pool_create"
+          },
+          {
+            "idempotency_key": "d15-approval-9311bf0cd440445cacd4083735560f51",
+            "origin": "product-api-manual",
+            "receipt": {
+              "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+              "state": "approved"
+            },
+            "replay": {
+              "receipt": {
+                "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+                "state": "approved"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "byq_strategy_approval"
+          }
+        ],
+        "adapter_generation": "generation-1531b54b295841f5a7cad54d38a398cc",
+        "adapter_pid": 3508680,
+        "approval": {
+          "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "bypassed": false,
+          "decided_by": "d15admin",
+          "execution_authorized": true,
+          "fetched_approval": {
+            "artifact_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+            "state": "approved"
+          },
+          "reuse_denied": true,
+          "state": "approved",
+          "trials": [
+            {
+              "artifact_id": "artifact_3ae9ad122317499e8d853f593bf3e660",
+              "denied": true,
+              "http_status": 201,
+              "kind": "rejected",
+              "phase": "durable",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 409,
+              "kind": "invalid_reuse",
+              "phase": "pre-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "after_count": 0,
+              "before_count": 0,
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 422,
+              "kind": "protected_operation_blocked",
+              "phase": "pre-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            }
+          ]
+        },
+        "capture_errors": [],
+        "capture_ok": true,
+        "continuity": "reattached",
+        "executor_epoch": 1,
+        "generation_index": 3,
+        "goal": {
+          "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+          "prompt_receipt": {
+            "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+            "root_run_id": "22d3c287a4804647bbdb9c40bfaa0bac"
+          }
+        },
+        "result": {
+          "attributed_message_sequence": 5,
+          "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "sequence": 18,
+          "status": "completed",
+          "target_run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "terminal_kind": "session.result",
+          "trace_contiguous": true
+        },
+        "session_id": "conversation_d0f9bfa924134ad38a93a70004ffbce8",
+        "trace_id": "byq-trace-5806c739f4104b2ea9e4711e18808b86"
+      },
+      "capture_errors": [],
+      "evidence": [
+        "docs/evidence/d15/d15-runtime/dsh-process-interruption.v3.json"
+      ],
+      "fault_applied": true,
+      "id": "dsh-process-interruption",
+      "result": "PASS"
+    },
+    {
+      "after": {
+        "_provider_tool_calls_emitted": 2,
+        "_provider_tool_name": "mcp__byq__byq_research_task_create",
+        "_second_delivery_run_id": "5ae86c909e4d4e509da80037d09ba2f4",
+        "_task_count": 1,
+        "action_receipts": [
+          {
+            "idempotency_key": "d15-mcp-7357789c20c34840ade5bcf23e3eabe4",
+            "origin": "agent-mcp",
+            "receipt": {
+              "state": "accepted",
+              "task_id": "task_14b0bb44271b4f37aebbee7c9fb540f9",
+              "tool_call_id": "d15-tool-1",
+              "trace_id": "byq-trace-d793af6fac75401e954c16d6a32f14cc"
+            },
+            "replay": {
+              "receipt": {
+                "state": "accepted",
+                "task_id": "task_14b0bb44271b4f37aebbee7c9fb540f9",
+                "tool_call_id": "d15-tool-2",
+                "trace_id": "byq-trace-d793af6fac75401e954c16d6a32f14cc"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "mcp__byq__byq_research_task_create"
+          }
+        ],
+        "adapter_generation": "generation-8fcb26f946c74295992013ab646d7241",
+        "adapter_pid": 3513115,
+        "agent_mcp_runs": {
+          "first": {
+            "assistant_sequence": 7,
+            "call_index": 1,
+            "mcp_status": "ok",
+            "message_id": "message_3c7c34738a5d468ab1f21f958d9cc524",
+            "run_id": "a62526d29114463498acfc293d8a850a",
+            "side_effect_count": 1,
+            "task_id": "task_14b0bb44271b4f37aebbee7c9fb540f9",
+            "terminal_kind": "session.result",
+            "terminal_sequence": 11,
+            "tool_call_id": "d15-tool-1"
+          },
+          "second": {
+            "assistant_sequence": 19,
+            "call_index": 2,
+            "mcp_status": "ok",
+            "message_id": "message_81a6aa9f2bb54257b666177263a442d3",
+            "run_id": "5ae86c909e4d4e509da80037d09ba2f4",
+            "side_effect_count": 1,
+            "task_id": "task_14b0bb44271b4f37aebbee7c9fb540f9",
+            "terminal_kind": "session.result",
+            "terminal_sequence": 23,
+            "tool_call_id": "d15-tool-2"
+          }
+        },
+        "approval": {
+          "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "bypassed": false,
+          "decided_by": "d15admin",
+          "execution_authorized": true,
+          "fetched_approval": {
+            "artifact_id": null,
+            "state": null
+          },
+          "reuse_denied": true,
+          "state": "approved",
+          "trials": [
+            {
+              "artifact_id": "artifact_3ae9ad122317499e8d853f593bf3e660",
+              "denied": true,
+              "http_status": 201,
+              "kind": "rejected",
+              "phase": "durable",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 409,
+              "kind": "invalid_reuse",
+              "phase": "post-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "after_count": 0,
+              "before_count": 0,
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 422,
+              "kind": "protected_operation_blocked",
+              "phase": "post-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            }
+          ]
+        },
+        "capture_errors": [],
+        "capture_ok": true,
+        "continuity": "rehydrated",
+        "executor_epoch": 1,
+        "generation_index": 2,
+        "goal": {
+          "content_sha256": "b98424284488321a79811941a944b8ee1a0071067b58bd462523843efb888e38",
+          "prompt_receipt": {
+            "content_sha256": "b98424284488321a79811941a944b8ee1a0071067b58bd462523843efb888e38",
+            "root_run_id": "a62526d29114463498acfc293d8a850a"
+          }
+        },
+        "result": {
+          "attributed_message_sequence": 7,
+          "run_id": "a62526d29114463498acfc293d8a850a",
+          "sequence": 23,
+          "status": "completed",
+          "target_run_id": "a62526d29114463498acfc293d8a850a",
+          "terminal_kind": "session.result",
+          "trace_contiguous": true
+        },
+        "session_id": "conversation_188bbf741e314121bbed5e16cab43480",
+        "trace_id": "byq-trace-d793af6fac75401e954c16d6a32f14cc"
+      },
+      "before": {
+        "_provider_tool_calls_emitted": 1,
+        "_provider_tool_name": "mcp__byq__byq_research_task_create",
+        "_task_count": 1,
+        "action_receipts": [
+          {
+            "idempotency_key": "d15-mcp-7357789c20c34840ade5bcf23e3eabe4",
+            "origin": "agent-mcp",
+            "receipt": {
+              "state": "accepted",
+              "task_id": "task_14b0bb44271b4f37aebbee7c9fb540f9",
+              "tool_call_id": "d15-tool-1",
+              "trace_id": "byq-trace-d793af6fac75401e954c16d6a32f14cc"
+            },
+            "replay": {
+              "receipt": {
+                "state": "accepted",
+                "task_id": "task_14b0bb44271b4f37aebbee7c9fb540f9",
+                "tool_call_id": "d15-tool-1",
+                "trace_id": "byq-trace-d793af6fac75401e954c16d6a32f14cc"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "mcp__byq__byq_research_task_create"
+          }
+        ],
+        "adapter_generation": "generation-b20e2445c441437aae417cc3fe044f17",
+        "adapter_pid": 3508680,
+        "agent_mcp_runs": {
+          "first": {
+            "assistant_sequence": 7,
+            "call_index": 1,
+            "mcp_status": "ok",
+            "message_id": "message_3c7c34738a5d468ab1f21f958d9cc524",
+            "run_id": "a62526d29114463498acfc293d8a850a",
+            "side_effect_count": 1,
+            "task_id": "task_14b0bb44271b4f37aebbee7c9fb540f9",
+            "terminal_kind": "session.result",
+            "terminal_sequence": 11,
+            "tool_call_id": "d15-tool-1"
+          }
+        },
+        "approval": {
+          "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "bypassed": false,
+          "decided_by": "d15admin",
+          "execution_authorized": true,
+          "fetched_approval": {
+            "artifact_id": null,
+            "state": null
+          },
+          "reuse_denied": true,
+          "state": "approved",
+          "trials": [
+            {
+              "artifact_id": "artifact_3ae9ad122317499e8d853f593bf3e660",
+              "denied": true,
+              "http_status": 201,
+              "kind": "rejected",
+              "phase": "durable",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 409,
+              "kind": "invalid_reuse",
+              "phase": "pre-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "after_count": 0,
+              "before_count": 0,
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 422,
+              "kind": "protected_operation_blocked",
+              "phase": "pre-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            }
+          ]
+        },
+        "capture_errors": [],
+        "capture_ok": true,
+        "continuity": "fresh",
+        "executor_epoch": 1,
+        "generation_index": 1,
+        "goal": {
+          "content_sha256": "b98424284488321a79811941a944b8ee1a0071067b58bd462523843efb888e38",
+          "prompt_receipt": {
+            "content_sha256": "b98424284488321a79811941a944b8ee1a0071067b58bd462523843efb888e38",
+            "root_run_id": "a62526d29114463498acfc293d8a850a"
+          }
+        },
+        "result": {
+          "attributed_message_sequence": 7,
+          "run_id": "a62526d29114463498acfc293d8a850a",
+          "sequence": 11,
+          "status": "completed",
+          "target_run_id": "a62526d29114463498acfc293d8a850a",
+          "terminal_kind": "session.result",
+          "trace_contiguous": true
+        },
+        "session_id": "conversation_188bbf741e314121bbed5e16cab43480",
+        "trace_id": "byq-trace-d793af6fac75401e954c16d6a32f14cc"
+      },
+      "capture_errors": [],
+      "evidence": [
+        "docs/evidence/d15/d15-runtime/agent-mcp-domain-at-most-once.v5.json"
+      ],
+      "fault_applied": true,
+      "id": "agent-mcp-domain-at-most-once",
+      "result": "PASS"
+    },
+    {
+      "after": {
+        "_detail_message_count": 4,
+        "_domain": {
+          "approval_replay_matches": true,
+          "approval_side_effect_count": 1,
+          "pool_side_effect_count": 1,
+          "replay_approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "replay_pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d"
+        },
+        "_dsh_pids": [
+          24,
+          129
+        ],
+        "_journal_generations": [
+          {
+            "ended_at": 1789885394.3100584,
+            "executor_epoch": 1,
+            "generation_id": "generation-e18aeb836d404c77bc4e05d876f120bc",
+            "root_run_id": null,
+            "started_at": 1789885385.3815992,
+            "state": "closed"
+          },
+          {
+            "ended_at": 1789885408.7398605,
+            "executor_epoch": 1,
+            "generation_id": "generation-90efcd785e114712add5f030194ab795",
+            "root_run_id": null,
+            "started_at": 1789885395.263586,
+            "state": "interrupted"
+          },
+          {
+            "ended_at": 1789885419.7642622,
+            "executor_epoch": 1,
+            "generation_id": "generation-1531b54b295841f5a7cad54d38a398cc",
+            "root_run_id": null,
+            "started_at": 1789885408.7479506,
+            "state": "closed"
+          },
+          {
+            "ended_at": 1789885440.8579419,
+            "executor_epoch": 1,
+            "generation_id": "generation-c0a47a1b00f644d4a8536571b0778d69",
+            "root_run_id": null,
+            "started_at": 1789885419.7691853,
+            "state": "closed"
+          }
+        ],
+        "_provider_calls": 7,
+        "_takeover": {
+          "audit_path": "/var/lib/byq/dsh-sessions/dsh-0.1.5rc1/byq-lifecycle-evidence/executor-state/takeover-audit/20260920T062401Z.2.json",
+          "database_rows_modified": false,
+          "executor_epoch": 2,
+          "previous_epoch": 1,
+          "reason": "D15 runtime qualification executor takeover"
+        },
+        "_trace_event_count": 25,
+        "action_receipts": [
+          {
+            "idempotency_key": "message_edd04c56b8fe4cfe980eb1f8a48addea",
+            "origin": "product-api-manual",
+            "receipt": {
+              "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+              "state": "accepted"
+            },
+            "replay": {
+              "receipt": {
+                "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+                "state": "accepted"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "runtime.prompt.idempotent"
+          },
+          {
+            "idempotency_key": "d15-pool-b6f6d7737ce34dbcb83084dbb2127a51",
+            "origin": "product-api-manual",
+            "receipt": {
+              "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+              "state": "accepted"
+            },
+            "replay": {
+              "receipt": {
+                "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+                "state": "accepted"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "byq_paper_pool_create"
+          },
+          {
+            "idempotency_key": "d15-approval-9311bf0cd440445cacd4083735560f51",
+            "origin": "product-api-manual",
+            "receipt": {
+              "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+              "state": "approved"
+            },
+            "replay": {
+              "receipt": {
+                "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+                "state": "approved"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "byq_strategy_approval"
+          }
+        ],
+        "adapter_generation": "generation-c0a47a1b00f644d4a8536571b0778d69",
+        "adapter_pid": 3513115,
+        "approval": {
+          "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "bypassed": false,
+          "decided_by": "d15admin",
+          "execution_authorized": true,
+          "fetched_approval": {
+            "artifact_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+            "state": "approved"
+          },
+          "reuse_denied": true,
+          "state": "approved",
+          "trials": [
+            {
+              "artifact_id": "artifact_3ae9ad122317499e8d853f593bf3e660",
+              "denied": true,
+              "http_status": 201,
+              "kind": "rejected",
+              "phase": "durable",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 409,
+              "kind": "invalid_reuse",
+              "phase": "post-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "after_count": 0,
+              "before_count": 0,
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 422,
+              "kind": "protected_operation_blocked",
+              "phase": "post-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            }
+          ]
+        },
+        "capture_errors": [],
+        "capture_ok": true,
+        "continuity": "reattached",
+        "executor_epoch": 2,
+        "generation_index": 4,
+        "goal": {
+          "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+          "prompt_receipt": {
+            "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+            "root_run_id": "22d3c287a4804647bbdb9c40bfaa0bac"
+          }
+        },
+        "result": {
+          "attributed_message_sequence": 5,
+          "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "sequence": 25,
+          "status": "completed",
+          "target_run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "terminal_kind": "session.result",
+          "trace_contiguous": true
+        },
+        "session_id": "conversation_d0f9bfa924134ad38a93a70004ffbce8",
+        "trace_id": "byq-trace-5806c739f4104b2ea9e4711e18808b86"
+      },
+      "before": {
+        "_detail_message_count": 4,
+        "_domain": {
+          "approval_replay_matches": true,
+          "approval_side_effect_count": 1,
+          "pool_side_effect_count": 1,
+          "replay_approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "replay_pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d"
+        },
+        "_dsh_pids": [
+          24,
+          96
+        ],
+        "_journal_generations": [
+          {
+            "ended_at": 1789885394.3100584,
+            "executor_epoch": 1,
+            "generation_id": "generation-e18aeb836d404c77bc4e05d876f120bc",
+            "root_run_id": null,
+            "started_at": 1789885385.3815992,
+            "state": "closed"
+          },
+          {
+            "ended_at": 1789885408.7398605,
+            "executor_epoch": 1,
+            "generation_id": "generation-90efcd785e114712add5f030194ab795",
+            "root_run_id": null,
+            "started_at": 1789885395.263586,
+            "state": "interrupted"
+          },
+          {
+            "ended_at": 1789885419.7642622,
+            "executor_epoch": 1,
+            "generation_id": "generation-1531b54b295841f5a7cad54d38a398cc",
+            "root_run_id": null,
+            "started_at": 1789885408.7479506,
+            "state": "closed"
+          },
+          {
+            "ended_at": null,
+            "executor_epoch": 1,
+            "generation_id": "generation-c0a47a1b00f644d4a8536571b0778d69",
+            "root_run_id": null,
+            "started_at": 1789885419.7691853,
+            "state": "starting"
+          }
+        ],
+        "_provider_calls": 7,
+        "_trace_event_count": 25,
+        "action_receipts": [
+          {
+            "idempotency_key": "message_edd04c56b8fe4cfe980eb1f8a48addea",
+            "origin": "product-api-manual",
+            "receipt": {
+              "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+              "state": "accepted"
+            },
+            "replay": {
+              "receipt": {
+                "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+                "state": "accepted"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "runtime.prompt.idempotent"
+          },
+          {
+            "idempotency_key": "d15-pool-b6f6d7737ce34dbcb83084dbb2127a51",
+            "origin": "product-api-manual",
+            "receipt": {
+              "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+              "state": "accepted"
+            },
+            "replay": {
+              "receipt": {
+                "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+                "state": "accepted"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "byq_paper_pool_create"
+          },
+          {
+            "idempotency_key": "d15-approval-9311bf0cd440445cacd4083735560f51",
+            "origin": "product-api-manual",
+            "receipt": {
+              "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+              "state": "approved"
+            },
+            "replay": {
+              "receipt": {
+                "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+                "state": "approved"
+              },
+              "side_effect_count": 1
+            },
+            "side_effect_count": 1,
+            "tool": "byq_strategy_approval"
+          }
+        ],
+        "adapter_generation": "generation-c0a47a1b00f644d4a8536571b0778d69",
+        "adapter_pid": 3513115,
+        "approval": {
+          "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "bypassed": false,
+          "decided_by": "d15admin",
+          "execution_authorized": true,
+          "fetched_approval": {
+            "artifact_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+            "state": "approved"
+          },
+          "reuse_denied": true,
+          "state": "approved",
+          "trials": [
+            {
+              "artifact_id": "artifact_3ae9ad122317499e8d853f593bf3e660",
+              "denied": true,
+              "http_status": 201,
+              "kind": "rejected",
+              "phase": "durable",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 409,
+              "kind": "invalid_reuse",
+              "phase": "pre-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            },
+            {
+              "after_count": 0,
+              "before_count": 0,
+              "denied": true,
+              "domain_code": "product_domain_rejected",
+              "http_status": 422,
+              "kind": "protected_operation_blocked",
+              "phase": "pre-fault",
+              "side_effect_created": false,
+              "state": "rejected"
+            }
+          ]
+        },
+        "capture_errors": [],
+        "capture_ok": true,
+        "continuity": "rehydrated",
+        "executor_epoch": 1,
+        "generation_index": 4,
+        "goal": {
+          "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+          "prompt_receipt": {
+            "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+            "root_run_id": "22d3c287a4804647bbdb9c40bfaa0bac"
+          }
+        },
+        "result": {
+          "attributed_message_sequence": 5,
+          "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "sequence": 25,
+          "status": "completed",
+          "target_run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "terminal_kind": "session.result",
+          "trace_contiguous": true
+        },
+        "session_id": "conversation_d0f9bfa924134ad38a93a70004ffbce8",
+        "trace_id": "byq-trace-5806c739f4104b2ea9e4711e18808b86"
+      },
+      "capture_errors": [],
+      "evidence": [
+        "docs/evidence/d15/d15-runtime/executor-takeover.v3.json"
+      ],
+      "fault_applied": true,
+      "id": "executor-takeover",
+      "result": "PASS"
+    },
+    {
+      "id": "host-reboot",
+      "not_run_reason": "not executed: rebooting the maintainer host is not authorized and a container restart is not equivalent to a host reboot",
+      "result": "NOT_RUN"
+    }
+  ],
+  "schema_version": "byq-d15-runtime-observations.v5",
+  "stack": {
+    "candidate_image": "byq-d15-runtime-candidate:local",
+    "compose_project": "byq-d15-runtime",
+    "isolated_session_root": "/var/lib/byq/dsh-sessions/dsh-0.1.5rc1",
+    "ports": {
+      "adapter": 18400,
+      "backend": 18000,
+      "gateway": 18100,
+      "mcp": 18300
+    }
+  }
+}

@@ -1,10 +1,10 @@
 # D15 real isolated BYQ runtime-continuity qualification
 
-- Status: **v4 service-boundary qualification PASS (scripted keyless provider);
+- Status: **v5 service-boundary qualification PASS (scripted keyless provider);
   NOT a real-LLM-quality pass and NOT a full original-task qualification.**
-- Date: 2026-09-20 (v4 scope/approval/Agent-MCP revision)
+- Date: 2026-09-20 (v5 two-run replay + post-fault approval revision)
 - Candidate: coherent `dsh-0.1.5rc1` / Python SDK `0.1.5rc1` / bundled runtime `0.1.5rc1`
-- Build revision: `post-u8.163` (rebuild identity only; no selector/deployment change)
+- Build revision: `post-u8.164` (rebuild identity only; no selector/deployment change)
 - Scope: runtime continuity only. D15-4, D15-5, D15-G and R3 are **not** in this
   batch and no full-D15 completion is claimed.
 
@@ -15,10 +15,11 @@
 | v1 | early service-boundary observation | capture hardcoded approval, fabricated missing receipts, `sequence>0` continuity |
 | v2 | observer/coverage fixes | same capture-layer defects |
 | v3 | capture-layer fixes (no success defaults, persisted approval, real trace attribution) | **no real Agent→MCP→Domain action**; approval denial inferred from any error; no protected-operation attempt |
-| **v4** | **the required business at the service boundary**: process recovery, goal preservation, real Agent→MCP→Domain at-most-once, authoritative approval denial via a protected operation, traceable result | **real-LLM-quality semantics** (provider is scripted/keyless); host reboot; D15-4/D15-5/D15-G; production cutover |
+| v4 | the required business at the service boundary, but the Agent→MCP replay was **synthesized from the current task id** and the approval trials were only the pre-fault proof | a second call that was not executed/failed could still pass |
+| **v5** | **two real runs / two real tool responses**, same task id, one side effect; post-fault approval re-attempt with authoritative counts | **real-LLM-quality semantics** (provider is scripted/keyless); host reboot; D15-4/D15-5/D15-G; production cutover |
 
-Only **v4** is the qualification evidence. v1/v2/v3 are retained history and are
-**not** qualification passes. Even v4 is a **limited service-boundary pass with a
+Only **v5** is the qualification evidence. v1–v4 are retained history and are
+**not** qualification passes. Even v5 is a **limited service-boundary pass with a
 scripted provider** — it is not a full original-task (real-model) qualification.
 
 ## v4 additions
@@ -45,6 +46,30 @@ scripted provider** — it is not a full original-task (real-model) qualificatio
    A 5xx/timeout is **not** a denial, and a rejection with an increased
    side-effect count fails the verdict (capture-layer negatives below).
 
+## v5 additions (two-run replay + post-fault approval)
+
+1. **Two real runs / two real tool responses.** The first and second runs and
+   their user messages are held separately. After the fault the second run's own
+   tool call, its completion terminal (`session.result`) and its own attributed
+   assistant are awaited. The provider records a real tool-call/result history;
+   the scripted provider emitted `mcp__byq__byq_research_task_create` twice
+   (call_index `1 -> 2`, tool_call_id `d15-tool-1 -> d15-tool-2`). Both real MCP
+   results reference the **same** `task_14b0bb44271b4f37aebbee7c9fb540f9` with a
+   measured side-effect count of 1. The delivery receipt carries the first real
+   tool response and the replay receipt the second, correlated by run id,
+   tool_call_id and task id. A dict rebuilt from the current task id can no
+   longer pass.
+2. **Post-fault approval re-attempt.** The pre-fault proof is labelled
+   `phase="pre-fault"`; every recovery `after` capture actually re-requests the
+   invalid reuse and re-attempts the protected backtest operation after the fault
+   and measures the authoritative backtest-job count before/after, labelled
+   `phase="post-fault"`. The observer requires the post-fault trials. This proves
+   the denial **after** the fault, not merely before it.
+3. **Fault detail recorded.** The adapter is SIGKILLed and restarted, then the
+   Gateway is reconnected (its trace collector for an in-memory Product session
+   ends with the adapter stream, so it must be re-established before the second
+   delivery can be observed). Both are recorded.
+
 ## What is real vs scripted
 
 Real, isolated stack (compose project `byq-d15-runtime`, dedicated network/
@@ -53,19 +78,19 @@ from this branch (`stack.v4.json` records every image digest). Scripted and
 explicitly **not** real-LLM-quality: the keyless deterministic provider
 (`llm.real_llm_quality=false`).
 
-## Per-row results (v4)
+## Per-row results (v5)
 
 | fault row | continuity | pid | generation | epoch |
 | --- | --- | --- | --- | --- |
-| adapter-process-restart | reattached -> rehydrated | 3412601 -> 3414070 | 1 -> 2 | 1 -> 1 |
-| gateway-disconnect-reconnect | reattached -> reattached | 3414070 -> 3414070 | 2 -> 2 | 1 -> 1 |
-| generation-replacement | reattached -> interrupted | 3414070 -> 3414070 | 2 -> 3 | 1 -> 1 |
-| dsh-process-interruption | reattached -> rehydrated | 3414070 -> 3414070 | 3 -> 4 | 1 -> 1 |
-| agent-mcp-domain-at-most-once | fresh -> rehydrated | 3414070 -> 3418327 | 1 -> 2 | 1 -> 1 |
-| executor-takeover | rehydrated -> reattached | 3418327 -> 3418327 | 4 -> 4 | 1 -> 2 |
+| adapter-process-restart | reattached -> rehydrated | 3507299 -> 3508680 | 1 -> 2 | 1 -> 1 |
+| gateway-disconnect-reconnect | reattached -> reattached | 3508680 -> 3508680 | 2 -> 2 | 1 -> 1 |
+| generation-replacement | reattached -> interrupted | 3508680 -> 3508680 | 2 -> 3 | 1 -> 1 |
+| dsh-process-interruption | reattached -> rehydrated | 3508680 -> 3508680 | 3 -> 4 | 1 -> 1 |
+| agent-mcp-domain-at-most-once | fresh -> rehydrated | 3508680 -> 3513115 | 1 -> 2 | 1 -> 1 |
+| executor-takeover | rehydrated -> reattached | 3513115 -> 3513115 | 4 -> 4 | 1 -> 2 |
 | host-reboot (OPTIONAL) | `NOT_RUN` | - | - | - |
 
-(PIDs vary per run; see `observations.v4.json`.)
+(PIDs vary per run; see `observations.v5.json`.)
 
 ## Explicitly uncovered / not executed
 
@@ -76,29 +101,30 @@ explicitly **not** real-LLM-quality: the keyless deterministic provider
 
 ## Fail-able observer and capture negatives
 
-- `observer.py --selfcheck` -> `negative-controls.v4.json` (39 controls,
+- `observer.py --selfcheck` -> `negative-controls.v5.json` (42 controls,
   `all_controls_pass=true`, `defect_targeting_pre_fix_passed=true`).
-- `capture_negatives.py` -> `capture-negatives.v4.json` (7 cases, each legacy
+- `capture_negatives.py` -> `capture-negatives.v5.json` (10 cases, each legacy
   `all_pass=true` -> fixed `all_pass=false`): deleted-journal-receipt,
-  replay-error, approval-expiry-bypass, **denial-from-500-timeout**,
-  **rejected-response-but-side-effect-exists**, trace-gap,
-  only-old-assistant-result.
+  replay-error, approval-expiry-bypass, denial-from-500-timeout,
+  rejected-response-but-side-effect-exists, trace-gap, only-old-assistant-result,
+  and the new **agent-mcp-second-no-tool**, **agent-mcp-second-mcp-failed**,
+  **agent-mcp-only-first-run**.
 
 ## Isolation, cleanup, reproduce
 
-`stack.v4.json`: preflight (6 containers, loopback-only ports, candidate pinned,
+`stack.v5.json`: preflight (6 containers, loopback-only ports, candidate pinned,
 image digests) and cleanup (`containers_remaining=0`, `networks_remaining=0`,
 `volumes_remaining=0`). Production/Community untouched.
 
 ```bash
 python3 scripts/d15/runtime_continuity/run_qualification.py            # up -> scenarios -> cleanup
 python3 scripts/d15/runtime_continuity/observer.py --selfcheck \
-    --out docs/evidence/d15/d15-runtime/negative-controls.v4.json      # must exit 0
+    --out docs/evidence/d15/d15-runtime/negative-controls.v5.json      # must exit 0
 python3 scripts/d15/runtime_continuity/capture_negatives.py \
-    --out docs/evidence/d15/d15-runtime/capture-negatives.v4.json      # must exit 0
+    --out docs/evidence/d15/d15-runtime/capture-negatives.v5.json      # must exit 0
 python3 scripts/d15/runtime_continuity/observer.py \
-    --observations docs/evidence/d15/d15-runtime/observations.v4.json \
-    --out docs/evidence/d15/d15-runtime/verdict.v4.json                # must exit 0
+    --observations docs/evidence/d15/d15-runtime/observations.v5.json \
+    --out docs/evidence/d15/d15-runtime/verdict.v5.json                # must exit 0
 ```
 
-v1/v2/v3 evidence is retained unchanged and is **not** a qualification pass.
+v1–v4 evidence is retained unchanged and is **not** a qualification pass.

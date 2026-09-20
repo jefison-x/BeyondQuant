@@ -35,7 +35,7 @@ def _load(name: str, path: Path):
 def load_modules():
     observer = _load("d15_obs_capture_neg", HERE / "observer.py")
     runner = _load("d15_rq_capture_neg", HERE / "run_qualification.py")
-    contract = json.loads((HERE / "contract.v4.json").read_text(encoding="utf-8"))
+    contract = json.loads((HERE / "contract.v5.json").read_text(encoding="utf-8"))
     return observer, runner, contract
 
 
@@ -113,7 +113,10 @@ def build_cases(observer, runner, contract) -> list[dict]:
     denial_422 = {"ok": False, "status": 422, "error": "http 422",
                   "body": {"error": {"code": "product_domain_rejected",
                                      "message": "strategy version is not approved for execution"}}}
-    approval = runner.derive_approval(expired_response, rejected_response, denial_422, denial_422, 0, 0, None)
+    approval = runner.derive_approval(expired_response, rejected_response,
+                                      {"phase": "post-fault", "invalid_reuse": denial_422,
+                                       "protected_operation": denial_422,
+                                       "backtests_before": 0, "backtests_after": 0}, None)
     assert approval["state"] == "expired" and approval["bypassed"] is True
 
     def pre_expiry(scenario):
@@ -134,7 +137,10 @@ def build_cases(observer, runner, contract) -> list[dict]:
     server_error = {"ok": False, "status": 500, "error": "http 500",
                     "body": {"error": {"code": "internal_error", "message": "boom"}}}
     timeout_error = {"ok": False, "status": 0, "error": "URLError: timed out", "body": None}
-    approval_500 = runner.derive_approval(expired_response, rejected_response, server_error, timeout_error, 0, 0, None)
+    approval_500 = runner.derive_approval(expired_response, rejected_response,
+                                          {"phase": "post-fault", "invalid_reuse": server_error,
+                                           "protected_operation": timeout_error,
+                                           "backtests_before": 0, "backtests_after": 0}, None)
     assert approval_500["bypassed"] is True
     assert approval_500["trials"][1]["denied"] is False
     assert approval_500["trials"][2]["denied"] is False
@@ -154,7 +160,10 @@ def build_cases(observer, runner, contract) -> list[dict]:
         _scenario(observer, contract, pre_500), _scenario(observer, contract, post_500))
 
     # 3c. A rejected response but an authoritative side effect exists.
-    approval_side = runner.derive_approval(expired_response, rejected_response, denial_422, denial_422, 0, 1, None)
+    approval_side = runner.derive_approval(expired_response, rejected_response,
+                                           {"phase": "post-fault", "invalid_reuse": denial_422,
+                                            "protected_operation": denial_422,
+                                            "backtests_before": 0, "backtests_after": 1}, None)
     assert approval_side["bypassed"] is True
     assert approval_side["trials"][2]["after_count"] == 1
 
@@ -220,6 +229,56 @@ def build_cases(observer, runner, contract) -> list[dict]:
     add("only-old-assistant-result",
         "target run never completed but a historical assistant exists; old capture reported completed",
         _scenario(observer, contract, pre_old_assistant), _scenario(observer, contract, post_old_assistant))
+
+    # 6. Agent->MCP replay negatives.
+    def agent_mcp_case(mutate) -> dict:
+        fixture = _runtime_fixture(observer, contract)
+        mutate(next(s for s in fixture["scenarios"] if s["id"] == "agent-mcp-domain-at-most-once"))
+        return fixture
+
+    def pre_agent_mcp(scenario):
+        # Pre-fix: delivery/replay rebuilt from the same current task id.
+        receipt = scenario["after"]["action_receipts"][0]
+        receipt["replay"]["receipt"] = receipt["receipt"]
+
+    def post_second_no_tool(scenario):
+        after = scenario["after"]
+        after["agent_mcp_runs"].pop("second", None)
+        receipt = after["action_receipts"][0]
+        receipt["replay"]["receipt"] = receipt["receipt"]
+        after["capture_ok"] = False
+        after["capture_errors"] = ["second run emitted no tool call"]
+
+    add("agent-mcp-second-no-tool",
+        "the second run emitted no tool call; old capture reused the first success",
+        agent_mcp_case(pre_agent_mcp), agent_mcp_case(post_second_no_tool))
+
+    def post_second_mcp_failed(scenario):
+        after = scenario["after"]
+        other = "task_" + "8" * 32
+        after["agent_mcp_runs"]["second"].update({"mcp_status": "error", "task_id": other})
+        receipt = after["action_receipts"][0]
+        receipt["replay"]["receipt"] = {**receipt["receipt"], "task_id": other}
+        after["capture_ok"] = False
+        after["capture_errors"] = ["second MCP tool result failed/timed out"]
+
+    add("agent-mcp-second-mcp-failed",
+        "the second MCP call failed/timed out; old capture reused the first success",
+        agent_mcp_case(pre_agent_mcp), agent_mcp_case(post_second_mcp_failed))
+
+    def post_only_first(scenario):
+        after = scenario["after"]
+        first = after["agent_mcp_runs"]["first"]
+        after["agent_mcp_runs"]["second"].update(
+            {"run_id": first["run_id"], "tool_call_id": first["tool_call_id"]})
+        receipt = after["action_receipts"][0]
+        receipt["replay"]["receipt"] = receipt["receipt"]
+        after["capture_ok"] = False
+        after["capture_errors"] = ["only the first run's terminal/assistant exists"]
+
+    add("agent-mcp-only-first-run",
+        "only the first run terminal/assistant exists; old capture accepted any old assistant",
+        agent_mcp_case(pre_agent_mcp), agent_mcp_case(post_only_first))
 
     return cases
 

@@ -173,7 +173,13 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
   `product_domain_rejected`）。capture 层负例新增 `500/timeout 不算拒绝` 与
   `拒绝响应但副作用已存在`。**文档明确区分「有限服务边界观测通过」与「完整原任务资格」：v4 是
   scripted keyless provider 的有限服务边界通过，不是真实 LLM 语义/完整原任务资格；v1/v2/v3 为
-  保留历史且不构成资格通过**。资格证据 `docs/evidence/d15/d15-runtime/*.v4.json`。
+  保留历史且不构成资格通过**。v5 复核修订修正 Agent→MCP 重放证据：分别持有第一次/第二次
+  run 与 message，等待第二次自身的 tool call/terminal/assistant，并按 run id、tool_call_id 与
+  同一 task id（实测副作用=1）关联两个真实 MCP tool 结果；provider 记录真实 tool-call/result
+  历史，`agent-mcp-second-no-tool`/`agent-mcp-second-mcp-failed`/`agent-mcp-only-first-run`
+  负例必须失败。approval 试验区分 `pre-fault`/`post-fault`：每个恢复场景的 after 在故障后
+  真实重试 invalid-reuse 与受保护回测操作并测量权威前后计数。资格证据
+  `docs/evidence/d15/d15-runtime/*.v5.json`。
 - **D15-4..D15-G（PLANNED）**：subagent/fork continuity、persistent terminal 与
   architecture Go/No-Go 尚未执行；`R3_RESUME = NO`。
 - **路线重排**：`R0 → R1 → R2 → D15 → R3 Thin Runtime Supervisor → R4 TerminalAttachment →
@@ -187,7 +193,7 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
   并入 `main`（`.154`）后合并 `origin/main` 并改用未使用 id `post-u8.155`（仅重建身份；
   历史清单与全部证据保留，不修改任何既有 immutable manifest）。D15-3R 及 observer v2/v3/v4
   复核修订各新增 `scripts/d15/runtime_continuity`/`tests`/证据后依次推进
-  `post-u8.159 → .160 → .161 → .162 → .163`（仅重建身份，历史 manifest 与证据全部保留）。
+  `post-u8.159 → .160 → .161 → .162 → .163 → .164`（仅重建身份，历史 manifest 与证据全部保留）。
   不部署、不自动合并。`R3_RESUME = NO`，直至 D15-G 完成且有原生连续性证据。
 
 - 当前已完成阶段：**Phase 97**——回测任务拥有 Backend 权威、持久化的可读名称；名称与稳定 Backtest ID 在 Product 目录、

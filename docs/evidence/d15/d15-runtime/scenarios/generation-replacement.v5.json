@@ -1,0 +1,349 @@
+{
+  "after": {
+    "_detail_message_count": 3,
+    "_domain": {
+      "approval_replay_matches": true,
+      "approval_side_effect_count": 1,
+      "pool_side_effect_count": 1,
+      "replay_approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+      "replay_pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d"
+    },
+    "_dsh_pids": [
+      158,
+      193
+    ],
+    "_journal_generations": [
+      {
+        "ended_at": 1789885394.3100584,
+        "executor_epoch": 1,
+        "generation_id": "generation-e18aeb836d404c77bc4e05d876f120bc",
+        "root_run_id": null,
+        "started_at": 1789885385.3815992,
+        "state": "closed"
+      },
+      {
+        "ended_at": 1789885408.7398605,
+        "executor_epoch": 1,
+        "generation_id": "generation-90efcd785e114712add5f030194ab795",
+        "root_run_id": null,
+        "started_at": 1789885395.263586,
+        "state": "interrupted"
+      },
+      {
+        "ended_at": null,
+        "executor_epoch": 1,
+        "generation_id": "generation-1531b54b295841f5a7cad54d38a398cc",
+        "root_run_id": null,
+        "started_at": 1789885408.7479506,
+        "state": "starting"
+      }
+    ],
+    "_provider_calls": 2,
+    "_status_before_cancel": "model_or_executor_unqualified",
+    "_submission_run_id": "03632985a4c346d3acb7fef89beba850",
+    "_trace_event_count": 18,
+    "action_receipts": [
+      {
+        "idempotency_key": "message_edd04c56b8fe4cfe980eb1f8a48addea",
+        "origin": "product-api-manual",
+        "receipt": {
+          "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "state": "accepted"
+        },
+        "replay": {
+          "receipt": {
+            "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+            "state": "accepted"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "runtime.prompt.idempotent"
+      },
+      {
+        "idempotency_key": "d15-pool-b6f6d7737ce34dbcb83084dbb2127a51",
+        "origin": "product-api-manual",
+        "receipt": {
+          "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+          "state": "accepted"
+        },
+        "replay": {
+          "receipt": {
+            "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+            "state": "accepted"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "byq_paper_pool_create"
+      },
+      {
+        "idempotency_key": "d15-approval-9311bf0cd440445cacd4083735560f51",
+        "origin": "product-api-manual",
+        "receipt": {
+          "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "state": "approved"
+        },
+        "replay": {
+          "receipt": {
+            "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+            "state": "approved"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "byq_strategy_approval"
+      }
+    ],
+    "adapter_generation": "generation-1531b54b295841f5a7cad54d38a398cc",
+    "adapter_pid": 3508680,
+    "approval": {
+      "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+      "bypassed": false,
+      "decided_by": "d15admin",
+      "execution_authorized": true,
+      "fetched_approval": {
+        "artifact_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+        "state": "approved"
+      },
+      "reuse_denied": true,
+      "state": "approved",
+      "trials": [
+        {
+          "artifact_id": "artifact_3ae9ad122317499e8d853f593bf3e660",
+          "denied": true,
+          "http_status": 201,
+          "kind": "rejected",
+          "phase": "durable",
+          "side_effect_created": false,
+          "state": "rejected"
+        },
+        {
+          "denied": true,
+          "domain_code": "product_domain_rejected",
+          "http_status": 409,
+          "kind": "invalid_reuse",
+          "phase": "post-fault",
+          "side_effect_created": false,
+          "state": "rejected"
+        },
+        {
+          "after_count": 0,
+          "before_count": 0,
+          "denied": true,
+          "domain_code": "product_domain_rejected",
+          "http_status": 422,
+          "kind": "protected_operation_blocked",
+          "phase": "post-fault",
+          "side_effect_created": false,
+          "state": "rejected"
+        }
+      ]
+    },
+    "capture_errors": [],
+    "capture_ok": true,
+    "continuity": "interrupted",
+    "executor_epoch": 1,
+    "generation_index": 3,
+    "goal": {
+      "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+      "prompt_receipt": {
+        "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+        "root_run_id": "22d3c287a4804647bbdb9c40bfaa0bac"
+      }
+    },
+    "result": {
+      "attributed_message_sequence": 5,
+      "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+      "sequence": 18,
+      "status": "completed",
+      "target_run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+      "terminal_kind": "session.result",
+      "trace_contiguous": true
+    },
+    "session_id": "conversation_d0f9bfa924134ad38a93a70004ffbce8",
+    "trace_id": "byq-trace-5806c739f4104b2ea9e4711e18808b86"
+  },
+  "before": {
+    "_detail_message_count": 2,
+    "_domain": {
+      "approval_replay_matches": true,
+      "approval_side_effect_count": 1,
+      "pool_side_effect_count": 1,
+      "replay_approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+      "replay_pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d"
+    },
+    "_dsh_pids": [
+      18,
+      136
+    ],
+    "_journal_generations": [
+      {
+        "ended_at": 1789885394.3100584,
+        "executor_epoch": 1,
+        "generation_id": "generation-e18aeb836d404c77bc4e05d876f120bc",
+        "root_run_id": null,
+        "started_at": 1789885385.3815992,
+        "state": "closed"
+      },
+      {
+        "ended_at": null,
+        "executor_epoch": 1,
+        "generation_id": "generation-90efcd785e114712add5f030194ab795",
+        "root_run_id": null,
+        "started_at": 1789885395.263586,
+        "state": "starting"
+      }
+    ],
+    "_provider_calls": 1,
+    "_trace_event_count": 9,
+    "action_receipts": [
+      {
+        "idempotency_key": "message_edd04c56b8fe4cfe980eb1f8a48addea",
+        "origin": "product-api-manual",
+        "receipt": {
+          "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+          "state": "accepted"
+        },
+        "replay": {
+          "receipt": {
+            "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+            "state": "accepted"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "runtime.prompt.idempotent"
+      },
+      {
+        "idempotency_key": "d15-pool-b6f6d7737ce34dbcb83084dbb2127a51",
+        "origin": "product-api-manual",
+        "receipt": {
+          "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+          "state": "accepted"
+        },
+        "replay": {
+          "receipt": {
+            "pool_id": "stock_pool_012b45b7656744fc9a357ecc935a0f4d",
+            "state": "accepted"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "byq_paper_pool_create"
+      },
+      {
+        "idempotency_key": "d15-approval-9311bf0cd440445cacd4083735560f51",
+        "origin": "product-api-manual",
+        "receipt": {
+          "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+          "state": "approved"
+        },
+        "replay": {
+          "receipt": {
+            "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+            "state": "approved"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "byq_strategy_approval"
+      }
+    ],
+    "adapter_generation": "generation-90efcd785e114712add5f030194ab795",
+    "adapter_pid": 3508680,
+    "approval": {
+      "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+      "bypassed": false,
+      "decided_by": "d15admin",
+      "execution_authorized": true,
+      "fetched_approval": {
+        "artifact_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+        "state": "approved"
+      },
+      "reuse_denied": true,
+      "state": "approved",
+      "trials": [
+        {
+          "artifact_id": "artifact_3ae9ad122317499e8d853f593bf3e660",
+          "denied": true,
+          "http_status": 201,
+          "kind": "rejected",
+          "phase": "durable",
+          "side_effect_created": false,
+          "state": "rejected"
+        },
+        {
+          "denied": true,
+          "domain_code": "product_domain_rejected",
+          "http_status": 409,
+          "kind": "invalid_reuse",
+          "phase": "pre-fault",
+          "side_effect_created": false,
+          "state": "rejected"
+        },
+        {
+          "after_count": 0,
+          "before_count": 0,
+          "denied": true,
+          "domain_code": "product_domain_rejected",
+          "http_status": 422,
+          "kind": "protected_operation_blocked",
+          "phase": "pre-fault",
+          "side_effect_created": false,
+          "state": "rejected"
+        }
+      ]
+    },
+    "capture_errors": [],
+    "capture_ok": true,
+    "continuity": "reattached",
+    "executor_epoch": 1,
+    "generation_index": 2,
+    "goal": {
+      "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+      "prompt_receipt": {
+        "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+        "root_run_id": "22d3c287a4804647bbdb9c40bfaa0bac"
+      }
+    },
+    "result": {
+      "attributed_message_sequence": 5,
+      "run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+      "sequence": 11,
+      "status": "completed",
+      "target_run_id": "22d3c287a4804647bbdb9c40bfaa0bac",
+      "terminal_kind": "session.result",
+      "trace_contiguous": true
+    },
+    "session_id": "conversation_d0f9bfa924134ad38a93a70004ffbce8",
+    "trace_id": "byq-trace-5806c739f4104b2ea9e4711e18808b86"
+  },
+  "candidate": {
+    "python_sdk": "0.1.5rc1",
+    "release": "dsh-0.1.5rc1",
+    "runtime_bin": "0.1.5rc1",
+    "selector_env": "BYQ_DSH_COMPATIBILITY_RELEASE"
+  },
+  "capture_errors": [],
+  "evidence": [
+    "docs/evidence/d15/d15-runtime/generation-replacement.v3.json"
+  ],
+  "evidence_class": "runtime-isolated-stack",
+  "execution_model": {
+    "action_origin": "product-api-manual + agent-mcp",
+    "agent_mcp_tool_calls": 2,
+    "note": "The research goal, persistent approval and paper-pool side effect are manual Product API actions. The agent-mcp-domain-at-most-once scenario additionally drives a real scripted-provider tool call through the runtime-adapter -> MCP -> Backend and verifies one domain side effect across an adapter restart.",
+    "provider": "scripted-keyless"
+  },
+  "fault_applied": true,
+  "generated_at": "2026-09-20T06:22:38Z",
+  "id": "generation-replacement",
+  "llm": {
+    "class": "scripted-keyless",
+    "note": "Keyless deterministic loopback provider; service-boundary runtime-continuity evidence, not real-LLM-quality semantic evidence.",
+    "real_llm_quality": false
+  },
+  "result": "PASS",
+  "schema_version": "byq-d15-runtime-scenario.v5"
+}

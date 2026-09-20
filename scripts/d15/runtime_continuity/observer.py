@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any
 
 HERE = Path(__file__).resolve().parent
-DEFAULT_CONTRACT = HERE / "contract.v4.json"
+DEFAULT_CONTRACT = HERE / "contract.v5.json"
 
 _RUN_ID = re.compile(r"^[0-9a-f]{32}$")
 
@@ -111,7 +111,24 @@ def _check_action_receipts(receipts: object, fields: list[str], ctx: str, failur
         if _is_nonempty_str(key):
             seen[str(key)] = str(receipt.get("receipt"))
         replay = receipt.get("replay")
-        if not isinstance(replay, dict) or replay.get("receipt") != receipt.get("receipt") \
+        replay_receipt = replay.get("receipt") if isinstance(replay, dict) else None
+        if receipt.get("origin") == "agent-mcp":
+            # The replay must be a SECOND real tool response for the same domain
+            # object: same task id, distinct real tool_call_id, one side effect.
+            first = receipt.get("receipt") if isinstance(receipt.get("receipt"), dict) else {}
+            second = replay_receipt if isinstance(replay_receipt, dict) else {}
+            if not _is_nonempty_str(first.get("task_id")) or first.get("task_id") != second.get("task_id"):
+                failures.append(f"{item_ctx}: agent-mcp replay task id does not match the delivery")
+                ok = False
+            first_call = first.get("tool_call_id")
+            second_call = second.get("tool_call_id")
+            if not _is_nonempty_str(first_call) or not _is_nonempty_str(second_call) or first_call == second_call:
+                failures.append(f"{item_ctx}: agent-mcp replay is not a distinct real tool response")
+                ok = False
+            if not isinstance(replay, dict) or _as_int(replay.get("side_effect_count")) != 1:
+                failures.append(f"{item_ctx}: agent-mcp replay did not report one side effect")
+                ok = False
+        elif not isinstance(replay, dict) or replay_receipt != receipt.get("receipt") \
                 or _as_int(replay.get("side_effect_count")) != 1:
             failures.append(f"{item_ctx}: replay did not deduplicate the side effect")
             ok = False
@@ -119,7 +136,8 @@ def _check_action_receipts(receipts: object, fields: list[str], ctx: str, failur
 
 
 def _check_approval(approval: object, states: list[str], required_trials: list[str],
-                    ctx: str, failures: list[str]) -> bool:
+                    ctx: str, failures: list[str],
+                    required_post_fault_trials: list[str] | None = None) -> bool:
     if not isinstance(approval, dict):
         failures.append(f"{ctx}: approval must be an object")
         return False
@@ -184,6 +202,10 @@ def _check_approval(approval: object, states: list[str], required_trials: list[s
                 ok = False
             if not _is_nonempty_str(trial.get("domain_code")):
                 failures.append(f"{item_ctx}: denial has no domain error code")
+                ok = False
+            if kind in (required_post_fault_trials or []) and trial.get("phase") != "post-fault":
+                failures.append(
+                    f"{item_ctx}: a post-fault re-attempt is required, got phase {trial.get('phase')!r}")
                 ok = False
         if kind == "protected_operation_blocked":
             before = _as_int(trial.get("before_count"))
@@ -320,9 +342,46 @@ def _agent_mcp_at_most_once(before: dict, after: dict) -> bool:
     return replay_receipt.get("task_id") == second_task and _as_int(replay.get("side_effect_count")) == 1
 
 
+def _agent_mcp_two_run_replay(before: dict, after: dict) -> bool:
+    """Two real runs, two real tool calls, one domain object, one side effect."""
+
+    def runs(state: dict) -> dict:
+        value = state.get("agent_mcp_runs")
+        return value if isinstance(value, dict) else {}
+
+    first = runs(before).get("first")
+    second = runs(after).get("second")
+    if not isinstance(first, dict) or not isinstance(second, dict):
+        return False
+    if not _is_nonempty_str(first.get("run_id")) or not _is_nonempty_str(second.get("run_id")):
+        return False
+    if first["run_id"] == second["run_id"]:
+        return False
+    if not _is_nonempty_str(first.get("tool_call_id")) or not _is_nonempty_str(second.get("tool_call_id")):
+        return False
+    if first["tool_call_id"] == second["tool_call_id"]:
+        return False
+    if not _is_nonempty_str(first.get("task_id")) or first["task_id"] != second.get("task_id"):
+        return False
+    if first.get("mcp_status") != "ok" or second.get("mcp_status") != "ok":
+        return False
+    if first.get("terminal_kind") != "session.result" or second.get("terminal_kind") != "session.result":
+        return False
+    for run in (first, second):
+        assistant = _as_int(run.get("assistant_sequence"))
+        if assistant is None or assistant <= 0:
+            return False
+        if _as_int(run.get("side_effect_count")) != 1:
+            return False
+    first_index = _as_int(first.get("call_index"))
+    second_index = _as_int(second.get("call_index"))
+    return first_index is not None and second_index is not None and second_index > first_index
+
+
 RELATIONSHIP_CHECKS = {
     "pid_changed": _pid_changed,
     "agent_mcp_at_most_once": _agent_mcp_at_most_once,
+    "agent_mcp_two_run_replay": _agent_mcp_two_run_replay,
     "pid_stable": _pid_stable,
     "generation_incremented": _generation_incremented,
     "epoch_unchanged": _epoch_unchanged,
@@ -427,7 +486,8 @@ def _check_scenario(scenario: dict, spec: dict, contract: dict, failures: list[s
         origins=contract.get("action_origin_vocabulary"))
     checks["approval_not_bypassed"] = _check_approval(
         after.get("approval"), contract["approval_states"],
-        contract.get("required_approval_trials", []), f"{ctx}.after", failures)
+        contract.get("required_approval_trials", []), f"{ctx}.after", failures,
+        required_post_fault_trials=contract.get("required_post_fault_trials", []))
 
     after_result = after.get("result") if isinstance(after.get("result"), dict) else {}
     for field in contract["result_fields"]:
@@ -613,7 +673,23 @@ def _legacy_check_scenario(scenario: dict, spec: dict, contract: dict, failures:
     if not _is_nonempty_str(bg.get("content_sha256")) or bg.get("content_sha256") != ag.get("content_sha256") \
             or ag.get("prompt_receipt") != bg.get("prompt_receipt"):
         failures.append(f"{ctx}: goal drifted")
-    _check_action_receipts(after.get("action_receipts"), contract["action_receipt_fields"], f"{ctx}.after", failures)
+    # Pre-fix receipt check: replay must equal the delivery (the old algorithm
+    # had no concept of a distinct second real tool response).
+    for index, receipt in enumerate(after.get("action_receipts", []) if isinstance(
+            after.get("action_receipts"), list) else []):
+        item_ctx = f"{ctx}.after.action_receipts[{index}]"
+        if not isinstance(receipt, dict):
+            failures.append(f"{item_ctx}: not an object")
+            continue
+        for field in contract["action_receipt_fields"]:
+            if field not in receipt:
+                failures.append(f"{item_ctx}: missing '{field}'")
+        if receipt.get("side_effect_count") != 1:
+            failures.append(f"{item_ctx}: side effect count")
+        replay = receipt.get("replay")
+        if not isinstance(replay, dict) or replay.get("receipt") != receipt.get("receipt") \
+                or replay.get("side_effect_count") != 1:
+            failures.append(f"{item_ctx}: replay did not deduplicate")
     _check_approval(after.get("approval"), contract["approval_states"], [], f"{ctx}.after", failures)
     ar = after.get("result") if isinstance(after.get("result"), dict) else {}
     if ar.get("trace_contiguous") is not True or not _is_nonempty_str(ar.get("run_id")):
@@ -635,6 +711,15 @@ def legacy_compute_verdict(contract: dict, observations: dict) -> dict:
     """
     failures: list[str] = []
     required = {item["id"]: item for item in contract.get("required_scenarios", [])}
+    # The pre-fix algorithm had no concept of a distinct second real tool
+    # response; normalize the new-shape agent-mcp receipts to its world view.
+    observations = copy.deepcopy(observations) if isinstance(observations, dict) else observations
+    for item in observations.get("scenarios", []) if isinstance(observations.get("scenarios"), list) else []:
+        after = item.get("after") if isinstance(item, dict) and isinstance(item.get("after"), dict) else {}
+        for receipt in after.get("action_receipts", []) if isinstance(after.get("action_receipts"), list) else []:
+            if isinstance(receipt, dict) and receipt.get("origin") == "agent-mcp" \
+                    and isinstance(receipt.get("replay"), dict):
+                receipt["replay"]["receipt"] = receipt.get("receipt")
     scenarios = observations.get("scenarios") if isinstance(observations.get("scenarios"), list) else []
     rows = []
     for item in scenarios:
@@ -685,13 +770,14 @@ def _state(*, run_id: str, pid: int, generation: str, generation_index: int, epo
             "decided_by": "human-owner", "execution_authorized": True,
             "trials": [
                 {"kind": "rejected", "state": "rejected", "denied": True, "side_effect_created": False,
-                 "http_status": 201},
+                 "http_status": 201, "phase": "durable"},
                 {"kind": "invalid_reuse", "state": "rejected", "denied": True, "side_effect_created": False,
-                 "http_status": 409, "domain_code": "artifact idempotency key was reused"},
+                 "http_status": 409, "domain_code": "artifact idempotency key was reused",
+                 "phase": "post-fault"},
                 {"kind": "protected_operation_blocked", "state": "rejected", "denied": True,
                  "side_effect_created": False, "http_status": 422,
                  "domain_code": "strategy version is not approved for execution",
-                 "before_count": 0, "after_count": 0},
+                 "before_count": 0, "after_count": 0, "phase": "post-fault"},
             ],
         },
         "action_receipts": [
@@ -717,10 +803,24 @@ def _state(*, run_id: str, pid: int, generation: str, generation_index: int, epo
 
 
 def _agent_mcp_state(*, run_id: str, task_id: str, pid: int, generation: str, generation_index: int,
-                     epoch: int, sequence: int, continuity: str) -> dict:
+                     epoch: int, sequence: int, continuity: str, include_second: bool = False) -> dict:
+    trace = "byq-trace-d15-agentmcp-0001"
+    first_run = {"run_id": run_id, "message_id": "message-first", "tool_call_id": "d15-tool-1",
+                 "call_index": 1, "task_id": task_id, "mcp_status": "ok",
+                 "terminal_kind": "session.result", "terminal_sequence": sequence,
+                 "assistant_sequence": sequence - 2, "side_effect_count": 1}
+    runs = {"first": first_run}
+    second_run_id = "7" * 32
+    if include_second:
+        runs["second"] = {"run_id": second_run_id, "message_id": "message-second",
+                          "tool_call_id": "d15-tool-2", "call_index": 2, "task_id": task_id,
+                          "mcp_status": "ok", "terminal_kind": "session.result",
+                          "terminal_sequence": sequence, "assistant_sequence": sequence - 1,
+                          "side_effect_count": 1}
+    replay_call = "d15-tool-2" if include_second else "d15-tool-1"
     return {
         "session_id": "byq-session-d15-agentmcp-0001",
-        "trace_id": "byq-trace-d15-agentmcp-0001",
+        "trace_id": trace,
         "adapter_pid": pid,
         "adapter_generation": generation,
         "generation_index": generation_index,
@@ -737,24 +837,27 @@ def _agent_mcp_state(*, run_id: str, task_id: str, pid: int, generation: str, ge
             "decided_by": "human-owner", "execution_authorized": True,
             "trials": [
                 {"kind": "rejected", "state": "rejected", "denied": True, "side_effect_created": False,
-                 "http_status": 201},
+                 "http_status": 201, "phase": "durable"},
                 {"kind": "invalid_reuse", "state": "rejected", "denied": True, "side_effect_created": False,
-                 "http_status": 409, "domain_code": "artifact idempotency key was reused"},
+                 "http_status": 409, "domain_code": "artifact idempotency key was reused",
+                 "phase": "post-fault"},
                 {"kind": "protected_operation_blocked", "state": "rejected", "denied": True,
                  "side_effect_created": False, "http_status": 422,
                  "domain_code": "strategy version is not approved for execution",
-                 "before_count": 0, "after_count": 0},
+                 "before_count": 0, "after_count": 0, "phase": "post-fault"},
             ],
         },
         "action_receipts": [
             {"tool": "mcp__byq__byq_research_task_create", "origin": "agent-mcp",
              "idempotency_key": "d15-mcp-key-0001",
-             "receipt": {"state": "accepted", "task_id": task_id, "trace_id": "byq-trace-d15-agentmcp-0001"},
+             "receipt": {"state": "accepted", "task_id": task_id, "tool_call_id": "d15-tool-1",
+                         "trace_id": trace},
              "side_effect_count": 1,
-             "replay": {"receipt": {"state": "accepted", "task_id": task_id,
-                                    "trace_id": "byq-trace-d15-agentmcp-0001"},
+             "replay": {"receipt": {"state": "accepted", "task_id": task_id, "tool_call_id": replay_call,
+                                    "trace_id": trace},
                         "side_effect_count": 1}},
         ],
+        "agent_mcp_runs": runs,
         "result": {
             "run_id": run_id, "status": "completed", "sequence": sequence, "trace_contiguous": True,
             "target_run_id": run_id, "terminal_kind": "session.result",
@@ -810,7 +913,7 @@ def valid_fixture(contract: dict) -> dict:
                                 sequence=14, continuity="fresh"),
         after=_agent_mcp_state(run_id="6" * 32, task_id="task_" + "7" * 32, pid=2003,
                                generation="generation-g6", generation_index=6, epoch=1,
-                               sequence=15, continuity="rehydrated")))
+                               sequence=15, continuity="rehydrated", include_second=True)))
     scenarios.append({
         "id": "host-reboot", "result": "NOT_RUN",
         "not_run_reason": "not executed: host reboot is not authorized and a container restart is not a host reboot",
@@ -911,6 +1014,15 @@ def _mutations(fixture: dict) -> list[tuple[str, dict]]:
     add("agent-mcp-not-at-most-once", lambda v: next(
         s for s in v["scenarios"] if s["id"] == "agent-mcp-domain-at-most-once")["after"][
         "action_receipts"][0]["receipt"].update({"task_id": "task_" + "8" * 32}))
+    add("agent-mcp-second-no-tool", lambda v: next(
+        s for s in v["scenarios"] if s["id"] == "agent-mcp-domain-at-most-once")["after"][
+        "agent_mcp_runs"].pop("second", None))
+    add("agent-mcp-second-mcp-failed", lambda v: next(
+        s for s in v["scenarios"] if s["id"] == "agent-mcp-domain-at-most-once")["after"][
+        "agent_mcp_runs"]["second"].update({"mcp_status": "error"}))
+    add("agent-mcp-only-first-run", lambda v: next(
+        s for s in v["scenarios"] if s["id"] == "agent-mcp-domain-at-most-once")["after"][
+        "agent_mcp_runs"]["second"].update({"run_id": "6" * 32, "tool_call_id": "d15-tool-1"}))
     add("approval-invalid-reuse-500", lambda v: v["scenarios"][0]["after"]["approval"]["trials"][1].update(
         {"http_status": 500, "domain_code": "internal error"}))
     add("approval-protected-count-changed", lambda v: v["scenarios"][0]["after"]["approval"]["trials"][2].update(

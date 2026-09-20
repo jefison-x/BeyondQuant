@@ -252,6 +252,22 @@ qualification pass. Evidence:
 (`observations.v4.json`, `verdict.v4.json`, `negative-controls.v4.json`,
 `capture-negatives.v4.json`, `stack.v4.json`, `scenarios/*.v4.json`).
 
+**Two-run replay + post-fault approval revision (v5, 2026-09-20).** The
+Agent→MCP scenario now holds the first and second run/message separately, waits
+for the second run's own tool call, terminal and attributed assistant, and
+correlates both real tool responses by run id, tool_call_id and the same task id
+with a measured side-effect count of 1 (the scripted provider records a real
+tool-call/result history; it emitted the tool call twice). A replay synthesized
+from the current task id can no longer pass. Approval trials are labelled
+`pre-fault`/`post-fault`, and every recovery `after` capture actually re-requests
+the invalid reuse and re-attempts the protected backtest operation after the
+fault, measuring authoritative before/after counts. New capture negatives:
+`agent-mcp-second-no-tool`, `agent-mcp-second-mcp-failed`,
+`agent-mcp-only-first-run`. Evidence:
+[`docs/evidence/d15/d15-runtime/`](../evidence/d15/d15-runtime/README.md)
+(`observations.v5.json`, `verdict.v5.json`, `negative-controls.v5.json`,
+`capture-negatives.v5.json`, `stack.v5.json`, `scenarios/*.v5.json`).
+
 ## 5. D15-4 — Subagent / fork continuity
 
 Verify parent/child identity, child session persistence, continuable descriptor,
@@ -364,3 +380,5 @@ and `tests/` build inputs again, so the revision advances
 deployment, immutable release registry or 0.1.2 artifact/evidence change and no
 deployment). The D15-3R scope/approval/Agent-MCP revision changes the same build
 inputs again, advancing `post-u8.162` -> `post-u8.163` (rebuild identity only).
+The D15-3R two-run replay revision changes the same build inputs again,
+advancing `post-u8.163` -> `post-u8.164` (rebuild identity only).

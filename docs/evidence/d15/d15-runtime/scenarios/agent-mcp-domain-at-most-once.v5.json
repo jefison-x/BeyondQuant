@@ -1,0 +1,262 @@
+{
+  "after": {
+    "_provider_tool_calls_emitted": 2,
+    "_provider_tool_name": "mcp__byq__byq_research_task_create",
+    "_second_delivery_run_id": "5ae86c909e4d4e509da80037d09ba2f4",
+    "_task_count": 1,
+    "action_receipts": [
+      {
+        "idempotency_key": "d15-mcp-7357789c20c34840ade5bcf23e3eabe4",
+        "origin": "agent-mcp",
+        "receipt": {
+          "state": "accepted",
+          "task_id": "task_14b0bb44271b4f37aebbee7c9fb540f9",
+          "tool_call_id": "d15-tool-1",
+          "trace_id": "byq-trace-d793af6fac75401e954c16d6a32f14cc"
+        },
+        "replay": {
+          "receipt": {
+            "state": "accepted",
+            "task_id": "task_14b0bb44271b4f37aebbee7c9fb540f9",
+            "tool_call_id": "d15-tool-2",
+            "trace_id": "byq-trace-d793af6fac75401e954c16d6a32f14cc"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "mcp__byq__byq_research_task_create"
+      }
+    ],
+    "adapter_generation": "generation-8fcb26f946c74295992013ab646d7241",
+    "adapter_pid": 3513115,
+    "agent_mcp_runs": {
+      "first": {
+        "assistant_sequence": 7,
+        "call_index": 1,
+        "mcp_status": "ok",
+        "message_id": "message_3c7c34738a5d468ab1f21f958d9cc524",
+        "run_id": "a62526d29114463498acfc293d8a850a",
+        "side_effect_count": 1,
+        "task_id": "task_14b0bb44271b4f37aebbee7c9fb540f9",
+        "terminal_kind": "session.result",
+        "terminal_sequence": 11,
+        "tool_call_id": "d15-tool-1"
+      },
+      "second": {
+        "assistant_sequence": 19,
+        "call_index": 2,
+        "mcp_status": "ok",
+        "message_id": "message_81a6aa9f2bb54257b666177263a442d3",
+        "run_id": "5ae86c909e4d4e509da80037d09ba2f4",
+        "side_effect_count": 1,
+        "task_id": "task_14b0bb44271b4f37aebbee7c9fb540f9",
+        "terminal_kind": "session.result",
+        "terminal_sequence": 23,
+        "tool_call_id": "d15-tool-2"
+      }
+    },
+    "approval": {
+      "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+      "bypassed": false,
+      "decided_by": "d15admin",
+      "execution_authorized": true,
+      "fetched_approval": {
+        "artifact_id": null,
+        "state": null
+      },
+      "reuse_denied": true,
+      "state": "approved",
+      "trials": [
+        {
+          "artifact_id": "artifact_3ae9ad122317499e8d853f593bf3e660",
+          "denied": true,
+          "http_status": 201,
+          "kind": "rejected",
+          "phase": "durable",
+          "side_effect_created": false,
+          "state": "rejected"
+        },
+        {
+          "denied": true,
+          "domain_code": "product_domain_rejected",
+          "http_status": 409,
+          "kind": "invalid_reuse",
+          "phase": "post-fault",
+          "side_effect_created": false,
+          "state": "rejected"
+        },
+        {
+          "after_count": 0,
+          "before_count": 0,
+          "denied": true,
+          "domain_code": "product_domain_rejected",
+          "http_status": 422,
+          "kind": "protected_operation_blocked",
+          "phase": "post-fault",
+          "side_effect_created": false,
+          "state": "rejected"
+        }
+      ]
+    },
+    "capture_errors": [],
+    "capture_ok": true,
+    "continuity": "rehydrated",
+    "executor_epoch": 1,
+    "generation_index": 2,
+    "goal": {
+      "content_sha256": "b98424284488321a79811941a944b8ee1a0071067b58bd462523843efb888e38",
+      "prompt_receipt": {
+        "content_sha256": "b98424284488321a79811941a944b8ee1a0071067b58bd462523843efb888e38",
+        "root_run_id": "a62526d29114463498acfc293d8a850a"
+      }
+    },
+    "result": {
+      "attributed_message_sequence": 7,
+      "run_id": "a62526d29114463498acfc293d8a850a",
+      "sequence": 23,
+      "status": "completed",
+      "target_run_id": "a62526d29114463498acfc293d8a850a",
+      "terminal_kind": "session.result",
+      "trace_contiguous": true
+    },
+    "session_id": "conversation_188bbf741e314121bbed5e16cab43480",
+    "trace_id": "byq-trace-d793af6fac75401e954c16d6a32f14cc"
+  },
+  "before": {
+    "_provider_tool_calls_emitted": 1,
+    "_provider_tool_name": "mcp__byq__byq_research_task_create",
+    "_task_count": 1,
+    "action_receipts": [
+      {
+        "idempotency_key": "d15-mcp-7357789c20c34840ade5bcf23e3eabe4",
+        "origin": "agent-mcp",
+        "receipt": {
+          "state": "accepted",
+          "task_id": "task_14b0bb44271b4f37aebbee7c9fb540f9",
+          "tool_call_id": "d15-tool-1",
+          "trace_id": "byq-trace-d793af6fac75401e954c16d6a32f14cc"
+        },
+        "replay": {
+          "receipt": {
+            "state": "accepted",
+            "task_id": "task_14b0bb44271b4f37aebbee7c9fb540f9",
+            "tool_call_id": "d15-tool-1",
+            "trace_id": "byq-trace-d793af6fac75401e954c16d6a32f14cc"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "mcp__byq__byq_research_task_create"
+      }
+    ],
+    "adapter_generation": "generation-b20e2445c441437aae417cc3fe044f17",
+    "adapter_pid": 3508680,
+    "agent_mcp_runs": {
+      "first": {
+        "assistant_sequence": 7,
+        "call_index": 1,
+        "mcp_status": "ok",
+        "message_id": "message_3c7c34738a5d468ab1f21f958d9cc524",
+        "run_id": "a62526d29114463498acfc293d8a850a",
+        "side_effect_count": 1,
+        "task_id": "task_14b0bb44271b4f37aebbee7c9fb540f9",
+        "terminal_kind": "session.result",
+        "terminal_sequence": 11,
+        "tool_call_id": "d15-tool-1"
+      }
+    },
+    "approval": {
+      "approval_id": "artifact_bd6d9ed26ae942a2ab6d45f9daebb00c",
+      "bypassed": false,
+      "decided_by": "d15admin",
+      "execution_authorized": true,
+      "fetched_approval": {
+        "artifact_id": null,
+        "state": null
+      },
+      "reuse_denied": true,
+      "state": "approved",
+      "trials": [
+        {
+          "artifact_id": "artifact_3ae9ad122317499e8d853f593bf3e660",
+          "denied": true,
+          "http_status": 201,
+          "kind": "rejected",
+          "phase": "durable",
+          "side_effect_created": false,
+          "state": "rejected"
+        },
+        {
+          "denied": true,
+          "domain_code": "product_domain_rejected",
+          "http_status": 409,
+          "kind": "invalid_reuse",
+          "phase": "pre-fault",
+          "side_effect_created": false,
+          "state": "rejected"
+        },
+        {
+          "after_count": 0,
+          "before_count": 0,
+          "denied": true,
+          "domain_code": "product_domain_rejected",
+          "http_status": 422,
+          "kind": "protected_operation_blocked",
+          "phase": "pre-fault",
+          "side_effect_created": false,
+          "state": "rejected"
+        }
+      ]
+    },
+    "capture_errors": [],
+    "capture_ok": true,
+    "continuity": "fresh",
+    "executor_epoch": 1,
+    "generation_index": 1,
+    "goal": {
+      "content_sha256": "b98424284488321a79811941a944b8ee1a0071067b58bd462523843efb888e38",
+      "prompt_receipt": {
+        "content_sha256": "b98424284488321a79811941a944b8ee1a0071067b58bd462523843efb888e38",
+        "root_run_id": "a62526d29114463498acfc293d8a850a"
+      }
+    },
+    "result": {
+      "attributed_message_sequence": 7,
+      "run_id": "a62526d29114463498acfc293d8a850a",
+      "sequence": 11,
+      "status": "completed",
+      "target_run_id": "a62526d29114463498acfc293d8a850a",
+      "terminal_kind": "session.result",
+      "trace_contiguous": true
+    },
+    "session_id": "conversation_188bbf741e314121bbed5e16cab43480",
+    "trace_id": "byq-trace-d793af6fac75401e954c16d6a32f14cc"
+  },
+  "candidate": {
+    "python_sdk": "0.1.5rc1",
+    "release": "dsh-0.1.5rc1",
+    "runtime_bin": "0.1.5rc1",
+    "selector_env": "BYQ_DSH_COMPATIBILITY_RELEASE"
+  },
+  "capture_errors": [],
+  "evidence": [
+    "docs/evidence/d15/d15-runtime/agent-mcp-domain-at-most-once.v5.json"
+  ],
+  "evidence_class": "runtime-isolated-stack",
+  "execution_model": {
+    "action_origin": "product-api-manual + agent-mcp",
+    "agent_mcp_tool_calls": 2,
+    "note": "The research goal, persistent approval and paper-pool side effect are manual Product API actions. The agent-mcp-domain-at-most-once scenario additionally drives a real scripted-provider tool call through the runtime-adapter -> MCP -> Backend and verifies one domain side effect across an adapter restart.",
+    "provider": "scripted-keyless"
+  },
+  "fault_applied": true,
+  "generated_at": "2026-09-20T06:22:38Z",
+  "id": "agent-mcp-domain-at-most-once",
+  "llm": {
+    "class": "scripted-keyless",
+    "note": "Keyless deterministic loopback provider; service-boundary runtime-continuity evidence, not real-LLM-quality semantic evidence.",
+    "real_llm_quality": false
+  },
+  "result": "PASS",
+  "schema_version": "byq-d15-runtime-scenario.v5"
+}

@@ -19,7 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OBSERVER = ROOT / "scripts/d15/runtime_continuity/observer.py"
-CONTRACT = ROOT / "scripts/d15/runtime_continuity/contract.v4.json"
+CONTRACT = ROOT / "scripts/d15/runtime_continuity/contract.v5.json"
 
 
 def _load_observer():
@@ -38,7 +38,7 @@ def _contract():
 class D15RuntimeContinuityObserverTests(unittest.TestCase):
     def test_contract_is_closed_and_versioned(self):
         contract = _contract()
-        self.assertEqual(contract["schema_version"], "byq-d15-runtime-contract.v4")
+        self.assertEqual(contract["schema_version"], "byq-d15-runtime-contract.v5")
         ids = [item["id"] for item in contract["required_scenarios"]]
         self.assertEqual(len(ids), len(set(ids)))
         for expected in ("adapter-process-restart", "dsh-process-interruption",
@@ -61,7 +61,7 @@ class D15RuntimeContinuityObserverTests(unittest.TestCase):
         self.assertTrue(controls["baseline_all_pass"])
         self.assertTrue(controls["all_controls_pass"])
         self.assertTrue(controls["defect_targeting_pre_fix_passed"])
-        self.assertGreaterEqual(controls["control_count"], 39)
+        self.assertGreaterEqual(controls["control_count"], 42)
         for control in controls["controls"]:
             self.assertFalse(control["observed_all_pass"], control)
             self.assertEqual(control["observed_exit_code"], 1, control)
@@ -139,7 +139,7 @@ class D15RuntimeContinuityObserverTests(unittest.TestCase):
         observer = _load_observer()
         contract = _contract()
         default = {
-            "schema_version": "byq-d15-runtime-observations.v4",
+            "schema_version": "byq-d15-runtime-observations.v5",
             "evidence_class": contract["required_evidence_class"],
             "candidate": dict(contract["candidate"]),
             "llm": {"class": contract["llm_evidence_class"], "real_llm_quality": False},
@@ -224,6 +224,35 @@ class D15RuntimeContinuityObserverTests(unittest.TestCase):
 
         fixture = observer.valid_fixture(contract)
         fixture["scenarios"][0]["after"]["approval"]["trials"][2].update({"after_count": 1})
+        self.assertFalse(observer.compute_verdict(contract, fixture, allow_unit_fixture=True)["all_pass"])
+
+        # A pre-fault proof must not be reported as a post-fault attempt.
+        fixture = observer.valid_fixture(contract)
+        fixture["scenarios"][0]["after"]["approval"]["trials"][1].update({"phase": "pre-fault"})
+        verdict = observer.compute_verdict(contract, fixture, allow_unit_fixture=True)
+        self.assertFalse(verdict["all_pass"])
+        self.assertTrue(any("post-fault" in item for item in verdict["failures"]))
+
+    def test_agent_mcp_two_run_replay_is_enforced(self):
+        observer = _load_observer()
+        contract = _contract()
+
+        def agent_after(fixture):
+            return next(s for s in fixture["scenarios"]
+                        if s["id"] == "agent-mcp-domain-at-most-once")["after"]
+
+        fixture = observer.valid_fixture(contract)
+        agent_after(fixture)["agent_mcp_runs"].pop("second", None)
+        self.assertFalse(observer.compute_verdict(contract, fixture, allow_unit_fixture=True)["all_pass"])
+
+        fixture = observer.valid_fixture(contract)
+        agent_after(fixture)["agent_mcp_runs"]["second"].update({"mcp_status": "error"})
+        self.assertFalse(observer.compute_verdict(contract, fixture, allow_unit_fixture=True)["all_pass"])
+
+        fixture = observer.valid_fixture(contract)
+        first = agent_after(fixture)["agent_mcp_runs"]["first"]
+        agent_after(fixture)["agent_mcp_runs"]["second"].update(
+            {"run_id": first["run_id"], "tool_call_id": first["tool_call_id"]})
         self.assertFalse(observer.compute_verdict(contract, fixture, allow_unit_fixture=True)["all_pass"])
 
     def test_observer_cli_fails_on_malformed_observations(self):

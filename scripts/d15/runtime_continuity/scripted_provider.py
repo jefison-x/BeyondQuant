@@ -21,6 +21,27 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
+def _parse_tool_content(content: object) -> object:
+    """Reduce a DSH tool-result message to the MCP JSON payload when possible."""
+    text = ""
+    if isinstance(content, str):
+        text = content
+    elif isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and isinstance(block.get("text"), str):
+                parts.append(block["text"])
+            elif isinstance(block, str):
+                parts.append(block)
+        text = "".join(parts)
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return {"raw": text[:500]}
+
+
 class Handler(BaseHTTPRequestHandler):
     calls = 0
     delay_seconds = 0.0
@@ -28,6 +49,7 @@ class Handler(BaseHTTPRequestHandler):
     tool_calls_emitted = 0
     last_tool_name: str | None = None
     last_available_tools: list[str] = []
+    tool_history: list[dict] = []
 
     def log_message(self, *args: object) -> None:  # noqa: N802
         return
@@ -57,6 +79,7 @@ class Handler(BaseHTTPRequestHandler):
                         "tool_calls_emitted": self.tool_calls_emitted,
                         "last_tool_name": self.last_tool_name,
                         "last_available_tools": self.last_available_tools,
+                        "tool_history": self.tool_history[-50:],
                         "armed_tool_call": self.tool_call})
             return
         if parsed.path == "/_delay":
@@ -124,6 +147,10 @@ class Handler(BaseHTTPRequestHandler):
             self.__class__.tool_calls_emitted += 1
             self.__class__.last_tool_name = name
             call_id = f"d15-tool-{self.tool_calls_emitted}"
+            self.__class__.tool_history.append({
+                "stage": "call", "call_id": call_id, "name": name,
+                "arguments": armed["arguments"], "call_index": self.tool_calls_emitted,
+            })
             payloads = [
                 {"choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]},
                 {"choices": [{"index": 0, "delta": {"tool_calls": [{
@@ -133,6 +160,15 @@ class Handler(BaseHTTPRequestHandler):
                 {"choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]},
             ]
         else:
+            if has_tool_result:
+                for message in messages:
+                    if not isinstance(message, dict) or message.get("role") != "tool":
+                        continue
+                    self.__class__.tool_history.append({
+                        "stage": "result",
+                        "call_id": message.get("tool_call_id"),
+                        "content": _parse_tool_content(message.get("content")),
+                    })
             if armed is not None and has_tool_result:
                 self.__class__.tool_call = None
             payloads = [
