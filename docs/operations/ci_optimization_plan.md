@@ -91,7 +91,7 @@ Status: maintenance execution plan，非 Product Phase，非永久授权。
 - 脱敏与 cleanup 行为不变；无新增 Full 运行；无付费 runner；无安全检查弱化。
 - 本 PR 的必需远端验证产出可解析的 `[byq-timing]`/`--durations` 基线。
 
-## CI-B — backend 测试墙钟时间（未开始）
+## CI-B — backend 测试墙钟时间（本批，测量 + 低风险收窄）
 
 范围：在 CI-A 量化后，针对 `_byq_reset_schema` 的逐测试整库重建与其余慢 setup/
 call/teardown 做低风险、可回退的收窄（例如：经验证安全的按测试隔离策略或
@@ -99,6 +99,58 @@ schemas/fixtures 复用），保持覆盖与跳过语义等价、cleanup 资源�
 非目标：为达标删测试或降低断言。验收：CI-A 基线对比、pytest 计数/跳过集合等价、
 setup 时间可量化下降、失败路径与隔离回归通过。任何 schema/fixture 语义改动需
 单独论证；否则延后。
+
+### CI-B 测量（2026-09-20，隔离 `byq_domain_test` postgres:16 容器 + worktree backend 镜像）
+
+CI-A 远端基线：`793 passed + 3 skipped` / collected 796 in 1247.96s；仅 ≥1s 的
+call 合计 97.47s、≥1s 的 setup 合计 5.32s，说明成本分散在阈值以下，必须聚合。
+
+本机聚合（同一实现，`--durations-min=1.0` 之外的 setup/call/teardown 全量统计）：
+
+- 单次整库重建（`DROP SCHEMA public CASCADE` + `CREATE SCHEMA public` + 23 个 store 的
+  247 条 DDL，116 张表）：DROP+CREATE 25ms，DDL 约 0.92–0.95s，合计约 1.0–1.18s/次；
+  对已存在 schema 重跑全部 DDL 仅 74ms；`TRUNCATE` 全部 116 张表 394ms。
+- 即：逐测试重建的开销几乎全部来自“真正创建 118 张表 + 75 个索引”，而不是连接的
+  DROP/CREATE，也不是 fsync（整库重建放进单事务仅从 1078ms 降到 946ms）。
+- 采用延迟重建后整批：`793 passed, 3 skipped` in 926.86s；
+  `pytest_setup=93.31s (n=796)`、`pytest_call=830.12s`、`pytest_teardown=0.28s`；
+  `schema_resets=562`（即 796 个测试中有 234 个从不打开数据库连接）、
+  `store_bootstraps=2224`、`store_bootstrap_seconds≈39s`（不含重建）。
+- 同机对照推算：旧实现为这 234 个纯逻辑测试各多付一次约 1.17s 重建，即约 +274s；
+  新实现约 927s，等价旧实现约 1201s，约低 23%。远端精确对照见本批 PR 的 backend
+  lane `[byq-timing]`/pytest 汇总。
+
+### 采用方案（最小、可回退，且不削弱隔离）
+
+`_byq_reset_schema` 改为**延迟重建**：autouse fixture 只声明本测试“可能用库”；真正的
+`DROP SCHEMA + CREATE + 全部注册 DDL` 在该测试**第一次取用数据库连接时**执行一次。
+所有生产与测试路径都经 `app.db.create_db_engine` 取引擎，因此只需插桩该单一工厂
+（`engine_connect` + 创建时即刻触发）。不打开的连接的测试（纯逻辑/纯契约）不再付
+整库重建。数据库测试的隔离语义**完全不变**：仍是每测试一次 DROP/CREATE + 全量 DDL，
+动态 schema（测试 `DROP TABLE`/`DROP COLUMN`/`CREATE TABLE`）仍由下一次全量 DDL 复原，
+多连接/提交语义不变，无全局回滚、无 SQLite/mock、无“测试跳过迁移”分支。
+
+### 被排除的方案（及隔离风险）
+
+- **session 初始化一次 + 逐测试 TRUNCATE**：`TRUNCATE` 无法复原被测试 DROP 的表/列
+  （`test_operations_api` DROP `market_daily_bars`；`test_backtest`/`test_feedback_
+  publisher_create_permit` DROP 列），若补跑全量 DDL 也只能修列、不能清除测试自建的
+  额外对象；收益仅约 2x，且无法证明动态 schema 清理，故放弃。
+- **独立 DB/容器分片**：保持完全隔离、可线性缩短墙钟，但需要多数据库编排与资源上限，
+  超出本批“最小可靠”的范围，延后到后续批次（需先有分片隔离回归）。
+- 未采用 pytest-xdist（未知共享状态）、未把 autouse 改 session（污染风险）、未改断言/
+  跳过集合/生产代码。
+
+### CI-B 验收与隔离回归
+
+- 计数/跳过等价：`793 passed, 3 skipped`（collected 796），无新增跳过、无删除断言。
+- 新增 `services/backend/tests/test_schema_isolation.py`：注册迁移真的执行（迁移列存在）、
+  独立连接可见已提交写入（未用全局回滚）、重建能清除已提交脏行并复原 schema、纯逻辑
+  测试不触发重建、用库测试每测试恰好重建一次、前一测试的行对后一测试不可见。
+- `scripts/ci/local-ci.sh` 在 backend lane 之后以 `BYQ_TEST_SHUFFLE_SEED=1` 固定种子乱序
+  重跑该隔离模块，证明顺序无关。
+- 聚合统计由 `services/backend/tests/conftest.py` 在 pytest 结束时以单行
+  `[byq-timing] pytest_setup=… schema_resets=…` 输出（沿用 CI-A 脱敏日志）。
 
 ## CI-C — 变更依赖分类细化（未开始）
 

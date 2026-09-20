@@ -439,6 +439,16 @@ check_backend() {
       "$(ci_image backend)" python -m pytest -q -p no:cacheprovider \
       --durations=20 --durations-min=1.0; then
     ok "backend tests"; else bad "backend tests"; fi
+  # Deferred-reset isolation regression: the same schema-isolation tests run in
+  # a fixed-seed shuffled order, proving per-test cleanup is order-independent.
+  if run_interruptible docker run --rm --name "$CI_BACKEND_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET" \
+      -e BYQ_DATABASE_URL="postgresql+psycopg://byq_test:byq-test-dev@$CI_PG:5432/byq_domain_test" \
+      -e BYQ_TEST_SHUFFLE_SEED=1 -e PYTHONDONTWRITEBYTECODE=1 \
+      -v "$REPO_ROOT/services/backend:/app" -w /app \
+      -v "$REPO_ROOT/plugins/dsh-byq/registry:/app/plugin-registry:ro" \
+      "$(ci_image backend)" python -m pytest -q -p no:cacheprovider \
+      tests/test_schema_isolation.py; then
+    ok "backend schema isolation (shuffled)"; else bad "backend schema isolation (shuffled)"; fi
   if [ -d "$REPO_ROOT/workers/feedback-publisher/tests" ]; then
     if run_interruptible docker run --rm --name "$CI_BACKEND_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" \
         -e PYTHONDONTWRITEBYTECODE=1 \
