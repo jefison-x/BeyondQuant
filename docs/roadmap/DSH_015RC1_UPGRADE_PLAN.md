@@ -203,25 +203,36 @@ service-boundary runtime-continuity evidence and **not** real-LLM-quality
 semantic evidence. Host reboot is `NOT_RUN` (a container restart is not a host
 reboot). D15-4/D15-5/D15-G and R3 are not in this batch.
 
-**Review-fix revision (v2, 2026-09-20).** The observer now separates
-`format_valid` (the artifact is well formed) from `all_pass` (the qualification
-passed). A REQUIRED scenario left `NOT_RUN`/`BLOCKED` makes the verdict
-non-zero while preserving its status/reason; OPTIONAL scenarios (e.g.
-`host-reboot`) are declared separately and do not gate required coverage.
-`allowed_continuity`/`forbidden_continuity` come only from the trusted contract
-(observations may not relax them). PASS requires real PID/generation/epoch
-relationships and receipt/trace linkage, not field existence. The selfcheck
-executes a reconstructed legacy algorithm to prove the pre-fix behaviour rather
-than asserting it. The isolated stack also rebuilds Backend/Gateway/MCP from the
-branch: the earlier reuse of a stale production image lacked pool idempotency
-and was fixed. Evidence:
+**Review-fix revision (v2, 2026-09-20).** The observer separates `format_valid`
+(the artifact is well formed) from `all_pass` (the qualification passed). A
+REQUIRED scenario left `NOT_RUN`/`BLOCKED` makes the verdict non-zero while
+preserving its status/reason; OPTIONAL scenarios (e.g. `host-reboot`) are
+declared separately and do not gate required coverage.
+`allowed_continuity`/`forbidden_continuity` come only from the trusted contract.
+PASS requires real PID/generation/epoch relationships and receipt/trace linkage.
+The selfcheck executes a reconstructed legacy algorithm to prove the pre-fix
+behaviour rather than asserting it. The isolated stack rebuilds Backend/Gateway/
+MCP from the branch (a stale production image lacked pool idempotency).
+
+**Capture-layer revision (v3, 2026-09-20).** `capture()` no longer fabricates
+evidence: missing durable journal receipt / replay error / mismatched replay run
+id produce `capture_ok=false` + `capture_errors` and a scenario `FAIL`; the
+approval `state`/`decided_by` are read from the persisted approval and real
+REJECT + invalid-reuse deny trials are attempted with no-side-effect assertions;
+`trace_contiguous` is computed from the full persisted sequence and the result is
+attributed to the target run (`terminal_kind`, `attributed_message_sequence`);
+`make_receipt` requires a measured `side_effect_count` and a labeled `origin`;
+and manual Product actions are distinguished from Agent→MCP execution
+(`agent_mcp_tool_calls=0`). **v1/v2 are retained but are not a qualification
+pass.** Evidence:
 [`docs/evidence/d15/d15-runtime/`](../evidence/d15/d15-runtime/README.md)
-(`observations.v2.json`, `verdict.v2.json`, `negative-controls.v2.json`,
-`stack.v2.json`, per-row `scenarios/*.v2.json`; v1 retained). Harness:
-`scripts/d15/runtime_continuity/{contract.v2.json,observer.py,scripted_provider.py,run_qualification.py}`
-and `tests/test_dsh_d15_runtime_continuity.py`. The observer is fail-able: 27
-negative controls each force a non-zero exit while a known-good unit fixture
-passes.
+(`observations.v3.json`, `verdict.v3.json`, `negative-controls.v3.json`,
+`capture-negatives.v3.json`, `stack.v3.json`, per-row `scenarios/*.v3.json`).
+Harness:
+`scripts/d15/runtime_continuity/{contract.v3.json,observer.py,capture_negatives.py,scripted_provider.py,run_qualification.py}`
+and `tests/test_dsh_d15_runtime_{continuity,capture}.py`. The observer is
+fail-able: 35 negative controls plus 5 capture-layer negatives each force a
+non-zero exit while a known-good unit fixture passes.
 
 ## 5. D15-4 — Subagent / fork continuity
 
@@ -326,5 +337,11 @@ artifact/evidence change and no deployment.
 The D15-3R observer review-fix revision changes `scripts/d15/runtime_continuity/`
 and `tests/` build inputs again, so the revision advances
 `post-u8.160` -> `post-u8.161` (again a rebuild identity bump only; no selector,
+deployment, immutable release registry or 0.1.2 artifact/evidence change and no
+deployment).
+
+The D15-3R capture-layer review-fix revision changes `scripts/d15/runtime_continuity/`
+and `tests/` build inputs again, so the revision advances
+`post-u8.161` -> `post-u8.162` (rebuild identity bump only; no selector,
 deployment, immutable release registry or 0.1.2 artifact/evidence change and no
 deployment).

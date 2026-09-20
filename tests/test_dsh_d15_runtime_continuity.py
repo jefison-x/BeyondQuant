@@ -17,7 +17,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 OBSERVER = ROOT / "scripts/d15/runtime_continuity/observer.py"
-CONTRACT = ROOT / "scripts/d15/runtime_continuity/contract.v2.json"
+CONTRACT = ROOT / "scripts/d15/runtime_continuity/contract.v3.json"
 
 
 def _load_observer():
@@ -35,7 +35,7 @@ def _contract():
 
 def test_contract_is_closed_and_versioned():
     contract = _contract()
-    assert contract["schema_version"] == "byq-d15-runtime-contract.v2"
+    assert contract["schema_version"] == "byq-d15-runtime-contract.v3"
     ids = [item["id"] for item in contract["required_scenarios"]]
     assert len(ids) == len(set(ids))
     for expected in ("adapter-process-restart", "dsh-process-interruption",
@@ -58,7 +58,7 @@ def test_unit_fixture_passes_and_every_negative_control_fails():
     assert controls["baseline_all_pass"] is True
     assert controls["all_controls_pass"] is True
     assert controls["defect_targeting_pre_fix_passed"] is True
-    assert controls["control_count"] >= 27
+    assert controls["control_count"] >= 35
     for control in controls["controls"]:
         assert control["observed_all_pass"] is False, control
         assert control["observed_exit_code"] == 1, control
@@ -146,7 +146,7 @@ def test_missing_evidence_is_never_an_empty_default_pass():
     observer = _load_observer()
     contract = _contract()
     default = {
-        "schema_version": "byq-d15-runtime-observations.v2",
+        "schema_version": "byq-d15-runtime-observations.v3",
         "evidence_class": contract["required_evidence_class"],
         "candidate": dict(contract["candidate"]),
         "llm": {"class": contract["llm_evidence_class"], "real_llm_quality": False},
@@ -183,6 +183,55 @@ def test_observer_cli_exit_code_tracks_verdict(tmp_path: Path):
     good = tmp_path / "good.json"
     good.write_text(json.dumps(fixture), encoding="utf-8")
     assert observer.main(["--observations", str(good), "--out", str(tmp_path / "v.json")]) == 0
+
+
+def test_action_receipt_requires_origin_and_measured_count():
+    observer = _load_observer()
+    contract = _contract()
+    fixture = observer.valid_fixture(contract)
+    fixture["scenarios"][0]["after"]["action_receipts"][0]["side_effect_count"] = None
+    assert observer.compute_verdict(contract, fixture, allow_unit_fixture=True)["all_pass"] is False
+
+    fixture = observer.valid_fixture(contract)
+    fixture["scenarios"][0]["after"]["action_receipts"][0].pop("origin")
+    assert observer.compute_verdict(contract, fixture, allow_unit_fixture=True)["all_pass"] is False
+
+
+def test_approval_trials_are_required_and_side_effects_fail():
+    observer = _load_observer()
+    contract = _contract()
+    fixture = observer.valid_fixture(contract)
+    fixture["scenarios"][0]["after"]["approval"].pop("trials")
+    assert observer.compute_verdict(contract, fixture, allow_unit_fixture=True)["all_pass"] is False
+
+    fixture = observer.valid_fixture(contract)
+    fixture["scenarios"][0]["after"]["approval"]["trials"][0]["side_effect_created"] = True
+    verdict = observer.compute_verdict(contract, fixture, allow_unit_fixture=True)
+    assert verdict["all_pass"] is False
+    assert any("bypass" in item for item in verdict["failures"])
+
+
+def test_result_must_be_attributed_to_the_target_run():
+    observer = _load_observer()
+    contract = _contract()
+    fixture = observer.valid_fixture(contract)
+    fixture["scenarios"][0]["after"]["result"]["target_run_id"] = "9" * 32
+    assert observer.compute_verdict(contract, fixture, allow_unit_fixture=True)["all_pass"] is False
+
+    fixture = observer.valid_fixture(contract)
+    fixture["scenarios"][0]["after"]["result"]["status"] = "incomplete"
+    assert observer.compute_verdict(contract, fixture, allow_unit_fixture=True)["all_pass"] is False
+
+
+def test_capture_errors_gate_pass():
+    observer = _load_observer()
+    contract = _contract()
+    fixture = observer.valid_fixture(contract)
+    fixture["scenarios"][0]["after"]["capture_ok"] = False
+    fixture["scenarios"][0]["after"]["capture_errors"] = ["journal read failed"]
+    verdict = observer.compute_verdict(contract, fixture, allow_unit_fixture=True)
+    assert verdict["all_pass"] is False
+    assert any("capture evidence missing" in item for item in verdict["failures"])
 
 
 if __name__ == "__main__":

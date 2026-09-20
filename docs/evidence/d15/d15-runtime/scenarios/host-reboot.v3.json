@@ -1,0 +1,25 @@
+{
+  "candidate": {
+    "python_sdk": "0.1.5rc1",
+    "release": "dsh-0.1.5rc1",
+    "runtime_bin": "0.1.5rc1",
+    "selector_env": "BYQ_DSH_COMPATIBILITY_RELEASE"
+  },
+  "evidence_class": "runtime-isolated-stack",
+  "execution_model": {
+    "action_origin": "product-api-manual",
+    "agent_mcp_tool_calls": 0,
+    "note": "The research goal, persistent approval and paper-pool side effect are exercised through the real Product/Backend API as manual Product actions. They are NOT Agent->MCP tool-call executions and do NOT claim Agent at-most-once semantics.",
+    "provider": "scripted-keyless"
+  },
+  "generated_at": "2026-09-20T05:12:04Z",
+  "id": "host-reboot",
+  "llm": {
+    "class": "scripted-keyless",
+    "note": "Keyless deterministic loopback provider; service-boundary runtime-continuity evidence, not real-LLM-quality semantic evidence.",
+    "real_llm_quality": false
+  },
+  "not_run_reason": "not executed: rebooting the maintainer host is not authorized and a container restart is not equivalent to a host reboot",
+  "result": "NOT_RUN",
+  "schema_version": "byq-d15-runtime-scenario.v3"
+}

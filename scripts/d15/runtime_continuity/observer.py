@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any
 
 HERE = Path(__file__).resolve().parent
-DEFAULT_CONTRACT = HERE / "contract.v2.json"
+DEFAULT_CONTRACT = HERE / "contract.v3.json"
 
 _RUN_ID = re.compile(r"^[0-9a-f]{32}$")
 
@@ -72,7 +72,8 @@ def _require_before_after(block: object, fields: list[str], ctx: str, failures: 
     return block
 
 
-def _check_action_receipts(receipts: object, fields: list[str], ctx: str, failures: list[str]) -> bool:
+def _check_action_receipts(receipts: object, fields: list[str], ctx: str, failures: list[str],
+                           origins: list[str] | None = None) -> bool:
     if not isinstance(receipts, list) or not receipts:
         failures.append(f"{ctx}: action_receipts must be a non-empty list")
         return False
@@ -92,9 +93,16 @@ def _check_action_receipts(receipts: object, fields: list[str], ctx: str, failur
         if not _is_nonempty_str(key):
             failures.append(f"{item_ctx}: empty idempotency_key")
             ok = False
-        if receipt.get("side_effect_count") != 1:
-            failures.append(
-                f"{item_ctx}: duplicate side effect (side_effect_count={receipt.get('side_effect_count')!r})")
+        if origins is not None and receipt.get("origin") not in origins:
+            failures.append(f"{item_ctx}: unlabeled action origin {receipt.get('origin')!r}")
+            ok = False
+        # side_effect_count must be measured by the capture layer, never defaulted.
+        count = _as_int(receipt.get("side_effect_count"))
+        if count is None:
+            failures.append(f"{item_ctx}: side_effect_count was not measured")
+            ok = False
+        elif count != 1:
+            failures.append(f"{item_ctx}: duplicate side effect (side_effect_count={count!r})")
             ok = False
         prior = seen.get(str(key))
         if prior is not None and prior != receipt.get("receipt"):
@@ -104,13 +112,14 @@ def _check_action_receipts(receipts: object, fields: list[str], ctx: str, failur
             seen[str(key)] = str(receipt.get("receipt"))
         replay = receipt.get("replay")
         if not isinstance(replay, dict) or replay.get("receipt") != receipt.get("receipt") \
-                or replay.get("side_effect_count") != 1:
+                or _as_int(replay.get("side_effect_count")) != 1:
             failures.append(f"{item_ctx}: replay did not deduplicate the side effect")
             ok = False
     return ok
 
 
-def _check_approval(approval: object, states: list[str], ctx: str, failures: list[str]) -> bool:
+def _check_approval(approval: object, states: list[str], required_trials: list[str],
+                    ctx: str, failures: list[str]) -> bool:
     if not isinstance(approval, dict):
         failures.append(f"{ctx}: approval must be an object")
         return False
@@ -120,6 +129,12 @@ def _check_approval(approval: object, states: list[str], ctx: str, failures: lis
         ok = False
     if approval.get("state") not in states:
         failures.append(f"{ctx}.approval: invalid state {approval.get('state')!r}")
+        ok = False
+    if not _is_nonempty_str(approval.get("decided_by")):
+        failures.append(f"{ctx}.approval: missing decided_by (must come from the persisted approval)")
+        ok = False
+    if approval.get("state") == "approved" and approval.get("execution_authorized") is not True:
+        failures.append(f"{ctx}.approval: approved state without persisted execution_authorized=true")
         ok = False
     if approval.get("bypassed") is not False:
         failures.append(f"{ctx}.approval: approval was bypassed")
@@ -132,6 +147,39 @@ def _check_approval(approval: object, states: list[str], ctx: str, failures: lis
     if "reuse_denied" in approval and approval.get("reuse_denied") is not True:
         failures.append(f"{ctx}.approval: recorded approval reuse was not denied")
         ok = False
+
+    if not required_trials and "trials" not in approval:
+        # Legacy path: the pre-fix algorithm did not know about deny trials.
+        return ok
+    trials = approval.get("trials")
+    if not isinstance(trials, list):
+        failures.append(f"{ctx}.approval: missing persisted deny trials")
+        return False
+    by_kind = {}
+    for index, trial in enumerate(trials):
+        item_ctx = f"{ctx}.approval.trials[{index}]"
+        if not isinstance(trial, dict):
+            failures.append(f"{item_ctx}: not an object")
+            ok = False
+            continue
+        kind = trial.get("kind")
+        if kind in by_kind:
+            failures.append(f"{item_ctx}: duplicate trial kind {kind!r}")
+            ok = False
+        by_kind[kind] = trial
+        if trial.get("denied") is not True:
+            failures.append(f"{item_ctx}: deny trial was not denied")
+            ok = False
+        if trial.get("side_effect_created") is not False:
+            failures.append(f"{item_ctx}: deny trial created a side effect (approval bypassed)")
+            ok = False
+        if trial.get("state") not in states:
+            failures.append(f"{item_ctx}: invalid persisted trial state {trial.get('state')!r}")
+            ok = False
+    for kind in required_trials:
+        if kind not in by_kind:
+            failures.append(f"{ctx}.approval: missing required deny trial {kind!r}")
+            ok = False
     return ok
 
 
@@ -210,6 +258,26 @@ def _sequence_advanced_or_held(before: dict, after: dict) -> bool:
     return b is not None and a is not None and a >= b
 
 
+def _result_attributed_to_target_run(before: dict, after: dict) -> bool:
+    """The reported result must be the TARGET run's own completion, not any assistant."""
+    result = after.get("result") if isinstance(after.get("result"), dict) else {}
+    goal = after.get("goal") if isinstance(after.get("goal"), dict) else {}
+    receipt = goal.get("prompt_receipt") if isinstance(goal.get("prompt_receipt"), dict) else {}
+    target = receipt.get("root_run_id")
+    if not isinstance(target, str) or _RUN_ID.fullmatch(target) is None:
+        return False
+    if result.get("target_run_id") != target or result.get("run_id") != target:
+        return False
+    if result.get("status") != "completed":
+        return False
+    if result.get("terminal_kind") != "session.result":
+        return False
+    if result.get("trace_contiguous") is not True:
+        return False
+    attributed = _as_int(result.get("attributed_message_sequence"))
+    return attributed is not None and attributed > 0
+
+
 RELATIONSHIP_CHECKS = {
     "pid_changed": _pid_changed,
     "pid_stable": _pid_stable,
@@ -219,6 +287,7 @@ RELATIONSHIP_CHECKS = {
     "goal_receipt_linked": _goal_receipt_linked,
     "domain_receipt_linked": _domain_receipt_linked,
     "sequence_advanced_or_held": _sequence_advanced_or_held,
+    "result_attributed_to_target_run": _result_attributed_to_target_run,
 }
 
 
@@ -254,6 +323,7 @@ def _check_scenario(scenario: dict, spec: dict, contract: dict, failures: list[s
         "continuity_truthful": False,
         "sequence_contiguous": False,
         "recovery_relationship_truthful": False,
+        "evidence_not_fabricated": False,
     }
     row = {"id": scenario_id, "result": result,
            "required": bool(spec.get("required", False)), "invariants": checks}
@@ -281,6 +351,14 @@ def _check_scenario(scenario: dict, spec: dict, contract: dict, failures: list[s
     after = _require_before_after(
         scenario.get("after"), contract["required_before_after_fields"], f"{ctx}.after", failures)
 
+    # No success defaults: the capture layer must report capture_ok and any
+    # capture_errors; a missing/failed capture can never be a PASS.
+    capture_errors = list(before.get("capture_errors") or []) + list(after.get("capture_errors") or [])
+    if before.get("capture_ok") is True and after.get("capture_ok") is True and not capture_errors:
+        checks["evidence_not_fabricated"] = True
+    else:
+        failures.append(f"{ctx}: capture evidence missing or fabricated: {capture_errors or 'capture_ok false'}")
+
     if _is_nonempty_str(before.get("session_id")) and before.get("session_id") == after.get("session_id") \
             and before.get("trace_id") == after.get("trace_id"):
         checks["identity_stable"] = True
@@ -302,9 +380,11 @@ def _check_scenario(scenario: dict, spec: dict, contract: dict, failures: list[s
         failures.append(f"{ctx}: original goal drifted or prompt receipt was not retained")
 
     checks["no_duplicate_side_effect"] = _check_action_receipts(
-        after.get("action_receipts"), contract["action_receipt_fields"], f"{ctx}.after", failures)
+        after.get("action_receipts"), contract["action_receipt_fields"], f"{ctx}.after", failures,
+        origins=contract.get("action_origin_vocabulary"))
     checks["approval_not_bypassed"] = _check_approval(
-        after.get("approval"), contract["approval_states"], f"{ctx}.after", failures)
+        after.get("approval"), contract["approval_states"],
+        contract.get("required_approval_trials", []), f"{ctx}.after", failures)
 
     after_result = after.get("result") if isinstance(after.get("result"), dict) else {}
     for field in contract["result_fields"]:
@@ -491,7 +571,7 @@ def _legacy_check_scenario(scenario: dict, spec: dict, contract: dict, failures:
             or ag.get("prompt_receipt") != bg.get("prompt_receipt"):
         failures.append(f"{ctx}: goal drifted")
     _check_action_receipts(after.get("action_receipts"), contract["action_receipt_fields"], f"{ctx}.after", failures)
-    _check_approval(after.get("approval"), contract["approval_states"], f"{ctx}.after", failures)
+    _check_approval(after.get("approval"), contract["approval_states"], [], f"{ctx}.after", failures)
     ar = after.get("result") if isinstance(after.get("result"), dict) else {}
     if ar.get("trace_contiguous") is not True or not _is_nonempty_str(ar.get("run_id")):
         failures.append(f"{ctx}: result not traceable")
@@ -551,26 +631,39 @@ def _state(*, run_id: str, pid: int, generation: str, generation_index: int, epo
         "generation_index": generation_index,
         "executor_epoch": epoch,
         "continuity": continuity,
+        "capture_ok": True,
+        "capture_errors": [],
         "goal": {
             "content_sha256": "a" * 64,
             "prompt_receipt": {"root_run_id": run_id, "content_sha256": "a" * 64},
         },
         "approval": {
             "approval_id": _APPROVAL_ID, "state": "approved", "bypassed": False,
-            "decided_by": "human-owner",
+            "decided_by": "human-owner", "execution_authorized": True,
+            "trials": [
+                {"kind": "rejected", "state": "rejected", "denied": True, "side_effect_created": False},
+                {"kind": "invalid_reuse", "state": "rejected", "denied": True, "side_effect_created": False},
+            ],
         },
         "action_receipts": [
-            {"tool": "runtime.prompt.idempotent", "idempotency_key": "d15-runtime-idem-0001",
+            {"tool": "runtime.prompt.idempotent", "origin": "product-api-manual",
+             "idempotency_key": "d15-runtime-idem-0001",
              "receipt": {"state": "accepted", "run_id": run_id}, "side_effect_count": 1,
              "replay": {"receipt": {"state": "accepted", "run_id": run_id}, "side_effect_count": 1}},
-            {"tool": "byq_paper_pool_create", "idempotency_key": "d15-runtime-pool-0001",
+            {"tool": "byq_paper_pool_create", "origin": "product-api-manual",
+             "idempotency_key": "d15-runtime-pool-0001",
              "receipt": {"state": "accepted", "pool_id": pool_id}, "side_effect_count": 1,
              "replay": {"receipt": {"state": "accepted", "pool_id": pool_id}, "side_effect_count": 1}},
-            {"tool": "byq_strategy_approval", "idempotency_key": "d15-runtime-approval-0001",
+            {"tool": "byq_strategy_approval", "origin": "product-api-manual",
+             "idempotency_key": "d15-runtime-approval-0001",
              "receipt": {"state": "approved", "approval_id": _APPROVAL_ID}, "side_effect_count": 1,
              "replay": {"receipt": {"state": "approved", "approval_id": _APPROVAL_ID}, "side_effect_count": 1}},
         ],
-        "result": {"run_id": run_id, "status": "completed", "sequence": sequence, "trace_contiguous": True},
+        "result": {
+            "run_id": run_id, "status": "completed", "sequence": sequence, "trace_contiguous": True,
+            "target_run_id": run_id, "terminal_kind": "session.result",
+            "attributed_message_sequence": sequence,
+        },
     }
 
 
@@ -676,6 +769,21 @@ def _mutations(fixture: dict) -> list[tuple[str, dict]]:
         {"executor_epoch": v["scenarios"][4]["before"]["executor_epoch"]}))
     add("broken-receipt-linkage", lambda v: v["scenarios"][0]["after"]["goal"]["prompt_receipt"].update(
         {"root_run_id": "9" * 32}))
+    add("unmeasured-side-effect-count", lambda v: v["scenarios"][0]["after"]["action_receipts"][0].update(
+        {"side_effect_count": None}))
+    add("unlabeled-action-origin", lambda v: v["scenarios"][0]["after"]["action_receipts"][0].pop(
+        "origin", None))
+    add("approval-trial-side-effect", lambda v: v["scenarios"][0]["after"]["approval"]["trials"][0].update(
+        {"side_effect_created": True}))
+    add("approval-missing-trials", lambda v: v["scenarios"][0]["after"]["approval"].pop("trials", None))
+    add("result-not-attributed-to-target", lambda v: v["scenarios"][0]["after"]["result"].update(
+        {"target_run_id": "9" * 32}))
+    add("capture-error-present", lambda v: (
+        v["scenarios"][0]["after"].update({"capture_ok": False, "capture_errors": ["injected capture loss"]})))
+    add("trace-gap-incomplete", lambda v: v["scenarios"][0]["after"]["result"].update(
+        {"trace_contiguous": False, "status": "incomplete"}))
+    add("only-old-assistant-result", lambda v: v["scenarios"][0]["after"]["result"].update(
+        {"attributed_message_sequence": None, "status": "incomplete"}))
     # Defect-targeting negatives.
     add("all-required-not-run", lambda v: [s.update(
         {"result": "NOT_RUN", "not_run_reason": "not executed",

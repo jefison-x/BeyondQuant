@@ -157,9 +157,15 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
   `all-required-not-run`/`single-required-blocked`/`reasoned-not-executed`/放宽 allowed/清空
   forbidden 五例，重建的旧算法 `all_pass=true` 而修复后为 false（真实执行对比，非硬编码）。
   本修订还发现并修复隔离栈复用陈旧生产镜像导致 pool 幂等失效的问题，改为从本分支重建
-  Backend/Gateway/MCP。**这是 scripted keyless provider 的服务边界证据，非真实 LLM 语义证据；
-  host reboot 为 OPTIONAL `NOT_RUN`，不等同容器重启**。D15-4/D15-5/D15-G 与 R3 不在本批，
-  不主张完整 D15。证据 `docs/evidence/d15/d15-runtime/*.v2.json`（v1 保留）。
+  Backend/Gateway/MCP。capture 层复核修订（v3）进一步移除成功默认：缺失 journal receipt/
+  replay 错误/非目标 run 一律 `capture_ok=false` + 场景 FAIL，不伪造 receipt 也不回退原 run id；
+  approval 的 `state`/`decided_by` 取自持久化响应，并真实执行 REJECT 与 invalid-reuse 拒绝试验
+  （`side_effect_created=false`）；`trace_contiguous` 按完整持久序列计算并把结果归因到目标 run
+  （`terminal_kind`/`attributed_message_sequence`）；`side_effect_count` 必须实测、action `origin`
+  必须标注；手工 Product 动作与 Agent→MCP 执行显式区分（`agent_mcp_tool_calls=0`）。**v1/v2
+  证据保留但不构成资格通过**。**这是 scripted keyless provider 的服务边界证据，非真实 LLM 语义
+  证据；host reboot 为 OPTIONAL `NOT_RUN`，不等同容器重启**。D15-4/D15-5/D15-G 与 R3 不在本批，
+  不主张完整 D15。资格证据 `docs/evidence/d15/d15-runtime/*.v3.json`。
 - **D15-4..D15-G（PLANNED）**：subagent/fork continuity、persistent terminal 与
   architecture Go/No-Go 尚未执行；`R3_RESUME = NO`。
 - **路线重排**：`R0 → R1 → R2 → D15 → R3 Thin Runtime Supervisor → R4 TerminalAttachment →
@@ -171,7 +177,9 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
   分类逻辑与证据后推进 `post-u8.148 → post-u8.149`；本轮 D15 资格完整性/验收措辞整改新增
   `scripts/d15/harness`、`tests/` 与证据后先推进 `post-u8.150 → post-u8.151`，CI-A `#326`
   并入 `main`（`.154`）后合并 `origin/main` 并改用未使用 id `post-u8.155`（仅重建身份；
-  历史清单与全部证据保留，不修改任何既有 immutable manifest）。
+  历史清单与全部证据保留，不修改任何既有 immutable manifest）。D15-3R 及 observer v2/v3
+  复核修订各新增 `scripts/d15/runtime_continuity`/`tests`/证据后依次推进
+  `post-u8.159 → .160 → .161 → .162`（仅重建身份，历史 manifest 与证据全部保留）。
   不部署、不自动合并。`R3_RESUME = NO`，直至 D15-G 完成且有原生连续性证据。
 
 - 当前已完成阶段：**Phase 97**——回测任务拥有 Backend 权威、持久化的可读名称；名称与稳定 Backtest ID 在 Product 目录、
