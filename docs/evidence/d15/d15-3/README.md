@@ -83,6 +83,28 @@ those rows model the transport/lifecycle fault and exercise the runtime/DSH
 boundary that actually determines resumability. The process/host rows are real
 cross-process operations.
 
+## Proof boundary (what D15-3 does and does not prove)
+
+**Proven here.** A new OS process can natively reopen the same persisted DSH
+session through the real 0.1.5-rc.1 persistence seam, with the same session id, a
+preserved event log and a contiguous sequence, including across a real `SIGKILL`
+(lease released by the kernel) and a genuinely separate generation process.
+
+**Not proven here.** No browser, frontend, Gateway or BYQ runtime-adapter service
+is started or restarted; the corresponding rows model the transport/lifecycle
+fault and exercise the runtime/DSH boundary only. D15-3 therefore does not
+demonstrate, end to end, that after a real process/host fault:
+
+- the original AgentSession goal is preserved and resumed (not silently lost);
+- a domain action is executed at most once (no duplicate side effect);
+- a previously granted approval is still valid for the resumed turn;
+- the final result remains traceable to the originating run/session.
+
+Those semantic guarantees require a **real isolated runtime qualification** that
+runs the BYQ services and asserts persistence and domain behavior. That run is a
+required next step; it is not claimed by D15-3 and must not be inferred from the
+`reattached`/`rehydrated`/`interrupted` labels alone.
+
 ## Native resume viability and R3
 
 **Native session resume is viable for every persisted failure-matrix row**:

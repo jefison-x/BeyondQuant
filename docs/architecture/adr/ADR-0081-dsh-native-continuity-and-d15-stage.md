@@ -94,3 +94,11 @@ session/tool/subagent 的第二持久化。
 
 - 本 ADR 只改阶段顺序与文档/隔离代码；回滚即丢弃候选声明并保持默认选择器。
 - 不改数据库、不改 domain row、不重启 Worker、不删除任何历史制品或证据。
+
+## Review note（2026-09-20，未改变状态）
+
+状态仍为 **Proposed**。记录的授权缺口：本 ADR 文本写明路线重排须在获维护者接受之后发生，但专项
+[D15 计划](../../roadmap/DSH_015RC1_UPGRADE_PLAN.md) 已实际实现该重排（D15 插在 R2 之后、R3 之前）。
+该差异必须由维护者具名解决（接受为 Accepted，或以具名记录追认当前重排）；D15-2/D15-3 的 `PASS`
+是隔离资格证据，不构成 R3 解冻、生产切换或对本 ADR 的接受。详见
+[STATUS.md](../../roadmap/STATUS.md) 顶部“权威当前状态”。

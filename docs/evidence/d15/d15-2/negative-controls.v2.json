@@ -1,0 +1,219 @@
+{
+  "schema_version": "byq-d15-2-negative-controls.v2",
+  "generated_at": "2026-09-20T00:19:54.904Z",
+  "harness": "scripts/d15/harness/migration_harness.mjs (BYQ_D15_2_FAULT)",
+  "note": "Every control invokes the real harness CLI and observes its process exit code and verdict.v2. Result-layer faults leave all stage statuses passing, so the recorded legacy_exit_code=0 proves the pre-fix gate would have reported PASS on a broken invariant.",
+  "all_controls_pass": true,
+  "controls": [
+    {
+      "fault": null,
+      "injects": "none",
+      "expectation": "real qualification passes and exits 0",
+      "expected": {
+        "exit_code": 0,
+        "all_pass": true,
+        "fail_closed_pass": true,
+        "failing_invariants": [],
+        "blocked_count": 0
+      },
+      "observed": {
+        "exit_code": 0,
+        "all_pass": true,
+        "fail_closed_pass": true,
+        "failing_invariants": [],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 0
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "sequence",
+      "injects": "sequence_continuity=false and reopen.sequence_contiguous=false on f-completed",
+      "expectation": "sequence invariant fails; legacy stage-only gate would still pass",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "failing_invariants": [
+          "sequence_continuity"
+        ],
+        "legacy_exit_code": 0
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": true,
+        "failing_invariants": [
+          "sequence_continuity"
+        ],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 0
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "ids",
+      "injects": "missing_from_target on f-completed",
+      "expectation": "id invariant fails; legacy stage-only gate would still pass",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "failing_invariants": [
+          "id_continuity"
+        ],
+        "legacy_exit_code": 0
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": true,
+        "failing_invariants": [
+          "id_continuity"
+        ],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 0
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "context",
+      "injects": "missing_system_prompts on f-completed",
+      "expectation": "context invariant fails; legacy stage-only gate would still pass",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "failing_invariants": [
+          "context_preservation"
+        ],
+        "legacy_exit_code": 0
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": true,
+        "failing_invariants": [
+          "context_preservation"
+        ],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 0
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "reopen",
+      "injects": "appended_missing_from_reopen on f-completed",
+      "expectation": "append/reopen invariant fails; legacy stage-only gate would still pass",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "failing_invariants": [
+          "append_reopen"
+        ],
+        "legacy_exit_code": 0
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": true,
+        "failing_invariants": [
+          "append_reopen"
+        ],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 0
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "blockers",
+      "injects": "an extra non-migration blocker on f-completed",
+      "expectation": "no-blockers invariant fails; legacy stage-only exit ignores it and would pass",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "failing_invariants": [
+          "no_blockers"
+        ],
+        "legacy_exit_code": 0,
+        "blocked_count": 0
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": true,
+        "failing_invariants": [
+          "no_blockers"
+        ],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 0
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "fail_closed",
+      "injects": "documented_refusal=false on the first rejection case",
+      "expectation": "rejection-case verdict fails; the pre-fix exit code ignored fail-closed entirely",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": false,
+        "failing_invariants": [],
+        "legacy_exit_code": 0
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": false,
+        "failing_invariants": [],
+        "blocked_count": 0,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 0
+      },
+      "failures": [],
+      "control_pass": true
+    },
+    {
+      "fault": "blocked_migration",
+      "injects": "a real unclassified event into the f-completed source store",
+      "expectation": "the real pipeline blocks the migration and the gate fails",
+      "expected": {
+        "exit_code": 1,
+        "all_pass": false,
+        "failing_invariants_includes": [
+          "migration_completed",
+          "no_blockers"
+        ],
+        "blocked_count": 1,
+        "legacy_exit_code": 1
+      },
+      "observed": {
+        "exit_code": 1,
+        "all_pass": false,
+        "fail_closed_pass": true,
+        "failing_invariants": [
+          "migration_completed",
+          "sequence_continuity",
+          "id_continuity",
+          "append_reopen",
+          "non_downgradable",
+          "no_blockers"
+        ],
+        "blocked_count": 1,
+        "legacy_all_post_migration_stages_pass": true,
+        "legacy_exit_code": 1
+      },
+      "failures": [],
+      "control_pass": true
+    }
+  ]
+}

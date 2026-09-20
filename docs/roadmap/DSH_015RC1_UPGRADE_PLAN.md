@@ -1,8 +1,11 @@
 # DSH 0.1.5-rc.1 Native Continuity Upgrade and Qualification (Stage D15)
 
 Status: **D15-0 done, D15-1 candidate built/started/probed, D15-2 session V3
-migration PASS, D15-3 native session resume PASS, D15-4..D15-G not started.
-`R3_RESUME = NO`.**
+migration PASS (format layer only), D15-3 native persistence-layer session
+resume PASS, D15-4..D15-G not started. A real BYQ runtime-level continuity
+qualification (process recovery, goal preservation, domain-action at-most-once,
+approval validity, result traceability) remains a required next step and is not
+done. `R3_RESUME = NO`.**
 Relates: ADR-0079, ADR-0081, ADR-0058, ADR-0069, ADR-0003
 Evidence: `docs/evidence/d15/`
 Target decision: [`docs/evidence/d15/target-decision.v1.json`](../evidence/d15/target-decision.v1.json)
@@ -51,13 +54,13 @@ violate the "no second generic agent harness" rule.
 | --- | --- | --- |
 | D15-0 | Upgrade Recon | **DONE** |
 | D15-1 | Candidate Runtime Upgrade | **machinery + isolated build/start DONE; D15-2..D15-G pending** |
-| D15-2 | Session V3 Migration Qualification | **PASS** |
-| D15-3 | Native Session Resume Qualification | **PASS** |
+| D15-2 | Session V3 Migration Qualification (format layer) | **PASS** |
+| D15-3 | Native Session Resume Qualification (persistence seam) | **PASS** |
 | D15-4 | Subagent/Fork Continuity Qualification | planned |
 | D15-5 | Persistent Terminal Qualification | planned |
 | D15-G | Architecture Go/No-Go | planned |
 
-## 3. D15-2 — Session V3 migration (PASS)
+## 3. D15-2 — Session V3 migration (PASS, format layer)
 
 Fixtures: [`docs/evidence/d15/fixtures/sessions/index.v1.json`](../evidence/d15/fixtures/sessions/index.v1.json)
 (specification: [`fixtures/manifest.v1.json`](../evidence/d15/fixtures/manifest.v1.json)).
@@ -65,13 +68,29 @@ Fixtures: [`docs/evidence/d15/fixtures/sessions/index.v1.json`](../evidence/d15/
 Flow per fixture: `0.1.2 historical → migration → V3 → read → resume → append →
 close → reopen`.
 
-Result (2026-09-19): **PASS.** 9/9 fixtures completed every stage, 0 blockers,
-`all_post_migration_stages_pass=true`; 8 migrated (one real v0 store produced by
-the isolated 0.1.2-rc.1 runtime, the rest deterministic released-v2 artifacts)
-and one already-current v3 child. The migrated store is **not downgradable** by
-`0.1.2-rc.1` (9/9 recorded). Fail-closed: future-version, unclassified-event,
-malformed-header and refused-surface cases all surface the documented refusal
-and are never converted to a fresh session.
+Result (2026-09-19): **PASS at the session-format layer only.** 9/9 fixtures
+completed every stage, 0 blockers, `all_post_migration_stages_pass=true`; 8
+migrated (one real v0 store produced by the isolated 0.1.2-rc.1 runtime, the rest
+deterministic released-v2 artifacts) and one already-current v3 child. The
+migrated store is **not downgradable** by `0.1.2-rc.1` (9/9 recorded).
+Fail-closed: future-version, unclassified-event, malformed-header and
+refused-surface cases all surface the documented refusal and are never converted
+to a fresh session.
+
+**Scope:** `resume` is `Session.fromRestore`, `append` is hand-built events
+encoded with the released v3 codec, and `close`/`reopen` are file/codec
+operations. This is codec/catalog migration evidence, **not** runtime recovery:
+it does not exercise a BYQ runtime process, `SessionHandle.flush()` durability,
+a live `SessionWriteLease`, or AgentSession goal/approval/result continuity.
+Those are deferred to the real isolated runtime qualification below.
+
+**Verdict integrity.** `scripts/d15/harness/migration_verdict.mjs` now computes an
+explicit verdict over every required invariant (migration completion, sequence
+continuity, id continuity, context preservation, append+reopen,
+non-downgradability, no blockers) and every fail-closed rejection, and the
+harness exits non-zero unless all pass. `negative-controls.v2.json` injects
+sequence/id/context/reopen/blocker/fail-closed faults and confirms they fail
+while the pre-fix stage-only gate recorded `legacy_exit_code=0`.
 
 Acceptance:
 
@@ -87,12 +106,19 @@ Acceptance:
    (`f-forked`: seeded cut marker seq 7 -> target inherited count 9).
 5. Unknown/future format versions fail closed with the documented refusal, not
    corruption. **PASS**.
+6. The verdict fails on any broken invariant, rejection case or blocker and the
+   exit code reflects it; negative controls prove the pre-fix gate would have
+   passed. **PASS** (`verdict.v2.json`, `negative-controls.v2.json`).
 
 Evidence: [`docs/evidence/d15/d15-2/`](../evidence/d15/d15-2/README.md)
-(`migration-results.v1.json`, `fail-closed.v1.json`). Harness:
-`scripts/d15/harness/migration_harness.mjs`. D15-2 adds test/evidence/docs under
-the build-input inventory, so per repository rules the production build revision
-advances `post-u8.147` -> `post-u8.148` (no selector/deployment change).
+(`migration-results.v2.json`, `verdict.v2.json`, `fail-closed.v2.json`,
+`negative-controls.v2.json`; the v1 artifacts are preserved). Harness:
+`scripts/d15/harness/migration_harness.mjs` +
+`scripts/d15/harness/migration_verdict.mjs` +
+`scripts/d15/harness/migration_negative_controls.mjs`. D15-2 adds
+test/evidence/docs under the build-input inventory, so per repository rules the
+production build revision advances `post-u8.147` -> `post-u8.148` (no
+selector/deployment change).
 
 ## 4. D15-3 — Native session resume (PASS)
 
@@ -124,6 +150,16 @@ fallback. Conclusion: **native session resume is viable; R3 must not
 re-implement it** (it only owns invoking native attach/resume, epoch fencing,
 the BYQ fallback when native resume is unavailable, lifecycle observation and
 cleanup). The R3 freeze stands and `R3_RESUME = NO` until D15-G.
+
+**Scope / proof boundary.** D15-3 proves native persistence-layer resumability
+across a genuinely new OS process. No browser, frontend, Gateway or BYQ
+runtime-adapter service is started or restarted; those rows model the
+transport/lifecycle fault (the process rows are real cross-process operations).
+D15-3 therefore does **not** prove BYQ runtime-level semantic recovery: original
+goal preservation, domain-action at-most-once, approval validity and result
+traceability remain unverified. A **real isolated runtime qualification** that
+runs the BYQ services and asserts persistence plus domain behavior is a required
+next step and is not claimed here.
 
 Evidence: [`docs/evidence/d15/d15-3/`](../evidence/d15/d15-3/README.md)
 (`native-resume-observations.v1.json`, `native-resume-results.v1.json`).
@@ -209,3 +245,10 @@ under `packages/contracts`, all part of the build-input inventory, so the
 revision advances `post-u8.148` -> `post-u8.149`. Again a rebuild identity bump
 only: no selector, `compose.yml`, `deployment.json`, immutable release registry
 or 0.1.2 artifact/evidence change and no deployment.
+
+The D15-2 verdict-integrity rectification adds `migration_verdict.mjs` and
+`migration_negative_controls.mjs` under `scripts/d15/`, updates
+`tests/test_dsh_d15_2_migration.py` / `tests/test_dsh_d15_3_native_resume.py` and
+adds v2 evidence, all build-input files, so the revision advances
+`post-u8.150` -> `post-u8.151` (rebuild identity only; no selector, deployment,
+immutable release registry or 0.1.2 artifact/evidence change and no deployment).

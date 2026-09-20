@@ -89,13 +89,15 @@
       "id": "session_format_v2_v3",
       "status": "new",
       "observed_status": "compatible",
-      "observed_evidence": "docs/evidence/d15/d15-2/migration-results.v1.json",
-      "summary": "Native session format catalog with adjacent migrations v0->v1->v2->v3; SessionFormatUnsupportedError and sessionFormatVersionRefusal fail closed on unknown versions instead of corrupting. D15-2 migrated real/quasi-real historical v0 and v2 stores through the released chain and completed read/resume/append/close/reopen with contiguous sequences and preserved message ids.",
+      "observed_evidence": "docs/evidence/d15/d15-2/verdict.v2.json",
+      "summary": "Native session format catalog with adjacent migrations v0->v1->v2->v3; SessionFormatUnsupportedError and sessionFormatVersionRefusal fail closed on unknown versions instead of corrupting. D15-2 (format layer only, not runtime recovery) migrated real/quasi-real historical v0 and v2 stores through the released chain and completed read/resume/append/close/reopen with contiguous sequences, preserved message ids and preserved system-prompt/provider context.",
       "evidence": [
         "new packages dsh-session-format, -catalog, -v0-to-v1, -v1-to-v2, -v2-to-v3",
         "@deepseek-ai/dsh-session-format-v2-to-v3/lib/types/migration.d.ts: sessionFormatV2ToV3",
-        "docs/evidence/d15/d15-2/migration-results.v1.json: 9/9 fixtures migrated/current; all read/resume/append/close/reopen stages pass; 0 blockers; 9/9 non-downgradable",
-        "docs/evidence/d15/d15-2/fail-closed.v1.json: future-version, unclassified-event, malformed-header and refused-surface migrations all surface a documented refusal and are never converted to a new session"
+        "docs/evidence/d15/d15-2/migration-results.v2.json: 9/9 fixtures migrated/current; all read/resume/append/close/reopen stages pass; 0 blockers; 9/9 non-downgradable",
+        "docs/evidence/d15/d15-2/verdict.v2.json: invariant verdict over sequence/id/context/append-reopen/non-downgradable/blockers and all fail-closed rejections; all_pass=true, exit_code=0",
+        "docs/evidence/d15/d15-2/fail-closed.v2.json: future-version, unclassified-event, malformed-header and refused-surface migrations all surface a documented refusal and are never converted to a new session",
+        "docs/evidence/d15/d15-2/negative-controls.v2.json: injected sequence/id/context/reopen/blocker/fail-closed faults all fail the verdict and exit non-zero, while the pre-fix stage-only gate would have passed"
       ],
       "byq_affected_files": [],
       "change_class": [
@@ -476,8 +478,8 @@
       "item": "native_session_v0_v2_to_v3_migration",
       "status": "probed",
       "observed_status": "compatible",
-      "evidence": "docs/evidence/d15/d15-2/migration-results.v1.json",
-      "scope": "real 0.1.2-rc.1 v0 store plus released-v2 fixtures, migrated with sessionFormatV2ToV3 via the first-party catalog; read/resume/append/close/reopen and fail-closed refusals qualified"
+      "evidence": "docs/evidence/d15/d15-2/verdict.v2.json",
+      "scope": "format layer only: real 0.1.2-rc.1 v0 store plus released-v2 fixtures, migrated with sessionFormatV2ToV3 via the first-party catalog; read/resume/append/close/reopen and fail-closed refusals qualified with an invariant verdict and negative controls; no runtime/SessionHandle/lease recovery claimed"
     },
     {
       "item": "native_session_resume",

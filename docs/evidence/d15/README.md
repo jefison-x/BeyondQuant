@@ -110,7 +110,7 @@ and boundaries: [`d15-1/README.md`](d15-1/README.md).
 
 The image is not pushed and not referenced by any production selector.
 
-## D15-2 — session V3 migration qualification
+## D15-2 — session V3 migration qualification (format layer)
 
 Nine immutable fixtures were committed under
 [`fixtures/sessions/`](fixtures/sessions/index.v1.json) and qualified against the
@@ -121,6 +121,20 @@ preserved message ids. The migrated store is **not downgradable** by
 `0.1.2-rc.1`; fail-closed cases surface the documented refusal instead of
 converting to a new session. Full detail and provenance:
 [`d15-2/README.md`](d15-2/README.md).
+
+This is **format-layer migration evidence only**: `resume` is
+`Session.fromRestore`, `append` is hand-built/encoded events, and `close`/`reopen`
+are file/codec operations. It is not proof of runtime/SessionHandle recovery,
+unfinished-tool/subagent recovery, or AgentSession goal/approval/result
+continuity.
+
+The current harness computes an explicit invariant verdict
+([`verdict.v2.json`](d15-2/verdict.v2.json)) and fails the process unless every
+invariant, every fail-closed rejection and every blocker passes; the negative
+controls in [`negative-controls.v2.json`](d15-2/negative-controls.v2.json) prove
+a broken sequence/id/context/rejection fails while the pre-fix stage-only gate
+would have reported PASS. The v1 results/fail-closed artifacts are preserved
+unchanged; the v2 artifacts are additional.
 
 The compatibility ledger's `session_format_v2_v3` interface now carries
 `observed_status: "compatible"` and the migration item is moved from
@@ -141,6 +155,18 @@ still natively resumable). A native-unavailable control (a session that never
 reached the `flush()` barrier) is correctly not resumable and requires BYQ
 conversation fallback. Full table, real-vs-simulated detail and the
 native-vs-fallback conclusion: [`d15-3/README.md`](d15-3/README.md).
+
+D15-3 proves the **native persistence-layer resumability** of a persisted DSH
+session across a genuinely new OS process, using the shipped
+`SessionPersistence`/`SessionHandle`/`SessionWriteLease`/`readColdSessionLog`
+seam. The four service rows use real per-generation worker processes but a
+**simulated** transport/lifecycle fault (no browser, frontend, Gateway or BYQ
+runtime-adapter service is actually restarted), and D15-3 does **not** prove
+semantic runtime recovery: the original goal is still on the runtime path, a
+domain action is not duplicated, an approval remains valid, or a result remains
+traceable end to end. That BYQ runtime-level continuity qualification (with real
+services, persistence and domain assertions) is a required next step and is not
+done here.
 
 The ledger's `native_session_resume` interface is `compatible` (probed). Native
 resume is viable enough that R3 must **not** re-implement it; the R3 freeze and
