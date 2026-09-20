@@ -10,7 +10,10 @@ COMPONENTS = ('docs', 'architecture', 'backend', 'gateway', 'runtime', 'mcp', 'f
 
 def plan(base, full=False):
     baseline = subprocess.check_output(['git', 'merge-base', base, 'HEAD'], text=True).strip()
-    paths = subprocess.check_output(['git', 'diff', '--name-only', baseline, 'HEAD'], text=True)
+    # --no-renames keeps both sides of a move so a contract relocated to a
+    # documentation-looking path cannot hide its removal risk.
+    paths = subprocess.check_output(
+        ['git', 'diff', '--name-only', '--no-renames', baseline, 'HEAD'], text=True)
     raw = subprocess.check_output(['bash', 'scripts/ci/classify-changes.sh'], input=paths,
                                   text=True, env={**os.environ, 'BYQ_CI_DIFF_BASE': baseline})
     impact = dict(line.split('=', 1) for line in raw.splitlines())

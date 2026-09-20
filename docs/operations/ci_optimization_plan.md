@@ -109,7 +109,8 @@ setup 时间可量化下降、失败路径与隔离回归通过。任何 schema/
 - CI-A 基线：run `35475291783`，`793 passed + 3 skipped` / collected 796 in
   **1247.96s**；backend job 1343s；仅 ≥1s 的 call 合计 97.47s、≥1s 的 setup 合计
   5.32s，说明成本分散在阈值以下，必须聚合。
-- 本批：run `35483981710` attempt 2（head `b04cd10`，修复前隔离模块），backend job
+- 本批 **old head 中间测量**（head `b04cd10`，修复前隔离模块；**不是最终验收口径**，
+  最终结果见 (d)）：run `35483981710` attempt 2，backend job
   `106006956776`：`800 passed, 3 skipped, 1 warning, 7 subtests passed` in
   **951.10s**；backend job **1033s**；`[byq-timing] pytest_setup=95.27 (n=803)
   pytest_call=850.99 (n=809) pytest_teardown=0.43 (n=803) session_wall=951.12`；
@@ -134,6 +135,17 @@ setup 时间可量化下降、失败路径与隔离回归通过。任何 schema/
   `904.40 + 235×~1.17 ≈ 1179s`；相对本机新值约低 23%。这是**逐 DDL/逐测试外推**，
   不是同条件 old/new 测量，只用于解释 (a) 的机制；不得单独引用为实测加速。
 
+**(d) 最终 head 实测（CI-B 验收口径）**
+
+- **CI-B 的最终验收结果是最终 head（合并前最后提交）的 backend lane：
+  `799 passed + 3 skipped`，pytest in 975.06s。**
+- (a) 的 `800 passed + 3 skipped` / 951.10s 是更早的 old-head 中间测量（head
+  `b04cd10`，修复隔离模块之前）；两者相差 1 个测试。**不得把 old-head 的
+  800/951.10s 当作 CI-B 最终验收数字**。以最终 head 对 CI-A 基线同 lane 比较：
+  `793 passed + 3 skipped` / 1247.96s → `799 passed + 3 skipped` / 975.06s
+  （−272.90s，约 21.9%，且最终 head 多 6 个测试，方向保守）。跳过集合始终为
+  3 个，未新增跳过、未删除断言。
+
 ### 采用方案（最小、可回退，且不削弱隔离）
 
 `_byq_reset_schema` 改为**延迟重建**：autouse fixture 只声明本测试“可能用库”；真正的
@@ -157,11 +169,12 @@ setup 时间可量化下降、失败路径与隔离回归通过。任何 schema/
 
 ### CI-B 验收与隔离回归
 
-- **测试/跳过集合**：基线集合为 `793 passed + 3 skipped`（collected 796）；本批集合为
-  `800 passed + 3 skipped`（collected 803 = 796 + 7 个新隔离测试），跳过集合不变（仍 3 个，
-  无新增跳过、无删除断言）。远端 summary/job 见 (a)；脱敏 `checks.log` 位于 run
-  `35483981710` attempt 2 backend job `106006956776` 的 artifact
-  `ci-35483981710-2-backend`。
+- **测试/跳过集合**：基线集合为 `793 passed + 3 skipped`（collected 796）；**最终 head
+  验收集合为 `799 passed + 3 skipped` / 975.06s（见 (d)）**。old-head 中间测量曾为
+  `800 passed + 3 skipped`（collected 803 = 796 + 7 个新隔离测试），**不作为最终验收**。
+  跳过集合不变（仍 3 个，无新增跳过、无删除断言）。old-head 的远端 summary/job 见 (a)；
+  脱敏 `checks.log` 位于 run `35483981710` attempt 2 backend job `106006956776` 的
+  artifact `ci-35483981710-2-backend`。
 - 新增 `services/backend/tests/test_schema_isolation.py`：
   - **真实失败后自动恢复（有界嵌套 pytest 子进程）**：第一个用例提交脏行并创建动态表
     （`CREATE TABLE`/`CREATE INDEX`）后**真的失败**；第二个用例**不调用任何手动 reset**，
@@ -182,13 +195,69 @@ setup 时间可量化下降、失败路径与隔离回归通过。任何 schema/
 - 聚合统计由 `services/backend/tests/conftest.py` 在 pytest 结束时以单行
   `[byq-timing] pytest_setup=… schema_resets=…` 输出（沿用 CI-A 脱敏日志）。
 
-## CI-C — 变更依赖分类细化（未开始）
+## CI-C — 变更依赖分类细化（本批实现，Draft）
 
-范围：细化 `scripts/ci/classify-changes.sh` 对 `services/runtime-adapter`、
-`scripts/dsh`、`packages` 与未知路径的过宽分类，以及 build-identity 相关路径，
-使窄改动不再一律触发 all+integration；保持 unknown/fail-closed 与
-`tests/architecture/test_ci_policy.py` 的代表性路由合同。验收：负例（未知、
-移除内联 DDL、契约/迁移）仍触发 integration；新增最小影响的分类负例；无漏测。
+状态：已在隔离 worktree `codex/phase-ci-c` 实现；默认停在人工合并门禁。范围仍为
+细化 `scripts/ci/classify-changes.sh` 对 `services/runtime-adapter`、`scripts/dsh`、
+`packages` 与 build-identity 路径的过宽分类，使窄改动不再一律触发 all+integration；
+未知路径仍 fail-closed。
+
+### 分类器审计（实际消费者与传递依赖）
+
+- `services/runtime-adapter/app`、`services/runtime-adapter/runtime`：生产 runtime 协议边界，
+  由 `runtime` lane 执行，跨边界行为由 integration 的 candidate/F6 资格覆盖 → 保持
+  all+integration。
+- `services/runtime-adapter/tests`：仅测试；`runtime` lane 直接执行，integration 的
+  `check_dsh_candidate` 挂载运行；无其它服务或组件 suite 引用 → 收窄为 runtime+integration。
+- `services/runtime-adapter/Dockerfile*`、`pyproject.toml`、`requirements*.lock`：build identity、
+  依赖与容器启动 → 保持保守。
+- `scripts/dsh/*`：`release.py`/`promotion.py`/`build_revision.py`/`historical_inputs.py`/
+  `plugin_registry.py`/`web_evidence_provenance.py` 属 build identity/selector → 保持
+  all+integration；`scripts/dsh/production_*.py` 仅由根 architecture 测试与其它 ops 脚本引用，
+  无服务、镜像或 CI lane 导入（候选镜像 COPY 列表不含 `scripts/`）→ 收窄为 architecture。
+- `packages/contracts/*`：由 backend/gateway/runtime 引入且属共享机器可读契约 → 保持
+  all+integration；`packages/operations/*` 仅 `services/gateway/app/main.py` 与
+  `services/runtime-adapter/app/main.py` 引入，根 `tests/` 覆盖，是 Gateway/Adapter 跨边界
+  启动门 → gateway+runtime+architecture+integration。
+- 未知/新路径：仍 `unknown=yes` + all+integration，未放宽。
+
+### 收窄（证据支持的最小集）
+
+| 路径类 | 新选择 | 依据 |
+|---|---|---|
+| `packages/operations/*` | gateway+runtime+architecture+integration | 仅两个服务 import；integration 保留跨边界启动门 |
+| `services/runtime-adapter/tests/*` | runtime+integration | 纯测试；runtime lane + candidate 资格挂载 |
+| `scripts/dsh/production_*.py` | architecture | 仅根架构测试覆盖；无服务/镜像/CI 引用 |
+
+delete/rename：`plan.py` 与 `local-ci.sh` 的 diff 增加 `--no-renames`，使移动的旧路径也进入
+风险并集，目的地低风险不能掩盖旧路径。
+
+### 离线回放（ESTIMATE，非测量）
+
+- 输入：最近 13 个 PR（含 #326/#329/#327/#324 等）的 changed-file 列表，本地 git 计算，
+  **未触发任何新 Full 运行**。
+- 结果：这些 PR 同时改动 build-identity/依赖/契约/runtime-protocol 路径，收窄类不改变其
+  选择（0 lane 变化）；最近 80 个提交中三个收窄类从未单独出现。
+- 单类隔离估计（假设未来 PR 只改该类；复用基线 run `35471161872` 的 lane 秒数）：
+  `packages/operations` 约 −1558s、runtime-adapter tests 约 −1652s、production ops 约 −2243s。
+- 原始输入/输出：`docs/operations/ci_c_offline_replay.json`。**全部标记为 ESTIMATE，
+  不是测量值，也不是 CI-C 的合并收益声明。**
+
+### 路由合同与负例
+
+`tests/architecture/test_ci_policy.py` 新增 `CiRoutingContractTests`：未知/新路径 fail-closed；
+契约、内联 DDL 移除、迁移、lock/依赖、容器启动、runtime-protocol 跨边界、build-identity
+保持覆盖；混合变更取风险并集；delete/rename 取旧+新并做真实 git rename 端到端回放；
+收窄类只保留所需 lane。
+
+### 构建身份
+
+本批改动 `scripts/`、`tests/` 等 build inputs → 按规则新建不可变
+`config/dsh/builds/dsh-0.1.2rc1-post-u8.158.json`，selector 与候选 Dockerfile COPY 指向
+`.158`；历史清单与既有证据不改写、不覆盖。
+
+验收：负例（未知、移除内联 DDL、契约/迁移）仍触发 integration；新增最小影响的分类负例；
+无漏测；`make dev-check` + 定向合同测试通过；无付费 runner、无安全检查弱化。
 
 ## 批次验收标准（CI-A/B/C 通用）
 
@@ -221,3 +290,8 @@ setup 时间可量化下降、失败路径与隔离回归通过。任何 schema/
 - 队列时间来自平台 run API，不在脱敏日志内；`ci-metrics.py` 允许显式传入。
 - Release Images 的 `--all` 串行 Full 与独立 publish 是 ADR-0070 现行要求；
   CI-A/B/C 均不删除重复验证，也不复用未证明身份的 PR 制品。
+- CI-C 的收益只对“仅含收窄类路径”的未来窄 PR 生效；采样到的近期 PR 均为 build-identity/
+  依赖/契约类，收益为 0（见离线回放）。`config/dsh/builds/*`、`scripts/d15/*`、
+  `scripts/ops/*` 等仍按未知/保守路径 fail-closed，未纳入本批收窄。
+- CI-C 未测量真实墙钟节省；`ci_c_offline_replay.json` 的数值是基线 lane 秒数外推的
+  ESTIMATE。真实的隔离 runtime 连续性资格（D15-4+）不在本批范围。

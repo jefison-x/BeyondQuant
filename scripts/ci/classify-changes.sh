@@ -44,6 +44,32 @@ while IFS= read -r path; do
     fi
   fi
   case "$path" in
+    packages/operations/*)
+      # Narrowed by CI-C: only the Gateway and the runtime adapter import this
+      # shared admission module; backend/mcp/frontend suites cannot reach it.
+      # Integration stays: it is the deployment-controlled startup gate shared
+      # across the Gateway/Adapter boundary.
+      docs_only=no
+      architecture=yes
+      gateway=yes
+      runtime=yes
+      integration=yes
+      ;;
+    services/runtime-adapter/tests/*)
+      # Narrowed by CI-C: test-only sources. The runtime lane executes them and
+      # the integration candidate qualification mounts them; no other component
+      # suite imports them.
+      docs_only=no
+      runtime=yes
+      integration=yes
+      ;;
+    scripts/dsh/production_*.py)
+      # Narrowed by CI-C: operator-only production scripts. Only root
+      # architecture tests exercise them; no service, image or CI lane imports
+      # them, so component and integration lanes add no coverage.
+      docs_only=no
+      architecture=yes
+      ;;
     docs/contracts/*.json|docs/contracts/*.yaml|docs/contracts/*.yml|docs/contracts/*.ts|docs/contracts/*.py|apps/frontend/tests/e2e/real-*.ts|apps/frontend/playwright.real.config.ts|services/*/Dockerfile|services/*/pyproject.toml|services/*/requirements*.txt|services/*/package*.json|services/*/runtime/*|services/*/migrations/*|services/backend/app/db.py|services/backend/app/main.py|plugins/*|scripts/dsh/*)
       docs_only=no
       mark_all_components
