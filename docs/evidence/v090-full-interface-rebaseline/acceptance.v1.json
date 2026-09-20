@@ -1,0 +1,309 @@
+{
+  "schema_version": "byq-v090-full-interface-rebaseline.v1",
+  "baseline_commit": "b109d2804aa7724501356c8ee06943904e1e605e",
+  "candidate_commit": "21c1812cfb388d6daecca8fa2000d9586e684779",
+  "auditor": {
+    "schema_version": "h4-review-check.v2",
+    "discovered": 566,
+    "reviewed": 566,
+    "verified": 566,
+    "missing": 0,
+    "stale": 0,
+    "fake_pass": 0,
+    "complete": true
+  },
+  "missing_rows_added": [
+    "GET /v1/users/model-credentials/{credential_id}/models (discover_model_credential_models)",
+    "POST /v1/users/model-profiles/{profile_id}/disable (disable_model_profile)",
+    "POST /v1/users/model-profiles/{profile_id}/enable (enable_model_profile)",
+    "GET /settings/models/credentials/{credential_id}/models (product_model_credential_models)",
+    "POST /settings/models/profiles/{profile_id}/disable (product_model_profile_disable)",
+    "POST /settings/models/profiles/{profile_id}/enable (product_model_profile_enable)"
+  ],
+  "source_boundary_files": [
+    "services/backend/app/main.py",
+    "services/gateway/app/main.py",
+    "services/gateway/app/product_api.py",
+    "services/mcp/src/server.ts",
+    "services/runtime-adapter/app/main.py",
+    "workers/signal/worker.py"
+  ],
+  "dependency_only_files": [
+    "apps/frontend/src/api/settings.ts",
+    "plugins/dsh-byq/runtime/byq-continuation-budget.js",
+    "services/backend/app/backtest.py",
+    "services/backend/app/continuation_scope.py",
+    "services/backend/app/credentials.py",
+    "services/backend/app/data_provider.py",
+    "services/backend/app/market_readiness.py",
+    "services/backend/app/research.py",
+    "services/backend/app/research_continuation.py",
+    "services/backend/app/signal_producer.py",
+    "services/mcp/src/backtest.ts",
+    "services/mcp/src/request-validation.ts",
+    "services/runtime-adapter/app/runtime.py",
+    "services/signal-sandbox/runner.py"
+  ],
+  "drift": {
+    "apps/frontend/src/api/settings.ts": {
+      "commits": [
+        "dd19469 feat: refresh credential models from the product UI (#291)",
+        "ff574ce feat: enforce runtime model allowlist and add profile disable/enable (P101-E) (#294)"
+      ],
+      "recorded": [
+        "2bf371b84eb12f84d336714bdc9c83387bedab5418145f2c97f75aef1807587e"
+      ],
+      "baseline_sha256": "2bf371b84eb12f84d336714bdc9c83387bedab5418145f2c97f75aef1807587e",
+      "candidate_sha256": "0655a1ac6ea75e0de706c38298852ecac302e098a68a274bbcb95d8a32898cf6"
+    },
+    "plugins/dsh-byq/runtime/byq-continuation-budget.js": {
+      "commits": [
+        "b889d24 fix: align continuation budget guard route qualification with ADR-0075 (#306)",
+        "d0cb1e5 fix: normalize continuation guard provider and apply the reserved output cap (#309)",
+        "35570e5 fix: size continuation budget for bounded multi-call turns (#315)"
+      ],
+      "recorded": [
+        "a5497f11c521f4b76fb05aede71a5c3754a38e882f3baf432faca974e9e79765"
+      ],
+      "baseline_sha256": "a5497f11c521f4b76fb05aede71a5c3754a38e882f3baf432faca974e9e79765",
+      "candidate_sha256": "a4e056d07fea99808e2d3d7a843df130c008169ffd4e0ac882780a18cb14d684"
+    },
+    "services/backend/app/backtest.py": {
+      "commits": [
+        "56b07cf fix(backend): align snapshot/backtest bar bound with ADR-0047 aggregates (#301)",
+        "21d75fe fix(backend): keep absolute adjustment factor in ready bars and validate plan-hash readiness (#303)"
+      ],
+      "recorded": [
+        "c6190e71b4168c1889b02fddd23a27e17eed2d7d03e5045b619ad82298077aaf"
+      ],
+      "baseline_sha256": "c6190e71b4168c1889b02fddd23a27e17eed2d7d03e5045b619ad82298077aaf",
+      "candidate_sha256": "f47e146b54a11c703b4e5929763832e66c792a2c069544b134c19218499c6e6d"
+    },
+    "services/backend/app/continuation_scope.py": {
+      "commits": [
+        "320abdd feat: auto-continue agent when waiting data becomes ready (#305)",
+        "a4c445f fix: re-arm data-ready continuation after a needs_attention settlement (#312)"
+      ],
+      "recorded": [
+        "4a6416b24e6d533b7241510e46b1f28b3179628903320c390b1d3f49cffefc6d"
+      ],
+      "baseline_sha256": "4a6416b24e6d533b7241510e46b1f28b3179628903320c390b1d3f49cffefc6d",
+      "candidate_sha256": "2d338968d866a7c9d722d7912dd04ea946bf01cb5b8b302197c3be8ada89d371"
+    },
+    "services/backend/app/credentials.py": {
+      "commits": [
+        "591c034 feat: add credential-driven model discovery endpoint (#287)",
+        "a74beb0 fix: send client identity and map transports in model discovery (#288)",
+        "4452ea4 feat: accept credential-discovered models for profiles and resolution (#289)",
+        "ff574ce feat: enforce runtime model allowlist and add profile disable/enable (P101-E) (#294)",
+        "c0f76d1 fix: fail closed when resolving non-allowlisted models (#295)",
+        "5737ae3 feat: allow deepseek-v4.1-flash on the opencode-go chat route (#296)"
+      ],
+      "recorded": [
+        "d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87"
+      ],
+      "baseline_sha256": "d5ef1eea4b6be7e168e3937ac052726c5d5cca267253a26ad5237c95e0168f87",
+      "candidate_sha256": "c7e98d3f3db81cb1f0d0e3ab1092364b07d1d6d782ffe010eebdd22c0eaf7d60"
+    },
+    "services/backend/app/data_provider.py": {
+      "commits": [
+        "55b38b1 feat: add Tushare fund catalogue, NAV and ETF daily provider contracts (#286)",
+        "80fb9f8 feat(data): P100-B Tushare index_dailybasic contract, storage, incremental sync and readiness (#337)"
+      ],
+      "recorded": [
+        "8d8c4efca3e7041f839e59d46fcb22467f6fa2f5ea44732a4417f50c25b3aa7b"
+      ],
+      "baseline_sha256": "8d8c4efca3e7041f839e59d46fcb22467f6fa2f5ea44732a4417f50c25b3aa7b",
+      "candidate_sha256": "0fdf9de31724ed53ccb53c35ed1a069a696cc0fa6e3843048cfc047a967b7662"
+    },
+    "services/backend/app/main.py": {
+      "commits": [
+        "591c034 feat: add credential-driven model discovery endpoint (#287)",
+        "ff574ce feat: enforce runtime model allowlist and add profile disable/enable (P101-E) (#294)",
+        "b29cb0b feat(backend): partition aggregate backtest/signal data preparation (ADR-0047) (#298)",
+        "56b07cf fix(backend): align snapshot/backtest bar bound with ADR-0047 aggregates (#301)"
+      ],
+      "recorded": [
+        "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b"
+      ],
+      "baseline_sha256": "ef997abae39ce76282fe0d12cde99a2db8e37cae5082f375e5b882314488b05b",
+      "candidate_sha256": "75feab2b82dc5cdf69cceb42305f74deae4b31155400889ce26b0dd549ecdc5c"
+    },
+    "services/backend/app/market_readiness.py": {
+      "commits": [
+        "2ad80ff fix(backend): treat delist date as non-applicable in market coverage (#299)",
+        "9bc7e84 perf(backend): deduplicate and columnar-encode the signal sandbox input (#300)",
+        "56b07cf fix(backend): align snapshot/backtest bar bound with ADR-0047 aggregates (#301)",
+        "21d75fe fix(backend): keep absolute adjustment factor in ready bars and validate plan-hash readiness (#303)",
+        "80fb9f8 feat(data): P100-B Tushare index_dailybasic contract, storage, incremental sync and readiness (#337)"
+      ],
+      "recorded": [
+        "1e2585cd5d0fc8d301e89fc5e7047dcef62f020e14c8245c3d8e77e72286c7fc"
+      ],
+      "baseline_sha256": "1e2585cd5d0fc8d301e89fc5e7047dcef62f020e14c8245c3d8e77e72286c7fc",
+      "candidate_sha256": "25be7ec9509cf427265435130feaf65a1be5f76f18117001cc0a70f53c65c4c6"
+    },
+    "services/backend/app/research.py": {
+      "commits": [
+        "a4c445f fix: re-arm data-ready continuation after a needs_attention settlement (#312)"
+      ],
+      "recorded": [
+        "cd4ced95306ced3a1b78d141b3690efb30e35acf97d8cf49ea75f21629fef478"
+      ],
+      "baseline_sha256": "cd4ced95306ced3a1b78d141b3690efb30e35acf97d8cf49ea75f21629fef478",
+      "candidate_sha256": "d73d99421763da4836cfe85310ab1b83095fc1fe96473d964a8739420532d27a"
+    },
+    "services/backend/app/research_continuation.py": {
+      "commits": [
+        "320abdd feat: auto-continue agent when waiting data becomes ready (#305)",
+        "a4c445f fix: re-arm data-ready continuation after a needs_attention settlement (#312)",
+        "35570e5 fix: size continuation budget for bounded multi-call turns (#315)"
+      ],
+      "recorded": [
+        "4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3"
+      ],
+      "baseline_sha256": "4969d503016b3f87b31f943601877f943918dee5949b4cc6bca4d121829f29d3",
+      "candidate_sha256": "24fbc46a1430056eb93b8f29952a8c4468564686d3148f6a08790f96243e701b"
+    },
+    "services/backend/app/signal_producer.py": {
+      "commits": [
+        "3eab6c6 fix: fail over-cap signal jobs instead of crashing the worker (#293)",
+        "b29cb0b feat(backend): partition aggregate backtest/signal data preparation (ADR-0047) (#298)",
+        "9bc7e84 perf(backend): deduplicate and columnar-encode the signal sandbox input (#300)",
+        "21d75fe fix(backend): keep absolute adjustment factor in ready bars and validate plan-hash readiness (#303)"
+      ],
+      "recorded": [
+        "c628e100e3a23ce638f1ba73dd2435bf1c6073f45bddd03a4ed585b30644a6f6"
+      ],
+      "baseline_sha256": "c628e100e3a23ce638f1ba73dd2435bf1c6073f45bddd03a4ed585b30644a6f6",
+      "candidate_sha256": "f804596d44e0f41e69a79071df921f4f18646abf57aaaddac07120fc8a4ce58a"
+    },
+    "services/gateway/app/main.py": {
+      "commits": [
+        "221041a fix(runtime): rehydrate existing sessions after adapter restart and continue traces (#302)",
+        "6f5254b feat(runtime): separate durable session identity from runtime generations (Runtime Continuity R2) (#316)"
+      ],
+      "recorded": [
+        "c6d3f2115e3235635d62d4424ca7680f8afe2e99e06bb224e039abd685f297c6"
+      ],
+      "baseline_sha256": "37ee81c970dd6eb03e8c0e0fc4bdde3119816ed94ca58ba7771be0e834e05fd3",
+      "candidate_sha256": "98f574e3b2b82a435d05993a772d276c6b5165d0c4c97def040364d8b87212a8",
+      "false_baseline": true,
+      "recorded_blob_commit": "049104e fix: preserve research mission in approval handoff"
+    },
+    "services/gateway/app/product_api.py": {
+      "commits": [
+        "dd19469 feat: refresh credential models from the product UI (#291)",
+        "ff574ce feat: enforce runtime model allowlist and add profile disable/enable (P101-E) (#294)"
+      ],
+      "recorded": [
+        "cc75c64d8bc98fbdf4e26acaf19097478d64604ad17a89f7bcb5b782078092da"
+      ],
+      "baseline_sha256": "cc75c64d8bc98fbdf4e26acaf19097478d64604ad17a89f7bcb5b782078092da",
+      "candidate_sha256": "017e611ccaf691fb7815ded1148ad1332b81ec6dda8965c1b641211a6325b3aa"
+    },
+    "services/mcp/src/backtest.ts": {
+      "commits": [],
+      "recorded": [
+        "9d19d12f0ab70f35fee77abee4ad7386de335723b600193401ca74c634cb4836"
+      ],
+      "baseline_sha256": "f189ffaa6dcc7adcf1d7df620a0783779df6abe1a78fa1d8c6544a7543191044",
+      "candidate_sha256": "f189ffaa6dcc7adcf1d7df620a0783779df6abe1a78fa1d8c6544a7543191044",
+      "false_baseline": true,
+      "recorded_blob_commit": "df17e33 fix: verify original backtest identity before accepting receipts"
+    },
+    "services/mcp/src/request-validation.ts": {
+      "commits": [
+        "0709231 fix(mcp): surface safe domain-bound hints for backtest preflight 422s (#297)"
+      ],
+      "recorded": [
+        "0425340a79b3c13b4a6c94ddec05043195eb3807ccdafc8f6810a6ae3e1501b0"
+      ],
+      "baseline_sha256": "0425340a79b3c13b4a6c94ddec05043195eb3807ccdafc8f6810a6ae3e1501b0",
+      "candidate_sha256": "6fa10c7ff702667af27707fee4af5c4237397aff0142623c66b95ae0c0138fbc"
+    },
+    "services/mcp/src/server.ts": {
+      "commits": [],
+      "recorded": [
+        "ec06a08139b74cce43801ec53868bc1d0ad56a4902ac766ceda81beb8e6dc6ee"
+      ],
+      "baseline_sha256": "1e501499a09bf7954e480078315f28dfe6bbb30c8e28e2227084e491e2abfe02",
+      "candidate_sha256": "1e501499a09bf7954e480078315f28dfe6bbb30c8e28e2227084e491e2abfe02",
+      "false_baseline": true,
+      "recorded_blob_commit": "aee5acc fix: qualify strategy version correction and atomic receipts"
+    },
+    "services/runtime-adapter/app/main.py": {
+      "commits": [
+        "221041a fix(runtime): rehydrate existing sessions after adapter restart and continue traces (#302)",
+        "ef74b73 fix(runtime): explicit stale-lease error + reversible stale session archive (#304)"
+      ],
+      "recorded": [
+        "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0"
+      ],
+      "baseline_sha256": "46f47e0d86d7a5673a8b8308185e5501d98c74c31416201c2555077a1a2dada0",
+      "candidate_sha256": "8adbccc75f50ece7e86f1c4300ee162d280373455207b057deacf37ef3ffd005"
+    },
+    "services/runtime-adapter/app/runtime.py": {
+      "commits": [
+        "9d71d3d feat: qualify background continuation by provider route (#290)",
+        "221041a fix(runtime): rehydrate existing sessions after adapter restart and continue traces (#302)",
+        "ef74b73 fix(runtime): explicit stale-lease error + reversible stale session archive (#304)",
+        "d0cb1e5 fix: normalize continuation guard provider and apply the reserved output cap (#309)",
+        "6f5254b feat(runtime): separate durable session identity from runtime generations (Runtime Continuity R2) (#316)"
+      ],
+      "recorded": [
+        "cf1ab277821cd448750b9b18ad1bc699eb94c23e8ffead568d381d98288f046b"
+      ],
+      "baseline_sha256": "cf1ab277821cd448750b9b18ad1bc699eb94c23e8ffead568d381d98288f046b",
+      "candidate_sha256": "753ce548ead2bc512db9036896b40659d44117a93acc9f969fcdd2ad5d368164"
+    },
+    "services/signal-sandbox/runner.py": {
+      "commits": [
+        "9bc7e84 perf(backend): deduplicate and columnar-encode the signal sandbox input (#300)",
+        "56b07cf fix(backend): align snapshot/backtest bar bound with ADR-0047 aggregates (#301)",
+        "21d75fe fix(backend): keep absolute adjustment factor in ready bars and validate plan-hash readiness (#303)"
+      ],
+      "recorded": [
+        "dd19c80fb1af6d3a772961128ecbb8d74721d013cb0f0ea4312df6036157fa5d"
+      ],
+      "baseline_sha256": "dd19c80fb1af6d3a772961128ecbb8d74721d013cb0f0ea4312df6036157fa5d",
+      "candidate_sha256": "fc79f88e505824c6037320b3522ea96a1fcb4c87aa191a8a13052da168a37bbf"
+    },
+    "workers/signal/worker.py": {
+      "commits": [
+        "21d75fe fix(backend): keep absolute adjustment factor in ready bars and validate plan-hash readiness (#303)"
+      ],
+      "recorded": [
+        "4390aa19d53da879ce667be66815db706b277b9c17939564b7f88f33c7a087e1"
+      ],
+      "baseline_sha256": "4390aa19d53da879ce667be66815db706b277b9c17939564b7f88f33c7a087e1",
+      "candidate_sha256": "bba6b0a081f3133f365459180944ba87cd4c90a37807118bfb45aa1ba78118d6"
+    }
+  },
+  "false_baseline_hashes": {
+    "services/gateway/app/main.py": {
+      "recorded": [
+        "c6d3f2115e3235635d62d4424ca7680f8afe2e99e06bb224e039abd685f297c6"
+      ],
+      "baseline_sha256": "37ee81c970dd6eb03e8c0e0fc4bdde3119816ed94ca58ba7771be0e834e05fd3",
+      "candidate_sha256": "98f574e3b2b82a435d05993a772d276c6b5165d0c4c97def040364d8b87212a8",
+      "recorded_blob_commit": "049104e fix: preserve research mission in approval handoff"
+    },
+    "services/mcp/src/backtest.ts": {
+      "recorded": [
+        "9d19d12f0ab70f35fee77abee4ad7386de335723b600193401ca74c634cb4836"
+      ],
+      "baseline_sha256": "f189ffaa6dcc7adcf1d7df620a0783779df6abe1a78fa1d8c6544a7543191044",
+      "candidate_sha256": "f189ffaa6dcc7adcf1d7df620a0783779df6abe1a78fa1d8c6544a7543191044",
+      "recorded_blob_commit": "df17e33 fix: verify original backtest identity before accepting receipts"
+    },
+    "services/mcp/src/server.ts": {
+      "recorded": [
+        "ec06a08139b74cce43801ec53868bc1d0ad56a4902ac766ceda81beb8e6dc6ee"
+      ],
+      "baseline_sha256": "1e501499a09bf7954e480078315f28dfe6bbb30c8e28e2227084e491e2abfe02",
+      "candidate_sha256": "1e501499a09bf7954e480078315f28dfe6bbb30c8e28e2227084e491e2abfe02",
+      "recorded_blob_commit": "aee5acc fix: qualify strategy version correction and atomic receipts"
+    }
+  }
+}

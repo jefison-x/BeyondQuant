@@ -19,15 +19,17 @@
 状态，也不表示下一 Product Phase 已授权。
 
 <!-- byq:v090-closeout-audit=active -->
+<!-- byq:v090-full-interface-rebaseline=active -->
 <!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->
 <!-- byq:phase-100-p100-c=paused-not-delivery -->
 <!-- byq:audit-build-revision=dsh-0.1.2rc1-post-u8.177 -->
+<!-- byq:rebaseline-build-revision=dsh-0.1.2rc1-post-u8.178 -->
 
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|
 | Product | 最近完成 Phase 97（marker 97） | 未授权任何新的 Product Phase | 维护者阶段性授权 + 本文件 next phase | 一阶段一 worktree/Draft PR；Human Merge Gate；不得自授新 Phase |
 | 数据/资格 | Phase 98 资格与基准冻结已授权（#282，2026-09-17）；Phase 99 `COMPLETE`（#283）；Phase 100 **`PAUSED`**（维护者 #285 于 2026-09-17 开启，冻结 Tushare 6000 数据集范围；P100-A 基金 provider 合同已并入 #286；P100-B 指数每日指标已并入 `main`（#337，base commit 即其合并提交）；P100-C 申万行业存在**未审查实现提交**于隔离分支 `codex/phase-100c`（Draft #338），**paused、not delivered、未审查、未并入 `main`**；P100-D/P100-E 冻结）；Phase 101 `COMPLETE` | 先执行 **0.9 closeout governance & gap ledger audit**（独立 worktree/分支 `codex/v090-closeout-audit`，本文件）；Phase 100 切片暂停，待维护者明确恢复后才继续 P100-C/D/E；**S3/历史成分准备属 0.10.0，不在 0.9 gate 内** | 维护者开启 Phase 100（#285）+ [V1_DATA_BASELINE_CONTRACT](V1_DATA_BASELINE_CONTRACT.md)「6000 积分可接入的数据集（Phase 100 实施范围）」；ADR-0074 为边界 ADR；Phase 98 授权只覆盖前置资格，**不**覆盖 Phase 100 实施范围 | 仅 Tushare、不用 Community；不支持分钟/实时/港股/特色数据；不得以“接口可调用/单次拉取成功”代替覆盖/时点/单位/许可证据；不改生产状态（除非另有部署授权）；HIST/THS 概念在证明历史可见性前保持 blocked；`codex/phase-100c` 不是交付，不得据此声明 P100-C 完成，不得从未审查分支推断业务完成 |
-| 维护（当前） | **0.9 closeout governance & gap ledger audit**（独立 worktree/分支 `codex/v090-closeout-audit`，基于 `origin/main` `80fb9f8`；不推进 Product Phase） | 维护者 review Draft PR；本批只做事实审计、plan/STATUS 修订、机器可读 acceptance matrix 与必要审计测试 | 本次任务委托 develop/push/Draft；合并与后续步骤由维护者按 Human Merge Gate 决定 | 不实现 Proposed ADR-0082/0083；不切换生产 selector；不 deploy；不创建/移动 tag/release；不覆盖历史证据；不触碰 `codex/phase-100c`/PR #338；`R3_RESUME = NO` |
+| 维护（当前） | **0.9 full-interface re-baseline**（独立 worktree/分支 `codex/v090-full-interface-rebaseline`，基于动态 `origin/main` `21c1812`；不推进 Product Phase；执行 0.9 严格顺序第 2 步） | 维护者 review Draft PR；本批重做逐接口台账至机器可读 `complete=true`（566/566，missing=0，stale=0，fake_pass=0），补齐 Phase 101 六行并修正 3 个错误基线哈希 | 本次任务委托 develop/push/Draft；合并与后续步骤由维护者按 Human Merge Gate 决定 | 不实现 Proposed ADR-0082/0083；不切换生产 selector；不 deploy；不创建/移动 tag/release；不覆盖历史证据；不触碰 `codex/phase-100c`/PR #338；不恢复 Phase 100；`R3_RESUME = NO` |
 | 依赖资格（D15） | D15-0/1/2/3/3R 完成（D15-2 格式层、D15-3 原生持久层、D15-3R 隔离 runtime 连续性均 `PASS`）；D15-4 `PARTIAL/BLOCKED`（原生 subagent/fork seam 6 项 + 1 支撑项通过；`child-crash`/BYQ `adapter-restart` `BLOCKED`；host reboot `NOT_RUN`）；D15-5 `PARTIAL/BLOCKED`（真实隔离原生 persistent terminal：page refresh/browser disconnect/frontend restart/gateway restart 四行 `PASS`，跨进程唯一 marker 无重放/丢失、权限不可绕过、错误 terminal 拒绝、stale generation/epoch fenced、清理无孤儿；`adapter-restart` 与 `dsh-runtime-restart` 必需项 `BLOCKED`，host reboot `NOT_RUN`）；D15-G `NO_GO`（NOT-PASS，decision contract + fail-able observer；部分 PASS 不得聚合为 GO；child-crash/BYQ adapter restart/terminal adapter restart/DSH runtime restart 四项必需项未过，host reboot `NOT_RUN`；证据 `docs/evidence/d15/d15-g/`）；R3 冻结、`R3_RESUME=NO` | 无：D15-G 已给出 NO_GO，未授权任何后续 D15/R3/生产切换；R3 解冻需 GO 加 R3/R6 原生连续性证据 | 维护者 D15 目标决策（2026-09-19）+ 专项 D15 计划 | 不改生产 selector；候选隔离；NO_GO 后不恢复 R3；不接受/不实现 Proposed ADR-0082/0083 |
 
 ## 0.9 closeout governance & gap ledger audit（2026-09-20，权威维护条目）
@@ -70,6 +72,24 @@ Community 豁免、不用当前关系回填）。**0.9 严格顺序不以 S3 开
 计划已实际实现该重排（D15 插在 R2 之后、R3 之前）。维护者已于 2026-09-19 接受 ADR-0081
 （Accepted，见 #328），该缺口已关闭：D15 插在 R2 之后、R3 之前的重排现为已授权顺序。D15-2/D15-3
 的 `PASS` 仍是隔离资格证据，不据此推断 R3 解冻或生产切换授权。
+
+## 0.9 full-interface re-baseline（2026-09-21，权威维护条目）
+
+本批执行 0.9 严格顺序第 2 步：在候选 `origin/main`（`21c1812`）上把 H4 逐接口可靠性台账重做到
+**真实、机器可读的 `complete=true`**。这是维护/审计，不推进 Product Phase，不实现 Proposed
+ADR-0082/0083，不切换生产 selector，不 deploy，不创建/移动 tag/release，不恢复 Phase 100，
+不触碰 `codex/phase-100c`/PR #338，不做 Community 检查或复制。
+
+H4 台账在其自身提交记录 560 行；当前源码发现 **566**。缺失的 6 行全部是 Phase 101 凭据驱动模型目录
+接口（Backend 发现接口 + profile disable/enable 及其 Gateway/Product API 代理）。**20 个文件漂移**：
+17 个在 H4 提交后变更，另有 3 个记录哈希从未匹配已提交的 H4 树（MCP `server.ts`、`backtest.ts`、
+Gateway `main.py` 的假基线）。`scripts/ci/check-reliability-review.py` 已改为**fail-closed 审计器**：
+缺行、过期 source/dependency 哈希、fake PASS 任一都非零退出；当前结果 `discovered=reviewed=566`、
+`missing=0`、`stale=0`、`fake_pass=0`、`complete=true`。逐接口重新核对结果、漂移分解与复现见
+`docs/evidence/v090-full-interface-rebaseline/`，由 `tests/test_reliability_review_audit.py` 断言。
+
+构建身份推进到未使用 id `post-u8.177 → post-u8.178`（`scripts/`、`tests/` 属 build inputs）；历史
+`.177` manifest 与全部证据保持不变，仅重建身份，不改 selector/`compose.yml`/`deployment.json`/制品。
 
 ## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19，历史叙述）
 

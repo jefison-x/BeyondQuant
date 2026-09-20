@@ -1303,6 +1303,33 @@ same build inputs). Rebuild identity only: no selector, `compose.yml`,
 `deployment.json`, immutable release registry or 0.1.2 artifact/evidence change and no
 deployment.
 
+## 0.9 Full-Interface Re-Baseline (maintenance, 2026-09-21)
+
+This maintenance batch executes step (2) of the 0.9 strict order: re-do the candidate
+`main` full-interface reliability ledger to a real `complete=true`. It does **not**
+advance a Product Phase, does **not** implement Proposed ADR-0082/0083, does **not**
+switch the production selector, does **not** deploy, and does **not** create or move any
+tag/release. It does not inspect or copy the Community repository and does not resume
+frozen Phase 100.
+
+The H4 ledger (`docs/evidence/research-handoff-h4/INTERFACE-REVIEW.json`) recorded 560
+reviewed rows at its own commit; the current tree discovers 566. The six missing rows are
+the Phase 101 model-catalogue endpoints (Backend discovery + profile disable/enable and
+their Gateway/Product API proxies). Twenty files drifted: 17 changed after the H4 commit
+and three recorded digests never matched the committed H4 tree (MCP `server.ts`,
+`backtest.ts`, Gateway `main.py`). `scripts/ci/check-reliability-review.py` is now a
+fail-closed auditor: missing rows, stale source/dependency digests and fake PASS rows each
+exit non-zero. The re-verified per-interface semantics and the full drift breakdown are in
+`docs/evidence/v090-full-interface-rebaseline/`; consistency and the fail-closed behavior
+are asserted by `tests/test_reliability_review_audit.py`.
+
+Build revision: this batch changes `scripts/ci/check-reliability-review.py` and adds
+`tests/test_reliability_review_audit.py` (build inputs) and advances the production
+runtime build identity `post-u8.177 → post-u8.178` (unused id). Rebuild identity only: the
+historical `.177` manifest and evidence are preserved unchanged; no selector,
+`compose.yml`, `deployment.json`, immutable release registry or 0.1.2 artifact/evidence
+change and no deployment.
+
 ## Maintenance — Delist-boundary coverage correction (ADR-0028)（构建修订 `dsh-0.1.2rc1-post-u8.130`，PR #299）
 
 ADR-0028 point 2 evaluates coverage over each symbol's frozen listing lifecycle. The market-readiness
