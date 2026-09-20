@@ -1,0 +1,579 @@
+{
+  "schema_version": "byq-v090-closeout-acceptance-matrix.v1",
+  "generated_at": "2026-09-20",
+  "scope": "Machine-readable acceptance matrix for the 0.9 closeout. It fixes (a) the formal 0.9.0 release-manifest requirements that the historical v0.9.0-beta tag does not satisfy, (b) the remaining 0.9.x evidence gates, (c) the minimal serial DSH 0.1.5-rc.1 closeout slices with per-blocker owner/reproduction/acceptance/failure-closure, and (d) the ADR-0082/0083 sufficiency items. All statuses are read at the base commit. Proposed ADRs stay Proposed and nothing here is implemented.",
+  "base": {
+    "origin_main_commit": "80fb9f809a6b796b7e98df23c19640286612a740",
+    "product_phase_marker": 97,
+    "build_revision_at_base": "dsh-0.1.2rc1-post-u8.174",
+    "audit_build_revision": "dsh-0.1.2rc1-post-u8.177"
+  },
+  "status_vocabulary": [
+    "covered",
+    "superseded",
+    "open",
+    "blocked",
+    "missing"
+  ],
+  "formal_0_9_0_manifest_requirements": [
+    {
+      "id": "formal-source-sha",
+      "requirement": "Manifest binds the exact 40-hex source SHA of the released commit.",
+      "status": "missing",
+      "why": "v0.9.0-beta is an annotated Git tag at 135bc7d only; no byq-release.v1 manifest exists on the base commit.",
+      "validator": "scripts/release/manifest.py::validate"
+    },
+    {
+      "id": "formal-ci-url",
+      "requirement": "Manifest binds a successful trusted-main full-qualification CI run URL for the exact source SHA.",
+      "status": "missing",
+      "why": "No release manifest or trusted-main full run is recorded for the beta tag.",
+      "validator": "scripts/release/manifest.py::verified"
+    },
+    {
+      "id": "formal-service-digests",
+      "requirement": "Every service image is pinned by ghcr.io digest plus config image_id, and the set equals the full service set.",
+      "status": "missing",
+      "why": "No all-service digest set is recorded in-repo for v0.9.0-beta.",
+      "validator": "scripts/release/manifest.py::validate"
+    },
+    {
+      "id": "formal-actual-composition",
+      "requirement": "Manifest records the actual deployed composition (which services are new builds versus retained digests), not just the full set.",
+      "status": "missing",
+      "why": "No composition/deployment record exists for the beta tag.",
+      "validator": "docs/operations/image-release.md + scripts/release/manifest.py overlay/promote"
+    },
+    {
+      "id": "formal-migration-classification",
+      "requirement": "Migration classification is one of none/forward-compatible/operator-required with a reviewed decision.",
+      "status": "missing",
+      "why": "No migration classification is bound to v0.9.0-beta.",
+      "validator": "scripts/release/manifest.py::validate"
+    },
+    {
+      "id": "formal-sbom",
+      "requirement": "Each service has an SPDX SBOM with a bound sha256.",
+      "status": "missing",
+      "why": "No SBOM set is recorded in-repo for the beta tag.",
+      "validator": "scripts/release/manifest.py::validate"
+    },
+    {
+      "id": "formal-backup",
+      "requirement": "Backup receipt and readable checksum exist (schema/format changes only).",
+      "status": "missing",
+      "why": "No formal release backup receipt is bound to v0.9.0-beta.",
+      "validator": "docs/DEVELOPMENT_WORKFLOW.md §常规升级"
+    },
+    {
+      "id": "formal-rollback",
+      "requirement": "Rollback version (previous digests and configuration) is retained and recorded.",
+      "status": "missing",
+      "why": "No rollback record is bound to v0.9.0-beta.",
+      "validator": "scripts/release/images.py + docs/operations/image-release.md"
+    },
+    {
+      "id": "formal-independent-acceptance",
+      "requirement": "Independent release acceptance on the actual composition (real Product API/business journeys), not health checks alone.",
+      "status": "missing",
+      "why": "No independent acceptance record is bound to v0.9.0-beta; historical F6/health checks are explicitly not substitutes.",
+      "validator": "docs/roadmap/V1_RELEASE_ACCEPTANCE.md"
+    },
+    {
+      "id": "formal-attestation",
+      "requirement": "Manifest is attested by the trusted release workflow and verifiable with signer-workflow/source-ref/source-digest.",
+      "status": "missing",
+      "why": "No attested release manifest exists for v0.9.0-beta.",
+      "validator": "scripts/release/manifest.py::verified"
+    }
+  ],
+  "x09_requirements": [
+    {
+      "id": "x09-F2",
+      "requirement": "完整 F2 unknown-result reconciliation across write interfaces.",
+      "status": "open",
+      "ledger_ref": "F2",
+      "exit_criteria": "A current, on-base-commit reconciliation record covering every named write interface, not only the three research creation families."
+    },
+    {
+      "id": "x09-full-interface-audit",
+      "requirement": "剩余全接口审计(逐接口最新结论).",
+      "status": "open",
+      "ledger_ref": "full-interface-audit",
+      "exit_criteria": "scripts/ci/check-reliability-review.py reports complete=true on the candidate base commit (reviewed==discovered, no drift, no manual_pending)."
+    },
+    {
+      "id": "x09-composite-fault-regression",
+      "requirement": "复合研究故障回归.",
+      "status": "open",
+      "ledger_ref": "composite-research-fault-regression",
+      "exit_criteria": "Committed composite journey evidence (improve strategy → approval → training → prediction → backtest → comparison) under the R1-R5 fault matrix, on real Product API/PostgreSQL/Worker."
+    }
+  ],
+  "dsh_0_1_5_rc1_closeout_slices": [
+    {
+      "id": "slice-1-subagent-child-crash",
+      "blocker": "subagent-child-crash",
+      "title": "Independent out-of-process continuable child crash",
+      "owner_node": "d15-4-child-provider-remediation",
+      "implementation_owner": "D15 remediation / candidate-qualification slice D15-4 (evidence-only native harness, or the isolated runtime-adapter stack with a real DSH child process). NOT owned by post-GO R6. If 0.1.5-rc.1 has no independent-process continuable provider, this is an EXTERNAL BLOCKER: an upstream out-of-process provider implementing prepareContinuable must land and be qualified first, or the maintainer must choose a gate-order adjustment (see gate_order_options).",
+      "external_blocker": {
+        "is_external": true,
+        "provider": "out-of-process DSH continuable provider implementing SubagentProvider.prepareContinuable",
+        "available_in_0_1_5_rc1": false,
+        "consequence": "Until an independent-process provider is qualified, subagent-child-crash cannot PASS and D15-G stays NO_GO. This must NOT be hidden by assigning the blocker to a post-gate R-series phase.",
+        "resolution_options": [
+          "upstream provider qualification",
+          "maintainer gate-order adjustment / gate split"
+        ]
+      },
+      "reproduction": {
+        "current_state": "BLOCKED",
+        "steps": "The composed native spawn provider runs children in-process; a child-only SIGKILL while the parent executor stays alive is not reachable. The owning-process SIGKILL is not a substitute.",
+        "evidence": [
+          "docs/evidence/d15/d15-4/verdict.v2.json",
+          "docs/evidence/d15/d15-4/routing.v1.json",
+          "docs/evidence/d15/d15-4/scenarios/child-crash.v2.json"
+        ]
+      },
+      "acceptance_criteria": [
+        "A real independently killable child process exists and is SIGKILLed while the parent executor stays alive.",
+        "The parent observes a truthful failed settlement for that child, retains the durable child id and can natively resume or explicitly mark loss.",
+        "Measured exactly-once settlement and no orphan process/session after cleanup."
+      ],
+      "failure_closure_criteria": [
+        "If no out-of-process continuable provider can be qualified, the blocker stays BLOCKED; it may not be deleted or downgraded to optional.",
+        "Any PASS requires a real child PID death and a real parent observation, not a simulated or reasoned result."
+      ],
+      "depends_on": [
+        "adr-0082-decision",
+        "d15-4-child-provider-remediation (external blocker if no out-of-process provider exists)"
+      ],
+      "candidate_only": true,
+      "production_effect": "none"
+    },
+    {
+      "id": "slice-2-subagent-byq-adapter-restart",
+      "blocker": "subagent-byq-adapter-restart",
+      "title": "BYQ adapter restart rebinds a persisted continuable child",
+      "owner_node": "d15-4-candidate-composition-hookup",
+      "implementation_owner": "D15 remediation / candidate-qualification slice D15-4 candidate composition hookup under ADR-0082: the candidate profile plus a BYQ child-resume/rebind surface. NOT owned by post-GO R6. Requires an accepted ADR-0082 option (candidate-specific, reversible).",
+      "reproduction": {
+        "current_state": "BLOCKED",
+        "steps": "Generation A returns a continuable child and persists it. A fresh adapter exposes only root resume_session; the byte-identical 0.1.2 Python SDK has no child operation; no committed BYQ surface rebinds the child.",
+        "evidence": [
+          "docs/evidence/d15/d15-4/continuable/verdict.v1.json",
+          "docs/evidence/d15/d15-4/continuable/continuable-adapter-restart.v1.json",
+          "docs/evidence/d15/d15-4/continuable/scenarios/byq-compose-adapter-restart.v1.json"
+        ]
+      },
+      "acceptance_criteria": [
+        "After an adapter restart a fresh adapter rebinds the exact persisted continuable child and delivers messages to it.",
+        "Exactly-once settlement, original-goal linkage, BYQ-owned child-id persistence, epoch/generation fencing and orphan cleanup are all measured.",
+        "The child is never re-created as a new unrelated child and no second session store is introduced."
+      ],
+      "failure_closure_criteria": [
+        "Without an accepted ADR-0082 option the blocker stays BLOCKED.",
+        "A stale-epoch or wrong-owner rebind must fail closed and be recorded, never fabricated."
+      ],
+      "depends_on": [
+        "adr-0082-decision",
+        "d15-4-child-provider-remediation (when option 1 is required) OR d15-4-candidate-composition-hookup"
+      ],
+      "candidate_only": true,
+      "production_effect": "none"
+    },
+    {
+      "id": "slice-3-terminal-adapter-restart",
+      "blocker": "terminal-adapter-restart",
+      "title": "BYQ TerminalAttachment survives an adapter restart",
+      "owner_node": "d15-5-candidate-attachment-layer",
+      "implementation_owner": "D15 remediation / candidate-qualification slice D15-5 candidate attachment layer under ADR-0083 (candidate-specific, reversible, evidence-only). R4 later productizes the attachment surface; the blocker is NOT owned by post-GO R4.",
+      "reproduction": {
+        "current_state": "BLOCKED",
+        "steps": "An adapter abort kills the DSH runtime. Native terminal sessions are process-local and the committed BYQ tree persists no TerminalAttachment, so a fresh adapter rejects the old attachment (real rejection evidence, no fabricated reattach).",
+        "evidence": [
+          "docs/evidence/d15/d15-5/verdict.v1.json",
+          "docs/evidence/d15/d15-5/interface-probe.v1.json",
+          "docs/evidence/d15/d15-5/scenarios/adapter-restart.v1.json"
+        ]
+      },
+      "acceptance_criteria": [
+        "A BYQ-owned durable TerminalAttachment record (BYQ-minted id, owner principal, generation, executor epoch) is persisted and authorized by BYQ, not by DSH.",
+        "After an adapter restart the same attachment is rebound when native state survives, otherwise the status is truthfully lost/interrupted, never reattached.",
+        "Foreign-session and unauthorized-principal access are rejected; stale generation/epoch is fenced; cleanup leaves no orphan PTY.",
+        "Browser reaches the surface only through Gateway/Product API; no raw PTY handle or DSH event is projected."
+      ],
+      "failure_closure_criteria": [
+        "Without an accepted ADR-0083 the blocker stays BLOCKED.",
+        "Any 'reattached' result must bind a real attachment/session/pid; otherwise it must be lost/interrupted."
+      ],
+      "depends_on": [
+        "adr-0083-decision",
+        "d15-5-candidate-attachment-layer"
+      ],
+      "candidate_only": true,
+      "production_effect": "none"
+    },
+    {
+      "id": "slice-4-terminal-dsh-runtime-restart",
+      "blocker": "terminal-dsh-runtime-restart",
+      "title": "Truthful terminal loss across a DSH runtime restart",
+      "owner_node": "d15-5-candidate-attachment-layer",
+      "implementation_owner": "D15 remediation / candidate-qualification slice D15-5 candidate attachment layer under ADR-0083 (candidate-specific, reversible, evidence-only). R4 later productizes the attachment surface; the blocker is NOT owned by post-GO R4.",
+      "reproduction": {
+        "current_state": "BLOCKED",
+        "steps": "A restarted DSH runtime is a new process and native terminal sessions do not survive it; no BYQ reconnect surface exists, so the old attachment must be reported lost.",
+        "evidence": [
+          "docs/evidence/d15/d15-5/verdict.v1.json",
+          "docs/evidence/d15/d15-5/scenarios/dsh-runtime-restart.v1.json"
+        ]
+      },
+      "acceptance_criteria": [
+        "The BYQ attachment layer records the transition to lost/interrupted and never claims reattach when the native runtime state is gone.",
+        "Orphan detection reconciles a surviving PTY with no attachment as lost, never silently reused.",
+        "Lifetime of the terminal never defines conversation or durable-job lifetime."
+      ],
+      "failure_closure_criteria": [
+        "Without an accepted ADR-0083 the blocker stays BLOCKED.",
+        "A fabricated reattach fails the fail-able observer and the verdict must be non-zero."
+      ],
+      "depends_on": [
+        "adr-0083-decision",
+        "d15-5-candidate-attachment-layer"
+      ],
+      "candidate_only": true,
+      "production_effect": "none"
+    },
+    {
+      "id": "slice-5-d15-g-rerun",
+      "blocker": null,
+      "title": "D15-G re-run after all four atomic blockers resolve",
+      "implementation_owner": "Architecture Go/No-Go observer (scripts/d15/go_no_go/)",
+      "acceptance_criteria": [
+        "All required atomic capabilities derive PASS from committed evidence; aggregates derive from their atomic members; optional host-reboot stays a limitation.",
+        "The verdict is GO only when no required atomic capability is non-PASS.",
+        "GO does not switch the production selector; the production default decision is separate."
+      ],
+      "failure_closure_criteria": [
+        "Any required atomic non-PASS forces NO_GO and must name an actionable blocker.",
+        "Partial-PASS aggregation into GO must be rejected by the observer."
+      ],
+      "depends_on": [
+        "slice-1",
+        "slice-2",
+        "slice-3",
+        "slice-4"
+      ],
+      "gating": "D15-G"
+    },
+    {
+      "id": "slice-6-r3-thin-supervisor",
+      "blocker": null,
+      "title": "R3 Thin Runtime Supervisor",
+      "implementation_owner": "Runtime Continuity R3",
+      "acceptance_criteria": [
+        "Only RuntimeGeneration health, executor epoch/fencing, native attach/resume, native-resume fallback, lifecycle observation and resource cleanup.",
+        "Not a conversation store, DSH session-store substitute, subagent persistence or PTY runtime."
+      ],
+      "depends_on": [
+        "slice-5 GO"
+      ],
+      "stop_condition": "Stop at Draft PR; no production selector switch."
+    },
+    {
+      "id": "slice-7-r4-terminal-attachment",
+      "blocker": null,
+      "title": "R4 TerminalAttachment productization",
+      "implementation_owner": "Runtime Continuity R4",
+      "acceptance_criteria": [
+        "Attachment lifecycle, not a terminal runtime; BYQ owns identity/state/auth/reconnect."
+      ],
+      "depends_on": [
+        "slice-6"
+      ],
+      "stop_condition": "Stop at Draft PR; no production selector switch."
+    },
+    {
+      "id": "slice-8-r5-durable-job-independence",
+      "blocker": null,
+      "title": "R5 DurableJob independence",
+      "implementation_owner": "Runtime Continuity R5",
+      "acceptance_criteria": [
+        "DurableJob does not depend on Browser/Frontend/AgentSession/RuntimeGeneration/DSH process/TerminalAttachment."
+      ],
+      "depends_on": [
+        "slice-7"
+      ],
+      "stop_condition": "Stop at Draft PR."
+    },
+    {
+      "id": "slice-9-r6-full-runtime-continuity",
+      "blocker": null,
+      "title": "R6 Full Runtime Continuity Qualification",
+      "implementation_owner": "Runtime Continuity R6",
+      "acceptance_criteria": [
+        "Full continuity qualification over the reordered roadmap; completion does not imply a production cutover."
+      ],
+      "depends_on": [
+        "slice-8"
+      ],
+      "stop_condition": "Stop at Draft PR."
+    },
+    {
+      "id": "slice-10-independent-production-go-no-go",
+      "blocker": null,
+      "title": "Independent Production Go/No-Go",
+      "implementation_owner": "Maintainer decision (separate from development authorization)",
+      "acceptance_criteria": [
+        "Explicit maintainer decision on switching the production default to a qualified DSH release.",
+        "'Compatible with 0.1.5-rc.1' and 'production default = 0.1.5-rc.1' remain independent decisions."
+      ],
+      "depends_on": [
+        "slice-9"
+      ],
+      "stop_condition": "Requires explicit maintainer decision; never automatic."
+    }
+  ],
+  "adr_sufficiency": {
+    "ADR-0082": {
+      "status": "Proposed, not accepted, not implemented",
+      "sufficient_to_resolve_blockers": false,
+      "findings": [
+        "ADR-0082 is a decision gate that lists two options but does not by itself resolve either subagent blocker.",
+        "child-crash cannot be resolved by option 2 (in-process children); it requires option 1, an upstream out-of-process continuable provider that 0.1.5-rc.1 does not ship.",
+        "Option 2 requires a BYQ child-resume bridge; the ADR names exactly-once settlement, original-goal linkage, orphan cleanup and an epoch fence but does not define tenant/owner scoping, the authorization model, the idempotency/at-most-once contract, the fencing-token format, crash reconciliation, rollback or a testable acceptance matrix.",
+        "The ADR does not state whether acceptance authorizes a candidate-specific evidence-only implementation sufficient to re-run D15-G, which the D15-G gate requires before R3."
+      ],
+      "required_revisions": [
+        "Declare which option is chosen and its feasibility owner/timeline; if option 1 is required for child-crash, state that the blocker cannot be resolved until an out-of-process continuable provider is qualified.",
+        "For option 2, add tenant/workspace scoping, authorization matrix, at-most-once settlement contract, epoch/generation fencing token, crash/orphan reconciliation, rollback and acceptance criteria.",
+        "State explicitly that acceptance authorizes only a candidate-specific, reversible qualification path to re-run D15-G, not a production default switch.",
+        "Resolve the circular ownership: the D15-G blockers must be owned by pre-gate D15 candidate-qualification slices, not by post-GO R6. If child-crash remains an external blocker, record it as such and add a maintainer gate-order option (keep / split / reorder / reclassify) instead of claiming a strictly serial executable order."
+      ],
+      "gate_order_dependency": "d15-4-child-provider-remediation -> d15-4-candidate-composition-hookup -> d15-g-rerun; no post-gate R-series owner."
+    },
+    "ADR-0083": {
+      "status": "Proposed, not accepted, not implemented",
+      "sufficient_to_resolve_blockers": false,
+      "findings": [
+        "ADR-0083 correctly fixes BYQ-owned attachment identity/state/auth/reconnect and DSH-owned PTY/shell/I/O, and requires lost/interrupted instead of fabricated reattach.",
+        "It defers durable-attachment persistence to 'a separate named decision' while the blockers (adapter restart, DSH runtime restart) require exactly that persistence to be qualified.",
+        "It does not define the tenant/workspace authorization matrix, at-most-once unique attachment creation/attach, the fencing-token format, orphan GC, rollback, or the migration path for the new attachment state.",
+        "It does not resolve the sequence tension: the terminal blockers gate D15-G before R3, while productization belongs to R4 after R3."
+      ],
+      "required_revisions": [
+        "Name the persistence store decision (or explicitly authorize a candidate-specific evidence-only store for D15-G) without introducing a second session store.",
+        "Add tenant/workspace authorization matrix, idempotent unique attach, epoch/generation fencing token semantics, orphan GC and rollback.",
+        "Define the candidate-specific evidence path that lets D15-G pass terminal-adapter-restart / dsh-runtime-restart before R4 productionization.",
+        "State that the terminal attachment layer needed by D15-G is a pre-gate D15-5 candidate-qualification slice, with R4 only productizing it after D15-G GO; do not assign the blocker to post-gate R4."
+      ],
+      "gate_order_dependency": "d15-5-candidate-attachment-layer -> d15-g-rerun -> r4-terminal-attachment (productization only)."
+    }
+  },
+  "serial_order": [
+    "0.9 closeout audit (this batch: fact audit + plan/STATUS revision + matrix + audit tests)",
+    "full-interface re-baseline to complete=true on the candidate base commit",
+    "composite research fault regression",
+    "ADR-0082 maintainer decision (accept/modify/reject)",
+    "ADR-0083 maintainer decision (accept/modify/reject)",
+    "d15-4-child-provider-remediation (B1; external blocker if no out-of-process provider)",
+    "d15-4-candidate-composition-hookup (B2)",
+    "d15-5-candidate-attachment-layer (B3/B4)",
+    "D15-G re-run (GO/NO_GO)",
+    "R3 thin supervisor",
+    "R4 TerminalAttachment productization",
+    "R5 DurableJob independence",
+    "R6 full runtime continuity qualification",
+    "independent production Go/No-Go (maintainer decision)"
+  ],
+  "concurrency": "strictly serial for slices 1-5; slices 1-2 share ADR-0082 and slices 3-4 share ADR-0083, but within each pair the child/attachment boundary and its persistence must be made coherent before D15-G can be re-run.",
+  "stop_conditions": [
+    "Every slice: one isolated worktree/branch/Draft PR; stop at Draft; no push to main; human merge gate.",
+    "No production selector switch, no deployment, no tag/release, no accepted-ADR change without an explicit maintainer decision.",
+    "No blocker may be deleted or downgraded to optional to obtain a GO.",
+    "No historical evidence, immutable manifest or old tag may be modified."
+  ],
+  "not_authorized_this_batch": [
+    "Implementing Proposed ADR-0082 or ADR-0083",
+    "Switching the production DSH selector/default",
+    "Any deployment",
+    "Creating or moving any tag/release"
+  ],
+  "constraints": {
+    "r3_resume": "NO",
+    "production_selector": "dsh-0.1.2rc1",
+    "production_default_unchanged": true,
+    "deployment": "none",
+    "release_or_tag_created": false
+  },
+  "deferred_to_0_10": [
+    {
+      "id": "x010-S3",
+      "ledger_ref": "S3",
+      "requirement": "S3 / historical constituent preparation",
+      "status": "open",
+      "track": "0.10.0 / frozen Phase 100",
+      "resolution": "Tushare P100-C (index_classify/index_member_all) and P100-D (ths_index/ths_member) point-in-time evidence; NO Community exemption and NO current-relation backfill.",
+      "not_a_0_9_gate": true
+    }
+  ],
+  "deferred_to_0_10_note": "S3 belongs to the 0.10.0 gate. It is removed from the 0.9 strict order and does not gate or precede the 0.9 closeout.",
+  "x010_requirements": [
+    {
+      "id": "x010-S3",
+      "ledger_ref": "S3",
+      "requirement": "S3 / historical constituent preparation",
+      "status": "open",
+      "track": "0.10.0 / frozen Phase 100",
+      "resolution": "Tushare P100-C (index_classify/index_member_all) and P100-D (ths_index/ths_member) point-in-time evidence; NO Community exemption and NO current-relation backfill.",
+      "not_a_0_9_gate": true
+    }
+  ],
+  "dag": {
+    "gate": "d15-g-rerun",
+    "owner_rule": "Every D15-G atomic blocker owner node MUST be a pre-gate D15 candidate-qualification node. Post-gate R-series nodes (r3/r4/r5/r6) may NOT own a blocker.",
+    "nodes": [
+      {
+        "id": "v090-audit",
+        "phase": "0.9 audit",
+        "after_gate": false,
+        "depends_on": []
+      },
+      {
+        "id": "x09-full-interface-rebaseline",
+        "phase": "0.9.x",
+        "after_gate": false,
+        "depends_on": [
+          "v090-audit"
+        ]
+      },
+      {
+        "id": "x09-composite-fault-regression",
+        "phase": "0.9.x",
+        "after_gate": false,
+        "depends_on": [
+          "v090-audit"
+        ]
+      },
+      {
+        "id": "adr-0082-decision",
+        "phase": "0.9.x decision",
+        "after_gate": false,
+        "depends_on": [
+          "v090-audit"
+        ]
+      },
+      {
+        "id": "adr-0083-decision",
+        "phase": "0.9.x decision",
+        "after_gate": false,
+        "depends_on": [
+          "v090-audit"
+        ]
+      },
+      {
+        "id": "d15-4-child-provider-remediation",
+        "phase": "D15 remediation (pre-gate)",
+        "after_gate": false,
+        "depends_on": [
+          "adr-0082-decision"
+        ],
+        "external_blocker": true
+      },
+      {
+        "id": "d15-4-candidate-composition-hookup",
+        "phase": "D15 remediation (pre-gate)",
+        "after_gate": false,
+        "depends_on": [
+          "adr-0082-decision"
+        ]
+      },
+      {
+        "id": "d15-5-candidate-attachment-layer",
+        "phase": "D15 remediation (pre-gate)",
+        "after_gate": false,
+        "depends_on": [
+          "adr-0083-decision"
+        ]
+      },
+      {
+        "id": "d15-g-rerun",
+        "phase": "D15 gate",
+        "after_gate": false,
+        "gate": true,
+        "depends_on": [
+          "d15-4-child-provider-remediation",
+          "d15-4-candidate-composition-hookup",
+          "d15-5-candidate-attachment-layer"
+        ]
+      },
+      {
+        "id": "r3-thin-supervisor",
+        "phase": "R-series post-gate",
+        "after_gate": true,
+        "depends_on": [
+          "d15-g-rerun"
+        ]
+      },
+      {
+        "id": "r4-terminal-attachment",
+        "phase": "R-series post-gate",
+        "after_gate": true,
+        "depends_on": [
+          "r3-thin-supervisor"
+        ]
+      },
+      {
+        "id": "r5-durable-job-independence",
+        "phase": "R-series post-gate",
+        "after_gate": true,
+        "depends_on": [
+          "r4-terminal-attachment"
+        ]
+      },
+      {
+        "id": "r6-full-runtime-continuity",
+        "phase": "R-series post-gate",
+        "after_gate": true,
+        "depends_on": [
+          "r5-durable-job-independence"
+        ]
+      },
+      {
+        "id": "production-go-no-go",
+        "phase": "post-R6",
+        "after_gate": true,
+        "depends_on": [
+          "r6-full-runtime-continuity"
+        ]
+      }
+    ]
+  },
+  "maintainer_gate_order_options": [
+    {
+      "id": "G-keep",
+      "title": "Keep the strict D15-G gate",
+      "detail": "Honest but non-executable while d15-4-child-provider-remediation is an external blocker: D15-G stays NO_GO and R3..R6 do not start.",
+      "requires": "an upstream out-of-process continuable provider"
+    },
+    {
+      "id": "G-split",
+      "title": "Split the D15-G gate",
+      "detail": "Separate a runtime/session/subagent-adapter gate from a terminal gate (or separate required-atomic from external-dependency items) so an unresolvable external item does not deadlock unrelated terminal continuity.",
+      "requires": "maintainer decision; ADR-0081 / D15 contract revision"
+    },
+    {
+      "id": "G-reorder",
+      "title": "Reorder / phase the blockers",
+      "detail": "Qualify the terminal attachment layer (B3/B4) and B2 first; schedule B1 after an upstream provider exists, without letting B1 deadlock the whole closeout.",
+      "requires": "maintainer decision"
+    },
+    {
+      "id": "G-reclassify",
+      "title": "Reclassify child-crash as an optional limitation",
+      "detail": "Only via an accepted ADR revision; not permitted by this audit and not a silent downgrade.",
+      "requires": "explicit maintainer Accepted ADR revision"
+    }
+  ]
+}

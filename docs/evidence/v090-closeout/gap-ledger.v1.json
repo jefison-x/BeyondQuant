@@ -1,0 +1,229 @@
+{
+  "schema_version": "byq-v090-closeout-gap-ledger.v1",
+  "generated_at": "2026-09-20",
+  "scope": "Fact audit of the historical Post-U8 / D15 evidence sets against the VERSION_PLAN 0.9.0 and 0.9.x completion gates. Every status is derived from the latest committed business evidence, not from historical document PASS labels or CI colors. Statuses are read at the frozen base commit below.",
+  "base": {
+    "repository": "jefison-x/BeyondQuant",
+    "origin_main_commit": "80fb9f809a6b796b7e98df23c19640286612a740",
+    "origin_main_subject": "feat(data): P100-B Tushare index_dailybasic contract, storage, incremental sync and readiness (#337)",
+    "product_phase_marker": 97,
+    "phase_source_of_truth": "docs/roadmap/STATUS.md"
+  },
+  "status_vocabulary": ["covered", "superseded", "open", "blocked"],
+  "status_definitions": {
+    "covered": "The latest committed business evidence on the base commit satisfies the item as scoped.",
+    "superseded": "The item was intentionally ended/redirected and replaced by a later named boundary; it is not a pass.",
+    "open": "A latest conclusion exists but is not current on the base commit, or a named closure slice is still missing.",
+    "blocked": "A required external input or prerequisite is unavailable; no substitute may be fabricated."
+  },
+  "version_plan_gates": [
+    {
+      "id": "0.9.0",
+      "deliverable": "为现有 Beta 建立统一产品版本和已知限制基线",
+      "gate": "发布清单绑定源码、镜像和实际服务组合，完成独立发布验收",
+      "status": "open",
+      "reason": "The historical v0.9.0-beta Git tag is a pre-release marker only; no formal byq-release.v1 manifest binding source SHA, all-service digests, actual composition, migration, backup, rollback and independent acceptance exists on the base commit.",
+      "evidence": ["docs/evidence/v090-closeout/BETA-VS-FORMAL-0.9.0.md"],
+      "existing_release_tag": "v0.9.0-beta"
+    },
+    {
+      "id": "0.9.x",
+      "deliverable": "完整 F2、剩余全接口审计、复合研究故障回归",
+      "gate": "Post-U8 各项有最新结论；不把 F6 完成或健康检查等同整体关闭",
+      "status": "open",
+      "reason": "The interface-level reconciliation ledger is not current on the base commit (complete=false), the composite research fault regression has no committed execution evidence, and D15 retains four atomic blockers. Named child slices are covered where cited. S3 / historical constituent preparation is a 0.10.0 deliverable and does NOT gate 0.9.",
+      "evidence": [
+        "docs/evidence/v090-closeout/gap-ledger.v1.json",
+        "docs/evidence/research-handoff-h4/INTERFACE-REVIEW.json",
+        "docs/evidence/d15/d15-g/verdict.v1.json"
+      ]
+    },
+    {
+      "id": "0.10.0",
+      "deliverable": "S3、历史成分准备、可版本化特征与时点数据基础",
+      "gate": "真实数据基准可复现；同时完成 HIST 数据可行性及深度学习环境资格调查",
+      "status": "open",
+      "reason": "S3 / historical constituent preparation was moved here from the Post-U8 backlog. Frozen Phase 100 (PAUSED) is the resolution track; HIST remains blocked. This gate does NOT gate the 0.9 closeout and must not precede it.",
+      "evidence": [
+        "docs/roadmap/V1_DATA_BASELINE_CONTRACT.md",
+        "docs/roadmap/V1_HIST_DATA_QUALIFICATION.md",
+        "docs/roadmap/VERSION_PLAN.md"
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "F2",
+      "title": "持久的未知结果核对（write unknown-result reconciliation）",
+      "status": "open",
+      "reason": "The named F2 child slices are covered, but there is no current on-base-commit closure of complete F2. The H4 whole-interface ledger that carried the completion claim now reports complete=false on the base commit.",
+      "latest_conclusion": "Named F2 slices verified at their own commits; the whole-F2 completion claim is stale on the base commit.",
+      "evidence": [
+        "docs/evidence/post-u8-f2-research-watch/AUDIT.md",
+        "docs/evidence/post-u8-interface-audit/AUDIT.md",
+        "docs/evidence/research-handoff-h4/ASSET-IMPORT-IDEMPOTENCY.md",
+        "docs/evidence/research-handoff-h4/CROSS-PROCESS.md"
+      ],
+      "covered_slices": [
+        {
+          "id": "F2-research-creation-watch",
+          "status": "covered",
+          "evidence": "docs/evidence/post-u8-f2-research-watch/AUDIT.md",
+          "note": "Three MCP research creation families: durable original-request receipt watch, real PostgreSQL restart probe, 30/30 immutable qualification and real Product API desktop/mobile journeys."
+        },
+        {
+          "id": "F2-publisher-pagination",
+          "status": "covered",
+          "evidence": "docs/evidence/post-u8-interface-audit/AUDIT.md",
+          "note": "F2-PUB-01 local verified: bounded page scan replaces first-page-only republish. Synthetic failure-path evidence only; not a production duplicate-Issue finding."
+        }
+      ],
+      "open_reason_evidence": [
+        "scripts/ci/check-reliability-review.py",
+        "docs/evidence/research-handoff-h4/INTEGRATION.md"
+      ]
+    },
+    {
+      "id": "S3",
+      "title": "历史指数成分准备与准确说明",
+      "status": "superseded",
+      "release_version": "0.10.0",
+      "gates_0_9_closeout": false,
+      "historical_status": "blocked",
+      "superseded_to": "0.10.0 data baseline track (frozen Phase 100): resolve with Tushare P100-C/P100-D point-in-time evidence",
+      "reason": "S3 / historical constituent preparation is a 0.10.0 deliverable, not a 0.9.x gate. The historical Post-U8 investigation is blocked on a real read-only source, but under ADR-0068 a missing Community source is NOT a development blocker (AGENTS rule 21) and a Community exemption is not required. It must not gate or precede the 0.9 closeout.",
+      "latest_conclusion": "Historical Post-U8 S3 fact: isolated synthetic slices pass; real history still lacks a validated source. Transferred to the frozen 0.10 Phase 100 and removed from the 0.9 gate.",
+      "evidence": [
+        "docs/evidence/post-u8-r1/S3-HISTORICAL-PREPARATION.md",
+        "docs/evidence/research-handoff-h5/INDEX-PREPARATION.md",
+        "docs/roadmap/V1_HIST_DATA_QUALIFICATION.md",
+        "docs/evidence/phase-99/QUALIFICATION-EXECUTION.md"
+      ],
+      "does_not_prove": "Any claim that five-year-ago constituents are available, or that a single static snapshot is a historical constituent series.",
+      "historical_blocker": "No authenticated/validated read-only Community historical constituent export or connection (no longer a 0.9 blocker).",
+      "resolution_path": "Resolve in 0.10 Phase 100 with Tushare P100-C (Shenwan index_classify/index_member_all) and P100-D (THS ths_index/ths_member) point-in-time evidence. Do NOT require a Community exemption and do NOT backfill historical relations with current relations.",
+      "not_a_0_9_blocker": true
+    },
+    {
+      "id": "full-interface-audit",
+      "title": "剩余全接口审计（H4 逐接口台账）",
+      "status": "open",
+      "reason": "At its own commit the H4 ledger reported reviewed=560, verified=560, complete=true. On the base commit scripts/ci/check-reliability-review.py reports complete=false with unreviewed=6 and many source-drift errors across Backend/Gateway/MCP/Worker entries, so the audit is not current.",
+      "latest_conclusion": "Interface ledger complete only at its historical commit; source drift makes it non-current on the base commit.",
+      "evidence": [
+        "docs/evidence/research-handoff-h4/INTERFACE-REVIEW.json",
+        "docs/evidence/research-handoff-h4/CURRENT-INVENTORY.json",
+        "docs/evidence/research-handoff-h4/ASSET-IMPORT-IDEMPOTENCY.md",
+        "docs/evidence/research-handoff-h4/INTEGRATION.md",
+        "scripts/ci/check-reliability-review.py"
+      ],
+      "observed_on_base_commit": {
+        "tool": "python3 scripts/ci/check-reliability-review.py",
+        "discovered": 566,
+        "reviewed": 560,
+        "verified": 560,
+        "unreviewed": 6,
+        "complete": false,
+        "error_kind": "source drift",
+        "note": "The tool exits 0 without --require-complete; it is a read-only reporter, not a CI pass. The drift is the evidence that the ledger must be re-baselined before it can support a 0.9.x closure claim."
+      }
+    },
+    {
+      "id": "composite-research-fault-regression",
+      "title": "复合研究故障回归（改进策略 → 审批 → 训练 → 预测 → 回测 → 新旧比较，含故障注入）",
+      "status": "open",
+      "reason": "H5 executed a real three-round backtest and report selection on an isolated stack, but the full composite journey and the R1-R5 fault matrix (disconnect/timeout/cancel/worker-kill/service-restart/late-result) have no committed execution evidence.",
+      "latest_conclusion": "End-to-end three-round research is covered; the composite fault regression is not.",
+      "evidence": [
+        "docs/roadmap/POST_U8_AGENT_RELIABILITY_REMEDIATION.md",
+        "docs/evidence/research-handoff-h5/LIVE-RESEARCH.md",
+        "docs/evidence/research-handoff-h5/COMPLETE-RESEARCH-CONTRACT.md"
+      ],
+      "covered_portion": {
+        "id": "H5-live-three-round-research",
+        "status": "covered",
+        "evidence": "docs/evidence/research-handoff-h5/LIVE-RESEARCH.md",
+        "note": "Real paid model, isolated stack, three same-task backtests (+3.35%/+1.26%/0%), validated report, selected best, bound paper account; verify_completion passed on real persisted objects."
+      },
+      "missing": [
+        "Composite improve-strategy → approval → training → prediction → backtest → comparison journey under injected faults.",
+        "The R1-R5 deterministic fault matrix (60/180/600/900 clocks, cancel/timeout/late-result at-most-once, stale-active closure)."
+      ]
+    },
+    {
+      "id": "H1-H5",
+      "title": "研究流程连续性整改 H1–H5",
+      "status": "covered",
+      "reason": "H1-H3 and H5 have committed business evidence on the base commit; H5 completed the real three-round research. The H4 interface-ledger sub-item is tracked separately above as full-interface-audit and is open on the base commit.",
+      "latest_conclusion": "H1–H5 completed; H4 ledger currency is tracked under full-interface-audit.",
+      "evidence": [
+        "docs/roadmap/RESEARCH_HANDOFF_PLAN.md",
+        "docs/evidence/research-handoff-h2/AUDIT.md",
+        "docs/evidence/research-handoff-h3/AUDIT.md",
+        "docs/evidence/research-handoff-h5/LIVE-RESEARCH.md"
+      ],
+      "note": "H1–H5 merged via PR #280; H5 build revision dsh-0.1.2rc1-post-u8.115."
+    },
+    {
+      "id": "U8",
+      "title": "DSH 0.1.2rc1 U8 生产观察与稳定性验收",
+      "status": "superseded",
+      "reason": "U8 was explicitly CLOSED_EARLY_REMEDIATION_REQUIRED by maintainer decision. The 24-hour gate was waived, not passed (78 samples / 4h25m), and semantic acceptance failed. It was replaced by the ADR-0062 Post-U8 reliability boundaries and the R/S/F remediation program.",
+      "latest_conclusion": "U8 is not a stability PASS; it is a documented early close whose failures seeded the Post-U8 remediation.",
+      "evidence": [
+        "docs/evidence/dsh-012rc1/u8/OBSERVATION.md",
+        "docs/roadmap/POST_U8_AGENT_RELIABILITY_REMEDIATION.md",
+        "docs/architecture/adr/ADR-0062-post-u8-reliability-boundaries.md"
+      ],
+      "superseded_by": "ADR-0062 + Post-U8 R1–R5 / S1–S3 / F1–F10 remediation"
+    },
+    {
+      "id": "D15",
+      "title": "DSH 0.1.5-rc.1 原生连续性资格（Runtime Continuity D15）",
+      "status": "open",
+      "reason": "D15-G is an honest NO_GO derived by a fail-able observer: four atomic required capabilities are BLOCKED. D15-2/D15-3/D15-3R/D15-4 partial and D15-5 partial are PASS where stated.",
+      "latest_conclusion": "D15-G NO_GO (NOT-PASS); R3_RESUME=NO; production selector dsh-0.1.2rc1 unchanged.",
+      "evidence": [
+        "docs/evidence/d15/d15-g/verdict.v1.json",
+        "docs/evidence/d15/d15-g/capability-matrix.v1.json",
+        "docs/evidence/d15/d15-g/decision-input.v1.json",
+        "docs/roadmap/DSH_015RC1_UPGRADE_PLAN.md",
+        "docs/evidence/d15/acceptance-matrix.v1.json"
+      ],
+      "sub_stage_results": {
+        "D15-0": "DONE",
+        "D15-1": "isolated build/start/probe DONE",
+        "D15-2": "PASS (format layer)",
+        "D15-3": "PASS (native persistence seam)",
+        "D15-3R": "PASS (scripted keyless service boundary)",
+        "D15-4": "PARTIAL/BLOCKED",
+        "D15-5": "PARTIAL/BLOCKED",
+        "D15-G": "NO_GO"
+      },
+      "atomic_blockers": [
+        "subagent-child-crash",
+        "subagent-byq-adapter-restart",
+        "terminal-adapter-restart",
+        "terminal-dsh-runtime-restart"
+      ]
+    }
+  ],
+  "summary": {
+    "covered": 1,
+    "superseded": 2,
+    "open": 4,
+    "blocked": 0
+  },
+  "deferred_to_0_10": ["S3"],
+  "deferred_to_0_10_note": "S3 / historical constituent preparation belongs to the 0.10.0 gate and is resolved by frozen Phase 100 (Tushare P100-C/P100-D), not by the 0.9 closeout.",
+  "not_gating_0_9_closeout": ["S3"],
+  "constraints": {
+    "r3_resume": "NO",
+    "production_selector": "dsh-0.1.2rc1",
+    "production_default_unchanged": true,
+    "deployment": "none",
+    "adr_0082": "Proposed, not accepted, not implemented",
+    "adr_0083": "Proposed, not accepted, not implemented",
+    "release_or_tag_created": false
+  }
+}

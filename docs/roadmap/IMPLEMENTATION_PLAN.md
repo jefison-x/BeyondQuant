@@ -1207,22 +1207,33 @@ HIST 历史关系可行性调查与深度学习环境资格调查。交付物：
 
 ## Data Center Comprehensiveness（Phase 100）
 
-### Phase 100 — 0.10 data baseline implementation (`IN_PROGRESS`)
+<!-- byq:phase-100-p100-c=paused-not-delivery -->
+<!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->
+
+### Phase 100 — 0.10 data baseline implementation (`PAUSED`)
+
+> 2026-09-20：Phase 100 冻结为 `PAUSED`，当前步骤改为 **0.9 closeout governance & gap ledger
+> audit**（见下方同名小节）。P100-A（#286）与 P100-B（#337，已并入 base）为已完成事实；P100-C
+> 仅在隔离分支 `codex/phase-100c`（Draft PR #338）存在**未审查实现提交**，**paused、not delivered、
+> 未审查、不并入 `main`**，不得从该分支推断业务完成；P100-D/P100-E 冻结。维护者未明确恢复前不得继续任一
+> Phase 100 切片。S3/历史成分准备属 0.10.0，由本 Phase 100 解决（Tushare P100-C/P100-D 时点证据；
+> 不申请 Community 豁免、不用当前关系回填）。
 
 依据 ADR-0074、[V1_DATA_BASELINE_CONTRACT](V1_DATA_BASELINE_CONTRACT.md) 与维护者的 Tushare 6000 分账号，
 在 BYQ Data Plane 内（仅 Tushare，不使用 Community）实现有限、可测、可复现的数据全面性。拆分为可独立验收的切片：
 
-1. **P100-A 基金数据**：`fund_basic`/`fund_nav`/`fund_daily`/`fund_share`/`fund_div`/`fund_adj`/`fund_portfolio`
+1. **P100-A 基金数据**（已完成，#286）：`fund_basic`/`fund_nav`/`fund_daily`/`fund_share`/`fund_div`/`fund_adj`/`fund_portfolio`
    的 provider 合同、存储、readiness 与覆盖审计（ETF 场内 + 场外基金）。
-2. **P100-B 指数每日指标**（已交付，Draft PR）：`index_dailybasic` 的 provider 合同（canonical 指数/日期/单位/
+2. **P100-B 指数每日指标**（已完成，已并入 `main` #337）：`index_dailybasic` 的 provider 合同（canonical 指数/日期/单位/
    provenance）、权威存储与按 `idempotency_key` 去重的增量同步、coverage/readiness 与真实 Tushare 验证证据
    （`docs/evidence/phase-100b/INDEX-DAILYBASIC-VERIFICATION.json`）。计量单位为 Tushare 文档口径（市值/股本为
    元/股并显式记录 units，`index_dailybasic` 与 `daily_basic` 的万元/万股口径不同），不接入分钟/实时/港股/特色数据。
-3. **P100-C 行业关系（申万）**：`index_classify`/`index_member_all` 合同与时点可见性实测；可证则接入，
-   否则登记 blocked。
-4. **P100-D 概念关系（同花顺）**：`ths_index`/`ths_member`；因 `in_date/out_date` 官方“暂无”，
+3. **P100-C 行业关系（申万）**（**paused / not delivered**）：`index_classify`/`index_member_all` 合同与时点可见性实测；
+   仅在隔离分支 `codex/phase-100c`（Draft PR #338）存在**未审查实现提交**，未并入 `main`、未审查，
+   维护者未授权恢复前不得继续；不得据此声明 P100-C 完成。
+4. **P100-D 概念关系（同花顺）**（冻结）：`ths_index`/`ths_member`；因 `in_date/out_date` 官方“暂无”，
    必须先证明历史可见性再接入，否则维持 blocked。
-5. **P100-E Product 呈现**：Data Center 覆盖/质量/就绪的 UI/小巴可见与可操作（不改边界）。
+5. **P100-E Product 呈现**（冻结）：Data Center 覆盖/质量/就绪的 UI/小巴可见与可操作（不改边界）。
 
 每个切片独立 worktree/Draft PR；不得以“接口可调用/单次拉取成功”代替完整覆盖、时点、单位、许可与摘要证据；
 不得支持分钟/实时/港股/特色数据；不改运行能力或生产状态除非另有部署授权。
@@ -1250,6 +1261,47 @@ HIST 历史关系可行性调查与深度学习环境资格调查。交付物：
   禁用/启用动作与状态列同步。不修改既有 `model_command_receipts` 约束，不硬删除任何行。
 
 边界：不外泄密钥、不引入新 SDK、未知 provider/失败闭合；每切片独立 worktree/Draft PR。
+
+## 0.9 Closeout Governance & Gap Ledger Audit (maintenance, 2026-09-20)
+
+This maintenance batch executes the 0.9 closeout fact audit. It does **not** advance a
+Product Phase, does **not** implement Proposed ADR-0082/0083, does **not** switch the
+production selector, does **not** deploy, and does **not** create or move any tag/release.
+It freezes Phase 100 (`PAUSED`) with P100-A/P100-B as completed facts and P100-C paused on
+its isolated branch (unreviewed implementation commits, not delivered). S3 / historical
+constituent preparation is a **0.10.0** deliverable: the historical Post-U8 investigation is
+a `blocked` fact but does **not** gate the 0.9 closeout (ADR-0068/AGENTS rule 21), and it is
+resolved by frozen Phase 100 with Tushare P100-C/P100-D point-in-time evidence (no Community
+exemption, no current-relation backfill).
+
+Deliverables (machine-readable under `docs/evidence/v090-closeout/`):
+
+- Gap ledger mapping F2, S3, the full-interface audit, the composite research fault
+  regression, H1–H5, U8 and D15 to `covered | superseded | open | blocked`, citing the
+  precise evidence path and the base `origin/main` commit. S3 is `superseded → 0.10.0`.
+- Acceptance matrix for the formal 0.9.0 manifest, the remaining 0.9.x gates, the serial
+  DSH 0.1.5-rc.1 closeout slices (per-blocker owner/reproduction/acceptance/failure-closure),
+  the machine-readable `dag`, and the ADR-0082/0083 sufficiency items.
+- Consistency asserted by `tests/test_v090_closeout_governance.py`, including DAG acyclicity
+  and owner-before-gate for every blocker.
+
+0.9 strict order (does **not** start with S3): (1) this audit → Draft; (2) full-interface
+re-baseline to `complete=true`; (3) composite research fault regression; (4) ADR-0082/0083
+maintainer decisions; (5) the D15 pre-gate blocker slices, each owned by a pre-gate D15
+candidate-qualification node (B1 `subagent-child-crash` is an external blocker if no
+out-of-process provider exists); (6) D15-G re-run; (7) R3 → R4 → R5 → R6 → independent
+production Go/No-Go. Every slice stops at a Draft PR; blockers may not be deleted or
+downgraded; "upgrade dependency" is never "switch the production default"; if B1 stays an
+external blocker the maintainer must explicitly choose a gate-order option (keep / split /
+reorder / reclassify).
+
+Build revision: this batch adds `tests/test_v090_closeout_governance.py` (a build input) and
+advances the production runtime build identity `post-u8.174 → post-u8.177` (`.175` is held by
+the paused `codex/phase-100c` branch; the earlier in-branch `.176` revision is retained
+unchanged as a historical build identity after the P1 matrix/route corrections changed the
+same build inputs). Rebuild identity only: no selector, `compose.yml`,
+`deployment.json`, immutable release registry or 0.1.2 artifact/evidence change and no
+deployment.
 
 ## Maintenance — Delist-boundary coverage correction (ADR-0028)（构建修订 `dsh-0.1.2rc1-post-u8.130`，PR #299）
 
