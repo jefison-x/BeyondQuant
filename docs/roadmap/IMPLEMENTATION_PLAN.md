@@ -1214,7 +1214,10 @@ HIST 历史关系可行性调查与深度学习环境资格调查。交付物：
 
 1. **P100-A 基金数据**：`fund_basic`/`fund_nav`/`fund_daily`/`fund_share`/`fund_div`/`fund_adj`/`fund_portfolio`
    的 provider 合同、存储、readiness 与覆盖审计（ETF 场内 + 场外基金）。
-2. **P100-B 指数每日指标**：`index_dailybasic` 合同、存储与 readiness。
+2. **P100-B 指数每日指标**（已交付，Draft PR）：`index_dailybasic` 的 provider 合同（canonical 指数/日期/单位/
+   provenance）、权威存储与按 `idempotency_key` 去重的增量同步、coverage/readiness 与真实 Tushare 验证证据
+   （`docs/evidence/phase-100b/INDEX-DAILYBASIC-VERIFICATION.json`）。计量单位为 Tushare 文档口径（市值/股本为
+   元/股并显式记录 units，`index_dailybasic` 与 `daily_basic` 的万元/万股口径不同），不接入分钟/实时/港股/特色数据。
 3. **P100-C 行业关系（申万）**：`index_classify`/`index_member_all` 合同与时点可见性实测；可证则接入，
    否则登记 blocked。
 4. **P100-D 概念关系（同花顺）**：`ths_index`/`ths_member`；因 `in_date/out_date` 官方“暂无”，

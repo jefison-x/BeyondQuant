@@ -1,0 +1,294 @@
+{
+  "calendar": {
+    "end_date": "20260918",
+    "open_count": 35,
+    "request_fingerprint": "1d99fa72618369c4111a1aaf3d6d62715204733acfddfe5a946a6d2fd5c9eb76",
+    "row_count": 49,
+    "start_date": "20260801"
+  },
+  "endpoint": "index_dailybasic",
+  "generated_at": "2026-09-20T13:56:44.761249+00:00",
+  "index_daily_basic_provider_calls": 6,
+  "isolated_database": true,
+  "per_index_sync": {
+    "000016.SH": {
+      "created": true,
+      "effective_start_date": "20260801",
+      "idempotency_key_reused_returns_same_job": true,
+      "job_id": "indexsync_c003a7931fc64f0898061a409fd741e6",
+      "rows_inserted": 35,
+      "rows_kept": 0,
+      "rows_received": 35,
+      "status": "completed",
+      "terminal_rerun_rows_inserted": 35,
+      "terminal_rerun_status": "completed"
+    },
+    "000300.SH": {
+      "created": true,
+      "effective_start_date": "20260801",
+      "idempotency_key_reused_returns_same_job": true,
+      "job_id": "indexsync_16f77e9b72b34353a97efe43e48fedd2",
+      "rows_inserted": 35,
+      "rows_kept": 0,
+      "rows_received": 35,
+      "status": "completed",
+      "terminal_rerun_rows_inserted": 35,
+      "terminal_rerun_status": "completed"
+    },
+    "000688.SH": {
+      "created": true,
+      "effective_start_date": "20260801",
+      "idempotency_key_reused_returns_same_job": true,
+      "job_id": "indexsync_f81f3fb1ed7f4264938c9bb1b847bc66",
+      "rows_inserted": 35,
+      "rows_kept": 0,
+      "rows_received": 35,
+      "status": "completed",
+      "terminal_rerun_rows_inserted": 35,
+      "terminal_rerun_status": "completed"
+    },
+    "000852.SH": {
+      "created": true,
+      "effective_start_date": "20260801",
+      "idempotency_key_reused_returns_same_job": true,
+      "job_id": "indexsync_133830c565374506bb1cc86c0a6ed8fb",
+      "rows_inserted": 35,
+      "rows_kept": 0,
+      "rows_received": 35,
+      "status": "completed",
+      "terminal_rerun_rows_inserted": 35,
+      "terminal_rerun_status": "completed"
+    },
+    "000905.SH": {
+      "created": true,
+      "effective_start_date": "20260801",
+      "idempotency_key_reused_returns_same_job": true,
+      "job_id": "indexsync_2b7247b5605044298a5cb5d6246014ce",
+      "rows_inserted": 35,
+      "rows_kept": 0,
+      "rows_received": 35,
+      "status": "completed",
+      "terminal_rerun_rows_inserted": 35,
+      "terminal_rerun_status": "completed"
+    },
+    "399006.SZ": {
+      "created": true,
+      "effective_start_date": "20260801",
+      "idempotency_key_reused_returns_same_job": true,
+      "job_id": "indexsync_6b3b983ceecd42acb78d68ba9dad21c6",
+      "rows_inserted": 35,
+      "rows_kept": 0,
+      "rows_received": 35,
+      "status": "completed",
+      "terminal_rerun_rows_inserted": 35,
+      "terminal_rerun_status": "completed"
+    }
+  },
+  "persisted_coverage": {
+    "completeness_claimed": false,
+    "date_max": "20260918",
+    "date_min": "20260803",
+    "endpoint": "index_dailybasic",
+    "groups": [
+      {
+        "date_max": "20260918",
+        "date_min": "20260803",
+        "index_symbol": "000016.SH",
+        "negative_issues": 0,
+        "row_count": 35
+      },
+      {
+        "date_max": "20260918",
+        "date_min": "20260803",
+        "index_symbol": "000300.SH",
+        "negative_issues": 0,
+        "row_count": 35
+      },
+      {
+        "date_max": "20260918",
+        "date_min": "20260803",
+        "index_symbol": "000688.SH",
+        "negative_issues": 0,
+        "row_count": 35
+      },
+      {
+        "date_max": "20260918",
+        "date_min": "20260803",
+        "index_symbol": "000852.SH",
+        "negative_issues": 0,
+        "row_count": 35
+      },
+      {
+        "date_max": "20260918",
+        "date_min": "20260803",
+        "index_symbol": "000905.SH",
+        "negative_issues": 0,
+        "row_count": 35
+      },
+      {
+        "date_max": "20260918",
+        "date_min": "20260803",
+        "index_symbol": "399006.SZ",
+        "negative_issues": 0,
+        "row_count": 35
+      }
+    ],
+    "index_count": 6,
+    "issue_count": 0,
+    "provider": "tushare",
+    "quality": "observed",
+    "row_count": 210,
+    "schema_version": "index-daily-basic.v1",
+    "scope": "persisted_observations",
+    "units": {
+      "float_mv": "cny",
+      "float_share": "share",
+      "free_share": "share",
+      "pb": "ratio",
+      "pe": "ratio",
+      "pe_ttm": "ratio",
+      "total_mv": "cny",
+      "total_share": "share",
+      "turnover_rate": "percent",
+      "turnover_rate_f": "percent"
+    }
+  },
+  "production_state_changed": false,
+  "provider": "tushare",
+  "readiness": {
+    "calendar_verified": true,
+    "fields": [
+      "total_mv",
+      "pe",
+      "pe_ttm",
+      "pb",
+      "turnover_rate"
+    ],
+    "missing_by_index": {},
+    "missing_fields_total": 0,
+    "missing_total": 0,
+    "returned_rows": 210,
+    "sample_rows": [
+      {
+        "content_sha256": "de2d8264ed6c85df418c7d9e66a3b01729f865698c609f5dead6025a31073ef7",
+        "data_source": "tushare",
+        "index_symbol": "000016.SH",
+        "provenance": {
+          "cache_hit": false,
+          "endpoint": "index_dailybasic",
+          "provider": "tushare",
+          "request_fingerprint": "3b3845b8162a4f1ee9f988cef7fa9f9a5fb612c379b8e0a78d7d49a487075a10",
+          "retrieved_at": "2026-09-20T13:56:43.037464+00:00",
+          "row_count": 35
+        },
+        "trade_date": "20260803",
+        "values": {
+          "pb": 1.2564,
+          "pe": 11.7315,
+          "pe_ttm": 11.6315,
+          "total_mv": 28283149814357.62,
+          "turnover_rate": 0.3527
+        }
+      },
+      {
+        "content_sha256": "f126cae03310404e08457d259c9de49cd5b08e99179562e8ddc6119c5edd6516",
+        "data_source": "tushare",
+        "index_symbol": "000300.SH",
+        "provenance": {
+          "cache_hit": false,
+          "endpoint": "index_dailybasic",
+          "provider": "tushare",
+          "request_fingerprint": "d1ac312cd1f74dc1afe4da8a5d8146a1165176009e2cd106e7e2fb9b5b645480",
+          "retrieved_at": "2026-09-20T13:56:43.349077+00:00",
+          "row_count": 35
+        },
+        "trade_date": "20260803",
+        "values": {
+          "pb": 1.4533,
+          "pe": 14.5583,
+          "pe_ttm": 14.2976,
+          "total_mv": 67462354041429.26,
+          "turnover_rate": 0.6925
+        }
+      },
+      {
+        "content_sha256": "a331772ac648bf49bd9d5e253e308ac462291180b18672534f0c35a2a227ecf0",
+        "data_source": "tushare",
+        "index_symbol": "000688.SH",
+        "provenance": {
+          "cache_hit": false,
+          "endpoint": "index_dailybasic",
+          "provider": "tushare",
+          "request_fingerprint": "67d48bb8e4a549fd900af96c58a6b15ad4f3f1fd1c80a7fd73d2d4a9ba6e8b71",
+          "retrieved_at": "2026-09-20T13:56:43.702571+00:00",
+          "row_count": 35
+        },
+        "trade_date": "20260803",
+        "values": {
+          "pb": 7.3819,
+          "pe": 252.58,
+          "pe_ttm": 186.4567,
+          "total_mv": 6454176533878.51,
+          "turnover_rate": 1.7774
+        }
+      },
+      {
+        "content_sha256": "dd437cfdcb272605f8f5bc7fd7ad83f05cfe418627be1401e4c5c70b04b74175",
+        "data_source": "tushare",
+        "index_symbol": "000852.SH",
+        "provenance": {
+          "cache_hit": false,
+          "endpoint": "index_dailybasic",
+          "provider": "tushare",
+          "request_fingerprint": "50f9bf1a48de2b55d5e69ce39845603f69f187520b2d69a1c48136e20395b61c",
+          "retrieved_at": "2026-09-20T13:56:44.033098+00:00",
+          "row_count": 35
+        },
+        "trade_date": "20260803",
+        "values": {
+          "pb": 2.2847,
+          "pe": 42.9735,
+          "pe_ttm": 42.1253,
+          "total_mv": 13774177938550.89,
+          "turnover_rate": 2.3551
+        }
+      },
+      {
+        "content_sha256": "099bbd1ea85fa033a38e2250d05d9341df33e23fe02feb7df31f1a5b5be628bc",
+        "data_source": "tushare",
+        "index_symbol": "000905.SH",
+        "provenance": {
+          "cache_hit": false,
+          "endpoint": "index_dailybasic",
+          "provider": "tushare",
+          "request_fingerprint": "909a10f9f39a55a6299b74a822e8349c6b59701a98baed41d620718fee977af9",
+          "retrieved_at": "2026-09-20T13:56:44.374511+00:00",
+          "row_count": 35
+        },
+        "trade_date": "20260803",
+        "values": {
+          "pb": 2.357,
+          "pe": 36.6254,
+          "pe_ttm": 34.753,
+          "total_mv": 17654120734215.03,
+          "turnover_rate": 1.7948
+        }
+      }
+    ],
+    "schema_version": "index-daily-basic-readiness.v1",
+    "units": {
+      "pb": "ratio",
+      "pe": "ratio",
+      "pe_ttm": "ratio",
+      "total_mv": "cny",
+      "turnover_rate": "percent"
+    },
+    "usable": true
+  },
+  "schema_version": "phase-100b-index-dailybasic-verification.v1",
+  "window": {
+    "end_date": "20260918",
+    "open_sessions": 35,
+    "start_date": "20260801"
+  }
+}

@@ -9,6 +9,7 @@ from app.data_provider import (
     FundBasicRequest,
     FundDailyRequest,
     FundNavRequest,
+    IndexDailyBasicRequest,
     ProviderAuthorizationError,
     ProviderCredentialsMissing,
     ProviderProtocolError,
@@ -615,3 +616,87 @@ def test_fund_requests_reject_unbounded_or_invalid_input() -> None:
         FundDailyRequest("BADCODE", "20240101", "20240102").normalized()
     with pytest.raises(ValueError):
         FundNavRequest(market="X", nav_date="20240102").normalized()
+
+
+INDEX_DAILY_BASIC_TEST_FIELDS = [
+    "ts_code", "trade_date", "total_mv", "float_mv", "total_share",
+    "float_share", "free_share", "turnover_rate", "turnover_rate_f",
+    "pe", "pe_ttm", "pb",
+]
+
+
+def index_daily_basic_row(
+    ts_code: str = "000300.SH",
+    trade_date: str = "20240102",
+    *,
+    total_mv: object = 3.0e13,
+    turnover_rate: object = 0.85,
+    pe: object = 11.2,
+) -> list[object]:
+    return [ts_code, trade_date, total_mv, 2.0e13, 1.5e11, 1.0e11, 8.0e10,
+            turnover_rate, 0.9, pe, 11.0, 1.35]
+
+
+def test_index_daily_basic_translates_and_scans_the_request() -> None:
+    transport = FakeTransport([
+        TransportResponse(200, envelope(
+            [index_daily_basic_row()], fields=INDEX_DAILY_BASIC_TEST_FIELDS,
+        )),
+    ])
+    instance = provider(transport)
+
+    result = instance.fetch_index_daily_basic(IndexDailyBasicRequest(trade_date="20240102"))
+    assert result.rows[0].ts_code == "000300.SH"
+    assert result.rows[0].values["pe"] == 11.2
+    assert result.rows[0].values["total_mv"] == 3.0e13
+    assert result.provenance.endpoint == "index_dailybasic"
+    assert transport.calls[0][1]["api_name"] == "index_dailybasic"
+    assert transport.calls[0][1]["params"] == {"trade_date": "20240102"}
+    assert "fixture-token" not in result.provenance.request_fingerprint
+
+
+def test_index_daily_basic_request_rejects_unbounded_or_invalid_input() -> None:
+    with pytest.raises(ValueError, match="requires ts_code"):
+        IndexDailyBasicRequest().normalized()
+    with pytest.raises(ValueError, match="invalid format"):
+        IndexDailyBasicRequest(ts_code="BADCODE").normalized()
+    with pytest.raises(ValueError, match="both start_date and end_date"):
+        IndexDailyBasicRequest(ts_code="000300.SH", start_date="20240101").normalized()
+    with pytest.raises(ValueError, match="at most 401 days"):
+        IndexDailyBasicRequest(ts_code="000300.SH", start_date="20230101", end_date="20250101").normalized()
+    with pytest.raises(ValueError, match="either trade_date or a date range"):
+        IndexDailyBasicRequest(trade_date="20240102", start_date="20240101", end_date="20240105").normalized()
+    assert IndexDailyBasicRequest(ts_code="000300.sh", trade_date="20240102").normalized() == (
+        IndexDailyBasicRequest("000300.SH", "20240102")
+    )
+
+
+def test_index_daily_basic_rejects_provider_rows_outside_the_contract() -> None:
+    def instance_with(items: list[list[object]]) -> TushareProvider:
+        return provider(FakeTransport([
+            TransportResponse(200, envelope(items, fields=INDEX_DAILY_BASIC_TEST_FIELDS)),
+        ]))
+
+    with pytest.raises(ProviderProtocolError, match="outside the session"):
+        instance_with([index_daily_basic_row(trade_date="20240103")]).fetch_index_daily_basic(
+            IndexDailyBasicRequest(trade_date="20240102")
+        )
+    with pytest.raises(ProviderProtocolError, match="invalid index-daily-basic symbol"):
+        instance_with([index_daily_basic_row(ts_code="BADCODE")]).fetch_index_daily_basic(
+            IndexDailyBasicRequest(trade_date="20240102")
+        )
+    with pytest.raises(ProviderProtocolError, match="for another index"):
+        instance_with([index_daily_basic_row(ts_code="000905.SH")]).fetch_index_daily_basic(
+            IndexDailyBasicRequest(ts_code="000300.SH", trade_date="20240102")
+        )
+    with pytest.raises(ProviderProtocolError, match="duplicate"):
+        row = index_daily_basic_row()
+        instance_with([row, row]).fetch_index_daily_basic(IndexDailyBasicRequest(trade_date="20240102"))
+    with pytest.raises(ProviderProtocolError, match="non-finite"):
+        instance_with([index_daily_basic_row(pe=float("inf"))]).fetch_index_daily_basic(
+            IndexDailyBasicRequest(trade_date="20240102")
+        )
+    with pytest.raises(ProviderProtocolError, match="outside the requested range"):
+        instance_with([index_daily_basic_row(trade_date="20240110")]).fetch_index_daily_basic(
+            IndexDailyBasicRequest(ts_code="000300.SH", start_date="20240101", end_date="20240105")
+        )
