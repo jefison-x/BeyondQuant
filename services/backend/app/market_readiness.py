@@ -947,6 +947,27 @@ class MarketReadinessStore(PgStoreMixin):
             {"symbol": benchmark_symbol, "start": requirement["start_date"], "end": requirement["end_date"]},
         ) if benchmark_symbol else []
         benchmark_map = {str(row["trade_date"]): row for row in benchmark_rows}
+        from .index_indicators import VALUE_FIELDS as INDEX_DAILY_BASIC_VALUE_FIELDS
+        index_valuation = declared.get("index_valuation")
+        valuation_symbol: str | None = None
+        valuation_fields: list[str] = []
+        valuation_map: dict[str, dict[str, object]] = {}
+        if index_valuation is not None:
+            if not isinstance(index_valuation, dict):
+                raise ValueError("declared index_valuation is invalid")
+            valuation_symbol = str(index_valuation.get("index_symbol", "")).strip().upper()
+            valuation_fields = list(index_valuation.get("fields", []))
+            if not valuation_symbol or not valuation_fields:
+                raise ValueError("declared index_valuation requires index_symbol and fields")
+            if any(field not in INDEX_DAILY_BASIC_VALUE_FIELDS for field in valuation_fields):
+                raise ValueError("declared index_valuation contains an unsupported field")
+            valuation_rows = self._execute(
+                f"""SELECT trade_date,content_sha256,{', '.join(valuation_fields)}
+                    FROM market_index_daily_basic
+                    WHERE index_symbol=:symbol AND trade_date BETWEEN :start AND :end""",
+                {"symbol": valuation_symbol, "start": requirement["start_date"], "end": requirement["end_date"]},
+            )
+            valuation_map = {str(row["trade_date"]): row for row in valuation_rows}
         daily_basic_fields = list(declared.get("daily_basic", []))
         daily_basic_rows = self._execute(
             """SELECT symbol,trade_date,content_sha256 FROM market_daily_basic
@@ -1002,6 +1023,15 @@ class MarketReadinessStore(PgStoreMixin):
             for trade_date in dates:
                 if trade_date not in benchmark_map:
                     missing.append({"symbol": str(benchmark_symbol), "trade_date": trade_date, "dataset": "index_daily"})
+                    missing_dates.add(trade_date)
+        if valuation_symbol:
+            for trade_date in dates:
+                valuation_row = valuation_map.get(trade_date)
+                if valuation_row is None:
+                    missing.append({"symbol": str(valuation_symbol), "trade_date": trade_date, "dataset": "index_daily_basic"})
+                    missing_dates.add(trade_date)
+                elif any(valuation_row.get(field) is None for field in valuation_fields):
+                    missing.append({"symbol": str(valuation_symbol), "trade_date": trade_date, "dataset": "index_daily_basic_fields"})
                     missing_dates.add(trade_date)
         if index_universe:
             for period in weight_periods:
@@ -1088,6 +1118,11 @@ class MarketReadinessStore(PgStoreMixin):
             "requirement_sha256": requirement["requirement_sha256"], "cells": ready_cells,
             "corporate_actions": [str(row["content_sha256"]) for row in action_rows],
             "benchmark": [str(row["content_sha256"]) for row in benchmark_rows],
+            "index_valuation": [
+                str(row["content_sha256"]) for row in sorted(
+                    valuation_map.values(), key=lambda item: str(item["trade_date"]),
+                )
+            ],
             "index_weights": [str(row["content_sha256"]) for row in weight_rows],
             "financial_completeness": [str(row["content_sha256"]) for row in financial_complete.values()],
         })

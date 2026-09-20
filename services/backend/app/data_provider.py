@@ -99,6 +99,29 @@ MAX_FUND_DAILY_ROWS = 5_000
 _MAX_FUND_RANGE_DAYS = 400
 _FUND_SYMBOL_PATTERN = re.compile(r"^[0-9]{6}\.(?:SH|SZ|OF)$")
 _FUND_MARKETS = {"E", "O"}
+# Tushare index_dailybasic: canonical index identity/date plus valuation and
+# capital figures. Tushare documents money in yuan and shares in shares, so the
+# BYQ contract stores those units explicitly rather than the daily_basic 万元/
+# 万股 convention. Rates are percentages; valuation ratios are dimensionless.
+INDEX_DAILY_BASIC_FIELDS = (
+    "ts_code", "trade_date", "total_mv", "float_mv", "total_share",
+    "float_share", "free_share", "turnover_rate", "turnover_rate_f",
+    "pe", "pe_ttm", "pb",
+)
+INDEX_DAILY_BASIC_UNITS = {
+    "total_mv": "cny",
+    "float_mv": "cny",
+    "total_share": "share",
+    "float_share": "share",
+    "free_share": "share",
+    "turnover_rate": "percent",
+    "turnover_rate_f": "percent",
+    "pe": "ratio",
+    "pe_ttm": "ratio",
+    "pb": "ratio",
+}
+MAX_INDEX_DAILY_BASIC_ROWS = 3_000
+_MAX_INDEX_DAILY_BASIC_RANGE_DAYS = 400
 _SYMBOL_PATTERN = re.compile(r"^[0-9]{6}\.(?:SH|SZ|BJ)$")
 _INDEX_SYMBOL_PATTERN = re.compile(r"^[0-9A-Z]{6,12}\.(?:SH|SZ|CSI)$")
 _TUSHARE_HISTORICAL_ALIAS_PATTERN = re.compile(r"^T[0-9]{6}\.(?:SH|SZ|BJ)$")
@@ -1114,6 +1137,79 @@ class FundDailyResult:
     provenance: Provenance
 
 
+@dataclass(frozen=True)
+class IndexDailyBasicRequest:
+    """Closed request for Tushare ``index_dailybasic`` index indicator rows."""
+
+    ts_code: str | None = None
+    trade_date: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+
+    def normalized(self) -> "IndexDailyBasicRequest":
+        ts_code = None
+        if self.ts_code is not None and str(self.ts_code).strip():
+            ts_code = str(self.ts_code).strip().upper()
+            if not _INDEX_SYMBOL_PATTERN.fullmatch(ts_code):
+                raise ValueError("index daily basic ts_code has invalid format")
+        trade_date = _validate_date(self.trade_date, "trade_date")
+        start = _validate_date(self.start_date, "start_date")
+        end = _validate_date(self.end_date, "end_date")
+        if (start is None) != (end is None):
+            raise ValueError("index daily basic requires both start_date and end_date")
+        if start is not None and end is not None:
+            if start > end:
+                raise ValueError("start_date must not be after end_date")
+            if (datetime.strptime(end, "%Y%m%d") - datetime.strptime(start, "%Y%m%d")).days > _MAX_INDEX_DAILY_BASIC_RANGE_DAYS:
+                raise ValueError("index daily basic range must be ordered and at most 401 days")
+            if trade_date is not None:
+                raise ValueError("index daily basic accepts either trade_date or a date range")
+        if ts_code is None and trade_date is None and start is None:
+            raise ValueError("index daily basic requires ts_code, trade_date or a bounded date range")
+        return IndexDailyBasicRequest(ts_code, trade_date, start, end)
+
+    def provider_params(self) -> dict[str, str]:
+        params: dict[str, str] = {}
+        for key in ("ts_code", "trade_date", "start_date", "end_date"):
+            value = getattr(self, key)
+            if value is not None:
+                params[key] = value
+        return params
+
+
+@dataclass(frozen=True)
+class IndexDailyBasic:
+    ts_code: str
+    trade_date: str
+    values: dict[str, float | None]
+
+    @classmethod
+    def from_row(cls, fields: list[str], row: list[Any]) -> "IndexDailyBasic":
+        try:
+            values = dict(zip(fields, row, strict=True))
+        except ValueError as error:
+            raise ProviderProtocolError("provider index-daily-basic row does not match its fields") from error
+        if any(field not in values for field in INDEX_DAILY_BASIC_FIELDS):
+            raise ProviderProtocolError("provider response omitted index-daily-basic fields")
+        symbol = str(values["ts_code"] or "").strip().upper()
+        if not _INDEX_SYMBOL_PATTERN.fullmatch(symbol):
+            raise ProviderProtocolError("provider returned an invalid index-daily-basic symbol")
+        return cls(
+            symbol,
+            _provider_date(values["trade_date"], "trade_date"),
+            _finite_values(values, INDEX_DAILY_BASIC_FIELDS[2:]),
+        )
+
+    def as_dict(self) -> dict[str, object]:
+        return {"ts_code": self.ts_code, "trade_date": self.trade_date, **self.values}
+
+
+@dataclass(frozen=True)
+class IndexDailyBasicResult:
+    rows: tuple[IndexDailyBasic, ...]
+    provenance: Provenance
+
+
 class TushareProvider:
     """Tushare adapter behind the BYQ-owned provider contract."""
 
@@ -1685,3 +1781,23 @@ class TushareProvider:
         if len({item.trade_date for item in bars}) != len(bars):
             raise ProviderProtocolError("provider returned duplicate fund-daily rows")
         return FundDailyResult(tuple(sorted(bars, key=lambda item: item.trade_date)), provenance)
+
+    def fetch_index_daily_basic(self, request: IndexDailyBasicRequest) -> IndexDailyBasicResult:
+        normalized = request.normalized()
+        fields, rows, provenance = self._fetch_bounded_dataset(
+            "index_dailybasic", normalized.provider_params(),
+            INDEX_DAILY_BASIC_FIELDS, MAX_INDEX_DAILY_BASIC_ROWS,
+        )
+        items = tuple(IndexDailyBasic.from_row(fields, row) for row in rows)
+        if normalized.ts_code is not None and any(item.ts_code != normalized.ts_code for item in items):
+            raise ProviderProtocolError("provider returned index daily basic data for another index")
+        if normalized.trade_date is not None and any(item.trade_date != normalized.trade_date for item in items):
+            raise ProviderProtocolError("provider returned index daily basic data outside the session")
+        if normalized.start_date is not None and normalized.end_date is not None and any(
+                not normalized.start_date <= item.trade_date <= normalized.end_date for item in items):
+            raise ProviderProtocolError("provider returned index daily basic data outside the requested range")
+        if len({(item.ts_code, item.trade_date) for item in items}) != len(items):
+            raise ProviderProtocolError("provider returned duplicate index-daily-basic rows")
+        return IndexDailyBasicResult(
+            tuple(sorted(items, key=lambda item: (item.trade_date, item.ts_code))), provenance,
+        )
