@@ -1,0 +1,87 @@
+{
+  "schema_version": "byq-d15-4-native-scenario.v1",
+  "evidence_class": "native-runtime-isolated",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1",
+    "closure": "agent-loop + jsonl session persistence + @deepseek-ai/dsh-subagent + spawn/fork in-process providers"
+  },
+  "llm": {
+    "class": "scripted-keyless",
+    "real_llm_quality": false,
+    "note": "Scripted keyless in-process adapter. Runtime-continuity evidence only; never semantic model quality."
+  },
+  "generated_at": "2026-09-20T08:39:44Z",
+  "id": "parent-child-identity",
+  "result": "PASS",
+  "check": "childId is a durable SessionId distinct from the root parent; persisted header records the direct parent and origin=subagent; listChildren exposes the continuable child",
+  "operation": "real startContinuable on the native spawn provider",
+  "observation": {
+    "parentId": "d15-4-parent",
+    "childId": "3f0b3112-78b5-4599-9b6d-b097527b8ca9",
+    "messageId": "b616841a-fc8d-438b-a322-eb124abc2c65",
+    "distinctIdentity": true,
+    "header": {
+      "id": "3f0b3112-78b5-4599-9b6d-b097527b8ca9",
+      "parentSession": "d15-4-parent",
+      "origin": "subagent",
+      "isSeeded": false,
+      "delegationDepth": 1
+    },
+    "descriptor": {
+      "version": 3,
+      "mode": "continuable",
+      "provider": "spawn",
+      "label": "child task",
+      "agentProvider": "mock",
+      "agentModel": "mock"
+    },
+    "descriptorVersion": 3,
+    "childEventTypes": [
+      "subagent/descriptor",
+      "agent/inbox/spliced",
+      "turn/start",
+      "agent/inbox/spliced",
+      "step/start",
+      "system/message",
+      "user/message",
+      "user/message",
+      "request/header",
+      "request/context",
+      "assistant/message",
+      "step/end",
+      "turn/end"
+    ],
+    "childSequenceContiguous": true,
+    "settlementCount": 0,
+    "settlementDeliveries": 1,
+    "created": [
+      {
+        "id": "d15-4-parent",
+        "provider": "mock",
+        "model": "mock"
+      },
+      {
+        "id": "3f0b3112-78b5-4599-9b6d-b097527b8ca9",
+        "provider": "mock",
+        "model": "mock"
+      }
+    ],
+    "listChildren": [
+      {
+        "id": "3f0b3112-78b5-4599-9b6d-b097527b8ca9",
+        "mode": "continuable",
+        "kind": "child"
+      }
+    ],
+    "adapterRequests": [
+      {
+        "provider": "mock",
+        "model": "mock",
+        "reasoningEffort": "max",
+        "toolNames": []
+      }
+    ]
+  },
+  "fault_applied": false
+}

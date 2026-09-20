@@ -1,0 +1,83 @@
+{
+  "schema_version": "byq-d15-4-native-scenario.v1",
+  "evidence_class": "native-runtime-isolated",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1",
+    "closure": "agent-loop + jsonl session persistence + @deepseek-ai/dsh-subagent + spawn/fork in-process providers"
+  },
+  "llm": {
+    "class": "scripted-keyless",
+    "real_llm_quality": false,
+    "note": "Scripted keyless in-process adapter. Runtime-continuity evidence only; never semantic model quality."
+  },
+  "generated_at": "2026-09-20T08:39:44Z",
+  "id": "cold-resume",
+  "result": "PASS",
+  "check": "a genuinely new OS process cold-resumes the same durable child via sendMessage with the descriptor reapplied and exactly one new settlement",
+  "operation": "new OS process + parent resume + sendMessage cold resume",
+  "observation": {
+    "parentId": "d15-4-parent",
+    "childId": "3f0b3112-78b5-4599-9b6d-b097527b8ca9",
+    "messageId": "96811d73-78b8-4b07-8f58-6d0632991dcc",
+    "sameChildId": true,
+    "headerBefore": {
+      "id": "3f0b3112-78b5-4599-9b6d-b097527b8ca9",
+      "parentSession": "d15-4-parent",
+      "origin": "subagent",
+      "isSeeded": false,
+      "delegationDepth": 1
+    },
+    "headerAfter": {
+      "id": "3f0b3112-78b5-4599-9b6d-b097527b8ca9",
+      "parentSession": "d15-4-parent",
+      "origin": "subagent",
+      "isSeeded": false,
+      "delegationDepth": 1
+    },
+    "descriptorBefore": {
+      "version": 3,
+      "mode": "continuable",
+      "provider": "spawn",
+      "label": "child task",
+      "agentProvider": "mock",
+      "agentModel": "mock"
+    },
+    "descriptorAfter": {
+      "version": 3,
+      "mode": "continuable",
+      "provider": "spawn",
+      "label": "child task",
+      "agentProvider": "mock",
+      "agentModel": "mock"
+    },
+    "inheritedEventCountBefore": 0,
+    "inheritedEventCountAfter": 0,
+    "sequenceContiguousAcrossResume": true,
+    "settlementBefore": 0,
+    "settlementAfter": 0,
+    "settlementDeliveries": 1,
+    "newSettlements": 1,
+    "created": [
+      {
+        "id": "d15-4-parent",
+        "provider": "mock",
+        "model": "mock"
+      },
+      {
+        "id": "3f0b3112-78b5-4599-9b6d-b097527b8ca9",
+        "provider": "mock",
+        "model": "mock"
+      }
+    ],
+    "adapterRequests": [
+      {
+        "provider": "mock",
+        "model": "mock",
+        "reasoningEffort": "max",
+        "toolNames": []
+      }
+    ]
+  },
+  "fault_applied": true
+}

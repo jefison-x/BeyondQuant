@@ -1,0 +1,68 @@
+{
+  "schema_version": "byq-d15-4-native-scenario.v1",
+  "evidence_class": "native-runtime-isolated",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1",
+    "closure": "agent-loop + jsonl session persistence + @deepseek-ai/dsh-subagent + spawn/fork in-process providers"
+  },
+  "llm": {
+    "class": "scripted-keyless",
+    "real_llm_quality": false,
+    "note": "Scripted keyless in-process adapter. Runtime-continuity evidence only; never semantic model quality."
+  },
+  "generated_at": "2026-09-20T08:39:44Z",
+  "id": "parent-crash",
+  "result": "PASS",
+  "check": "SIGKILL of the executor process is survived by the durable parent identity and the child remains natively resumable with no fabricated completion",
+  "operation": "SIGKILL the owning OS process mid child turn, then a new OS process resumes",
+  "observation": {
+    "crash": {
+      "signal": "SIGKILL",
+      "exit": null,
+      "crashedAsExpected": true
+    },
+    "after": {
+      "parentId": "d15-4-parent",
+      "childId": "1d6bf3b9-fe70-4452-819b-ebab1d0e1bd4",
+      "messageId": "74fe4dbc-4f30-46ac-acdd-b727f2a7720c",
+      "sameChildId": true,
+      "headerBefore": {
+        "id": "1d6bf3b9-fe70-4452-819b-ebab1d0e1bd4",
+        "parentSession": "d15-4-parent",
+        "origin": "subagent",
+        "isSeeded": false,
+        "delegationDepth": 1
+      },
+      "headerAfter": {
+        "id": "1d6bf3b9-fe70-4452-819b-ebab1d0e1bd4",
+        "parentSession": "d15-4-parent",
+        "origin": "subagent",
+        "isSeeded": false,
+        "delegationDepth": 1
+      },
+      "descriptorAfter": {
+        "version": 3,
+        "mode": "continuable",
+        "provider": "spawn",
+        "label": "child task",
+        "agentProvider": "mock",
+        "agentModel": "mock"
+      },
+      "childIdRetained": true,
+      "parentSurvived": true,
+      "parentEventCountBefore": 2,
+      "parentEventCountAfter": 2,
+      "newSettlements": 1,
+      "adapterRequests": [
+        {
+          "provider": "mock",
+          "model": "mock",
+          "reasoningEffort": "max",
+          "toolNames": []
+        }
+      ]
+    }
+  },
+  "fault_applied": true
+}

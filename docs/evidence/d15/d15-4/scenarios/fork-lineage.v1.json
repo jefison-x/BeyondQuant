@@ -1,0 +1,39 @@
+{
+  "schema_version": "byq-d15-4-native-scenario.v1",
+  "evidence_class": "native-runtime-isolated",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1",
+    "closure": "agent-loop + jsonl session persistence + @deepseek-ai/dsh-subagent + spawn/fork in-process providers"
+  },
+  "llm": {
+    "class": "scripted-keyless",
+    "real_llm_quality": false,
+    "note": "Scripted keyless in-process adapter. Runtime-continuity evidence only; never semantic model quality."
+  },
+  "generated_at": "2026-09-20T08:39:44Z",
+  "id": "fork-lineage",
+  "result": "PASS",
+  "check": "the fork provider yields a distinct seeded child whose inheritedEventCount equals the parent completed-turn prefix and leaves the parent log unchanged",
+  "operation": "real fork provider start over a completed parent turn",
+  "observation": {
+    "parentId": "d15-4-parent",
+    "forkId": "e9b82dd6-ca37-47d5-b205-ed0ad84ca410",
+    "distinctIdentity": true,
+    "header": {
+      "id": "e9b82dd6-ca37-47d5-b205-ed0ad84ca410",
+      "parentSession": "d15-4-parent",
+      "origin": "subagent",
+      "isSeeded": true,
+      "delegationDepth": 1
+    },
+    "isSeeded": true,
+    "inheritedEventCount": 11,
+    "parentCompletedTurnCount": 1,
+    "parentEventCountBefore": 11,
+    "parentEventCountAfter": 11,
+    "parentUnchanged": true,
+    "childSequenceContiguous": true
+  },
+  "fault_applied": true
+}

@@ -1,7 +1,7 @@
 {
   "schema_version": "byq-d15-acceptance-matrix.v1",
   "generated_at": "2026-09-19",
-  "notes": "Acceptance criteria for D15-2..D15-G. D15-2 and D15-3 are PASS with committed evidence; D15-4..D15-G remain NOT_RUN until a live candidate exists. No criteria may be marked PASS without committed evidence. D15-2 PASS is FORMAT-LAYER migration evidence only (codec/catalog; no runtime/SessionHandle/lease, no goal/approval/result continuity). D15-3 PASS covers native persistence-layer session resume across a new OS process only, not BYQ runtime-level semantic recovery. Process recovery, original-goal preservation, domain-action at-most-once, approval validity and result traceability remain a required real isolated runtime qualification. R3_RESUME stays NO until D15-G.",
+  "notes": "Acceptance criteria for D15-2..D15-G. D15-2 and D15-3 are PASS with committed evidence; D15-3R is PASS (scripted keyless provider); D15-4 is PARTIAL/BLOCKED with committed evidence (native continuable/fork seam qualified; child-crash and BYQ adapter-restart required items BLOCKED; host reboot NOT_RUN); D15-5/D15-G remain NOT_RUN. No criteria may be marked PASS without committed evidence. D15-2 PASS is FORMAT-LAYER migration evidence only (codec/catalog; no runtime/SessionHandle/lease, no goal/approval/result continuity). D15-3 PASS covers native persistence-layer session resume across a new OS process only, not BYQ runtime-level semantic recovery. Process recovery, original-goal preservation, domain-action at-most-once, approval validity and result traceability remain a required real isolated runtime qualification. R3_RESUME stays NO until D15-G.",
   "result_vocabulary": ["NOT_RUN", "PASS", "FAIL", "BLOCKED"],
   "requirements": {
     "schema_version": "byq-d15-2-requirements.v1",
@@ -201,7 +201,10 @@
     {
       "id": "D15-4",
       "name": "Subagent/Fork Continuity Qualification",
-      "result": "NOT_RUN",
+      "result": "BLOCKED",
+      "layer": "native subagent seam (evidence-only Node harness, per-generation OS processes)",
+      "proves": "the native @deepseek-ai/dsh-subagent continuable seam (startContinuable, Activation, authorizeLineage, listChildren, sendMessage cold resume) and the fork provider are reachable and qualified in an evidence-only harness against the fixed 0.1.5-rc.1 candidate: distinct durable child identity, v3 continuable descriptor, new-OS-process cold resume with one settlement, seeded fork prefix, and provider/model/reasoning-effort/persona inheritance; six runtime negatives (non-direct/stale parent, unmaterialized cold resume, max-depth, child-claims-root, out-of-filter tool) are rejected",
+      "does_not_prove": "child-only crash isolation (in-process child), the BYQ runtime-adapter container-restart child resume and the BYQ child-session projection (the committed composition loads byq_delegate_* with enableRunInBackground=false so startContinuable is not driven by BYQ), host reboot; no full D15-4 or D15-G pass",
       "criteria": [
         "parent/child durable identity and lineage authorization verified",
         "child session persistence and continuable descriptor verified",
@@ -209,6 +212,20 @@
         "fork lineage distinct from parent; inherited prefix preserved",
         "model/provider, persona, reasoning effort and tool permissions/filter preserved",
         "parent crash, child crash, adapter restart and host restart handled without second persistence"
+      ],
+      "criterion_results": [
+        {"criterion": "parent/child durable identity and lineage authorization verified", "result": "PASS", "evidence": "native-observations.v1.json parent-child-identity: child SessionId distinct from d15-4-parent, header.parentSession=d15-4-parent, origin=subagent; non-direct/stale-parent/child-claims-root negatives rejected UNAUTHORIZED/DUPLICATE_CHILD/SubagentDepthError"},
+        {"criterion": "child session persistence and continuable descriptor verified", "result": "PASS", "evidence": "subagent/descriptor version 3 mode=continuable provider=spawn persisted before the first turn"},
+        {"criterion": "cold resume of a continuable child verified", "result": "PASS", "evidence": "cold-resume: a new OS process resumed the same child id with a contiguous log and exactly one settlement; unmaterialized cold resume rejected NOT_RESUMABLE"},
+        {"criterion": "fork lineage distinct from parent; inherited prefix preserved", "result": "PASS", "evidence": "fork-lineage: distinct seeded fork, inheritedEventCount=11, parent log unchanged"},
+        {"criterion": "model/provider, persona, reasoning effort and tool permissions/filter preserved", "result": "PASS", "evidence": "inheritance: descriptor agentProvider/agentModel/reasoningEffort=max/persona persisted and reapplied on cold resume; max-depth negative rejected SubagentDepthError; out-of-filter tool rejected"},
+        {"criterion": "parent crash, child crash, adapter restart and host restart handled without second persistence", "result": "BLOCKED", "evidence": "parent-crash PASS (SIGKILL executor, parent survived, child resumed, one settlement); child-crash BLOCKED (in-process child not isolatable); byq-adapter-restart BLOCKED (BYQ composition does not reach startContinuable); host-reboot NOT_RUN"}
+      ],
+      "evidence": [
+        "docs/evidence/d15/d15-4/native-observations.v1.json",
+        "docs/evidence/d15/d15-4/verdict.v1.json",
+        "docs/evidence/d15/d15-4/negative-controls.v1.json",
+        "docs/evidence/d15/d15-4/reachability.v1.json"
       ],
       "evidence_path": "docs/evidence/d15/d15-4"
     },

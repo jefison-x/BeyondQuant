@@ -191,6 +191,30 @@ runtime 资格，属必需下一步且尚未完成。结论：原生 session res
 本分支合并 `origin/main` 并改用未使用 id `post-u8.155`（仅重建身份）。D15-4..D15-G（subagent/fork、
 persistent terminal、Go/No-Go）仍为 PLANNED。不部署、不自动合并。
 
+D15-4 原生 subagent/fork 连续性资格（构建修订 `post-u8.165`，维护，不推进 Product Phase）：
+维护者授权 develop/隔离测试/feature push/Draft PR。以固定 `dsh-0.1.5rc1` 候选闭包启动
+**evidence-only Node harness**（`scripts/d15/subagent/native_subagent_harness.mjs`，真实
+`@deepseek-ai/dsh-agent-loop` + JSONL session persistence + `@deepseek-ai/dsh-subagent` +
+spawn/fork in-process provider，每代一个 OS 进程，scripted keyless adapter，标注
+`real_llm_quality=false`），直接驱动原生 `startContinuable`/`Activation`/`authorizeLineage`/
+`listChildren`/`sendMessage`/fork。6 个必需场景 `PASS`：parent/child 身份（`d15-4-parent` 与
+不同 durable child，`header.parentSession`/`origin=subagent`）、v3 continuable descriptor、
+新 OS 进程 cold resume 同一 child 且恰好一次 settlement、seeded fork（`inheritedEventCount=11`、
+parent 不变）、provider/model/reasoning-effort/persona 继承并在 cold resume 重放、SIGKILL 执行
+进程后 parent 身份仍在且 child 可原生恢复；6 个 runtime 反例被拒（non-direct/stale parent
+`UNAUTHORIZED`、unmaterialized `NOT_RESUMABLE`、`maxDepth` `SubagentDepthError`、
+child-claims-root `DUPLICATE_CHILD`、out-of-filter tool）。fail-able observer 以合同为准、
+必需项 `NOT_RUN`/`BLOCKED` 一律非零退出；`negative-controls.v1.json` 23 项控制全部失败，其中
+22 项证明修复前 result-only 门禁会误报 `all_pass=true`（含 required-blocked 场景）。reachability
+probe 真实确认：提交的 BYQ 组合 5 个 `byq_delegate_*` 均 `enableRunInBackground: false`，候选
+`@deepseek-ai/dsh-tool-subagent@0.1.5-rc.1` 仅在 background+continuable 分支调用
+`startContinuable()`，故 continuable 冷恢复路径**不从 BYQ 可达**；`child-crash`（in-process child
+不可单独 SIGKILL）与 BYQ `adapter-restart` 必需项 `BLOCKED`，保留最小具体选项（隔离 compose 栈 +
+tool-aware scripted provider，不改生产组合、不新增 BYQ subagent 持久化），host reboot `NOT_RUN`。
+**不主张完整 D15-4/D15-G/full-D15，`R3_RESUME = NO`。** 新增 `scripts/d15/subagent/`、`tests/` 与
+证据均属 build-input inventory，构建修订推进 `post-u8.164 → .165`（仅重建身份，不改
+selector/deployment/immutable registry/0.1.2 制品与证据）。不部署、不自动合并。
+
 数据就绪续接 needs_attention 重挂（fix，构建修订 `dsh-0.1.2rc1-post-u8.142`）：生产 round-2
 数据就绪续接回合结算为 `needs_attention` 后，`research_tasks.continuation_blocked_reason` 被写成
 `continuation_needs_attention`；原预算路径的按任务级 `continue` 使其永久阻止后续**不同**的
