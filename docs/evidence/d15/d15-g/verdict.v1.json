@@ -1,0 +1,79 @@
+{
+  "aggregation_rejected": false,
+  "all_pass": false,
+  "candidate": {
+    "npm_packages": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1",
+    "release": "dsh-0.1.5rc1"
+  },
+  "claimed_blockers": [
+    "host-reboot-resume",
+    "subagent-byq-adapter-restart",
+    "subagent-child-crash",
+    "subagent-resume",
+    "terminal-adapter-restart",
+    "terminal-dsh-runtime-restart",
+    "terminal-persistence"
+  ],
+  "claimed_capabilities": {
+    "fork-continuity": "PASS",
+    "host-reboot-resume": "NOT_RUN",
+    "process-restart-resume": "PASS",
+    "root-session-persistence": "PASS",
+    "subagent-byq-adapter-restart": "BLOCKED",
+    "subagent-child-crash": "BLOCKED",
+    "subagent-resume": "BLOCKED",
+    "terminal-adapter-restart": "BLOCKED",
+    "terminal-client-reattach": "PASS",
+    "terminal-dsh-runtime-restart": "BLOCKED",
+    "terminal-persistence": "BLOCKED"
+  },
+  "constraints": {
+    "adr_0082": "Proposed, not accepted, not implemented",
+    "adr_0083": "Proposed, not accepted, not implemented",
+    "deployment": "none",
+    "production_default_unchanged": true,
+    "production_selector": "dsh-0.1.2rc1",
+    "r3_resume": "NO"
+  },
+  "decision_valid": true,
+  "decision_vocabulary": [
+    "GO",
+    "NO_GO"
+  ],
+  "derived_blockers": [
+    "host-reboot-resume",
+    "subagent-byq-adapter-restart",
+    "subagent-child-crash",
+    "subagent-resume",
+    "terminal-adapter-restart",
+    "terminal-dsh-runtime-restart",
+    "terminal-persistence"
+  ],
+  "derived_capabilities": {
+    "fork-continuity": "PASS",
+    "host-reboot-resume": "NOT_RUN",
+    "process-restart-resume": "PASS",
+    "root-session-persistence": "PASS",
+    "subagent-byq-adapter-restart": "BLOCKED",
+    "subagent-child-crash": "BLOCKED",
+    "subagent-resume": "BLOCKED",
+    "terminal-adapter-restart": "BLOCKED",
+    "terminal-client-reattach": "PASS",
+    "terminal-dsh-runtime-restart": "BLOCKED",
+    "terminal-persistence": "BLOCKED"
+  },
+  "exit_code": 1,
+  "failures": [],
+  "format_valid": true,
+  "go_claimed": false,
+  "go_granted": false,
+  "honest": true,
+  "honesty_failures": [],
+  "production_selector": "dsh-0.1.2rc1",
+  "r3_resume": "NO",
+  "required_capability_count": 11,
+  "required_coverage_ok": false,
+  "schema_version": "byq-d15-g-verdict.v1",
+  "verdict": "NO_GO"
+}

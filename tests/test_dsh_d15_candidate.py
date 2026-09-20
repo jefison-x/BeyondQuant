@@ -265,8 +265,25 @@ class D15CandidateTests(unittest.TestCase):
         self.assertTrue(d15_5["evidence"])
         self.assertTrue(d15_5["criterion_results"])
 
-        # D15-G is not opened, and R3 stays unopened until D15-G.
-        self.assertEqual(stages["D15-G"]["result"], "NOT_RUN")
+        # D15-G is executed and is honestly NO_GO (NOT-PASS), never GO: the
+        # required capabilities child-crash, BYQ adapter-restart, terminal
+        # adapter-restart and terminal DSH-runtime-restart did not pass, so a
+        # partial-PASS aggregation is rejected. R3 stays unopened.
+        d15_g = stages["D15-G"]
+        self.assertEqual(d15_g["result"], "NO_GO")
+        self.assertNotEqual(d15_g["result"], "GO")
+        self.assertTrue(d15_g["evidence"], "D15-G must carry committed evidence")
+        self.assertTrue(d15_g["criterion_results"])
+        d15_g_uncovered = d15_g.get("uncovered_items")
+        self.assertTrue(d15_g_uncovered, "a NO_GO D15-G must carry named uncovered_items")
+        d15_g_uncovered_ids = {item["id"] for item in d15_g_uncovered}
+        for required_uncovered in ("subagent-child-crash", "subagent-byq-adapter-restart",
+                                   "terminal-adapter-restart", "terminal-dsh-runtime-restart",
+                                   "host-reboot-resume"):
+            self.assertIn(required_uncovered, d15_g_uncovered_ids)
+        for item in d15_g_uncovered:
+            self.assertIn(item["status"], {"BLOCKED", "NOT_RUN"})
+            self.assertTrue(item.get("reason"))
         self.assertNotIn("R3", stages)
         self.assertIn("R3_RESUME stays NO", matrix["notes"])
 

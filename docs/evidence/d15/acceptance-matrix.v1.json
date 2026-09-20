@@ -1,12 +1,13 @@
 {
   "schema_version": "byq-d15-acceptance-matrix.v1",
   "generated_at": "2026-09-19",
-  "notes": "Acceptance criteria for D15-2..D15-G. D15-2 and D15-3 are PASS with committed evidence; D15-3R is PASS (scripted keyless provider); D15-4 is PARTIAL/BLOCKED with committed evidence (native continuable/fork seam qualified; child-crash and BYQ adapter-restart required items BLOCKED; host reboot NOT_RUN); D15-5 is PARTIAL/BLOCKED with committed evidence (real native persistent terminal for four client-side fault rows and all cross-checks; adapter-restart and dsh-runtime-restart required items BLOCKED because native sessions are process-local and no BYQ TerminalAttachment wiring exists; host reboot NOT_RUN); D15-G remains NOT_RUN. No criteria may be marked PASS without committed evidence. D15-2 PASS is FORMAT-LAYER migration evidence only. D15-3 PASS covers native persistence-layer session resume across a new OS process only. D15-3R is a scripted keyless service-boundary pass. R3_RESUME stays NO until D15-G.",
+  "notes": "Acceptance criteria for D15-2..D15-G. D15-2 and D15-3 are PASS with committed evidence; D15-3R is PASS (scripted keyless provider); D15-4 is PARTIAL/BLOCKED with committed evidence (native continuable/fork seam qualified; child-crash and BYQ adapter-restart required items BLOCKED; host reboot NOT_RUN); D15-5 is PARTIAL/BLOCKED with committed evidence (real native persistent terminal for four client-side fault rows and all cross-checks; adapter-restart and dsh-runtime-restart required items BLOCKED because native sessions are process-local and no BYQ TerminalAttachment wiring exists; host reboot NOT_RUN); D15-G is NO_GO (NOT-PASS) with committed evidence in docs/evidence/d15/d15-g/ because the required capabilities child-crash, BYQ adapter-restart, terminal adapter-restart and terminal DSH-runtime-restart did not pass (host reboot NOT_RUN). No criteria may be marked PASS without committed evidence. D15-2 PASS is FORMAT-LAYER migration evidence only. D15-3 PASS covers native persistence-layer session resume across a new OS process only. D15-3R is a scripted keyless service-boundary pass. R3_RESUME stays NO after D15-G; only a GO plus R3/R6 native-continuity evidence could reconsider it.",
   "result_vocabulary": [
     "NOT_RUN",
     "PASS",
     "FAIL",
-    "BLOCKED"
+    "BLOCKED",
+    "NO_GO"
   ],
   "requirements": {
     "schema_version": "byq-d15-2-requirements.v1",
@@ -592,12 +593,80 @@
     {
       "id": "D15-G",
       "name": "Architecture Go/No-Go",
-      "result": "NOT_RUN",
+      "result": "NO_GO",
+      "layer": "architecture decision over D15-2..D15-5 evidence",
+      "proves": "a fail-able decision contract and observer derive the Go/No-Go verdict from the committed D15-2..D15-5 evidence; the verdict is NO_GO because a required capability that is not PASS must force NO-GO, and the required items child-crash, BYQ adapter-restart, terminal adapter-restart and terminal DSH-runtime restart did not pass (host reboot NOT_RUN)",
+      "does_not_prove": "that DSH 0.1.5-rc.1 native continuity is adoption-ready; that R3 may resume; that any production cutover is authorized; that the Proposed ADR-0082/0083 are accepted or implemented",
       "criteria": [
-        "capability matrix over D15-2..D15-5 complete",
-        "Go/No-Go report committed; No-Go lists exact blockers",
-        "Go does not authorize production cutover",
-        "R3_RESUME assessed: YES only with completed D15-G and native-continuity evidence"
+        "a Go/No-Go decision contract and a fail-able observer exist before the decision is computed",
+        "the observer derives each required capability status from committed evidence and rejects any claimed status that differs",
+        "the observer fails (non-zero) if the decision aggregates partial PASS into GO or if any required capability is not actually PASS",
+        "a GO is granted only when every required capability is actually PASS; a required non-PASS forces NO_GO",
+        "every required non-PASS capability is named as a blocker; a GO does not authorize production cutover",
+        "R3_RESUME assessed NO and the production selector/default remain unchanged",
+        "the Proposed ADR-0082/0083 remain not accepted and not implemented"
+      ],
+      "criterion_results": [
+        {
+          "criterion": "decision contract + fail-able observer exist first",
+          "result": "PASS",
+          "evidence": "scripts/d15/go_no_go/contract.v1.json + scripts/d15/go_no_go/observer.py; selfcheck known-good GO fixture passes and all 14 negative controls are rejected (13 defect-targeting)"
+        },
+        {
+          "criterion": "capability/failure matrix over D15-2..D15-5 is complete",
+          "result": "PASS",
+          "evidence": "docs/evidence/d15/d15-g/capability-matrix.v1.json covers 11 required capabilities across D15-2/D15-3/D15-3R/D15-4/D15-5 with per-item DSH-native result, BYQ fallback, R-series owner and evidence references"
+        },
+        {
+          "criterion": "partial-PASS aggregation is rejected",
+          "result": "PASS",
+          "evidence": "docs/evidence/d15/d15-g/negative-controls.v1.json: claim-go-on-partial-sources has fixed_all_pass=false/exit 1 while legacy_all_pass=true; the derived verdict stays NO_GO with named blockers"
+        },
+        {
+          "criterion": "required non-PASS forces NO_GO and is named",
+          "result": "PASS",
+          "evidence": "docs/evidence/d15/d15-g/verdict.v1.json derives verdict NO_GO; blockers include subagent-child-crash, subagent-byq-adapter-restart, terminal-adapter-restart and terminal-dsh-runtime-restart (host-reboot-resume NOT_RUN)"
+        },
+        {
+          "criterion": "GO does not authorize production cutover; constraints unchanged",
+          "result": "PASS",
+          "evidence": "contract constraints r3_resume=NO, production_selector=dsh-0.1.2rc1, deployment=none; ADR-0082/0083 recorded as Proposed, not accepted, not implemented"
+        }
+      ],
+      "uncovered_items": [
+        {
+          "id": "subagent-child-crash",
+          "status": "BLOCKED",
+          "reason": "in-process children cannot be independently SIGKILLed while the parent executor stays alive; no out-of-process continuable provider exists in 0.1.5rc1"
+        },
+        {
+          "id": "subagent-byq-adapter-restart",
+          "status": "BLOCKED",
+          "reason": "the committed byq_delegate_* composition never calls startContinuable(); no committed BYQ surface cold-resumes a continuable child after an adapter restart"
+        },
+        {
+          "id": "terminal-adapter-restart",
+          "status": "BLOCKED",
+          "reason": "native terminal sessions are process-local and the committed BYQ tree persists no TerminalAttachment, so a fresh adapter rejects the old attachment"
+        },
+        {
+          "id": "terminal-dsh-runtime-restart",
+          "status": "BLOCKED",
+          "reason": "a restarted DSH runtime is a new process and native terminal sessions do not survive it"
+        },
+        {
+          "id": "host-reboot-resume",
+          "status": "NOT_RUN",
+          "reason": "rebooting the maintainer host is not authorized; a container/adapter restart is not a host reboot"
+        }
+      ],
+      "evidence": [
+        "docs/evidence/d15/d15-g/decision-input.v1.json",
+        "docs/evidence/d15/d15-g/capability-matrix.v1.json",
+        "docs/evidence/d15/d15-g/provenance.v1.json",
+        "docs/evidence/d15/d15-g/verdict.v1.json",
+        "docs/evidence/d15/d15-g/negative-controls.v1.json",
+        "docs/evidence/d15/d15-g/README.md"
       ],
       "evidence_path": "docs/evidence/d15/d15-g"
     }

@@ -1,0 +1,217 @@
+{
+  "schema_version": "byq-d15-g-contract.v1",
+  "generated_at": "2026-09-20",
+  "scope": "D15-G architecture Go/No-Go over the D15-2..D15-5 native-continuity qualification. This contract decides GO/NO_GO for adoption readiness. It does not authorize a production cutover, does not accept or implement the Proposed ADR-0082/0083, does not open R3 and does not change the production DSH selector or default.",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "python_sdk": "0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1"
+  },
+  "decision_vocabulary": ["GO", "NO_GO"],
+  "capability_vocabulary": ["PASS", "FAIL", "NOT_RUN", "BLOCKED", "MISSING"],
+  "source_artifacts": [
+    {
+      "id": "d15_2_verdict",
+      "path": "docs/evidence/d15/d15-2/verdict.v3.json",
+      "stage": "D15-2",
+      "layer": "session-format"
+    },
+    {
+      "id": "d15_3_results",
+      "path": "docs/evidence/d15/d15-3/native-resume-results.v1.json",
+      "stage": "D15-3",
+      "layer": "native-persistence-seam"
+    },
+    {
+      "id": "d15_runtime_verdict",
+      "path": "docs/evidence/d15/d15-runtime/verdict.v5.json",
+      "stage": "D15-3R",
+      "layer": "real-isolated-services"
+    },
+    {
+      "id": "d15_4_verdict",
+      "path": "docs/evidence/d15/d15-4/verdict.v2.json",
+      "stage": "D15-4",
+      "layer": "native-subagent-fork"
+    },
+    {
+      "id": "d15_5_verdict",
+      "path": "docs/evidence/d15/d15-5/verdict.v1.json",
+      "stage": "D15-5",
+      "layer": "native-persistent-terminal"
+    },
+    {
+      "id": "acceptance_matrix",
+      "path": "docs/evidence/d15/acceptance-matrix.v1.json",
+      "stage": "D15",
+      "layer": "acceptance"
+    }
+  ],
+  "required_capabilities": [
+    {
+      "id": "root-session-persistence",
+      "stage": "D15-2/D15-3",
+      "name": "root DSH session persistence and native reopen",
+      "required": true,
+      "sources": ["d15_2_verdict", "d15_3_results"],
+      "dsh_native_result": "PASS (format migration + native persistence-layer reopen with one OS process per generation)",
+      "byq_fallback": "BYQ conversation rehydration when native resume is unavailable (unflushed session)",
+      "r_series_owner": "R3 Thin Runtime Supervisor",
+      "assertions": ["session_format_all_pass", "native_reopen_same_session_id"]
+    },
+    {
+      "id": "process-restart-resume",
+      "stage": "D15-3/D15-3R",
+      "name": "adapter/DSH process restart and executor takeover resume",
+      "required": true,
+      "sources": ["d15_3_results", "d15_runtime_verdict"],
+      "dsh_native_result": "PASS at the persistence seam; PASS at the isolated real-service boundary with a scripted keyless provider",
+      "byq_fallback": "BYQ lifecycle-journal rebuild + native attach/resume invocation; BYQ fallback only when native resume is unavailable",
+      "r_series_owner": "R3 Thin Runtime Supervisor",
+      "assertions": ["adapter_restart_native_resume", "isolated_runtime_all_pass", "epoch_fencing"]
+    },
+    {
+      "id": "host-reboot-resume",
+      "stage": "D15-3/D15-4/D15-5",
+      "name": "host reboot resume (real runtime)",
+      "required": true,
+      "sources": ["d15_3_results", "d15_4_verdict", "d15_5_verdict"],
+      "dsh_native_result": "NOT_RUN: D15-3 only models the host-reboot path at the persistence seam; no real host reboot was executed and a container/adapter restart is not a host reboot",
+      "byq_fallback": "none proven; native flock release plus attach/resume is expected but unqualified end to end",
+      "r_series_owner": "R6 Full Runtime Continuity Qualification",
+      "assertions": ["real_host_reboot_executed"]
+    },
+    {
+      "id": "fork-continuity",
+      "stage": "D15-4",
+      "name": "native fork lineage continuity",
+      "required": true,
+      "sources": ["d15_4_verdict"],
+      "dsh_native_result": "PASS in the evidence-only native harness (exact inherited cut, parent log immutable, contiguous child log)",
+      "byq_fallback": "BYQ must not persist subagent state itself; no BYQ fallback is built",
+      "r_series_owner": "R6 Full Runtime Continuity Qualification (native seam owned by DSH)",
+      "assertions": ["fork_lineage_pass"]
+    },
+    {
+      "id": "subagent-resume",
+      "stage": "D15-4",
+      "name": "continuable subagent resume (aggregate)",
+      "required": true,
+      "sources": ["d15_4_verdict"],
+      "dsh_native_result": "BLOCKED: six required native scenarios PASS but child-crash and BYQ adapter-restart required items are BLOCKED",
+      "byq_fallback": "BYQ continues to use the foreground delegate path; no BYQ subagent persistence is added",
+      "r_series_owner": "R6/composition hookup (Proposed ADR-0082, not accepted, not implemented)",
+      "assertions": ["every_d15_4_required_scenario_pass"]
+    },
+    {
+      "id": "subagent-child-crash",
+      "stage": "D15-4",
+      "name": "subagent child-only crash recovery",
+      "required": true,
+      "sources": ["d15_4_verdict"],
+      "dsh_native_result": "BLOCKED: the composed native spawn provider runs children in-process; no independent child SIGKILL while the parent stays alive",
+      "byq_fallback": "child-run-fault is supporting evidence only; it is not a substitute for child-crash",
+      "r_series_owner": "R6 (requires an out-of-process continuable child provider)",
+      "assertions": ["d15_4_child_crash_pass"]
+    },
+    {
+      "id": "subagent-byq-adapter-restart",
+      "stage": "D15-4",
+      "name": "BYQ adapter restart rebinding a continuable child",
+      "required": true,
+      "sources": ["d15_4_verdict"],
+      "dsh_native_result": "BLOCKED: the committed byq_delegate_* composition never calls startContinuable(), and no committed BYQ surface cold-resumes a continuable child",
+      "byq_fallback": "none; the BYQ child-session projection/rebind contract does not exist",
+      "r_series_owner": "R6/composition hookup (Proposed ADR-0082, not accepted, not implemented)",
+      "assertions": ["d15_4_adapter_restart_pass"]
+    },
+    {
+      "id": "terminal-client-reattach",
+      "stage": "D15-5",
+      "name": "terminal I/O rebind across client-side faults",
+      "required": true,
+      "sources": ["d15_5_verdict"],
+      "dsh_native_result": "PASS: page refresh, browser disconnect, frontend restart and gateway restart rebind the same attachment/PTY with no replay and no loss",
+      "byq_fallback": "BYQ owns TerminalAttachment identity/state/authorization/reconnect (evidence-only gate today)",
+      "r_series_owner": "R4 TerminalAttachment",
+      "assertions": ["four_client_rows_pass"]
+    },
+    {
+      "id": "terminal-persistence",
+      "stage": "D15-5",
+      "name": "persistent terminal (aggregate)",
+      "required": true,
+      "sources": ["d15_5_verdict"],
+      "dsh_native_result": "BLOCKED: four client rows PASS but adapter-restart and dsh-runtime-restart required rows are BLOCKED; native terminal sessions are process-local",
+      "byq_fallback": "no persisted TerminalAttachment or reconnect surface is composed",
+      "r_series_owner": "R4 TerminalAttachment (Proposed ADR-0083, not accepted, not implemented)",
+      "assertions": ["every_d15_5_required_row_pass"]
+    },
+    {
+      "id": "terminal-adapter-restart",
+      "stage": "D15-5",
+      "name": "terminal attachment rebind across a BYQ adapter restart",
+      "required": true,
+      "sources": ["d15_5_verdict"],
+      "dsh_native_result": "BLOCKED: an adapter restart kills the DSH runtime; a fresh adapter rejects the old attachment",
+      "byq_fallback": "none; BYQ TerminalAttachment persistence/reconnect is absent",
+      "r_series_owner": "R4 TerminalAttachment (Proposed ADR-0083, not accepted, not implemented)",
+      "assertions": ["d15_5_adapter_restart_pass"]
+    },
+    {
+      "id": "terminal-dsh-runtime-restart",
+      "stage": "D15-5",
+      "name": "terminal attachment rebind across a DSH runtime restart",
+      "required": true,
+      "sources": ["d15_5_verdict"],
+      "dsh_native_result": "BLOCKED: a restarted DSH runtime is a new process and native terminal sessions do not survive it",
+      "byq_fallback": "none; requires the BYQ attachment layer plus an explicit lost/interrupted status",
+      "r_series_owner": "R4 TerminalAttachment (Proposed ADR-0083, not accepted, not implemented)",
+      "assertions": ["d15_5_dsh_runtime_restart_pass"]
+    }
+  ],
+  "optional_capabilities": [],
+  "rules": {
+    "go_requires_every_required_capability_pass": true,
+    "no_partial_pass_aggregation": true,
+    "verdict_is_derived_from_sources_not_declared": true,
+    "every_required_non_pass_must_be_named_as_a_blocker": true,
+    "required_source_artifacts_must_be_provenance_verified": true,
+    "go_does_not_authorize_production_cutover": true,
+    "r3_resume_requires_go_and_native_continuity_evidence": true
+  },
+  "constraints": {
+    "r3_resume": "NO",
+    "production_selector": "dsh-0.1.2rc1",
+    "production_default_unchanged": true,
+    "adr_0082": "Proposed, not accepted, not implemented",
+    "adr_0083": "Proposed, not accepted, not implemented",
+    "deployment": "none"
+  },
+  "forbidden_decision_fields": [
+    "all_pass",
+    "capabilities_ok",
+    "required_capabilities",
+    "go_authorized",
+    "self_declared_verdict",
+    "coverage"
+  ],
+  "fail_closed": [
+    "candidate mismatch",
+    "decision not in the decision vocabulary",
+    "missing or extra capability id (closed set)",
+    "a claimed capability status that differs from the independently derived status",
+    "a GO decision while any required capability is not PASS",
+    "a decision that differs from the independently derived verdict",
+    "a blocker set that does not equal the derived set of required non-PASS capabilities",
+    "a required capability claimed PASS without provenance-verified source evidence",
+    "missing or hash-mismatched source evidence",
+    "a decision that declares its own coverage/verdict fields (self-declared)",
+    "GO does not authorize production cutover and must not be reported as cutover"
+  ],
+  "notes": {
+    "purpose": "D15-G is a decision, not a qualification: a truthful NO_GO is the correct pass criterion. The observer fails (non-zero) when the decision is invalid, dishonest or aggregates a partial PASS into GO.",
+    "go_boundary": "GO would only mean DSH 0.1.5-rc.1 native continuity is adoption-ready; it would still not authorize a production cutover, which is a separate decision.",
+    "r3": "R3_RESUME stays NO regardless of this stage; R3 may only be reconsidered after a GO plus the R3/R6 native-continuity evidence."
+  }
+}

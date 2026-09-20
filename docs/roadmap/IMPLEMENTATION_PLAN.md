@@ -274,6 +274,24 @@ result-only 门禁误报。框架中立合同
 `PARTIAL/BLOCKED`，不主张完整 D15-5/D15-G/full-D15，`R3_RESUME = NO`。** 新增 build inputs 属
 inventory，构建修订推进 `post-u8.169 → .170`（仅重建身份）。不部署、不自动合并。
 
+D15-G architecture Go/No-Go（构建修订 `post-u8.171`，维护，不推进 Product Phase）：先定义
+fail-able decision contract（`scripts/d15/go_no_go/contract.v1.json`）与 observer
+（`scripts/d15/go_no_go/observer.py`），再计算结论。observer 从已提交 D15-2..D15-5 证据独立
+推导每个必需 capability 状态并校验 provenance sha256；GO 仅当全部必需 capability `PASS`，任一
+必需项非 PASS 强制 `NO_GO` 且必须具名 blocker；拒绝部分 PASS 聚合为 GO、claimed 与 derived
+不一致、缺失 blocker/证据/自声明 verdict/coverage 字段。`negative-controls.v1.json` 14 项控制
+全部被拒（13 项 defect-targeting，修复前 result-trusting 门禁误报），全 PASS 合成 fixture 得到
+诚实 GO 并通过。capability/failure matrix（`docs/evidence/d15/d15-g/capability-matrix.v1.json`）
+覆盖 D15-2..D15-5 每项 DSH-native 结果/BYQ fallback/R-series owner/证据。推导结论：
+root-session-persistence、process-restart-resume、fork-continuity、terminal-client-reattach
+`PASS`；host-reboot-resume `NOT_RUN`；subagent-resume、subagent-child-crash、
+subagent-byq-adapter-restart、terminal-persistence、terminal-adapter-restart、
+terminal-dsh-runtime-restart `BLOCKED`。**结论 `NO_GO`（NOT-PASS）：child-crash、BYQ adapter
+restart、terminal adapter restart、DSH runtime restart 四项必需项未过，host reboot `NOT_RUN`；
+不得聚合部分 PASS 为 GO。** 生产 selector/default 不变、R3 冻结且 `R3_RESUME = NO`、Proposed
+ADR-0082/0083 未接受未实现、无部署/发布/tag/付费/重启主机。新增 build inputs 属 inventory，
+构建修订推进 `post-u8.170 → .171`（仅重建身份）。不部署、不自动合并。
+
 数据就绪续接 needs_attention 重挂（fix，构建修订 `dsh-0.1.2rc1-post-u8.142`）：生产 round-2
 数据就绪续接回合结算为 `needs_attention` 后，`research_tasks.continuation_blocked_reason` 被写成
 `continuation_needs_attention`；原预算路径的按任务级 `continue` 使其永久阻止后续**不同**的
