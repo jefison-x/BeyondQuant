@@ -33,6 +33,7 @@ from app.data_sync import DataSyncStore
 from app.data_demand import DataDemandStore
 from app.engineering import EngineeringTaskStore
 from app.index_indicators import IndexIndicatorStore
+from app.industry_classification import IndustryClassificationStore
 from app.learning_loop import LearningLoopStore
 from app.market_data import MarketDataStore
 from app.market_automation import MarketAutomationStore
@@ -74,6 +75,7 @@ REGISTERED_SCHEMA_DDL: list[str] = [
     *MarketAutomationStore.SCHEMA_DDL,
     *MarketReadinessStore.SCHEMA_DDL,
     *IndexIndicatorStore.SCHEMA_DDL,
+    *IndustryClassificationStore.SCHEMA_DDL,
     *SignalJobStore.SCHEMA_DDL,
     *MLTrainingRunStore.SCHEMA_DDL,
     *MLPredictionRunStore.SCHEMA_DDL,

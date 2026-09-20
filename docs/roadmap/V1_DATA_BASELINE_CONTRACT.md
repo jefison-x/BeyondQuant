@@ -62,8 +62,10 @@ Status: Draft — 依据 [ADR-0074](../architecture/adr/ADR-0074-data-baseline-a
 ## HIST 时点可见性关键前提
 
 - `ths_member` 的 `in_date`/`out_date` 官方标注“暂无”，历史概念成分可能**不可点时**；
-  `index_member_all`（申万）需实测是否含纳入/剔除日期。
-- 因此 HIST 仍以**行业（申万，若可证时点）**为先；概念关系在证明历史可见性前保持 `blocked`，
+  `index_member_all`（申万）已由 P100-C 实测确认含纳入/剔除日期：`in_date`/`out_date` 区间逐股
+  不重叠、跨日期重建成分不同，且接口无 as-of 日期参数（日期类参数被静默忽略并返回当前成分），
+  因此点-in-time 只能由持久化区间本地重建（证据 `docs/evidence/phase-100c/`）。
+- 因此 HIST 仍以**行业（申万，已证时点）**为先；概念关系在证明历史可见性前保持 `blocked`，
   禁止用当前成分回填历史。
 
 ## 未决项（blocked 直到证据）

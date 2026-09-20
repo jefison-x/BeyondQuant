@@ -968,6 +968,32 @@ class MarketReadinessStore(PgStoreMixin):
                 {"symbol": valuation_symbol, "start": requirement["start_date"], "end": requirement["end_date"]},
             )
             valuation_map = {str(row["trade_date"]): row for row in valuation_rows}
+        from .industry_classification import INDEX_CLASSIFY_LEVELS as INDUSTRY_LEVELS
+        industry_membership = declared.get("industry_membership")
+        membership_level: str | None = None
+        membership_by_symbol: dict[str, list[dict[str, object]]] = {}
+        membership_evidence: list[str] = []
+        if industry_membership is not None:
+            if not isinstance(industry_membership, dict):
+                raise ValueError("declared industry_membership is invalid")
+            membership_level = str(industry_membership.get("level", "L1")).strip().upper()
+            if membership_level not in INDUSTRY_LEVELS:
+                raise ValueError("declared industry_membership contains an unsupported level")
+            membership_rows = self._execute(
+                """SELECT ts_code,l1_code,l2_code,l3_code,in_date,out_date,content_sha256
+                   FROM market_index_member_all
+                   WHERE ts_code IN (SELECT jsonb_array_elements_text(:symbols))
+                   ORDER BY ts_code,in_date,l3_code""",
+                {"symbols": symbols},
+            )
+            for membership_row in membership_rows:
+                membership_by_symbol.setdefault(str(membership_row["ts_code"]), []).append(membership_row)
+                in_date = str(membership_row["in_date"])
+                out_date = membership_row["out_date"]
+                if in_date <= str(requirement["end_date"]) and (
+                    not out_date or str(out_date) > str(requirement["start_date"])
+                ):
+                    membership_evidence.append(str(membership_row["content_sha256"]))
         daily_basic_fields = list(declared.get("daily_basic", []))
         daily_basic_rows = self._execute(
             """SELECT symbol,trade_date,content_sha256 FROM market_daily_basic
@@ -1057,6 +1083,16 @@ class MarketReadinessStore(PgStoreMixin):
                     delist_date and trade_date >= str(delist_date)
                 ):
                     continue
+                if membership_level is not None:
+                    active_membership = [
+                        item for item in membership_by_symbol.get(symbol, [])
+                        if str(item["in_date"]) <= trade_date
+                        and (not item["out_date"] or str(item["out_date"]) > trade_date)
+                    ]
+                    if len(active_membership) != 1:
+                        missing.append({"symbol": symbol, "trade_date": trade_date, "dataset": "industry_membership"})
+                        missing_dates.add(trade_date)
+                        continue
                 status = status_map.get((symbol, trade_date))
                 supplement = supplements.get(trade_date)
                 if trade_date in incomplete_action_dates:
@@ -1123,6 +1159,7 @@ class MarketReadinessStore(PgStoreMixin):
                     valuation_map.values(), key=lambda item: str(item["trade_date"]),
                 )
             ],
+            "industry_membership": sorted(set(membership_evidence)),
             "index_weights": [str(row["content_sha256"]) for row in weight_rows],
             "financial_completeness": [str(row["content_sha256"]) for row in financial_complete.values()],
         })
