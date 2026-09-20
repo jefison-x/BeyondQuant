@@ -2,10 +2,9 @@
 
 Status: **D15-0 done, D15-1 candidate built/started/probed, D15-2 session V3
 migration PASS (format layer only), D15-3 native persistence-layer session
-resume PASS, D15-4..D15-G not started. A real BYQ runtime-level continuity
-qualification (process recovery, goal preservation, domain-action at-most-once,
-approval validity, result traceability) remains a required next step and is not
-done. `R3_RESUME = NO`.**
+resume PASS, D15-3R real isolated BYQ runtime-continuity qualification PASS
+(scripted keyless provider; service-boundary, not real-LLM-quality), D15-4..D15-G
+not started. `R3_RESUME = NO`.**
 Relates: ADR-0079, ADR-0081, ADR-0058, ADR-0069, ADR-0003
 Evidence: `docs/evidence/d15/`
 Target decision: [`docs/evidence/d15/target-decision.v1.json`](../evidence/d15/target-decision.v1.json)
@@ -56,6 +55,7 @@ violate the "no second generic agent harness" rule.
 | D15-1 | Candidate Runtime Upgrade | **machinery + isolated build/start DONE; D15-2..D15-G pending** |
 | D15-2 | Session V3 Migration Qualification (format layer) | **PASS** |
 | D15-3 | Native Session Resume Qualification (persistence seam) | **PASS** |
+| D15-3R | Real Isolated BYQ Runtime-Continuity Qualification | **PASS** (scripted keyless provider) |
 | D15-4 | Subagent/Fork Continuity Qualification | planned |
 | D15-5 | Persistent Terminal Qualification | planned |
 | D15-G | Architecture Go/No-Go | planned |
@@ -182,6 +182,92 @@ evidence-only: the public framework-neutral `fresh/reattached/rehydrated/
 interrupted` contract is unchanged and the DSH session id never becomes the BYQ
 `AgentSession` identity.
 
+## 4b. D15-3R — Real isolated BYQ runtime continuity (PASS)
+
+A real isolated BYQ stack (dedicated compose project `byq-d15-runtime`, dedicated
+network/volumes, fresh PostgreSQL, loopback-only ports) ran the rebuilt fixed
+`dsh-0.1.5rc1` candidate runtime-adapter together with the real Gateway, Backend
+and MCP services. A keyless deterministic loopback provider drove the turns.
+
+Result (2026-09-20): **PASS** for adapter/DSH process interruption+restart,
+Gateway disconnect/reconnect, generation replacement, DSH child interruption and
+executor takeover. Each row records before/after session, goal, approval,
+action-receipts, result, adapter pid, generation and executor epoch; original
+goal retained; redelivery deduplicated with one side effect; approval not
+bypassed; result traceable; generation replacement produced a new generation and
+executor takeover incremented the monotonic epoch `1 -> 2` with an immutable
+audit and no database write.
+
+**Proof boundary.** The provider is scripted and keyless, so this is
+service-boundary runtime-continuity evidence and **not** real-LLM-quality
+semantic evidence. Host reboot is `NOT_RUN` (a container restart is not a host
+reboot). D15-4/D15-5/D15-G and R3 are not in this batch.
+
+**Review-fix revision (v2, 2026-09-20).** The observer separates `format_valid`
+(the artifact is well formed) from `all_pass` (the qualification passed). A
+REQUIRED scenario left `NOT_RUN`/`BLOCKED` makes the verdict non-zero while
+preserving its status/reason; OPTIONAL scenarios (e.g. `host-reboot`) are
+declared separately and do not gate required coverage.
+`allowed_continuity`/`forbidden_continuity` come only from the trusted contract.
+PASS requires real PID/generation/epoch relationships and receipt/trace linkage.
+The selfcheck executes a reconstructed legacy algorithm to prove the pre-fix
+behaviour rather than asserting it. The isolated stack rebuilds Backend/Gateway/
+MCP from the branch (a stale production image lacked pool idempotency).
+
+**Capture-layer revision (v3, 2026-09-20).** `capture()` no longer fabricates
+evidence: missing durable journal receipt / replay error / mismatched replay run
+id produce `capture_ok=false` + `capture_errors` and a scenario `FAIL`; the
+approval `state`/`decided_by` are read from the persisted approval and real
+REJECT + invalid-reuse deny trials are attempted with no-side-effect assertions;
+`trace_contiguous` is computed from the full persisted sequence and the result is
+attributed to the target run (`terminal_kind`, `attributed_message_sequence`);
+`make_receipt` requires a measured `side_effect_count` and a labeled `origin`;
+and manual Product actions are distinguished from Agent→MCP execution
+(`agent_mcp_tool_calls=0`). **v1/v2 are retained but are not a qualification
+pass.** Evidence:
+[`docs/evidence/d15/d15-runtime/`](../evidence/d15/d15-runtime/README.md)
+(`observations.v3.json`, `verdict.v3.json`, `negative-controls.v3.json`,
+`capture-negatives.v3.json`, `stack.v3.json`, per-row `scenarios/*.v3.json`).
+Harness:
+`scripts/d15/runtime_continuity/{contract.v3.json,observer.py,capture_negatives.py,scripted_provider.py,run_qualification.py}`
+and `tests/test_dsh_d15_runtime_{continuity,capture}.py`. The observer is
+fail-able: 35 negative controls plus 5 capture-layer negatives each force a
+non-zero exit while a known-good unit fixture passes.
+
+**Scope/approval/Agent-MCP revision (v4, 2026-09-20).** The scripted provider
+emits a real `mcp__byq__byq_research_task_create` tool call through the real
+runtime-adapter → MCP → Backend; the adapter is restarted and the same
+idempotency key re-delivered, returning the same task id with a measured
+side-effect count of 1 (new required scenario `agent-mcp-domain-at-most-once`).
+Approval denial now records the HTTP status/domain code and actually attempts the
+protected backtest operation with the rejected approval, verifying the
+authoritative backtest-job count before/after (invalid reuse 409, protected
+operation 422 `product_domain_rejected`, count `0 -> 0`). Capture negatives add
+`denial-from-500-timeout` and `rejected-response-but-side-effect-exists`. Docs
+explicitly separate a **limited service-boundary observation pass** from a **full
+original-task qualification**: v4 is the former (scripted keyless provider), not
+real-LLM-quality, and v1/v2/v3 are retained history that do not constitute a
+qualification pass. Evidence:
+[`docs/evidence/d15/d15-runtime/`](../evidence/d15/d15-runtime/README.md)
+(`observations.v4.json`, `verdict.v4.json`, `negative-controls.v4.json`,
+`capture-negatives.v4.json`, `stack.v4.json`, `scenarios/*.v4.json`).
+
+**Two-run replay + post-fault approval revision (v5, 2026-09-20).** The
+Agent→MCP scenario now holds the first and second run/message separately, waits
+for the second run's own tool call, terminal and attributed assistant, and
+correlates both real tool responses by run id, tool_call_id and the same task id
+with a measured side-effect count of 1 (the scripted provider records a real
+tool-call/result history; it emitted the tool call twice). A replay synthesized
+from the current task id can no longer pass. Approval trials are labelled
+`pre-fault`/`post-fault`, and every recovery `after` capture actually re-requests
+the invalid reuse and re-attempts the protected backtest operation after the
+fault, measuring authoritative before/after counts. New capture negatives:
+`agent-mcp-second-no-tool`, `agent-mcp-second-mcp-failed`,
+`agent-mcp-only-first-run`. Evidence:
+[`docs/evidence/d15/d15-runtime/`](../evidence/d15/d15-runtime/README.md)
+(`observations.v5.json`, `verdict.v5.json`, `negative-controls.v5.json`,
+`capture-negatives.v5.json`, `stack.v5.json`, `scenarios/*.v5.json`).
+
 ## 5. D15-4 — Subagent / fork continuity
 
 Verify parent/child identity, child session persistence, continuable descriptor,
@@ -274,3 +360,25 @@ are taken). The `.155` manifest is created new; no prior immutable manifest
 (`.151`–`.154`) is modified and no `main` history is rewritten. Selector,
 `compose.yml`, `deployment.json`, the immutable release registry and 0.1.2
 artifacts/evidence are unchanged, and no deployment occurs.
+
+D15-3R adds the runtime-continuity harness, observer, contract and tests under
+`scripts/d15/` and `tests/`, which are part of the build-input inventory, so the
+revision advances `post-u8.159` -> `post-u8.160` (`.158`/`.159` were already
+taken by in-flight/main identities). This is a rebuild identity bump only: no
+selector, `compose.yml`, `deployment.json`, immutable release registry or 0.1.2
+artifact/evidence change and no deployment.
+
+The D15-3R observer review-fix revision changes `scripts/d15/runtime_continuity/`
+and `tests/` build inputs again, so the revision advances
+`post-u8.160` -> `post-u8.161` (again a rebuild identity bump only; no selector,
+deployment, immutable release registry or 0.1.2 artifact/evidence change and no
+deployment).
+
+The D15-3R capture-layer review-fix revision changes `scripts/d15/runtime_continuity/`
+and `tests/` build inputs again, so the revision advances
+`post-u8.161` -> `post-u8.162` (rebuild identity bump only; no selector,
+deployment, immutable release registry or 0.1.2 artifact/evidence change and no
+deployment). The D15-3R scope/approval/Agent-MCP revision changes the same build
+inputs again, advancing `post-u8.162` -> `post-u8.163` (rebuild identity only).
+The D15-3R two-run replay revision changes the same build inputs again,
+advancing `post-u8.163` -> `post-u8.164` (rebuild identity only).

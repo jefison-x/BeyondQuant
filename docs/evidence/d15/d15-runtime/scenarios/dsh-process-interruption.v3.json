@@ -1,0 +1,337 @@
+{
+  "after": {
+    "_detail_message_count": 4,
+    "_domain": {
+      "approval_replay_matches": true,
+      "approval_side_effect_count": 1,
+      "pool_side_effect_count": 1,
+      "replay_approval_id": "artifact_eedc78dd80c8462896c229c510f3b4b3",
+      "replay_pool_id": "stock_pool_6910978c06e148b793c14021007fb9dc"
+    },
+    "_dsh_pids": [
+      275,
+      303
+    ],
+    "_interrupted_pids": [
+      157,
+      245
+    ],
+    "_journal_generations": [
+      {
+        "ended_at": 1789881161.0010672,
+        "executor_epoch": 1,
+        "generation_id": "generation-e726078c88594e14bc9366acbd65ab4f",
+        "root_run_id": null,
+        "started_at": 1789881151.4028382,
+        "state": "closed"
+      },
+      {
+        "ended_at": 1789881176.7562878,
+        "executor_epoch": 1,
+        "generation_id": "generation-56e0b879c3e04c108443a7515fdb1ed4",
+        "root_run_id": null,
+        "started_at": 1789881162.2933402,
+        "state": "interrupted"
+      },
+      {
+        "ended_at": 1789881187.5759022,
+        "executor_epoch": 1,
+        "generation_id": "generation-15f23f9c949744949b85c50fca6b4de0",
+        "root_run_id": null,
+        "started_at": 1789881176.758948,
+        "state": "closed"
+      },
+      {
+        "ended_at": null,
+        "executor_epoch": 1,
+        "generation_id": "generation-60c5db883b2c4dae8b3965b13893404e",
+        "root_run_id": null,
+        "started_at": 1789881187.5852394,
+        "state": "starting"
+      }
+    ],
+    "_provider_calls": 3,
+    "_status_before_interrupt": "model_or_executor_unqualified",
+    "_submission_run_id": "9068ffb007b74581b7f4bb5151d2f6c7",
+    "_trace_event_count": 25,
+    "action_receipts": [
+      {
+        "idempotency_key": "message_7d2c06af322e43428666639e51baf93d",
+        "origin": "product-api-manual",
+        "receipt": {
+          "run_id": "a495ec1a0fcf43dfaab3854b7d4e9b87",
+          "state": "accepted"
+        },
+        "replay": {
+          "receipt": {
+            "run_id": "a495ec1a0fcf43dfaab3854b7d4e9b87",
+            "state": "accepted"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "runtime.prompt.idempotent"
+      },
+      {
+        "idempotency_key": "d15-pool-2237f19089fe4ace9376be0a2bfded02",
+        "origin": "product-api-manual",
+        "receipt": {
+          "pool_id": "stock_pool_6910978c06e148b793c14021007fb9dc",
+          "state": "accepted"
+        },
+        "replay": {
+          "receipt": {
+            "pool_id": "stock_pool_6910978c06e148b793c14021007fb9dc",
+            "state": "accepted"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "byq_paper_pool_create"
+      },
+      {
+        "idempotency_key": "d15-approval-228c68fbe36f4d65973deca63fc90555",
+        "origin": "product-api-manual",
+        "receipt": {
+          "approval_id": "artifact_eedc78dd80c8462896c229c510f3b4b3",
+          "state": "approved"
+        },
+        "replay": {
+          "receipt": {
+            "approval_id": "artifact_eedc78dd80c8462896c229c510f3b4b3",
+            "state": "approved"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "byq_strategy_approval"
+      }
+    ],
+    "adapter_generation": "generation-60c5db883b2c4dae8b3965b13893404e",
+    "adapter_pid": 3315908,
+    "approval": {
+      "approval_id": "artifact_eedc78dd80c8462896c229c510f3b4b3",
+      "bypassed": false,
+      "decided_by": "d15admin",
+      "execution_authorized": true,
+      "fetched_approval": {
+        "artifact_id": "artifact_eedc78dd80c8462896c229c510f3b4b3",
+        "state": "approved"
+      },
+      "reuse_denied": true,
+      "state": "approved",
+      "trials": [
+        {
+          "artifact_id": "artifact_a1624e5e64f744629da002b28e68bfcb",
+          "denied": true,
+          "kind": "rejected",
+          "side_effect_created": false,
+          "state": "rejected"
+        },
+        {
+          "denied": true,
+          "kind": "invalid_reuse",
+          "side_effect_created": false,
+          "state": "rejected"
+        }
+      ]
+    },
+    "capture_errors": [],
+    "capture_ok": true,
+    "continuity": "rehydrated",
+    "executor_epoch": 1,
+    "generation_index": 4,
+    "goal": {
+      "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+      "prompt_receipt": {
+        "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+        "root_run_id": "a495ec1a0fcf43dfaab3854b7d4e9b87"
+      }
+    },
+    "result": {
+      "attributed_message_sequence": 5,
+      "run_id": "a495ec1a0fcf43dfaab3854b7d4e9b87",
+      "sequence": 25,
+      "status": "completed",
+      "target_run_id": "a495ec1a0fcf43dfaab3854b7d4e9b87",
+      "terminal_kind": "session.result",
+      "trace_contiguous": true
+    },
+    "session_id": "conversation_91ae4a1620d44201a0e889eaf0a77bce",
+    "trace_id": "byq-trace-ed62c3b405534666b95c384f82f593f7"
+  },
+  "before": {
+    "_detail_message_count": 3,
+    "_domain": {
+      "approval_replay_matches": true,
+      "approval_side_effect_count": 1,
+      "pool_side_effect_count": 1,
+      "replay_approval_id": "artifact_eedc78dd80c8462896c229c510f3b4b3",
+      "replay_pool_id": "stock_pool_6910978c06e148b793c14021007fb9dc"
+    },
+    "_dsh_pids": [
+      157,
+      218
+    ],
+    "_journal_generations": [
+      {
+        "ended_at": 1789881161.0010672,
+        "executor_epoch": 1,
+        "generation_id": "generation-e726078c88594e14bc9366acbd65ab4f",
+        "root_run_id": null,
+        "started_at": 1789881151.4028382,
+        "state": "closed"
+      },
+      {
+        "ended_at": 1789881176.7562878,
+        "executor_epoch": 1,
+        "generation_id": "generation-56e0b879c3e04c108443a7515fdb1ed4",
+        "root_run_id": null,
+        "started_at": 1789881162.2933402,
+        "state": "interrupted"
+      },
+      {
+        "ended_at": null,
+        "executor_epoch": 1,
+        "generation_id": "generation-15f23f9c949744949b85c50fca6b4de0",
+        "root_run_id": null,
+        "started_at": 1789881176.758948,
+        "state": "starting"
+      }
+    ],
+    "_provider_calls": 2,
+    "_trace_event_count": 18,
+    "action_receipts": [
+      {
+        "idempotency_key": "message_7d2c06af322e43428666639e51baf93d",
+        "origin": "product-api-manual",
+        "receipt": {
+          "run_id": "a495ec1a0fcf43dfaab3854b7d4e9b87",
+          "state": "accepted"
+        },
+        "replay": {
+          "receipt": {
+            "run_id": "a495ec1a0fcf43dfaab3854b7d4e9b87",
+            "state": "accepted"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "runtime.prompt.idempotent"
+      },
+      {
+        "idempotency_key": "d15-pool-2237f19089fe4ace9376be0a2bfded02",
+        "origin": "product-api-manual",
+        "receipt": {
+          "pool_id": "stock_pool_6910978c06e148b793c14021007fb9dc",
+          "state": "accepted"
+        },
+        "replay": {
+          "receipt": {
+            "pool_id": "stock_pool_6910978c06e148b793c14021007fb9dc",
+            "state": "accepted"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "byq_paper_pool_create"
+      },
+      {
+        "idempotency_key": "d15-approval-228c68fbe36f4d65973deca63fc90555",
+        "origin": "product-api-manual",
+        "receipt": {
+          "approval_id": "artifact_eedc78dd80c8462896c229c510f3b4b3",
+          "state": "approved"
+        },
+        "replay": {
+          "receipt": {
+            "approval_id": "artifact_eedc78dd80c8462896c229c510f3b4b3",
+            "state": "approved"
+          },
+          "side_effect_count": 1
+        },
+        "side_effect_count": 1,
+        "tool": "byq_strategy_approval"
+      }
+    ],
+    "adapter_generation": "generation-15f23f9c949744949b85c50fca6b4de0",
+    "adapter_pid": 3315908,
+    "approval": {
+      "approval_id": "artifact_eedc78dd80c8462896c229c510f3b4b3",
+      "bypassed": false,
+      "decided_by": "d15admin",
+      "execution_authorized": true,
+      "fetched_approval": {
+        "artifact_id": "artifact_eedc78dd80c8462896c229c510f3b4b3",
+        "state": "approved"
+      },
+      "reuse_denied": true,
+      "state": "approved",
+      "trials": [
+        {
+          "artifact_id": "artifact_a1624e5e64f744629da002b28e68bfcb",
+          "denied": true,
+          "kind": "rejected",
+          "side_effect_created": false,
+          "state": "rejected"
+        },
+        {
+          "denied": true,
+          "kind": "invalid_reuse",
+          "side_effect_created": false,
+          "state": "rejected"
+        }
+      ]
+    },
+    "capture_errors": [],
+    "capture_ok": true,
+    "continuity": "reattached",
+    "executor_epoch": 1,
+    "generation_index": 3,
+    "goal": {
+      "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+      "prompt_receipt": {
+        "content_sha256": "10f6c8b7c167494c06565b9e7e5bcf7d1605bdd43b502a12738741a35b2a23ff",
+        "root_run_id": "a495ec1a0fcf43dfaab3854b7d4e9b87"
+      }
+    },
+    "result": {
+      "attributed_message_sequence": 5,
+      "run_id": "a495ec1a0fcf43dfaab3854b7d4e9b87",
+      "sequence": 18,
+      "status": "completed",
+      "target_run_id": "a495ec1a0fcf43dfaab3854b7d4e9b87",
+      "terminal_kind": "session.result",
+      "trace_contiguous": true
+    },
+    "session_id": "conversation_91ae4a1620d44201a0e889eaf0a77bce",
+    "trace_id": "byq-trace-ed62c3b405534666b95c384f82f593f7"
+  },
+  "candidate": {
+    "python_sdk": "0.1.5rc1",
+    "release": "dsh-0.1.5rc1",
+    "runtime_bin": "0.1.5rc1",
+    "selector_env": "BYQ_DSH_COMPATIBILITY_RELEASE"
+  },
+  "capture_errors": [],
+  "evidence": [
+    "docs/evidence/d15/d15-runtime/dsh-process-interruption.v3.json"
+  ],
+  "evidence_class": "runtime-isolated-stack",
+  "execution_model": {
+    "action_origin": "product-api-manual",
+    "agent_mcp_tool_calls": 0,
+    "note": "The research goal, persistent approval and paper-pool side effect are exercised through the real Product/Backend API as manual Product actions. They are NOT Agent->MCP tool-call executions and do NOT claim Agent at-most-once semantics.",
+    "provider": "scripted-keyless"
+  },
+  "fault_applied": true,
+  "generated_at": "2026-09-20T05:12:04Z",
+  "id": "dsh-process-interruption",
+  "llm": {
+    "class": "scripted-keyless",
+    "note": "Keyless deterministic loopback provider; service-boundary runtime-continuity evidence, not real-LLM-quality semantic evidence.",
+    "real_llm_quality": false
+  },
+  "result": "PASS",
+  "schema_version": "byq-d15-runtime-scenario.v3"
+}

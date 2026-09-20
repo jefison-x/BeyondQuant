@@ -1,0 +1,23 @@
+{
+  "schema_version": "dsh-deployment-identity.v1",
+  "default_release": "dsh-0.1.5rc1",
+  "compatibility_family": "byq-dsh-sdk-v1",
+  "candidate_releases": ["dsh-0.1.5rc1"],
+  "python": {
+    "sdk": "0.1.5rc1",
+    "runtime_bin": "0.1.5rc1"
+  },
+  "runtime_executor": {
+    "deployment_id": "byq-d15-runtime-qualification",
+    "executor_epoch": 1,
+    "runtime_release": "dsh-0.1.5rc1",
+    "volume_identity": "byq-d15-runtime-sessions",
+    "schema_version": "runtime-executor.v1"
+  },
+  "profile": {
+    "composition": "/opt/byq/profiles/byq-product.patch.yml",
+    "identity": "/opt/byq/profiles/byq-product.identity.json",
+    "name": "byq-product-candidate"
+  },
+  "note": "Isolated D15 runtime-continuity qualification identity. Not a production deployment identity and never referenced by config/dsh/deployment.json."
+}

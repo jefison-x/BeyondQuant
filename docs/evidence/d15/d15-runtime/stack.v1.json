@@ -1,0 +1,33 @@
+{
+  "cleanup": {
+    "containers_before": 6,
+    "containers_remaining": 0,
+    "networks_remaining": 0,
+    "volumes_remaining": 0
+  },
+  "domain_artifacts": {
+    "approval_id": "artifact_e010be1cffe64077b26d4ff6a146c688",
+    "approval_key": "d15-approval-933bc2958c1044e29301e39950c7340b",
+    "pool_id": "stock_pool_c7fa634427ed4dceba23855d28330cca",
+    "pool_key": "d15-pool-a8bc3455b8114f8a8d1f07cbb5bb6f28",
+    "run_id": "0c790c22e0354566a8b3045c0c16a496",
+    "strategy_version_artifact_id": "artifact_20e60c8ac5c546f9846c29c8fa832ff2",
+    "task_id": "task_1899b92d3cbb4ea6bc5b38feba638d62"
+  },
+  "generated_at": "2026-09-20T04:41:17Z",
+  "preflight": {
+    "adapter_image": "sha256:36126eb52f48d68d6d2bcb0a3165616d3a279b8d4375939b03693b92d8059ac5",
+    "candidate": "dsh-0.1.5rc1",
+    "containers": 6,
+    "images": {
+      "byq-d15-runtime-backend-1": "sha256:8a1f7d6551691320010826b717f417fc426392c5f50c00dfbb251372c75bee9f",
+      "byq-d15-runtime-gateway-1": "sha256:d41bee602ab0a524b0acf061bc1c4bac878e84eca3434797d1ea14bfdb10b352",
+      "byq-d15-runtime-mcp-1": "sha256:c662c45f4e39e6c1d4d32a4ed04f47d4324ba00d9c2cb052a26e8fbcca4d05b5",
+      "byq-d15-runtime-postgres-1": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+      "byq-d15-runtime-runtime-adapter-1": "sha256:36126eb52f48d68d6d2bcb0a3165616d3a279b8d4375939b03693b92d8059ac5",
+      "byq-d15-runtime-scripted-provider-1": "sha256:d1b1ae07f37a9b5011b3f7e12fe384f70af10a789df5f460113f73759c8ad330"
+    },
+    "network": "byq-d15-runtime_d15_internal"
+  },
+  "schema_version": "byq-d15-runtime-stack.v1"
+}

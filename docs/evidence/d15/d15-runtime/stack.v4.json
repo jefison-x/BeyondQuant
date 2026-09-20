@@ -1,0 +1,167 @@
+{
+  "cleanup": {
+    "containers_before": 6,
+    "containers_remaining": 0,
+    "networks_remaining": 0,
+    "volumes_remaining": 0
+  },
+  "domain_artifacts": {
+    "approval_body": {
+      "decision": "approved",
+      "idempotency_key": "d15-approval-9b78c2839fd649ef8a78cad4aadc0fb2",
+      "rationale": "D15 isolated human approved decision.",
+      "strategy_version_artifact_id": "artifact_997b13647a734e37801ca7a861e97541",
+      "task_id": "task_ae0902cc929d430897f0cb2915826465",
+      "trace_id": "d15-approval-trace-8d7a12e387794d758530a27fa37599fe"
+    },
+    "approval_id": "artifact_edb6d276a1a8481db8074b91992f2c59",
+    "approval_key": "d15-approval-9b78c2839fd649ef8a78cad4aadc0fb2",
+    "approved_response": {
+      "approval": {
+        "decision": "approved",
+        "execution_authorized": true,
+        "execution_outcome": "not_started",
+        "rationale": "D15 isolated human approved decision.",
+        "reviewer_principal": "d15admin",
+        "schema_version": "strategy-approval-v1",
+        "strategy_version_artifact_id": "artifact_997b13647a734e37801ca7a861e97541",
+        "strategy_version_id": "87f17752105a38478d64af68b6acb54d35ae0490cb83d26f3e06cfe4b3dd5ce6"
+      },
+      "artifact": {
+        "artifact_id": "artifact_edb6d276a1a8481db8074b91992f2c59",
+        "content": {
+          "decision": "approved",
+          "execution_authorized": true,
+          "execution_outcome": "not_started",
+          "rationale": "D15 isolated human approved decision.",
+          "reviewer_principal": "d15admin",
+          "schema_version": "strategy-approval-v1",
+          "strategy_version_artifact_id": "artifact_997b13647a734e37801ca7a861e97541",
+          "strategy_version_id": "87f17752105a38478d64af68b6acb54d35ae0490cb83d26f3e06cfe4b3dd5ce6"
+        },
+        "content_sha256": "6f6a0f08ade14db692ea8872ba12d67a6118826767f5db9513fa46fa5e11e8c3",
+        "created_at": "2026-09-20T05:52:12.752895+00:00",
+        "experiment_id": null,
+        "kind": "strategy_approval",
+        "lineage": [
+          {
+            "id": "task_ae0902cc929d430897f0cb2915826465",
+            "kind": "research_task"
+          },
+          {
+            "id": "artifact_997b13647a734e37801ca7a861e97541",
+            "kind": "artifact"
+          }
+        ],
+        "owner_principal": "d15admin",
+        "status": "validated",
+        "task_id": "task_ae0902cc929d430897f0cb2915826465",
+        "trace_id": "d15-approval-trace-8d7a12e387794d758530a27fa37599fe",
+        "updated_at": "2026-09-20T05:52:12.758110+00:00",
+        "version": 2,
+        "workspace_id": "workspace_edb32d276ea14a9e8df6535dfabf1721"
+      }
+    },
+    "backtests_after": 0,
+    "backtests_before": 0,
+    "invalid_reuse_response": {
+      "body": {
+        "error": {
+          "code": "product_domain_rejected",
+          "message": "artifact idempotency key was reused",
+          "request_id": "e69f6db37f824bc0ac47aebfee432d41"
+        }
+      },
+      "error": "http 409",
+      "ok": false,
+      "status": 409
+    },
+    "pool_id": "stock_pool_25022612dfa14676afefb64b5ee849bb",
+    "pool_key": "d15-pool-1d182fac508e4fd39118a01b90700d3a",
+    "pool_name": "D15 isolated pool 7525c36f51ab48608a5e12470db244d4",
+    "protected_operation_response": {
+      "body": {
+        "error": {
+          "code": "product_domain_rejected",
+          "message": "strategy version is not approved for execution",
+          "request_id": "93cca65233434edab5943b47a218fdb1"
+        }
+      },
+      "error": "http 422",
+      "ok": false,
+      "status": 422
+    },
+    "rejected_response": {
+      "approval": {
+        "decision": "rejected",
+        "execution_authorized": false,
+        "execution_outcome": "not_started",
+        "rationale": "D15 isolated human rejected decision.",
+        "reviewer_principal": "d15admin",
+        "schema_version": "strategy-approval-v1",
+        "strategy_version_artifact_id": "artifact_c87c3dc0191841ac9159e0d094e30fe7",
+        "strategy_version_id": "ce73979a11ce03fe19c48de914a367f79040ae521a5c658674e744a5ce32ce12"
+      },
+      "artifact": {
+        "artifact_id": "artifact_cf598186707243819dd54474f7154ac2",
+        "content": {
+          "decision": "rejected",
+          "execution_authorized": false,
+          "execution_outcome": "not_started",
+          "rationale": "D15 isolated human rejected decision.",
+          "reviewer_principal": "d15admin",
+          "schema_version": "strategy-approval-v1",
+          "strategy_version_artifact_id": "artifact_c87c3dc0191841ac9159e0d094e30fe7",
+          "strategy_version_id": "ce73979a11ce03fe19c48de914a367f79040ae521a5c658674e744a5ce32ce12"
+        },
+        "content_sha256": "03d76fefe9bf1626ba6ceeef177a1fb8f28c41ad5b98fd2cc3be14182b6d5c1a",
+        "created_at": "2026-09-20T05:52:12.848499+00:00",
+        "experiment_id": null,
+        "kind": "strategy_approval",
+        "lineage": [
+          {
+            "id": "task_ae0902cc929d430897f0cb2915826465",
+            "kind": "research_task"
+          },
+          {
+            "id": "artifact_c87c3dc0191841ac9159e0d094e30fe7",
+            "kind": "artifact"
+          }
+        ],
+        "owner_principal": "d15admin",
+        "status": "validated",
+        "task_id": "task_ae0902cc929d430897f0cb2915826465",
+        "trace_id": "d15-approval-trace-4116c18bd0374923adff91784c6af2f2",
+        "updated_at": "2026-09-20T05:52:12.852039+00:00",
+        "version": 2,
+        "workspace_id": "workspace_edb32d276ea14a9e8df6535dfabf1721"
+      }
+    },
+    "rejected_version_artifact_id": "artifact_c87c3dc0191841ac9159e0d094e30fe7",
+    "run_id": "e15fe20665cd4c3981b6a5fdc499f864",
+    "strategy_version_artifact_id": "artifact_997b13647a734e37801ca7a861e97541",
+    "task_id": "task_ae0902cc929d430897f0cb2915826465"
+  },
+  "execution_model": {
+    "action_origin": "product-api-manual + agent-mcp",
+    "agent_mcp_tool_calls": 2,
+    "note": "The research goal, persistent approval and paper-pool side effect are manual Product API actions. The agent-mcp-domain-at-most-once scenario additionally drives a real scripted-provider tool call through the runtime-adapter -> MCP -> Backend and verifies one domain side effect across an adapter restart.",
+    "provider": "scripted-keyless"
+  },
+  "generated_at": "2026-09-20T05:51:45Z",
+  "preflight": {
+    "adapter_image": "sha256:36126eb52f48d68d6d2bcb0a3165616d3a279b8d4375939b03693b92d8059ac5",
+    "candidate": "dsh-0.1.5rc1",
+    "containers": 6,
+    "images": {
+      "byq-d15-runtime-backend-1": "sha256:d841fa1de79904e040a6b48cbad73d5910e30974e517ffc385b66a3f50336c5c",
+      "byq-d15-runtime-gateway-1": "sha256:a71019670573353372974d4cafe606d445efdca8030fc1583134168e9a4c35c7",
+      "byq-d15-runtime-mcp-1": "sha256:e9b39bd80a9c77c9cf8742644f325c82575e8384891671e1f2cd92a51e7a95c5",
+      "byq-d15-runtime-postgres-1": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+      "byq-d15-runtime-runtime-adapter-1": "sha256:36126eb52f48d68d6d2bcb0a3165616d3a279b8d4375939b03693b92d8059ac5",
+      "byq-d15-runtime-scripted-provider-1": "sha256:962f35ba39b755782e876f0501c5a0bf905983244627aef19e1d43055deaed09"
+    },
+    "network": "byq-d15-runtime_d15_internal"
+  },
+  "schema_version": "byq-d15-runtime-stack.v4"
+}

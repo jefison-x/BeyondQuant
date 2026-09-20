@@ -1,0 +1,110 @@
+{
+  "all_pass": true,
+  "candidate": {
+    "python_sdk": "0.1.5rc1",
+    "release": "dsh-0.1.5rc1",
+    "runtime_bin": "0.1.5rc1",
+    "selector_env": "BYQ_DSH_COMPATIBILITY_RELEASE"
+  },
+  "exit_code": 0,
+  "failed_scenarios": [],
+  "failures": [],
+  "invariant_coverage": {
+    "approval_not_bypassed": true,
+    "before_after_captured": true,
+    "continuity_truthful": true,
+    "identity_stable": true,
+    "no_duplicate_side_effect": true,
+    "original_goal_retained": true,
+    "result_traceable": true,
+    "sequence_contiguous": true
+  },
+  "llm_evidence_class": "scripted-keyless",
+  "pass_scenarios": [
+    "adapter-process-restart",
+    "gateway-disconnect-reconnect",
+    "generation-replacement",
+    "dsh-process-interruption",
+    "executor-takeover"
+  ],
+  "required_scenario_count": 5,
+  "scenarios": [
+    {
+      "continuity": "rehydrated",
+      "id": "adapter-process-restart",
+      "invariants": {
+        "approval_not_bypassed": true,
+        "before_after_captured": true,
+        "continuity_truthful": true,
+        "identity_stable": true,
+        "no_duplicate_side_effect": true,
+        "original_goal_retained": true,
+        "result_traceable": true,
+        "sequence_contiguous": true
+      },
+      "result": "PASS"
+    },
+    {
+      "continuity": "reattached",
+      "id": "gateway-disconnect-reconnect",
+      "invariants": {
+        "approval_not_bypassed": true,
+        "before_after_captured": true,
+        "continuity_truthful": true,
+        "identity_stable": true,
+        "no_duplicate_side_effect": true,
+        "original_goal_retained": true,
+        "result_traceable": true,
+        "sequence_contiguous": true
+      },
+      "result": "PASS"
+    },
+    {
+      "continuity": "interrupted",
+      "id": "generation-replacement",
+      "invariants": {
+        "approval_not_bypassed": true,
+        "before_after_captured": true,
+        "continuity_truthful": true,
+        "identity_stable": true,
+        "no_duplicate_side_effect": true,
+        "original_goal_retained": true,
+        "result_traceable": true,
+        "sequence_contiguous": true
+      },
+      "result": "PASS"
+    },
+    {
+      "continuity": "rehydrated",
+      "id": "dsh-process-interruption",
+      "invariants": {
+        "approval_not_bypassed": true,
+        "before_after_captured": true,
+        "continuity_truthful": true,
+        "identity_stable": true,
+        "no_duplicate_side_effect": true,
+        "original_goal_retained": true,
+        "result_traceable": true,
+        "sequence_contiguous": true
+      },
+      "result": "PASS"
+    },
+    {
+      "continuity": "reattached",
+      "id": "executor-takeover",
+      "invariants": {
+        "approval_not_bypassed": true,
+        "before_after_captured": true,
+        "continuity_truthful": true,
+        "identity_stable": true,
+        "no_duplicate_side_effect": true,
+        "original_goal_retained": true,
+        "result_traceable": true,
+        "sequence_contiguous": true
+      },
+      "result": "PASS"
+    }
+  ],
+  "schema_version": "byq-d15-runtime-verdict.v1",
+  "uncovered_scenarios": []
+}

@@ -1,0 +1,79 @@
+{
+  "all_cases_pass": true,
+  "all_pass": true,
+  "baseline_all_pass": true,
+  "case_count": 7,
+  "cases": [
+    {
+      "case": "deleted-journal-receipt",
+      "description": "journal prompt receipt deleted; old capture fabricated one, fixed capture reports capture_ok=false",
+      "passes": true,
+      "post_fix_all_pass": false,
+      "post_fix_exit_code": 1,
+      "post_fix_first_failure": "scenario[adapter-process-restart]: capture evidence missing or fabricated: ['journal has no prompt receipts']",
+      "pre_fix_legacy_all_pass": true,
+      "pre_fix_legacy_exit_code": 0
+    },
+    {
+      "case": "replay-error",
+      "description": "prompt replay errored; old capture fell back to the original run id, fixed capture reports the error",
+      "passes": true,
+      "post_fix_all_pass": false,
+      "post_fix_exit_code": 1,
+      "post_fix_first_failure": "scenario[adapter-process-restart]: capture evidence missing or fabricated: ['prompt replay request error: adapter 500']",
+      "pre_fix_legacy_all_pass": true,
+      "pre_fix_legacy_exit_code": 0
+    },
+    {
+      "case": "approval-expiry-bypass",
+      "description": "persisted approval is expired and a deny trial created a side effect; old capture hardcoded approved",
+      "passes": true,
+      "post_fix_all_pass": false,
+      "post_fix_exit_code": 1,
+      "post_fix_first_failure": "scenario[adapter-process-restart]: capture evidence missing or fabricated: [\"persisted approval state is 'expired', not approved\"]",
+      "pre_fix_legacy_all_pass": true,
+      "pre_fix_legacy_exit_code": 0
+    },
+    {
+      "case": "denial-from-500-timeout",
+      "description": "a 500/timeout was treated as denial; fixed capture requires a definitive 4xx domain rejection",
+      "passes": true,
+      "post_fix_all_pass": false,
+      "post_fix_exit_code": 1,
+      "post_fix_first_failure": "scenario[adapter-process-restart]: capture evidence missing or fabricated: ['a 5xx/timeout is not a definitive denial']",
+      "pre_fix_legacy_all_pass": true,
+      "pre_fix_legacy_exit_code": 0
+    },
+    {
+      "case": "rejected-response-but-side-effect-exists",
+      "description": "protected operation returned a rejection but the authoritative side-effect count increased",
+      "passes": true,
+      "post_fix_all_pass": false,
+      "post_fix_exit_code": 1,
+      "post_fix_first_failure": "scenario[adapter-process-restart]: capture evidence missing or fabricated: ['protected operation created a side effect']",
+      "pre_fix_legacy_all_pass": true,
+      "pre_fix_legacy_exit_code": 0
+    },
+    {
+      "case": "trace-gap",
+      "description": "persisted trace has a sequence gap; old capture only checked sequence > 0",
+      "passes": true,
+      "post_fix_all_pass": false,
+      "post_fix_exit_code": 1,
+      "post_fix_first_failure": "scenario[adapter-process-restart]: capture evidence missing or fabricated: ['persisted trace sequence is not contiguous from 1']",
+      "pre_fix_legacy_all_pass": true,
+      "pre_fix_legacy_exit_code": 0
+    },
+    {
+      "case": "only-old-assistant-result",
+      "description": "target run never completed but a historical assistant exists; old capture reported completed",
+      "passes": true,
+      "post_fix_all_pass": false,
+      "post_fix_exit_code": 1,
+      "post_fix_first_failure": "scenario[adapter-process-restart]: capture evidence missing or fabricated: ['target run 22222222222222222222222222222222 has no terminal event']",
+      "pre_fix_legacy_all_pass": true,
+      "pre_fix_legacy_exit_code": 0
+    }
+  ],
+  "schema_version": "byq-d15-runtime-capture-negatives.v3"
+}
