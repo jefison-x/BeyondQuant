@@ -1,0 +1,954 @@
+{
+  "kind": "ESTIMATE",
+  "note": "Offline comparison of origin/main classifier vs CI-C classifier on changed-file lists of recent commits. No CI run was triggered. Lane seconds are reused from baseline run 35471161872 and are an estimate, not a measurement of saved wall clock.",
+  "recent_pr_replay": {
+    "finding": "Every sampled recent PR also changes a build-identity, dependency, contract or runtime-protocol path, so the new narrow classes do not reduce its selection. The classes never occur in isolation in the last 80 commits.",
+    "records": [
+      {
+        "commit": "a0e1a05",
+        "subject": "ci: CI-B backend test wall-clock measurement + deferred schema reset (#329)",
+        "changed_files": [
+          "config/dsh/builds/dsh-0.1.2rc1-post-u8.156.json",
+          "config/dsh/builds/dsh-0.1.2rc1-post-u8.157.json",
+          "docs/operations/ci_optimization_plan.md",
+          "scripts/ci/local-ci.sh",
+          "scripts/dsh/build_revision.py",
+          "services/backend/tests/conftest.py",
+          "services/backend/tests/test_schema_isolation.py",
+          "services/runtime-adapter/Dockerfile.post-u8-candidate"
+        ],
+        "old_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "new_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "old_lanes": [
+          "docs",
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "new_lanes": [
+          "docs",
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "dropped_lanes": [],
+        "estimated_saved_seconds": 0
+      },
+      {
+        "commit": "29ca9b5",
+        "subject": "fix(dsh): D15 qualification verdict integrity + acceptance wording + status authority (#327)",
+        "changed_files": [
+          "config/dsh/builds/dsh-0.1.2rc1-post-u8.155.json",
+          "docs/architecture/adr/ADR-0081-dsh-native-continuity-and-d15-stage.md",
+          "docs/evidence/d15/README.md",
+          "docs/evidence/d15/acceptance-matrix.v1.json",
+          "docs/evidence/d15/compatibility-ledger.v1.json",
+          "docs/evidence/d15/d15-2/README.md",
+          "docs/evidence/d15/d15-2/fail-closed.v2.json",
+          "docs/evidence/d15/d15-2/fail-closed.v3.json",
+          "docs/evidence/d15/d15-2/migration-results.v2.json",
+          "docs/evidence/d15/d15-2/migration-results.v3.json",
+          "docs/evidence/d15/d15-2/negative-controls.v2.json",
+          "docs/evidence/d15/d15-2/negative-controls.v3.json",
+          "docs/evidence/d15/d15-2/verdict.v2.json",
+          "docs/evidence/d15/d15-2/verdict.v3.json",
+          "docs/evidence/d15/d15-3/README.md",
+          "docs/roadmap/DSH_015RC1_UPGRADE_PLAN.md",
+          "docs/roadmap/IMPLEMENTATION_PLAN.md",
+          "docs/roadmap/STATUS.md",
+          "scripts/d15/harness/migration_harness.mjs",
+          "scripts/d15/harness/migration_negative_controls.mjs",
+          "scripts/d15/harness/migration_verdict.mjs",
+          "scripts/dsh/build_revision.py",
+          "services/runtime-adapter/Dockerfile.post-u8-candidate",
+          "tests/test_dsh_d15_2_migration.py",
+          "tests/test_dsh_d15_3_native_resume.py"
+        ],
+        "old_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "new_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "old_lanes": [
+          "docs",
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "new_lanes": [
+          "docs",
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "dropped_lanes": [],
+        "estimated_saved_seconds": 0
+      },
+      {
+        "commit": "036ea7d",
+        "subject": "docs: accept ADR-0081 (DSH 0.1.5-rc.1 native continuity and D15 stage) (#328)",
+        "changed_files": [
+          "docs/architecture/adr/ADR-0081-dsh-native-continuity-and-d15-stage.md",
+          "docs/architecture/adr/README.md",
+          "docs/roadmap/STATUS.md"
+        ],
+        "old_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "no",
+          "gateway": "no",
+          "runtime": "no",
+          "mcp": "no",
+          "frontend": "no",
+          "integration": "no",
+          "unknown": "no",
+          "docs_only": "yes"
+        },
+        "new_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "no",
+          "gateway": "no",
+          "runtime": "no",
+          "mcp": "no",
+          "frontend": "no",
+          "integration": "no",
+          "unknown": "no",
+          "docs_only": "yes"
+        },
+        "old_lanes": [
+          "docs",
+          "architecture"
+        ],
+        "new_lanes": [
+          "docs",
+          "architecture"
+        ],
+        "dropped_lanes": [],
+        "estimated_saved_seconds": 0
+      },
+      {
+        "commit": "6642c6e",
+        "subject": "ci: CI-A measurement + low-risk process rectification (plan, early-fail, watcher) (#326)",
+        "changed_files": [
+          ".github/workflows/ci-selfhosted.yml",
+          "config/dsh/builds/dsh-0.1.2rc1-post-u8.151.json",
+          "config/dsh/builds/dsh-0.1.2rc1-post-u8.152.json",
+          "config/dsh/builds/dsh-0.1.2rc1-post-u8.153.json",
+          "config/dsh/builds/dsh-0.1.2rc1-post-u8.154.json",
+          "docs/DEVELOPMENT_WORKFLOW.md",
+          "docs/operations/ci-policy.md",
+          "docs/operations/ci_optimization_plan.md",
+          "docs/operations/image-release.md",
+          "scripts/ci/ci-metrics.py",
+          "scripts/ci/local-ci.sh",
+          "scripts/ci/watch-ci.py",
+          "scripts/dsh/build_revision.py",
+          "services/runtime-adapter/Dockerfile.post-u8-candidate",
+          "tests/architecture/test_ci_metrics.py",
+          "tests/architecture/test_ci_workflow_contract.py",
+          "tests/architecture/test_watch_ci.py"
+        ],
+        "old_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "new_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "old_lanes": [
+          "docs",
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "new_lanes": [
+          "docs",
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "dropped_lanes": [],
+        "estimated_saved_seconds": 0
+      },
+      {
+        "commit": "53120ff",
+        "subject": "fix: close lease TOCTOU window and secret default-value bypass (#325)",
+        "changed_files": [
+          "config/dsh/builds/dsh-0.1.2rc1-post-u8.150.json",
+          "scripts/dsh/build_revision.py",
+          "scripts/dsh/release_secrets.py",
+          "services/runtime-adapter/Dockerfile.post-u8-candidate",
+          "services/runtime-adapter/app/executor_identity.py",
+          "services/runtime-adapter/app/lifecycle_journal.py",
+          "services/runtime-adapter/tests/test_executor_lease.py",
+          "tests/test_dsh_release_secrets.py"
+        ],
+        "old_selection": {
+          "docs": "no",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "new_selection": {
+          "docs": "no",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "old_lanes": [
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "new_lanes": [
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "dropped_lanes": [],
+        "estimated_saved_seconds": 0
+      },
+      {
+        "commit": "539b5e0",
+        "subject": "feat(dsh): D15-3 native session resume qualification (#324)",
+        "changed_files": [
+          "config/dsh/builds/dsh-0.1.2rc1-post-u8.149.json",
+          "docs/evidence/d15/README.md",
+          "docs/evidence/d15/acceptance-matrix.v1.json",
+          "docs/evidence/d15/compatibility-ledger.v1.json",
+          "docs/evidence/d15/d15-3/README.md",
+          "docs/evidence/d15/d15-3/native-resume-observations.v1.json",
+          "docs/evidence/d15/d15-3/native-resume-results.v1.json",
+          "docs/roadmap/DSH_015RC1_UPGRADE_PLAN.md",
+          "docs/roadmap/IMPLEMENTATION_PLAN.md",
+          "docs/roadmap/STATUS.md",
+          "packages/contracts/runtime_continuity.py",
+          "scripts/d15/harness/.npmrc",
+          "scripts/d15/harness/native_resume_common.mjs",
+          "scripts/d15/harness/native_resume_harness.mjs",
+          "scripts/d15/harness/native_resume_worker.mjs",
+          "scripts/d15/harness/package-lock.json",
+          "scripts/d15/harness/package.json",
+          "scripts/d15/native_resume_qualification.py",
+          "scripts/dsh/build_revision.py",
+          "services/runtime-adapter/Dockerfile.post-u8-candidate",
+          "tests/test_dsh_d15_3_native_resume.py",
+          "tests/test_dsh_d15_candidate.py"
+        ],
+        "old_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "new_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "old_lanes": [
+          "docs",
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "new_lanes": [
+          "docs",
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "dropped_lanes": [],
+        "estimated_saved_seconds": 0
+      },
+      {
+        "commit": "7f102cf",
+        "subject": "feat(dsh): D15-2 session V3 migration qualification (#323)",
+        "changed_files": [
+          "config/dsh/builds/dsh-0.1.2rc1-post-u8.148.json",
+          "config/dsh/candidates/dsh-0.1.5rc1/candidate.json",
+          "docs/architecture/adr/ADR-0081-dsh-native-continuity-and-d15-stage.md",
+          "docs/evidence/d15/README.md",
+          "docs/evidence/d15/acceptance-matrix.v1.json",
+          "docs/evidence/d15/compatibility-ledger.v1.json",
+          "docs/evidence/d15/d15-2/README.md",
+          "docs/evidence/d15/d15-2/fail-closed.v1.json",
+          "docs/evidence/d15/d15-2/migration-results.v1.json",
+          "docs/evidence/d15/fixtures/manifest.v1.json",
+          "docs/evidence/d15/fixtures/sessions/f-compacted/session.jsonl",
+          "docs/evidence/d15/fixtures/sessions/f-completed/session.jsonl",
+          "docs/evidence/d15/fixtures/sessions/f-continuable/session.jsonl",
+          "docs/evidence/d15/fixtures/sessions/f-forked/session.jsonl",
+          "docs/evidence/d15/fixtures/sessions/f-interrupted/session.jsonl",
+          "docs/evidence/d15/fixtures/sessions/f-large/session.jsonl",
+          "docs/evidence/d15/fixtures/sessions/f-normal/session.jsonl",
+          "docs/evidence/d15/fixtures/sessions/f-normal/session.origin.zstd",
+          "docs/evidence/d15/fixtures/sessions/f-old-lifecycle/byq-lifecycle-evidence.json",
+          "docs/evidence/d15/fixtures/sessions/f-old-lifecycle/session.jsonl",
+          "docs/evidence/d15/fixtures/sessions/f-subagent/session.jsonl",
+          "docs/evidence/d15/fixtures/sessions/index.v1.json",
+          "docs/roadmap/DSH_015RC1_UPGRADE_PLAN.md",
+          "docs/roadmap/IMPLEMENTATION_PLAN.md",
+          "docs/roadmap/STATUS.md",
+          "scripts/d15/harness/build_fixtures.mjs",
+          "scripts/d15/harness/fixture_index.mjs",
+          "scripts/d15/harness/migration_harness.mjs",
+          "scripts/d15/harness/package-lock.json",
+          "scripts/d15/harness/package.json",
+          "scripts/dsh/build_revision.py",
+          "services/runtime-adapter/Dockerfile.post-u8-candidate",
+          "tests/test_dsh_d15_2_migration.py",
+          "tests/test_dsh_d15_candidate.py"
+        ],
+        "old_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "new_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "old_lanes": [
+          "docs",
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "new_lanes": [
+          "docs",
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "dropped_lanes": [],
+        "estimated_saved_seconds": 0
+      },
+      {
+        "commit": "a650c69",
+        "subject": "feat(dsh): target D15 at 0.1.5-rc.1 and start isolated candidate (D15-1) (#322)",
+        "changed_files": [
+          "config/dsh/builds/dsh-0.1.2rc1-post-u8.147.json",
+          "config/dsh/candidates/dsh-0.1.5rc1/candidate.json",
+          "docs/architecture/RUNTIME_CONTINUITY_FAILURE_MATRIX.md",
+          "docs/architecture/adr/ADR-0081-dsh-native-continuity-and-d15-stage.md",
+          "docs/evidence/d15/README.md",
+          "docs/evidence/d15/compatibility-ledger.v1.json",
+          "docs/evidence/d15/d15-1/README.md",
+          "docs/evidence/d15/d15-1/candidate-build.v1.json",
+          "docs/evidence/d15/d15-1/candidate-start-probe.v1.json",
+          "docs/evidence/d15/target-decision.v1.json",
+          "docs/evidence/d15/upgrade-recon.v1.json",
+          "docs/roadmap/DSH_015RC1_UPGRADE_PLAN.md",
+          "docs/roadmap/IMPLEMENTATION_PLAN.md",
+          "docs/roadmap/STATUS.md",
+          "scripts/dsh/build_revision.py",
+          "scripts/dsh/candidate_registry.py",
+          "services/runtime-adapter/Dockerfile.dsh-0.1.5rc1-candidate",
+          "services/runtime-adapter/Dockerfile.post-u8-candidate",
+          "services/runtime-adapter/requirements.dsh-0.1.5rc1-candidate.lock",
+          "services/runtime-adapter/tests/d15_candidate_probe.py",
+          "tests/test_dsh_d15_candidate.py"
+        ],
+        "old_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "new_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "old_lanes": [
+          "docs",
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "new_lanes": [
+          "docs",
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "dropped_lanes": [],
+        "estimated_saved_seconds": 0
+      },
+      {
+        "commit": "9e5fecb",
+        "subject": "feat(dsh): D15-0 upgrade recon + D15-1 isolated 0.1.5 candidate (freeze R3) (#319)",
+        "changed_files": [
+          "config/dsh/builds/dsh-0.1.2rc1-post-u8.146.json",
+          "config/dsh/candidates/dsh-0.1.5rc1/candidate.json",
+          "config/dsh/candidates/dsh-0.1.5rc1/python.lock",
+          "docs/architecture/RUNTIME_CONTINUITY_FAILURE_MATRIX.md",
+          "docs/architecture/adr/ADR-0081-dsh-native-continuity-and-d15-stage.md",
+          "docs/architecture/adr/README.md",
+          "docs/evidence/d15/README.md",
+          "docs/evidence/d15/acceptance-matrix.v1.json",
+          "docs/evidence/d15/compatibility-ledger.v1.json",
+          "docs/evidence/d15/fixtures/manifest.v1.json",
+          "docs/evidence/d15/upgrade-recon.v1.json",
+          "docs/roadmap/DSH_015RC2_UPGRADE_PLAN.md",
+          "docs/roadmap/IMPLEMENTATION_PLAN.md",
+          "docs/roadmap/STATUS.md",
+          "scripts/dsh/build_revision.py",
+          "scripts/dsh/candidate_registry.py",
+          "services/runtime-adapter/Dockerfile.post-u8-candidate",
+          "services/runtime-adapter/app/compat/__init__.py",
+          "services/runtime-adapter/app/compat/dsh_015.py",
+          "services/runtime-adapter/tests/test_candidate_selector.py",
+          "tests/test_dsh_d15_candidate.py"
+        ],
+        "old_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "new_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "old_lanes": [
+          "docs",
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "new_lanes": [
+          "docs",
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "dropped_lanes": [],
+        "estimated_saved_seconds": 0
+      },
+      {
+        "commit": "f1d22a5",
+        "subject": "docs: accept ADR-0077/0078/0079/0080 (#317)",
+        "changed_files": [
+          "docs/architecture/adr/ADR-0077-data-ready-auto-continuation.md",
+          "docs/architecture/adr/ADR-0078-explicit-session-lease-reanchor.md",
+          "docs/architecture/adr/ADR-0079-runtime-continuity-and-session-recovery.md",
+          "docs/architecture/adr/ADR-0080-release-artifact-secret-boundary.md",
+          "docs/architecture/adr/README.md",
+          "docs/roadmap/STATUS.md"
+        ],
+        "old_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "no",
+          "gateway": "no",
+          "runtime": "no",
+          "mcp": "no",
+          "frontend": "no",
+          "integration": "no",
+          "unknown": "no",
+          "docs_only": "yes"
+        },
+        "new_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "no",
+          "gateway": "no",
+          "runtime": "no",
+          "mcp": "no",
+          "frontend": "no",
+          "integration": "no",
+          "unknown": "no",
+          "docs_only": "yes"
+        },
+        "old_lanes": [
+          "docs",
+          "architecture"
+        ],
+        "new_lanes": [
+          "docs",
+          "architecture"
+        ],
+        "dropped_lanes": [],
+        "estimated_saved_seconds": 0
+      },
+      {
+        "commit": "6f5254b",
+        "subject": "feat(runtime): separate durable session identity from runtime generations (Runtime Continuity R2) (#316)",
+        "changed_files": [
+          "config/dsh/builds/dsh-0.1.2rc1-post-u8.145.json",
+          "docs/architecture/RUNTIME_CONTINUITY_FAILURE_MATRIX.md",
+          "docs/architecture/adr/ADR-0079-runtime-continuity-and-session-recovery.md",
+          "docs/roadmap/IMPLEMENTATION_PLAN.md",
+          "packages/contracts/runtime_continuity.py",
+          "scripts/dsh/build_revision.py",
+          "services/gateway/app/main.py",
+          "services/gateway/tests/test_product_agent.py",
+          "services/runtime-adapter/Dockerfile.post-u8-candidate",
+          "services/runtime-adapter/app/generation_ledger.py",
+          "services/runtime-adapter/app/runtime.py",
+          "services/runtime-adapter/tests/test_generation_continuity.py"
+        ],
+        "old_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "new_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "old_lanes": [
+          "docs",
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "new_lanes": [
+          "docs",
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "dropped_lanes": [],
+        "estimated_saved_seconds": 0
+      },
+      {
+        "commit": "35570e5",
+        "subject": "fix: size continuation budget for bounded multi-call turns (#315)",
+        "changed_files": [
+          "config/dsh/builds/dsh-0.1.2rc1-post-u8.144.json",
+          "docs/architecture/adr/ADR-0077-data-ready-auto-continuation.md",
+          "docs/contracts/task-continuation-budget.md",
+          "docs/roadmap/IMPLEMENTATION_PLAN.md",
+          "plugins/dsh-byq/runtime/byq-continuation-budget.js",
+          "plugins/dsh-byq/runtime/byq-continuation-budget.test.js",
+          "scripts/dsh/build_revision.py",
+          "services/backend/app/research_continuation.py",
+          "services/backend/tests/test_data_ready_continuation.py",
+          "services/runtime-adapter/Dockerfile.post-u8-candidate",
+          "services/runtime-adapter/app/continuation_budget.py",
+          "tests/architecture/test_architecture.py"
+        ],
+        "old_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "new_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "old_lanes": [
+          "docs",
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "new_lanes": [
+          "docs",
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "dropped_lanes": [],
+        "estimated_saved_seconds": 0
+      },
+      {
+        "commit": "8187768",
+        "subject": "feat(release): stop baking plaintext secrets into release artifacts (ADR-0080) (#314)",
+        "changed_files": [
+          "config/dsh/builds/dsh-0.1.2rc1-post-u8.143.json",
+          "docs/architecture/adr/ADR-0080-release-artifact-secret-boundary.md",
+          "docs/architecture/adr/README.md",
+          "docs/operations/DSH_012RC1_ROLLOUT.md",
+          "docs/operations/image-release.md",
+          "scripts/dsh/build_revision.py",
+          "scripts/dsh/release_secrets.py",
+          "scripts/release/manifest.py",
+          "services/runtime-adapter/Dockerfile.post-u8-candidate",
+          "tests/test_dsh_release_secrets.py"
+        ],
+        "old_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "new_selection": {
+          "docs": "yes",
+          "architecture": "yes",
+          "backend": "yes",
+          "gateway": "yes",
+          "runtime": "yes",
+          "mcp": "yes",
+          "frontend": "yes",
+          "integration": "yes",
+          "unknown": "yes",
+          "docs_only": "no"
+        },
+        "old_lanes": [
+          "docs",
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "new_lanes": [
+          "docs",
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "dropped_lanes": [],
+        "estimated_saved_seconds": 0
+      }
+    ],
+    "estimated_total_saved_seconds": 0,
+    "estimated_total_saved_minutes": 0.0
+  },
+  "isolated_narrowing_class_estimates": {
+    "note": "Hypothetical future PR whose only changed path is the listed class; not observed in recent history. Same baseline seconds; ESTIMATE only. runtime-adapter tests is no longer narrowed: the exact-whitelist fix makes the whole family fail closed, so its dropped-lane estimate is 0.",
+    "records": [
+      {
+        "paths": [
+          "packages/operations/admission.py"
+        ],
+        "old_lanes": [
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "new_lanes": [
+          "architecture",
+          "gateway",
+          "runtime",
+          "integration"
+        ],
+        "dropped_lanes": [
+          "backend",
+          "mcp",
+          "frontend"
+        ],
+        "estimated_saved_seconds": 1558
+      },
+      {
+        "paths": [
+          "scripts/dsh/production_backup.py"
+        ],
+        "old_lanes": [
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "new_lanes": [
+          "architecture"
+        ],
+        "dropped_lanes": [
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "estimated_saved_seconds": 2243
+      },
+      {
+        "paths": [
+          "services/runtime-adapter/tests/test_chat_admission.py"
+        ],
+        "old_lanes": [
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "new_lanes": [
+          "architecture",
+          "backend",
+          "gateway",
+          "runtime",
+          "mcp",
+          "frontend",
+          "integration"
+        ],
+        "dropped_lanes": [],
+        "estimated_saved_seconds": 0
+      }
+    ],
+    "estimated_total_saved_seconds": 3801,
+    "estimated_total_saved_minutes": 63.4
+  },
+  "baseline_lane_seconds": {
+    "docs": 26,
+    "architecture": 33,
+    "backend": 1301,
+    "gateway": 61,
+    "runtime": 64,
+    "mcp": 77,
+    "frontend": 180,
+    "integration": 560
+  }
+}

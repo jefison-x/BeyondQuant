@@ -113,14 +113,16 @@ compute_changed() {
     echo "    [WARN] no merge base; comparing the exact baseline tree" >&2
     DIFF_BASE="$BASE_SHA"
   fi
-  if ! CHANGED="$(git diff --name-only "$DIFF_BASE" HEAD)"; then
+  # --no-renames reports both sides of a move so a removed higher-risk path
+  # still selects its coverage even when the destination looks low-risk.
+  if ! CHANGED="$(git diff --name-only --no-renames "$DIFF_BASE" HEAD)"; then
     echo "    [FAIL] unable to compute changed files from '$DIFF_BASE'" >&2
     return 1
   fi
   if [ "${GITHUB_ACTIONS:-false}" != true ]; then
     CHANGED="$({
       printf '%s\n' "$CHANGED"
-      git diff --name-only HEAD
+      git diff --name-only --no-renames HEAD
       git ls-files --others --exclude-standard
     } | sed '/^$/d' | sort -u)"
   fi
