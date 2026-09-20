@@ -84,13 +84,21 @@ it does not exercise a BYQ runtime process, `SessionHandle.flush()` durability,
 a live `SessionWriteLease`, or AgentSession goal/approval/result continuity.
 Those are deferred to the real isolated runtime qualification below.
 
-**Verdict integrity.** `scripts/d15/harness/migration_verdict.mjs` now computes an
-explicit verdict over every required invariant (migration completion, sequence
+**Verdict integrity.** `scripts/d15/harness/migration_verdict.mjs` computes an
+explicit verdict over manifest conformance, explicit per-stage success
+(`read`/`resume`/`append`/`close`/`reopen`), migration completion, sequence
 continuity, id continuity, context preservation, append+reopen,
-non-downgradability, no blockers) and every fail-closed rejection, and the
-harness exits non-zero unless all pass. `negative-controls.v2.json` injects
-sequence/id/context/reopen/blocker/fail-closed faults and confirms they fail
-while the pre-fix stage-only gate recorded `legacy_exit_code=0`.
+non-downgradability, no blockers, and every fail-closed rejection; the harness
+exits non-zero unless all pass. Completeness is mandatory: the required fixture
+set (count/uniqueness/no missing/extra), required stages and required rejection
+cases come from the single `requirements` block in
+[`acceptance-matrix.v1.json`](../evidence/d15/acceptance-matrix.v1.json); empty,
+missing, duplicate, unexpected, missing-stage and missing-evidence inputs FAIL,
+and required evidence is never defaulted to pass. `negative-controls.v3.json`
+(17 controls) confirms the result-layer and completeness faults fail while the
+pre-fix stage-only gate recorded `legacy_exit_code=0`, and records the review
+repro `computeVerdict([], {cases:[one valid]})` flipping pre-fix PASS to post-fix
+FAIL.
 
 Acceptance:
 
@@ -108,11 +116,15 @@ Acceptance:
    corruption. **PASS**.
 6. The verdict fails on any broken invariant, rejection case or blocker and the
    exit code reflects it; negative controls prove the pre-fix gate would have
-   passed. **PASS** (`verdict.v2.json`, `negative-controls.v2.json`).
+   passed. **PASS** (`verdict.v3.json`, `negative-controls.v3.json`).
+7. The verdict validates the required fixture set (count/uniqueness/no
+   missing/extra), required stages and required rejection set from the single
+   acceptance-matrix manifest, and fails on missing required evidence instead of
+   defaulting to pass. **PASS** (17 negative controls incl. the review repro).
 
 Evidence: [`docs/evidence/d15/d15-2/`](../evidence/d15/d15-2/README.md)
-(`migration-results.v2.json`, `verdict.v2.json`, `fail-closed.v2.json`,
-`negative-controls.v2.json`; the v1 artifacts are preserved). Harness:
+(`migration-results.v3.json`, `verdict.v3.json`, `fail-closed.v3.json`,
+`negative-controls.v3.json`; the v1/v2 artifacts are preserved). Harness:
 `scripts/d15/harness/migration_harness.mjs` +
 `scripts/d15/harness/migration_verdict.mjs` +
 `scripts/d15/harness/migration_negative_controls.mjs`. D15-2 adds
@@ -252,3 +264,12 @@ The D15-2 verdict-integrity rectification adds `migration_verdict.mjs` and
 adds v2 evidence, all build-input files, so the revision advances
 `post-u8.150` -> `post-u8.151` (rebuild identity only; no selector, deployment,
 immutable release registry or 0.1.2 artifact/evidence change and no deployment).
+
+The D15-2 verdict-completeness rectification further changes build-input files
+(`scripts/d15/harness/migration_verdict.mjs`,
+`scripts/d15/harness/migration_negative_controls.mjs`, `tests/`), so the `.151`
+manifest is regenerated at the same build id (`.151` is not merged history).
+Decision: keep the branch's current build id `post-u8.151`; no new id is minted
+here. `#326` targets `post-u8.154`; after it merges this branch is rebased and
+bumped to an unused id and re-verified on the new head (separate step). No
+`main`-immutable manifest history is rewritten.

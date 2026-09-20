@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { mkdirSync } from 'node:fs'
+import { computeVerdict, legacyStageVerdict, preFixV2Verdict } from './migration_verdict.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const fixturesRoot = process.argv[2]
@@ -75,6 +76,60 @@ const CONTROLS = [
     injects: 'a real unclassified event into the f-completed source store',
     expectation: 'the real pipeline blocks the migration and the gate fails',
     expect: { exit_code: 1, all_pass: false, failing_invariants_includes: ['migration_completed', 'no_blockers'], blocked_count: 1, legacy_exit_code: 1 },
+  },
+  {
+    fault: 'empty_fixtures',
+    injects: 'zero fixtures collected',
+    expectation: 'manifest conformance fails on an empty required fixture set',
+    expect: { exit_code: 1, all_pass: false, failing_invariants: ['manifest_conformance'], blocked_count: 0, legacy_exit_code: 1 },
+  },
+  {
+    fault: 'drop_fixture',
+    injects: 'remove the required f-completed fixture',
+    expectation: 'manifest conformance fails on a missing required fixture; legacy stage-only gate would pass',
+    expect: { exit_code: 1, all_pass: false, failing_invariants: ['manifest_conformance'], legacy_exit_code: 0 },
+  },
+  {
+    fault: 'duplicate_fixture',
+    injects: 'duplicate f-normal',
+    expectation: 'manifest conformance fails on a duplicate fixture',
+    expect: { exit_code: 1, all_pass: false, failing_invariants: ['manifest_conformance'], legacy_exit_code: 0 },
+  },
+  {
+    fault: 'extra_fixture',
+    injects: 'append an unexpected f-unexpected fixture',
+    expectation: 'manifest conformance fails on an unexpected fixture',
+    expect: { exit_code: 1, all_pass: false, failing_invariants_includes: ['manifest_conformance'], legacy_exit_code: 1 },
+  },
+  {
+    fault: 'drop_fail_closed',
+    injects: 'remove one required rejection case',
+    expectation: 'manifest conformance fails on a missing required rejection case; legacy stage-only gate would pass',
+    expect: { exit_code: 1, all_pass: false, failing_invariants: ['manifest_conformance'], legacy_exit_code: 0 },
+  },
+  {
+    fault: 'extra_fail_closed',
+    injects: 'append an unexpected rejection case',
+    expectation: 'manifest conformance fails on an unexpected rejection case; legacy stage-only gate would pass',
+    expect: { exit_code: 1, all_pass: false, failing_invariants: ['manifest_conformance'], legacy_exit_code: 0 },
+  },
+  {
+    fault: 'missing_evidence',
+    injects: 'delete message_id_preservation from f-completed evidence',
+    expectation: 'missing required evidence fails id/append instead of defaulting to pass; legacy stage-only gate would pass',
+    expect: { exit_code: 1, all_pass: false, failing_invariants: ['id_continuity', 'append_reopen'], legacy_exit_code: 0 },
+  },
+  {
+    fault: 'stage_failure',
+    injects: "set f-completed.append.status='fail' while leaving other evidence intact",
+    expectation: 'the explicit stage-state check fails',
+    expect: { exit_code: 1, all_pass: false, failing_invariants_includes: ['stage_states'], legacy_exit_code: 1 },
+  },
+  {
+    fault: 'requirements_missing',
+    injects: 'evaluate without the required-set manifest',
+    expectation: 'manifest conformance fails when the requirements manifest is absent; legacy stage-only gate would pass',
+    expect: { exit_code: 1, all_pass: false, failing_invariants: ['manifest_conformance'], legacy_exit_code: 0 },
   },
 ]
 
@@ -147,15 +202,40 @@ for (const control of CONTROLS) {
   })
 }
 
+// Direct function-level repro from the review: zero fixtures plus a single valid
+// rejection case. The pre-fix v2 verdict passed; the fixed verdict must fail.
+const oneCase = {
+  id: 'one-only', refused: true, documented_refusal: true,
+  treated_as_new_session: false, successor_generation_written: false,
+}
+const reproPreFix = preFixV2Verdict([], { cases: [oneCase] })
+const reproPostFix = computeVerdict([], { cases: [oneCase] })
+const reproLegacy = legacyStageVerdict([])
+const repro = {
+  input: 'computeVerdict([], {cases:[one-only valid refusal]})',
+  pre_fix_observed: { all_pass: reproPreFix.all_pass, exit_code: reproPreFix.exit_code },
+  post_fix_observed: {
+    all_pass: reproPostFix.all_pass,
+    exit_code: reproPostFix.exit_code,
+    failing_invariants: Object.entries(reproPostFix.invariants)
+      .filter(([, value]) => !value.pass)
+      .map(([key]) => key),
+  },
+  legacy_exit_code: reproLegacy.legacy_exit_code,
+  repro_fixed: reproPreFix.all_pass === true && reproPostFix.all_pass === false,
+}
+if (!repro.repro_fixed) ok = false
+
 const document = {
-  schema_version: 'byq-d15-2-negative-controls.v2',
+  schema_version: 'byq-d15-2-negative-controls.v3',
   generated_at: new Date().toISOString(),
   harness: 'scripts/d15/harness/migration_harness.mjs (BYQ_D15_2_FAULT)',
-  note: 'Every control invokes the real harness CLI and observes its process exit code and verdict.v2. Result-layer faults leave all stage statuses passing, so the recorded legacy_exit_code=0 proves the pre-fix gate would have reported PASS on a broken invariant.',
+  note: 'Every control invokes the real harness CLI and observes its process exit code and verdict.v3. Result-layer faults leave all stage statuses passing, so the recorded legacy_exit_code=0 proves the pre-fix gate would have reported PASS on a broken invariant. The completeness controls (empty/drop/duplicate/extra/missing-evidence/requirements-missing) prove the manifest-driven required-set gate fails.',
+  repro,
   all_controls_pass: ok,
   controls,
 }
 mkdirSync(dirname(outputPath), { recursive: true })
 writeFileSync(outputPath, `${JSON.stringify(document, null, 2)}\n`, 'utf8')
-console.log(JSON.stringify({ all_controls_pass: ok, control_count: controls.length, failing_controls: controls.filter((c) => !c.control_pass).map((c) => c.fault) }, null, 2))
+console.log(JSON.stringify({ all_controls_pass: ok, control_count: controls.length, repro_fixed: repro.repro_fixed, failing_controls: controls.filter((c) => !c.control_pass).map((c) => c.fault) }, null, 2))
 process.exit(ok ? 0 : 1)

@@ -129,12 +129,17 @@ unfinished-tool/subagent recovery, or AgentSession goal/approval/result
 continuity.
 
 The current harness computes an explicit invariant verdict
-([`verdict.v2.json`](d15-2/verdict.v2.json)) and fails the process unless every
-invariant, every fail-closed rejection and every blocker passes; the negative
-controls in [`negative-controls.v2.json`](d15-2/negative-controls.v2.json) prove
-a broken sequence/id/context/rejection fails while the pre-fix stage-only gate
-would have reported PASS. The v1 results/fail-closed artifacts are preserved
-unchanged; the v2 artifacts are additional.
+([`verdict.v3.json`](d15-2/verdict.v3.json)) and fails the process unless
+manifest conformance (required fixture set count/uniqueness/no missing/extra and
+the required rejection set, read from the single `requirements` block of
+[`acceptance-matrix.v1.json`](acceptance-matrix.v1.json)), every required stage,
+every invariant, every fail-closed rejection and every blocker passes. Required
+evidence is never defaulted to an empty/passing value. The negative controls in
+[`negative-controls.v3.json`](d15-2/negative-controls.v3.json) (17 controls)
+prove empty/missing/duplicate/unexpected/missing-evidence/stage-failure faults
+fail, and record the review repro `computeVerdict([], {cases:[one valid]})` as
+pre-fix PASS -> post-fix FAIL. The v1 and v2 artifacts are preserved unchanged;
+the v3 artifacts are additional.
 
 The compatibility ledger's `session_format_v2_v3` interface now carries
 `observed_status: "compatible"` and the migration item is moved from

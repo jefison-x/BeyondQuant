@@ -21,14 +21,15 @@
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|
 | Product | 最近完成 Phase 97（marker 97） | 未授权任何新的 Product Phase | 维护者阶段性授权 + 本文件 next phase | 一阶段一 worktree/Draft PR；Human Merge Gate；不得自授新 Phase |
-| 数据/资格 | Phase 98 已授权（2026-09-17，ADR-0074）；Phase 99 `COMPLETE`；Phase 100 `IN_PROGRESS`；Phase 101 `COMPLETE` | 按 ADR-0074/V1 计划推进 Phase 100 切片，不引入 HIST/GPU/新 Worker 拓扑 | 维护者 2026-09-17 Phase 98 授权 + 专项计划 | 不实现数据扩容；每切片独立 worktree/Draft PR |
-| 维护（当前） | D15 资格完整性、验收措辞与状态权威整改（本批次，不推进 Product Phase） | 维护者复核本 Draft PR；D15-4/R3 在授权前不得开始 | 本次维护任务明确授予 develop/push/Draft PR | 停在 Draft PR；不 merge/deploy；不覆盖历史证据 |
+| 数据/资格 | Phase 98 资格与基准冻结已授权（#282，2026-09-17）；Phase 99 `COMPLETE`（#283）；Phase 100 `IN_PROGRESS`（维护者 #285 于 2026-09-17 开启，冻结 Tushare 6000 数据集范围；P100-A 基金 provider 合同已并入 #286）；Phase 101 `COMPLETE` | 继续 Phase 100 切片 P100-B..E（`index_dailybasic`、申万行业、同花顺概念、Product 呈现），每切片独立 worktree/Draft PR | 维护者开启 Phase 100（#285）+ [V1_DATA_BASELINE_CONTRACT](V1_DATA_BASELINE_CONTRACT.md)「6000 积分可接入的数据集（Phase 100 实施范围）」；ADR-0074 为边界 ADR；Phase 98 授权只覆盖前置资格，**不**覆盖 Phase 100 实施范围 | 仅 Tushare、不用 Community；不支持分钟/实时/港股/特色数据；不得以“接口可调用/单次拉取成功”代替覆盖/时点/单位/许可证据；不改生产状态（除非另有部署授权）；HIST/THS 概念在证明历史可见性前保持 blocked |
+| 维护（当前） | D15 资格完整性、验收措辞与状态权威整改（PR #327，不推进 Product Phase）；被委托实现者交付 Draft | 被委托实现者停在 Draft；#327 的合并由原会话既有合并授权按 ADR-0015/0059 预发布 Gate 执行（按次生效，不写成永久规则） | 本次任务委托 develop/push/Draft；**合并授权属原会话既有授权，非本次新授予** | 被委托实现者不得 merge/deploy、不得启动 D15-4/R3、不得覆盖历史证据；`ADR-0081` 保持 Proposed |
 | 依赖资格（D15） | D15-0/1 完成；D15-2 格式层 `PASS`；D15-3 原生持久层恢复 `PASS`；D15-4..D15-G 未开始；R3 冻结、`R3_RESUME=NO` | 真实隔离 runtime 连续性资格（进程恢复、原目标不丢、domain action 不重复、approval 仍有效、结果可追溯）+ D15-4..D15-G | 维护者 D15 目标决策（2026-09-19）+ 专项 D15 计划 | 不改生产 selector；候选隔离；D15-G 前不恢复 R3 |
 
-**授权缺口（未单方面解决）**：`ADR-0081` 仍为 `Proposed`，其文本写明“路线重排须在接受之后”，
-但专项 D15 计划已实际实现该重排（D15 插在 R2 之后、R3 之前）。这是文档权威与已执行事实之间的
-差异，必须由维护者具名解决：或将 ADR-0081 接受为 Accepted，或以维护者具名记录追认当前重排。
-本整改不得代办该接受，也不得据 D15 的 `PASS` 推断 R3 解冻或生产切换授权。
+**授权缺口（维护者所有，未单方面解决）**：`ADR-0081` 仍为 `Proposed`，其文本写明“路线重排须在接受
+之后”，但专项 D15 计划已实际实现该重排（D15 插在 R2 之后、R3 之前）。这是文档权威与已执行事实
+之间的差异，必须由维护者具名解决：或将 ADR-0081 接受为 Accepted，或以维护者具名记录追认当前
+重排。本整改不得代办该接受，也不得据 D15 的 `PASS` 推断 R3 解冻或生产切换授权。该缺口属于架构
+授权事项，**不得阻塞与 D15 资格完整性/CI 相关的已授权整改**。
 
 ## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19，历史叙述）
 

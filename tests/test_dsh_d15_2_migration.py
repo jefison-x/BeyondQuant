@@ -32,13 +32,22 @@ ROOT = Path(__file__).resolve().parents[1]
 SESSIONS = ROOT / "docs/evidence/d15/fixtures/sessions"
 D15_2 = ROOT / "docs/evidence/d15/d15-2"
 INDEX = SESSIONS / "index.v1.json"
-RESULTS = D15_2 / "migration-results.v2.json"
-FAIL_CLOSED = D15_2 / "fail-closed.v2.json"
-VERDICT = D15_2 / "verdict.v2.json"
-NEGATIVE_CONTROLS = D15_2 / "negative-controls.v2.json"
+ACCEPTANCE_MATRIX = ROOT / "docs/evidence/d15/acceptance-matrix.v1.json"
+RESULTS = D15_2 / "migration-results.v3.json"
+FAIL_CLOSED = D15_2 / "fail-closed.v3.json"
+VERDICT = D15_2 / "verdict.v3.json"
+NEGATIVE_CONTROLS = D15_2 / "negative-controls.v3.json"
 RESULTS_V1 = D15_2 / "migration-results.v1.json"
 FAIL_CLOSED_V1 = D15_2 / "fail-closed.v1.json"
+RESULTS_V2 = D15_2 / "migration-results.v2.json"
+VERDICT_V2 = D15_2 / "verdict.v2.json"
+NEGATIVE_CONTROLS_V2 = D15_2 / "negative-controls.v2.json"
 HARNESS = ROOT / "scripts/d15/harness"
+REQUIRED_STAGES = ["read", "resume", "append", "close", "reopen"]
+REQUIRED_FAIL_CLOSED_CASES = [
+    "unknown-future-format", "unclassified-event", "malformed-header",
+    "refused-surface-migration",
+]
 
 EXPECTED_FIXTURES = [
     "f-normal", "f-completed", "f-interrupted", "f-compacted", "f-large",
@@ -102,7 +111,7 @@ class D15MigrationEvidenceTests(unittest.TestCase):
         cls.by_id = {item["id"]: item for item in cls.results["fixtures"]}
 
     def test_evidence_covers_target_and_every_fixture(self) -> None:
-        self.assertEqual(self.results["schema_version"], "byq-d15-2-session-migration-results.v2")
+        self.assertEqual(self.results["schema_version"], "byq-d15-2-session-migration-results.v3")
         target = self.results["target"]
         self.assertEqual(target["release_id"], "dsh-0.1.5rc1")
         self.assertEqual(target["python_sdk"], "0.1.5rc1")
@@ -179,11 +188,28 @@ class D15FailClosedTests(unittest.TestCase):
 
 
 class D15HistoricalEvidenceTests(unittest.TestCase):
-    def test_v1_format_layer_evidence_is_preserved_unchanged(self) -> None:
-        for path in (RESULTS_V1, FAIL_CLOSED_V1):
+    def test_earlier_format_layer_evidence_is_preserved_unchanged(self) -> None:
+        for path in (RESULTS_V1, FAIL_CLOSED_V1, RESULTS_V2, VERDICT_V2, NEGATIVE_CONTROLS_V2):
             self.assertTrue(path.is_file(), path)
         self.assertEqual(load(RESULTS_V1)["schema_version"], "byq-d15-2-session-migration-results.v1")
         self.assertEqual(load(FAIL_CLOSED_V1)["schema_version"], "byq-d15-2-fail-closed.v1")
+        self.assertEqual(load(RESULTS_V2)["schema_version"], "byq-d15-2-session-migration-results.v2")
+        self.assertEqual(load(VERDICT_V2)["schema_version"], "byq-d15-2-verdict.v2")
+        self.assertEqual(load(NEGATIVE_CONTROLS_V2)["schema_version"], "byq-d15-2-negative-controls.v2")
+
+
+class D15RequirementsManifestTests(unittest.TestCase):
+    def test_requirements_come_from_the_single_acceptance_matrix(self) -> None:
+        requirements = load(ACCEPTANCE_MATRIX)["requirements"]
+        self.assertEqual(requirements["schema_version"], "byq-d15-2-requirements.v1")
+        self.assertEqual(requirements["fixtures"], EXPECTED_FIXTURES)
+        self.assertEqual(requirements["stages"], REQUIRED_STAGES)
+        self.assertEqual(requirements["fail_closed_cases"], REQUIRED_FAIL_CLOSED_CASES)
+
+    def test_required_fixtures_match_the_immutable_index(self) -> None:
+        requirements = load(ACCEPTANCE_MATRIX)["requirements"]
+        index_ids = [item["id"] for item in load(INDEX)["fixtures"]]
+        self.assertEqual(requirements["fixtures"], index_ids)
 
 
 class D15VerdictTests(unittest.TestCase):
@@ -193,23 +219,31 @@ class D15VerdictTests(unittest.TestCase):
         cls.verdict = cls.document["verdict"]
 
     def test_verdict_shape_and_overall_pass(self) -> None:
-        self.assertEqual(self.document["schema_version"], "byq-d15-2-verdict.v2")
-        self.assertEqual(self.verdict["schema_version"], "byq-d15-2-verdict.v2")
+        self.assertEqual(self.document["schema_version"], "byq-d15-2-verdict.v3")
+        self.assertEqual(self.verdict["schema_version"], "byq-d15-2-verdict.v3")
+        self.assertEqual(self.verdict["requirements_schema_version"], "byq-d15-2-requirements.v1")
         self.assertTrue(self.verdict["all_pass"])
         self.assertEqual(self.verdict["exit_code"], 0)
         self.assertEqual(self.verdict["blocked_count"], 0)
         self.assertEqual(self.verdict["blockers"], [])
+        self.assertEqual(self.verdict["fixture_count"], 9)
 
     def test_every_required_invariant_passes(self) -> None:
         invariants = self.verdict["invariants"]
         self.assertEqual(set(invariants), {
-            "migration_completed", "sequence_continuity", "id_continuity",
-            "context_preservation", "append_reopen", "non_downgradable", "no_blockers",
+            "manifest_conformance", "migration_completed", "stage_states",
+            "sequence_continuity", "id_continuity", "context_preservation",
+            "append_reopen", "non_downgradable", "no_blockers",
         })
         for name, value in invariants.items():
             with self.subTest(invariant=name):
                 self.assertTrue(value["pass"], name)
                 self.assertEqual(value["failures"], [], name)
+
+    def test_manifest_conformance_covers_the_required_sets(self) -> None:
+        conformance = self.verdict["invariants"]["manifest_conformance"]
+        self.assertTrue(conformance["pass"])
+        self.assertEqual(conformance["failures"], [])
 
     def test_fail_closed_rejections_are_part_of_the_verdict(self) -> None:
         rejected = self.verdict["fail_closed"]
@@ -257,10 +291,21 @@ class D15NegativeControlEvidenceTests(unittest.TestCase):
         cls.controls = {control["fault"]: control for control in cls.document["controls"]}
 
     def test_all_negative_controls_pass(self) -> None:
-        self.assertEqual(self.document["schema_version"], "byq-d15-2-negative-controls.v2")
+        self.assertEqual(self.document["schema_version"], "byq-d15-2-negative-controls.v3")
         self.assertTrue(self.document["all_controls_pass"])
-        self.assertEqual(len(self.document["controls"]), 8)
+        self.assertEqual(len(self.document["controls"]), 17)
         self.assertTrue(all(control["control_pass"] for control in self.document["controls"]))
+
+    def test_review_repro_is_fixed(self) -> None:
+        repro = self.document["repro"]
+        self.assertTrue(repro["repro_fixed"])
+        # Pre-fix: zero fixtures + one valid rejection case passed.
+        self.assertTrue(repro["pre_fix_observed"]["all_pass"])
+        self.assertEqual(repro["pre_fix_observed"]["exit_code"], 0)
+        # Post-fix: the same input fails on manifest conformance.
+        self.assertFalse(repro["post_fix_observed"]["all_pass"])
+        self.assertEqual(repro["post_fix_observed"]["exit_code"], 1)
+        self.assertEqual(repro["post_fix_observed"]["failing_invariants"], ["manifest_conformance"])
 
     def test_default_run_passes(self) -> None:
         observed = self.controls[None]["observed"]
@@ -289,6 +334,24 @@ class D15NegativeControlEvidenceTests(unittest.TestCase):
         for fault, invariant in expected.items():
             with self.subTest(fault=fault):
                 self.assertIn(invariant, self.controls[fault]["observed"]["failing_invariants"])
+
+    def test_completeness_faults_fail_manifest_conformance(self) -> None:
+        for fault in ("empty_fixtures", "drop_fixture", "duplicate_fixture",
+                      "drop_fail_closed", "extra_fail_closed", "requirements_missing"):
+            with self.subTest(fault=fault):
+                observed = self.controls[fault]["observed"]
+                self.assertEqual(observed["exit_code"], 1, fault)
+                self.assertFalse(observed["all_pass"], fault)
+                self.assertIn("manifest_conformance", observed["failing_invariants"], fault)
+        # Unexpected fixture and missing evidence fail their explicit checks too.
+        self.assertIn("manifest_conformance", self.controls["extra_fixture"]["observed"]["failing_invariants"])
+        self.assertIn("id_continuity", self.controls["missing_evidence"]["observed"]["failing_invariants"])
+        self.assertIn("append_reopen", self.controls["missing_evidence"]["observed"]["failing_invariants"])
+
+    def test_stage_failure_fails_the_stage_state_check(self) -> None:
+        observed = self.controls["stage_failure"]["observed"]
+        self.assertEqual(observed["exit_code"], 1)
+        self.assertIn("stage_states", observed["failing_invariants"])
 
     def test_real_blocked_migration_fails_the_gate(self) -> None:
         observed = self.controls["blocked_migration"]["observed"]
@@ -363,7 +426,13 @@ class D15LiveHarnessTests(unittest.TestCase):
 
     def test_live_injected_faults_fail_the_verdict_and_the_exit_code(self) -> None:
         self._ensure_dependencies()
-        for fault in ("sequence", "ids", "context", "reopen", "blockers", "fail_closed", "blocked_migration"):
+        faults = (
+            "sequence", "ids", "context", "reopen", "blockers", "fail_closed", "blocked_migration",
+            "empty_fixtures", "drop_fixture", "duplicate_fixture", "extra_fixture",
+            "drop_fail_closed", "extra_fail_closed", "missing_evidence", "stage_failure",
+            "requirements_missing",
+        )
+        for fault in faults:
             with self.subTest(fault=fault):
                 directory = Path(tempfile.mkdtemp(prefix=f"byq-d15-2-fault-{fault}-", dir=self.live_dir.name))
                 completed = self._run_harness(

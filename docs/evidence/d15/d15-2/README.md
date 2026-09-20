@@ -12,11 +12,12 @@ resume (D15-3), subagent continuity (D15-4), persistent terminal (D15-5) or
 Go/No-Go (D15-G) claim. Production default remains `dsh-0.1.2rc1`; R3_RESUME = NO.
 
 - Fixture index (immutable, sha256): [`../fixtures/sessions/index.v1.json`](../fixtures/sessions/index.v1.json)
-- Migration results (current, invariant-checked verdict): [`migration-results.v2.json`](migration-results.v2.json)
-- Compact verdict: [`verdict.v2.json`](verdict.v2.json)
-- Fail-closed results (current): [`fail-closed.v2.json`](fail-closed.v2.json)
-- Negative controls proving the verdict/exit code fail closed: [`negative-controls.v2.json`](negative-controls.v2.json)
-- Historical format-layer evidence (preserved, unchanged): [`migration-results.v1.json`](migration-results.v1.json), [`fail-closed.v1.json`](fail-closed.v1.json)
+- Single requirements manifest (required fixtures/stages/rejection cases): [`../acceptance-matrix.v1.json`](../acceptance-matrix.v1.json) `requirements`
+- Migration results (current, invariant-checked verdict): [`migration-results.v3.json`](migration-results.v3.json)
+- Compact verdict: [`verdict.v3.json`](verdict.v3.json)
+- Fail-closed results (current): [`fail-closed.v3.json`](fail-closed.v3.json)
+- Negative controls proving the verdict/exit code fail closed: [`negative-controls.v3.json`](negative-controls.v3.json)
+- Historical format-layer evidence (preserved, unchanged): [`migration-results.v1.json`](migration-results.v1.json), [`fail-closed.v1.json`](fail-closed.v1.json), [`migration-results.v2.json`](migration-results.v2.json), [`verdict.v2.json`](verdict.v2.json), [`negative-controls.v2.json`](negative-controls.v2.json)
 - Harness: [`../../../../scripts/d15/harness/migration_harness.mjs`](../../../../scripts/d15/harness/migration_harness.mjs)
   + [`migration_verdict.mjs`](../../../../scripts/d15/harness/migration_verdict.mjs)
   + [`migration_negative_controls.mjs`](../../../../scripts/d15/harness/migration_negative_controls.mjs)
@@ -41,7 +42,7 @@ dispatches to `sessionFormatV2ToV3`), then exercises
 | f-forked | forked | v2 | migrated | pass | pass | pass | pass | pass | no |
 | f-old-lifecycle | with-old-lifecycle-evidence | v2 | migrated | pass | pass | pass | pass | pass | no |
 
-Summary from `migration-results.v2.json`:
+Summary from `migration-results.v3.json`:
 `fixture_count=9, migrated_count=8, current_count=1, blocked_count=0,
 all_post_migration_stages_pass=true, downgradable_count=0,
 non_downgradable_count=9`, and the invariant verdict `all_pass=true`
@@ -50,21 +51,36 @@ non_downgradable_count=9`, and the invariant verdict `all_pass=true`
 ### Verdict integrity and negative controls
 
 `migration_verdict.mjs` turns the observed evidence into an explicit gate over
-every required invariant: migration completion, sequence continuity, id
-continuity (session id + `missing_from_target` + `missing_from_reopen`),
-context preservation (system prompts / provider-models), append+reopen,
-non-downgradability, no blockers, and every fail-closed rejection case. The
-harness process exits `0` only when `verdict.all_pass` is true; fail-closed
-rejections and every blocker now count.
+**manifest conformance**, migration completion, explicit per-stage success
+(`read`/`resume`/`append`/`close`/`reopen`), sequence continuity, id continuity
+(session id + `missing_from_target` + `missing_from_reopen`), context preservation
+(system prompts / provider-models), append+reopen, non-downgradability, no
+blockers, and every fail-closed rejection case. The harness process exits `0`
+only when `verdict.all_pass` is true.
 
-`negative-controls.v2.json` runs the real harness CLI once per injected fault and
-records the observed exit code and verdict. For the sequence / ids / context /
-reopen / blockers / fail-closed faults all stage statuses still pass, so
-`legacy_exit_code=0` is recorded alongside `exit_code=1` and
-`all_pass=false`: that is direct proof the pre-fix stage-only gate would have
-reported PASS on a broken invariant. A real `blocked_migration` control (an
-unclassified event injected into the configured source) fails through the actual
-pipeline with `blocked_count=1`.
+**Completeness is mandatory.** The required fixture set (count + uniqueness +
+no missing/extra), the required stage set and the required rejection-case set are
+read from the single `requirements` block in
+[`../acceptance-matrix.v1.json`](../acceptance-matrix.v1.json). Empty fixtures,
+a missing fixture, a duplicate, an unexpected fixture/rejection case, a missing
+stage and missing required evidence all FAIL. Required evidence is never
+defaulted to an empty/passing value (`?? []` was removed from the gate).
+
+`negative-controls.v3.json` runs the real harness CLI once per injected fault (17
+controls) and records the observed exit code and verdict. For the result-layer
+faults all stage statuses still pass, so `legacy_exit_code=0` is recorded
+alongside `exit_code=1`/`all_pass=false`. The completeness faults
+(`empty_fixtures`, `drop_fixture`, `duplicate_fixture`, `extra_fixture`,
+`drop_fail_closed`, `extra_fail_closed`, `missing_evidence`,
+`requirements_missing`) all fail `manifest_conformance` (and `missing_evidence`
+fails `id_continuity`/`append_reopen`), while `stage_failure` fails
+`stage_states`. A real `blocked_migration` control fails through the actual
+pipeline.
+
+The review repro is recorded directly: `computeVerdict([], {cases:[one valid
+refusal]})` observed **pre-fix `all_pass=true`/`exit_code=0`** and **post-fix
+`all_pass=false`/`exit_code=1`** (`failing_invariants=["manifest_conformance"]`),
+with `legacy_exit_code=1`.
 
 ### Fixtures and provenance
 
@@ -92,6 +108,12 @@ the BYQ build-input inventory, so per repository rules the production build
 revision advances `post-u8.147` → `post-u8.148`. This is an inventory/rebuild
 identity bump only: no selector, `compose.yml`, `deployment.json` or 0.1.2
 artifact/evidence changes and no deployment.
+
+The D15-2 verdict-completeness rectification adds
+`migration_verdict.mjs`/`migration_negative_controls.mjs` and updates tests, all
+build-input files, so on this branch the revision is `post-u8.151` (see the
+upgrade plan's build-revision section; the branch is rebased/bumped to an unused
+id after `#326` merges).
 
 ## Harness scope and boundary
 
@@ -123,8 +145,9 @@ not satisfied here.
 
 ## Fail-closed semantics
 
-`fail-closed.v1.json` records four refusals. In every case
-`treated_as_new_session=false` and `successor_generation_written=false`:
+`fail-closed.v3.json` records four refusals (identical to the preserved v1/v2
+evidence). In every case `treated_as_new_session=false` and
+`successor_generation_written=false`:
 
 | case | catalog status | surfaced error | documented refusal |
 | --- | --- | --- | --- |

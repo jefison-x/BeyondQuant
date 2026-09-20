@@ -29,7 +29,7 @@ import { sessionFormatV0ToV1 } from '@deepseek-ai/dsh-session-format-v0-to-v1'
 import { releasedV2SessionFormatCodec, sessionFormatV1ToV2 } from '@deepseek-ai/dsh-session-format-v1-to-v2'
 import { Session, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import {
-  computeVerdict, extractMessageIds, providerModels, systemPrompts,
+  computeVerdict, extractMessageIds, providerModels, requirementsFromAcceptanceMatrix, systemPrompts,
 } from './migration_verdict.mjs'
 
 const fixturesRoot = process.argv[2]
@@ -38,6 +38,9 @@ const failClosedPath = process.argv[4]
 const verdictPath = process.argv[5]
 // Test-only negative control. The default (empty) path is the real qualification.
 const FAULT = process.env.BYQ_D15_2_FAULT ?? ''
+// Single manifest for the required fixture/stage/rejection sets.
+const REQUIREMENTS_PATH = process.env.BYQ_D15_2_REQUIREMENTS
+  ?? new URL('../../../docs/evidence/d15/acceptance-matrix.v1.json', import.meta.url).pathname
 if (!fixturesRoot || !resultsPath) {
   console.error('usage: node migration_harness.mjs <fixtures-root> <results.json> [fail-closed.json] [verdict.json]')
   process.exit(2)
@@ -495,30 +498,87 @@ async function failClosedCases() {
   return { schema_version: 'byq-d15-2-fail-closed.v1', cases }
 }
 
+/**
+ * Test-only collection-level fault injection. It mutates the collected result
+ * list / rejection set before the verdict so the negative controls can prove the
+ * completeness gate fails on empty, missing, duplicate, unexpected, missing-
+ * evidence and single-stage-failure inputs.
+ */
+function applyCollectionFault(fixtures, failClosed) {
+  const find = (id) => fixtures.find((fixture) => fixture.id === id)
+  switch (FAULT) {
+    case 'drop_fixture':
+      fixtures.splice(fixtures.findIndex((fixture) => fixture.id === 'f-completed'), 1)
+      break
+    case 'duplicate_fixture':
+      fixtures.push(JSON.parse(JSON.stringify(find('f-normal'))))
+      break
+    case 'extra_fixture':
+      fixtures.push({
+        id: 'f-unexpected', category: 'unexpected', migration: { status: 'migrated' },
+        evidence: {}, downgrade: { feasible: false }, blockers: [],
+      })
+      break
+    case 'drop_fail_closed':
+      failClosed.cases.pop()
+      break
+    case 'extra_fail_closed':
+      failClosed.cases.push({
+        id: 'unexpected-rejection', expectation: 'negative control', refused: true,
+        documented_refusal: true, error_name: null, error_message: null, catalog_status: null,
+        treated_as_new_session: false, successor_generation_written: false,
+      })
+      break
+    case 'missing_evidence':
+      delete find('f-completed').evidence.message_id_preservation
+      break
+    case 'stage_failure':
+      find('f-completed').append.status = 'fail'
+      break
+    default:
+      break
+  }
+}
+
 async function main() {
   const scratchRoot = await mkdtemp(join(tmpdir(), 'byq-d15-2-'))
   const fixtures = []
   try {
-    for (const id of FIXTURE_ORDER) {
-      const result = await migrateFixture(id, scratchRoot)
-      // A failed migration must never leave a successor generation behind.
-      result.migration.no_successor_written = result.migration.status === 'blocked'
-      fixtures.push(result)
-      console.error(`[d15-2] ${id}: migration=${result.migration.status} read=${result.read.status} resume=${result.resume.status} append=${result.append.status} close=${result.close.status} reopen=${result.reopen.status} downgrade=${result.downgrade.feasible}`)
+    let requirements
+    try {
+      requirements = requirementsFromAcceptanceMatrix(JSON.parse(await readFile(REQUIREMENTS_PATH, 'utf8')))
+    } catch (error) {
+      requirements = undefined
+      console.error(`[d15-2] requirements manifest unavailable: ${error?.message ?? error}`)
+    }
+    const fixtureOrder = Array.isArray(requirements?.fixtures) && requirements.fixtures.length > 0
+      ? requirements.fixtures
+      : FIXTURE_ORDER
+    if (FAULT !== 'empty_fixtures') {
+      for (const id of fixtureOrder) {
+        const result = await migrateFixture(id, scratchRoot)
+        // A failed migration must never leave a successor generation behind.
+        result.migration.no_successor_written = result.migration.status === 'blocked'
+        fixtures.push(result)
+        console.error(`[d15-2] ${id}: migration=${result.migration.status} read=${result.read.status} resume=${result.resume.status} append=${result.append.status} close=${result.close.status} reopen=${result.reopen.status} downgrade=${result.downgrade.feasible}`)
+      }
     }
     const failClosed = await failClosedCases()
-    const migrated = fixtures.filter((fixture) => fixture.migration.status === 'migrated' || fixture.migration.status === 'current')
+    applyCollectionFault(fixtures, failClosed)
+    const effectiveRequirements = FAULT === 'requirements_missing' ? undefined : requirements
+    const migrated = fixtures.filter((fixture) => fixture.migration?.status === 'migrated' || fixture.migration?.status === 'current')
     // The pre-fix gate only looked at stage status strings. It is retained as
     // `legacy_*` so negative controls can prove the old code would have passed.
-    const allPass = migrated.every((fixture) => fixture.read.status === 'pass' && fixture.resume.status === 'pass' && fixture.append.status === 'pass' && fixture.close.status === 'pass' && fixture.reopen.status === 'pass')
-    const verdict = computeVerdict(fixtures, failClosed)
+    const allPass = migrated.length > 0 && migrated.every((fixture) => ['read', 'resume', 'append', 'close', 'reopen'].every((stage) => fixture[stage]?.status === 'pass'))
+    const verdict = computeVerdict(fixtures, failClosed, effectiveRequirements)
     const results = {
-      schema_version: 'byq-d15-2-session-migration-results.v2',
+      schema_version: 'byq-d15-2-session-migration-results.v3',
       generated_at: new Date().toISOString(),
       target: TARGET,
       harness: {
         script: 'scripts/d15/harness/migration_harness.mjs',
         verdict_script: 'scripts/d15/harness/migration_verdict.mjs',
+        requirements_manifest: 'docs/evidence/d15/acceptance-matrix.v1.json',
         package_versions: PACKAGE_VERSIONS,
         fault_injection: FAULT || null,
         scope: 'format-catalog layer only, NOT runtime recovery. read/resume via installed Session.fromRestore; append encoded with the released v3 current encoder; close = fsync of the v3 generation; reopen re-reads through the installed Session. No SessionHandle.flush durability barrier, no live SessionWriteLease, no runtime adapter/Gateway/DSH process, and no real AgentSession/goal/approval/result recovery is exercised.',
@@ -528,15 +588,15 @@ async function main() {
         fixture_count: fixtures.length,
         migrated_count: migrated.filter((fixture) => fixture.migration.status === 'migrated').length,
         current_count: migrated.filter((fixture) => fixture.migration.status === 'current').length,
-        blocked_count: fixtures.filter((fixture) => fixture.migration.status === 'blocked').length,
+        blocked_count: fixtures.filter((fixture) => fixture.migration?.status === 'blocked').length,
         all_post_migration_stages_pass: allPass,
-        downgradable_count: fixtures.filter((fixture) => fixture.downgrade.feasible === true).length,
-        non_downgradable_count: fixtures.filter((fixture) => fixture.downgrade.feasible === false).length,
+        downgradable_count: fixtures.filter((fixture) => fixture.downgrade?.feasible === true).length,
+        non_downgradable_count: fixtures.filter((fixture) => fixture.downgrade?.feasible === false).length,
       },
       verdict,
     }
     const verdictDocument = {
-      schema_version: 'byq-d15-2-verdict.v2',
+      schema_version: 'byq-d15-2-verdict.v3',
       generated_at: results.generated_at,
       target: TARGET,
       harness: results.harness,
