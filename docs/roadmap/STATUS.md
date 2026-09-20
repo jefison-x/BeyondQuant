@@ -21,12 +21,12 @@
 <!-- byq:v090-closeout-audit=active -->
 <!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->
 <!-- byq:phase-100-p100-c=paused-not-delivery -->
-<!-- byq:audit-build-revision=dsh-0.1.2rc1-post-u8.176 -->
+<!-- byq:audit-build-revision=dsh-0.1.2rc1-post-u8.177 -->
 
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|
 | Product | 最近完成 Phase 97（marker 97） | 未授权任何新的 Product Phase | 维护者阶段性授权 + 本文件 next phase | 一阶段一 worktree/Draft PR；Human Merge Gate；不得自授新 Phase |
-| 数据/资格 | Phase 98 资格与基准冻结已授权（#282，2026-09-17）；Phase 99 `COMPLETE`（#283）；Phase 100 **`PAUSED`**（维护者 #285 于 2026-09-17 开启，冻结 Tushare 6000 数据集范围；P100-A 基金 provider 合同已并入 #286；P100-B 指数每日指标已并入 `main`（#337，base commit 即其合并提交）；P100-C 申万行业已完成于隔离分支 `codex/phase-100c`，**paused、Draft #338、不计为交付、未并入 `main`**；P100-D/P100-E 冻结）；Phase 101 `COMPLETE` | 先执行 **0.9 closeout governance & gap ledger audit**（独立 worktree/分支 `codex/v090-closeout-audit`，本文件）；Phase 100 切片暂停，待维护者明确恢复后才继续 P100-C/D/E | 维护者开启 Phase 100（#285）+ [V1_DATA_BASELINE_CONTRACT](V1_DATA_BASELINE_CONTRACT.md)「6000 积分可接入的数据集（Phase 100 实施范围）」；ADR-0074 为边界 ADR；Phase 98 授权只覆盖前置资格，**不**覆盖 Phase 100 实施范围 | 仅 Tushare、不用 Community；不支持分钟/实时/港股/特色数据；不得以“接口可调用/单次拉取成功”代替覆盖/时点/单位/许可证据；不改生产状态（除非另有部署授权）；HIST/THS 概念在证明历史可见性前保持 blocked；`codex/phase-100c` 不是交付，不得据此声明 P100-C 完成 |
+| 数据/资格 | Phase 98 资格与基准冻结已授权（#282，2026-09-17）；Phase 99 `COMPLETE`（#283）；Phase 100 **`PAUSED`**（维护者 #285 于 2026-09-17 开启，冻结 Tushare 6000 数据集范围；P100-A 基金 provider 合同已并入 #286；P100-B 指数每日指标已并入 `main`（#337，base commit 即其合并提交）；P100-C 申万行业存在**未审查实现提交**于隔离分支 `codex/phase-100c`（Draft #338），**paused、not delivered、未审查、未并入 `main`**；P100-D/P100-E 冻结）；Phase 101 `COMPLETE` | 先执行 **0.9 closeout governance & gap ledger audit**（独立 worktree/分支 `codex/v090-closeout-audit`，本文件）；Phase 100 切片暂停，待维护者明确恢复后才继续 P100-C/D/E；**S3/历史成分准备属 0.10.0，不在 0.9 gate 内** | 维护者开启 Phase 100（#285）+ [V1_DATA_BASELINE_CONTRACT](V1_DATA_BASELINE_CONTRACT.md)「6000 积分可接入的数据集（Phase 100 实施范围）」；ADR-0074 为边界 ADR；Phase 98 授权只覆盖前置资格，**不**覆盖 Phase 100 实施范围 | 仅 Tushare、不用 Community；不支持分钟/实时/港股/特色数据；不得以“接口可调用/单次拉取成功”代替覆盖/时点/单位/许可证据；不改生产状态（除非另有部署授权）；HIST/THS 概念在证明历史可见性前保持 blocked；`codex/phase-100c` 不是交付，不得据此声明 P100-C 完成，不得从未审查分支推断业务完成 |
 | 维护（当前） | **0.9 closeout governance & gap ledger audit**（独立 worktree/分支 `codex/v090-closeout-audit`，基于 `origin/main` `80fb9f8`；不推进 Product Phase） | 维护者 review Draft PR；本批只做事实审计、plan/STATUS 修订、机器可读 acceptance matrix 与必要审计测试 | 本次任务委托 develop/push/Draft；合并与后续步骤由维护者按 Human Merge Gate 决定 | 不实现 Proposed ADR-0082/0083；不切换生产 selector；不 deploy；不创建/移动 tag/release；不覆盖历史证据；不触碰 `codex/phase-100c`/PR #338；`R3_RESUME = NO` |
 | 依赖资格（D15） | D15-0/1/2/3/3R 完成（D15-2 格式层、D15-3 原生持久层、D15-3R 隔离 runtime 连续性均 `PASS`）；D15-4 `PARTIAL/BLOCKED`（原生 subagent/fork seam 6 项 + 1 支撑项通过；`child-crash`/BYQ `adapter-restart` `BLOCKED`；host reboot `NOT_RUN`）；D15-5 `PARTIAL/BLOCKED`（真实隔离原生 persistent terminal：page refresh/browser disconnect/frontend restart/gateway restart 四行 `PASS`，跨进程唯一 marker 无重放/丢失、权限不可绕过、错误 terminal 拒绝、stale generation/epoch fenced、清理无孤儿；`adapter-restart` 与 `dsh-runtime-restart` 必需项 `BLOCKED`，host reboot `NOT_RUN`）；D15-G `NO_GO`（NOT-PASS，decision contract + fail-able observer；部分 PASS 不得聚合为 GO；child-crash/BYQ adapter restart/terminal adapter restart/DSH runtime restart 四项必需项未过，host reboot `NOT_RUN`；证据 `docs/evidence/d15/d15-g/`）；R3 冻结、`R3_RESUME=NO` | 无：D15-G 已给出 NO_GO，未授权任何后续 D15/R3/生产切换；R3 解冻需 GO 加 R3/R6 原生连续性证据 | 维护者 D15 目标决策（2026-09-19）+ 专项 D15 计划 | 不改生产 selector；候选隔离；NO_GO 后不恢复 R3；不接受/不实现 Proposed ADR-0082/0083 |
 
@@ -37,25 +37,34 @@
 机器可读交付见 `docs/evidence/v090-closeout/`：gap ledger、acceptance matrix、beta-vs-formal、
 DSH slices、ADR-0082/0083 sufficiency；一致性由 `tests/test_v090_closeout_governance.py` 断言。
 
-Phase 100 冻结：P100-A（#286）与 P100-B（#337，已并入 base）为已完成事实；P100-C 已在隔离分支
-`codex/phase-100c`（Draft PR #338）实现，但 **paused、不计为交付、不并入 `main`**；P100-D/P100-E 冻结。
-Phase 100 不因此关闭；维护者未授权恢复前不得继续。
+Phase 100 冻结：P100-A（#286）与 P100-B（#337，已并入 base）为已完成事实；P100-C 仅在隔离分支
+`codex/phase-100c`（Draft PR #338）存在**未审查实现提交**，**paused、not delivered、未审查、不并入 `main`**；
+不得从该分支推断业务完成。P100-D/P100-E 冻结。Phase 100 不因此关闭；维护者未授权恢复前不得继续。
 
-严格串行顺序与每切片停止条件：
+**版本范围（关键）**：S3 / 历史成分准备属于 **0.10.0**（`VERSION_PLAN` 的 0.10.0 行），**不属于 0.9
+closeout gate**。历史 Post-U8 S3 调查保持 `blocked` 事实，但在 ADR-0068/AGENTS 规则 21 下缺失
+Community 来源不是开发阻塞；它移交冻结的 Phase 100（用 Tushare P100-C/P100-D 时点证据解决，不申请
+Community 豁免、不用当前关系回填）。**0.9 严格顺序不以 S3 开头，也不被 S3 阻塞。**
+
+0.9 严格串行顺序与每切片停止条件：
 
 1. 本审计（本分支）→ Draft PR，停在 Human Merge Gate。
-2. S3 真实只读历史成分来源（blocked 直到维护者提供）→ 无来源不继续。
-3. full-interface 逐接口台账在候选 base commit 重新达到 `complete=true`。
-4. 复合研究故障回归（改进策略→审批→训练→预测→回测→新旧比较 + R1–R5 故障矩阵）。
-5. ADR-0082 维护者决定（Proposed→accept/modify/reject）；ADR-0083 同。
-6. D15 四个 atomic blocker：`subagent-child-crash` → `subagent-byq-adapter-restart` →
-   `terminal-adapter-restart` → `terminal-dsh-runtime-restart`；每项独立 Draft PR，未 PASS 不进入下一项。
-7. D15-G 重跑；仅当全部必须 atomic 项 PASS 才可 GO。
-8. GO 之后：R3 thin supervisor → R4 TerminalAttachment → R5 DurableJob independence →
+2. full-interface 逐接口台账在候选 base commit 重新达到 `complete=true`。
+3. 复合研究故障回归（改进策略→审批→训练→预测→回测→新旧比较 + R1–R5 故障矩阵）。
+4. ADR-0082 维护者决定（Proposed→accept/modify/reject）；ADR-0083 同。
+5. D15 pre-gate 修复切片：
+   - `subagent-child-crash`（owner `d15-4-child-provider-remediation`；若 0.1.5-rc.1 无进程外
+     continuable provider 则为 **external blocker**，不得指派给 post-GO R6）；
+   - `subagent-byq-adapter-restart`（owner `d15-4-candidate-composition-hookup`）；
+   - `terminal-adapter-restart` / `terminal-dsh-runtime-restart`（owner `d15-5-candidate-attachment-layer`，非 post-GO R4）。
+   每项独立 Draft PR；owner 必须在 D15-G gate 之前，未 PASS 不进入下一项。
+6. D15-G 重跑；仅当全部必须 atomic 项 PASS 才可 GO。若 B1 仍为 external blocker，维护者必须显式
+   选择 gate-order 选项（`G-keep` / `G-split` / `G-reorder` / `G-reclassify`），不得同时声称严格串行且可执行。
+7. GO 之后：R3 thin supervisor → R4 TerminalAttachment → R5 DurableJob independence →
    R6 full runtime continuity → 独立 production Go/No-Go（维护者决定）。
 
 每项停止条件：一 worktree/分支/Draft PR；停在 Draft；不 push `main`；不得删除或降级 blocker；
-不得以“升级依赖”等同“切换生产默认”；不得覆盖历史证据或旧 tag。
+不得以“升级依赖”等同“切换生产默认”；不得覆盖历史证据或旧 tag；不得让 S3/0.10 项阻塞 0.9。
 
 **授权缺口（已解决）**：`ADR-0081` 曾为 `Proposed`，其文本写明“路线重排须在接受之后”，而专项 D15
 计划已实际实现该重排（D15 插在 R2 之后、R3 之前）。维护者已于 2026-09-19 接受 ADR-0081
@@ -850,7 +859,8 @@ Post-Phase 90 Management Action Consistency Maintenance 依据 ADR-0050 将股�
 - 2026-09-20 **0.9 closeout governance & gap ledger audit** 本批为审计/治理：只做事实审计、
   plan/STATUS 修订、机器可读 acceptance matrix 与审计测试；不实现 Proposed ADR-0082/0083、
   不切换生产 selector、不 deploy、不创建/移动 tag/release。Phase 100 的 P100-C..E 冻结；
-  `codex/phase-100c`（Draft PR #338）不计为交付。详见顶部权威条目与
+  `codex/phase-100c`（Draft PR #338）只有未审查实现提交，not delivered/未审查。S3/历史成分准备属
+  0.10.0，不属于 0.9 closeout gate，不以 S3 开头或阻塞 0.9 顺序。详见顶部权威条目与
   [`docs/evidence/v090-closeout/`](../evidence/v090-closeout/README.md)。
 - 2026-09-19 维护收口（ADR-0047 聚合边界、运行/续接连续性与只读归档审计）已完成并记入本文与
   [实现计划](IMPLEMENTATION_PLAN.md)；它是维护，不推进 Product Phase，也不改变上一条授权状态。

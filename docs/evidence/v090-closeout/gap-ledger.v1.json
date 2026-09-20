@@ -31,11 +31,23 @@
       "deliverable": "完整 F2、剩余全接口审计、复合研究故障回归",
       "gate": "Post-U8 各项有最新结论；不把 F6 完成或健康检查等同整体关闭",
       "status": "open",
-      "reason": "The interface-level reconciliation ledger is not current on the base commit (complete=false), the composite research fault regression has no committed execution evidence, and D15 retains four atomic blockers. Named child slices are covered where cited.",
+      "reason": "The interface-level reconciliation ledger is not current on the base commit (complete=false), the composite research fault regression has no committed execution evidence, and D15 retains four atomic blockers. Named child slices are covered where cited. S3 / historical constituent preparation is a 0.10.0 deliverable and does NOT gate 0.9.",
       "evidence": [
         "docs/evidence/v090-closeout/gap-ledger.v1.json",
         "docs/evidence/research-handoff-h4/INTERFACE-REVIEW.json",
         "docs/evidence/d15/d15-g/verdict.v1.json"
+      ]
+    },
+    {
+      "id": "0.10.0",
+      "deliverable": "S3、历史成分准备、可版本化特征与时点数据基础",
+      "gate": "真实数据基准可复现；同时完成 HIST 数据可行性及深度学习环境资格调查",
+      "status": "open",
+      "reason": "S3 / historical constituent preparation was moved here from the Post-U8 backlog. Frozen Phase 100 (PAUSED) is the resolution track; HIST remains blocked. This gate does NOT gate the 0.9 closeout and must not precede it.",
+      "evidence": [
+        "docs/roadmap/V1_DATA_BASELINE_CONTRACT.md",
+        "docs/roadmap/V1_HIST_DATA_QUALIFICATION.md",
+        "docs/roadmap/VERSION_PLAN.md"
       ]
     }
   ],
@@ -74,9 +86,13 @@
     {
       "id": "S3",
       "title": "历史指数成分准备与准确说明",
-      "status": "blocked",
-      "reason": "The real read-only historical constituent source (Community cache/connection) is unavailable, so historical coverage and the full time series cannot be proven. Single-time-point preparation is implemented but not equivalent to a historical series.",
-      "latest_conclusion": "Isolated implementation slices pass with synthetic data; real history remains blocked by missing read-only source and by the absence of a complete change-over-time series.",
+      "status": "superseded",
+      "release_version": "0.10.0",
+      "gates_0_9_closeout": false,
+      "historical_status": "blocked",
+      "superseded_to": "0.10.0 data baseline track (frozen Phase 100): resolve with Tushare P100-C/P100-D point-in-time evidence",
+      "reason": "S3 / historical constituent preparation is a 0.10.0 deliverable, not a 0.9.x gate. The historical Post-U8 investigation is blocked on a real read-only source, but under ADR-0068 a missing Community source is NOT a development blocker (AGENTS rule 21) and a Community exemption is not required. It must not gate or precede the 0.9 closeout.",
+      "latest_conclusion": "Historical Post-U8 S3 fact: isolated synthetic slices pass; real history still lacks a validated source. Transferred to the frozen 0.10 Phase 100 and removed from the 0.9 gate.",
       "evidence": [
         "docs/evidence/post-u8-r1/S3-HISTORICAL-PREPARATION.md",
         "docs/evidence/research-handoff-h5/INDEX-PREPARATION.md",
@@ -84,7 +100,9 @@
         "docs/evidence/phase-99/QUALIFICATION-EXECUTION.md"
       ],
       "does_not_prove": "Any claim that five-year-ago constituents are available, or that a single static snapshot is a historical constituent series.",
-      "blocker": "No authenticated/validated read-only Community historical constituent export or connection."
+      "historical_blocker": "No authenticated/validated read-only Community historical constituent export or connection (no longer a 0.9 blocker).",
+      "resolution_path": "Resolve in 0.10 Phase 100 with Tushare P100-C (Shenwan index_classify/index_member_all) and P100-D (THS ths_index/ths_member) point-in-time evidence. Do NOT require a Community exemption and do NOT backfill historical relations with current relations.",
+      "not_a_0_9_blocker": true
     },
     {
       "id": "full-interface-audit",
@@ -192,10 +210,13 @@
   ],
   "summary": {
     "covered": 1,
-    "superseded": 1,
+    "superseded": 2,
     "open": 4,
-    "blocked": 1
+    "blocked": 0
   },
+  "deferred_to_0_10": ["S3"],
+  "deferred_to_0_10_note": "S3 / historical constituent preparation belongs to the 0.10.0 gate and is resolved by frozen Phase 100 (Tushare P100-C/P100-D), not by the 0.9 closeout.",
+  "not_gating_0_9_closeout": ["S3"],
   "constraints": {
     "r3_resume": "NO",
     "production_selector": "dsh-0.1.2rc1",

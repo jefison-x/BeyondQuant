@@ -39,7 +39,7 @@ FORMAL_MANIFEST_IDS = (
     "formal-independent-acceptance",
     "formal-attestation",
 )
-AUDIT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.176"
+AUDIT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.177"
 
 
 def _ledger() -> dict:
@@ -71,6 +71,32 @@ def _evidence_paths(value) -> list[str]:
 
     walk(value)
     return found
+
+
+def _topological_order(dag) -> tuple[dict, list[str]]:
+    """Return (nodes, topological order); fail on an unknown edge or a cycle."""
+    nodes = {node["id"]: node for node in dag["nodes"]}
+    indegree = {node_id: 0 for node_id in nodes}
+    adjacency = {node_id: [] for node_id in nodes}
+    for node_id, node in nodes.items():
+        for dependency in node.get("depends_on", []):
+            if dependency not in nodes:
+                raise AssertionError(f"unknown dag dependency: {dependency}")
+            adjacency[dependency].append(node_id)
+            indegree[node_id] += 1
+    queue = sorted(node_id for node_id, degree in indegree.items() if degree == 0)
+    order: list[str] = []
+    while queue:
+        current = queue.pop(0)
+        order.append(current)
+        for neighbour in sorted(adjacency[current]):
+            indegree[neighbour] -= 1
+            if indegree[neighbour] == 0:
+                queue.append(neighbour)
+        queue.sort()
+    if len(order) != len(nodes):
+        raise AssertionError(f"dag cycle detected among: {sorted(set(nodes) - set(order))}")
+    return nodes, order
 
 
 class GapLedgerTests(unittest.TestCase):
@@ -105,9 +131,23 @@ class GapLedgerTests(unittest.TestCase):
 
     def test_version_plan_gates_are_recorded(self):
         gates = {gate["id"]: gate for gate in _ledger()["version_plan_gates"]}
-        self.assertEqual(set(gates), {"0.9.0", "0.9.x"})
+        self.assertEqual(set(gates), {"0.9.0", "0.9.x", "0.10.0"})
         for gate in gates.values():
             self.assertIn(gate["status"], STATUS_VOCABULARY)
+
+    def test_s3_is_deferred_to_0_10_not_a_0_9_gate(self):
+        ledger = _ledger()
+        s3 = next(item for item in ledger["items"] if item["id"] == "S3")
+        self.assertEqual(s3["status"], "superseded")
+        self.assertEqual(s3["release_version"], "0.10.0")
+        self.assertFalse(s3["gates_0_9_closeout"])
+        self.assertTrue(s3["not_a_0_9_blocker"])
+        self.assertIn("S3", ledger["deferred_to_0_10"])
+        self.assertIn("S3", ledger["not_gating_0_9_closeout"])
+        for entry in _matrix()["serial_order"]:
+            self.assertNotIn("S3", entry, entry)
+        x09_refs = {item["ledger_ref"] for item in _matrix()["x09_requirements"]}
+        self.assertNotIn("S3", x09_refs)
 
     def test_d15_atomic_blockers_are_frozen(self):
         d15 = next(item for item in _ledger()["items"] if item["id"] == "D15")
@@ -152,14 +192,50 @@ class AcceptanceMatrixTests(unittest.TestCase):
         slices = {item["blocker"]: item for item in _matrix()["dsh_0_1_5_rc1_closeout_slices"]
                   if item["blocker"]}
         self.assertEqual(sorted(slices), sorted(PRIMARY_BLOCKERS))
+        dag_ids = {node["id"] for node in _matrix()["dag"]["nodes"]}
         for blocker, item in slices.items():
             self.assertTrue(item["implementation_owner"], blocker)
+            self.assertTrue(item["owner_node"], blocker)
+            self.assertIn(item["owner_node"], dag_ids, blocker)
             self.assertTrue(item["reproduction"]["steps"], blocker)
             self.assertTrue(item["reproduction"]["evidence"], blocker)
             self.assertTrue(item["acceptance_criteria"], blocker)
             self.assertTrue(item["failure_closure_criteria"], blocker)
             for relative in _evidence_paths(item):
                 self.assertTrue((ROOT / relative).is_file(), f"{blocker}: {relative}")
+
+    def test_dag_is_acyclic(self):
+        nodes, topo = _topological_order(_matrix()["dag"])
+        self.assertEqual(set(topo), set(nodes))
+        self.assertEqual(len(topo), len(nodes))
+        gate = _matrix()["dag"]["gate"]
+        self.assertIn(gate, nodes)
+        self.assertTrue(nodes[gate].get("gate"), gate)
+
+    def test_blocker_owner_lies_before_the_gate(self):
+        dag = _matrix()["dag"]
+        nodes, topo = _topological_order(dag)
+        index = {node_id: position for position, node_id in enumerate(topo)}
+        gate = dag["gate"]
+        post_gate = {node_id for node_id, node in nodes.items() if node.get("after_gate")}
+        self.assertTrue(post_gate)
+        for item in _matrix()["dsh_0_1_5_rc1_closeout_slices"]:
+            if not item["blocker"]:
+                continue
+            owner = item["owner_node"]
+            self.assertIn(owner, nodes, item["blocker"])
+            self.assertLess(index[owner], index[gate], item["blocker"])
+            self.assertNotIn(owner, post_gate, item["blocker"])
+
+    def test_external_blocker_and_gate_order_options_are_recorded(self):
+        matrix = _matrix()
+        b1 = next(item for item in matrix["dsh_0_1_5_rc1_closeout_slices"]
+                  if item["blocker"] == "subagent-child-crash")
+        self.assertTrue(b1["external_blocker"]["is_external"])
+        self.assertFalse(b1["external_blocker"]["available_in_0_1_5_rc1"])
+        self.assertNotEqual(b1["owner_node"], "r6-full-runtime-continuity")
+        option_ids = {item["id"] for item in matrix["maintainer_gate_order_options"]}
+        self.assertTrue({"G-keep", "G-split", "G-reorder", "G-reclassify"} <= option_ids)
 
     def test_serial_order_gates_d15_g_before_r3(self):
         order = _matrix()["serial_order"]
@@ -211,7 +287,7 @@ class GovernanceDocTests(unittest.TestCase):
         for marker in ("<!-- byq:v090-closeout-audit=active -->",
                        "<!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->",
                        "<!-- byq:phase-100-p100-c=paused-not-delivery -->",
-                       "<!-- byq:audit-build-revision=dsh-0.1.2rc1-post-u8.176 -->"):
+                       "<!-- byq:audit-build-revision=dsh-0.1.2rc1-post-u8.177 -->"):
             self.assertIn(marker, status)
         self.assertIn("<!-- byq:current-completed-phase=97 -->", status)
         self.assertIn("P100-A", status)
@@ -224,7 +300,7 @@ class GovernanceDocTests(unittest.TestCase):
         self.assertIn("<!-- byq:phase-100-p100-c=paused-not-delivery -->", plan)
         self.assertIn("Phase 100 — 0.10 data baseline implementation (`PAUSED`)", plan)
         self.assertIn("0.9 Closeout Governance & Gap Ledger Audit", plan)
-        self.assertIn("post-u8.174 → post-u8.176", plan)
+        self.assertIn("post-u8.174 → post-u8.177", plan)
 
     def test_version_plan_links_the_audit_and_the_beta_distinction(self):
         version_plan = (ROOT / "docs/roadmap/VERSION_PLAN.md").read_text(encoding="utf-8")

@@ -36,6 +36,12 @@ Gaps:
    session store" is not enforceable.
 4. **No qualification path stated.** It does not say whether acceptance authorizes a
    candidate-specific, reversible implementation sufficient to re-run D15-G before R3.
+5. **Circular ownership.** The earlier slice draft assigned `subagent-child-crash` to
+   post-GO **R6** while requiring B1..B4 → D15-G → R3 → R4 → R5 → R6; B1 would depend on a
+   phase it itself blocks. The corrected DAG assigns every blocker to a **pre-gate D15
+   candidate-qualification** node; `child-crash` is additionally an **external blocker** in
+   0.1.5-rc.1 (no out-of-process continuable provider). The ADR must not claim a strictly
+   serial executable order while an external dependency is unresolved.
 
 ### ADR-0083 — sufficient? **No**
 
@@ -70,6 +76,9 @@ Gaps:
   rollback; acceptance criteria.
 - State that acceptance authorizes only a candidate-specific, reversible qualification
   path to re-run D15-G — not a production default switch.
+- Fix the circular ownership: D15-G blockers are owned by pre-gate D15 candidate-qualification
+  slices, never by post-GO R6. If `child-crash` stays an external blocker, record it and offer
+  the maintainer a gate-order option (keep / split / reorder / reclassify).
 
 ### ADR-0083
 
@@ -78,7 +87,8 @@ Gaps:
 - Add: tenant/workspace authorization matrix; idempotent unique attach; epoch/generation
   fencing-token semantics; orphan GC; rollback/migration.
 - Define the candidate-specific evidence path that lets D15-G pass
-  `terminal-adapter-restart` / `terminal-dsh-runtime-restart` before R4 productization.
+  `terminal-adapter-restart` / `terminal-dsh-runtime-restart` **before** R4 productization,
+  and state that the blocker is owned by the pre-gate D15-5 candidate layer, not by post-GO R4.
 
 ## Boundary checklist both ADRs must make explicit
 
@@ -100,7 +110,8 @@ Gaps:
 | D-2 | ADR-0083 persistence | named durable store / candidate-specific evidence-only store / reject | Choose evidence-only for D15-G, with the durable store deferred to R4 |
 | D-3 | Sequence tension | accept candidate-specific layer for D15-G then R4 / reorder D15-G and R4 / split the terminal gate | Prefer candidate-specific layer for D15-G then R4 productionization |
 | D-4 | ADR status | accept with revisions / keep Proposed / reject | Keep **Proposed** until the revisions above are written |
-| D-5 | Blocker resolution order | B1→B2→B3→B4 serial / B1+B3 then B2+B4 | Keep the serial order in [DSH-015RC1-CLOSEOUT-SLICES.md](DSH-015RC1-CLOSEOUT-SLICES.md) |
+| D-5 | Blocker resolution order | B1→B2→B3→B4 serial / B1+B3 then B2+B4 | Keep the serial order in [DSH-015RC1-CLOSEOUT-SLICES.md](DSH-015RC1-CLOSEOUT-SLICES.md); B1 is an external blocker if no out-of-process provider exists |
+| D-6 | D15-G gate order (if B1 external) | `G-keep` / `G-split` / `G-reorder` / `G-reclassify` (see slices doc) | Do **not** silently hold a "strict serial" claim while B1 is externally blocked; choose a gate-order option explicitly |
 
 ## Explicit non-actions in this batch
 

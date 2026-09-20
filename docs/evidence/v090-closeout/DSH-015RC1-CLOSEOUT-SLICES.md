@@ -25,9 +25,15 @@ aggregates `subagent-resume` / `terminal-persistence` are display-only.
 
 ### B1 `subagent-child-crash` — independent out-of-process continuable child
 
-- **Implementation owner:** R6 Full Runtime Continuity Qualification, with an
-  out-of-process continuable provider (ADR-0082 option 1) or the isolated
-  runtime-adapter stack with a real DSH child process.
+- **Implementation owner:** D15 remediation / candidate-qualification slice D15-4 (evidence-only
+  native harness, or the isolated runtime-adapter stack with a real DSH child process). **Not**
+  post-GO R6. If 0.1.5-rc.1 has no independent-process continuable provider, B1 is an
+  **external blocker**: an upstream out-of-process provider implementing `prepareContinuable`
+  must land and be qualified first (or the maintainer chooses a gate-order adjustment below).
+- **Owner node:** `d15-4-child-provider-remediation` (pre-gate).
+- **External blocker:** `available_in_0_1_5_rc1 = false`. Until an independent-process
+  provider is qualified, `subagent-child-crash` cannot PASS and D15-G stays `NO_GO`; this must
+  not be hidden by assigning the blocker to a post-gate R-series phase.
 - **Reproduction (current `BLOCKED`):** the composed native spawn provider runs children
   in-process, so a child-only SIGKILL while the parent executor stays alive is not
   reachable; the owning-process SIGKILL is explicitly not a substitute.
@@ -44,8 +50,10 @@ aggregates `subagent-resume` / `terminal-persistence` are display-only.
 
 ### B2 `subagent-byq-adapter-restart` — BYQ rebinds a persisted continuable child
 
-- **Implementation owner:** R6/composition hookup under Proposed ADR-0082 (option 1 or
-  option 2). Requires an accepted ADR before implementation.
+- **Implementation owner:** D15 remediation / candidate-qualification slice D15-4 candidate
+  composition hookup under ADR-0082 (candidate profile + BYQ child-resume/rebind surface).
+  **Not** post-GO R6. Requires an accepted ADR-0082 option before implementation.
+- **Owner node:** `d15-4-candidate-composition-hookup` (pre-gate).
 - **Reproduction (current `BLOCKED`):** generation A returns a continuable child and
   persists it; a fresh adapter exposes only root `resume_session`; the 0.1.5 Python SDK
   is byte-identical to 0.1.2 and exposes no child operation; no committed BYQ surface
@@ -63,8 +71,10 @@ aggregates `subagent-resume` / `terminal-persistence` are display-only.
 
 ### B3 `terminal-adapter-restart` — BYQ TerminalAttachment survives an adapter restart
 
-- **Implementation owner:** R4 TerminalAttachment under Proposed ADR-0083; first a
-  candidate-specific, reversible evidence-only layer sufficient to re-run D15-G.
+- **Implementation owner:** D15 remediation / candidate-qualification slice D15-5 candidate
+  attachment layer under ADR-0083 (candidate-specific, reversible, evidence-only). R4 later
+  productizes the surface; the blocker is **not** owned by post-GO R4.
+- **Owner node:** `d15-5-candidate-attachment-layer` (pre-gate).
 - **Reproduction (current `BLOCKED`):** an adapter abort kills the DSH runtime; native
   terminal sessions are process-local and the committed BYQ tree persists no
   `TerminalAttachment`, so a fresh adapter rejects the old attachment (real rejection
@@ -84,7 +94,10 @@ aggregates `subagent-resume` / `terminal-persistence` are display-only.
 
 ### B4 `terminal-dsh-runtime-restart` — truthful terminal loss across a DSH restart
 
-- **Implementation owner:** R4 TerminalAttachment under Proposed ADR-0083.
+- **Implementation owner:** D15 remediation / candidate-qualification slice D15-5 candidate
+  attachment layer under ADR-0083 (candidate-specific, reversible, evidence-only). R4 later
+  productizes the surface; the blocker is **not** owned by post-GO R4.
+- **Owner node:** `d15-5-candidate-attachment-layer` (pre-gate).
 - **Reproduction (current `BLOCKED`):** a restarted DSH runtime is a new process and
   native terminal sessions do not survive it; no BYQ reconnect surface exists, so the old
   attachment must be reported lost. Evidence:
@@ -99,23 +112,64 @@ aggregates `subagent-resume` / `terminal-persistence` are display-only.
 
 ## Minimal serial slices and gating order
 
-| # | Slice | Depends on | Exit / stop condition |
-|---|---|---|---|
-| 1 | B1 `subagent-child-crash` | ADR-0082 decision + out-of-process provider/stack | Draft PR; blocker reaches real `PASS` or stays `BLOCKED` |
-| 2 | B2 `subagent-byq-adapter-restart` | ADR-0082 decision + B1 provider boundary | Draft PR; real rebind `PASS` or `BLOCKED` |
-| 3 | B3 `terminal-adapter-restart` | ADR-0083 decision + candidate-specific attachment layer | Draft PR; real rebind/loss `PASS` or `BLOCKED` |
-| 4 | B4 `terminal-dsh-runtime-restart` | ADR-0083 + B3 layer | Draft PR; truthful loss `PASS` or `BLOCKED` |
-| 5 | D15-G re-run | slots 1–4 | `GO` only if every required atomic capability derives `PASS` |
-| 6 | R3 Thin Runtime Supervisor | slot 5 `GO` | Draft PR; no selector switch |
-| 7 | R4 TerminalAttachment productization | slot 6 | Draft PR |
-| 8 | R5 DurableJob independence | slot 7 | Draft PR |
-| 9 | R6 Full Runtime Continuity Qualification | slot 8 | Draft PR |
-| 10 | Independent Production Go/No-Go | slot 9 | **Maintainer decision only** |
+| # | Slice | Owner node (pre-gate) | Depends on | Exit / stop condition |
+|---|---|---|---|---|
+| 1 | B1 `subagent-child-crash` | `d15-4-child-provider-remediation` | ADR-0082 decision; **external blocker** if no out-of-process provider | Draft PR; real `PASS` or stays `BLOCKED`/external |
+| 2 | B2 `subagent-byq-adapter-restart` | `d15-4-candidate-composition-hookup` | ADR-0082 decision (+ B1 when option 1 is required) | Draft PR; real rebind `PASS` or `BLOCKED` |
+| 3 | B3 `terminal-adapter-restart` | `d15-5-candidate-attachment-layer` | ADR-0083 decision | Draft PR; real rebind/loss `PASS` or `BLOCKED` |
+| 4 | B4 `terminal-dsh-runtime-restart` | `d15-5-candidate-attachment-layer` | ADR-0083 decision + B3 layer | Draft PR; truthful loss `PASS` or `BLOCKED` |
+| 5 | D15-G re-run | gate `d15-g-rerun` | owner nodes 1–4 | `GO` only if every required atomic capability derives `PASS` |
+| 6 | R3 Thin Runtime Supervisor | `r3-thin-supervisor` | slot 5 `GO` | Draft PR; no selector switch |
+| 7 | R4 TerminalAttachment productization | `r4-terminal-attachment` | slot 6 | Draft PR |
+| 8 | R5 DurableJob independence | `r5-durable-job-independence` | slot 7 | Draft PR |
+| 9 | R6 Full Runtime Continuity Qualification | `r6-full-runtime-continuity` | slot 8 | Draft PR |
+| 10 | Independent Production Go/No-Go | `production-go-no-go` | slot 9 | **Maintainer decision only** |
+
+## DAG and ownership rule
+
+```
+v090-audit
+ ├── x09-full-interface-rebaseline
+ ├── x09-composite-fault-regression
+ ├── adr-0082-decision ──► d15-4-child-provider-remediation (external blocker)
+ │                       └► d15-4-candidate-composition-hookup
+ └── adr-0083-decision ──► d15-5-candidate-attachment-layer
+                                   │
+        {d15-4-child-provider-remediation, d15-4-candidate-composition-hookup,
+         d15-5-candidate-attachment-layer} ──► d15-g-rerun (GATE)
+                                                    └► r3-thin-supervisor
+                                                        └► r4-terminal-attachment
+                                                            └► r5-durable-job-independence
+                                                                └► r6-full-runtime-continuity
+                                                                    └► production-go-no-go
+```
+
+**Owner rule:** every D15-G atomic blocker owner must be a **pre-gate D15
+candidate-qualification node**. Post-gate R-series nodes (`r3/r4/r5/r6`) may **not** own a
+blocker. This removes the former `B1 → R6` and `B3/B4 → R4` cycles. The machine-readable DAG
+is `acceptance-matrix.v1.json` `dag`, and `tests/test_v090_closeout_governance.py` asserts
+acyclicity and owner-before-gate for every blocker.
 
 Slices 1–4 are serial at the boundary level: B1/B2 share the ADR-0082 child boundary and
 B3/B4 share the ADR-0083 attachment boundary, and each boundary plus its persistence must
 be coherent before D15-G can be re-run. D15-G must **not** be re-run, and R3 must **not**
 resume, while any of B1–B4 is non-`PASS`.
+
+## Gate-order options (maintainer decision required)
+
+B1 (`subagent-child-crash`) is an **external blocker** in DSH 0.1.5-rc.1: no out-of-process
+continuable provider exists. A strict serial order therefore cannot be both honest and
+executable for that item. The maintainer must choose one of:
+
+| Option | Meaning | Requires |
+|---|---|---|
+| `G-keep` | Keep the strict D15-G gate; D15-G stays `NO_GO` until an upstream provider exists | upstream out-of-process provider |
+| `G-split` | Split the gate (e.g. runtime/session/subagent-adapter vs terminal, or required-atomic vs external-dependency) so B1 does not deadlock unrelated continuity | maintainer decision; ADR-0081/D15 contract revision |
+| `G-reorder` | Qualify B2/B3/B4 first; schedule B1 after an upstream provider exists | maintainer decision |
+| `G-reclassify` | Reclassify `child-crash` as an optional limitation | explicit maintainer Accepted ADR revision (not a silent downgrade) |
+
+This audit does **not** choose an option; it records them. A strict serial order is claimed
+**only** for the items that are internally ownable; an external blocker is named as such.
 
 ## Dependency upgrade is not a production default switch
 
