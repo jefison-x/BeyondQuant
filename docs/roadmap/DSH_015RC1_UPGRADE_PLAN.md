@@ -331,14 +331,35 @@ evidence, and the unsupported claim that a native rejection proves a nonexistent
 pre-fix gate is removed (the only pre-fix comparison is the observer's real
 reconstructed legacy algorithm).
 
+**Routing / process-boundary investigation (2026-09-20).** A real trial
+(`scripts/d15/subagent/routing_probe.mjs`, evidence `routing.v1.json`) executes
+the candidate `@deepseek-ai/dsh-tool-subagent` through `ctx.tools.execute`: the
+committed BYQ config (`enableRunInBackground:false`, no `backgroundMode`) is
+foreground (`start=1`, `startContinuable=0`); `backgroundMode:continuable` with
+the in-process `spawn` provider reaches `startContinuable`; any provider without
+`prepareContinuable` (models the out-of-process `dsh-sdk`/ACP/Codex/Claude Code
+backends) is rejected with `does not support \`backgroundMode: continuable\``.
+Only `subagent-spawn-in-process` and `subagent-fork-in-process` implement
+`prepareContinuable`, so **native 0.1.5rc1 provides no independent-process
+continuable child provider**; `@deepseek-ai/dsh-subagent-dsh-sdk` is published at
+rc.1 but is not in the candidate bundled runtime list and also lacks
+`prepareContinuable`. The BYQ hookup to `startContinuable` is a product-semantics
+change (foreground result → durable background child; blast radius: composition,
+delegate tool contract, runtime-adapter child-lease path, 0.1.2 compat boundary).
+It exceeds this PR's qualification scope and still cannot satisfy
+`child-crash`/BYQ adapter restart, so D15-4 stays `BLOCKED`; the minimal
+candidate-compatible hookup is planned for an independent worktree/feature PR.
+The CI contract test now accepts D15-4 `BLOCKED` **only** with named
+`uncovered_items` and asserts D15-G/R3 are not opened.
+
 Evidence: [`docs/evidence/d15/d15-4/`](../evidence/d15/d15-4/README.md)
 v2 (current): `native-observations.v2.json`, `verdict.v2.json` (`all_pass=false`,
 six required PASS + one supporting PASS + two required BLOCKED),
 `negative-controls.v2.json` (28 controls, 27 defect-targeting),
-`reachability.v1.json`, `scenarios/*.v2.json`; v1 is preserved unchanged.
-Contract/observer:
-`scripts/d15/subagent/{contract.v1.json,observer.py,reachability_probe.mjs}` and
-`tests/test_dsh_d15_4_subagent.py`.
+`reachability.v1.json`, `routing.v1.json`, `scenarios/*.v2.json`; v1 is preserved
+unchanged. Contract/observer:
+`scripts/d15/subagent/{contract.v1.json,observer.py,reachability_probe.mjs,routing_probe.mjs}`
+and `tests/test_dsh_d15_4_subagent.py`.
 
 ## 6. D15-5 — Persistent terminal
 
@@ -460,3 +481,9 @@ fork deriver/controls; tests), so the revision advances
 `post-u8.165` -> `post-u8.166` (rebuild identity only; the v1 evidence is
 preserved and no selector, deployment, immutable release registry or 0.1.2
 artifact/evidence changes).
+
+The D15-4 routing/investigation revision adds `scripts/d15/subagent/routing_probe.mjs`,
+updates `tests/test_dsh_d15_candidate.py` and `tests/test_dsh_d15_4_subagent.py`,
+all build-input files, so the revision advances `post-u8.166` -> `post-u8.167`
+(rebuild identity only; no selector, deployment, immutable release registry or
+0.1.2 artifact/evidence change).

@@ -1,0 +1,110 @@
+{
+  "schema_version": "byq-d15-4-routing.v1",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm": "0.1.5-rc.1"
+  },
+  "descriptor_version": 3,
+  "trials": [
+    {
+      "skill": "byq-foreground",
+      "tool_config": {
+        "provider": "spawn",
+        "toolName": "byq_delegate_test",
+        "enableRunInBackground": false
+      },
+      "apply_error": null,
+      "result_kind": "foreground",
+      "start_calls": 1,
+      "start_continuable_calls": 0,
+      "start_continuable_supported_on_service": true
+    },
+    {
+      "skill": "continuable-in-process",
+      "tool_config": {
+        "provider": "spawn",
+        "toolName": "byq_delegate_test",
+        "enableRunInBackground": true,
+        "backgroundMode": "continuable"
+      },
+      "apply_error": null,
+      "result_kind": "continuable",
+      "start_calls": 0,
+      "start_continuable_calls": 1,
+      "start_continuable_supported_on_service": true
+    },
+    {
+      "skill": "continuable-out-of-process",
+      "tool_config": {
+        "provider": "dsh-sdk-like",
+        "toolName": "byq_delegate_test",
+        "enableRunInBackground": true,
+        "backgroundMode": "continuable"
+      },
+      "apply_error": {
+        "name": "Error",
+        "message": "tool-subagent: provider \"dsh-sdk-like\" does not support `backgroundMode: continuable`"
+      },
+      "result_kind": null,
+      "start_calls": 0,
+      "start_continuable_calls": 0,
+      "start_continuable_supported_on_service": true
+    }
+  ],
+  "conclusions": {
+    "byq_foreground_config_reaches_start_continuable": false,
+    "byq_foreground_config_is_foreground": true,
+    "continuable_in_process_is_reachable_when_enabled": true,
+    "independent_process_continuable_provider_available": false,
+    "out_of_process_provider_without_prepareContinuable_rejected": true
+  },
+  "available_interfaces": [
+    {
+      "interface": "SubagentRuntime.startContinuable",
+      "reference": "@deepseek-ai/dsh-subagent index.d.ts; src/index.ts:228; continuation.ts:102",
+      "kind": "continuable child (in-process residency)"
+    },
+    {
+      "interface": "SubagentProvider.prepareContinuable",
+      "reference": "@deepseek-ai/dsh-subagent src/types.ts:389; implemented by subagent-spawn-in-process/src/index.ts:61 and subagent-fork-in-process/src/index.ts:84 only",
+      "kind": "capability gate for continuable"
+    },
+    {
+      "interface": "SubagentRuntime.start (foreground/background one-shot)",
+      "reference": "@deepseek-ai/dsh-subagent index.d.ts; tool-subagent/src/index.ts:557",
+      "kind": "one-shot child; process boundary is provider-owned"
+    },
+    {
+      "interface": "tool-subagent background/continuable routing",
+      "reference": "@deepseek-ai/dsh-tool-subagent src/index.ts:287-305 (resolveDelegationRun), :321-347 (gates), :525-536 (startContinuable)",
+      "kind": "BYQ delegate routing"
+    },
+    {
+      "interface": "out-of-process child providers (acp/codex/claude-code)",
+      "reference": "@deepseek-ai/dsh-subagent src/out-of-process.ts; bundled-015.txt lists dsh-subagent-acp/-codex/-claude-code; NO_START_CAPABILITIES; no prepareContinuable",
+      "kind": "independent process, one-shot, fresh context, not continuable"
+    },
+    {
+      "interface": "out-of-process DSH-SDK child provider",
+      "reference": "@deepseek-ai/dsh-subagent-dsh-sdk src/index.ts (published at 0.1.5-rc.1; NOT in the candidate bundled runtime list; no prepareContinuable)",
+      "kind": "independent process, one-shot, fresh context, not continuable, not packaged in the candidate image"
+    }
+  ],
+  "required_wiring_for_byq_to_reach_start_continuable": {
+    "change": "on each byq_delegate_* tool: set backgroundMode: 'continuable' and stop disabling background (enableRunInBackground: true), keeping provider: spawn",
+    "blast_radius": [
+      "composition: plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml (5 delegate tools) and the profile patch override",
+      "tool contract: the delegate tool returns {kind: continuable, subagentId} instead of the foreground SubagentResult, so the Product Agent must handle a durable child id, later delivery and settlement",
+      "runtime-adapter: services/runtime-adapter/app/runtime.py child-lease/observation path currently models foreground delegation only; a continuable child outlives the parent turn",
+      "compat boundary: services/runtime-adapter/app/compat/dsh_015.py still inherits the 0.1.2 observation contract"
+    ],
+    "reversible": "the composition keys are revertible, but the returned tool-result shape and Product/agent handling change is not transparent to current callers; it is a product-semantics change, not a no-op",
+    "candidate_specific": "yes — can be applied to the isolated candidate profile/composition without changing config/dsh/deployment.json, compose.yml or the production selector dsh-0.1.2rc1",
+    "process_boundary": "the continuable provider available in the candidate runtime is in-process (spawn/fork); no out-of-process provider implements prepareContinuable, so a continuable child still shares the executor process"
+  },
+  "production_unchanged": {
+    "selector": "config/dsh/deployment.json",
+    "compose": "compose.yml",
+    "note": "probe reads and boots only isolated in-memory/temp topology; it edits no production file"
+  }
+}

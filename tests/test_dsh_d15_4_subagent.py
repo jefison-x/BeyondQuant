@@ -186,6 +186,24 @@ class D15SubagentEvidenceTests(unittest.TestCase):
         self.assertNotEqual(
             by_interface["startContinuable_activation_registry"]["status"], "REACHABLE_FROM_BYQ_COMPOSITION")
 
+    def test_routing_evidence_is_the_real_trial_and_stays_reversible(self):
+        routing = json.loads((EVIDENCE / "routing.v1.json").read_text(encoding="utf-8"))
+        self.assertEqual(routing["schema_version"], "byq-d15-4-routing.v1")
+        conclusions = routing["conclusions"]
+        # The committed BYQ delegate config is foreground and never reaches
+        # startContinuable; enabling continuable is reachable in-process only;
+        # no independent-process continuable provider exists.
+        self.assertTrue(conclusions["byq_foreground_config_is_foreground"])
+        self.assertFalse(conclusions["byq_foreground_config_reaches_start_continuable"])
+        self.assertTrue(conclusions["continuable_in_process_is_reachable_when_enabled"])
+        self.assertFalse(conclusions["independent_process_continuable_provider_available"])
+        self.assertTrue(conclusions["out_of_process_provider_without_prepareContinuable_rejected"])
+        wiring = routing["required_wiring_for_byq_to_reach_start_continuable"]
+        self.assertTrue(wiring["candidate_specific"])
+        self.assertIn("not transparent", wiring["reversible"])
+        self.assertTrue(routing["available_interfaces"])
+        self.assertTrue(routing["trials"])
+
     def test_negative_controls_evidence_is_recorded(self):
         controls = json.loads((EVIDENCE / "negative-controls.v2.json").read_text(encoding="utf-8"))
         self.assertTrue(controls["all_controls_pass"])
@@ -234,6 +252,23 @@ class D15SubagentNativeIntegrationTests(unittest.TestCase):
         self.assertIn("forced orchestrator throw", result.stderr)
         after = set(glob.glob(os.path.join(tmpdir, "d15-4-*")))
         self.assertEqual(after - before, set(), "temp roots leaked on the exception path")
+
+    def test_routing_probe_reproduces_the_byq_to_native_routing(self):
+        if shutil.which("node") is None:
+            self.skipTest("node not available")
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "routing.v1.json"
+            result = subprocess.run(
+                ["node", "routing_probe.mjs", "--out", str(out)],
+                cwd=SUBAGENT, capture_output=True, text=True, timeout=300)
+            self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+            routing = json.loads(out.read_text(encoding="utf-8"))
+        conclusions = routing["conclusions"]
+        self.assertTrue(conclusions["byq_foreground_config_is_foreground"])
+        self.assertFalse(conclusions["byq_foreground_config_reaches_start_continuable"])
+        self.assertTrue(conclusions["continuable_in_process_is_reachable_when_enabled"])
+        self.assertFalse(conclusions["independent_process_continuable_provider_available"])
+        self.assertTrue(conclusions["out_of_process_provider_without_prepareContinuable_rejected"])
 
 
 if __name__ == "__main__":

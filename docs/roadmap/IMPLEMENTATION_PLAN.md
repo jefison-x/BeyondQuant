@@ -229,6 +229,23 @@ off-by-one/zero/payload-drift/length-mismatch/child-gap 负例控制，全部证
 v1 全部保留不覆盖。新增 build inputs 属 inventory，构建修订推进 `post-u8.165 → .166`（仅重建身份）。
 不部署、不自动合并。
 
+D15-4 早期评审后续：CI 合同测试修正 + 原生接口/接线影响调查（构建修订 `post-u8.167`，维护）：
+`tests/test_dsh_d15_candidate.py` 的 acceptance-matrix 断言不再要求 D15-4 `NOT_RUN`，而是严格接受
+`BLOCKED` **仅当**其携带具名 `uncovered_items`（每项含 status+reason，必须覆盖 child-crash/
+byq-adapter-restart/host-reboot），并断言 D15-G 未开启、`R3_RESUME stays NO`；不回退证据、不宽泛
+接受任意状态。新增 `scripts/d15/subagent/routing_probe.mjs` 真实试验（boot 真实候选
+`@deepseek-ai/dsh-subagent`+spawn provider+`@deepseek-ai/dsh-tool-subagent`，经
+`ctx.tools.execute` 执行并计数 `start`/`startContinuable`）：提交的 BYQ 委派配置
+（`enableRunInBackground:false`、无 `backgroundMode`）为 foreground（start=1、startContinuable=0）；
+`backgroundMode: continuable` 仅 in-process `spawn` provider 可达（startContinuable=1）；无
+`prepareContinuable` 的 out-of-process provider（模型化 dsh-sdk/ACP/Codex/Claude Code）被拒
+`does not support \`backgroundMode: continuable\``。结论：BYQ 到 `startContinuable` 的接线是产品语义
+变更（foreground 结果 → durable background child；影响组合 5 个 delegate 工具、工具结果契约、
+runtime-adapter child-lease 观察、dsh_015 compat 边界），超出本 PR 资格范围，且 0.1.5rc1 无独立进程
+continuable child provider，仍不能解决 child-crash/adapter restart；故 D15-4 保持 `BLOCKED`，
+最小候选兼容 hookup 计划在独立 worktree/feature PR 实施（普通实现，非需授权事项）。证据
+`docs/evidence/d15/d15-4/routing.v1.json` 且 v1/v2 不覆盖。不部署、不自动合并。
+
 数据就绪续接 needs_attention 重挂（fix，构建修订 `dsh-0.1.2rc1-post-u8.142`）：生产 round-2
 数据就绪续接回合结算为 `needs_attention` 后，`research_tasks.continuation_blocked_reason` 被写成
 `continuation_needs_attention`；原预算路径的按任务级 `continue` 使其永久阻止后续**不同**的

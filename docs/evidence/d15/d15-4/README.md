@@ -19,6 +19,7 @@
 | `verdict.v2.json` | fail-able observer verdict: `all_pass=false`, six required PASS + one supporting PASS + two required BLOCKED |
 | `negative-controls.v2.json` | 28 fail-closed controls (27 defect-targeting: pre-fix gate passes, fixed gate fails) |
 | `reachability.v1.json` | real inspection of the committed BYQ composition vs the candidate tool implementation |
+| `routing.v1.json` | real `ctx.tools.execute` routing trial (foreground vs continuable vs out-of-process) and the wiring/process-boundary impact |
 | `scenarios/*.v2.json` | one file per scenario |
 | `*.v1.json`, `scenarios/*.v1.json` | the original reviewed evidence, preserved unchanged (not overwritten) |
 
@@ -91,6 +92,53 @@ The smallest concrete option for the BYQ items is an isolated D15 compose stack
 plus a tool-aware scripted provider, without changing the production composition
 or adding BYQ subagent persistence. It was **not** built here.
 
+## Native interface + wiring impact (real routing trial, `routing.v1.json`)
+
+`routing_probe.mjs` boots the real candidate `@deepseek-ai/dsh-subagent` +
+`@deepseek-ai/dsh-subagent-spawn-in-process` + `@deepseek-ai/dsh-tool-subagent`
+and executes the delegation tool through `ctx.tools.execute` while counting
+`start` / `startContinuable`:
+
+| trial | tool config | result |
+| --- | --- | --- |
+| byq-foreground | `enableRunInBackground:false` (committed BYQ) | foreground, `start=1`, `startContinuable=0` |
+| continuable-in-process | `enableRunInBackground:true` + `backgroundMode:continuable`, provider `spawn` | `{kind:continuable}`, `startContinuable=1` |
+| continuable-out-of-process | same, provider without `prepareContinuable` (models dsh-sdk/acp/codex) | apply rejected: `provider "dsh-sdk-like" does not support \`backgroundMode: continuable\`` |
+
+Available native interfaces:
+
+- `SubagentRuntime.startContinuable` — `@deepseek-ai/dsh-subagent` (`src/index.ts:228`, `continuation.ts:102`); durable in-process continuable child.
+- `SubagentProvider.prepareContinuable` — capability gate (`src/types.ts:389`); implemented **only** by `subagent-spawn-in-process` (`src/index.ts:61`) and `subagent-fork-in-process` (`src/index.ts:84`).
+- `tool-subagent` routing — `resolveDelegationRun` (`src/index.ts:287-305`), gates (`:321-347`), `startContinuable` (`:525-536`).
+- Out-of-process one-shot providers — `subagent/src/out-of-process.ts` (`NO_START_CAPABILITIES`); bundled `dsh-subagent-acp/-codex/-claude-code`; none implements `prepareContinuable`. `@deepseek-ai/dsh-subagent-dsh-sdk` is published at rc.1 but **not in the candidate bundled runtime list** and also has no `prepareContinuable`.
+
+Required wiring for BYQ to reach `startContinuable`: set `backgroundMode: continuable`
+and stop disabling background (`enableRunInBackground: true`) on each
+`byq_delegate_*`, keeping `provider: spawn`.
+
+- **Blast radius**: composition (5 delegate tools + profile patch); the delegate
+  tool result shape changes from the foreground `SubagentResult` to
+  `{kind: continuable, subagentId}`, so the Product Agent must handle a durable
+  child id, later delivery and settlement; the runtime-adapter child-lease path
+  (`services/runtime-adapter/app/runtime.py`) models foreground delegation; the
+  compat boundary (`dsh_015.py`) still inherits 0.1.2.
+- **Reversible**: the composition keys are revertible, but the result-shape and
+  Product handling change is **not transparent** to current callers — it is a
+  product-semantics change, not a no-op.
+- **Candidate-specific**: yes; it can be applied to the isolated candidate
+  profile/composition without changing `config/dsh/deployment.json`, `compose.yml`
+  or the production selector `dsh-0.1.2rc1`.
+- **Process boundary**: the only continuable providers in the candidate runtime
+  are in-process (spawn/fork). No out-of-process provider implements
+  `prepareContinuable`, so a continuable child always shares the executor process.
+
+**Scope decision.** The BYQ→`startContinuable` hookup is a product-semantics
+change (durable background child contract) that **exceeds this PR's qualification
+scope**, and it still cannot satisfy `child-crash`/BYQ adapter restart because
+native 0.1.5rc1 has no independent-process continuable provider. #332 therefore
+stays reviewable partial evidence; the minimal candidate-compatible hookup is
+planned for an independent worktree/feature PR. D15-4 stays **BLOCKED**.
+
 ## Per-item results (real observations, v2)
 
 | item | result | real observation |
@@ -144,6 +192,7 @@ cd scripts/d15/subagent
 npm ci --no-audit --no-fund --legacy-peer-deps
 node native_subagent_harness.mjs run --out ../../../docs/evidence/d15/d15-4/native-observations.v2.json
 node reachability_probe.mjs --out ../../../docs/evidence/d15/d15-4/reachability.v1.json
+node routing_probe.mjs --out ../../../docs/evidence/d15/d15-4/routing.v1.json
 python3 observer.py --selfcheck --out ../../../docs/evidence/d15/d15-4/negative-controls.v2.json
 python3 observer.py --observations ../../../docs/evidence/d15/d15-4/native-observations.v2.json \
     --out ../../../docs/evidence/d15/d15-4/verdict.v2.json   # exits 1: two required BLOCKED
