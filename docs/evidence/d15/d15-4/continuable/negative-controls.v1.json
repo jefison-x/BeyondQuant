@@ -1,0 +1,134 @@
+{
+  "all_controls_pass": true,
+  "control_count": 25,
+  "controls": [
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "result-kind-foreground"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "child-not-persisted"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "descriptor-not-continuable"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "parent-link-wrong"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "duplicate-settlement"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "settlement-count-mismatch"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "goal-link-missing"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "orphan-child"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "same-os-process"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "cold-resume-not-contiguous"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "cold-resume-duplicate-settlement"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "child-crash-fabricated-completion"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "compose-not-restarted"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "compose-no-byq-surface"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "required-blocked"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "required-not-run"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "required-missing"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "fault-not-applied"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "false-llm-quality"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "non-native-evidence"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "candidate-mismatch"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "negative-not-rejected"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "self-declared-coverage"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "duplicate-scenario-id"
+    },
+    {
+      "fixed_all_pass": false,
+      "legacy_all_pass": true,
+      "name": "unknown-scenario-id"
+    }
+  ],
+  "defect_targeting_pre_fix_passed_count": 25,
+  "known_good_fixture_all_pass": true,
+  "schema_version": "byq-d15-4-continuable-negative-controls.v1"
+}

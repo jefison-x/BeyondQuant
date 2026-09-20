@@ -1,0 +1,285 @@
+{
+  "candidate": {
+    "npm_packages": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1",
+    "release": "dsh-0.1.5rc1"
+  },
+  "candidate_allowlists": {
+    "byq_delegate_backtest_analysis": [
+      "mcp__byq__byq_agent_context",
+      "mcp__byq__byq_agent_roles",
+      "mcp__byq__byq_agent_run_start",
+      "mcp__byq__byq_agent_authorize",
+      "mcp__byq__byq_agent_audit",
+      "mcp__byq__byq_research_get",
+      "mcp__byq__byq_backtest_task_prepare",
+      "mcp__byq__byq_backtest_task_create",
+      "mcp__byq__byq_backtest_task_get",
+      "mcp__byq__byq_backtest_analysis_get",
+      "mcp__byq__byq_backtest_task_execute",
+      "mcp__byq__byq_backtest_task_cancel",
+      "mcp__byq__byq_workflow_card_propose"
+    ],
+    "byq_delegate_factor_research": [
+      "mcp__byq__byq_agent_context",
+      "mcp__byq__byq_agent_roles",
+      "mcp__byq__byq_agent_run_start",
+      "mcp__byq__byq_agent_authorize",
+      "mcp__byq__byq_agent_audit",
+      "mcp__byq__byq_market_daily",
+      "mcp__byq__byq_factor_compute",
+      "mcp__byq__byq_research_get",
+      "mcp__byq__byq_experiment_create",
+      "mcp__byq__byq_artifact_create",
+      "mcp__byq__byq_workflow_card_propose"
+    ],
+    "byq_delegate_market_research": [
+      "mcp__byq__byq_agent_context",
+      "mcp__byq__byq_agent_roles",
+      "mcp__byq__byq_agent_run_start",
+      "mcp__byq__byq_agent_authorize",
+      "mcp__byq__byq_agent_audit",
+      "web_search",
+      "mcp__byq__byq_market_session_context",
+      "mcp__byq__byq_market_daily",
+      "mcp__byq__byq_market_valuation",
+      "mcp__byq__byq_market_fundamentals",
+      "mcp__byq__byq_research_task_create",
+      "mcp__byq__byq_research_get",
+      "mcp__byq__byq_experiment_create",
+      "mcp__byq__byq_artifact_create",
+      "mcp__byq__byq_web_evidence_create",
+      "mcp__byq__byq_workflow_card_propose"
+    ],
+    "byq_delegate_ml_research": [
+      "mcp__byq__byq_agent_context",
+      "mcp__byq__byq_agent_roles",
+      "mcp__byq__byq_agent_run_start",
+      "mcp__byq__byq_agent_authorize",
+      "mcp__byq__byq_agent_audit",
+      "mcp__byq__byq_agent_approval_request",
+      "mcp__byq__byq_agent_approval_get",
+      "mcp__byq__byq_research_task_create",
+      "mcp__byq__byq_research_get",
+      "mcp__byq__byq_ml_capabilities",
+      "mcp__byq__byq_ml_workspace_get",
+      "mcp__byq__byq_ml_studies",
+      "mcp__byq__byq_ml_study_get",
+      "mcp__byq__byq_ml_strategy_create",
+      "mcp__byq__byq_ml_strategy_approve",
+      "mcp__byq__byq_ml_training_create",
+      "mcp__byq__byq_ml_training_get",
+      "mcp__byq__byq_ml_training_cancel",
+      "mcp__byq__byq_ml_prediction_create",
+      "mcp__byq__byq_ml_prediction_get",
+      "mcp__byq__byq_backtest_task_get",
+      "mcp__byq__byq_backtest_task_execute",
+      "mcp__byq__byq_backtest_task_cancel"
+    ],
+    "byq_delegate_strategy_research": [
+      "mcp__byq__byq_agent_context",
+      "mcp__byq__byq_agent_roles",
+      "mcp__byq__byq_agent_run_start",
+      "mcp__byq__byq_agent_authorize",
+      "mcp__byq__byq_agent_audit",
+      "mcp__byq__byq_research_task_create",
+      "mcp__byq__byq_research_get",
+      "mcp__byq__byq_experiment_create",
+      "mcp__byq__byq_artifact_create",
+      "mcp__byq__byq_strategy_validate",
+      "mcp__byq__byq_strategy_version_create",
+      "mcp__byq__byq_strategy_export",
+      "mcp__byq__byq_workflow_card_propose"
+    ]
+  },
+  "candidate_blocks": {
+    "byq_delegate_backtest_analysis": {
+      "__toolName": "byq_delegate_backtest_analysis",
+      "backgroundMode": "continuable",
+      "enableRunInBackground": "true",
+      "maxDepth": "1",
+      "provider": "spawn"
+    },
+    "byq_delegate_factor_research": {
+      "__toolName": "byq_delegate_factor_research",
+      "backgroundMode": "continuable",
+      "enableRunInBackground": "true",
+      "maxDepth": "1",
+      "provider": "spawn"
+    },
+    "byq_delegate_market_research": {
+      "__toolName": "byq_delegate_market_research",
+      "backgroundMode": "continuable",
+      "enableRunInBackground": "true",
+      "maxDepth": "1",
+      "provider": "spawn"
+    },
+    "byq_delegate_ml_research": {
+      "__toolName": "byq_delegate_ml_research",
+      "backgroundMode": "continuable",
+      "enableRunInBackground": "true",
+      "maxDepth": "1",
+      "provider": "spawn"
+    },
+    "byq_delegate_strategy_research": {
+      "__toolName": "byq_delegate_strategy_research",
+      "backgroundMode": "continuable",
+      "enableRunInBackground": "true",
+      "maxDepth": "1",
+      "provider": "spawn"
+    }
+  },
+  "candidate_patch": "plugins/dsh-byq/profiles/dsh-0.1.5rc1-continuable/byq-product.patch.yml",
+  "delegates": [
+    "byq_delegate_market_research",
+    "byq_delegate_factor_research",
+    "byq_delegate_strategy_research",
+    "byq_delegate_backtest_analysis",
+    "byq_delegate_ml_research"
+  ],
+  "expected_candidate_wiring": {
+    "backgroundMode": "continuable",
+    "enableRunInBackground": true,
+    "provider": "spawn"
+  },
+  "expected_production_wiring": {
+    "backgroundMode": "one-shot",
+    "enableRunInBackground": false,
+    "provider": "spawn",
+    "release": "dsh-0.1.2rc1"
+  },
+  "failures": [],
+  "production_allowlists": {
+    "byq_delegate_backtest_analysis": [
+      "mcp__byq__byq_agent_context",
+      "mcp__byq__byq_agent_roles",
+      "mcp__byq__byq_agent_run_start",
+      "mcp__byq__byq_agent_authorize",
+      "mcp__byq__byq_agent_audit",
+      "mcp__byq__byq_research_get",
+      "mcp__byq__byq_backtest_task_prepare",
+      "mcp__byq__byq_backtest_task_create",
+      "mcp__byq__byq_backtest_task_get",
+      "mcp__byq__byq_backtest_analysis_get",
+      "mcp__byq__byq_backtest_task_execute",
+      "mcp__byq__byq_backtest_task_cancel",
+      "mcp__byq__byq_workflow_card_propose"
+    ],
+    "byq_delegate_factor_research": [
+      "mcp__byq__byq_agent_context",
+      "mcp__byq__byq_agent_roles",
+      "mcp__byq__byq_agent_run_start",
+      "mcp__byq__byq_agent_authorize",
+      "mcp__byq__byq_agent_audit",
+      "mcp__byq__byq_market_daily",
+      "mcp__byq__byq_factor_compute",
+      "mcp__byq__byq_research_get",
+      "mcp__byq__byq_experiment_create",
+      "mcp__byq__byq_artifact_create",
+      "mcp__byq__byq_workflow_card_propose"
+    ],
+    "byq_delegate_market_research": [
+      "mcp__byq__byq_agent_context",
+      "mcp__byq__byq_agent_roles",
+      "mcp__byq__byq_agent_run_start",
+      "mcp__byq__byq_agent_authorize",
+      "mcp__byq__byq_agent_audit",
+      "web_search",
+      "mcp__byq__byq_market_session_context",
+      "mcp__byq__byq_market_daily",
+      "mcp__byq__byq_market_valuation",
+      "mcp__byq__byq_market_fundamentals",
+      "mcp__byq__byq_research_task_create",
+      "mcp__byq__byq_research_get",
+      "mcp__byq__byq_experiment_create",
+      "mcp__byq__byq_artifact_create",
+      "mcp__byq__byq_web_evidence_create",
+      "mcp__byq__byq_workflow_card_propose"
+    ],
+    "byq_delegate_ml_research": [
+      "mcp__byq__byq_agent_context",
+      "mcp__byq__byq_agent_roles",
+      "mcp__byq__byq_agent_run_start",
+      "mcp__byq__byq_agent_authorize",
+      "mcp__byq__byq_agent_audit",
+      "mcp__byq__byq_agent_approval_request",
+      "mcp__byq__byq_agent_approval_get",
+      "mcp__byq__byq_research_task_create",
+      "mcp__byq__byq_research_get",
+      "mcp__byq__byq_ml_capabilities",
+      "mcp__byq__byq_ml_workspace_get",
+      "mcp__byq__byq_ml_studies",
+      "mcp__byq__byq_ml_study_get",
+      "mcp__byq__byq_ml_strategy_create",
+      "mcp__byq__byq_ml_strategy_approve",
+      "mcp__byq__byq_ml_training_create",
+      "mcp__byq__byq_ml_training_get",
+      "mcp__byq__byq_ml_training_cancel",
+      "mcp__byq__byq_ml_prediction_create",
+      "mcp__byq__byq_ml_prediction_get",
+      "mcp__byq__byq_backtest_task_get",
+      "mcp__byq__byq_backtest_task_execute",
+      "mcp__byq__byq_backtest_task_cancel"
+    ],
+    "byq_delegate_strategy_research": [
+      "mcp__byq__byq_agent_context",
+      "mcp__byq__byq_agent_roles",
+      "mcp__byq__byq_agent_run_start",
+      "mcp__byq__byq_agent_authorize",
+      "mcp__byq__byq_agent_audit",
+      "mcp__byq__byq_research_task_create",
+      "mcp__byq__byq_research_get",
+      "mcp__byq__byq_experiment_create",
+      "mcp__byq__byq_artifact_create",
+      "mcp__byq__byq_strategy_validate",
+      "mcp__byq__byq_strategy_version_create",
+      "mcp__byq__byq_strategy_export",
+      "mcp__byq__byq_workflow_card_propose"
+    ]
+  },
+  "production_blocks": {
+    "byq_delegate_backtest_analysis": {
+      "__toolName": "byq_delegate_backtest_analysis",
+      "backgroundMode": "one-shot",
+      "enableRunInBackground": "false",
+      "maxDepth": "1",
+      "provider": "spawn"
+    },
+    "byq_delegate_factor_research": {
+      "__toolName": "byq_delegate_factor_research",
+      "backgroundMode": "one-shot",
+      "enableRunInBackground": "false",
+      "maxDepth": "1",
+      "provider": "spawn"
+    },
+    "byq_delegate_market_research": {
+      "__toolName": "byq_delegate_market_research",
+      "backgroundMode": "one-shot",
+      "enableRunInBackground": "false",
+      "maxDepth": "1",
+      "provider": "spawn"
+    },
+    "byq_delegate_ml_research": {
+      "__toolName": "byq_delegate_ml_research",
+      "backgroundMode": "one-shot",
+      "enableRunInBackground": "false",
+      "maxDepth": "1",
+      "provider": "spawn"
+    },
+    "byq_delegate_strategy_research": {
+      "__toolName": "byq_delegate_strategy_research",
+      "backgroundMode": "one-shot",
+      "enableRunInBackground": "false",
+      "maxDepth": "1",
+      "provider": "spawn"
+    }
+  },
+  "production_patch": "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml",
+  "production_patch_regenerated": {
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "{\"status\": \"ok\", \"check\": true, \"continuable\": false}"
+  },
+  "schema_version": "byq-d15-4-continuable-wiring.v1",
+  "wiring_ok": true
+}

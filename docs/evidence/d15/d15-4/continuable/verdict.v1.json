@@ -1,0 +1,471 @@
+{
+  "all_pass": false,
+  "candidate": {
+    "npm_packages": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1",
+    "release": "dsh-0.1.5rc1"
+  },
+  "explicit_non_claims": [
+    "no full D15-4 pass unless every required scenario is PASS",
+    "no independent child-process capability; no new provider; R3_RESUME = NO",
+    "scripted keyless provider: not real-LLM-quality semantic evidence"
+  ],
+  "failures": [],
+  "format_valid": true,
+  "negatives": [
+    {
+      "errorClass": "SubagentError",
+      "errorCode": null,
+      "kind": "non-direct-parent",
+      "rejected": true
+    },
+    {
+      "errorClass": "SubagentError",
+      "errorCode": "UNAUTHORIZED",
+      "kind": "stale-parent",
+      "rejected": true
+    },
+    {
+      "errorClass": "SubagentError",
+      "errorCode": null,
+      "kind": "unmaterialized",
+      "rejected": true
+    },
+    {
+      "errorClass": "SubagentError",
+      "errorCode": null,
+      "kind": "child-claims-root",
+      "rejected": true
+    }
+  ],
+  "optional_coverage": {
+    "child-run-fault": "NOT_RUN",
+    "host-reboot": "NOT_RUN"
+  },
+  "reason_uncovered": [
+    "required scenario 'child-crash' is BLOCKED",
+    "required scenario 'byq-compose-adapter-restart' is BLOCKED"
+  ],
+  "required_coverage": {
+    "adapter-restart-cold-resume": "PASS",
+    "byq-compose-adapter-restart": "BLOCKED",
+    "child-crash": "BLOCKED",
+    "child-id-persistence": "PASS",
+    "delegate-result-shape": "PASS",
+    "lease-linked-to-original-goal": "PASS",
+    "no-orphan-after-parent-end": "PASS",
+    "settlement-exactly-once": "PASS"
+  },
+  "required_coverage_ok": false,
+  "scenarios": [
+    {
+      "assertions": {
+        "continuable_result_kind": true,
+        "provider_spawn_preserved": true,
+        "start_continuable_reached": true,
+        "subagent_id_present": true
+      },
+      "assertions_ok": true,
+      "id": "delegate-result-shape",
+      "observation_keys": [
+        "perTool",
+        "provider",
+        "resultKind",
+        "startContinuableCalls",
+        "subagentId"
+      ],
+      "required": true,
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "child_store_exists": true,
+        "descriptor_mode_continuable": true,
+        "origin_subagent": true,
+        "parent_link_recorded": true
+      },
+      "assertions_ok": true,
+      "id": "child-id-persistence",
+      "observation_keys": [
+        "childStoreExists",
+        "descriptorMode",
+        "origin",
+        "parentId",
+        "parentSession",
+        "perTool"
+      ],
+      "required": true,
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "no_duplicate_settlement": true,
+        "settlement_count_matches_child_turns": true
+      },
+      "assertions_ok": true,
+      "id": "settlement-exactly-once",
+      "observation_keys": [
+        "childTurnCount",
+        "duplicateSettlement",
+        "perTool",
+        "settlementCount"
+      ],
+      "required": true,
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "child_linked_to_goal": true,
+        "delegation_call_id_recorded": true,
+        "original_goal_recorded": true
+      },
+      "assertions_ok": true,
+      "id": "lease-linked-to-original-goal",
+      "observation_keys": [
+        "delegationCallId",
+        "linkedToOriginalGoal",
+        "originalGoalId",
+        "perTool"
+      ],
+      "required": true,
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "child_remains_addressable": true,
+        "no_unsettled_child": true,
+        "parent_run_ended": true
+      },
+      "assertions_ok": true,
+      "id": "no-orphan-after-parent-end",
+      "observation_keys": [
+        "childRemainsAddressable",
+        "parentRunEnded",
+        "perTool",
+        "unsettledChildCount"
+      ],
+      "required": true,
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "new_os_process": true,
+        "no_duplicate_settlement": true,
+        "same_child_id": true,
+        "sequence_contiguous": true,
+        "settlement_exactly_once": true
+      },
+      "assertions_ok": true,
+      "id": "adapter-restart-cold-resume",
+      "observation_keys": [
+        "duplicateSettlement",
+        "generationAProcessId",
+        "generationBProcessId",
+        "newOsProcess",
+        "perTool",
+        "resumedSettlementCount",
+        "sameChildId",
+        "sequenceContiguous"
+      ],
+      "required": true,
+      "result": "PASS"
+    },
+    {
+      "assertions": {},
+      "assertions_ok": false,
+      "id": "child-crash",
+      "not_run_reason": "not executed: the only continuable providers in the candidate closure are in-process (spawn/fork), so a child shares the executor process and cannot be independently SIGKILLed while the parent stays alive. The generation-A SIGKILL used by adapter-restart-cold-resume is the owning-process (adapter) fault, NOT a child-only crash. No child process was faked and no persistence substitute was built. Smallest option: a future out-of-process continuable provider.",
+      "required": true,
+      "result": "BLOCKED"
+    },
+    {
+      "assertions": {},
+      "assertions_ok": false,
+      "id": "byq-compose-adapter-restart",
+      "not_run_reason": "not executed in this native probe: the real isolated compose-stack runtime-adapter container restart is attempted and reported separately by the D15-4 compose runner. The Python SDK surface is byte-identical to 0.1.2 and exposes no continuable-child resume/reachability operation, and the committed adapter has no BYQ surface that cold-resumes a delegated child, so a container restart cannot rebind the child through BYQ. Independent child-process capability stays BLOCKED; no provider or R3 behaviour is added.",
+      "required": true,
+      "result": "BLOCKED"
+    },
+    {
+      "assertions": {},
+      "assertions_ok": false,
+      "id": "child-run-fault",
+      "not_run_reason": "not executed in this batch: the child-run-fault supporting scenario is covered by the existing D15-4 native harness evidence and is not required for the continuable-wiring contract.",
+      "required": false,
+      "result": "NOT_RUN"
+    },
+    {
+      "assertions": {},
+      "assertions_ok": false,
+      "id": "host-reboot",
+      "not_run_reason": "not executed: rebooting the maintainer host is not authorized and a container/adapter restart is not a host reboot",
+      "required": false,
+      "result": "NOT_RUN"
+    }
+  ],
+  "schema_version": "byq-d15-4-continuable-verdict.v1",
+  "wiring": {
+    "candidate_allowlists": {
+      "byq_delegate_backtest_analysis": [
+        "mcp__byq__byq_agent_context",
+        "mcp__byq__byq_agent_roles",
+        "mcp__byq__byq_agent_run_start",
+        "mcp__byq__byq_agent_authorize",
+        "mcp__byq__byq_agent_audit",
+        "mcp__byq__byq_research_get",
+        "mcp__byq__byq_backtest_task_prepare",
+        "mcp__byq__byq_backtest_task_create",
+        "mcp__byq__byq_backtest_task_get",
+        "mcp__byq__byq_backtest_analysis_get",
+        "mcp__byq__byq_backtest_task_execute",
+        "mcp__byq__byq_backtest_task_cancel",
+        "mcp__byq__byq_workflow_card_propose"
+      ],
+      "byq_delegate_factor_research": [
+        "mcp__byq__byq_agent_context",
+        "mcp__byq__byq_agent_roles",
+        "mcp__byq__byq_agent_run_start",
+        "mcp__byq__byq_agent_authorize",
+        "mcp__byq__byq_agent_audit",
+        "mcp__byq__byq_market_daily",
+        "mcp__byq__byq_factor_compute",
+        "mcp__byq__byq_research_get",
+        "mcp__byq__byq_experiment_create",
+        "mcp__byq__byq_artifact_create",
+        "mcp__byq__byq_workflow_card_propose"
+      ],
+      "byq_delegate_market_research": [
+        "mcp__byq__byq_agent_context",
+        "mcp__byq__byq_agent_roles",
+        "mcp__byq__byq_agent_run_start",
+        "mcp__byq__byq_agent_authorize",
+        "mcp__byq__byq_agent_audit",
+        "web_search",
+        "mcp__byq__byq_market_session_context",
+        "mcp__byq__byq_market_daily",
+        "mcp__byq__byq_market_valuation",
+        "mcp__byq__byq_market_fundamentals",
+        "mcp__byq__byq_research_task_create",
+        "mcp__byq__byq_research_get",
+        "mcp__byq__byq_experiment_create",
+        "mcp__byq__byq_artifact_create",
+        "mcp__byq__byq_web_evidence_create",
+        "mcp__byq__byq_workflow_card_propose"
+      ],
+      "byq_delegate_ml_research": [
+        "mcp__byq__byq_agent_context",
+        "mcp__byq__byq_agent_roles",
+        "mcp__byq__byq_agent_run_start",
+        "mcp__byq__byq_agent_authorize",
+        "mcp__byq__byq_agent_audit",
+        "mcp__byq__byq_agent_approval_request",
+        "mcp__byq__byq_agent_approval_get",
+        "mcp__byq__byq_research_task_create",
+        "mcp__byq__byq_research_get",
+        "mcp__byq__byq_ml_capabilities",
+        "mcp__byq__byq_ml_workspace_get",
+        "mcp__byq__byq_ml_studies",
+        "mcp__byq__byq_ml_study_get",
+        "mcp__byq__byq_ml_strategy_create",
+        "mcp__byq__byq_ml_strategy_approve",
+        "mcp__byq__byq_ml_training_create",
+        "mcp__byq__byq_ml_training_get",
+        "mcp__byq__byq_ml_training_cancel",
+        "mcp__byq__byq_ml_prediction_create",
+        "mcp__byq__byq_ml_prediction_get",
+        "mcp__byq__byq_backtest_task_get",
+        "mcp__byq__byq_backtest_task_execute",
+        "mcp__byq__byq_backtest_task_cancel"
+      ],
+      "byq_delegate_strategy_research": [
+        "mcp__byq__byq_agent_context",
+        "mcp__byq__byq_agent_roles",
+        "mcp__byq__byq_agent_run_start",
+        "mcp__byq__byq_agent_authorize",
+        "mcp__byq__byq_agent_audit",
+        "mcp__byq__byq_research_task_create",
+        "mcp__byq__byq_research_get",
+        "mcp__byq__byq_experiment_create",
+        "mcp__byq__byq_artifact_create",
+        "mcp__byq__byq_strategy_validate",
+        "mcp__byq__byq_strategy_version_create",
+        "mcp__byq__byq_strategy_export",
+        "mcp__byq__byq_workflow_card_propose"
+      ]
+    },
+    "candidate_blocks": {
+      "byq_delegate_backtest_analysis": {
+        "__toolName": "byq_delegate_backtest_analysis",
+        "backgroundMode": "continuable",
+        "enableRunInBackground": "true",
+        "maxDepth": "1",
+        "provider": "spawn"
+      },
+      "byq_delegate_factor_research": {
+        "__toolName": "byq_delegate_factor_research",
+        "backgroundMode": "continuable",
+        "enableRunInBackground": "true",
+        "maxDepth": "1",
+        "provider": "spawn"
+      },
+      "byq_delegate_market_research": {
+        "__toolName": "byq_delegate_market_research",
+        "backgroundMode": "continuable",
+        "enableRunInBackground": "true",
+        "maxDepth": "1",
+        "provider": "spawn"
+      },
+      "byq_delegate_ml_research": {
+        "__toolName": "byq_delegate_ml_research",
+        "backgroundMode": "continuable",
+        "enableRunInBackground": "true",
+        "maxDepth": "1",
+        "provider": "spawn"
+      },
+      "byq_delegate_strategy_research": {
+        "__toolName": "byq_delegate_strategy_research",
+        "backgroundMode": "continuable",
+        "enableRunInBackground": "true",
+        "maxDepth": "1",
+        "provider": "spawn"
+      }
+    },
+    "candidate_patch": "plugins/dsh-byq/profiles/dsh-0.1.5rc1-continuable/byq-product.patch.yml",
+    "delegates": [
+      "byq_delegate_market_research",
+      "byq_delegate_factor_research",
+      "byq_delegate_strategy_research",
+      "byq_delegate_backtest_analysis",
+      "byq_delegate_ml_research"
+    ],
+    "failures": [],
+    "production_allowlists": {
+      "byq_delegate_backtest_analysis": [
+        "mcp__byq__byq_agent_context",
+        "mcp__byq__byq_agent_roles",
+        "mcp__byq__byq_agent_run_start",
+        "mcp__byq__byq_agent_authorize",
+        "mcp__byq__byq_agent_audit",
+        "mcp__byq__byq_research_get",
+        "mcp__byq__byq_backtest_task_prepare",
+        "mcp__byq__byq_backtest_task_create",
+        "mcp__byq__byq_backtest_task_get",
+        "mcp__byq__byq_backtest_analysis_get",
+        "mcp__byq__byq_backtest_task_execute",
+        "mcp__byq__byq_backtest_task_cancel",
+        "mcp__byq__byq_workflow_card_propose"
+      ],
+      "byq_delegate_factor_research": [
+        "mcp__byq__byq_agent_context",
+        "mcp__byq__byq_agent_roles",
+        "mcp__byq__byq_agent_run_start",
+        "mcp__byq__byq_agent_authorize",
+        "mcp__byq__byq_agent_audit",
+        "mcp__byq__byq_market_daily",
+        "mcp__byq__byq_factor_compute",
+        "mcp__byq__byq_research_get",
+        "mcp__byq__byq_experiment_create",
+        "mcp__byq__byq_artifact_create",
+        "mcp__byq__byq_workflow_card_propose"
+      ],
+      "byq_delegate_market_research": [
+        "mcp__byq__byq_agent_context",
+        "mcp__byq__byq_agent_roles",
+        "mcp__byq__byq_agent_run_start",
+        "mcp__byq__byq_agent_authorize",
+        "mcp__byq__byq_agent_audit",
+        "web_search",
+        "mcp__byq__byq_market_session_context",
+        "mcp__byq__byq_market_daily",
+        "mcp__byq__byq_market_valuation",
+        "mcp__byq__byq_market_fundamentals",
+        "mcp__byq__byq_research_task_create",
+        "mcp__byq__byq_research_get",
+        "mcp__byq__byq_experiment_create",
+        "mcp__byq__byq_artifact_create",
+        "mcp__byq__byq_web_evidence_create",
+        "mcp__byq__byq_workflow_card_propose"
+      ],
+      "byq_delegate_ml_research": [
+        "mcp__byq__byq_agent_context",
+        "mcp__byq__byq_agent_roles",
+        "mcp__byq__byq_agent_run_start",
+        "mcp__byq__byq_agent_authorize",
+        "mcp__byq__byq_agent_audit",
+        "mcp__byq__byq_agent_approval_request",
+        "mcp__byq__byq_agent_approval_get",
+        "mcp__byq__byq_research_task_create",
+        "mcp__byq__byq_research_get",
+        "mcp__byq__byq_ml_capabilities",
+        "mcp__byq__byq_ml_workspace_get",
+        "mcp__byq__byq_ml_studies",
+        "mcp__byq__byq_ml_study_get",
+        "mcp__byq__byq_ml_strategy_create",
+        "mcp__byq__byq_ml_strategy_approve",
+        "mcp__byq__byq_ml_training_create",
+        "mcp__byq__byq_ml_training_get",
+        "mcp__byq__byq_ml_training_cancel",
+        "mcp__byq__byq_ml_prediction_create",
+        "mcp__byq__byq_ml_prediction_get",
+        "mcp__byq__byq_backtest_task_get",
+        "mcp__byq__byq_backtest_task_execute",
+        "mcp__byq__byq_backtest_task_cancel"
+      ],
+      "byq_delegate_strategy_research": [
+        "mcp__byq__byq_agent_context",
+        "mcp__byq__byq_agent_roles",
+        "mcp__byq__byq_agent_run_start",
+        "mcp__byq__byq_agent_authorize",
+        "mcp__byq__byq_agent_audit",
+        "mcp__byq__byq_research_task_create",
+        "mcp__byq__byq_research_get",
+        "mcp__byq__byq_experiment_create",
+        "mcp__byq__byq_artifact_create",
+        "mcp__byq__byq_strategy_validate",
+        "mcp__byq__byq_strategy_version_create",
+        "mcp__byq__byq_strategy_export",
+        "mcp__byq__byq_workflow_card_propose"
+      ]
+    },
+    "production_blocks": {
+      "byq_delegate_backtest_analysis": {
+        "__toolName": "byq_delegate_backtest_analysis",
+        "backgroundMode": "one-shot",
+        "enableRunInBackground": "false",
+        "maxDepth": "1",
+        "provider": "spawn"
+      },
+      "byq_delegate_factor_research": {
+        "__toolName": "byq_delegate_factor_research",
+        "backgroundMode": "one-shot",
+        "enableRunInBackground": "false",
+        "maxDepth": "1",
+        "provider": "spawn"
+      },
+      "byq_delegate_market_research": {
+        "__toolName": "byq_delegate_market_research",
+        "backgroundMode": "one-shot",
+        "enableRunInBackground": "false",
+        "maxDepth": "1",
+        "provider": "spawn"
+      },
+      "byq_delegate_ml_research": {
+        "__toolName": "byq_delegate_ml_research",
+        "backgroundMode": "one-shot",
+        "enableRunInBackground": "false",
+        "maxDepth": "1",
+        "provider": "spawn"
+      },
+      "byq_delegate_strategy_research": {
+        "__toolName": "byq_delegate_strategy_research",
+        "backgroundMode": "one-shot",
+        "enableRunInBackground": "false",
+        "maxDepth": "1",
+        "provider": "spawn"
+      }
+    },
+    "production_patch": "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml",
+    "wiring_ok": true
+  },
+  "wiring_ok": true
+}

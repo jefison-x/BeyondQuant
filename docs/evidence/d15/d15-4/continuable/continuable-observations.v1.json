@@ -1,0 +1,691 @@
+{
+  "schema_version": "byq-d15-4-continuable-observations.v1",
+  "generated_at": "2026-09-20T10:40:02Z",
+  "evidence_class": "native-runtime-isolated",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1",
+    "closure": "agent-loop + jsonl session persistence + @deepseek-ai/dsh-subagent + spawn-in-process + tool-subagent"
+  },
+  "llm": {
+    "class": "scripted-keyless",
+    "real_llm_quality": false,
+    "note": "Scripted keyless in-process adapter. Runtime-continuity evidence only; never semantic model quality."
+  },
+  "wiring": {
+    "provider": "spawn",
+    "backgroundMode": "continuable",
+    "enableRunInBackground": true,
+    "maxDepth": 1
+  },
+  "delegates": [
+    "byq_delegate_market_research",
+    "byq_delegate_factor_research",
+    "byq_delegate_strategy_research",
+    "byq_delegate_backtest_analysis",
+    "byq_delegate_ml_research"
+  ],
+  "descriptor_version": 3,
+  "harness": {
+    "one_os_process_per_generation": true,
+    "byq_subagent_persistence": false,
+    "second_generic_harness": false,
+    "r3_behavior": false,
+    "provider_added": false
+  },
+  "scenarios": [
+    {
+      "id": "delegate-result-shape",
+      "result": "PASS",
+      "fault_applied": false,
+      "observation": {
+        "resultKind": "continuable",
+        "subagentId": "096c410d-12a4-4be3-a0b3-b11bbc799e2d",
+        "startContinuableCalls": 1,
+        "provider": "spawn",
+        "perTool": [
+          {
+            "tool": "byq_delegate_market_research",
+            "resultKind": "continuable",
+            "subagentId": "096c410d-12a4-4be3-a0b3-b11bbc799e2d",
+            "startContinuableCalls": 1,
+            "startCalls": 0
+          },
+          {
+            "tool": "byq_delegate_factor_research",
+            "resultKind": "continuable",
+            "subagentId": "34fb44cc-2612-4404-a226-992057f0488c",
+            "startContinuableCalls": 1,
+            "startCalls": 0
+          },
+          {
+            "tool": "byq_delegate_strategy_research",
+            "resultKind": "continuable",
+            "subagentId": "601b49bd-fad5-4423-b5c0-0351b02793b2",
+            "startContinuableCalls": 1,
+            "startCalls": 0
+          },
+          {
+            "tool": "byq_delegate_backtest_analysis",
+            "resultKind": "continuable",
+            "subagentId": "491cd979-762c-4c99-9a23-1ce962216ef5",
+            "startContinuableCalls": 1,
+            "startCalls": 0
+          },
+          {
+            "tool": "byq_delegate_ml_research",
+            "resultKind": "continuable",
+            "subagentId": "9eb41be3-c2aa-4bfc-8ce7-1500597f6d4a",
+            "startContinuableCalls": 1,
+            "startCalls": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "child-id-persistence",
+      "result": "PASS",
+      "fault_applied": false,
+      "observation": {
+        "childStoreExists": true,
+        "descriptorMode": "continuable",
+        "parentSession": "d15-4-parent-byq_delegate_market_research",
+        "parentId": "d15-4-parent-byq_delegate_market_research",
+        "origin": "subagent",
+        "perTool": [
+          {
+            "tool": "byq_delegate_market_research",
+            "childId": "096c410d-12a4-4be3-a0b3-b11bbc799e2d",
+            "descriptorMode": "continuable",
+            "descriptorVersion": 3,
+            "parentSession": "d15-4-parent-byq_delegate_market_research",
+            "origin": "subagent"
+          },
+          {
+            "tool": "byq_delegate_factor_research",
+            "childId": "34fb44cc-2612-4404-a226-992057f0488c",
+            "descriptorMode": "continuable",
+            "descriptorVersion": 3,
+            "parentSession": "d15-4-parent-byq_delegate_factor_research",
+            "origin": "subagent"
+          },
+          {
+            "tool": "byq_delegate_strategy_research",
+            "childId": "601b49bd-fad5-4423-b5c0-0351b02793b2",
+            "descriptorMode": "continuable",
+            "descriptorVersion": 3,
+            "parentSession": "d15-4-parent-byq_delegate_strategy_research",
+            "origin": "subagent"
+          },
+          {
+            "tool": "byq_delegate_backtest_analysis",
+            "childId": "491cd979-762c-4c99-9a23-1ce962216ef5",
+            "descriptorMode": "continuable",
+            "descriptorVersion": 3,
+            "parentSession": "d15-4-parent-byq_delegate_backtest_analysis",
+            "origin": "subagent"
+          },
+          {
+            "tool": "byq_delegate_ml_research",
+            "childId": "9eb41be3-c2aa-4bfc-8ce7-1500597f6d4a",
+            "descriptorMode": "continuable",
+            "descriptorVersion": 3,
+            "parentSession": "d15-4-parent-byq_delegate_ml_research",
+            "origin": "subagent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "settlement-exactly-once",
+      "result": "PASS",
+      "fault_applied": false,
+      "observation": {
+        "settlementCount": 1,
+        "childTurnCount": 1,
+        "duplicateSettlement": false,
+        "perTool": [
+          {
+            "tool": "byq_delegate_market_research",
+            "settlementCount": 1,
+            "childTurnCount": 1,
+            "duplicateSettlement": false
+          },
+          {
+            "tool": "byq_delegate_factor_research",
+            "settlementCount": 1,
+            "childTurnCount": 1,
+            "duplicateSettlement": false
+          },
+          {
+            "tool": "byq_delegate_strategy_research",
+            "settlementCount": 1,
+            "childTurnCount": 1,
+            "duplicateSettlement": false
+          },
+          {
+            "tool": "byq_delegate_backtest_analysis",
+            "settlementCount": 1,
+            "childTurnCount": 1,
+            "duplicateSettlement": false
+          },
+          {
+            "tool": "byq_delegate_ml_research",
+            "settlementCount": 1,
+            "childTurnCount": 1,
+            "duplicateSettlement": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "lease-linked-to-original-goal",
+      "result": "PASS",
+      "fault_applied": false,
+      "observation": {
+        "delegationCallId": "d15-4-call-byq_delegate_market_research",
+        "originalGoalId": "d15-4-parent-byq_delegate_market_research:goal",
+        "linkedToOriginalGoal": true,
+        "perTool": [
+          {
+            "tool": "byq_delegate_market_research",
+            "delegationCallId": "d15-4-call-byq_delegate_market_research",
+            "originalGoalId": "d15-4-parent-byq_delegate_market_research:goal",
+            "childId": "096c410d-12a4-4be3-a0b3-b11bbc799e2d",
+            "linkedToOriginalGoal": true
+          },
+          {
+            "tool": "byq_delegate_factor_research",
+            "delegationCallId": "d15-4-call-byq_delegate_factor_research",
+            "originalGoalId": "d15-4-parent-byq_delegate_factor_research:goal",
+            "childId": "34fb44cc-2612-4404-a226-992057f0488c",
+            "linkedToOriginalGoal": true
+          },
+          {
+            "tool": "byq_delegate_strategy_research",
+            "delegationCallId": "d15-4-call-byq_delegate_strategy_research",
+            "originalGoalId": "d15-4-parent-byq_delegate_strategy_research:goal",
+            "childId": "601b49bd-fad5-4423-b5c0-0351b02793b2",
+            "linkedToOriginalGoal": true
+          },
+          {
+            "tool": "byq_delegate_backtest_analysis",
+            "delegationCallId": "d15-4-call-byq_delegate_backtest_analysis",
+            "originalGoalId": "d15-4-parent-byq_delegate_backtest_analysis:goal",
+            "childId": "491cd979-762c-4c99-9a23-1ce962216ef5",
+            "linkedToOriginalGoal": true
+          },
+          {
+            "tool": "byq_delegate_ml_research",
+            "delegationCallId": "d15-4-call-byq_delegate_ml_research",
+            "originalGoalId": "d15-4-parent-byq_delegate_ml_research:goal",
+            "childId": "9eb41be3-c2aa-4bfc-8ce7-1500597f6d4a",
+            "linkedToOriginalGoal": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "no-orphan-after-parent-end",
+      "result": "PASS",
+      "fault_applied": true,
+      "observation": {
+        "parentRunEnded": true,
+        "unsettledChildCount": 0,
+        "childRemainsAddressable": true,
+        "perTool": [
+          {
+            "tool": "byq_delegate_market_research",
+            "parentRunEnded": true,
+            "unsettledChildCount": 0,
+            "childRemainsAddressable": true
+          },
+          {
+            "tool": "byq_delegate_factor_research",
+            "parentRunEnded": true,
+            "unsettledChildCount": 0,
+            "childRemainsAddressable": true
+          },
+          {
+            "tool": "byq_delegate_strategy_research",
+            "parentRunEnded": true,
+            "unsettledChildCount": 0,
+            "childRemainsAddressable": true
+          },
+          {
+            "tool": "byq_delegate_backtest_analysis",
+            "parentRunEnded": true,
+            "unsettledChildCount": 0,
+            "childRemainsAddressable": true
+          },
+          {
+            "tool": "byq_delegate_ml_research",
+            "parentRunEnded": true,
+            "unsettledChildCount": 0,
+            "childRemainsAddressable": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "adapter-restart-cold-resume",
+      "result": "PASS",
+      "fault_applied": true,
+      "observation": {
+        "newOsProcess": true,
+        "generationAProcessId": 4032653,
+        "generationBProcessId": 4032664,
+        "sameChildId": true,
+        "sequenceContiguous": true,
+        "resumedSettlementCount": 1,
+        "duplicateSettlement": false,
+        "perTool": [
+          {
+            "tool": "byq_delegate_market_research",
+            "generationAProcessId": 4032653,
+            "generationBProcessId": 4032664,
+            "sameChildId": true,
+            "sequenceContiguous": true,
+            "resumedSettlementCount": 1,
+            "duplicateSettlement": false
+          },
+          {
+            "tool": "byq_delegate_factor_research",
+            "generationAProcessId": 4032675,
+            "generationBProcessId": 4032686,
+            "sameChildId": true,
+            "sequenceContiguous": true,
+            "resumedSettlementCount": 1,
+            "duplicateSettlement": false
+          },
+          {
+            "tool": "byq_delegate_strategy_research",
+            "generationAProcessId": 4032697,
+            "generationBProcessId": 4032708,
+            "sameChildId": true,
+            "sequenceContiguous": true,
+            "resumedSettlementCount": 1,
+            "duplicateSettlement": false
+          },
+          {
+            "tool": "byq_delegate_backtest_analysis",
+            "generationAProcessId": 4032719,
+            "generationBProcessId": 4032751,
+            "sameChildId": true,
+            "sequenceContiguous": true,
+            "resumedSettlementCount": 1,
+            "duplicateSettlement": false
+          },
+          {
+            "tool": "byq_delegate_ml_research",
+            "generationAProcessId": 4032781,
+            "generationBProcessId": 4032792,
+            "sameChildId": true,
+            "sequenceContiguous": true,
+            "resumedSettlementCount": 1,
+            "duplicateSettlement": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "child-crash",
+      "result": "BLOCKED",
+      "fault_applied": false,
+      "not_run_reason": "not executed: the only continuable providers in the candidate closure are in-process (spawn/fork), so a child shares the executor process and cannot be independently SIGKILLed while the parent stays alive. The generation-A SIGKILL used by adapter-restart-cold-resume is the owning-process (adapter) fault, NOT a child-only crash. No child process was faked and no persistence substitute was built. Smallest option: a future out-of-process continuable provider."
+    },
+    {
+      "id": "byq-compose-adapter-restart",
+      "result": "BLOCKED",
+      "fault_applied": false,
+      "not_run_reason": "not executed in this native probe: the real isolated compose-stack runtime-adapter container restart is attempted and reported separately by the D15-4 compose runner. The Python SDK surface is byte-identical to 0.1.2 and exposes no continuable-child resume/reachability operation, and the committed adapter has no BYQ surface that cold-resumes a delegated child, so a container restart cannot rebind the child through BYQ. Independent child-process capability stays BLOCKED; no provider or R3 behaviour is added."
+    },
+    {
+      "id": "child-run-fault",
+      "result": "NOT_RUN",
+      "fault_applied": false,
+      "not_run_reason": "not executed in this batch: the child-run-fault supporting scenario is covered by the existing D15-4 native harness evidence and is not required for the continuable-wiring contract."
+    },
+    {
+      "id": "host-reboot",
+      "result": "NOT_RUN",
+      "fault_applied": false,
+      "not_run_reason": "not executed: rebooting the maintainer host is not authorized and a container/adapter restart is not a host reboot"
+    }
+  ],
+  "negatives": [
+    {
+      "kind": "non-direct-parent",
+      "rejected": true,
+      "errorCode": null,
+      "errorClass": "SubagentError",
+      "note": "rejection is covered by the existing D15-4 native harness"
+    },
+    {
+      "kind": "stale-parent",
+      "rejected": true,
+      "errorCode": "UNAUTHORIZED",
+      "errorClass": "SubagentError",
+      "note": "rejection is covered by the existing D15-4 native harness"
+    },
+    {
+      "kind": "unmaterialized",
+      "rejected": true,
+      "errorCode": null,
+      "errorClass": "SubagentError",
+      "note": "rejection is covered by the existing D15-4 native harness"
+    },
+    {
+      "kind": "child-claims-root",
+      "rejected": true,
+      "errorCode": null,
+      "errorClass": "SubagentError",
+      "note": "rejection is covered by the existing D15-4 native harness"
+    }
+  ],
+  "per_tool": [
+    {
+      "tool": "byq_delegate_market_research",
+      "generationA": {
+        "tool": "byq_delegate_market_research",
+        "resultKind": "continuable",
+        "subagentId": "096c410d-12a4-4be3-a0b3-b11bbc799e2d",
+        "startCalls": 0,
+        "startContinuableCalls": 1,
+        "provider": "spawn",
+        "parentId": "d15-4-parent-byq_delegate_market_research",
+        "delegationCallId": "d15-4-call-byq_delegate_market_research",
+        "originalGoalId": "d15-4-parent-byq_delegate_market_research:goal",
+        "childStoreExists": true,
+        "descriptorMode": "continuable",
+        "descriptorVersion": 3,
+        "parentSession": "d15-4-parent-byq_delegate_market_research",
+        "origin": "subagent",
+        "childTurnCount": 1,
+        "settlementCount": 1,
+        "duplicateSettlement": false,
+        "linkedToOriginalGoal": true,
+        "listChildren": [
+          {
+            "id": "096c410d-12a4-4be3-a0b3-b11bbc799e2d",
+            "mode": "continuable"
+          }
+        ],
+        "childLogHash": "sha256:653beda2728f92a6ffcbab6ff64b1c0d72c8435b34a581c39770b678d5b553a7",
+        "childSequenceContiguous": true,
+        "childEventCount": 13,
+        "parentRunEnded": true,
+        "unsettledChildCount": 0,
+        "childRemainsAddressable": true,
+        "processId": 4032653,
+        "storeRoot": "/tmp/d15-4-continuable-byq_delegate_market_research-MSeI0V"
+      },
+      "generationB": {
+        "tool": "byq_delegate_market_research",
+        "generationAProcessId": 4032653,
+        "generationBProcessId": 4032664,
+        "newOsProcess": true,
+        "sameChildId": true,
+        "sequenceContiguous": true,
+        "resumedSettlementCount": 1,
+        "settlementCountParent": 0,
+        "duplicateSettlement": false,
+        "turnsBefore": 1,
+        "turnsAfter": 2,
+        "messageId": "01715670-23e8-4f11-aa41-12e23a37d3d7",
+        "childSequenceContiguous": true,
+        "descriptorMode": "continuable"
+      },
+      "generationASignal": "SIGKILL",
+      "generationAExit": null,
+      "generationAStderr": ""
+    },
+    {
+      "tool": "byq_delegate_factor_research",
+      "generationA": {
+        "tool": "byq_delegate_factor_research",
+        "resultKind": "continuable",
+        "subagentId": "34fb44cc-2612-4404-a226-992057f0488c",
+        "startCalls": 0,
+        "startContinuableCalls": 1,
+        "provider": "spawn",
+        "parentId": "d15-4-parent-byq_delegate_factor_research",
+        "delegationCallId": "d15-4-call-byq_delegate_factor_research",
+        "originalGoalId": "d15-4-parent-byq_delegate_factor_research:goal",
+        "childStoreExists": true,
+        "descriptorMode": "continuable",
+        "descriptorVersion": 3,
+        "parentSession": "d15-4-parent-byq_delegate_factor_research",
+        "origin": "subagent",
+        "childTurnCount": 1,
+        "settlementCount": 1,
+        "duplicateSettlement": false,
+        "linkedToOriginalGoal": true,
+        "listChildren": [
+          {
+            "id": "34fb44cc-2612-4404-a226-992057f0488c",
+            "mode": "continuable"
+          }
+        ],
+        "childLogHash": "sha256:ad8d5b803f9976ab30765e152a8390b3d7c02911051ec1cef32b64c57e8af45e",
+        "childSequenceContiguous": true,
+        "childEventCount": 13,
+        "parentRunEnded": true,
+        "unsettledChildCount": 0,
+        "childRemainsAddressable": true,
+        "processId": 4032675,
+        "storeRoot": "/tmp/d15-4-continuable-byq_delegate_factor_research-D2Lwt8"
+      },
+      "generationB": {
+        "tool": "byq_delegate_factor_research",
+        "generationAProcessId": 4032675,
+        "generationBProcessId": 4032686,
+        "newOsProcess": true,
+        "sameChildId": true,
+        "sequenceContiguous": true,
+        "resumedSettlementCount": 1,
+        "settlementCountParent": 0,
+        "duplicateSettlement": false,
+        "turnsBefore": 1,
+        "turnsAfter": 2,
+        "messageId": "80bdf326-6b3f-4f29-abd3-9e058ef84f49",
+        "childSequenceContiguous": true,
+        "descriptorMode": "continuable"
+      },
+      "generationASignal": "SIGKILL",
+      "generationAExit": null,
+      "generationAStderr": ""
+    },
+    {
+      "tool": "byq_delegate_strategy_research",
+      "generationA": {
+        "tool": "byq_delegate_strategy_research",
+        "resultKind": "continuable",
+        "subagentId": "601b49bd-fad5-4423-b5c0-0351b02793b2",
+        "startCalls": 0,
+        "startContinuableCalls": 1,
+        "provider": "spawn",
+        "parentId": "d15-4-parent-byq_delegate_strategy_research",
+        "delegationCallId": "d15-4-call-byq_delegate_strategy_research",
+        "originalGoalId": "d15-4-parent-byq_delegate_strategy_research:goal",
+        "childStoreExists": true,
+        "descriptorMode": "continuable",
+        "descriptorVersion": 3,
+        "parentSession": "d15-4-parent-byq_delegate_strategy_research",
+        "origin": "subagent",
+        "childTurnCount": 1,
+        "settlementCount": 1,
+        "duplicateSettlement": false,
+        "linkedToOriginalGoal": true,
+        "listChildren": [
+          {
+            "id": "601b49bd-fad5-4423-b5c0-0351b02793b2",
+            "mode": "continuable"
+          }
+        ],
+        "childLogHash": "sha256:c8d64cf7b150dfee01114a2e08c30d2b5094f6834b0589ea4acbfb2e39e654ae",
+        "childSequenceContiguous": true,
+        "childEventCount": 13,
+        "parentRunEnded": true,
+        "unsettledChildCount": 0,
+        "childRemainsAddressable": true,
+        "processId": 4032697,
+        "storeRoot": "/tmp/d15-4-continuable-byq_delegate_strategy_research-o7ddkf"
+      },
+      "generationB": {
+        "tool": "byq_delegate_strategy_research",
+        "generationAProcessId": 4032697,
+        "generationBProcessId": 4032708,
+        "newOsProcess": true,
+        "sameChildId": true,
+        "sequenceContiguous": true,
+        "resumedSettlementCount": 1,
+        "settlementCountParent": 0,
+        "duplicateSettlement": false,
+        "turnsBefore": 1,
+        "turnsAfter": 2,
+        "messageId": "2fd15179-6c23-4de0-96a9-c16fb985e234",
+        "childSequenceContiguous": true,
+        "descriptorMode": "continuable"
+      },
+      "generationASignal": "SIGKILL",
+      "generationAExit": null,
+      "generationAStderr": ""
+    },
+    {
+      "tool": "byq_delegate_backtest_analysis",
+      "generationA": {
+        "tool": "byq_delegate_backtest_analysis",
+        "resultKind": "continuable",
+        "subagentId": "491cd979-762c-4c99-9a23-1ce962216ef5",
+        "startCalls": 0,
+        "startContinuableCalls": 1,
+        "provider": "spawn",
+        "parentId": "d15-4-parent-byq_delegate_backtest_analysis",
+        "delegationCallId": "d15-4-call-byq_delegate_backtest_analysis",
+        "originalGoalId": "d15-4-parent-byq_delegate_backtest_analysis:goal",
+        "childStoreExists": true,
+        "descriptorMode": "continuable",
+        "descriptorVersion": 3,
+        "parentSession": "d15-4-parent-byq_delegate_backtest_analysis",
+        "origin": "subagent",
+        "childTurnCount": 1,
+        "settlementCount": 1,
+        "duplicateSettlement": false,
+        "linkedToOriginalGoal": true,
+        "listChildren": [
+          {
+            "id": "491cd979-762c-4c99-9a23-1ce962216ef5",
+            "mode": "continuable"
+          }
+        ],
+        "childLogHash": "sha256:1b2d27b6f8da5ad6988b6dd12f696c1bd2e67715f5f45cfd83adc3511c189bac",
+        "childSequenceContiguous": true,
+        "childEventCount": 13,
+        "parentRunEnded": true,
+        "unsettledChildCount": 0,
+        "childRemainsAddressable": true,
+        "processId": 4032719,
+        "storeRoot": "/tmp/d15-4-continuable-byq_delegate_backtest_analysis-anKYD9"
+      },
+      "generationB": {
+        "tool": "byq_delegate_backtest_analysis",
+        "generationAProcessId": 4032719,
+        "generationBProcessId": 4032751,
+        "newOsProcess": true,
+        "sameChildId": true,
+        "sequenceContiguous": true,
+        "resumedSettlementCount": 1,
+        "settlementCountParent": 0,
+        "duplicateSettlement": false,
+        "turnsBefore": 1,
+        "turnsAfter": 2,
+        "messageId": "ac2c2628-e0d9-40e7-974e-83db8785caf3",
+        "childSequenceContiguous": true,
+        "descriptorMode": "continuable"
+      },
+      "generationASignal": "SIGKILL",
+      "generationAExit": null,
+      "generationAStderr": ""
+    },
+    {
+      "tool": "byq_delegate_ml_research",
+      "generationA": {
+        "tool": "byq_delegate_ml_research",
+        "resultKind": "continuable",
+        "subagentId": "9eb41be3-c2aa-4bfc-8ce7-1500597f6d4a",
+        "startCalls": 0,
+        "startContinuableCalls": 1,
+        "provider": "spawn",
+        "parentId": "d15-4-parent-byq_delegate_ml_research",
+        "delegationCallId": "d15-4-call-byq_delegate_ml_research",
+        "originalGoalId": "d15-4-parent-byq_delegate_ml_research:goal",
+        "childStoreExists": true,
+        "descriptorMode": "continuable",
+        "descriptorVersion": 3,
+        "parentSession": "d15-4-parent-byq_delegate_ml_research",
+        "origin": "subagent",
+        "childTurnCount": 1,
+        "settlementCount": 1,
+        "duplicateSettlement": false,
+        "linkedToOriginalGoal": true,
+        "listChildren": [
+          {
+            "id": "9eb41be3-c2aa-4bfc-8ce7-1500597f6d4a",
+            "mode": "continuable"
+          }
+        ],
+        "childLogHash": "sha256:85f01b940c69c6f6c6adf805077bc148062bbdba5d428411824901eaf4504b01",
+        "childSequenceContiguous": true,
+        "childEventCount": 13,
+        "parentRunEnded": true,
+        "unsettledChildCount": 0,
+        "childRemainsAddressable": true,
+        "processId": 4032781,
+        "storeRoot": "/tmp/d15-4-continuable-byq_delegate_ml_research-T09INZ"
+      },
+      "generationB": {
+        "tool": "byq_delegate_ml_research",
+        "generationAProcessId": 4032781,
+        "generationBProcessId": 4032792,
+        "newOsProcess": true,
+        "sameChildId": true,
+        "sequenceContiguous": true,
+        "resumedSettlementCount": 1,
+        "settlementCountParent": 0,
+        "duplicateSettlement": false,
+        "turnsBefore": 1,
+        "turnsAfter": 2,
+        "messageId": "8eb7f178-e3d4-4a76-9ca0-53fd6dc7d6b4",
+        "childSequenceContiguous": true,
+        "descriptorMode": "continuable"
+      },
+      "generationASignal": "SIGKILL",
+      "generationAExit": null,
+      "generationAStderr": ""
+    }
+  ],
+  "runtime_root_cleaned": true,
+  "cleanup": [
+    {
+      "root": "/tmp/d15-4-continuable-byq_delegate_market_research-MSeI0V",
+      "removed": true
+    },
+    {
+      "root": "/tmp/d15-4-continuable-byq_delegate_factor_research-D2Lwt8",
+      "removed": true
+    },
+    {
+      "root": "/tmp/d15-4-continuable-byq_delegate_strategy_research-o7ddkf",
+      "removed": true
+    },
+    {
+      "root": "/tmp/d15-4-continuable-byq_delegate_backtest_analysis-anKYD9",
+      "removed": true
+    },
+    {
+      "root": "/tmp/d15-4-continuable-byq_delegate_ml_research-T09INZ",
+      "removed": true
+    }
+  ]
+}
