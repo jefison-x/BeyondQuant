@@ -194,13 +194,17 @@ Phase 98/100 为独立的数据/资格轨道，Phase 99 已完成，因此该 ma
   历史清单与全部证据保留，不修改任何既有 immutable manifest）。D15-3R 及 observer v2/v3/v4
   复核修订各新增 `scripts/d15/runtime_continuity`/`tests`/证据后依次推进
    `post-u8.159 → .160 → .161 → .162 → .163 → .164`（仅重建身份，历史 manifest 与证据全部保留）。
-   D15-4 新增 `scripts/d15/subagent/`（原生 harness/合同/observer/reachability probe）、
-   `tests/test_dsh_d15_4_subagent.py` 与 `docs/evidence/d15/d15-4/` 后推进
-   `post-u8.164 → .165`（仅重建身份）。D15-4 为 `PARTIAL/BLOCKED`：原生 subagent/fork seam 6 项
-   `PASS`（真实每代一 OS 进程、scripted keyless provider），`child-crash` 与 BYQ `adapter-restart`
-   必需项 `BLOCKED`（提交的 BYQ 组合以 `enableRunInBackground: false` 只走 foreground `subagents.start`，
-   不触发 `startContinuable`），host reboot `NOT_RUN`；observer 因必需项未覆盖而非零退出，不主张
-   完整 D15-4。不部署、不自动合并。`R3_RESUME = NO`，直至 D15-G 完成且有原生连续性证据。
+    D15-4 新增 `scripts/d15/subagent/`（原生 harness/合同/observer/reachability probe）、
+    `tests/test_dsh_d15_4_subagent.py` 与 `docs/evidence/d15/d15-4/` 后推进
+    `post-u8.164 → .165`（仅重建身份）。D15-4 评审修订 v2 再次修改同一批 build inputs
+    （harness 精确 fork cut/全日志哈希、child-run-fault 场景、`finally` 清理；observer fork 校验/负例；
+    tests），推进 `post-u8.165 → .166`（仅重建身份，v1 证据保留）。D15-4 为 `PARTIAL/BLOCKED`：原生
+    subagent/fork seam 6 个必需项 `PASS` 加 1 个支撑项 `child-run-fault` `PASS`（真实每代一 OS 进程、
+    scripted keyless provider），`child-crash` 与 BYQ `adapter-restart` 必需项保持 `BLOCKED`（不以删除
+    或 owning-process SIGKILL 冒充：前者不可 in-process 单独 SIGKILL，后者因 `enableRunInBackground: false`
+    只走 foreground `subagents.start` 不触发 `startContinuable`），host reboot `NOT_RUN`；observer 因
+    必需项未覆盖而非零退出，不主张完整 D15-4。不部署、不自动合并。`R3_RESUME = NO`，直至 D15-G 完成且
+    有原生连续性证据。
 
 - 当前已完成阶段：**Phase 97**——回测任务拥有 Backend 权威、持久化的可读名称；名称与稳定 Backtest ID 在 Product 目录、
   技术详情和小巴任务投影中分离。名称搜索保持服务端分页，缺省名称来自已验证策略，历史任务由 PostgreSQL 前向修复补齐，

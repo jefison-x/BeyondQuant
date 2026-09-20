@@ -1,0 +1,72 @@
+{
+  "schema_version": "byq-d15-4-native-scenario.v2",
+  "evidence_class": "native-runtime-isolated",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1",
+    "closure": "agent-loop + jsonl session persistence + @deepseek-ai/dsh-subagent + spawn/fork in-process providers"
+  },
+  "llm": {
+    "class": "scripted-keyless",
+    "real_llm_quality": false,
+    "note": "Scripted keyless in-process adapter. Runtime-continuity evidence only; never semantic model quality."
+  },
+  "generated_at": "2026-09-20T09:08:06Z",
+  "id": "child-run-fault",
+  "result": "PASS",
+  "check": "an independent child-run fault (model stream failure, not a SIGKILL) leaves the child id retained, the parent settlement truthful (no fabricated completion), and the child natively resumable in a later OS process",
+  "operation": "real child-run fault on the native spawn provider + cold resume",
+  "observation": {
+    "parentId": "d15-4-parent",
+    "childId": "a192efe0-ca7d-42bf-8998-07d17fec14cb",
+    "adapterRequests": 1,
+    "settlement": {
+      "summary": "Background subagent a192efe0-ca7d-42bf-8998-07d17fec14cb failed before it finished.",
+      "text": "Background subagent a192efe0-ca7d-42bf-8998-07d17fec14cb failed before it finished. It left no closing message."
+    },
+    "childEventTypes": [
+      "subagent/descriptor",
+      "agent/inbox/spliced",
+      "turn/start",
+      "agent/inbox/spliced",
+      "step/start",
+      "system/message",
+      "user/message",
+      "user/message",
+      "request/header",
+      "request/context",
+      "assistant/attempt",
+      "step/end",
+      "turn/end"
+    ],
+    "childIdRetained": true,
+    "parentTruthfulFailure": true,
+    "fabricatedCompletion": false,
+    "descriptor": {
+      "version": 3,
+      "mode": "continuable",
+      "provider": "spawn",
+      "label": "child task",
+      "agentProvider": "mock",
+      "agentModel": "mock"
+    },
+    "resume": {
+      "parentId": "d15-4-parent",
+      "childId": "a192efe0-ca7d-42bf-8998-07d17fec14cb",
+      "sameChildId": true,
+      "childIdRetained": true,
+      "turnEnded": true,
+      "descriptorAfter": {
+        "version": 3,
+        "mode": "continuable",
+        "provider": "spawn",
+        "label": "child task",
+        "agentProvider": "mock",
+        "agentModel": "mock"
+      },
+      "nativelyResumable": true,
+      "childSequenceContiguous": true
+    }
+  },
+  "fault_applied": true
+}

@@ -1,12 +1,12 @@
 # D15-4 native subagent / fork continuity qualification
 
 - Status: **PARTIAL / BLOCKED — not a full D15-4 pass, no D15-G pass, no full-D15
-  claim.** Six required scenarios PASS in a real native runtime; two required
-  scenarios are **BLOCKED**; host reboot is **NOT_RUN**.
-- Date: 2026-09-20
+  claim.** Seven scenarios PASS (six required + one supporting child-run fault);
+  two required scenarios are **BLOCKED**; host reboot is **NOT_RUN**.
+- Date: 2026-09-20 (review-fix revision v2)
 - Candidate: coherent `dsh-0.1.5rc1` / Python SDK `0.1.5rc1` / bundled npm
   `0.1.5-rc.1`
-- Build revision: `post-u8.165` (rebuild identity only; no selector/deployment change)
+- Build revision: `post-u8.166` (rebuild identity only; no selector/deployment change)
 - Provider: scripted keyless (non-real-LLM)
 - Scope: subagent/fork continuity only. D15-5, D15-G and R3 are **not** in this
   batch. `R3_RESUME = NO`.
@@ -15,14 +15,39 @@
 
 | artifact | what it is |
 | --- | --- |
-| `native-observations.v1.json` | raw real observations of the native harness |
-| `verdict.v1.json` | fail-able observer verdict: `all_pass=false`, six PASS + two required BLOCKED |
-| `negative-controls.v1.json` | 23 fail-closed controls (22 defect-targeting: pre-fix gate passes, fixed gate fails) |
+| `native-observations.v2.json` | raw real observations of the native harness (current) |
+| `verdict.v2.json` | fail-able observer verdict: `all_pass=false`, six required PASS + one supporting PASS + two required BLOCKED |
+| `negative-controls.v2.json` | 28 fail-closed controls (27 defect-targeting: pre-fix gate passes, fixed gate fails) |
 | `reachability.v1.json` | real inspection of the committed BYQ composition vs the candidate tool implementation |
-| `scenarios/*.v1.json` | one file per scenario |
+| `scenarios/*.v2.json` | one file per scenario |
+| `*.v1.json`, `scenarios/*.v1.json` | the original reviewed evidence, preserved unchanged (not overwritten) |
 
 **No D15-4 completion is claimed.** The observer exits non-zero because two
 required scenarios are BLOCKED; this is intentional and truthful.
+
+### Review-fix revision v2 (2026-09-20)
+
+1. **child-crash / BYQ adapter-restart are still required and never removed.**
+   Both stay in `required_scenarios` and are emitted as named **BLOCKED** with
+   concrete reasons. A new *supporting* (optional, non-gating) scenario
+   `child-run-fault` records a real independent child-run fault (the child's
+   model stream fails while the parent process stays alive): the settlement is
+   truthful ("failed before it finished"), the child id is retained and the child
+   is natively resumable in a later OS process. The owning-process SIGKILL is
+   recorded only as native executor evidence (`parent-crash`) and is **not** used
+   as the child fault or the BYQ adapter recovery.
+2. **fork-lineage is exact.** `inheritedEventCount` must equal the parent's
+   balanced completed-turn prefix cut (`last turn/end seq + 1`, observed cut
+   `10 → 11`); the **full parent event-log hash and length** are equal
+   before/after; the child log is sequence-contiguous. New controls
+   `fork-inherited-off-by-one`, `fork-inherited-zero`, `fork-parent-payload-drift`,
+   `fork-parent-length-mismatch`, `fork-child-sequence-gap` all fail the fixed
+   gate while the pre-fix result-only gate passes.
+3. **Real temp cleanup.** Every temp root (main roots and each negative root) is
+   removed in a `finally`, including worker exception/timeout paths, and the
+   `cleanup` / `root_cleaned` evidence records removal. The unsupported claim
+   that a native rejection proves a nonexistent pre-fix gate is removed; the only
+   pre-fix comparison is the observer's real reconstructed legacy algorithm.
 
 ## What is real vs scripted
 
@@ -66,17 +91,18 @@ The smallest concrete option for the BYQ items is an isolated D15 compose stack
 plus a tool-aware scripted provider, without changing the production composition
 or adding BYQ subagent persistence. It was **not** built here.
 
-## Per-item results (real observations)
+## Per-item results (real observations, v2)
 
 | item | result | real observation |
 | --- | --- | --- |
-| parent/child identity | **PASS** | root `d15-4-parent` vs child `3f0b3112-78b5-4599-9b6d-b097527b8ca9`; `header.parentSession=d15-4-parent`, `origin=subagent`; `listChildren` shows `mode=continuable` |
+| parent/child identity | **PASS** | root `d15-4-parent` vs child `2ab32944-4162-47d4-bd81-85dbd2ed239b`; `header.parentSession=d15-4-parent`, `origin=subagent`; `listChildren` shows `mode=continuable` |
 | continuable descriptor | **PASS** | persisted `subagent/descriptor` `{version:3, mode:continuable, provider:spawn}` before the first turn |
-| cold resume | **PASS** | a genuinely new OS process resumed the same child `3f0b3112-…-7b8ca9`, contiguous sequence, `newSettlements=1` |
-| fork lineage | **PASS** | fork `e9b82dd6-ca37-47d5-b205-ed0ad84ca410`, `isSeeded=true`, `inheritedEventCount=11`, parent log unchanged |
+| cold resume | **PASS** | a genuinely new OS process resumed the same child, contiguous sequence, `newSettlements=1` |
+| fork lineage | **PASS** | fork `76c9126b-5c1f-40be-8a60-ebf1662c4869`, `isSeeded=true`, `inheritedEventCount=11 == lastTurnEndSeq(10)+1`, parent log hash+length identical, child sequence contiguous |
 | inheritance | **PASS** | descriptor `agentProvider/model=mock`, `agentReasoningEffort=max`, persona persisted; child reapplied `reasoningEffort=max` on cold resume |
-| parent crash | **PASS** | SIGKILL of the owning process; parent identity survived; child `1d6bf3b9-…-ebab1d0e1bd4` retained and natively resumed; one settlement |
-| child crash | **BLOCKED** | in-process children share the executor process; a child-only SIGKILL is not isolatable. Smallest option: out-of-process child provider or the D15-3R `dsh-process-interruption` compose pattern |
+| parent crash | **PASS** | SIGKILL of the owning process; parent identity survived; child `31932c7d-8266-43d8-bd10-e7a238bc5a99` retained and natively resumed; one settlement |
+| child-run-fault (supporting) | **PASS** | independent child stream failure `7cb6b1ea-de33-48f2-b10b-3f4458821875`; settlement "failed before it finished"; child resumable |
+| child crash | **BLOCKED** | in-process children cannot be independently SIGKILLed while the parent lives; the owning-process SIGKILL is not used here. Smallest option: out-of-process child provider or the D15-3R `dsh-process-interruption` compose pattern |
 | byq adapter restart (container) | **BLOCKED** | BYQ composition does not reach `startContinuable`; no committed BYQ path cold-resumes a continuable child. Not to be confused with the process `parent-crash` above |
 | host reboot | **NOT_RUN** | rebooting the maintainer host is not authorized and is **not** a container/adapter restart |
 
@@ -84,44 +110,51 @@ or adding BYQ subagent persistence. It was **not** built here.
 
 Runtime negatives (native seam, all rejected):
 
-| negative | error |
-| --- | --- |
-| non-direct parent | `UNAUTHORIZED` — "belongs to another parent session" |
-| stale parent | `UNAUTHORIZED` |
-| unmaterialized cold resume | `NOT_RESUMABLE` |
-| depth exceeds `maxDepth` | `SubagentDepthError` "depth 2 exceeds maxDepth 1" |
-| child claims root identity | `DUPLICATE_CHILD` "subagent d15-4-parent already exists" |
-| out-of-filter tool | `tools.restrict() names unknown global tool` |
+| negative | error | root cleaned |
+| --- | --- | --- |
+| non-direct parent | `UNAUTHORIZED` — "belongs to another parent session" | yes |
+| stale parent | `UNAUTHORIZED` | yes |
+| unmaterialized cold resume | `NOT_RESUMABLE` | yes |
+| depth exceeds `maxDepth` | `SubagentDepthError` "depth 2 exceeds maxDepth 1" | yes |
+| child claims root identity | `DUPLICATE_CHILD` "subagent d15-4-parent already exists" | yes |
+| out-of-filter tool | `tools.restrict()` unknown global tool | yes |
 
-Observer negatives (`negative-controls.v1.json`): 23 controls, all non-zero for
-the fixed observer. **22 are defect-targeting**: the reconstructed pre-fix
+Observer negatives (`negative-controls.v2.json`): 28 controls, all non-zero for
+the fixed observer. **27 are defect-targeting**: the reconstructed pre-fix
 result-only gate reported `all_pass=true` while the fixed adjudicator returned
 false — including `required-blocked-fixture-pre-fix-passes` (required
 `NOT_RUN`/`BLOCKED` did not gate PASS), `duplicate-settlement`,
-`fork-inherited-off-by-one-zero`, `false-assertion-same-child-id`,
-`reasoning-drift`, `negative-not-rejected`, `non-native-evidence-class`,
-`llm-claims-real-quality` and `self-declared-coverage`.
+`fork-inherited-off-by-one`, `fork-inherited-zero`, `fork-parent-payload-drift`,
+`fork-parent-length-mismatch`, `fork-child-sequence-gap`,
+`child-run-fault-fabricated-completion`, `child-run-fault-not-resumable`,
+`false-assertion-same-child-id`, `reasoning-drift`, `negative-not-rejected`,
+`non-native-evidence-class`, `llm-claims-real-quality` and `self-declared-coverage`.
 
 ## Isolation, cleanup, reproduce
 
-The harness uses `mkdtemp` roots and removes them; `runtime_root_cleaned=true`.
-No production stack, Community repository or selector was touched.
+The harness creates temp roots via `mkdtemp` and removes **every** root in a
+`finally` (main roots and each negative root), including worker
+exception/timeout paths. `native-observations.v2.json` records
+`cleanup: [...]` with `removed: true` for all 11 roots, `runtime_root_cleaned=true`
+and `root_cleaned=true` on every negative. No production stack, Community
+repository or selector was touched.
 
 ```bash
 cd scripts/d15/subagent
 npm ci --no-audit --no-fund --legacy-peer-deps
-node native_subagent_harness.mjs run --out ../../../docs/evidence/d15/d15-4/native-observations.v1.json
+node native_subagent_harness.mjs run --out ../../../docs/evidence/d15/d15-4/native-observations.v2.json
 node reachability_probe.mjs --out ../../../docs/evidence/d15/d15-4/reachability.v1.json
-python3 observer.py --selfcheck --out ../../../docs/evidence/d15/d15-4/negative-controls.v1.json
-python3 observer.py --observations ../../../docs/evidence/d15/d15-4/native-observations.v1.json \
-    --out ../../../docs/evidence/d15/d15-4/verdict.v1.json   # exits 1: two required BLOCKED
+python3 observer.py --selfcheck --out ../../../docs/evidence/d15/d15-4/negative-controls.v2.json
+python3 observer.py --observations ../../../docs/evidence/d15/d15-4/native-observations.v2.json \
+    --out ../../../docs/evidence/d15/d15-4/verdict.v2.json   # exits 1: two required BLOCKED
 ```
 
 ## Explicit non-claims
 
 - **No D15-4 pass. No D15-5 pass. No D15-G pass. No full-D15 claim.**
 - `R3_RESUME = NO`; R3 remains frozen.
-- Host reboot `NOT_RUN`; container/adapter restart is a distinct item.
+- Host reboot `NOT_RUN`; container/adapter restart is a distinct item and both
+  remain BLOCKED/NOT_RUN in this batch.
 - The provider is scripted/keyless: not real-LLM-quality evidence.
 - Production default selector `dsh-0.1.2rc1`, `compose.yml` and `deployment.json`
   are unchanged; the candidate remains isolated.

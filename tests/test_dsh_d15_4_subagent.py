@@ -11,6 +11,7 @@ Set ``BYQ_D15_4_RUN_NATIVE=1`` to additionally execute the real native harness
 
 from __future__ import annotations
 
+import glob
 import importlib.util
 import json
 import os
@@ -53,11 +54,21 @@ class D15SubagentContractTests(unittest.TestCase):
             self.assertIn(expected, ids)
         optional = [item["id"] for item in contract["optional_scenarios"]]
         self.assertIn("host-reboot", optional)
+        self.assertIn("child-run-fault", optional)
         self.assertTrue(set(optional).isdisjoint(ids))
         self.assertTrue(contract["required_coverage_gates_qualification"])
         self.assertTrue(contract["negatives_must_all_be_rejected"])
         self.assertEqual(contract["candidate"]["release"], "dsh-0.1.5rc1")
         self.assertEqual(contract["required_evidence_class"], "native-runtime-isolated")
+        by_id = {item["id"]: item for item in contract["required_scenarios"]}
+        self.assertEqual(
+            set(by_id["fork-lineage"]["assertions"]),
+            {"distinct_identity", "is_seeded", "exact_inherited_cut", "parent_log_immutable",
+             "child_sequence_contiguous"})
+        # The stage must not pass by removing child-crash / byq-adapter-restart.
+        for required_id in ("child-crash", "byq-adapter-restart"):
+            self.assertIn(required_id, ids)
+            self.assertTrue(by_id[required_id]["required"])
 
     def test_fully_qualified_fixture_passes_and_required_blocked_fails(self):
         observer = _load_observer()
@@ -112,7 +123,7 @@ class D15SubagentContractTests(unittest.TestCase):
 
 class D15SubagentEvidenceTests(unittest.TestCase):
     def test_committed_verdict_is_truthful_and_not_a_full_pass(self):
-        verdict = json.loads((EVIDENCE / "verdict.v1.json").read_text(encoding="utf-8"))
+        verdict = json.loads((EVIDENCE / "verdict.v2.json").read_text(encoding="utf-8"))
         self.assertFalse(verdict["all_pass"])
         self.assertTrue(verdict["format_valid"])
         self.assertTrue(verdict["negatives_ok"])
@@ -123,6 +134,43 @@ class D15SubagentEvidenceTests(unittest.TestCase):
         self.assertEqual(coverage["child-crash"], "BLOCKED")
         self.assertEqual(coverage["byq-adapter-restart"], "BLOCKED")
         self.assertEqual(verdict["optional_coverage"]["host-reboot"], "NOT_RUN")
+        # The stage does not pass: the two required blocked items gate the verdict.
+        self.assertIn("child-crash", verdict["reason_uncovered"])
+        self.assertIn("byq-adapter-restart", verdict["reason_uncovered"])
+
+    def test_v1_evidence_is_preserved_not_overwritten(self):
+        for name in ("native-observations.v1.json", "verdict.v1.json", "negative-controls.v1.json",
+                     "reachability.v1.json"):
+            self.assertTrue((EVIDENCE / name).is_file(), name)
+        v1 = json.loads((EVIDENCE / "verdict.v1.json").read_text(encoding="utf-8"))
+        v2 = json.loads((EVIDENCE / "verdict.v2.json").read_text(encoding="utf-8"))
+        self.assertEqual(v1["schema_version"], "byq-d15-4-verdict.v1")
+        self.assertEqual(v2["schema_version"], "byq-d15-4-verdict.v2")
+
+    def test_v2_fork_evidence_has_the_exact_cut_and_immutable_parent_log(self):
+        observations = json.loads((EVIDENCE / "native-observations.v2.json").read_text(encoding="utf-8"))
+        scenario = next(item for item in observations["scenarios"] if item["id"] == "fork-lineage")
+        obs = scenario["observation"]
+        self.assertEqual(obs["inheritedEventCount"], obs["parentLastTurnEndSeq"] + 1)
+        self.assertEqual(obs["parentLogHashBefore"], obs["parentLogHashAfter"])
+        self.assertEqual(obs["parentEventCountBefore"], obs["parentEventCountAfter"])
+        self.assertTrue(obs["childSequenceContiguous"])
+        self.assertEqual(scenario["result"], "PASS")
+
+    def test_child_run_fault_is_real_supporting_evidence(self):
+        observations = json.loads((EVIDENCE / "native-observations.v2.json").read_text(encoding="utf-8"))
+        scenario = next(item for item in observations["scenarios"] if item["id"] == "child-run-fault")
+        self.assertEqual(scenario["result"], "PASS")
+        self.assertTrue(scenario["observation"]["childIdRetained"])
+        self.assertTrue(scenario["observation"]["parentTruthfulFailure"])
+        self.assertFalse(scenario["observation"]["fabricatedCompletion"])
+        self.assertTrue(scenario["observation"]["resume"]["nativelyResumable"])
+
+    def test_negative_roots_are_cleaned(self):
+        observations = json.loads((EVIDENCE / "native-observations.v2.json").read_text(encoding="utf-8"))
+        self.assertTrue(observations["runtime_root_cleaned"])
+        self.assertTrue(all(item["removed"] for item in observations["cleanup"]))
+        self.assertTrue(all(item["root_cleaned"] for item in observations["negatives"]))
 
     def test_reachability_evidence_matches_the_committed_composition(self):
         reachability = json.loads((EVIDENCE / "reachability.v1.json").read_text(encoding="utf-8"))
@@ -139,9 +187,14 @@ class D15SubagentEvidenceTests(unittest.TestCase):
             by_interface["startContinuable_activation_registry"]["status"], "REACHABLE_FROM_BYQ_COMPOSITION")
 
     def test_negative_controls_evidence_is_recorded(self):
-        controls = json.loads((EVIDENCE / "negative-controls.v1.json").read_text(encoding="utf-8"))
+        controls = json.loads((EVIDENCE / "negative-controls.v2.json").read_text(encoding="utf-8"))
         self.assertTrue(controls["all_controls_pass"])
         self.assertGreater(controls["control_count"], 0)
+        names = {item["name"] for item in controls["controls"]}
+        for expected in ("fork-inherited-off-by-one", "fork-inherited-zero", "fork-parent-payload-drift",
+                         "fork-parent-length-mismatch", "fork-child-sequence-gap",
+                         "child-run-fault-fabricated-completion", "child-run-fault-not-resumable"):
+            self.assertIn(expected, names)
 
 
 @unittest.skipUnless(os.environ.get("BYQ_D15_4_RUN_NATIVE") == "1",
@@ -151,7 +204,7 @@ class D15SubagentNativeIntegrationTests(unittest.TestCase):
         if shutil.which("node") is None:
             self.skipTest("node not available")
         with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / "native-observations.v1.json"
+            out = Path(tmp) / "native-observations.v2.json"
             result = subprocess.run(
                 ["node", "native_subagent_harness.mjs", "run", "--out", str(out)],
                 cwd=SUBAGENT, capture_output=True, text=True, timeout=600)
@@ -159,9 +212,28 @@ class D15SubagentNativeIntegrationTests(unittest.TestCase):
             observations = json.loads(out.read_text(encoding="utf-8"))
         by_id = {item["id"]: item["result"] for item in observations["scenarios"]}
         for scenario_id in ("parent-child-identity", "continuable-descriptor", "cold-resume",
-                            "fork-lineage", "inheritance", "parent-crash"):
+                            "fork-lineage", "inheritance", "parent-crash", "child-run-fault"):
             self.assertEqual(by_id[scenario_id], "PASS", scenario_id)
+        self.assertEqual(by_id["child-crash"], "BLOCKED")
+        self.assertEqual(by_id["byq-adapter-restart"], "BLOCKED")
+        self.assertEqual(by_id["host-reboot"], "NOT_RUN")
         self.assertTrue(all(item["rejected"] for item in observations["negatives"]))
+        self.assertTrue(observations["runtime_root_cleaned"])
+        self.assertTrue(all(item["root_cleaned"] for item in observations["negatives"]))
+
+    def test_native_harness_finally_cleans_temp_roots_on_orchestrator_exception(self):
+        if shutil.which("node") is None:
+            self.skipTest("node not available")
+        tmpdir = tempfile.gettempdir()
+        before = set(glob.glob(os.path.join(tmpdir, "d15-4-*")))
+        env = {**os.environ, "D15_4_FORCE_ORCHESTRATOR_THROW": "1"}
+        result = subprocess.run(
+            ["node", "native_subagent_harness.mjs", "run"],
+            cwd=SUBAGENT, capture_output=True, text=True, timeout=300, env=env)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("forced orchestrator throw", result.stderr)
+        after = set(glob.glob(os.path.join(tmpdir, "d15-4-*")))
+        self.assertEqual(after - before, set(), "temp roots leaked on the exception path")
 
 
 if __name__ == "__main__":

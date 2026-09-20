@@ -215,6 +215,20 @@ tool-aware scripted provider，不改生产组合、不新增 BYQ subagent 持�
 证据均属 build-input inventory，构建修订推进 `post-u8.164 → .165`（仅重建身份，不改
 selector/deployment/immutable registry/0.1.2 制品与证据）。不部署、不自动合并。
 
+D15-4 早期评审缺陷整改 v2（构建修订 `post-u8.166`，维护，不推进 Product Phase）：`child-crash`
+与 `byq-adapter-restart` 保持 required 且记为具名 `BLOCKED`（不得通过删除必需项或复用
+owning-process SIGKILL 结案）；新增真实支撑场景 `child-run-fault`（child 模型流失败、parent 进程存活，
+settlement 如实 "failed before it finished"、child id 保留且可原生恢复，SLATE 非 SIGKILL 替代）。
+fork-lineage 改为精确不变量：`inheritedEventCount ==` parent 平衡完成回合前缀 cut（`last turn/end
+seq + 1`，实测 `10 → 11`）、父日志**全哈希与长度**前后相等、child 序列连续；observer 新增
+off-by-one/zero/payload-drift/length-mismatch/child-gap 负例控制，全部证明修复前 result-only 门禁
+误报而修复后失败。每个临时根（主根与每个 negative 根）在 `finally` 中删除（含 worker 异常/超时
+路径），`cleanup`/`root_cleaned` 记录实删；移除“native 拒绝即证明不存在的前置门禁会放过”的无依据
+历史断言，唯一 pre-fix 比较仍是 observer 内真实重建的 legacy 算法。证据 v2 追加
+`native-observations.v2.json`/`verdict.v2.json`/`negative-controls.v2.json`/`scenarios/*.v2.json`，
+v1 全部保留不覆盖。新增 build inputs 属 inventory，构建修订推进 `post-u8.165 → .166`（仅重建身份）。
+不部署、不自动合并。
+
 数据就绪续接 needs_attention 重挂（fix，构建修订 `dsh-0.1.2rc1-post-u8.142`）：生产 round-2
 数据就绪续接回合结算为 `needs_attention` 后，`research_tasks.continuation_blocked_reason` 被写成
 `continuation_needs_attention`；原预算路径的按任务级 `continue` 使其永久阻止后续**不同**的

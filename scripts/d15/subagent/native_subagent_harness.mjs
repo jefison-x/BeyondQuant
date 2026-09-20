@@ -20,6 +20,7 @@
  */
 
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -69,6 +70,15 @@ export function hangResponse() {
   ]
 }
 
+/**
+ * Fail the model stream (no SIGKILL): an independent child-run fault that
+ * exercises the native seam's truthful failure/settlement path while the parent
+ * process stays alive. This is NOT a substitute for a child-only process crash.
+ */
+export function faultResponse(message = 'd15-4 scripted child stream fault') {
+  return [{ fault: message }]
+}
+
 class ScriptedAdapter extends LlmAdapter {
   requests = []
   constructor(script, efforts) {
@@ -98,6 +108,9 @@ class ScriptedAdapter extends LlmAdapter {
     })
     const entry = this.script.length > 0 ? this.script.shift() : textResponse('scripted fallback')
     for (const chunk of entry) {
+      if (chunk.fault) {
+        throw new Error(String(chunk.fault))
+      }
       if (chunk.hang) {
         await new Promise((_resolve, reject) => {
           if (options.signal?.aborted) { reject(new Error('aborted')); return }
@@ -138,7 +151,15 @@ async function boot(storeRoot, { efforts } = {}) {
   const settlements = []
   ctx.on('agent/inbox/inserted', ({ agent, message }) => {
     if (message?.source?.kind === 'subagent-settled') {
-      settlements.push({ agentId: String(agent.id), childId: String(message.source.senderSessionId) })
+      const text = Array.isArray(message.content)
+        ? message.content.filter((block) => block?.type === 'text').map((block) => block.text).join(' ')
+        : ''
+      settlements.push({
+        agentId: String(agent.id),
+        childId: String(message.source.senderSessionId),
+        summary: message.source.summary ?? null,
+        text,
+      })
     }
   })
   return { ctx, persistenceFiber, loopHarness, created, settlements }
@@ -189,6 +210,13 @@ function sequencesContiguous(events) {
   const seqs = events.map((event) => event.seq)
   if (seqs.length === 0) return true
   return seqs.every((value, index) => value === index)
+}
+
+/** Full-log digest: seq + type + payload, so payload tampering cannot hide. */
+function eventLogHash(events) {
+  return 'sha256:' + createHash('sha256')
+    .update(JSON.stringify(events.map((event) => ({ seq: event.seq, type: event.type, data: event.data }))))
+    .digest('hex')
 }
 
 async function waitFor(predicate, { timeout = 20000, interval = 100 } = {}) {
@@ -343,7 +371,11 @@ async function scenarioFork(params) {
   const parentTurn = await waitTurnEnd(ctx, PARENT_ID, 1)
   if (parentTurn === null) throw new Error('parent turn did not complete before fork')
   const parentStored = await readStored(ctx, PARENT_ID)
-  const parentEventsBefore = parentStored.events.map((event) => `${event.seq}:${event.type}`)
+  const parentEventsBefore = parentStored.events
+  const parentLogHashBefore = eventLogHash(parentEventsBefore)
+  const turnEnds = parentEventsBefore.filter((event) => event.type === 'turn/end')
+  if (turnEnds.length === 0) throw new Error('parent has no completed turn/end for the fork cut')
+  const parentLastTurnEndSeq = turnEnds[turnEnds.length - 1].seq
 
   const run = await ctx.subagents.start('fork', {
     prompt: [{ type: 'text', text: 'fork child task' }],
@@ -353,6 +385,8 @@ async function scenarioFork(params) {
   const forked = await waitTurnEnd(ctx, run.id, 1)
   const child = forked ?? await readStored(ctx, run.id)
   const parentStoredAfter = await readStored(ctx, PARENT_ID)
+  const parentEventsAfter = parentStoredAfter.events
+  const parentLogHashAfter = eventLogHash(parentEventsAfter)
 
   await run.dispose?.()
   await persistenceFiber.dispose()
@@ -365,11 +399,17 @@ async function scenarioFork(params) {
     header: child.header,
     isSeeded: child.header.isSeeded,
     inheritedEventCount: child.inheritedEventCount,
-    parentCompletedTurnCount: parentStored.events.filter((event) => event.type === 'turn/end').length,
+    // The exact inherited cut: the balanced completed-turn prefix of the parent
+    // is events[0..lastTurnEndSeq], i.e. lastTurnEndSeq + 1 events.
+    parentLastTurnEndSeq,
+    parentCompletedTurnPrefixCut: parentLastTurnEndSeq + 1,
+    parentCompletedTurnCount: turnEnds.length,
     parentEventCountBefore: parentEventsBefore.length,
-    parentEventCountAfter: parentStoredAfter.events.length,
-    parentUnchanged: JSON.stringify(parentEventsBefore)
-      === JSON.stringify(parentStoredAfter.events.slice(0, parentEventsBefore.length).map((event) => `${event.seq}:${event.type}`)),
+    parentEventCountAfter: parentEventsAfter.length,
+    parentLogHashBefore,
+    parentLogHashAfter,
+    parentLogImmutable: parentLogHashBefore === parentLogHashAfter
+      && parentEventsBefore.length === parentEventsAfter.length,
     childSequenceContiguous: sequencesContiguous(child.events),
   }
 }
@@ -429,6 +469,78 @@ async function scenarioAfterCrash(params) {
     parentEventCountAfter: parentStoredAfter.events.length,
     newSettlements: settlements.filter((item) => item.childId === String(params.childId)).length,
     adapterRequests: adapter.requests,
+  }
+}
+
+async function scenarioChildFault(params) {
+  // An independent child-run fault (the child's model stream fails) while the
+  // parent process stays alive. This exercises the native truthful-failure and
+  // settlement path; it is NOT a child process SIGKILL.
+  const { ctx, persistenceFiber, settlements } = await boot(params.storeRoot, { efforts: ['max'] })
+  const adapter = new ScriptedAdapter([faultResponse()], ['max'])
+  ctx.llm.registerAdapter(['mock'], adapter)
+  const parent = await createParent(ctx)
+  parkParent(ctx, parent)
+  const started = await ctx.subagents.startContinuable({
+    provider: 'spawn',
+    label: 'child task',
+    request: { prompt: [{ type: 'text', text: 'child initial task (fault window)' }], parent },
+    signal: SIGNAL(),
+  })
+  await waitFor(() => adapter.requests.length >= 1, { timeout: 10000 })
+  const settlement = await waitFor(
+    () => settlements.find((item) => item.childId === String(started.childId)) ?? null, { timeout: 15000 })
+  let child = null
+  try {
+    child = await readStored(ctx, started.childId)
+  } catch {
+    child = null
+  }
+  await persistenceFiber.dispose()
+  await ctx.dispose?.()
+  const summary = settlement?.summary ?? ''
+  const text = settlement?.text ?? ''
+  return {
+    parentId: parent.id,
+    childId: started.childId,
+    adapterRequests: adapter.requests.length,
+    settlement: settlement ? { summary, text } : null,
+    childEventTypes: child?.events.map((event) => event.type) ?? [],
+    childIdRetained: child !== null && String(child.header.id) === String(started.childId),
+    parentTruthfulFailure: settlement !== null,
+    fabricatedCompletion: /completed/i.test(summary),
+    descriptor: child === null ? null : descriptorOf(child),
+  }
+}
+
+async function scenarioChildFaultResume(params) {
+  const { ctx, persistenceFiber, settlements } = await boot(params.storeRoot, { efforts: ['max'] })
+  const adapter = new ScriptedAdapter([textResponse('child answer after fault')], ['max'])
+  ctx.llm.registerAdapter(['mock'], adapter)
+  const parent = await resumeParent(ctx)
+  parkParent(ctx, parent)
+  const before = await readStored(ctx, params.childId)
+  const turnsBefore = before.events.filter((event) => event.type === 'turn/end').length
+  await ctx.subagents.sendMessage(
+    parent, SessionId(params.childId), [{ type: 'text', text: 'resume after child fault' }], { signal: SIGNAL() },
+  )
+  const resumed = await waitTurnEnd(ctx, params.childId, turnsBefore + 1)
+  await waitFor(() => settlements.filter((item) => item.childId === String(params.childId)).length >= 1,
+    { timeout: 15000 })
+  const after = resumed ?? await readStored(ctx, params.childId)
+  await persistenceFiber.dispose()
+  await ctx.dispose?.()
+  const turnEnded = after.events.filter((event) => event.type === 'turn/end').length > turnsBefore
+  return {
+    parentId: parent.id,
+    childId: params.childId,
+    sameChildId: String(after.header.id) === String(params.childId),
+    childIdRetained: String(after.header.id) === String(params.childId),
+    turnEnded,
+    descriptorAfter: descriptorOf(after),
+    nativelyResumable: String(after.header.id) === String(params.childId)
+      && descriptorOf(after)?.mode === 'continuable' && turnEnded,
+    childSequenceContiguous: sequencesContiguous(after.events),
   }
 }
 
@@ -537,6 +649,8 @@ const SCENARIOS = {
   fork: scenarioFork,
   crash: scenarioCrash,
   afterCrash: scenarioAfterCrash,
+  childFault: scenarioChildFault,
+  childFaultResume: scenarioChildFaultResume,
   negative: scenarioNegative,
 }
 
@@ -572,12 +686,44 @@ function runWorker(self, scenario, params, { expectSignal = null } = {}) {
 }
 
 function runOrchestrator(self, { out, keep }) {
-  const root = mkdtempSync(join(tmpdir(), 'd15-4-native-'))
+  const roots = []
+  const makeRoot = (prefix) => {
+    const dir = mkdtempSync(join(tmpdir(), prefix))
+    roots.push(dir)
+    return dir
+  }
+  const root = makeRoot('d15-4-native-')
   const crashMarker = join(root, 'crash-marker.json')
   const started = Date.now()
   const scenarios = []
+  const negatives = []
+  // Evidence version comes from the output filename so a rerun cannot silently
+  // overwrite an earlier reviewed artifact.
+  const evidenceVersion = (typeof out === 'string' && out.match(/\.(v\d+)\.json$/)?.[1]) || 'v2'
+  // Idempotent: every root is removed here on the normal path and again in the
+  // outer finally, so worker exceptions/timeouts never leak a temp directory.
+  const cleanupRoots = () => {
+    const evidence = []
+    for (const dir of roots) {
+      let removed = false
+      try {
+        rmSync(dir, { recursive: true, force: true })
+        removed = true
+      } catch (error) {
+        removed = false
+      }
+      evidence.push({ root: dir, removed })
+    }
+    return evidence
+  }
 
-  const start = runWorker(self, 'start', { storeRoot: root, composition: {} })
+  try {
+    // Test hook: force an orchestrator failure after temp roots exist so the
+    // outer finally cleanup can be exercised on the exception path.
+    if (process.env.D15_4_FORCE_ORCHESTRATOR_THROW === '1') {
+      throw new Error('forced orchestrator throw for cleanup evidence')
+    }
+    const start = runWorker(self, 'start', { storeRoot: root, composition: {} })
   scenarios.push({
     id: 'parent-child-identity',
     result: start.observation && start.observation.distinctIdentity ? 'PASS' : 'FAIL',
@@ -611,19 +757,23 @@ function runOrchestrator(self, { out, keep }) {
     fault_applied: true,
   })
 
-  const forkRoot = mkdtempSync(join(tmpdir(), 'd15-4-fork-'))
+  const forkRoot = makeRoot('d15-4-fork-')
   const fork = runWorker(self, 'fork', { storeRoot: forkRoot })
+  const forkObs = fork.observation
   scenarios.push({
     id: 'fork-lineage',
-    result: fork.observation?.distinctIdentity && fork.observation?.isSeeded
-      && fork.observation?.inheritedEventCount > 0 && fork.observation?.parentUnchanged ? 'PASS' : 'FAIL',
-    check: 'the fork provider yields a distinct seeded child whose inheritedEventCount equals the parent completed-turn prefix and leaves the parent log unchanged',
+    result: forkObs?.distinctIdentity && forkObs?.isSeeded
+      && forkObs?.inheritedEventCount === forkObs?.parentLastTurnEndSeq + 1
+      && forkObs?.parentLogImmutable && forkObs?.childSequenceContiguous ? 'PASS' : 'FAIL',
+    check: 'the fork is a distinct seeded child with inheritedEventCount exactly the parent balanced '
+      + 'completed-turn prefix (last turn/end seq + 1); the full parent log hash and length are equal '
+      + 'before/after; the child log is sequence-contiguous',
     operation: 'real fork provider start over a completed parent turn',
-    observation: fork.observation,
+    observation: forkObs,
     fault_applied: true,
   })
 
-  const inheritRoot = mkdtempSync(join(tmpdir(), 'd15-4-inherit-'))
+  const inheritRoot = makeRoot('d15-4-inherit-')
   const inheritStart = runWorker(self, 'start', {
     storeRoot: inheritRoot,
     composition: { reasoningEffort: 'max', persona: 'd15-4 inherited persona' },
@@ -648,7 +798,7 @@ function runOrchestrator(self, { out, keep }) {
     fault_applied: true,
   })
 
-  const crashRoot = mkdtempSync(join(tmpdir(), 'd15-4-crash-'))
+  const crashRoot = makeRoot('d15-4-crash-')
   const crash = runWorker(self, 'crash',
     { storeRoot: crashRoot, crashMarker: join(crashRoot, 'crash-marker.json') }, { expectSignal: 'SIGKILL' })
   const marker = existsSync(join(crashRoot, 'crash-marker.json'))
@@ -669,14 +819,38 @@ function runOrchestrator(self, { out, keep }) {
     fault_applied: true,
   })
 
+  // Supporting evidence, not a substitute: a real independent child-run fault
+  // (model stream failure) while the parent process stays alive. It is NOT a
+  // child process SIGKILL and does not stand in for child-crash.
+  const faultRoot = makeRoot('d15-4-childfault-')
+  const childFault = runWorker(self, 'childFault', { storeRoot: faultRoot })
+  const childFaultResume = childFault.observation?.childId
+    ? runWorker(self, 'childFaultResume', { storeRoot: faultRoot, childId: childFault.observation.childId })
+    : { observation: null }
+  scenarios.push({
+    id: 'child-run-fault',
+    result: childFault.observation?.childIdRetained && childFault.observation?.parentTruthfulFailure
+      && childFault.observation?.fabricatedCompletion !== true
+      && childFaultResume.observation?.nativelyResumable ? 'PASS' : 'FAIL',
+    check: 'an independent child-run fault (model stream failure, not a SIGKILL) leaves the child id '
+      + 'retained, the parent settlement truthful (no fabricated completion), and the child natively '
+      + 'resumable in a later OS process',
+    operation: 'real child-run fault on the native spawn provider + cold resume',
+    observation: { ...(childFault.observation ?? {}), resume: childFaultResume.observation },
+    fault_applied: true,
+  })
+
   scenarios.push({
     id: 'child-crash',
     result: 'BLOCKED',
     fault_applied: false,
-    not_run_reason: 'not executed: the composed native spawn provider runs children in-process, so a '
-      + 'child-only SIGKILL is not isolatable from the parent executor. Smallest concrete option: an '
-      + 'out-of-process child provider or the isolated runtime-adapter stack with a real DSH child '
-      + 'process (the D15-3R dsh-process-interruption pattern). No child persistence substitute was built.',
+    not_run_reason: 'not executed: the composed native spawn provider runs children in-process, so an '
+      + 'independent child process cannot be SIGKILLed while the parent executor stays alive. The '
+      + 'owning-process SIGKILL is recorded only as native executor evidence (parent-crash) and is NOT '
+      + 'used for this item. child-run-fault records a real but different independent child fault. '
+      + 'Smallest concrete option: an out-of-process child provider or the isolated runtime-adapter '
+      + 'stack with a real DSH child process (the D15-3R dsh-process-interruption pattern). No child '
+      + 'persistence substitute was built.',
   })
   scenarios.push({
     id: 'byq-adapter-restart',
@@ -692,19 +866,32 @@ function runOrchestrator(self, { out, keep }) {
       + 'production composition.',
   })
 
-  // Negatives: each must be rejected by the native seam (so the pre-fix gate, which
-  // would accept them, is proven wrong).
-  const negatives = []
+  // Negatives: each must be rejected by the native seam. This records the
+  // native rejection only; there is no historical pre-fix gate at this layer, so
+  // no claim is made about what such a gate would have done. (The observer's own
+  // pre-fix comparison is evidence at the observer layer, not here.)
   for (const kind of ['non-direct-parent', 'stale-parent', 'unmaterialized', 'max-depth',
     'child-claims-root', 'out-of-filter-tool']) {
-    const negRoot = mkdtempSync(join(tmpdir(), `d15-4-neg-${kind}-`))
-    const neg = runWorker(self, 'negative', { storeRoot: negRoot, kind })
+    const negRoot = makeRoot(`d15-4-neg-${kind}-`)
+    let neg = null
+    let cleaned = false
+    try {
+      neg = runWorker(self, 'negative', { storeRoot: negRoot, kind })
+    } finally {
+      try {
+        rmSync(negRoot, { recursive: true, force: true })
+        cleaned = true
+      } catch {
+        cleaned = false
+      }
+    }
     negatives.push({
       kind,
-      rejected: neg.observation?.rejected === true,
-      errorCode: neg.observation?.errorCode ?? null,
-      errorClass: neg.observation?.errorClass ?? null,
-      message: neg.observation?.message ?? neg.stderr ?? null,
+      rejected: neg?.observation?.rejected === true,
+      errorCode: neg?.observation?.errorCode ?? null,
+      errorClass: neg?.observation?.errorClass ?? null,
+      message: neg?.observation?.message ?? neg?.stderr ?? null,
+      root_cleaned: cleaned,
     })
   }
 
@@ -723,7 +910,7 @@ function runOrchestrator(self, { out, keep }) {
   const negativesPass = negatives.every((item) => item.rejected)
 
   const observations = {
-    schema_version: 'byq-d15-4-native-observations.v1',
+    schema_version: `byq-d15-4-native-observations.${evidenceVersion}`,
     generated_at: new Date().toISOString().replace(/\.\d+Z$/, 'Z'),
     evidence_class: EVIDENCE_CLASS,
     candidate: {
@@ -753,14 +940,13 @@ function runOrchestrator(self, { out, keep }) {
       reason: 'not executed: rebooting the maintainer host is not authorized and a container/adapter restart is not a host reboot',
     },
     runtime_root_cleaned: false,
+    cleanup: null,
   }
 
   if (!keep) {
-    rmSync(root, { recursive: true, force: true })
-    rmSync(forkRoot, { recursive: true, force: true })
-    rmSync(inheritRoot, { recursive: true, force: true })
-    rmSync(crashRoot, { recursive: true, force: true })
-    observations.runtime_root_cleaned = true
+    observations.cleanup = cleanupRoots()
+    observations.runtime_root_cleaned = observations.cleanup.length > 0
+      && observations.cleanup.every((item) => item.removed)
   } else {
     observations.runtime_root = root
   }
@@ -772,8 +958,8 @@ function runOrchestrator(self, { out, keep }) {
     const scenarioDir = join(out, '..', 'scenarios')
     mkdirSync(scenarioDir, { recursive: true })
     for (const scenario of scenarios) {
-      writeFileSync(join(scenarioDir, `${scenario.id}.v1.json`), JSON.stringify({
-        schema_version: 'byq-d15-4-native-scenario.v1',
+      writeFileSync(join(scenarioDir, `${scenario.id}.${evidenceVersion}.json`), JSON.stringify({
+        schema_version: `byq-d15-4-native-scenario.${evidenceVersion}`,
         evidence_class: observations.evidence_class,
         candidate: observations.candidate,
         llm: observations.llm,
@@ -784,6 +970,10 @@ function runOrchestrator(self, { out, keep }) {
   }
   process.stdout.write(JSON.stringify(observations, null, 2) + '\n')
   return 0
+  } finally {
+    // Safety net for exception/timeout paths; cleanupRoots is idempotent.
+    if (!keep) cleanupRoots()
+  }
 }
 
 async function main(argv) {

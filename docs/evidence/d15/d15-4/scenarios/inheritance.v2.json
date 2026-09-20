@@ -1,0 +1,38 @@
+{
+  "schema_version": "byq-d15-4-native-scenario.v2",
+  "evidence_class": "native-runtime-isolated",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1",
+    "closure": "agent-loop + jsonl session persistence + @deepseek-ai/dsh-subagent + spawn/fork in-process providers"
+  },
+  "llm": {
+    "class": "scripted-keyless",
+    "real_llm_quality": false,
+    "note": "Scripted keyless in-process adapter. Runtime-continuity evidence only; never semantic model quality."
+  },
+  "generated_at": "2026-09-20T09:08:06Z",
+  "id": "inheritance",
+  "result": "PASS",
+  "check": "declared provider/model/reasoning-effort/persona are persisted in the descriptor and reapplied to the child on cold resume",
+  "operation": "startContinuable with declared composition + cold resume observation of agent/created",
+  "observation": {
+    "descriptor": {
+      "version": 3,
+      "mode": "continuable",
+      "provider": "spawn",
+      "label": "child task",
+      "agentProvider": "mock",
+      "agentModel": "mock",
+      "agentReasoningEffort": "max",
+      "persona": "d15-4 inherited persona"
+    },
+    "reappliedChild": {
+      "id": "71a7e0f4-3414-4273-8a5b-2cb3b14d2440",
+      "provider": "mock",
+      "model": "mock",
+      "reasoningEffort": "max"
+    }
+  },
+  "fault_applied": true
+}

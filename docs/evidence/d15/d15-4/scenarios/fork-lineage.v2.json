@@ -1,0 +1,43 @@
+{
+  "schema_version": "byq-d15-4-native-scenario.v2",
+  "evidence_class": "native-runtime-isolated",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1",
+    "closure": "agent-loop + jsonl session persistence + @deepseek-ai/dsh-subagent + spawn/fork in-process providers"
+  },
+  "llm": {
+    "class": "scripted-keyless",
+    "real_llm_quality": false,
+    "note": "Scripted keyless in-process adapter. Runtime-continuity evidence only; never semantic model quality."
+  },
+  "generated_at": "2026-09-20T09:08:06Z",
+  "id": "fork-lineage",
+  "result": "PASS",
+  "check": "the fork is a distinct seeded child with inheritedEventCount exactly the parent balanced completed-turn prefix (last turn/end seq + 1); the full parent log hash and length are equal before/after; the child log is sequence-contiguous",
+  "operation": "real fork provider start over a completed parent turn",
+  "observation": {
+    "parentId": "d15-4-parent",
+    "forkId": "3123c407-c889-4f60-993f-d970c7d02358",
+    "distinctIdentity": true,
+    "header": {
+      "id": "3123c407-c889-4f60-993f-d970c7d02358",
+      "parentSession": "d15-4-parent",
+      "origin": "subagent",
+      "isSeeded": true,
+      "delegationDepth": 1
+    },
+    "isSeeded": true,
+    "inheritedEventCount": 11,
+    "parentLastTurnEndSeq": 10,
+    "parentCompletedTurnPrefixCut": 11,
+    "parentCompletedTurnCount": 1,
+    "parentEventCountBefore": 11,
+    "parentEventCountAfter": 11,
+    "parentLogHashBefore": "sha256:6175fff4927b2ae0a04239370dc3fc3a8c1cfbc285f3d07d6578e233b3358be2",
+    "parentLogHashAfter": "sha256:6175fff4927b2ae0a04239370dc3fc3a8c1cfbc285f3d07d6578e233b3358be2",
+    "parentLogImmutable": true,
+    "childSequenceContiguous": true
+  },
+  "fault_applied": true
+}

@@ -1,0 +1,207 @@
+{
+  "all_controls_pass": true,
+  "control_count": 28,
+  "controls": [
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "required-blocked-fixture-pre-fix-passes"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "missing-required-scenario"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "duplicate-scenario-id"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "unknown-scenario-id"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "required-blocked"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "required-not-run"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": false,
+      "name": "blocked-without-reason"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "false-assertion-same-child-id"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "duplicate-settlement"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "fork-inherited-off-by-one"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "fork-inherited-zero"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "fork-not-seeded"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "fork-parent-payload-drift"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "fork-parent-length-mismatch"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "fork-child-sequence-gap"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "child-run-fault-fabricated-completion"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "child-run-fault-not-resumable"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "descriptor-wrong-version"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "reasoning-drift"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "persona-dropped"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "fault-not-applied"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "parent-identity-replaced"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "negative-not-rejected"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "candidate-mismatch"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "non-native-evidence-class"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "llm-claims-real-quality"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "pass-without-observation"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "self-declared-coverage"
+    }
+  ],
+  "defect_targeting_pre_fix_passed": [
+    "required-blocked-fixture-pre-fix-passes",
+    "missing-required-scenario",
+    "duplicate-scenario-id",
+    "unknown-scenario-id",
+    "required-blocked",
+    "required-not-run",
+    "false-assertion-same-child-id",
+    "duplicate-settlement",
+    "fork-inherited-off-by-one",
+    "fork-inherited-zero",
+    "fork-not-seeded",
+    "fork-parent-payload-drift",
+    "fork-parent-length-mismatch",
+    "fork-child-sequence-gap",
+    "child-run-fault-fabricated-completion",
+    "child-run-fault-not-resumable",
+    "descriptor-wrong-version",
+    "reasoning-drift",
+    "persona-dropped",
+    "fault-not-applied",
+    "parent-identity-replaced",
+    "negative-not-rejected",
+    "candidate-mismatch",
+    "non-native-evidence-class",
+    "llm-claims-real-quality",
+    "pass-without-observation",
+    "self-declared-coverage"
+  ],
+  "defect_targeting_pre_fix_passed_count": 27,
+  "known_good_unit_fixture_all_pass": true,
+  "known_good_unit_fixture_format_valid": true,
+  "schema_version": "byq-d15-4-negative-controls.v2"
+}

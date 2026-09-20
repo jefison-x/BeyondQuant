@@ -89,11 +89,29 @@ def _cold_resume(obs: dict) -> dict[str, bool]:
 
 def _fork(obs: dict) -> dict[str, bool]:
     inherited = obs.get("inheritedEventCount")
+    last_end = obs.get("parentLastTurnEndSeq")
     return {
         "distinct_identity": obs.get("distinctIdentity") is True,
         "is_seeded": obs.get("isSeeded") is True,
-        "inherited_prefix_nonzero": _is_int(inherited) and inherited > 0,
-        "parent_unchanged": obs.get("parentUnchanged") is True,
+        # Exact cut: the balanced completed-turn prefix is events[0..lastEnd].
+        "exact_inherited_cut": _is_int(inherited) and _is_int(last_end)
+        and inherited == last_end + 1,
+        # Full-log immutability: identical digest AND identical length.
+        "parent_log_immutable": _is_nonempty_str(obs.get("parentLogHashBefore"))
+        and obs.get("parentLogHashBefore") == obs.get("parentLogHashAfter")
+        and _is_int(obs.get("parentEventCountBefore"))
+        and obs.get("parentEventCountBefore") == obs.get("parentEventCountAfter"),
+        "child_sequence_contiguous": obs.get("childSequenceContiguous") is True,
+    }
+
+
+def _child_run_fault(obs: dict) -> dict[str, bool]:
+    resume = obs.get("resume") if isinstance(obs.get("resume"), dict) else {}
+    return {
+        "child_id_retained": obs.get("childIdRetained") is True,
+        "parent_truthful_failure": obs.get("parentTruthfulFailure") is True,
+        "natively_resumable": resume.get("nativelyResumable") is True,
+        "no_fabricated_completion": obs.get("fabricatedCompletion") is not True,
     }
 
 
@@ -147,6 +165,7 @@ _ASSERTION_DERIVERS: dict[str, Callable[[dict], dict[str, bool]]] = {
     "fork-lineage": _fork,
     "inheritance": _inheritance,
     "parent-crash": _parent_crash,
+    "child-run-fault": _child_run_fault,
     "child-crash": _child_crash,
     "byq-adapter-restart": _byq_adapter_restart,
 }
@@ -316,7 +335,7 @@ def compute_verdict(contract: dict, observations: dict, *, allow_unit_fixture: b
     format_valid = not failures
     all_pass = format_valid and not failed and required_coverage_ok and negatives_ok
     return {
-        "schema_version": "byq-d15-4-verdict.v1",
+        "schema_version": "byq-d15-4-verdict.v2",
         "all_pass": all_pass,
         "format_valid": format_valid,
         "qualification_passed": all_pass,
@@ -403,7 +422,14 @@ def valid_fixture(contract: dict) -> dict:
                          "descriptorAfter": {"mode": "continuable"}}},
         {"id": "fork-lineage", "result": "PASS", "fault_applied": True,
          "observation": {"distinctIdentity": True, "isSeeded": True, "inheritedEventCount": 11,
-                         "parentUnchanged": True}},
+                         "parentLastTurnEndSeq": 10,
+                         "parentLogHashBefore": "sha256:" + "a" * 64,
+                         "parentLogHashAfter": "sha256:" + "a" * 64,
+                         "parentEventCountBefore": 11, "parentEventCountAfter": 11,
+                         "childSequenceContiguous": True}},
+        {"id": "child-run-fault", "result": "PASS", "fault_applied": True,
+         "observation": {"childIdRetained": True, "parentTruthfulFailure": True,
+                         "fabricatedCompletion": False, "resume": {"nativelyResumable": True}}},
         {"id": "inheritance", "result": "PASS", "fault_applied": True,
          "observation": {"descriptor": {"agentProvider": "mock", "agentModel": "mock",
                                         "agentReasoningEffort": "max", "persona": "persona"},
@@ -459,11 +485,21 @@ def _mutations(fixture: dict) -> list[tuple[str, dict]]:
         {"sameChildId": False}))
     add("duplicate-settlement", lambda v: scenario(v, "cold-resume")["observation"].update(
         {"newSettlements": 2}))
-    add("fork-inherited-off-by-one-zero", lambda v: scenario(v, "fork-lineage")["observation"].update(
+    add("fork-inherited-off-by-one", lambda v: scenario(v, "fork-lineage")["observation"].update(
+        {"inheritedEventCount": 12}))
+    add("fork-inherited-zero", lambda v: scenario(v, "fork-lineage")["observation"].update(
         {"inheritedEventCount": 0}))
     add("fork-not-seeded", lambda v: scenario(v, "fork-lineage")["observation"].update({"isSeeded": False}))
-    add("fork-parent-mutated", lambda v: scenario(v, "fork-lineage")["observation"].update(
-        {"parentUnchanged": False}))
+    add("fork-parent-payload-drift", lambda v: scenario(v, "fork-lineage")["observation"].update(
+        {"parentLogHashAfter": "sha256:" + "b" * 64}))
+    add("fork-parent-length-mismatch", lambda v: scenario(v, "fork-lineage")["observation"].update(
+        {"parentEventCountAfter": scenario(v, "fork-lineage")["observation"]["parentEventCountBefore"] + 1}))
+    add("fork-child-sequence-gap", lambda v: scenario(v, "fork-lineage")["observation"].update(
+        {"childSequenceContiguous": False}))
+    add("child-run-fault-fabricated-completion", lambda v: scenario(v, "child-run-fault")["observation"].update(
+        {"fabricatedCompletion": True}))
+    add("child-run-fault-not-resumable", lambda v: scenario(v, "child-run-fault")["observation"].update(
+        {"resume": {"nativelyResumable": False}}))
     add("descriptor-wrong-version", lambda v: scenario(v, "continuable-descriptor")["observation"].update(
         {"version": 2}))
     add("reasoning-drift", lambda v: scenario(v, "inheritance")["observation"]["descriptor"].update(
@@ -531,7 +567,7 @@ def selfcheck(contract: dict) -> dict:
     defect_targeting = [item for item in controls
                         if item["legacy_all_pass"] and not item["fixed_all_pass"]]
     return {
-        "schema_version": "byq-d15-4-negative-controls.v1",
+        "schema_version": "byq-d15-4-negative-controls.v2",
         "known_good_unit_fixture_format_valid": good["format_valid"],
         "known_good_unit_fixture_all_pass": good["all_pass"],
         "control_count": len(controls),

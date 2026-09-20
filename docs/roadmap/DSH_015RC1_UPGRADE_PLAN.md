@@ -315,10 +315,28 @@ drives `startContinuable`). `host-reboot` is OPTIONAL `NOT_RUN` and is never
 labelled as a container restart. **No D15-4 full pass, no D15-G pass and no
 full-D15 claim; `R3_RESUME = NO`.**
 
+**Review-fix revision (v2, 2026-09-20).** `child-crash` and
+`byq-adapter-restart` remain **required** and stay named **BLOCKED** (the stage is
+not passed by deleting them). A real *supporting* scenario `child-run-fault` (the
+child's model stream fails while the parent process stays alive) records a
+truthful "failed before it finished" settlement, a retained child id and native
+resumability; the owning-process SIGKILL is kept only as native executor evidence
+and is not used as the child fault or BYQ adapter recovery. `fork-lineage` now
+requires the **exact** inherited cut (`inheritedEventCount == last turn/end seq +
+1`), **full parent-log hash and length equality** before/after and a contiguous
+child log; new observer controls cover off-by-one, zero, payload drift, length
+mismatch and child sequence gap. Every temp root is removed in a `finally`
+(including worker exception/timeout paths) with recorded `cleanup`/`root_cleaned`
+evidence, and the unsupported claim that a native rejection proves a nonexistent
+pre-fix gate is removed (the only pre-fix comparison is the observer's real
+reconstructed legacy algorithm).
+
 Evidence: [`docs/evidence/d15/d15-4/`](../evidence/d15/d15-4/README.md)
-(`native-observations.v1.json`, `verdict.v1.json` (`all_pass=false`, six PASS +
-two required BLOCKED), `negative-controls.v1.json`, `reachability.v1.json`,
-`scenarios/*.v1.json`). Contract/observer:
+v2 (current): `native-observations.v2.json`, `verdict.v2.json` (`all_pass=false`,
+six required PASS + one supporting PASS + two required BLOCKED),
+`negative-controls.v2.json` (28 controls, 27 defect-targeting),
+`reachability.v1.json`, `scenarios/*.v2.json`; v1 is preserved unchanged.
+Contract/observer:
 `scripts/d15/subagent/{contract.v1.json,observer.py,reachability_probe.mjs}` and
 `tests/test_dsh_d15_4_subagent.py`.
 
@@ -435,3 +453,10 @@ reachability probe), `tests/test_dsh_d15_4_subagent.py` and
 `post-u8.164` -> `post-u8.165` (rebuild identity only; no selector,
 `compose.yml`, `deployment.json`, immutable release registry or 0.1.2
 artifact/evidence change and no deployment).
+
+The D15-4 review-fix revision changes the same build inputs again (harness exact
+fork-cut/hash checks, child-run-fault scenario, `finally` temp cleanup; observer
+fork deriver/controls; tests), so the revision advances
+`post-u8.165` -> `post-u8.166` (rebuild identity only; the v1 evidence is
+preserved and no selector, deployment, immutable release registry or 0.1.2
+artifact/evidence changes).

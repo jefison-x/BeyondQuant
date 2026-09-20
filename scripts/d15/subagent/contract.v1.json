@@ -39,10 +39,10 @@
     },
     {
       "id": "fork-lineage",
-      "description": "the fork provider yields a distinct child seeded with the parent's balanced completed-turn prefix and leaves the parent log immutable",
+      "description": "the fork provider yields a distinct child seeded with the parent's balanced completed-turn prefix (exact cut) and leaves the full parent log byte-identical and the same length",
       "required": true,
       "requires_fault": true,
-      "assertions": ["distinct_identity", "is_seeded", "inherited_prefix_nonzero", "parent_unchanged"]
+      "assertions": ["distinct_identity", "is_seeded", "exact_inherited_cut", "parent_log_immutable", "child_sequence_contiguous"]
     },
     {
       "id": "inheritance",
@@ -75,6 +75,13 @@
   ],
   "optional_scenarios": [
     {
+      "id": "child-run-fault",
+      "description": "supporting evidence (not a substitute for child-crash): a real independent child-run fault (the child's model stream fails) while the parent process stays alive; the child id is retained, the parent settlement is truthful and the child is natively resumable in a later OS process.",
+      "required": false,
+      "requires_fault": true,
+      "assertions": ["child_id_retained", "parent_truthful_failure", "natively_resumable", "no_fabricated_completion"]
+    },
+    {
       "id": "host-reboot",
       "description": "host reboot. NOT executed: rebooting the maintainer host is not authorized and a container/adapter restart is not a host reboot.",
       "required": false,
@@ -96,8 +103,9 @@
     "descriptor_reapplied",
     "distinct_identity",
     "is_seeded",
-    "inherited_prefix_nonzero",
-    "parent_unchanged",
+    "exact_inherited_cut",
+    "parent_log_immutable",
+    "child_sequence_contiguous",
     "provider_inherited",
     "model_inherited",
     "reasoning_inherited",
