@@ -8,8 +8,13 @@ PARTIAL/BLOCKED (native subagent/fork seam qualified in an evidence-only
 harness; child-crash and BYQ adapter-restart required items BLOCKED; host reboot
 NOT_RUN), plus a candidate-specific continuable-wiring investigation (product
 semantics PASS in an isolated native harness and real isolated candidate image;
-BYQ adapter-restart child rebind still BLOCKED), D15-5/D15-G not started.
-`R3_RESUME = NO`.**
+BYQ adapter-restart child rebind still BLOCKED), D15-5 persistent-terminal (PTY)
+PARTIAL/BLOCKED (real isolated native terminal seam; page-refresh,
+browser-disconnect, frontend-restart and gateway-restart PASS; adapter-restart
+and DSH-runtime-restart required items BLOCKED; host reboot NOT_RUN — see §6),
+D15-G PLANNED / NOT_RUN (not started; must wait for both real D15-4 and D15-5
+conclusions). The cross-process terminal reattach boundary is a Proposed,
+unimplemented ADR-0083. `R3_RESUME = NO`.**
 Relates: ADR-0079, ADR-0081, ADR-0058, ADR-0069, ADR-0003
 Evidence: `docs/evidence/d15/`
 Target decision: [`docs/evidence/d15/target-decision.v1.json`](../evidence/d15/target-decision.v1.json)
@@ -57,13 +62,13 @@ violate the "no second generic agent harness" rule.
 | id | name | state |
 | --- | --- | --- |
 | D15-0 | Upgrade Recon | **DONE** |
-| D15-1 | Candidate Runtime Upgrade | **machinery + isolated build/start DONE; D15-2..D15-G pending** |
+| D15-1 | Candidate Runtime Upgrade | **machinery + isolated build/start DONE** |
 | D15-2 | Session V3 Migration Qualification (format layer) | **PASS** |
 | D15-3 | Native Session Resume Qualification (persistence seam) | **PASS** |
 | D15-3R | Real Isolated BYQ Runtime-Continuity Qualification | **PASS** (scripted keyless provider) |
 | D15-4 | Subagent/Fork Continuity Qualification | **PARTIAL/BLOCKED** (native seam PASS; child-crash + BYQ adapter-restart BLOCKED; host reboot NOT_RUN) |
-| D15-5 | Persistent Terminal Qualification | planned |
-| D15-G | Architecture Go/No-Go | planned |
+| D15-5 | Persistent Terminal Qualification | **PARTIAL/BLOCKED** (real native terminal seam; page-refresh/browser-disconnect/frontend-restart/gateway-restart PASS; adapter-restart + DSH runtime restart BLOCKED; host reboot NOT_RUN; see §6) |
+| D15-G | Architecture Go/No-Go | **PLANNED / NOT_RUN** (not started; must wait for both D15-4 and D15-5 real conclusions) |
 
 ## 3. D15-2 — Session V3 migration (PASS, format layer)
 
@@ -206,7 +211,9 @@ audit and no database write.
 **Proof boundary.** The provider is scripted and keyless, so this is
 service-boundary runtime-continuity evidence and **not** real-LLM-quality
 semantic evidence. Host reboot is `NOT_RUN` (a container restart is not a host
-reboot). D15-4/D15-5/D15-G and R3 are not in this batch.
+reboot). D15-4/D15-5/D15-G and R3 were not in this D15-3R batch (historical
+batch scope only; D15-4 was qualified separately as PARTIAL/BLOCKED and D15-5 is
+now PARTIAL/BLOCKED in §6 — D15-G remains NOT_RUN).
 
 **Review-fix revision (v2, 2026-09-20).** The observer separates `format_valid`
 (the artifact is well formed) from `all_pass` (the qualification passed). A
