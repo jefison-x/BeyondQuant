@@ -59,6 +59,19 @@ Proposed 只允许规划/验证，不授权越界实现。Accepted 必须记录�
   另建；重定义 R3 Thin Runtime Supervisor、R4 TerminalAttachment、R6 全量连续性资格并
   排序 `R0→R1→R2→D15→R3→R4→R5→R6→独立 Production Go/No-Go`；已于 2026-09-19 获维护者接受。
 
+- [ADR-0082](ADR-0082-dsh-continuable-child-resume.md)（Accepted，2026-09-21，**modified**）记录 0.9 严格顺序
+  第 4 步维护者决定：**只选 Option 1**——未来由 DSH 提供独立进程 continuable provider /
+  `prepareContinuable`；通用子会话恢复与独立子崩溃恢复归 **DSH**。**Option 2（BYQ runtime-adapter
+  child-resume bridge）被拒**（当前架构方向），BYQ 不建第二个 session store、不建通用 agent harness。
+  接受不代表实现：`subagent-child-crash` / `subagent-byq-adapter-restart` 等 blocker 在合格进程外 provider
+  出现并通过资格前保持 `BLOCKED`。决定记录见
+  [v090-adr-decisions](../../evidence/v090-adr-decisions/README.md)（非 GitHub approval）。
+- [ADR-0083](ADR-0083-terminal-attachment-boundary.md)（Accepted，2026-09-21，**as proposed**）记录同一步决定：
+  BYQ 只持久化 `TerminalAttachment` identity/permission/generation/epoch/state，并经 Gateway/Product API 暴露
+  **有界**接口；**DSH 继续拥有 PTY/shell/IO**；原生 process-local 状态丢失时 MUST 真实报告
+  `lost`/`interrupted`，绝不伪造 `reattached`；**不承诺**跨 runtime restart 的 PTY 连续性。接受只授权候选级、
+  可逆的 D15-G 资格路径，不切换生产 selector；未实现。决定记录同上。
+
 
 - ADR-0020 定义 Phase 34 的 Stock Pool identity、不可变 snapshot、lifecycle 和
   cross-domain reference 边界。

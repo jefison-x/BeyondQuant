@@ -1388,6 +1388,46 @@ Rebuild identity only: the historical `.178` manifest and evidence are preserved
 unchanged; no selector, `compose.yml`, `deployment.json`, immutable release
 registry or 0.1.2 artifact/evidence change and no deployment.
 
+## 0.9 ADR-0082/0083 Maintainer Decision (maintenance, 2026-09-21)
+
+This maintenance batch executes step (4) of the 0.9 strict order: record the
+maintainer's human decision on ADR-0082 and ADR-0083. It is a **decision/record**
+batch only. It does **not** implement the provider, the child bridge, the
+`TerminalAttachment` API/persistence, does **not** unfreeze D15/R3, does **not**
+switch the production selector, does **not** deploy, and does **not** create or
+move any tag/release. It does not inspect or copy the Community repository and
+does not resume frozen Phase 100.
+
+- **ADR-0082 — Accepted, modified (Option 1 only).** DSH provides, in the future,
+  an independent-process continuable provider / `prepareContinuable`; generic child
+  resume and independent child-crash recovery belong to DSH. The BYQ
+  runtime-adapter child-resume bridge (Option 2) is **rejected** for the current
+  architecture direction; BYQ does not build a second session store or a generic
+  harness. `subagent-child-crash` stays BLOCKED until a qualifying out-of-process
+  provider exists; the escape path is to keep foreground delegation.
+- **ADR-0083 — Accepted, as proposed.** BYQ persists only bounded
+  `TerminalAttachment` identity/permission/generation/epoch/state and exposes bounded
+  Gateway/Product API interfaces; DSH continues to own PTY/shell/IO. Native
+  process-local state loss MUST be reported as truthful `lost`/`interrupted`, never a
+  fabricated `reattached`; the ADR does not promise PTY continuity across a runtime
+  restart.
+- **Not resolved, not closed.** The four D15-G atomic blockers
+  (`subagent-child-crash`, `subagent-byq-adapter-restart`,
+  `terminal-adapter-restart`, `terminal-dsh-runtime-restart`) remain BLOCKED;
+  D15-G remains NO_GO; 0.9 is **not** closed. R3 stays frozen and `R3_RESUME = NO`.
+- Decision record: `docs/evidence/v090-adr-decisions/README.md` and
+  `decision-record.v1.json`. No GitHub approval is claimed.
+- Consistency is asserted by the updated/added governance tests in
+  `tests/test_v090_closeout_governance.py`.
+
+Build revision: this batch changes `scripts/dsh/build_revision.py`,
+`tests/test_v090_closeout_governance.py` and the candidate Dockerfile (build inputs)
+and advances the production runtime build identity
+`post-u8.179 → post-u8.180` (unused id). Rebuild identity only: the historical
+`.179` manifest and evidence are preserved unchanged; no selector, `compose.yml`,
+`deployment.json`, immutable release registry or 0.1.2 artifact/evidence change and no
+deployment.
+
 ## Maintenance — Delist-boundary coverage correction (ADR-0028)（构建修订 `dsh-0.1.2rc1-post-u8.130`，PR #299）
 
 ADR-0028 point 2 evaluates coverage over each symbol's frozen listing lifecycle. The market-readiness
