@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-17
-- Relates: ADR-0071（1.0 机器学习发布计划）、ADR-0072、ADR-0062、ADR-0059
+- Relates: ADR-0071（1.0 机器学习发布计划）、ADR-0072、ADR-0062、ADR-0059、ADR-0084
 - Does not supersede any existing decision.
 
 ## Context
@@ -32,8 +32,10 @@
 4. **框架中立与边界不变**：复用 BYQ capability registry、领域任务与模型/预测/信号合同；
    Product 仅经 Product API，Agent-to-Domain 仅经 BYQ MCP；DSH 不训练、不推理、不读业务库
    或模型对象；不引入第二任务引擎、第二 Agent harness 或 Community 兼容层。
-5. **每个新边界另需具名 ADR**：GPU、有限调参、HIST 实施、新 Worker 拓扑等须在实施前
-   取得具名 Accepted ADR；ADR-0043/0048 的现行限制在本 ADR 下不解除。
+5. **按边界风险决定是否新增 ADR**：新增信任主体、持久化权威、跨 Plane 调用、外部写权限、
+   不可逆迁移、新付费资源或生产拓扑时，实施前必须取得具名 Accepted ADR。同一版本、同一
+   信任边界和同一数据/执行拓扑内的普通合同实现可由一个实施 ADR 覆盖，不要求为每个模型、
+   profile 或接口重复建 ADR；ADR-0043/0048 的现行限制在本 ADR 下不解除。
 6. **证据状态机**：模型/任务/profile 使用 `planned → implementing → qualified →
    release-verified`，`blocked` 必须记录原因；调查结论是规划台账，不改变 runtime 注册表协议。
 
@@ -53,3 +55,10 @@
 
 纯规划与证据交付，无数据迁移、无运行时变更。若调查结论要求修订必备项，须修订
 ADR-0071/VERSION_PLAN 并保留原因；本 ADR 可被后续具名 ADR 精确取代。
+
+## ADR-0084 superseding clarification（2026-09-21）
+
+0.10 资格调查仍必须如实产生 `qualified`、`blocked` 或 `not_measured` 证据。外部数据/环境缺口
+只阻塞依赖该缺口的功能或发布声明；在不违反数据时点、许可、完整性和安全边界时，不冻结无关
+数据合同、维护任务或后续调查。0.10 完成后按 ADR-0084 对 1.0 矩阵执行
+`core`/`extended`/`deferred` 具名范围复核。

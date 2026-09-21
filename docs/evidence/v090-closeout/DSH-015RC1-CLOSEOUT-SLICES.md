@@ -1,5 +1,14 @@
 # DSH 0.1.5-rc.1 closeout slices
 
+> **Current gate-scope override (ADR-0084, Accepted 2026-09-21).** This file preserves the
+> historical closeout order, observations and verdicts. B1/B2 remain `BLOCKED_EXTERNAL`, but
+> are no longer global blockers for 0.9 closeout, candidate compatibility, bounded R3 failure
+> containment or unrelated roadmap work. The next current slice is BYQ session failure
+> containment and business recovery, followed by a new D15 superseding assessment. Do not
+> rewrite the historical D15-G `NO_GO`, claim B1/B2 PASS, implement ADR-0082 Option 2, or infer
+> production selector/deployment authorization. Current authority is ADR-0084 and the top table
+> in `docs/roadmap/STATUS.md`; later “mandatory for 0.9” wording below is historical.
+
 Status (audit-time snapshot, 2026-09-20): **plan only — nothing implemented.** At audit
 time ADR-0082/0083 were Proposed; the production selector/default remains `dsh-0.1.2rc1`;
 `R3_RESUME = NO`.

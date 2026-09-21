@@ -1,5 +1,28 @@
 # DSH 0.1.5-rc.1 Native Continuity Upgrade and Qualification (Stage D15)
 
+## Current superseding decision — ADR-0084（2026-09-21）
+
+The status block and D15 evidence below preserve their historical qualification facts. ADR-0084
+changes gate scope without rewriting them:
+
+- B1 `subagent-child-crash` and B2 `subagent-byq-adapter-restart` remain
+  `BLOCKED_EXTERNAL`; they do not become PASS or optional native capabilities.
+- B3 `terminal-adapter-restart` and B4 `terminal-dsh-runtime-restart` have later
+  candidate/qualification-layer PASS overlays; the committed D15-5/D15-G snapshots remain
+  immutable.
+- Historical D15-G remains `NO_GO`, but B1/B2 no longer globally block 0.9 closeout, candidate
+  compatibility, the bounded R3 failure-containment scope, or unrelated roadmap work.
+- The next required slice is BYQ session failure containment and business recovery. It must
+  record lost execution as `interrupted`, fence stale generations and late results, preserve
+  durable business identity/receipts, retry only safe idempotent work, and pause unknown side
+  effects. It must not claim that an unavailable child was resumed.
+- After that slice, create a new named D15 superseding assessment. Do not rerun merely to replace
+  the old label, do not overwrite old evidence, and do not wait for the upstream provider before
+  continuing work that does not depend on native independent-child recovery.
+
+`R3_RESUME` remains `NO` until the new containment evidence is reviewed; ADR-0084 does not
+automatically switch the production selector or authorize deployment/release/tag.
+
 Status: **D15-0 done, D15-1 candidate built/started/probed, D15-2 session V3
 migration PASS (format layer only), D15-3 native persistence-layer session
 resume PASS, D15-3R real isolated BYQ runtime-continuity qualification PASS
@@ -19,7 +42,7 @@ adapter-restart, terminal adapter-restart and terminal DSH-runtime restart did
 not pass, while host reboot stays an OPTIONAL limitation NOT_RUN. The
 cross-process terminal reattach boundary is a Proposed, unimplemented ADR-0083.
 `R3_RESUME = NO`.**
-Relates: ADR-0079, ADR-0081, ADR-0058, ADR-0069, ADR-0003
+Relates: ADR-0079, ADR-0081, ADR-0058, ADR-0069, ADR-0003, ADR-0084
 Evidence: `docs/evidence/d15/`
 Target decision: [`docs/evidence/d15/target-decision.v1.json`](../evidence/d15/target-decision.v1.json)
 

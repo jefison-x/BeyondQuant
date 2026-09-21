@@ -5,7 +5,7 @@
 - Accepted: 2026-09-19
 - Relates: ADR-0079（Runtime Continuity 与 Session Recovery）、ADR-0058（DSH release bundles 与
   compatibility）、ADR-0069（退役 0.1.1 build lane）、ADR-0003（runtime compatibility review）、
-  ADR-0023（执行者身份）、ADR-0062（Post-U8 可靠性边界）
+  ADR-0023（执行者身份）、ADR-0062（Post-U8 可靠性边界）、ADR-0084（门禁分级与外部依赖）
 - Supersedes: 无（不改写任何 Accepted ADR 文本）。本 ADR 已于 2026-09-19 获维护者接受，取代 R3
   的实施顺序，不改变 R0/R1/R2 的已落地语义。
 - Decision scope: Runtime Continuity 阶段顺序（R3 冻结与重定义、D15 新增、R4/R6 重定义）；
@@ -102,3 +102,16 @@ session/tool/subagent 的第二持久化。
 R3 之前）现为已授权顺序，此前记录的 Proposed-vs-implemented 缺口已关闭。D15-2/D15-3 的 `PASS`
 仍是隔离资格证据，不构成 R3 解冻或生产切换授权。详见
 [STATUS.md](../../roadmap/STATUS.md) 顶部“权威当前状态”。
+
+## ADR-0084 superseding clarification（2026-09-21）
+
+本 ADR 的历史 D15 顺序、候选隔离与“不得建立第二套连续性运行时”继续有效。ADR-0084 精确
+取代以下全局阻塞解释：D15-G 的历史 `NO_GO`、B1 `subagent-child-crash` 和 B2
+`subagent-byq-adapter-restart` 的 `BLOCKED_EXTERNAL` 不再冻结 0.9 收口、候选兼容判断、
+R3 thin supervisor 的安全失败/观测/清理/新 generation 恢复范围或无关 0.10 工作。
+
+R3 不因本修订自动解冻。恢复 R3 前必须先完成 **BYQ session failure containment and business
+recovery**：检测执行者失联、将未完成 run 标记为 `interrupted`、fence 旧 generation/epoch 与
+迟到终态、保留 conversation/durable job/回执、仅安全重调度幂等步骤，并暂停未知副作用。
+通过后产生新的 D15 superseding assessment；历史 D15-4/D15-G verdict 不改写。生产 selector
+切换仍是独立决定。

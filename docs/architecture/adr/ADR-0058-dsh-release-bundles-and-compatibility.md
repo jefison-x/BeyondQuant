@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-05
 - Decision scope: DSH maintenance U0–U8；不改变 Product Phase 97 的完成状态
-- Related: ADR-0003、0009、0019、0033、0037、0038、0039、0040、0046、0051、0059
+- Related: ADR-0003、0009、0019、0033、0037、0038、0039、0040、0046、0051、0059、0084
 
 ## 背景
 
@@ -120,3 +120,14 @@ required CI 使用真实 runtime + scripted provider 和完整隔离 Product 栈
 后续授权记录在执行交接中。维护者其后另行明确授权 U1–U8 串行开发、push/Draft PR 和 CI-green
 auto-merge；该授权仍不包含生产部署、正式版本切换或付费模型测试。后续若实际边界超出本 ADR，
 必须修订 ADR 并重新取得方向。
+
+## ADR-0084 superseding clarification（2026-09-21）
+
+ADR-0084 将 DSH 升级门禁按影响分为 A/B/C 风险级别，并把候选兼容、生产晋升与外部能力资格
+分开。缺失的进程外 continuable provider 必须继续记录为 `BLOCKED_EXTERNAL`，不得伪造 PASS，
+但它只阻塞依赖原生独立 child 恢复的能力声明；它不再自动阻塞候选兼容判断、无关版本工作或
+BYQ 已能安全降级的失败恢复切片。
+
+生产 selector、部署、release/tag 仍需独立授权，并继续要求与实际采用范围匹配的制品身份、
+权限、MCP、会话、取消、WorkflowTrace、故障降级和回滚证据。该修订不改变本 ADR 的精确制品、
+候选隔离和禁止隐式 fallback 约束。
