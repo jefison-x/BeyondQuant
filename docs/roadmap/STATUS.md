@@ -26,21 +26,22 @@
 <!-- byq:v090-step5-gsplit-decision=complete -->
 <!-- byq:v090-step5-b2-adapter-restart=blocked-external -->
 <!-- byq:v090-session-containment=containment-classification-delivered -->
+<!-- byq:v090-step-safety-design=inventory-design-delivered -->
 <!-- byq:v090-step5-b3-terminal-adapter-restart=complete -->
 <!-- byq:v090-step5-b4-terminal-dsh-runtime-restart=complete -->
 <!-- byq:v090-dsh-provider-qualification=blocked-external -->
 <!-- byq:adr-0084=accepted -->
 <!-- byq:session-failure-containment=in-progress-blocked-internal -->
-<!-- byq:session-failure-containment-next=authoritative-step-safety-and-budget-inventory -->
+<!-- byq:session-failure-containment-next=authoritative-step-safety-budget-rescheduling-implementation -->
 <!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->
 <!-- byq:phase-100-p100-c=paused-not-delivery -->
-<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.190 -->
+<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.196 -->
 
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|
 | Product | 最近完成 Phase 97（marker 97） | 未授权任何新的 Product Phase | 维护者阶段性授权 + 本文件 next phase | 一阶段一 worktree/Draft PR；Human Merge Gate；不得自授新 Phase |
 | 数据/资格 | Phase 98/99 `COMPLETE`；Phase 100 `PAUSED`：P100-A/P100-B 已并入 `main`，P100-C 只存在于暂停且未交付的 Draft #338，P100-D/P100-E 冻结；Phase 101 `COMPLETE`。S3/历史成分准备属于 0.10.0，不是 0.9 gate。 | 等待 0.9 的**完整** BYQ failure-containment gate 收口（当前 `IN_PROGRESS / BLOCKED_INTERNAL`；本 PR 只交付 containment + 只读分类，不生成 superseding assessment）；之后仅在维护者恢复 Phase 100 时继续 P100-C/D/E，并在 0.10 资格结束后执行 1.0 `core`/`extended`/`deferred` 范围复核 | Phase 100 原授权 + ADR-0074/0084 | 仅 Tushare；不得从未审查分支推断完成；数据来源、时点、单位、许可与完整性失败继续 fail closed；不因外部可选能力冻结无关调查 |
-| 维护（当前） | **ADR-0084 门禁合理化与 0.9 收口治理**：维护者已于 2026-09-21 明确接受完整决定；B3 `terminal-adapter-restart` 与 B4 `terminal-dsh-runtime-restart` 保持候选/资格层 PASS；B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 继续保持真实 `BLOCKED_EXTERNAL`，历史 D15-G 继续为 `NO_GO` 且不改写，但这些外部能力不再是 0.9 收口、候选兼容判断、受限 R3 失败隔离或无关 0.10 工作的全局硬前置。另已完成独立监控切片 `v090-dsh-provider-qualification`：DSH rc.2 与 alpha.2 均无进程外 continuable provider，保持 **`BLOCKED_EXTERNAL`**，**未升级依赖**（证据 `docs/evidence/v090-dsh-provider-qualification/`）。**本 PR（`codex/v090-session-failure-containment`）只交付 containment + fail-closed 只读恢复分类**（marker `v090-session-containment=containment-classification-delivered`）：执行者失联检测、未完成 run→`interrupted`（仅在 fenced containment 匹配同一 session/trace 与精确 run 时）、旧 generation/epoch 与迟到终态 fencing、真实 before/after 业务状态观测、未知副作用与未验证 authority 一律 `paused`。**完整 business-recovery gate（权威服务端 step-safety + budget binding + safe rescheduling）仍为 `IN_PROGRESS / BLOCKED_INTERNAL`**，本 PR 不据此声明门禁完成，也不进入 D15 superseding assessment。 | **下一唯一任务**：为 **authoritative server-side step-safety + budget binding + safe rescheduling** 做 **inventory + minimal design**（沿用现有 job/receipt/idempotency/generation/WorkflowTrace；逐项确认权威来源与失败闭合）。若该设计需要新的持久化权威、信任主体或跨 Plane 调用，**必须先提出 ADR 决定**，不得在本 PR 或后续实现中绕过。 | 维护者明确接受 ADR-0084；ADR-0081/0082/0058/0071/0074 的 superseding 修订 | 不改写历史 verdict；不实现 DSH 进程外 provider 或第二通用 harness；不自动解冻 R3；不切换生产 selector；不部署；不创建/移动 tag/release；不恢复 Phase 100；每个实现切片使用独立 worktree/PR |
+| 维护（当前） | **ADR-0084 门禁合理化与 0.9 收口治理**：维护者已于 2026-09-21 明确接受完整决定；B3 `terminal-adapter-restart` 与 B4 `terminal-dsh-runtime-restart` 保持候选/资格层 PASS；B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 继续保持真实 `BLOCKED_EXTERNAL`，历史 D15-G 继续为 `NO_GO` 且不改写，但这些外部能力不再是 0.9 收口、候选兼容判断、受限 R3 失败隔离或无关 0.10 工作的全局硬前置。另已完成独立监控切片 `v090-dsh-provider-qualification`：DSH rc.2 与 alpha.2 均无进程外 continuable provider，保持 **`BLOCKED_EXTERNAL`**，**未升级依赖**（证据 `docs/evidence/v090-dsh-provider-qualification/`）。**本 PR（`codex/v090-session-failure-containment`）只交付 containment + fail-closed 只读恢复分类**（marker `v090-session-containment=containment-classification-delivered`）：执行者失联检测、未完成 run→`interrupted`（仅在 fenced containment 匹配同一 session/trace 与精确 run 时）、旧 generation/epoch 与迟到终态 fencing、真实 before/after 业务状态观测、未知副作用与未验证 authority 一律 `paused`。**完整 business-recovery gate（权威服务端 step-safety + budget binding + safe rescheduling）仍为 `IN_PROGRESS / BLOCKED_INTERNAL`**，本 PR 不据此声明门禁完成，也不进入 D15 superseding assessment。 | **本 PR（`codex/v090-step-safety-design`）交付 inventory + minimal design**（marker `v090-step-safety-design=inventory-design-delivered`，证据 `docs/evidence/v090-step-safety-design/`）：逐项盘点 server-side step-safety / budget binding / safe rescheduling 的现有组件与缺失权威；设计结论为**沿用现有组件即可**（closed domain action + receipt contract、Backend `continuation_budget` 权威账本、既有 Gateway→Backend 内部 seam），**无需新 ADR**。**下一唯一任务**：实现该最小设计（有界、幂等、可审计、并发恰一次；未知/不可用一律 fail closed）；若后续切片引入新的持久化权威、信任主体或跨 Plane 调用，**必须先提出 ADR 决定**。 | 维护者明确接受 ADR-0084；ADR-0081/0082/0058/0071/0074 的 superseding 修订 | 不改写历史 verdict；不实现 DSH 进程外 provider 或第二通用 harness；不自动解冻 R3；不切换生产 selector；不部署；不创建/移动 tag/release；不恢复 Phase 100；每个实现切片使用独立 worktree/PR |
 | 依赖资格（D15） | **当前资格状态（B4 之后，2026-09-21）**；ADR-0084 已接受：`terminal-adapter-restart` = **PASS**、`terminal-dsh-runtime-restart` = **PASS**（均为候选/资格层）；B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 为 `BLOCKED_EXTERNAL`；独立监控切片确认 DSH rc.2/alpha.2 provider 资格仍 `BLOCKED_EXTERNAL`（无 out-of-process provider，未升级依赖）；ADR-0083 仅候选/资格层最小实现完成；R4 / production wiring NOT implemented。D15-G **未重跑**，按当前 B1/B2 状态即使重跑仍为 `NO_GO`；**历史已提交快照（不改写）**：D15-4/D15-5/D15-G committed evidence 保持原样。外部 blocker 只阻塞原生独立 child 恢复声明，不再形成全局停止。 | 仅在**完整** BYQ failure-containment gate 通过后才生成具名 superseding assessment（当前 gate `IN_PROGRESS / BLOCKED_INTERNAL`，本 PR 不生成）；按实际采用范围判断候选兼容与晋升，不等待上游 provider 才继续无关路线 | ADR-0084 + ADR-0081/0082；历史证据与 B3/B4 current overlay | `R3_RESUME` 不因文档决定自动变为 YES；不得把 B1/B2 标为 PASS；不得改写历史 D15 verdict；生产切换、部署和 release 独立授权 |
 
 ## 0.9 closeout governance & gap ledger audit（2026-09-20，历史审计快照）
@@ -518,6 +519,111 @@ tag/release，不恢复 Phase 100，不触碰 `codex/phase-100c`/PR #338，不�
   恢复、B1/B2 降级）一律未做。
 - 构建身份推进 `post-u8.189 → post-u8.190`（`scripts/`、`tests/` 属 build inputs，仅重建身份；
   历史 `.189` manifest 与全部证据保留，不改 selector/`compose.yml`/`deployment.json`/制品）。
+
+## 0.9 authoritative step-safety + budget binding + safe rescheduling inventory/design（2026-09-21，权威维护条目）
+
+本批执行“完整 business-recovery gate”的唯一后续设计切片：为
+**authoritative server-side step-safety + budget binding + safe rescheduling**
+做 **inventory + minimal design**。独立
+worktree/分支 `codex/v090-step-safety-design`，基于动态 `origin/main`。这是**设计/证据**，
+**不实现任何 runtime 代码**，不推进 Product Phase，不切换生产 selector，不 deploy，不创建/移动
+tag/release，不恢复 Phase 100，不触碰 `codex/phase-100c`/PR #338，不做 Community 检查或复制，
+不 fork/patch DSH。证据 `docs/evidence/v090-step-safety-design/`（`README.md` +
+`inventory.v1.json` + `design.v1.json`），由 `tests/test_v090_step_safety_design_governance.py`
+守门。
+
+- **Inventory（现有 vs 缺失）**：step-safety 现有 `agent_domain_call_evidence`（有序 occurred-call
+  集，PK `(owner,workspace,session,sequence)`，绑定 root-run/generation/agent-run）与
+  `agent_domain_call_claims`（精确 per-call receipt，UNIQUE
+  `(root_run_id,task_id,action,idempotency_key)`）、`domain_call_admission.ACTIONS`（closed action
+  + idempotency identity）、`research_receipts`、adapter prompt receipt；budget 现有 Backend
+  `research_tasks.continuation_permission`/`continuation_budget`（**权威**；并发保证是 task 行
+  `SELECT ... FOR UPDATE` + 事务内 event_key 扫描去重，**没有** per-event-key DB 唯一约束，也
+  **没有**该路径上的 advisory lock）与 adapter guard 镜像；safe-rescheduling 现有
+  `classify_recovery`/fence/containment ledger 与 `dispatch_attempts`（**传输重试，不是业务恢复
+  尝试**）。缺失三项：closed per-step idempotent/result_verifiable registry；失联 run 到原
+  reservation 行与按 sequence 闭合的 occurred-call 集的绑定；有界、按 ordinal 恰一次、
+  receipt-first 的原行 rearm。MCP 工具描述、客户端 step 字段、prompt 文本与“最后一次调用”
+  启发式均**不是**权威。
+- **Minimal design**：contract mapping 保留 `session_failure_containment`。**身份分离（P1-F/O）**：
+  budget 权威身份仍是原 `reservation_id`；每次恢复提交身份是 Backend 原子签发/持久化的
+  `recovery_attempt_key`（作为 prompt idempotency key，避免 Adapter 因同 key 的旧 accepted
+  receipt 直接返回旧 run；`runtime.py:780-789`/`806-809`）。carrier
+  `task-continuation-reservation.v1` 增加 **closed** `recovery_attempt` 子记录
+  `{attempt_key, ordinal, trigger_key, interrupted_run_id, interrupted_generation,
+  containment_attempt, interrupted_executor_epoch, snapshot_tail_sequence,
+  snapshot_digest}`（P1-L/P1-R）。**两个 epoch 分离（P1-O）**：
+  `interrupted_executor_epoch` 来自 durable containment（`record_loss` 写入失败 epoch），参与
+  SOURCE `trigger_key`，且**永不要求等于 live epoch**；`target_executor_epoch`/`target_generation`
+  由 Adapter 在 admission 的 `record.lock` 下读取 **live** epoch 并创建/绑定新 generation，经
+  accepted receipt 返回、由 Backend 聚合持久化（Backend **不**假装知道 Adapter 的 live epoch）。
+  Adapter **重算并校验** `trigger_key`/`attempt_key`，要求 containment 字段一致、prompt key ==
+  attempt key 且 reservation 一致；缺字段/篡改/把 interrupted epoch 当 live/stale target receipt/
+  target epoch 或 generation 不符一律 fail closed；**合法正例**：interrupted=1、live target=2。
+  **每 attempt 独立 receipt（P1-G）**：prompt/guard/settlement 以 `attempt_key.json` 为身份、
+  不可覆盖，绑定 `{reservation_id, ordinal, run_id, charged_tokens, settlement_sha256}`；Backend
+  行内 `recovery_attempts`（含 target epoch/generation）为最终聚合；累计精确费用 ≤
+  `R.token_limit`；未知费用→`paused`。**trigger-key 去重后分配 ordinal（P1-H）**：
+  `trigger_key=sha256(reservation_id+interrupted_run_id+interrupted_generation+containment_attempt+interrupted_executor_epoch)`；
+  同一 trigger 在 task 行 `FOR UPDATE` 下返回既有 attempt，仅新的 fenced loss 才分配下一 ordinal
+  （cap 3，`dispatch_attempts` 仍只是传输重试）。step-safety 改为 **snapshot-anchored
+  session-global closure（P1-I/N/P）**：`domain_call_evidence` 仅单请求持 `record.lock`
+  （`runtime.py:1143-1146`），**不假设跨 HTTP 页持锁**；`idle=true` 时 Adapter 发出固定
+  `{snapshot_tail_sequence, snapshot_digest}`，digest 的**规范化输入**为
+  `{"schema_version":"recovery-snapshot.v1","session_id","trace_id","tail_sequence","calls":[有序
+  closed call 行]}`（sorted keys + compact，绑定 session_id + trace_id + tail + 有序调用行），
+  分页锚定该 tail，与 persisted `agent_domain_call_evidence` **逐项对账**并验证全局 `1..N`
+  连续，再按 root 过滤（子集只须严格递增、**不必从 1 开始**）；carrier 的 closed
+  `recovery_attempt` 显式携带 `snapshot_tail_sequence`/`snapshot_digest`（P1-R），Backend 聚合
+  存**同一** snapshot 身份；`submit_prompt` 先校验 snapshot 字段形状与 digest，再在**同一
+  `record.lock`（`777-877`）内、创建新 root 之前**重算并原子比较当前 tail/digest 未变且
+  `idle=true` 才安装 target generation（闭合 check-then-start TOCTOU）；
+  append-between-pages/append-after-final-page/idle 翻转/digest 篡改/竞态→`paused`；**同一
+  trigger + 同一 snapshot 重试不增加 ordinal**，snapshot 变化**不得**静默改写既有 attempt 或
+  消耗另一 ordinal（须新的权威 loss trigger 或 fail closed）。**recovery-mode admission envelope（P1-K/N）**：
+  仅允许只读操作，或精确复用原 `(action,task_id,idempotency_key,request_sha256,input_sha256)`；
+  模型不得选择/铸造新 key；`may_produce_new_key=true` 仅作保守分类，**永远 ineligible/blocked**，
+  不得据此授权铸造新 key（若要允许新 key，须另立 **Proposed** ADR，本 PR 不开启/不暗示）；
+  越界的新写/改 key/发布/下单/付费/不可逆→`blocked`/`paused`；无法预先确定的 replay 不得
+  `eligible`。budget 决策为**自洽 tri-state（P1-J/M/Q）**：先验
+  `other_settled + other_unresolved + R.token_limit ≤ P.token_limit`（违反→blocked），再算
+  `R_available = R.token_limit − cum_exact`（任一未知→`R_available=None`→**None/paused**）；
+  revoked/expired/blocked reason/ordinal cap/权威证据冲突→**blocked**；**任何创建新 recovery
+  model run 的资格都必须满足已知 `R_available ≥ model_call_floor`（P1-Q：只读仅约束副作用，
+  **不豁免 token 预算**）；只有纯 controller receipt/evidence 对账（无模型调用、无 recovery
+  attempt/run）可在 floor 之下继续观察，且不得称为 eligible reschedule**。原行 rearm 不是新 turn，
+  `max_turns` 只校验未越权。**数值例**：P.token_limit=100、other settled=30、R ceiling=60、
+  R 累计精确费用=20 → 不变量 `30+60≤100`，`R_available=60−20=`**40**（旧公式错误地得 10）。
+  未知费用**永不算 0、永不退款**。
+- **ADR 决定 = 无需新 ADR（已给出可实现的映射证明）**：设计只扩展既有权威——同一
+  `research_tasks.continuation_budget` 行（行内按 trigger 键控的有界 recovery 子记录，**非**独立
+  store）、既有 closed contract/carrier + closed step-safety registry（非持久化权威）、既有
+  prompt/guard/settlement receipt 表面按 attempt key 复用（非新 store）、既有 session-global call
+  evidence 与 admission 路径（非新信任主体/跨 Plane 接口）、既有 Gateway→Backend
+  `/internal/task-continuation/...` seam 与既有 adapter dispatch 路径；ADR-0084 gate 分类不变。若
+  后续切片引入独立 recovery store、新 public/internal 跨 Plane 权威接口、DB schema/migration（如
+  per-event_key 唯一索引）、新信任主体、**允许 recovery run 铸造新 domain key**，或 gate 分类
+  变更，**必须先提出 Proposed ADR（不得 Accepted）**。
+- **门禁与边界不变**：**完整 business-recovery gate 仍为 `IN_PROGRESS / BLOCKED_INTERNAL`**
+  （本切片是设计，不是实现）；**不生成也不声称** D15 superseding assessment；B1/B2
+  `BLOCKED_EXTERNAL`、历史 D15-G `NO_GO`、`R3_RESUME = NO` 全部不改写；未实现原生 child resume；
+  未知副作用暂停。
+- **本修订（P1-A..P1-R）**：撤回“新 reservation / 固定单 event key 的 3 次 / unique+advisory
+  lock / registry-only 步骤查找 / `token_limit−charged_tokens` / 以 `reservation_id` 直接 rearm /
+  单 settlement slot / 按 root 从 1 连续 / 双重扣减 / `may_produce_new_key` 可授权新 key / 单一
+  executor_epoch 同时匹配 containment 与 live / 跨 HTTP 页持锁 / 只读豁免 token floor / carrier
+  未携带 snapshot 身份”等表述；改为原行 rearm + 身份分离 + **interrupted/target 双 epoch** + 每
+  attempt receipt + trigger-key 去重 + **snapshot-anchored** session-global closure（carrier 显式
+  携带 snapshot 身份 + 规范化 digest + 原子比较）+ 自洽 tri-state 不双扣公式（**新 recovery
+  model run 必须满足 model-call floor**）+ recovery admission envelope；均有 committed 代码行号
+  支撑（见 `design.v1.json.real_code_facts`）。
+- 构建身份：初始设计切片推进 `post-u8.190 → post-u8.191`；P1-A..P1-E 推进
+  `post-u8.191 → post-u8.192`；P1-F..P1-K 推进 `post-u8.192 → post-u8.193`；P1-L..P1-N 推进
+  `post-u8.193 → post-u8.194`；P1-O..P1-Q 推进 `post-u8.194 → post-u8.195`；本 P1-R 修订
+  （`tests/` 变更）再推进 `post-u8.195 → post-u8.196`（`scripts/`、`tests/`、
+  `services/runtime-adapter/Dockerfile.post-u8-candidate` 属 build inputs，仅重建身份；历史
+  `.190`/`.191`/`.192`/`.193`/`.194`/`.195` manifest 与全部证据保留，不改
+  selector/`compose.yml`/`deployment.json`/制品）。
 
 ## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19，历史叙述）
 

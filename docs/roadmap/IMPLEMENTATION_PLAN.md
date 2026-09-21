@@ -36,11 +36,52 @@ no authoritative server-side step-safety/budget metadata exists yet, automatic r
 **blocked/fail-closed to paused** and no prompt is ever submitted. The full business-recovery gate
 therefore stays **`IN_PROGRESS / BLOCKED_INTERNAL`**; this PR does not claim the ADR-0084 replacement
 hard gate complete. The next sole task is an **inventory + minimal design** for authoritative
-server-side step-safety + budget binding + safe rescheduling; if it requires a new persistence
-authority, trust subject or cross-Plane call, an ADR decision must be proposed first. Per ADR-0084
-migration step 4, the named D15 superseding assessment is a **separate** follow-up only after the
-full gate passes; this PR does not create or claim it, keeps B1/B2 `BLOCKED_EXTERNAL`, D15-G `NO_GO`
-and `R3_RESUME = NO`, and does not implement native child resume.
+server-side step-safety + budget binding + safe rescheduling.
+
+**Design slice status (2026-09-21): delivered as design/evidence only, one isolated worktree/Draft
+PR** (`docs/evidence/v090-step-safety-design/`; no runtime code). The inventory records the existing
+authorities and the missing pieces; the minimal design keeps
+`packages/contracts/session_failure_containment.py` closed and adds: (1) **identity separation** —
+budget authority stays the original `reservation_id`, while each recovery submission uses a
+Backend-minted `recovery_attempt_key` (the Adapter otherwise returns the lost old run for a reused
+prompt key and forces the key to `reservation_id`); the carrier's **closed** `recovery_attempt`
+sub-record carries `{attempt_key, ordinal, trigger_key, interrupted_run_id, interrupted_generation,
+containment_attempt, interrupted_executor_epoch, snapshot_tail_sequence, snapshot_digest}`, and the
+Adapter validates the snapshot field shape/digest, recomputes both keys and matches the durable
+containment (missing/tampered → fail closed); (2) **two epochs** — the SOURCE
+`interrupted_executor_epoch` comes from the durable containment and never has to equal the live
+epoch, while the Adapter reads the **live** `target_executor_epoch`/`target_generation` at admission
+under `record.lock` and returns them in the accepted receipt (the Backend never pretends to know the
+Adapter's live epoch; a legitimate takeover `1 → 2` is a legal positive, interrupted-as-live / stale
+target receipt / mismatch are rejected); (3) **per-attempt receipts** bound to `{reservation_id,
+ordinal, run_id, charged_tokens, settlement_sha256}` with the Backend row as the final aggregate;
+(4) **trigger-key dedup** before ordinal allocation binding the interrupted epoch (same fenced loss
+returns the existing attempt; only a new loss allocates the next ordinal, cap 3); (5)
+**snapshot-anchored session-global closure** (no cross-request lock assumed: a fixed
+`{snapshot_tail_sequence, snapshot_digest}` issued when `idle=true` and carried in the closed
+carrier, canonicalized digest over `session_id` + `trace_id` + tail + ordered closed call rows,
+item-by-item adapter↔Backend reconciliation, global `1..N` contiguous, then per-root filter; a
+second root's first sequence > 1 is legal) plus an **in-`record.lock`
+validate-shape-then-atomic-compare-and-start** before creating a new root
+(append/idle-flip/digest-tamper/race → `paused`; the Backend aggregate stores the SAME snapshot
+identity; a same-trigger+same-snapshot retry does not raise the ordinal and a snapshot change never
+silently rewrites an attempt); (6) a **no-double-deduction,
+self-consistent tri-state** budget decision (`blocked` for authoritative denial/conflict/ordinal
+cap/known sub-floor, `None`/`paused` for unknown cost/input, `R_available = R.token_limit −
+cum_exact` after the grant invariant, e.g. P=100/other=30/R=60/charge=20 → 40, not 10; unknown cost
+is never 0 and never refunded; **any new recovery model run requires a known
+`R_available >= model_call_floor` — read-only constrains side effects only and does not exempt the
+budget; only a controller-only reconciliation may observe below the floor**); and (7) a
+**recovery-mode admission envelope** (read-only, or exact reuse of the original safe call;
+`may_produce_new_key=true` is conservative only and always ineligible; the model never mints new
+keys; undeterminable work is not `eligible`). It concludes existing components suffice, so **no new
+ADR is required**; a later slice that needs an independent recovery store, a new cross-Plane
+authority interface, a DB migration, a new trust subject, or authorization for a recovery run to
+mint a new key must propose an ADR first. The next sole task is the bounded exactly-once receipt-first
+rearm implementation under those constraints. Per ADR-0084 migration step 4, the named D15
+superseding assessment is a **separate** follow-up only after the full gate passes; the design PR
+does not create or claim it, keeps B1/B2 `BLOCKED_EXTERNAL`, D15-G `NO_GO` and `R3_RESUME = NO`,
+keeps the gate `IN_PROGRESS / BLOCKED_INTERNAL`, and does not implement native child resume.
 
 After 0.10 data/HIST/deep-environment qualification, execute a named 1.0 matrix review that
 classifies planned capabilities as `core`, `extended` or `deferred`. Only the accepted `core`

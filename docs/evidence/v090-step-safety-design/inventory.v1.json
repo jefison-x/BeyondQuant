@@ -1,0 +1,137 @@
+{
+  "schema_version": "byq-v090-step-safety-inventory.v1",
+  "revision": "rectified-p1-o-q",
+  "task": "authoritative server-side step-safety + budget binding + safe rescheduling",
+  "authority": "ADR-0084 (Accepted 2026-09-21) migration step 3/4; ADR-0081/0082/0083; ADR-0079; ADR-0077; ADR-0066; ADR-0062",
+  "delivered_scope": "inventory+minimal-design",
+  "runtime_implementation": false,
+  "step_safety": [
+    {
+      "interface": "services/backend/app/domain_call_admission.py agent_domain_call_evidence",
+      "exists": true,
+      "authoritative": "yes - session-global ordered occurred-call rows, PRIMARY KEY (owner_principal,workspace_id,session_id,sequence), bound to root_run_id/generation/agent_run_id/task_id/action/idempotency_key/request_sha256/input_sha256",
+      "missing": "no recovery consumer closes the session-global cursor under a stable snapshot (more=false AND idle=true) with item-by-item reconciliation",
+      "real_mechanism": {
+        "adapter_page_shape": "services/runtime-adapter/app/runtime.py:1131-1133 domain_call_evidence page returns {more: len(calls) > after+len(rows), idle: state['open_root'] is None}",
+        "no_cross_request_lock": "services/runtime-adapter/app/runtime.py:1143-1146 record.lock is held only within one request; multi-page HTTP fetches do not lock across pages"
+      }
+    },
+    {
+      "interface": "services/backend/app/domain_call_admission.py agent_domain_call_claims",
+      "exists": true,
+      "authoritative": "yes - exact per-call receipt, UNIQUE (root_run_id,task_id,action,idempotency_key), closed status claimed/executing/succeeded/correctable_failure",
+      "missing": "not wired into recovery classification"
+    },
+    {
+      "interface": "packages/contracts/domain_call_admission.py and service admission",
+      "exists": true,
+      "authoritative": "closed action set + idempotency identity only",
+      "missing": "no closed per-action safety/may_produce_new_key declaration and no recovery-mode admission envelope"
+    },
+    {
+      "interface": "services/backend/app/research_receipts.py",
+      "exists": true,
+      "authoritative": "exact idempotency-keyed receipt presence/absence/conflict for research_task/experiment/artifact",
+      "missing": "no recovery classifier read path"
+    },
+    {
+      "interface": "services/mcp/src/server.ts (tool descriptions)",
+      "exists": true,
+      "authoritative": "no - prompt-facing display strings only",
+      "missing": "no programmatic side-effect class"
+    }
+  ],
+  "budget_binding": [
+    {
+      "interface": "services/backend/app/research_continuation.py (continuation_permission + continuation_budget)",
+      "exists": true,
+      "authoritative": "yes - task-bound token budget; concurrency is the task-row SELECT ... FOR UPDATE in _continuation_task plus in-transaction scan/dedup",
+      "missing": "no trigger-keyed in-row recovery aggregate and no no-double-deduction headroom formula",
+      "real_mechanism": {
+        "row_lock": "services/backend/app/research_continuation.py:107-109 research_tasks FOR UPDATE",
+        "previous_unconfirmed_rejection": "services/backend/app/research_continuation.py:309-310 rejects a new reservation while any row is non-settled",
+        "dispatch_sets_outcome_unknown": "services/backend/app/research_continuation.py:563-567",
+        "per_event_key_unique_constraint": false,
+        "pg_advisory_xact_lock_on_this_path": false
+      }
+    },
+    {
+      "interface": "services/runtime-adapter/app/continuation_budget.py",
+      "exists": true,
+      "authoritative": "bounded guard-journal mirror; read_guard/recovered_settlement carry the actual charged amount",
+      "missing": "persist_settlement has one immutable slot per reservation_id - no per-attempt receipt identity",
+      "real_mechanism": {
+        "settlement_path": "services/runtime-adapter/app/continuation_budget.py:105-137 <session>/<reservation_id>.json",
+        "immutable_settlement_message": "original continuation settlement cannot change"
+      }
+    },
+    {
+      "interface": "services/runtime-adapter/app/runtime.py submit_prompt / reconcile_prompt",
+      "exists": true,
+      "authoritative": "durable prompt receipt by idempotency_key",
+      "missing": "accepted receipt returns the old run and the prompt key is forced to reservation_id; no separate recovery submission identity, no closed recovery_attempt carrier with recompute/verify, and no Adapter-determined target epoch/generation returned in the accepted receipt",
+      "real_mechanism": {
+        "old_run_dedup": "services/runtime-adapter/app/runtime.py:780-789 returns durable run_id on an accepted receipt",
+        "forces_reservation_key": "services/runtime-adapter/app/runtime.py:806-809 requires idempotency_key == budget['reservation_id']",
+        "prompt_single_slot": "services/runtime-adapter/app/lifecycle_journal.py:533-539,603-613 prompts[key] resolves to one root_run_id"
+      }
+    },
+    {
+      "interface": "services/gateway/app/main.py::_recovery_authority",
+      "exists": true,
+      "authoritative": "yes for owner/workspace/authorization",
+      "missing": "budget_available hardcoded None"
+    }
+  ],
+  "safe_rescheduling": [
+    {
+      "interface": "packages/contracts/session_failure_containment.py",
+      "exists": true,
+      "authoritative": "yes - RecoveryDecision, auto_retry, RECOVERY_ATTEMPT_MAX=3, generation/epoch/attempt fence",
+      "missing": "no consumer"
+    },
+    {
+      "interface": "services/runtime-adapter/app/containment.py + executor_identity.py",
+      "exists": true,
+      "authoritative": "yes - fenced loss identity (interrupted_run_id/generation/containment_attempt/interrupted_executor_epoch); a takeover advances the epoch and fences the old writer (test_containment_write_fails_closed_on_stale_executor_epoch)",
+      "missing": "no deterministic trigger key derived from the interrupted epoch, and no separation of the interrupted (source) epoch from the live target epoch/generation"
+    },
+    {
+      "interface": "services/backend/app/research_continuation.py claim_continuation_dispatch",
+      "exists": true,
+      "authoritative": "transport/dispatch retry counter dispatch_attempts <= 8; NOT a business recovery attempt",
+      "missing": "trigger-keyed business recovery attempt ordinal"
+    },
+    {
+      "interface": "services/gateway/app/session_containment.py",
+      "exists": true,
+      "authoritative": "read-only classification, submission=not_performed",
+      "missing": "no bounded exactly-one rearm and no recovery admission envelope"
+    }
+  ],
+  "missing_authoritative_pieces": [
+    "closed per-step safety registry (may_produce_new_key conservative only) and a recovery-mode admission envelope",
+    "separation of budget-authority identity (reservation_id) from per-submission recovery identity (Backend-minted recovery_attempt_key) carried in a closed recovery_attempt sub-record {attempt_key, ordinal, trigger_key, interrupted_run_id, interrupted_generation, containment_attempt, interrupted_executor_epoch} with Adapter recompute/verify/fence",
+    "separation of the interrupted (source) executor epoch from the live target executor epoch/generation determined by the Adapter at admission",
+    "per-attempt receipt identity with the Backend recovery_attempts as the final aggregate",
+    "a deterministic trigger identity (binding the interrupted epoch) that dedups concurrent triggers before ordinal allocation",
+    "snapshot-anchored session-global evidence closure (fixed snapshot_tail_sequence/snapshot_digest when idle=true; item-by-item reconciliation; per-root subsets need not start at 1) plus an in-record.lock atomic check-and-start before creating a new root",
+    "a no-double-deduction, self-consistent tri-state budget headroom decision where any new recovery model run requires a known model-call floor (no read-only exemption)"
+  ],
+  "non_authoritative_display_only": [
+    "MCP tool description strings (Read-only / idempotently) are prompt-facing text and are never accepted as step-safety authority",
+    "client-supplied step flags were removed by the containment slice and are never accepted",
+    "prompt text, display strings and a 'last call' heuristic are forbidden inference sources"
+  ],
+  "boundaries_unchanged": {
+    "b1_subagent_child_crash": "BLOCKED_EXTERNAL",
+    "b2_subagent_byq_adapter_restart": "BLOCKED_EXTERNAL",
+    "d15_g": "NO_GO",
+    "r3_resume": "NO",
+    "production_selector": "dsh-0.1.2rc1",
+    "full_business_recovery_gate": "IN_PROGRESS/BLOCKED_INTERNAL",
+    "native_child_resume": "not_implemented",
+    "superseding_assessment": "not_created_in_this_pr",
+    "unknown_side_effects": "pause"
+  }
+}
