@@ -1,5 +1,5 @@
 {
-  "schema_version": "byq-v090-session-containment-contract.v1",
+  "schema_version": "byq-v090-session-containment-contract.v2",
   "identity": {
     "run_pattern": "^[0-9a-f]{32}$",
     "identifier_pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
@@ -7,8 +7,8 @@
   "provenance_allowed_sources": [
     "runtime-adapter-test-harness",
     "adapter-containment-ledger",
-    "gateway-attempt-ledger",
     "contract-pure-function",
+    "gateway-session-containment",
     "lifecycle-journal"
   ],
   "scenarios": [
@@ -16,19 +16,43 @@
       "id": "executor-loss-interrupted",
       "required": true,
       "kind": "adapter_loss",
-      "expect": {"status": "interrupted", "loss_cause": "executor-loss", "preserved": true}
+      "expect": {"status": "interrupted", "loss_cause": "executor-loss", "before_after_equal": true}
+    },
+    {
+      "id": "late-success-no-overwrite",
+      "required": true,
+      "kind": "adapter_loss",
+      "expect": {"status": "interrupted", "before_after_equal": true}
+    },
+    {
+      "id": "ordinary-failed-not-interrupted",
+      "required": true,
+      "kind": "loss_evidence",
+      "expect": {"status": "failed", "interrupted": false}
+    },
+    {
+      "id": "mismatched-run-not-interrupted",
+      "required": true,
+      "kind": "loss_evidence",
+      "expect": {"status": "failed", "interrupted": false}
+    },
+    {
+      "id": "mismatched-trace-not-interrupted",
+      "required": true,
+      "kind": "loss_evidence",
+      "expect": {"status": "failed", "interrupted": false}
+    },
+    {
+      "id": "cancelled-not-interrupted",
+      "required": true,
+      "kind": "loss_evidence",
+      "expect": {"status": "cancelled", "interrupted": false}
     },
     {
       "id": "stale-generation-terminal-fenced",
       "required": true,
       "kind": "fencing",
       "expect": {"fenced": true}
-    },
-    {
-      "id": "late-success-no-overwrite",
-      "required": true,
-      "kind": "adapter_loss",
-      "expect": {"status": "interrupted", "history_unchanged": true}
     },
     {
       "id": "duplicate-terminal-rejected",
@@ -43,22 +67,22 @@
       "expect": {"fenced": true}
     },
     {
-      "id": "idempotent-no-receipt-one-attempt-lineage",
+      "id": "authority-unavailable-pauses",
       "required": true,
-      "kind": "attempt",
-      "expect": {"attempts": 1, "auto_retry": true, "lineage_chained": true}
+      "kind": "classification",
+      "expect": {"status": "paused", "reason": "authority_unavailable", "auto_retry": false}
+    },
+    {
+      "id": "unknown-side-effect-paused",
+      "required": true,
+      "kind": "classification",
+      "expect": {"status": "paused", "reason": "non_idempotent_step", "auto_retry": false}
     },
     {
       "id": "success-receipt-not-replayed",
       "required": true,
       "kind": "classification",
       "expect": {"status": "settled", "reason": "existing_success_receipt", "auto_retry": false}
-    },
-    {
-      "id": "unknown-side-effect-paused",
-      "required": true,
-      "kind": "classification",
-      "expect": {"status": "paused", "reason": "non_idempotent_step", "requires_confirmation": true}
     },
     {
       "id": "cancel-blocks-recovery",
@@ -85,10 +109,16 @@
       "expect": {"status": "blocked", "reason": "owner_workspace_mismatch", "auto_retry": false}
     },
     {
-      "id": "concurrent-recovery-one-attempt",
+      "id": "preservation-not-constant",
       "required": true,
-      "kind": "attempt",
-      "expect": {"attempts": 1, "conflict": true}
+      "kind": "preservation",
+      "expect": {"before_after_equal": true, "boundary_verified": false, "all_preserved": false}
+    },
+    {
+      "id": "recovery-endpoint-never-submits",
+      "required": true,
+      "kind": "no_submit",
+      "expect": {"submits": false}
     },
     {
       "id": "observer-breakable",

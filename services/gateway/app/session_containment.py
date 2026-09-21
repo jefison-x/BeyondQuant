@@ -1,42 +1,48 @@
-"""ADR-0084 Product-visible containment and bounded business recovery.
+"""ADR-0084 Product-visible containment and recovery *classification*.
 
 The Gateway derives containment strictly from the normalized BYQ WorkflowTrace
-and the durable adapter containment summary. It never reads a raw DSH event, a
-DSH session id, or the business database directly. Business state (conversation,
-authorization, approval, artifacts, jobs, receipts, budget, cancel) stays in the
-Domain Plane; recovery only ever creates one bounded, auditable new attempt that
-queries the exact receipt before any replay.
+plus the durable, fenced adapter containment summary. It never reads a raw DSH
+event, a DSH session id, or the business database directly.
+
+This module is deliberately **read-only**. Automatic rescheduling requires
+server-side authoritative action/workflow step-safety and budget metadata. That
+metadata does not exist yet, so the classification fails closed to
+``paused``/``needs_confirmation`` and no new prompt is ever submitted. There is no
+attempt ledger, no ``/tmp`` authority and no second session store.
+
+Business state (conversation, authorization, approval, artifacts, jobs,
+receipts, budget, cancel) stays in the Domain Plane; the preservation projection
+reports a value as ``preserved`` only when an existing authoritative catalog/job/
+receipt read proves it, otherwise ``unknown``/``unavailable``.
 """
 
 from __future__ import annotations
 
-import json
-import os
-from pathlib import Path
-import tempfile
-import time
+import re
 
 from packages.contracts.session_failure_containment import (
-    ATTEMPTS_SCHEMA_VERSION,
+    BOUNDARY_INVARIANT,
     CONTAINMENT_VERSION,
     LOSS_CAUSES,
-    RECOVERY_ATTEMPT_MAX,
-    build_attempt,
+    PRESERVED_FIELDS,
+    PRESERVATION_SCHEMA_VERSION,
     classify_recovery,
-    ledger_has_open_attempt,
-    validate_attempt_ledger,
+    validate_preservation,
 )
 
 TERMINAL_KINDS = frozenset({
-    "session.result", "session.failed", "session.cancelled", "session.result.discarded",
+    "session.result", "session.failed", "session.cancelled",
+    "session.result.discarded", "session.closed",
 })
 COMPLETED = "session.result"
+CANCELLED = "session.cancelled"
 INTERRUPTED = "interrupted"
-CANCELLED = "cancelled"
-
-
-class RecoveryConflict(RuntimeError):
-    """A recovery request conflicts with the one authoritative attempt."""
+_RUN = re.compile(r"[0-9a-f]{32}")
+_ORDINARY = {
+    "session.failed": "failed",
+    "session.result.discarded": "discarded",
+    "session.closed": "closed",
+}
 
 
 def _owned(events: object, session_id: str, trace_id: str) -> list[dict]:
@@ -51,27 +57,113 @@ def _owned(events: object, session_id: str, trace_id: str) -> list[dict]:
     )
 
 
-def loss_from_trace(events: object, session_id: str, trace_id: str) -> dict:
-    """Derive interruption and cancel state from normalized BYQ events only."""
+def _terminal_run(event: dict) -> str | None:
+    payload = event.get("payload")
+    run = payload.get("run_id") if isinstance(payload, dict) else None
+    return run if isinstance(run, str) and _RUN.fullmatch(run) else None
+
+
+def containment_match(adapter_containment: object, session_id: str, trace_id: str) -> dict | None:
+    """Return the fenced containment record only when it binds this session/trace.
+
+    The adapter summary is the authoritative loss evidence. A record for another
+    session/trace, a missing run identity or an unknown loss cause is not
+    evidence and must not turn an ordinary failure into an interruption.
+    """
+
+    if not isinstance(adapter_containment, dict) or not adapter_containment.get("contained"):
+        return None
+    if adapter_containment.get("session_id") not in (None, session_id):
+        return None
+    latest = adapter_containment.get("latest")
+    if not isinstance(latest, dict) or latest.get("trace_id") != trace_id:
+        return None
+    run = latest.get("interrupted_run_id")
+    if not isinstance(run, str) or _RUN.fullmatch(run) is None:
+        return None
+    if latest.get("loss_cause") not in LOSS_CAUSES:
+        return None
+    return latest
+
+
+def loss_from_evidence(
+    events: object, session_id: str, trace_id: str, adapter_containment: object = None,
+) -> dict:
+    """Derive the truthful terminal status from trace + fenced loss evidence.
+
+    ``interrupted`` is projected **only** when the adapter's fenced containment
+    record matches this session/trace and the exact terminal run. An ordinary
+    model/tool failure stays ``failed``; a cancel stays ``cancelled``; a
+    discarded result keeps its existing semantics; an unproven close stays
+    ``closed``.
+    """
 
     owned = _owned(events, session_id, trace_id)
     terminals = [event for event in owned if event.get("kind") in TERMINAL_KINDS]
-    if not terminals:
-        return {"status": "active", "interrupted": False, "cancelled": False,
-                "interrupted_run_id": None, "last_terminal_sequence": None}
-    last = terminals[-1]
-    if last.get("kind") == COMPLETED:
-        return {"status": "completed", "interrupted": False, "cancelled": False,
-                "interrupted_run_id": None, "last_terminal_sequence": last.get("sequence")}
-    cancelled = last.get("kind") == "session.cancelled"
-    run_id = last.get("payload", {}).get("run_id") if isinstance(last.get("payload"), dict) else None
-    return {
-        "status": CANCELLED if cancelled else INTERRUPTED,
-        "interrupted": not cancelled,
-        "cancelled": cancelled,
-        "interrupted_run_id": run_id if isinstance(run_id, str) else None,
-        "last_terminal_sequence": last.get("sequence"),
+    last = terminals[-1] if terminals else None
+    match = containment_match(adapter_containment, session_id, trace_id)
+    base = {
+        "status": "active", "interrupted": False, "cancelled": False,
+        "interrupted_run_id": None, "loss_cause": None, "last_terminal_sequence": None,
     }
+    if last is None:
+        if match is not None:
+            return {**base, "status": INTERRUPTED, "interrupted": True,
+                    "interrupted_run_id": match["interrupted_run_id"],
+                    "loss_cause": match["loss_cause"]}
+        return base
+    kind = last.get("kind")
+    run = _terminal_run(last)
+    sequence = last.get("sequence")
+    if kind == COMPLETED:
+        return {**base, "status": "completed", "last_terminal_sequence": sequence}
+    if kind == CANCELLED:
+        return {**base, "status": "cancelled", "cancelled": True, "last_terminal_sequence": sequence}
+    if match is not None and (run is None or run == match["interrupted_run_id"]):
+        return {**base, "status": INTERRUPTED, "interrupted": True,
+                "interrupted_run_id": match["interrupted_run_id"],
+                "loss_cause": match["loss_cause"], "last_terminal_sequence": sequence}
+    return {**base, "status": _ORDINARY.get(kind, "failed"), "last_terminal_sequence": sequence}
+
+
+def preservation_projection(
+    *,
+    conversation_known: bool,
+    trace_known: bool,
+    authority: object,
+    catalog_source: str = "backend-product-catalog",
+    trace_source: str = "gateway-trace-store",
+) -> dict:
+    """Separate the boundary assertion from actual before/after verification."""
+
+    states = {field: "unknown" for field in PRESERVED_FIELDS}
+    sources: dict[str, str] = {}
+    if trace_known:
+        states["workflow_trace"] = "preserved"
+        sources["workflow_trace"] = trace_source
+    if conversation_known:
+        states["conversation"] = "preserved"
+        sources["conversation"] = catalog_source
+    auth = authority.get("authorization_current") if isinstance(authority, dict) else None
+    if auth is True:
+        states["authorization"] = "preserved"
+        sources["authorization"] = (authority.get("source") if isinstance(authority, dict)
+                                    else None) or "backend-auth-session"
+    elif auth is False:
+        states["authorization"] = "unavailable"
+    if not sources:
+        sources["boundary"] = "execution-boundary-assertion"
+    return validate_preservation({
+        "schema_version": PRESERVATION_SCHEMA_VERSION,
+        "states": states,
+        "boundary_invariant": BOUNDARY_INVARIANT,
+        "boundary_verified": False,
+        "sources": sources,
+    })
+
+
+def _tri(value: object) -> bool | None:
+    return value if isinstance(value, bool) else None
 
 
 def project_containment(
@@ -81,56 +173,39 @@ def project_containment(
     trace_id: str,
     conversation_id: str | None = None,
     adapter_containment: object = None,
-    step: object = None,
-    receipts: object = None,
-    authorization_current: bool = True,
-    owner_matches: bool = True,
-    workspace_matches: bool = True,
-    budget_available: bool = True,
-    attempt_ledger: object = None,
+    authority: object = None,
+    preservation: object = None,
 ) -> dict:
-    """One fail-closed, framework-neutral containment + recovery projection.
+    """One fail-closed, framework-neutral containment + classification projection.
 
-    ``step`` may declare ``{"idempotent": bool, "result_verifiable": bool}``. An
-    absent or unknown step is treated as *not* safe, so the recovery is paused
-    for the user rather than auto-retried.
+    No prompt is submitted and no attempt is created. An unverified authority or
+    absent step-safety metadata always yields ``paused`` (or ``blocked`` for an
+    authoritative denial), never ``eligible``.
     """
 
-    loss = loss_from_trace(events, session_id, trace_id)
-    latest = None
-    if isinstance(adapter_containment, dict) and adapter_containment.get("contained"):
-        candidate = adapter_containment.get("latest")
-        if isinstance(candidate, dict):
-            latest = candidate
-    loss_cause = (latest or {}).get("loss_cause")
-    if not isinstance(loss_cause, str) or loss_cause not in LOSS_CAUSES:
-        loss_cause = "runtime-loss" if loss["interrupted"] else None
-
-    ledger = attempt_ledger if isinstance(attempt_ledger, dict) else None
-    attempts = ledger.get("attempts") if ledger else []
-    if not isinstance(attempts, list):
-        attempts = []
-    step_map = step if isinstance(step, dict) else {}
-    receipt_map = receipts if isinstance(receipts, dict) else {}
-
+    loss = loss_from_evidence(events, session_id, trace_id, adapter_containment)
+    authority = authority if isinstance(authority, dict) else {}
     recovery = None
     if loss["interrupted"] or loss["cancelled"]:
+        # No authoritative step-safety metadata exists, so a step is never
+        # declared safe here; a successful receipt is never claimed without an
+        # exact read. The decision therefore fails closed to paused/blocked.
         decision = classify_recovery(
             cancelled=loss["cancelled"],
-            authorization_current=authorization_current,
-            owner_matches=owner_matches,
-            workspace_matches=workspace_matches,
-            budget_available=budget_available,
-            success_receipt_present=bool(receipt_map.get("success")),
-            receipt_queryable=bool(receipt_map.get("queryable")),
-            step_declared_idempotent=bool(step_map.get("idempotent")),
-            step_result_verifiable=bool(step_map.get("result_verifiable")),
-            attempt_in_progress=bool(ledger and ledger_has_open_attempt(ledger)),
-            attempts_used=len(attempts),
+            authorization_current=_tri(authority.get("authorization_current")),
+            owner_matches=_tri(authority.get("owner_matches")),
+            workspace_matches=_tri(authority.get("workspace_matches")),
+            budget_available=_tri(authority.get("budget_available")),
+            success_receipt_present=False,
+            receipt_queryable=False,
+            step_declared_idempotent=False,
+            step_result_verifiable=False,
             previous_run_id=loss["interrupted_run_id"],
         )
         recovery = decision.view()
-
+    if preservation is None:
+        preservation = preservation_projection(
+            conversation_known=conversation_id is not None, trace_known=True, authority=authority)
     return {
         "schema_version": CONTAINMENT_VERSION,
         # Public conversation identity, never the internal runtime session id.
@@ -138,139 +213,10 @@ def project_containment(
         "conversation_id": conversation_id,
         "trace_id": trace_id,
         "status": loss["status"],
-        "loss_cause": loss_cause,
-        "interrupted_run_id": (latest or {}).get("interrupted_run_id") or loss["interrupted_run_id"],
+        "loss_cause": loss["loss_cause"],
+        "interrupted_run_id": loss["interrupted_run_id"],
         "recovery": recovery,
-        "attempts": [
-            {"attempt": row.get("attempt"), "previous_run_id": row.get("previous_run_id"),
-             "new_run_id": row.get("new_run_id"), "state": row.get("state")}
-            for row in attempts if isinstance(row, dict)
-        ],
-        "public_history_preserved": True,
-        "max_attempts": RECOVERY_ATTEMPT_MAX,
+        "preservation": validate_preservation(preservation),
+        # Read-only: this endpoint never submits a prompt or records an attempt.
+        "submission": "not_performed",
     }
-
-
-def empty_ledger(session_id: str) -> dict:
-    return {"schema_version": ATTEMPTS_SCHEMA_VERSION, "session_id": session_id,
-            "max_attempts": RECOVERY_ATTEMPT_MAX, "attempts": []}
-
-
-class RecoveryAttemptStore:
-    """Bounded, append-only, file-locked recovery attempt ledger.
-
-    The exclusive file lock makes exactly one concurrent recovery request the
-    authoritative attempt; every other request observes the open attempt and is
-    rejected without producing a second one.
-    """
-
-    def __init__(self, root: Path, *, now=time.time) -> None:
-        self.root = Path(root)
-        self.now = now
-
-    def _path(self, session_id: str) -> Path:
-        return self.root / f"{session_id}.recovery-attempts.json"
-
-    def _lock(self, session_id: str):
-        self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
-        return (self.root / f"{session_id}.recovery-attempts.lock").open("a")
-
-    def read(self, session_id: str) -> dict:
-        try:
-            value = json.loads(self._path(session_id).read_text(encoding="utf-8"))
-        except (FileNotFoundError, json.JSONDecodeError, OSError):
-            return empty_ledger(session_id)
-        return validate_attempt_ledger(value)
-
-    def _save(self, session_id: str, ledger: dict) -> None:
-        validate_attempt_ledger(ledger)
-        payload = json.dumps(ledger, sort_keys=True, separators=(",", ":")).encode()
-        directory = self.root
-        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-        fd, name = tempfile.mkstemp(prefix=".recovery-attempts-", dir=directory)
-        try:
-            with os.fdopen(fd, "wb") as stream:
-                stream.write(payload)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(name, self._path(session_id))
-            directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
-        finally:
-            if os.path.exists(name):
-                os.unlink(name)
-
-    def begin(self, session_id: str, *, previous_run_id: str | None, new_run_id: str,
-              generation: str, idempotency_key: str) -> dict:
-        import fcntl
-
-        with self._lock(session_id) as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            ledger = self.read(session_id)
-            if ledger_has_open_attempt(ledger):
-                raise RecoveryConflict("a recovery attempt is already in progress")
-            attempt = len(ledger["attempts"]) + 1
-            if attempt > RECOVERY_ATTEMPT_MAX:
-                raise RecoveryConflict("recovery attempts are exhausted")
-            chained_previous = (ledger["attempts"][-1]["new_run_id"]
-                                if ledger["attempts"] else previous_run_id)
-            row = build_attempt(
-                attempt=attempt, previous_run_id=chained_previous, new_run_id=new_run_id,
-                generation=generation, idempotency_key=idempotency_key,
-                state="in_progress", created_at=self.now(),
-            )
-            ledger = {**ledger, "attempts": [*ledger["attempts"], row]}
-            self._save(session_id, ledger)
-            return ledger
-
-    def settle(self, session_id: str, *, attempt: int, state: str) -> dict:
-        import fcntl
-
-        if state not in {"settled", "failed"}:
-            raise ValueError("invalid recovery attempt settlement")
-        with self._lock(session_id) as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            ledger = self.read(session_id)
-            rows = ledger["attempts"]
-            if not rows or rows[-1]["attempt"] != attempt:
-                raise RecoveryConflict("no matching open recovery attempt")
-            rows = [*rows[:-1], {**rows[-1], "state": state}]
-            ledger = {**ledger, "attempts": rows}
-            self._save(session_id, ledger)
-            return ledger
-
-    def guard(self, session_id: str, *, previous_run_id: str | None, idempotency_key: str,
-              submit) -> dict:
-        """Serialize one recovery submission under the attempt lock.
-
-        ``submit`` is called at most once, only while no attempt is open, and the
-        resulting run identity is recorded as the authoritative new attempt
-        before the lock is released. Concurrent callers therefore never produce
-        a second attempt.
-        """
-
-        import fcntl
-
-        with self._lock(session_id) as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            ledger = self.read(session_id)
-            if ledger_has_open_attempt(ledger):
-                raise RecoveryConflict("a recovery attempt is already in progress")
-            attempt = len(ledger["attempts"]) + 1
-            if attempt > RECOVERY_ATTEMPT_MAX:
-                raise RecoveryConflict("recovery attempts are exhausted")
-            # Lineage is chained from the previous attempt, never forked.
-            chained_previous = (ledger["attempts"][-1]["new_run_id"]
-                                if ledger["attempts"] else previous_run_id)
-            new_run_id = submit()
-            row = build_attempt(
-                attempt=attempt, previous_run_id=chained_previous, new_run_id=new_run_id,
-                generation=new_run_id, idempotency_key=idempotency_key,
-                state="in_progress", created_at=self.now(),
-            )
-            ledger = {**ledger, "attempts": [*ledger["attempts"], row]}
-            self._save(session_id, ledger)
-            return ledger

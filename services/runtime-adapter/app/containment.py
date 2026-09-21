@@ -22,6 +22,7 @@ import tempfile
 from typing import Any
 
 from packages.contracts.session_failure_containment import (
+    BOUNDARY_INVARIANT,
     CONTAINMENT_VERSION,
     FencedWrite,
     assert_terminal_settlement,
@@ -132,9 +133,10 @@ def record_loss(
         "interrupted_generation": interrupted_generation,
         "executor_epoch": identity.executor_epoch,
         "attempt": attempt,
-        "preserved": {field: True for field in (
-            "conversation", "durable_job", "authorization", "approval", "artifact",
-            "workflow_trace", "idempotency_keys", "budget", "cancel_state", "audit_chain")},
+        # Boundary assertion only: the execution boundary does not modify durable
+        # business state. This is not observed business evidence; the Gateway and
+        # Domain independently verify actual preservation.
+        "boundary_invariant": BOUNDARY_INVARIANT,
         "recorded_at": recorded_at,
     })
     with executor_identity.epoch_lock(evidence_root, exclusive=False):

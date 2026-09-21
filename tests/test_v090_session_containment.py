@@ -21,27 +21,32 @@ CONTRACT = CONTAINMENT / "contract.v1.json"
 OBSERVER = CONTAINMENT / "observer.py"
 CAPTURE = CONTAINMENT / "capture.py"
 EVIDENCE = ROOT / "docs/evidence/v090-session-containment"
-OBSERVATIONS = EVIDENCE / "observations.v1.json"
-VERDICT = EVIDENCE / "verdict.v1.json"
-CONTROLS = EVIDENCE / "negative-controls.v1.json"
+OBSERVATIONS = EVIDENCE / "observations.v2.json"
+VERDICT = EVIDENCE / "verdict.v2.json"
+CONTROLS = EVIDENCE / "negative-controls.v2.json"
 CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.190"
 
 B1 = "subagent-child-crash"
 B2 = "subagent-byq-adapter-restart"
 REQUIRED_SCENARIOS = {
     "executor-loss-interrupted",
-    "stale-generation-terminal-fenced",
     "late-success-no-overwrite",
+    "ordinary-failed-not-interrupted",
+    "mismatched-run-not-interrupted",
+    "mismatched-trace-not-interrupted",
+    "cancelled-not-interrupted",
+    "stale-generation-terminal-fenced",
     "duplicate-terminal-rejected",
     "terminal-reopen-rejected",
-    "idempotent-no-receipt-one-attempt-lineage",
-    "success-receipt-not-replayed",
+    "authority-unavailable-pauses",
     "unknown-side-effect-paused",
+    "success-receipt-not-replayed",
     "cancel-blocks-recovery",
     "budget-exhausted-blocks",
     "authorization-revoked-blocks",
     "owner-workspace-mismatch-blocks",
-    "concurrent-recovery-one-attempt",
+    "preservation-not-constant",
+    "recovery-endpoint-never-submits",
     "observer-breakable",
 }
 
@@ -66,8 +71,7 @@ def _sha256(path: Path) -> str:
 class ContractTests(unittest.TestCase):
     def test_contract_declares_every_required_fail_able_scenario(self):
         contract = _contract()
-        self.assertEqual(contract["schema_version"],
-                         "byq-v090-session-containment-contract.v1")
+        self.assertEqual(contract["schema_version"], "byq-v090-session-containment-contract.v2")
         declared = {scenario["id"] for scenario in contract["scenarios"]}
         self.assertEqual(declared, REQUIRED_SCENARIOS)
         self.assertTrue(all(scenario["required"] for scenario in contract["scenarios"]))
@@ -84,11 +88,11 @@ class ObserverFailAbilityTests(unittest.TestCase):
         self.assertGreaterEqual(result["defect_targeting_count"], 8)
         self.assertTrue(result["defect_targeting_pre_fix_passed"])
         names = {item["name"] for item in result["controls"]}
-        for expected in ("executor-loss-fake-completed", "stale-generation-not-fenced",
-                         "duplicate-terminal-not-fenced", "terminal-reopen-not-fenced",
-                         "unknown-side-effect-auto-retry", "cancel-recoverable",
-                         "success-receipt-replayed", "concurrent-second-attempt",
-                         "negative-controls-trusted", "provenance-digest-mismatch"):
+        for expected in ("executor-loss-fake-completed", "before-after-diverged",
+                         "ordinary-failed-marked-interrupted", "mismatched-run-marked-interrupted",
+                         "mismatched-trace-marked-interrupted", "authority-unavailable-allowed",
+                         "preservation-constant-claim", "preservation-boundary-self-verified",
+                         "endpoint-source-mismatch", "success-receipt-replayed"):
             self.assertIn(expected, names)
 
     def test_committed_evidence_is_breakable_by_a_mutation(self):
@@ -96,11 +100,21 @@ class ObserverFailAbilityTests(unittest.TestCase):
         contract = _contract()
         observations = json.loads(OBSERVATIONS.read_text(encoding="utf-8"))
         self.assertTrue(observer.compute_verdict(contract, observations)["all_pass"])
-        broken = json.loads(OBSERVATIONS.read_text(encoding="utf-8"))
-        broken["scenarios"]["executor-loss-interrupted"]["observed"]["status"] = "completed"
-        verdict = observer.compute_verdict(contract, broken)
-        self.assertFalse(verdict["all_pass"])
-        self.assertEqual(verdict["exit_code"], 1)
+        for mutate in (
+            lambda value: value["scenarios"]["executor-loss-interrupted"]["observed"].update(status="completed"),
+            lambda value: value["scenarios"]["ordinary-failed-not-interrupted"]["observed"].update(
+                adapter_containment={"schema_version": "s", "session_id": "runtime-1", "contained": True,
+                    "latest": {"trace_id": "trace-1", "loss_cause": "executor-loss",
+                               "interrupted_run_id": "a" * 32, "interrupted_generation": "g",
+                               "executor_epoch": 1}}),
+            lambda value: value["scenarios"]["preservation-not-constant"]["observed"].update(
+                after={"session_started": 0, "prompt_receipts": 0, "run_events": 0}),
+        ):
+            broken = json.loads(OBSERVATIONS.read_text(encoding="utf-8"))
+            mutate(broken)
+            verdict = observer.compute_verdict(contract, broken)
+            self.assertFalse(verdict["all_pass"])
+            self.assertEqual(verdict["exit_code"], 1)
 
 
 class CommittedEvidenceTests(unittest.TestCase):
@@ -124,20 +138,45 @@ class CommittedEvidenceTests(unittest.TestCase):
         digests = observations["provenance"]["source_sha256"]
         for relative, expected in digests.items():
             self.assertEqual(expected, _sha256(ROOT / relative), relative)
-        self.assertIn("services/runtime-adapter/app/containment.py", digests)
-        self.assertIn("services/gateway/app/session_containment.py", digests)
+        for relative in ("services/runtime-adapter/app/containment.py",
+                         "services/gateway/app/session_containment.py",
+                         "services/gateway/app/main.py"):
+            self.assertIn(relative, digests)
 
-    def test_loss_observation_is_truthful_and_preserves_state(self):
+    def test_loss_observation_is_truthful_with_real_before_after_state(self):
         observed = json.loads(OBSERVATIONS.read_text(encoding="utf-8"))[
             "scenarios"]["executor-loss-interrupted"]["observed"]
         self.assertEqual(observed["status"], "interrupted")
         self.assertEqual(observed["loss_cause"], "executor-loss")
-        self.assertTrue(observed["preserved"])
+        self.assertEqual(observed["before"], observed["after"])
+        self.assertGreater(observed["before"]["prompt_receipts"], 0)
         self.assertTrue(observed["history_unchanged"])
-        self.assertEqual(observed["interrupted_run_id"], observed["expected_run"])
+        self.assertRegex(observed["interrupted_run_id"], r"^[0-9a-f]{32}$")
+        self.assertEqual(observed["trace_id"], observed["expected_trace_id"])
+
+    def test_preservation_is_not_a_constant_claim(self):
+        observed = json.loads(OBSERVATIONS.read_text(encoding="utf-8"))[
+            "scenarios"]["preservation-not-constant"]["observed"]
+        self.assertEqual(observed["before"], observed["after"])
+        projection = observed["preservation"]
+        self.assertFalse(projection["boundary_verified"])
+        self.assertEqual(projection["states"]["durable_job"], "unknown")
+        self.assertNotEqual(set(projection["states"].values()), {"preserved"})
 
 
 class BoundaryTests(unittest.TestCase):
+    def test_recovery_endpoint_cannot_submit(self):
+        source = (ROOT / "services/gateway/app/main.py").read_text(encoding="utf-8")
+        start = source.index("def get_recovery_classification(")
+        end = source.index("@app.", start)
+        body = source[start:end]
+        self.assertNotIn("_adapter_post", body)
+        self.assertNotIn("/prompt", body)
+        self.assertNotIn("_runtime_recovery_payload", body)
+        self.assertIn('"submitted": False', body)
+        self.assertFalse((ROOT / "services/gateway/app/session_containment.py").read_text(
+            encoding="utf-8").count("RecoveryAttemptStore"))
+
     def test_status_keeps_b1_b2_blocked_external_and_r3_frozen(self):
         status = (ROOT / "docs/roadmap/STATUS.md").read_text(encoding="utf-8")
         for marker in ("<!-- byq:v090-step5-b1-subagent-child-crash=blocked-external -->",
@@ -171,6 +210,11 @@ class BoundaryTests(unittest.TestCase):
             self.assertNotIn("sqlalchemy", text.lower(), str(path))
             self.assertNotIn("PTY", text, str(path))
             self.assertNotIn("import pty", text, str(path))
+
+    def test_no_tmp_authority_ledger_remains(self):
+        for path in (ROOT / "services/gateway/app").rglob("*.py"):
+            self.assertNotIn("byq-recovery-attempts", path.read_text(encoding="utf-8"), str(path))
+            self.assertNotIn("RecoveryAttemptStore", path.read_text(encoding="utf-8"), str(path))
 
     def test_production_selector_is_unchanged(self):
         deployment = json.loads((ROOT / "config/dsh/deployment.json").read_text(encoding="utf-8"))

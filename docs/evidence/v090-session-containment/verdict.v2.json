@@ -14,15 +14,43 @@
     },
     {
       "failures": [],
-      "id": "stale-generation-terminal-fenced",
-      "kind": "fencing",
+      "id": "late-success-no-overwrite",
+      "kind": "adapter_loss",
       "required": true,
       "verdict": "PASS"
     },
     {
       "failures": [],
-      "id": "late-success-no-overwrite",
-      "kind": "adapter_loss",
+      "id": "ordinary-failed-not-interrupted",
+      "kind": "loss_evidence",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "mismatched-run-not-interrupted",
+      "kind": "loss_evidence",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "mismatched-trace-not-interrupted",
+      "kind": "loss_evidence",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "cancelled-not-interrupted",
+      "kind": "loss_evidence",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "stale-generation-terminal-fenced",
+      "kind": "fencing",
       "required": true,
       "verdict": "PASS"
     },
@@ -42,14 +70,7 @@
     },
     {
       "failures": [],
-      "id": "idempotent-no-receipt-one-attempt-lineage",
-      "kind": "attempt",
-      "required": true,
-      "verdict": "PASS"
-    },
-    {
-      "failures": [],
-      "id": "success-receipt-not-replayed",
+      "id": "authority-unavailable-pauses",
       "kind": "classification",
       "required": true,
       "verdict": "PASS"
@@ -57,6 +78,13 @@
     {
       "failures": [],
       "id": "unknown-side-effect-paused",
+      "kind": "classification",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "success-receipt-not-replayed",
       "kind": "classification",
       "required": true,
       "verdict": "PASS"
@@ -91,8 +119,15 @@
     },
     {
       "failures": [],
-      "id": "concurrent-recovery-one-attempt",
-      "kind": "attempt",
+      "id": "preservation-not-constant",
+      "kind": "preservation",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "recovery-endpoint-never-submits",
+      "kind": "no_submit",
       "required": true,
       "verdict": "PASS"
     },
@@ -104,5 +139,5 @@
       "verdict": "PASS"
     }
   ],
-  "schema_version": "byq-v090-session-containment-verdict.v1"
+  "schema_version": "byq-v090-session-containment-verdict.v2"
 }

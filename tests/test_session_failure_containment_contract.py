@@ -9,7 +9,6 @@ import unittest
 from packages.contracts import session_failure_containment as c
 
 RUN_A = "a" * 32
-RUN_B = "b" * 32
 
 
 def _record(**overrides):
@@ -25,7 +24,7 @@ def _record(**overrides):
         "interrupted_generation": "generation-1",
         "executor_epoch": 1,
         "attempt": 1,
-        "preserved": {field: True for field in c.PRESERVED_FIELDS},
+        "boundary_invariant": c.BOUNDARY_INVARIANT,
         "recorded_at": 1.0,
     }
     value.update(overrides)
@@ -36,8 +35,7 @@ def _classify(**overrides):
     facts = dict(cancelled=False, authorization_current=True, owner_matches=True,
                  workspace_matches=True, budget_available=True, success_receipt_present=False,
                  receipt_queryable=True, step_declared_idempotent=True,
-                 step_result_verifiable=True, attempt_in_progress=False, attempts_used=0,
-                 previous_run_id=RUN_A)
+                 step_result_verifiable=True, previous_run_id=RUN_A)
     facts.update(overrides)
     return c.classify_recovery(**facts)
 
@@ -50,16 +48,14 @@ class ContractTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 c.validate_loss_cause(invalid)
 
-    def test_containment_record_requires_all_business_state_preserved(self):
-        self.assertEqual(c.validate_containment_record(_record())["preserved"],
-                         {field: True for field in c.PRESERVED_FIELDS})
-        # A null conversation id is allowed at the adapter boundary; the Gateway
-        # supplies the public conversation identity.
+    def test_containment_record_carries_the_boundary_assertion_not_business_evidence(self):
+        record = c.validate_containment_record(_record())
+        self.assertEqual(record["boundary_invariant"], c.BOUNDARY_INVARIANT)
+        self.assertNotIn("preserved", record)
         self.assertIsNone(c.validate_containment_record(_record(conversation_id=None))["conversation_id"])
-        broken = _record()
-        broken["preserved"] = {**broken["preserved"], "audit_chain": False}
-        for invalid in (broken, _record(loss_cause="completed"), _record(executor_epoch=0),
-                        _record(interrupted_run_id="not-a-run")):
+        for invalid in (_record(loss_cause="completed"), _record(executor_epoch=0),
+                        _record(interrupted_run_id="not-a-run"),
+                        _record(boundary_invariant="self-verified")):
             with self.assertRaises(ValueError):
                 c.validate_containment_record(invalid)
 
@@ -89,12 +85,44 @@ class ContractTests(unittest.TestCase):
             c.assert_terminal_settlement(settled={}, write_attempt=1, write_terminal="reattached")
 
 
+class PreservationTests(unittest.TestCase):
+    def _projection(self, **overrides):
+        states = {field: "unknown" for field in c.PRESERVED_FIELDS}
+        value = {
+            "schema_version": c.PRESERVATION_SCHEMA_VERSION,
+            "states": states,
+            "boundary_invariant": c.BOUNDARY_INVARIANT,
+            "boundary_verified": False,
+            "sources": {"boundary": "execution-boundary-assertion"},
+        }
+        value.update(overrides)
+        return value
+
+    def test_preservation_requires_a_source_for_a_preserved_field(self):
+        value = self._projection()
+        value["states"] = {**value["states"], "conversation": "preserved"}
+        with self.assertRaises(ValueError):
+            c.validate_preservation(value)
+
+    def test_boundary_invariant_cannot_be_self_verified(self):
+        value = self._projection()
+        value["boundary_verified"] = True
+        with self.assertRaises(ValueError):
+            c.validate_preservation(value)
+
+    def test_preservation_accepts_a_sourced_projection(self):
+        value = self._projection()
+        value["states"] = {**value["states"], "conversation": "preserved"}
+        value["sources"] = {**value["sources"], "conversation": "backend-product-catalog"}
+        self.assertEqual(c.validate_preservation(value), value)
+
+
 class RecoveryClassificationTests(unittest.TestCase):
     def test_cancel_blocks_recovery_before_anything_else(self):
         decision = _classify(cancelled=True, success_receipt_present=True)
         self.assertEqual((decision.status, decision.reason), ("blocked", "cancelled"))
 
-    def test_hard_invariants_block(self):
+    def test_authoritative_denials_block(self):
         for overrides, reason in (
             ({"owner_matches": False}, "owner_workspace_mismatch"),
             ({"workspace_matches": False}, "owner_workspace_mismatch"),
@@ -102,6 +130,13 @@ class RecoveryClassificationTests(unittest.TestCase):
             ({"budget_available": False}, "budget_exhausted"),
         ):
             self.assertEqual(_classify(**overrides).reason, reason)
+
+    def test_unverifiable_authority_pauses_and_is_never_allowed(self):
+        for field in ("owner_matches", "workspace_matches", "authorization_current", "budget_available"):
+            decision = _classify(**{field: None})
+            self.assertEqual((decision.status, decision.reason), ("paused", "authority_unavailable"))
+            self.assertTrue(decision.requires_confirmation)
+            self.assertFalse(decision.auto_retry)
 
     def test_success_receipt_is_settled_never_replayed(self):
         decision = _classify(success_receipt_present=True)
@@ -118,37 +153,10 @@ class RecoveryClassificationTests(unittest.TestCase):
             self.assertTrue(decision.requires_confirmation)
             self.assertFalse(decision.auto_retry)
 
-    def test_eligible_only_for_declared_idempotent_result_verifiable(self):
+    def test_eligible_only_for_verified_authority_and_declared_safe_step(self):
         decision = _classify()
         self.assertEqual((decision.status, decision.auto_retry), ("eligible", True))
-        self.assertEqual(decision.lineage, {"previous_run_id": RUN_A, "attempt": 1})
-
-    def test_concurrent_attempt_blocks_and_exhaustion_is_bounded(self):
-        self.assertEqual(_classify(attempt_in_progress=True).reason, "attempt_in_progress")
-        exhausted = _classify(attempts_used=c.RECOVERY_ATTEMPT_MAX)
-        self.assertEqual((exhausted.status, exhausted.reason), ("exhausted", "attempts_exhausted"))
-
-
-class AttemptLedgerTests(unittest.TestCase):
-    def test_attempt_ledger_is_gapless_chained_and_bounded(self):
-        first = c.build_attempt(attempt=1, previous_run_id=RUN_A, new_run_id=RUN_B,
-                                generation="g1", idempotency_key="original-key-1",
-                                state="failed", created_at=1.0)
-        second = c.build_attempt(attempt=2, previous_run_id=RUN_B, new_run_id="c" * 32,
-                                 generation="g2", idempotency_key="original-key-1",
-                                 state="in_progress", created_at=2.0)
-        ledger = {"schema_version": c.ATTEMPTS_SCHEMA_VERSION, "session_id": "session-1",
-                  "max_attempts": c.RECOVERY_ATTEMPT_MAX, "attempts": [first, second]}
-        self.assertEqual(c.validate_attempt_ledger(ledger), ledger)
-        self.assertTrue(c.ledger_has_open_attempt(ledger))
-        for broken in (
-            {**ledger, "attempts": [first, {**second, "previous_run_id": "d" * 32}]},
-            {**ledger, "attempts": [{**second, "attempt": 3}]},
-            {**ledger, "attempts": [{**first, "state": "in_progress"}, second]},
-            {**ledger, "max_attempts": 99},
-        ):
-            with self.assertRaises(ValueError):
-                c.validate_attempt_ledger(broken)
+        self.assertEqual(decision.lineage, {"previous_run_id": RUN_A})
 
     def test_recovery_decision_view_is_closed(self):
         view = _classify().view()

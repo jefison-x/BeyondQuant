@@ -1603,6 +1603,10 @@ class RuntimeAdapter:
         if records:
             latest = records[-1]
             summary["latest"] = {
+                # Framework-neutral trace/run binding: the Gateway may only
+                # project `interrupted` when this matches the exact session/trace
+                # and terminal run. No DSH private identity is exposed.
+                "trace_id": latest["trace_id"],
                 "loss_cause": latest["loss_cause"],
                 "interrupted_run_id": latest["interrupted_run_id"],
                 "interrupted_generation": latest["interrupted_generation"],

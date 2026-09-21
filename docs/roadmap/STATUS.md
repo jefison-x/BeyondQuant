@@ -474,28 +474,37 @@ and business recovery`。独立 worktree/分支 `codex/v090-session-failure-cont
 tag/release，不恢复 Phase 100，不触碰 `codex/phase-100c`/PR #338，不做 Community 检查或复制，
 不 fork/patch DSH，**不实现** ADR-0082 Option 2 或任何原生 child resume。
 
-- **实现范围（可逆、合同优先）**：新增 BYQ 自有框架中立合同
+- **实现范围（可逆、合同优先，只读）**：新增 BYQ 自有框架中立合同
   `packages/contracts/session_failure_containment.py`（closed loss cause / `interrupted` 终态 /
-  generation-epoch-attempt fence / 终态重开与重复结算拒绝 / 有界恢复分类 / old→new 尝试 lineage）；
-  Runtime Adapter `app/containment.py` 持久化**有界、受 epoch 与 attempt fence 保护**的 containment
-  证据（`byq-lifecycle-evidence/containment/`），并在 `_rehydrate` 检测到丢失的 open root 时如实记录
-  `executor-loss`、在 `_run_prompt` 终态结算前校验 generation fence；Gateway
-  `app/session_containment.py` 仅从**规范化 WorkflowTrace + 持久 adapter containment 摘要**派生
-  `interrupted`、恢复资格、暂停原因与尝试 lineage，并提供 Product API 投影
-  （`GET /v1/agent/sessions/{id}/containment`、`POST /v1/agent/sessions/{id}/recovery-attempt`、
+  generation-epoch-attempt fence / 终态重开与重复结算拒绝 / **tri-state fail-closed 恢复分类** /
+  boundary assertion 与真实 preservation 证据分离）；Runtime Adapter `app/containment.py` 持久化
+  **有界、受 epoch 与 attempt fence 保护**的 containment 证据（`byq-lifecycle-evidence/containment/`），
+  记录**框架中立 trace/run 绑定**，并在 `_rehydrate` 检测到丢失的 open root 时如实记录 `executor-loss`、
+  在 `_run_prompt` 终态结算前校验 generation fence；Gateway `app/session_containment.py` **只读**，仅当
+  **fenced containment 记录匹配同一 session/trace 与精确 run** 时才投影 `interrupted`，并提供 Product API
+  投影（`GET /v1/agent/sessions/{id}/containment`、`GET /v1/agent/sessions/{id}/recovery` 只读分类、
   `GET /v1/agent/sessions/{id}` 的 `containment` 字段）。前端**不**读取 DSH 私有事件。
-- **恢复分类（fail-closed）**：取消/预算耗尽/授权撤销/owner-workspace 不匹配一律 `blocked`；已存在精确
-  成功回执一律 `settled`（绝不重放）；非幂等或结果不可核对的副作用一律 `paused`（用户可见原因，
-  绝不自动重试）；仅合同显式声明幂等**且**结果可核对的步骤在无回执时产生**至多一个**有界尝试，
-  并发恢复请求只形成一个权威 attempt。取消后不恢复。
+- **恢复分类（fail-closed，无自动重试路径）**：取消/预算耗尽/授权撤销/owner-workspace 不匹配一律
+  `blocked`；已存在精确成功回执一律 `settled`（绝不重放）；非幂等或结果不可核对的副作用一律 `paused`
+  （用户可见原因）。authority 每项为 tri-state：未知/不可达一律 `paused`，**绝不默认允许**；owner/workspace
+  来自 owner-scoped catalog 与 durable Backend auth session，任意未答复回合的预算无权威绑定故为未知。
+  **无权威步骤安全元数据，故不存在自动 resubmit 路径**：`GET .../recovery` 只读分类、`"submitted": false`，
+  不提交任何 prompt，也不存在 attempt ledger。
+- **五处 Safety/Integrity 修复**：(1) 删除客户端 `step` 自证字段，安全声明只能来自服务端权威元数据，
+  缺失即 paused；(2) `_recovery_authority` 接入现有权威组件逐项校验，未验证不提交；
+  (3) 删除 `/tmp/byq-recovery-attempts` authority ledger，收缩为只读分类，无第二 store；
+  (4) `loss_from_evidence` 仅在 fenced containment 匹配 session/trace 与精确 run 时投影 `interrupted`，
+  普通 `failed`/`cancelled`/`discarded` 保持原语义；(5) 移除常量 preservation 声明，改为
+  `boundary_verified=false` + 仅由权威 catalog/trace 读取证明的 `preserved`，其余 `unknown`/`unavailable`。
 - **可失败验收（真实、可破坏）**：`scripts/v090/session_containment/`（contract、fail-able observer、
-  real capture）；真实 Runtime Adapter 合成兼容 harness 复现执行者丢失→`interrupted` 且会话/历史/
-  回执保留，以及旧 generation 迟到成功不覆盖新 generation；真实 Gateway attempt ledger 证明
-  单权威 attempt 与 lineage；纯合同函数复现 stale generation/迟到/重复/重开拒绝与全部分类。
-  observer 区分 `format_valid` 与 `all_pass`，`--selfcheck` 20 项控制全部被拒（19 项 defect-targeting
-  修复前 result-trusting 门禁会误报），提交 verdict `format_valid=true`、`all_pass=true`、exit 0，
-  且对 committed observations 的变异会使其失败。证据
-  `docs/evidence/v090-session-containment/`，由 `tests/test_v090_session_containment.py` 断言。
+  real capture）；真实 Runtime Adapter 合成兼容 harness 复现执行者丢失→`interrupted` 且**真实
+  before/after journal 状态（会话事件与回执计数）不变**，以及旧 generation 迟到成功不覆盖新 generation；
+  纯合同函数复现 stale generation/迟到/重复/重开拒绝与全部分类（含 authority 未知 paused、预算/授权/
+  owner-workspace 拒绝）；`loss_from_evidence` 复现三项 interruption 负例；`no_submit` 静态守卫证明
+  恢复端点不含 `_adapter_post`/`/prompt`/`_runtime_recovery_payload`。observer 区分 `format_valid` 与
+  `all_pass`，`--selfcheck` 24 项控制全部被拒（24 项 defect-targeting，修复前 result-trusting 门禁会误报），
+  提交 verdict `format_valid=true`、`all_pass=true`、exit 0，且对 committed observations 的变异会使其失败。
+  证据 `docs/evidence/v090-session-containment/`，由 `tests/test_v090_session_containment.py` 断言。
 - **边界事实不变**：B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 保持
   `BLOCKED_EXTERNAL`；历史 D15-G 保持 `NO_GO`（历史 verdict/JSON 不改写）；`R3_RESUME = NO`；
   0.9 未关闭。本 PR **不生成也不声称**任何 D15 superseding assessment 通过；原生子进程续接仍

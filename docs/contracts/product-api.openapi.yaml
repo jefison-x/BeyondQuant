@@ -635,9 +635,9 @@ paths:
   /v1/agent/sessions/{session_id}/containment:
     parameters: [{$ref: "#/components/parameters/SessionId"}]
     get: {summary: 只读暴露框架中立的 interruption/恢复资格/暂停原因/尝试 lineage；不读取 DSH 私有事件。, responses: *okResponses}
-  /v1/agent/sessions/{session_id}/recovery-attempt:
+  /v1/agent/sessions/{session_id}/recovery:
     parameters: [{$ref: "#/components/parameters/SessionId"}]
-    post: {summary: 至多创建一个有界、可审计的恢复尝试；先查精确回执，未知副作用暂停。, responses: *okResponses}
+    get: {summary: 只读恢复分类；无权威步骤/预算元数据时 fail closed 为 paused，绝不提交新 prompt。, responses: *okResponses}
   /v1/workflows/{session_id}/events:
     parameters:
       - $ref: "#/components/parameters/SessionId"

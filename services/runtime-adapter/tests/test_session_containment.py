@@ -67,9 +67,15 @@ def test_lost_executor_run_is_interrupted_and_business_state_survives(
         assert summary["latest"]["interrupted_run_id"] == root
         assert summary["latest"]["interrupted_generation"]
         assert summary["latest"]["executor_epoch"] >= 1
+        # Framework-neutral trace binding: the Gateway may only project
+        # interrupted when this matches the exact session/trace.
+        assert summary["latest"]["trace_id"] == "loss-trace"
         records = containment.read(restarted._session_root / "byq-lifecycle-evidence", "loss-1")
-        assert all(record["preserved"][field] is True for record in records
-                   for field in containment_contract.PRESERVED_FIELDS)
+        # The record carries the execution-boundary assertion, not business
+        # evidence: the adapter cannot and does not claim business preservation.
+        assert all(record["boundary_invariant"] == containment_contract.BOUNDARY_INVARIANT
+                   for record in records)
+        assert all("preserved" not in record for record in records)
     finally:
         restarted.close()
         FakeHarness.allow_run.set()

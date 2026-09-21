@@ -1,7 +1,7 @@
 {
   "all_controls_pass": true,
   "baseline_all_pass": true,
-  "control_count": 20,
+  "control_count": 24,
   "controls": [
     {
       "defect_targeting": true,
@@ -21,8 +21,32 @@
     },
     {
       "defect_targeting": true,
-      "first_failure": "executor-loss-interrupted: business state was not attested preserved",
-      "name": "preserved-false",
+      "first_failure": "executor-loss-interrupted: real before/after state diverged",
+      "name": "before-after-diverged",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "ordinary-failed-not-interrupted: status='interrupted' != contract 'failed'",
+      "name": "ordinary-failed-marked-interrupted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "ordinary-failed-not-interrupted: status='interrupted' != contract 'failed'",
+      "name": "mismatched-run-marked-interrupted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "mismatched-trace-not-interrupted: status='interrupted' != contract 'failed'",
+      "name": "mismatched-trace-marked-interrupted",
       "observed_all_pass": false,
       "observed_exit_code": 1,
       "pre_fix_legacy_all_pass": true
@@ -47,6 +71,14 @@
       "defect_targeting": true,
       "first_failure": "terminal-reopen-rejected: fence raised=False != contract fenced=True",
       "name": "terminal-reopen-not-fenced",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "authority-unavailable-pauses: derived status='eligible' != contract 'paused'",
+      "name": "authority-unavailable-allowed",
       "observed_all_pass": false,
       "observed_exit_code": 1,
       "pre_fix_legacy_all_pass": true
@@ -101,16 +133,24 @@
     },
     {
       "defect_targeting": true,
-      "first_failure": "idempotent-no-receipt-one-attempt-lineage: attempt ledger invalid: recovery attempt lineage must chain the previous new run",
-      "name": "attempt-lineage-forked",
+      "first_failure": "preservation-not-constant: preservation projection invalid: a preserved field requires an authoritative source",
+      "name": "preservation-constant-claim",
       "observed_all_pass": false,
       "observed_exit_code": 1,
       "pre_fix_legacy_all_pass": true
     },
     {
       "defect_targeting": true,
-      "first_failure": "concurrent-recovery-one-attempt: concurrent recovery did not raise a conflict",
-      "name": "concurrent-second-attempt",
+      "first_failure": "preservation-not-constant: preservation projection invalid: boundary invariant cannot be self-verified",
+      "name": "preservation-boundary-self-verified",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "recovery-endpoint-never-submits: observed source digest does not match the current endpoint",
+      "name": "endpoint-source-mismatch",
       "observed_all_pass": false,
       "observed_exit_code": 1,
       "pre_fix_legacy_all_pass": true
@@ -148,14 +188,6 @@
       "pre_fix_legacy_all_pass": true
     },
     {
-      "defect_targeting": false,
-      "first_failure": "missing required scenario: cancel-blocks-recovery",
-      "name": "dropped-scenario",
-      "observed_all_pass": false,
-      "observed_exit_code": 1,
-      "pre_fix_legacy_all_pass": false
-    },
-    {
       "defect_targeting": true,
       "first_failure": "unknown-side-effect-paused: recorded decision does not match the re-derived decision",
       "name": "scenario-verdict-label-only",
@@ -164,7 +196,7 @@
       "pre_fix_legacy_all_pass": true
     }
   ],
-  "defect_targeting_count": 19,
+  "defect_targeting_count": 24,
   "defect_targeting_pre_fix_passed": true,
-  "schema_version": "byq-v090-session-containment-negative-controls.v1"
+  "schema_version": "byq-v090-session-containment-negative-controls.v2"
 }
