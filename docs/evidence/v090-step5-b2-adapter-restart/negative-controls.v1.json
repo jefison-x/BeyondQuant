@@ -1,0 +1,198 @@
+{
+  "all_controls_pass": true,
+  "control_count": 27,
+  "controls": [
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": false,
+      "name": "blocked-fixture-pre-fix-passes"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "label-only-claim"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "no-rebind-candidates"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "same-os-process"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "same-container-not-fresh"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "no-child-persistence"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "child-not-linked-to-goal"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "extra-child-created"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "second-session-store"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "orphan-left-behind"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "duplicate-settlement-on-resume"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "rebind-without-message-id"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "rebind-without-delivery"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "fencing-not-fail-closed"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "stale-epoch-rebind-accepted"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "composition-forbids-but-claims-surface"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "generation-a-no-startContinuable"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "generation-a-no-child-id"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "generation-a-no-delegation-call"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "candidate-mismatch"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": false,
+      "name": "non-real-evidence-class"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "llm-claims-real-quality"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "production-selector-changed"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "fork-or-patch-of-dsh"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "forbidden-substitution-bridge"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "wrong-owner-node"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "no-substitutions-recorded"
+    }
+  ],
+  "defect_targeting_pre_fix_passed": [
+    "label-only-claim",
+    "no-rebind-candidates",
+    "same-os-process",
+    "same-container-not-fresh",
+    "no-child-persistence",
+    "child-not-linked-to-goal",
+    "extra-child-created",
+    "second-session-store",
+    "orphan-left-behind",
+    "duplicate-settlement-on-resume",
+    "rebind-without-message-id",
+    "rebind-without-delivery",
+    "fencing-not-fail-closed",
+    "stale-epoch-rebind-accepted",
+    "composition-forbids-but-claims-surface",
+    "generation-a-no-startContinuable",
+    "generation-a-no-child-id",
+    "generation-a-no-delegation-call",
+    "candidate-mismatch",
+    "llm-claims-real-quality",
+    "production-selector-changed",
+    "fork-or-patch-of-dsh",
+    "forbidden-substitution-bridge",
+    "wrong-owner-node",
+    "no-substitutions-recorded"
+  ],
+  "defect_targeting_pre_fix_passed_count": 25,
+  "known_good_unit_fixture_all_pass": true,
+  "schema_version": "byq-v090-step5-b2-adapter-restart-negative-controls.v1"
+}

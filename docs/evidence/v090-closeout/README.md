@@ -31,6 +31,11 @@ any tag/release.
   2026-09-21 step-5 `G-split` gate-order decision: B1 stays a mandatory external blocker,
   the strict internal order B2 → terminal-adapter-restart → terminal-dsh-runtime-restart is
   enabled, D15-G stays `NO_GO` until B1 PASSes, `R3_RESUME = NO`, and 0.9 is not closed.
+- [step-5 B2 `subagent-byq-adapter-restart` execution](../v090-step5-b2-adapter-restart/README.md) —
+  the first internal G-split item was executed 2026-09-21 with a real isolated candidate
+  composition/restart probe and a fail-able observer; it stays **BLOCKED (external/dependency)**
+  with no Option-2 bridge and no second session store. The closeout matrix slice-2 evidence and
+  the D15 gap-ledger entry link its machine-readable verdict.
 
 The consistency of these files (schema, status vocabulary, evidence paths, the four
 D15-G atomic blockers, the beta-vs-formal distinction and the frozen constraints) is

@@ -200,6 +200,28 @@ The maintainer chose **`G-split`** on 2026-09-21:
 
 Machine-readable record: [gsplit-decision.v1.json](gsplit-decision.v1.json).
 
+### Execution status (2026-09-21): B2 executed and BLOCKED (external/dependency)
+
+The maintainer-authorized G-split internal order has begun. B2
+`subagent-byq-adapter-restart` (owner `d15-4-candidate-composition-hookup`) was executed
+as the **first internal item** and stays **BLOCKED**:
+
+- A **real isolated composition/restart probe** in the committed candidate image
+  (`byq-d15-4-continuable-candidate:local`, `--network none`, keyless scripted provider,
+  real `RuntimeAdapter` + real bundled 0.1.5-rc.1 runtime + candidate continuable
+  composition) showed generation A really reaches `startContinuable` and persists
+  exactly one child linked to the original delegation/goal, but a genuinely fresh OS
+  process/container has **no committed BYQ composition surface** to rebind, message or
+  cold-resume that child (only root `resume_session`; the 0.1.5 Python SDK has no child
+  operation; the composition itself forbids `subagent`/`send_message`/`list_agents`).
+- **No Option-2 bridge, no second session store and no DSH fork/patch** were added; the
+  fail-able observer verdict is `all_pass=false`, `external_blocked=true`, exit 1.
+- Evidence: [v090-step5-b2-adapter-restart](../v090-step5-b2-adapter-restart/README.md).
+- **Next sole task in the strict internal order:** `terminal-adapter-restart`
+  (owner node `d15-5-candidate-attachment-layer`, pre-gate; never post-GO R4). It is
+  **not started** by this B2 slice.
+- D15-G stays `NO_GO` until B1 truly PASSes; `R3_RESUME = NO`; 0.9 is **not** closed.
+
 ## Dependency upgrade is not a production default switch
 
 - "BYQ compatible with DSH 0.1.5-rc.1" and "production default = DSH 0.1.5-rc.1" are

@@ -1,0 +1,58 @@
+{
+  "schema_version": "byq-v090-step5-b2-probe-provenance.v1",
+  "generated_at": "2026-09-21",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1"
+  },
+  "isolation": {
+    "image": "byq-d15-4-continuable-candidate:local",
+    "image_id": "sha256:21bc000eab0a1edd1a9dd7568f4d78660318defb2a872bc592bf2a84043aa5eb",
+    "dockerfile": "services/runtime-adapter/Dockerfile.dsh-0.1.5rc1-continuable-candidate",
+    "network": "none",
+    "user": "root",
+    "session_root_volume": "ephemeral host bind mount (throwaway)",
+    "production_selector": "dsh-0.1.2rc1",
+    "production_selector_changed": false,
+    "fork_or_patch_of_dsh": false,
+    "keyless": true,
+    "llm_class": "scripted-keyless",
+    "real_llm_quality": false
+  },
+  "runtime": {
+    "python_sdk": "0.1.5rc1",
+    "runtime_bin": "0.1.5rc1",
+    "composition": "/opt/byq/profiles/byq-product-continuable.patch.yml",
+    "composition_identity": "/opt/byq/profiles/byq-product-continuable.identity.json",
+    "selector_env": "BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1"
+  },
+  "artifacts": {
+    "probe": {
+      "path": "scripts/d15/subagent/byq_adapter_restart_probe.py",
+      "sha256": "sha256:ef42f8f91da0a1cd6836251f4f5fc6b6e461f1576362b5be31e2868946b4db3d"
+    },
+    "observer": {
+      "path": "scripts/d15/subagent/byq_adapter_restart_observer.py",
+      "sha256": "sha256:c4c0b2ff888f3ac800f85d32f19db2a0428a24d989678091762d5e84cedcde54"
+    },
+    "contract": {
+      "path": "scripts/d15/subagent/byq_adapter_restart_contract.v1.json",
+      "sha256": "sha256:e39348ca9b0b2617279ce6092caad77a090bf0127500483e524d5352137a51a8"
+    },
+    "candidate_declaration": {
+      "path": "config/dsh/candidates/dsh-0.1.5rc1/candidate.json",
+      "sha256": "sha256:80506e845751d0883dcbb2e290394b15ea959fe0df631f325ee92ec25b27f0f5"
+    },
+    "composition_identity": {
+      "path": "plugins/dsh-byq/profiles/dsh-0.1.5rc1-continuable/byq-product.identity.json",
+      "sha256": "sha256:1f39ab156f52aac728acbc5bf43cc2ee3aaebbac2e3d5216c89eb686737b8106"
+    }
+  },
+  "base": {
+    "origin_main_commit": "0793d483db648c67af3c76050ead5da41792789a",
+    "note": "dynamic origin/main base for this slice; no SHA hard-coded in STATUS.md"
+  },
+  "fault_model": "generation A terminates abruptly in its own container; generation B is a fresh container/OS process over the same durable session root",
+  "scope_note": "The decisive question (a committed BYQ surface that rebinds the child) is identical at the adapter/SDK/composition boundary; the probe runs the real adapter + real bundled runtime in the committed isolated candidate image rather than the full Gateway compose stack."
+}

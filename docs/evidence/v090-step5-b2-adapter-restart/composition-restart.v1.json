@@ -1,0 +1,451 @@
+{
+  "schema_version": "byq-v090-step5-b2-adapter-restart-observation.v1",
+  "owner_node": "d15-4-candidate-composition-hookup",
+  "blocker": "subagent-byq-adapter-restart",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1"
+  },
+  "evidence_class": "real-isolated-candidate-adapter-container",
+  "llm": {
+    "class": "scripted-keyless",
+    "real_llm_quality": false
+  },
+  "isolation": {
+    "network": "none",
+    "image": "byq-d15-4-continuable-candidate:local",
+    "composition": "/opt/byq/profiles/byq-product-continuable.patch.yml",
+    "composition_identity": "/opt/byq/profiles/byq-product-continuable.identity.json",
+    "session_root": "/sessions",
+    "production_selector_changed": false,
+    "fork_or_patch_of_dsh": false
+  },
+  "composition": {
+    "base_profile": "sdk",
+    "composition_hash": "sha256:13cacecd2d90a8da12520d49fad0870b5b827ff199f4bab763c7eb45e67d1676",
+    "continuable_wiring": {
+      "delegate_result_shape": "{kind: continuable, subagentId}",
+      "isolated_candidate_only": true,
+      "native_seam": "SubagentRuntime.startContinuable",
+      "production_selector_unchanged": "dsh-0.1.2rc1"
+    },
+    "delegate_background_mode": "continuable",
+    "delegate_max_depth": 1,
+    "delegates": [
+      "byq_delegate_market_research",
+      "byq_delegate_factor_research",
+      "byq_delegate_strategy_research",
+      "byq_delegate_backtest_analysis",
+      "byq_delegate_ml_research"
+    ],
+    "enabled_plugin_ids": [
+      "compaction",
+      "guard",
+      "web-search"
+    ],
+    "forbidden_tools": [
+      "bash",
+      "pwsh",
+      "jobs",
+      "fs",
+      "fs_search",
+      "str_replace_editor",
+      "subagent",
+      "subagent_fork",
+      "workflow",
+      "todo_write",
+      "goal",
+      "ralph",
+      "web_fetch",
+      "list_agents",
+      "send_message"
+    ],
+    "mcp": {
+      "fail_on_startup_error": true,
+      "server": "byq"
+    },
+    "patch": "plugins/dsh-byq/profiles/dsh-0.1.5rc1-continuable/byq-product.patch.yml",
+    "patch_sha256": "sha256:13cacecd2d90a8da12520d49fad0870b5b827ff199f4bab763c7eb45e67d1676",
+    "permission_mode": "read-only",
+    "profile": "byq-product-continuable-candidate",
+    "release_id": "dsh-0.1.5rc1",
+    "schema_version": "dsh-candidate-profile-identity.v1",
+    "skills": {
+      "include_default_roots": false,
+      "root": "/opt/dsh/bundles/dsh-byq/skills",
+      "watch": false
+    },
+    "telemetry": "disabled"
+  },
+  "generation_a": {
+    "schema_version": "byq-v090-step5-b2-generation-a.v1",
+    "mode": "a",
+    "owner_node": "d15-4-candidate-composition-hookup",
+    "blocker": "subagent-byq-adapter-restart",
+    "candidate": {
+      "release": "dsh-0.1.5rc1",
+      "npm": "0.1.5-rc.1",
+      "python_sdk": "0.1.5rc1"
+    },
+    "fault_model": "abrupt-container-termination",
+    "process_pid": 1,
+    "container_hostname": "53908dde1d74",
+    "llm": {
+      "class": "scripted-keyless",
+      "real_llm_quality": false
+    },
+    "isolation": {
+      "network": "none",
+      "image": "byq-d15-4-continuable-candidate:local",
+      "composition": "/opt/byq/profiles/byq-product-continuable.patch.yml",
+      "composition_identity": "/opt/byq/profiles/byq-product-continuable.identity.json",
+      "session_root": "/sessions",
+      "production_selector_changed": false,
+      "fork_or_patch_of_dsh": false
+    },
+    "composition": {
+      "base_profile": "sdk",
+      "composition_hash": "sha256:13cacecd2d90a8da12520d49fad0870b5b827ff199f4bab763c7eb45e67d1676",
+      "continuable_wiring": {
+        "delegate_result_shape": "{kind: continuable, subagentId}",
+        "isolated_candidate_only": true,
+        "native_seam": "SubagentRuntime.startContinuable",
+        "production_selector_unchanged": "dsh-0.1.2rc1"
+      },
+      "delegate_background_mode": "continuable",
+      "delegate_max_depth": 1,
+      "delegates": [
+        "byq_delegate_market_research",
+        "byq_delegate_factor_research",
+        "byq_delegate_strategy_research",
+        "byq_delegate_backtest_analysis",
+        "byq_delegate_ml_research"
+      ],
+      "enabled_plugin_ids": [
+        "compaction",
+        "guard",
+        "web-search"
+      ],
+      "forbidden_tools": [
+        "bash",
+        "pwsh",
+        "jobs",
+        "fs",
+        "fs_search",
+        "str_replace_editor",
+        "subagent",
+        "subagent_fork",
+        "workflow",
+        "todo_write",
+        "goal",
+        "ralph",
+        "web_fetch",
+        "list_agents",
+        "send_message"
+      ],
+      "mcp": {
+        "fail_on_startup_error": true,
+        "server": "byq"
+      },
+      "patch": "plugins/dsh-byq/profiles/dsh-0.1.5rc1-continuable/byq-product.patch.yml",
+      "patch_sha256": "sha256:13cacecd2d90a8da12520d49fad0870b5b827ff199f4bab763c7eb45e67d1676",
+      "permission_mode": "read-only",
+      "profile": "byq-product-continuable-candidate",
+      "release_id": "dsh-0.1.5rc1",
+      "schema_version": "dsh-candidate-profile-identity.v1",
+      "skills": {
+        "include_default_roots": false,
+        "root": "/opt/dsh/bundles/dsh-byq/skills",
+        "watch": false
+      },
+      "telemetry": "disabled"
+    },
+    "status": "PASS",
+    "result": "PASS",
+    "root_session_id": "d15-b2-root-96b04d7b0e044f7e887ab5aef46f0408",
+    "create_status": "ready",
+    "final_status": "idle",
+    "notification_methods": {
+      "session.event": 31,
+      "session.status": 3,
+      "subagent.started": 1
+    },
+    "event_types": {
+      "agent/inbox/spliced": 4,
+      "assistant/message": 2,
+      "request/context": 2,
+      "request/header": 2,
+      "session/title": 2,
+      "step/end": 2,
+      "step/start": 3,
+      "subagent/catalog": 1,
+      "system/message": 2,
+      "tool/call": 1,
+      "tool/result": 1,
+      "turn/end": 1,
+      "turn/start": 2,
+      "user/message": 6
+    },
+    "start_continuable_reached": true,
+    "delegate_result": {
+      "kind": "continuable",
+      "subagentId": "eb1f6b3c-5ac5-47f7-875d-0c322be5290e",
+      "raw_text": "started subagent eb1f6b3c-5ac5-47f7-875d-0c322be5290e"
+    },
+    "started_children": [
+      "eb1f6b3c-5ac5-47f7-875d-0c322be5290e"
+    ],
+    "started_child_links": [
+      {
+        "childSessionId": "eb1f6b3c-5ac5-47f7-875d-0c322be5290e",
+        "parentSessionId": "d15-b2-root-96b04d7b0e044f7e887ab5aef46f0408"
+      }
+    ],
+    "started_child_count": 1,
+    "child_id": "eb1f6b3c-5ac5-47f7-875d-0c322be5290e",
+    "child_store": {
+      "present": true,
+      "file": "session.v3.jsonl.zstd",
+      "relative": "d15-b2-root-96b04d7b0e044f7e887ab5aef46f0408/sessions/--sessions-d15-b2-root-96b04d7b0e044f7e887ab5aef46f0408--/eb1f6b3c-5ac5-47f7-875d-0c322be5290e/session.v3.jsonl.zstd",
+      "header": {}
+    },
+    "child_session_files": [
+      {
+        "relative": "d15-b2-root-96b04d7b0e044f7e887ab5aef46f0408/sessions/--sessions-d15-b2-root-96b04d7b0e044f7e887ab5aef46f0408--/eb1f6b3c-5ac5-47f7-875d-0c322be5290e/session.v3.jsonl.zstd",
+        "name": "session.v3.jsonl.zstd",
+        "size": 5462,
+        "header": {}
+      },
+      {
+        "relative": "d15-b2-root-96b04d7b0e044f7e887ab5aef46f0408/storages/session_projcache/sessions/eb1f6b3c-5ac5-47f7-875d-0c322be5290e.json",
+        "name": "eb1f6b3c-5ac5-47f7-875d-0c322be5290e.json",
+        "size": 3569,
+        "header": {}
+      }
+    ],
+    "child_persisted": true,
+    "child_parent_session": "d15-b2-root-96b04d7b0e044f7e887ab5aef46f0408",
+    "child_linked_to_root": true,
+    "child_descriptor_mode": null,
+    "child_descriptor_mode_measurement": "not_observable_without_zstandard in the isolated image; descriptor v3 mode=continuable for the same candidate composition is proven natively in docs/evidence/d15/d15-4/continuable/continuable-observations.v1.json",
+    "delegation_call_ids": [
+      "d15-b2-delegate-call"
+    ],
+    "delegation_call_id": "d15-b2-delegate-call",
+    "original_goal_ref": "d15-b2-root-96b04d7b0e044f7e887ab5aef46f0408",
+    "settlement_count": null,
+    "settlements": [],
+    "settlement_measurement": "not_observed_at_byq_adapter_boundary",
+    "duplicate_settlement": null,
+    "root_turn_end_count": 1,
+    "child_turn_end_count": 0,
+    "seq_unique_sorted": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23
+    ],
+    "provider_requests": 4,
+    "cleanup": {
+      "adapter_closed": false,
+      "orphan_processes": 0,
+      "basis": "abrupt container termination; the in-process spawn child leaves no OS process"
+    }
+  },
+  "generation_b": {
+    "schema_version": "byq-v090-step5-b2-generation-b.v1",
+    "mode": "b",
+    "candidate": {
+      "release": "dsh-0.1.5rc1",
+      "npm": "0.1.5-rc.1",
+      "python_sdk": "0.1.5rc1"
+    },
+    "process_pid": 1,
+    "container_hostname": "ec826d485a3a",
+    "isolation": {
+      "network": "none",
+      "session_root": "/sessions",
+      "production_selector_changed": false,
+      "fork_or_patch_of_dsh": false
+    },
+    "composition": {
+      "base_profile": "sdk",
+      "composition_hash": "sha256:13cacecd2d90a8da12520d49fad0870b5b827ff199f4bab763c7eb45e67d1676",
+      "continuable_wiring": {
+        "delegate_result_shape": "{kind: continuable, subagentId}",
+        "isolated_candidate_only": true,
+        "native_seam": "SubagentRuntime.startContinuable",
+        "production_selector_unchanged": "dsh-0.1.2rc1"
+      },
+      "delegate_background_mode": "continuable",
+      "delegate_max_depth": 1,
+      "delegates": [
+        "byq_delegate_market_research",
+        "byq_delegate_factor_research",
+        "byq_delegate_strategy_research",
+        "byq_delegate_backtest_analysis",
+        "byq_delegate_ml_research"
+      ],
+      "enabled_plugin_ids": [
+        "compaction",
+        "guard",
+        "web-search"
+      ],
+      "forbidden_tools": [
+        "bash",
+        "pwsh",
+        "jobs",
+        "fs",
+        "fs_search",
+        "str_replace_editor",
+        "subagent",
+        "subagent_fork",
+        "workflow",
+        "todo_write",
+        "goal",
+        "ralph",
+        "web_fetch",
+        "list_agents",
+        "send_message"
+      ],
+      "mcp": {
+        "fail_on_startup_error": true,
+        "server": "byq"
+      },
+      "patch": "plugins/dsh-byq/profiles/dsh-0.1.5rc1-continuable/byq-product.patch.yml",
+      "patch_sha256": "sha256:13cacecd2d90a8da12520d49fad0870b5b827ff199f4bab763c7eb45e67d1676",
+      "permission_mode": "read-only",
+      "profile": "byq-product-continuable-candidate",
+      "release_id": "dsh-0.1.5rc1",
+      "schema_version": "dsh-candidate-profile-identity.v1",
+      "skills": {
+        "include_default_roots": false,
+        "root": "/opt/dsh/bundles/dsh-byq/skills",
+        "watch": false
+      },
+      "telemetry": "disabled"
+    },
+    "status": "BLOCKED",
+    "byq_adapter_surfaces": {
+      "adapter_public_surfaces": [
+        "acknowledge_terminal",
+        "cancel_session",
+        "close",
+        "continuation_qualified",
+        "continuation_receipt",
+        "create_session",
+        "describe_session",
+        "domain_call_evidence",
+        "operations_snapshot",
+        "readiness",
+        "reconcile_prompt",
+        "recover_evidence",
+        "release_session",
+        "resume_session",
+        "runtime_command",
+        "submit_prompt",
+        "subscribe",
+        "unsubscribe"
+      ],
+      "adapter_child_surfaces": [],
+      "compat_child_surfaces": [],
+      "sdk_child_surfaces": [],
+      "child_rebind_candidates": [],
+      "root_resume_surface": true,
+      "forbidden_tools": [
+        "bash",
+        "pwsh",
+        "jobs",
+        "fs",
+        "fs_search",
+        "str_replace_editor",
+        "subagent",
+        "subagent_fork",
+        "workflow",
+        "todo_write",
+        "goal",
+        "ralph",
+        "web_fetch",
+        "list_agents",
+        "send_message"
+      ]
+    },
+    "child_rebind_candidates": [],
+    "child_rebind_via_byq_composition": false,
+    "child_message_delivered": false,
+    "message_id": null,
+    "rebind_errors": [],
+    "root_resume_attempt": {
+      "ok": false,
+      "error": "KeyError: 'unknown BYQ session: d15-b2-root-96b04d7b0e044f7e887ab5aef46f0408'"
+    },
+    "child_as_root_resume_attempt": {
+      "ok": false,
+      "error": "KeyError: 'unknown BYQ session: eb1f6b3c-5ac5-47f7-875d-0c322be5290e'"
+    },
+    "owner_generation_epoch_fail_closed": "no_rebind_surface_to_fence",
+    "child_persisted_same_id": true,
+    "child_store": {
+      "present": true,
+      "file": "session.v3.jsonl.zstd",
+      "relative": "d15-b2-root-96b04d7b0e044f7e887ab5aef46f0408/sessions/--sessions-d15-b2-root-96b04d7b0e044f7e887ab5aef46f0408--/eb1f6b3c-5ac5-47f7-875d-0c322be5290e/session.v3.jsonl.zstd",
+      "header": {}
+    },
+    "child_session_files": [
+      {
+        "relative": "d15-b2-root-96b04d7b0e044f7e887ab5aef46f0408/sessions/--sessions-d15-b2-root-96b04d7b0e044f7e887ab5aef46f0408--/eb1f6b3c-5ac5-47f7-875d-0c322be5290e/session.v3.jsonl.zstd",
+        "name": "session.v3.jsonl.zstd",
+        "size": 5462,
+        "header": {}
+      },
+      {
+        "relative": "d15-b2-root-96b04d7b0e044f7e887ab5aef46f0408/storages/session_projcache/sessions/eb1f6b3c-5ac5-47f7-875d-0c322be5290e.json",
+        "name": "eb1f6b3c-5ac5-47f7-875d-0c322be5290e.json",
+        "size": 3569,
+        "header": {}
+      }
+    ],
+    "composition_forbids_messaging_tools": true,
+    "session_store_dirs": [
+      "byq-lifecycle-evidence",
+      "d15-b2-root-96b04d7b0e044f7e887ab5aef46f0408"
+    ],
+    "second_session_store_created": false,
+    "extra_child_created": false,
+    "orphans": 0,
+    "blocked_reason": "a fresh BYQ runtime-adapter OS process exposes only the root `resume_session` operation, the 0.1.5 Python SDK surface is byte-identical to 0.1.2 and exposes no child/subagent/continuable operation, and the committed candidate composition forbids the native child messaging tools (send_message/list_agents/subagent). There is no committed BYQ composition surface that reaches, messages or cold-resumes the persisted continuable child; the child session file persists on disk with the same id. ADR-0082 Option 2 (a BYQ child-resume bridge) is rejected, so this stays BLOCKED until an upstream out-of-process continuable provider exists."
+  },
+  "process_identity": {
+    "generation_a_pid": 1,
+    "generation_b_pid": 1,
+    "generation_a_container": "53908dde1d74",
+    "generation_b_container": "ec826d485a3a",
+    "new_os_process": true,
+    "fresh_container": true
+  },
+  "substitutions_rejected": [
+    "BYQ child-resume bridge (ADR-0082 Option 2, rejected)",
+    "same-process / same-pid generation as a fresh adapter",
+    "owning-process restart presented as a BYQ child rebind",
+    "root resume_session presented as a child rebind",
+    "label-only PASS without a real composition surface and message receipt"
+  ]
+}

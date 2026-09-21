@@ -24,16 +24,17 @@
 <!-- byq:v090-adr-decisions=complete -->
 <!-- byq:v090-step5-b1-subagent-child-crash=blocked-external -->
 <!-- byq:v090-step5-gsplit-decision=complete -->
+<!-- byq:v090-step5-b2-adapter-restart=blocked-external -->
 <!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->
 <!-- byq:phase-100-p100-c=paused-not-delivery -->
-<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.182 -->
+<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.183 -->
 
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|
 | Product | 最近完成 Phase 97（marker 97） | 未授权任何新的 Product Phase | 维护者阶段性授权 + 本文件 next phase | 一阶段一 worktree/Draft PR；Human Merge Gate；不得自授新 Phase |
 | 数据/资格 | Phase 98 资格与基准冻结已授权（#282，2026-09-17）；Phase 99 `COMPLETE`（#283）；Phase 100 **`PAUSED`**（维护者 #285 于 2026-09-17 开启，冻结 Tushare 6000 数据集范围；P100-A 基金 provider 合同已并入 #286；P100-B 指数每日指标已并入 `main`（#337，base commit 即其合并提交）；P100-C 申万行业存在**未审查实现提交**于隔离分支 `codex/phase-100c`（Draft #338），**paused、not delivered、未审查、未并入 `main`**；P100-D/P100-E 冻结）；Phase 101 `COMPLETE` | 0.9 严格顺序步骤 1（closeout audit）、步骤 2（full-interface re-baseline）、步骤 3（composite research fault regression）与步骤 4（ADR-0082/0083 决定）已完成；步骤 5 首切片 B1（`subagent-child-crash`）已执行并因缺上游进程外 provider 保持 **BLOCKED（external）**；维护者已决定 **`G-split`** 并按严格内部顺序继续（B2 → `terminal-adapter-restart` → `terminal-dsh-runtime-restart`），下一步 B2；见“维护（当前）”行；Phase 100 切片暂停，待维护者明确恢复后才继续 P100-C/D/E；**S3/历史成分准备属 0.10.0，不在 0.9 gate 内** | 维护者开启 Phase 100（#285）+ [V1_DATA_BASELINE_CONTRACT](V1_DATA_BASELINE_CONTRACT.md)「6000 积分可接入的数据集（Phase 100 实施范围）」；ADR-0074 为边界 ADR；Phase 98 授权只覆盖前置资格，**不**覆盖 Phase 100 实施范围 | 仅 Tushare、不用 Community；不支持分钟/实时/港股/特色数据；不得以“接口可调用/单次拉取成功”代替覆盖/时点/单位/许可证据；不改生产状态（除非另有部署授权）；HIST/THS 概念在证明历史可见性前保持 blocked；`codex/phase-100c` 不是交付，不得据此声明 P100-C 完成，不得从未审查分支推断业务完成 |
-| 维护（当前） | **0.9 严格顺序第 5 步 G-split gate-order 决定（`G-split`）**（独立 worktree/分支 `codex/v090-step5-gsplit-decision`，基于动态 `origin/main`；不推进 Product Phase）：B1 `subagent-child-crash`（owner `d15-4-child-provider-remediation`）保持 **BLOCKED（external）** 且为 **mandatory** external gate，**不**降级、**不**删除、**不**改为 optional；G-split 把 external B1 与可独立执行的 internal pre-gate 修复分离，允许按严格内部顺序继续：**B2 `subagent-byq-adapter-restart` → `terminal-adapter-restart` → `terminal-dsh-runtime-restart`**。**不实现 B2**，无 runtime/provider/child-bridge/TerminalAttachment 代码；**未**开始 terminal 切片、D15-G 重跑、R3；D15-G 保持 `NO_GO` 直到 B1 真正 PASS；**0.9 未关闭** | **下一唯一任务**：B2 `subagent-byq-adapter-restart`（owner `d15-4-candidate-composition-hookup`，pre-gate，非 post-GO R6），按严格内部顺序继续；D15-G 保持 `NO_GO` 直到 B1 真正 PASS；本 PR 停在 Draft | 维护者 0.9 步骤 5 G-split 指令 + 本文件 next phase；决定记录 `docs/evidence/v090-closeout/gsplit-decision.v1.json`；ADR-0082 只选 Option 1（未来上游 DSH 进程外 provider） | 不实现 B2 或任何 runtime/provider/child-bridge/TerminalAttachment 代码；不切换生产 selector；不 deploy；不创建/移动 tag/release；不恢复 Phase 100；不触碰 `codex/phase-100c`/PR #338；`R3_RESUME = NO`；D15/R3 保持冻结；不宣称 blocker 已解决或 0.9 已关闭 |
-| 依赖资格（D15） | D15-0/1/2/3/3R 完成（D15-2 格式层、D15-3 原生持久层、D15-3R 隔离 runtime 连续性均 `PASS`）；D15-4 `PARTIAL/BLOCKED`（原生 subagent/fork seam 6 项 + 1 支撑项通过；`child-crash`/BYQ `adapter-restart` `BLOCKED`；host reboot `NOT_RUN`）；D15-5 `PARTIAL/BLOCKED`（真实隔离原生 persistent terminal：page refresh/browser disconnect/frontend restart/gateway restart 四行 `PASS`，跨进程唯一 marker 无重放/丢失、权限不可绕过、错误 terminal 拒绝、stale generation/epoch fenced、清理无孤儿；`adapter-restart` 与 `dsh-runtime-restart` 必需项 `BLOCKED`，host reboot `NOT_RUN`）；D15-G `NO_GO`（NOT-PASS，decision contract + fail-able observer；部分 PASS 不得聚合为 GO；child-crash/BYQ adapter restart/terminal adapter restart/DSH runtime restart 四项必需项未过，host reboot `NOT_RUN`；证据 `docs/evidence/d15/d15-g/`）；R3 冻结、`R3_RESUME=NO` | 无：D15-G 已给出 NO_GO，未授权任何后续 D15/R3/生产切换；R3 解冻需 GO 加 R3/R6 原生连续性证据 | 维护者 D15 目标决策（2026-09-19）+ 专项 D15 计划 | 不改生产 selector；候选隔离；NO_GO 后不恢复 R3；ADR-0082/0083 已于 2026-09-21 获维护者接受（0082 只选 Option 1、Option 2 被拒；0083 as-proposed）但**未实现**，D15-4/D15-5/D15-G 状态与四项 atomic BLOCKED 不变 |
+| 维护（当前） | **0.9 严格顺序第 5 步 G-split 内 B2 `subagent-byq-adapter-restart`**（独立 worktree/分支 `codex/v090-step5-b2-adapter-restart`，基于动态 `origin/main`；不推进 Product Phase）：在**真实隔离候选镜像**内运行真正的 BYQ composition/restart 探针（generation A 真实 `startContinuable` + 精确持久 child/委派/goal 链接 → generation B 全新 OS 进程/容器），结果 **BLOCKED（external/dependency）**：committed BYQ composition 无任何 child rebind/message/resume 表面，且 composition 自身 `forbidden_tools` 禁用 `subagent`/`send_message`/`list_agents`，Option 2 child-resume bridge 被 ADR-0082 拒绝。B1 `subagent-child-crash`（owner `d15-4-child-provider-remediation`）保持 **BLOCKED（external）** 且为 **mandatory** external gate，**不**降级、**不**删除、**不**改为 optional；G-split 严格内部顺序：**B2 `subagent-byq-adapter-restart`（本批执行，BLOCKED）→ `terminal-adapter-restart` → `terminal-dsh-runtime-restart`**。**未**实现 B2 修复、无 BYQ child-resume bridge、无第二 session store、无 runtime/provider/TerminalAttachment 代码；**未**开始 terminal 切片、D15-G 重跑、R3；D15-G 保持 `NO_GO` 直到 B1 真正 PASS；**0.9 未关闭** | **下一唯一任务**：`terminal-adapter-restart`（owner `d15-5-candidate-attachment-layer`，pre-gate，非 post-GO R4），按 G-split 严格内部顺序继续；D15-G 保持 `NO_GO` 直到 B1 真正 PASS；本 PR 停在 Draft | 维护者 0.9 步骤 5 G-split 指令 + 本文件 next phase；G-split 决定记录 `docs/evidence/v090-closeout/gsplit-decision.v1.json`；B2 证据 `docs/evidence/v090-step5-b2-adapter-restart/`；ADR-0082 只选 Option 1（未来上游 DSH 进程外 provider） | 不实现 B2 修复或任何 runtime/provider/child-bridge/TerminalAttachment 代码（本批只运行真实隔离 composition/restart 探针与 fail-able observer）；不切换生产 selector；不 deploy；不创建/移动 tag/release；不恢复 Phase 100；不触碰 `codex/phase-100c`/PR #338；`R3_RESUME = NO`；D15/R3 保持冻结；不宣称 blocker 已解决或 0.9 已关闭 |
+| 依赖资格（D15） | D15-0/1/2/3/3R 完成（D15-2 格式层、D15-3 原生持久层、D15-3R 隔离 runtime 连续性均 `PASS`）；D15-4 `PARTIAL/BLOCKED`（原生 subagent/fork seam 6 项 + 1 支撑项通过；`child-crash`/BYQ `adapter-restart` `BLOCKED`，其中 BYQ `adapter-restart` 已由 0.9 步骤 5 B2 真实 composition/restart 探针复核并保持 `BLOCKED`；host reboot `NOT_RUN`）；D15-5 `PARTIAL/BLOCKED`（真实隔离原生 persistent terminal：page refresh/browser disconnect/frontend restart/gateway restart 四行 `PASS`，跨进程唯一 marker 无重放/丢失、权限不可绕过、错误 terminal 拒绝、stale generation/epoch fenced、清理无孤儿；`adapter-restart` 与 `dsh-runtime-restart` 必需项 `BLOCKED`，host reboot `NOT_RUN`）；D15-G `NO_GO`（NOT-PASS，decision contract + fail-able observer；部分 PASS 不得聚合为 GO；child-crash/BYQ adapter restart/terminal adapter restart/DSH runtime restart 四项必需项未过，host reboot `NOT_RUN`；证据 `docs/evidence/d15/d15-g/`）；R3 冻结、`R3_RESUME=NO` | 无：D15-G 已给出 NO_GO，未授权任何后续 D15/R3/生产切换；R3 解冻需 GO 加 R3/R6 原生连续性证据 | 维护者 D15 目标决策（2026-09-19）+ 专项 D15 计划 | 不改生产 selector；候选隔离；NO_GO 后不恢复 R3；ADR-0082/0083 已于 2026-09-21 获维护者接受（0082 只选 Option 1、Option 2 被拒；0083 as-proposed）但**未实现**，D15-4/D15-5/D15-G 状态与四项 atomic BLOCKED 不变 |
 
 ## 0.9 closeout governance & gap ledger audit（2026-09-20，权威维护条目）
 
@@ -65,7 +66,11 @@ Community 豁免、不用当前关系回填）。**0.9 严格顺序不以 S3 开
      执行首切片并确认 external blocker**（`docs/evidence/v090-d15-child-provider-remediation/`：
      真实原生 gate 证明唯一 continuable provider 为 in-process，进程外 provider 全部
      `UNSUPPORTED_CAPABILITY`）；**需维护者 gate-order 决定**后才可继续；
-   - `subagent-byq-adapter-restart`（owner `d15-4-candidate-composition-hookup`）——**未开始**；
+   - `subagent-byq-adapter-restart`（owner `d15-4-candidate-composition-hookup`）——**已于
+     2026-09-21 在 G-split 内执行**（真实隔离候选镜像 composition/restart 探针 + fail-able
+     observer）：generation A 真实 `startContinuable` 并持久 child/委派/goal 链接，generation B
+     全新 OS 进程无法经 committed BYQ composition 重绑 child；**保持 BLOCKED（external/dependency）**；
+     证据 `docs/evidence/v090-step5-b2-adapter-restart/`；
    - `terminal-adapter-restart` / `terminal-dsh-runtime-restart`（owner `d15-5-candidate-attachment-layer`，非 post-GO R4）——**未开始**。
    每项独立 Draft PR；owner 必须在 D15-G gate 之前，未 PASS 不进入下一项。
 6. D15-G 重跑；仅当全部必须 atomic 项 PASS 才可 GO。若 B1 仍为 external blocker，维护者必须显式
@@ -209,6 +214,41 @@ G-split 指令；本记录不伪造 GitHub approval。
   `tests/test_v090_gsplit_decision.py` 与 `tests/test_v090_closeout_governance.py` 守门。
 - 构建身份推进 `post-u8.181 → post-u8.182`（`tests/` 属 build inputs，仅重建身份；历史 manifest
   与全部证据保留）。
+
+## 0.9 step-5 B2 `subagent-byq-adapter-restart`（2026-09-21，权威维护条目）
+
+本批在 G-split 严格内部顺序内执行 **B2 `subagent-byq-adapter-restart`**，owner
+`d15-4-candidate-composition-hookup`（独立 worktree/分支 `codex/v090-step5-b2-adapter-restart`，
+基于动态 `origin/main`）。这是维护/资格，不推进 Product Phase，**不实现** ADR-0082 的
+Option 2（BYQ child-resume bridge **被拒**），不建第二个 session store/generic harness，
+不切换生产 selector，不 deploy，不创建/移动 tag/release，不恢复 Phase 100，不触碰
+`codex/phase-100c`/PR #338，不做 Community 检查或复制，不 fork/patch DSH。
+
+- **真实隔离 composition/restart 探针**：`scripts/d15/subagent/byq_adapter_restart_probe.py`
+  在真实 `byq-d15-4-continuable-candidate:local`（candidate 0.1.5-rc.1 + 真实
+  `RuntimeAdapter` + candidate continuable composition；`--network none`、keyless scripted
+  provider）中把 generation A 与 generation B 作为**独立容器/OS 进程**运行，共享同一 durable
+  session root。
+- **结果 = external/dependency BLOCKED**：generation A 真实到达 `startContinuable`
+  （`byq_delegate_market_research` 返回 `{kind: continuable, subagentId}`、child 持久且
+  `subagent.started` 链接到 root、精确 delegation call id、恰好 1 个 child）；generation B
+  是全新 OS 进程/容器且 child 文件同 id 持久，但 **committed BYQ composition 无任何
+  child rebind/message/resume 表面**：adapter 仅暴露 root `resume_session`，`0.1.5` Python SDK
+  与 `0.1.2` 逐字节相同、无 child 操作，且 composition 自身 `forbidden_tools` 禁用
+  `subagent`/`subagent_fork`/`send_message`/`list_agents`。`resume_session(child_id)` 真实
+  fail-closed（`KeyError: unknown BYQ session`）。无第二 session store、无额外 child、无孤儿。
+- **observer 可失败**：`byq_adapter_restart_observer.py --selfcheck` 27 项控制全部对修复后门禁
+  非零（25 项 defect-targeting，修复前 result-trusting 门禁会误报）；提交的 `verdict.v1.json`
+  `format_valid=true`、`all_pass=false`、`external_blocked=true`、exit 1。
+- **未开始**：`terminal-adapter-restart`、`terminal-dsh-runtime-restart`、D15-G 重跑、
+  R3/R4/R5/R6。**`R3_RESUME = NO`**；D15/R3 保持冻结；**0.9 未关闭**。
+- **下一唯一任务**：`terminal-adapter-restart`（owner `d15-5-candidate-attachment-layer`，
+  pre-gate，非 post-GO R4），按 G-split 严格内部顺序继续。
+- 证据 `docs/evidence/v090-step5-b2-adapter-restart/`（composition observation、probe
+  provenance、fail-able observer verdict、external-blocked、27 项 focused negatives），由
+  `tests/test_v090_step5_b2_adapter_restart.py` 断言。构建身份推进
+  `post-u8.182 → post-u8.183`（`scripts/`、`tests/` 属 build inputs，仅重建身份；历史
+  manifest 与全部证据保留）。
 
 ## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19，历史叙述）
 
