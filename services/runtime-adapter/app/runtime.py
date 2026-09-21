@@ -997,7 +997,10 @@ class RuntimeAdapter:
         prompt is NOT a live/complete accepted result, so this returns
         ``outcome_unknown`` and the Gateway reaches the existing recovery seam
         (Backend-minted carrier + Adapter admission) instead of short-circuiting.
-        A normal completion has no containment record and is unchanged.
+        A normal completion has no containment record and is unchanged. When the
+        containment evidence cannot be read or is conflicting, the authority that
+        would prove the run is alive is unavailable, so this fails closed with
+        ``outcome_unknown`` rather than reporting a possibly-lost run as ``accepted``.
         """
 
         if not isinstance(receipt, dict) or receipt.get("state") != "accepted":
@@ -1008,7 +1011,7 @@ class RuntimeAdapter:
         try:
             records = containment.read(self._session_root / "byq-lifecycle-evidence", session_id)
         except (OSError, ValueError, containment.ContainmentConflict):
-            return receipt
+            return {"schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
         if any(record.get("interrupted_run_id") == run_id for record in records):
             return {"schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
         return receipt

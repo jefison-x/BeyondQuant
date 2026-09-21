@@ -392,7 +392,74 @@ def test_lost_original_prompt_is_never_reconciled_as_accepted(tmp_path, monkeypa
         FakeHarness.allow_run.set()
 
 
-def test_recovery_envelope_violation_stops_the_run():
+def test_reconcile_prompt_stays_accepted_without_containment_evidence(tmp_path, monkeypatch):
+    """No containment record at all leaves a normal accepted receipt unchanged."""
+
+    from app import runtime as runtime_module
+    from app.runtime import RuntimeAdapter
+
+    FakeHarness.reset()
+    adapter = _root_scoped_adapter(tmp_path, monkeypatch)
+    monkeypatch.setattr(runtime_module, "read_guard", lambda *args, **kwargs: {"charged_tokens": 1})
+    monkeypatch.setattr(FakeHarness, "close", lambda self: None)
+    try:
+        adapter.create_session("norec-1", "norec-trace", "alice", "workspace_alice")
+        reservation = _plain_reservation()
+        content = "synthetic live research"
+        adapter.submit_prompt("norec-1", content, idempotency_key=reservation["reservation_id"],
+                              conversation_context=[], continuation_budget=reservation)
+        assert FakeHarness.run_started.wait(2.0)
+        identity = json.dumps({"content": content, "reservation": reservation},
+                              sort_keys=True, separators=(",", ":"))
+        digest = hashlib.sha256(identity.encode()).hexdigest()
+        receipt = adapter.reconcile_prompt("norec-1", reservation["reservation_id"], digest)
+        assert receipt["state"] == "accepted"
+        assert isinstance(receipt.get("run_id"), str)
+    finally:
+        adapter.close()
+        FakeHarness.allow_run.set()
+
+
+def test_reconcile_prompt_fails_closed_on_unreadable_containment(tmp_path, monkeypatch):
+    """Corrupt/conflicting containment authority is NOT an accepted result."""
+
+    from app import containment
+    from app import runtime as runtime_module
+    from app.runtime import RuntimeAdapter
+
+    FakeHarness.reset()
+    adapter = _root_scoped_adapter(tmp_path, monkeypatch)
+    monkeypatch.setattr(runtime_module, "read_guard", lambda *args, **kwargs: {"charged_tokens": 1})
+    monkeypatch.setattr(FakeHarness, "close", lambda self: None)
+    try:
+        adapter.create_session("badrec-1", "badrec-trace", "alice", "workspace_alice")
+        reservation = _plain_reservation()
+        content = "synthetic corrupted-evidence research"
+        adapter.submit_prompt("badrec-1", content, idempotency_key=reservation["reservation_id"],
+                              conversation_context=[], continuation_budget=reservation)
+        assert FakeHarness.run_started.wait(2.0)
+        identity = json.dumps({"content": content, "reservation": reservation},
+                              sort_keys=True, separators=(",", ":"))
+        digest = hashlib.sha256(identity.encode()).hexdigest()
+        # Control: the live receipt is accepted while the evidence is readable.
+        assert adapter.reconcile_prompt("badrec-1", reservation["reservation_id"], digest)["state"] == "accepted"
+
+        def _conflict(*args, **kwargs):
+            raise containment.ContainmentConflict("containment evidence is unreadable")
+
+        monkeypatch.setattr(containment, "read", _conflict)
+        assert adapter.reconcile_prompt("badrec-1", reservation["reservation_id"], digest) == {
+            "schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
+
+        # A raw OSError from the reader is the same unknown-authority condition.
+        monkeypatch.setattr(containment, "read",
+                            lambda *args, **kwargs: (_ for _ in ()).throw(OSError("io error")))
+        assert adapter.reconcile_prompt("badrec-1", reservation["reservation_id"], digest) == {
+            "schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
+    finally:
+        adapter.close()
+        FakeHarness.allow_run.set()
+
     """The Backend's runtime recovery-mode rejection is a stop, not a soft error."""
 
     from app.runtime import RuntimeAdapter
