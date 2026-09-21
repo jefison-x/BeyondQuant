@@ -35,7 +35,7 @@
 <!-- byq:session-failure-containment-next=authoritative-step-safety-budget-rescheduling-implementation -->
 <!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->
 <!-- byq:phase-100-p100-c=paused-not-delivery -->
-<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.192 -->
+<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.193 -->
 
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|
@@ -545,39 +545,53 @@ tag/release，不恢复 Phase 100，不触碰 `codex/phase-100c`/PR #338，不�
   reservation 行与按 sequence 闭合的 occurred-call 集的绑定；有界、按 ordinal 恰一次、
   receipt-first 的原行 rearm。MCP 工具描述、客户端 step 字段、prompt 文本与“最后一次调用”
   启发式均**不是**权威。
-- **Minimal design**：contract mapping 保留 `session_failure_containment`；step-safety 必须使用
-  同一 session/trace/generation/root-run 的 `agent_domain_call_evidence`，**按 sequence 闭合**
-  （起点 1、严格连续）并逐调用对账（success→settled 不重放；claimed/executing→paused；
-  gap/未知/冲突/不可查→`paused`/`blocked`；零证据的已派发 run→`paused`；无 task reservation 的
-  普通回合→`paused`）；仅当全部已发生副作用 settled 且待重放 action 均为
-  idempotent+result_verifiable 才 `eligible`。**不创建新 reservation**（`research_continuation.py:309-310`
-  在旧行未 settled 时拒绝；`563-567` 已把派发行置 `outcome_unknown`），改为在**原行内 rearm**，
-  同一 `reservation_id`/`event_key`/`token_limit`；recovery ordinal 在 task 行 `FOR UPDATE` 下原子
-  分配（`RECOVERY_ATTEMPT_MAX=3`），确定性身份
-  `recovery-v1:<sha256(event_key+interrupted_run_id+':'+k)>` 仅用于审计/对账，恰一次由锁定的
-  ordinal 保证，且与传输 `dispatch_attempts` 分离。budget 公式计入 `outcome_unknown` 的**未知
-  负债**（`charged_tokens` 为 `None` 时不算 0、不退款；缺 guard receipt 即 `None`→`paused`），
-  `available = min(permission_remaining, reservation_remaining)`。
+- **Minimal design**：contract mapping 保留 `session_failure_containment`。**身份分离（P1-F）**：
+  budget 权威身份仍是原 `reservation_id`；每次恢复提交身份是 Backend 原子签发/持久化的
+  `recovery_attempt_key`（作为 prompt idempotency key，避免 Adapter 因同 key 的旧 accepted
+  receipt 直接返回旧 run；`runtime.py:780-789`/`806-809`）；carrier
+  `task-continuation-reservation.v1` 增加 closed `recovery_attempt` 子记录，Adapter 校验并绑定
+  `reservation_id`/ordinal 与 epoch/generation fence，**client/model 不得铸造**。**每 attempt
+  独立 receipt（P1-G）**：prompt/guard/settlement 以 `attempt_key.json` 为身份、不可覆盖，绑定
+  `{reservation_id, ordinal, run_id, charged_tokens, settlement_sha256}`；Backend 行内
+  `recovery_attempts` 为最终聚合；累计精确费用 ≤ `R.token_limit`；未知费用→`paused`。
+  **trigger-key 去重后分配 ordinal（P1-H）**：
+  `trigger_key=sha256(reservation_id+interrupted_run_id+interrupted_generation+containment_attempt+executor_epoch)`；
+  同一 trigger 在 task 行 `FOR UPDATE` 下返回既有 attempt，仅新的 fenced loss 才分配下一 ordinal
+  （cap 3，`dispatch_attempts` 仍只是传输重试）。step-safety 改为 **session-global cursor
+  closure（P1-I）**：分页到 `more=false` 并验证全局 `1..N` 连续，再按 root 过滤；目标子集只须
+  严格递增、**不必从 1 开始**（同 session 的第二个 root 首序 >1 合法）；不可读/不完整→`paused`。
+  **recovery-mode admission envelope（P1-K）**：仅允许只读操作，或精确复用原
+  `(action,task_id,idempotency_key,request_sha256,input_sha256)`；模型不得选择/铸造新 key；
+  越界的新写/改 key/发布/下单/付费/不可逆→`blocked`/`paused`；无法预先确定的 replay 不得
+  `eligible`。budget 公式**不再双重扣减（P1-J）**：先验
+  `other_settled + other_unresolved + R.token_limit ≤ P.token_limit`（否则 fail closed），再算
+  `R_available = R.token_limit − cum_exact`（原 attempt 0 或精确费用 + 各 recovery attempt 精确
+  费用；任一未知→`None`/`paused`）；原行 rearm 不是新 turn，`max_turns` 只校验未越权。**数值
+  例**：P.token_limit=100、other settled=30、R ceiling=60、R 累计精确费用=20 → 不变量
+  `30+60≤100`，`R_available=60−20=`**40**（旧公式错误地得 10）。
 - **ADR 决定 = 无需新 ADR（已给出可实现的映射证明）**：设计只扩展既有权威——同一
-  `research_tasks.continuation_budget` 行（行内新增有界 recovery 子记录，**非**独立 store）、
-  closed contract（`session_failure_containment` + closed step-safety registry，非持久化权威）、
-  既有 per-call receipt/有序 call evidence（非新信任主体）、既有 Gateway→Backend
-  `/internal/task-continuation/...` seam（在其上增加一个操作）与既有 adapter dispatch 路径（非新
-  Plane 边界/新跨 Plane 接口），ADR-0084 gate 分类不变。若后续切片引入独立 recovery store、新
-  public/internal 跨 Plane 权威接口、DB schema/migration（如 per-event_key 唯一索引）、新信任主体
-  或 gate 分类变更，**必须先提出 Proposed ADR（不得 Accepted）**。
+  `research_tasks.continuation_budget` 行（行内按 trigger 键控的有界 recovery 子记录，**非**独立
+  store）、既有 closed contract/carrier + closed step-safety registry（非持久化权威）、既有
+  prompt/guard/settlement receipt 表面按 attempt key 复用（非新 store）、既有 session-global call
+  evidence 与 admission 路径（非新信任主体/跨 Plane 接口）、既有 Gateway→Backend
+  `/internal/task-continuation/...` seam 与既有 adapter dispatch 路径；ADR-0084 gate 分类不变。若
+  后续切片引入独立 recovery store、新 public/internal 跨 Plane 权威接口、DB schema/migration（如
+  per-event_key 唯一索引）、新信任主体或 gate 分类变更，**必须先提出 Proposed ADR（不得
+  Accepted）**。
 - **门禁与边界不变**：**完整 business-recovery gate 仍为 `IN_PROGRESS / BLOCKED_INTERNAL`**
   （本切片是设计，不是实现）；**不生成也不声称** D15 superseding assessment；B1/B2
   `BLOCKED_EXTERNAL`、历史 D15-G `NO_GO`、`R3_RESUME = NO` 全部不改写；未实现原生 child resume；
   未知副作用暂停。
-- **本修订（P1-A..P1-E）**：撤回“新 reservation / 固定单 event key 的 3 次 / unique+advisory
-  lock / registry-only 步骤查找 / `token_limit−charged_tokens`”表述；改为原行 rearm、ordinal
-  身份、真实 task-row `FOR UPDATE` 机制、按 sequence 闭合的 call evidence、含未知负债的 budget
-  公式；每条均有 committed 代码行号支撑（见证据 `design.v1.json.real_code_facts`）。
-- 构建身份：初始设计切片推进 `post-u8.190 → post-u8.191`；本修订（P1-A..P1-E，`tests/` 变更）
-  再推进 `post-u8.191 → post-u8.192`（`scripts/`、`tests/`、
-  `services/runtime-adapter/Dockerfile.post-u8-candidate` 属 build inputs，仅重建身份；历史 `.190`/
-  `.191` manifest 与全部证据保留，不改 selector/`compose.yml`/`deployment.json`/制品）。
+- **本修订（P1-A..P1-K）**：撤回“新 reservation / 固定单 event key 的 3 次 / unique+advisory
+  lock / registry-only 步骤查找 / `token_limit−charged_tokens` / 以 `reservation_id` 直接 rearm /
+  单 settlement slot / 按 root 从 1 连续 / 双重扣减”等表述；改为原行 rearm + 身份分离 + 每
+  attempt receipt + trigger-key 去重 + session-global cursor + 不双扣公式 + recovery admission
+  envelope；均有 committed 代码行号支撑（见 `design.v1.json.real_code_facts`）。
+- 构建身份：初始设计切片推进 `post-u8.190 → post-u8.191`；P1-A..P1-E 修订推进
+  `post-u8.191 → post-u8.192`；本 P1-F..P1-K 修订（`tests/` 变更）再推进
+  `post-u8.192 → post-u8.193`（`scripts/`、`tests/`、
+  `services/runtime-adapter/Dockerfile.post-u8-candidate` 属 build inputs，仅重建身份；历史
+  `.190`/`.191`/`.192` manifest 与全部证据保留，不改 selector/`compose.yml`/`deployment.json`/制品）。
 
 ## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19，历史叙述）
 

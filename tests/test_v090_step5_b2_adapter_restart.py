@@ -38,7 +38,7 @@ BLOCKED = EVIDENCE / "external-blocked.v1.json"
 CONTROLS = EVIDENCE / "negative-controls.v1.json"
 PROVENANCE = EVIDENCE / "probe-provenance.v1.json"
 COMPOSITION_IDENTITY = ROOT / "plugins/dsh-byq/profiles/dsh-0.1.5rc1-continuable/byq-product.identity.json"
-CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.192"
+CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.193"
 
 B2 = "subagent-byq-adapter-restart"
 B2_OWNER = "d15-4-candidate-composition-hookup"

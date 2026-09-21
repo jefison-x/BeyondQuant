@@ -40,22 +40,26 @@ server-side step-safety + budget binding + safe rescheduling.
 
 **Design slice status (2026-09-21): delivered as design/evidence only, one isolated worktree/Draft
 PR** (`docs/evidence/v090-step-safety-design/`; no runtime code). The inventory records the existing
-authorities and the three missing pieces; the minimal design keeps
-`packages/contracts/session_failure_containment.py` closed, derives step-safety from a closed action
-registry **and** the sequence-ordered `agent_domain_call_evidence` set (zero evidence for a
-dispatched run, sequence gaps, unknown, conflict or unqueryable → `paused`/`blocked`), binds budget
-to the **original** Backend `research_tasks.continuation_budget` row via an in-row rearm (no new
-reservation: a new row is rejected while any row is non-settled and a lost dispatch is
-`outcome_unknown`), allocates a bounded `recovery_attempt` ordinal atomically under the task-row
-`SELECT ... FOR UPDATE` (with transport `dispatch_attempts` kept separate), and treats
-`outcome_unknown` cost as an unknown liability that is never zero and never refunded. It concludes
-existing components suffice, so **no new ADR is required**; a later slice that needs an independent
-recovery store, a new cross-Plane authority interface, a DB migration or a new trust subject must
-propose an ADR first. The next sole task is the bounded exactly-once (per ordinal) receipt-first
-rearm implementation. Per ADR-0084 migration step 4, the named D15 superseding assessment is a
-**separate** follow-up only after the full gate passes; the design PR does not create or claim it,
-keeps B1/B2 `BLOCKED_EXTERNAL`, D15-G `NO_GO` and `R3_RESUME = NO`, keeps the gate
-`IN_PROGRESS / BLOCKED_INTERNAL`, and does not implement native child resume.
+authorities and the missing pieces; the minimal design keeps
+`packages/contracts/session_failure_containment.py` closed and adds: (1) **identity separation** —
+budget authority stays the original `reservation_id`, while each recovery submission uses a
+Backend-minted `recovery_attempt_key` (the Adapter otherwise returns the lost old run for a reused
+prompt key and forces the key to `reservation_id`); (2) **per-attempt receipts** bound to
+`{reservation_id, ordinal, run_id, charged_tokens, settlement_sha256}` with the Backend row as the
+final aggregate; (3) **trigger-key dedup** before ordinal allocation (same fenced loss returns the
+existing attempt; only a new loss allocates the next ordinal, cap 3); (4) **session-global cursor
+closure** (pages until `more=false`, global `1..N` contiguous, then per-root filter; a second root's
+first sequence > 1 is legal); (5) a **no-double-deduction** budget formula
+(`R_available = R.token_limit − cum_exact` after the grant invariant, e.g. P=100/other=30/R=60/
+charge=20 → 40, not 10); and (6) a **recovery-mode admission envelope** (read-only, or exact reuse
+of the original safe call; the model never mints new keys; undeterminable work is not `eligible`).
+It concludes existing components suffice, so **no new ADR is required**; a later slice that needs an
+independent recovery store, a new cross-Plane authority interface, a DB migration or a new trust
+subject must propose an ADR first. The next sole task is the bounded exactly-once receipt-first
+rearm implementation under those constraints. Per ADR-0084 migration step 4, the named D15
+superseding assessment is a **separate** follow-up only after the full gate passes; the design PR
+does not create or claim it, keeps B1/B2 `BLOCKED_EXTERNAL`, D15-G `NO_GO` and `R3_RESUME = NO`,
+keeps the gate `IN_PROGRESS / BLOCKED_INTERNAL`, and does not implement native child resume.
 
 After 0.10 data/HIST/deep-environment qualification, execute a named 1.0 matrix review that
 classifies planned capabilities as `core`, `extended` or `deferred`. Only the accepted `core`
