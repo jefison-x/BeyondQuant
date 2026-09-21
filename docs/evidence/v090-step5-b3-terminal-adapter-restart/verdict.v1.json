@@ -1,0 +1,348 @@
+{
+  "all_pass": true,
+  "candidate": {
+    "npm": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1",
+    "release": "dsh-0.1.5rc1"
+  },
+  "cross_checks": [
+    {
+      "assertions": {
+        "attachment_id_byq_minted": true,
+        "attachment_id_not_native_identity": true,
+        "audit_linkage_present": true,
+        "durable_store_persisted": true,
+        "no_second_session_store": true,
+        "record_has_owner_generation_epoch_state": true,
+        "reloaded_same_attachment_id": true
+      },
+      "assertions_ok": true,
+      "id": "durable-attachment-lifecycle",
+      "observation_keys": [
+        "attachmentId",
+        "attachmentIdByqMinted",
+        "attachmentIdNotNativeIdentity",
+        "auditEvents",
+        "auditLinkagePresent",
+        "durableStorePersisted",
+        "nativePid",
+        "nativeSessionId",
+        "oneStoreFile",
+        "recordHasOwnerGenerationEpochState",
+        "reloadedSameAttachmentId"
+      ],
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "foreign_owner_read_rejected": true,
+        "foreign_owner_send_rejected": true,
+        "foreign_principal_rejected": true
+      },
+      "assertions_ok": true,
+      "id": "permission-boundary",
+      "observation_keys": [
+        "foreignPrincipalError",
+        "foreignReadError",
+        "foreignSendError"
+      ],
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "current_generation_accepted_or_honest": true,
+        "stale_epoch_rejected": true,
+        "stale_generation_rejected": true
+      },
+      "assertions_ok": true,
+      "id": "stale-generation-fenced",
+      "observation_keys": [
+        "currentEpoch",
+        "currentGeneration",
+        "currentRebindOk",
+        "lostWorldStaleEpochError",
+        "lostWorldStaleGenerationError",
+        "lostWorldValidTokenHonestLost",
+        "staleEpochError",
+        "staleGenerationError"
+      ],
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "unknown_attachment_rejected": true,
+        "wrong_terminal_does_not_reach_real_pty": true
+      },
+      "assertions_ok": true,
+      "id": "wrong-terminal-rejected",
+      "observation_keys": [
+        "realSessionId",
+        "requestedUnknownAttachmentId",
+        "requestedUnknownSessionId",
+        "unknownAttachmentError",
+        "unknownReadError"
+      ],
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "close_idempotent": true,
+        "no_extra_native_session": true,
+        "reattach_idempotent_same_identity": true
+      },
+      "assertions_ok": true,
+      "id": "idempotent-transitions",
+      "observation_keys": [
+        "closeIdempotent",
+        "idempotentReattachSameIdentity",
+        "nativeSessionCountAfterIdempotent"
+      ],
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "all_recorded_pids_dead": true,
+        "close_ends_pty": true,
+        "runtime_shutdown_no_orphans": true
+      },
+      "assertions_ok": true,
+      "id": "cleanup-no-orphans",
+      "observation_keys": [
+        "closeEndsPty",
+        "lostWorldOrphans",
+        "survivesWorldOrphans"
+      ],
+      "result": "PASS"
+    }
+  ],
+  "cross_checks_ok": true,
+  "evidence_class": "native-runtime-isolated-b3",
+  "existence_dimensions": [
+    "pty_process",
+    "attachment",
+    "io_rebind",
+    "terminal_identity"
+  ],
+  "exit_code": 0,
+  "failed_scenarios": [],
+  "failures": [],
+  "format_valid": true,
+  "llm_evidence_class": "not-applicable",
+  "negatives": [
+    {
+      "errorClass": null,
+      "errorCode": "UNAUTHORIZED_PRINCIPAL",
+      "kind": "foreign-principal",
+      "rejected": true
+    },
+    {
+      "errorClass": null,
+      "errorCode": "FOREIGN_SESSION",
+      "kind": "foreign-owner-send",
+      "rejected": true
+    },
+    {
+      "errorClass": null,
+      "errorCode": "FOREIGN_SESSION",
+      "kind": "foreign-owner-read",
+      "rejected": true
+    },
+    {
+      "errorClass": null,
+      "errorCode": "UNKNOWN_ATTACHMENT",
+      "kind": "unknown-attachment",
+      "rejected": true
+    },
+    {
+      "errorClass": null,
+      "errorCode": "NO_SESSION",
+      "kind": "unknown-terminal",
+      "rejected": true
+    },
+    {
+      "errorClass": null,
+      "errorCode": "STALE_GENERATION",
+      "kind": "stale-generation",
+      "rejected": true
+    },
+    {
+      "errorClass": null,
+      "errorCode": "STALE_EPOCH",
+      "kind": "stale-epoch",
+      "rejected": true
+    },
+    {
+      "errorClass": null,
+      "errorCode": "NATIVE_SESSION_UNAVAILABLE",
+      "kind": "fake-reattach-after-native-loss",
+      "rejected": true
+    }
+  ],
+  "negatives_ok": true,
+  "optional_coverage": {
+    "host-reboot": "MISSING"
+  },
+  "optional_scenario_count": 1,
+  "qualification_passed": true,
+  "reason_uncovered": [],
+  "required_coverage": {
+    "adapter-restart-native-lost": "PASS",
+    "adapter-restart-native-survives": "PASS"
+  },
+  "required_coverage_ok": true,
+  "required_scenario_count": 2,
+  "scenarios": [
+    {
+      "assertions": {
+        "attachment_present": true,
+        "byq_minted_attachment": true,
+        "durable_attachment_loaded": true,
+        "fresh_adapter_os_process": true,
+        "identity_stable": true,
+        "io_rebind_ok": true,
+        "marker_distinct_value": true,
+        "no_false_reattach": true,
+        "no_loss": true,
+        "pty_process_present": true,
+        "rebind_send_delta_omits_old_marker": true,
+        "same_attachment": true,
+        "same_pty_pid": true,
+        "same_session": true,
+        "scrollback_has_marker_once": true
+      },
+      "assertions_ok": true,
+      "dimensions": {
+        "attachment": "present",
+        "io_rebind": "ok",
+        "pty_process": "present",
+        "terminal_identity": "stable"
+      },
+      "id": "adapter-restart-native-survives",
+      "observation_keys": [
+        "adapterAGeneration",
+        "adapterAPid",
+        "adapterBGeneration",
+        "adapterBPid",
+        "attachmentId",
+        "attachmentIdIsNotNativeId",
+        "attachmentPresent",
+        "auditEvents",
+        "auditLinkagePresent",
+        "byqMintedAttachmentId",
+        "closeEndsPty",
+        "closeIdempotent",
+        "createEpoch",
+        "createGeneration",
+        "durableRecordsLoadedSameId",
+        "durableStoreFilePresent",
+        "expectedAttachmentId",
+        "expectedPid",
+        "expectedSessionId",
+        "fabricatedReattach",
+        "foreignPrincipalError",
+        "foreignReadError",
+        "foreignSendError",
+        "freshAdapterOsProcess",
+        "idempotentReattachSameIdentity",
+        "identityStable",
+        "ioRebindOk",
+        "marker1",
+        "marker1InFirstViewport",
+        "marker1InRebindSendDelta",
+        "marker1InScrollback",
+        "marker2",
+        "marker2InRebindSendDelta",
+        "marker2InScrollback",
+        "nativePid",
+        "nativeSessionCountAfterIdempotent",
+        "nativeSessionId",
+        "observedAttachmentId",
+        "observedPid",
+        "observedSessionId",
+        "orphans",
+        "ptyCmdlineBefore",
+        "ptyProcessPresent",
+        "ptyProcessPresentAtRebind",
+        "reattachOk",
+        "reattachStatus",
+        "recordHasOwnerGenerationEpochState",
+        "requestedUnknownSessionId",
+        "runtimeAPid",
+        "runtimeShutdownOrphans",
+        "sameAttachment",
+        "samePtyPid",
+        "sameSession",
+        "staleEpochError",
+        "staleGenerationError",
+        "temp_root",
+        "temp_root_removed",
+        "unknownAttachmentError",
+        "unknownReadError",
+        "unknownReadRealSessionId"
+      ],
+      "required": true,
+      "result": "PASS"
+    },
+    {
+      "assertions": {
+        "byq_minted_attachment": true,
+        "durable_attachment_loaded": true,
+        "fake_reattach_rejected": true,
+        "fresh_adapter_os_process": true,
+        "honest_lost_status": true,
+        "native_reattach_attempted": true,
+        "native_session_absent": true,
+        "old_pty_pid_dead": true
+      },
+      "assertions_ok": true,
+      "dimensions": {
+        "attachment": "present",
+        "io_rebind": "rejected",
+        "pty_process": "absent",
+        "terminal_identity": "lost"
+      },
+      "id": "adapter-restart-native-lost",
+      "observation_keys": [
+        "adapterCGeneration",
+        "adapterCPid",
+        "adapterDGeneration",
+        "adapterDPid",
+        "attachmentId",
+        "attachmentIdIsNotNativeId",
+        "byqMintedAttachmentId",
+        "closeIdempotent",
+        "durableRecordsLoadedSameId",
+        "durableStoreFilePresent",
+        "fakeReattachRejected",
+        "foreignPrincipalError",
+        "freshAdapterOsProcess",
+        "marker1",
+        "nativePid",
+        "nativeSessionId",
+        "nativeSessionPresent",
+        "nativeSessionsInNewRuntime",
+        "oldPidAliveAfterLoss",
+        "oldPidAliveReported",
+        "orphans",
+        "ptyCmdlineBefore",
+        "reattachAttempted",
+        "reattachOk",
+        "reattachStatus",
+        "rebindError",
+        "runtimeAPid",
+        "runtimeBGeneration",
+        "runtimeBPid",
+        "runtimeGenerationReported",
+        "runtimeShutdownOrphans",
+        "staleEpochError",
+        "staleGenerationError",
+        "temp_root",
+        "temp_root_removed"
+      ],
+      "required": true,
+      "result": "PASS"
+    }
+  ],
+  "schema_version": "byq-v090-step5-b3-verdict.v1",
+  "uncovered_scenarios": []
+}

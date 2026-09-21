@@ -1,0 +1,52 @@
+{
+  "browser_boundary": {
+    "frontend_files_scanned_root": "apps/frontend/src",
+    "frontend_raw_dsh_schema_refs": 0,
+    "frontend_touches_raw_dsh_schema": false
+  },
+  "byq_product_surface": {
+    "byq_exposes_persistent_terminal_product_surface": false,
+    "runtime_adapter_persistent_terminal_route_count": 0,
+    "runtime_adapter_run_terminal_receipt_routes": [
+      "/internal/runtime/sessions/{session_id}/terminal-receipt"
+    ],
+    "runtime_adapter_terminal_routes": [],
+    "terminal_receipt_is_agentrun_evidence_not_pty": true
+  },
+  "candidate": {
+    "npm": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1",
+    "release": "dsh-0.1.5rc1"
+  },
+  "candidate_layer_only": {
+    "b3_files": [
+      "scripts/d15/terminal/adapter_restart_harness.mjs",
+      "scripts/d15/terminal/adapter_restart_observer.py",
+      "scripts/d15/terminal/adapter_restart_contract.v1.json",
+      "scripts/d15/terminal/adapter_restart_scope_probe.py",
+      "scripts/d15/terminal/adapter_restart_provenance.py",
+      "scripts/d15/terminal/run_adapter_restart_probe.sh"
+    ],
+    "confined_to_candidate_layer": true,
+    "missing_b3_files": []
+  },
+  "forbidden_substitutions_present": {},
+  "owner_node": "d15-5-candidate-attachment-layer",
+  "ownership": {
+    "byq_builds_pty_runtime": false,
+    "byq_copies_dsh_terminal": false,
+    "fork_or_patch_of_dsh": false,
+    "second_generic_harness": false,
+    "second_session_store": false,
+    "uses_native_ctx_terminals_seam": true
+  },
+  "production": {
+    "default_release": "dsh-0.1.2rc1",
+    "deployment": "none",
+    "production_selector_changed": false,
+    "r4_productization": false,
+    "release_or_tag_created": false
+  },
+  "schema_version": "byq-v090-step5-b3-scope-probe.v1",
+  "slice": "terminal-adapter-restart"
+}

@@ -12,6 +12,16 @@ This audit deliberately does **not** implement Proposed ADR-0082/0083, does **no
 switch the production selector, does **not** deploy, and does **not** create or move
 any tag/release.
 
+> **Historical snapshot note.** The audit-time fields in this directory are a 2026-09-20
+> snapshot at base `.174`. The current D15/slice state — ADR-0083 accepted with only the
+> candidate/qualification-layer minimal `TerminalAttachment` lifecycle implemented, B3
+> `terminal-adapter-restart` **PASS**, B4 `terminal-dsh-runtime-restart` **BLOCKED / not
+> started**, B1/B2 **BLOCKED**, D15-G **not re-run and still `NO_GO`** — is recorded under
+> `current_state_after_b3` in [acceptance-matrix.v1.json](acceptance-matrix.v1.json) /
+> [gap-ledger.v1.json](gap-ledger.v1.json) and in
+> [STATUS.md](../../roadmap/STATUS.md). The committed `docs/evidence/d15/d15-5` and
+> `docs/evidence/d15/d15-g` verdicts are **not rewritten**.
+
 ## Deliverables in this directory
 
 - [gap-ledger.v1.json](gap-ledger.v1.json) — machine-readable historical-evidence mapping to
@@ -36,6 +46,12 @@ any tag/release.
   composition/restart probe and a fail-able observer; it stays **BLOCKED (external/dependency)**
   with no Option-2 bridge and no second session store. The closeout matrix slice-2 evidence and
   the D15 gap-ledger entry link its machine-readable verdict.
+- [step-5 B3 `terminal-adapter-restart` execution](../v090-step5-b3-terminal-adapter-restart/README.md) —
+  the second internal G-split item was executed 2026-09-21 and **PASSes** at the
+  candidate/qualification layer: the minimal BYQ `TerminalAttachment` lifecycle is implemented
+  and verified (fresh adapter rebinds the same durable attachment when native state survives,
+  otherwise truthful `lost`/`interrupted`). The closeout matrix slice-3 current state is
+  `PASS`; B4 `terminal-dsh-runtime-restart` is **BLOCKED / not started**.
 
 The consistency of these files (schema, status vocabulary, evidence paths, the four
 D15-G atomic blockers, the beta-vs-formal distinction and the frozen constraints) is
@@ -64,7 +80,7 @@ Item-by-item result (business evidence, not old doc PASS or CI labels):
 | composite research fault regression | **open** | Three-round live research covered; composite journey + R1–R5 fault matrix not executed | [remediation scope](../../roadmap/POST_U8_AGENT_RELIABILITY_REMEDIATION.md); [H5 live research](../research-handoff-h5/LIVE-RESEARCH.md); [H5 contract](../research-handoff-h5/COMPLETE-RESEARCH-CONTRACT.md) |
 | H1–H5 | **covered** | H1–H5 completed; H5 real three-round research passed | [handoff plan](../../roadmap/RESEARCH_HANDOFF_PLAN.md); [H2](../research-handoff-h2/AUDIT.md); [H3](../research-handoff-h3/AUDIT.md); [H5](../research-handoff-h5/LIVE-RESEARCH.md) |
 | U8 | **superseded** | `CLOSED_EARLY_REMEDIATION_REQUIRED`; not a stability PASS | [U8 observation](../dsh-012rc1/u8/OBSERVATION.md); [remediation scope](../../roadmap/POST_U8_AGENT_RELIABILITY_REMEDIATION.md); [ADR-0062](../../architecture/adr/ADR-0062-post-u8-reliability-boundaries.md) |
-| D15 | **open** | D15-G `NO_GO`; four atomic required capabilities BLOCKED | [D15-G verdict](../d15/d15-g/verdict.v1.json); [capability matrix](../d15/d15-g/capability-matrix.v1.json); [D15-G decision input](../d15/d15-g/decision-input.v1.json); [D15 plan](../../roadmap/DSH_015RC1_UPGRADE_PLAN.md) |
+| D15 | **open** | D15-G `NO_GO`; four atomic required capabilities BLOCKED (audit-time snapshot). **Current:** `terminal-adapter-restart` PASS (B3, candidate layer), `terminal-dsh-runtime-restart` BLOCKED/not started, B1/B2 BLOCKED, D15-G not re-run | [D15-G verdict](../d15/d15-g/verdict.v1.json); [capability matrix](../d15/d15-g/capability-matrix.v1.json); [D15-G decision input](../d15/d15-g/decision-input.v1.json); [D15 plan](../../roadmap/DSH_015RC1_UPGRADE_PLAN.md); [B3 verdict](../v090-step5-b3-terminal-adapter-restart/verdict.v1.json) |
 
 Summary: **covered 1, superseded 2, open 4, blocked 0** (top-level items). S3 is not a 0.9
 gate item; it is listed under `deferred_to_0_10` in the machine-readable ledger.
@@ -133,9 +149,12 @@ R1–R5 / S1–S3 / F1–F10 remediation. It is not a stability pass.
 - `R3_RESUME = NO`; production selector/default `dsh-0.1.2rc1`; deployment `none`.
 - At audit time ADR-0082 and ADR-0083 were **Proposed, not accepted, not implemented**.
   The 2026-09-21 step-4 maintainer decision accepted them (ADR-0082 modified — Option 1
-  only, Option 2 rejected; ADR-0083 as proposed) but **implemented neither**; the D15-G
+  only, Option 2 rejected; ADR-0083 as proposed). The 2026-09-21 step-5 B3 slice then
+  implemented **only** the candidate/qualification-layer minimal ADR-0083 attachment
+  lifecycle; ADR-0082 and R4/production wiring remain **not implemented**; the D15-G
   blockers remain unresolved and 0.9 is not closed. See
-  [../v090-adr-decisions/README.md](../v090-adr-decisions/README.md).
+  [../v090-adr-decisions/README.md](../v090-adr-decisions/README.md) and
+  [../v090-step5-b3-terminal-adapter-restart/README.md](../v090-step5-b3-terminal-adapter-restart/README.md).
 - No tag/release is created or moved; the historical `v0.9.0-beta` tag is untouched.
 - The paused `codex/phase-100c` branch (Draft PR #338) is **not** delivery and is not
   touched by this audit.

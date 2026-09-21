@@ -1,6 +1,42 @@
 {
   "schema_version": "byq-v090-closeout-acceptance-matrix.v1",
   "generated_at": "2026-09-20",
+  "snapshot": true,
+  "snapshot_kind": "historical-audit-snapshot",
+  "snapshot_note": "Audit-time snapshot at base origin/main 80fb9f8 / build post-u8.174 (2026-09-20). Its audit-time fields (adr_sufficiency, each slice's reproduction.current_state, not_authorized_this_batch, constraints) are preserved as historical and MUST NOT be read as the current D15/slice state. The current qualification state is `current_state_after_b3` below and docs/roadmap/STATUS.md; the committed docs/evidence/d15/d15-5 and docs/evidence/d15/d15-g verdicts are not rewritten and D15-G has not been re-run.",
+  "current_state_authority": "docs/roadmap/STATUS.md",
+  "current_state_after_b3": {
+    "as_of": "2026-09-21",
+    "authority": "docs/roadmap/STATUS.md",
+    "terminal_adapter_restart": {
+      "status": "PASS",
+      "scope": "candidate/qualification layer",
+      "evidence": "docs/evidence/v090-step5-b3-terminal-adapter-restart/verdict.v1.json"
+    },
+    "terminal_dsh_runtime_restart": {
+      "status": "BLOCKED",
+      "started": false
+    },
+    "subagent_child_crash": {
+      "status": "BLOCKED",
+      "external": true
+    },
+    "subagent_byq_adapter_restart": {
+      "status": "BLOCKED",
+      "external_dependency": true
+    },
+    "adr_0083": {
+      "status": "Accepted",
+      "implemented_scope": "candidate/qualification-layer minimal TerminalAttachment lifecycle",
+      "r4_or_production_wiring": "NOT implemented"
+    },
+    "d15_g": {
+      "status": "NO_GO",
+      "rerun": false,
+      "note": "not re-run; even if re-run it stays NO_GO while B1/B2/B4 are not PASS"
+    },
+    "r3_resume": "NO"
+  },
   "scope": "Machine-readable acceptance matrix for the 0.9 closeout. It fixes (a) the formal 0.9.0 release-manifest requirements that the historical v0.9.0-beta tag does not satisfy, (b) the remaining 0.9.x evidence gates, (c) the minimal serial DSH 0.1.5-rc.1 closeout slices with per-blocker owner/reproduction/acceptance/failure-closure, and (d) the ADR-0082/0083 sufficiency items. All statuses are read at the base commit. Proposed ADRs stay Proposed and nothing here is implemented.",
   "base": {
     "origin_main_commit": "80fb9f809a6b796b7e98df23c19640286612a740",
@@ -198,9 +234,12 @@
         "evidence": [
           "docs/evidence/d15/d15-5/verdict.v1.json",
           "docs/evidence/d15/d15-5/interface-probe.v1.json",
-          "docs/evidence/d15/d15-5/scenarios/adapter-restart.v1.json"
+          "docs/evidence/d15/d15-5/scenarios/adapter-restart.v1.json",
+          "docs/evidence/v090-step5-b3-terminal-adapter-restart/verdict.v1.json"
         ]
       },
+      "current_state_after_b3": "PASS",
+      "current_state_after_b3_note": "B3 executed 2026-09-21; the candidate/qualification-layer minimal TerminalAttachment lifecycle is implemented and verified. The reproduction.current_state above is the audit-time D15-5 snapshot and is preserved/not rewritten.",
       "acceptance_criteria": [
         "A BYQ-owned durable TerminalAttachment record (BYQ-minted id, owner principal, generation, executor epoch) is persisted and authorized by BYQ, not by DSH.",
         "After an adapter restart the same attachment is rebound when native state survives, otherwise the status is truthfully lost/interrupted, never reattached.",
@@ -232,6 +271,9 @@
           "docs/evidence/d15/d15-5/scenarios/dsh-runtime-restart.v1.json"
         ]
       },
+      "current_state_after_b3": "BLOCKED",
+      "current_state_after_b3_started": false,
+      "current_state_after_b3_note": "B4 terminal-dsh-runtime-restart has not started; the current state is BLOCKED / not started.",
       "acceptance_criteria": [
         "The BYQ attachment layer records the transition to lost/interrupted and never claims reattach when the native runtime state is gone.",
         "Orphan detection reconciles a surviving PTY with no attachment as lost, never silently reused.",
@@ -341,6 +383,7 @@
   "adr_sufficiency": {
     "ADR-0082": {
       "status": "Proposed, not accepted, not implemented",
+      "snapshot_note": "Audit-time (2026-09-20) review, preserved as historical. The 2026-09-21 step-4 maintainer decision accepted ADR-0082 (modified: Option 1 only, Option 2 rejected) without implementing it; see current_state_after_b3 and docs/evidence/v090-adr-decisions/.",
       "sufficient_to_resolve_blockers": false,
       "findings": [
         "ADR-0082 is a decision gate that lists two options but does not by itself resolve either subagent blocker.",
@@ -358,6 +401,7 @@
     },
     "ADR-0083": {
       "status": "Proposed, not accepted, not implemented",
+      "snapshot_note": "Audit-time (2026-09-20) review, preserved as historical. The 2026-09-21 step-4 maintainer decision accepted ADR-0083 (as proposed) and the 2026-09-21 step-5 B3 slice implemented only the candidate/qualification-layer minimal TerminalAttachment lifecycle; R4/production wiring is NOT implemented; see current_state_after_b3.",
       "sufficient_to_resolve_blockers": false,
       "findings": [
         "ADR-0083 correctly fixes BYQ-owned attachment identity/state/auth/reconnect and DSH-owned PTY/shell/I/O, and requires lost/interrupted instead of fabricated reattach.",
@@ -398,7 +442,7 @@
     "No historical evidence, immutable manifest or old tag may be modified."
   ],
   "not_authorized_this_batch": [
-    "Implementing Proposed ADR-0082 or ADR-0083",
+    "Implementing production wiring / productization of ADR-0082 or ADR-0083 (the candidate/qualification-layer minimal ADR-0083 attachment lifecycle is a separately authorized D15 pre-gate slice, not production wiring and not R4)",
     "Switching the production DSH selector/default",
     "Any deployment",
     "Creating or moving any tag/release"

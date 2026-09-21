@@ -1535,6 +1535,49 @@ manifest and all evidence are preserved unchanged; no selector, `compose.yml`,
 `deployment.json`, immutable release registry or 0.1.2 artifact/evidence change and no
 deployment.
 
+## 0.9 step-5 B3 `terminal-adapter-restart` (maintenance/qualification, 2026-09-21)
+
+This maintenance batch executes B3 `terminal-adapter-restart` (owner node
+`d15-5-candidate-attachment-layer`) as the second internal item of the G-split strict
+order (after B2 stayed BLOCKED-external). It is **candidate/qualification-layer** work:
+it implements and verifies the minimal BYQ `TerminalAttachment` lifecycle accepted by
+ADR-0083 but does **not** productize it (no R4), does not switch the production selector,
+does not deploy and does not create or move any tag/release. It does not start
+`terminal-dsh-runtime-restart` (B4), D15-G re-run or R3/R4/R5/R6, does not inspect or copy
+the Community repository and does not resume frozen Phase 100.
+
+- BYQ owns only a bounded durable attachment record (BYQ-minted attachment id, owner
+  principal/authorization, runtime generation, executor epoch, state and audit linkage);
+  DSH continues to own the PTY/shell/process/IO. BYQ builds no PTY runtime, copies no DSH
+  terminal, builds no second generic harness/store and never persists or fabricates the
+  native PTY (`scripts/d15/terminal/adapter_restart_harness.mjs`).
+- Generation A establishes a real native persistent terminal plus a durable BYQ attachment
+  in separate OS processes. Aborting the BYQ adapter OS process and starting a fresh
+  adapter generation B is exercised in two real branches:
+  - **native reachable** -> generation B reloads the same durable attachment, authorizes
+    and generation-validates it and rebinds the SAME attachment/native session/PTY pid with
+    a unique marker (no replay, no loss);
+  - **native lost** (committed topology: the adapter restart takes the native runtime with
+    it) -> generation B deterministically reports `lost`/`interrupted` and rejects a fake
+    reattach. Per ADR-0083 this honest state is the acceptance.
+- A fail-able observer (`scripts/d15/terminal/adapter_restart_observer.py`, 32 focused
+  non-zero controls, 29 defect-targeting) derives the verdict and explicitly distinguishes
+  a correct honest `lost`/`interrupted` from a not-implemented/label-only PASS by requiring
+  the positive fresh-adapter rebind of a durable attachment before the honest loss can pass.
+  The committed verdict is `format_valid=true`, `all_pass=true`, exit 0.
+- Evidence: `docs/evidence/v090-step5-b3-terminal-adapter-restart/` (native observations,
+  verdict, negative controls, scope probe, provenance), asserted by
+  `tests/test_v090_step5_b3_terminal_adapter_restart.py`. Next in the G-split strict
+  internal order: `terminal-dsh-runtime-restart` (B4), **not started** here. D15-G stays
+  `NO_GO` until B1 truly PASSes; `R3_RESUME = NO`; 0.9 is **not** closed.
+
+Build revision: this batch changes `scripts/`, `tests/` and the candidate Dockerfile
+(build inputs) and advances the production runtime build identity
+`post-u8.183 → post-u8.184` (unused id). Rebuild identity only: the historical `.183`
+manifest and all evidence are preserved unchanged; no selector, `compose.yml`,
+`deployment.json`, immutable release registry or 0.1.2 artifact/evidence change and no
+deployment.
+
 ## Maintenance — Delist-boundary coverage correction (ADR-0028)（构建修订 `dsh-0.1.2rc1-post-u8.130`，PR #299）
 
 ADR-0028 point 2 evaluates coverage over each symbol's frozen listing lifecycle. The market-readiness

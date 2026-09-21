@@ -1,0 +1,67 @@
+{
+  "artifacts": {
+    "contract": {
+      "path": "scripts/d15/terminal/adapter_restart_contract.v1.json",
+      "sha256": "sha256:dff21a3b32404502d9d8d9d7a9e299ec3e8d5f15c4526309b2b813839c8f9346"
+    },
+    "harness": {
+      "path": "scripts/d15/terminal/adapter_restart_harness.mjs",
+      "sha256": "sha256:56c64efdff3224ebcbab69175c691da1703eabba89a1da5e5f40af44ef4b1666"
+    },
+    "observer": {
+      "path": "scripts/d15/terminal/adapter_restart_observer.py",
+      "sha256": "sha256:9f29b7954d0043062692a2e67cff0ef09b6b7a7a907d690991d44a7e6ba44dca"
+    },
+    "package": {
+      "path": "scripts/d15/terminal/package.json",
+      "sha256": "sha256:3b61f6a5e27d146994b72c4753c4e1c2320cd3d0cc5bbd26200a16b72e289a84"
+    },
+    "package_lock": {
+      "path": "scripts/d15/terminal/package-lock.json",
+      "sha256": "sha256:c58a3d0ef40822cdf14ce6956551b2b59abff9a20ef16f9224a683c55864af78"
+    },
+    "runner": {
+      "path": "scripts/d15/terminal/run_adapter_restart_probe.sh",
+      "sha256": "sha256:efc0e17ce2c472982f4ae321c0915013f362d252834a3680d3e5858c3f143307"
+    },
+    "scope_probe": {
+      "path": "scripts/d15/terminal/adapter_restart_scope_probe.py",
+      "sha256": "sha256:2b358e3491b6d85af364e862cba44db780ee6bdb8aeb7110c13c242d0885698d"
+    }
+  },
+  "candidate": {
+    "npm": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1",
+    "release": "dsh-0.1.5rc1"
+  },
+  "constraints": {
+    "byq_builds_pty_runtime": false,
+    "byq_copies_dsh_terminal": false,
+    "r4_productization": false,
+    "second_generic_harness": false,
+    "second_session_store": false
+  },
+  "environment": {
+    "node": "v22.23.2",
+    "os": "Linux",
+    "python": "3.14.4"
+  },
+  "isolation": {
+    "database_changes": "none",
+    "deployment": "none",
+    "docker_image_used": false,
+    "evidence_class": "native-runtime-isolated-b3",
+    "fork_or_patch_of_dsh": false,
+    "network": "none required at run time (npm install only)",
+    "processes": "separate OS processes per native runtime generation, per BYQ adapter generation and per client action",
+    "production_selector": "dsh-0.1.2rc1",
+    "production_selector_changed": false,
+    "r3_resume": "NO",
+    "release_or_tag_created": false,
+    "runtime": "real native @deepseek-ai/dsh-terminal + @deepseek-ai/dsh-terminal-bash closure via npm"
+  },
+  "missing_artifacts": [],
+  "owner_node": "d15-5-candidate-attachment-layer",
+  "schema_version": "byq-v090-step5-b3-provenance.v1",
+  "slice": "terminal-adapter-restart"
+}
