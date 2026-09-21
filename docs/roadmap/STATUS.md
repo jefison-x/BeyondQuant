@@ -27,18 +27,19 @@
 <!-- byq:v090-step5-b2-adapter-restart=blocked-external -->
 <!-- byq:v090-step5-b3-terminal-adapter-restart=complete -->
 <!-- byq:v090-step5-b4-terminal-dsh-runtime-restart=complete -->
+<!-- byq:v090-dsh-provider-qualification=blocked-external -->
 <!-- byq:adr-0084=accepted -->
 <!-- byq:session-failure-containment=next -->
 <!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->
 <!-- byq:phase-100-p100-c=paused-not-delivery -->
-<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.185 -->
+<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.189 -->
 
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|
 | Product | 最近完成 Phase 97（marker 97） | 未授权任何新的 Product Phase | 维护者阶段性授权 + 本文件 next phase | 一阶段一 worktree/Draft PR；Human Merge Gate；不得自授新 Phase |
 | 数据/资格 | Phase 98/99 `COMPLETE`；Phase 100 `PAUSED`：P100-A/P100-B 已并入 `main`，P100-C 只存在于暂停且未交付的 Draft #338，P100-D/P100-E 冻结；Phase 101 `COMPLETE`。S3/历史成分准备属于 0.10.0，不是 0.9 gate。 | 等待 0.9 的 BYQ failure-containment 与 superseding assessment 收口；之后仅在维护者恢复 Phase 100 时继续 P100-C/D/E，并在 0.10 资格结束后执行 1.0 `core`/`extended`/`deferred` 范围复核 | Phase 100 原授权 + ADR-0074/0084 | 仅 Tushare；不得从未审查分支推断完成；数据来源、时点、单位、许可与完整性失败继续 fail closed；不因外部可选能力冻结无关调查 |
-| 维护（当前） | **ADR-0084 门禁合理化与 0.9 收口治理**：维护者已于 2026-09-21 明确接受完整决定；B3 `terminal-adapter-restart` 与 B4 `terminal-dsh-runtime-restart` 保持候选/资格层 PASS；B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 继续保持真实 `BLOCKED_EXTERNAL`，历史 D15-G 继续为 `NO_GO` 且不改写，但这些外部能力不再是 0.9 收口、候选兼容判断、受限 R3 失败隔离或无关 0.10 工作的全局硬前置。 | **下一唯一实现任务（本治理 PR 合并后）**：独立实现并验收 BYQ session failure containment and business recovery：执行者失联检测、未完成 run→`interrupted`、旧 generation/epoch 与迟到终态 fencing、conversation/durable job/回执保留、仅幂等且可核对步骤的安全重调度、未知副作用暂停。通过后生成新的 D15 superseding assessment，再决定 0.1.5-rc.1 候选晋升范围。 | 维护者明确接受 ADR-0084；ADR-0081/0082/0058/0071/0074 的 superseding 修订 | 不改写历史 verdict；不实现 DSH 进程外 provider 或第二通用 harness；不自动解冻 R3；不切换生产 selector；不部署；不创建/移动 tag/release；不恢复 Phase 100；每个实现切片使用独立 worktree/PR |
-| 依赖资格（D15） | **当前资格状态（B4 之后，2026-09-21）**；ADR-0084 已接受：`terminal-adapter-restart` = **PASS**、`terminal-dsh-runtime-restart` = **PASS**（均为候选/资格层）；B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 为 `BLOCKED_EXTERNAL`；ADR-0083 仅候选/资格层最小实现完成；R4 / production wiring NOT implemented。D15-G **未重跑**，按当前 B1/B2 状态即使重跑仍为 `NO_GO`；**历史已提交快照（不改写）**：D15-4/D15-5/D15-G committed evidence 保持原样。外部 blocker 只阻塞原生独立 child 恢复声明，不再形成全局停止。 | 在 BYQ failure-containment 切片通过后生成具名 superseding assessment；按实际采用范围判断候选兼容与晋升，不等待上游 provider 才继续无关路线 | ADR-0084 + ADR-0081/0082；历史证据与 B3/B4 current overlay | `R3_RESUME` 不因文档决定自动变为 YES；不得把 B1/B2 标为 PASS；不得改写历史 D15 verdict；生产切换、部署和 release 独立授权 |
+| 维护（当前） | **ADR-0084 门禁合理化与 0.9 收口治理**：维护者已于 2026-09-21 明确接受完整决定；B3 `terminal-adapter-restart` 与 B4 `terminal-dsh-runtime-restart` 保持候选/资格层 PASS；B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 继续保持真实 `BLOCKED_EXTERNAL`，历史 D15-G 继续为 `NO_GO` 且不改写，但这些外部能力不再是 0.9 收口、候选兼容判断、受限 R3 失败隔离或无关 0.10 工作的全局硬前置。另已完成独立监控切片 `v090-dsh-provider-qualification`：DSH rc.2 与 alpha.2 均无进程外 continuable provider，保持 **`BLOCKED_EXTERNAL`**，**未升级依赖**（证据 `docs/evidence/v090-dsh-provider-qualification/`）。 | **下一唯一实现任务（本治理 PR 合并后）**：独立实现并验收 BYQ session failure containment and business recovery：执行者失联检测、未完成 run→`interrupted`、旧 generation/epoch 与迟到终态 fencing、conversation/durable job/回执保留、仅幂等且可核对步骤的安全重调度、未知副作用暂停。通过后生成新的 D15 superseding assessment，再决定 0.1.5-rc.1 候选晋升范围。 | 维护者明确接受 ADR-0084；ADR-0081/0082/0058/0071/0074 的 superseding 修订 | 不改写历史 verdict；不实现 DSH 进程外 provider 或第二通用 harness；不自动解冻 R3；不切换生产 selector；不部署；不创建/移动 tag/release；不恢复 Phase 100；每个实现切片使用独立 worktree/PR |
+| 依赖资格（D15） | **当前资格状态（B4 之后，2026-09-21）**；ADR-0084 已接受：`terminal-adapter-restart` = **PASS**、`terminal-dsh-runtime-restart` = **PASS**（均为候选/资格层）；B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 为 `BLOCKED_EXTERNAL`；独立监控切片确认 DSH rc.2/alpha.2 provider 资格仍 `BLOCKED_EXTERNAL`（无 out-of-process provider，未升级依赖）；ADR-0083 仅候选/资格层最小实现完成；R4 / production wiring NOT implemented。D15-G **未重跑**，按当前 B1/B2 状态即使重跑仍为 `NO_GO`；**历史已提交快照（不改写）**：D15-4/D15-5/D15-G committed evidence 保持原样。外部 blocker 只阻塞原生独立 child 恢复声明，不再形成全局停止。 | 在 BYQ failure-containment 切片通过后生成具名 superseding assessment；按实际采用范围判断候选兼容与晋升，不等待上游 provider 才继续无关路线 | ADR-0084 + ADR-0081/0082；历史证据与 B3/B4 current overlay | `R3_RESUME` 不因文档决定自动变为 YES；不得把 B1/B2 标为 PASS；不得改写历史 D15 verdict；生产切换、部署和 release 独立授权 |
 
 ## 0.9 closeout governance & gap ledger audit（2026-09-20，历史审计快照）
 
@@ -385,6 +386,84 @@ store schema（**不建第二 generic harness**）；BYQ 仍只拥有有界 atta
   `tests/test_v090_step5_b4_terminal_dsh_runtime_restart.py` 断言。构建身份推进
   `post-u8.184 → post-u8.185`（`scripts/`、`tests/` 属 build inputs，仅重建身份；历史
   manifest 与全部证据保留）。
+
+## 独立 DSH provider 资格监控切片 `v090-dsh-provider-qualification`（2026-09-21，权威维护条目）
+
+本批执行**独立维护/依赖资格监控切片**（独立 worktree/分支 `codex/v090-dsh-provider-qualification`，
+基于动态 `origin/main`），回答一个问题：**未来哪个 DSH 发布能解锁 ADR-0082 Option 1 blocker**。
+这是监控/资格，不推进 Product Phase，不实现 ADR-0082 Option 1（属上游 DSH），不建 BYQ provider /
+child-resume bridge / 第二 session store，不切换生产 selector/default，**不升级依赖**，不 deploy，
+不创建/移动 tag/release，不恢复 Phase 100，不触碰 `codex/phase-100c`/PR #338，不 fork/patch DSH，
+**不向外部仓库提交 issue/PR**。**B1/B2/D15-G/R3 状态不变**：B1 `subagent-child-crash` 保持
+**BLOCKED（external）**，B2 `subagent-byq-adapter-restart` 保持 **BLOCKED（external/dependency）**，
+D15-G 保持 **`NO_GO`** 且**未重跑**，**`R3_RESUME = NO`**，0.9 未关闭。
+
+- **版本/包来源 + 完整闭包**：`scripts/d15/provider_qualification/version_provenance.py` 只读记录
+  npm dist-tags、发布时间、根 tarball integrity、完整解析闭包（rc.2 = 594 包，alpha.2 = 650 包，
+  含 canonical sha256）与 6 个 subagent provider 闭包；PyPI `deepseek-harness-sdk` /
+  `deepseek-harness-runtime-bin` **均无** `0.1.5rc2`/`0.1.6a2`，故两个发布都**不是 coherent pairing**。
+- **原生能力清单 + 探针**：`scripts/d15/provider_qualification/capability_inventory.mjs` 在隔离安装中
+  启动真实 cordis 上下文 + 真实 `SubagentRuntime`，注册真实 provider 并调用真实
+  `SubagentRuntime.prepareContinuable` gate。结果：rc.2 与 alpha.2 的 in-process `spawn`/`fork`
+  gate `PASS`，而 out-of-process `acp`/`codex`/`claude-code`/`dsh-sdk` 全部
+  `UNSUPPORTED_CAPABILITY`；两个发布的 README 仍声明 **Process-local residency**（跨进程续接需要
+  **未来的 durable mailbox + cross-process lease protocol**）、**No durable parent mailbox**、
+  **ACP children remain one-shot**。`out-of-process.d.ts`/`subprocessRunHandle` 等
+  **one-shot helper 符号存在但不算 capability**。
+- **结果 = 两个版本均 BLOCKED（external）**：机器可读 verdict 分版本记录
+  `verdict.rc2.v1.json` / `verdict.alpha2.v1.json`（`format_valid=true`、`all_pass=false`、
+  `external_blocked=true`、exit 1）；`cross_process_continuation_qualification = null`，因为不存在
+  可运行的 out-of-process continuable provider。最小具体缺口 = DSH 无 out-of-process
+  `prepareContinuable` provider，且无 durable mailbox / cross-process lease protocol。
+- **显式资格开关**：原生探针**不进入日常 CI**，仅在 `BYQ_DSH_PROVIDER_QUALIFICATION=1` 时经
+  `scripts/d15/provider_qualification/run_provider_qualification.sh` 运行；能力缺失时**稳定输出
+  BLOCKED 且非零退出**，不造成日常 CI 误报。
+- **上游需求包**：`docs/evidence/v090-dsh-provider-qualification/upstream-requirement.md` 给出最小接口
+  契约（`SubagentProvider.prepareContinuable`、durable mailbox、cross-process lease）、10 条生命周期/
+  安全不变式、可复现 B1/B2 场景与上游验收清单。**未向外部仓库发送任何 issue/PR**。
+- **可失败 observer**：`provider_qualification_observer.py --selfcheck` 33 项控制全部非零（31 项
+  defect-targeting），显式覆盖 **fake provider / in-process provider / one-shot provider /
+  no-mailbox / double-lease / duplicate-settlement** 六类必需失败。
+- 证据 `docs/evidence/v090-dsh-provider-qualification/`，由
+  `tests/test_v090_dsh_provider_qualification.py` 断言。构建身份推进
+  `post-u8.185 → post-u8.186`（`scripts/`、`tests/` 属 build inputs，仅重建身份；历史 manifest 与
+  全部证据保留）。
+- **结论**：ADR-0082 Option 1 **仍 BLOCKED（external）**；**未执行任何依赖升级**；下一个上游合格
+  provider 出现时本监控切片可重跑。
+- **追加：PR #348 CI 运行域镜像引用加固（2026-09-21，同 PR）**：backend lane 出现一次运行域
+  `:latest` tag 丢失（后续 `docker run` 误走 registry pull）与一次 26% 处非确定性 pytest 失败。经
+  诊断：二者**不可本地复现**（本机同镜像 backend 全绿；attempt 1 在同一 26% 位置无失败；`main`
+  backend lane 绿），且 #348 **不触碰任何 backend 代码**，故**非 #348 引入**。加固
+  `scripts/ci/local-ci.sh`：run-scoped 镜像构建后立即捕获 immutable image id，backend/mcp 容器运行
+  改用该 id 并加 `--pull=never`，缺失时 **fail-closed、绝不回退 registry/陈旧镜像**；identity 与
+  cleanup gate **不变**。回归测试 `tests/test_ci_run_scoped_image_reference.py`。构建身份推进
+  `post-u8.186 → post-u8.187`（`scripts/`、`tests/` 属 build inputs，仅重建身份；历史 manifest 与
+  全部证据保留）。**未改历史 verdict、未改生产 selector/compose/deployment、未 deploy/tag/release、
+  未运行 Full CI、未触碰 `codex/adr-gate-rationalization`。**
+- **追加：cleanup image-id 收口（2026-09-21，同 PR）**：维护者指出运行侧 immutable-id 修复未闭合其
+  启用的清理场景——tag 丢失而 ID 仍在时，旧 cleanup 只按 tag 校验，会留下 dangling image 却误报成功。
+  现 `local-ci.sh` 在构建后把本次实际捕获的 `service=sha256:<64hex>` 列表原子写入按
+  `BYQ_CI_SCOPE` 严格隔离的 manifest（`.ci-artifacts/$BYQ_CI_SCOPE/image-ids.env`）；独立
+  `always-cleanup` 进程读取同一路径，**校验后才**对精确 ID 执行 `docker image rm`（仅当该 ID 无其他
+  scope 的 tag），清理后**同时验证 tag 与精确 ID 均消失**。缺失 manifest 保持向后兼容；内容非法
+  一律 fail-closed 且**绝不**把文件内容交给 `docker image rm`。**无 global prune、不删除其他 scope/
+  共享镜像**；identity/backend/schema/cleanup gate 均未放宽。行为测试
+  `tests/test_ci_cleanup_image_ids.py`（strict fake docker：tag 丢失 ID 仍在被移除、tag+ID 双移除、
+  shared foreign-tag 不删除、foreign-scope manifest 不读取、非法/畸形 manifest fail-closed、缺失
+  manifest 向后兼容、重复 ID 去重）。构建身份推进
+  `post-u8.187 → post-u8.188`（`scripts/`、`tests/` 属 build inputs，仅重建身份；历史 manifest 与
+  全部证据保留）。**未改历史 verdict、未改生产 selector/compose/deployment、未 deploy/tag/release、
+  未运行 Full CI、未取消或重跑当前 CI、未触碰 PR #349。**
+- **追加：manifest 边界两处窄修（2026-09-21，同 PR）**：(1) scope 现在显式拒绝 `.`/`..`，且
+  manifest 目录经规范化必须严格等于 `.ci-artifacts/<scope>`，杜绝 `..` 把 `image-ids.env` 解析到
+  `.ci-artifacts` 之外；`local-ci.sh` 的 scope 校验同步拒绝 `.`/`..`。(2) manifest 的 `service`
+  必须是本次 `image_resources` 精确白名单成员，**未知或重复 service 一律 fail-closed**，其 ID
+  **绝不**交给 `docker image rm`。行为测试新增：`.`/`..` scope 拒绝且不读取/不删除越界 manifest、
+  unknown service 与 duplicate service fail-closed 且 ID 不被删除。既有 foreign-tag 共享保护、
+  缺失 manifest 向后兼容、无 global prune 全部保留。构建身份推进
+  `post-u8.188 → post-u8.189`（`scripts/`、`tests/` 属 build inputs，仅重建身份；历史 manifest 与
+  全部证据保留）。**未改历史 verdict、未改生产 selector/compose/deployment、未 deploy/tag/release、
+  未运行 Full CI、未取消或重跑当前 CI、未触碰 PR #349、未引入镜像签名或第二框架。**
 
 ## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19，历史叙述）
 

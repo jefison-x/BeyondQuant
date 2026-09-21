@@ -1,0 +1,33 @@
+{
+  "adr": "docs/architecture/adr/ADR-0082-dsh-continuable-child-resume.md",
+  "all_pass": false,
+  "blocked_reasons": [
+    "no registerable out-of-process provider implements SubagentProvider.prepareContinuable in the examined release; the only continuable providers are in-process and every out-of-process provider is rejected by the native gate"
+  ],
+  "blocker": "subagent-child-crash",
+  "conclusions": {
+    "cross_process_qualification_ok": false,
+    "in_process_continuable_providers": [
+      "fork",
+      "spawn"
+    ],
+    "out_of_process_continuable_provider_available": false,
+    "out_of_process_continuable_providers": [],
+    "out_of_process_provider_rejected_by_native_gate": true
+  },
+  "examined_version": {
+    "channel": "alpha",
+    "id": "alpha2",
+    "npm": "0.1.6-alpha.2",
+    "subagent_package_version": "0.1.6-alpha.2"
+  },
+  "exit_code": 1,
+  "external_blocked": true,
+  "failures": [],
+  "format_valid": true,
+  "owner_node": "d15-4-child-provider-remediation",
+  "qualification_passed": false,
+  "result": "BLOCKED",
+  "schema_version": "byq-v090-dsh-provider-qualification-verdict.v1",
+  "slice": "v090-dsh-provider-qualification"
+}
