@@ -1,7 +1,17 @@
 # DSH 0.1.5-rc.1 closeout slices
 
-Status: **plan only — nothing implemented.** Proposed ADR-0082/0083 stay Proposed;
-the production selector/default remains `dsh-0.1.2rc1`; `R3_RESUME = NO`.
+Status (audit-time snapshot, 2026-09-20): **plan only — nothing implemented.** At audit
+time ADR-0082/0083 were Proposed; the production selector/default remains `dsh-0.1.2rc1`;
+`R3_RESUME = NO`.
+
+**Historical snapshot — not the current D15/slice state.** Current qualification state
+(2026-09-21): ADR-0082/0083 are **Accepted** (without implementing production wiring); B3
+`terminal-adapter-restart` is **PASS** at the candidate/qualification layer; B4
+`terminal-dsh-runtime-restart` is **BLOCKED / not started**; B1/B2 remain **BLOCKED**;
+D15-G is **not re-run and still `NO_GO`** (even if re-run it stays `NO_GO` while B1/B2/B4 are
+not PASS). The current authority is `docs/roadmap/STATUS.md` and the `current_state_after_b3`
+overlay in `acceptance-matrix.v1.json`; the committed `docs/evidence/d15/d15-5` and
+`docs/evidence/d15/d15-g` verdicts are **not rewritten**.
 
 Machine-readable form: [acceptance-matrix.v1.json](acceptance-matrix.v1.json)
 `dsh_0_1_5_rc1_closeout_slices`.
@@ -75,13 +85,18 @@ aggregates `subagent-resume` / `terminal-persistence` are display-only.
   attachment layer under ADR-0083 (candidate-specific, reversible, evidence-only). R4 later
   productizes the surface; the blocker is **not** owned by post-GO R4.
 - **Owner node:** `d15-5-candidate-attachment-layer` (pre-gate).
-- **Reproduction (current `BLOCKED`):** an adapter abort kills the DSH runtime; native
+- **Reproduction (audit-time D15-5 snapshot `BLOCKED`; not rewritten):** an adapter abort kills the DSH runtime; native
   terminal sessions are process-local and the committed BYQ tree persists no
   `TerminalAttachment`, so a fresh adapter rejects the old attachment (real rejection
   evidence, no fabricated reattach). Evidence:
   [D15-5 verdict](../d15/d15-5/verdict.v1.json),
   [interface probe](../d15/d15-5/interface-probe.v1.json),
   [adapter-restart scenario](../d15/d15-5/scenarios/adapter-restart.v1.json).
+- **Current state after B3 (2026-09-21): `PASS`** at the candidate/qualification layer — a durable
+  BYQ `TerminalAttachment` minimal lifecycle is implemented and verified (fresh adapter rebinds the
+  same attachment when native state survives; truthful `lost`/`interrupted` otherwise). Evidence:
+  [B3 verdict](../v090-step5-b3-terminal-adapter-restart/verdict.v1.json) /
+  [B3 README](../v090-step5-b3-terminal-adapter-restart/README.md).
 - **Acceptance criteria:** a BYQ-owned durable attachment record (BYQ-minted id, owner
   principal, runtime generation, executor epoch) is persisted and authorized by BYQ; after
   an adapter restart the same attachment rebinds when native state survives, otherwise the
@@ -98,11 +113,13 @@ aggregates `subagent-resume` / `terminal-persistence` are display-only.
   attachment layer under ADR-0083 (candidate-specific, reversible, evidence-only). R4 later
   productizes the surface; the blocker is **not** owned by post-GO R4.
 - **Owner node:** `d15-5-candidate-attachment-layer` (pre-gate).
-- **Reproduction (current `BLOCKED`):** a restarted DSH runtime is a new process and
+- **Reproduction (audit-time D15-5 snapshot `BLOCKED`; not rewritten):** a restarted DSH runtime is a new process and
   native terminal sessions do not survive it; no BYQ reconnect surface exists, so the old
   attachment must be reported lost. Evidence:
   [D15-5 verdict](../d15/d15-5/verdict.v1.json),
   [dsh-runtime-restart scenario](../d15/d15-5/scenarios/dsh-runtime-restart.v1.json).
+- **Current state after B3 (2026-09-21): `BLOCKED` / not started.** B4 is the next pre-gate
+  slice in the G-split strict internal order and has **not** been started.
 - **Acceptance criteria:** the BYQ attachment layer records the transition to
   `lost`/`interrupted` and never claims reattach when native state is gone; orphan
   detection reconciles a surviving PTY with no attachment as lost, never silently reused;
@@ -221,6 +238,29 @@ as the **first internal item** and stays **BLOCKED**:
   (owner node `d15-5-candidate-attachment-layer`, pre-gate; never post-GO R4). It is
   **not started** by this B2 slice.
 - D15-G stays `NO_GO` until B1 truly PASSes; `R3_RESUME = NO`; 0.9 is **not** closed.
+
+### Execution status (2026-09-21): B3 executed and PASS (candidate/qualification layer)
+
+The G-split strict internal order continued with B3 `terminal-adapter-restart`
+(owner `d15-5-candidate-attachment-layer`, pre-gate):
+
+- The candidate/qualification-layer **minimal BYQ `TerminalAttachment` lifecycle** was
+  implemented and verified over the real native DSH 0.1.5-rc.1 persistent terminal
+  (BYQ-minted durable attachment id, owner principal/authorization, runtime generation,
+  executor epoch, state, audit linkage; DSH keeps PTY/shell/process/IO; no BYQ PTY runtime,
+  no DSH fork/patch, no second harness/store, no persisted/faked PTY).
+- A fresh adapter generation B reloads the same durable attachment and rebinds when native
+  state survives, and deterministically reports `lost`/`interrupted` (rejecting a fake
+  reattach) when it does not. The fail-able observer distinguishes a correct honest loss
+  from a not-implemented/label-only PASS. Verdict `all_pass=true`, exit 0.
+- Evidence: [v090-step5-b3-terminal-adapter-restart](../v090-step5-b3-terminal-adapter-restart/README.md).
+- **Current state after B3:** `terminal-adapter-restart = PASS`; B4
+  `terminal-dsh-runtime-restart` = **BLOCKED / not started**; B1/B2 remain **BLOCKED**;
+  ADR-0083 implemented only at the candidate/qualification layer (R4/production wiring
+  **NOT** implemented); D15-G **not re-run**, still `NO_GO`; `R3_RESUME = NO`; 0.9 is
+  **not** closed.
+- **Next sole task in the strict internal order:** `terminal-dsh-runtime-restart` (B4;
+  owner `d15-5-candidate-attachment-layer`). It is **not started** by this B3 slice.
 
 ## Dependency upgrade is not a production default switch
 

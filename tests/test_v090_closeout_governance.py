@@ -46,8 +46,9 @@ AUDIT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.177"
 # fault-regression batch moved it to .179, the ADR-0082/0083 decision batch
 # moved it to .180, the step-5 B1 subagent-child-crash remediation batch moved
 # it to .181, the step-5 G-split gate-order decision batch moved it to .182,
-# and the step-5 B2 subagent-byq-adapter-restart batch moved it to .183.
-CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.183"
+# the step-5 B2 subagent-byq-adapter-restart batch moved it to .183, and the
+# step-5 B3 terminal-adapter-restart batch moved it to .184.
+CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.184"
 
 DECISION_RECORD = ROOT / "docs/evidence/v090-adr-decisions/decision-record.v1.json"
 DECISION_RECORD_MD = ROOT / "docs/evidence/v090-adr-decisions/README.md"
@@ -320,7 +321,7 @@ class GovernanceDocTests(unittest.TestCase):
                        "<!-- byq:v090-full-interface-rebaseline=complete -->",
                        "<!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->",
                        "<!-- byq:phase-100-p100-c=paused-not-delivery -->",
-                       "<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.183 -->"):
+                       "<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.184 -->"):
             self.assertIn(marker, status)
         # Completed historical 0.9 steps must not remain marked active.
         self.assertNotIn("v090-closeout-audit=active", status)
@@ -493,6 +494,99 @@ class NoImplementationTests(unittest.TestCase):
             text = candidate.read_text(encoding="utf-8", errors="ignore")
             if '"schema": "byq-release.v1"' in text or '"schema":"byq-release.v1"' in text:
                 self.fail(f"unexpected committed release manifest: {candidate}")
+
+
+class CurrentStateAfterB3Tests(unittest.TestCase):
+    """State-consistency guards: historical D15 snapshots vs the current B3 state.
+
+    These tests reject any regression of the current authority back to
+    "terminal-adapter-restart BLOCKED / not started". They also freeze the
+    historical d15-5/d15-g verdicts as un-rewritten snapshots and assert the
+    explicit current/candidate-only ADR-0083 scope.
+    """
+
+    def _status(self) -> str:
+        return (ROOT / "docs/roadmap/STATUS.md").read_text(encoding="utf-8")
+
+    def test_status_distinguishes_historical_snapshot_from_current_state(self):
+        status = self._status()
+        self.assertIn("<!-- byq:v090-step5-b3-terminal-adapter-restart=complete -->", status)
+        self.assertIn("**当前资格状态（B3 之后，2026-09-21）**", status)
+        self.assertIn("`terminal-adapter-restart` = **PASS**", status)
+        self.assertIn("`terminal-dsh-runtime-restart` = **BLOCKED / not started**", status)
+        self.assertIn("仅候选/资格层最小实现完成；R4 / production wiring NOT implemented", status)
+        self.assertIn("D15-G **未重跑**", status)
+        self.assertIn("即使重跑仍为 `NO_GO`", status)
+        self.assertIn("**历史已提交快照（不改写）**", status)
+        self.assertIn("**历史快照说明（state-consistency）：**", status)
+        self.assertIn("**当前资格状态 = `terminal-adapter-restart` PASS**", status)
+        self.assertIn("**当前资格状态 = `terminal-dsh-runtime-restart` BLOCKED / not started**", status)
+        # The audit-time "both terminal slices not started" line must not come back.
+        self.assertNotIn("`terminal-adapter-restart` / `terminal-dsh-runtime-restart`（owner", status)
+
+    def test_maintenance_row_names_b3_pass_and_b4_not_started(self):
+        row = next(line for line in self._status().splitlines()
+                   if line.startswith("| 维护（当前） |"))
+        self.assertIn("terminal-adapter-restart", row)
+        self.assertIn("PASS", row)
+        self.assertIn("terminal-dsh-runtime-restart", row)
+        self.assertIn("未开始", row)
+        self.assertNotIn("`terminal-adapter-restart` / `terminal-dsh-runtime-restart`", row)
+
+    def test_ledger_and_matrix_current_overlay_agree(self):
+        for payload in (_ledger(), _matrix()):
+            self.assertTrue(payload["snapshot"], payload["schema_version"])
+            self.assertEqual(payload["snapshot_kind"], "historical-audit-snapshot")
+            self.assertIn("2026-09-20", payload["snapshot_note"])
+            current = payload["current_state_after_b3"]
+            self.assertEqual(current["terminal_adapter_restart"]["status"], "PASS")
+            self.assertEqual(current["terminal_dsh_runtime_restart"]["status"], "BLOCKED")
+            self.assertFalse(current["terminal_dsh_runtime_restart"]["started"])
+            self.assertEqual(current["subagent_child_crash"]["status"], "BLOCKED")
+            self.assertEqual(current["subagent_byq_adapter_restart"]["status"], "BLOCKED")
+            self.assertEqual(current["adr_0083"]["status"], "Accepted")
+            self.assertEqual(current["adr_0083"]["r4_or_production_wiring"], "NOT implemented")
+            self.assertEqual(current["d15_g"]["status"], "NO_GO")
+            self.assertFalse(current["d15_g"]["rerun"])
+            self.assertEqual(current["r3_resume"], "NO")
+
+    def test_matrix_slice3_is_current_pass_slice4_not_started(self):
+        slices = {item["id"]: item for item in _matrix()["dsh_0_1_5_rc1_closeout_slices"]}
+        self.assertEqual(slices["slice-3-terminal-adapter-restart"]["current_state_after_b3"], "PASS")
+        self.assertEqual(slices["slice-4-terminal-dsh-runtime-restart"]["current_state_after_b3"],
+                         "BLOCKED")
+        self.assertFalse(
+            slices["slice-4-terminal-dsh-runtime-restart"]["current_state_after_b3_started"])
+
+    def test_gsplit_record_carries_a_current_overlay(self):
+        record = json.loads((EVIDENCE / "gsplit-decision.v1.json").read_text(encoding="utf-8"))
+        current = record["current_state_after_b3"]
+        self.assertEqual(current["terminal-adapter-restart"], "PASS (candidate/qualification layer)")
+        self.assertEqual(current["terminal-dsh-runtime-restart"], "BLOCKED / not started")
+        self.assertFalse(current["d15-g-rerun"])
+        self.assertEqual(current["r3-resume"], "NO")
+
+    def test_historical_d15_snapshots_are_not_rewritten_and_current_overlay_is_pass(self):
+        capability = json.loads(
+            (ROOT / "docs/evidence/d15/d15-g/capability-matrix.v1.json").read_text(encoding="utf-8"))
+        self.assertIn("terminal-adapter-restart", capability["primary_named_blockers"])
+        verdict = json.loads(
+            (ROOT / "docs/evidence/d15/d15-g/verdict.v1.json").read_text(encoding="utf-8"))
+        self.assertEqual(verdict["verdict"], "NO_GO")
+        self.assertEqual(verdict["derived_capabilities"]["terminal-adapter-restart"], "BLOCKED")
+        # The historical snapshot is explicitly distinguishable from the current state.
+        self.assertEqual(
+            _ledger()["current_state_after_b3"]["terminal_adapter_restart"]["status"], "PASS")
+        self.assertEqual(
+            _matrix()["current_state_after_b3"]["terminal_adapter_restart"]["status"], "PASS")
+
+    def test_no_current_authority_regresses_b3_to_blocked(self):
+        # Regression guard: no current-state mapping may claim B3 BLOCKED/not-started.
+        for payload in (_ledger(), _matrix()):
+            status = payload["current_state_after_b3"]["terminal_adapter_restart"]["status"]
+            self.assertNotIn(status, {"BLOCKED", "NOT_STARTED", "not started"})
+        self.assertEqual(
+            _matrix()["dsh_0_1_5_rc1_closeout_slices"][2]["current_state_after_b3"], "PASS")
 
 
 if __name__ == "__main__":
