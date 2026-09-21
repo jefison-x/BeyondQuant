@@ -1,7 +1,10 @@
 # ADR-0083: BYQ TerminalAttachment persistence, reconnect and fencing boundary
 
-- Status: **Proposed (DRAFT for review — NOT accepted, NOT implemented)**
+- Status: Accepted
 - Date: 2026-09-20
+- Accepted: 2026-09-21 (maintainer decision; **as currently proposed**; **NOT implemented**)
+- Decision record: `docs/evidence/v090-adr-decisions/README.md` / `decision-record.v1.json`
+  (0.9 strict-order step 4 maintainer decision; no GitHub approval is claimed)
 - Relates: ADR-0081, ADR-0079, ADR-0003, ADR-0023, ADR-0059
 - Stage: D15-5 follow-up
 - Evidence: `docs/evidence/d15/d15-5/`
@@ -39,10 +42,10 @@ especially across an adapter/DSH restart and across multiple BYQ services — is
 Product API surface, authorization and executor-epoch fencing. D15-5 does not
 implement it.
 
-## Decision (proposed, not implemented)
+## Decision (accepted by the maintainer on 2026-09-21, as currently proposed — NOT implemented)
 
-If BYQ is to own a persistent terminal attachment across runtime restarts, the
-maintainer must first accept an ADR that fixes the boundary. This ADR proposes:
+The maintainer accepts this ADR **as currently proposed**. If BYQ is to own a
+persistent terminal attachment, the boundary is fixed as follows:
 
 1. **BYQ owns a durable `TerminalAttachment` record** with a BYQ-minted
    `attachment_id` (never a DSH session id or pid), owner principal, runtime
@@ -61,13 +64,21 @@ maintainer must first accept an ADR that fixes the boundary. This ADR proposes:
 5. **DSH continues to own PTY/shell/I/O.** BYQ MUST NOT implement a PTY runtime,
    a shell, or terminal I/O; it adapts, observes, authorizes and fails down.
 
-The framework-neutral vocabulary already exists in
-`packages/contracts/terminal_attachment.py` (`attached`/`reattached`/
-`rehydrated`/`lost`/`interrupted`/`fenced`, the four existence dimensions, and
-the BYQ/DSH ownership split). Accepting this ADR would authorize the production
-wiring that D15-5 deliberately left unimplemented.
+**This ADR does not promise terminal continuity across a runtime restart.** The
+native DSH terminal is process-local, so a runtime/DSH restart genuinely destroys
+the PTY. The honest contract is **"reconnect where native state survives; otherwise
+truthful `lost`/`interrupted`"** — never a fabricated `reattached`.
 
-## Consequences (if accepted)
+Accepting this ADR authorizes only a **candidate-specific, reversible** production
+wiring of the BYQ attachment layer for D15-G qualification. It does **not** switch
+the production selector/default, does **not** authorize a production cutover, and
+does **not** authorize a second session store. The framework-neutral vocabulary
+already exists in `packages/contracts/terminal_attachment.py`
+(`attached`/`reattached`/`rehydrated`/`lost`/`interrupted`/`fenced`, the four
+existence dimensions, and the BYQ/DSH ownership split). The production wiring that
+D15-5 deliberately left unimplemented remains **NOT implemented** by this decision.
+
+## Consequences (accepted)
 
 - New BYQ state (attachment records) and a new Product/Gateway surface with
   authorization and audit implications; a candidate-specific, reversible
@@ -75,10 +86,13 @@ wiring that D15-5 deliberately left unimplemented.
   callers.
 - Native sessions remain process-local, so a restart genuinely loses a running
   shell unless DSH later provides a durable backend. The honest contract is
-  therefore "reconnect where native state survives; otherwise truthful loss".
+  therefore "reconnect where native state survives; otherwise truthful
+  `lost`/`interrupted`", never a fabricated reattach.
 - Terminal lifetime still never defines conversation or durable-job lifetime.
-- Until accepted, D15-5 stays **PARTIAL/BLOCKED**, `R3_RESUME = NO`, and the
-  production selector/default `dsh-0.1.2rc1` is unchanged.
+- Acceptance does **not** implement anything: D15-5 stays **PARTIAL/BLOCKED**,
+  `R3_RESUME = NO`, and the production selector/default `dsh-0.1.2rc1` is
+  unchanged. The candidate-specific attachment layer required by D15-G is a
+  pre-gate D15-5 qualification slice, not a production default switch.
 
 ## Alternatives considered
 
@@ -95,5 +109,6 @@ wiring that D15-5 deliberately left unimplemented.
 - Implemented only after acceptance, candidate-specific and reversible; no
   database schema change without a separate named decision; production default
   and selector unchanged until D15-G and a separate cutover decision.
-- Rollback is to stop exposing the surface and drop the candidate wiring; no
-  historical evidence or immutable release registry is modified.
+- On native state loss, roll back to truthful `lost`/`interrupted`; rollback of
+  the surface is to stop exposing it and drop the candidate wiring; no historical
+  evidence or immutable release registry is modified.

@@ -5,7 +5,8 @@ aggregation rejection, per-capability derivation, atomic-blocker model with
 derived aggregates and optional limitations, provenance verification,
 self-declared-field rejection), the committed evidence (honest NO_GO, four atomic
 blockers, provenance), and the unchanged constraints (R3_RESUME=NO, production
-selector/default, Proposed ADR-0082/0083 not accepted/implemented).
+selector/default, ADR-0082/0083 accepted-but-unimplemented after the 2026-09-21
+maintainer decision; the D15-G contract itself remains the D15-G-time record).
 
 Runs under ``unittest`` (the architecture lane has no pytest).
 """
@@ -96,9 +97,9 @@ class D15GoNoGoContractTests(unittest.TestCase):
         self.assertEqual(constraints["production_selector"], "dsh-0.1.2rc1")
         self.assertTrue(constraints["production_default_unchanged"])
         self.assertEqual(constraints["deployment"], "none")
-        self.assertIn("not accepted", constraints["adr_0082"])
+        # The contract is the D15-G-time record; the 2026-09-21 maintainer decision
+        # accepted ADR-0082/0083 but did not implement them.
         self.assertIn("not implemented", constraints["adr_0082"])
-        self.assertIn("not accepted", constraints["adr_0083"])
         self.assertIn("not implemented", constraints["adr_0083"])
 
     def test_go_is_granted_only_when_every_required_capability_passes(self):
@@ -317,13 +318,13 @@ class D15GoNoGoEvidenceTests(unittest.TestCase):
         self.assertTrue(d15_g["evidence"])
         self.assertTrue(d15_g["criterion_results"])
 
-    def test_adr_0082_and_0083_remain_proposed_and_unimplemented(self):
+    def test_adr_0082_and_0083_are_accepted_and_unimplemented(self):
         for name in ("ADR-0082-dsh-continuable-child-resume.md",
                      "ADR-0083-terminal-attachment-boundary.md"):
             text = (ROOT / "docs/architecture/adr" / name).read_text(encoding="utf-8")
-            self.assertIn("Proposed", text, name)
-            self.assertIn("NOT accepted, NOT implemented", text, name)
-            self.assertNotIn("Status: Accepted", text, name)
+            self.assertIn("- Status: Accepted", text, name)
+            self.assertIn("NOT implemented", text, name)
+            self.assertNotIn("Status: Proposed", text, name)
 
 
 if __name__ == "__main__":

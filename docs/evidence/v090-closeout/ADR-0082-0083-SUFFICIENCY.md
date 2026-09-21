@@ -1,8 +1,16 @@
 # ADR-0082 / ADR-0083 sufficiency review and maintainer decision package
 
 Status: **review only.** Both ADRs remain **Proposed (DRAFT for review — NOT accepted,
-NOT implemented)**. This document does **not** accept, modify or implement them, and
-does **not** impersonate a maintainer decision.
+NOT implemented)**. This document does **not** accept, modify or implement them, and does
+**not** impersonate a maintainer decision.
+
+> **Post-decision note (2026-09-21, 0.9 strict order step 4):** this is the
+> pre-decision sufficiency review and its findings are preserved as historical audit
+> facts. The maintainer subsequently **accepted** ADR-0082 (modified — **Option 1
+> only**, Option 2 rejected) and ADR-0083 (**as proposed**), but **implemented
+> neither**. See the decision record
+> [../v090-adr-decisions/README.md](../v090-adr-decisions/README.md). The D15-G
+> atomic blockers remain unresolved and **0.9 is not closed**.
 
 Reviewed:
 [ADR-0082](../../architecture/adr/ADR-0082-dsh-continuable-child-resume.md) and

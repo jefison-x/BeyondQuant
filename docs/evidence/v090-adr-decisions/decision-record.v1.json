@@ -1,0 +1,59 @@
+{
+  "schema_version": "byq-v090-adr-decision-record.v1",
+  "decided_at": "2026-09-21",
+  "recorded_at": "2026-09-21",
+  "decision_authority": "repository maintainer (human)",
+  "decision_source": "0.9 strict-order step 4 maintainer instruction (2026-09-21)",
+  "github_approval_claimed": false,
+  "base": {
+    "origin_main_commit": "f3c3381285a0b452d6080422d135dd9560f6a5f2",
+    "note": "dynamic origin/main at decision recording; no SHA hard-coded in STATUS.md"
+  },
+  "adr_0082": {
+    "status": "Accepted",
+    "acceptance": "modified",
+    "chosen_option": "Option 1",
+    "option_1": "DSH provides a future independent-process continuable provider / prepareContinuable; generic child resume and independent child-crash recovery belong to DSH",
+    "option_2": "rejected",
+    "option_2_reason": "BYQ runtime-adapter child-resume bridge rejected as the current architecture direction; BYQ does not build a second session store or a generic harness",
+    "post_qualification_requirement": "subagent-child-crash stays BLOCKED until a qualifying out-of-process continuable provider exists and is qualified",
+    "rollback_escape_path": "keep foreground delegation and leave the native continuable seam unexercised if the future provider does not materialize",
+    "second_session_store_authorized": false,
+    "generic_harness_authorized": false
+  },
+  "adr_0083": {
+    "status": "Accepted",
+    "acceptance": "as-proposed",
+    "byq_owns": "TerminalAttachment identity, permission, generation, epoch and state, exposed via bounded Gateway/Product API interfaces",
+    "dsh_owns": "PTY/shell/IO",
+    "pty_across_runtime_restart_promised": false,
+    "native_state_loss_status": "truthful lost/interrupted, never a fabricated reattached",
+    "persistence_store_decision": "candidate-specific, reversible qualification path only; no second session store"
+  },
+  "implementation": "none",
+  "blockers": {
+    "subagent-child-crash": "BLOCKED",
+    "subagent-byq-adapter-restart": "BLOCKED",
+    "terminal-adapter-restart": "BLOCKED",
+    "terminal-dsh-runtime-restart": "BLOCKED",
+    "all_four_resolved": false
+  },
+  "constraints": {
+    "r3_resume": "NO",
+    "d15_frozen": true,
+    "r3_frozen": true,
+    "production_selector": "dsh-0.1.2rc1",
+    "production_default_unchanged": true,
+    "deployment": "none",
+    "release_or_tag_created": false,
+    "v090_closed": false
+  },
+  "non_actions": [
+    "No out-of-process continuable provider or prepareContinuable provider",
+    "No BYQ child-resume bridge / resume_delegated_child seam",
+    "No TerminalAttachment API, persistence, or database schema change",
+    "No D15/R3 unfreeze",
+    "No production selector/default switch",
+    "No deployment, tag or release"
+  ]
+}

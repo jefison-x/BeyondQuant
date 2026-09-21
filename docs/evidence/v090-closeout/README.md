@@ -25,7 +25,8 @@ any tag/release.
 - [DSH-015RC1-CLOSEOUT-SLICES.md](DSH-015RC1-CLOSEOUT-SLICES.md) — the minimal serial DSH slices
   and the gating order to D15-G / R3 / R4 / R5 / R6 / independent production Go/No-Go.
 - [ADR-0082-0083-SUFFICIENCY.md](ADR-0082-0083-SUFFICIENCY.md) — sufficiency review and the
-  maintainer decision package. Both ADRs stay Proposed.
+  maintainer decision package. Both ADRs stay Proposed **at audit time**; the 2026-09-21
+  step-4 maintainer decision later accepted them without implementing them.
 
 The consistency of these files (schema, status vocabulary, evidence paths, the four
 D15-G atomic blockers, the beta-vs-formal distinction and the frozen constraints) is
@@ -121,7 +122,11 @@ R1–R5 / S1–S3 / F1–F10 remediation. It is not a stability pass.
 ## Constraints frozen by this audit
 
 - `R3_RESUME = NO`; production selector/default `dsh-0.1.2rc1`; deployment `none`.
-- ADR-0082 and ADR-0083 remain **Proposed, not accepted, not implemented**.
+- At audit time ADR-0082 and ADR-0083 were **Proposed, not accepted, not implemented**.
+  The 2026-09-21 step-4 maintainer decision accepted them (ADR-0082 modified — Option 1
+  only, Option 2 rejected; ADR-0083 as proposed) but **implemented neither**; the D15-G
+  blockers remain unresolved and 0.9 is not closed. See
+  [../v090-adr-decisions/README.md](../v090-adr-decisions/README.md).
 - No tag/release is created or moved; the historical `v0.9.0-beta` tag is untouched.
 - The paused `codex/phase-100c` branch (Draft PR #338) is **not** delivery and is not
   touched by this audit.

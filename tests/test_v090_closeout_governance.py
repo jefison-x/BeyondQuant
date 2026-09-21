@@ -42,9 +42,23 @@ FORMAL_MANIFEST_IDS = (
 AUDIT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.177"
 # The closeout audit revision above is historical and stays immutable. Later
 # maintenance batches that change build inputs advance the *selected* revision;
-# the full-interface re-baseline batch moved it to .178 and the composite
-# research fault-regression batch moved it to .179.
-CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.179"
+# the full-interface re-baseline batch moved it to .178, the composite research
+# fault-regression batch moved it to .179, and the ADR-0082/0083 decision batch
+# moved it to .180.
+CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.180"
+
+DECISION_RECORD = ROOT / "docs/evidence/v090-adr-decisions/decision-record.v1.json"
+DECISION_RECORD_MD = ROOT / "docs/evidence/v090-adr-decisions/README.md"
+D15_ATOMIC_BLOCKERS = (
+    "subagent-child-crash",
+    "subagent-byq-adapter-restart",
+    "terminal-adapter-restart",
+    "terminal-dsh-runtime-restart",
+)
+
+
+def _decision() -> dict:
+    return json.loads(DECISION_RECORD.read_text(encoding="utf-8"))
 
 
 def _ledger() -> dict:
@@ -263,12 +277,19 @@ class AcceptanceMatrixTests(unittest.TestCase):
         self.assertEqual(verdict["verdict"], "NO_GO")
         self.assertEqual(sorted(verdict["derived_blockers"]), sorted(PRIMARY_BLOCKERS))
 
-    def test_adr_sufficiency_stays_proposed(self):
+    def test_audit_sufficiency_review_is_preserved(self):
+        # The 2026-09-20 audit matrix is preserved as the audit-time review; the
+        # 2026-09-21 maintainer decision changes the ADR *status*, not the audit
+        # record. `sufficient_to_resolve_blockers` stays false because Option 1 is
+        # upstream work: accepting ADR-0082 resolves nothing by itself.
         sufficiency = _matrix()["adr_sufficiency"]
         for name in ("ADR-0082", "ADR-0083"):
             self.assertIn("Proposed", sufficiency[name]["status"])
             self.assertFalse(sufficiency[name]["sufficient_to_resolve_blockers"], name)
             self.assertTrue(sufficiency[name]["required_revisions"], name)
+        decision = _decision()
+        for name in ("adr_0082", "adr_0083"):
+            self.assertEqual(decision[name]["status"], "Accepted", name)
 
     def test_matrix_constraints_and_non_authorizations(self):
         matrix = _matrix()
@@ -289,21 +310,24 @@ class GovernanceDocTests(unittest.TestCase):
 
     def test_status_freezes_phase_100_and_names_next_step(self):
         status = self._status()
-        for marker in ("<!-- byq:v090-composite-research=active -->",
+        for marker in ("<!-- byq:v090-composite-research=complete -->",
+                       "<!-- byq:v090-adr-decisions=active -->",
                        "<!-- byq:v090-closeout-audit=complete -->",
                        "<!-- byq:v090-full-interface-rebaseline=complete -->",
                        "<!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->",
                        "<!-- byq:phase-100-p100-c=paused-not-delivery -->",
-                       "<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.179 -->"):
+                       "<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.180 -->"):
             self.assertIn(marker, status)
         # Completed historical 0.9 steps must not remain marked active.
         self.assertNotIn("v090-closeout-audit=active", status)
         self.assertNotIn("v090-full-interface-rebaseline=active", status)
+        self.assertNotIn("v090-composite-research=active", status)
         self.assertIn("<!-- byq:current-completed-phase=97 -->", status)
         self.assertIn("P100-A", status)
         self.assertIn("P100-B", status)
         self.assertIn("codex/phase-100c", status)
         self.assertIn("0.9 closeout governance & gap ledger audit", status)
+        self.assertIn("0.9 ADR-0082/0083 maintainer decision", status)
 
     def test_implementation_plan_freezes_phase_100(self):
         plan = self._plan()
@@ -333,14 +357,106 @@ class GovernanceDocTests(unittest.TestCase):
             self.assertIn(blocker, slices)
 
 
+class AdrDecisionRecordTests(unittest.TestCase):
+    """0.9 strict-order step 4: ADR-0082/0083 maintainer decision record."""
+
+    def _status(self) -> str:
+        return (ROOT / "docs/roadmap/STATUS.md").read_text(encoding="utf-8")
+
+    def _plan(self) -> str:
+        return (ROOT / "docs/roadmap/IMPLEMENTATION_PLAN.md").read_text(encoding="utf-8")
+
+    def test_record_is_a_maintainer_decision_not_a_github_approval(self):
+        record = _decision()
+        self.assertEqual(record["schema_version"], "byq-v090-adr-decision-record.v1")
+        self.assertIn("maintainer", record["decision_authority"])
+        self.assertEqual(record["decided_at"], "2026-09-21")
+        self.assertFalse(record["github_approval_claimed"])
+        self.assertIn("step 4", record["decision_source"])
+        self.assertTrue(DECISION_RECORD_MD.is_file())
+
+    def test_adr_0082_option_1_chosen_option_2_rejected(self):
+        decision = _decision()["adr_0082"]
+        self.assertEqual(decision["status"], "Accepted")
+        self.assertEqual(decision["acceptance"], "modified")
+        self.assertEqual(decision["chosen_option"], "Option 1")
+        self.assertIn("prepareContinuable", decision["option_1"])
+        self.assertEqual(decision["option_2"], "rejected")
+        self.assertFalse(decision["second_session_store_authorized"])
+        self.assertFalse(decision["generic_harness_authorized"])
+        self.assertTrue(decision["post_qualification_requirement"])
+        self.assertTrue(decision["rollback_escape_path"])
+        text = (ROOT / "docs/architecture/adr"
+                / "ADR-0082-dsh-continuable-child-resume.md").read_text(encoding="utf-8")
+        self.assertIn("only Option 1 is chosen", text)
+        self.assertIn("**rejected as the current architecture direction**", text)
+        self.assertIn("build a second session store or a generic agent harness",
+                      text)
+        self.assertIn("blockers therefore stay **BLOCKED**", text)
+        self.assertIn("Rollback / escape path", text)
+
+    def test_adr_0083_accepted_as_proposed_with_truthful_lost_semantics(self):
+        decision = _decision()["adr_0083"]
+        self.assertEqual(decision["status"], "Accepted")
+        self.assertEqual(decision["acceptance"], "as-proposed")
+        self.assertEqual(decision["dsh_owns"], "PTY/shell/IO")
+        self.assertFalse(decision["pty_across_runtime_restart_promised"])
+        self.assertIn("lost", decision["native_state_loss_status"])
+        self.assertIn("interrupted", decision["native_state_loss_status"])
+        self.assertIn("never a fabricated", decision["native_state_loss_status"])
+        text = (ROOT / "docs/architecture/adr"
+                / "ADR-0083-terminal-attachment-boundary.md").read_text(encoding="utf-8")
+        self.assertIn("accepted by the maintainer", text)
+        self.assertIn("**DSH continues to own PTY/shell/I/O.**", text)
+        self.assertIn("never fabricates a reattach", text)
+        self.assertIn("does not promise terminal continuity across a runtime restart",
+                      text)
+        self.assertIn("truthful `lost`/`interrupted`", text)
+        self.assertIn("candidate-specific, reversible", text)
+
+    def test_decision_claims_no_implementation_and_keeps_blockers_frozen(self):
+        record = _decision()
+        self.assertEqual(record["implementation"], "none")
+        blockers = record["blockers"]
+        for blocker in D15_ATOMIC_BLOCKERS:
+            self.assertEqual(blockers[blocker], "BLOCKED", blocker)
+        self.assertFalse(blockers["all_four_resolved"])
+        constraints = record["constraints"]
+        self.assertEqual(constraints["r3_resume"], "NO")
+        self.assertTrue(constraints["d15_frozen"])
+        self.assertTrue(constraints["r3_frozen"])
+        self.assertEqual(constraints["production_selector"], "dsh-0.1.2rc1")
+        self.assertEqual(constraints["deployment"], "none")
+        self.assertFalse(constraints["release_or_tag_created"])
+        self.assertFalse(constraints["v090_closed"])
+        joined = " ".join(record["non_actions"]).lower()
+        for phrase in ("provider", "child-resume bridge", "terminalattachment",
+                       "d15/r3 unfreeze", "selector", "deployment"):
+            self.assertIn(phrase, joined)
+
+    def test_status_records_step_4_and_keeps_0_9_open(self):
+        status = self._status()
+        self.assertIn("ADR-0082（Accepted，modified）", status)
+        self.assertIn("ADR-0083（Accepted，as proposed）", status)
+        self.assertIn("**0.9 未关闭**", status)
+        self.assertIn("Option 2 的 BYQ child-resume bridge **被拒**", status)
+        self.assertIn("四项 D15-G atomic BLOCKED", status)
+        self.assertIn("D15/R3 保持冻结", status)
+        plan = self._plan()
+        self.assertIn("0.9 ADR-0082/0083 Maintainer Decision", plan)
+        self.assertIn("0.9 is **not** closed", plan)
+
+
 class NoImplementationTests(unittest.TestCase):
-    def test_adr_0082_and_0083_remain_proposed(self):
+    def test_adr_0082_and_0083_are_accepted_and_unimplemented(self):
         for name in ("ADR-0082-dsh-continuable-child-resume.md",
                      "ADR-0083-terminal-attachment-boundary.md"):
             text = (ROOT / "docs/architecture/adr" / name).read_text(encoding="utf-8")
-            self.assertIn("Proposed", text, name)
-            self.assertIn("NOT accepted, NOT implemented", text, name)
-            self.assertNotIn("Status: Accepted", text, name)
+            self.assertIn("- Status: Accepted", text, name)
+            self.assertIn("Accepted: 2026-09-21", text, name)
+            self.assertIn("maintainer decision", text, name)
+            self.assertIn("NOT implemented", text, name)
+            self.assertNotIn("Status: Proposed", text, name)
 
     def test_no_child_resume_or_terminal_wiring_in_services(self):
         services = ROOT / "services"
