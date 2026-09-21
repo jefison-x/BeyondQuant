@@ -32,11 +32,12 @@ ADAPTER_BUDGET = ROOT / "services/runtime-adapter/app/continuation_budget.py"
 ADAPTER_CONTAINMENT = ROOT / "services/runtime-adapter/app/containment.py"
 CONTAINMENT_TEST = ROOT / "services/runtime-adapter/tests/test_session_containment.py"
 ADR_DIR = ROOT / "docs/architecture/adr"
-CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.195"
+CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.196"
 
 CARRIER_FIELDS = {
     "attempt_key", "ordinal", "trigger_key", "interrupted_run_id",
     "interrupted_generation", "containment_attempt", "interrupted_executor_epoch",
+    "snapshot_tail_sequence", "snapshot_digest",
 }
 
 
@@ -122,15 +123,38 @@ class DesignEvidenceTests(unittest.TestCase):
         self.assertIs(trigger["epoch_bound_is_interrupted_not_live"], True)
         self.assertEqual(trigger["cap"], 3)
 
+    def test_carrier_carries_snapshot_identity_and_canonical_digest(self):
+        design = _load(DESIGN)
+        carrier = design["identity_separation"]["trusted_carrier_extension"]
+        self.assertIn("snapshot_tail_sequence", carrier["closed_fields"])
+        self.assertIn("snapshot_digest", carrier["closed_fields"])
+        source = design["authoritative_source"]
+        canonical = source["snapshot_digest_canonical_input"]
+        for token in ("session_id", "trace_id", "tail_sequence", "calls",
+                      "request_sha256", "input_sha256", "ordered"):
+            self.assertIn(token, canonical)
+        self.assertIn("SAME snapshot identity", source["snapshot_identity_bound_where"])
+        # Aggregate/ordinal semantics (P1-R).
+        self.assertIn("does NOT increase the ordinal", source["same_snapshot_retry"])
+        self.assertIn("MUST NOT silently rewrite", source["snapshot_change_semantics"])
+        self.assertIn("MUST NOT consume another ordinal", source["snapshot_change_semantics"])
+        aggregate = design["per_attempt_receipt"]["final_authoritative_aggregate"]
+        self.assertIn("SAME snapshot identity", aggregate)
+
     def test_snapshot_anchoring_and_atomic_check_and_start(self):
         source = _load(DESIGN)["authoritative_source"]
         self.assertIs(source["no_cross_request_lock"], True)
         self.assertIn("snapshot_tail_sequence", source["snapshot_anchoring"])
         self.assertIn("snapshot_digest", source["snapshot_anchoring"])
+        self.assertIn("validate", source["atomic_check_and_start"].lower())
+        self.assertIn("recomputes the CURRENT snapshot", source["atomic_check_and_start"])
         self.assertIn("record.lock", source["atomic_check_and_start"])
         self.assertIn("idle == true", source["atomic_check_and_start"])
         self.assertIn("TOCTOU", source["atomic_check_and_start"])
-        self.assertIn("does not allocate a new business ordinal", source["same_snapshot_retry"])
+        self.assertIn("does NOT increase the ordinal", source["same_snapshot_retry"])
+        steps = " ".join(_load(DESIGN)["identity_separation"]["adapter_recompute_and_verify"])
+        self.assertIn("canonical snapshot digest", steps)
+        self.assertIn("re-verify the CURRENT snapshot tail/digest", steps)
         # Positive: closed stable snapshot with a second root first sequence > 1.
         self.assertTrue(stable_snapshot_closure(False, True, True, [1, 2, 3, 4], [3, 4]))
         # Negatives: not idle, pagination unfinished, reconciliation failed.
@@ -336,7 +360,7 @@ class NoRuntimeImplementationTests(unittest.TestCase):
         from scripts.dsh import build_revision as builds
         self.assertEqual(builds.selected_build_id("dsh-0.1.2rc1"), CURRENT_BUILD_REVISION)
         self.assertTrue((ROOT / "config/dsh/builds" / f"{CURRENT_BUILD_REVISION}.json").is_file())
-        self.assertTrue((ROOT / "config/dsh/builds/dsh-0.1.2rc1-post-u8.194.json").is_file())
+        self.assertTrue((ROOT / "config/dsh/builds/dsh-0.1.2rc1-post-u8.195.json").is_file())
 
 
 if __name__ == "__main__":

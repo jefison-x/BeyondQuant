@@ -24,7 +24,7 @@ EVIDENCE = ROOT / "docs/evidence/v090-session-containment"
 OBSERVATIONS = EVIDENCE / "observations.v2.json"
 VERDICT = EVIDENCE / "verdict.v2.json"
 CONTROLS = EVIDENCE / "negative-controls.v2.json"
-CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.195"
+CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.196"
 
 B1 = "subagent-child-crash"
 B2 = "subagent-byq-adapter-restart"
@@ -196,7 +196,7 @@ class BoundaryTests(unittest.TestCase):
                        "<!-- byq:v090-session-containment=containment-classification-delivered -->",
                        "<!-- byq:session-failure-containment=in-progress-blocked-internal -->",
                        "<!-- byq:session-failure-containment-next=authoritative-step-safety-budget-rescheduling-implementation -->",
-                       "<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.195 -->"):
+                       "<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.196 -->"):
             self.assertIn(marker, status)
         self.assertIn("R3_RESUME = NO", status)
         self.assertIn("D15-G", status)

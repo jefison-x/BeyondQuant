@@ -35,7 +35,7 @@
 <!-- byq:session-failure-containment-next=authoritative-step-safety-budget-rescheduling-implementation -->
 <!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->
 <!-- byq:phase-100-p100-c=paused-not-delivery -->
-<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.195 -->
+<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.196 -->
 
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|
@@ -551,7 +551,8 @@ tag/release，不恢复 Phase 100，不触碰 `codex/phase-100c`/PR #338，不�
   receipt 直接返回旧 run；`runtime.py:780-789`/`806-809`）。carrier
   `task-continuation-reservation.v1` 增加 **closed** `recovery_attempt` 子记录
   `{attempt_key, ordinal, trigger_key, interrupted_run_id, interrupted_generation,
-  containment_attempt, interrupted_executor_epoch}`（P1-L）。**两个 epoch 分离（P1-O）**：
+  containment_attempt, interrupted_executor_epoch, snapshot_tail_sequence,
+  snapshot_digest}`（P1-L/P1-R）。**两个 epoch 分离（P1-O）**：
   `interrupted_executor_epoch` 来自 durable containment（`record_loss` 写入失败 epoch），参与
   SOURCE `trigger_key`，且**永不要求等于 live epoch**；`target_executor_epoch`/`target_generation`
   由 Adapter 在 admission 的 `record.lock` 下读取 **live** epoch 并创建/绑定新 generation，经
@@ -568,12 +569,18 @@ tag/release，不恢复 Phase 100，不触碰 `codex/phase-100c`/PR #338，不�
   （cap 3，`dispatch_attempts` 仍只是传输重试）。step-safety 改为 **snapshot-anchored
   session-global closure（P1-I/N/P）**：`domain_call_evidence` 仅单请求持 `record.lock`
   （`runtime.py:1143-1146`），**不假设跨 HTTP 页持锁**；`idle=true` 时 Adapter 发出固定
-  `{snapshot_tail_sequence, snapshot_digest}`，分页锚定该 tail，与 persisted
-  `agent_domain_call_evidence` **逐项对账**并验证全局 `1..N` 连续，再按 root 过滤（子集只须严格
-  递增、**不必从 1 开始**）；`submit_prompt` 在**同一 `record.lock`（`777-877`）内、创建新 root
-  之前**原子复核 tail/digest 未变且 `idle=true` 才安装 target generation（闭合 check-then-start
-  TOCTOU）；append-between-pages/append-after-final-page/idle 翻转/digest 篡改/竞态→`paused`；
-  同一稳定 snapshot 可重试且**不分配新 ordinal**。**recovery-mode admission envelope（P1-K/N）**：
+  `{snapshot_tail_sequence, snapshot_digest}`，digest 的**规范化输入**为
+  `{"schema_version":"recovery-snapshot.v1","session_id","trace_id","tail_sequence","calls":[有序
+  closed call 行]}`（sorted keys + compact，绑定 session_id + trace_id + tail + 有序调用行），
+  分页锚定该 tail，与 persisted `agent_domain_call_evidence` **逐项对账**并验证全局 `1..N`
+  连续，再按 root 过滤（子集只须严格递增、**不必从 1 开始**）；carrier 的 closed
+  `recovery_attempt` 显式携带 `snapshot_tail_sequence`/`snapshot_digest`（P1-R），Backend 聚合
+  存**同一** snapshot 身份；`submit_prompt` 先校验 snapshot 字段形状与 digest，再在**同一
+  `record.lock`（`777-877`）内、创建新 root 之前**重算并原子比较当前 tail/digest 未变且
+  `idle=true` 才安装 target generation（闭合 check-then-start TOCTOU）；
+  append-between-pages/append-after-final-page/idle 翻转/digest 篡改/竞态→`paused`；**同一
+  trigger + 同一 snapshot 重试不增加 ordinal**，snapshot 变化**不得**静默改写既有 attempt 或
+  消耗另一 ordinal（须新的权威 loss trigger 或 fail closed）。**recovery-mode admission envelope（P1-K/N）**：
   仅允许只读操作，或精确复用原 `(action,task_id,idempotency_key,request_sha256,input_sha256)`；
   模型不得选择/铸造新 key；`may_produce_new_key=true` 仅作保守分类，**永远 ineligible/blocked**，
   不得据此授权铸造新 key（若要允许新 key，须另立 **Proposed** ADR，本 PR 不开启/不暗示）；
@@ -601,20 +608,22 @@ tag/release，不恢复 Phase 100，不触碰 `codex/phase-100c`/PR #338，不�
   （本切片是设计，不是实现）；**不生成也不声称** D15 superseding assessment；B1/B2
   `BLOCKED_EXTERNAL`、历史 D15-G `NO_GO`、`R3_RESUME = NO` 全部不改写；未实现原生 child resume；
   未知副作用暂停。
-- **本修订（P1-A..P1-Q）**：撤回“新 reservation / 固定单 event key 的 3 次 / unique+advisory
+- **本修订（P1-A..P1-R）**：撤回“新 reservation / 固定单 event key 的 3 次 / unique+advisory
   lock / registry-only 步骤查找 / `token_limit−charged_tokens` / 以 `reservation_id` 直接 rearm /
   单 settlement slot / 按 root 从 1 连续 / 双重扣减 / `may_produce_new_key` 可授权新 key / 单一
-  executor_epoch 同时匹配 containment 与 live / 跨 HTTP 页持锁 / 只读豁免 token floor”等表述；
-  改为原行 rearm + 身份分离 + **interrupted/target 双 epoch** + 每 attempt receipt + trigger-key
-  去重 + **snapshot-anchored** session-global closure + **in-lock 原子 check-and-start** + 自洽
-  tri-state 不双扣公式（**新 recovery model run 必须满足 model-call floor**）+ recovery admission
-  envelope；均有 committed 代码行号支撑（见 `design.v1.json.real_code_facts`）。
+  executor_epoch 同时匹配 containment 与 live / 跨 HTTP 页持锁 / 只读豁免 token floor / carrier
+  未携带 snapshot 身份”等表述；改为原行 rearm + 身份分离 + **interrupted/target 双 epoch** + 每
+  attempt receipt + trigger-key 去重 + **snapshot-anchored** session-global closure（carrier 显式
+  携带 snapshot 身份 + 规范化 digest + 原子比较）+ 自洽 tri-state 不双扣公式（**新 recovery
+  model run 必须满足 model-call floor**）+ recovery admission envelope；均有 committed 代码行号
+  支撑（见 `design.v1.json.real_code_facts`）。
 - 构建身份：初始设计切片推进 `post-u8.190 → post-u8.191`；P1-A..P1-E 推进
   `post-u8.191 → post-u8.192`；P1-F..P1-K 推进 `post-u8.192 → post-u8.193`；P1-L..P1-N 推进
-  `post-u8.193 → post-u8.194`；本 P1-O..P1-Q 修订（`tests/` 变更）再推进
-  `post-u8.194 → post-u8.195`（`scripts/`、`tests/`、
+  `post-u8.193 → post-u8.194`；P1-O..P1-Q 推进 `post-u8.194 → post-u8.195`；本 P1-R 修订
+  （`tests/` 变更）再推进 `post-u8.195 → post-u8.196`（`scripts/`、`tests/`、
   `services/runtime-adapter/Dockerfile.post-u8-candidate` 属 build inputs，仅重建身份；历史
-  `.190`/`.191`/`.192`/`.193`/`.194` manifest 与全部证据保留，不改 selector/`compose.yml`/`deployment.json`/制品）。
+  `.190`/`.191`/`.192`/`.193`/`.194`/`.195` manifest 与全部证据保留，不改
+  selector/`compose.yml`/`deployment.json`/制品）。
 
 ## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19，历史叙述）
 

@@ -28,6 +28,14 @@ ADR-0066, ADR-0062, and the merged containment slice
 >   (no cross-HTTP-page locking claim); and removal of the read-only model-call
 >   floor exemption (any new recovery model run needs a known floor; only a
 >   controller-only reconciliation may observe below it).
+> - P1-R: the closed `recovery_attempt` carrier explicitly carries
+>   `snapshot_tail_sequence` + `snapshot_digest` (Backend-issued/persisted), with a
+>   canonicalized digest input binding `session_id` + `trace_id` + tail + the
+>   ordered closed call rows; the Adapter validates shape+digest then recomputes
+>   and atomically compares the CURRENT snapshot under `record.lock`; the Backend
+>   aggregate stores the SAME snapshot identity, a same-trigger+same-snapshot
+>   retry does not raise the ordinal, and a snapshot change never silently
+>   rewrites an attempt or consumes another ordinal.
 
 ## Code facts the design must respect (verified against the committed tree)
 
@@ -167,8 +175,11 @@ Because `submit_prompt` returns the **old** run for a reused prompt key
   `task-continuation-reservation.v1` gains a **closed** `recovery_attempt`
   sub-record with exactly `{attempt_key, ordinal, trigger_key,
   interrupted_run_id, interrupted_generation, containment_attempt,
-  interrupted_executor_epoch}`. Only the Backend mints it; `validate_reservation`
-  keeps owner/workspace checks.
+  interrupted_executor_epoch, snapshot_tail_sequence, snapshot_digest}` (P1-R).
+  Only the Backend mints it; `validate_reservation` keeps owner/workspace checks.
+  The `snapshot_*` fields carry the expected anchored snapshot (below) so the
+  Adapter can re-verify it; the Backend attempt aggregate stores the SAME
+  snapshot identity.
 - **Two epochs (P1-O), never conflated:**
   - `interrupted_executor_epoch` comes from the durable containment record
     (`containment.record_loss` wrote the failing epoch) and participates in the
@@ -182,21 +193,29 @@ Because `submit_prompt` returns the **old** run for a reused prompt key
     epoch: the Adapter determines the target atomically at admission and returns
     `{target_executor_epoch, target_generation, run_id}` in the **accepted
     receipt**; the Backend persists them in the attempt aggregate.
-- **Adapter recompute/verify (fail closed).** `submit_prompt` MUST:
-  1. recompute `trigger_key' = sha256("recovery-trigger.v1:" + reservation_id +
+- **Adapter validate-then-atomic-compare (fail closed).** `submit_prompt` MUST:
+  1. validate the closed SOURCE field shape, including `snapshot_tail_sequence`
+     (non-negative int) and `snapshot_digest` (64 hex chars);
+  2. recompute `trigger_key' = sha256("recovery-trigger.v1:" + reservation_id +
      ":" + interrupted_run_id + ":" + interrupted_generation + ":" +
      containment_attempt + ":" + interrupted_executor_epoch)` from the carrier
      fields and require `trigger_key' == trigger_key`;
-  2. recompute `attempt_key' = "recovery_" + sha256(trigger_key + ":" +
+  3. recompute `attempt_key' = "recovery_" + sha256(trigger_key + ":" +
      str(ordinal))[:32]` and require `attempt_key' == attempt_key`;
-  3. require `containment_attempt`, `interrupted_generation` and
+  4. require `containment_attempt`, `interrupted_generation` and
      `interrupted_executor_epoch` to match the durable containment record for the
      same session/trace/run;
-  4. require the prompt `idempotency_key == attempt_key` and the carrier's
+  5. recompute the **canonical snapshot digest** over the CURRENT session/trace
+     and ordered closed call rows and require it equals the carrier
+     `snapshot_digest`;
+  6. require the prompt `idempotency_key == attempt_key` and the carrier's
      reservation id to equal the budget's `reservation_id`;
-  5. **at admission under `record.lock`**, read the live epoch, create/bind the
-     target `RuntimeGeneration`, and return the accepted receipt with
-     `{target_executor_epoch, target_generation, run_id}`.
+  7. **at admission under `record.lock`**, recompute/compare the CURRENT snapshot
+     tail/digest atomically (must be identical) and require `idle == true`, then
+     read the live epoch, create/bind the target `RuntimeGeneration`, and return
+     the accepted receipt with `{target_executor_epoch, target_generation,
+     run_id}`.
+  A missing/tampered digest, a tail change, or `idle != true` → `paused`/rejected.
 - **Target/receipt fence:** the accepted receipt binds `{attempt_key,
   reservation_id, ordinal, run_id, target_executor_epoch, target_generation}`;
   the Backend persists them; a later/old target write (stale target receipt or
@@ -256,28 +275,40 @@ The adapter journal and `agent_domain_call_evidence` sequences are
 `(owner,workspace,session,sequence)`), so a per-root filter "start at 1 and
 contiguous" would misread the 2nd+ root as a gap. The closure rule is:
 
-1. **Snapshot anchoring, no cross-request lock (P1-P).** `domain_call_evidence`
+1. **Snapshot anchoring, no cross-request lock (P1-P/P1-R).** `domain_call_evidence`
    holds `record.lock` only within a **single** request (`runtime.py:1143-1146`);
    a multi-page HTTP fetch does **not** hold a lock across pages, so the design
    does **NOT** assume "the same locked view across pages". Instead, when
    `idle == true` the Adapter issues a **fixed snapshot**
    `{snapshot_tail_sequence, snapshot_digest}` deterministically bound to
-   `(session_id, trace_id)` and the ordered (append-only) call rows. Pagination
-   is fully anchored to that tail; every page is validated against it, and any
-   change to the tail/digest/`idle` → `paused`. Reconcile adapter pages with the
-   persisted `agent_domain_call_evidence` rows **item-by-item** by `(session,
-   sequence, action, idempotency_key, request_sha256, input_sha256)`; the union
-   must be the session-global `1..N` strictly contiguous.
-2. **Atomic check-and-start (TOCTOU closure).** `submit_prompt`, within the SAME
-   `record.lock` (`runtime.py:777-877`) and **before** creating a new root /
-   installing the target generation, atomically re-verifies that the expected
-   `snapshot_tail_sequence`/`snapshot_digest` is still identical AND `idle ==
-   true`; only then does it install the target generation. This closes the "a
-   new root/call appears between evidence review and re-dispatch" window. The
-   Backend classification/attempt aggregate and the carrier bind this snapshot
-   identity. A retry of the **same** stable snapshot is allowed and does not
-   allocate a new business ordinal (`trigger_key` dedup returns the existing
-   attempt).
+   `(session_id, trace_id)` and the ordered (append-only) call rows. The
+   **canonicalized digest input** is the sha256 hex of
+   `{"schema_version":"recovery-snapshot.v1","session_id":<str>,
+   "trace_id":<str>,"tail_sequence":<int>,"calls":[<ordered closed call rows>]}`
+   serialized with sorted keys and compact separators, where each call row binds
+   `(sequence, root_run_id, generation, agent_run_id, action, idempotency_key,
+   request_sha256, input_sha256)`; i.e. the digest binds `session_id` + `trace_id`
+   + the tail + the **ordered** closed call rows. Pagination is fully anchored to
+   that tail; every page is validated against it, and any change to the
+   tail/digest/`idle` → `paused`. Reconcile adapter pages with the persisted
+   `agent_domain_call_evidence` rows **item-by-item** by `(session, sequence,
+   action, idempotency_key, request_sha256, input_sha256)`; the union must be the
+   session-global `1..N` strictly contiguous.
+2. **Validate-then-atomic-compare-and-start (TOCTOU closure).** `submit_prompt`
+   first validates the carrier snapshot field shape and recomputes/compares the
+   digest; then, within the SAME `record.lock` (`runtime.py:777-877`) and
+   **before** creating a new root / installing the target generation, it
+   recomputes the CURRENT snapshot and atomically compares the expected
+   `snapshot_tail_sequence`/`snapshot_digest` (must be identical) AND requires
+   `idle == true`; only then does it install the target generation. This closes
+   the "a new root/call appears between evidence review and re-dispatch" window.
+   The Backend-issued and persisted CLOSED `recovery_attempt` carrier carries the
+   `snapshot_*` fields, and the Backend attempt aggregate stores the SAME
+   snapshot identity. Retrying the **same** `trigger_key` + **same** snapshot
+   does **not** increase the ordinal (`trigger_key` dedup returns the existing
+   attempt); a snapshot change MUST NOT silently rewrite an existing attempt and
+   MUST NOT consume another ordinal — it requires a new authoritative loss
+   trigger (`trigger_key`) or fails closed.
 3. **Then** filter the target root by exact `(session_id, trace_id, root_run_id,
    generation, agent_run_id)`. The target subset must be strictly increasing and
    consistent with the global sequence; it does **not** need to start at 1
@@ -389,26 +420,32 @@ record matching the same session/trace and exact run.
    conservative only and always ineligible (a new key would need a Proposed ADR).
 2. Backend-minted `recovery_attempt_key` carried in the closed `recovery_attempt`
    sub-record `{attempt_key, ordinal, trigger_key, interrupted_run_id,
-   interrupted_generation, containment_attempt, interrupted_executor_epoch}`; the
-   Adapter recomputes/verifies both keys, matches the durable containment, and
-   **at admission under `record.lock`** reads the live epoch, binds the target
+   interrupted_generation, containment_attempt, interrupted_executor_epoch,
+   snapshot_tail_sequence, snapshot_digest}`; the Adapter validates the snapshot
+   field shape/digest, recomputes/verifies both keys, matches the durable
+   containment, and **at admission under `record.lock`** recomputes/compares the
+   CURRENT snapshot tail/digest, reads the live epoch, binds the target
    `RuntimeGeneration`, and returns `{target_executor_epoch, target_generation,
    run_id}` in the accepted receipt; client/model cannot mint it.
 3. Per-attempt prompt/guard/settlement receipts (`attempt_key.json`), immutable,
    bound to `{reservation_id, ordinal, run_id, charged_tokens, settlement_sha256}`;
    Backend `recovery_attempts` is the final aggregate (including the target
-   epoch/generation); cumulative exact charges ≤ `R.token_limit`.
+   epoch/generation and the SAME snapshot identity); cumulative exact charges ≤
+   `R.token_limit`.
 4. Trigger-key dedup before ordinal allocation under the task-row `FOR UPDATE`;
    cap 3; concurrent same-trigger calls create exactly one attempt; the trigger
-   binds the **interrupted** epoch, never the live one.
+   binds the **interrupted** epoch, never the live one; same trigger + same
+   snapshot retry does not increase the ordinal, and a snapshot change never
+   silently rewrites an existing attempt or consumes another ordinal.
 5. Snapshot-anchored session-global closure (fixed `{snapshot_tail_sequence,
-   snapshot_digest}` when `idle=true`; pagination anchored to it; no
+   snapshot_digest}` when `idle=true`; canonicalized digest over `session_id` +
+   `trace_id` + tail + ordered closed call rows; pagination anchored to it; no
    cross-request lock assumed; item-by-item adapter↔Backend reconciliation;
    global `1..N` contiguous; per-root subset strictly increasing, not required to
-   start at 1) **plus** the in-`record.lock` atomic check-and-start before
-   creating a new root (re-verify tail/digest unchanged and `idle=true`);
-   append-between-pages / append-after-final-page / idle-flip / digest-tamper /
-   check-then-start race → `paused`.
+   start at 1) **plus** the in-`record.lock` validate-shape-then-atomic-compare-
+   and-start before creating a new root (recompute tail/digest and require
+   unchanged and `idle=true`); append-between-pages / append-after-final-page /
+   idle-flip / digest-tamper / check-then-start race → `paused`.
 6. Corrected budget formula (grant invariant; `R_available = R.token_limit −
    cum_exact`; no second deduction; **any new recovery model run requires a known
    `R_available >= model_call_floor`**; no read-only exemption; numeric example

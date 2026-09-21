@@ -46,8 +46,9 @@ budget authority stays the original `reservation_id`, while each recovery submis
 Backend-minted `recovery_attempt_key` (the Adapter otherwise returns the lost old run for a reused
 prompt key and forces the key to `reservation_id`); the carrier's **closed** `recovery_attempt`
 sub-record carries `{attempt_key, ordinal, trigger_key, interrupted_run_id, interrupted_generation,
-containment_attempt, interrupted_executor_epoch}`, and the Adapter recomputes both keys and matches
-the durable containment (missing/tampered → fail closed); (2) **two epochs** — the SOURCE
+containment_attempt, interrupted_executor_epoch, snapshot_tail_sequence, snapshot_digest}`, and the
+Adapter validates the snapshot field shape/digest, recomputes both keys and matches the durable
+containment (missing/tampered → fail closed); (2) **two epochs** — the SOURCE
 `interrupted_executor_epoch` comes from the durable containment and never has to equal the live
 epoch, while the Adapter reads the **live** `target_executor_epoch`/`target_generation` at admission
 under `record.lock` and returns them in the accepted receipt (the Backend never pretends to know the
@@ -57,10 +58,14 @@ ordinal, run_id, charged_tokens, settlement_sha256}` with the Backend row as the
 (4) **trigger-key dedup** before ordinal allocation binding the interrupted epoch (same fenced loss
 returns the existing attempt; only a new loss allocates the next ordinal, cap 3); (5)
 **snapshot-anchored session-global closure** (no cross-request lock assumed: a fixed
-`{snapshot_tail_sequence, snapshot_digest}` issued when `idle=true`, item-by-item
-adapter↔Backend reconciliation, global `1..N` contiguous, then per-root filter; a second root's
-first sequence > 1 is legal) plus an **in-`record.lock` atomic check-and-start** before creating a
-new root (append/idle-flip/digest-tamper/race → `paused`); (6) a **no-double-deduction,
+`{snapshot_tail_sequence, snapshot_digest}` issued when `idle=true` and carried in the closed
+carrier, canonicalized digest over `session_id` + `trace_id` + tail + ordered closed call rows,
+item-by-item adapter↔Backend reconciliation, global `1..N` contiguous, then per-root filter; a
+second root's first sequence > 1 is legal) plus an **in-`record.lock`
+validate-shape-then-atomic-compare-and-start** before creating a new root
+(append/idle-flip/digest-tamper/race → `paused`; the Backend aggregate stores the SAME snapshot
+identity; a same-trigger+same-snapshot retry does not raise the ordinal and a snapshot change never
+silently rewrites an attempt); (6) a **no-double-deduction,
 self-consistent tri-state** budget decision (`blocked` for authoritative denial/conflict/ordinal
 cap/known sub-floor, `None`/`paused` for unknown cost/input, `R_available = R.token_limit −
 cum_exact` after the grant invariant, e.g. P=100/other=30/R=60/charge=20 → 40, not 10; unknown cost
