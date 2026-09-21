@@ -1,0 +1,129 @@
+{
+  "schema_version": "byq-v090-dsh-provider-qualification-contract.v1",
+  "slice": "v090-dsh-provider-qualification",
+  "owner_node": "d15-4-child-provider-remediation",
+  "adr": "docs/architecture/adr/ADR-0082-dsh-continuable-child-resume.md",
+  "closeout_slices": "docs/evidence/v090-closeout/DSH-015RC1-CLOSEOUT-SLICES.md",
+  "examined_versions": [
+    {
+      "id": "rc2",
+      "npm": "0.1.5-rc.2",
+      "channel": "next",
+      "python_sdk": null,
+      "python_runtime_bin": null,
+      "coherent_pairing": false
+    },
+    {
+      "id": "alpha2",
+      "npm": "0.1.6-alpha.2",
+      "channel": "alpha",
+      "python_sdk": null,
+      "python_runtime_bin": null,
+      "coherent_pairing": false
+    }
+  ],
+  "required_evidence_class": "native-runtime-isolated",
+  "required_providers": [
+    {
+      "name": "spawn",
+      "package": "@deepseek-ai/dsh-subagent-spawn-in-process",
+      "boundary": "in-process"
+    },
+    {
+      "name": "fork",
+      "package": "@deepseek-ai/dsh-subagent-fork-in-process",
+      "boundary": "in-process"
+    },
+    {
+      "name": "acp",
+      "package": "@deepseek-ai/dsh-subagent-acp",
+      "boundary": "out-of-process"
+    },
+    {
+      "name": "codex",
+      "package": "@deepseek-ai/dsh-subagent-codex",
+      "boundary": "out-of-process"
+    },
+    {
+      "name": "claude-code",
+      "package": "@deepseek-ai/dsh-subagent-claude-code",
+      "boundary": "out-of-process"
+    },
+    {
+      "name": "dsh-sdk",
+      "package": "@deepseek-ai/dsh-subagent-dsh-sdk",
+      "boundary": "out-of-process"
+    }
+  ],
+  "required_gate": {
+    "method": "SubagentRuntime.prepareContinuable",
+    "out_of_process_rejection_code": "UNSUPPORTED_CAPABILITY",
+    "rejection_message_fragment": "does not support continuable children"
+  },
+  "required_capability": {
+    "id": "out-of-process-continuable-provider",
+    "description": "an actually registerable out-of-process DSH provider implementing SubagentProvider.prepareContinuable whose child runs in its own OS process and can be rediscovered by a new generation after the parent/provider process is SIGKILLed",
+    "helper_symbols_are_not_capability": [
+      "lib/types/out-of-process.d.ts",
+      "subprocessRunHandle",
+      "NO_START_CAPABILITIES",
+      "settleRunResult",
+      "resolveChildCwd"
+    ]
+  },
+  "cross_process_qualification_required_fields": {
+    "method": "cross-process-continuation",
+    "child_independent_os_process": true,
+    "parent_os_process_sigkilled": true,
+    "new_generation_discovered_child": true,
+    "discovery_child_id_matches": true,
+    "durable_mailbox_present": true,
+    "message_delivered": true,
+    "wakeup_delivered": true,
+    "single_active_lease": true,
+    "lease_takeover": true,
+    "stale_epoch_rejected": true,
+    "at_most_once_settlement": true,
+    "settlement_count": 1,
+    "original_goal_lineage_preserved": true,
+    "delegation_lineage_preserved": true,
+    "authorization_enforced": true,
+    "tool_filter_enforced": true,
+    "orphan_processes": 0,
+    "orphan_sessions": 0
+  },
+  "required_positive_int_fields": [
+    "child_os_process_id",
+    "parent_os_process_id",
+    "generation_b_os_process_id"
+  ],
+  "required_monotonic_fields": [
+    {
+      "from": "lease_epoch_before",
+      "to": "lease_epoch_after",
+      "reason": "lease takeover must advance the epoch; a stale epoch must be fenced"
+    }
+  ],
+  "forbidden_substitutions": [
+    "out-of-process.d.ts presence",
+    "subprocessRunHandle symbol",
+    "one-shot ACP child",
+    "cold-read session",
+    "same-process in-process provider",
+    "BYQ child-resume bridge (ADR-0082 Option 2, rejected)",
+    "label-only PASS"
+  ],
+  "pass_requires": "an out-of-process provider with a real prepareContinuable gate pass AND a complete cross-process continuation qualification (durable mailbox, single-active lease with epoch fencing, at-most-once settlement, goal/delegation lineage, authorization/tool filtering, orphan cleanup)",
+  "blocked_definition": "the required capability is absent from the examined release; the ADR-0082 Option 1 blocker stays BLOCKED and an upstream out-of-process continuable provider is required",
+  "qualification_switch": "BYQ_DSH_PROVIDER_QUALIFICATION=1",
+  "constraints": {
+    "r3_resume": "NO",
+    "d15_g_verdict": "NO_GO",
+    "production_selector": "dsh-0.1.2rc1",
+    "dependency_upgrade": "none",
+    "deployment": "none",
+    "release_or_tag_created": false,
+    "fork_or_patch_of_dsh": false,
+    "byq_child_resume_bridge": false
+  }
+}

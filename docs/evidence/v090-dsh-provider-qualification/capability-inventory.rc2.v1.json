@@ -1,0 +1,183 @@
+{
+  "schema_version": "byq-v090-dsh-provider-qualification-capability-inventory.v1",
+  "generated_at": "2026-09-21T06:43:31.000Z",
+  "examined_version": {
+    "id": "rc2",
+    "npm": "0.1.5-rc.2",
+    "channel": "next",
+    "subagent_package_version": "0.1.5-rc.2"
+  },
+  "evidence_class": "native-runtime-isolated",
+  "llm": {
+    "class": "no-llm",
+    "real_llm_quality": false,
+    "note": "capability inventory makes no LLM call"
+  },
+  "boot_error": null,
+  "providers": [
+    {
+      "name": "spawn",
+      "package": "@deepseek-ai/dsh-subagent-spawn-in-process",
+      "boundary": "in-process",
+      "version": "0.1.5-rc.2",
+      "import_ok": true,
+      "prepare_continuable_present": true,
+      "capabilities": {
+        "agentOptions": true,
+        "outputSchema": true,
+        "depthLimit": true,
+        "toolFilter": true,
+        "persona": true
+      },
+      "gate": {
+        "ok": true,
+        "kind": "capability-present",
+        "spec": {}
+      }
+    },
+    {
+      "name": "fork",
+      "package": "@deepseek-ai/dsh-subagent-fork-in-process",
+      "boundary": "in-process",
+      "version": "0.1.5-rc.2",
+      "import_ok": true,
+      "prepare_continuable_present": true,
+      "capabilities": {
+        "agentOptions": true,
+        "outputSchema": true,
+        "depthLimit": true,
+        "toolFilter": true,
+        "persona": true
+      },
+      "gate": {
+        "ok": true,
+        "kind": "capability-present",
+        "spec": {}
+      }
+    },
+    {
+      "name": "acp",
+      "package": "@deepseek-ai/dsh-subagent-acp",
+      "boundary": "out-of-process",
+      "version": "0.1.5-rc.2",
+      "import_ok": true,
+      "prepare_continuable_present": false,
+      "capabilities": {
+        "agentOptions": false,
+        "outputSchema": false,
+        "depthLimit": false,
+        "toolFilter": false,
+        "persona": false
+      },
+      "gate": {
+        "ok": false,
+        "kind": "unsupported-capability",
+        "errorClass": "SubagentError",
+        "errorCode": "UNSUPPORTED_CAPABILITY",
+        "message": "subagent provider \"acp\" does not support continuable children (no prepareContinuable capability)"
+      }
+    },
+    {
+      "name": "codex",
+      "package": "@deepseek-ai/dsh-subagent-codex",
+      "boundary": "out-of-process",
+      "version": "0.1.5-rc.2",
+      "import_ok": true,
+      "prepare_continuable_present": false,
+      "capabilities": {
+        "agentOptions": false,
+        "outputSchema": false,
+        "depthLimit": false,
+        "toolFilter": false,
+        "persona": false
+      },
+      "gate": {
+        "ok": false,
+        "kind": "unsupported-capability",
+        "errorClass": "SubagentError",
+        "errorCode": "UNSUPPORTED_CAPABILITY",
+        "message": "subagent provider \"codex\" does not support continuable children (no prepareContinuable capability)"
+      }
+    },
+    {
+      "name": "claude-code",
+      "package": "@deepseek-ai/dsh-subagent-claude-code",
+      "boundary": "out-of-process",
+      "version": "0.1.5-rc.2",
+      "import_ok": true,
+      "prepare_continuable_present": false,
+      "capabilities": {
+        "agentOptions": false,
+        "outputSchema": false,
+        "depthLimit": false,
+        "toolFilter": false,
+        "persona": false
+      },
+      "gate": {
+        "ok": false,
+        "kind": "unsupported-capability",
+        "errorClass": "SubagentError",
+        "errorCode": "UNSUPPORTED_CAPABILITY",
+        "message": "subagent provider \"claude-code\" does not support continuable children (no prepareContinuable capability)"
+      }
+    },
+    {
+      "name": "dsh-sdk",
+      "package": "@deepseek-ai/dsh-subagent-dsh-sdk",
+      "boundary": "out-of-process",
+      "version": "0.1.5-rc.2",
+      "import_ok": true,
+      "prepare_continuable_present": false,
+      "capabilities": {
+        "agentOptions": true,
+        "outputSchema": false,
+        "depthLimit": false,
+        "toolFilter": false,
+        "persona": false
+      },
+      "gate": {
+        "ok": false,
+        "kind": "unsupported-capability",
+        "errorClass": "SubagentError",
+        "errorCode": "UNSUPPORTED_CAPABILITY",
+        "message": "subagent provider \"dsh-sdk\" does not support continuable children (no prepareContinuable capability)"
+      }
+    }
+  ],
+  "declared_limitations": {
+    "available": true,
+    "process_local_residency": true,
+    "durable_mailbox_absent": true,
+    "cross_process_lease_absent": true,
+    "cross_process_continuation_deferred": true,
+    "acp_one_shot": true,
+    "process_local_activation_quote": "the Activation inbox and ownership graph do not coordinate two harness processes; concurrent access to one persistence store needs a durable mailbox and cross-process lease protocol"
+  },
+  "out_of_process_helpers": [
+    "NO_START_CAPABILITIES",
+    "subprocessRunHandle",
+    "settleRunResult",
+    "resolveChildCwd",
+    "assertPositiveFinite",
+    "assertUsableCwd",
+    "validateConfiguredCwd"
+  ],
+  "helper_symbols_are_not_capability": true,
+  "cross_process_continuation_qualification": null,
+  "cross_process_continuation_qualification_reason": "no out-of-process continuable provider exists in the examined release to run a cross-process continuation, mailbox/lease, at-most-once settlement or orphan-cleanup qualification against",
+  "conclusions": {
+    "out_of_process_continuable_provider_available": false,
+    "in_process_continuable_provider_available": true,
+    "out_of_process_provider_without_prepare_continuable_rejected": true,
+    "cross_process_qualification_ok": false,
+    "out_of_process_continuable_providers": [],
+    "in_process_continuable_providers": [
+      "spawn",
+      "fork"
+    ]
+  },
+  "production_unchanged": {
+    "selector": "config/dsh/deployment.json default_release=dsh-0.1.2rc1",
+    "note": "probe boots only an isolated in-memory cordis context from a scratch install; no DSH fork/patch and no production file written"
+  }
+}
