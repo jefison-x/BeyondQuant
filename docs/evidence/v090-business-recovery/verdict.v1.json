@@ -1,0 +1,171 @@
+{
+  "all_pass": true,
+  "coverage_failures": [],
+  "exit_code": 0,
+  "failures": [],
+  "format_valid": true,
+  "scenarios": [
+    {
+      "failures": [],
+      "id": "same-trigger-same-snapshot-exactly-once",
+      "kind": "allocation",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "retry-reuses-original-ordinal",
+      "kind": "allocation",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "snapshot-change-no-overwrite-no-extra-ordinal",
+      "kind": "allocation",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "ordinal-cap-blocks",
+      "kind": "allocation",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "no-double-deduction",
+      "kind": "budget",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "model-call-floor-required",
+      "kind": "budget",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "unknown-cost-paused",
+      "kind": "budget",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "evidence-conflict-blocked",
+      "kind": "budget",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "grant-invariant-blocked",
+      "kind": "budget",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "envelope-new-key-blocked",
+      "kind": "envelope",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "envelope-exact-reuse-eligible",
+      "kind": "envelope",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "envelope-non-original-call-blocked",
+      "kind": "envelope",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "snapshot-digest-tamper-paused",
+      "kind": "snapshot",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "snapshot-tail-change-paused",
+      "kind": "snapshot",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "snapshot-idle-flip-paused",
+      "kind": "snapshot",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "carrier-extra-field-rejected",
+      "kind": "carrier",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "carrier-trigger-mismatch-rejected",
+      "kind": "carrier",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "target-stale-epoch-rejected",
+      "kind": "target",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "target-stale-generation-rejected",
+      "kind": "target",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "gateway-forwards-closed-carrier",
+      "kind": "gateway",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "gateway-rejects-invented-field",
+      "kind": "gateway",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "real-adapter-journal-snapshot-closure",
+      "kind": "adapter",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "observer-breakable",
+      "kind": "meta",
+      "required": true,
+      "verdict": "PASS"
+    }
+  ],
+  "schema_version": "byq-v090-business-recovery-verdict.v1"
+}

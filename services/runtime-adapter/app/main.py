@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from packages.contracts.conversation_rehydration import ConversationContextMessage
 from packages.operations.admission import AdmissionClosed, chat_admission
 from packages.contracts.prompt_rejection import credential_rejection
+from packages.contracts import business_recovery as recovery_contract
 
 from .runtime import ModelCredentialUnavailable, RuntimeAdapter, SessionConflict, StaleSessionLease
 
@@ -143,6 +144,10 @@ def submit_prompt(session_id: str, request: PromptRequest) -> dict[str, object]:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except SessionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except recovery_contract.RecoveryRejected as exc:
+        # A failed recovery admission is never a submit: fail closed with the
+        # closed reason so the caller pauses/blocks instead of retrying blindly.
+        raise HTTPException(status_code=409, detail={"code": exc.code, "paused": exc.paused}) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ModelCredentialUnavailable as exc:
@@ -253,6 +258,18 @@ def continuation_qualification(session_id: str) -> dict:
     with record.lock:
         qualified = adapter.continuation_qualified(record)
         return {'qualified': qualified, 'reason': 'qualified' if qualified else 'model_or_executor_unqualified'}
+
+
+@app.get('/internal/runtime/sessions/{session_id}/recovery-receipt/{attempt_key}')
+def recovery_receipt(session_id: str, attempt_key: str) -> dict:
+    """Exact accepted target receipt for one Backend-minted attempt key."""
+
+    try:
+        return adapter.recovery_receipt(session_id, attempt_key)
+    except KeyError:
+        raise HTTPException(status_code=404, detail='unknown recovery attempt')
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/internal/runtime/sessions/{session_id}/cancel")

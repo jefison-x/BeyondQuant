@@ -512,6 +512,31 @@ def record_task_continuation_receipt(task_id: str, payload: dict[str, Any], requ
         task_id, trusted_context=context, **payload))
 
 
+@app.post('/internal/task-continuation/{task_id}/recovery')
+def begin_task_recovery(task_id: str, payload: dict[str, Any], request: Request) -> dict:
+    context = _continuation_consumer_context(request)
+    required = {'reservation_id', 'interrupted_run_id', 'interrupted_generation',
+                'containment_attempt', 'interrupted_executor_epoch',
+                'snapshot_tail_sequence', 'snapshot_digest'}
+    allowed = required | {'read_only', 'replayed_calls', 'occurred_calls',
+                          'evidence_conflict', 'model_call_floor'}
+    if not required <= set(payload) or set(payload) - allowed:
+        raise HTTPException(status_code=422, detail='invalid recovery request fields')
+    return _research_call(lambda: research_store.begin_recovery(
+        task_id, trusted_context=context, **payload))
+
+
+@app.post('/internal/task-continuation/{task_id}/recovery-target')
+def record_task_recovery_target(task_id: str, payload: dict[str, Any], request: Request) -> dict:
+    context = _continuation_consumer_context(request)
+    required = {'reservation_id', 'attempt_key', 'run_id', 'target_executor_epoch', 'target_generation'}
+    allowed = required | {'status'}
+    if not required <= set(payload) or set(payload) - allowed:
+        raise HTTPException(status_code=422, detail='invalid recovery target fields')
+    return _research_call(lambda: research_store.record_recovery_target(
+        task_id, trusted_context=context, **payload))
+
+
 @app.post("/internal/domain-call-evidence/{conversation_id}")
 def consume_domain_call_evidence(conversation_id: str, payload: dict[str, Any], request: Request) -> dict:
     # Private Gateway consumer. Never exposed through Product API or MCP.

@@ -1,0 +1,210 @@
+{
+  "all_controls_pass": true,
+  "baseline_all_pass": true,
+  "control_count": 25,
+  "controls": [
+    {
+      "defect_targeting": true,
+      "first_failure": "same-trigger-same-snapshot-exactly-once: derived allocation result 1 {'created': False, 'attempt_key': 'recovery_961b57219c23733e66011c63d55fe887', 'ordinal': 1} != contract {'created': True, 'attempt_key': 'recovery_961b57219c23733e66011c63d55fe887', 'ordinal': 2}",
+      "name": "same-trigger-creates-a-second-attempt",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "retry-reuses-original-ordinal: derived allocation result 1 {'created': False, 'attempt_key': 'recovery_961b57219c23733e66011c63d55fe887', 'ordinal': 1} != contract {'created': True, 'attempt_key': 'recovery_961b57219c23733e66011c63d55fe887', 'ordinal': 2}",
+      "name": "retry-raises-the-ordinal",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "snapshot-change-no-overwrite-no-extra-ordinal: derived allocation result 1 {'blocked': 'snapshot_changed_for_existing_trigger'} != contract {'blocked': None, 'created': True, 'ordinal': 2}",
+      "name": "snapshot-change-consumes-an-ordinal",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "ordinal-cap-blocks: derived allocation result 3 {'blocked': 'ordinal_cap'} != contract {'blocked': None, 'created': True, 'ordinal': 4}",
+      "name": "ordinal-cap-bypassed",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "no-double-deduction: derived budget decision='blocked' != contract 'eligible'",
+      "name": "double-deducted-budget",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "model-call-floor-required: derived budget decision='eligible' != contract 'blocked'",
+      "name": "model-floor-bypassed",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "unknown-cost-paused: derived budget decision='eligible' != contract 'paused'",
+      "name": "unknown-cost-treated-as-zero",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "evidence-conflict-blocked: derived budget decision='eligible' != contract 'blocked'",
+      "name": "evidence-conflict-allowed",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "grant-invariant-blocked: derived budget decision='eligible' != contract 'blocked'",
+      "name": "grant-invariant-bypassed",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "envelope-new-key-blocked: derived envelope eligible=True != contract False",
+      "name": "new-key-action-eligible",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "envelope-non-original-call-blocked: derived envelope eligible=True != contract False",
+      "name": "non-original-call-eligible",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "snapshot-digest-tamper-paused: snapshot was accepted but the contract rejects it",
+      "name": "snapshot-digest-tamper-accepted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "snapshot-tail-change-paused: snapshot was accepted but the contract rejects it",
+      "name": "snapshot-tail-change-accepted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "snapshot-idle-flip-paused: snapshot was accepted but the contract rejects it",
+      "name": "snapshot-idle-flip-accepted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "carrier-extra-field-rejected: carrier was accepted but the contract rejects it",
+      "name": "carrier-extra-field-accepted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "carrier-trigger-mismatch-rejected: carrier was accepted but the contract rejects it",
+      "name": "carrier-trigger-mismatch-accepted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "target-stale-epoch-rejected: stale target was accepted but the contract rejects it",
+      "name": "stale-target-epoch-accepted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "target-stale-generation-rejected: stale target was accepted but the contract rejects it",
+      "name": "stale-target-generation-accepted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "gateway-forwards-closed-carrier: forwarded carrier does not equal the closed authority",
+      "name": "gateway-invents-authority",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "gateway-rejects-invented-field: gateway accepted an invalid carrier",
+      "name": "gateway-invented-field-accepted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "real-adapter-journal-snapshot-closure: recorded adapter digest is not the canonical digest",
+      "name": "real-journal-digest-mismatch",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "observer-breakable: observer is not breakable by negative controls",
+      "name": "negative-controls-trusted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "same-trigger-same-snapshot-exactly-once: missing provenance",
+      "name": "missing-provenance",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "same-trigger-same-snapshot-exactly-once: provenance source is not contract-allowed",
+      "name": "wrong-source-provenance",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "provenance: source digest mismatch for packages/contracts/business_recovery.py",
+      "name": "provenance-digest-mismatch",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    }
+  ],
+  "defect_targeting_count": 25,
+  "defect_targeting_pre_fix_passed": true,
+  "schema_version": "byq-v090-business-recovery-negative-controls.v1"
+}

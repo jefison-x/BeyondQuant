@@ -1,0 +1,38 @@
+{
+  "schema_version": "byq-v090-business-recovery-contract.v1",
+  "provenance_allowed_sources": [
+    "contract-pure-function",
+    "runtime-adapter-real-journal",
+    "gateway-recovery-carrier"
+  ],
+  "identity": {
+    "run_pattern": "[0-9a-f]{32}",
+    "attempt_pattern": "recovery_[0-9a-f]{32}",
+    "digest_pattern": "[0-9a-f]{64}"
+  },
+  "scenarios": [
+    {"id": "same-trigger-same-snapshot-exactly-once", "kind": "allocation", "required": true},
+    {"id": "retry-reuses-original-ordinal", "kind": "allocation", "required": true},
+    {"id": "snapshot-change-no-overwrite-no-extra-ordinal", "kind": "allocation", "required": true},
+    {"id": "ordinal-cap-blocks", "kind": "allocation", "required": true},
+    {"id": "no-double-deduction", "kind": "budget", "required": true},
+    {"id": "model-call-floor-required", "kind": "budget", "required": true},
+    {"id": "unknown-cost-paused", "kind": "budget", "required": true},
+    {"id": "evidence-conflict-blocked", "kind": "budget", "required": true},
+    {"id": "grant-invariant-blocked", "kind": "budget", "required": true},
+    {"id": "envelope-new-key-blocked", "kind": "envelope", "required": true},
+    {"id": "envelope-exact-reuse-eligible", "kind": "envelope", "required": true},
+    {"id": "envelope-non-original-call-blocked", "kind": "envelope", "required": true},
+    {"id": "snapshot-digest-tamper-paused", "kind": "snapshot", "required": true},
+    {"id": "snapshot-tail-change-paused", "kind": "snapshot", "required": true},
+    {"id": "snapshot-idle-flip-paused", "kind": "snapshot", "required": true},
+    {"id": "carrier-extra-field-rejected", "kind": "carrier", "required": true},
+    {"id": "carrier-trigger-mismatch-rejected", "kind": "carrier", "required": true},
+    {"id": "target-stale-epoch-rejected", "kind": "target", "required": true},
+    {"id": "target-stale-generation-rejected", "kind": "target", "required": true},
+    {"id": "gateway-forwards-closed-carrier", "kind": "gateway", "required": true},
+    {"id": "gateway-rejects-invented-field", "kind": "gateway", "required": true},
+    {"id": "real-adapter-journal-snapshot-closure", "kind": "adapter", "required": true},
+    {"id": "observer-breakable", "kind": "meta", "required": true}
+  ]
+}

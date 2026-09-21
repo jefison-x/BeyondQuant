@@ -42,6 +42,7 @@ from .session_containment import (
 from .workflow_projection import project_workflow_event
 from .agent_lifecycle_delivery import LifecycleDelivery
 from .task_continuation import TaskContinuationDelivery
+from .recovery_carrier import closed_recovery_carrier
 from packages.contracts.agent_run_lifecycle import lifecycle_receipt, project_lifecycle_event
 from packages.contracts.workflow_trace import validate_workflow_trace_event
 
@@ -227,7 +228,7 @@ def _consume_admitted_task_continuation(context):
             conversation, context['session_id'], context['trace_id']):
         raise ValueError('continuation conversation identity changed')
     observer = _attach_continuation_observer(context)
-    reservation, receipt = intent['reservation'], intent['receipt']
+    reservation, receipt = closed_recovery_carrier(intent['reservation']), intent['receipt']
     identity = reservation['reservation_id']
     task = intent['task_id']
     if receipt.get('reservation_id') != identity or reservation.get('task_id') != task:

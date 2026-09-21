@@ -1,13 +1,13 @@
 {
   "provenance": {
-    "captured_at": 1789988786.4189186,
+    "captured_at": 1790006923.9285572,
     "harness": "runtime-adapter synthetic compatibility + gateway read-only module",
     "source_sha256": {
       "packages/contracts/session_failure_containment.py": "sha256:20eca020f8f9adcf84f87b97d4a59931950b7a8f3161590c323c3274bcc26234",
-      "services/gateway/app/main.py": "sha256:9a159bb334f99734d6887a15ee34120ad3cc447b9223a650f814a7199b5d6899",
+      "services/gateway/app/main.py": "sha256:17687a534197c9aff015b0e3f954e4b3e2a4151616c1537595cd1e72586f5b33",
       "services/gateway/app/session_containment.py": "sha256:983c88214fd147243d2117e5eb3e05799a0d76c1cef07c468bc04fad3c9dcf1a",
       "services/runtime-adapter/app/containment.py": "sha256:f77e2679f28da13ade9b870ab74570d0c28d3dba035d5a096618800b28113d18",
-      "services/runtime-adapter/app/runtime.py": "sha256:307bfac64be166080845fe4d1590d92d7153712d32f88d34dd23826301cb381c"
+      "services/runtime-adapter/app/runtime.py": "sha256:d895a8f8b88fc59276d586c3cbd18cfd5d50153cfdb38b3d684d1c6fe2b74112"
     }
   },
   "scenarios": {
@@ -32,7 +32,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789988786.37952,
+        "observed_at": 1790006923.7074716,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -58,7 +58,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789988786.379543,
+        "observed_at": 1790006923.7074893,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -84,7 +84,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789988786.3795395,
+        "observed_at": 1790006923.7074864,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -110,7 +110,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789988786.3795357,
+        "observed_at": 1790006923.707484,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -146,7 +146,7 @@
         "trace_id": "trace-1"
       },
       "provenance": {
-        "observed_at": 1789988786.3794963,
+        "observed_at": 1790006923.7074504,
         "source": "gateway-session-containment"
       },
       "verdict": "PASS"
@@ -165,7 +165,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789988786.379498,
+        "observed_at": 1790006923.707452,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -184,14 +184,14 @@
         },
         "expected_trace_id": "cap-loss-trace",
         "history_unchanged": true,
-        "interrupted_run_id": "5943e91969fa4c45940db5af752b923c",
+        "interrupted_run_id": "a9ea0823fea54334a2485b3de0a6b7f6",
         "loss_cause": "executor-loss",
         "status": "interrupted",
         "terminal_added": true,
         "trace_id": "cap-loss-trace"
       },
       "provenance": {
-        "observed_at": 1789988786.379476,
+        "observed_at": 1790006923.7074153,
         "source": "runtime-adapter-test-harness"
       },
       "verdict": "PASS"
@@ -240,7 +240,7 @@
         "trace_id": "trace-1"
       },
       "provenance": {
-        "observed_at": 1789988786.3794954,
+        "observed_at": 1790006923.7074492,
         "source": "gateway-session-containment"
       },
       "verdict": "PASS"
@@ -259,13 +259,13 @@
         },
         "expected_trace_id": "cap-late-trace",
         "history_unchanged": true,
-        "interrupted_run_id": "bf3cb1594ea44909be4a560a30141c86",
+        "interrupted_run_id": "c9f66bf73d4b47a19e79b56a0816041d",
         "loss_cause": "executor-loss",
         "status": "interrupted",
         "trace_id": "cap-late-trace"
       },
       "provenance": {
-        "observed_at": 1789988786.3794777,
+        "observed_at": 1790006923.7074163,
         "source": "runtime-adapter-test-harness"
       },
       "verdict": "PASS"
@@ -314,7 +314,7 @@
         "trace_id": "trace-1"
       },
       "provenance": {
-        "observed_at": 1789988786.379485,
+        "observed_at": 1790006923.7074409,
         "source": "gateway-session-containment"
       },
       "verdict": "PASS"
@@ -363,7 +363,7 @@
         "trace_id": "trace-1"
       },
       "provenance": {
-        "observed_at": 1789988786.3794868,
+        "observed_at": 1790006923.7074423,
         "source": "gateway-session-containment"
       },
       "verdict": "PASS"
@@ -411,7 +411,7 @@
         "trace_id": "trace-1"
       },
       "provenance": {
-        "observed_at": 1789988786.3794913,
+        "observed_at": 1790006923.7074459,
         "source": "gateway-session-containment"
       },
       "verdict": "PASS"
@@ -458,7 +458,7 @@
         "trace_id": "trace-1"
       },
       "provenance": {
-        "observed_at": 1789988786.3794935,
+        "observed_at": 1790006923.7074473,
         "source": "gateway-session-containment"
       },
       "verdict": "PASS"
@@ -472,7 +472,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789988786.418754,
+        "observed_at": 1790006923.928305,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -521,7 +521,7 @@
         "trace_id": "trace-1"
       },
       "provenance": {
-        "observed_at": 1789988786.3794837,
+        "observed_at": 1790006923.7074394,
         "source": "gateway-session-containment"
       },
       "verdict": "PASS"
@@ -547,7 +547,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789988786.3795464,
+        "observed_at": 1790006923.7074919,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -588,17 +588,17 @@
         }
       },
       "provenance": {
-        "observed_at": 1789988786.4187686,
+        "observed_at": 1790006923.9283183,
         "source": "runtime-adapter-test-harness"
       },
       "verdict": "PASS"
     },
     "recovery-endpoint-never-submits": {
       "observed": {
-        "source_sha256": "sha256:9a159bb334f99734d6887a15ee34120ad3cc447b9223a650f814a7199b5d6899"
+        "source_sha256": "sha256:17687a534197c9aff015b0e3f954e4b3e2a4151616c1537595cd1e72586f5b33"
       },
       "provenance": {
-        "observed_at": 1789988786.379702,
+        "observed_at": 1790006923.7076192,
         "source": "gateway-session-containment"
       },
       "verdict": "PASS"
@@ -616,7 +616,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789988786.3794973,
+        "observed_at": 1790006923.707451,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -642,7 +642,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789988786.3795311,
+        "observed_at": 1790006923.7074804,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -661,7 +661,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789988786.3794987,
+        "observed_at": 1790006923.707453,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -687,7 +687,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789988786.3795264,
+        "observed_at": 1790006923.7074764,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
