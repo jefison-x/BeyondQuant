@@ -35,7 +35,7 @@
 <!-- byq:session-failure-containment-next=authoritative-step-safety-budget-rescheduling-implementation -->
 <!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->
 <!-- byq:phase-100-p100-c=paused-not-delivery -->
-<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.191 -->
+<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.192 -->
 
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|
@@ -532,31 +532,52 @@ tag/release，不恢复 Phase 100，不触碰 `codex/phase-100c`/PR #338，不�
 `inventory.v1.json` + `design.v1.json`），由 `tests/test_v090_step_safety_design_governance.py`
 守门。
 
-- **Inventory（现有 vs 缺失）**：step-safety 现有 `domain_call_admission`（closed ACTIONS +
-  idempotency_key/request_hash，但**无 per-step 安全类**）、`research_receipts`（精确 receipt
-  对账）、adapter prompt receipt；budget 现有 Backend
-  `research_tasks.continuation_permission`/`continuation_budget`（**权威**，per-event-key
-  at-most-once）与 adapter/DSH guard 镜像；safe-rescheduling 现有 `classify_recovery`/fence/
-  containment ledger 与 Backend reservation dedup。缺失三项：closed per-step
-  idempotent/result_verifiable registry；失联 run 到其精确权威 reservation/event identity 的绑定；
-  有界、恰一次、receipt-first 的 reschedule。MCP 工具描述字符串与客户端 step 字段均**不是**权威。
-- **Minimal design**：contract mapping 保留 `session_failure_containment`；step-safety 权威来自
-  BYQ domain contract（closed registry，未列出即 unknown）；budget 权威来自既有
-  `continuation_budget`，任意未绑定回合保持 `None`→`paused`；reschedule 为确定性 `recovery-v1:`
-  event key 的新 reservation，受 `RECOVERY_ATTEMPT_MAX=3`、原 reservation 与既有 dedup/行锁约束；
-  先查精确 receipt（成功→`settled` 绝不重放，冲突→`blocked`，非幂等/未知→`paused`）；失败一律
-  fail closed；审计沿用 containment ledger + Backend ledger，**无第二个 store**。
-- **ADR 决定 = 无需新 ADR**：设计只做 ordinary closed-contract 扩展并复用既有权威
-  （`domain_call_admission`、`research_receipts`、`continuation_budget`、既有 Gateway→Backend
-  `_catalog_request` 内部 seam），**未引入**新持久化权威、新信任主体或新跨 Plane 调用。若后续
-  实现切片引入其中任一项，**必须先提出 Proposed ADR**。
+- **Inventory（现有 vs 缺失）**：step-safety 现有 `agent_domain_call_evidence`（有序 occurred-call
+  集，PK `(owner,workspace,session,sequence)`，绑定 root-run/generation/agent-run）与
+  `agent_domain_call_claims`（精确 per-call receipt，UNIQUE
+  `(root_run_id,task_id,action,idempotency_key)`）、`domain_call_admission.ACTIONS`（closed action
+  + idempotency identity）、`research_receipts`、adapter prompt receipt；budget 现有 Backend
+  `research_tasks.continuation_permission`/`continuation_budget`（**权威**；并发保证是 task 行
+  `SELECT ... FOR UPDATE` + 事务内 event_key 扫描去重，**没有** per-event-key DB 唯一约束，也
+  **没有**该路径上的 advisory lock）与 adapter guard 镜像；safe-rescheduling 现有
+  `classify_recovery`/fence/containment ledger 与 `dispatch_attempts`（**传输重试，不是业务恢复
+  尝试**）。缺失三项：closed per-step idempotent/result_verifiable registry；失联 run 到原
+  reservation 行与按 sequence 闭合的 occurred-call 集的绑定；有界、按 ordinal 恰一次、
+  receipt-first 的原行 rearm。MCP 工具描述、客户端 step 字段、prompt 文本与“最后一次调用”
+  启发式均**不是**权威。
+- **Minimal design**：contract mapping 保留 `session_failure_containment`；step-safety 必须使用
+  同一 session/trace/generation/root-run 的 `agent_domain_call_evidence`，**按 sequence 闭合**
+  （起点 1、严格连续）并逐调用对账（success→settled 不重放；claimed/executing→paused；
+  gap/未知/冲突/不可查→`paused`/`blocked`；零证据的已派发 run→`paused`；无 task reservation 的
+  普通回合→`paused`）；仅当全部已发生副作用 settled 且待重放 action 均为
+  idempotent+result_verifiable 才 `eligible`。**不创建新 reservation**（`research_continuation.py:309-310`
+  在旧行未 settled 时拒绝；`563-567` 已把派发行置 `outcome_unknown`），改为在**原行内 rearm**，
+  同一 `reservation_id`/`event_key`/`token_limit`；recovery ordinal 在 task 行 `FOR UPDATE` 下原子
+  分配（`RECOVERY_ATTEMPT_MAX=3`），确定性身份
+  `recovery-v1:<sha256(event_key+interrupted_run_id+':'+k)>` 仅用于审计/对账，恰一次由锁定的
+  ordinal 保证，且与传输 `dispatch_attempts` 分离。budget 公式计入 `outcome_unknown` 的**未知
+  负债**（`charged_tokens` 为 `None` 时不算 0、不退款；缺 guard receipt 即 `None`→`paused`），
+  `available = min(permission_remaining, reservation_remaining)`。
+- **ADR 决定 = 无需新 ADR（已给出可实现的映射证明）**：设计只扩展既有权威——同一
+  `research_tasks.continuation_budget` 行（行内新增有界 recovery 子记录，**非**独立 store）、
+  closed contract（`session_failure_containment` + closed step-safety registry，非持久化权威）、
+  既有 per-call receipt/有序 call evidence（非新信任主体）、既有 Gateway→Backend
+  `/internal/task-continuation/...` seam（在其上增加一个操作）与既有 adapter dispatch 路径（非新
+  Plane 边界/新跨 Plane 接口），ADR-0084 gate 分类不变。若后续切片引入独立 recovery store、新
+  public/internal 跨 Plane 权威接口、DB schema/migration（如 per-event_key 唯一索引）、新信任主体
+  或 gate 分类变更，**必须先提出 Proposed ADR（不得 Accepted）**。
 - **门禁与边界不变**：**完整 business-recovery gate 仍为 `IN_PROGRESS / BLOCKED_INTERNAL`**
   （本切片是设计，不是实现）；**不生成也不声称** D15 superseding assessment；B1/B2
   `BLOCKED_EXTERNAL`、历史 D15-G `NO_GO`、`R3_RESUME = NO` 全部不改写；未实现原生 child resume；
   未知副作用暂停。
-- 构建身份推进 `post-u8.190 → post-u8.191`（`scripts/`、`tests/`、
-  `services/runtime-adapter/Dockerfile.post-u8-candidate` 属 build inputs，仅重建身份；历史 `.190`
-  manifest 与全部证据保留，不改 selector/`compose.yml`/`deployment.json`/制品）。
+- **本修订（P1-A..P1-E）**：撤回“新 reservation / 固定单 event key 的 3 次 / unique+advisory
+  lock / registry-only 步骤查找 / `token_limit−charged_tokens`”表述；改为原行 rearm、ordinal
+  身份、真实 task-row `FOR UPDATE` 机制、按 sequence 闭合的 call evidence、含未知负债的 budget
+  公式；每条均有 committed 代码行号支撑（见证据 `design.v1.json.real_code_facts`）。
+- 构建身份：初始设计切片推进 `post-u8.190 → post-u8.191`；本修订（P1-A..P1-E，`tests/` 变更）
+  再推进 `post-u8.191 → post-u8.192`（`scripts/`、`tests/`、
+  `services/runtime-adapter/Dockerfile.post-u8-candidate` 属 build inputs，仅重建身份；历史 `.190`/
+  `.191` manifest 与全部证据保留，不改 selector/`compose.yml`/`deployment.json`/制品）。
 
 ## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19，历史叙述）
 

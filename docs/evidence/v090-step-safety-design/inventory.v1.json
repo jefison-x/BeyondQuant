@@ -1,14 +1,27 @@
 {
   "schema_version": "byq-v090-step-safety-inventory.v1",
+  "revision": "rectified-p1-a-e",
   "task": "authoritative server-side step-safety + budget binding + safe rescheduling",
   "authority": "ADR-0084 (Accepted 2026-09-21) migration step 3/4; ADR-0081/0082/0083; ADR-0079; ADR-0077; ADR-0066; ADR-0062",
   "delivered_scope": "inventory+minimal-design",
   "runtime_implementation": false,
   "step_safety": [
     {
-      "interface": "packages/contracts/domain_call_admission.py",
+      "interface": "services/backend/app/domain_call_admission.py agent_domain_call_evidence",
       "exists": true,
-      "authoritative": "closed action idempotency identity only (idempotency_key/request_sha256/input_sha256); not a permission and not a safety class",
+      "authoritative": "yes - ordered occurred-call rows with PRIMARY KEY (owner_principal,workspace_id,session_id,sequence) and columns root_run_id/generation/agent_run_id/task_id/action/idempotency_key/request_sha256/input_sha256; no domain execution without a proof row",
+      "missing": "no recovery consumer closes the set by sequence"
+    },
+    {
+      "interface": "services/backend/app/domain_call_admission.py agent_domain_call_claims",
+      "exists": true,
+      "authoritative": "yes - exact per-call receipt, UNIQUE (root_run_id,task_id,action,idempotency_key), closed status claimed/executing/succeeded/correctable_failure",
+      "missing": "not wired into recovery classification"
+    },
+    {
+      "interface": "packages/contracts/domain_call_admission.py (ADR-0066)",
+      "exists": true,
+      "authoritative": "closed action set + idempotency identity only; not a permission and not a safety class",
       "missing": "no closed per-action idempotent/result_verifiable declaration"
     },
     {
@@ -18,42 +31,37 @@
       "missing": "no recovery classifier read path"
     },
     {
-      "interface": "services/runtime-adapter/app/lifecycle_journal.py",
+      "interface": "services/runtime-adapter/app/lifecycle_journal.py / runtime.py",
       "exists": true,
-      "authoritative": "durable prompt idempotency receipt (idempotency_key + content_sha256)",
+      "authoritative": "durable prompt idempotency receipt and monotonic domain-call sequence (observe_call enforces sequence == len(calls)+1)",
       "missing": "no per-turn multi-tool step classification"
-    },
-    {
-      "interface": "packages/contracts/agent_run_lifecycle.py",
-      "exists": true,
-      "authoritative": "run lifecycle receipt projection",
-      "missing": "does not classify side effects"
     },
     {
       "interface": "services/mcp/src/server.ts (tool descriptions)",
       "exists": true,
       "authoritative": "no - prompt-facing display strings only",
       "missing": "no programmatic side-effect class"
-    },
-    {
-      "interface": "packages/contracts/session_failure_containment.py::classify_recovery",
-      "exists": true,
-      "authoritative": "single tri-state fail-closed decision surface",
-      "missing": "step_declared_idempotent/step_result_verifiable are always False because no authoritative registry exists, so eligible is unreachable"
     }
   ],
   "budget_binding": [
     {
       "interface": "services/backend/app/research_continuation.py (continuation_permission + continuation_budget)",
       "exists": true,
-      "authoritative": "yes - task-bound token budget authority with per-event-key at-most-once reservation",
-      "missing": "no binding from an interrupted run to its exact original reservation/event identity"
+      "authoritative": "yes - task-bound token budget; concurrency is the task-row SELECT ... FOR UPDATE in _continuation_task plus in-transaction event-key scan/dedup",
+      "missing": "no in-row recovery attempt allocation and no unknown-liability judgment",
+      "real_mechanism": {
+        "row_lock": "services/backend/app/research_continuation.py:107-109 research_tasks FOR UPDATE",
+        "previous_unconfirmed_rejection": "services/backend/app/research_continuation.py:309-310 rejects a new reservation while any row is non-settled",
+        "dispatch_sets_outcome_unknown": "services/backend/app/research_continuation.py:563-567",
+        "per_event_key_unique_constraint": false,
+        "pg_advisory_xact_lock_on_this_path": false
+      }
     },
     {
       "interface": "services/runtime-adapter/app/continuation_budget.py",
       "exists": true,
-      "authoritative": "no - bounded mirror of the Backend reservation",
-      "missing": "not an authority"
+      "authoritative": "no - bounded guard-journal mirror; read_guard/recovered_settlement carry the actual charged amount",
+      "missing": "not consumed for recovery"
     },
     {
       "interface": "plugins/dsh-byq/runtime/byq-continuation-budget.js",
@@ -65,7 +73,7 @@
       "interface": "services/gateway/app/main.py::_recovery_authority",
       "exists": true,
       "authoritative": "yes for owner/workspace/authorization (existing catalog + Backend auth session)",
-      "missing": "budget_available is hardcoded None for an arbitrary unanswered turn, so recovery pauses"
+      "missing": "budget_available hardcoded None"
     }
   ],
   "safe_rescheduling": [
@@ -82,38 +90,27 @@
       "missing": "no recovery-attempt record (deliberately no second store)"
     },
     {
-      "interface": "services/runtime-adapter/app/executor_identity.py",
+      "interface": "services/backend/app/research_continuation.py claim_continuation_dispatch",
       "exists": true,
-      "authoritative": "yes - stable executor identity and monotonic epoch fence",
-      "missing": "none"
-    },
-    {
-      "interface": "services/runtime-adapter/app/generation_ledger.py",
-      "exists": true,
-      "authoritative": "yes - bounded runtime generation history",
-      "missing": "none"
+      "authoritative": "transport/dispatch retry counter dispatch_attempts <= 8; it is NOT a business recovery attempt",
+      "missing": "business recovery attempt ordinal and its atomic allocation"
     },
     {
       "interface": "services/gateway/app/session_containment.py",
       "exists": true,
       "authoritative": "yes - read-only classification, submission=not_performed",
-      "missing": "no bounded exactly-one reschedule"
-    },
-    {
-      "interface": "services/backend/app/research_continuation.py reservation dedup",
-      "exists": true,
-      "authoritative": "yes - one row per event_key inside a transaction (advisory lock / FOR UPDATE)",
-      "missing": "no deterministic recovery event-key namespace"
+      "missing": "no bounded exactly-one rearm"
     }
   ],
   "missing_authoritative_pieces": [
-    "closed server-side per-step idempotent/result_verifiable registry",
-    "binding from an interrupted run to its exact authoritative reservation/event identity",
-    "bounded exactly-one reschedule keyed off the original authoritative reservation with receipt-first reconciliation"
+    "closed server-side per-step idempotent/result_verifiable registry consumed against the sequence-ordered occurred-call set",
+    "binding of a lost run to its exact original reservation row with an in-row bounded recovery-attempt ordinal and unknown-liability judgment",
+    "a bounded, exactly-once (per ordinal), receipt-first rearm of the original reservation row"
   ],
   "non_authoritative_display_only": [
     "MCP tool description strings (Read-only / idempotently) are prompt-facing text and are never accepted as step-safety authority",
-    "client-supplied step flags were removed by the containment slice and are never accepted"
+    "client-supplied step flags were removed by the containment slice and are never accepted",
+    "prompt text, display strings and a 'last call' heuristic are forbidden inference sources"
   ],
   "boundaries_unchanged": {
     "b1_subagent_child_crash": "BLOCKED_EXTERNAL",
