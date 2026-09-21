@@ -30,7 +30,7 @@
 <!-- byq:v090-dsh-provider-qualification=blocked-external -->
 <!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->
 <!-- byq:phase-100-p100-c=paused-not-delivery -->
-<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.186 -->
+<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.187 -->
 
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|
@@ -428,6 +428,16 @@ D15-G 保持 **`NO_GO`** 且**未重跑**，**`R3_RESUME = NO`**，0.9 未关闭
   全部证据保留）。
 - **结论**：ADR-0082 Option 1 **仍 BLOCKED（external）**；**未执行任何依赖升级**；下一个上游合格
   provider 出现时本监控切片可重跑。
+- **追加：PR #348 CI 运行域镜像引用加固（2026-09-21，同 PR）**：backend lane 出现一次运行域
+  `:latest` tag 丢失（后续 `docker run` 误走 registry pull）与一次 26% 处非确定性 pytest 失败。经
+  诊断：二者**不可本地复现**（本机同镜像 backend 全绿；attempt 1 在同一 26% 位置无失败；`main`
+  backend lane 绿），且 #348 **不触碰任何 backend 代码**，故**非 #348 引入**。加固
+  `scripts/ci/local-ci.sh`：run-scoped 镜像构建后立即捕获 immutable image id，backend/mcp 容器运行
+  改用该 id 并加 `--pull=never`，缺失时 **fail-closed、绝不回退 registry/陈旧镜像**；identity 与
+  cleanup gate **不变**。回归测试 `tests/test_ci_run_scoped_image_reference.py`。构建身份推进
+  `post-u8.186 → post-u8.187`（`scripts/`、`tests/` 属 build inputs，仅重建身份；历史 manifest 与
+  全部证据保留）。**未改历史 verdict、未改生产 selector/compose/deployment、未 deploy/tag/release、
+  未运行 Full CI、未触碰 `codex/adr-gate-rationalization`。**
 
 ## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19，历史叙述）
 

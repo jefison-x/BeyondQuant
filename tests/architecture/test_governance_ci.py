@@ -143,7 +143,10 @@ test -z "$DEEPSEEK_API_KEY$TUSHARE_TOKEN$BYQ_FEEDBACK_GITHUB_TOKEN$BYQ_FEEDBACK_
         self.assertEqual(result.returncode, 0, result.stderr)
         source = (ROOT / "scripts/ci/local-ci.sh").read_text()
         for service in ("backend", "gateway", "runtime-adapter", "mcp"):
-            self.assertIn(f'"$(ci_image {service})"', source)
+            self.assertTrue(
+                f'"$(ci_image {service})"' in source
+                or f'"$(ci_image_ref {service})"' in source,
+                f"run-scoped image reference missing for {service}")
             self.assertNotIn(f"beyondquant-{service}", source)
         self.assertIn("--no-build --wait", source)
 

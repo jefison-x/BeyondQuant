@@ -48,9 +48,10 @@ AUDIT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.177"
 # it to .181, the step-5 G-split gate-order decision batch moved it to .182,
 # the step-5 B2 subagent-byq-adapter-restart batch moved it to .183, the
 # step-5 B3 terminal-adapter-restart batch moved it to .184, the
-# step-5 B4 terminal-dsh-runtime-restart batch moved it to .185, and the
-# independent v090-dsh-provider-qualification monitoring batch moved it to .186.
-CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.186"
+# step-5 B4 terminal-dsh-runtime-restart batch moved it to .185, the
+# independent v090-dsh-provider-qualification monitoring batch moved it to .186,
+# and the run-scoped CI image-reference hardening moved it to .187.
+CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.187"
 
 DECISION_RECORD = ROOT / "docs/evidence/v090-adr-decisions/decision-record.v1.json"
 DECISION_RECORD_MD = ROOT / "docs/evidence/v090-adr-decisions/README.md"
@@ -323,7 +324,7 @@ class GovernanceDocTests(unittest.TestCase):
                        "<!-- byq:v090-full-interface-rebaseline=complete -->",
                        "<!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->",
                        "<!-- byq:phase-100-p100-c=paused-not-delivery -->",
-                       "<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.186 -->"):
+                       "<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.187 -->"):
             self.assertIn(marker, status)
         # Completed historical 0.9 steps must not remain marked active.
         self.assertNotIn("v090-closeout-audit=active", status)
