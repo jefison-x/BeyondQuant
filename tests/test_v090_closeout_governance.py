@@ -43,9 +43,10 @@ AUDIT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.177"
 # The closeout audit revision above is historical and stays immutable. Later
 # maintenance batches that change build inputs advance the *selected* revision;
 # the full-interface re-baseline batch moved it to .178, the composite research
-# fault-regression batch moved it to .179, and the ADR-0082/0083 decision batch
-# moved it to .180.
-CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.180"
+# fault-regression batch moved it to .179, the ADR-0082/0083 decision batch
+# moved it to .180, and the step-5 B1 subagent-child-crash remediation batch
+# moved it to .181.
+CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.181"
 
 DECISION_RECORD = ROOT / "docs/evidence/v090-adr-decisions/decision-record.v1.json"
 DECISION_RECORD_MD = ROOT / "docs/evidence/v090-adr-decisions/README.md"
@@ -311,17 +312,19 @@ class GovernanceDocTests(unittest.TestCase):
     def test_status_freezes_phase_100_and_names_next_step(self):
         status = self._status()
         for marker in ("<!-- byq:v090-composite-research=complete -->",
-                       "<!-- byq:v090-adr-decisions=active -->",
+                       "<!-- byq:v090-adr-decisions=complete -->",
+                       "<!-- byq:v090-step5-b1-subagent-child-crash=blocked-external -->",
                        "<!-- byq:v090-closeout-audit=complete -->",
                        "<!-- byq:v090-full-interface-rebaseline=complete -->",
                        "<!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->",
                        "<!-- byq:phase-100-p100-c=paused-not-delivery -->",
-                       "<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.180 -->"):
+                       "<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.181 -->"):
             self.assertIn(marker, status)
         # Completed historical 0.9 steps must not remain marked active.
         self.assertNotIn("v090-closeout-audit=active", status)
         self.assertNotIn("v090-full-interface-rebaseline=active", status)
         self.assertNotIn("v090-composite-research=active", status)
+        self.assertNotIn("v090-adr-decisions=active", status)
         self.assertIn("<!-- byq:current-completed-phase=97 -->", status)
         self.assertIn("P100-A", status)
         self.assertIn("P100-B", status)

@@ -1,0 +1,26 @@
+{
+  "all_pass": false,
+  "blocked_reasons": [
+    "no out-of-process provider implements SubagentProvider.prepareContinuable in the 0.1.5-rc.1 candidate; the only continuable providers are in-process",
+    "no real child-crash qualification record"
+  ],
+  "blocker": "subagent-child-crash",
+  "conclusions": {
+    "child_crash_qualification_ok": false,
+    "in_process_continuable_providers": [
+      "fork",
+      "spawn"
+    ],
+    "out_of_process_continuable_provider_available": false,
+    "out_of_process_continuable_providers": [],
+    "out_of_process_provider_rejected_by_native_gate": true
+  },
+  "exit_code": 1,
+  "external_blocked": true,
+  "failures": [],
+  "format_valid": true,
+  "owner_node": "d15-4-child-provider-remediation",
+  "qualification_passed": false,
+  "result": "BLOCKED",
+  "schema_version": "byq-v090-d15-child-provider-remediation-verdict.v1"
+}
