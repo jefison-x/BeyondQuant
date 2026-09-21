@@ -1,6 +1,6 @@
 {
   "schema_version": "byq-v090-step-safety-inventory.v1",
-  "revision": "rectified-p1-f-k",
+  "revision": "rectified-p1-l-n",
   "task": "authoritative server-side step-safety + budget binding + safe rescheduling",
   "authority": "ADR-0084 (Accepted 2026-09-21) migration step 3/4; ADR-0081/0082/0083; ADR-0079; ADR-0077; ADR-0066; ADR-0062",
   "delivered_scope": "inventory+minimal-design",
@@ -10,7 +10,10 @@
       "interface": "services/backend/app/domain_call_admission.py agent_domain_call_evidence",
       "exists": true,
       "authoritative": "yes - session-global ordered occurred-call rows, PRIMARY KEY (owner_principal,workspace_id,session_id,sequence), bound to root_run_id/generation/agent_run_id/task_id/action/idempotency_key/request_sha256/input_sha256",
-      "missing": "no recovery consumer closes the session-global cursor"
+      "missing": "no recovery consumer closes the session-global cursor under a stable snapshot (more=false AND idle=true) with item-by-item reconciliation",
+      "real_mechanism": {
+        "adapter_page_shape": "services/runtime-adapter/app/runtime.py:1131-1133 domain_call_evidence page returns {more: len(calls) > after+len(rows), idle: state['open_root'] is None}"
+      }
     },
     {
       "interface": "services/backend/app/domain_call_admission.py agent_domain_call_claims",
@@ -65,7 +68,7 @@
       "interface": "services/runtime-adapter/app/runtime.py submit_prompt / reconcile_prompt",
       "exists": true,
       "authoritative": "durable prompt receipt by idempotency_key",
-      "missing": "accepted receipt returns the old run and the prompt key is forced to reservation_id - no separate recovery submission identity",
+      "missing": "accepted receipt returns the old run and the prompt key is forced to reservation_id; no separate recovery submission identity and no closed recovery_attempt carrier with recompute/verify/fence",
       "real_mechanism": {
         "old_run_dedup": "services/runtime-adapter/app/runtime.py:780-789 returns durable run_id on an accepted receipt",
         "forces_reservation_key": "services/runtime-adapter/app/runtime.py:806-809 requires idempotency_key == budget['reservation_id']",
@@ -106,12 +109,12 @@
     }
   ],
   "missing_authoritative_pieces": [
-    "closed per-step safety registry (with may_produce_new_key) and a recovery-mode admission envelope",
-    "separation of budget-authority identity (reservation_id) from per-submission recovery identity (Backend-minted recovery_attempt_key)",
+    "closed per-step safety registry (may_produce_new_key conservative only) and a recovery-mode admission envelope",
+    "separation of budget-authority identity (reservation_id) from per-submission recovery identity (Backend-minted recovery_attempt_key) carried in a closed recovery_attempt sub-record {attempt_key, ordinal, trigger_key, interrupted_run_id, interrupted_generation, containment_attempt, executor_epoch} with Adapter recompute/verify/fence",
     "per-attempt receipt identity with the Backend recovery_attempts as the final aggregate",
     "a deterministic trigger identity that dedups concurrent triggers before ordinal allocation",
-    "session-global evidence cursor closure (per-root subsets need not start at 1)",
-    "a no-double-deduction budget headroom formula"
+    "stable-snapshot session-global evidence closure (more=false AND idle=true, item-by-item reconciliation; per-root subsets need not start at 1)",
+    "a no-double-deduction, self-consistent tri-state budget headroom decision"
   ],
   "non_authoritative_display_only": [
     "MCP tool description strings (Read-only / idempotently) are prompt-facing text and are never accepted as step-safety authority",

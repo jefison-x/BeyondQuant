@@ -1,6 +1,6 @@
 {
   "schema_version": "byq-v090-step-safety-design.v1",
-  "revision": "rectified-p1-f-k",
+  "revision": "rectified-p1-l-n",
   "task": "authoritative server-side step-safety + budget binding + safe rescheduling",
   "delivered_scope": "inventory+minimal-design",
   "runtime_implementation": false,
@@ -10,8 +10,8 @@
     "adapter_single_settlement_slot": "services/runtime-adapter/app/continuation_budget.py:105-137 persist_settlement writes <session>/<reservation_id>.json and raises 'original continuation settlement cannot change' on differing content",
     "prompt_receipt_single_slot": "services/runtime-adapter/app/lifecycle_journal.py:533-539,603-613 prompts[key] = {root_run_id, content_sha256}; a key cannot be replaced and resolves to one root_run_id",
     "session_global_call_sequence": "services/runtime-adapter/app/lifecycle_journal.py:551-559 observe_call requires sequence == len(state['calls']) + 1, accumulating across roots in the session",
+    "adapter_page_shape": "services/runtime-adapter/app/runtime.py:1131-1133 domain_call_evidence page returns {more: len(calls) > after+len(rows), idle: state['open_root'] is None}",
     "call_evidence_pk_session_global": "services/backend/app/domain_call_admission.py:29-42 agent_domain_call_evidence PRIMARY KEY (owner_principal, workspace_id, session_id, sequence)",
-    "call_evidence_pagination": "services/runtime-adapter/app/runtime.py:1122-1133 domain_call_evidence returns a bounded page with 'more'",
     "call_claim_unique": "services/backend/app/domain_call_admission.py:50-59 agent_domain_call_claims UNIQUE (root_run_id, task_id, action, idempotency_key)",
     "continuation_task_row_lock": "services/backend/app/research_continuation.py:107-109 _continuation_task SELECT ... FOR UPDATE on research_tasks",
     "new_reservation_requires_no_unconfirmed_row": "services/backend/app/research_continuation.py:309-310 rejects a new reservation while any row is non-settled",
@@ -23,11 +23,29 @@
     "budget_authority_identity": "original reservation_id (Backend-issued; unchanged; carried in task-continuation-reservation.v1)",
     "recovery_submission_identity": "recovery_attempt_key issued and atomically persisted by the Backend when it allocates an ordinal, binding (reservation_id, trigger_key, ordinal)",
     "prompt_idempotency_key": "recovery_attempt_key for a recovery submission (NOT the reservation_id, which the Adapter dedups to the lost old run)",
-    "trusted_carrier_extension": "task-continuation-reservation.v1 gains recovery_attempt:{attempt_key, ordinal, trigger_key, interrupted_run_id, interrupted_generation}",
-    "issuer": "Backend only",
-    "client_or_model_must_not_mint": true,
-    "adapter_validation": "submit_prompt accepts idempotency_key == recovery_attempt_key only when the carrier recovery_attempt is present, well-formed, bound to the same reservation_id/ordinal, and fenced by the live executor epoch/generation; rejects client-minted keys, mismatched reservations and stale epoch/generation",
-    "generation_attempt_fencing": "attempt key binds the exact fenced loss identity and the live executor epoch; stale epoch/generation fails closed",
+    "trusted_carrier_extension": {
+      "record": "task-continuation-reservation.v1.recovery_attempt",
+      "closed_fields": ["attempt_key", "ordinal", "trigger_key", "interrupted_run_id", "interrupted_generation", "containment_attempt", "executor_epoch"],
+      "issuer": "Backend only",
+      "client_or_model_must_not_mint": true
+    },
+    "adapter_recompute_and_verify": [
+      "require the closed field set {attempt_key, ordinal, trigger_key, interrupted_run_id, interrupted_generation, containment_attempt, executor_epoch} present and well-formed",
+      "recompute trigger_key' = sha256('recovery-trigger.v1:' + reservation_id + ':' + interrupted_run_id + ':' + interrupted_generation + ':' + containment_attempt + ':' + executor_epoch) and require trigger_key' == trigger_key",
+      "recompute attempt_key' = 'recovery_' + sha256(trigger_key + ':' + str(ordinal))[:32] and require attempt_key' == attempt_key",
+      "require containment_attempt and interrupted_generation to match the durable containment record for the same session/trace/run",
+      "require executor_epoch to equal the LIVE executor epoch and the target RuntimeGeneration",
+      "require prompt idempotency_key == attempt_key and the carrier reservation id == budget reservation_id"
+    ],
+    "rejections_fail_closed": [
+      "missing carrier field",
+      "tampered or mismatched trigger_key",
+      "tampered or mismatched attempt_key",
+      "mismatched reservation or ordinal",
+      "stale or unknown executor_epoch",
+      "stale or unknown generation"
+    ],
+    "new_attempt_key_yields_new_run": true,
     "ordinary_extension_of_existing_seam": true
   },
   "per_attempt_receipt": {
@@ -61,13 +79,16 @@
   "authoritative_source": {
     "occurred_step_set": "agent_domain_call_evidence rows for the same session, filtered to the exact (trace_id, root_run_id, generation, agent_run_id)",
     "sequence_nature": "session-global (adapter observe_call sequence == len(state['calls'])+1; PK (owner,workspace,session,sequence))",
-    "closure_rule": "fetch/sync bounded pages until more == false and verify the session-global sequence 1..N strictly contiguous; THEN filter the target root by exact (session_id, trace_id, root_run_id, generation, agent_run_id); the target subset must be strictly increasing and consistent with the global sequence and does NOT need to start at 1",
+    "stable_snapshot_closure": "the final adapter page under one locked/consistent view must have more == false AND idle == true; more == false alone under concurrent appends does not prove the tail is closed",
+    "idle_required": true,
+    "item_by_item_reconciliation": "reconcile adapter pages with persisted agent_domain_call_evidence rows item-by-item by (session, sequence, action, idempotency_key, request_sha256, input_sha256); the union must be the session-global 1..N strictly contiguous",
+    "closure_rule": "obtain a stable snapshot (more==false AND idle==true), reconcile item-by-item, verify session-global 1..N contiguous, THEN filter the target root by exact (session_id, trace_id, root_run_id, generation, agent_run_id); the target subset must be strictly increasing and consistent with the global sequence and does NOT need to start at 1",
     "second_root_first_sequence_gt_1_legal": true,
     "per_call_binding": "for every observed call, bind persisted (action, task_id, idempotency_key, request_sha256, input_sha256) and reconcile via agent_domain_call_claims keyed by (root_run_id, task_id, action, idempotency_key)",
     "step_safety": "BYQ domain contract registry, never the client/prompt/display strings; a step is safe only when declared idempotent and result_verifiable and its exact receipt is settled",
     "forbidden_inference": ["prompt text", "mcp_display_strings", "client_fields", "last_call_heuristic"],
     "zero_evidence_dispatched_run": "paused",
-    "unreadable_or_incomplete_pagination": "paused",
+    "unreadable_or_unstable_or_incomplete_pagination": "paused",
     "no_task_reservation_ordinary_turn": "paused"
   },
   "call_evidence_reconciliation": {
@@ -87,7 +108,9 @@
       "exact reuse of an original persisted safe call with the same (action, task_id, idempotency_key, request_sha256, input_sha256)"
     ],
     "enforcement": "Backend admission verifies the envelope against the lost root's agent_domain_call_evidence and the closed registry",
-    "new_key_actions": "the registry must explicitly declare any action whose key derives from input hash/content address, and the Backend must enforce it",
+    "may_produce_new_key_conservative_only": true,
+    "may_produce_new_key_true_always_ineligible": true,
+    "new_key_authorization": "never; enabling a new key is beyond this design and requires a separate Proposed ADR (not opened or implied by this slice)",
     "model_must_not_choose": true,
     "out_of_envelope": "blocked/paused (new write, different input/hash/key, publish/order/paid/irreversible)",
     "undeterminable_work": "not eligible"
@@ -106,9 +129,19 @@
       "step_1_grant_invariant": "other_settled + other_unresolved + R.token_limit <= P.token_limit, else blocked",
       "step_2_r_headroom": "R_available = R.token_limit - cum_exact, where cum_exact = exact charge of the original attempt (0 if never accepted) + sum of exact charged_tokens of every reconciled recovery attempt; None if any charge unknown",
       "step_3_no_double_deduction": "do NOT deduct R.token_limit from P again; no new reservation; no new turn",
-      "step_4_authority": "revocation/expiry/continuation_blocked_reason still block; max_turns only verifies the original ledger/authorization was not exceeded",
-      "budget_available": "blocked if revoked/expired/blocked-reason or R_available is None; None (paused) if any charge unknown or any input unreadable or R_available < single_call_floor; True otherwise subject to ordinal < RECOVERY_ATTEMPT_MAX"
+      "budget_available": "TRI-STATE: blocked if permission revoked/expired/continuation_blocked_reason, or the grant invariant is violated, or ordinal >= RECOVERY_ATTEMPT_MAX, or authoritative evidence conflicts, or R_available is KNOWN and < model_call_floor while the envelope needs a model call; None (paused) if R_available is None (any charge unknown) or any input unreadable or closure/step-safety cannot be authoritatively obtained; eligible otherwise",
+      "read_only_floor_exemption": "a pure read-only envelope does not need a model-call floor; if the implementation still needs a model call it MUST NOT claim read-only floor-exemption"
     },
+    "tri_state_decision_table": [
+      {"condition": "permission revoked/expired/continuation_blocked_reason set", "decision": "blocked"},
+      {"condition": "grant allocation invariant violated", "decision": "blocked"},
+      {"condition": "ordinal >= RECOVERY_ATTEMPT_MAX", "decision": "blocked"},
+      {"condition": "authoritative evidence conflict (settlement/hash mismatch)", "decision": "blocked"},
+      {"condition": "R_available KNOWN and < model_call_floor and the envelope needs a model call", "decision": "blocked"},
+      {"condition": "R_available is None (any attempt charge unknown) or any input unreadable", "decision": "None/paused"},
+      {"condition": "closure or step-safety cannot be authoritatively obtained", "decision": "None/paused"},
+      {"condition": "otherwise (known R_available >= floor, or a pure read-only envelope)", "decision": "eligible"}
+    ],
     "numeric_example": {
       "permission_token_limit": 100,
       "other_settled": 30,
@@ -120,17 +153,17 @@
       "note": "R still has 40, not 10; the old min(P - committed - unresolved, R - known) double-deducted R's ceiling"
     },
     "state_table": [
-      {"reservation_status": "reserved", "guard_receipt": "absent/never dispatched", "consumed": 0, "r_available": "R.token_limit", "budget_available": "True (bounded rearm) if grant invariant holds"},
-      {"reservation_status": "rejected", "guard_receipt": "absent", "consumed": 0, "r_available": "R.token_limit", "budget_available": "True (bounded rearm)"},
-      {"reservation_status": "accepted/outcome_unknown", "guard_receipt": "present, identity matches R/attempt/run", "consumed": "c (known)", "r_available": "R.token_limit - c", "budget_available": "True if >= floor else blocked"},
-      {"reservation_status": "accepted/outcome_unknown", "guard_receipt": "absent/unreadable/identity mismatch", "consumed": "unknown", "r_available": null, "budget_available": null},
-      {"reservation_status": "settled", "guard_receipt": "n/a", "consumed": "c", "r_available": "terminal", "budget_available": "no rearm (terminal)"},
-      {"reservation_status": "any", "guard_receipt": "n/a", "consumed": "n/a", "r_available": "n/a", "budget_available": "blocked if P revoked/expired/blocked-reason/ordinal cap"}
+      {"reservation_status": "reserved", "guard_receipt": "absent/never dispatched", "consumed": 0, "r_available": "R.token_limit", "decision": "eligible if grant invariant holds and ordinal < cap"},
+      {"reservation_status": "rejected", "guard_receipt": "absent", "consumed": 0, "r_available": "R.token_limit", "decision": "eligible if grant invariant holds and ordinal < cap"},
+      {"reservation_status": "accepted/outcome_unknown", "guard_receipt": "present, identity matches R/attempt/run", "consumed": "c (known)", "r_available": "R.token_limit - c", "decision": "eligible if >= model_call_floor else blocked"},
+      {"reservation_status": "accepted/outcome_unknown", "guard_receipt": "absent/unreadable/identity mismatch", "consumed": "unknown", "r_available": null, "decision": "None/paused (unknown cost is never 0 and never refunded)"},
+      {"reservation_status": "settled", "guard_receipt": "n/a", "consumed": "c", "r_available": "terminal", "decision": "no rearm (terminal)"},
+      {"reservation_status": "any", "guard_receipt": "n/a", "consumed": "n/a", "r_available": "n/a", "decision": "blocked if revoked/expired/blocked-reason/ordinal cap/evidence conflict"}
     ]
   },
   "safe_rescheduling": {
     "receipt_first": "reconcile the exact prompt and guard receipts for the attempt key before deciding; success -> settled (never replay); conflict -> blocked; unresolved charge -> paused",
-    "bounded": "ordinal < RECOVERY_ATTEMPT_MAX=3 and R_available >= single_call_floor; cumulative exact charges never exceed R.token_limit",
+    "bounded": "ordinal < RECOVERY_ATTEMPT_MAX=3 and R_available >= model_call_floor; cumulative exact charges never exceed R.token_limit",
     "trigger_keyed_exactly_once": "same trigger_key returns the existing attempt; only a new fenced loss identity allocates the next ordinal",
     "attempt_ordinal_identity": "recovery_<sha256(trigger_key + ':' + ordinal)[:32]>; audit/reconciliation identity, recomputable from trigger + ordinal",
     "dispatch_attempts_are_transport_retry": true,
@@ -143,28 +176,28 @@
     "unknown_or_unavailable_authority": "paused (authority_unavailable), never allowed",
     "missing_or_ambiguous_step_safety_or_call_evidence": "paused",
     "conflict": "blocked",
-    "unknown_cost": "paused, never refunded and never settled as 0",
-    "zero_evidence_dispatched_run_or_session_global_gap_or_incomplete_pagination": "paused/blocked",
-    "out_of_envelope_work": "blocked/paused",
+    "unknown_cost": "None/paused, never refunded and never settled as 0",
+    "zero_evidence_dispatched_run_or_session_global_gap_or_unstable_closure": "paused/blocked",
+    "out_of_envelope_or_new_key_action": "blocked/paused",
     "ordinary_failed_cancelled_discarded_closed": "keep ordinary semantics; interrupted projected only from fenced containment matching the same session/trace and exact run"
   },
   "next_slice_acceptance_criteria": [
-    "closed registry with may_produce_new_key plus the recovery-mode admission envelope",
-    "Backend-minted recovery_attempt_key carried in the reservation; Adapter validates it, binds it to the reservation/ordinal and fences epoch/generation; client/model cannot mint it",
+    "closed registry + recovery-mode envelope; may_produce_new_key=true is conservative only and always ineligible (a new key would need a Proposed ADR)",
+    "Backend-minted recovery_attempt_key carried in the closed recovery_attempt sub-record {attempt_key, ordinal, trigger_key, interrupted_run_id, interrupted_generation, containment_attempt, executor_epoch}; the Adapter recomputes/verifies both keys and fences the LIVE executor epoch/generation; client/model cannot mint it",
     "per-attempt prompt/guard/settlement receipts (attempt_key.json), immutable, bound to {reservation_id, ordinal, run_id, charged_tokens, settlement_sha256}; Backend recovery_attempts is the final aggregate; cumulative exact charges <= R.token_limit",
     "trigger-key dedup before ordinal allocation under the task-row FOR UPDATE; cap 3; concurrent same-trigger calls create exactly one attempt",
-    "session-global cursor closure (pages until more=false; global 1..N contiguous; per-root subset strictly increasing, not required to start at 1)",
-    "corrected budget formula (grant invariant; R_available = R.token_limit - cum_exact; no second deduction; numeric example reproduced)",
-    "fail-able observer plus negative controls (adapter old-run dedup; immutable settlement slot; concurrent trigger; second-root sequence >1; double-deduct; out-of-envelope write)",
+    "stable-snapshot session-global closure (final page more=false AND idle=true under one locked view; item-by-item adapter<->Backend reconciliation; global 1..N contiguous; per-root subset strictly increasing, not required to start at 1; unstable/unproven closure -> paused)",
+    "corrected tri-state budget formula (grant invariant; R_available = R.token_limit - cum_exact; no second deduction; numeric example reproduced)",
+    "fail-able observer plus negative controls (Adapter old-run dedup; immutable settlement slot; concurrent trigger; second-root sequence >1; double-deduct; out-of-envelope write; missing/tampered carrier field; stale epoch/generation; unstable closure)",
     "no runtime code in this slice; no selector/deploy/release/tag/Phase 100 resume/D15 superseding assessment"
   ],
   "adr_decision": {
     "required": false,
     "proposed": false,
-    "rationale": "only extends already-authorized components: the existing Backend authority row (in-row recovery_attempts keyed by trigger, no independent store); the existing closed contract/carrier plus a closed registry (no new persistence authority); the existing prompt/guard/settlement receipt surfaces keyed per attempt (no new store); the existing session-global call evidence and admission path (no new trust subject or cross-Plane interface); the existing Gateway->Backend /internal/task-continuation seam and adapter dispatch path; the ADR-0084 gate classification is unchanged",
+    "rationale": "only extends already-authorized components: the existing Backend authority row (in-row recovery_attempts keyed by trigger, no independent store); the existing closed contract/carrier plus a closed registry (no new persistence authority); the existing prompt/guard/settlement receipt surfaces keyed per attempt (no new store); the existing session-global call evidence and admission path (no new trust subject or cross-Plane interface); the existing Gateway->Backend /internal/task-continuation seam and adapter dispatch path; the ADR-0084 gate classification is unchanged. Allowing a recovery run to mint a new domain key is explicitly out of scope and would require a separate Proposed ADR",
     "decision_points": [
       "recovery attempt persistence is an in-row addition keyed by trigger_key, not an independent store",
-      "the recovery_attempt_key is minted by the existing Backend authority and validated by the existing adapter carrier",
+      "the recovery_attempt_key is minted by the existing Backend authority and recomputed/verified by the existing adapter carrier",
       "per-attempt receipts reuse the existing prompt/guard/settlement surfaces",
       "the recovery-mode envelope is enforced by the existing Backend admission using existing call evidence",
       "no new trust subject, database migration, or gate-classification change"
@@ -174,6 +207,7 @@
       "a new public/internal cross-Plane authority interface",
       "a database schema/migration such as a per-event_key unique index",
       "a new trust subject",
+      "allowing a recovery run to mint a new domain key (may_produce_new_key enforcement)",
       "a change to the ADR-0084 gate classification"
     ]
   },

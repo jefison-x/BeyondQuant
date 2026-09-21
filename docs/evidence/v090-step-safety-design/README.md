@@ -18,6 +18,10 @@ ADR-0066, ADR-0062, and the merged containment slice
 >   receipts vs the immutable single settlement slot; trigger-key dedup before
 >   ordinal allocation; session-global evidence cursor closure; corrected
 >   no-double-deduction budget formula; recovery-mode admission envelope.
+> - P1-L..P1-N: the closed `recovery_attempt` carrier fields + Adapter
+>   recompute/verify/fence; a self-consistent tri-state budget decision table;
+>   stable-snapshot tail closure (`more=false` AND `idle=true` + item-by-item
+>   reconciliation) and the `may_produce_new_key=true` always-ineligible boundary.
 
 ## Code facts the design must respect (verified against the committed tree)
 
@@ -141,18 +145,29 @@ Because `submit_prompt` returns the **old** run for a reused prompt key
 - **Recovery submission identity** = `recovery_attempt_key`, issued and
   atomically persisted by the Backend when it allocates an ordinal, binding
   `(reservation_id, trigger_key, ordinal)`.
-- **Trusted-carrier extension:** `task-continuation-reservation.v1` gains
-  `recovery_attempt: {attempt_key, ordinal, trigger_key, interrupted_run_id,
-  interrupted_generation}`. Only the Backend mints it; `validate_reservation`
-  keeps owner/workspace checks.
-- **Adapter validation:** `submit_prompt` accepts `idempotency_key ==
-  recovery_attempt_key` only when the carrier's `recovery_attempt` is present,
-  well-formed, bound to the same `reservation_id`/ordinal, and fenced by the live
-  executor epoch/generation; it rejects client-minted keys, a mismatched
-  reservation, and stale epoch/generation. A *new* attempt key yields a *new*
-  run (no old-run dedup).
-- **Fencing:** the attempt key binds the exact fenced loss identity below; stale
-  epoch/generation → fail closed.
+- **Trusted-carrier extension (closed fields):**
+  `task-continuation-reservation.v1` gains a **closed** `recovery_attempt`
+  sub-record with exactly `{attempt_key, ordinal, trigger_key,
+  interrupted_run_id, interrupted_generation, containment_attempt,
+  executor_epoch}`. Only the Backend mints it; `validate_reservation` keeps
+  owner/workspace checks.
+- **Adapter recompute/verify (fail closed).** `submit_prompt` MUST:
+  1. recompute `trigger_key' = sha256("recovery-trigger.v1:" + reservation_id +
+     ":" + interrupted_run_id + ":" + interrupted_generation + ":" +
+     containment_attempt + ":" + executor_epoch)` from the carrier fields and
+     require `trigger_key' == trigger_key`;
+  2. recompute `attempt_key' = "recovery_" + sha256(trigger_key + ":" +
+     str(ordinal))[:32]` and require `attempt_key' == attempt_key`;
+  3. require `containment_attempt` and `interrupted_generation` to match the
+     durable containment record for the same session/trace/run, and
+     `executor_epoch` to equal the **live** executor epoch and the target
+     `RuntimeGeneration`;
+  4. require the prompt `idempotency_key == attempt_key` and the carrier's
+     reservation id to equal the budget's `reservation_id`.
+- **Rejections:** a missing carrier field, a tampered/mismatched `trigger_key` or
+  `attempt_key`, a mismatched reservation/ordinal, and a stale/unknown
+  `executor_epoch` or generation all raise (fail closed). A *new* attempt key
+  yields a *new* run (no old-run dedup).
 
 ### Per-attempt receipt identity (P1-G)
 
@@ -202,15 +217,23 @@ The adapter journal and `agent_domain_call_evidence` sequences are
 `(owner,workspace,session,sequence)`), so a per-root filter "start at 1 and
 contiguous" would misread the 2nd+ root as a gap. The closure rule is:
 
-1. Fetch/sync bounded pages (adapter `domain_call_evidence` with `more`, and
-   `agent_domain_call_evidence` ORDER BY sequence) until `more == false`, proving
-   the session-global sequence `1..N` strictly contiguous.
+1. **Stable-snapshot closure.** Fetch/sync bounded pages from the adapter
+   (`domain_call_evidence`) under the **same locked/consistent view** until the
+   **final** page has `more == false` **and** `idle == true` (the session has no
+   open root). `more == false` alone under concurrent appends does not prove the
+   tail is closed. Reconcile adapter pages with the persisted
+   `agent_domain_call_evidence` rows **item-by-item** by `(session, sequence,
+   action, idempotency_key, request_sha256, input_sha256)`; the union must be the
+   session-global `1..N` strictly contiguous. `idle == false`, a tail change
+   between pages, or an inability to obtain a consistent locked snapshot and
+   closure → `paused`.
 2. **Then** filter the target root by exact `(session_id, trace_id, root_run_id,
    generation, agent_run_id)`. The target subset must be strictly increasing and
    consistent with the global sequence; it does **not** need to start at 1
    (a second root's first observed sequence > 1 is legal).
-3. If the adapter/journal/cursor is unreadable, pagination is incomplete, or the
-   tail closure cannot be proven after loss → `paused`.
+3. If the adapter/journal/cursor is unreadable, pagination is incomplete, the
+   snapshot is not stable, or the tail closure cannot be proven after loss →
+   `paused`.
 4. Each observed call binds `(action, task_id, idempotency_key, request_sha256,
    input_sha256)` and reconciles against `agent_domain_call_claims`. Zero
    evidence for a dispatched run, a genuine session-global gap, or any unknown/
@@ -242,13 +265,23 @@ cum_exact = exact charge of the original attempt (0 if never accepted) +
 R_available = R.token_limit - cum_exact          # None if any charge is unknown
 
 # 3. No second deduction of R's ceiling; no new reservation; no new turn.
-budget_available = blocked  if revoked/expired/blocked-reason set
-                 = blocked  if R_available is None            # unknown -> paused below
-                 = None     if any charge unknown or any input unreadable   -> paused
-                 = None     if R_available < single_call_floor and not (read-only envelope)
-                 = True     otherwise, subject to ordinal < RECOVERY_ATTEMPT_MAX
+#    Tri-state decision: blocked | None(paused) | eligible.
+blocked  if permission revoked / expired / continuation_blocked_reason set
+blocked  if the grant allocation invariant (step 1) is violated
+blocked  if ordinal >= RECOVERY_ATTEMPT_MAX
+blocked  if authoritative evidence conflicts (settlement/hash mismatch)
+blocked  if R_available is KNOWN and < model_call_floor AND the envelope needs a model call
+None     if R_available is None (any attempt charge unknown) or any input unreadable
+None     if step-safety / closure cannot be authoritatively obtained
+eligible otherwise (R_available >= floor, or a pure read-only envelope)
 ```
 
+- **Tri-state rule (no contradiction):** authoritative denial or conflict is
+  `blocked`; unknown/unavailable cost or input is `None` → `paused`; only a known
+  `R_available` below the model-call floor is `blocked` **when the envelope needs
+  a model call**. A pure read-only envelope does **not** need a model-call floor;
+  if the implementation still needs a model call it MUST NOT claim read-only
+  floor-exemption.
 - Revocation/expiry/`continuation_blocked_reason` still block. `max_turns` is
   only used to verify the original ledger/authorization was not exceeded;
   recovery within `R` does not require an extra free turn.
@@ -257,7 +290,7 @@ budget_available = blocked  if revoked/expired/blocked-reason set
   90 ≤ 100`. `R_available = 60 − 20 = 40` — **40, not 10**. The old formula's
   `min(100−30−60, 60−20) = min(10, 40) = 10` was wrong.
 - Unknown cost is never `0` and is never refunded; `outcome_unknown` without a
-  reconciled guard receipt → `None`/`paused`.
+  reconciled guard receipt → `R_available = None` → `None`/`paused`.
 
 ### Recovery-mode domain admission envelope (P1-K)
 
@@ -270,9 +303,13 @@ make it safe. A recovery run is therefore admitted only inside a
 - **(b) exact reuse of an original persisted safe call** — the same
   `(action, task_id, idempotency_key, request_sha256, input_sha256)` present in
   the lost root's `agent_domain_call_evidence`, verified by the Backend.
-- The registry must explicitly declare any action whose key is derived from
-  input hash/content address, and the Backend must enforce it; the model MUST NOT
-  choose the mode or mint keys.
+- The registry's `may_produce_new_key` field is **conservative classification
+  only**: an action declared `may_produce_new_key=true` is **always
+  ineligible/blocked** for automatic recovery. It MUST NOT authorize the model
+  or a recovery run to mint a new key. Enabling a new key is beyond this design
+  and would require a separate **Proposed** ADR (never opened or implied here).
+- The model MUST NOT choose the mode or mint keys; the Backend enforces the
+  envelope against the lost root's `agent_domain_call_evidence`.
 - Any out-of-envelope new write, different input/hash/key, or
   publish/order/paid/irreversible action → `blocked`/`paused`.
 - If the "work to replay" cannot be predetermined from the envelope + registry,
@@ -289,9 +326,12 @@ record matching the same session/trace and exact run.
 
 ### Next implementation-slice acceptance criteria
 
-1. Closed registry (with `may_produce_new_key`) + recovery-mode envelope.
-2. Backend-minted `recovery_attempt_key` carried in the reservation; Adapter
-   validates it, binds it to the reservation/ordinal and fences epoch/generation;
+1. Closed registry + recovery-mode envelope; `may_produce_new_key=true` is
+   conservative only and always ineligible (a new key would need a Proposed ADR).
+2. Backend-minted `recovery_attempt_key` carried in the closed `recovery_attempt`
+   sub-record `{attempt_key, ordinal, trigger_key, interrupted_run_id,
+   interrupted_generation, containment_attempt, executor_epoch}`; the Adapter
+   recomputes/verifies both keys and fences the LIVE executor epoch/generation;
    client/model cannot mint it.
 3. Per-attempt prompt/guard/settlement receipts (`attempt_key.json`), immutable,
    bound to `{reservation_id, ordinal, run_id, charged_tokens, settlement_sha256}`;
@@ -299,8 +339,10 @@ record matching the same session/trace and exact run.
    ≤ `R.token_limit`.
 4. Trigger-key dedup before ordinal allocation under the task-row `FOR UPDATE`;
    cap 3; concurrent same-trigger calls create exactly one attempt.
-5. Session-global cursor closure (pages until `more=false`; global `1..N`
-   contiguous; per-root subset strictly increasing, not required to start at 1).
+5. Stable-snapshot session-global closure (final page `more=false` AND `idle=true`
+   under one locked view; item-by-item adapter↔Backend reconciliation; global
+   `1..N` contiguous; per-root subset strictly increasing, not required to start
+   at 1; unstable/unproven closure → `paused`).
 6. Corrected budget formula (grant invariant; `R_available = R.token_limit −
    cum_exact`; no second deduction; numeric example reproduced).
 7. Fail-able observer + negative controls (Adapter old-run dedup; immutable

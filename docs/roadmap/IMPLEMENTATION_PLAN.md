@@ -44,18 +44,26 @@ authorities and the missing pieces; the minimal design keeps
 `packages/contracts/session_failure_containment.py` closed and adds: (1) **identity separation** —
 budget authority stays the original `reservation_id`, while each recovery submission uses a
 Backend-minted `recovery_attempt_key` (the Adapter otherwise returns the lost old run for a reused
-prompt key and forces the key to `reservation_id`); (2) **per-attempt receipts** bound to
-`{reservation_id, ordinal, run_id, charged_tokens, settlement_sha256}` with the Backend row as the
-final aggregate; (3) **trigger-key dedup** before ordinal allocation (same fenced loss returns the
-existing attempt; only a new loss allocates the next ordinal, cap 3); (4) **session-global cursor
-closure** (pages until `more=false`, global `1..N` contiguous, then per-root filter; a second root's
-first sequence > 1 is legal); (5) a **no-double-deduction** budget formula
-(`R_available = R.token_limit − cum_exact` after the grant invariant, e.g. P=100/other=30/R=60/
-charge=20 → 40, not 10); and (6) a **recovery-mode admission envelope** (read-only, or exact reuse
-of the original safe call; the model never mints new keys; undeterminable work is not `eligible`).
-It concludes existing components suffice, so **no new ADR is required**; a later slice that needs an
-independent recovery store, a new cross-Plane authority interface, a DB migration or a new trust
-subject must propose an ADR first. The next sole task is the bounded exactly-once receipt-first
+prompt key and forces the key to `reservation_id`); the carrier's **closed** `recovery_attempt`
+sub-record carries `{attempt_key, ordinal, trigger_key, interrupted_run_id, interrupted_generation,
+containment_attempt, executor_epoch}` and the Adapter recomputes both keys and fences the live
+executor epoch/generation (missing/tampered/stale → fail closed); (2) **per-attempt receipts** bound
+to `{reservation_id, ordinal, run_id, charged_tokens, settlement_sha256}` with the Backend row as
+the final aggregate; (3) **trigger-key dedup** before ordinal allocation (same fenced loss returns
+the existing attempt; only a new loss allocates the next ordinal, cap 3); (4) **stable-snapshot
+session-global cursor closure** (final page `more=false` AND `idle=true` under one locked view,
+item-by-item adapter↔Backend reconciliation, global `1..N` contiguous, then per-root filter; a
+second root's first sequence > 1 is legal; unstable/unproven closure → `paused`); (5) a
+**no-double-deduction, self-consistent tri-state** budget decision (`blocked` for authoritative
+denial/conflict/ordinal cap/known sub-floor, `None`/`paused` for unknown cost/input,
+`R_available = R.token_limit − cum_exact` after the grant invariant, e.g. P=100/other=30/R=60/
+charge=20 → 40, not 10; unknown cost is never 0 and never refunded); and (6) a **recovery-mode
+admission envelope** (read-only, or exact reuse of the original safe call; `may_produce_new_key=true`
+is conservative only and always ineligible; the model never mints new keys; undeterminable work is
+not `eligible`). It concludes existing components suffice, so **no new ADR is required**; a later
+slice that needs an independent recovery store, a new cross-Plane authority interface, a DB
+migration, a new trust subject, or authorization for a recovery run to mint a new key must propose
+an ADR first. The next sole task is the bounded exactly-once receipt-first
 rearm implementation under those constraints. Per ADR-0084 migration step 4, the named D15
 superseding assessment is a **separate** follow-up only after the full gate passes; the design PR
 does not create or claim it, keeps B1/B2 `BLOCKED_EXTERNAL`, D15-G `NO_GO` and `R3_RESUME = NO`,

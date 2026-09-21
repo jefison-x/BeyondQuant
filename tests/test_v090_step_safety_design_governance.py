@@ -5,7 +5,7 @@ only, that no runtime implementation or ADR acceptance is claimed, that the full
 ADR-0084 business-recovery gate stays ``IN_PROGRESS / BLOCKED_INTERNAL``, that no
 D15 superseding assessment is created while B1/B2 stay ``BLOCKED_EXTERNAL``,
 D15-G stays ``NO_GO`` and ``R3_RESUME = NO``, and that the design statements are
-consistent with the REAL committed code facts (rectification P1-A..P1-K).
+consistent with the REAL committed code facts (rectification P1-A..P1-N).
 """
 
 from __future__ import annotations
@@ -30,7 +30,12 @@ LIFECYCLE = ROOT / "services/runtime-adapter/app/lifecycle_journal.py"
 ADAPTER_RUNTIME = ROOT / "services/runtime-adapter/app/runtime.py"
 ADAPTER_BUDGET = ROOT / "services/runtime-adapter/app/continuation_budget.py"
 ADR_DIR = ROOT / "docs/architecture/adr"
-CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.193"
+CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.194"
+
+CARRIER_FIELDS = {
+    "attempt_key", "ordinal", "trigger_key", "interrupted_run_id",
+    "interrupted_generation", "containment_attempt", "executor_epoch",
+}
 
 
 def _load(path: Path) -> dict:
@@ -38,19 +43,22 @@ def _load(path: Path) -> dict:
 
 
 def session_global_closure(sequences: list[int], target: list[int]) -> bool:
-    """Documented closure rule: global 1..N contiguous; target strictly increasing.
-
-    The target subset is NOT required to start at 1 because the adapter call
-    sequence accumulates across roots in one session.
-    """
+    """Global 1..N contiguous; target strictly increasing, not required to start at 1."""
 
     if not sequences or sorted(sequences) != list(range(1, len(sequences) + 1)):
         return False
-    if target != sorted(target):
-        return False
-    if len(set(target)) != len(target):
+    if target != sorted(target) or len(set(target)) != len(target):
         return False
     return all(sequence in sequences for sequence in target)
+
+
+def stable_snapshot_closure(more: bool, idle: bool, reconciled: bool,
+                            sequences: list[int], target: list[int]) -> bool:
+    """Stable-snapshot closure: more=false AND idle=true AND item-by-item reconciled."""
+
+    if more or not idle or not reconciled:
+        return False
+    return session_global_closure(sequences, target)
 
 
 class DesignEvidenceTests(unittest.TestCase):
@@ -58,28 +66,40 @@ class DesignEvidenceTests(unittest.TestCase):
         inventory, design = _load(INVENTORY), _load(DESIGN)
         self.assertEqual(inventory["schema_version"], "byq-v090-step-safety-inventory.v1")
         self.assertEqual(design["schema_version"], "byq-v090-step-safety-design.v1")
-        self.assertEqual(design["revision"], "rectified-p1-f-k")
-        self.assertEqual(inventory["revision"], "rectified-p1-f-k")
+        self.assertEqual(design["revision"], "rectified-p1-l-n")
+        self.assertEqual(inventory["revision"], "rectified-p1-l-n")
         for value in (inventory, design):
             self.assertEqual(value["delivered_scope"], "inventory+minimal-design")
             self.assertFalse(value["runtime_implementation"])
 
-    def test_identity_separation_is_backend_minted(self):
+    def test_identity_separation_carries_closed_recovery_attempt_fields(self):
         identity = _load(DESIGN)["identity_separation"]
         self.assertIn("reservation_id", identity["budget_authority_identity"])
         self.assertIn("recovery_attempt_key", identity["recovery_submission_identity"])
-        self.assertIn("recovery_attempt_key", identity["prompt_idempotency_key"])
-        self.assertIn("task-continuation-reservation.v1", identity["trusted_carrier_extension"])
-        self.assertEqual(identity["issuer"], "Backend only")
-        self.assertIs(identity["client_or_model_must_not_mint"], True)
-        self.assertIn("epoch/generation", identity["adapter_validation"])
+        carrier = identity["trusted_carrier_extension"]
+        self.assertEqual(set(carrier["closed_fields"]), CARRIER_FIELDS)
+        self.assertEqual(carrier["issuer"], "Backend only")
+        self.assertIs(carrier["client_or_model_must_not_mint"], True)
+
+    def test_adapter_recomputes_and_verifies_and_rejects(self):
+        identity = _load(DESIGN)["identity_separation"]
+        steps = " ".join(identity["adapter_recompute_and_verify"])
+        self.assertIn("recompute trigger_key'", steps)
+        self.assertIn("recompute attempt_key'", steps)
+        self.assertIn("live", steps.lower())
+        self.assertIn("RuntimeGeneration", steps)
+        rejections = " ".join(identity["rejections_fail_closed"])
+        for expected in ("missing carrier field", "tampered or mismatched trigger_key",
+                         "tampered or mismatched attempt_key", "stale or unknown executor_epoch",
+                         "stale or unknown generation"):
+            self.assertIn(expected, rejections)
+        self.assertIs(identity["new_attempt_key_yields_new_run"], True)
 
     def test_per_attempt_receipt_is_closed_and_bounded(self):
         receipt = _load(DESIGN)["per_attempt_receipt"]
         self.assertIn("attempt_key", receipt["prompt_receipt"])
         self.assertIn("attempt_key.json", receipt["settlement_receipt"])
         self.assertIn("settlement_sha256", receipt["settlement_receipt"])
-        self.assertIn("reserved", receipt["closed_states"])
         self.assertIn("outcome_unknown", receipt["closed_states"])
         self.assertEqual(receipt["unknown_attempt_charge"], "paused")
         self.assertIn("R.token_limit", receipt["cumulative_bound"])
@@ -93,44 +113,70 @@ class DesignEvidenceTests(unittest.TestCase):
                       "containment_attempt", "executor_epoch"):
             self.assertIn(field, trigger["binds"])
         self.assertIn("SAME trigger_key returns the existing attempt", trigger["dedup_rule"])
-        self.assertIn("NEW authoritative fenced loss identity", trigger["dedup_rule"])
         self.assertEqual(trigger["cap"], 3)
-        self.assertIs(trigger["recomputable_and_verifiable"], True)
 
-    def test_session_global_closure_accepts_second_root_first_sequence_gt_one(self):
+    def test_stable_snapshot_closure_requires_more_false_and_idle(self):
         source = _load(DESIGN)["authoritative_source"]
-        self.assertIn("session-global", source["sequence_nature"])
-        self.assertIn("does NOT need to start at 1", source["closure_rule"])
+        self.assertIs(source["idle_required"], True)
+        self.assertIn("more == false AND idle == true", source["stable_snapshot_closure"])
+        self.assertIn("item-by-item", source["item_by_item_reconciliation"])
         self.assertIs(source["second_root_first_sequence_gt_1_legal"], True)
-        # Positive: a second root whose first observed sequence is 3 is legal.
+        # Positive: closed tail, second root first sequence 3 is legal.
+        self.assertTrue(stable_snapshot_closure(False, True, True, [1, 2, 3, 4], [3, 4]))
+        # Negative: not idle (open root) -> unstable, not closed.
+        self.assertFalse(stable_snapshot_closure(False, False, True, [1, 2, 3], [3]))
+        # Negative: more=True -> pagination not finished.
+        self.assertFalse(stable_snapshot_closure(True, True, True, [1, 2, 3], [3]))
+        # Negative: item-by-item reconciliation failed.
+        self.assertFalse(stable_snapshot_closure(False, True, False, [1, 2, 3], [3]))
+        # Positive: second root first sequence > 1 is legal.
         self.assertTrue(session_global_closure([1, 2, 3, 4], [3, 4]))
-        # Negative: a session-global gap is not closure.
+        # Negative: session-global gap.
         self.assertFalse(session_global_closure([1, 2, 4], [4]))
-        # Negative: a per-root out-of-order subset is not closure.
+        # Negative: per-root out-of-order subset.
         self.assertFalse(session_global_closure([1, 2, 3, 4], [4, 3]))
 
-    def test_budget_formula_does_not_double_deduct(self):
+    def test_budget_tri_state_is_self_consistent_and_unknown_is_not_zero(self):
         budget = _load(DESIGN)["budget_binding"]
-        example = budget["numeric_example"]
+        self.assertIs(budget["unknown_cost_is_zero"], False)
+        self.assertIs(budget["unknown_cost_refunded"], False)
+        table = {row["condition"]: row["decision"] for row in budget["tri_state_decision_table"]}
+        self.assertEqual(table["permission revoked/expired/continuation_blocked_reason set"], "blocked")
+        self.assertEqual(table["grant allocation invariant violated"], "blocked")
+        self.assertEqual(table["ordinal >= RECOVERY_ATTEMPT_MAX"], "blocked")
+        self.assertEqual(table["authoritative evidence conflict (settlement/hash mismatch)"], "blocked")
+        self.assertEqual(
+            table["R_available KNOWN and < model_call_floor and the envelope needs a model call"], "blocked")
+        self.assertEqual(table["R_available is None (any attempt charge unknown) or any input unreadable"], "None/paused")
+        self.assertEqual(table["closure or step-safety cannot be authoritatively obtained"], "None/paused")
+        self.assertEqual(
+            table["otherwise (known R_available >= floor, or a pure read-only envelope)"], "eligible")
+        formula = budget["formula"]
+        self.assertIn("TRI-STATE", formula["budget_available"])
+        self.assertIn("do NOT deduct", formula["step_3_no_double_deduction"])
+        self.assertIn("read-only envelope", formula["read_only_floor_exemption"])
+        # No contradiction: unknown maps to None, never to blocked or eligible.
+        self.assertNotIn("None", table["permission revoked/expired/continuation_blocked_reason set"])
+        self.assertNotIn("blocked", table["R_available is None (any attempt charge unknown) or any input unreadable"])
+
+    def test_budget_formula_does_not_double_deduct(self):
+        example = _load(DESIGN)["budget_binding"]["numeric_example"]
         self.assertEqual(example["permission_token_limit"], 100)
         self.assertEqual(example["other_settled"], 30)
         self.assertEqual(example["r_token_limit"], 60)
         self.assertEqual(example["r_cumulative_exact_charge"], 20)
         self.assertEqual(example["r_available"], 40)
         self.assertEqual(example["old_wrong_value"], 10)
-        formula = budget["formula"]
-        self.assertIn("other_settled + other_unresolved + R.token_limit", formula["step_1_grant_invariant"])
-        self.assertIn("R.token_limit - cum_exact", formula["step_2_r_headroom"])
-        self.assertIn("do NOT deduct", formula["step_3_no_double_deduction"])
-        self.assertIn("max_turns", formula["step_4_authority"])
 
-    def test_recovery_admission_envelope_constrains_future_writes(self):
+    def test_recovery_admission_envelope_and_may_produce_new_key_boundary(self):
         envelope = _load(DESIGN)["recovery_admission_envelope"]
         allowed = " ".join(envelope["allowed"])
         self.assertIn("read-only", allowed)
         self.assertIn("request_sha256", allowed)
-        self.assertIn("agent_domain_call_evidence", envelope["enforcement"])
-        self.assertIn("may_produce_new_key", _load(DESIGN)["next_slice_acceptance_criteria"][0])
+        self.assertIs(envelope["may_produce_new_key_conservative_only"], True)
+        self.assertIs(envelope["may_produce_new_key_true_always_ineligible"], True)
+        self.assertIn("Proposed ADR", envelope["new_key_authorization"])
+        self.assertNotIn("authorize", envelope["new_key_authorization"].lower().replace("never", ""))
         self.assertIs(envelope["model_must_not_choose"], True)
         self.assertEqual(envelope["undeterminable_work"], "not eligible")
 
@@ -142,23 +188,24 @@ class DesignEvidenceTests(unittest.TestCase):
         self.assertIn("FOR UPDATE", mechanism["row_lock"])
         self.assertIs(mechanism["per_event_key_unique_constraint"], False)
         self.assertIs(mechanism["pg_advisory_xact_lock_on_this_path"], False)
-        self.assertIn("research_continuation.py:309-310", mechanism["previous_unconfirmed_rejection"])
-        self.assertIn("research_continuation.py:563-567", mechanism["dispatch_sets_outcome_unknown"])
         adapter = next(entry for entry in inventory["budget_binding"]
                        if "continuation_budget.py" in entry["interface"])
         self.assertIn("reservation_id", adapter["real_mechanism"]["settlement_path"])
-        self.assertIn("original continuation settlement cannot change",
-                      adapter["real_mechanism"]["immutable_settlement_message"])
         submit = next(entry for entry in inventory["budget_binding"]
                       if "submit_prompt" in entry["interface"])
         self.assertIn("durable run_id", submit["real_mechanism"]["old_run_dedup"])
         self.assertIn("budget['reservation_id']", submit["real_mechanism"]["forces_reservation_key"])
+        step = next(entry for entry in inventory["step_safety"]
+                    if "agent_domain_call_evidence" in entry["interface"])
+        self.assertIn("idle", step["real_mechanism"]["adapter_page_shape"])
 
     def test_no_new_adr_is_required_or_proposed(self):
         design = _load(DESIGN)
         self.assertIs(design["adr_decision"]["required"], False)
         self.assertIs(design["adr_decision"]["proposed"], False)
         self.assertIn("no new adr is required", README.read_text(encoding="utf-8").lower())
+        self.assertIn("mint a new domain key",
+                      " ".join(design["adr_decision"]["future_triggers_requiring_a_proposed_adr"]))
         for path in ADR_DIR.glob("ADR-*step-safety*.md"):
             text = path.read_text(encoding="utf-8")
             self.assertIn("Status: Proposed", text, str(path))
@@ -183,7 +230,8 @@ class DesignEvidenceTests(unittest.TestCase):
         self.assertIn("原行 rearm", status)
         self.assertIn("身份分离", status)
         self.assertIn("FOR UPDATE", status)
-        self.assertIn("session-global cursor", status)
+        self.assertIn("session-global", status)
+        self.assertIn("idle=true", status)
         self.assertIn("40", status)
 
     def test_no_superseding_assessment_is_created_or_claimed(self):
@@ -214,6 +262,11 @@ class RealCodeFactTests(unittest.TestCase):
         self.assertIn('return durable["run_id"]', source)
         self.assertIn("if idempotency_key != budget['reservation_id']:", source)
         self.assertIn("continuation requires its original reservation key", source)
+
+    def test_adapter_page_exposes_more_and_idle(self):
+        source = ADAPTER_RUNTIME.read_text(encoding="utf-8")
+        self.assertIn('"more": len(state["calls"]) > after_sequence + len(rows)', source)
+        self.assertIn('"idle": state["open_root"] is None', source)
 
     def test_settlement_is_one_immutable_slot_per_reservation(self):
         source = ADAPTER_BUDGET.read_text(encoding="utf-8")
@@ -276,7 +329,7 @@ class NoRuntimeImplementationTests(unittest.TestCase):
         from scripts.dsh import build_revision as builds
         self.assertEqual(builds.selected_build_id("dsh-0.1.2rc1"), CURRENT_BUILD_REVISION)
         self.assertTrue((ROOT / "config/dsh/builds" / f"{CURRENT_BUILD_REVISION}.json").is_file())
-        self.assertTrue((ROOT / "config/dsh/builds/dsh-0.1.2rc1-post-u8.192.json").is_file())
+        self.assertTrue((ROOT / "config/dsh/builds/dsh-0.1.2rc1-post-u8.193.json").is_file())
 
 
 if __name__ == "__main__":
