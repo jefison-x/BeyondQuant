@@ -76,8 +76,9 @@ class RunScopedImageReferenceTests(unittest.TestCase):
         self.assertIn('printf \'%s=%s\\n\' "$service" "${CI_IMAGE_IDS[$service]}"', self.script)
         # The cleanup gate consumes the same scope-scoped manifest and removes the
         # exact captured ids (behavior is proven in test_ci_cleanup_image_ids.py).
-        self.assertIn(
-            'MANIFEST="$REPO_ROOT/.ci-artifacts/$SCOPE/image-ids.env"', self.cleanup)
+        self.assertIn('ARTIFACT_ROOT="$REPO_ROOT/.ci-artifacts"', self.cleanup)
+        self.assertIn('MANIFEST_DIR="$ARTIFACT_ROOT/$SCOPE"', self.cleanup)
+        self.assertIn('MANIFEST="$MANIFEST_DIR/image-ids.env"', self.cleanup)
         self.assertIn('docker image rm "$PROJECT-$service"', self.cleanup)
         self.assertIn('docker image rm "$image_id"', self.cleanup)
         self.assertIn("image_has_foreign_tag", self.cleanup)

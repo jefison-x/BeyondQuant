@@ -30,7 +30,7 @@
 <!-- byq:v090-dsh-provider-qualification=blocked-external -->
 <!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->
 <!-- byq:phase-100-p100-c=paused-not-delivery -->
-<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.188 -->
+<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.189 -->
 
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|
@@ -452,6 +452,16 @@ D15-G 保持 **`NO_GO`** 且**未重跑**，**`R3_RESUME = NO`**，0.9 未关闭
   `post-u8.187 → post-u8.188`（`scripts/`、`tests/` 属 build inputs，仅重建身份；历史 manifest 与
   全部证据保留）。**未改历史 verdict、未改生产 selector/compose/deployment、未 deploy/tag/release、
   未运行 Full CI、未取消或重跑当前 CI、未触碰 PR #349。**
+- **追加：manifest 边界两处窄修（2026-09-21，同 PR）**：(1) scope 现在显式拒绝 `.`/`..`，且
+  manifest 目录经规范化必须严格等于 `.ci-artifacts/<scope>`，杜绝 `..` 把 `image-ids.env` 解析到
+  `.ci-artifacts` 之外；`local-ci.sh` 的 scope 校验同步拒绝 `.`/`..`。(2) manifest 的 `service`
+  必须是本次 `image_resources` 精确白名单成员，**未知或重复 service 一律 fail-closed**，其 ID
+  **绝不**交给 `docker image rm`。行为测试新增：`.`/`..` scope 拒绝且不读取/不删除越界 manifest、
+  unknown service 与 duplicate service fail-closed 且 ID 不被删除。既有 foreign-tag 共享保护、
+  缺失 manifest 向后兼容、无 global prune 全部保留。构建身份推进
+  `post-u8.188 → post-u8.189`（`scripts/`、`tests/` 属 build inputs，仅重建身份；历史 manifest 与
+  全部证据保留）。**未改历史 verdict、未改生产 selector/compose/deployment、未 deploy/tag/release、
+  未运行 Full CI、未取消或重跑当前 CI、未触碰 PR #349、未引入镜像签名或第二框架。**
 
 ## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19，历史叙述）
 

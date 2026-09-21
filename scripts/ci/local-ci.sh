@@ -164,7 +164,7 @@ want() { # want <check>
 # ------------------------------------------------------------------- postgres
 BYQ_CI_SCOPE="${BYQ_CI_SCOPE:-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-$$}}"
 case "$BYQ_CI_SCOPE" in
-  ''|*[!A-Za-z0-9_.-]*) echo "invalid CI scope" >&2; exit 2 ;;
+  .|..|''|*[!A-Za-z0-9_.-]*) echo "invalid CI scope" >&2; exit 2 ;;
 esac
 CI_PG="byq-ci-postgres-$BYQ_CI_SCOPE"
 CI_BACKEND="byq-ci-backend-$BYQ_CI_SCOPE"

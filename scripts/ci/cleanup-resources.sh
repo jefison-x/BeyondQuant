@@ -21,7 +21,7 @@ if [ -z "$SCOPE" ]; then
   exit 2
 fi
 case "$SCOPE" in
-  *[!A-Za-z0-9_.-]*) echo "invalid CI scope: $SCOPE" >&2; exit 2 ;;
+  .|..|*[!A-Za-z0-9_.-]*) echo "invalid CI scope: $SCOPE" >&2; exit 2 ;;
 esac
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -44,7 +44,25 @@ RUNTIME_CANDIDATE_BENCH_VOL="byq-ci-runtime-candidate-bench-$SCOPE"
 # The same path is derived from BYQ_CI_SCOPE by both local-ci.sh (writer) and this
 # independent always-cleanup process, so cleanup can remove a dangling image whose
 # mutable run-scoped tag is already gone. It is never shared across scopes.
-MANIFEST="$REPO_ROOT/.ci-artifacts/$SCOPE/image-ids.env"
+#
+# Scope is a single path component: `/` is rejected, and `.`/`..` are rejected
+# above, so the manifest directory normalizes to exactly .ci-artifacts/<scope> and
+# can never resolve outside .ci-artifacts/<scope>/. The explicit checks below keep
+# that guarantee even if the scope validation changes.
+ARTIFACT_ROOT="$REPO_ROOT/.ci-artifacts"
+MANIFEST_DIR="$ARTIFACT_ROOT/$SCOPE"
+case "$MANIFEST_DIR" in
+  "$ARTIFACT_ROOT"/*) ;;
+  *) echo "invalid CI scope path: $SCOPE" >&2; exit 2 ;;
+esac
+if command -v realpath >/dev/null 2>&1; then
+  normalized_root="$(realpath -m "$ARTIFACT_ROOT")"
+  normalized_dir="$(realpath -m "$MANIFEST_DIR")"
+  if [ "$normalized_dir" != "$normalized_root/$SCOPE" ]; then
+    echo "invalid CI scope path: $SCOPE" >&2; exit 2
+  fi
+fi
+MANIFEST="$MANIFEST_DIR/image-ids.env"
 
 export COMPOSE_PROJECT_NAME="$PROJECT"
 export COMPOSE_FILE="$REPO_ROOT/compose.yml"
@@ -69,6 +87,7 @@ volume_resources=("$BYQ_POSTGRES_VOLUME_NAME" "$BYQ_DOMAIN_VOLUME_NAME" "$BYQ_ML
 [ "$KEEP_POSTGRES" -eq 1 ] || volume_resources+=("$PG_VOL")
 
 manifest_ids=()
+manifest_services=()
 manifest_state="missing"   # missing | valid | invalid
 retained_shared_ids=()
 
@@ -82,10 +101,11 @@ fi
 # file is ever handed to `docker image rm`.
 load_manifest_ids() {
   manifest_ids=()
+  manifest_services=()
   manifest_state="missing"
   [ -f "$MANIFEST" ] || return 0
   manifest_state="valid"
-  local line service image_id
+  local line service image_id known allowed seen
   while IFS= read -r line || [ -n "$line" ]; do
     [ -z "$line" ] && continue
     case "$line" in
@@ -100,11 +120,28 @@ load_manifest_ids() {
         echo "CI cleanup manifest invalid: bad service '$service'" >&2
         manifest_ids=(); manifest_state="invalid"; return 1 ;;
     esac
+    # Only this run's own services may drive deletion; an unknown service is a
+    # foreign or corrupt entry and fails closed.
+    allowed=0
+    for known in "${image_resources[@]}"; do
+      if [ "$service" = "$known" ]; then allowed=1; break; fi
+    done
+    if [ "$allowed" -ne 1 ]; then
+      echo "CI cleanup manifest invalid: service '$service' is not a run-scoped service" >&2
+      manifest_ids=(); manifest_state="invalid"; return 1
+    fi
+    for seen in "${manifest_services[@]}"; do
+      if [ "$seen" = "$service" ]; then
+        echo "CI cleanup manifest invalid: duplicate service '$service'" >&2
+        manifest_ids=(); manifest_state="invalid"; return 1
+      fi
+    done
     if [[ ! "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]; then
       echo "CI cleanup manifest invalid: not an immutable image id: $image_id" >&2
       manifest_ids=(); manifest_state="invalid"; return 1
     fi
     manifest_ids+=("$image_id")
+    manifest_services+=("$service")
   done < "$MANIFEST"
   return 0
 }

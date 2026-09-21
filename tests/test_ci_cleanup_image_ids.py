@@ -168,6 +168,54 @@ class CleanupImageIdTests(unittest.TestCase):
         self.assertNotIn(ID_A, self._images())
         self.assertEqual(self._log().count(f"image rm {ID_A}"), 1)
 
+    # ------------------------------------------------ defect 1: scope escape
+    def test_dot_scope_is_rejected_and_cannot_read_an_escaped_manifest(self) -> None:
+        escaped = ROOT / ".ci-artifacts" / "image-ids.env"  # where '.' would resolve
+        escaped.parent.mkdir(parents=True, exist_ok=True)
+        escaped.write_text(f"backend={ID_A}\n", encoding="utf-8")
+        self.addCleanup(lambda: escaped.unlink(missing_ok=True))
+        self.state.write_text(f"{ID_A}\t\n", encoding="utf-8")
+        result = self._run(scope=".")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("invalid CI scope", result.stderr)
+        self.assertNotIn(f"image rm {ID_A}", self._log())
+        self.assertTrue(escaped.exists(), "escaped manifest must be untouched")
+        self.assertIn(ID_A, self._images())
+
+    def test_dotdot_scope_is_rejected_and_cannot_read_an_escaped_manifest(self) -> None:
+        escaped = ROOT / "image-ids.env"  # where '..' would resolve
+        escaped.write_text(f"backend={ID_A}\n", encoding="utf-8")
+        self.addCleanup(lambda: escaped.unlink(missing_ok=True))
+        self.state.write_text(f"{ID_A}\t\n", encoding="utf-8")
+        result = self._run(scope="..")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("invalid CI scope", result.stderr)
+        self.assertNotIn(f"image rm {ID_A}", self._log())
+        self.assertTrue(escaped.exists(), "escaped manifest must be untouched")
+        self.assertIn(ID_A, self._images())
+
+    # ------------------------------------ defect 2: service allowlist / duplicates
+    def test_unknown_manifest_service_fails_closed_and_id_not_deleted(self) -> None:
+        self.state.write_text(f"{ID_A}\t\n", encoding="utf-8")
+        self._write_manifest(f"foreign={ID_A}\n")
+        result = self._run()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not a run-scoped service", result.stderr)
+        self.assertNotIn(f"image rm {ID_A}", self._log())
+        self.assertIn(ID_A, self._images(), "unknown service must not delete an image")
+        self.assertTrue(self.manifest.exists())
+
+    def test_duplicate_manifest_service_fails_closed_and_ids_not_deleted(self) -> None:
+        self.state.write_text(f"{ID_A}\t\n{ID_B}\t\n", encoding="utf-8")
+        self._write_manifest(f"backend={ID_A}\nbackend={ID_B}\n")
+        result = self._run()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("duplicate service", result.stderr)
+        self.assertNotIn(f"image rm {ID_A}", self._log())
+        self.assertNotIn(f"image rm {ID_B}", self._log())
+        self.assertIn(ID_A, self._images())
+        self.assertIn(ID_B, self._images())
+
 
 if __name__ == "__main__":
     unittest.main()
