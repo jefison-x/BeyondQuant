@@ -1,0 +1,345 @@
+{
+  "all_controls_pass": true,
+  "control_count": 48,
+  "controls": [
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "missing-required-scenario"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": false,
+      "name": "required-scenario-fail"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "required-blocked"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": false,
+      "name": "blocked-without-reason"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "fabricated-reattach-session-drift"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "fabricated-reattach-pid-drift"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "false-identity-claim"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "fault-not-applied"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "missing-dimension"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "dimension-contradicts-lost"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "label-only-pass-positive"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": false,
+      "name": "not-implemented-positive-missing"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "not-implemented-label-pass"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "runtime-not-restarted"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "runtime-generation-not-advanced"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "runtime-restart-flag-only"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "lost-without-native-failure"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "old-pty-still-alive"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "lost-status-not-lost"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "fake-reattach-accepted"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "reattach-retry-flips"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "conversation-terminated-on-terminal-loss"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "durable-job-terminated-on-terminal-loss"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "durable-not-loaded"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "orphan-not-surviving"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "orphan-not-detected"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "orphan-classified-attached"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "orphan-reused"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "orphan-adopted-as-attachment"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "orphan-reuse-attempt-accepted"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "orphan-cleanup-left-alive"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "orphan-dimensions-not-lost"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "orphan-dimensions-hide-surviving-pty"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "permission-bypass"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "wrong-terminal-accepted"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "stale-not-fenced"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "runtime-restart-cross-check-fake"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "lifetime-cross-check-fake"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "cleanup-cross-check-fake"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "idempotent-cross-check-fake"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "durable-cross-check-fake"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "negative-not-rejected"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "candidate-mismatch"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "non-native-evidence-class"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "llm-claims-real-quality"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "pass-without-observation"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "self-declared-coverage"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "fresh-adapter-not-fresh"
+    }
+  ],
+  "defect_targeting_pre_fix_passed": [
+    "missing-required-scenario",
+    "required-blocked",
+    "fabricated-reattach-session-drift",
+    "fabricated-reattach-pid-drift",
+    "false-identity-claim",
+    "fault-not-applied",
+    "missing-dimension",
+    "dimension-contradicts-lost",
+    "label-only-pass-positive",
+    "not-implemented-label-pass",
+    "runtime-not-restarted",
+    "runtime-generation-not-advanced",
+    "runtime-restart-flag-only",
+    "lost-without-native-failure",
+    "old-pty-still-alive",
+    "lost-status-not-lost",
+    "fake-reattach-accepted",
+    "reattach-retry-flips",
+    "conversation-terminated-on-terminal-loss",
+    "durable-job-terminated-on-terminal-loss",
+    "durable-not-loaded",
+    "orphan-not-surviving",
+    "orphan-not-detected",
+    "orphan-classified-attached",
+    "orphan-reused",
+    "orphan-adopted-as-attachment",
+    "orphan-reuse-attempt-accepted",
+    "orphan-cleanup-left-alive",
+    "orphan-dimensions-not-lost",
+    "orphan-dimensions-hide-surviving-pty",
+    "permission-bypass",
+    "wrong-terminal-accepted",
+    "stale-not-fenced",
+    "runtime-restart-cross-check-fake",
+    "lifetime-cross-check-fake",
+    "cleanup-cross-check-fake",
+    "idempotent-cross-check-fake",
+    "durable-cross-check-fake",
+    "negative-not-rejected",
+    "candidate-mismatch",
+    "non-native-evidence-class",
+    "llm-claims-real-quality",
+    "pass-without-observation",
+    "self-declared-coverage",
+    "fresh-adapter-not-fresh"
+  ],
+  "defect_targeting_pre_fix_passed_count": 45,
+  "known_good_unit_fixture_all_pass": true,
+  "known_good_unit_fixture_format_valid": true,
+  "schema_version": "byq-v090-step5-b4-negative-controls.v1"
+}

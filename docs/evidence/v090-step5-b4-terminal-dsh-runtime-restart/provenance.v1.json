@@ -1,0 +1,76 @@
+{
+  "artifacts": {
+    "contract": {
+      "path": "scripts/d15/terminal/dsh_runtime_restart_contract.v1.json",
+      "sha256": "sha256:930b865ac79b9f21eb09af306db486abc05055dafc0f2a4811915e237856a0e7"
+    },
+    "harness": {
+      "path": "scripts/d15/terminal/dsh_runtime_restart_harness.mjs",
+      "sha256": "sha256:fdf5afb3157b607252667a82a9e922da00533b0f6bacd6f8527b8ef470aa6bef"
+    },
+    "observer": {
+      "path": "scripts/d15/terminal/dsh_runtime_restart_observer.py",
+      "sha256": "sha256:bc0c4701f0cb870a8ddd469d0d7605a116c0c70f71b2d7167e99ec208205af8c"
+    },
+    "package": {
+      "path": "scripts/d15/terminal/package.json",
+      "sha256": "sha256:3b61f6a5e27d146994b72c4753c4e1c2320cd3d0cc5bbd26200a16b72e289a84"
+    },
+    "package_lock": {
+      "path": "scripts/d15/terminal/package-lock.json",
+      "sha256": "sha256:c58a3d0ef40822cdf14ce6956551b2b59abff9a20ef16f9224a683c55864af78"
+    },
+    "reused_b3_runtime": {
+      "path": "scripts/d15/terminal/adapter_restart_harness.mjs",
+      "sha256": "sha256:56c64efdff3224ebcbab69175c691da1703eabba89a1da5e5f40af44ef4b1666"
+    },
+    "runner": {
+      "path": "scripts/d15/terminal/run_dsh_runtime_restart_probe.sh",
+      "sha256": "sha256:ec4d9e7c3d3b09f688bbd633edfb454a413c74c8fc5f9818e919e63112903cf7"
+    },
+    "scope_probe": {
+      "path": "scripts/d15/terminal/dsh_runtime_restart_scope_probe.py",
+      "sha256": "sha256:e01256f068737a9e3dac4d56b5fb5c8cb80c1146bb61744694030f98aa2ca5a3"
+    }
+  },
+  "candidate": {
+    "npm": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1",
+    "release": "dsh-0.1.5rc1"
+  },
+  "constraints": {
+    "byq_builds_pty_runtime": false,
+    "byq_copies_dsh_terminal": false,
+    "r4_productization": false,
+    "second_generic_harness": false,
+    "second_session_store": false
+  },
+  "environment": {
+    "node": "v22.23.2",
+    "os": "Linux",
+    "python": "3.14.4"
+  },
+  "isolation": {
+    "database_changes": "none",
+    "deployment": "none",
+    "docker_image_used": false,
+    "evidence_class": "native-runtime-isolated-b4",
+    "fork_or_patch_of_dsh": false,
+    "network": "none required at run time (npm install only)",
+    "processes": "separate OS processes per native DSH runtime generation, per BYQ adapter generation and per client action; the DSH runtime OS process is truly terminated and restarted",
+    "production_selector": "dsh-0.1.2rc1",
+    "production_selector_changed": false,
+    "r3_resume": "NO",
+    "release_or_tag_created": false,
+    "runtime": "real native @deepseek-ai/dsh-terminal + @deepseek-ai/dsh-terminal-bash closure via npm (committed B3 runtime role)"
+  },
+  "missing_artifacts": [],
+  "owner_node": "d15-5-candidate-attachment-layer",
+  "reuse": {
+    "reused_runtime_role_path": "scripts/d15/terminal/adapter_restart_harness.mjs",
+    "reuses_b3_attachment_store_schema": true,
+    "reuses_b3_native_runtime_role": true
+  },
+  "schema_version": "byq-v090-step5-b4-provenance.v1",
+  "slice": "terminal-dsh-runtime-restart"
+}

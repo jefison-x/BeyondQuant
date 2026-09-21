@@ -1,0 +1,352 @@
+{
+  "schema_version": "byq-v090-step5-b4-native-observations.v1",
+  "generated_at": "2026-09-21T05:58:23.716Z",
+  "evidence_class": "native-runtime-isolated-b4",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1"
+  },
+  "runtime_model": {
+    "native_runtime": "one native DSH runtime OS process per runtime generation owning the real ctx.terminals PTY service + shell backend (reused committed B3 runtime role)",
+    "byq_adapter": "one BYQ adapter OS process owning only the durable TerminalAttachment + reconcile surface; the DSH runtime restart and the adapter restart are the faults",
+    "client": "each client action is a separate OS process over a Unix socket"
+  },
+  "llm": {
+    "class": "not-applicable",
+    "real_llm_quality": false,
+    "note": "no model call; the real native terminal seam is driven through the BYQ attachment adapter"
+  },
+  "scenarios": [
+    {
+      "id": "dsh-runtime-restart-terminal-lost",
+      "result": "PASS",
+      "fault_applied": true,
+      "dimensions": {
+        "pty_process": "absent",
+        "attachment": "present",
+        "io_rebind": "rejected",
+        "terminal_identity": "lost"
+      },
+      "observation": {
+        "temp_root": "/tmp/b4-runtime-restart-Fhg7gT",
+        "attachmentId": "byq-att-39a4e31a3db9b82e32",
+        "nativeSessionId": "pty-1",
+        "nativePid": 2365550,
+        "expectedAttachmentId": "byq-att-39a4e31a3db9b82e32",
+        "expectedSessionId": "pty-1",
+        "expectedPid": 2365550,
+        "conversationId": "byq-conv-bdd1c834b8e06a6dc6",
+        "durableJobId": "byq-job-fff4640f078fb86ea5",
+        "ptyCmdlineBefore": "bwrap --ro-bind / / --dev /dev --unshare-pid --proc /proc --die-with-parent -- /bin/bash --noprofile --norc -i",
+        "byqMintedAttachmentId": true,
+        "attachmentIdIsNotNativeId": true,
+        "createGeneration": 1,
+        "createEpoch": 1,
+        "marker1": "B4_RESTART_MARK_ONE_d5c195c51a8386f8",
+        "marker1InFirstViewport": 1,
+        "pidAliveBeforeFault": true,
+        "runtimeAPid": 2365524,
+        "runtimeARuntimePid": 2365524,
+        "runtimeAGeneration": 1,
+        "runtimeBPid": 2365635,
+        "runtimeBRuntimePid": 2365635,
+        "runtimeBGeneration": 2,
+        "runtimeOsProcessRestart": true,
+        "dshRuntimeRestarted": true,
+        "oldPidAliveAfterRuntimeRestart": false,
+        "oldPidAliveReported": false,
+        "adapterAPid": 2365531,
+        "adapterAGeneration": 1,
+        "adapterBPid": 2365642,
+        "adapterBGeneration": 2,
+        "freshAdapterOsProcess": true,
+        "durableStoreFilePresent": true,
+        "durableRecordsLoadedSameId": true,
+        "recordHasOwnerGenerationEpochState": true,
+        "auditLinkagePresent": true,
+        "auditEvents": [
+          "create",
+          "signal",
+          "lost"
+        ],
+        "reattachAttempted": true,
+        "reattachOk": false,
+        "reattachStatus": "lost",
+        "rebindError": "NATIVE_SESSION_UNAVAILABLE",
+        "nativeSessionPresent": false,
+        "nativeSessionsInNewRuntime": 0,
+        "returnedSessionId": null,
+        "returnedPid": null,
+        "identityStable": false,
+        "fakeReattachRejected": true,
+        "reattachRetrySameLoss": true,
+        "conversationBeforeStatus": "active",
+        "conversationStatusAfterLoss": "active",
+        "durableJobStatusAfterLoss": "active",
+        "conversationSurvived": true,
+        "durableJobSurvived": true,
+        "conversationUnchanged": true,
+        "terminalLifetimeDefinesConversation": false,
+        "foreignPrincipalError": "UNAUTHORIZED_PRINCIPAL",
+        "staleGenerationError": "STALE_GENERATION",
+        "staleEpochError": "STALE_EPOCH",
+        "unknownAttachmentError": "UNKNOWN_ATTACHMENT",
+        "foreignSendError": "FOREIGN_SESSION",
+        "foreignReadError": "FOREIGN_SESSION",
+        "unknownReadError": "NO_SESSION",
+        "requestedUnknownSessionId": "pty-does-not-exist",
+        "unknownReadRealSessionId": "pty-1",
+        "closeIdempotent": true,
+        "orphans": 0,
+        "runtimeShutdownOrphans": 0,
+        "temp_root_removed": true
+      }
+    },
+    {
+      "id": "surviving-pty-without-attachment-lost",
+      "result": "PASS",
+      "fault_applied": true,
+      "dimensions": {
+        "pty_process": "present",
+        "attachment": "absent",
+        "io_rebind": "rejected",
+        "terminal_identity": "lost"
+      },
+      "observation": {
+        "temp_root": "/tmp/b4-orphan-dzSU56",
+        "attachmentId": "byq-att-58ad402e08232f0255",
+        "nativeSessionId": "pty-1",
+        "nativePid": 2365820,
+        "conversationId": "byq-conv-b5b18da4321baca51d",
+        "durableJobId": "byq-job-7d059d374c02e0a11b",
+        "byqMintedAttachmentId": true,
+        "attachmentIdIsNotNativeId": true,
+        "durableStoreFilePresent": true,
+        "durableRecordsLoadedSameId": true,
+        "nativePtyAliveBeforeDrop": true,
+        "dropped": true,
+        "droppedNativeSessionId": "pty-1",
+        "droppedNativePid": 2365820,
+        "nativePtyAliveAfterDrop": true,
+        "remainingAttachmentRecords": 0,
+        "adapterAPid": 2365782,
+        "adapterBPid": 2365908,
+        "freshAdapterOsProcess": true,
+        "orphanReconcileRan": true,
+        "orphanNativeSessionsDetected": 1,
+        "orphanClassified": "lost",
+        "orphanReused": false,
+        "orphanAdoptedAsAttachment": false,
+        "orphanReuseAttemptError": "ORPHAN_NOT_REUSABLE",
+        "orphanReconcileIdempotent": true,
+        "oldAttachmentIdReattachError": "UNKNOWN_ATTACHMENT",
+        "conversationStatusAfter": "active",
+        "durableJobStatusAfter": "active",
+        "conversationSurvived": true,
+        "durableJobSurvived": true,
+        "terminalLifetimeDefinesConversation": false,
+        "foreignPrincipalError": "UNAUTHORIZED_PRINCIPAL",
+        "staleGenerationError": "STALE_GENERATION",
+        "staleEpochError": "STALE_EPOCH",
+        "foreignSendError": "FOREIGN_SESSION",
+        "foreignReadError": "FOREIGN_SESSION",
+        "unknownAttachmentError": "UNKNOWN_ATTACHMENT",
+        "cleanupKilledOrphan": true,
+        "cleanupOrphansFound": 1,
+        "orphanPidAliveAfterCleanup": false,
+        "orphans": 0,
+        "runtimeShutdownOrphans": 0,
+        "nativeSessionsAfterCleanup": 0,
+        "temp_root_removed": true
+      }
+    }
+  ],
+  "cross_checks": [
+    {
+      "id": "durable-attachment-lifecycle",
+      "result": "PASS",
+      "assertions": {},
+      "observation": {
+        "attachmentId": "byq-att-39a4e31a3db9b82e32",
+        "nativeSessionId": "pty-1",
+        "nativePid": 2365550,
+        "attachmentIdByqMinted": true,
+        "attachmentIdNotNativeIdentity": true,
+        "durableStorePersisted": true,
+        "reloadedSameAttachmentId": true,
+        "recordHasOwnerGenerationEpochState": true,
+        "auditLinkagePresent": true,
+        "auditEvents": [
+          "create",
+          "signal",
+          "lost"
+        ],
+        "oneStoreFile": true
+      }
+    },
+    {
+      "id": "real-dsh-runtime-restart",
+      "result": "PASS",
+      "assertions": {},
+      "observation": {
+        "runtimeAPid": 2365524,
+        "runtimeBPid": 2365635,
+        "runtimeAGeneration": 1,
+        "runtimeBGeneration": 2,
+        "runtimeOsProcessRestart": true,
+        "dshRuntimeRestarted": true,
+        "pidAliveBeforeFault": true,
+        "oldPtyPid": 2365550,
+        "oldPidAliveAfterRuntimeRestart": false,
+        "nativeSessionsInNewRuntime": 0
+      }
+    },
+    {
+      "id": "permission-boundary",
+      "result": "PASS",
+      "assertions": {},
+      "observation": {
+        "foreignPrincipalError": "UNAUTHORIZED_PRINCIPAL",
+        "foreignSendError": "FOREIGN_SESSION",
+        "foreignReadError": "FOREIGN_SESSION"
+      }
+    },
+    {
+      "id": "stale-generation-fenced",
+      "result": "PASS",
+      "assertions": {},
+      "observation": {
+        "staleGenerationError": "STALE_GENERATION",
+        "staleEpochError": "STALE_EPOCH",
+        "currentGeneration": 1,
+        "currentEpoch": 1,
+        "orphanWorldStaleGenerationError": "STALE_GENERATION",
+        "orphanWorldStaleEpochError": "STALE_EPOCH"
+      }
+    },
+    {
+      "id": "wrong-terminal-rejected",
+      "result": "PASS",
+      "assertions": {},
+      "observation": {
+        "unknownAttachmentError": "UNKNOWN_ATTACHMENT",
+        "requestedUnknownAttachmentId": "byq-att-does-not-exist",
+        "unknownReadError": "NO_SESSION",
+        "requestedUnknownSessionId": "pty-does-not-exist",
+        "realSessionId": "pty-1"
+      }
+    },
+    {
+      "id": "idempotent-transitions",
+      "result": "PASS",
+      "assertions": {},
+      "observation": {
+        "reattachRetrySameLoss": true,
+        "orphanReconcileIdempotent": true,
+        "closeIdempotent": true
+      }
+    },
+    {
+      "id": "cleanup-no-orphans",
+      "result": "PASS",
+      "assertions": {},
+      "observation": {
+        "restartWorldOrphans": 0,
+        "orphanWorldOrphans": 0,
+        "orphanCleanupKilled": true,
+        "orphanPidAliveAfterCleanup": false,
+        "nativeSessionsAfterCleanup": 0
+      }
+    },
+    {
+      "id": "terminal-lifetime-independent",
+      "result": "PASS",
+      "assertions": {},
+      "observation": {
+        "conversationId": "byq-conv-bdd1c834b8e06a6dc6",
+        "durableJobId": "byq-job-fff4640f078fb86ea5",
+        "conversationStatusAfterLoss": "active",
+        "durableJobStatusAfterLoss": "active",
+        "restartConversationSurvived": true,
+        "restartDurableJobSurvived": true,
+        "orphanConversationStatus": "active",
+        "orphanDurableJobStatus": "active",
+        "orphanConversationSurvived": true,
+        "orphanDurableJobSurvived": true
+      }
+    }
+  ],
+  "negatives": [
+    {
+      "kind": "foreign-principal",
+      "rejected": true,
+      "errorCode": "UNAUTHORIZED_PRINCIPAL"
+    },
+    {
+      "kind": "foreign-owner-send",
+      "rejected": true,
+      "errorCode": "FOREIGN_SESSION"
+    },
+    {
+      "kind": "foreign-owner-read",
+      "rejected": true,
+      "errorCode": "FOREIGN_SESSION"
+    },
+    {
+      "kind": "unknown-attachment",
+      "rejected": true,
+      "errorCode": "UNKNOWN_ATTACHMENT"
+    },
+    {
+      "kind": "unknown-terminal",
+      "rejected": true,
+      "errorCode": "NO_SESSION"
+    },
+    {
+      "kind": "stale-generation",
+      "rejected": true,
+      "errorCode": "STALE_GENERATION"
+    },
+    {
+      "kind": "stale-epoch",
+      "rejected": true,
+      "errorCode": "STALE_EPOCH"
+    },
+    {
+      "kind": "fake-reattach-after-dsh-runtime-restart",
+      "rejected": true,
+      "errorCode": "NATIVE_SESSION_UNAVAILABLE"
+    },
+    {
+      "kind": "orphan-reuse",
+      "rejected": true,
+      "errorCode": "ORPHAN_NOT_REUSABLE"
+    },
+    {
+      "kind": "dropped-attachment-reattach",
+      "rejected": true,
+      "errorCode": "UNKNOWN_ATTACHMENT"
+    }
+  ],
+  "notes": [
+    {
+      "scope": "candidate/qualification layer only: scripts/d15/terminal B4 harness/observer/contract; reuses the committed B3 native runtime role and the minimal TerminalAttachment record schema; no runtime-adapter, Product API or frontend change",
+      "reuses_b3_native_runtime_role": true,
+      "reuses_b3_attachment_store_schema": true,
+      "production_selector_unchanged": true,
+      "byq_builds_pty_runtime": false,
+      "byq_copies_dsh_terminal": false,
+      "second_generic_harness": false,
+      "second_session_store": false,
+      "fork_or_patch_of_dsh": false,
+      "product_surface_touches_raw_dsh_schema": false,
+      "r4_productization": false
+    }
+  ],
+  "cleanup": {
+    "restart_world_temp_root_removed": true,
+    "orphan_world_temp_root_removed": true,
+    "temp_root_removed": true
+  }
+}

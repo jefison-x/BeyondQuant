@@ -50,7 +50,7 @@
     "starts_after": "this G-split decision slice",
     "not_started_in_this_batch": true
   },
-  "snapshot_note": "decision-time record (2026-09-21); the `next_task` above is the B2 record. Current state after B2 and B3 is in `current_state_after_b3`.",
+  "snapshot_note": "decision-time record (2026-09-21); the `next_task` above is the B2 record. Current state after B2, B3 and B4 is in `current_state_after_b4`; the historical `current_state_after_b3` overlay is preserved.",
   "current_state_after_b3": {
     "as_of": "2026-09-21",
     "authority": "docs/roadmap/STATUS.md",
@@ -78,5 +78,16 @@
     "No production selector/default switch",
     "No deployment, tag or release",
     "No D15-G re-run and no R3 unfreeze"
-  ]
+  ],
+  "current_state_after_b4": {
+    "as_of": "2026-09-21",
+    "authority": "docs/roadmap/STATUS.md",
+    "subagent-byq-adapter-restart": "BLOCKED (external/dependency)",
+    "terminal-adapter-restart": "PASS (candidate/qualification layer)",
+    "terminal-dsh-runtime-restart": "PASS (candidate/qualification layer)",
+    "subagent-child-crash": "BLOCKED (external)",
+    "d15-g": "NO_GO",
+    "d15-g-rerun": false,
+    "r3-resume": "NO"
+  }
 }

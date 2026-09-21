@@ -262,6 +262,36 @@ The G-split strict internal order continued with B3 `terminal-adapter-restart`
 - **Next sole task in the strict internal order:** `terminal-dsh-runtime-restart` (B4;
   owner `d15-5-candidate-attachment-layer`). It is **not started** by this B3 slice.
 
+### Execution status (2026-09-21): B4 executed and PASS (candidate/qualification layer)
+
+The G-split strict internal order was completed with B4 `terminal-dsh-runtime-restart`
+(owner `d15-5-candidate-attachment-layer`, pre-gate):
+
+- The B4 probe **reuses the committed B3 native runtime role** and the minimal
+  `TerminalAttachment` store schema, and **truly terminates and restarts the DSH runtime
+  OS process** (SIGKILL, then a genuinely fresh OS process as runtime generation B).
+- A fresh adapter generation B reloads the same durable attachment, authorizes and
+  generation/epoch-validates it, and truthfully records `lost`/`interrupted` — never a
+  fabricated reattach. A **surviving PTY with no attachment** is reconciled as `lost` and
+  **never silently reused or adopted**. Terminal lifetime does **not** define conversation
+  or durable-job lifetime (both stay `active`). The fail-able observer (48 controls, 45
+  defect-targeting) rejects fake reattach, label-only PASS, no-real-restart,
+  terminal-driven conversation/job termination and orphan reuse. Verdict `all_pass=true`,
+  exit 0.
+- Evidence: [v090-step5-b4-terminal-dsh-runtime-restart](../v090-step5-b4-terminal-dsh-runtime-restart/README.md),
+  with [current-overlay.v1.json](../v090-step5-b4-terminal-dsh-runtime-restart/current-overlay.v1.json)
+  distinguishing the un-rewritten historical D15-5/D15-G committed snapshot from the B4
+  current overlay.
+- **Current state after B4:** `terminal-adapter-restart = PASS` and
+  `terminal-dsh-runtime-restart = PASS` at the candidate/qualification layer; B1
+  `subagent-child-crash` and B2 `subagent-byq-adapter-restart` remain **BLOCKED**; ADR-0083
+  implemented only at the candidate/qualification layer (R4/production wiring **NOT**
+  implemented); D15-G **not re-run**, still `NO_GO` (it must not be re-run while B1 is
+  BLOCKED); `R3_RESUME = NO`; 0.9 is **not** closed.
+- **G-split strict internal order (B2/B3/B4) is complete.** No further step-5 slice is
+  authorized; D15-G awaits the upstream out-of-process continuable provider (ADR-0082
+  Option 1) for B1.
+
 ## Dependency upgrade is not a production default switch
 
 - "BYQ compatible with DSH 0.1.5-rc.1" and "production default = DSH 0.1.5-rc.1" are

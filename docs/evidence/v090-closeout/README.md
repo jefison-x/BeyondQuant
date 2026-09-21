@@ -149,12 +149,15 @@ R1–R5 / S1–S3 / F1–F10 remediation. It is not a stability pass.
 - `R3_RESUME = NO`; production selector/default `dsh-0.1.2rc1`; deployment `none`.
 - At audit time ADR-0082 and ADR-0083 were **Proposed, not accepted, not implemented**.
   The 2026-09-21 step-4 maintainer decision accepted them (ADR-0082 modified — Option 1
-  only, Option 2 rejected; ADR-0083 as proposed). The 2026-09-21 step-5 B3 slice then
+  only, Option 2 rejected; ADR-0083 as proposed). The 2026-09-21 step-5 B3/B4 slices then
   implemented **only** the candidate/qualification-layer minimal ADR-0083 attachment
-  lifecycle; ADR-0082 and R4/production wiring remain **not implemented**; the D15-G
-  blockers remain unresolved and 0.9 is not closed. See
-  [../v090-adr-decisions/README.md](../v090-adr-decisions/README.md) and
-  [../v090-step5-b3-terminal-adapter-restart/README.md](../v090-step5-b3-terminal-adapter-restart/README.md).
+  lifecycle (B3 adapter restart; B4 truthful loss across a real DSH runtime OS-process
+  restart plus surviving-PTY reconcile and terminal-lifetime independence); ADR-0082 and
+  R4/production wiring remain **not implemented**; the D15-G blockers remain unresolved and
+  0.9 is not closed. See
+  [../v090-adr-decisions/README.md](../v090-adr-decisions/README.md),
+  [../v090-step5-b3-terminal-adapter-restart/README.md](../v090-step5-b3-terminal-adapter-restart/README.md)
+  and [../v090-step5-b4-terminal-dsh-runtime-restart/README.md](../v090-step5-b4-terminal-dsh-runtime-restart/README.md).
 - No tag/release is created or moved; the historical `v0.9.0-beta` tag is untouched.
 - The paused `codex/phase-100c` branch (Draft PR #338) is **not** delivery and is not
   touched by this audit.

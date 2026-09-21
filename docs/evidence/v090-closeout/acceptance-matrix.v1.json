@@ -3,7 +3,7 @@
   "generated_at": "2026-09-20",
   "snapshot": true,
   "snapshot_kind": "historical-audit-snapshot",
-  "snapshot_note": "Audit-time snapshot at base origin/main 80fb9f8 / build post-u8.174 (2026-09-20). Its audit-time fields (adr_sufficiency, each slice's reproduction.current_state, not_authorized_this_batch, constraints) are preserved as historical and MUST NOT be read as the current D15/slice state. The current qualification state is `current_state_after_b3` below and docs/roadmap/STATUS.md; the committed docs/evidence/d15/d15-5 and docs/evidence/d15/d15-g verdicts are not rewritten and D15-G has not been re-run.",
+  "snapshot_note": "Audit-time snapshot at base origin/main 80fb9f8 / build post-u8.174 (2026-09-20). Its audit-time fields (adr_sufficiency, each slice's reproduction.current_state, not_authorized_this_batch, constraints) are preserved as historical and MUST NOT be read as the current D15/slice state. The current qualification state is `current_state_after_b4` below and docs/roadmap/STATUS.md; the committed docs/evidence/d15/d15-5 and docs/evidence/d15/d15-g verdicts are not rewritten and D15-G has not been re-run.",
   "current_state_authority": "docs/roadmap/STATUS.md",
   "current_state_after_b3": {
     "as_of": "2026-09-21",
@@ -255,7 +255,9 @@
         "d15-5-candidate-attachment-layer"
       ],
       "candidate_only": true,
-      "production_effect": "none"
+      "production_effect": "none",
+      "current_state_after_b4": "PASS",
+      "current_state_after_b4_note": "B3 remains PASS at the candidate/qualification layer; unchanged by B4."
     },
     {
       "id": "slice-4-terminal-dsh-runtime-restart",
@@ -288,7 +290,10 @@
         "d15-5-candidate-attachment-layer"
       ],
       "candidate_only": true,
-      "production_effect": "none"
+      "production_effect": "none",
+      "current_state_after_b4": "PASS",
+      "current_state_after_b4_started": true,
+      "current_state_after_b4_note": "B4 executed 2026-09-21; the candidate/qualification-layer attachment layer records truthful lost across a real DSH runtime OS-process restart, reconciles a surviving PTY without attachment as lost (never reused) and keeps terminal lifetime independent from conversation/durable-job lifetime. The reproduction.current_state above is the audit-time D15-5 snapshot and is preserved/not rewritten."
     },
     {
       "id": "slice-5-d15-g-rerun",
@@ -622,5 +627,39 @@
       "detail": "Only via an accepted ADR revision; not permitted by this audit and not a silent downgrade.",
       "requires": "explicit maintainer Accepted ADR revision"
     }
-  ]
+  ],
+  "current_state_after_b4": {
+    "as_of": "2026-09-21",
+    "authority": "docs/roadmap/STATUS.md",
+    "terminal_adapter_restart": {
+      "status": "PASS",
+      "scope": "candidate/qualification layer",
+      "evidence": "docs/evidence/v090-step5-b3-terminal-adapter-restart/verdict.v1.json"
+    },
+    "terminal_dsh_runtime_restart": {
+      "status": "PASS",
+      "started": true,
+      "scope": "candidate/qualification layer",
+      "evidence": "docs/evidence/v090-step5-b4-terminal-dsh-runtime-restart/verdict.v1.json"
+    },
+    "subagent_child_crash": {
+      "status": "BLOCKED",
+      "external": true
+    },
+    "subagent_byq_adapter_restart": {
+      "status": "BLOCKED",
+      "external_dependency": true
+    },
+    "adr_0083": {
+      "status": "Accepted",
+      "implemented_scope": "candidate/qualification-layer minimal TerminalAttachment lifecycle extended for DSH-runtime-restart + orphan reconcile",
+      "r4_or_production_wiring": "NOT implemented"
+    },
+    "d15_g": {
+      "status": "NO_GO",
+      "rerun": false,
+      "note": "not re-run; even if re-run it stays NO_GO while B1/B2 are not PASS"
+    },
+    "r3_resume": "NO"
+  }
 }
