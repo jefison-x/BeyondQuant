@@ -176,8 +176,29 @@ executable for that item. The maintainer must choose one of:
 | `G-reorder` | Qualify B2/B3/B4 first; schedule B1 after an upstream provider exists | maintainer decision |
 | `G-reclassify` | Reclassify `child-crash` as an optional limitation | explicit maintainer Accepted ADR revision (not a silent downgrade) |
 
-This audit does **not** choose an option; it records them. A strict serial order is claimed
+This audit did not choose an option; it recorded them. A strict serial order was claimed
 **only** for the items that are internally ownable; an external blocker is named as such.
+
+### Maintainer decision (2026-09-21): `G-split`
+
+The maintainer chose **`G-split`** on 2026-09-21:
+
+- **B1 `subagent-child-crash` remains a MANDATORY external blocker** for 0.9 / D15-G.
+  It is **not** downgraded, **not** deleted and **not** made optional; `G-reclassify`
+  is not chosen. The D15-G required-atomic condition is unchanged.
+- **G-split** separates the external B1 from the independently executable **internal**
+  pre-gate fixes, allowing the following **strict internal order**:
+  **B2 `subagent-byq-adapter-restart` → `terminal-adapter-restart` →
+  `terminal-dsh-runtime-restart`**.
+- **D15-G stays `NO_GO` until B1 truly PASSes.** A B2/B3/B4 `PASS` does not turn D15-G
+  into `GO` while B1 is `BLOCKED`; the gate re-runs only when every required atomic
+  capability derives `PASS`.
+- **`R3_RESUME = NO`**; D15/R3 stay frozen; **0.9 is not closed**.
+- **Next sole task after this decision slice:** B2 `subagent-byq-adapter-restart`,
+  owner node `d15-4-candidate-composition-hookup` (pre-gate; never post-GO R6). It is
+  **not started** by this decision slice.
+
+Machine-readable record: [gsplit-decision.v1.json](gsplit-decision.v1.json).
 
 ## Dependency upgrade is not a production default switch
 

@@ -1,0 +1,70 @@
+{
+  "schema_version": "byq-v090-gsplit-decision.v1",
+  "decided_at": "2026-09-21",
+  "recorded_at": "2026-09-21",
+  "decision_authority": "repository maintainer (human)",
+  "decision_source": "0.9 strict-order step 5 G-split gate-order maintainer instruction (2026-09-21)",
+  "github_approval_claimed": false,
+  "base": {
+    "origin_main_commit": "856b4d9a7905c9b96644a5915e1ea5506df2f752",
+    "note": "dynamic origin/main at decision recording; no SHA hard-coded in STATUS.md"
+  },
+  "chosen_option": "G-split",
+  "gate_split": {
+    "summary": "Separate the external B1 child-provider dependency from the independently executable internal pre-gate fixes.",
+    "rationale": "subagent-child-crash has no out-of-process continuable provider in DSH 0.1.5-rc.1, so a single strict serial gate would deadlock unrelated internal continuity fixes. G-split keeps B1 as the final mandatory external gate while allowing the internal pre-gate fixes to proceed in a strict internal order.",
+    "external_item": "subagent-child-crash",
+    "internal_items": [
+      "subagent-byq-adapter-restart",
+      "terminal-adapter-restart",
+      "terminal-dsh-runtime-restart"
+    ]
+  },
+  "b1_subagent_child_crash": {
+    "blocker": "subagent-child-crash",
+    "status": "BLOCKED",
+    "mandatory": true,
+    "is_final_external_gate": true,
+    "downgraded": false,
+    "deleted": false,
+    "made_optional": false
+  },
+  "allowed_internal_order": {
+    "strict": true,
+    "items": [
+      "subagent-byq-adapter-restart",
+      "terminal-adapter-restart",
+      "terminal-dsh-runtime-restart"
+    ],
+    "enabled_by": "G-split"
+  },
+  "gate": {
+    "id": "d15-g",
+    "status": "NO_GO",
+    "stays_no_go_until": "B1 subagent-child-crash truly PASSes",
+    "go_requires_all_required_atomic_capabilities_pass": true
+  },
+  "next_task": {
+    "blocker": "subagent-byq-adapter-restart",
+    "owner_node": "d15-4-candidate-composition-hookup",
+    "starts_after": "this G-split decision slice",
+    "not_started_in_this_batch": true
+  },
+  "constraints": {
+    "r3_resume": "NO",
+    "d15_frozen": true,
+    "r3_frozen": true,
+    "production_selector": "dsh-0.1.2rc1",
+    "production_default_unchanged": true,
+    "deployment": "none",
+    "release_or_tag_created": false,
+    "v090_closed": false
+  },
+  "non_actions": [
+    "No subagent-byq-adapter-restart (B2) implementation; no runtime code",
+    "No provider, child-bridge or TerminalAttachment code",
+    "No production selector/default switch",
+    "No deployment, tag or release",
+    "No D15-G re-run and no R3 unfreeze"
+  ]
+}
