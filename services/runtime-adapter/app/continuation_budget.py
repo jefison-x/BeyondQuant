@@ -7,6 +7,8 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from packages.contracts import business_recovery as recovery_contract
+
 
 # ADR-0077 conservative per-call ceilings. The Backend reserves a bounded
 # multi-call turn in
@@ -23,8 +25,16 @@ CONTINUATION_MAX_OUTPUT_TOKENS = 8192
 
 def validate_reservation(value: object, *, owner: str, workspace: str) -> dict:
     fields = {'schema_version', 'reservation_id', 'task_id', 'owner', 'workspace_id', 'token_limit', 'expires_at'}
-    if not isinstance(value, dict) or set(value) != fields or value['schema_version'] != 'task-continuation-reservation.v1':
+    if (not isinstance(value, dict) or not fields <= set(value)
+            or set(value) - fields - {'recovery_attempt'}):
         raise ValueError('invalid continuation reservation')
+    if value['schema_version'] != 'task-continuation-reservation.v1':
+        raise ValueError('invalid continuation reservation')
+    if 'recovery_attempt' in value:
+        # The closed carrier is Backend-minted only; the Adapter re-verifies its
+        # shape and identity later under the admission lock. A malformed carrier
+        # is rejected here before any resource is touched.
+        recovery_contract.validate_recovery_carrier(value['recovery_attempt'])
     if value['owner'] != owner or value['workspace_id'] != workspace:
         raise ValueError('continuation reservation ownership mismatch')
     if not isinstance(value['reservation_id'], str) or re.fullmatch(r'continuation_[0-9a-f]{32}', value['reservation_id']) is None:

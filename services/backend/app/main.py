@@ -487,10 +487,17 @@ def peek_task_continuation(conversation_id: str, request: Request) -> dict:
 @app.post('/internal/task-continuation/{task_id}/dispatch')
 def dispatch_task_continuation(task_id: str, payload: dict[str, Any], request: Request) -> dict:
     context = _continuation_consumer_context(request)
-    if set(payload) != {'reservation_id'}:
+    allowed = {'reservation_id', 'recovery'}
+    if not {'reservation_id'} <= set(payload) or set(payload) - allowed:
         raise HTTPException(status_code=422, detail='exact continuation reservation required')
+    recovery = payload.get('recovery')
+    if recovery is not None:
+        required = {'interrupted_run_id', 'interrupted_generation', 'containment_attempt',
+                    'interrupted_executor_epoch', 'snapshot_tail_sequence', 'snapshot_digest'}
+        if not isinstance(recovery, dict) or set(recovery) != required:
+            raise HTTPException(status_code=422, detail='exact recovery loss evidence required')
     return _research_call(lambda: research_store.claim_continuation_dispatch(
-        task_id, payload['reservation_id'], trusted_context=context))
+        task_id, payload['reservation_id'], trusted_context=context, recovery=recovery))
 
 
 @app.post('/internal/task-continuation/{task_id}/block')
@@ -504,7 +511,9 @@ def block_task_continuation(task_id: str, payload: dict[str, Any], request: Requ
 @app.post('/internal/task-continuation/{task_id}/receipt')
 def record_task_continuation_receipt(task_id: str, payload: dict[str, Any], request: Request) -> dict:
     context = _continuation_consumer_context(request)
-    if set(payload) - {'reservation_id', 'status', 'run_id', 'charged_tokens', 'settlement_sha256', 'outcome'}:
+    allowed = {'reservation_id', 'status', 'run_id', 'charged_tokens', 'settlement_sha256', 'outcome',
+               'attempt_key', 'target_executor_epoch', 'target_generation'}
+    if set(payload) - allowed:
         raise HTTPException(status_code=422, detail='invalid continuation receipt fields')
     if not {'reservation_id', 'status'} <= set(payload):
         raise HTTPException(status_code=422, detail='original reservation and status required')

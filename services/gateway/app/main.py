@@ -35,6 +35,7 @@ from .user_session import ProductAuthError, resolve_principal, resolve_user
 from .trace_store import TraceConflict, TraceStore
 from .conversation_recovery import project_recovery
 from .session_containment import (
+    containment_match,
     loss_from_evidence,
     preservation_projection,
     project_containment,
@@ -42,6 +43,7 @@ from .session_containment import (
 from .workflow_projection import project_workflow_event
 from .agent_lifecycle_delivery import LifecycleDelivery
 from .task_continuation import TaskContinuationDelivery
+from .recovery_carrier import closed_recovery_carrier
 from packages.contracts.agent_run_lifecycle import lifecycle_receipt, project_lifecycle_event
 from packages.contracts.workflow_trace import validate_workflow_trace_event
 
@@ -227,7 +229,7 @@ def _consume_admitted_task_continuation(context):
             conversation, context['session_id'], context['trace_id']):
         raise ValueError('continuation conversation identity changed')
     observer = _attach_continuation_observer(context)
-    reservation, receipt = intent['reservation'], intent['receipt']
+    reservation, receipt = closed_recovery_carrier(intent['reservation']), intent['receipt']
     identity = reservation['reservation_id']
     task = intent['task_id']
     if receipt.get('reservation_id') != identity or reservation.get('task_id') != task:
@@ -254,12 +256,27 @@ def _consume_admitted_task_continuation(context):
             if generation is not None:
                 _schedule_idle_release(observer, generation)
         return
+    if (settled.get('status') == 'accepted' and type(settled.get('charged_tokens')) is int
+            and receipt.get('status') != 'settled' and receipt.get('run_id')):
+        # Bind the Adapter's exact durable guard charge for the lost original
+        # attempt before any recovery decision; an unreadable guard stays unknown.
+        mark('accepted', run_id=receipt['run_id'], charged_tokens=settled['charged_tokens'])
     instruction = receipt['instruction']
     identity_content = json.dumps({'content': instruction, 'reservation': reservation}, sort_keys=True, separators=(',', ':'))
     original = _continuation_adapter_get(f"/internal/runtime/sessions/{intent['session_id']}/prompts/reconcile",
         params={'idempotency_key': identity, 'content_sha256': hashlib.sha256(identity_content.encode()).hexdigest()})
     if original.get('state') == 'accepted':
         mark('accepted', run_id=original['run_id'])
+        return
+    # ADR-0084: when the Adapter's fenced containment proves this reservation's
+    # accepted run was lost, recovery is folded into the SAME reservation state
+    # machine: the Backend re-derives step-safety/budget from its own evidence
+    # and mints the closed carrier, then the Adapter admits it atomically.
+    if _resume_lost_reservation(
+            backend=backend, mark=mark, task=task, identity=identity, reservation=reservation,
+            receipt=receipt, session_id=intent['session_id'], trace_id=intent['trace_id'],
+            instruction=instruction, conversation=conversation, principal=principal,
+            workspace=workspace):
         return
     if receipt['status'] != 'reserved' or intent.get('may_dispatch') is not True:
         return
@@ -275,9 +292,13 @@ def _consume_admitted_task_continuation(context):
         generation = product_sessions.idle_release_generation(observer)
         if generation is not None:
             _schedule_idle_release(observer, generation)
-    payload = {'content': instruction, 'require_model_key': True, 'idempotency_key': identity,
+    carrier = reservation.get('recovery_attempt') if isinstance(
+        reservation.get('recovery_attempt'), dict) else None
+    prompt_key = carrier['attempt_key'] if carrier is not None else identity
+    payload = {'content': instruction, 'require_model_key': True, 'idempotency_key': prompt_key,
         'continuation_budget': reservation, **_runtime_recovery_payload(session)}
-    if backend('dispatch', {'reservation_id': identity}, task=task).get('dispatch') is not True:
+    if carrier is None and backend('dispatch', {'reservation_id': identity}, task=task).get('dispatch') is not True:
+        # A durable already-allocated recovery rearm does not re-claim dispatch.
         return
     try:
         accepted = _adapter_post(f'/internal/runtime/sessions/{session.session_id}/prompt', payload=payload, timeout=5.0)
@@ -286,7 +307,7 @@ def _consume_admitted_task_continuation(context):
         # A definite conflict may be retried under the same charged intent.
         # Ambiguous transport failures remain unknown and are only reconciled.
         if exc.status_code == 409:
-            mark('rejected')
+            mark('rejected', **({'attempt_key': carrier['attempt_key']} if carrier is not None else {}))
             if observer is not None:
                 product_sessions.finish_continuation(observer, identity)
                 generation = product_sessions.idle_release_generation(observer)
@@ -295,7 +316,81 @@ def _consume_admitted_task_continuation(context):
         return
     if accepted.get('accepted') is not True or not _valid_prompt_run_id(accepted.get('run_id')):
         return
-    mark('accepted', run_id=accepted['run_id'])
+    if carrier is None:
+        mark('accepted', run_id=accepted['run_id'])
+        return
+    target = accepted.get('recovery') if isinstance(accepted.get('recovery'), dict) else {}
+    if (target.get('attempt_key') != carrier['attempt_key']
+            or not isinstance(target.get('target_executor_epoch'), int)
+            or not isinstance(target.get('target_generation'), str)):
+        return
+    mark('accepted', run_id=accepted['run_id'], attempt_key=carrier['attempt_key'],
+         target_executor_epoch=target['target_executor_epoch'], target_generation=target['target_generation'])
+
+
+def _resume_lost_reservation(*, backend, mark, task, identity, reservation, receipt, session_id,
+        trace_id, instruction, conversation, principal, workspace):
+    """Recover a lost accepted reservation inside the existing state machine.
+
+    The Adapter's fenced containment + read-only recovery anchor are the
+    authoritative loss evidence; the Backend alone decides whether a bounded
+    recovery attempt is admissible and mints the closed carrier. Recovery that is
+    paused/blocked is never resubmitted.
+    """
+
+    if receipt.get('status') not in {'accepted', 'outcome_unknown'}:
+        return False
+    containment = _adapter_containment(session_id)
+    match = containment_match(containment, session_id, trace_id)
+    if match is None:
+        return False
+    anchor = containment.get('recovery_anchor') if isinstance(containment, dict) else None
+    if (not isinstance(anchor, dict) or anchor.get('idle') is not True
+            or not isinstance(anchor.get('snapshot_tail_sequence'), int)
+            or not isinstance(anchor.get('snapshot_digest'), str)):
+        return False
+    recovery = {
+        'interrupted_run_id': match['interrupted_run_id'],
+        'interrupted_generation': match['interrupted_generation'],
+        'containment_attempt': match['attempt'],
+        'interrupted_executor_epoch': match['executor_epoch'],
+        'snapshot_tail_sequence': anchor['snapshot_tail_sequence'],
+        'snapshot_digest': anchor['snapshot_digest'],
+    }
+    dispatched = backend('dispatch', {'reservation_id': identity, 'recovery': recovery}, task=task)
+    if dispatched.get('dispatch') is not True:
+        return True
+    carrier = dispatched.get('recovery_attempt')
+    if not isinstance(carrier, dict):
+        return True
+    try:
+        session = product_sessions.get_owned(conversation, principal)
+    except HTTPException:
+        product_sessions.remove_owned(conversation, principal)
+        session = _restore_product_session(conversation, principal, workspace)
+    if session is None:
+        return True
+    if not product_sessions.hold_continuation(session, identity, reservation['expires_at']):
+        return True
+    recovered = closed_recovery_carrier({**reservation, 'recovery_attempt': carrier})
+    payload = {'content': instruction, 'require_model_key': True, 'idempotency_key': carrier['attempt_key'],
+        'continuation_budget': recovered, **_runtime_recovery_payload(session)}
+    try:
+        accepted = _adapter_post(f'/internal/runtime/sessions/{session_id}/prompt', payload=payload, timeout=5.0)
+    except HTTPException as exc:
+        if exc.status_code == 409:
+            mark('rejected', attempt_key=carrier['attempt_key'])
+        return True
+    if accepted.get('accepted') is not True or not _valid_prompt_run_id(accepted.get('run_id')):
+        return True
+    target = accepted.get('recovery') if isinstance(accepted.get('recovery'), dict) else {}
+    if (target.get('attempt_key') != carrier['attempt_key']
+            or not isinstance(target.get('target_executor_epoch'), int)
+            or not isinstance(target.get('target_generation'), str)):
+        return True
+    mark('accepted', run_id=accepted['run_id'], attempt_key=carrier['attempt_key'],
+         target_executor_epoch=target['target_executor_epoch'], target_generation=target['target_generation'])
+    return True
 
 
 def _send_agent_lifecycle(context, event):

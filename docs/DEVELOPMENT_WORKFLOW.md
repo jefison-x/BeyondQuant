@@ -81,6 +81,12 @@ ADR-0059 补充：必须有覆盖本任务的 merge 授权，并在动作前运�
 API 403、ruleset-only 尚未验证、设置关闭、skipped/neutral、未知/过期检查时停在 Draft；
 不得使用 `--admin`、取消必需检查或直接即时 merge 作为 fallback。修复平台配置需维护者另行授权。
 
+merge preflight 只评估**精确 PR head 上最新的有效 BeyondQuant CI run**（按 check 的
+`/actions/runs/<id>` run identity 分组，而非按 check 名称）。同一 head 上更旧的 run 若被较新 run
+取代（工作流使用 `cancel-in-progress`），其 cancelled/failed rollup 不得污染结论；最新的 run 出现任何
+failure/cancel/skip/neutral/incomplete、缺少 required context、head 不符、非 BeyondQuant CI 工作流，
+或无法确认 run 归属时一律停在 Draft。
+
 仅源码公开过渡任务适用 [ADR-0060](architecture/adr/ADR-0060-source-publication-and-hosted-ci.md)
 中已获维护者批准的一次性例外；它不能用于后续 runner PR、DSH 升级或普通开发。
 公开贡献还须遵守根 CONTRIBUTING.md / CONTRIBUTOR_LICENSE_AGREEMENT.md；技术 CI 成功
