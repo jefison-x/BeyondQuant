@@ -124,6 +124,33 @@ candidate qualification is **not** written as a completed formal upgrade, no sup
 is generated (**尚未生成**), the production selector is unchanged, no deploy/release/tag/selector
 switch occurs, and 0.10 is not started.
 
+**Real acceptance slice status (2026-09-21): the merged #352 vertical slice accepted with a REAL
+ISOLATED SERVICE COMBINATION, one isolated worktree/Draft PR**
+(`codex/v090-business-recovery-acceptance`, base dynamic `origin/main` `d906205`; evidence
+`docs/evidence/v090-business-recovery-acceptance/`). An isolated compose project
+(`byq-v090-recovery`, own network/volumes, fresh PostgreSQL, loopback-only ports) runs the committed
+Backend, Gateway background task-continuation consumer, Runtime Adapter (real DSH 0.1.2rc1 +
+append-only lifecycle journal + containment ledger), MCP and PostgreSQL; only the model is a
+controlled keyless scripted provider that cannot influence authority. Real result: a real Adapter
+OS-process termination marks the exact open run `interrupted` (`executor-loss`); the real Gateway
+consumer detects the fenced containment + read-only anchor, the Backend re-derives step-safety/budget
+from its own evidence and mints the closed carrier, the Adapter admits it atomically and installs a
+new target generation, and the accepted target is written back; authoritative row counts are
+unchanged by the read-only recovery, the journal shows exactly one lost and one recovery generation,
+and the retry reuses the exact accepted run with no new ordinal/generation. Real fail-closed
+negatives: forged loss, existing-trigger snapshot change, unknown cost (`paused`), below the
+model-call floor, ordinal cap, stale target epoch, recovery-mode new key and cross-task domain claims.
+The acceptance also found and minimally fixed a real #352 defect: after a real executor loss the
+Gateway never reached the recovery seam because `reconcile_prompt` reported the lost run's original
+prompt `accepted`; the fix (`_reconcile_lost_receipt`) reports `outcome_unknown` when the fenced
+containment proves that exact run was lost, with a real-journal regression test. The fail-able
+observer re-derives every verdict from RAW fields and rejects 20 defect-targeting controls. The
+retained 0.9 closeout order becomes: **this gate → real recovery acceptance (delivered by this PR) →
+formally upgrade the repo default dependency/selector to the coherent DSH `0.1.5-rc.1` → D15
+superseding assessment → 0.9 closeout**. B1/B2 stay `BLOCKED_EXTERNAL`, D15-G stays `NO_GO`,
+`R3_RESUME = NO`, no superseding assessment is generated, the selector is unchanged, and no
+deploy/release/tag occurs.
+
 
 After 0.10 data/HIST/deep-environment qualification, execute a named 1.0 matrix review that
 classifies planned capabilities as `core`, `extended` or `deferred`. Only the accepted `core`

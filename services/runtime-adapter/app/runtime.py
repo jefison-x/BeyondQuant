@@ -968,22 +968,50 @@ class RuntimeAdapter:
             if state["context"]["session_id"] != session_id:
                 raise SessionConflict("durable prompt session identity conflicts")
             try:
-                return LifecycleJournal.lookup(state, idempotency_key, content_sha256)
+                receipt = LifecycleJournal.lookup(state, idempotency_key, content_sha256)
             except ValueError as exc:
                 raise SessionConflict("prompt receipt identity conflicts") from exc
+            return self._reconcile_lost_receipt(session_id, receipt)
         with record.lock:
             if record.journal:
                 try:
-                    return record.journal.receipt(idempotency_key, content_sha256)
+                    receipt = record.journal.receipt(idempotency_key, content_sha256)
                 except ValueError as exc:
                     raise SessionConflict("prompt receipt identity conflicts") from exc
-            existing = record.prompt_idempotency.get(idempotency_key)
-            if existing is None:
-                return {"schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
-            content, run_id = existing
-            if hashlib.sha256(content.encode("utf-8")).hexdigest() != content_sha256:
-                raise SessionConflict("prompt receipt identity conflicts with original content")
-            return {"schema_version": "prompt-receipt.v1", "state": "accepted", "run_id": run_id}
+            else:
+                existing = record.prompt_idempotency.get(idempotency_key)
+                if existing is None:
+                    return {"schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
+                content, run_id = existing
+                if hashlib.sha256(content.encode("utf-8")).hexdigest() != content_sha256:
+                    raise SessionConflict("prompt receipt identity conflicts with original content")
+                receipt = {"schema_version": "prompt-receipt.v1", "state": "accepted", "run_id": run_id}
+            return self._reconcile_lost_receipt(session_id, receipt)
+
+    def _reconcile_lost_receipt(self, session_id: str, receipt: object) -> dict[str, object]:
+        """Never report a durably lost run's original prompt as ``accepted``.
+
+        ADR-0084: the Gateway reconciles the original prompt before deciding on
+        recovery. A prompt receipt alone proves only that the run *started*; when
+        the fenced containment ledger proves that exact run was lost, the original
+        prompt is NOT a live/complete accepted result, so this returns
+        ``outcome_unknown`` and the Gateway reaches the existing recovery seam
+        (Backend-minted carrier + Adapter admission) instead of short-circuiting.
+        A normal completion has no containment record and is unchanged.
+        """
+
+        if not isinstance(receipt, dict) or receipt.get("state") != "accepted":
+            return receipt
+        run_id = receipt.get("run_id")
+        if not isinstance(run_id, str):
+            return receipt
+        try:
+            records = containment.read(self._session_root / "byq-lifecycle-evidence", session_id)
+        except (OSError, ValueError, containment.ContainmentConflict):
+            return receipt
+        if any(record.get("interrupted_run_id") == run_id for record in records):
+            return {"schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
+        return receipt
 
     def _run_prompt(
         self, record: RuntimeSession, run: ActiveRun, content: str,

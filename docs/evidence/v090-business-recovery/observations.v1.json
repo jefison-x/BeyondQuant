@@ -1,13 +1,13 @@
 {
   "provenance": {
-    "captured_at": 1790014202.7958302,
+    "captured_at": 1790025349.7488072,
     "harness": "runtime-adapter synthetic compatibility + real lifecycle journal + closed contract",
     "source_sha256": {
       "packages/contracts/business_recovery.py": "sha256:87d6fe5a4f4d4cd102464bab7fcbf2f2fe9fdfc33061ce2713a481bb1177ee10",
       "services/backend/app/research_continuation.py": "sha256:1052e9afc4363fb84228edb5a2fc7464b71ff95546bbc72c6c3c91bd25cd4390",
       "services/gateway/app/recovery_carrier.py": "sha256:e51eacf5e10567a0f1fc6a46dc9f84accce4b6da0a8ead8b73fdda8e98a524fe",
       "services/runtime-adapter/app/business_recovery.py": "sha256:936b4b675f38577b5bd40503b25ce4887e437ed4e9a7b2e0ef25646c3aa46ce8",
-      "services/runtime-adapter/app/runtime.py": "sha256:bddf146bd3a55d12129836a6c054cff3122d9bf32696de35d7bf5df09f1f64aa"
+      "services/runtime-adapter/app/runtime.py": "sha256:f117239c5653619f704f46e4229bf95a312383e48d484377c1659cb1ec579564"
     }
   },
   "scenarios": {
@@ -283,7 +283,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1790014202.7956066,
+        "observed_at": 1790025349.74857,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -363,15 +363,15 @@
         "carrier_tail": 0,
         "digest": "0323ef59cae05fb08e98f5383ca92f788915dcb64a16d5045d975ecbfefbd0a0",
         "idle": true,
-        "run_id": "ca8e1fe5c2da4c4eab1f868b9fa15c31",
+        "run_id": "bad5a7f849464ca49c594129564a5b3b",
         "session_id": "rec-1",
         "tail": 0,
         "target_executor_epoch": 1,
-        "target_generation": "generation-c899ffe0e6614402b073a41e23e93190",
+        "target_generation": "generation-b5b9f8fdb45e47d78c2bdd33dd411f25",
         "trace_id": "rec-trace"
       },
       "provenance": {
-        "observed_at": 1790014202.7641191,
+        "observed_at": 1790025349.7230272,
         "source": "runtime-adapter-real-journal"
       },
       "verdict": "PASS"

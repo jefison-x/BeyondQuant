@@ -1,0 +1,128 @@
+{
+  "all_controls_rejected": true,
+  "control_count": 20,
+  "controls": [
+    {
+      "all_pass": false,
+      "control": "label-only-pass",
+      "format_valid": true,
+      "rejected": true
+    },
+    {
+      "all_pass": false,
+      "control": "target-equals-lost",
+      "format_valid": true,
+      "rejected": true
+    },
+    {
+      "all_pass": false,
+      "control": "containment-wrong-run",
+      "format_valid": true,
+      "rejected": true
+    },
+    {
+      "all_pass": false,
+      "control": "no-real-process-termination",
+      "format_valid": true,
+      "rejected": true
+    },
+    {
+      "all_pass": false,
+      "control": "no-guard-charge",
+      "format_valid": true,
+      "rejected": true
+    },
+    {
+      "all_pass": false,
+      "control": "read-only-recovery-wrote-business",
+      "format_valid": true,
+      "rejected": true
+    },
+    {
+      "all_pass": false,
+      "control": "retry-created-second-generation",
+      "format_valid": true,
+      "rejected": true
+    },
+    {
+      "all_pass": false,
+      "control": "retry-changed-run",
+      "format_valid": true,
+      "rejected": true
+    },
+    {
+      "all_pass": false,
+      "control": "adapter-not-settled",
+      "format_valid": true,
+      "rejected": true
+    },
+    {
+      "all_pass": false,
+      "control": "forged-not-refused",
+      "format_valid": true,
+      "rejected": true
+    },
+    {
+      "all_pass": false,
+      "control": "forged-wrong-reason",
+      "format_valid": true,
+      "rejected": true
+    },
+    {
+      "all_pass": false,
+      "control": "snapshot-change-not-refused",
+      "format_valid": true,
+      "rejected": true
+    },
+    {
+      "all_pass": false,
+      "control": "unknown-cost-not-paused",
+      "format_valid": true,
+      "rejected": true
+    },
+    {
+      "all_pass": false,
+      "control": "floor-not-blocked",
+      "format_valid": true,
+      "rejected": true
+    },
+    {
+      "all_pass": false,
+      "control": "ordinal-cap-not-blocked",
+      "format_valid": true,
+      "rejected": true
+    },
+    {
+      "all_pass": false,
+      "control": "stale-target-not-refused",
+      "format_valid": true,
+      "rejected": true
+    },
+    {
+      "all_pass": false,
+      "control": "new-key-not-refused",
+      "format_valid": true,
+      "rejected": true
+    },
+    {
+      "all_pass": false,
+      "control": "cross-task-not-refused",
+      "format_valid": true,
+      "rejected": true
+    },
+    {
+      "all_pass": false,
+      "control": "missing-provenance",
+      "format_valid": true,
+      "rejected": true
+    },
+    {
+      "all_pass": false,
+      "control": "missing-required-scenario",
+      "format_valid": true,
+      "rejected": true
+    }
+  ],
+  "defect_targeting_count": 20,
+  "schema_version": "byq-v090-business-recovery-acceptance-negative-controls.v1"
+}

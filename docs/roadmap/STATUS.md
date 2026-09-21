@@ -33,16 +33,17 @@
 <!-- byq:adr-0084=accepted -->
 <!-- byq:session-failure-containment=in-progress-blocked-internal -->
 <!-- byq:v090-business-recovery=implementation-delivered -->
+<!-- byq:v090-business-recovery-acceptance=real-passes -->
 <!-- byq:session-failure-containment-next=real-recovery-acceptance-then-coherent-dsh-0.1.5rc1-upgrade -->
 <!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->
 <!-- byq:phase-100-p100-c=paused-not-delivery -->
-<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.197 -->
+<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.198 -->
 
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|
 | Product | 最近完成 Phase 97（marker 97） | 未授权任何新的 Product Phase | 维护者阶段性授权 + 本文件 next phase | 一阶段一 worktree/Draft PR；Human Merge Gate；不得自授新 Phase |
 | 数据/资格 | Phase 98/99 `COMPLETE`；Phase 100 `PAUSED`：P100-A/P100-B 已并入 `main`，P100-C 只存在于暂停且未交付的 Draft #338，P100-D/P100-E 冻结；Phase 101 `COMPLETE`。S3/历史成分准备属于 0.10.0，不是 0.9 gate。 | 等待 0.9 的**完整** BYQ failure-containment gate 收口（当前 `IN_PROGRESS / BLOCKED_INTERNAL`；本 PR 只交付 containment + 只读分类，不生成 superseding assessment）；之后仅在维护者恢复 Phase 100 时继续 P100-C/D/E，并在 0.10 资格结束后执行 1.0 `core`/`extended`/`deferred` 范围复核 | Phase 100 原授权 + ADR-0074/0084 | 仅 Tushare；不得从未审查分支推断完成；数据来源、时点、单位、许可与完整性失败继续 fail closed；不因外部可选能力冻结无关调查 |
-| 维护（当前） | **ADR-0084 门禁合理化与 0.9 收口治理**：维护者已于 2026-09-21 明确接受完整决定；B3 `terminal-adapter-restart` 与 B4 `terminal-dsh-runtime-restart` 保持候选/资格层 PASS；B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 继续保持真实 `BLOCKED_EXTERNAL`，历史 D15-G 继续为 `NO_GO` 且不改写，但这些外部能力不再是 0.9 收口、候选兼容判断、受限 R3 失败隔离或无关 0.10 工作的全局硬前置。另已完成独立监控切片 `v090-dsh-provider-qualification`：DSH rc.2 与 alpha.2 均无进程外 continuable provider，保持 **`BLOCKED_EXTERNAL`**，**未升级依赖**（证据 `docs/evidence/v090-dsh-provider-qualification/`）。**本 PR（`codex/v090-session-failure-containment`）只交付 containment + fail-closed 只读恢复分类**（marker `v090-session-containment=containment-classification-delivered`）：执行者失联检测、未完成 run→`interrupted`（仅在 fenced containment 匹配同一 session/trace 与精确 run 时）、旧 generation/epoch 与迟到终态 fencing、真实 before/after 业务状态观测、未知副作用与未验证 authority 一律 `paused`。**完整 business-recovery gate（权威服务端 step-safety + budget binding + safe rescheduling）仍为 `IN_PROGRESS / BLOCKED_INTERNAL`**，本 PR 不据此声明门禁完成，也不进入 D15 superseding assessment。 | **本 PR（`codex/v090-business-recovery-impl`）交付 #351 最小设计的真实垂直切片实现**（marker `v090-business-recovery=implementation-delivered`，证据 `docs/evidence/v090-business-recovery/`）：Backend 在既有 `research_tasks.continuation_budget` 行内权威分配/复用 `recovery_attempt`（`FOR UPDATE` + trigger-key 去重，cap 3，无新 store/migration）；封闭 carrier `{attempt_key, ordinal, trigger_key, interrupted_run_id, interrupted_generation, containment_attempt, interrupted_executor_epoch, snapshot_tail_sequence, snapshot_digest}` 由 Backend 铸造；Gateway 只转发封闭 authority；Adapter 在 `record.lock` 内先校验 digest/containment 再重算并原子比较当前 snapshot 与 `idle=true`，之后才创建/安装 target generation 并返回 accepted receipt（target epoch/generation/run）；recovery-mode envelope 仅允许只读或精确复用原安全调用五元组；未知副作用/成本、预算/floor、snapshot 变化、旧 epoch/generation、`ordinal > 3` 一律 fail closed。**以下 0.9 收口顺序保留**：本 gate → 真实 recovery 验收 → 正式把仓库默认 dependency/selector 升级到 coherent DSH `0.1.5-rc.1`（含 rollback/业务验证）→ D15 superseding assessment → 0.9 收口。**本 PR 不把既有候选资格写成正式升级完成，不生成 superseding assessment，不启动 0.10**（superseding assessment **尚未生成**）。 | 维护者明确接受 ADR-0084；ADR-0081/0082/0058/0071/0074 的 superseding 修订 | 不改写历史 verdict；不实现 DSH 进程外 provider 或第二通用 harness；不自动解冻 R3；不切换生产 selector；不部署；不创建/移动 tag/release；不恢复 Phase 100；每个实现切片使用独立 worktree/PR |
+| 维护（当前） | **ADR-0084 门禁合理化与 0.9 收口治理**：维护者已于 2026-09-21 明确接受完整决定；B3 `terminal-adapter-restart` 与 B4 `terminal-dsh-runtime-restart` 保持候选/资格层 PASS；B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 继续保持真实 `BLOCKED_EXTERNAL`，历史 D15-G 继续为 `NO_GO` 且不改写，但这些外部能力不再是 0.9 收口、候选兼容判断、受限 R3 失败隔离或无关 0.10 工作的全局硬前置。另已完成独立监控切片 `v090-dsh-provider-qualification`：DSH rc.2 与 alpha.2 均无进程外 continuable provider，保持 **`BLOCKED_EXTERNAL`**，**未升级依赖**（证据 `docs/evidence/v090-dsh-provider-qualification/`）。**本 PR（`codex/v090-session-failure-containment`）只交付 containment + fail-closed 只读恢复分类**（marker `v090-session-containment=containment-classification-delivered`）：执行者失联检测、未完成 run→`interrupted`（仅在 fenced containment 匹配同一 session/trace 与精确 run 时）、旧 generation/epoch 与迟到终态 fencing、真实 before/after 业务状态观测、未知副作用与未验证 authority 一律 `paused`。**完整 business-recovery gate（权威服务端 step-safety + budget binding + safe rescheduling）仍为 `IN_PROGRESS / BLOCKED_INTERNAL`**，本 PR 不据此声明门禁完成，也不进入 D15 superseding assessment。 | **本 PR（`codex/v090-business-recovery-impl`）交付 #351 最小设计的真实垂直切片实现**（marker `v090-business-recovery=implementation-delivered`，证据 `docs/evidence/v090-business-recovery/`）：Backend 在既有 `research_tasks.continuation_budget` 行内权威分配/复用 `recovery_attempt`（`FOR UPDATE` + trigger-key 去重，cap 3，无新 store/migration）；封闭 carrier `{attempt_key, ordinal, trigger_key, interrupted_run_id, interrupted_generation, containment_attempt, interrupted_executor_epoch, snapshot_tail_sequence, snapshot_digest}` 由 Backend 铸造；Gateway 只转发封闭 authority；Adapter 在 `record.lock` 内先校验 digest/containment 再重算并原子比较当前 snapshot 与 `idle=true`，之后才创建/安装 target generation 并返回 accepted receipt（target epoch/generation/run）；recovery-mode envelope 仅允许只读或精确复用原安全调用五元组；未知副作用/成本、预算/floor、snapshot 变化、旧 epoch/generation、`ordinal > 3` 一律 fail closed。**本 PR（`codex/v090-business-recovery-acceptance`）已完成真实隔离服务组合验收**（marker `v090-business-recovery-acceptance=real-passes`，证据 `docs/evidence/v090-business-recovery-acceptance/`）：真实 Adapter OS 进程终止→containment 把精确未完成 run 记为 `interrupted`→真实 Gateway consumer→Backend 铸造 carrier→Adapter 安装新 target generation，9/9 场景 PASS；并发现并最小修复一个真实 #352 缺陷（丢失 run 的原始 prompt 被 `reconcile_prompt` 误报 `accepted`，导致 Gateway 在 recovery seam 之前短路）。**以下 0.9 收口顺序保留**：本 gate → 真实 recovery 验收（本 PR 已交付）→ 正式把仓库默认 dependency/selector 升级到 coherent DSH `0.1.5-rc.1`（含 rollback/业务验证）→ D15 superseding assessment → 0.9 收口。**本 PR 不把既有候选资格写成正式升级完成，不生成 superseding assessment，不启动 0.10**（superseding assessment **尚未生成**）。 | 维护者明确接受 ADR-0084；ADR-0081/0082/0058/0071/0074 的 superseding 修订 | 不改写历史 verdict；不实现 DSH 进程外 provider 或第二通用 harness；不自动解冻 R3；不切换生产 selector；不部署；不创建/移动 tag/release；不恢复 Phase 100；每个实现切片使用独立 worktree/PR |
 | 依赖资格（D15） | **当前资格状态（B4 之后，2026-09-21）**；ADR-0084 已接受：`terminal-adapter-restart` = **PASS**、`terminal-dsh-runtime-restart` = **PASS**（均为候选/资格层）；B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 为 `BLOCKED_EXTERNAL`；独立监控切片确认 DSH rc.2/alpha.2 provider 资格仍 `BLOCKED_EXTERNAL`（无 out-of-process provider，未升级依赖）；ADR-0083 仅候选/资格层最小实现完成；R4 / production wiring NOT implemented。D15-G **未重跑**，按当前 B1/B2 状态即使重跑仍为 `NO_GO`；**历史已提交快照（不改写）**：D15-4/D15-5/D15-G committed evidence 保持原样。外部 blocker 只阻塞原生独立 child 恢复声明，不再形成全局停止。 | 仅在**完整** BYQ failure-containment gate 通过后才生成具名 superseding assessment（当前 gate `IN_PROGRESS / BLOCKED_INTERNAL`，本 PR 不生成）；按实际采用范围判断候选兼容与晋升，不等待上游 provider 才继续无关路线 | ADR-0084 + ADR-0081/0082；历史证据与 B3/B4 current overlay | `R3_RESUME` 不因文档决定自动变为 YES；不得把 B1/B2 标为 PASS；不得改写历史 D15 verdict；生产切换、部署和 release 独立授权 |
 
 ## 0.9 closeout governance & gap ledger audit（2026-09-20，历史审计快照）
@@ -717,6 +718,45 @@ tag/release，不恢复 Phase 100，不触碰 `codex/phase-100c`/PR #338，不�
   也不把既有候选资格写成正式升级完成。
 - 构建身份推进 `post-u8.196 → post-u8.197`（`scripts/`、`tests/`、
   `services/runtime-adapter/Dockerfile.post-u8-candidate` 属 build inputs，仅重建身份；历史 `.196`
+  manifest 与全部证据保留，不改 selector/`compose.yml`/`deployment.json`/制品）。
+
+## 0.9 REAL business-recovery acceptance of merged #352（2026-09-21，权威维护条目）
+
+本批执行 0.9 收口顺序中“本 gate → 真实 recovery 验收”的唯一任务：用**真实隔离服务组合**
+（独立 compose 项目 `byq-v090-recovery`、独立网络/卷、全新 PostgreSQL、仅 loopback 端口）验收
+已并入 `main` 的 #352 business-recovery 垂直切片。独立 worktree/分支
+`codex/v090-business-recovery-acceptance`，基于动态 `origin/main`（`d906205`）。这是维护/资格，
+**不推进 Product Phase**，不切换生产 selector，不 deploy，不创建/移动 tag/release，不恢复
+Phase 100，不触碰 `codex/phase-100c`/PR #338，不做 Community 检查或复制，**不生成 D15
+superseding assessment**，**不启动 0.10**。
+
+- **真实边界**：committed Backend/Gateway（真实后台 `TaskContinuationDelivery` consumer）/
+  Runtime Adapter（真实 DSH 0.1.2rc1 + append-only lifecycle journal + containment ledger）/MCP/
+  PostgreSQL 均为真实组件；唯一受控项是**无密钥 scripted 模型 provider**，它不能影响任何权威
+  决策。真实 `SIGKILL`/重启 Adapter OS 进程（容器 PID 变化）。
+- **结果 = PASS**（9/9 场景，`docs/evidence/v090-business-recovery-acceptance/`）：真实 before-state
+  →真实执行中终止 Adapter→containment 把**精确**未完成 run 记为 `interrupted`（`executor-loss`）
+  →真实 Gateway consumer 触发→Backend 从自有证据重derive并铸造封闭 carrier→Adapter 原子准入并
+  安装新 target generation→accepted target 写回；read-only recovery **未改变**任何权威业务行计数，
+  journal 仅一次 lost + 一次 recovery generation；retry 精确复用同一 accepted run 且不新增 ordinal/
+  generation。真实 fail-closed 负例：forged loss、existing-trigger snapshot 变化、unknown cost
+  (`paused`)、below model-call floor、ordinal cap、stale target epoch、recovery-mode new key、
+  cross-task。
+- **发现并最小修复一个真实 #352 缺陷**：真实执行者丢失后 Gateway 永远到不了 recovery seam，因为
+  Adapter `reconcile_prompt` 把丢失 run 的原始 prompt 报成 `accepted`（prompt receipt 只证明 run
+  *启动*过），Gateway 在 `_resume_lost_reservation` 之前短路。修复
+  `services/runtime-adapter/app/runtime.py::_reconcile_lost_receipt`：当 fenced containment 证明该
+  精确 run 已丢失时返回 `outcome_unknown`，Gateway 因此进入既有 recovery 路径；正常完成无
+  containment 记录，行为不变。回归测试
+  `services/runtime-adapter/tests/test_business_recovery.py::test_lost_original_prompt_is_never_reconciled_as_accepted`。
+- **可失败 observer**：`scripts/v090/business_recovery_acceptance/observer.py` 不信任 `result` 标签，
+  从 RAW 字段重新推导；`--selfcheck` 20 项 defect-targeting 控制全部被拒；提交 verdict
+  `format_valid=true`、`all_pass=true`、exit 0；cleanup 后 containers/networks/volumes 均为 0 且
+  生产栈未被触碰。由 `tests/test_v090_business_recovery_acceptance.py` 守门。
+- **边界不变**：B1/B2 仍 `BLOCKED_EXTERNAL`，历史 D15-G 仍 `NO_GO`（不改写），`R3_RESUME = NO`，
+  生产 selector 仍 `dsh-0.1.2rc1`，0.9 未关闭；未生成 superseding assessment。构建身份推进
+  `post-u8.197 → post-u8.198`（`scripts/`、`tests/`、
+  `services/runtime-adapter/Dockerfile.post-u8-candidate` 属 build inputs，仅重建身份；历史 `.197`
   manifest 与全部证据保留，不改 selector/`compose.yml`/`deployment.json`/制品）。
 
 ## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19，历史叙述）

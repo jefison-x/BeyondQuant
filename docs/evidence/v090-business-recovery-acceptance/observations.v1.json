@@ -1,0 +1,344 @@
+{
+  "cleanup": {
+    "containers_before": 5,
+    "containers_remaining": 0,
+    "networks_remaining": 0,
+    "production_untouched": true,
+    "volumes_remaining": 0
+  },
+  "scenarios": {
+    "negative-below-model-call-floor": {
+      "assertions": {
+        "blocked_below_floor": true,
+        "dispatch_refused": true
+      },
+      "boundary": "backend",
+      "id": "negative-below-model-call-floor",
+      "observed": {
+        "dispatch": false,
+        "recovery": {
+          "reason": "below_model_call_floor",
+          "status": "blocked"
+        }
+      },
+      "provenance": {
+        "observed_at": 1790025820.3290772,
+        "source": "real-isolated-services"
+      },
+      "result": "PASS"
+    },
+    "negative-forged-loss-run": {
+      "assertions": {
+        "blocked_lost_run_not_authoritative": true,
+        "dispatch_refused": true
+      },
+      "boundary": "backend",
+      "id": "negative-forged-loss-run",
+      "observed": {
+        "dispatch": false,
+        "recovery": {
+          "reason": "lost_run_not_authoritative",
+          "status": "blocked"
+        }
+      },
+      "provenance": {
+        "observed_at": 1790025820.3091872,
+        "source": "real-isolated-services"
+      },
+      "result": "PASS"
+    },
+    "negative-ordinal-cap": {
+      "assertions": {
+        "blocked_ordinal_cap": true,
+        "dispatch_refused": true
+      },
+      "boundary": "backend",
+      "id": "negative-ordinal-cap",
+      "observed": {
+        "dispatch": false,
+        "recovery": {
+          "reason": "ordinal_cap",
+          "status": "blocked"
+        }
+      },
+      "provenance": {
+        "observed_at": 1790025820.3353815,
+        "source": "real-isolated-services"
+      },
+      "result": "PASS"
+    },
+    "negative-recovery-cross-task": {
+      "assertions": {
+        "refused": true
+      },
+      "boundary": "backend-domain-claim",
+      "id": "negative-recovery-cross-task",
+      "observed": {
+        "body": {
+          "detail": {
+            "reason": "recovery_envelope_violation",
+            "schema_version": "domain-call-admission.v1",
+            "state": "blocked"
+          }
+        },
+        "status": 409
+      },
+      "provenance": {
+        "observed_at": 1790025820.3516345,
+        "source": "real-isolated-services"
+      },
+      "result": "PASS"
+    },
+    "negative-recovery-new-key": {
+      "assertions": {
+        "refused": true
+      },
+      "boundary": "backend-domain-claim",
+      "id": "negative-recovery-new-key",
+      "observed": {
+        "body": {
+          "detail": {
+            "reason": "recovery_envelope_violation",
+            "schema_version": "domain-call-admission.v1",
+            "state": "blocked"
+          }
+        },
+        "status": 409
+      },
+      "provenance": {
+        "observed_at": 1790025820.343492,
+        "source": "real-isolated-services"
+      },
+      "result": "PASS"
+    },
+    "negative-snapshot-change-for-existing-trigger": {
+      "assertions": {
+        "blocked_snapshot_changed": true,
+        "dispatch_refused": true
+      },
+      "boundary": "backend",
+      "id": "negative-snapshot-change-for-existing-trigger",
+      "observed": {
+        "dispatch": false,
+        "recovery": {
+          "reason": "snapshot_changed_for_existing_trigger",
+          "status": "blocked"
+        }
+      },
+      "provenance": {
+        "observed_at": 1790025820.3159542,
+        "source": "real-isolated-services"
+      },
+      "result": "PASS"
+    },
+    "negative-stale-target-epoch": {
+      "assertions": {
+        "refused": true
+      },
+      "boundary": "backend",
+      "id": "negative-stale-target-epoch",
+      "observed": {
+        "body": {
+          "detail": "stale recovery target epoch"
+        },
+        "status": 409
+      },
+      "provenance": {
+        "observed_at": 1790025820.3571775,
+        "source": "real-isolated-services"
+      },
+      "result": "PASS"
+    },
+    "negative-unknown-cost-paused": {
+      "assertions": {
+        "dispatch_refused": true,
+        "paused_unknown_attempt_charge": true
+      },
+      "boundary": "backend",
+      "id": "negative-unknown-cost-paused",
+      "observed": {
+        "dispatch": false,
+        "recovery": {
+          "reason": "unknown_attempt_charge",
+          "status": "paused"
+        }
+      },
+      "provenance": {
+        "observed_at": 1790025820.321991,
+        "source": "real-isolated-services"
+      },
+      "result": "PASS"
+    },
+    "real-executor-loss-and-recovery": {
+      "assertions": {
+        "adapter_settled_the_recovery_run": true,
+        "backend_minted_carrier_ordinal_1": true,
+        "containment_marks_exact_run_interrupted": true,
+        "exactly_one_recovery_generation": true,
+        "guard_charge_admitted": true,
+        "lost_run_is_canonical": true,
+        "read_only_recovery_wrote_no_business_rows": true,
+        "real_process_terminated": true,
+        "retry_created_no_second_generation": true,
+        "retry_no_new_ordinal": true,
+        "retry_reused_exact_run": true,
+        "run_was_open_before_loss": true,
+        "target_epoch_is_live_int": true,
+        "target_is_a_new_run_and_generation": true
+      },
+      "boundary": "backend+gateway+adapter+postgres",
+      "id": "real-executor-loss-and-recovery",
+      "observed": {
+        "adapter_pid_after": 252885,
+        "adapter_pid_before": 251145,
+        "adapter_receipt": {
+          "blocked_reason": null,
+          "call_count": 2,
+          "charged_tokens": 2113536,
+          "outcome": "completed",
+          "reservation_id": "continuation_fad182a79e9c4e429e27d6bcb8786f15",
+          "run_id": "bff83377bb814c4cb0a77c07b47de874",
+          "settlement_sha256": "2f796692b73dd72056d5006f25899f1543917b063ff75064950ba5474db11f86",
+          "status": "settled"
+        },
+        "before_anchor": {
+          "attempts": 0,
+          "contained": false,
+          "latest": null,
+          "recovery_anchor": {
+            "idle": false,
+            "snapshot_digest": null,
+            "snapshot_tail_sequence": null
+          },
+          "schema_version": "session-containment-summary.v1",
+          "session_id": "recovery-acceptance-session"
+        },
+        "business_counts_after": {
+          "artifacts": 5,
+          "backtest_jobs": 0,
+          "ml_prediction_runs": 0,
+          "ml_training_runs": 0,
+          "research_tasks": 5
+        },
+        "business_counts_before": {
+          "artifacts": 5,
+          "backtest_jobs": 0,
+          "ml_prediction_runs": 0,
+          "ml_training_runs": 0,
+          "research_tasks": 5
+        },
+        "charged_tokens": 1056768,
+        "containment": {
+          "attempts": 1,
+          "contained": true,
+          "latest": {
+            "attempt": 1,
+            "executor_epoch": 1,
+            "interrupted_generation": "generation-5b6c5703983244179e37b954386322de",
+            "interrupted_run_id": "b93a9c9946184dfeb4fe95cfa6013b66",
+            "loss_cause": "executor-loss",
+            "trace_id": "recovery-acceptance-trace"
+          },
+          "recovery_anchor": {
+            "idle": true,
+            "snapshot_digest": "9e952dd54f430824f4f5f61f47d892c39d1908472c1b81147714f52329648085",
+            "snapshot_tail_sequence": 0
+          },
+          "schema_version": "session-containment-summary.v1",
+          "session_id": "recovery-acceptance-session"
+        },
+        "guard": {
+          "call_count": 1,
+          "charged_tokens": 1056768,
+          "reservation_id": "continuation_fad182a79e9c4e429e27d6bcb8786f15",
+          "status": "accepted"
+        },
+        "guard_ready": true,
+        "journal_results": [
+          "bff83377bb814c4cb0a77c07b47de874"
+        ],
+        "journal_started": [
+          "b93a9c9946184dfeb4fe95cfa6013b66",
+          "bff83377bb814c4cb0a77c07b47de874"
+        ],
+        "journal_started_after_retry": [
+          "b93a9c9946184dfeb4fe95cfa6013b66",
+          "bff83377bb814c4cb0a77c07b47de874"
+        ],
+        "lifecycle": {
+          "context": {
+            "conversation_id": "conversation_51c44f28e62e427090397b0bdd44dd82",
+            "owner": "recovery-acceptance-user",
+            "session_id": "recovery-acceptance-session",
+            "trace_id": "recovery-acceptance-trace",
+            "workspace_id": "workspace_3dec9e3b054d42d4861744732f184456"
+          },
+          "path": "/var/lib/byq/workflow-traces/recovery-acceptance-session.lifecycle.json"
+        },
+        "lost_run_id": "b93a9c9946184dfeb4fe95cfa6013b66",
+        "recovery_attempt": {
+          "allowed_calls": [],
+          "attempt_key": "recovery_aefc105e777b53bb77e908305ec83419",
+          "charged_tokens": null,
+          "containment_attempt": 1,
+          "envelope_mode": "read_only",
+          "interrupted_executor_epoch": 1,
+          "interrupted_generation": "generation-5b6c5703983244179e37b954386322de",
+          "interrupted_run_id": "b93a9c9946184dfeb4fe95cfa6013b66",
+          "ordinal": 1,
+          "run_id": "bff83377bb814c4cb0a77c07b47de874",
+          "snapshot_digest": "9e952dd54f430824f4f5f61f47d892c39d1908472c1b81147714f52329648085",
+          "snapshot_tail_sequence": 0,
+          "status": "accepted",
+          "target_executor_epoch": 1,
+          "target_generation": "generation-48ba741ad8da4f599190019d82a7e8af"
+        },
+        "retry_dispatch": {
+          "dispatch": false,
+          "recovery": {
+            "reason": "unknown_attempt_charge",
+            "status": "paused"
+          }
+        },
+        "retry_prompt": {
+          "accepted": true,
+          "recovery": {
+            "attempt_key": "recovery_aefc105e777b53bb77e908305ec83419",
+            "ordinal": 1,
+            "reservation_id": "continuation_fad182a79e9c4e429e27d6bcb8786f15",
+            "run_id": "bff83377bb814c4cb0a77c07b47de874",
+            "schema_version": "recovery-accepted-receipt.v1",
+            "snapshot_digest": "9e952dd54f430824f4f5f61f47d892c39d1908472c1b81147714f52329648085",
+            "snapshot_tail_sequence": 0,
+            "target_executor_epoch": 1,
+            "target_generation": "generation-48ba741ad8da4f599190019d82a7e8af"
+          },
+          "run_id": "bff83377bb814c4cb0a77c07b47de874",
+          "session_id": "recovery-acceptance-session"
+        },
+        "target_run_id": "bff83377bb814c4cb0a77c07b47de874",
+        "terminal_ack": {
+          "receipt": {
+            "event_sha256": "2b5bbee948a3b8056785c7d9e64d95c5448a6995fca6784066b399ca241e42ee",
+            "root_run_id": "b93a9c9946184dfeb4fe95cfa6013b66",
+            "schema_version": "agent-run-lifecycle-receipt.v1",
+            "sequence": 5
+          }
+        }
+      },
+      "provenance": {
+        "observed_at": 1790025820.3016932,
+        "source": "real-isolated-services"
+      },
+      "result": "PASS"
+    }
+  },
+  "schema_version": "byq-v090-business-recovery-acceptance-observations.v1",
+  "seed": {
+    "conversation_id": "conversation_51c44f28e62e427090397b0bdd44dd82",
+    "owner": "recovery-acceptance-user",
+    "session_id": "recovery-acceptance-session",
+    "trace_id": "recovery-acceptance-trace",
+    "workspace_id": "workspace_3dec9e3b054d42d4861744732f184456"
+  }
+}
