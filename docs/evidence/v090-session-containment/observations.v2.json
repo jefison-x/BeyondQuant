@@ -1,0 +1,697 @@
+{
+  "provenance": {
+    "captured_at": 1789988786.4189186,
+    "harness": "runtime-adapter synthetic compatibility + gateway read-only module",
+    "source_sha256": {
+      "packages/contracts/session_failure_containment.py": "sha256:20eca020f8f9adcf84f87b97d4a59931950b7a8f3161590c323c3274bcc26234",
+      "services/gateway/app/main.py": "sha256:9a159bb334f99734d6887a15ee34120ad3cc447b9223a650f814a7199b5d6899",
+      "services/gateway/app/session_containment.py": "sha256:983c88214fd147243d2117e5eb3e05799a0d76c1cef07c468bc04fad3c9dcf1a",
+      "services/runtime-adapter/app/containment.py": "sha256:f77e2679f28da13ade9b870ab74570d0c28d3dba035d5a096618800b28113d18",
+      "services/runtime-adapter/app/runtime.py": "sha256:307bfac64be166080845fe4d1590d92d7153712d32f88d34dd23826301cb381c"
+    }
+  },
+  "scenarios": {
+    "authority-unavailable-pauses": {
+      "observed": {
+        "decision": {
+          "auto_retry": false,
+          "reason": "authority_unavailable",
+          "status": "paused"
+        },
+        "inputs": {
+          "authorization_current": true,
+          "budget_available": null,
+          "cancelled": false,
+          "owner_matches": true,
+          "previous_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "receipt_queryable": true,
+          "step_declared_idempotent": true,
+          "step_result_verifiable": true,
+          "success_receipt_present": false,
+          "workspace_matches": true
+        }
+      },
+      "provenance": {
+        "observed_at": 1789988786.37952,
+        "source": "contract-pure-function"
+      },
+      "verdict": "PASS"
+    },
+    "authorization-revoked-blocks": {
+      "observed": {
+        "decision": {
+          "auto_retry": false,
+          "reason": "authorization_revoked",
+          "status": "blocked"
+        },
+        "inputs": {
+          "authorization_current": false,
+          "budget_available": true,
+          "cancelled": false,
+          "owner_matches": true,
+          "previous_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "receipt_queryable": true,
+          "step_declared_idempotent": true,
+          "step_result_verifiable": true,
+          "success_receipt_present": false,
+          "workspace_matches": true
+        }
+      },
+      "provenance": {
+        "observed_at": 1789988786.379543,
+        "source": "contract-pure-function"
+      },
+      "verdict": "PASS"
+    },
+    "budget-exhausted-blocks": {
+      "observed": {
+        "decision": {
+          "auto_retry": false,
+          "reason": "budget_exhausted",
+          "status": "blocked"
+        },
+        "inputs": {
+          "authorization_current": true,
+          "budget_available": false,
+          "cancelled": false,
+          "owner_matches": true,
+          "previous_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "receipt_queryable": true,
+          "step_declared_idempotent": true,
+          "step_result_verifiable": true,
+          "success_receipt_present": false,
+          "workspace_matches": true
+        }
+      },
+      "provenance": {
+        "observed_at": 1789988786.3795395,
+        "source": "contract-pure-function"
+      },
+      "verdict": "PASS"
+    },
+    "cancel-blocks-recovery": {
+      "observed": {
+        "decision": {
+          "auto_retry": false,
+          "reason": "cancelled",
+          "status": "blocked"
+        },
+        "inputs": {
+          "authorization_current": true,
+          "budget_available": true,
+          "cancelled": true,
+          "owner_matches": true,
+          "previous_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "receipt_queryable": true,
+          "step_declared_idempotent": true,
+          "step_result_verifiable": true,
+          "success_receipt_present": false,
+          "workspace_matches": true
+        }
+      },
+      "provenance": {
+        "observed_at": 1789988786.3795357,
+        "source": "contract-pure-function"
+      },
+      "verdict": "PASS"
+    },
+    "cancelled-not-interrupted": {
+      "observed": {
+        "adapter_containment": null,
+        "events": [
+          {
+            "kind": "session.started",
+            "payload": {
+              "run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "sequence": 1,
+            "session_id": "runtime-1",
+            "source": "runtime-adapter",
+            "timestamp": "t",
+            "trace_id": "trace-1"
+          },
+          {
+            "kind": "session.cancelled",
+            "payload": {
+              "run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "sequence": 2,
+            "session_id": "runtime-1",
+            "source": "runtime-adapter",
+            "timestamp": "t",
+            "trace_id": "trace-1"
+          }
+        ],
+        "session_id": "runtime-1",
+        "trace_id": "trace-1"
+      },
+      "provenance": {
+        "observed_at": 1789988786.3794963,
+        "source": "gateway-session-containment"
+      },
+      "verdict": "PASS"
+    },
+    "duplicate-terminal-rejected": {
+      "observed": {
+        "call": {
+          "function": "assert_terminal_settlement",
+          "kwargs": {
+            "settled": {
+              "1": "interrupted"
+            },
+            "write_attempt": 1,
+            "write_terminal": "interrupted"
+          }
+        }
+      },
+      "provenance": {
+        "observed_at": 1789988786.379498,
+        "source": "contract-pure-function"
+      },
+      "verdict": "PASS"
+    },
+    "executor-loss-interrupted": {
+      "observed": {
+        "after": {
+          "prompt_receipts": 1,
+          "run_events": 1,
+          "session_started": 1
+        },
+        "before": {
+          "prompt_receipts": 1,
+          "run_events": 1,
+          "session_started": 1
+        },
+        "expected_trace_id": "cap-loss-trace",
+        "history_unchanged": true,
+        "interrupted_run_id": "5943e91969fa4c45940db5af752b923c",
+        "loss_cause": "executor-loss",
+        "status": "interrupted",
+        "terminal_added": true,
+        "trace_id": "cap-loss-trace"
+      },
+      "provenance": {
+        "observed_at": 1789988786.379476,
+        "source": "runtime-adapter-test-harness"
+      },
+      "verdict": "PASS"
+    },
+    "invalid-terminal-run-not-interrupted": {
+      "observed": {
+        "adapter_containment": {
+          "attempts": 1,
+          "contained": true,
+          "latest": {
+            "attempt": 1,
+            "executor_epoch": 1,
+            "interrupted_generation": "generation-dead",
+            "interrupted_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "loss_cause": "executor-loss",
+            "trace_id": "trace-1"
+          },
+          "schema_version": "session-containment-summary.v1",
+          "session_id": "runtime-1"
+        },
+        "events": [
+          {
+            "kind": "session.started",
+            "payload": {
+              "run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "sequence": 1,
+            "session_id": "runtime-1",
+            "source": "runtime-adapter",
+            "timestamp": "t",
+            "trace_id": "trace-1"
+          },
+          {
+            "kind": "session.failed",
+            "payload": {
+              "run_id": "not-a-run"
+            },
+            "sequence": 2,
+            "session_id": "runtime-1",
+            "source": "runtime-adapter",
+            "timestamp": "t",
+            "trace_id": "trace-1"
+          }
+        ],
+        "session_id": "runtime-1",
+        "trace_id": "trace-1"
+      },
+      "provenance": {
+        "observed_at": 1789988786.3794954,
+        "source": "gateway-session-containment"
+      },
+      "verdict": "PASS"
+    },
+    "late-success-no-overwrite": {
+      "observed": {
+        "after": {
+          "prompt_receipts": 1,
+          "run_events": 1,
+          "session_started": 1
+        },
+        "before": {
+          "prompt_receipts": 1,
+          "run_events": 1,
+          "session_started": 1
+        },
+        "expected_trace_id": "cap-late-trace",
+        "history_unchanged": true,
+        "interrupted_run_id": "bf3cb1594ea44909be4a560a30141c86",
+        "loss_cause": "executor-loss",
+        "status": "interrupted",
+        "trace_id": "cap-late-trace"
+      },
+      "provenance": {
+        "observed_at": 1789988786.3794777,
+        "source": "runtime-adapter-test-harness"
+      },
+      "verdict": "PASS"
+    },
+    "mismatched-run-not-interrupted": {
+      "observed": {
+        "adapter_containment": {
+          "attempts": 1,
+          "contained": true,
+          "latest": {
+            "attempt": 1,
+            "executor_epoch": 1,
+            "interrupted_generation": "generation-dead",
+            "interrupted_run_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "loss_cause": "executor-loss",
+            "trace_id": "trace-1"
+          },
+          "schema_version": "session-containment-summary.v1",
+          "session_id": "runtime-1"
+        },
+        "events": [
+          {
+            "kind": "session.started",
+            "payload": {
+              "run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "sequence": 1,
+            "session_id": "runtime-1",
+            "source": "runtime-adapter",
+            "timestamp": "t",
+            "trace_id": "trace-1"
+          },
+          {
+            "kind": "session.failed",
+            "payload": {
+              "run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "sequence": 2,
+            "session_id": "runtime-1",
+            "source": "runtime-adapter",
+            "timestamp": "t",
+            "trace_id": "trace-1"
+          }
+        ],
+        "session_id": "runtime-1",
+        "trace_id": "trace-1"
+      },
+      "provenance": {
+        "observed_at": 1789988786.379485,
+        "source": "gateway-session-containment"
+      },
+      "verdict": "PASS"
+    },
+    "mismatched-trace-not-interrupted": {
+      "observed": {
+        "adapter_containment": {
+          "attempts": 1,
+          "contained": true,
+          "latest": {
+            "attempt": 1,
+            "executor_epoch": 1,
+            "interrupted_generation": "generation-dead",
+            "interrupted_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "loss_cause": "executor-loss",
+            "trace_id": "trace-other"
+          },
+          "schema_version": "session-containment-summary.v1",
+          "session_id": "runtime-1"
+        },
+        "events": [
+          {
+            "kind": "session.started",
+            "payload": {
+              "run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "sequence": 1,
+            "session_id": "runtime-1",
+            "source": "runtime-adapter",
+            "timestamp": "t",
+            "trace_id": "trace-1"
+          },
+          {
+            "kind": "session.failed",
+            "payload": {
+              "run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "sequence": 2,
+            "session_id": "runtime-1",
+            "source": "runtime-adapter",
+            "timestamp": "t",
+            "trace_id": "trace-1"
+          }
+        ],
+        "session_id": "runtime-1",
+        "trace_id": "trace-1"
+      },
+      "provenance": {
+        "observed_at": 1789988786.3794868,
+        "source": "gateway-session-containment"
+      },
+      "verdict": "PASS"
+    },
+    "missing-summary-session-not-interrupted": {
+      "observed": {
+        "adapter_containment": {
+          "attempts": 1,
+          "contained": true,
+          "latest": {
+            "attempt": 1,
+            "executor_epoch": 1,
+            "interrupted_generation": "generation-dead",
+            "interrupted_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "loss_cause": "executor-loss",
+            "trace_id": "trace-1"
+          },
+          "schema_version": "session-containment-summary.v1"
+        },
+        "events": [
+          {
+            "kind": "session.started",
+            "payload": {
+              "run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "sequence": 1,
+            "session_id": "runtime-1",
+            "source": "runtime-adapter",
+            "timestamp": "t",
+            "trace_id": "trace-1"
+          },
+          {
+            "kind": "session.failed",
+            "payload": {
+              "run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "sequence": 2,
+            "session_id": "runtime-1",
+            "source": "runtime-adapter",
+            "timestamp": "t",
+            "trace_id": "trace-1"
+          }
+        ],
+        "session_id": "runtime-1",
+        "trace_id": "trace-1"
+      },
+      "provenance": {
+        "observed_at": 1789988786.3794913,
+        "source": "gateway-session-containment"
+      },
+      "verdict": "PASS"
+    },
+    "missing-terminal-run-not-interrupted": {
+      "observed": {
+        "adapter_containment": {
+          "attempts": 1,
+          "contained": true,
+          "latest": {
+            "attempt": 1,
+            "executor_epoch": 1,
+            "interrupted_generation": "generation-dead",
+            "interrupted_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "loss_cause": "executor-loss",
+            "trace_id": "trace-1"
+          },
+          "schema_version": "session-containment-summary.v1",
+          "session_id": "runtime-1"
+        },
+        "events": [
+          {
+            "kind": "session.started",
+            "payload": {
+              "run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "sequence": 1,
+            "session_id": "runtime-1",
+            "source": "runtime-adapter",
+            "timestamp": "t",
+            "trace_id": "trace-1"
+          },
+          {
+            "kind": "session.failed",
+            "payload": {},
+            "sequence": 2,
+            "session_id": "runtime-1",
+            "source": "runtime-adapter",
+            "timestamp": "t",
+            "trace_id": "trace-1"
+          }
+        ],
+        "session_id": "runtime-1",
+        "trace_id": "trace-1"
+      },
+      "provenance": {
+        "observed_at": 1789988786.3794935,
+        "source": "gateway-session-containment"
+      },
+      "verdict": "PASS"
+    },
+    "observer-breakable": {
+      "observed": {
+        "negative_controls": {
+          "all_controls_rejected": true,
+          "control_count": 27,
+          "defect_targeting_count": 27
+        }
+      },
+      "provenance": {
+        "observed_at": 1789988786.418754,
+        "source": "contract-pure-function"
+      },
+      "verdict": "PASS"
+    },
+    "ordinary-failed-not-interrupted": {
+      "observed": {
+        "adapter_containment": {
+          "attempts": 1,
+          "contained": true,
+          "latest": {
+            "attempt": 1,
+            "executor_epoch": 1,
+            "interrupted_generation": "generation-dead",
+            "interrupted_run_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "loss_cause": "executor-loss",
+            "trace_id": "trace-1"
+          },
+          "schema_version": "session-containment-summary.v1",
+          "session_id": "runtime-1"
+        },
+        "events": [
+          {
+            "kind": "session.started",
+            "payload": {
+              "run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "sequence": 1,
+            "session_id": "runtime-1",
+            "source": "runtime-adapter",
+            "timestamp": "t",
+            "trace_id": "trace-1"
+          },
+          {
+            "kind": "session.failed",
+            "payload": {
+              "run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "sequence": 2,
+            "session_id": "runtime-1",
+            "source": "runtime-adapter",
+            "timestamp": "t",
+            "trace_id": "trace-1"
+          }
+        ],
+        "session_id": "runtime-1",
+        "trace_id": "trace-1"
+      },
+      "provenance": {
+        "observed_at": 1789988786.3794837,
+        "source": "gateway-session-containment"
+      },
+      "verdict": "PASS"
+    },
+    "owner-workspace-mismatch-blocks": {
+      "observed": {
+        "decision": {
+          "auto_retry": false,
+          "reason": "owner_workspace_mismatch",
+          "status": "blocked"
+        },
+        "inputs": {
+          "authorization_current": true,
+          "budget_available": true,
+          "cancelled": false,
+          "owner_matches": false,
+          "previous_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "receipt_queryable": true,
+          "step_declared_idempotent": true,
+          "step_result_verifiable": true,
+          "success_receipt_present": false,
+          "workspace_matches": true
+        }
+      },
+      "provenance": {
+        "observed_at": 1789988786.3795464,
+        "source": "contract-pure-function"
+      },
+      "verdict": "PASS"
+    },
+    "preservation-not-constant": {
+      "observed": {
+        "after": {
+          "prompt_receipts": 1,
+          "run_events": 1,
+          "session_started": 1
+        },
+        "before": {
+          "prompt_receipts": 1,
+          "run_events": 1,
+          "session_started": 1
+        },
+        "preservation": {
+          "boundary_invariant": "execution-boundary-does-not-modify-business-state.v1",
+          "boundary_verified": false,
+          "schema_version": "session-containment-preservation.v1",
+          "sources": {
+            "authorization": "backend-auth-session",
+            "conversation": "backend-product-catalog",
+            "workflow_trace": "gateway-trace-store"
+          },
+          "states": {
+            "approval": "unknown",
+            "artifact": "unknown",
+            "audit_chain": "unknown",
+            "authorization": "preserved",
+            "budget": "unknown",
+            "cancel_state": "unknown",
+            "conversation": "preserved",
+            "durable_job": "unknown",
+            "idempotency_keys": "unknown",
+            "workflow_trace": "preserved"
+          }
+        }
+      },
+      "provenance": {
+        "observed_at": 1789988786.4187686,
+        "source": "runtime-adapter-test-harness"
+      },
+      "verdict": "PASS"
+    },
+    "recovery-endpoint-never-submits": {
+      "observed": {
+        "source_sha256": "sha256:9a159bb334f99734d6887a15ee34120ad3cc447b9223a650f814a7199b5d6899"
+      },
+      "provenance": {
+        "observed_at": 1789988786.379702,
+        "source": "gateway-session-containment"
+      },
+      "verdict": "PASS"
+    },
+    "stale-generation-terminal-fenced": {
+      "observed": {
+        "call": {
+          "function": "assert_generation_fenced",
+          "kwargs": {
+            "authoritative_epoch": 2,
+            "authoritative_generation": "g2",
+            "write_epoch": 1,
+            "write_generation": "g1"
+          }
+        }
+      },
+      "provenance": {
+        "observed_at": 1789988786.3794973,
+        "source": "contract-pure-function"
+      },
+      "verdict": "PASS"
+    },
+    "success-receipt-not-replayed": {
+      "observed": {
+        "decision": {
+          "auto_retry": false,
+          "reason": "existing_success_receipt",
+          "status": "settled"
+        },
+        "inputs": {
+          "authorization_current": true,
+          "budget_available": true,
+          "cancelled": false,
+          "owner_matches": true,
+          "previous_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "receipt_queryable": true,
+          "step_declared_idempotent": true,
+          "step_result_verifiable": true,
+          "success_receipt_present": true,
+          "workspace_matches": true
+        }
+      },
+      "provenance": {
+        "observed_at": 1789988786.3795311,
+        "source": "contract-pure-function"
+      },
+      "verdict": "PASS"
+    },
+    "terminal-reopen-rejected": {
+      "observed": {
+        "call": {
+          "function": "assert_terminal_settlement",
+          "kwargs": {
+            "settled": {
+              "1": "interrupted"
+            },
+            "write_attempt": 1,
+            "write_terminal": "completed"
+          }
+        }
+      },
+      "provenance": {
+        "observed_at": 1789988786.3794987,
+        "source": "contract-pure-function"
+      },
+      "verdict": "PASS"
+    },
+    "unknown-side-effect-paused": {
+      "observed": {
+        "decision": {
+          "auto_retry": false,
+          "reason": "non_idempotent_step",
+          "status": "paused"
+        },
+        "inputs": {
+          "authorization_current": true,
+          "budget_available": true,
+          "cancelled": false,
+          "owner_matches": true,
+          "previous_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "receipt_queryable": true,
+          "step_declared_idempotent": false,
+          "step_result_verifiable": true,
+          "success_receipt_present": false,
+          "workspace_matches": true
+        }
+      },
+      "provenance": {
+        "observed_at": 1789988786.3795264,
+        "source": "contract-pure-function"
+      },
+      "verdict": "PASS"
+    }
+  },
+  "schema_version": "byq-v090-session-containment-observations.v2"
+}

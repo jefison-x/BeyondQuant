@@ -1,0 +1,46 @@
+{
+  "schema_version": "byq-v090-session-containment-design-check.v1",
+  "task": "BYQ session failure containment and business recovery (ADR-0084)",
+  "authority": "ADR-0084 (Accepted 2026-09-21) migration step 3; ADR-0081/0082/0083; ADR-0079; ADR-0064",
+  "inventory": {
+    "authoritative_models": [
+      {"interface": "packages/contracts/runtime_continuity.py", "role": "closed fresh/reattached/rehydrated/interrupted vocabulary", "reused": true},
+      {"interface": "packages/contracts/conversation_recovery.py", "role": "public unanswered-turn/failure recovery projection", "reused": true},
+      {"interface": "packages/contracts/agent_run_lifecycle.py", "role": "lifecycle event/receipt projection", "reused": true},
+      {"interface": "packages/contracts/workflow_trace.py", "role": "framework-neutral WorkflowTrace envelope", "reused": true},
+      {"interface": "services/runtime-adapter/app/lifecycle_journal.py", "role": "durable lifecycle evidence + fenced writes", "reused": true},
+      {"interface": "services/runtime-adapter/app/executor_identity.py", "role": "stable executor identity + monotonic epoch fence", "reused": true},
+      {"interface": "services/runtime-adapter/app/generation_ledger.py", "role": "bounded runtime generation history", "reused": true},
+      {"interface": "services/backend/app/research_receipts.py", "role": "business idempotency receipt watches", "reused": true},
+      {"interface": "services/gateway/app/conversation_recovery.py", "role": "normalized trace recovery projection", "reused": true},
+      {"interface": "services/gateway/app/agent_lifecycle_delivery.py", "role": "durable finite delivery bookkeeping", "reused": true}
+    ],
+    "new_interfaces": [
+      {"interface": "packages/contracts/session_failure_containment.py", "role": "closed containment/recovery contract", "classification": "ordinary-schema-contract"},
+      {"interface": "services/runtime-adapter/app/containment.py", "role": "bounded fenced containment evidence ledger", "classification": "ordinary-evidence-ledger"},
+      {"interface": "services/gateway/app/session_containment.py", "role": "normalized containment projection + one-attempt ledger", "classification": "ordinary-projection-ledger"}
+    ]
+  },
+  "design_check": {
+    "new_trust_subject": false,
+    "new_persistence_authority": false,
+    "cross_plane_call": false,
+    "production_topology_change": false,
+    "reasoning": "Containment evidence is a bounded BYQ-owned evidence ledger analogous to the existing generation ledger; business state authority remains the Backend/Domain Plane, executor fencing reuses executor_identity epochs, and the Gateway reads only normalized WorkflowTrace plus the adapter summary over the existing internal seam.",
+    "adr_required": false,
+    "authorized": "ordinary schema/contract/test/reversible implementation"
+  },
+  "boundaries_unchanged": {
+    "b1_subagent_child_crash": "BLOCKED_EXTERNAL",
+    "b2_subagent_byq_adapter_restart": "BLOCKED_EXTERNAL",
+    "d15_g": "NO_GO",
+    "r3_resume": "NO",
+    "production_selector": "dsh-0.1.2rc1",
+    "full_business_recovery_gate": "IN_PROGRESS/BLOCKED_INTERNAL",
+    "delivered_scope": "containment + fail-closed read-only classification",
+    "next_task": "inventory + minimal design for authoritative server-side step-safety + budget binding + safe rescheduling; ADR first if a new persistence authority, trust subject or cross-Plane call is required",
+    "superseding_assessment": "not_created_in_this_pr",
+    "native_child_resume": "not_implemented",
+    "unknown_side_effects": "pause"
+  }
+}

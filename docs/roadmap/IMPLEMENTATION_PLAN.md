@@ -25,6 +25,23 @@ second generic harness/session store/PTY runtime, production selector changes, d
 release/tag. Passing it permits a bounded R3 decision and 0.9 closeout assessment; it does not
 claim native child-process resume and does not itself authorize R3, promotion or deployment.
 
+**Slice status (2026-09-21): implemented as read-only containment + classification, one isolated
+worktree/Draft PR.** The contract, the Runtime Adapter containment ledger/fence and the Gateway
+read-only containment/classification projection are delivered with fail-able evidence
+(`docs/evidence/v090-session-containment/`). Five Safety/Integrity blockers were fixed: no
+client-declared step safety, tri-state authority verified from existing components (never defaulted
+true), no `/tmp` attempt ledger / no second store, interruption projected only from fenced
+containment matching the exact session/trace/run, and observed (not asserted) preservation. Because
+no authoritative server-side step-safety/budget metadata exists yet, automatic rescheduling stays
+**blocked/fail-closed to paused** and no prompt is ever submitted. The full business-recovery gate
+therefore stays **`IN_PROGRESS / BLOCKED_INTERNAL`**; this PR does not claim the ADR-0084 replacement
+hard gate complete. The next sole task is an **inventory + minimal design** for authoritative
+server-side step-safety + budget binding + safe rescheduling; if it requires a new persistence
+authority, trust subject or cross-Plane call, an ADR decision must be proposed first. Per ADR-0084
+migration step 4, the named D15 superseding assessment is a **separate** follow-up only after the
+full gate passes; this PR does not create or claim it, keeps B1/B2 `BLOCKED_EXTERNAL`, D15-G `NO_GO`
+and `R3_RESUME = NO`, and does not implement native child resume.
+
 After 0.10 data/HIST/deep-environment qualification, execute a named 1.0 matrix review that
 classifies planned capabilities as `core`, `extended` or `deferred`. Only the accepted `core`
 set becomes the global 1.0 release gate; safety and data-integrity failures remain fail closed.

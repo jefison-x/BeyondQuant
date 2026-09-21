@@ -34,6 +34,11 @@ from .pooled_http import pooled_http as httpx
 from .user_session import ProductAuthError, resolve_principal, resolve_user
 from .trace_store import TraceConflict, TraceStore
 from .conversation_recovery import project_recovery
+from .session_containment import (
+    loss_from_evidence,
+    preservation_projection,
+    project_containment,
+)
 from .workflow_projection import project_workflow_event
 from .agent_lifecycle_delivery import LifecycleDelivery
 from .task_continuation import TaskContinuationDelivery
@@ -76,6 +81,90 @@ def _continuation_adapter_get(path: str, params=None) -> dict:
     if not isinstance(value, dict):
         raise ValueError('invalid continuation adapter receipt')
     return value
+
+
+def _adapter_containment(runtime_session_id: str) -> dict | None:
+    """Fetch the bounded adapter containment summary; unavailable is not fatal."""
+
+    if not runtime_session_id:
+        return None
+    try:
+        return _continuation_adapter_get(
+            f"/internal/runtime/sessions/{runtime_session_id}/containment")
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
+def _session_containment_projection(
+    request: Request,
+    *,
+    conversation_id: str,
+    runtime_session_id: str,
+    trace_id: str,
+    principal_subject: str,
+    workspace_id: str,
+    conversation: object,
+    events: object,
+    fetch_adapter: bool = True,
+) -> dict:
+    """Read-only containment projection with independently verified authority.
+
+    No prompt is submitted and no attempt is created. When the authority cannot
+    be verified the projection pauses and, unless ``fetch_adapter`` is set, does
+    not even read the adapter.
+    """
+
+    authority = _recovery_authority(
+        request, principal_subject=principal_subject, workspace_id=workspace_id,
+        conversation=conversation)
+    preservation = preservation_projection(
+        conversation_known=isinstance(conversation, dict) and bool(conversation.get("conversation_id")),
+        trace_known=isinstance(events, list), authority=authority)
+    return project_containment(
+        events, session_id=runtime_session_id, trace_id=trace_id,
+        conversation_id=conversation_id,
+        adapter_containment=_adapter_containment(runtime_session_id) if fetch_adapter else None,
+        authority=authority, preservation=preservation,
+    )
+
+
+def _recovery_authority(
+    request: Request, *, principal_subject: str, workspace_id: str, conversation: object,
+) -> dict:
+    """Verify recovery authority from existing authoritative components.
+
+    Each item is tri-state: ``True`` verified, ``False`` authoritatively denied,
+    ``None`` unknown/unavailable. Missing or ambiguous authority is never
+    treated as allowed. No new authority is introduced: owner/workspace come from
+    the owner-scoped Product catalog and the durable Backend auth session.
+    """
+
+    result: dict[str, object] = {
+        "owner_matches": None, "workspace_matches": None,
+        "authorization_current": None, "budget_available": None,
+        "source": "unavailable",
+    }
+    owner = conversation.get("owner_principal") if isinstance(conversation, dict) else None
+    if isinstance(owner, str):
+        result["owner_matches"] = owner == principal_subject
+    if "byq_session" in request.cookies:
+        try:
+            user = resolve_user(request)
+        except ProductAuthError:
+            result["authorization_current"] = False
+            result["workspace_matches"] = False
+            result["source"] = "backend-auth-session"
+        else:
+            workspace = user.get("_workspace")
+            current_workspace = workspace.get("workspace_id") if isinstance(workspace, dict) else None
+            result["authorization_current"] = user.get("status") == "active"
+            result["workspace_matches"] = (
+                isinstance(current_workspace, str) and current_workspace == workspace_id)
+            result["source"] = "backend-auth-session"
+    # An arbitrary unanswered turn has no authoritative task/budget binding, so
+    # budget availability is unknown and must never be defaulted to allowed.
+    result["budget_available"] = None
+    return result
 
 
 def _consume_task_continuation(context):
@@ -1269,7 +1358,75 @@ def get_product_session(session_id: str, request: Request) -> dict[str, object]:
         "created_at": conversation.get("created_at"),
         "updated_at": conversation.get("updated_at"),
     }
-    return {"conversation": public, "messages": messages, "events": events}
+    containment = _session_containment_projection(
+        request,
+        conversation_id=session_id,
+        runtime_session_id=runtime_session_id,
+        trace_id=str(conversation.get("trace_id") or ""),
+        principal_subject=principal.subject,
+        workspace_id=workspace_id,
+        conversation=conversation,
+        events=trace_store.read(runtime_session_id),
+    )
+    return {"conversation": public, "messages": messages, "events": events,
+            "containment": containment}
+
+
+@app.get("/v1/agent/sessions/{session_id}/containment")
+def get_product_containment(session_id: str, request: Request) -> dict[str, object]:
+    session = _product_session(request, session_id)
+    body = _catalog_request(
+        "GET", f"/v1/product/conversations/{session_id}", session.principal, session.workspace_id)
+    conversation = body.get("conversation")
+    if not isinstance(conversation, dict):
+        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
+    return {"containment": _session_containment_projection(
+        request,
+        conversation_id=session.conversation_id,
+        runtime_session_id=session.session_id,
+        trace_id=session.trace_id,
+        principal_subject=session.principal.subject,
+        workspace_id=session.workspace_id,
+        conversation=conversation,
+        events=trace_store.read(session.session_id),
+    )}
+
+
+@app.get("/v1/agent/sessions/{session_id}/recovery")
+def get_recovery_classification(session_id: str, request: Request) -> dict[str, object]:
+    """Read-only recovery classification. Never submits a prompt or an attempt.
+
+    Automatic rescheduling requires authoritative server-side step-safety and
+    budget metadata. That metadata is absent, so the classification fails closed
+    to ``paused``/``needs_confirmation`` and no adapter prompt is ever sent. A
+    cancel or an unverified authority is resolved without any adapter call.
+    """
+
+    session = _product_session(request, session_id)
+    body = _catalog_request(
+        "GET", f"/v1/product/conversations/{session_id}", session.principal, session.workspace_id)
+    conversation = body.get("conversation")
+    if not isinstance(conversation, dict):
+        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
+    events = trace_store.read(session.session_id)
+    authority = _recovery_authority(
+        request, principal_subject=session.principal.subject,
+        workspace_id=session.workspace_id, conversation=conversation)
+    # A cancel is resolved from the trace alone; every other case reads the
+    # read-only adapter containment summary (never a prompt/submit).
+    trace_only_loss = loss_from_evidence(events, session.session_id, session.trace_id)
+    projection = _session_containment_projection(
+        request,
+        conversation_id=session.conversation_id,
+        runtime_session_id=session.session_id,
+        trace_id=session.trace_id,
+        principal_subject=session.principal.subject,
+        workspace_id=session.workspace_id,
+        conversation=conversation,
+        events=events,
+        fetch_adapter=not trace_only_loss["cancelled"],
+    )
+    return {"containment": projection, "submitted": False}
 
 
 @app.get("/v1/agent/sessions/{session_id}/lifecycle-delivery")

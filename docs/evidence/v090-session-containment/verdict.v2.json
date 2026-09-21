@@ -1,0 +1,164 @@
+{
+  "all_pass": true,
+  "coverage_failures": [],
+  "exit_code": 0,
+  "failures": [],
+  "format_valid": true,
+  "scenarios": [
+    {
+      "failures": [],
+      "id": "executor-loss-interrupted",
+      "kind": "adapter_loss",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "late-success-no-overwrite",
+      "kind": "adapter_loss",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "ordinary-failed-not-interrupted",
+      "kind": "loss_evidence",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "mismatched-run-not-interrupted",
+      "kind": "loss_evidence",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "mismatched-trace-not-interrupted",
+      "kind": "loss_evidence",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "missing-summary-session-not-interrupted",
+      "kind": "loss_evidence",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "missing-terminal-run-not-interrupted",
+      "kind": "loss_evidence",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "invalid-terminal-run-not-interrupted",
+      "kind": "loss_evidence",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "cancelled-not-interrupted",
+      "kind": "loss_evidence",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "stale-generation-terminal-fenced",
+      "kind": "fencing",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "duplicate-terminal-rejected",
+      "kind": "fencing",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "terminal-reopen-rejected",
+      "kind": "fencing",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "authority-unavailable-pauses",
+      "kind": "classification",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "unknown-side-effect-paused",
+      "kind": "classification",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "success-receipt-not-replayed",
+      "kind": "classification",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "cancel-blocks-recovery",
+      "kind": "classification",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "budget-exhausted-blocks",
+      "kind": "classification",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "authorization-revoked-blocks",
+      "kind": "classification",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "owner-workspace-mismatch-blocks",
+      "kind": "classification",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "preservation-not-constant",
+      "kind": "preservation",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "recovery-endpoint-never-submits",
+      "kind": "no_submit",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "observer-breakable",
+      "kind": "meta",
+      "required": true,
+      "verdict": "PASS"
+    }
+  ],
+  "schema_version": "byq-v090-session-containment-verdict.v2"
+}

@@ -1,0 +1,226 @@
+{
+  "all_controls_pass": true,
+  "baseline_all_pass": true,
+  "control_count": 27,
+  "controls": [
+    {
+      "defect_targeting": true,
+      "first_failure": "executor-loss-interrupted: status='completed' != contract 'interrupted'",
+      "name": "executor-loss-fake-completed",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "executor-loss-interrupted: loss_cause mismatch",
+      "name": "loss-cause-wrong",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "executor-loss-interrupted: real before/after state diverged",
+      "name": "before-after-diverged",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "ordinary-failed-not-interrupted: status='interrupted' != contract 'failed'",
+      "name": "ordinary-failed-marked-interrupted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "ordinary-failed-not-interrupted: status='interrupted' != contract 'failed'",
+      "name": "mismatched-run-marked-interrupted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "mismatched-trace-not-interrupted: status='interrupted' != contract 'failed'",
+      "name": "mismatched-trace-marked-interrupted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "missing-summary-session-not-interrupted: status='interrupted' != contract 'failed'",
+      "name": "missing-summary-session-marked-interrupted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "missing-terminal-run-not-interrupted: status='interrupted' != contract 'failed'",
+      "name": "missing-terminal-run-marked-interrupted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "invalid-terminal-run-not-interrupted: status='interrupted' != contract 'failed'",
+      "name": "invalid-terminal-run-marked-interrupted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "stale-generation-terminal-fenced: fence raised=False != contract fenced=True",
+      "name": "stale-generation-not-fenced",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "duplicate-terminal-rejected: fence raised=False != contract fenced=True",
+      "name": "duplicate-terminal-not-fenced",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "terminal-reopen-rejected: fence raised=False != contract fenced=True",
+      "name": "terminal-reopen-not-fenced",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "authority-unavailable-pauses: derived status='eligible' != contract 'paused'",
+      "name": "authority-unavailable-allowed",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "unknown-side-effect-paused: derived status='eligible' != contract 'paused'",
+      "name": "unknown-side-effect-auto-retry",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "cancel-blocks-recovery: derived status='eligible' != contract 'blocked'",
+      "name": "cancel-recoverable",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "budget-exhausted-blocks: derived status='eligible' != contract 'blocked'",
+      "name": "budget-blocks-bypassed",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "authorization-revoked-blocks: derived status='eligible' != contract 'blocked'",
+      "name": "auth-revoked-bypassed",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "owner-workspace-mismatch-blocks: derived status='eligible' != contract 'blocked'",
+      "name": "owner-mismatch-bypassed",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "success-receipt-not-replayed: derived status='eligible' != contract 'settled'",
+      "name": "success-receipt-replayed",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "preservation-not-constant: preservation projection invalid: a preserved field requires an authoritative source",
+      "name": "preservation-constant-claim",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "preservation-not-constant: preservation projection invalid: boundary invariant cannot be self-verified",
+      "name": "preservation-boundary-self-verified",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "recovery-endpoint-never-submits: observed source digest does not match the current endpoint",
+      "name": "endpoint-source-mismatch",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "observer-breakable: observer is not breakable by negative controls",
+      "name": "negative-controls-trusted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "executor-loss-interrupted: missing provenance",
+      "name": "missing-provenance",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "executor-loss-interrupted: provenance source is not contract-allowed",
+      "name": "wrong-source-provenance",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "provenance: source digest mismatch for packages/contracts/session_failure_containment.py",
+      "name": "provenance-digest-mismatch",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "unknown-side-effect-paused: recorded decision does not match the re-derived decision",
+      "name": "scenario-verdict-label-only",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    }
+  ],
+  "defect_targeting_count": 27,
+  "defect_targeting_pre_fix_passed": true,
+  "schema_version": "byq-v090-session-containment-negative-controls.v2"
+}
