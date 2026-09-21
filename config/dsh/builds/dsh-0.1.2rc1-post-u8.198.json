@@ -763,7 +763,7 @@
     "services/runtime-adapter/tests/test_root_process_lifecycle.py": "sha256:37078f4cc6bd9abfe37cd86873a2a9cd2958b0342c6b6c39cebb1d009960f874",
     "services/runtime-adapter/tests/test_runtime_crash_wire.py": "sha256:21bafd7e8f4bb2fca33356bf27f2d6c8e2486a31794791a711a3ddc92b43573d",
     "services/runtime-adapter/tests/test_sdk_compatibility.py": "sha256:0b9e9f3e02ba5307a7c219d1d0e6f1112a9da95fc802cbe8eebea38c759ab4e5",
-    "services/runtime-adapter/tests/test_session_containment.py": "sha256:e69f77d75a1dcd0dd5f50aea11dd929bf82e5aa20d81c7e7e757611df5acf58a",
+    "services/runtime-adapter/tests/test_session_containment.py": "sha256:e1f0cb2fbec881dc9042a9173d006b949253a138a5d2eec741255ec90bf5f31e",
     "services/runtime-adapter/tests/test_session_rehydration.py": "sha256:3d063fd3f17ee41c6f1e99575952842fb91d59ee261cf9b92a5a14bd04527950",
     "services/runtime-adapter/tests/test_sse_delivery.py": "sha256:7d9a5599b8fd5f1f6b9600bba179180651a1b0e9a8883d244bfe41ae9122953d",
     "services/runtime-adapter/tests/v090_br_acceptance_provider.py": "sha256:b1aedc1676c569e7645b147c1bb23023b61cd567b8133afe9532d0e05065e01c",
