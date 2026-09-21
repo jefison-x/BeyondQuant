@@ -1467,6 +1467,35 @@ identity only: the historical `.180` manifest and evidence are preserved unchang
 selector, `compose.yml`, `deployment.json`, immutable release registry or 0.1.2
 artifact/evidence change and no deployment.
 
+## 0.9 step-5 G-split gate-order decision (maintenance, 2026-09-21)
+
+This maintenance batch records the maintainer's `G-split` gate-order decision for the
+0.9 strict-order step-5 B1 external blocker. It is a **decision/record** batch only. It
+does **not** implement B2 `subagent-byq-adapter-restart` or any runtime/provider/
+child-bridge/`TerminalAttachment` code, does **not** unfreeze D15/R3, does **not** switch
+the production selector, does **not** deploy, and does **not** create or move any
+tag/release. It does not inspect or copy the Community repository and does not resume
+frozen Phase 100.
+
+- **B1 `subagent-child-crash` stays a MANDATORY external blocker** — not downgraded, not
+  deleted, not made optional; the D15-G required-atomic condition is unchanged.
+- **G-split** separates the external B1 from the independently executable internal
+  pre-gate fixes, allowing the strict internal order B2 `subagent-byq-adapter-restart` →
+  `terminal-adapter-restart` → `terminal-dsh-runtime-restart`.
+- **D15-G stays `NO_GO` until B1 truly PASSes.** A B2/B3/B4 `PASS` does not make D15-G
+  `GO` while B1 is `BLOCKED`. `R3_RESUME = NO`; D15/R3 stay frozen; 0.9 is **not** closed.
+- **Next sole task:** B2 `subagent-byq-adapter-restart`, owner node
+  `d15-4-candidate-composition-hookup` (pre-gate; never post-GO R6). It is **not started**
+  here.
+- Machine-readable record: `docs/evidence/v090-closeout/gsplit-decision.v1.json`.
+
+Build revision: this batch changes `scripts/dsh/build_revision.py`, `tests/` and the
+candidate Dockerfile (build inputs) and advances the production runtime build identity
+`post-u8.181 → post-u8.182` (unused id). Rebuild identity only: the historical `.181`
+manifest and evidence are preserved unchanged; no selector, `compose.yml`,
+`deployment.json`, immutable release registry or 0.1.2 artifact/evidence change and no
+deployment.
+
 ## Maintenance — Delist-boundary coverage correction (ADR-0028)（构建修订 `dsh-0.1.2rc1-post-u8.130`，PR #299）
 
 ADR-0028 point 2 evaluates coverage over each symbol's frozen listing lifecycle. The market-readiness

@@ -44,9 +44,9 @@ AUDIT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.177"
 # maintenance batches that change build inputs advance the *selected* revision;
 # the full-interface re-baseline batch moved it to .178, the composite research
 # fault-regression batch moved it to .179, the ADR-0082/0083 decision batch
-# moved it to .180, and the step-5 B1 subagent-child-crash remediation batch
-# moved it to .181.
-CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.181"
+# moved it to .180, the step-5 B1 subagent-child-crash remediation batch moved
+# it to .181, and the step-5 G-split gate-order decision batch moved it to .182.
+CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.182"
 
 DECISION_RECORD = ROOT / "docs/evidence/v090-adr-decisions/decision-record.v1.json"
 DECISION_RECORD_MD = ROOT / "docs/evidence/v090-adr-decisions/README.md"
@@ -318,7 +318,7 @@ class GovernanceDocTests(unittest.TestCase):
                        "<!-- byq:v090-full-interface-rebaseline=complete -->",
                        "<!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->",
                        "<!-- byq:phase-100-p100-c=paused-not-delivery -->",
-                       "<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.181 -->"):
+                       "<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.182 -->"):
             self.assertIn(marker, status)
         # Completed historical 0.9 steps must not remain marked active.
         self.assertNotIn("v090-closeout-audit=active", status)

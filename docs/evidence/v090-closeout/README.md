@@ -27,6 +27,10 @@ any tag/release.
 - [ADR-0082-0083-SUFFICIENCY.md](ADR-0082-0083-SUFFICIENCY.md) — sufficiency review and the
   maintainer decision package. Both ADRs stay Proposed **at audit time**; the 2026-09-21
   step-4 maintainer decision later accepted them without implementing them.
+- [gsplit-decision.v1.json](gsplit-decision.v1.json) — machine-readable record of the
+  2026-09-21 step-5 `G-split` gate-order decision: B1 stays a mandatory external blocker,
+  the strict internal order B2 → terminal-adapter-restart → terminal-dsh-runtime-restart is
+  enabled, D15-G stays `NO_GO` until B1 PASSes, `R3_RESUME = NO`, and 0.9 is not closed.
 
 The consistency of these files (schema, status vocabulary, evidence paths, the four
 D15-G atomic blockers, the beta-vs-formal distinction and the frozen constraints) is
