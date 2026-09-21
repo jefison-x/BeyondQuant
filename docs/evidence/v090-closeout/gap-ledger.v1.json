@@ -3,7 +3,7 @@
   "generated_at": "2026-09-20",
   "snapshot": true,
   "snapshot_kind": "historical-audit-snapshot",
-  "snapshot_note": "Audit-time snapshot at base origin/main 80fb9f8 / build post-u8.174 (2026-09-20). Its fields (item statuses, D15.atomic_blockers, constraints.adr_0082/adr_0083) are preserved as historical and MUST NOT be read as the current D15/slice state. The current qualification state is `current_state_after_b3` below and docs/roadmap/STATUS.md; the committed docs/evidence/d15/d15-5 and docs/evidence/d15/d15-g verdicts are not rewritten and D15-G has not been re-run.",
+  "snapshot_note": "Audit-time snapshot at base origin/main 80fb9f8 / build post-u8.174 (2026-09-20). Its fields (item statuses, D15.atomic_blockers, constraints.adr_0082/adr_0083) are preserved as historical and MUST NOT be read as the current D15/slice state. The current qualification state is `current_state_after_b4` below and docs/roadmap/STATUS.md; the committed docs/evidence/d15/d15-5 and docs/evidence/d15/d15-g verdicts are not rewritten and D15-G has not been re-run.",
   "current_state_authority": "docs/roadmap/STATUS.md",
   "current_state_after_b3": {
     "as_of": "2026-09-21",
@@ -218,7 +218,7 @@
       "title": "DSH 0.1.5-rc.1 原生连续性资格（Runtime Continuity D15）",
       "status": "open",
       "reason": "D15-G is an honest NO_GO derived by a fail-able observer: four atomic required capabilities are BLOCKED. D15-2/D15-3/D15-3R/D15-4 partial and D15-5 partial are PASS where stated.",
-      "latest_conclusion": "D15-G NO_GO (NOT-PASS); R3_RESUME=NO; production selector dsh-0.1.2rc1 unchanged. 0.9 step-5 G-split internal order: B2 subagent-byq-adapter-restart executed 2026-09-21 and stays BLOCKED (external/dependency); B3 terminal-adapter-restart executed 2026-09-21 and PASSes at the candidate/qualification layer (durable BYQ TerminalAttachment minimal lifecycle; honest lost/interrupted on native loss); B4 terminal-dsh-runtime-restart not started. D15-G was NOT re-run and stays NO_GO. No BYQ child-resume bridge, no second session store. See current_state_after_b3.",
+      "latest_conclusion": "D15-G NO_GO (NOT-PASS); R3_RESUME=NO; production selector dsh-0.1.2rc1 unchanged. 0.9 step-5 G-split internal order: B2 subagent-byq-adapter-restart executed 2026-09-21 and stays BLOCKED (external/dependency); B3 terminal-adapter-restart executed 2026-09-21 and PASSes at the candidate/qualification layer; B4 terminal-dsh-runtime-restart executed 2026-09-21 and PASSes at the candidate/qualification layer (truthful lost across a real DSH runtime OS-process restart; surviving PTY without attachment reconciled as lost and never reused; terminal lifetime independent from conversation/durable-job lifetime). D15-G was NOT re-run and stays NO_GO. No BYQ child-resume bridge, no second session store. See current_state_after_b4.",
       "evidence": [
         "docs/evidence/d15/d15-g/verdict.v1.json",
         "docs/evidence/d15/d15-g/capability-matrix.v1.json",
@@ -253,6 +253,12 @@
         "d15-g": "NO_GO",
         "d15-g-rerun": false,
         "r3-resume": "NO"
+      },
+      "atomic_blockers_current_overlay": {
+        "subagent-child-crash": "BLOCKED (external)",
+        "subagent-byq-adapter-restart": "BLOCKED (external/dependency)",
+        "terminal-adapter-restart": "PASS (candidate/qualification layer)",
+        "terminal-dsh-runtime-restart": "PASS (candidate/qualification layer)"
       }
     }
   ],
@@ -266,7 +272,7 @@
   "deferred_to_0_10_note": "S3 / historical constituent preparation belongs to the 0.10.0 gate and is resolved by frozen Phase 100 (Tushare P100-C/P100-D), not by the 0.9 closeout.",
   "not_gating_0_9_closeout": ["S3"],
   "constraints": {
-    "snapshot_note": "Audit-time (2026-09-20) constraints, preserved as historical. Current: ADR-0082 Accepted (Option 1, not implemented); ADR-0083 Accepted with only the B3 candidate/qualification-layer minimal implementation done (R4/production wiring NOT implemented); see current_state_after_b3.",
+    "snapshot_note": "Audit-time (2026-09-20) constraints, preserved as historical. Current: ADR-0082 Accepted (Option 1, not implemented); ADR-0083 Accepted with only the B3 candidate/qualification-layer minimal implementation done (R4/production wiring NOT implemented); see current_state_after_b4.",
     "r3_resume": "NO",
     "production_selector": "dsh-0.1.2rc1",
     "production_default_unchanged": true,
@@ -274,5 +280,39 @@
     "adr_0082": "Proposed, not accepted, not implemented",
     "adr_0083": "Proposed, not accepted, not implemented",
     "release_or_tag_created": false
+  },
+  "current_state_after_b4": {
+    "as_of": "2026-09-21",
+    "authority": "docs/roadmap/STATUS.md",
+    "terminal_adapter_restart": {
+      "status": "PASS",
+      "scope": "candidate/qualification layer",
+      "evidence": "docs/evidence/v090-step5-b3-terminal-adapter-restart/verdict.v1.json"
+    },
+    "terminal_dsh_runtime_restart": {
+      "status": "PASS",
+      "started": true,
+      "scope": "candidate/qualification layer",
+      "evidence": "docs/evidence/v090-step5-b4-terminal-dsh-runtime-restart/verdict.v1.json"
+    },
+    "subagent_child_crash": {
+      "status": "BLOCKED",
+      "external": true
+    },
+    "subagent_byq_adapter_restart": {
+      "status": "BLOCKED",
+      "external_dependency": true
+    },
+    "adr_0083": {
+      "status": "Accepted",
+      "implemented_scope": "candidate/qualification-layer minimal TerminalAttachment lifecycle extended for DSH-runtime-restart + orphan reconcile",
+      "r4_or_production_wiring": "NOT implemented"
+    },
+    "d15_g": {
+      "status": "NO_GO",
+      "rerun": false,
+      "note": "not re-run; even if re-run it stays NO_GO while B1/B2 are not PASS"
+    },
+    "r3_resume": "NO"
   }
 }

@@ -1,0 +1,129 @@
+{
+  "schema_version": "byq-v090-step5-b4-terminal-dsh-runtime-restart-contract.v1",
+  "slice": "terminal-dsh-runtime-restart",
+  "owner_node": "d15-5-candidate-attachment-layer",
+  "step": "0.9 strict-order step 5 slice 4 (B4, G-split internal order fourth item)",
+  "adr": "docs/architecture/adr/ADR-0083-terminal-attachment-boundary.md",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1"
+  },
+  "required_evidence_class": "native-runtime-isolated-b4",
+  "llm_evidence_class": "not-applicable",
+  "llm_evidence_note": "No model is called. The real native ctx.terminals PTY seam (reused committed B3 runtime role) is driven through a minimal BYQ-owned TerminalAttachment adapter plus B4 reconcile; this is terminal-attachment-continuity evidence, NOT real-LLM-quality evidence.",
+  "results_vocabulary": ["PASS", "FAIL", "NOT_RUN", "BLOCKED"],
+  "existence_dimensions": ["pty_process", "attachment", "io_rebind", "terminal_identity"],
+  "ownership": {
+    "byq": ["attachment_identity", "attachment_state", "authorization", "reconnect", "runtime_generation", "executor_epoch", "audit_linkage", "orphan_reconcile"],
+    "dsh": ["pty_process", "shell", "io", "native_session_lifecycle"],
+    "rule": "BYQ owns ONLY the bounded TerminalAttachment lifecycle (BYQ-minted attachment id, owner principal/authorization, runtime generation, executor epoch, state, audit) and orphan reconcile. DSH owns the PTY/shell/process/IO. BYQ must not build a PTY runtime, must not copy a DSH terminal, must not build a second generic harness and must not persist or fake the native PTY."
+  },
+  "required_scenarios": [
+    {
+      "id": "dsh-runtime-restart-terminal-lost",
+      "description": "generation A establishes a real native persistent terminal plus a durable BYQ TerminalAttachment. The DSH runtime OS process is genuinely terminated (old PTY pid dies) and a fresh runtime OS process generation B is started. A fresh adapter generation B reloads the SAME durable attachment, performs owner authorization and generation/epoch validation, finds the native process-local state genuinely unreachable, deterministically records lost/interrupted and rejects a fake reattach. Per ADR-0083 this honest loss is the acceptance.",
+      "required": true,
+      "requires_fault": true,
+      "expects": "honest_lost",
+      "assertions": ["byq_minted_attachment", "durable_attachment_loaded", "fresh_adapter_os_process", "generation_a_native_terminal_real", "real_dsh_runtime_restart", "old_pty_pid_dead", "native_session_absent", "honest_lost_status", "fake_reattach_rejected", "reattach_retry_same_loss", "conversation_survived", "durable_job_survived", "terminal_not_defining_conversation"]
+    },
+    {
+      "id": "surviving-pty-without-attachment-lost",
+      "description": "the native DSH state (a real PTY) genuinely SURVIVES while the BYQ durable attachment record is lost. A fresh adapter generation B reconciles the native sessions against the durable attachments, detects the surviving PTY as an orphan, classifies it lost, and NEVER silently reuses or adopts it; the stale attachment id is rejected and cleanup ends the orphan PTY with no orphans left.",
+      "required": true,
+      "requires_fault": true,
+      "expects": "orphan_lost",
+      "assertions": ["byq_minted_attachment", "durable_attachment_loaded", "fresh_adapter_os_process", "orphan_record_dropped", "surviving_pty_alive", "orphan_reconcile_ran", "orphan_detected", "orphan_classified_lost", "orphan_not_reused", "orphan_reuse_attempt_rejected", "old_attachment_rejected", "orphan_cleanup_no_orphans", "conversation_survived", "durable_job_survived", "terminal_not_defining_conversation"]
+    }
+  ],
+  "optional_scenarios": [
+    {
+      "id": "host-reboot",
+      "description": "host reboot. NOT executed: rebooting the maintainer host is not authorized and a container/process restart is not a host reboot.",
+      "required": false,
+      "requires_fault": true,
+      "assertions": []
+    }
+  ],
+  "required_cross_checks": [
+    {
+      "id": "durable-attachment-lifecycle",
+      "description": "the BYQ attachment is a real durable, BYQ-minted record distinct from any DSH session id or pid: it persists to a BYQ-owned store, carries owner principal + runtime generation + executor epoch + state + audit linkage, and reloads with the same id in a fresh adapter OS process",
+      "required": true,
+      "assertions": ["attachment_id_byq_minted", "attachment_id_not_native_identity", "durable_store_persisted", "reloaded_same_attachment_id", "audit_linkage_present", "record_has_owner_generation_epoch_state", "no_second_session_store"]
+    },
+    {
+      "id": "real-dsh-runtime-restart",
+      "description": "the DSH runtime OS process was genuinely terminated and restarted: a different runtime OS pid, an advanced runtime generation, the generation-A PTY pid really gone and the new runtime holding no sessions",
+      "required": true,
+      "assertions": ["runtime_os_process_restarted", "runtime_generation_advanced", "generation_a_pty_was_alive", "old_pty_pid_dead_after_restart", "new_runtime_has_no_sessions"]
+    },
+    {
+      "id": "permission-boundary",
+      "description": "an owner/principal boundary cannot be bypassed: a foreign principal presenting the attachment is rejected, and a different native owner cannot read or send to another owner's PTY",
+      "required": true,
+      "assertions": ["foreign_principal_rejected", "foreign_owner_send_rejected", "foreign_owner_read_rejected"]
+    },
+    {
+      "id": "stale-generation-fenced",
+      "description": "a stale runtime generation / executor epoch is fenced before any rebind or reconcile decision, in both the DSH-restart and orphan worlds",
+      "required": true,
+      "assertions": ["stale_generation_rejected", "stale_epoch_rejected", "orphan_world_generation_fenced", "orphan_world_epoch_fenced"]
+    },
+    {
+      "id": "wrong-terminal-rejected",
+      "description": "an unknown/wrong attachment or terminal id is rejected and cannot reach a real PTY",
+      "required": true,
+      "assertions": ["unknown_attachment_rejected", "wrong_terminal_does_not_reach_real_pty"]
+    },
+    {
+      "id": "idempotent-transitions",
+      "description": "the honest loss is stable across retries: a repeated reattach returns the same lost state, orphan reconcile is idempotent and closing twice is a no-op",
+      "required": true,
+      "assertions": ["reattach_retry_same_loss", "orphan_reconcile_idempotent", "close_idempotent"]
+    },
+    {
+      "id": "cleanup-no-orphans",
+      "description": "closing the attachment / restarting the runtime and the orphan cleanup leave no orphan PTY process",
+      "required": true,
+      "assertions": ["restart_world_no_orphans", "orphan_world_killed_orphan", "orphan_pid_dead_after_cleanup", "no_native_sessions_after_cleanup"]
+    },
+    {
+      "id": "terminal-lifetime-independent",
+      "description": "terminal (attachment/PTY) lifetime never defines conversation or durable-job lifetime: BYQ conversation/job identities survive both the DSH runtime restart and the orphan loss unchanged and active",
+      "required": true,
+      "assertions": ["restart_conversation_survived", "restart_durable_job_survived", "orphan_conversation_survived", "orphan_durable_job_survived"]
+    }
+  ],
+  "fail_closed": [
+    "missing required scenario",
+    "required scenario not covered by a PASS",
+    "a required scenario PASS without the exact dimensions and derived honesty",
+    "a required scenario PASS without fault_applied when the contract requires a fault",
+    "NOT_RUN/BLOCKED without a reason",
+    "a required cross-check with a false assertion",
+    "an honest-lost scenario without a real DSH runtime restart (different runtime pid + advanced generation + dead old PTY)",
+    "an honest-lost scenario that does not prove the native state is genuinely gone",
+    "an orphan scenario without a genuinely surviving PTY and no attachment",
+    "an orphan that is silently reused or adopted as an attachment",
+    "a positive rebind/loss that is not exercised, i.e. a label-only PASS",
+    "an unknown scenario id (closed set)",
+    "a duplicate scenario id",
+    "candidate mismatch",
+    "non-native evidence class",
+    "llm evidence claims real-llm-quality",
+    "a negative that was not rejected",
+    "a false reattach (session/pid returned or identity_stable claimed)",
+    "a terminal-driven termination of a conversation or durable job",
+    "any attempt by the observation to declare its own coverage/continuity rules"
+  ],
+  "notes": {
+    "native_seam": "the real native @deepseek-ai/dsh-terminal service + @deepseek-ai/dsh-terminal-bash backend own the PTY/shell/IO; the committed B3 harness runtime role is reused unchanged. A minimal B4 BYQ adapter owns only the durable TerminalAttachment lifecycle and orphan reconcile. No PTY runtime, no second generic harness, no DSH fork/patch.",
+    "dsh_runtime_restart": "the DSH runtime OS process is SIGKILLed and a genuinely fresh OS process is started as the next runtime generation. Native sessions are process-local, so the old PTY dies with the runtime; the honest result is lost/interrupted, never a fabricated reattach.",
+    "surviving_pty": "a real PTY surviving without any BYQ attachment is an orphan; reconcile classifies it lost and never silently reuses it.",
+    "lifetime_independence": "terminal lifetime never defines conversation or durable-job lifetime; the BYQ conversation/job identities survive terminal loss.",
+    "host_reboot": "kept separate and NOT_RUN in this batch",
+    "scope": "candidate/qualification layer only; no production selector switch, no R4 productization, no raw DSH schema in any browser/frontend surface"
+  }
+}

@@ -1578,6 +1578,50 @@ manifest and all evidence are preserved unchanged; no selector, `compose.yml`,
 `deployment.json`, immutable release registry or 0.1.2 artifact/evidence change and no
 deployment.
 
+## 0.9 step-5 B4 `terminal-dsh-runtime-restart` (maintenance/qualification, 2026-09-21)
+
+This maintenance batch executes B4 `terminal-dsh-runtime-restart` (owner node
+`d15-5-candidate-attachment-layer`) as the fourth and final internal item of the G-split
+strict order (after B2 stayed BLOCKED-external and B3 PASSed). It is
+**candidate/qualification-layer** work: it reuses the committed B3 native runtime role and
+the minimal BYQ `TerminalAttachment` store schema, adds the DSH-runtime-restart fault and
+orphan reconcile, and implements no production wiring/R4. It does not re-run D15-G, start
+R3/R4/R5/R6, switch the production selector, deploy, create/move any tag/release, inspect or
+copy the Community repository, or resume frozen Phase 100.
+
+- BYQ owns only the bounded durable attachment + reconcile; DSH owns the PTY/shell/process/IO.
+  BYQ builds no PTY runtime, copies no DSH terminal, builds no second generic harness/store and
+  never persists or fabricates the native PTY (`scripts/d15/terminal/dsh_runtime_restart_harness.mjs`).
+- A real isolated native probe reuses the committed B3 runtime role and truly terminates the
+  **DSH runtime OS process**, then starts a genuinely fresh OS process as runtime generation B:
+  - `dsh-runtime-restart-terminal-lost` **PASS** — generation A establishes a real native PTY
+    (unique marker echoed) plus a durable BYQ attachment; after SIGKILL and restart of the DSH
+    runtime (runtime pid changed, generation `1→2`, old PTY pid dead, 0 sessions in the new
+    runtime) a fresh adapter generation B reloads the same durable attachment, authorizes and
+    generation-validates it and deterministically records `lost` (`NATIVE_SESSION_UNAVAILABLE`),
+    rejecting a fake reattach; a retry returns the same loss.
+  - `surviving-pty-without-attachment-lost` **PASS** — a genuinely surviving PTY with no BYQ
+    attachment is reconciled as an orphan `lost`, is never silently reused/adopted, the stale
+    attachment id is rejected and cleanup leaves no orphan PTY.
+- Terminal lifetime never defines conversation or durable-job lifetime: the BYQ conversation/job
+  identities stay `active` and unchanged across both faults.
+- A fail-able observer (`scripts/d15/terminal/dsh_runtime_restart_observer.py`, 48 focused
+  non-zero controls, 45 defect-targeting) derives the verdict from raw pids/generations/counters
+  and rejects fake reattach, label-only PASS, no-real-restart, terminal-driven conversation/job
+  termination and orphan reuse. The committed verdict is `format_valid=true`, `all_pass=true`, exit 0.
+- Evidence: `docs/evidence/v090-step5-b4-terminal-dsh-runtime-restart/` (native observations,
+  verdict, negative controls, scope probe, provenance, current overlay distinguishing the
+  historical D15-5/D15-G committed snapshot from the B4 current overlay), asserted by
+  `tests/test_v090_step5_b4_terminal_dsh_runtime_restart.py`.
+- The G-split strict internal order (B2/B3/B4) is complete. D15-G must not be re-run while B1
+  is BLOCKED and stays `NO_GO`; `R3_RESUME = NO`; 0.9 is **not** closed.
+
+Build revision: this batch changes `scripts/`, `tests/` and the candidate Dockerfile
+(build inputs) and advances the production runtime build identity `post-u8.184 → post-u8.185`
+(unused id). Rebuild identity only: the historical `.184` manifest and all evidence are
+preserved unchanged; no selector, `compose.yml`, `deployment.json`, immutable release registry
+or 0.1.2 artifact/evidence change and no deployment.
+
 ## Maintenance — Delist-boundary coverage correction (ADR-0028)（构建修订 `dsh-0.1.2rc1-post-u8.130`，PR #299）
 
 ADR-0028 point 2 evaluates coverage over each symbol's frozen listing lifecycle. The market-readiness

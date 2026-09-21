@@ -1,0 +1,71 @@
+{
+  "schema_version": "byq-v090-step5-b4-state-overlay.v1",
+  "generated_at": "2026-09-21",
+  "slice": "terminal-dsh-runtime-restart",
+  "owner_node": "d15-5-candidate-attachment-layer",
+  "historical_snapshot": {
+    "snapshot_kind": "committed-audit-snapshot",
+    "not_rewritten": true,
+    "d15_5": {
+      "path": "docs/evidence/d15/d15-5/verdict.v1.json",
+      "all_pass": false,
+      "dsh_runtime_restart_scenario": "BLOCKED",
+      "dsh_runtime_restart_dimensions": {
+        "pty_process": "absent",
+        "attachment": "absent",
+        "io_rebind": "rejected",
+        "terminal_identity": "lost"
+      },
+      "dsh_runtime_restart_observation": {
+        "rebindOk": false,
+        "rebindError": "UNKNOWN_ATTACHMENT",
+        "newRuntimeAttachmentPresent": false,
+        "nativeSessionsInNewRuntime": 0
+      },
+      "note": "The committed D15-5 snapshot has no committed BYQ terminal wiring and no durable TerminalAttachment, so the old attachment was genuinely rejected. This is preserved unchanged and is NOT the B4 current state."
+    },
+    "d15_g": {
+      "path": "docs/evidence/d15/d15-g/verdict.v1.json",
+      "verdict": "NO_GO",
+      "terminal_dsh_runtime_restart": "BLOCKED",
+      "terminal_adapter_restart": "BLOCKED",
+      "subagent_child_crash": "BLOCKED",
+      "subagent_byq_adapter_restart": "BLOCKED",
+      "note": "The committed D15-G verdict is NO_GO derived from the audit-time snapshot; it has NOT been re-run and is preserved unchanged."
+    }
+  },
+  "current_state_after_b4": {
+    "terminal_dsh_runtime_restart": "PASS (candidate/qualification layer)",
+    "terminal_adapter_restart": "PASS (candidate/qualification layer, B3)",
+    "subagent_child_crash": "BLOCKED (external)",
+    "subagent_byq_adapter_restart": "BLOCKED (external/dependency)",
+    "adr_0083": "Accepted; candidate/qualification-layer minimal TerminalAttachment lifecycle implemented and extended for DSH-runtime-restart + orphan reconcile; R4 / production wiring NOT implemented",
+    "d15_g": "NO_GO (not re-run; even if re-run it stays NO_GO while B1/B2 are not PASS)",
+    "d15_g_rerun": false,
+    "r3_resume": "NO",
+    "production_selector": "dsh-0.1.2rc1",
+    "production_selector_changed": false,
+    "evidence": "docs/evidence/v090-step5-b4-terminal-dsh-runtime-restart/verdict.v1.json"
+  },
+  "b4_truthfulness": {
+    "dsh_runtime_os_process_truly_restarted": true,
+    "old_pty_pid_dead_after_restart": true,
+    "attachment_status": "lost",
+    "fabricated_reattach": false,
+    "surviving_pty_without_attachment_reconciled_as_lost": true,
+    "surviving_pty_silently_reused": false,
+    "terminal_lifetime_defines_conversation_or_job": false,
+    "orphans_left": 0
+  },
+  "constraints": {
+    "second_generic_harness": false,
+    "second_session_store": false,
+    "byq_builds_pty_runtime": false,
+    "byq_copies_dsh_terminal": false,
+    "fork_or_patch_of_dsh": false,
+    "r4_productization": false,
+    "rerun_d15_g": false,
+    "resume_phase_100": false,
+    "phase_100c_touched": false
+  }
+}
