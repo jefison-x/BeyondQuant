@@ -824,7 +824,7 @@
     "tests/test_reanchor_session_lease.py": "sha256:66bba8e76f4bcd8f83500400aeece2818e7fbc26f3e8fa75da699796dea3186d",
     "tests/test_reliability_review_audit.py": "sha256:835fa2df81a3c712bb2a9dfcb2ad7cea711e89680f1ba2ae6831a455aae9fb6f",
     "tests/test_root_profile.py": "sha256:5551d370b90f2c901674ac5a1fd5778da4cfd24edf0a055bd9d35a1fcec7f3aa",
-    "tests/test_session_failure_containment_contract.py": "sha256:d325ee14ba1756e2adb28afff6dfa9b761e934aa0a53d105c826049327b3cebe",
+    "tests/test_session_failure_containment_contract.py": "sha256:3f0b4d88ef42b56435c299aec7f359fe5481ca56dfe9c04779e4034b137a844f",
     "tests/test_takeover_executor_epoch.py": "sha256:8ae224c14e347e62f13daea2a2e79f0f9bfeb173d4f97b07f4b0aa106d9084b3",
     "tests/test_v090_closeout_governance.py": "sha256:891867182128c6add7f5eb613a4c2dc41e83701dd2e267333ca2710839c0bd48",
     "tests/test_v090_composite_research.py": "sha256:8a5ebb65633902bb7b2a6e9359582c9026295cdfc74f7ee9064337ce1848349d",
