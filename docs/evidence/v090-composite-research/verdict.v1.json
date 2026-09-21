@@ -1,0 +1,24 @@
+{
+  "all_pass": true,
+  "coverage_failures": [],
+  "exit_code": 0,
+  "failures": [],
+  "format_valid": true,
+  "journey_result": "PASS",
+  "scenario_results": {
+    "approval-reject-revoke-stale-reuse": "PASS",
+    "data-wait-continuation": "PASS",
+    "duplicate-delivery": "PASS",
+    "late-success": "PASS",
+    "model-or-domain-failure": "PASS",
+    "process-restart": "PASS",
+    "response-loss-after-write": "PASS",
+    "response-loss-before-write": "PASS",
+    "timeout-cancel": "PASS"
+  },
+  "schema_version": "byq-v090-composite-research-verdict.v1",
+  "superseded": true,
+  "superseded_by": "byq-v090-composite-research-verdict.v2",
+  "superseded_reason": "v1 observations were redacted and v1 hardcoded generation/epoch; v1 is not qualification evidence.",
+  "unit_fixture": false
+}

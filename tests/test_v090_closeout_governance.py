@@ -42,8 +42,9 @@ FORMAL_MANIFEST_IDS = (
 AUDIT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.177"
 # The closeout audit revision above is historical and stays immutable. Later
 # maintenance batches that change build inputs advance the *selected* revision;
-# the full-interface re-baseline batch moved it to .178.
-CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.178"
+# the full-interface re-baseline batch moved it to .178 and the composite
+# research fault-regression batch moved it to .179.
+CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.179"
 
 
 def _ledger() -> dict:
@@ -288,11 +289,16 @@ class GovernanceDocTests(unittest.TestCase):
 
     def test_status_freezes_phase_100_and_names_next_step(self):
         status = self._status()
-        for marker in ("<!-- byq:v090-closeout-audit=active -->",
+        for marker in ("<!-- byq:v090-composite-research=active -->",
+                       "<!-- byq:v090-closeout-audit=complete -->",
+                       "<!-- byq:v090-full-interface-rebaseline=complete -->",
                        "<!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->",
                        "<!-- byq:phase-100-p100-c=paused-not-delivery -->",
-                       "<!-- byq:audit-build-revision=dsh-0.1.2rc1-post-u8.177 -->"):
+                       "<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.179 -->"):
             self.assertIn(marker, status)
+        # Completed historical 0.9 steps must not remain marked active.
+        self.assertNotIn("v090-closeout-audit=active", status)
+        self.assertNotIn("v090-full-interface-rebaseline=active", status)
         self.assertIn("<!-- byq:current-completed-phase=97 -->", status)
         self.assertIn("P100-A", status)
         self.assertIn("P100-B", status)

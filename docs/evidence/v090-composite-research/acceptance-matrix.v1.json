@@ -1,0 +1,196 @@
+{
+  "schema_version": "byq-v090-composite-research-acceptance-matrix.v1",
+  "generated_at": "2026-09-21",
+  "frozen": true,
+  "frozen_before_execution": true,
+  "scope": "0.9 strict-sequence step 3 (composite research fault regression): one fully successful improve-strategy composite journey plus the R1-R5 fault matrix on a synthetic user and an isolated stack. Maintenance/audit only.",
+  "base": {
+    "origin_main_commit": "99b6f92704a526ed700ae495933c944a87fc15c9",
+    "product_phase_marker": 97,
+    "build_revision_at_base": "dsh-0.1.2rc1-post-u8.178"
+  },
+  "authorization": {
+    "develop": true,
+    "push_pr": true,
+    "merge": false,
+    "deploy": false,
+    "note": "Maintainer delegated develop/push/Draft PR for this 0.9 step; merge and any deploy remain the human gate."
+  },
+  "non_goals": [
+    "no production deploy or production data access",
+    "no Proposed ADR-0082/0083 implementation",
+    "no production DSH selector switch",
+    "no tag/release creation or movement",
+    "no Phase 100 resume",
+    "no Community repository inspection or copy"
+  ],
+  "results_vocabulary": [
+    "PASS",
+    "FAIL",
+    "NOT_RUN",
+    "BLOCKED"
+  ],
+  "evidence_rule": "Missing real evidence MUST be FAIL/BLOCKED. A health check, a declared result, a page or endpoint existence, or a unit fixture is never a PASS.",
+  "contract": "scripts/v090/composite_research/contract.v1.json",
+  "observer": "scripts/v090/composite_research/observer.py",
+  "capture_negatives": "scripts/v090/composite_research/capture_negatives.py",
+  "driver": "scripts/v090/composite_research/run_regression.py",
+  "observations_path": "docs/evidence/v090-composite-research/observations.v1.json",
+  "verdict_path": "docs/evidence/v090-composite-research/verdict.v1.json",
+  "negative_controls_path": "docs/evidence/v090-composite-research/negative-controls.v1.json",
+  "composite_journey": {
+    "id": "improve-strategy-composite.v1",
+    "user": "synthetic isolated user",
+    "isolation": "dedicated compose project + dedicated network/volumes + loopback-only ports + fresh synthetic PostgreSQL",
+    "provider": "scripted-keyless deterministic provider",
+    "required_steps": [
+      "strategy-improve-proposal",
+      "approval-required-action",
+      "execute-original-key-after-approval",
+      "training",
+      "out-of-sample-prediction",
+      "frozen-signal",
+      "native-backtest",
+      "old-vs-new-comparison",
+      "report-original-task-terminal"
+    ],
+    "required_invariants": [
+      "owner_workspace_bound",
+      "object_lineage_consistent",
+      "original_key_preserved",
+      "approval_authorized",
+      "identity_stable",
+      "report_consistent",
+      "terminal_state_consistent"
+    ],
+    "must_prove": [
+      "object lineage (every step links to the original task id)",
+      "owner and workspace attribution",
+      "original idempotency key preserved on the approved action",
+      "approval persisted and execution_authorized",
+      "task / artifact / backtest identity canonical",
+      "final comparison report consistent with the exact persisted jobs and terminal task state"
+    ]
+  },
+  "fault_matrix": {
+    "boundaries": "R1-R5 defined boundaries (Gateway/adapter/worker, runtime lifecycle, approval and domain)",
+    "required_assertions": [
+      "at_most_once",
+      "rejection_not_bypassed",
+      "late_result_no_next_step",
+      "failure_not_fake_completed",
+      "traceable_original_goal",
+      "no_active_pending_orphans"
+    ],
+    "per_row_required_fields": [
+      "fault_timing",
+      "pid_before",
+      "pid_after",
+      "generation_before",
+      "generation_after",
+      "epoch_before",
+      "epoch_after",
+      "db_counts_before",
+      "db_counts_after",
+      "receipt_ids",
+      "trace_id",
+      "run_id",
+      "task_id",
+      "owner",
+      "workspace_id",
+      "recovery_action",
+      "final_state",
+      "assertions",
+      "active_or_pending_orphans"
+    ],
+    "rows": [
+      {
+        "id": "response-loss-before-write",
+        "required": true
+      },
+      {
+        "id": "response-loss-after-write",
+        "required": true
+      },
+      {
+        "id": "process-restart",
+        "required": true
+      },
+      {
+        "id": "late-success",
+        "required": true
+      },
+      {
+        "id": "timeout-cancel",
+        "required": true
+      },
+      {
+        "id": "duplicate-delivery",
+        "required": true
+      },
+      {
+        "id": "approval-reject-revoke-stale-reuse",
+        "required": true
+      },
+      {
+        "id": "data-wait-continuation",
+        "required": true
+      },
+      {
+        "id": "model-or-domain-failure",
+        "required": true
+      }
+    ],
+    "optional_rows": [
+      {
+        "id": "host-reboot",
+        "reason": "a real host reboot is not authorized and is not equivalent to a container restart"
+      }
+    ]
+  },
+  "acceptance_gates": [
+    {
+      "id": "G-journey",
+      "requirement": "The composite journey runs end-to-end at least once with every required step PASS and consistent lineage/owner/workspace/original-key/approval/identity/report.",
+      "observer_check": "journey required steps + invariants"
+    },
+    {
+      "id": "G-faults",
+      "requirement": "Every required fault row is present and PASS with the six assertions, real before/after authoritative counts and no orphan.",
+      "observer_check": "required_scenarios coverage + assertions"
+    },
+    {
+      "id": "G-observer",
+      "requirement": "The observer is fail-able and every negative control exits non-zero, including the defect-targeting controls.",
+      "observer_check": "observer.py --selfcheck exit 0"
+    },
+    {
+      "id": "G-capture",
+      "requirement": "The capture layer never defaults to success; every capture negative fails post-fix and passes pre-fix.",
+      "observer_check": "capture_negatives.py exit 0"
+    },
+    {
+      "id": "G-isolation",
+      "requirement": "Isolated stack only; production untouched; cleanup leaves zero containers/networks/volumes.",
+      "observer_check": "cleanup block"
+    },
+    {
+      "id": "G-no-fake-pass",
+      "requirement": "No missing evidence is labeled PASS; failures are labeled FAIL/BLOCKED with a reason.",
+      "observer_check": "not_run_requires_reason + results_vocabulary"
+    }
+  ],
+  "status": {
+    "journey": "PASS",
+    "fault_matrix": "PASS",
+    "observer_selfcheck": "PASS",
+    "capture_negatives": "PASS",
+    "observer_verdict_all_pass": true,
+    "composite_task_id": "task_18e6eeda0453470b8165d18d94d4901e",
+    "evidence": "docs/evidence/v090-composite-research/observations.v1.json",
+    "note": "Frozen before execution, then executed on an isolated stack with a scripted keyless provider. All required journey steps and all 9 required fault rows are PASS with real PIDs, authoritative before/after counts and zero orphans; cleanup left 0 containers/networks/volumes and production untouched. This is service-boundary fault-regression evidence, not real-LLM-quality semantics."
+  },
+  "superseded": true,
+  "superseded_by": "byq-v090-composite-research-acceptance-matrix.v2",
+  "superseded_reason": "The v1 fault rows hardcoded generation/epoch, reused one trace/run for unrelated fault actions, and over-claimed scenario names (approval 3-in-1, data-wait). v1 is retained for provenance and is NOT qualification evidence."
+}

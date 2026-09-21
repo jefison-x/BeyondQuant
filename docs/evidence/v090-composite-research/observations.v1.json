@@ -1,0 +1,584 @@
+{
+  "cleanup": {
+    "containers_before": 9,
+    "containers_remaining": 0,
+    "networks_remaining": 0,
+    "production_untouched": true,
+    "volumes_remaining": 0
+  },
+  "evidence_class": "runtime-isolated-stack",
+  "execution_model": {
+    "compose_project": "byq-v090-composite-local",
+    "provider": "scripted-keyless"
+  },
+  "generated_at": "2026-09-20T17:19:43Z",
+  "journey": {
+    "id": "improve-strategy-composite.v1",
+    "original_key": "product-ml-training-f6-original-training",
+    "owner": "f6-chain-user",
+    "report": {
+      "baseline_job_id": "backtest_c6d38b497c3746d28529ef1758e81e5c",
+      "candidates": [
+        {
+          "job_id": "backtest_c6d38b497c3746d28529ef1758e81e5c",
+          "strategy_version_artifact_id": "artifact_be5ceb07c98b4952970321f9790ffea1",
+          "total_return_micros": 0
+        },
+        {
+          "job_id": "backtest_a032a39e98ac4a93ae832a0251b9f5d7",
+          "strategy_version_artifact_id": "artifact_e7649b0245994be29ae7aa8f6e434e50",
+          "total_return_micros": 39698
+        }
+      ],
+      "object_id": "artifact_7c27b8e1bc44439497ee1458421dd8d6",
+      "selected_job_id": "backtest_a032a39e98ac4a93ae832a0251b9f5d7",
+      "status": "validated",
+      "task_id": "task_18e6eeda0453470b8165d18d94d4901e"
+    },
+    "result": "PASS",
+    "steps": [
+      {
+        "approval": null,
+        "id": "strategy-improve-proposal",
+        "object_id": "artifact_e7649b0245994be29ae7aa8f6e434e50",
+        "object_kind": "artifact",
+        "original_key": "v090-step-strategy-improve-proposal",
+        "owner": "f6-chain-user",
+        "receipt": {
+          "idempotency_key": "product-ml-strategy-ff2e84a3b23a43bfbb52ddc0493b9a1e",
+          "object_id": "artifact_e7649b0245994be29ae7aa8f6e434e50",
+          "receipt_id": "artifact:artifact_e7649b0245994be29ae7aa8f6e434e50",
+          "task_id": "task_18e6eeda0453470b8165d18d94d4901e"
+        },
+        "result": "PASS",
+        "run_id": "75df562302424b7c91b1f10eeadc1a58",
+        "task_id": "task_18e6eeda0453470b8165d18d94d4901e",
+        "workspace_id": "workspace_33141b2aadc8433ca485358501fdb7d5"
+      },
+      {
+        "approval": null,
+        "id": "approval-required-action",
+        "object_id": "artifact_60cd3ccbd91b4dab88118ab5c0de0ee7",
+        "object_kind": "artifact",
+        "original_key": "v090-step-approval-required-action",
+        "owner": "f6-chain-user",
+        "receipt": {
+          "idempotency_key": "product-ml-approval-d8f9aae676394f7b96274dd13798a66b",
+          "object_id": "artifact_60cd3ccbd91b4dab88118ab5c0de0ee7",
+          "receipt_id": "artifact:artifact_60cd3ccbd91b4dab88118ab5c0de0ee7",
+          "task_id": "task_18e6eeda0453470b8165d18d94d4901e"
+        },
+        "result": "PASS",
+        "run_id": "75df562302424b7c91b1f10eeadc1a58",
+        "task_id": "task_18e6eeda0453470b8165d18d94d4901e",
+        "workspace_id": "workspace_33141b2aadc8433ca485358501fdb7d5"
+      },
+      {
+        "approval": {
+          "approval_artifact_id": "artifact_60cd3ccbd91b4dab88118ab5c0de0ee7",
+          "decision": "approved",
+          "execution_authorized": true
+        },
+        "id": "execute-original-key-after-approval",
+        "object_id": "mlrun_9def8ae00b5f46f79c59ff14b43c6dd4",
+        "object_kind": "run",
+        "original_key": "product-ml-training-f6-original-training",
+        "owner": "f6-chain-user",
+        "receipt": {
+          "idempotency_key": "product-ml-training-f6-original-training",
+          "object_id": "mlrun_9def8ae00b5f46f79c59ff14b43c6dd4",
+          "receipt_id": "run:mlrun_9def8ae00b5f46f79c59ff14b43c6dd4",
+          "task_id": "task_18e6eeda0453470b8165d18d94d4901e"
+        },
+        "result": "PASS",
+        "run_id": "75df562302424b7c91b1f10eeadc1a58",
+        "task_id": "task_18e6eeda0453470b8165d18d94d4901e",
+        "workspace_id": "workspace_33141b2aadc8433ca485358501fdb7d5"
+      },
+      {
+        "approval": null,
+        "id": "training",
+        "object_id": "mlrun_9def8ae00b5f46f79c59ff14b43c6dd4",
+        "object_kind": "run",
+        "original_key": "v090-step-training",
+        "owner": "f6-chain-user",
+        "receipt": {
+          "idempotency_key": "product-ml-training-f6-original-training",
+          "object_id": "mlrun_9def8ae00b5f46f79c59ff14b43c6dd4",
+          "receipt_id": "run:mlrun_9def8ae00b5f46f79c59ff14b43c6dd4",
+          "task_id": "task_18e6eeda0453470b8165d18d94d4901e"
+        },
+        "result": "PASS",
+        "run_id": "75df562302424b7c91b1f10eeadc1a58",
+        "task_id": "task_18e6eeda0453470b8165d18d94d4901e",
+        "workspace_id": "workspace_33141b2aadc8433ca485358501fdb7d5"
+      },
+      {
+        "approval": null,
+        "id": "out-of-sample-prediction",
+        "object_id": "artifact_202bb7b754954d0280a11504675c8674",
+        "object_kind": "artifact",
+        "original_key": "v090-step-out-of-sample-prediction",
+        "owner": "f6-chain-user",
+        "receipt": {
+          "idempotency_key": "sha256:d92db670065ad7e0",
+          "object_id": "artifact_202bb7b754954d0280a11504675c8674",
+          "receipt_id": "artifact:artifact_202bb7b754954d0280a11504675c8674",
+          "task_id": "task_18e6eeda0453470b8165d18d94d4901e"
+        },
+        "result": "PASS",
+        "run_id": "75df562302424b7c91b1f10eeadc1a58",
+        "task_id": "task_18e6eeda0453470b8165d18d94d4901e",
+        "workspace_id": "workspace_33141b2aadc8433ca485358501fdb7d5"
+      },
+      {
+        "approval": null,
+        "id": "frozen-signal",
+        "object_id": "artifact_e48b79e3bdd54f47b3195aed8a4fb3a5",
+        "object_kind": "artifact",
+        "original_key": "v090-step-frozen-signal",
+        "owner": "f6-chain-user",
+        "receipt": {
+          "idempotency_key": "sha256:2abca341e9f6a61c",
+          "object_id": "artifact_e48b79e3bdd54f47b3195aed8a4fb3a5",
+          "receipt_id": "artifact:artifact_e48b79e3bdd54f47b3195aed8a4fb3a5",
+          "task_id": "task_18e6eeda0453470b8165d18d94d4901e"
+        },
+        "result": "PASS",
+        "run_id": "75df562302424b7c91b1f10eeadc1a58",
+        "task_id": "task_18e6eeda0453470b8165d18d94d4901e",
+        "workspace_id": "workspace_33141b2aadc8433ca485358501fdb7d5"
+      },
+      {
+        "approval": null,
+        "id": "native-backtest",
+        "object_id": "backtest_a032a39e98ac4a93ae832a0251b9f5d7",
+        "object_kind": "job",
+        "original_key": "v090-step-native-backtest",
+        "owner": "f6-chain-user",
+        "receipt": {
+          "idempotency_key": "backtest-task-ef84f6d93f45489a90255e1f61a43f17",
+          "object_id": "backtest_a032a39e98ac4a93ae832a0251b9f5d7",
+          "receipt_id": "job:backtest_a032a39e98ac4a93ae832a0251b9f5d7",
+          "task_id": "task_18e6eeda0453470b8165d18d94d4901e"
+        },
+        "result": "PASS",
+        "run_id": "75df562302424b7c91b1f10eeadc1a58",
+        "task_id": "task_18e6eeda0453470b8165d18d94d4901e",
+        "workspace_id": "workspace_33141b2aadc8433ca485358501fdb7d5"
+      },
+      {
+        "approval": null,
+        "id": "old-vs-new-comparison",
+        "object_id": "artifact_7c27b8e1bc44439497ee1458421dd8d6",
+        "object_kind": "artifact",
+        "original_key": "v090-step-old-vs-new-comparison",
+        "owner": "f6-chain-user",
+        "receipt": {
+          "idempotency_key": "f6-comparison-backtest_a032a39e98ac4a93ae832a0251b9f5d7",
+          "object_id": "artifact_7c27b8e1bc44439497ee1458421dd8d6",
+          "receipt_id": "artifact:artifact_7c27b8e1bc44439497ee1458421dd8d6",
+          "task_id": "task_18e6eeda0453470b8165d18d94d4901e"
+        },
+        "result": "PASS",
+        "run_id": "75df562302424b7c91b1f10eeadc1a58",
+        "task_id": "task_18e6eeda0453470b8165d18d94d4901e",
+        "workspace_id": "workspace_33141b2aadc8433ca485358501fdb7d5"
+      },
+      {
+        "approval": null,
+        "id": "report-original-task-terminal",
+        "object_id": "task_18e6eeda0453470b8165d18d94d4901e",
+        "object_kind": "task",
+        "original_key": "v090-step-report-original-task-terminal",
+        "owner": "f6-chain-user",
+        "receipt": {
+          "idempotency_key": "f6-comparison-backtest_a032a39e98ac4a93ae832a0251b9f5d7",
+          "object_id": "task_18e6eeda0453470b8165d18d94d4901e",
+          "receipt_id": "task:task_18e6eeda0453470b8165d18d94d4901e",
+          "task_id": "task_18e6eeda0453470b8165d18d94d4901e"
+        },
+        "result": "PASS",
+        "run_id": "75df562302424b7c91b1f10eeadc1a58",
+        "task_id": "task_18e6eeda0453470b8165d18d94d4901e",
+        "workspace_id": "workspace_33141b2aadc8433ca485358501fdb7d5"
+      }
+    ],
+    "task_id": "task_18e6eeda0453470b8165d18d94d4901e",
+    "terminal": {
+      "completion_evidence_artifact_id": "artifact_7c27b8e1bc44439497ee1458421dd8d6",
+      "status": "completed",
+      "task_id": "task_18e6eeda0453470b8165d18d94d4901e"
+    },
+    "workspace_id": "workspace_33141b2aadc8433ca485358501fdb7d5"
+  },
+  "llm": {
+    "class": "scripted-keyless",
+    "note": "F6 synthetic runtime; service-boundary fault-regression evidence, not real-LLM-quality.",
+    "real_llm_quality": false
+  },
+  "redaction_note": "Superseded v1 evidence: high-entropy content-addressed idempotency keys were redacted to short sha256 digests so secret scanners do not treat synthetic evidence as credentials. The v2 evidence is the qualification artifact.",
+  "scenarios": [
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 2
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 1
+      },
+      "epoch_after": 1,
+      "epoch_before": 1,
+      "fault_timing": "injected during duplicate-delivery",
+      "final_state": "confirmed_original_object",
+      "generation_after": 1,
+      "generation_before": 1,
+      "id": "duplicate-delivery",
+      "owner": "f6-chain-user",
+      "pid_after": 760151,
+      "pid_before": 760151,
+      "receipt_ids": [
+        "mlrun_a3e5fd73541342c682d1640775d1ed02"
+      ],
+      "recovery_action": "second delivery reused the original object by idempotency key",
+      "result": "PASS",
+      "run_id": "75df562302424b7c91b1f10eeadc1a58",
+      "task_id": "task_18e6eeda0453470b8165d18d94d4901e",
+      "trace_id": "byq-trace-986b07b246cd45918c6cb57870f1520b",
+      "workspace_id": "workspace_33141b2aadc8433ca485358501fdb7d5"
+    },
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 3
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 2
+      },
+      "epoch_after": 1,
+      "epoch_before": 1,
+      "fault_timing": "injected during process-restart",
+      "final_state": "confirmed_original_object",
+      "generation_after": 2,
+      "generation_before": 1,
+      "id": "process-restart",
+      "owner": "f6-chain-user",
+      "pid_after": 766057,
+      "pid_before": 760151,
+      "receipt_ids": [
+        "mlrun_a49740948caf403d938776ee8e95e743"
+      ],
+      "recovery_action": "fresh backend process read the original object by the original key",
+      "result": "PASS",
+      "run_id": "75df562302424b7c91b1f10eeadc1a58",
+      "task_id": "task_18e6eeda0453470b8165d18d94d4901e",
+      "trace_id": "byq-trace-986b07b246cd45918c6cb57870f1520b",
+      "workspace_id": "workspace_33141b2aadc8433ca485358501fdb7d5"
+    },
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 4
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 3
+      },
+      "epoch_after": 1,
+      "epoch_before": 1,
+      "fault_timing": "injected during response-loss-after-write",
+      "final_state": "confirmed_original_object",
+      "generation_after": 1,
+      "generation_before": 1,
+      "id": "response-loss-after-write",
+      "owner": "f6-chain-user",
+      "pid_after": 766057,
+      "pid_before": 766057,
+      "receipt_ids": [
+        "mlrun_81e0123ecfcc4cadb3887e85c632bfbd"
+      ],
+      "recovery_action": "read-only reconcile by the original key recovered the committed object",
+      "result": "PASS",
+      "run_id": "75df562302424b7c91b1f10eeadc1a58",
+      "task_id": "task_18e6eeda0453470b8165d18d94d4901e",
+      "trace_id": "byq-trace-986b07b246cd45918c6cb57870f1520b",
+      "workspace_id": "workspace_33141b2aadc8433ca485358501fdb7d5"
+    },
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 4
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 4
+      },
+      "epoch_after": 1,
+      "epoch_before": 1,
+      "fault_timing": "injected during response-loss-before-write",
+      "final_state": "outcome_unknown_no_write",
+      "generation_after": 1,
+      "generation_before": 1,
+      "id": "response-loss-before-write",
+      "owner": "f6-chain-user",
+      "pid_after": 766057,
+      "pid_before": 766057,
+      "receipt_ids": [
+        "none:v090-loss-before"
+      ],
+      "recovery_action": "no write occurred; the original key resolves to no object",
+      "result": "PASS",
+      "run_id": "75df562302424b7c91b1f10eeadc1a58",
+      "task_id": "task_18e6eeda0453470b8165d18d94d4901e",
+      "trace_id": "byq-trace-986b07b246cd45918c6cb57870f1520b",
+      "workspace_id": "workspace_33141b2aadc8433ca485358501fdb7d5"
+    },
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 5
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 4
+      },
+      "epoch_after": 1,
+      "epoch_before": 1,
+      "fault_timing": "injected during timeout-cancel",
+      "final_state": "cancelled_terminal",
+      "generation_after": 1,
+      "generation_before": 1,
+      "id": "timeout-cancel",
+      "owner": "f6-chain-user",
+      "pid_after": 766057,
+      "pid_before": 766057,
+      "receipt_ids": [
+        "mlrun_26be6029a1c8432aaa2b8f966dabcadf"
+      ],
+      "recovery_action": "cancel observed before the worker ran; a late result created no next step",
+      "result": "PASS",
+      "run_id": "75df562302424b7c91b1f10eeadc1a58",
+      "task_id": "task_18e6eeda0453470b8165d18d94d4901e",
+      "trace_id": "byq-trace-986b07b246cd45918c6cb57870f1520b",
+      "workspace_id": "workspace_33141b2aadc8433ca485358501fdb7d5"
+    },
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 5
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 5
+      },
+      "epoch_after": 1,
+      "epoch_before": 1,
+      "fault_timing": "injected during approval-reject-revoke-stale-reuse",
+      "final_state": "rejected_no_side_effect",
+      "generation_after": 1,
+      "generation_before": 1,
+      "id": "approval-reject-revoke-stale-reuse",
+      "owner": "f6-chain-user",
+      "pid_after": 766057,
+      "pid_before": 766057,
+      "receipt_ids": [
+        "artifact_4e786610bfd940e4b862059a828b3918"
+      ],
+      "recovery_action": "rejected approval refused; the protected operation did not run",
+      "result": "PASS",
+      "run_id": "75df562302424b7c91b1f10eeadc1a58",
+      "task_id": "task_18e6eeda0453470b8165d18d94d4901e",
+      "trace_id": "byq-trace-986b07b246cd45918c6cb57870f1520b",
+      "workspace_id": "workspace_33141b2aadc8433ca485358501fdb7d5"
+    },
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 5
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 5
+      },
+      "epoch_after": 1,
+      "epoch_before": 1,
+      "fault_timing": "injected during model-or-domain-failure",
+      "final_state": "domain_rejected",
+      "generation_after": 1,
+      "generation_before": 1,
+      "id": "model-or-domain-failure",
+      "owner": "f6-chain-user",
+      "pid_after": 766057,
+      "pid_before": 766057,
+      "receipt_ids": [
+        "domain-rejection"
+      ],
+      "recovery_action": "domain rejection surfaced as a real failure; no completed run was created",
+      "result": "PASS",
+      "run_id": "75df562302424b7c91b1f10eeadc1a58",
+      "task_id": "task_18e6eeda0453470b8165d18d94d4901e",
+      "trace_id": "byq-trace-986b07b246cd45918c6cb57870f1520b",
+      "workspace_id": "workspace_33141b2aadc8433ca485358501fdb7d5"
+    },
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 6
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 5
+      },
+      "epoch_after": 1,
+      "epoch_before": 1,
+      "fault_timing": "submitted while the worker was stopped (status 'waiting_for_data')",
+      "final_state": "reconciled_late_success",
+      "generation_after": 2,
+      "generation_before": 1,
+      "id": "late-success",
+      "owner": "f6-chain-user",
+      "pid_after": 771895,
+      "pid_before": 768873,
+      "receipt_ids": [
+        "mlrun_ebbb9393b60841518540c5151fe46482"
+      ],
+      "recovery_action": "late completion reconciled to the original run; no extra step created",
+      "result": "PASS",
+      "run_id": "75df562302424b7c91b1f10eeadc1a58",
+      "task_id": "task_18e6eeda0453470b8165d18d94d4901e",
+      "trace_id": "byq-trace-986b07b246cd45918c6cb57870f1520b",
+      "workspace_id": "workspace_33141b2aadc8433ca485358501fdb7d5"
+    },
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 7
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 6
+      },
+      "epoch_after": 1,
+      "epoch_before": 1,
+      "fault_timing": "submitted while the worker was stopped (status 'waiting_for_data')",
+      "final_state": "continued_after_data_ready",
+      "generation_after": 2,
+      "generation_before": 1,
+      "id": "data-wait-continuation",
+      "owner": "f6-chain-user",
+      "pid_after": 774109,
+      "pid_before": 771895,
+      "receipt_ids": [
+        "mlrun_438b0d178aeb4894b6ff6e6e1af4ab6e"
+      ],
+      "recovery_action": "bounded wait was visible; the continuation ran at most once",
+      "result": "PASS",
+      "run_id": "75df562302424b7c91b1f10eeadc1a58",
+      "task_id": "task_18e6eeda0453470b8165d18d94d4901e",
+      "trace_id": "byq-trace-986b07b246cd45918c6cb57870f1520b",
+      "workspace_id": "workspace_33141b2aadc8433ca485358501fdb7d5"
+    }
+  ],
+  "schema_version": "byq-v090-composite-research-observations.v1"
+}

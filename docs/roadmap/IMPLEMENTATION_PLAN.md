@@ -1330,6 +1330,64 @@ historical `.177` manifest and evidence are preserved unchanged; no selector,
 `compose.yml`, `deployment.json`, immutable release registry or 0.1.2 artifact/evidence
 change and no deployment.
 
+## 0.9 Composite Research Fault Regression (maintenance, 2026-09-21)
+
+This maintenance batch executes step (3) of the 0.9 strict order: a real
+composite research journey plus the R1–R5 fault matrix on a synthetic user and
+an isolated stack. It does **not** advance a Product Phase, does **not**
+implement Proposed ADR-0082/0083, does **not** switch the production selector,
+does **not** deploy, does **not** create or move any tag/release, does **not**
+resume Phase 100 and does **not** inspect or copy the Community repository.
+
+**v1 is superseded and is not qualification evidence.** The v1 fault rows
+hardcoded generation/epoch, reused one trace/run for unrelated fault actions and
+over-claimed scenario names (approval 3-in-1, data-wait). v1 must not be read as
+9/9 PASS.
+
+**v2 is the current rectified evidence** (P1-1..P1-8). The acceptance matrix was
+frozen before execution
+(`docs/evidence/v090-composite-research/acceptance-matrix.v2.json`). The closed
+contract (`scripts/v090/composite_research/contract.v2.json`) is the observer's
+only source of truth for allowed final states, required assertions, required
+coverage, per-scenario boundary and allowed provenance sources. The composite
+journey (improve strategy → approval-required action → execute with the original
+key → training → out-of-sample prediction → frozen signal → native backtest →
+old-vs-new comparison → original-task terminal) ran end-to-end on the isolated
+stack with real persisted objects and a consistent validated comparison report.
+Every PASS scenario carries real per-scenario provenance (trace from the
+authoritative `ml_training_runs.trace_id`, associated with its receipt;
+run/generation/epoch explicit `not_applicable` + reason at the ML boundary; pid
+measured per restarted service). The scenario set is split and boundary-labelled:
+`process-restart-backend/gateway/ml-worker` exercise three boundaries separately;
+`cancel-terminal` must end `cancelled` and not reverse; `late-success` requires a
+strictly zero downstream delta; `queue-worker-resume` is a real queue resume;
+`approval-rejected` and `approval-stale-reuse` are independent real rows. Result:
+the journey passes and **13 exercisable required rows PASS; four required rows are
+honestly BLOCKED** (`approval-revoked` — no revoke path exists;
+`timeout-terminal` — no deterministic timeout boundary; `data-ready-continuation`
+— ADR-0077 data_ready not exercised; `runtime-adapter-tool-boundary` — D15
+tool-call fault injection scope). The observer is therefore
+`format_valid=true` and `all_pass=false` (exit 1); it does not claim 9/9 PASS.
+The fail-able observer (`observer.py --selfcheck`, 58 controls, 21
+defect-targeting) and the capture negatives (`capture_negatives.py`, 12 cases)
+both exit non-zero on every fault. P1-1: the over-broad evidence-directory
+gitleaks allowlist was removed and `.gitleaks.toml`/`.gitleaksignore` have no
+changes vs `main`; the trigger was removed at the source (high-entropy
+content-addressed idempotency keys redacted to a short `sha256:` digest, offending
+variable renamed) and the CI gitleaks version/config reports 0 findings over
+`origin/main..HEAD`. No 0.9-scope defect was reproduced, so this batch makes no
+implementation change. Evidence: `docs/evidence/v090-composite-research/`;
+asserted by `tests/test_v090_composite_research.py`. Provider is scripted keyless,
+so this is service-boundary fault-regression evidence, not real-LLM-quality
+semantics.
+
+Build revision: this batch adds `scripts/v090/composite_research/` and
+`tests/test_v090_composite_research.py` (build inputs) and advances the
+production runtime build identity `post-u8.178 → post-u8.179` (unused id).
+Rebuild identity only: the historical `.178` manifest and evidence are preserved
+unchanged; no selector, `compose.yml`, `deployment.json`, immutable release
+registry or 0.1.2 artifact/evidence change and no deployment.
+
 ## Maintenance — Delist-boundary coverage correction (ADR-0028)（构建修订 `dsh-0.1.2rc1-post-u8.130`，PR #299）
 
 ADR-0028 point 2 evaluates coverage over each symbol's frozen listing lifecycle. The market-readiness
