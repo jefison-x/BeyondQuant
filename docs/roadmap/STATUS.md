@@ -50,7 +50,7 @@
 > `current_state_after_b3` overlay 为准；`docs/evidence/d15/d15-5/` 与 `docs/evidence/d15/d15-g/`
 > 的 committed verdict 保持不改写。审计时“两 terminal 切片未开始 / ADR-0083 未实现”的表述是
 > 历史快照，已由 2026-09-21 B3 执行与 ADR-0083 候选/资格层最小实现取代，但 D15-G **未重跑**、
-> 仍为 `NO_GO`（即使重跑仍为 `NO_GO`，因 B1/B2/B4 非 PASS）。
+> 仍为 `NO_GO`（即使重跑仍为 `NO_GO`，因 B1/B2 非 PASS）。
 
 本批是**审计/治理**，不推进 Product Phase，不实现 Proposed ADR-0082/0083，不切换生产 selector，
 不 deploy，不创建/移动 tag/release。base 为动态取得的 `origin/main`（不在本文硬编码 SHA）。
