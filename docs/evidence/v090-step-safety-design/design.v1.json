@@ -1,6 +1,6 @@
 {
   "schema_version": "byq-v090-step-safety-design.v1",
-  "revision": "rectified-p1-l-n",
+  "revision": "rectified-p1-o-q",
   "task": "authoritative server-side step-safety + budget binding + safe rescheduling",
   "delivered_scope": "inventory+minimal-design",
   "runtime_implementation": false,
@@ -9,8 +9,12 @@
     "adapter_forces_reservation_key": "services/runtime-adapter/app/runtime.py:806-809 requires idempotency_key == budget['reservation_id'] for a continuation_budget",
     "adapter_single_settlement_slot": "services/runtime-adapter/app/continuation_budget.py:105-137 persist_settlement writes <session>/<reservation_id>.json and raises 'original continuation settlement cannot change' on differing content",
     "prompt_receipt_single_slot": "services/runtime-adapter/app/lifecycle_journal.py:533-539,603-613 prompts[key] = {root_run_id, content_sha256}; a key cannot be replaced and resolves to one root_run_id",
+    "containment_records_failing_epoch": "services/runtime-adapter/app/containment.py:103-159 record_loss persists the failing identity.executor_epoch in the containment record",
+    "takeover_fences_old_epoch": "services/runtime-adapter/tests/test_session_containment.py:85-108 test_containment_write_fails_closed_on_stale_executor_epoch: a takeover advances the epoch 1->2 and the old epoch becomes a fenced writer",
     "session_global_call_sequence": "services/runtime-adapter/app/lifecycle_journal.py:551-559 observe_call requires sequence == len(state['calls']) + 1, accumulating across roots in the session",
     "adapter_page_shape": "services/runtime-adapter/app/runtime.py:1131-1133 domain_call_evidence page returns {more: len(calls) > after+len(rows), idle: state['open_root'] is None}",
+    "no_cross_request_lock": "services/runtime-adapter/app/runtime.py:1143-1146 domain_call_evidence takes record.lock only within one request; multi-page HTTP fetches do not hold a lock across pages",
+    "submit_prompt_lock_boundary": "services/runtime-adapter/app/runtime.py:777-877 submit_prompt holds record.lock from admission through new-root/generation install; this is the only boundary for an atomic check-and-start",
     "call_evidence_pk_session_global": "services/backend/app/domain_call_admission.py:29-42 agent_domain_call_evidence PRIMARY KEY (owner_principal, workspace_id, session_id, sequence)",
     "call_claim_unique": "services/backend/app/domain_call_admission.py:50-59 agent_domain_call_claims UNIQUE (root_run_id, task_id, action, idempotency_key)",
     "continuation_task_row_lock": "services/backend/app/research_continuation.py:107-109 _continuation_task SELECT ... FOR UPDATE on research_tasks",
@@ -23,28 +27,46 @@
     "budget_authority_identity": "original reservation_id (Backend-issued; unchanged; carried in task-continuation-reservation.v1)",
     "recovery_submission_identity": "recovery_attempt_key issued and atomically persisted by the Backend when it allocates an ordinal, binding (reservation_id, trigger_key, ordinal)",
     "prompt_idempotency_key": "recovery_attempt_key for a recovery submission (NOT the reservation_id, which the Adapter dedups to the lost old run)",
+    "two_epochs": {
+      "interrupted_executor_epoch": {
+        "source": "the durable containment record (containment.record_loss wrote the failing epoch)",
+        "role": "participates in the SOURCE loss trigger_key; must precisely match interrupted_run_id / interrupted_generation / containment_attempt",
+        "must_equal_live_epoch": false
+      },
+      "target_executor_epoch_and_generation": {
+        "source": "the Adapter reads the LIVE epoch at admission under record.lock and binds the new RuntimeGeneration",
+        "role": "the Backend MUST NOT pretend to know the Adapter's live epoch; the Adapter returns target_executor_epoch/target_generation/run_id in the accepted receipt and the Backend persists them",
+        "must_equal_live_epoch": true
+      }
+    },
     "trusted_carrier_extension": {
       "record": "task-continuation-reservation.v1.recovery_attempt",
-      "closed_fields": ["attempt_key", "ordinal", "trigger_key", "interrupted_run_id", "interrupted_generation", "containment_attempt", "executor_epoch"],
+      "closed_fields": ["attempt_key", "ordinal", "trigger_key", "interrupted_run_id", "interrupted_generation", "containment_attempt", "interrupted_executor_epoch"],
       "issuer": "Backend only",
-      "client_or_model_must_not_mint": true
+      "client_or_model_must_not_mint": true,
+      "carries_expected_target_executor_epoch": false,
+      "reason": "the Backend does not know the Adapter's live epoch; the Adapter determines the target atomically at admission"
     },
     "adapter_recompute_and_verify": [
-      "require the closed field set {attempt_key, ordinal, trigger_key, interrupted_run_id, interrupted_generation, containment_attempt, executor_epoch} present and well-formed",
-      "recompute trigger_key' = sha256('recovery-trigger.v1:' + reservation_id + ':' + interrupted_run_id + ':' + interrupted_generation + ':' + containment_attempt + ':' + executor_epoch) and require trigger_key' == trigger_key",
+      "require the closed SOURCE field set {attempt_key, ordinal, trigger_key, interrupted_run_id, interrupted_generation, containment_attempt, interrupted_executor_epoch} present and well-formed",
+      "recompute trigger_key' = sha256('recovery-trigger.v1:' + reservation_id + ':' + interrupted_run_id + ':' + interrupted_generation + ':' + containment_attempt + ':' + interrupted_executor_epoch) and require trigger_key' == trigger_key",
       "recompute attempt_key' = 'recovery_' + sha256(trigger_key + ':' + str(ordinal))[:32] and require attempt_key' == attempt_key",
-      "require containment_attempt and interrupted_generation to match the durable containment record for the same session/trace/run",
-      "require executor_epoch to equal the LIVE executor epoch and the target RuntimeGeneration",
-      "require prompt idempotency_key == attempt_key and the carrier reservation id == budget reservation_id"
+      "require containment_attempt, interrupted_generation and interrupted_executor_epoch to match the durable containment record for the same session/trace/run",
+      "require prompt idempotency_key == attempt_key and the carrier reservation id == budget reservation_id",
+      "at admission under record.lock, read the LIVE epoch, create/bind the target RuntimeGeneration, and return {target_executor_epoch, target_generation, run_id} in the accepted receipt"
     ],
+    "target_receipt_binding": "the accepted receipt binds {attempt_key, reservation_id, ordinal, run_id, target_executor_epoch, target_generation}; the Backend persists them in the attempt aggregate; a later/old target write (stale target receipt or target epoch/generation mismatch) is rejected by the target fence",
     "rejections_fail_closed": [
       "missing carrier field",
       "tampered or mismatched trigger_key",
       "tampered or mismatched attempt_key",
       "mismatched reservation or ordinal",
-      "stale or unknown executor_epoch",
-      "stale or unknown generation"
+      "mismatched containment fields",
+      "treating interrupted_executor_epoch as the live epoch",
+      "stale target receipt",
+      "target epoch/generation mismatch"
     ],
+    "legal_positive": "old interrupted epoch with a NEWER live target epoch (e.g. 1 -> 2) is accepted",
     "new_attempt_key_yields_new_run": true,
     "ordinary_extension_of_existing_seam": true
   },
@@ -61,28 +83,34 @@
       "rejected": [],
       "settled": []
     },
-    "final_authoritative_aggregate": "the Backend original continuation row's recovery_attempts",
+    "final_authoritative_aggregate": "the Backend original continuation row's recovery_attempts, including target_executor_epoch/target_generation",
     "unknown_attempt_charge": "paused",
     "cumulative_bound": "exact charges of the original attempt plus every recovery attempt must never exceed R.token_limit",
     "never_overwrite_old_receipts": true,
     "no_new_authority_store": true
   },
   "recovery_trigger": {
-    "trigger_key": "sha256('recovery-trigger.v1:' + reservation_id + ':' + interrupted_run_id + ':' + interrupted_generation + ':' + containment_attempt + ':' + executor_epoch)",
-    "binds": ["reservation_id", "interrupted_run_id", "interrupted_generation", "containment_attempt", "executor_epoch"],
+    "trigger_key": "sha256('recovery-trigger.v1:' + reservation_id + ':' + interrupted_run_id + ':' + interrupted_generation + ':' + containment_attempt + ':' + interrupted_executor_epoch)",
+    "binds": ["reservation_id", "interrupted_run_id", "interrupted_generation", "containment_attempt", "interrupted_executor_epoch"],
+    "epoch_bound_is_interrupted_not_live": true,
     "attempt_key": "'recovery_' + sha256(trigger_key + ':' + str(ordinal))[:32]",
     "dedup_rule": "under the task-row SELECT ... FOR UPDATE, scan recovery_attempts first; the SAME trigger_key returns the existing attempt; only a NEW authoritative fenced loss identity allocates the next ordinal",
-    "later_loss": "a later recovery run that loses again yields a new fenced loss identity (new interrupted_run_id/generation/epoch) and allows the next ordinal",
+    "later_loss": "a later recovery run that loses again yields a new fenced loss identity (new interrupted_run_id/generation/interrupted-epoch) and allows the next ordinal",
     "cap": 3,
     "recomputable_and_verifiable": true
   },
   "authoritative_source": {
     "occurred_step_set": "agent_domain_call_evidence rows for the same session, filtered to the exact (trace_id, root_run_id, generation, agent_run_id)",
     "sequence_nature": "session-global (adapter observe_call sequence == len(state['calls'])+1; PK (owner,workspace,session,sequence))",
-    "stable_snapshot_closure": "the final adapter page under one locked/consistent view must have more == false AND idle == true; more == false alone under concurrent appends does not prove the tail is closed",
+    "no_cross_request_lock": true,
+    "snapshot_anchoring": "when idle == true the Adapter issues a fixed {snapshot_tail_sequence, snapshot_digest} deterministically bound to (session_id, trace_id) and the ordered append-only call rows; pagination is fully anchored to it and every page is validated against it",
+    "stable_snapshot_closure": "the final page must have more == false AND idle == true; more == false alone under concurrent appends does not prove the tail is closed; any change to tail/digest/idle -> paused",
     "idle_required": true,
     "item_by_item_reconciliation": "reconcile adapter pages with persisted agent_domain_call_evidence rows item-by-item by (session, sequence, action, idempotency_key, request_sha256, input_sha256); the union must be the session-global 1..N strictly contiguous",
-    "closure_rule": "obtain a stable snapshot (more==false AND idle==true), reconcile item-by-item, verify session-global 1..N contiguous, THEN filter the target root by exact (session_id, trace_id, root_run_id, generation, agent_run_id); the target subset must be strictly increasing and consistent with the global sequence and does NOT need to start at 1",
+    "atomic_check_and_start": "submit_prompt, within the SAME record.lock (runtime.py:777-877) and BEFORE creating a new root/installing the target generation, atomically re-verifies the expected snapshot_tail_sequence/snapshot_digest is still identical AND idle == true; only then installs the target generation (closes the check-then-start TOCTOU)",
+    "snapshot_identity_bound_where": "the Backend classification/attempt aggregate and the carrier bind the snapshot identity",
+    "same_snapshot_retry": "retrying the same stable snapshot is allowed and does not allocate a new business ordinal (trigger_key dedup returns the existing attempt)",
+    "closure_rule": "obtain the fixed snapshot (more==false AND idle==true), reconcile item-by-item, verify session-global 1..N contiguous, THEN filter the target root by exact (session_id, trace_id, root_run_id, generation, agent_run_id); the target subset must be strictly increasing and consistent with the global sequence and does NOT need to start at 1",
     "second_root_first_sequence_gt_1_legal": true,
     "per_call_binding": "for every observed call, bind persisted (action, task_id, idempotency_key, request_sha256, input_sha256) and reconcile via agent_domain_call_claims keyed by (root_run_id, task_id, action, idempotency_key)",
     "step_safety": "BYQ domain contract registry, never the client/prompt/display strings; a step is safe only when declared idempotent and result_verifiable and its exact receipt is settled",
@@ -99,7 +127,7 @@
     "request_sha256_reuse_mismatch": "blocked",
     "unlisted_or_receipt_absent_or_unqueryable": "paused (non_idempotent_step / unknown_side_effect)",
     "session_global_gap_or_conflict": "paused/blocked",
-    "eligible_condition": "ALL occurred side effects settled AND the work to replay is admissible under the recovery admission envelope"
+    "eligible_condition": "ALL occurred side effects settled AND the work to replay is admissible under the recovery admission envelope AND the model-call floor is satisfied"
   },
   "recovery_admission_envelope": {
     "purpose": "constrain the recovery run's future writes server-side; receipt closure proves only the past",
@@ -108,6 +136,8 @@
       "exact reuse of an original persisted safe call with the same (action, task_id, idempotency_key, request_sha256, input_sha256)"
     ],
     "enforcement": "Backend admission verifies the envelope against the lost root's agent_domain_call_evidence and the closed registry",
+    "read_only_constrains": "side effects only",
+    "read_only_exempts_token_budget": false,
     "may_produce_new_key_conservative_only": true,
     "may_produce_new_key_true_always_ineligible": true,
     "new_key_authorization": "never; enabling a new key is beyond this design and requires a separate Proposed ADR (not opened or implied by this slice)",
@@ -120,7 +150,7 @@
     "new_reservation_created": false,
     "rearm_is_not_a_new_turn": true,
     "persisted_location": "the existing research_tasks.continuation_budget row R",
-    "in_row_addition": "bounded recovery_attempts:[{attempt, trigger_key, attempt_key, status, run_id, charged_tokens?}] keyed by trigger_key",
+    "in_row_addition": "bounded recovery_attempts:[{attempt, trigger_key, attempt_key, status, run_id, target_executor_epoch, target_generation, charged_tokens?}] keyed by trigger_key",
     "real_concurrency_mechanism": "task-row SELECT ... FOR UPDATE via _continuation_task plus in-transaction scan/dedup; no per-event_key unique constraint; no pg_advisory_xact_lock on this path",
     "db_uniqueness_required": false,
     "unknown_cost_is_zero": false,
@@ -129,18 +159,20 @@
       "step_1_grant_invariant": "other_settled + other_unresolved + R.token_limit <= P.token_limit, else blocked",
       "step_2_r_headroom": "R_available = R.token_limit - cum_exact, where cum_exact = exact charge of the original attempt (0 if never accepted) + sum of exact charged_tokens of every reconciled recovery attempt; None if any charge unknown",
       "step_3_no_double_deduction": "do NOT deduct R.token_limit from P again; no new reservation; no new turn",
-      "budget_available": "TRI-STATE: blocked if permission revoked/expired/continuation_blocked_reason, or the grant invariant is violated, or ordinal >= RECOVERY_ATTEMPT_MAX, or authoritative evidence conflicts, or R_available is KNOWN and < model_call_floor while the envelope needs a model call; None (paused) if R_available is None (any charge unknown) or any input unreadable or closure/step-safety cannot be authoritatively obtained; eligible otherwise",
-      "read_only_floor_exemption": "a pure read-only envelope does not need a model-call floor; if the implementation still needs a model call it MUST NOT claim read-only floor-exemption"
+      "budget_available": "TRI-STATE: blocked if permission revoked/expired/continuation_blocked_reason, or the grant invariant is violated, or ordinal >= RECOVERY_ATTEMPT_MAX, or authoritative evidence conflicts, or R_available is KNOWN and < model_call_floor; None (paused) if R_available is None (any charge unknown) or any input unreadable or closure/step-safety cannot be authoritatively obtained; eligible otherwise",
+      "model_call_floor_required_for_any_new_recovery_run": true,
+      "read_only_floor_exemption": "NONE - automatic rescheduling starts a new model run, so even a read-only-only envelope requires a known R_available >= model_call_floor",
+      "controller_only_observation_below_floor": "only a pure controller receipt/evidence reconciliation (no model call, no recovery attempt/run) may continue observing below the floor; it MUST NOT be called an eligible reschedule"
     },
     "tri_state_decision_table": [
       {"condition": "permission revoked/expired/continuation_blocked_reason set", "decision": "blocked"},
       {"condition": "grant allocation invariant violated", "decision": "blocked"},
       {"condition": "ordinal >= RECOVERY_ATTEMPT_MAX", "decision": "blocked"},
       {"condition": "authoritative evidence conflict (settlement/hash mismatch)", "decision": "blocked"},
-      {"condition": "R_available KNOWN and < model_call_floor and the envelope needs a model call", "decision": "blocked"},
+      {"condition": "R_available KNOWN and < model_call_floor (any new recovery model run)", "decision": "blocked"},
       {"condition": "R_available is None (any attempt charge unknown) or any input unreadable", "decision": "None/paused"},
       {"condition": "closure or step-safety cannot be authoritatively obtained", "decision": "None/paused"},
-      {"condition": "otherwise (known R_available >= floor, or a pure read-only envelope)", "decision": "eligible"}
+      {"condition": "otherwise (known R_available >= model_call_floor)", "decision": "eligible"}
     ],
     "numeric_example": {
       "permission_token_limit": 100,
@@ -153,8 +185,8 @@
       "note": "R still has 40, not 10; the old min(P - committed - unresolved, R - known) double-deducted R's ceiling"
     },
     "state_table": [
-      {"reservation_status": "reserved", "guard_receipt": "absent/never dispatched", "consumed": 0, "r_available": "R.token_limit", "decision": "eligible if grant invariant holds and ordinal < cap"},
-      {"reservation_status": "rejected", "guard_receipt": "absent", "consumed": 0, "r_available": "R.token_limit", "decision": "eligible if grant invariant holds and ordinal < cap"},
+      {"reservation_status": "reserved", "guard_receipt": "absent/never dispatched", "consumed": 0, "r_available": "R.token_limit", "decision": "eligible if grant invariant holds, ordinal < cap, and R_available >= model_call_floor"},
+      {"reservation_status": "rejected", "guard_receipt": "absent", "consumed": 0, "r_available": "R.token_limit", "decision": "eligible if grant invariant holds, ordinal < cap, and R_available >= model_call_floor"},
       {"reservation_status": "accepted/outcome_unknown", "guard_receipt": "present, identity matches R/attempt/run", "consumed": "c (known)", "r_available": "R.token_limit - c", "decision": "eligible if >= model_call_floor else blocked"},
       {"reservation_status": "accepted/outcome_unknown", "guard_receipt": "absent/unreadable/identity mismatch", "consumed": "unknown", "r_available": null, "decision": "None/paused (unknown cost is never 0 and never refunded)"},
       {"reservation_status": "settled", "guard_receipt": "n/a", "consumed": "c", "r_available": "terminal", "decision": "no rearm (terminal)"},
@@ -169,8 +201,8 @@
     "dispatch_attempts_are_transport_retry": true,
     "recovery_attempt_max": 3,
     "transport_dispatch_attempt_cap": 8,
-    "auditable": "loss evidence stays in the fenced adapter containment ledger; attempt charges/run ids stay on R; no second store and no /tmp authority",
-    "fenced": "stale executor epoch, stale/duplicate generation, late settlement and terminal reopen fail closed (FencedWrite)"
+    "auditable": "loss evidence stays in the fenced adapter containment ledger; attempt charges/run ids/target epoch+generation stay on R; no second store and no /tmp authority",
+    "fenced": "stale interrupted epoch is expected (source); stale/duplicate TARGET epoch/generation, late settlement and terminal reopen fail closed (FencedWrite)"
   },
   "failure_semantics": {
     "unknown_or_unavailable_authority": "paused (authority_unavailable), never allowed",
@@ -178,17 +210,18 @@
     "conflict": "blocked",
     "unknown_cost": "None/paused, never refunded and never settled as 0",
     "zero_evidence_dispatched_run_or_session_global_gap_or_unstable_closure": "paused/blocked",
+    "snapshot_append_idle_flip_digest_tamper_or_check_then_start_race": "paused",
     "out_of_envelope_or_new_key_action": "blocked/paused",
     "ordinary_failed_cancelled_discarded_closed": "keep ordinary semantics; interrupted projected only from fenced containment matching the same session/trace and exact run"
   },
   "next_slice_acceptance_criteria": [
     "closed registry + recovery-mode envelope; may_produce_new_key=true is conservative only and always ineligible (a new key would need a Proposed ADR)",
-    "Backend-minted recovery_attempt_key carried in the closed recovery_attempt sub-record {attempt_key, ordinal, trigger_key, interrupted_run_id, interrupted_generation, containment_attempt, executor_epoch}; the Adapter recomputes/verifies both keys and fences the LIVE executor epoch/generation; client/model cannot mint it",
-    "per-attempt prompt/guard/settlement receipts (attempt_key.json), immutable, bound to {reservation_id, ordinal, run_id, charged_tokens, settlement_sha256}; Backend recovery_attempts is the final aggregate; cumulative exact charges <= R.token_limit",
-    "trigger-key dedup before ordinal allocation under the task-row FOR UPDATE; cap 3; concurrent same-trigger calls create exactly one attempt",
-    "stable-snapshot session-global closure (final page more=false AND idle=true under one locked view; item-by-item adapter<->Backend reconciliation; global 1..N contiguous; per-root subset strictly increasing, not required to start at 1; unstable/unproven closure -> paused)",
-    "corrected tri-state budget formula (grant invariant; R_available = R.token_limit - cum_exact; no second deduction; numeric example reproduced)",
-    "fail-able observer plus negative controls (Adapter old-run dedup; immutable settlement slot; concurrent trigger; second-root sequence >1; double-deduct; out-of-envelope write; missing/tampered carrier field; stale epoch/generation; unstable closure)",
+    "Backend-minted recovery_attempt_key carried in the closed recovery_attempt sub-record {attempt_key, ordinal, trigger_key, interrupted_run_id, interrupted_generation, containment_attempt, interrupted_executor_epoch}; the Adapter recomputes/verifies both keys, matches the durable containment, and at admission under record.lock reads the LIVE epoch, binds the target RuntimeGeneration, and returns {target_executor_epoch, target_generation, run_id} in the accepted receipt",
+    "per-attempt prompt/guard/settlement receipts (attempt_key.json), immutable, bound to {reservation_id, ordinal, run_id, charged_tokens, settlement_sha256}; Backend recovery_attempts is the final aggregate including target epoch/generation; cumulative exact charges <= R.token_limit",
+    "trigger-key dedup before ordinal allocation under the task-row FOR UPDATE; cap 3; concurrent same-trigger calls create exactly one attempt; the trigger binds the interrupted epoch, never the live one",
+    "snapshot-anchored session-global closure (fixed {snapshot_tail_sequence, snapshot_digest} when idle=true; no cross-request lock assumed; item-by-item reconciliation; global 1..N contiguous; per-root subset strictly increasing, not required to start at 1) plus the in-record.lock atomic check-and-start before creating a new root",
+    "corrected budget formula (grant invariant; R_available = R.token_limit - cum_exact; no second deduction; any new recovery model run requires a known R_available >= model_call_floor; no read-only exemption; numeric example reproduced)",
+    "fail-able observer plus negative controls (Adapter old-run dedup; immutable settlement slot; concurrent trigger; second-root sequence >1; double-deduct; out-of-envelope write; old-interrupted + newer-live epoch legal; interrupted-as-live rejected; stale target receipt rejected; snapshot append/idle/tamper/race rejected)",
     "no runtime code in this slice; no selector/deploy/release/tag/Phase 100 resume/D15 superseding assessment"
   ],
   "adr_decision": {
@@ -197,7 +230,7 @@
     "rationale": "only extends already-authorized components: the existing Backend authority row (in-row recovery_attempts keyed by trigger, no independent store); the existing closed contract/carrier plus a closed registry (no new persistence authority); the existing prompt/guard/settlement receipt surfaces keyed per attempt (no new store); the existing session-global call evidence and admission path (no new trust subject or cross-Plane interface); the existing Gateway->Backend /internal/task-continuation seam and adapter dispatch path; the ADR-0084 gate classification is unchanged. Allowing a recovery run to mint a new domain key is explicitly out of scope and would require a separate Proposed ADR",
     "decision_points": [
       "recovery attempt persistence is an in-row addition keyed by trigger_key, not an independent store",
-      "the recovery_attempt_key is minted by the existing Backend authority and recomputed/verified by the existing adapter carrier",
+      "the recovery_attempt_key is minted by the existing Backend authority; the target epoch/generation are determined by the existing Adapter at admission",
       "per-attempt receipts reuse the existing prompt/guard/settlement surfaces",
       "the recovery-mode envelope is enforced by the existing Backend admission using existing call evidence",
       "no new trust subject, database migration, or gate-classification change"

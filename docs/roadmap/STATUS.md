@@ -35,7 +35,7 @@
 <!-- byq:session-failure-containment-next=authoritative-step-safety-budget-rescheduling-implementation -->
 <!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->
 <!-- byq:phase-100-p100-c=paused-not-delivery -->
-<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.194 -->
+<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.195 -->
 
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|
@@ -545,41 +545,49 @@ tag/release，不恢复 Phase 100，不触碰 `codex/phase-100c`/PR #338，不�
   reservation 行与按 sequence 闭合的 occurred-call 集的绑定；有界、按 ordinal 恰一次、
   receipt-first 的原行 rearm。MCP 工具描述、客户端 step 字段、prompt 文本与“最后一次调用”
   启发式均**不是**权威。
-- **Minimal design**：contract mapping 保留 `session_failure_containment`。**身份分离（P1-F）**：
+- **Minimal design**：contract mapping 保留 `session_failure_containment`。**身份分离（P1-F/O）**：
   budget 权威身份仍是原 `reservation_id`；每次恢复提交身份是 Backend 原子签发/持久化的
   `recovery_attempt_key`（作为 prompt idempotency key，避免 Adapter 因同 key 的旧 accepted
-  receipt 直接返回旧 run；`runtime.py:780-789`/`806-809`）；carrier
+  receipt 直接返回旧 run；`runtime.py:780-789`/`806-809`）。carrier
   `task-continuation-reservation.v1` 增加 **closed** `recovery_attempt` 子记录
   `{attempt_key, ordinal, trigger_key, interrupted_run_id, interrupted_generation,
-  containment_attempt, executor_epoch}`（P1-L）；Adapter **重算并校验** `trigger_key`/`attempt_key`，
-  要求 `containment_attempt`/`interrupted_generation` 与 durable containment 一致、`executor_epoch`
-  等于**live** executor epoch 与目标 generation、prompt key == attempt key 且 reservation 一致；
-  缺字段/篡改/stale epoch 或 generation 一律 fail closed，**client/model 不得铸造**。**每 attempt
-  独立 receipt（P1-G）**：prompt/guard/settlement 以 `attempt_key.json` 为身份、不可覆盖，绑定
-  `{reservation_id, ordinal, run_id, charged_tokens, settlement_sha256}`；Backend 行内
-  `recovery_attempts` 为最终聚合；累计精确费用 ≤ `R.token_limit`；未知费用→`paused`。
-  **trigger-key 去重后分配 ordinal（P1-H）**：
-  `trigger_key=sha256(reservation_id+interrupted_run_id+interrupted_generation+containment_attempt+executor_epoch)`；
+  containment_attempt, interrupted_executor_epoch}`（P1-L）。**两个 epoch 分离（P1-O）**：
+  `interrupted_executor_epoch` 来自 durable containment（`record_loss` 写入失败 epoch），参与
+  SOURCE `trigger_key`，且**永不要求等于 live epoch**；`target_executor_epoch`/`target_generation`
+  由 Adapter 在 admission 的 `record.lock` 下读取 **live** epoch 并创建/绑定新 generation，经
+  accepted receipt 返回、由 Backend 聚合持久化（Backend **不**假装知道 Adapter 的 live epoch）。
+  Adapter **重算并校验** `trigger_key`/`attempt_key`，要求 containment 字段一致、prompt key ==
+  attempt key 且 reservation 一致；缺字段/篡改/把 interrupted epoch 当 live/stale target receipt/
+  target epoch 或 generation 不符一律 fail closed；**合法正例**：interrupted=1、live target=2。
+  **每 attempt 独立 receipt（P1-G）**：prompt/guard/settlement 以 `attempt_key.json` 为身份、
+  不可覆盖，绑定 `{reservation_id, ordinal, run_id, charged_tokens, settlement_sha256}`；Backend
+  行内 `recovery_attempts`（含 target epoch/generation）为最终聚合；累计精确费用 ≤
+  `R.token_limit`；未知费用→`paused`。**trigger-key 去重后分配 ordinal（P1-H）**：
+  `trigger_key=sha256(reservation_id+interrupted_run_id+interrupted_generation+containment_attempt+interrupted_executor_epoch)`；
   同一 trigger 在 task 行 `FOR UPDATE` 下返回既有 attempt，仅新的 fenced loss 才分配下一 ordinal
-  （cap 3，`dispatch_attempts` 仍只是传输重试）。step-safety 改为 **session-global cursor
-  closure（P1-I/P1-N）**：在同一 locked/consistent view 下取到最终页 `more=false` **且**
-  `idle=true`，并与 persisted `agent_domain_call_evidence` **逐项对账**，验证全局 `1..N` 连续，
-  再按 root 过滤；目标子集只须严格递增、**不必从 1 开始**（同 session 的第二个 root 首序 >1
-  合法）；`idle=false`、页间 tail 变化或无法取得一致 snapshot/closure→`paused`。
-  **recovery-mode admission envelope（P1-K/N）**：仅允许只读操作，或精确复用原
-  `(action,task_id,idempotency_key,request_sha256,input_sha256)`；模型不得选择/铸造新 key；
-  `may_produce_new_key=true` 仅作保守分类，**永远 ineligible/blocked**，不得据此授权铸造新 key
-  （若要允许新 key，须另立 **Proposed** ADR，本 PR 不开启/不暗示）；越界的新写/改 key/发布/下单/
-  付费/不可逆→`blocked`/`paused`；无法预先确定的 replay 不得 `eligible`。budget 决策为**自洽
-  tri-state（P1-J/M）**：先验
+  （cap 3，`dispatch_attempts` 仍只是传输重试）。step-safety 改为 **snapshot-anchored
+  session-global closure（P1-I/N/P）**：`domain_call_evidence` 仅单请求持 `record.lock`
+  （`runtime.py:1143-1146`），**不假设跨 HTTP 页持锁**；`idle=true` 时 Adapter 发出固定
+  `{snapshot_tail_sequence, snapshot_digest}`，分页锚定该 tail，与 persisted
+  `agent_domain_call_evidence` **逐项对账**并验证全局 `1..N` 连续，再按 root 过滤（子集只须严格
+  递增、**不必从 1 开始**）；`submit_prompt` 在**同一 `record.lock`（`777-877`）内、创建新 root
+  之前**原子复核 tail/digest 未变且 `idle=true` 才安装 target generation（闭合 check-then-start
+  TOCTOU）；append-between-pages/append-after-final-page/idle 翻转/digest 篡改/竞态→`paused`；
+  同一稳定 snapshot 可重试且**不分配新 ordinal**。**recovery-mode admission envelope（P1-K/N）**：
+  仅允许只读操作，或精确复用原 `(action,task_id,idempotency_key,request_sha256,input_sha256)`；
+  模型不得选择/铸造新 key；`may_produce_new_key=true` 仅作保守分类，**永远 ineligible/blocked**，
+  不得据此授权铸造新 key（若要允许新 key，须另立 **Proposed** ADR，本 PR 不开启/不暗示）；
+  越界的新写/改 key/发布/下单/付费/不可逆→`blocked`/`paused`；无法预先确定的 replay 不得
+  `eligible`。budget 决策为**自洽 tri-state（P1-J/M/Q）**：先验
   `other_settled + other_unresolved + R.token_limit ≤ P.token_limit`（违反→blocked），再算
-  `R_available = R.token_limit − cum_exact`（原 attempt 0 或精确费用 + 各 recovery attempt 精确
-  费用；任一未知→`R_available=None`→**None/paused**）；revoked/expired/blocked reason/ordinal cap/
-  权威证据冲突→**blocked**；已知 `R_available` 低于 model-call floor 且 envelope 需模型调用→
-  **blocked**；纯只读 envelope 不需要 model-call floor，若实现仍需模型调用则不得声称只读豁免。
-  原行 rearm 不是新 turn，`max_turns` 只校验未越权。**数值例**：P.token_limit=100、other
-  settled=30、R ceiling=60、R 累计精确费用=20 → 不变量 `30+60≤100`，`R_available=60−20=`**40**
-  （旧公式错误地得 10）。未知费用**永不算 0、永不退款**。
+  `R_available = R.token_limit − cum_exact`（任一未知→`R_available=None`→**None/paused**）；
+  revoked/expired/blocked reason/ordinal cap/权威证据冲突→**blocked**；**任何创建新 recovery
+  model run 的资格都必须满足已知 `R_available ≥ model_call_floor`（P1-Q：只读仅约束副作用，
+  **不豁免 token 预算**）；只有纯 controller receipt/evidence 对账（无模型调用、无 recovery
+  attempt/run）可在 floor 之下继续观察，且不得称为 eligible reschedule**。原行 rearm 不是新 turn，
+  `max_turns` 只校验未越权。**数值例**：P.token_limit=100、other settled=30、R ceiling=60、
+  R 累计精确费用=20 → 不变量 `30+60≤100`，`R_available=60−20=`**40**（旧公式错误地得 10）。
+  未知费用**永不算 0、永不退款**。
 - **ADR 决定 = 无需新 ADR（已给出可实现的映射证明）**：设计只扩展既有权威——同一
   `research_tasks.continuation_budget` 行（行内按 trigger 键控的有界 recovery 子记录，**非**独立
   store）、既有 closed contract/carrier + closed step-safety registry（非持久化权威）、既有
@@ -593,17 +601,20 @@ tag/release，不恢复 Phase 100，不触碰 `codex/phase-100c`/PR #338，不�
   （本切片是设计，不是实现）；**不生成也不声称** D15 superseding assessment；B1/B2
   `BLOCKED_EXTERNAL`、历史 D15-G `NO_GO`、`R3_RESUME = NO` 全部不改写；未实现原生 child resume；
   未知副作用暂停。
-- **本修订（P1-A..P1-N）**：撤回“新 reservation / 固定单 event key 的 3 次 / unique+advisory
+- **本修订（P1-A..P1-Q）**：撤回“新 reservation / 固定单 event key 的 3 次 / unique+advisory
   lock / registry-only 步骤查找 / `token_limit−charged_tokens` / 以 `reservation_id` 直接 rearm /
-  单 settlement slot / 按 root 从 1 连续 / 双重扣减 / `may_produce_new_key` 可授权新 key”等表述；
-  改为原行 rearm + 身份分离 + 每 attempt receipt + trigger-key 去重 + stable-snapshot
-  session-global cursor + 自洽 tri-state 不双扣公式 + recovery admission envelope；均有 committed
-  代码行号支撑（见 `design.v1.json.real_code_facts`）。
+  单 settlement slot / 按 root 从 1 连续 / 双重扣减 / `may_produce_new_key` 可授权新 key / 单一
+  executor_epoch 同时匹配 containment 与 live / 跨 HTTP 页持锁 / 只读豁免 token floor”等表述；
+  改为原行 rearm + 身份分离 + **interrupted/target 双 epoch** + 每 attempt receipt + trigger-key
+  去重 + **snapshot-anchored** session-global closure + **in-lock 原子 check-and-start** + 自洽
+  tri-state 不双扣公式（**新 recovery model run 必须满足 model-call floor**）+ recovery admission
+  envelope；均有 committed 代码行号支撑（见 `design.v1.json.real_code_facts`）。
 - 构建身份：初始设计切片推进 `post-u8.190 → post-u8.191`；P1-A..P1-E 推进
-  `post-u8.191 → post-u8.192`；P1-F..P1-K 推进 `post-u8.192 → post-u8.193`；本 P1-L..P1-N 修订
-  （`tests/` 变更）再推进 `post-u8.193 → post-u8.194`（`scripts/`、`tests/`、
+  `post-u8.191 → post-u8.192`；P1-F..P1-K 推进 `post-u8.192 → post-u8.193`；P1-L..P1-N 推进
+  `post-u8.193 → post-u8.194`；本 P1-O..P1-Q 修订（`tests/` 变更）再推进
+  `post-u8.194 → post-u8.195`（`scripts/`、`tests/`、
   `services/runtime-adapter/Dockerfile.post-u8-candidate` 属 build inputs，仅重建身份；历史
-  `.190`/`.191`/`.192`/`.193` manifest 与全部证据保留，不改 selector/`compose.yml`/`deployment.json`/制品）。
+  `.190`/`.191`/`.192`/`.193`/`.194` manifest 与全部证据保留，不改 selector/`compose.yml`/`deployment.json`/制品）。
 
 ## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19，历史叙述）
 

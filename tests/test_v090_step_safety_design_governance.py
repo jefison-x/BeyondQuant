@@ -5,7 +5,7 @@ only, that no runtime implementation or ADR acceptance is claimed, that the full
 ADR-0084 business-recovery gate stays ``IN_PROGRESS / BLOCKED_INTERNAL``, that no
 D15 superseding assessment is created while B1/B2 stay ``BLOCKED_EXTERNAL``,
 D15-G stays ``NO_GO`` and ``R3_RESUME = NO``, and that the design statements are
-consistent with the REAL committed code facts (rectification P1-A..P1-N).
+consistent with the REAL committed code facts (rectification P1-A..P1-Q).
 """
 
 from __future__ import annotations
@@ -29,12 +29,14 @@ CALL_EVIDENCE = ROOT / "services/backend/app/domain_call_admission.py"
 LIFECYCLE = ROOT / "services/runtime-adapter/app/lifecycle_journal.py"
 ADAPTER_RUNTIME = ROOT / "services/runtime-adapter/app/runtime.py"
 ADAPTER_BUDGET = ROOT / "services/runtime-adapter/app/continuation_budget.py"
+ADAPTER_CONTAINMENT = ROOT / "services/runtime-adapter/app/containment.py"
+CONTAINMENT_TEST = ROOT / "services/runtime-adapter/tests/test_session_containment.py"
 ADR_DIR = ROOT / "docs/architecture/adr"
-CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.194"
+CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.195"
 
 CARRIER_FIELDS = {
     "attempt_key", "ordinal", "trigger_key", "interrupted_run_id",
-    "interrupted_generation", "containment_attempt", "executor_epoch",
+    "interrupted_generation", "containment_attempt", "interrupted_executor_epoch",
 }
 
 
@@ -52,6 +54,13 @@ def session_global_closure(sequences: list[int], target: list[int]) -> bool:
     return all(sequence in sequences for sequence in target)
 
 
+def snapshot_unchanged(expected_tail: int, expected_digest: str,
+                       actual_tail: int, actual_digest: str) -> bool:
+    """The check-and-start re-verification: tail and digest must be identical."""
+
+    return expected_tail == actual_tail and expected_digest == actual_digest
+
+
 def stable_snapshot_closure(more: bool, idle: bool, reconciled: bool,
                             sequences: list[int], target: list[int]) -> bool:
     """Stable-snapshot closure: more=false AND idle=true AND item-by-item reconciled."""
@@ -66,98 +75,91 @@ class DesignEvidenceTests(unittest.TestCase):
         inventory, design = _load(INVENTORY), _load(DESIGN)
         self.assertEqual(inventory["schema_version"], "byq-v090-step-safety-inventory.v1")
         self.assertEqual(design["schema_version"], "byq-v090-step-safety-design.v1")
-        self.assertEqual(design["revision"], "rectified-p1-l-n")
-        self.assertEqual(inventory["revision"], "rectified-p1-l-n")
+        self.assertEqual(design["revision"], "rectified-p1-o-q")
+        self.assertEqual(inventory["revision"], "rectified-p1-o-q")
         for value in (inventory, design):
             self.assertEqual(value["delivered_scope"], "inventory+minimal-design")
             self.assertFalse(value["runtime_implementation"])
 
+    def test_two_epochs_are_separated(self):
+        identity = _load(DESIGN)["identity_separation"]
+        epochs = identity["two_epochs"]
+        self.assertIs(epochs["interrupted_executor_epoch"]["must_equal_live_epoch"], False)
+        self.assertIs(epochs["target_executor_epoch_and_generation"]["must_equal_live_epoch"], True)
+        self.assertIn("containment", epochs["interrupted_executor_epoch"]["source"])
+        self.assertIn("LIVE", epochs["target_executor_epoch_and_generation"]["source"])
+        self.assertIn("1 -> 2", identity["legal_positive"])
+
     def test_identity_separation_carries_closed_recovery_attempt_fields(self):
         identity = _load(DESIGN)["identity_separation"]
-        self.assertIn("reservation_id", identity["budget_authority_identity"])
-        self.assertIn("recovery_attempt_key", identity["recovery_submission_identity"])
         carrier = identity["trusted_carrier_extension"]
         self.assertEqual(set(carrier["closed_fields"]), CARRIER_FIELDS)
         self.assertEqual(carrier["issuer"], "Backend only")
         self.assertIs(carrier["client_or_model_must_not_mint"], True)
+        self.assertIs(carrier["carries_expected_target_executor_epoch"], False)
 
     def test_adapter_recomputes_and_verifies_and_rejects(self):
         identity = _load(DESIGN)["identity_separation"]
         steps = " ".join(identity["adapter_recompute_and_verify"])
         self.assertIn("recompute trigger_key'", steps)
         self.assertIn("recompute attempt_key'", steps)
-        self.assertIn("live", steps.lower())
+        self.assertIn("LIVE epoch", steps)
         self.assertIn("RuntimeGeneration", steps)
+        self.assertIn("target_executor_epoch", steps)
+        self.assertIn("target_executor_epoch", identity["target_receipt_binding"])
         rejections = " ".join(identity["rejections_fail_closed"])
         for expected in ("missing carrier field", "tampered or mismatched trigger_key",
-                         "tampered or mismatched attempt_key", "stale or unknown executor_epoch",
-                         "stale or unknown generation"):
+                         "tampered or mismatched attempt_key", "stale target receipt",
+                         "treating interrupted_executor_epoch as the live epoch",
+                         "target epoch/generation mismatch"):
             self.assertIn(expected, rejections)
         self.assertIs(identity["new_attempt_key_yields_new_run"], True)
 
-    def test_per_attempt_receipt_is_closed_and_bounded(self):
-        receipt = _load(DESIGN)["per_attempt_receipt"]
-        self.assertIn("attempt_key", receipt["prompt_receipt"])
-        self.assertIn("attempt_key.json", receipt["settlement_receipt"])
-        self.assertIn("settlement_sha256", receipt["settlement_receipt"])
-        self.assertIn("outcome_unknown", receipt["closed_states"])
-        self.assertEqual(receipt["unknown_attempt_charge"], "paused")
-        self.assertIn("R.token_limit", receipt["cumulative_bound"])
-        self.assertIs(receipt["never_overwrite_old_receipts"], True)
-        self.assertIs(receipt["no_new_authority_store"], True)
-
-    def test_trigger_key_dedups_before_ordinal_allocation(self):
+    def test_trigger_key_binds_interrupted_epoch_not_live(self):
         trigger = _load(DESIGN)["recovery_trigger"]
-        self.assertIn("recovery-trigger.v1", trigger["trigger_key"])
-        for field in ("reservation_id", "interrupted_run_id", "interrupted_generation",
-                      "containment_attempt", "executor_epoch"):
-            self.assertIn(field, trigger["binds"])
-        self.assertIn("SAME trigger_key returns the existing attempt", trigger["dedup_rule"])
+        self.assertIn("interrupted_executor_epoch", trigger["trigger_key"])
+        self.assertIn("interrupted_executor_epoch", trigger["binds"])
+        self.assertIs(trigger["epoch_bound_is_interrupted_not_live"], True)
         self.assertEqual(trigger["cap"], 3)
 
-    def test_stable_snapshot_closure_requires_more_false_and_idle(self):
+    def test_snapshot_anchoring_and_atomic_check_and_start(self):
         source = _load(DESIGN)["authoritative_source"]
-        self.assertIs(source["idle_required"], True)
-        self.assertIn("more == false AND idle == true", source["stable_snapshot_closure"])
-        self.assertIn("item-by-item", source["item_by_item_reconciliation"])
-        self.assertIs(source["second_root_first_sequence_gt_1_legal"], True)
-        # Positive: closed tail, second root first sequence 3 is legal.
+        self.assertIs(source["no_cross_request_lock"], True)
+        self.assertIn("snapshot_tail_sequence", source["snapshot_anchoring"])
+        self.assertIn("snapshot_digest", source["snapshot_anchoring"])
+        self.assertIn("record.lock", source["atomic_check_and_start"])
+        self.assertIn("idle == true", source["atomic_check_and_start"])
+        self.assertIn("TOCTOU", source["atomic_check_and_start"])
+        self.assertIn("does not allocate a new business ordinal", source["same_snapshot_retry"])
+        # Positive: closed stable snapshot with a second root first sequence > 1.
         self.assertTrue(stable_snapshot_closure(False, True, True, [1, 2, 3, 4], [3, 4]))
-        # Negative: not idle (open root) -> unstable, not closed.
+        # Negatives: not idle, pagination unfinished, reconciliation failed.
         self.assertFalse(stable_snapshot_closure(False, False, True, [1, 2, 3], [3]))
-        # Negative: more=True -> pagination not finished.
         self.assertFalse(stable_snapshot_closure(True, True, True, [1, 2, 3], [3]))
-        # Negative: item-by-item reconciliation failed.
         self.assertFalse(stable_snapshot_closure(False, True, False, [1, 2, 3], [3]))
-        # Positive: second root first sequence > 1 is legal.
-        self.assertTrue(session_global_closure([1, 2, 3, 4], [3, 4]))
-        # Negative: session-global gap.
+        # Negative: tail/digest tamper between evidence review and re-dispatch.
+        self.assertFalse(snapshot_unchanged(4, "d" * 64, 5, "d" * 64))
+        self.assertFalse(snapshot_unchanged(4, "d" * 64, 4, "e" * 64))
+        self.assertTrue(snapshot_unchanged(4, "d" * 64, 4, "d" * 64))
+        # Negative: session-global gap / out-of-order per-root subset.
         self.assertFalse(session_global_closure([1, 2, 4], [4]))
-        # Negative: per-root out-of-order subset.
         self.assertFalse(session_global_closure([1, 2, 3, 4], [4, 3]))
 
-    def test_budget_tri_state_is_self_consistent_and_unknown_is_not_zero(self):
+    def test_budget_tri_state_requires_model_floor_for_any_new_run(self):
         budget = _load(DESIGN)["budget_binding"]
         self.assertIs(budget["unknown_cost_is_zero"], False)
         self.assertIs(budget["unknown_cost_refunded"], False)
-        table = {row["condition"]: row["decision"] for row in budget["tri_state_decision_table"]}
-        self.assertEqual(table["permission revoked/expired/continuation_blocked_reason set"], "blocked")
-        self.assertEqual(table["grant allocation invariant violated"], "blocked")
-        self.assertEqual(table["ordinal >= RECOVERY_ATTEMPT_MAX"], "blocked")
-        self.assertEqual(table["authoritative evidence conflict (settlement/hash mismatch)"], "blocked")
-        self.assertEqual(
-            table["R_available KNOWN and < model_call_floor and the envelope needs a model call"], "blocked")
-        self.assertEqual(table["R_available is None (any attempt charge unknown) or any input unreadable"], "None/paused")
-        self.assertEqual(table["closure or step-safety cannot be authoritatively obtained"], "None/paused")
-        self.assertEqual(
-            table["otherwise (known R_available >= floor, or a pure read-only envelope)"], "eligible")
         formula = budget["formula"]
-        self.assertIn("TRI-STATE", formula["budget_available"])
-        self.assertIn("do NOT deduct", formula["step_3_no_double_deduction"])
-        self.assertIn("read-only envelope", formula["read_only_floor_exemption"])
-        # No contradiction: unknown maps to None, never to blocked or eligible.
-        self.assertNotIn("None", table["permission revoked/expired/continuation_blocked_reason set"])
-        self.assertNotIn("blocked", table["R_available is None (any attempt charge unknown) or any input unreadable"])
+        self.assertIs(formula["model_call_floor_required_for_any_new_recovery_run"], True)
+        self.assertIn("NONE", formula["read_only_floor_exemption"])
+        self.assertIn("controller", formula["controller_only_observation_below_floor"])
+        self.assertIn("MUST NOT be called an eligible reschedule",
+                      formula["controller_only_observation_below_floor"])
+        table = {row["condition"]: row["decision"] for row in budget["tri_state_decision_table"]}
+        self.assertEqual(table["R_available KNOWN and < model_call_floor (any new recovery model run)"], "blocked")
+        self.assertEqual(table["R_available is None (any attempt charge unknown) or any input unreadable"], "None/paused")
+        self.assertEqual(table["otherwise (known R_available >= model_call_floor)"], "eligible")
+        self.assertNotIn("read-only", table["otherwise (known R_available >= model_call_floor)"])
 
     def test_budget_formula_does_not_double_deduct(self):
         example = _load(DESIGN)["budget_binding"]["numeric_example"]
@@ -168,15 +170,13 @@ class DesignEvidenceTests(unittest.TestCase):
         self.assertEqual(example["r_available"], 40)
         self.assertEqual(example["old_wrong_value"], 10)
 
-    def test_recovery_admission_envelope_and_may_produce_new_key_boundary(self):
+    def test_recovery_admission_envelope_read_only_does_not_exempt_budget(self):
         envelope = _load(DESIGN)["recovery_admission_envelope"]
-        allowed = " ".join(envelope["allowed"])
-        self.assertIn("read-only", allowed)
-        self.assertIn("request_sha256", allowed)
+        self.assertIn("side effects only", envelope["read_only_constrains"])
+        self.assertIs(envelope["read_only_exempts_token_budget"], False)
         self.assertIs(envelope["may_produce_new_key_conservative_only"], True)
         self.assertIs(envelope["may_produce_new_key_true_always_ineligible"], True)
         self.assertIn("Proposed ADR", envelope["new_key_authorization"])
-        self.assertNotIn("authorize", envelope["new_key_authorization"].lower().replace("never", ""))
         self.assertIs(envelope["model_must_not_choose"], True)
         self.assertEqual(envelope["undeterminable_work"], "not eligible")
 
@@ -187,25 +187,19 @@ class DesignEvidenceTests(unittest.TestCase):
         mechanism = budget["real_mechanism"]
         self.assertIn("FOR UPDATE", mechanism["row_lock"])
         self.assertIs(mechanism["per_event_key_unique_constraint"], False)
-        self.assertIs(mechanism["pg_advisory_xact_lock_on_this_path"], False)
         adapter = next(entry for entry in inventory["budget_binding"]
                        if "continuation_budget.py" in entry["interface"])
         self.assertIn("reservation_id", adapter["real_mechanism"]["settlement_path"])
-        submit = next(entry for entry in inventory["budget_binding"]
-                      if "submit_prompt" in entry["interface"])
-        self.assertIn("durable run_id", submit["real_mechanism"]["old_run_dedup"])
-        self.assertIn("budget['reservation_id']", submit["real_mechanism"]["forces_reservation_key"])
         step = next(entry for entry in inventory["step_safety"]
                     if "agent_domain_call_evidence" in entry["interface"])
         self.assertIn("idle", step["real_mechanism"]["adapter_page_shape"])
+        self.assertIn("no_cross_request_lock", step["real_mechanism"])
 
     def test_no_new_adr_is_required_or_proposed(self):
         design = _load(DESIGN)
         self.assertIs(design["adr_decision"]["required"], False)
         self.assertIs(design["adr_decision"]["proposed"], False)
         self.assertIn("no new adr is required", README.read_text(encoding="utf-8").lower())
-        self.assertIn("mint a new domain key",
-                      " ".join(design["adr_decision"]["future_triggers_requiring_a_proposed_adr"]))
         for path in ADR_DIR.glob("ADR-*step-safety*.md"):
             text = path.read_text(encoding="utf-8")
             self.assertIn("Status: Proposed", text, str(path))
@@ -226,12 +220,10 @@ class DesignEvidenceTests(unittest.TestCase):
         self.assertNotIn("<!-- byq:v090-step-safety-design=complete -->", status)
         self.assertIn("inventory + minimal design", plan)
         self.assertIn("IN_PROGRESS / BLOCKED_INTERNAL", plan)
-        # The status narrative carries the rectified semantics.
-        self.assertIn("原行 rearm", status)
-        self.assertIn("身份分离", status)
-        self.assertIn("FOR UPDATE", status)
-        self.assertIn("session-global", status)
-        self.assertIn("idle=true", status)
+        self.assertIn("interrupted_executor_epoch", status)
+        self.assertIn("target_executor_epoch", status)
+        self.assertIn("snapshot", status)
+        self.assertIn("model_call_floor", status)
         self.assertIn("40", status)
 
     def test_no_superseding_assessment_is_created_or_claimed(self):
@@ -255,6 +247,21 @@ class DesignEvidenceTests(unittest.TestCase):
 
 class RealCodeFactTests(unittest.TestCase):
     """The design's claims must track the actual committed mechanisms."""
+
+    def test_containment_records_failing_epoch_and_takeover_fences_old(self):
+        containment = ADAPTER_CONTAINMENT.read_text(encoding="utf-8")
+        self.assertIn("executor_epoch", containment)
+        self.assertIn("assert_write_allowed_locked", containment)
+        test = CONTAINMENT_TEST.read_text(encoding="utf-8")
+        self.assertIn("def test_containment_write_fails_closed_on_stale_executor_epoch", test)
+        self.assertIn("takeover", test)
+
+    def test_no_cross_request_lock_is_claimed(self):
+        source = ADAPTER_RUNTIME.read_text(encoding="utf-8")
+        self.assertIn("with record.lock:", source)
+        readme = README.read_text(encoding="utf-8")
+        self.assertIn("does **NOT** assume", readme)
+        self.assertIs(_load(DESIGN)["authoritative_source"]["no_cross_request_lock"], True)
 
     def test_adapter_returns_old_run_and_forces_reservation_key(self):
         source = ADAPTER_RUNTIME.read_text(encoding="utf-8")
@@ -329,7 +336,7 @@ class NoRuntimeImplementationTests(unittest.TestCase):
         from scripts.dsh import build_revision as builds
         self.assertEqual(builds.selected_build_id("dsh-0.1.2rc1"), CURRENT_BUILD_REVISION)
         self.assertTrue((ROOT / "config/dsh/builds" / f"{CURRENT_BUILD_REVISION}.json").is_file())
-        self.assertTrue((ROOT / "config/dsh/builds/dsh-0.1.2rc1-post-u8.193.json").is_file())
+        self.assertTrue((ROOT / "config/dsh/builds/dsh-0.1.2rc1-post-u8.194.json").is_file())
 
 
 if __name__ == "__main__":

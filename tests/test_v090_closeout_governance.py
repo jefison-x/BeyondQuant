@@ -55,9 +55,9 @@ AUDIT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.177"
 # boundary hardening moved it to .189, the ADR-0084 session-containment slice
 # moved it to .190, the step-safety design slice moved it to .191, the
 # P1-A..P1-E design rectification moved it to .192, the P1-F..P1-K design
-# rectification moved it to .193, and the P1-L..P1-N design rectification moved
-# it to .194.
-CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.194"
+# rectification moved it to .193, the P1-L..P1-N design rectification moved it to
+# .194, and the P1-O..P1-Q design rectification moved it to .195.
+CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.195"
 
 DECISION_RECORD = ROOT / "docs/evidence/v090-adr-decisions/decision-record.v1.json"
 DECISION_RECORD_MD = ROOT / "docs/evidence/v090-adr-decisions/README.md"
@@ -330,7 +330,7 @@ class GovernanceDocTests(unittest.TestCase):
                        "<!-- byq:v090-full-interface-rebaseline=complete -->",
                        "<!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->",
                        "<!-- byq:phase-100-p100-c=paused-not-delivery -->",
-                       "<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.194 -->"):
+                       "<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.195 -->"):
             self.assertIn(marker, status)
         # Completed historical 0.9 steps must not remain marked active.
         self.assertNotIn("v090-closeout-audit=active", status)
