@@ -460,6 +460,8 @@ def test_reconcile_prompt_fails_closed_on_unreadable_containment(tmp_path, monke
         adapter.close()
         FakeHarness.allow_run.set()
 
+
+def test_recovery_envelope_violation_stops_the_run():
     """The Backend's runtime recovery-mode rejection is a stop, not a soft error."""
 
     from app.runtime import RuntimeAdapter

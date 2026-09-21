@@ -742,7 +742,7 @@
     "services/runtime-adapter/tests/d15_continuable_probe.py": "sha256:ecaf9521270d02f974b5a3e82f5672d33f69c78e4a8dcbcdd71e33f8bcbe514b",
     "services/runtime-adapter/tests/f6_synthetic_runtime.py": "sha256:2a6a672fc79fbb6ac785926025fdc5a7749a7ca2dc3a41cee9c247925c48846c",
     "services/runtime-adapter/tests/test_agent_lifecycle_wire.py": "sha256:97156e0e8afb26935809844a6bac3e71bfcb81abbe9830ca3ccbfbc2b55a6f94",
-    "services/runtime-adapter/tests/test_business_recovery.py": "sha256:d02ef09231471e3e1cd3fb6533800f35de15b130d1f7e34fba28fd4d63642f0b",
+    "services/runtime-adapter/tests/test_business_recovery.py": "sha256:e16f8b58c086b0aa04b16aff44e148f16c91856ff93823cb258b1b74c934e0c2",
     "services/runtime-adapter/tests/test_candidate_selector.py": "sha256:c4aef0cb9e53e4afb1dc8ac714b6a54ac537348472650637084bb022781753c8",
     "services/runtime-adapter/tests/test_chat_admission.py": "sha256:557b8ce146439191f0a1f28a8fa5870d94c28f6efd002f7f414f033d52dc99f0",
     "services/runtime-adapter/tests/test_child_lease.py": "sha256:e166a2c4fcb84cd88e39c0983a45e03d97b464df30352d54cb31034b0e3b6558",
