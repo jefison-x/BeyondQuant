@@ -35,6 +35,9 @@ def fixture(monkeypatch):
         raise AssertionError(path)
     def adapter(path, params=None):
         reads.append((path, params))
+        if '/containment' in path:
+            return {'schema_version': 'session-containment-summary.v1', 'session_id': 'session-a',
+                    'contained': False, 'latest': None, 'recovery_anchor': None}
         if '/continuation-receipt/' in path:
             return settlement
         if path.endswith('/prompts/reconcile'):

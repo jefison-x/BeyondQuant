@@ -1628,7 +1628,14 @@ class RuntimeAdapter:
             pass
 
     def containment_summary(self, session_id: str) -> dict[str, Any]:
-        """Bounded, framework-neutral containment projection for the Gateway."""
+        """Bounded, framework-neutral containment projection for the Gateway.
+
+        The read-only ``recovery_anchor`` is the Adapter's own fixed snapshot of
+        the session-global call closure, issued only when no root is open. It is
+        Adapter-owned execution evidence (never DSH state, never client input) and
+        lets the existing continuation consumer detect a fenced loss and rearm the
+        original reservation without a new cross-Plane endpoint.
+        """
 
         validate_identifier(session_id, field="session_id")
         evidence_root = self._session_root / "byq-lifecycle-evidence"
@@ -1637,6 +1644,7 @@ class RuntimeAdapter:
             "schema_version": "session-containment-summary.v1",
             "session_id": session_id, "contained": bool(records),
             "attempts": len(records), "latest": None,
+            "recovery_anchor": self._recovery_anchor(evidence_root, session_id),
         }
         if records:
             latest = records[-1]
@@ -1652,6 +1660,22 @@ class RuntimeAdapter:
                 "attempt": latest["attempt"],
             }
         return summary
+
+    def _recovery_anchor(self, evidence_root: Path, session_id: str) -> dict[str, Any] | None:
+        """Fixed ``{tail, digest, idle}`` for the current journal, or ``None``."""
+
+        try:
+            state = LifecycleJournal.read(evidence_root / f"{session_id}.json")
+        except (FileNotFoundError, OSError, ValueError):
+            return None
+        if state.get("open_root") is not None:
+            return {"snapshot_tail_sequence": None, "snapshot_digest": None, "idle": False}
+        try:
+            snapshot = business_recovery.snapshot_from_state(state)
+        except ValueError:
+            return None
+        return {"snapshot_tail_sequence": snapshot["tail_sequence"],
+                "snapshot_digest": snapshot["digest"], "idle": snapshot["idle"]}
 
     def continuation_qualified(self, record: RuntimeSession) -> bool:
         try:
@@ -1681,6 +1705,39 @@ class RuntimeAdapter:
         except (OSError, ValueError, TypeError, KeyError):
             return unknown
 
+    def _recover_guard_charge(self, reservation_id: str) -> dict | None:
+        """Exact durable guard charge for a lost reservation, or ``None``.
+
+        A lost run never wrote a terminal settlement, but the Adapter's own
+        per-call guard journal survives on disk. Reading it is authoritative BYQ
+        evidence; an unreadable/ambiguous journal returns ``None`` so the caller
+        keeps the liability unknown (paused) rather than treating it as zero.
+        """
+
+        if re.fullmatch(r'continuation_[0-9a-f]{32}', reservation_id) is None:
+            return None
+        try:
+            candidates = sorted(self._session_root.glob('*/continuation-budget.jsonl'))[:256]
+        except OSError:
+            return None
+        for journal in candidates:
+            try:
+                with journal.open('r', encoding='utf-8') as stream:
+                    first = json.loads(stream.readline())
+            except (OSError, ValueError, json.JSONDecodeError):
+                continue
+            if (not isinstance(first, dict) or first.get('reservation_id') != reservation_id
+                    or type(first.get('token_limit')) is not int):
+                continue
+            try:
+                receipt = read_guard(journal, {'reservation_id': reservation_id,
+                    'token_limit': first['token_limit']}, terminal=False)
+            except (OSError, ValueError, TypeError, KeyError):
+                return None
+            return {'reservation_id': reservation_id, 'status': 'accepted',
+                    'charged_tokens': receipt['charged_tokens'], 'call_count': receipt['call_count']}
+        return None
+
     def continuation_receipt(self, session_id: str, reservation_id: str) -> dict:
         validate_identifier(session_id, field='session_id')
         def recover():
@@ -1688,6 +1745,9 @@ class RuntimeAdapter:
                 state = LifecycleJournal.read(self._session_root / 'byq-lifecycle-evidence' / f'{session_id}.json')
                 return recovered_settlement(self._session_root, session_id, reservation_id, state)
             except (OSError, ValueError, TypeError, KeyError):
+                guard = self._recover_guard_charge(reservation_id)
+                if guard is not None:
+                    return guard
                 return {'reservation_id': reservation_id, 'status': 'outcome_unknown'}
         try:
             record = self._get(session_id, rehydrate=False)

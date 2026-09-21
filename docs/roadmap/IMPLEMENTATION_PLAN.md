@@ -88,20 +88,27 @@ slice, one isolated worktree/Draft PR** (`codex/v090-business-recovery-impl`, ba
 `021afb5`; evidence `docs/evidence/v090-business-recovery/`). Delivered: the closed
 `packages/contracts/business_recovery.py` contract (trigger/attempt identity, closed carrier,
 canonical snapshot digest + closure, step-safety registry + admission envelope, tri-state budget
-decision, pure trigger-keyed allocation); Backend in-row authoritative allocation/reuse
-(`research_continuation.begin_recovery`/`record_recovery_target`) under the same task-row
-`SELECT ... FOR UPDATE` (cap 3, no new store/migration); the Gateway closed-carrier forward
-(`services/gateway/app/recovery_carrier.py`); and the Adapter validate/atomic-check/install
+decision, pure trigger-keyed allocation); Backend in-row authoritative allocation/reuse folded into
+the **existing** continuation seam (`claim_continuation_dispatch` with the existing `dispatch` route,
+cap 3, no new store/migration and **no new cross-Plane endpoint**); server-derived step-safety/budget
+facts (occurred/replayed calls from `agent_domain_call_evidence` + `agent_domain_call_claims`, the
+closed registry, and the server floor constant — the request never carries them); the Gateway folded
+into the existing continuation consumer (`_consume_admitted_task_continuation`) with the closed-carrier
+forward (`services/gateway/app/recovery_carrier.py`); the Adapter validate/atomic-check/install
 (`services/runtime-adapter/app/business_recovery.py` wired into `submit_prompt`) that recomputes and
 atomically compares the CURRENT snapshot (`idle=true`) under `record.lock` before creating the new
-root/target generation, returning the accepted receipt with the live target epoch/generation/run.
+root/target generation, returning the accepted receipt with the live target epoch/generation/run in
+the existing prompt response; the accepted target written back through the existing receipt route; and
+the Adapter's durable guard charge bound through that same route (unknown stays paused).
 Acceptance is real behavior, not string tests: a Postgres-backed concurrency test proves same
 trigger+same snapshot allocates exactly once and a retry reuses the original attempt/ordinal, a
 snapshot change cannot rewrite/consume another ordinal, budget is not double-deducted, unknown
-cost/evidence conflict/model-floor/ordinal-cap fail closed; the adapter test injects digest tamper,
-tail append, idle flip, containment mismatch and stale target fences; the fail-able observer rejects
-25 defect-targeting negative controls. **No new ADR was required** (in-row authority only; no new
-cross-Plane authority, trust subject, DB migration or new domain key). The retained 0.9 closeout
+cost/evidence conflict/model-floor/ordinal-cap fail closed, the accepted target receipt is persisted
+and stale targets are fenced, and forged policy/loss facts cannot obtain a carrier; the adapter test
+injects digest tamper, tail append, idle flip, containment mismatch and stale target fences; the
+fail-able observer rejects 25 defect-targeting negative controls. **No new ADR was required**
+(in-row authority only; no new cross-Plane authority, trust subject, DB migration or new domain key).
+The retained 0.9 closeout
 order is: **this gate → real recovery acceptance → formally upgrade the repo default dependency/
 selector to the coherent DSH `0.1.5-rc.1` (with rollback/business verification) → D15 superseding
 assessment → 0.9 closeout**. The full business-recovery gate stays **`IN_PROGRESS /

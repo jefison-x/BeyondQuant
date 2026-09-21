@@ -550,6 +550,10 @@ class ResearchContinuationMixin:
             total += row.get('charged_tokens') or 0
         elif row.get('status') in {'reserved', 'rejected'} and row.get('run_id') is None:
             pass
+        elif type(row.get('charged_tokens')) is int and row['charged_tokens'] >= 0:
+            # A reconciled exact guard charge for an accepted/unknown attempt is
+            # authoritative; without it the charge is unknown (never zero).
+            total += row['charged_tokens']
         else:
             return None
         for attempt in attempts:
@@ -560,107 +564,152 @@ class ResearchContinuationMixin:
                 total += charge
             elif attempt.get('status') in {'reserved', 'rejected'} and attempt.get('run_id') is None:
                 continue
+            elif type(attempt.get('charged_tokens')) is int and attempt['charged_tokens'] >= 0:
+                total += attempt['charged_tokens']
             else:
                 return None
         return total
 
-    def begin_recovery(self, task_id: str, *, trusted_context: dict, reservation_id: str,
-            interrupted_run_id: str, interrupted_generation: str, containment_attempt: int,
-            interrupted_executor_epoch: int, snapshot_tail_sequence: int, snapshot_digest: str,
-            model_call_floor: int = recovery_contract.MODEL_CALL_FLOOR, read_only: bool = True,
-            replayed_calls: object = None, occurred_calls: object = None,
-            evidence_conflict: bool = False) -> dict:
-        """Authoritatively allocate/reuse one bounded recovery attempt in-row.
+    @staticmethod
+    def _recovery_policy_facts(connection, *, lost_run_id: str, task_id: str) -> dict | None:
+        """Derive step-safety/budget facts from BYQ's own authoritative evidence.
 
-        Runs inside the SAME task-row ``SELECT ... FOR UPDATE`` transaction as the
-        reservation ledger, so concurrent callers for one fenced loss allocate
-        exactly one attempt and never double-deduct the reservation budget. The
-        recovery row is an in-row addition (``recovery_attempts``), never an
-        independent store, and the prompt identity is the Backend-minted attempt
-        key, not the reservation id.
+        Nothing here is caller-provided. The occurred-call set is the persisted
+        session-global ``agent_domain_call_evidence`` for the exact lost root; the
+        reconciliation is the persisted ``agent_domain_call_claims``. A gap or an
+        unresolved claim is returned as a non-eligible classification rather than
+        being treated as permission.
         """
 
-        if not isinstance(reservation_id, str) or re.fullmatch(r'continuation_[0-9a-f]{32}', reservation_id) is None:
-            raise ValueError('invalid recovery reservation identity')
-        with self._transaction() as connection:
-            task, conversation = self._continuation_task(connection, task_id, trusted_context, human=False)
-            ledger = task.get('continuation_budget') or []
-            row = next((r for r in ledger if r['reservation_id'] == reservation_id), None)
-            if row is None:
-                return {'status': 'blocked', 'reason': 'reservation_missing', 'carrier': None}
-            permission = task.get('continuation_permission')
-            blocked = self._permission_blocked_reason(task, conversation)
-            now = datetime.now(timezone.utc)
-            attempts = row.get('recovery_attempts') or []
-            other_settled = sum(r['charged_tokens'] for r in ledger
-                if r is not row and r['status'] == 'settled')
-            other_unresolved = sum(r['token_limit'] for r in ledger
-                if r is not row and r['status'] != 'settled')
-            decision = recovery_contract.budget_decision(
-                permission_token_limit=(permission or {}).get('token_limit', 0),
-                other_settled=other_settled, other_unresolved=other_unresolved,
-                r_token_limit=row['token_limit'],
-                cum_exact=self._recovery_cumulative_charge(row),
-                model_call_floor=model_call_floor,
-                revoked=bool(permission and permission.get('revoked_at') is not None),
-                expired=bool(permission and now >= datetime.fromisoformat(permission['expires_at'])),
-                blocked_reason=blocked,
-                ordinal=len(attempts), evidence_conflict=evidence_conflict)
-            if decision['decision'] != 'eligible':
-                return {'status': decision['decision'], 'reason': decision['reason'],
-                        'carrier': None, 'r_available': decision['r_available']}
-            envelope = recovery_contract.admission_envelope(
-                read_only=read_only, replayed_calls=replayed_calls, occurred_calls=occurred_calls)
-            if not envelope['eligible']:
-                return {'status': 'blocked', 'reason': 'out_of_envelope',
-                        'envelope': envelope, 'carrier': None}
-            try:
-                attempt, created = recovery_contract.allocate_recovery_attempt(
-                    reservation_id=reservation_id, existing_attempts=attempts,
-                    interrupted_run_id=interrupted_run_id,
-                    interrupted_generation=interrupted_generation,
-                    containment_attempt=containment_attempt,
-                    interrupted_executor_epoch=interrupted_executor_epoch,
-                    snapshot_tail_sequence=snapshot_tail_sequence, snapshot_digest=snapshot_digest)
-            except recovery_contract.RecoveryRejected as exc:
-                return {'status': 'blocked', 'reason': exc.code, 'carrier': None}
-            if created:
-                updated = {**row, 'recovery_attempts': [*attempts, attempt],
-                           'status': 'reserved', 'next_attempt_at': now.isoformat()}
-                ledger = [updated if r is row else r for r in ledger]
-                execute(connection, 'UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
-                    {'budget': ledger, 'task': task_id})
-                logger.info('recovery attempt allocated: task=%s reservation=%s attempt=%s ordinal=%s',
-                    task_id, reservation_id, attempt['attempt_key'], attempt['ordinal'])
-            return {'status': 'eligible', 'reason': 'recovery_attempt', 'reused': not created,
-                    'carrier': recovery_contract.carrier_fields(attempt), 'attempt': attempt,
-                    'envelope': envelope, 'r_available': decision['r_available']}
+        evidence = execute(connection, """SELECT sequence, task_id, action, idempotency_key,
+                request_sha256, input_sha256 FROM agent_domain_call_evidence
+            WHERE root_run_id=:root ORDER BY sequence""", {'root': lost_run_id})
+        occurred = [{'action': row['action'], 'task_id': row['task_id'],
+                     'idempotency_key': row['idempotency_key'],
+                     'request_sha256': row['request_sha256'], 'input_sha256': row['input_sha256']}
+                    for row in evidence]
+        sequences = [row['sequence'] for row in evidence]
+        if sequences != list(range(1, len(sequences) + 1)):
+            return {'gap': True, 'occurred': occurred, 'replayed': [], 'read_only': False,
+                    'unresolved': False, 'conflict': False}
+        claims = execute(connection, """SELECT task_id, action, idempotency_key, request_sha256,
+                input_sha256, status FROM agent_domain_call_claims WHERE root_run_id=:root""",
+            {'root': lost_run_id})
+        by_key = {(row['action'], row['task_id'], row['idempotency_key']): row for row in evidence}
+        unresolved = False
+        conflict = False
+        for claim in claims:
+            if claim['status'] in {'claimed', 'executing'}:
+                unresolved = True
+            original = by_key.get((claim['action'], claim['task_id'], claim['idempotency_key']))
+            if (original is None or original['request_sha256'] != claim['request_sha256']
+                    or original['input_sha256'] != claim['input_sha256']):
+                conflict = True
+        return {'gap': False, 'occurred': occurred, 'replayed': occurred,
+                'read_only': len(occurred) == 0, 'unresolved': unresolved, 'conflict': conflict}
 
-    def record_recovery_target(self, task_id: str, *, trusted_context: dict, reservation_id: str,
-            attempt_key: str, run_id: str, target_executor_epoch: int, target_generation: str,
-            status: str = 'accepted') -> dict:
+    def _begin_recovery_locked(self, connection, task: dict, conversation: dict, row: dict,
+                               recovery: dict) -> dict:
+        """Allocate/reuse one recovery attempt in-row from server-derived facts.
+
+        ``recovery`` is the trusted Adapter-issued fenced-loss + snapshot evidence
+        forwarded by the Gateway; it is never a *policy* fact. Every step-safety,
+        budget and floor decision is derived here from BYQ's own evidence and the
+        server policy constant. The exact lost run must equal the reservation's
+        own persisted accepted run.
+        """
+
+        now = datetime.now(timezone.utc)
+        required = {'interrupted_run_id', 'interrupted_generation', 'containment_attempt',
+                    'interrupted_executor_epoch', 'snapshot_tail_sequence', 'snapshot_digest'}
+        if not isinstance(recovery, dict) or set(recovery) != required:
+            return {'status': 'blocked', 'reason': 'invalid_recovery_evidence'}
+        lost = recovery['interrupted_run_id']
+        if not isinstance(lost, str) or re.fullmatch(r'[0-9a-f]{32}', lost) is None:
+            return {'status': 'blocked', 'reason': 'invalid_recovery_evidence'}
+        # The Backend's own accepted receipts are the authority that this exact
+        # run belonged to this reservation: the original accepted run or any
+        # already-accepted recovery run. A forged/foreign loss cannot recover.
+        authoritative_runs = {row.get('run_id')}
+        authoritative_runs.update(a.get('run_id') for a in (row.get('recovery_attempts') or []))
+        if lost not in authoritative_runs:
+            return {'status': 'blocked', 'reason': 'lost_run_not_authoritative'}
+        facts = self._recovery_policy_facts(connection, lost_run_id=lost, task_id=task['task_id'])
+        if facts is None or facts['gap']:
+            return {'status': 'paused', 'reason': 'session_global_evidence_gap'}
+        if facts['unresolved']:
+            return {'status': 'paused', 'reason': 'prior_call_outcome_unknown'}
+        permission = task.get('continuation_permission')
+        blocked = self._permission_blocked_reason(task, conversation)
+        ledger = task.get('continuation_budget') or []
+        attempts = row.get('recovery_attempts') or []
+        other_settled = sum(r['charged_tokens'] for r in ledger
+            if r is not row and r['status'] == 'settled')
+        other_unresolved = sum(r['token_limit'] for r in ledger
+            if r is not row and r['status'] != 'settled')
+        decision = recovery_contract.budget_decision(
+            permission_token_limit=(permission or {}).get('token_limit', 0),
+            other_settled=other_settled, other_unresolved=other_unresolved,
+            r_token_limit=row['token_limit'],
+            cum_exact=self._recovery_cumulative_charge(row),
+            model_call_floor=recovery_contract.MODEL_CALL_FLOOR,
+            revoked=bool(permission and permission.get('revoked_at') is not None),
+            expired=bool(permission and now >= datetime.fromisoformat(permission['expires_at'])),
+            blocked_reason=blocked, ordinal=len(attempts),
+            evidence_conflict=facts['conflict'])
+        if decision['decision'] != 'eligible':
+            return {'status': decision['decision'], 'reason': decision['reason']}
+        envelope = recovery_contract.admission_envelope(
+            read_only=facts['read_only'], replayed_calls=facts['replayed'],
+            occurred_calls=facts['occurred'])
+        if not envelope['eligible']:
+            return {'status': 'blocked', 'reason': 'out_of_envelope', 'envelope': envelope}
+        try:
+            attempt, created = recovery_contract.allocate_recovery_attempt(
+                reservation_id=row['reservation_id'], existing_attempts=attempts,
+                interrupted_run_id=recovery['interrupted_run_id'],
+                interrupted_generation=recovery['interrupted_generation'],
+                containment_attempt=recovery['containment_attempt'],
+                interrupted_executor_epoch=recovery['interrupted_executor_epoch'],
+                snapshot_tail_sequence=recovery['snapshot_tail_sequence'],
+                snapshot_digest=recovery['snapshot_digest'])
+        except recovery_contract.RecoveryRejected as exc:
+            return {'status': 'blocked', 'reason': exc.code}
+        updated = {**row, 'recovery_attempts': [*attempts, attempt] if created else attempts,
+                   'status': 'reserved', 'next_attempt_at': now.isoformat()}
+        ledger = [updated if r is row else r for r in ledger]
+        execute(connection, 'UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
+            {'budget': ledger, 'task': task['task_id']})
+        if created:
+            logger.info('recovery attempt allocated: task=%s reservation=%s attempt=%s ordinal=%s',
+                task['task_id'], row['reservation_id'], attempt['attempt_key'], attempt['ordinal'])
+        return {'status': 'eligible', 'reason': 'recovery_attempt', 'reused': not created,
+                'recovery_attempt': recovery_contract.carrier_fields(attempt)}
+
+    def _record_recovery_target_locked(self, connection, task: dict, row: dict, *,
+            attempt_key: str, status: str, run_id: str, target_executor_epoch: int | None,
+            target_generation: str | None, charged_tokens: int | None = None) -> dict:
         """Persist the Adapter's accepted target receipt, fenced against stale writes."""
 
         from .research import IdempotencyConflict
         if status not in {'accepted', 'settled', 'rejected', 'outcome_unknown'}:
             raise ValueError('invalid recovery attempt status')
-        if not isinstance(run_id, str) or re.fullmatch(r'[0-9a-f]{32}', run_id) is None:
-            raise ValueError('exact runtime identity required')
-        if type(target_executor_epoch) is not int or target_executor_epoch < 1:
-            raise ValueError('invalid target executor epoch')
-        if not isinstance(target_generation, str) or not target_generation:
-            raise ValueError('invalid target generation')
-        with self._transaction() as connection:
-            task, _ = self._continuation_task(connection, task_id, trusted_context, human=False)
-            rows = task.get('continuation_budget') or []
-            row = next((r for r in rows if r['reservation_id'] == reservation_id), None)
-            if row is None:
-                raise ValueError('original continuation reservation required')
-            attempts = row.get('recovery_attempts') or []
-            index = next((i for i, a in enumerate(attempts) if a['attempt_key'] == attempt_key), None)
-            if index is None:
-                raise ValueError('unknown recovery attempt')
-            attempt = dict(attempts[index])
+        attempts = row.get('recovery_attempts') or []
+        index = next((i for i, a in enumerate(attempts) if a.get('attempt_key') == attempt_key), None)
+        if index is None:
+            raise ValueError('unknown recovery attempt')
+        attempt = dict(attempts[index])
+        if status == 'rejected':
+            if attempt.get('run_id') is not None:
+                raise IdempotencyConflict('accepted recovery attempt cannot be rejected')
+            attempt['status'] = 'rejected'
+        else:
+            if not isinstance(run_id, str) or re.fullmatch(r'[0-9a-f]{32}', run_id) is None:
+                raise ValueError('exact runtime identity required')
+            if type(target_executor_epoch) is not int or target_executor_epoch < 1:
+                raise ValueError('invalid target executor epoch')
+            if not isinstance(target_generation, str) or not target_generation:
+                raise ValueError('invalid target generation')
             if attempt.get('status') == 'settled':
                 if (attempt.get('run_id'), attempt.get('target_executor_epoch'),
                         attempt.get('target_generation')) != (run_id, target_executor_epoch, target_generation):
@@ -676,12 +725,18 @@ class ResearchContinuationMixin:
                 raise IdempotencyConflict('stale recovery target generation')
             attempt.update(status=status, run_id=run_id,
                 target_executor_epoch=target_executor_epoch, target_generation=target_generation)
-            attempts[index] = attempt
-            updated = {**row, 'recovery_attempts': attempts}
-            rows = [updated if r is row else r for r in rows]
-            execute(connection, 'UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
-                {'budget': rows, 'task': task_id})
-            return attempt
+            if charged_tokens is not None:
+                if type(charged_tokens) is not int or charged_tokens < 0:
+                    raise ValueError('exact nonnegative charge required')
+                if attempt.get('charged_tokens') is not None and attempt['charged_tokens'] != charged_tokens:
+                    raise IdempotencyConflict('recovery charge conflicts')
+                attempt['charged_tokens'] = charged_tokens
+        attempts[index] = attempt
+        updated = {**row, 'recovery_attempts': attempts}
+        ledger = [updated if r is row else r for r in (task.get('continuation_budget') or [])]
+        execute(connection, 'UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
+            {'budget': ledger, 'task': task['task_id']})
+        return attempt
 
     def block_continuation(self, task_id: str, reason: str, *, trusted_context: dict) -> dict:
         if reason not in {'model_or_executor_unqualified', 'continuation_needs_attention'}:
@@ -694,14 +749,26 @@ class ResearchContinuationMixin:
             logger.info("continuation blocked: task=%s reason=%s event=%s", task_id, reason, event_key)
             return {'blocked_reason': reason}
 
-    def claim_continuation_dispatch(self, task_id: str, reservation_id: str, *, trusted_context: dict) -> dict:
+    def claim_continuation_dispatch(self, task_id: str, reservation_id: str, *, trusted_context: dict,
+            recovery: dict | None = None) -> dict:
         with self._transaction() as connection:
             task, conversation = self._continuation_task(connection, task_id, trusted_context, human=False)
             rows = task.get('continuation_budget') or []
             row = next((r for r in rows if r['reservation_id'] == reservation_id), None)
             now = datetime.now(timezone.utc)
-            if (os.environ.get('BYQ_F6_EXECUTOR_ENABLED') != '1' or row is None or row['status'] != 'reserved'
-                    or self._continuation_blocked_reason(task, conversation, row) is not None
+            if os.environ.get('BYQ_F6_EXECUTOR_ENABLED') != '1' or row is None:
+                return {'dispatch': False}
+            if recovery is not None:
+                # ADR-0084: a lost accepted run is recovered as part of THIS
+                # reservation's state machine. The Backend re-derives every
+                # policy fact from its own evidence; the request supplies only
+                # the trusted Adapter loss/snapshot identity.
+                outcome = self._begin_recovery_locked(connection, task, conversation, row, recovery)
+                if outcome.get('status') != 'eligible':
+                    return {'dispatch': False, 'recovery': outcome}
+                return {'dispatch': True, 'recovery_attempt': outcome['recovery_attempt']}
+            if (self._continuation_blocked_reason(task, conversation, row) is not None
+                    or row['status'] != 'reserved'
                     or datetime.fromisoformat(row['expires_at']) <= now
                     or datetime.fromisoformat(row['next_attempt_at']) > now or row['dispatch_attempts'] >= 8):
                 return {'dispatch': False}
@@ -735,17 +802,43 @@ class ResearchContinuationMixin:
                 and datetime.fromisoformat(receipt['expires_at']) > datetime.now(timezone.utc),
             'receipt': receipt, 'reservation': reservation}
 
+    def _record_recovery_receipt(self, task_id: str, *, trusted_context: dict, reservation_id: str,
+            attempt_key: str, status: str, run_id: str | None,
+            target_executor_epoch: int | None, target_generation: str | None,
+            charged_tokens: int | None = None) -> dict:
+        with self._transaction() as connection:
+            task, _ = self._continuation_task(connection, task_id, trusted_context, human=False)
+            rows = task.get('continuation_budget') or []
+            row = next((row for row in rows if row['reservation_id'] == reservation_id), None)
+            if row is None:
+                raise ValueError('original continuation reservation required')
+            return self._record_recovery_target_locked(connection, task, row, attempt_key=attempt_key,
+                status=status, run_id=run_id, target_executor_epoch=target_executor_epoch,
+                target_generation=target_generation, charged_tokens=charged_tokens)
+
     def record_continuation_receipt(self, task_id: str, *, trusted_context: dict,
             reservation_id: str, status: str, run_id: str | None = None,
             charged_tokens: int | None = None, settlement_sha256: str | None = None,
-            outcome: str | None = None) -> dict:
+            outcome: str | None = None, attempt_key: str | None = None,
+            target_executor_epoch: int | None = None, target_generation: str | None = None) -> dict:
         """Trusted accounting evidence only; never infer zero usage from errors.
 
         Revocation and expiry do not discard an already reserved liability.
         Disabled identities remain rejected until a bounded trusted cleanup
         path with equivalent ownership checks is separately connected.
+
+        When ``attempt_key`` is supplied this is a recovery-attempt receipt: the
+        Adapter's accepted target identity is written into the in-row attempt
+        aggregate (still inside the same reservation state machine).
         """
         from .research import IdempotencyConflict
+        if attempt_key is not None:
+            if not isinstance(attempt_key, str) or re.fullmatch(r'recovery_[0-9a-f]{32}', attempt_key) is None:
+                raise ValueError('invalid recovery attempt identity')
+            return self._record_recovery_receipt(task_id, trusted_context=trusted_context,
+                reservation_id=reservation_id, attempt_key=attempt_key, status=status, run_id=run_id,
+                target_executor_epoch=target_executor_epoch, target_generation=target_generation,
+                charged_tokens=charged_tokens)
         if outcome not in {None, 'completed', 'needs_attention'} or (outcome is not None and status != 'settled'):
             raise ValueError('invalid continuation outcome')
         if status not in {'accepted', 'outcome_unknown', 'settled', 'rejected'}:
@@ -757,6 +850,13 @@ class ResearchContinuationMixin:
                 raise ValueError('exact nonnegative charge required')
             if not isinstance(settlement_sha256, str) or re.fullmatch(r'[0-9a-f]{64}', settlement_sha256) is None:
                 raise ValueError('trusted unique settlement required')
+        elif status == 'accepted':
+            # A reconciled exact guard charge may be bound to the accepted
+            # attempt before any terminal settlement; it is never a refund.
+            if charged_tokens is not None and (type(charged_tokens) is not int or charged_tokens < 0):
+                raise ValueError('exact nonnegative charge required')
+            if settlement_sha256 is not None:
+                raise ValueError('settlement belongs to a settled receipt')
         elif charged_tokens is not None or settlement_sha256 is not None:
             raise ValueError('unconfirmed receipt cannot return budget')
         if status != 'accepted' and run_id is not None:
@@ -774,6 +874,10 @@ class ResearchContinuationMixin:
                     if row['run_id'] != run_id:
                         raise IdempotencyConflict('settled continuation receipt conflicts')
                     return row
+                if charged_tokens is not None:
+                    if row.get('charged_tokens') is not None and row['charged_tokens'] != charged_tokens:
+                        raise IdempotencyConflict('continuation charge conflicts')
+                    row['charged_tokens'] = charged_tokens
                 row.update(status='accepted', run_id=run_id)
             elif status == 'rejected':
                 if row['run_id'] is not None or row['status'] == 'settled':

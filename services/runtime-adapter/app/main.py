@@ -159,7 +159,17 @@ def submit_prompt(session_id: str, request: PromptRequest) -> dict[str, object]:
             if rejection is not None:
                 raise HTTPException(status_code=503, detail=rejection) from exc
         raise HTTPException(status_code=503, detail="configured model provider is unavailable") from exc
-    return {"accepted": True, "session_id": session_id, "run_id": run_id}
+    response: dict[str, object] = {"accepted": True, "session_id": session_id, "run_id": run_id}
+    recovery = request.continuation_budget.get("recovery_attempt") if isinstance(
+        request.continuation_budget, dict) else None
+    if isinstance(recovery, dict) and isinstance(recovery.get("attempt_key"), str):
+        try:
+            response["recovery"] = adapter.recovery_receipt(session_id, recovery["attempt_key"])
+        except KeyError:
+            # The admission is already durable; a missing in-process projection
+            # is never a fabricated target. The Backend reconciles on the next pass.
+            pass
+    return response
 
 
 @app.post("/internal/runtime/sessions/{session_id}/resume", dependencies=[Depends(require_chat_admission)])
@@ -258,18 +268,6 @@ def continuation_qualification(session_id: str) -> dict:
     with record.lock:
         qualified = adapter.continuation_qualified(record)
         return {'qualified': qualified, 'reason': 'qualified' if qualified else 'model_or_executor_unqualified'}
-
-
-@app.get('/internal/runtime/sessions/{session_id}/recovery-receipt/{attempt_key}')
-def recovery_receipt(session_id: str, attempt_key: str) -> dict:
-    """Exact accepted target receipt for one Backend-minted attempt key."""
-
-    try:
-        return adapter.recovery_receipt(session_id, attempt_key)
-    except KeyError:
-        raise HTTPException(status_code=404, detail='unknown recovery attempt')
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/internal/runtime/sessions/{session_id}/cancel")

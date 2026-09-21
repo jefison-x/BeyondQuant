@@ -487,10 +487,17 @@ def peek_task_continuation(conversation_id: str, request: Request) -> dict:
 @app.post('/internal/task-continuation/{task_id}/dispatch')
 def dispatch_task_continuation(task_id: str, payload: dict[str, Any], request: Request) -> dict:
     context = _continuation_consumer_context(request)
-    if set(payload) != {'reservation_id'}:
+    allowed = {'reservation_id', 'recovery'}
+    if not {'reservation_id'} <= set(payload) or set(payload) - allowed:
         raise HTTPException(status_code=422, detail='exact continuation reservation required')
+    recovery = payload.get('recovery')
+    if recovery is not None:
+        required = {'interrupted_run_id', 'interrupted_generation', 'containment_attempt',
+                    'interrupted_executor_epoch', 'snapshot_tail_sequence', 'snapshot_digest'}
+        if not isinstance(recovery, dict) or set(recovery) != required:
+            raise HTTPException(status_code=422, detail='exact recovery loss evidence required')
     return _research_call(lambda: research_store.claim_continuation_dispatch(
-        task_id, payload['reservation_id'], trusted_context=context))
+        task_id, payload['reservation_id'], trusted_context=context, recovery=recovery))
 
 
 @app.post('/internal/task-continuation/{task_id}/block')
@@ -504,36 +511,13 @@ def block_task_continuation(task_id: str, payload: dict[str, Any], request: Requ
 @app.post('/internal/task-continuation/{task_id}/receipt')
 def record_task_continuation_receipt(task_id: str, payload: dict[str, Any], request: Request) -> dict:
     context = _continuation_consumer_context(request)
-    if set(payload) - {'reservation_id', 'status', 'run_id', 'charged_tokens', 'settlement_sha256', 'outcome'}:
+    allowed = {'reservation_id', 'status', 'run_id', 'charged_tokens', 'settlement_sha256', 'outcome',
+               'attempt_key', 'target_executor_epoch', 'target_generation'}
+    if set(payload) - allowed:
         raise HTTPException(status_code=422, detail='invalid continuation receipt fields')
     if not {'reservation_id', 'status'} <= set(payload):
         raise HTTPException(status_code=422, detail='original reservation and status required')
     return _research_call(lambda: research_store.record_continuation_receipt(
-        task_id, trusted_context=context, **payload))
-
-
-@app.post('/internal/task-continuation/{task_id}/recovery')
-def begin_task_recovery(task_id: str, payload: dict[str, Any], request: Request) -> dict:
-    context = _continuation_consumer_context(request)
-    required = {'reservation_id', 'interrupted_run_id', 'interrupted_generation',
-                'containment_attempt', 'interrupted_executor_epoch',
-                'snapshot_tail_sequence', 'snapshot_digest'}
-    allowed = required | {'read_only', 'replayed_calls', 'occurred_calls',
-                          'evidence_conflict', 'model_call_floor'}
-    if not required <= set(payload) or set(payload) - allowed:
-        raise HTTPException(status_code=422, detail='invalid recovery request fields')
-    return _research_call(lambda: research_store.begin_recovery(
-        task_id, trusted_context=context, **payload))
-
-
-@app.post('/internal/task-continuation/{task_id}/recovery-target')
-def record_task_recovery_target(task_id: str, payload: dict[str, Any], request: Request) -> dict:
-    context = _continuation_consumer_context(request)
-    required = {'reservation_id', 'attempt_key', 'run_id', 'target_executor_epoch', 'target_generation'}
-    allowed = required | {'status'}
-    if not required <= set(payload) or set(payload) - allowed:
-        raise HTTPException(status_code=422, detail='invalid recovery target fields')
-    return _research_call(lambda: research_store.record_recovery_target(
         task_id, trusted_context=context, **payload))
 
 

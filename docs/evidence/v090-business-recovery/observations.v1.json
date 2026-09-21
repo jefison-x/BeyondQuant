@@ -1,13 +1,13 @@
 {
   "provenance": {
-    "captured_at": 1790007491.6197774,
+    "captured_at": 1790011234.6120846,
     "harness": "runtime-adapter synthetic compatibility + real lifecycle journal + closed contract",
     "source_sha256": {
       "packages/contracts/business_recovery.py": "sha256:87d6fe5a4f4d4cd102464bab7fcbf2f2fe9fdfc33061ce2713a481bb1177ee10",
-      "services/backend/app/research_continuation.py": "sha256:2f30608f1789f183337701691c1a049f9e7a9e4597099d8f00585af825a520ca",
+      "services/backend/app/research_continuation.py": "sha256:fa68b9c557453168f3cdb0f477d8c592b8c8b6bb1e1bc8a0d4028cafb0a0947f",
       "services/gateway/app/recovery_carrier.py": "sha256:e51eacf5e10567a0f1fc6a46dc9f84accce4b6da0a8ead8b73fdda8e98a524fe",
       "services/runtime-adapter/app/business_recovery.py": "sha256:936b4b675f38577b5bd40503b25ce4887e437ed4e9a7b2e0ef25646c3aa46ce8",
-      "services/runtime-adapter/app/runtime.py": "sha256:d895a8f8b88fc59276d586c3cbd18cfd5d50153cfdb38b3d684d1c6fe2b74112"
+      "services/runtime-adapter/app/runtime.py": "sha256:4d99f7f3bf5086351e0d84081bf15e96cec02fa9bdafc913174bcea0ef858985"
     }
   },
   "scenarios": {
@@ -283,7 +283,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1790007491.6195657,
+        "observed_at": 1790011234.6119015,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -363,15 +363,15 @@
         "carrier_tail": 0,
         "digest": "0323ef59cae05fb08e98f5383ca92f788915dcb64a16d5045d975ecbfefbd0a0",
         "idle": true,
-        "run_id": "de055571eb064b80b61177375a0cea27",
+        "run_id": "9e18ec31097547afb9b8dbff06489841",
         "session_id": "rec-1",
         "tail": 0,
         "target_executor_epoch": 1,
-        "target_generation": "generation-992623af1ddb4bc3bfc3f84f78297640",
+        "target_generation": "generation-baafb1e94ad349ea9cf8655d0a505509",
         "trace_id": "rec-trace"
       },
       "provenance": {
-        "observed_at": 1790007491.5977163,
+        "observed_at": 1790011234.5793316,
         "source": "runtime-adapter-real-journal"
       },
       "verdict": "PASS"

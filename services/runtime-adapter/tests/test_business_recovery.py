@@ -281,3 +281,56 @@ def test_budget_decision_is_tri_state_and_never_double_deducts():
         permission_token_limit=10_000_000, other_settled=0, other_unresolved=0,
         r_token_limit=2_000_000, cum_exact=0, model_call_floor=1,
         evidence_conflict=True)["reason"] == "authoritative_evidence_conflict"
+
+
+def test_containment_summary_exposes_idle_recovery_anchor(tmp_path, monkeypatch):
+    adapter, recorded = _lost_session(tmp_path, monkeypatch)
+    try:
+        summary = adapter.containment_summary("rec-1")
+        anchor = summary["recovery_anchor"]
+        state = adapter._get("rec-1").journal.state
+        assert anchor["idle"] is True
+        assert anchor["snapshot_tail_sequence"] == len(state["calls"])
+        assert anchor["snapshot_digest"] == contract.canonical_snapshot_digest(
+            session_id="rec-1", trace_id="rec-trace",
+            tail_sequence=len(state["calls"]), calls=state["calls"])
+        # A missing durable journal yields no anchor, never a fabricated one.
+        assert adapter._recovery_anchor(adapter._session_root / "byq-lifecycle-evidence",
+                                        "unknown-session") is None
+    finally:
+        adapter.close()
+        FakeHarness.allow_run.set()
+
+
+def test_prompt_route_returns_the_accepted_recovery_target(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    adapter, recorded = _lost_session(tmp_path, monkeypatch)
+    monkeypatch.setattr(main, "adapter", adapter)
+    client = TestClient(main.app)
+    try:
+        record = adapter._get("rec-1")
+        snapshot = recovery.snapshot_from_state(record.journal.state)
+        # A tampered snapshot is rejected by the route with a closed reason.
+        tampered = _carrier(recorded, reservation_id="continuation_" + "a" * 32,
+                            snapshot=snapshot, digest="f" * 64)
+        rejected = client.post("/internal/runtime/sessions/rec-1/prompt", json={
+            "content": "recover", "idempotency_key": tampered["attempt_key"],
+            "conversation_context": [], "continuation_budget": _reservation(tampered)})
+        assert rejected.status_code == 409
+        assert rejected.json()["detail"]["code"] == "snapshot_digest_changed"
+        carrier = _carrier(recorded, reservation_id="continuation_" + "a" * 32, snapshot=snapshot)
+        FakeHarness.allow_run.set()
+        body = client.post("/internal/runtime/sessions/rec-1/prompt", json={
+            "content": "recover", "idempotency_key": carrier["attempt_key"],
+            "conversation_context": [], "continuation_budget": _reservation(carrier)})
+        assert body.status_code == 202, body.text
+        payload = body.json()
+        assert payload["accepted"] is True
+        assert payload["recovery"]["attempt_key"] == carrier["attempt_key"]
+        assert payload["recovery"]["target_executor_epoch"] == record.executor_epoch
+        assert payload["recovery"]["target_generation"] == record.runtime_generation
+    finally:
+        adapter.close()
+        FakeHarness.allow_run.set()

@@ -641,21 +641,34 @@ tag/release，不恢复 Phase 100，不触碰 `codex/phase-100c`/PR #338，不�
   `{attempt_key, ordinal, trigger_key, interrupted_run_id, interrupted_generation,
   containment_attempt, interrupted_executor_epoch, snapshot_tail_sequence, snapshot_digest}`，**仅
   Backend 铸造**；客户端/模型不得铸造。
-- **Backend 权威分配（行内，无新 store/migration）**：`research_continuation.begin_recovery` 在既有
-  `research_tasks.continuation_budget` 行上的**同一 task-row `SELECT ... FOR UPDATE`** 内按
-  `trigger_key` 去重复用、否则分配下一 ordinal（cap 3）；`record_recovery_target` 以 target
-  epoch/generation/run fence 持久化 Adapter 的 accepted receipt。预算公式为设计中的**不自双扣**
+- **Backend 权威分配（行内，无新 store/migration）**：恢复**折入既有 continuation seam**——沿用
+  既有 `/internal/task-continuation/{task_id}/dispatch` 与 `/receipt` 路由，**不新增任何跨 Plane 端点**。
+  `claim_continuation_dispatch` 在既有 `research_tasks.continuation_budget` 行上的**同一 task-row
+  `SELECT ... FOR UPDATE`** 内按 `trigger_key` 去重复用、否则分配下一 ordinal（cap 3），并把行 rearm
+  为 `reserved`；accepted target 由既有 `record_continuation_receipt`（带 `attempt_key`）写回行内
+  attempt 聚合，并以 target epoch/generation/run fence 拒绝 stale 写入。预算公式为设计中的**不自双扣**
   tri-state（`other_settled + other_unresolved + R.token_limit ≤ P.token_limit`；`R_available =
   R.token_limit − cum_exact`；未知费用→`paused`；任何新 recovery model run 必须有已知
   `R_available ≥ model_call_floor`）。
+- **服务端权威（P1-A 修复）**：请求**不再携带** `read_only`/`occurred_calls`/`replayed_calls`/
+  `evidence_conflict`/`model_call_floor`；这些全部由 Backend 从**自有权威证据**派生——occurred/replayed
+  来自 `agent_domain_call_evidence` 与 `agent_domain_call_claims`（session-global 连续性、未决 claim、
+  hash 冲突）、registry 来自 `domain_call_admission.ACTIONS`、floor 为服务端策略常量。请求只携带
+  Adapter 签发的 fenced loss + snapshot（BYQ-owned execution evidence），且 `interrupted_run_id` 必须
+  等于 Backend 自己已接受的 run（原始或既有 recovery attempt）。伪造/越权字段被闭合 payload 拒绝。
 - **Adapter 校验/原子检查/安装**：`services/runtime-adapter/app/business_recovery.py` 从真实
   append-only lifecycle journal 计算固定 `{tail, digest, idle}`（canonical digest 绑定
   `session_id`+`trace_id`+tail+**有序** closed call rows）；`submit_prompt` 在 `record.lock` 内、
   **创建新 root/target generation 之前**校验 carrier、匹配 durable containment，并重算/原子比较当前
-  snapshot 且要求 `idle=true`，随后安装 target generation 并以 accepted receipt 返回 live
+  snapshot 且要求 `idle=true`，随后安装 target generation 并在既有 prompt 响应内返回 accepted receipt
   `{target_executor_epoch, target_generation, run_id}`；旧 epoch/generation 迟到结果被 fence。
-- **Gateway 只转发封闭 authority**：`services/gateway/app/recovery_carrier.py` 只透传封闭九字段；
-  额外/未知字段失败关闭，绝不铸造 authority。
+- **Gateway 折入既有 consumer**：`_consume_admitted_task_continuation` 在既有 peek/claim/dispatch/
+  receipt seam 上检测 Adapter fenced containment（`containment_summary` 的只读 `recovery_anchor`），
+  由 Backend 铸造封闭 carrier 后经既有 Adapter prompt 路由原子准入，并把 accepted target 经既有
+  receipt 路由写回；`services/gateway/app/recovery_carrier.py` 只透传封闭九字段，额外/未知字段失败关闭。
+- **guard 费用绑定**：Adapter 对丢失 run 从**持久化 guard journal** 恢复精确 `charged_tokens`
+  （`_recover_guard_charge`），Gateway 经既有 receipt 路由把该精确费用绑定到原 attempt；不可读则保持
+  unknown→`paused`，绝不当作 0 或退款。
 - **recovery-mode admission envelope（封闭 registry）**：`packages/contracts/business_recovery.py` 的
   `STEP_SAFETY` 由 `domain_call_admission.ACTIONS` 派生，只允许只读或精确复用原
   `(action, task_id, idempotency_key, request_sha256, input_sha256)`；`may_produce_new_key` 为保守
@@ -668,6 +681,15 @@ tag/release，不恢复 Phase 100，不触碰 `codex/phase-100c`/PR #338，不�
   test_business_recovery.py`）；fail-able observer（25 项 defect-targeting 负例全部被拒）与真实
   adapter journal 证据 `docs/evidence/v090-business-recovery/`，由
   `tests/test_v090_business_recovery.py` 守门。
+- **P2 证据噪声收口**：`docs/evidence/research-handoff-h4/INTERFACE-REVIEW.json` 的改动**仅为
+  digest 刷新且可复现**：本 PR 修改了 `services/backend/app/main.py`（267 行 source 行）、
+  `services/gateway/app/main.py`、`services/runtime-adapter/app/main.py`、
+  `services/runtime-adapter/app/runtime.py`、`services/backend/app/research_continuation.py`，fail-closed
+  auditor（`scripts/ci/check-reliability-review.py`）要求每个 source/dependency digest 与当前树一致；
+  刷新后 `complete=true`（missing/stale/fake=0），未刷新则非零退出。无结构/字段/行增删，无
+  `auth_api.py`/`server.ts` 等无关文件 churn（已撤销）。`docs/evidence/v090-session-containment/
+  observations.v2.json` 仅更新因果相关 digest（runtime.py + gateway main.py 的 provenance 与 endpoint
+  场景 digest），保留原时间戳/run id，不再整文件重生成。
 - **边界与门禁不变**：`recovery_attempts` 是既有 authority 行的**行内 JSONB 子记录**，非独立
   store、无 DB migration、无新跨 Plane 权威接口、无新信任主体、**不铸造新 domain key**。**完整
   business-recovery gate 仍为 `IN_PROGRESS / BLOCKED_INTERNAL`**（本切片交付实现与真实证据，最终
