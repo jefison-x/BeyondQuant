@@ -164,7 +164,7 @@ want() { # want <check>
 # ------------------------------------------------------------------- postgres
 BYQ_CI_SCOPE="${BYQ_CI_SCOPE:-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-$$}}"
 case "$BYQ_CI_SCOPE" in
-  ''|*[!A-Za-z0-9_.-]*) echo "invalid CI scope" >&2; exit 2 ;;
+  .|..|''|*[!A-Za-z0-9_.-]*) echo "invalid CI scope" >&2; exit 2 ;;
 esac
 CI_PG="byq-ci-postgres-$BYQ_CI_SCOPE"
 CI_BACKEND="byq-ci-backend-$BYQ_CI_SCOPE"
@@ -262,14 +262,14 @@ ensure_ci_backend() {
   RESOURCES_TOUCHED=1
   if ! docker inspect "$CI_BACKEND" >/dev/null 2>&1; then
     printf '\n==> backend: starting live MCP contract dependency (%s)\n' "$CI_BACKEND"
-    docker run -d --name "$CI_BACKEND" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET" --network-alias backend \
+    docker run -d --pull=never --name "$CI_BACKEND" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET" --network-alias backend \
       -e BYQ_DATABASE_URL="postgresql+psycopg://byq_test:byq-test-dev@$CI_PG:5432/byq_domain_test" \
       -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/backend:/app" -w /app \
       -v "$REPO_ROOT/plugins/dsh-byq/registry:/app/plugin-registry:ro" \
       -e BYQ_WEB_EVIDENCE_PROVENANCE_POLICY=/opt/byq-evidence/web-evidence-provenance.json \
       -v "$REPO_ROOT/config/dsh/generated/web-evidence-provenance.json:/opt/byq-evidence/web-evidence-provenance.json:ro" \
-      "$(ci_image backend)" >/dev/null
+      "$(ci_image_ref backend)" >/dev/null
   fi
   for _ in $(seq 1 30); do
     docker exec "$CI_BACKEND" python -c \
@@ -285,11 +285,11 @@ ensure_ci_mcp() {
   ensure_ci_backend || return 1
   RESOURCES_TOUCHED=1
   if ! docker inspect "$CI_MCP_SERVER" >/dev/null 2>&1; then
-    docker run -d --name "$CI_MCP_SERVER" --label "byq.ci.scope=$BYQ_CI_SCOPE" \
+    docker run -d --pull=never --name "$CI_MCP_SERVER" --label "byq.ci.scope=$BYQ_CI_SCOPE" \
       --network "$CI_PG_NET" --network-alias mcp \
       -e BYQ_MCP_TOKEN=ci-mcp-test-only -e BYQ_BACKEND_URL=http://backend:8000 \
       -e BYQ_WEB_EVIDENCE_PROVENANCE_POLICY=/app/dsh-0.1.2rc1.web-evidence-provenance.json \
-      "$(ci_image mcp)" >/dev/null
+      "$(ci_image_ref mcp)" >/dev/null
   fi
   for _ in $(seq 1 30); do
     docker exec "$CI_MCP_SERVER" node -e \
@@ -352,8 +352,29 @@ ci_image() {
   printf '%s-%s' "$COMPOSE_PROJECT_NAME" "$1"
 }
 
+# Immutable image ids captured once, immediately after the run-scoped build.
+# Later container runs prefer these over the mutable run-scoped tag, and every
+# such run uses --pull=never: a missing image fails closed instead of silently
+# resolving a stale image from a registry.
+declare -A CI_IMAGE_IDS=()
+ci_image_ref() {
+  local service="$1"
+  if [ -n "${CI_IMAGE_IDS[$service]:-}" ]; then
+    printf '%s' "${CI_IMAGE_IDS[$service]}"
+  else
+    printf '%s' "$(ci_image "$service")"
+  fi
+}
+
+# Run/attempt-scoped manifest of the exact captured image ids, consumed by the
+# independent always-cleanup process so a dangling image (tag lost but id still
+# present) is removed and verified. Path is strictly isolated by BYQ_CI_SCOPE.
+ci_image_manifest_path() {
+  printf '%s' "$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE/image-ids.env"
+}
+
 build_test_images() {
-  local services=() service
+  local services=() service image_id manifest tmp
   python3 scripts/dsh/release.py check --historical-inputs || return 1
   python3 scripts/dsh/promotion.py check || return 1
   python3 -c 'from scripts.dsh import build_revision as b; [b.check(b.selected_build_id(r)) for r in sorted(b.RELEASES)]' || return 1
@@ -377,8 +398,18 @@ build_test_images() {
   fi
   for service in "${services[@]}"; do
     printf '    image identity -> service=%s tag=%s id=' "$service" "$(ci_image "$service")"
-    docker image inspect "$(ci_image "$service")" --format '{{.Id}}' || return 1
+    image_id="$(docker image inspect "$(ci_image "$service")" --format '{{.Id}}')" || return 1
+    CI_IMAGE_IDS["$service"]="$image_id"
+    printf '%s\n' "$image_id"
   done
+  manifest="$(ci_image_manifest_path)"
+  tmp="$manifest.tmp.$$"
+  mkdir -p "$(dirname "$manifest")"
+  : > "$tmp"
+  for service in "${services[@]}"; do
+    printf '%s=%s\n' "$service" "${CI_IMAGE_IDS[$service]}" >> "$tmp"
+  done
+  mv -f "$tmp" "$manifest"
 }
 resolve_ci_compose_urls() {
   local frontend_address gateway_address
@@ -430,7 +461,7 @@ check_backend() {
   step "backend: pytest against clean postgres"
   ensure_clean_postgres || { bad "clean postgres"; return; }
   RESOURCES_TOUCHED=1
-  if run_interruptible docker run --rm --name "$CI_BACKEND_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET" \
+  if run_interruptible docker run --pull=never --rm --name "$CI_BACKEND_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET" \
       -e BYQ_DATABASE_URL="postgresql+psycopg://byq_test:byq-test-dev@$CI_PG:5432/byq_domain_test" \
       -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/backend:/app" -w /app \
@@ -438,34 +469,34 @@ check_backend() {
       -e BYQ_WEB_EVIDENCE_PROVENANCE_POLICY=/opt/byq-evidence/web-evidence-provenance.json \
       -v "$REPO_ROOT/config/dsh/generated/web-evidence-provenance.json:/opt/byq-evidence/web-evidence-provenance.json:ro" \
       -v "$REPO_ROOT/config/dsh/generated/dsh-0.1.2rc1.web-evidence-provenance.json:/opt/byq-evidence/dsh-0.1.2rc1.web-evidence-provenance.json:ro" \
-      "$(ci_image backend)" python -m pytest -q -p no:cacheprovider \
+      "$(ci_image_ref backend)" python -m pytest -q -p no:cacheprovider \
       --durations=20 --durations-min=1.0; then
     ok "backend tests"; else bad "backend tests"; fi
   # Deferred-reset isolation regression: the same schema-isolation tests run in
   # a fixed-seed shuffled order, proving per-test cleanup is order-independent.
-  if run_interruptible docker run --rm --name "$CI_BACKEND_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET" \
+  if run_interruptible docker run --pull=never --rm --name "$CI_BACKEND_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET" \
       -e BYQ_DATABASE_URL="postgresql+psycopg://byq_test:byq-test-dev@$CI_PG:5432/byq_domain_test" \
       -e BYQ_TEST_SHUFFLE_SEED=1 -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/backend:/app" -w /app \
       -v "$REPO_ROOT/plugins/dsh-byq/registry:/app/plugin-registry:ro" \
-      "$(ci_image backend)" python -m pytest -q -p no:cacheprovider \
+      "$(ci_image_ref backend)" python -m pytest -q -p no:cacheprovider \
       tests/test_schema_isolation.py; then
     ok "backend schema isolation (shuffled)"; else bad "backend schema isolation (shuffled)"; fi
   if [ -d "$REPO_ROOT/workers/feedback-publisher/tests" ]; then
-    if run_interruptible docker run --rm --name "$CI_BACKEND_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" \
+    if run_interruptible docker run --pull=never --rm --name "$CI_BACKEND_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" \
         -e PYTHONDONTWRITEBYTECODE=1 \
         -v "$REPO_ROOT/workers/feedback-publisher:/publisher:ro" -w /publisher \
         -v "$REPO_ROOT/workers/feedback_http_deadline.py:/opt/byq-worker-http/feedback_http_deadline.py:ro" \
         -e PYTHONPATH=/opt/byq-worker-http:/app \
-        "$(ci_image backend)" python -m pytest -q -p no:cacheprovider tests; then
+        "$(ci_image_ref backend)" python -m pytest -q -p no:cacheprovider tests; then
       ok "feedback publisher fake-GitHub tests"; else bad "feedback publisher fake-GitHub tests"; fi
   fi
   if [ -d "$REPO_ROOT/workers/feedback-hub-relay/tests" ]; then
-    if run_interruptible docker run --rm --name "$CI_BACKEND_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" \
+    if run_interruptible docker run --pull=never --rm --name "$CI_BACKEND_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" \
         -e PYTHONDONTWRITEBYTECODE=1 -v "$REPO_ROOT/workers/feedback-hub-relay:/relay:ro" -w /relay \
         -v "$REPO_ROOT/workers/feedback_http_deadline.py:/opt/byq-worker-http/feedback_http_deadline.py:ro" \
         -e PYTHONPATH=/opt/byq-worker-http:/app \
-        "$(ci_image backend)" python -m pytest -q -p no:cacheprovider tests; then
+        "$(ci_image_ref backend)" python -m pytest -q -p no:cacheprovider tests; then
       ok "feedback hub relay tests"; else bad "feedback hub relay tests"; fi
   fi
 }

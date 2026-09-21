@@ -1,0 +1,38 @@
+{
+  "blocker": "subagent-child-crash",
+  "constraints": {
+    "byq_child_resume_bridge": false,
+    "d15_g_verdict": "NO_GO",
+    "dependency_upgrade": "none",
+    "deployment": "none",
+    "fork_or_patch_of_dsh": false,
+    "production_selector": "dsh-0.1.2rc1",
+    "r3_resume": "NO",
+    "release_or_tag_created": false
+  },
+  "evidence": "docs/evidence/v090-closeout/DSH-015RC1-CLOSEOUT-SLICES.md",
+  "examined_version": {
+    "channel": "alpha",
+    "id": "alpha2",
+    "npm": "0.1.6-alpha.2",
+    "subagent_package_version": "0.1.6-alpha.2"
+  },
+  "is_external": true,
+  "non_actions": [
+    "No DSH fork or patch",
+    "No BYQ provider or child-resume bridge",
+    "No second session store",
+    "No production selector/default upgrade",
+    "No dependency upgrade",
+    "No deployment, tag or release",
+    "No Phase 100 or #338 work",
+    "No D15-G re-run or R3 unfreeze"
+  ],
+  "owner_node": "d15-4-child-provider-remediation",
+  "required_capability": "out-of-process-continuable-provider",
+  "required_provider": "an actually registerable out-of-process DSH provider implementing SubagentProvider.prepareContinuable whose child runs in its own OS process and can be rediscovered by a new generation after the parent/provider process is SIGKILLed",
+  "schema_version": "byq-v090-dsh-provider-qualification-external-blocked.v1",
+  "slice": "v090-dsh-provider-qualification",
+  "status": "BLOCKED",
+  "upstream_resolution": "an upstream out-of-process provider implementing SubagentProvider.prepareContinuable, with a durable mailbox and a cross-process lease protocol, must land and be qualified; BYQ must not build a second harness or a child-resume bridge"
+}

@@ -27,15 +27,16 @@
 <!-- byq:v090-step5-b2-adapter-restart=blocked-external -->
 <!-- byq:v090-step5-b3-terminal-adapter-restart=complete -->
 <!-- byq:v090-step5-b4-terminal-dsh-runtime-restart=complete -->
+<!-- byq:v090-dsh-provider-qualification=blocked-external -->
 <!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->
 <!-- byq:phase-100-p100-c=paused-not-delivery -->
-<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.185 -->
+<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.189 -->
 
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|
 | Product | 最近完成 Phase 97（marker 97） | 未授权任何新的 Product Phase | 维护者阶段性授权 + 本文件 next phase | 一阶段一 worktree/Draft PR；Human Merge Gate；不得自授新 Phase |
 | 数据/资格 | Phase 98 资格与基准冻结已授权（#282，2026-09-17）；Phase 99 `COMPLETE`（#283）；Phase 100 **`PAUSED`**（维护者 #285 于 2026-09-17 开启，冻结 Tushare 6000 数据集范围；P100-A 基金 provider 合同已并入 #286；P100-B 指数每日指标已并入 `main`（#337，base commit 即其合并提交）；P100-C 申万行业存在**未审查实现提交**于隔离分支 `codex/phase-100c`（Draft #338），**paused、not delivered、未审查、未并入 `main`**；P100-D/P100-E 冻结）；Phase 101 `COMPLETE` | 0.9 严格顺序步骤 1（closeout audit）、步骤 2（full-interface re-baseline）、步骤 3（composite research fault regression）与步骤 4（ADR-0082/0083 决定）已完成；步骤 5 首切片 B1（`subagent-child-crash`）已执行并因缺上游进程外 provider 保持 **BLOCKED（external）**；维护者已决定 **`G-split`** 并按严格内部顺序继续（B2 → `terminal-adapter-restart` → `terminal-dsh-runtime-restart`）：B2 已执行并保持 BLOCKED-external，B3 `terminal-adapter-restart` 已执行且候选/资格层最小 `TerminalAttachment` 生命周期验证 PASS，B4 `terminal-dsh-runtime-restart` 已执行且候选/资格层跨真实 DSH runtime OS 进程重启的 truthful `lost`/`interrupted` + surviving-PTY reconcile 验证 PASS；G-split 严格内部顺序（B2/B3/B4）已走完，D15-G 因 B1 external BLOCKED 不得重跑；见“维护（当前）”行；Phase 100 切片暂停，待维护者明确恢复后才继续 P100-C/D/E；**S3/历史成分准备属 0.10.0，不在 0.9 gate 内** | 维护者开启 Phase 100（#285）+ [V1_DATA_BASELINE_CONTRACT](V1_DATA_BASELINE_CONTRACT.md)「6000 积分可接入的数据集（Phase 100 实施范围）」；ADR-0074 为边界 ADR；Phase 98 授权只覆盖前置资格，**不**覆盖 Phase 100 实施范围 | 仅 Tushare、不用 Community；不支持分钟/实时/港股/特色数据；不得以“接口可调用/单次拉取成功”代替覆盖/时点/单位/许可证据；不改生产状态（除非另有部署授权）；HIST/THS 概念在证明历史可见性前保持 blocked；`codex/phase-100c` 不是交付，不得据此声明 P100-C 完成，不得从未审查分支推断业务完成 |
-| 维护（当前） | **0.9 严格顺序第 5 步 G-split 内 B4 `terminal-dsh-runtime-restart`**（独立 worktree/分支 `codex/v090-step5-b4-terminal-dsh-runtime-restart`，基于动态 `origin/main`；不推进 Product Phase）：在真实隔离 DSH 0.1.5-rc.1 候选闭包内复用 B3 的 native runtime role 与最小 `TerminalAttachment` store schema，**真正终止并重启 DSH runtime OS 进程**（generation A → SIGKILL runtime → 全新 OS 进程 generation B）。真实结果：durable attachment 被 fresh adapter generation B 重载、授权与 generation/epoch 校验后确定性返回 **`lost`**（`NATIVE_SESSION_UNAVAILABLE`）并拒绝 fake reattach（no returned session/pid、no identity claim）；**surviving PTY with no attachment** 被 reconcile 为 `lost`、**never silently reused**；cleanup 无孤儿；BYQ conversation / durable-job 身份在 terminal loss 前后保持 `active`（terminal lifetime 不定义 conversation/job lifetime）。fail-able observer 明确区分“正确 lost”与“not implemented / label PASS”。B1 `subagent-child-crash` 保持 **BLOCKED（external）** mandatory external gate，**不**降级、**不**删除、**不**改为 optional；B2 `subagent-byq-adapter-restart` 保持 **BLOCKED（external/dependency）**；G-split 严格内部顺序 **B2（BLOCKED-external）→ B3 `terminal-adapter-restart`（PASS）→ B4 `terminal-dsh-runtime-restart`（本批执行，PASS）** 已走完，D15-G 因 B1 external BLOCKED 不得重跑；D15-G 保持 `NO_GO`；**`R3_RESUME = NO`**；0.9 未关闭 | **下一唯一任务**：无——G-split 内部顺序已走完；D15-G 重跑被 B1 external BLOCKED 阻塞，等待上游进程外 continuable provider（ADR-0082 Option 1）；D15-G 保持 `NO_GO` 直到 B1 真正 PASS；本 PR 停在 Draft | 维护者 0.9 步骤 5 G-split 指令 + 本文件 next phase；G-split 决定记录 `docs/evidence/v090-closeout/gsplit-decision.v1.json`；B4 证据 `docs/evidence/v090-step5-b4-terminal-dsh-runtime-restart/`；ADR-0083（Accepted；候选/资格层最小实现，无 R4 productization） | 不实现生产 wiring 或 R4 productization；不切换生产 selector；不 deploy；不创建/移动 tag/release；不恢复 Phase 100；不触碰 `codex/phase-100c`/PR #338；`R3_RESUME = NO`；D15/R3 保持冻结；不重跑 D15-G；不宣称 D15-G 已 GO 或 0.9 已关闭 |
+| 维护（当前） | **0.9 严格顺序第 5 步 G-split 内 B4 `terminal-dsh-runtime-restart`**（独立 worktree/分支 `codex/v090-step5-b4-terminal-dsh-runtime-restart`，基于动态 `origin/main`；不推进 Product Phase）：在真实隔离 DSH 0.1.5-rc.1 候选闭包内复用 B3 的 native runtime role 与最小 `TerminalAttachment` store schema，**真正终止并重启 DSH runtime OS 进程**（generation A → SIGKILL runtime → 全新 OS 进程 generation B）。真实结果：durable attachment 被 fresh adapter generation B 重载、授权与 generation/epoch 校验后确定性返回 **`lost`**（`NATIVE_SESSION_UNAVAILABLE`）并拒绝 fake reattach（no returned session/pid、no identity claim）；**surviving PTY with no attachment** 被 reconcile 为 `lost`、**never silently reused**；cleanup 无孤儿；BYQ conversation / durable-job 身份在 terminal loss 前后保持 `active`（terminal lifetime 不定义 conversation/job lifetime）。fail-able observer 明确区分“正确 lost”与“not implemented / label PASS”。B1 `subagent-child-crash` 保持 **BLOCKED（external）** mandatory external gate，**不**降级、**不**删除、**不**改为 optional；B2 `subagent-byq-adapter-restart` 保持 **BLOCKED（external/dependency）**；G-split 严格内部顺序 **B2（BLOCKED-external）→ B3 `terminal-adapter-restart`（PASS）→ B4 `terminal-dsh-runtime-restart`（本批执行，PASS）** 已走完，D15-G 因 B1 external BLOCKED 不得重跑；D15-G 保持 `NO_GO`；**`R3_RESUME = NO`**；0.9 未关闭 | **下一唯一任务**：无——G-split 内部顺序已走完；D15-G 重跑被 B1 external BLOCKED 阻塞，等待上游进程外 continuable provider（ADR-0082 Option 1）；本批另执行独立监控切片 `v090-dsh-provider-qualification`（rc.2 与 alpha.2 均 **BLOCKED（external）**，见下节及 `docs/evidence/v090-dsh-provider-qualification/`，**不升级依赖**）；D15-G 保持 `NO_GO` 直到 B1 真正 PASS；本 PR 停在 Draft | 维护者 0.9 步骤 5 G-split 指令 + 本文件 next phase；G-split 决定记录 `docs/evidence/v090-closeout/gsplit-decision.v1.json`；B4 证据 `docs/evidence/v090-step5-b4-terminal-dsh-runtime-restart/`；ADR-0083（Accepted；候选/资格层最小实现，无 R4 productization） | 不实现生产 wiring 或 R4 productization；不切换生产 selector；不 deploy；不创建/移动 tag/release；不恢复 Phase 100；不触碰 `codex/phase-100c`/PR #338；`R3_RESUME = NO`；D15/R3 保持冻结；不重跑 D15-G；不宣称 D15-G 已 GO 或 0.9 已关闭 |
 | 依赖资格（D15） | **当前资格状态（B4 之后，2026-09-21）**：`terminal-adapter-restart` = **PASS**（B3 候选/资格层证据 `docs/evidence/v090-step5-b3-terminal-adapter-restart/verdict.v1.json`）；`terminal-dsh-runtime-restart` = **PASS**（B4 候选/资格层证据 `docs/evidence/v090-step5-b4-terminal-dsh-runtime-restart/verdict.v1.json`，跨真实 DSH runtime OS 进程重启的 truthful `lost` + surviving-PTY reconcile）；`subagent-child-crash` = **BLOCKED（external）**；`subagent-byq-adapter-restart` = **BLOCKED（external/dependency）**；ADR-0083 = **Accepted，仅候选/资格层最小实现完成；R4 / production wiring NOT implemented**（含 DSH-runtime-restart + orphan reconcile）；D15-G **未重跑**、仍 **`NO_GO`**，且即使重跑仍为 `NO_GO`（B1/B2 非 PASS）；R3 冻结、`R3_RESUME=NO`。**历史快照说明（state-consistency）：**D15-4/D15-5/D15-G 的 committed verdict 保持当时事实——D15-5 中 `adapter-restart` 与 `dsh-runtime-restart` 均为 `BLOCKED`、committed BYQ 树无 `TerminalAttachment`；D15-G 由四个 atomic required capability `BLOCKED` 得出 `NO_GO`；**历史已提交快照（不改写）**：`docs/evidence/d15/d15-5/`、`docs/evidence/d15/d15-g/` **未改写**，**不是**当前资格状态的唯一权威；B4 current overlay 见 `docs/evidence/v090-step5-b4-terminal-dsh-runtime-restart/current-overlay.v1.json`。 | 无：G-split 内部顺序已走完；D15-G 重跑被 B1 external BLOCKED 阻塞，未授权任何后续 D15/R3/生产切换；R3 解冻需 GO 加 R3/R6 原生连续性证据 | 维护者 D15 目标决策（2026-09-19）+ 专项 D15 计划 + 0.9 步骤 5 G-split 指令；B4 证据 `docs/evidence/v090-step5-b4-terminal-dsh-runtime-restart/`；ADR-0083 候选/资格层最小实现（无 R4 productization） | 不改生产 selector；候选隔离；NO_GO 后不恢复 R3；不实现生产 wiring/R4 productization；D15-4/D15-5/D15-G 历史 committed 状态与 D15-G 四项 atomic BLOCKED 快照不改写；D15-G 不得在 B1 BLOCKED 时重跑；不宣称 D15-G 已 GO 或 0.9 已关闭 |
 
 ## 0.9 closeout governance & gap ledger audit（2026-09-20，历史审计快照）
@@ -383,6 +384,84 @@ store schema（**不建第二 generic harness**）；BYQ 仍只拥有有界 atta
   `tests/test_v090_step5_b4_terminal_dsh_runtime_restart.py` 断言。构建身份推进
   `post-u8.184 → post-u8.185`（`scripts/`、`tests/` 属 build inputs，仅重建身份；历史
   manifest 与全部证据保留）。
+
+## 独立 DSH provider 资格监控切片 `v090-dsh-provider-qualification`（2026-09-21，权威维护条目）
+
+本批执行**独立维护/依赖资格监控切片**（独立 worktree/分支 `codex/v090-dsh-provider-qualification`，
+基于动态 `origin/main`），回答一个问题：**未来哪个 DSH 发布能解锁 ADR-0082 Option 1 blocker**。
+这是监控/资格，不推进 Product Phase，不实现 ADR-0082 Option 1（属上游 DSH），不建 BYQ provider /
+child-resume bridge / 第二 session store，不切换生产 selector/default，**不升级依赖**，不 deploy，
+不创建/移动 tag/release，不恢复 Phase 100，不触碰 `codex/phase-100c`/PR #338，不 fork/patch DSH，
+**不向外部仓库提交 issue/PR**。**B1/B2/D15-G/R3 状态不变**：B1 `subagent-child-crash` 保持
+**BLOCKED（external）**，B2 `subagent-byq-adapter-restart` 保持 **BLOCKED（external/dependency）**，
+D15-G 保持 **`NO_GO`** 且**未重跑**，**`R3_RESUME = NO`**，0.9 未关闭。
+
+- **版本/包来源 + 完整闭包**：`scripts/d15/provider_qualification/version_provenance.py` 只读记录
+  npm dist-tags、发布时间、根 tarball integrity、完整解析闭包（rc.2 = 594 包，alpha.2 = 650 包，
+  含 canonical sha256）与 6 个 subagent provider 闭包；PyPI `deepseek-harness-sdk` /
+  `deepseek-harness-runtime-bin` **均无** `0.1.5rc2`/`0.1.6a2`，故两个发布都**不是 coherent pairing**。
+- **原生能力清单 + 探针**：`scripts/d15/provider_qualification/capability_inventory.mjs` 在隔离安装中
+  启动真实 cordis 上下文 + 真实 `SubagentRuntime`，注册真实 provider 并调用真实
+  `SubagentRuntime.prepareContinuable` gate。结果：rc.2 与 alpha.2 的 in-process `spawn`/`fork`
+  gate `PASS`，而 out-of-process `acp`/`codex`/`claude-code`/`dsh-sdk` 全部
+  `UNSUPPORTED_CAPABILITY`；两个发布的 README 仍声明 **Process-local residency**（跨进程续接需要
+  **未来的 durable mailbox + cross-process lease protocol**）、**No durable parent mailbox**、
+  **ACP children remain one-shot**。`out-of-process.d.ts`/`subprocessRunHandle` 等
+  **one-shot helper 符号存在但不算 capability**。
+- **结果 = 两个版本均 BLOCKED（external）**：机器可读 verdict 分版本记录
+  `verdict.rc2.v1.json` / `verdict.alpha2.v1.json`（`format_valid=true`、`all_pass=false`、
+  `external_blocked=true`、exit 1）；`cross_process_continuation_qualification = null`，因为不存在
+  可运行的 out-of-process continuable provider。最小具体缺口 = DSH 无 out-of-process
+  `prepareContinuable` provider，且无 durable mailbox / cross-process lease protocol。
+- **显式资格开关**：原生探针**不进入日常 CI**，仅在 `BYQ_DSH_PROVIDER_QUALIFICATION=1` 时经
+  `scripts/d15/provider_qualification/run_provider_qualification.sh` 运行；能力缺失时**稳定输出
+  BLOCKED 且非零退出**，不造成日常 CI 误报。
+- **上游需求包**：`docs/evidence/v090-dsh-provider-qualification/upstream-requirement.md` 给出最小接口
+  契约（`SubagentProvider.prepareContinuable`、durable mailbox、cross-process lease）、10 条生命周期/
+  安全不变式、可复现 B1/B2 场景与上游验收清单。**未向外部仓库发送任何 issue/PR**。
+- **可失败 observer**：`provider_qualification_observer.py --selfcheck` 33 项控制全部非零（31 项
+  defect-targeting），显式覆盖 **fake provider / in-process provider / one-shot provider /
+  no-mailbox / double-lease / duplicate-settlement** 六类必需失败。
+- 证据 `docs/evidence/v090-dsh-provider-qualification/`，由
+  `tests/test_v090_dsh_provider_qualification.py` 断言。构建身份推进
+  `post-u8.185 → post-u8.186`（`scripts/`、`tests/` 属 build inputs，仅重建身份；历史 manifest 与
+  全部证据保留）。
+- **结论**：ADR-0082 Option 1 **仍 BLOCKED（external）**；**未执行任何依赖升级**；下一个上游合格
+  provider 出现时本监控切片可重跑。
+- **追加：PR #348 CI 运行域镜像引用加固（2026-09-21，同 PR）**：backend lane 出现一次运行域
+  `:latest` tag 丢失（后续 `docker run` 误走 registry pull）与一次 26% 处非确定性 pytest 失败。经
+  诊断：二者**不可本地复现**（本机同镜像 backend 全绿；attempt 1 在同一 26% 位置无失败；`main`
+  backend lane 绿），且 #348 **不触碰任何 backend 代码**，故**非 #348 引入**。加固
+  `scripts/ci/local-ci.sh`：run-scoped 镜像构建后立即捕获 immutable image id，backend/mcp 容器运行
+  改用该 id 并加 `--pull=never`，缺失时 **fail-closed、绝不回退 registry/陈旧镜像**；identity 与
+  cleanup gate **不变**。回归测试 `tests/test_ci_run_scoped_image_reference.py`。构建身份推进
+  `post-u8.186 → post-u8.187`（`scripts/`、`tests/` 属 build inputs，仅重建身份；历史 manifest 与
+  全部证据保留）。**未改历史 verdict、未改生产 selector/compose/deployment、未 deploy/tag/release、
+  未运行 Full CI、未触碰 `codex/adr-gate-rationalization`。**
+- **追加：cleanup image-id 收口（2026-09-21，同 PR）**：维护者指出运行侧 immutable-id 修复未闭合其
+  启用的清理场景——tag 丢失而 ID 仍在时，旧 cleanup 只按 tag 校验，会留下 dangling image 却误报成功。
+  现 `local-ci.sh` 在构建后把本次实际捕获的 `service=sha256:<64hex>` 列表原子写入按
+  `BYQ_CI_SCOPE` 严格隔离的 manifest（`.ci-artifacts/$BYQ_CI_SCOPE/image-ids.env`）；独立
+  `always-cleanup` 进程读取同一路径，**校验后才**对精确 ID 执行 `docker image rm`（仅当该 ID 无其他
+  scope 的 tag），清理后**同时验证 tag 与精确 ID 均消失**。缺失 manifest 保持向后兼容；内容非法
+  一律 fail-closed 且**绝不**把文件内容交给 `docker image rm`。**无 global prune、不删除其他 scope/
+  共享镜像**；identity/backend/schema/cleanup gate 均未放宽。行为测试
+  `tests/test_ci_cleanup_image_ids.py`（strict fake docker：tag 丢失 ID 仍在被移除、tag+ID 双移除、
+  shared foreign-tag 不删除、foreign-scope manifest 不读取、非法/畸形 manifest fail-closed、缺失
+  manifest 向后兼容、重复 ID 去重）。构建身份推进
+  `post-u8.187 → post-u8.188`（`scripts/`、`tests/` 属 build inputs，仅重建身份；历史 manifest 与
+  全部证据保留）。**未改历史 verdict、未改生产 selector/compose/deployment、未 deploy/tag/release、
+  未运行 Full CI、未取消或重跑当前 CI、未触碰 PR #349。**
+- **追加：manifest 边界两处窄修（2026-09-21，同 PR）**：(1) scope 现在显式拒绝 `.`/`..`，且
+  manifest 目录经规范化必须严格等于 `.ci-artifacts/<scope>`，杜绝 `..` 把 `image-ids.env` 解析到
+  `.ci-artifacts` 之外；`local-ci.sh` 的 scope 校验同步拒绝 `.`/`..`。(2) manifest 的 `service`
+  必须是本次 `image_resources` 精确白名单成员，**未知或重复 service 一律 fail-closed**，其 ID
+  **绝不**交给 `docker image rm`。行为测试新增：`.`/`..` scope 拒绝且不读取/不删除越界 manifest、
+  unknown service 与 duplicate service fail-closed 且 ID 不被删除。既有 foreign-tag 共享保护、
+  缺失 manifest 向后兼容、无 global prune 全部保留。构建身份推进
+  `post-u8.188 → post-u8.189`（`scripts/`、`tests/` 属 build inputs，仅重建身份；历史 manifest 与
+  全部证据保留）。**未改历史 verdict、未改生产 selector/compose/deployment、未 deploy/tag/release、
+  未运行 Full CI、未取消或重跑当前 CI、未触碰 PR #349、未引入镜像签名或第二框架。**
 
 ## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19，历史叙述）
 
