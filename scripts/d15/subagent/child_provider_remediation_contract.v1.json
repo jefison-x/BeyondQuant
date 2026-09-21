@@ -1,0 +1,73 @@
+{
+  "schema_version": "byq-v090-d15-child-provider-remediation-contract.v1",
+  "blocker": "subagent-child-crash",
+  "owner_node": "d15-4-child-provider-remediation",
+  "step": "0.9 strict-order step 5 slice 1 (FIRST and ONLY slice)",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1"
+  },
+  "required_evidence_class": "native-runtime-isolated",
+  "required_providers": [
+    {
+      "name": "spawn",
+      "package": "@deepseek-ai/dsh-subagent-spawn-in-process",
+      "boundary": "in-process",
+      "in_candidate_bundle": true
+    },
+    {
+      "name": "fork",
+      "package": "@deepseek-ai/dsh-subagent-fork-in-process",
+      "boundary": "in-process",
+      "in_candidate_bundle": true
+    },
+    {
+      "name": "acp",
+      "package": "@deepseek-ai/dsh-subagent-acp",
+      "boundary": "out-of-process",
+      "in_candidate_bundle": true
+    },
+    {
+      "name": "codex",
+      "package": "@deepseek-ai/dsh-subagent-codex",
+      "boundary": "out-of-process",
+      "in_candidate_bundle": true
+    },
+    {
+      "name": "claude-code",
+      "package": "@deepseek-ai/dsh-subagent-claude-code",
+      "boundary": "out-of-process",
+      "in_candidate_bundle": true
+    }
+  ],
+  "required_capability": {
+    "id": "out-of-process-continuable-provider",
+    "description": "an out-of-process DSH provider implementing SubagentProvider.prepareContinuable whose child can be independently killed/restarted and natively resumed",
+    "available_in_0_1_5_rc1": false
+  },
+  "required_gate": {
+    "method": "SubagentRuntime.prepareContinuable",
+    "out_of_process_rejection_code": "UNSUPPORTED_CAPABILITY",
+    "rejection_message_fragment": "does not support continuable children"
+  },
+  "child_crash_qualification_required_fields": {
+    "method": "child-sigkill",
+    "child_pid_death_observed": true,
+    "parent_alive_during_kill": true,
+    "parent_truthful_failed_settlement": true,
+    "child_id_retained": true,
+    "natively_resumed_or_loss_marked": true,
+    "orphan_processes": 0
+  },
+  "forbidden_substitutions": [
+    "byq-child-resume-bridge",
+    "same-process-provider",
+    "owning-process-sigkill",
+    "label-only-pass"
+  ],
+  "pass_requires": "an out-of-process provider with prepareContinuable actually present plus a real child-only SIGKILL qualification with a truthful parent settlement and no orphan",
+  "blocked_definition": "the required capability is absent from the candidate; the blocker stays BLOCKED and an external upstream provider is required",
+  "candidate_declaration": "config/dsh/candidates/dsh-0.1.5rc1/candidate.json",
+  "adr": "docs/architecture/adr/ADR-0082-dsh-continuable-child-resume.md"
+}

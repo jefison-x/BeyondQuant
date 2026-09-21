@@ -1428,6 +1428,45 @@ and advances the production runtime build identity
 `deployment.json`, immutable release registry or 0.1.2 artifact/evidence change and no
 deployment.
 
+## 0.9 step-5 B1 `subagent-child-crash` remediation (maintenance, 2026-09-21)
+
+This maintenance batch executes the FIRST and ONLY slice of step-5 of the 0.9 strict
+order: B1 `subagent-child-crash`, owner `d15-4-child-provider-remediation`. It is an
+evidence/qualification batch. It does **not** implement ADR-0082 Option 1 (that is
+upstream DSH work), does **not** build a BYQ child-resume bridge (Option 2 is
+rejected), does **not** substitute a same-process provider, an owning-process SIGKILL
+or a label-only PASS, does **not** unfreeze D15/R3, does **not** switch the production
+selector, does **not** deploy, and does **not** create or move any tag/release. It does
+not inspect or copy the Community repository and does not resume frozen Phase 100.
+
+- **Read-only capability discovery + isolated qualification (real).**
+  `scripts/d15/subagent/child_provider_discovery.mjs` boots the real candidate cordis
+  context + real `SubagentRuntime`, registers the real candidate providers and calls
+  the real native `SubagentRuntime.prepareContinuable` gate. The only continuable
+  providers are in-process `spawn`/`fork`; `acp`/`codex`/`claude-code` (candidate
+  bundled) and `dsh-sdk` (not bundled) have no `prepareContinuable` and are rejected
+  with `UNSUPPORTED_CAPABILITY`. Candidate source archive sha256
+  `23af26a7…8262c` matches the declaration; the upstream source scan agrees.
+- **Result — external BLOCKED.** An in-process continuable child shares the executor
+  OS process, so it cannot be independently SIGKILLed while the parent stays alive.
+  No out-of-process continuable provider exists. `subagent-child-crash` stays
+  **BLOCKED** as an external dependency on future upstream DSH work; D15-G stays
+  `NO_GO`; 0.9 is **not** closed. R3 stays frozen and `R3_RESUME = NO`.
+- **Not started:** `subagent-byq-adapter-restart`, the terminal slices, the D15-G
+  re-run, and R3/R4/R5/R6.
+- **Maintainer gate-order decision required:** `G-keep` / `G-split` / `G-reorder` /
+  `G-reclassify` (see `docs/evidence/v090-closeout/DSH-015RC1-CLOSEOUT-SLICES.md`).
+  A strict serial step-5 order cannot be both honest and executable while B1 is an
+  external blocker.
+- Evidence: `docs/evidence/v090-d15-child-provider-remediation/`, asserted by
+  `tests/test_v090_d15_child_provider_remediation.py`.
+
+Build revision: this batch adds `scripts/` and `tests/` build inputs and advances the
+production runtime build identity `post-u8.180 → post-u8.181` (unused id). Rebuild
+identity only: the historical `.180` manifest and evidence are preserved unchanged; no
+selector, `compose.yml`, `deployment.json`, immutable release registry or 0.1.2
+artifact/evidence change and no deployment.
+
 ## Maintenance — Delist-boundary coverage correction (ADR-0028)（构建修订 `dsh-0.1.2rc1-post-u8.130`，PR #299）
 
 ADR-0028 point 2 evaluates coverage over each symbol's frozen listing lifecycle. The market-readiness

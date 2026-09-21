@@ -1,0 +1,62 @@
+{
+  "schema_version": "byq-v090-d15-child-provider-remediation-external-blocked.v1",
+  "blocker": "subagent-child-crash",
+  "owner_node": "d15-4-child-provider-remediation",
+  "status": "BLOCKED",
+  "is_external": true,
+  "available_in_0_1_5_rc1": false,
+  "required_provider": "an out-of-process DSH provider implementing SubagentProvider.prepareContinuable whose child can be independently killed/restarted and natively resumed",
+  "discovery_evidence": [
+    "docs/evidence/v090-d15-child-provider-remediation/capability-discovery.v1.json",
+    "docs/evidence/d15/d15-4/routing.v1.json",
+    "docs/evidence/d15/d15-4/verdict.v2.json"
+  ],
+  "discovery_conclusions": {
+    "out_of_process_continuable_provider_available": false,
+    "in_process_continuable_providers": [
+      "fork",
+      "spawn"
+    ],
+    "out_of_process_continuable_providers": [],
+    "child_crash_qualification_ok": false,
+    "out_of_process_provider_rejected_by_native_gate": true
+  },
+  "downstream_not_started": [
+    "subagent-byq-adapter-restart",
+    "terminal-adapter-restart",
+    "terminal-dsh-runtime-restart",
+    "d15-g-rerun",
+    "r3-thin-supervisor"
+  ],
+  "maintainer_decision_required": {
+    "required": true,
+    "reason": "a strict serial step-5 order cannot be both honest and executable while B1 is an external dependency on an upstream DSH provider",
+    "options": [
+      "G-keep",
+      "G-split",
+      "G-reorder",
+      "G-reclassify"
+    ],
+    "source": "docs/evidence/v090-closeout/DSH-015RC1-CLOSEOUT-SLICES.md#gate-order-options"
+  },
+  "upstream_resolution": "an upstream out-of-process provider implementing SubagentProvider.prepareContinuable must land and be qualified; BYQ must not build a second harness or a child-resume bridge",
+  "constraints": {
+    "r3_resume": "NO",
+    "d15_frozen": true,
+    "r3_frozen": true,
+    "production_selector": "dsh-0.1.2rc1",
+    "deployment": "none",
+    "release_or_tag_created": false,
+    "fork_or_patch_of_dsh": false
+  },
+  "non_actions": [
+    "No out-of-process continuable provider or prepareContinuable provider",
+    "No BYQ child-resume bridge",
+    "No same-process provider substitution",
+    "No owning-process SIGKILL substitution",
+    "No label-only PASS",
+    "No D15/R3 unfreeze",
+    "No production selector/default switch",
+    "No deployment, tag or release"
+  ]
+}

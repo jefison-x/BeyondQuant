@@ -157,10 +157,18 @@ resume, while any of B1–B4 is non-`PASS`.
 
 ## Gate-order options (maintainer decision required)
 
+> **Execution status (2026-09-21).** Slice 1 (B1 `subagent-child-crash`, owner
+> `d15-4-child-provider-remediation`) was executed as the first and only step-5
+> slice. Real read-only capability discovery against the actual `0.1.5-rc.1`
+> candidate confirms no out-of-process `prepareContinuable` provider exists
+> (evidence: [v090-d15-child-provider-remediation](../v090-d15-child-provider-remediation/README.md)).
+> B1 therefore remains **BLOCKED / external**, and the gate-order decision below is
+> now required before any further step-5 slice. No downstream slice, D15-G re-run or
+> R3 work was started.
+
 B1 (`subagent-child-crash`) is an **external blocker** in DSH 0.1.5-rc.1: no out-of-process
 continuable provider exists. A strict serial order therefore cannot be both honest and
 executable for that item. The maintainer must choose one of:
-
 | Option | Meaning | Requires |
 |---|---|---|
 | `G-keep` | Keep the strict D15-G gate; D15-G stays `NO_GO` until an upstream provider exists | upstream out-of-process provider |

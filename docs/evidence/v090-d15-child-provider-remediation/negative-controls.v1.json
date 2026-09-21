@@ -1,0 +1,156 @@
+{
+  "all_controls_pass": true,
+  "control_count": 21,
+  "controls": [
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": false,
+      "name": "blocked-fixture-pre-fix-passes"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "capability-absent-but-claimed"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "same-process-provider-substituted"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "owning-process-sigkill-as-child-crash"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "child-pid-not-dead"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "child-pid-missing"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "parent-not-alive-during-kill"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "settlement-fabricated"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "child-id-lost"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "no-native-resume"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "orphan-left-behind"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "forbidden-substitution-bridge"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "provider-capability-gate-contradiction"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "out-of-process-not-rejected"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "missing-out-of-process-provider"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "candidate-mismatch"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": false,
+      "name": "non-native-evidence-class"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "boot-error"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "archive-mismatch"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "no-providers"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "llm-claims-real-quality"
+    }
+  ],
+  "defect_targeting_pre_fix_passed": [
+    "capability-absent-but-claimed",
+    "same-process-provider-substituted",
+    "owning-process-sigkill-as-child-crash",
+    "child-pid-not-dead",
+    "child-pid-missing",
+    "parent-not-alive-during-kill",
+    "settlement-fabricated",
+    "child-id-lost",
+    "no-native-resume",
+    "orphan-left-behind",
+    "forbidden-substitution-bridge",
+    "provider-capability-gate-contradiction",
+    "out-of-process-not-rejected",
+    "missing-out-of-process-provider",
+    "candidate-mismatch",
+    "boot-error",
+    "archive-mismatch",
+    "no-providers",
+    "llm-claims-real-quality"
+  ],
+  "defect_targeting_pre_fix_passed_count": 19,
+  "known_good_unit_fixture_all_pass": true,
+  "schema_version": "byq-v090-d15-child-provider-remediation-negative-controls.v1"
+}

@@ -1,0 +1,248 @@
+{
+  "schema_version": "byq-v090-d15-child-provider-discovery.v1",
+  "generated_at": "2026-09-21T02:57:09.501Z",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1"
+  },
+  "provenance": {
+    "candidate_declaration": "config/dsh/candidates/dsh-0.1.5rc1/candidate.json",
+    "source_tag": "dsh-v0.1.5-rc.1",
+    "source_commit": "183f08e9c6dde7e36cd2318eaee70b0da08fb35e",
+    "source_archive_sha256": "23af26a7f422f3d3ba7ce148492e2937af3fe5cc39e8f05dd109e12dadd8262c",
+    "archive": {
+      "path": "/tmp/opencode/dsh-d15/candidate-src.tar.gz",
+      "observed_sha256": "23af26a7f422f3d3ba7ce148492e2937af3fe5cc39e8f05dd109e12dadd8262c",
+      "expected_sha256": "23af26a7f422f3d3ba7ce148492e2937af3fe5cc39e8f05dd109e12dadd8262c",
+      "matches_declaration": true
+    }
+  },
+  "evidence_class": "native-runtime-isolated",
+  "llm": {
+    "class": "no-llm",
+    "real_llm_quality": false,
+    "note": "capability discovery makes no LLM call"
+  },
+  "boot_error": null,
+  "providers": [
+    {
+      "name": "spawn",
+      "package": "@deepseek-ai/dsh-subagent-spawn-in-process",
+      "boundary": "in-process",
+      "in_candidate_bundle": true,
+      "import_ok": true,
+      "version": "0.1.5-rc.1",
+      "prepare_continuable_present": true,
+      "capabilities": {
+        "agentOptions": true,
+        "outputSchema": true,
+        "depthLimit": true,
+        "toolFilter": true,
+        "persona": true
+      },
+      "inherits_parent_context": false,
+      "gate": {
+        "ok": true,
+        "kind": "capability-present",
+        "spec": {}
+      }
+    },
+    {
+      "name": "fork",
+      "package": "@deepseek-ai/dsh-subagent-fork-in-process",
+      "boundary": "in-process",
+      "in_candidate_bundle": true,
+      "import_ok": true,
+      "version": "0.1.5-rc.1",
+      "prepare_continuable_present": true,
+      "capabilities": {
+        "agentOptions": true,
+        "outputSchema": true,
+        "depthLimit": true,
+        "toolFilter": true,
+        "persona": true
+      },
+      "inherits_parent_context": true,
+      "gate": {
+        "ok": true,
+        "kind": "capability-present",
+        "spec": {}
+      }
+    },
+    {
+      "name": "acp",
+      "package": "@deepseek-ai/dsh-subagent-acp",
+      "boundary": "out-of-process",
+      "in_candidate_bundle": true,
+      "import_ok": true,
+      "version": "0.1.5-rc.1",
+      "prepare_continuable_present": false,
+      "capabilities": {
+        "agentOptions": false,
+        "outputSchema": false,
+        "depthLimit": false,
+        "toolFilter": false,
+        "persona": false
+      },
+      "inherits_parent_context": false,
+      "gate": {
+        "ok": false,
+        "kind": "unsupported-capability",
+        "errorClass": "SubagentError",
+        "errorCode": "UNSUPPORTED_CAPABILITY",
+        "message": "subagent provider \"acp\" does not support continuable children (no prepareContinuable capability)"
+      }
+    },
+    {
+      "name": "codex",
+      "package": "@deepseek-ai/dsh-subagent-codex",
+      "boundary": "out-of-process",
+      "in_candidate_bundle": true,
+      "import_ok": true,
+      "version": "0.1.5-rc.1",
+      "prepare_continuable_present": false,
+      "capabilities": {
+        "agentOptions": false,
+        "outputSchema": false,
+        "depthLimit": false,
+        "toolFilter": false,
+        "persona": false
+      },
+      "inherits_parent_context": false,
+      "gate": {
+        "ok": false,
+        "kind": "unsupported-capability",
+        "errorClass": "SubagentError",
+        "errorCode": "UNSUPPORTED_CAPABILITY",
+        "message": "subagent provider \"codex\" does not support continuable children (no prepareContinuable capability)"
+      }
+    },
+    {
+      "name": "claude-code",
+      "package": "@deepseek-ai/dsh-subagent-claude-code",
+      "boundary": "out-of-process",
+      "in_candidate_bundle": true,
+      "import_ok": true,
+      "version": "0.1.5-rc.1",
+      "prepare_continuable_present": false,
+      "capabilities": {
+        "agentOptions": false,
+        "outputSchema": false,
+        "depthLimit": false,
+        "toolFilter": false,
+        "persona": false
+      },
+      "inherits_parent_context": false,
+      "gate": {
+        "ok": false,
+        "kind": "unsupported-capability",
+        "errorClass": "SubagentError",
+        "errorCode": "UNSUPPORTED_CAPABILITY",
+        "message": "subagent provider \"claude-code\" does not support continuable children (no prepareContinuable capability)"
+      }
+    },
+    {
+      "name": "dsh-sdk",
+      "package": "@deepseek-ai/dsh-subagent-dsh-sdk",
+      "boundary": "out-of-process",
+      "in_candidate_bundle": false,
+      "import_ok": true,
+      "version": "0.1.5-rc.1",
+      "prepare_continuable_present": false,
+      "capabilities": {
+        "agentOptions": true,
+        "outputSchema": false,
+        "depthLimit": false,
+        "toolFilter": false,
+        "persona": false
+      },
+      "inherits_parent_context": false,
+      "gate": {
+        "ok": false,
+        "kind": "unsupported-capability",
+        "errorClass": "SubagentError",
+        "errorCode": "UNSUPPORTED_CAPABILITY",
+        "message": "subagent provider \"dsh-sdk\" does not support continuable children (no prepareContinuable capability)"
+      }
+    }
+  ],
+  "source_archive_scan": {
+    "available": true,
+    "root": "deepseek-harness-183f08e9c6dde7e36cd2318eaee70b0da08fb35e",
+    "packages": [
+      {
+        "provider": "spawn",
+        "package": "@deepseek-ai/dsh-subagent-spawn-in-process",
+        "source_member": "deepseek-harness-183f08e9c6dde7e36cd2318eaee70b0da08fb35e/packages/subagent/subagent-spawn-in-process/src/index.ts",
+        "source_found": true,
+        "source_has_prepare_continuable": true,
+        "source_advertises_no_start_capabilities": false
+      },
+      {
+        "provider": "fork",
+        "package": "@deepseek-ai/dsh-subagent-fork-in-process",
+        "source_member": "deepseek-harness-183f08e9c6dde7e36cd2318eaee70b0da08fb35e/packages/subagent/subagent-fork-in-process/src/index.ts",
+        "source_found": true,
+        "source_has_prepare_continuable": true,
+        "source_advertises_no_start_capabilities": false
+      },
+      {
+        "provider": "acp",
+        "package": "@deepseek-ai/dsh-subagent-acp",
+        "source_member": "deepseek-harness-183f08e9c6dde7e36cd2318eaee70b0da08fb35e/packages/subagent/subagent-acp/src/index.ts",
+        "source_found": true,
+        "source_has_prepare_continuable": false,
+        "source_advertises_no_start_capabilities": false
+      },
+      {
+        "provider": "codex",
+        "package": "@deepseek-ai/dsh-subagent-codex",
+        "source_member": "deepseek-harness-183f08e9c6dde7e36cd2318eaee70b0da08fb35e/packages/subagent/subagent-codex/src/index.ts",
+        "source_found": true,
+        "source_has_prepare_continuable": false,
+        "source_advertises_no_start_capabilities": true
+      },
+      {
+        "provider": "claude-code",
+        "package": "@deepseek-ai/dsh-subagent-claude-code",
+        "source_member": "deepseek-harness-183f08e9c6dde7e36cd2318eaee70b0da08fb35e/packages/subagent/subagent-claude-code/src/index.ts",
+        "source_found": true,
+        "source_has_prepare_continuable": false,
+        "source_advertises_no_start_capabilities": true
+      },
+      {
+        "provider": "dsh-sdk",
+        "package": "@deepseek-ai/dsh-subagent-dsh-sdk",
+        "source_member": "deepseek-harness-183f08e9c6dde7e36cd2318eaee70b0da08fb35e/packages/subagent/subagent-dsh-sdk/src/index.ts",
+        "source_found": true,
+        "source_has_prepare_continuable": false,
+        "source_advertises_no_start_capabilities": true
+      }
+    ]
+  },
+  "conclusions": {
+    "out_of_process_continuable_provider_available": false,
+    "independently_killable_child_available": false,
+    "native_resume_surface_for_out_of_process_child": false,
+    "in_process_continuable_provider_available": true,
+    "out_of_process_provider_without_prepare_continuable_rejected": true,
+    "out_of_process_continuable_providers": [],
+    "in_process_continuable_providers": [
+      "spawn",
+      "fork"
+    ]
+  },
+  "substitutions_rejected": [
+    "a BYQ child-resume bridge (ADR-0082 Option 2, rejected) is not a provider capability",
+    "a same-process in-process provider is not an independently killable child",
+    "an owning-process SIGKILL is not a child-only crash",
+    "a label-only PASS without a real out-of-process prepareContinuable provider is not evidence"
+  ],
+  "child_crash_qualification": null,
+  "child_crash_qualification_reason": "no out-of-process continuable provider exists to kill; an in-process child cannot be independently SIGKILLed, and killing the owning process is explicitly not a child crash",
+  "production_unchanged": {
+    "selector": "config/dsh/deployment.json default_release=dsh-0.1.2rc1",
+    "note": "probe boots only an isolated in-memory cordis context; no DSH fork/patch, no production file written"
+  }
+}
