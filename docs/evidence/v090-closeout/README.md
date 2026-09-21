@@ -1,5 +1,12 @@
 # 0.9 Closeout Governance & Gap Ledger (fact audit)
 
+> **Current gate-scope override (ADR-0084, Accepted 2026-09-21).** This audit and its machine
+> evidence remain immutable historical facts. B1/B2 continue as `BLOCKED_EXTERNAL`, while their
+> absence no longer globally freezes 0.9 closeout, candidate compatibility, bounded R3 failure
+> containment or unrelated roadmap work. The current next slice is BYQ session failure
+> containment and business recovery, then a new D15 superseding assessment. Historical D15-G
+> stays `NO_GO`; production selector/deployment/release remain separate decisions.
+
 Status: **audit only — Draft PR, not merged, no implementation, no deployment, no
 tag/release.** This batch performs a fact audit, a plan/STATUS revision, a
 machine-readable acceptance matrix and the necessary audit tests.

@@ -71,6 +71,11 @@ Proposed 只允许规划/验证，不授权越界实现。Accepted 必须记录�
   **有界**接口；**DSH 继续拥有 PTY/shell/IO**；原生 process-local 状态丢失时 MUST 真实报告
   `lost`/`interrupted`，绝不伪造 `reattached`；**不承诺**跨 runtime restart 的 PTY 连续性。接受只授权候选级、
   可逆的 D15-G 资格路径，不切换生产 selector；未实现。决定记录同上。
+- [ADR-0084](ADR-0084-gate-classification-and-external-dependencies.md)（Accepted，2026-09-21）
+  将门禁分为 Safety/Integrity、Feature、Promotion/Release 与 External Qualification，并要求每项
+  声明阻塞对象；B1/B2 保持 `BLOCKED_EXTERNAL`，但不再冻结 0.9、候选兼容、受限 R3 失败隔离或
+  无关路线。当前替代硬门禁是 BYQ session failure containment and business recovery；历史 D15
+  verdict 不改写，生产 selector/部署/release 仍独立授权。
 
 
 - ADR-0020 定义 Phase 34 的 Stock Pool identity、不可变 snapshot、lifecycle 和
@@ -139,7 +144,8 @@ Proposed 只允许规划/验证，不授权越界实现。Accepted 必须记录�
   v2 session 签名和密码轮换失效边界。
 - ADR-0057 定义回测可读名称与稳定 ID 的分离、PostgreSQL forward repair、名称/ID 双字段目录和
   名称不进入不可变输入及结果身份的边界。
-- ADR-0058（Proposed）规划 DSH release bundle 与兼容层；方案归档不代表版本已升级或 ADR 已接受。
+- ADR-0058（Accepted，2026-09-06）定义 DSH release bundle、兼容适配、候选隔离、资格、晋升与
+  回滚边界；ADR-0084 后外部可选能力只阻塞其能力声明，仍不代表生产 selector 已切换。
 - ADR-0059 定义规则归属、隔离工作树、基于源码的 CI 与精确提交的合并/部署权限门禁。
 - ADR-0060 定义个人非商业研究且禁止实盘的源码公开许可、贡献/第三方权属、GitHub 托管 CI，
   以及仅用于一次发布准备 PR 的具名过渡例外。

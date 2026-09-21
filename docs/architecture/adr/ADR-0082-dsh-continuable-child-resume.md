@@ -6,7 +6,7 @@
   rejected; **NOT implemented**)
 - Decision record: `docs/evidence/v090-adr-decisions/README.md` / `decision-record.v1.json`
   (0.9 strict-order step 4 maintainer decision; no GitHub approval is claimed)
-- Relates: ADR-0079, ADR-0081, ADR-0058, ADR-0069, ADR-0003
+- Relates: ADR-0079, ADR-0081, ADR-0058, ADR-0069, ADR-0003, ADR-0084
 - Stage: D15-4 follow-up
 - Evidence: `docs/evidence/d15/d15-4/continuable/`
 
@@ -131,3 +131,17 @@ have added a BYQ-owned child-resume seam roughly as follows. This diff is
 
 No such method exists in the committed adapter, which is why the
 `byq-compose-adapter-restart` required scenario is truthfully `BLOCKED`.
+
+## ADR-0084 superseding clarification（2026-09-21）
+
+Option 1 remains the chosen owner and B1/B2 remain truthfully `BLOCKED_EXTERNAL` until DSH
+ships a qualifying out-of-process continuable provider. ADR-0084 changes their **gate
+scope**, not their result: they block claims of native independent-child recovery, but no
+longer globally block 0.9 closeout, DSH 0.1.5-rc.1 candidate compatibility, the bounded R3
+failure-containment scope, or unrelated roadmap work.
+
+BYQ still must not implement rejected Option 2 or a second generic harness. BYQ may and must
+detect parent/runtime loss, mark the affected run `interrupted`, fence stale generations and
+late settlements, preserve durable business state, and offer a safe new run where side effects
+are idempotent or reconciled. This is failure containment and business recovery, not a claim
+that the lost child process resumed.

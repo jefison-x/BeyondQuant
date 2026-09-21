@@ -1,5 +1,34 @@
 # BeyondQuant Implementation Plan
 
+## ADR-0084 current execution override（2026-09-21）
+
+ADR-0084 is Accepted and supersedes historical text that made every D15 atomic item a global
+prerequisite. B1 `subagent-child-crash` and B2 `subagent-byq-adapter-restart` remain truthful
+`BLOCKED_EXTERNAL`; B3/B4 retain their candidate-layer PASS evidence; historical D15-G remains
+`NO_GO` and is not rewritten. B1/B2 now block only native independent-child recovery claims.
+
+The next maintenance implementation after this governance change is **BYQ session failure
+containment and business recovery**, in one isolated worktree/branch/PR. Acceptance requires:
+
+1. detect parent/runtime/executor loss and terminate the affected in-flight run as `interrupted`;
+2. fence old generation/epoch writers, late settlements and attempts to reopen a terminal run;
+3. preserve conversation identity, public history, durable jobs, approvals, artifacts and receipts;
+4. automatically reschedule only contract-declared idempotent and reconcilable steps;
+5. query exact receipts/idempotency keys for writes, orders, publication, paid calls or unknown
+   outcomes, and pause with a truthful user-visible state when the outcome cannot be proven;
+6. keep owner/workspace authorization, audit, budget and cancellation semantics intact;
+7. produce fail-able, machine-readable evidence and a new D15 superseding assessment without
+   modifying the historical D15-4/D15-G verdicts.
+
+This slice must not implement an out-of-process DSH provider, rejected ADR-0082 Option 2, a
+second generic harness/session store/PTY runtime, production selector changes, deployment or a
+release/tag. Passing it permits a bounded R3 decision and 0.9 closeout assessment; it does not
+claim native child-process resume and does not itself authorize R3, promotion or deployment.
+
+After 0.10 data/HIST/deep-environment qualification, execute a named 1.0 matrix review that
+classifies planned capabilities as `core`, `extended` or `deferred`. Only the accepted `core`
+set becomes the global 1.0 release gate; safety and data-integrity failures remain fail closed.
+
 研究流程连续性维护：见[下一阶段整改目标](RESEARCH_HANDOFF_PLAN.md)，先完成审批后原目标交接，再补持久交接与授权续接连接；不推进 Product Phase。
 
 这是 autonomous development 的 repository roadmap。普通 phase branch 只能实现当前 phase；后续 phases 是 planning constraints，不授权提前构建 Product scope。
