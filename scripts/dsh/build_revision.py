@@ -68,7 +68,7 @@ def selected_build_id(release):
         return RETIRED_BUILD  # Historical identity only; never a current build.
     if release not in RELEASES:
         raise ValueError("unregistered release")
-    return release + "-post-u8.182"
+    return release + "-post-u8.183"
 
 
 def identity(build_id):

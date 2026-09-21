@@ -160,11 +160,14 @@
       "implementation_owner": "D15 remediation / candidate-qualification slice D15-4 candidate composition hookup under ADR-0082: the candidate profile plus a BYQ child-resume/rebind surface. NOT owned by post-GO R6. Requires an accepted ADR-0082 option (candidate-specific, reversible).",
       "reproduction": {
         "current_state": "BLOCKED",
-        "steps": "Generation A returns a continuable child and persists it. A fresh adapter exposes only root resume_session; the byte-identical 0.1.2 Python SDK has no child operation; no committed BYQ surface rebinds the child.",
+        "steps": "Generation A returns a continuable child and persists it. A fresh adapter exposes only root resume_session; the byte-identical 0.1.2 Python SDK has no child operation; no committed BYQ surface rebinds the child. Executed 2026-09-21 in the G-split strict internal order: the real isolated candidate composition/restart probe reconfirms generation A reaches startContinuable and persists the linked child, while a fresh OS process/container has no committed BYQ composition surface and the composition itself forbids subagent/send_message/list_agents.",
         "evidence": [
           "docs/evidence/d15/d15-4/continuable/verdict.v1.json",
           "docs/evidence/d15/d15-4/continuable/continuable-adapter-restart.v1.json",
-          "docs/evidence/d15/d15-4/continuable/scenarios/byq-compose-adapter-restart.v1.json"
+          "docs/evidence/d15/d15-4/continuable/scenarios/byq-compose-adapter-restart.v1.json",
+          "docs/evidence/v090-step5-b2-adapter-restart/verdict.v1.json",
+          "docs/evidence/v090-step5-b2-adapter-restart/composition-restart.v1.json",
+          "docs/evidence/v090-step5-b2-adapter-restart/external-blocked.v1.json"
         ]
       },
       "acceptance_criteria": [

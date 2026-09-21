@@ -1,0 +1,54 @@
+{
+  "schema_version": "byq-v090-step5-b2-adapter-restart-contract.v1",
+  "blocker": "subagent-byq-adapter-restart",
+  "owner_node": "d15-4-candidate-composition-hookup",
+  "step": "0.9 strict-order step 5 slice 2 (B2, G-split internal order first item)",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "npm": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1"
+  },
+  "required_evidence_class": "real-isolated-candidate-adapter-container",
+  "required_generation_a": {
+    "start_continuable_reached": true,
+    "child_persisted": true,
+    "child_linked_to_root": true,
+    "exactly_one_child": true,
+    "delegation_call_id_present": true,
+    "child_id_present": true
+  },
+  "required_generation_b": {
+    "new_os_process": true,
+    "byq_composition_child_rebind_surface_present": true,
+    "child_rebind_via_byq_composition": true,
+    "child_message_delivered": true,
+    "message_id_present": true,
+    "exactly_once_settlement_on_resumed_turn": true,
+    "owner_generation_epoch_fail_closed": true,
+    "child_persisted_same_id": true,
+    "no_extra_child": true,
+    "no_second_session_store": true,
+    "orphans": 0
+  },
+  "fail_closed_owner_generation_epoch": "a stale-owner / stale-generation / stale-epoch rebind must be rejected, not accepted",
+  "forbidden_substitutions": [
+    "byq-child-resume-bridge",
+    "in-process-child",
+    "root-resume-as-child-rebind",
+    "same-os-process-generation",
+    "owning-process-restart-as-child-rebind",
+    "mock",
+    "label-only-pass"
+  ],
+  "pass_requires": "a real committed BYQ composition surface rebinds the exact persisted continuable child from a fresh OS process, delivers a message with a message id, settles exactly once, is owner/generation/epoch fail-closed, creates no extra child and no second session store, and leaves no orphan",
+  "blocked_definition": "no committed BYQ composition surface (and ADR-0082 Option 2 is rejected) so the child cannot be rebound by a fresh BYQ adapter; the item stays BLOCKED until an upstream out-of-process continuable provider exists",
+  "external_dependency": {
+    "is_external": true,
+    "option_1": "upstream DSH out-of-process continuable provider implementing SubagentProvider.prepareContinuable",
+    "option_2": "rejected: a BYQ runtime-adapter child-resume bridge",
+    "available_in_0_1_5_rc1": false
+  },
+  "candidate_declaration": "config/dsh/candidates/dsh-0.1.5rc1/candidate.json",
+  "composition_identity": "plugins/dsh-byq/profiles/dsh-0.1.5rc1-continuable/byq-product.identity.json",
+  "adr": "docs/architecture/adr/ADR-0082-dsh-continuable-child-resume.md"
+}

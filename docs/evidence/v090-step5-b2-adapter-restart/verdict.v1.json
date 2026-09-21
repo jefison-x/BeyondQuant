@@ -1,0 +1,43 @@
+{
+  "all_pass": false,
+  "blocked_reasons": [
+    "no committed BYQ composition surface can rebind the persisted continuable child",
+    "the resumed child turn does not settle exactly once",
+    "owner/generation/epoch fencing is not fail-closed"
+  ],
+  "blocker": "subagent-byq-adapter-restart",
+  "conclusions": {
+    "allowed_child_rebind_surfaces": [],
+    "byq_composition_child_rebind_surface_present": false,
+    "child_rebound_from_fresh_process": false,
+    "composition_forbidden_tools": [
+      "bash",
+      "fs",
+      "fs_search",
+      "goal",
+      "jobs",
+      "list_agents",
+      "pwsh",
+      "ralph",
+      "send_message",
+      "str_replace_editor",
+      "subagent",
+      "subagent_fork",
+      "todo_write",
+      "web_fetch",
+      "workflow"
+    ],
+    "fresh_os_process": true,
+    "generation_a_ok": true,
+    "owner_generation_epoch_fail_closed": false,
+    "settlement_exactly_once": false
+  },
+  "exit_code": 1,
+  "external_blocked": true,
+  "failures": [],
+  "format_valid": true,
+  "owner_node": "d15-4-candidate-composition-hookup",
+  "qualification_passed": false,
+  "result": "BLOCKED",
+  "schema_version": "byq-v090-step5-b2-adapter-restart-verdict.v1"
+}

@@ -1496,6 +1496,45 @@ manifest and evidence are preserved unchanged; no selector, `compose.yml`,
 `deployment.json`, immutable release registry or 0.1.2 artifact/evidence change and no
 deployment.
 
+## 0.9 step-5 B2 `subagent-byq-adapter-restart` (maintenance/qualification, 2026-09-21)
+
+This maintenance batch executes B2 `subagent-byq-adapter-restart` (owner node
+`d15-4-candidate-composition-hookup`) as the first internal item of the G-split strict
+order. It is **qualification/evidence only**: it does **not** implement ADR-0082
+Option 2 (a BYQ child-resume bridge, rejected), adds no provider, no second session
+store, no second generic harness, no `TerminalAttachment`, does not unfreeze D15/R3,
+does not switch the production selector, does not deploy and does not create or move
+any tag/release. It does not inspect or copy the Community repository and does not
+resume frozen Phase 100.
+
+- A real isolated composition/restart probe
+  (`scripts/d15/subagent/byq_adapter_restart_probe.py`) runs the committed candidate
+  image `byq-d15-4-continuable-candidate:local` (real `RuntimeAdapter` + real bundled
+  DSH 0.1.5-rc.1 runtime + candidate continuable composition, `--network none`, keyless
+  scripted provider) with generation A and generation B as separate OS
+  processes/containers over one durable session root.
+- Result: generation A really reaches `startContinuable` and persists exactly one child
+  linked to the original delegation/goal, but a fresh OS process has **no committed BYQ
+  composition surface** to rebind/message/resume that child; the composition itself
+  forbids the native child messaging tools (`subagent`/`send_message`/`list_agents`).
+  B2 therefore stays **BLOCKED (external/dependency)** until ADR-0082 Option 1 (an
+  upstream out-of-process `prepareContinuable` provider) exists and is qualified.
+- A fail-able observer (`scripts/d15/subagent/byq_adapter_restart_observer.py`, 27
+  focused non-zero controls, 25 defect-targeting) derives the verdict; the committed
+  verdict is `format_valid=true`, `all_pass=false`, `external_blocked=true`, exit 1.
+- Evidence: `docs/evidence/v090-step5-b2-adapter-restart/`, asserted by
+  `tests/test_v090_step5_b2_adapter_restart.py`. Next in the G-split strict internal
+  order: `terminal-adapter-restart` (owner `d15-5-candidate-attachment-layer`), **not
+  started** here. D15-G stays `NO_GO` until B1 truly PASSes; `R3_RESUME = NO`; 0.9 is
+  **not** closed.
+
+Build revision: this batch changes `scripts/`, `tests/` and the candidate Dockerfile
+(build inputs) and advances the production runtime build identity
+`post-u8.182 → post-u8.183` (unused id). Rebuild identity only: the historical `.182`
+manifest and all evidence are preserved unchanged; no selector, `compose.yml`,
+`deployment.json`, immutable release registry or 0.1.2 artifact/evidence change and no
+deployment.
+
 ## Maintenance — Delist-boundary coverage correction (ADR-0028)（构建修订 `dsh-0.1.2rc1-post-u8.130`，PR #299）
 
 ADR-0028 point 2 evaluates coverage over each symbol's frozen listing lifecycle. The market-readiness

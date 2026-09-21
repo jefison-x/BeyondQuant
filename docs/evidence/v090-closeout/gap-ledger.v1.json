@@ -182,13 +182,14 @@
       "title": "DSH 0.1.5-rc.1 原生连续性资格（Runtime Continuity D15）",
       "status": "open",
       "reason": "D15-G is an honest NO_GO derived by a fail-able observer: four atomic required capabilities are BLOCKED. D15-2/D15-3/D15-3R/D15-4 partial and D15-5 partial are PASS where stated.",
-      "latest_conclusion": "D15-G NO_GO (NOT-PASS); R3_RESUME=NO; production selector dsh-0.1.2rc1 unchanged.",
+      "latest_conclusion": "D15-G NO_GO (NOT-PASS); R3_RESUME=NO; production selector dsh-0.1.2rc1 unchanged. 0.9 step-5 G-split internal order began: B2 subagent-byq-adapter-restart executed 2026-09-21 and stays BLOCKED (external/dependency); no BYQ child-resume bridge, no second session store.",
       "evidence": [
         "docs/evidence/d15/d15-g/verdict.v1.json",
         "docs/evidence/d15/d15-g/capability-matrix.v1.json",
         "docs/evidence/d15/d15-g/decision-input.v1.json",
         "docs/roadmap/DSH_015RC1_UPGRADE_PLAN.md",
-        "docs/evidence/d15/acceptance-matrix.v1.json"
+        "docs/evidence/d15/acceptance-matrix.v1.json",
+        "docs/evidence/v090-step5-b2-adapter-restart/verdict.v1.json"
       ],
       "sub_stage_results": {
         "D15-0": "DONE",

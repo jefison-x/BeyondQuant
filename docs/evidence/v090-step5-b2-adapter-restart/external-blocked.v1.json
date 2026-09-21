@@ -1,0 +1,67 @@
+{
+  "schema_version": "byq-v090-step5-b2-adapter-restart-external-blocked.v1",
+  "blocker": "subagent-byq-adapter-restart",
+  "owner_node": "d15-4-candidate-composition-hookup",
+  "status": "BLOCKED",
+  "is_external": true,
+  "available_in_0_1_5_rc1": false,
+  "required_provider": "upstream DSH out-of-process continuable provider implementing SubagentProvider.prepareContinuable",
+  "rejected_option": "rejected: a BYQ runtime-adapter child-resume bridge",
+  "composition_evidence": [
+    "docs/evidence/v090-step5-b2-adapter-restart/composition-restart.v1.json",
+    "plugins/dsh-byq/profiles/dsh-0.1.5rc1-continuable/byq-product.identity.json",
+    "docs/evidence/d15/d15-4/continuable/continuable-adapter-restart.v1.json"
+  ],
+  "observations": {
+    "generation_a_ok": true,
+    "fresh_os_process": true,
+    "byq_composition_child_rebind_surface_present": false,
+    "allowed_child_rebind_surfaces": [],
+    "composition_forbidden_tools": [
+      "bash",
+      "fs",
+      "fs_search",
+      "goal",
+      "jobs",
+      "list_agents",
+      "pwsh",
+      "ralph",
+      "send_message",
+      "str_replace_editor",
+      "subagent",
+      "subagent_fork",
+      "todo_write",
+      "web_fetch",
+      "workflow"
+    ],
+    "child_rebound_from_fresh_process": false,
+    "settlement_exactly_once": false,
+    "owner_generation_epoch_fail_closed": false
+  },
+  "downstream_not_started": [
+    "terminal-adapter-restart",
+    "terminal-dsh-runtime-restart",
+    "d15-g-rerun",
+    "r3-thin-supervisor"
+  ],
+  "external_dependency_resolution": "an upstream out-of-process provider implementing SubagentProvider.prepareContinuable must land and be qualified; BYQ must not build a second harness or a child-resume bridge",
+  "upstream_resolution": "ADR-0082 Option 1 (future upstream DSH provider); Option 2 rejected",
+  "constraints": {
+    "r3_resume": "NO",
+    "d15_frozen": true,
+    "r3_frozen": true,
+    "production_selector": "dsh-0.1.2rc1",
+    "deployment": "none",
+    "release_or_tag_created": false,
+    "fork_or_patch_of_dsh": false
+  },
+  "non_actions": [
+    "No BYQ child-resume bridge (ADR-0082 Option 2 rejected)",
+    "No second session store and no second generic harness",
+    "No in-process child or owning-process restart used as a rebind",
+    "No root resume_session presented as a child rebind",
+    "No D15/R3 unfreeze",
+    "No production selector/default switch",
+    "No deployment, tag or release"
+  ]
+}
