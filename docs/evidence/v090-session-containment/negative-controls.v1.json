@@ -1,0 +1,170 @@
+{
+  "all_controls_pass": true,
+  "baseline_all_pass": true,
+  "control_count": 20,
+  "controls": [
+    {
+      "defect_targeting": true,
+      "first_failure": "executor-loss-interrupted: status='completed' != contract 'interrupted'",
+      "name": "executor-loss-fake-completed",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "executor-loss-interrupted: loss_cause mismatch",
+      "name": "loss-cause-wrong",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "executor-loss-interrupted: business state was not attested preserved",
+      "name": "preserved-false",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "stale-generation-terminal-fenced: fence raised=False != contract fenced=True",
+      "name": "stale-generation-not-fenced",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "duplicate-terminal-rejected: fence raised=False != contract fenced=True",
+      "name": "duplicate-terminal-not-fenced",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "terminal-reopen-rejected: fence raised=False != contract fenced=True",
+      "name": "terminal-reopen-not-fenced",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "unknown-side-effect-paused: derived status='eligible' != contract 'paused'",
+      "name": "unknown-side-effect-auto-retry",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "cancel-blocks-recovery: derived status='eligible' != contract 'blocked'",
+      "name": "cancel-recoverable",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "budget-exhausted-blocks: derived status='eligible' != contract 'blocked'",
+      "name": "budget-blocks-bypassed",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "authorization-revoked-blocks: derived status='eligible' != contract 'blocked'",
+      "name": "auth-revoked-bypassed",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "owner-workspace-mismatch-blocks: derived status='eligible' != contract 'blocked'",
+      "name": "owner-mismatch-bypassed",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "success-receipt-not-replayed: derived status='eligible' != contract 'settled'",
+      "name": "success-receipt-replayed",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "idempotent-no-receipt-one-attempt-lineage: attempt ledger invalid: recovery attempt lineage must chain the previous new run",
+      "name": "attempt-lineage-forked",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "concurrent-recovery-one-attempt: concurrent recovery did not raise a conflict",
+      "name": "concurrent-second-attempt",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "observer-breakable: observer is not breakable by negative controls",
+      "name": "negative-controls-trusted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "executor-loss-interrupted: missing provenance",
+      "name": "missing-provenance",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "executor-loss-interrupted: provenance source is not contract-allowed",
+      "name": "wrong-source-provenance",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "provenance: source digest mismatch for packages/contracts/session_failure_containment.py",
+      "name": "provenance-digest-mismatch",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "missing required scenario: cancel-blocks-recovery",
+      "name": "dropped-scenario",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": false
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "unknown-side-effect-paused: recorded decision does not match the re-derived decision",
+      "name": "scenario-verdict-label-only",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    }
+  ],
+  "defect_targeting_count": 19,
+  "defect_targeting_pre_fix_passed": true,
+  "schema_version": "byq-v090-session-containment-negative-controls.v1"
+}

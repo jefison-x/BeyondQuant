@@ -1,0 +1,346 @@
+{
+  "provenance": {
+    "captured_at": 1789985029.1601481,
+    "harness": "runtime-adapter synthetic compatibility + gateway ledger",
+    "source_sha256": {
+      "packages/contracts/session_failure_containment.py": "sha256:124a5c3ca83267308a010452c058bf759dc85b1f7e103a4307696e191bdb4051",
+      "services/gateway/app/session_containment.py": "sha256:d856d782d5c8ff96fafee4b0790c581db1ebbd38c33085c91a7c3638525c4d83",
+      "services/runtime-adapter/app/containment.py": "sha256:ad75a79e35e6457ead6c6e56f81c3a5e9a6a8278b341d1dbf97abe80a9d1077c"
+    }
+  },
+  "scenarios": {
+    "authorization-revoked-blocks": {
+      "observed": {
+        "decision": {
+          "auto_retry": false,
+          "reason": "authorization_revoked",
+          "status": "blocked"
+        },
+        "inputs": {
+          "attempt_in_progress": false,
+          "attempts_used": 0,
+          "authorization_current": false,
+          "budget_available": true,
+          "cancelled": false,
+          "owner_matches": true,
+          "previous_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "receipt_queryable": true,
+          "step_declared_idempotent": true,
+          "step_result_verifiable": true,
+          "success_receipt_present": false,
+          "workspace_matches": true
+        }
+      },
+      "provenance": {
+        "observed_at": 1789985029.1600847,
+        "source": "contract-pure-function"
+      },
+      "verdict": "PASS"
+    },
+    "budget-exhausted-blocks": {
+      "observed": {
+        "decision": {
+          "auto_retry": false,
+          "reason": "budget_exhausted",
+          "status": "blocked"
+        },
+        "inputs": {
+          "attempt_in_progress": false,
+          "attempts_used": 0,
+          "authorization_current": true,
+          "budget_available": false,
+          "cancelled": false,
+          "owner_matches": true,
+          "previous_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "receipt_queryable": true,
+          "step_declared_idempotent": true,
+          "step_result_verifiable": true,
+          "success_receipt_present": false,
+          "workspace_matches": true
+        }
+      },
+      "provenance": {
+        "observed_at": 1789985029.1600842,
+        "source": "contract-pure-function"
+      },
+      "verdict": "PASS"
+    },
+    "cancel-blocks-recovery": {
+      "observed": {
+        "decision": {
+          "auto_retry": false,
+          "reason": "cancelled",
+          "status": "blocked"
+        },
+        "inputs": {
+          "attempt_in_progress": false,
+          "attempts_used": 0,
+          "authorization_current": true,
+          "budget_available": true,
+          "cancelled": true,
+          "owner_matches": true,
+          "previous_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "receipt_queryable": true,
+          "step_declared_idempotent": true,
+          "step_result_verifiable": true,
+          "success_receipt_present": false,
+          "workspace_matches": true
+        }
+      },
+      "provenance": {
+        "observed_at": 1789985029.1600838,
+        "source": "contract-pure-function"
+      },
+      "verdict": "PASS"
+    },
+    "concurrent-recovery-one-attempt": {
+      "observed": {
+        "conflict_raised": true,
+        "ledger": {
+          "attempts": [
+            {
+              "attempt": 1,
+              "created_at": 1.0,
+              "generation": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "idempotency_key": "original-key-1",
+              "new_run_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "previous_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "state": "in_progress"
+            }
+          ],
+          "max_attempts": 3,
+          "schema_version": "session-recovery-attempts.v1",
+          "session_id": "conversation_1"
+        }
+      },
+      "provenance": {
+        "observed_at": 1789985029.1548247,
+        "source": "gateway-attempt-ledger"
+      },
+      "verdict": "PASS"
+    },
+    "duplicate-terminal-rejected": {
+      "observed": {
+        "call": {
+          "function": "assert_terminal_settlement",
+          "kwargs": {
+            "settled": {
+              "1": "interrupted"
+            },
+            "write_attempt": 1,
+            "write_terminal": "interrupted"
+          }
+        }
+      },
+      "provenance": {
+        "observed_at": 1789985029.154824,
+        "source": "contract-pure-function"
+      },
+      "verdict": "PASS"
+    },
+    "executor-loss-interrupted": {
+      "observed": {
+        "expected_run": "d90b8feaad384e93a24488f9a024f562",
+        "history_unchanged": true,
+        "interrupted_run_id": "d90b8feaad384e93a24488f9a024f562",
+        "loss_cause": "executor-loss",
+        "preserved": true,
+        "status": "interrupted"
+      },
+      "provenance": {
+        "observed_at": 1789985029.1548226,
+        "source": "runtime-adapter-test-harness"
+      },
+      "verdict": "PASS"
+    },
+    "idempotent-no-receipt-one-attempt-lineage": {
+      "observed": {
+        "inputs": {
+          "attempt_in_progress": false,
+          "attempts_used": 0,
+          "authorization_current": true,
+          "budget_available": true,
+          "cancelled": false,
+          "owner_matches": true,
+          "previous_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "receipt_queryable": true,
+          "step_declared_idempotent": true,
+          "step_result_verifiable": true,
+          "success_receipt_present": false,
+          "workspace_matches": true
+        },
+        "ledger": {
+          "attempts": [
+            {
+              "attempt": 1,
+              "created_at": 1.0,
+              "generation": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "idempotency_key": "original-key-1",
+              "new_run_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "previous_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "state": "in_progress"
+            }
+          ],
+          "max_attempts": 3,
+          "schema_version": "session-recovery-attempts.v1",
+          "session_id": "conversation_1"
+        }
+      },
+      "provenance": {
+        "observed_at": 1789985029.1548247,
+        "source": "gateway-attempt-ledger"
+      },
+      "verdict": "PASS"
+    },
+    "late-success-no-overwrite": {
+      "observed": {
+        "history_unchanged": true,
+        "interrupted_run_id": "2f9de9871d98480f8834dde87c1a41e6",
+        "loss_cause": "executor-loss",
+        "preserved": true,
+        "status": "interrupted"
+      },
+      "provenance": {
+        "observed_at": 1789985029.1548228,
+        "source": "runtime-adapter-test-harness"
+      },
+      "verdict": "PASS"
+    },
+    "observer-breakable": {
+      "observed": {
+        "negative_controls": {
+          "all_controls_rejected": true,
+          "control_count": 20,
+          "defect_targeting_count": 19
+        }
+      },
+      "provenance": {
+        "observed_at": 1789985029.160081,
+        "source": "contract-pure-function"
+      },
+      "verdict": "PASS"
+    },
+    "owner-workspace-mismatch-blocks": {
+      "observed": {
+        "decision": {
+          "auto_retry": false,
+          "reason": "owner_workspace_mismatch",
+          "status": "blocked"
+        },
+        "inputs": {
+          "attempt_in_progress": false,
+          "attempts_used": 0,
+          "authorization_current": true,
+          "budget_available": true,
+          "cancelled": false,
+          "owner_matches": false,
+          "previous_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "receipt_queryable": true,
+          "step_declared_idempotent": true,
+          "step_result_verifiable": true,
+          "success_receipt_present": false,
+          "workspace_matches": true
+        }
+      },
+      "provenance": {
+        "observed_at": 1789985029.1600847,
+        "source": "contract-pure-function"
+      },
+      "verdict": "PASS"
+    },
+    "stale-generation-terminal-fenced": {
+      "observed": {
+        "call": {
+          "function": "assert_generation_fenced",
+          "kwargs": {
+            "authoritative_epoch": 2,
+            "authoritative_generation": "g2",
+            "write_epoch": 1,
+            "write_generation": "g1"
+          }
+        }
+      },
+      "provenance": {
+        "observed_at": 1789985029.1548238,
+        "source": "contract-pure-function"
+      },
+      "verdict": "PASS"
+    },
+    "success-receipt-not-replayed": {
+      "observed": {
+        "decision": {
+          "auto_retry": false,
+          "reason": "existing_success_receipt",
+          "status": "settled"
+        },
+        "inputs": {
+          "attempt_in_progress": false,
+          "attempts_used": 0,
+          "authorization_current": true,
+          "budget_available": true,
+          "cancelled": false,
+          "owner_matches": true,
+          "previous_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "receipt_queryable": true,
+          "step_declared_idempotent": true,
+          "step_result_verifiable": true,
+          "success_receipt_present": true,
+          "workspace_matches": true
+        }
+      },
+      "provenance": {
+        "observed_at": 1789985029.160083,
+        "source": "contract-pure-function"
+      },
+      "verdict": "PASS"
+    },
+    "terminal-reopen-rejected": {
+      "observed": {
+        "call": {
+          "function": "assert_terminal_settlement",
+          "kwargs": {
+            "settled": {
+              "1": "interrupted"
+            },
+            "write_attempt": 1,
+            "write_terminal": "completed"
+          }
+        }
+      },
+      "provenance": {
+        "observed_at": 1789985029.1548245,
+        "source": "contract-pure-function"
+      },
+      "verdict": "PASS"
+    },
+    "unknown-side-effect-paused": {
+      "observed": {
+        "decision": {
+          "auto_retry": false,
+          "reason": "non_idempotent_step",
+          "status": "paused"
+        },
+        "inputs": {
+          "attempt_in_progress": false,
+          "attempts_used": 0,
+          "authorization_current": true,
+          "budget_available": true,
+          "cancelled": false,
+          "owner_matches": true,
+          "previous_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "receipt_queryable": true,
+          "step_declared_idempotent": false,
+          "step_result_verifiable": true,
+          "success_receipt_present": false,
+          "workspace_matches": true
+        }
+      },
+      "provenance": {
+        "observed_at": 1789985029.1600835,
+        "source": "contract-pure-function"
+      },
+      "verdict": "PASS"
+    }
+  },
+  "schema_version": "byq-v090-session-containment-observations.v1"
+}

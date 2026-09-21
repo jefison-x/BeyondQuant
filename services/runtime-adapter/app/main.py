@@ -193,6 +193,14 @@ def acknowledge_terminal(session_id: str, payload: dict) -> dict:
         raise HTTPException(status_code=503, detail="terminal acknowledgement could not be persisted") from exc
 
 
+@app.get("/internal/runtime/sessions/{session_id}/containment")
+def session_containment(session_id: str) -> dict:
+    """Bounded BYQ containment projection (ADR-0084); no DSH private state."""
+    try:
+        return adapter.containment_summary(session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="invalid session identity") from exc
+
 @app.post("/internal/runtime/sessions/{session_id}/recover-evidence")
 def recover_evidence(session_id: str, payload: dict) -> dict:
     if set(payload) != {"trace_id", "owner", "workspace_id", "after_sequence"}:

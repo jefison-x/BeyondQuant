@@ -34,6 +34,11 @@ from .pooled_http import pooled_http as httpx
 from .user_session import ProductAuthError, resolve_principal, resolve_user
 from .trace_store import TraceConflict, TraceStore
 from .conversation_recovery import project_recovery
+from .session_containment import (
+    RecoveryAttemptStore,
+    RecoveryConflict,
+    project_containment,
+)
 from .workflow_projection import project_workflow_event
 from .agent_lifecycle_delivery import LifecycleDelivery
 from .task_continuation import TaskContinuationDelivery
@@ -67,6 +72,8 @@ BACKEND_URL = os.environ.get("BYQ_BACKEND_URL", "http://backend:8000")
 PRODUCT_TOKEN = os.environ.get("BYQ_PRODUCT_TOKEN")
 PRODUCT_PRINCIPAL = os.environ.get("BYQ_PRODUCT_PRINCIPAL", "product-user")
 trace_store = TraceStore(os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"))
+recovery_attempts = RecoveryAttemptStore(
+    os.environ.get("BYQ_RECOVERY_ATTEMPT_ROOT", "/tmp/byq-recovery-attempts"))
 
 
 def _continuation_adapter_get(path: str, params=None) -> dict:
@@ -76,6 +83,31 @@ def _continuation_adapter_get(path: str, params=None) -> dict:
     if not isinstance(value, dict):
         raise ValueError('invalid continuation adapter receipt')
     return value
+
+
+def _adapter_containment(runtime_session_id: str) -> dict | None:
+    """Fetch the bounded adapter containment summary; unavailable is not fatal."""
+
+    if not runtime_session_id:
+        return None
+    try:
+        return _continuation_adapter_get(
+            f"/internal/runtime/sessions/{runtime_session_id}/containment")
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
+def _session_containment_projection(
+    session: ProductSession, *, step: object = None, receipts: object = None,
+) -> dict:
+    events = trace_store.read(session.session_id)
+    return project_containment(
+        events, session_id=session.session_id, trace_id=session.trace_id,
+        conversation_id=session.conversation_id,
+        adapter_containment=_adapter_containment(session.session_id),
+        step=step, receipts=receipts,
+        attempt_ledger=recovery_attempts.read(session.conversation_id),
+    )
 
 
 def _consume_task_continuation(context):
@@ -1269,7 +1301,94 @@ def get_product_session(session_id: str, request: Request) -> dict[str, object]:
         "created_at": conversation.get("created_at"),
         "updated_at": conversation.get("updated_at"),
     }
-    return {"conversation": public, "messages": messages, "events": events}
+    containment = project_containment(
+        events, session_id=session_id, trace_id=str(conversation.get("trace_id") or ""),
+        conversation_id=session_id,
+        adapter_containment=_adapter_containment(runtime_session_id),
+        attempt_ledger=recovery_attempts.read(session_id),
+    )
+    return {"conversation": public, "messages": messages, "events": events,
+            "containment": containment}
+
+
+@app.get("/v1/agent/sessions/{session_id}/containment")
+def get_product_containment(session_id: str, request: Request) -> dict[str, object]:
+    session = _product_session(request, session_id)
+    return {"containment": _session_containment_projection(session)}
+
+
+class ProductRecoveryRequest(BaseModel):
+    idempotency_key: str = Field(min_length=8, max_length=128)
+    step: dict[str, object] | None = None
+
+
+@app.post("/v1/agent/sessions/{session_id}/recovery-attempt",
+          dependencies=[Depends(require_chat_admission)])
+def create_recovery_attempt(
+    session_id: str, request: ProductRecoveryRequest, http_request: Request,
+) -> dict[str, object]:
+    """Create at most one bounded, auditable recovery attempt for a lost run.
+
+    Only a step the caller explicitly declares idempotent AND result-verifiable
+    may auto-retry. The exact prompt receipt is queried first; a confirmed
+    success is never replayed, and an unknown side effect is paused.
+    """
+
+    session = _product_session(http_request, session_id)
+    catalog = _catalog_request(
+        "GET", f"/v1/product/conversations/{session_id}", session.principal, session.workspace_id)
+    messages = catalog.get("messages") if isinstance(catalog, dict) else None
+    events = trace_store.read(session.session_id)
+    _public, recovery = project_recovery(messages, events, session.session_id, session.trace_id)
+    unanswered = recovery.get("unanswered_turn") if isinstance(recovery, dict) else None
+    if (not isinstance(unanswered, dict)
+            or unanswered.get("message_id") != request.idempotency_key
+            or not isinstance(unanswered.get("content"), str)):
+        raise HTTPException(status_code=409, detail={
+            "code": "recovery_not_eligible", "reason": "unanswered_turn_unproven"})
+    content = unanswered["content"]
+    receipt = _adapter_prompt_receipt(session.session_id, request.idempotency_key, content)
+    step = request.step if isinstance(request.step, dict) else {}
+    projection = project_containment(
+        events, session_id=session.session_id, trace_id=session.trace_id,
+        conversation_id=session.conversation_id,
+        adapter_containment=_adapter_containment(session.session_id), step=step,
+        receipts={"success": receipt is not None, "queryable": True},
+        attempt_ledger=recovery_attempts.read(session.conversation_id),
+    )
+    decision = projection.get("recovery") or {}
+    if decision.get("status") != "eligible":
+        raise HTTPException(status_code=409, detail={
+            "code": "recovery_not_eligible", "reason": decision.get("reason")})
+
+    def submit() -> str:
+        body = _adapter_post(
+            f"/internal/runtime/sessions/{session.session_id}/prompt",
+            payload={"content": content, "require_model_key": True,
+                     "idempotency_key": request.idempotency_key,
+                     **_runtime_recovery_payload(session)}, timeout=5.0)
+        run_id = body.get("run_id") if isinstance(body, dict) else None
+        if not _valid_prompt_run_id(run_id):
+            raise HTTPException(status_code=502, detail="recovery receipt is unconfirmed")
+        return str(run_id)
+
+    try:
+        ledger = recovery_attempts.guard(
+            session.conversation_id,
+            previous_run_id=projection.get("interrupted_run_id"),
+            idempotency_key=request.idempotency_key, submit=submit)
+    except RecoveryConflict as exc:
+        raise HTTPException(status_code=409, detail={
+            "code": "recovery_attempt_in_progress"}) from exc
+    latest = ledger["attempts"][-1]
+    return {
+        "session_id": session.conversation_id,
+        "trace_id": session.trace_id,
+        "attempt": latest["attempt"],
+        "previous_run_id": latest["previous_run_id"],
+        "new_run_id": latest["new_run_id"],
+        "lineage": ledger["attempts"],
+    }
 
 
 @app.get("/v1/agent/sessions/{session_id}/lifecycle-delivery")

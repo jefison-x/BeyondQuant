@@ -25,6 +25,7 @@
 <!-- byq:v090-step5-b1-subagent-child-crash=blocked-external -->
 <!-- byq:v090-step5-gsplit-decision=complete -->
 <!-- byq:v090-step5-b2-adapter-restart=blocked-external -->
+<!-- byq:v090-session-containment=complete -->
 <!-- byq:v090-step5-b3-terminal-adapter-restart=complete -->
 <!-- byq:v090-step5-b4-terminal-dsh-runtime-restart=complete -->
 <!-- byq:v090-dsh-provider-qualification=blocked-external -->
@@ -32,7 +33,7 @@
 <!-- byq:session-failure-containment=next -->
 <!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->
 <!-- byq:phase-100-p100-c=paused-not-delivery -->
-<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.189 -->
+<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.190 -->
 
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|
@@ -464,6 +465,44 @@ D15-G 保持 **`NO_GO`** 且**未重跑**，**`R3_RESUME = NO`**，0.9 未关闭
   `post-u8.188 → post-u8.189`（`scripts/`、`tests/` 属 build inputs，仅重建身份；历史 manifest 与
   全部证据保留）。**未改历史 verdict、未改生产 selector/compose/deployment、未 deploy/tag/release、
   未运行 Full CI、未取消或重跑当前 CI、未触碰 PR #349、未引入镜像签名或第二框架。**
+
+## ADR-0084 BYQ session failure containment and business recovery（2026-09-21，权威维护条目）
+
+本批实现 ADR-0084 取代 B1/B2 全局阻塞作用的**当前必需门禁**：`BYQ session failure containment
+and business recovery`。独立 worktree/分支 `codex/v090-session-failure-containment`，基于动态
+`origin/main`。这是维护/资格，**不推进 Product Phase**，不切换生产 selector，不 deploy，不创建/移动
+tag/release，不恢复 Phase 100，不触碰 `codex/phase-100c`/PR #338，不做 Community 检查或复制，
+不 fork/patch DSH，**不实现** ADR-0082 Option 2 或任何原生 child resume。
+
+- **实现范围（可逆、合同优先）**：新增 BYQ 自有框架中立合同
+  `packages/contracts/session_failure_containment.py`（closed loss cause / `interrupted` 终态 /
+  generation-epoch-attempt fence / 终态重开与重复结算拒绝 / 有界恢复分类 / old→new 尝试 lineage）；
+  Runtime Adapter `app/containment.py` 持久化**有界、受 epoch 与 attempt fence 保护**的 containment
+  证据（`byq-lifecycle-evidence/containment/`），并在 `_rehydrate` 检测到丢失的 open root 时如实记录
+  `executor-loss`、在 `_run_prompt` 终态结算前校验 generation fence；Gateway
+  `app/session_containment.py` 仅从**规范化 WorkflowTrace + 持久 adapter containment 摘要**派生
+  `interrupted`、恢复资格、暂停原因与尝试 lineage，并提供 Product API 投影
+  （`GET /v1/agent/sessions/{id}/containment`、`POST /v1/agent/sessions/{id}/recovery-attempt`、
+  `GET /v1/agent/sessions/{id}` 的 `containment` 字段）。前端**不**读取 DSH 私有事件。
+- **恢复分类（fail-closed）**：取消/预算耗尽/授权撤销/owner-workspace 不匹配一律 `blocked`；已存在精确
+  成功回执一律 `settled`（绝不重放）；非幂等或结果不可核对的副作用一律 `paused`（用户可见原因，
+  绝不自动重试）；仅合同显式声明幂等**且**结果可核对的步骤在无回执时产生**至多一个**有界尝试，
+  并发恢复请求只形成一个权威 attempt。取消后不恢复。
+- **可失败验收（真实、可破坏）**：`scripts/v090/session_containment/`（contract、fail-able observer、
+  real capture）；真实 Runtime Adapter 合成兼容 harness 复现执行者丢失→`interrupted` 且会话/历史/
+  回执保留，以及旧 generation 迟到成功不覆盖新 generation；真实 Gateway attempt ledger 证明
+  单权威 attempt 与 lineage；纯合同函数复现 stale generation/迟到/重复/重开拒绝与全部分类。
+  observer 区分 `format_valid` 与 `all_pass`，`--selfcheck` 20 项控制全部被拒（19 项 defect-targeting
+  修复前 result-trusting 门禁会误报），提交 verdict `format_valid=true`、`all_pass=true`、exit 0，
+  且对 committed observations 的变异会使其失败。证据
+  `docs/evidence/v090-session-containment/`，由 `tests/test_v090_session_containment.py` 断言。
+- **边界事实不变**：B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 保持
+  `BLOCKED_EXTERNAL`；历史 D15-G 保持 `NO_GO`（历史 verdict/JSON 不改写）；`R3_RESUME = NO`；
+  0.9 未关闭。本 PR **不生成也不声称**任何 D15 superseding assessment 通过；原生子进程续接仍
+  **未实现**，未知副作用**暂停**，未授权项（生产 selector 切换、deploy、release/tag、Phase 100
+  恢复、B1/B2 降级）一律未做。
+- 构建身份推进 `post-u8.189 → post-u8.190`（`scripts/`、`tests/` 属 build inputs，仅重建身份；
+  历史 `.189` manifest 与全部证据保留，不改 selector/`compose.yml`/`deployment.json`/制品）。
 
 ## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19，历史叙述）
 

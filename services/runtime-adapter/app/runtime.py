@@ -25,6 +25,7 @@ from packages.contracts.conversation_recovery import normalize_recovery
 from packages.contracts.agent_run_lifecycle import registration_fingerprint, lifecycle_receipt, project_lifecycle_event
 from packages.contracts.domain_call_admission import ACTIONS as DOMAIN_CALL_ACTIONS, request_evidence
 from packages.contracts import runtime_continuity as continuity
+from packages.contracts import session_failure_containment as containment_contract
 
 from .contracts import WorkflowTraceEvent, make_workflow_trace_event
 from .child_lease import ChildLease
@@ -32,7 +33,8 @@ from .normalization import close_public_activities
 from .compat import RuntimeCompatibility, RuntimeObservation, compatibility_for_release
 from .identifiers import contained_session_path, validate_identifier
 from .lifecycle_journal import JournalIdentityMismatch, LifecycleJournal, JournalBusy
-from . import generation_ledger
+from .executor_identity import ExecutorIdentityError
+from . import containment, generation_ledger
 from .continuation_budget import (CONTINUATION_MAX_OUTPUT_TOKENS, persist_settlement,
     recovered_settlement, validate_reservation, create_guard_patch, read_guard)
 from .normalization import NormalizationState, normalize_runtime_observation
@@ -558,6 +560,29 @@ class RuntimeAdapter:
         epoch = getattr(getattr(journal, "executor", None), "executor_epoch", 0)
         return epoch if isinstance(epoch, int) and epoch > 0 else 0
 
+    @staticmethod
+    def _terminal_fenced(record: RuntimeSession, generation_id: str, executor_epoch: int) -> bool:
+        """ADR-0084: a run may only settle state for its own live generation.
+
+        A late terminal from a replaced generation (adapter restart, executor
+        takeover, new generation) fails closed instead of overwriting the newer
+        generation's state.
+        """
+
+        current = record.current_generation
+        if current is None:
+            return False
+        try:
+            containment_contract.assert_generation_fenced(
+                authoritative_epoch=record.executor_epoch,
+                authoritative_generation=current.generation_id,
+                write_epoch=executor_epoch,
+                write_generation=generation_id,
+            )
+        except containment_contract.FencedWrite:
+            return True
+        return False
+
     def _ledger_begin(self, record: RuntimeSession, generation: RuntimeGeneration,
                       root_run_id: str | None) -> None:
         try:
@@ -864,9 +889,12 @@ class RuntimeAdapter:
             # A worker may be scheduled only after cancellation and resume.
             prompt_harness = record.harness
             prompt_runtime_session_id = record.runtime_session_id
+            prompt_generation = record.runtime_generation
+            prompt_executor_epoch = record.executor_epoch
         worker = threading.Thread(
             target=self._run_prompt,
-            args=(record, run, effective_content, prompt_harness, prompt_runtime_session_id),
+            args=(record, run, effective_content, prompt_harness, prompt_runtime_session_id,
+                  prompt_generation, prompt_executor_epoch),
             name=f"byq-dsh-session-{session_id}",
             daemon=True,
         )
@@ -922,6 +950,7 @@ class RuntimeAdapter:
     def _run_prompt(
         self, record: RuntimeSession, run: ActiveRun, content: str,
         harness: Any, runtime_session_id: str,
+        generation_id: str = "", executor_epoch: int = 0,
     ) -> None:
         try:
             with record.lock:
@@ -954,6 +983,12 @@ class RuntimeAdapter:
             with record.lock:
                 if record.active_run is not run:
                     return
+                if self._terminal_fenced(record, generation_id, executor_epoch):
+                    # A newer generation owns this session; this late failure must
+                    # not overwrite its state or emit a stale terminal.
+                    record.active_run = None
+                    run.watchdog_stop.set()
+                    return
                 if self._root_scoped and not record.process_closed and not record.process_closing:
                     record.process_closing = True
                     try:
@@ -979,6 +1014,12 @@ class RuntimeAdapter:
 
         with record.lock:
             if record.active_run is not run:
+                return
+            if self._terminal_fenced(record, generation_id, executor_epoch):
+                # ADR-0084: never let a late success from a replaced generation
+                # settle completed over a newer generation's authoritative state.
+                record.active_run = None
+                run.watchdog_stop.set()
                 return
             record.active_run = None
             run.watchdog_stop.set()
@@ -1399,6 +1440,11 @@ class RuntimeAdapter:
                     pass
             interrupted_generation = (
                 lost_root.get("generation") if isinstance(lost_root, dict) else None)
+            if isinstance(lost_root, dict) and interrupted_generation:
+                self._record_containment(
+                    evidence_root, journal, context, lost_root,
+                    interrupted_generation=interrupted_generation, loss_cause="executor-loss",
+                )
             record = RuntimeSession(
                 session_id=session_id,
                 trace_id=context["trace_id"],
@@ -1518,6 +1564,52 @@ class RuntimeAdapter:
                     self._compatibility.close(record.harness)
             finally:
                 raise
+
+    def _record_containment(self, evidence_root: Path, journal: Any, context: dict,
+                            lost_root: dict, *, interrupted_generation: str,
+                            loss_cause: str) -> None:
+        """ADR-0084: persist one fenced containment fact for a lost open root.
+
+        A ledger failure never fabricates success: the truthful ``interrupted``
+        lifecycle outcome is already emitted by the journal claim.
+        """
+
+        try:
+            records = containment.read(evidence_root, context["session_id"])
+            attempt = (records[-1]["attempt"] + 1) if records else 1
+            containment.record_loss(
+                evidence_root, context=context,
+                executor=getattr(journal, "executor", None),
+                loss_cause=loss_cause,
+                interrupted_run_id=lost_root.get("root_run_id"),
+                interrupted_generation=interrupted_generation,
+                attempt=attempt, recorded_at=time.time(),
+            )
+        except (OSError, ValueError, containment.ContainmentConflict,
+                containment_contract.FencedWrite, ExecutorIdentityError):
+            pass
+
+    def containment_summary(self, session_id: str) -> dict[str, Any]:
+        """Bounded, framework-neutral containment projection for the Gateway."""
+
+        validate_identifier(session_id, field="session_id")
+        evidence_root = self._session_root / "byq-lifecycle-evidence"
+        records = containment.read(evidence_root, session_id)
+        summary: dict[str, Any] = {
+            "schema_version": "session-containment-summary.v1",
+            "session_id": session_id, "contained": bool(records),
+            "attempts": len(records), "latest": None,
+        }
+        if records:
+            latest = records[-1]
+            summary["latest"] = {
+                "loss_cause": latest["loss_cause"],
+                "interrupted_run_id": latest["interrupted_run_id"],
+                "interrupted_generation": latest["interrupted_generation"],
+                "executor_epoch": latest["executor_epoch"],
+                "attempt": latest["attempt"],
+            }
+        return summary
 
     def continuation_qualified(self, record: RuntimeSession) -> bool:
         try:
