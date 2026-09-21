@@ -1,0 +1,83 @@
+{
+  "schema_version": "byq-v090-step-safety-design.v1",
+  "task": "authoritative server-side step-safety + budget binding + safe rescheduling",
+  "delivered_scope": "inventory+minimal-design",
+  "runtime_implementation": false,
+  "contract_mapping": {
+    "keep_closed": "packages/contracts/session_failure_containment.py (classify_recovery, loss causes, terminal kinds, recovery statuses/reasons, generation/epoch/attempt fence, RECOVERY_ATTEMPT_MAX)",
+    "step_safety_registry": "closed, provider-independent per-action {idempotent, result_verifiable} registry co-located with the existing domain action contract (domain_call_admission.ACTIONS); ordinary contract extension",
+    "reuse_not_replace": [
+      "services/backend/app/research_receipts.py (exact receipt reconciliation)",
+      "services/backend/app/research_continuation.py (continuation budget authority)",
+      "services/runtime-adapter/app/lifecycle_journal.py / runtime.py (prompt receipt reconciliation)",
+      "services/runtime-adapter/app/containment.py + executor_identity.py (loss evidence and fencing)",
+      "packages/contracts/session_failure_containment.py::RecoveryDecision (public projection)"
+    ]
+  },
+  "authoritative_source": {
+    "step_idempotency_and_result_verifiability": "BYQ domain contract, never the client and never the model prompt; safe only when (1) the step is in the closed BYQ domain action set with a persisted idempotency_key and request_hash/input_hash, (2) an exact receipt reconciliation surface exists, and (3) it is not a write/order/publish/paid/irreversible action outside the registry; otherwise unknown",
+    "budget": "services/backend/app/research_continuation.py research_tasks.continuation_permission + continuation_budget (authoritative); adapter carrier and DSH guard journal are bounded mirrors",
+    "receipt": "services/backend/app/research_receipts.py and the existing domain idempotency lookup plus adapter reconcile_prompt",
+    "identity": "existing Backend auth session and owner-scoped Product catalog",
+    "fencing": "services/runtime-adapter/app/executor_identity.py epoch + containment generation/attempt fence"
+  },
+  "budget_binding": {
+    "task_bound_run": "bind the lost run to the exact persisted (reservation_id, event_key, input_sha256); derive budget_available from remaining=token_limit-charged_tokens, max_turns, expires_at, grant_version/revocation; exhausted/expired/revoked -> blocked; missing/ambiguous -> None -> paused",
+    "arbitrary_chat_turn": "no authoritative reservation; budget_available stays None -> paused",
+    "no_new_authority": true,
+    "no_spend_reset": true,
+    "reuse_existing_seam": "services/gateway/app/main.py _catalog_request to /internal/task-continuation and /internal/research-receipts already exists"
+  },
+  "safe_rescheduling": {
+    "bounded": "at most RECOVERY_ATTEMPT_MAX=3 per lost run, additionally bounded by reservation max_turns/expires_at/turn_timeout_seconds and DSH guard call/token bounds; must fit remaining authoritative reservation else budget_exhausted",
+    "idempotent_exactly_one": "new continuation reservation under deterministic recovery event key recovery-v1:<sha256(original_event_key + interrupted_run_id)>; the existing Backend ledger enforces one row per event_key inside its transaction (advisory lock / FOR UPDATE), so a concurrent duplicate creates zero extra reservations; domain writes retain original idempotency keys and reconcile request_hash instead of replaying",
+    "receipt_first": "success receipt -> settled (never replay); hash/identity conflict -> blocked; absent/unqueryable receipt with non-idempotent/unknown step -> paused",
+    "auditable": "loss recorded in the fenced adapter containment ledger; reschedule recorded in the Backend continuation ledger with run_id/charged_tokens/settlement_sha256 lineage; Gateway projection exposes the decision; no second store and no /tmp authority",
+    "fenced": "stale executor epoch, stale/duplicate generation, late settlement and terminal reopen fail closed (FencedWrite)"
+  },
+  "failure_semantics": {
+    "unknown_or_unavailable_authority": "paused (authority_unavailable), never allowed",
+    "missing_or_ambiguous_step_safety": "paused (step_safety_unavailable) or non_idempotent_step",
+    "unknown_side_effect_or_receipt": "paused",
+    "ordinary_failed_cancelled_discarded_closed": "keep ordinary semantics; interrupted projected only from fenced containment matching the same session/trace and exact run",
+    "unreadable_or_corrupt_containment_or_receipt": "treated as unavailable -> paused, never proof of absence or success"
+  },
+  "next_slice_acceptance_criteria": [
+    "closed step-safety registry derived from the existing domain action contract plus receipt surfaces; every unlisted step is unknown",
+    "classify_recovery invoked with real authoritative values (identity from existing Backend session/catalog; budget from continuation_budget; success receipt from existing reconciliation; step safety from the registry) with byte-for-byte fail-closed fallback to paused on any read failure",
+    "exactly-one bounded reschedule under a deterministic recovery-v1: event key, only within the original authoritative reservation and at most RECOVERY_ATTEMPT_MAX; concurrent duplicates create zero extra reservations; no second store",
+    "receipt-first: success receipt -> settled (no prompt); conflict -> blocked; non-idempotent/unknown -> paused",
+    "fenced: stale epoch/generation/attempt and terminal reopen fail closed",
+    "fail-able observer plus negative controls that a result-trusting gate would misreport, with machine-readable evidence",
+    "no new persistence authority, trust subject, cross-Plane call, production selector change, deploy, release/tag, Phase 100 resume or D15 superseding assessment"
+  ],
+  "adr_decision": {
+    "required": false,
+    "proposed": false,
+    "rationale": "ordinary closed-contract extension over already-authorized BYQ authorities; budget binding reuses the existing Backend continuation_budget ledger; receipt reconciliation reuses existing research_receipts / prompt-receipt surfaces; the Gateway->Backend _catalog_request internal seam already exists and is already used for task continuation and receipt reconciliation; no new trust subject, persistence authority, production topology or external write permission",
+    "decision_points": [
+      "step-safety declaration is an ordinary extension of the existing domain_call_admission contract",
+      "budget authority stays services/backend/app/research_continuation.py",
+      "receipt authority stays services/backend/app/research_receipts.py and existing domain idempotency lookups",
+      "identity authority stays the existing Backend auth session plus owner-scoped Product catalog",
+      "no new persistence, no new principal, no new cross-Plane surface"
+    ],
+    "future_triggers_requiring_a_proposed_adr": [
+      "a dedicated recovery-attempt persistence store",
+      "a new trust subject or principal",
+      "a new cross-Plane surface",
+      "a change to the ADR-0084 gate classification"
+    ]
+  },
+  "boundaries_unchanged": {
+    "b1_subagent_child_crash": "BLOCKED_EXTERNAL",
+    "b2_subagent_byq_adapter_restart": "BLOCKED_EXTERNAL",
+    "d15_g": "NO_GO",
+    "r3_resume": "NO",
+    "production_selector": "dsh-0.1.2rc1",
+    "full_business_recovery_gate": "IN_PROGRESS/BLOCKED_INTERNAL",
+    "native_child_resume": "not_implemented",
+    "superseding_assessment": "not_created_in_this_pr",
+    "unknown_side_effects": "pause"
+  }
+}

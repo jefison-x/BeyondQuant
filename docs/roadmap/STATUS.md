@@ -26,21 +26,22 @@
 <!-- byq:v090-step5-gsplit-decision=complete -->
 <!-- byq:v090-step5-b2-adapter-restart=blocked-external -->
 <!-- byq:v090-session-containment=containment-classification-delivered -->
+<!-- byq:v090-step-safety-design=inventory-design-delivered -->
 <!-- byq:v090-step5-b3-terminal-adapter-restart=complete -->
 <!-- byq:v090-step5-b4-terminal-dsh-runtime-restart=complete -->
 <!-- byq:v090-dsh-provider-qualification=blocked-external -->
 <!-- byq:adr-0084=accepted -->
 <!-- byq:session-failure-containment=in-progress-blocked-internal -->
-<!-- byq:session-failure-containment-next=authoritative-step-safety-and-budget-inventory -->
+<!-- byq:session-failure-containment-next=authoritative-step-safety-budget-rescheduling-implementation -->
 <!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->
 <!-- byq:phase-100-p100-c=paused-not-delivery -->
-<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.190 -->
+<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.191 -->
 
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|
 | Product | 最近完成 Phase 97（marker 97） | 未授权任何新的 Product Phase | 维护者阶段性授权 + 本文件 next phase | 一阶段一 worktree/Draft PR；Human Merge Gate；不得自授新 Phase |
 | 数据/资格 | Phase 98/99 `COMPLETE`；Phase 100 `PAUSED`：P100-A/P100-B 已并入 `main`，P100-C 只存在于暂停且未交付的 Draft #338，P100-D/P100-E 冻结；Phase 101 `COMPLETE`。S3/历史成分准备属于 0.10.0，不是 0.9 gate。 | 等待 0.9 的**完整** BYQ failure-containment gate 收口（当前 `IN_PROGRESS / BLOCKED_INTERNAL`；本 PR 只交付 containment + 只读分类，不生成 superseding assessment）；之后仅在维护者恢复 Phase 100 时继续 P100-C/D/E，并在 0.10 资格结束后执行 1.0 `core`/`extended`/`deferred` 范围复核 | Phase 100 原授权 + ADR-0074/0084 | 仅 Tushare；不得从未审查分支推断完成；数据来源、时点、单位、许可与完整性失败继续 fail closed；不因外部可选能力冻结无关调查 |
-| 维护（当前） | **ADR-0084 门禁合理化与 0.9 收口治理**：维护者已于 2026-09-21 明确接受完整决定；B3 `terminal-adapter-restart` 与 B4 `terminal-dsh-runtime-restart` 保持候选/资格层 PASS；B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 继续保持真实 `BLOCKED_EXTERNAL`，历史 D15-G 继续为 `NO_GO` 且不改写，但这些外部能力不再是 0.9 收口、候选兼容判断、受限 R3 失败隔离或无关 0.10 工作的全局硬前置。另已完成独立监控切片 `v090-dsh-provider-qualification`：DSH rc.2 与 alpha.2 均无进程外 continuable provider，保持 **`BLOCKED_EXTERNAL`**，**未升级依赖**（证据 `docs/evidence/v090-dsh-provider-qualification/`）。**本 PR（`codex/v090-session-failure-containment`）只交付 containment + fail-closed 只读恢复分类**（marker `v090-session-containment=containment-classification-delivered`）：执行者失联检测、未完成 run→`interrupted`（仅在 fenced containment 匹配同一 session/trace 与精确 run 时）、旧 generation/epoch 与迟到终态 fencing、真实 before/after 业务状态观测、未知副作用与未验证 authority 一律 `paused`。**完整 business-recovery gate（权威服务端 step-safety + budget binding + safe rescheduling）仍为 `IN_PROGRESS / BLOCKED_INTERNAL`**，本 PR 不据此声明门禁完成，也不进入 D15 superseding assessment。 | **下一唯一任务**：为 **authoritative server-side step-safety + budget binding + safe rescheduling** 做 **inventory + minimal design**（沿用现有 job/receipt/idempotency/generation/WorkflowTrace；逐项确认权威来源与失败闭合）。若该设计需要新的持久化权威、信任主体或跨 Plane 调用，**必须先提出 ADR 决定**，不得在本 PR 或后续实现中绕过。 | 维护者明确接受 ADR-0084；ADR-0081/0082/0058/0071/0074 的 superseding 修订 | 不改写历史 verdict；不实现 DSH 进程外 provider 或第二通用 harness；不自动解冻 R3；不切换生产 selector；不部署；不创建/移动 tag/release；不恢复 Phase 100；每个实现切片使用独立 worktree/PR |
+| 维护（当前） | **ADR-0084 门禁合理化与 0.9 收口治理**：维护者已于 2026-09-21 明确接受完整决定；B3 `terminal-adapter-restart` 与 B4 `terminal-dsh-runtime-restart` 保持候选/资格层 PASS；B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 继续保持真实 `BLOCKED_EXTERNAL`，历史 D15-G 继续为 `NO_GO` 且不改写，但这些外部能力不再是 0.9 收口、候选兼容判断、受限 R3 失败隔离或无关 0.10 工作的全局硬前置。另已完成独立监控切片 `v090-dsh-provider-qualification`：DSH rc.2 与 alpha.2 均无进程外 continuable provider，保持 **`BLOCKED_EXTERNAL`**，**未升级依赖**（证据 `docs/evidence/v090-dsh-provider-qualification/`）。**本 PR（`codex/v090-session-failure-containment`）只交付 containment + fail-closed 只读恢复分类**（marker `v090-session-containment=containment-classification-delivered`）：执行者失联检测、未完成 run→`interrupted`（仅在 fenced containment 匹配同一 session/trace 与精确 run 时）、旧 generation/epoch 与迟到终态 fencing、真实 before/after 业务状态观测、未知副作用与未验证 authority 一律 `paused`。**完整 business-recovery gate（权威服务端 step-safety + budget binding + safe rescheduling）仍为 `IN_PROGRESS / BLOCKED_INTERNAL`**，本 PR 不据此声明门禁完成，也不进入 D15 superseding assessment。 | **本 PR（`codex/v090-step-safety-design`）交付 inventory + minimal design**（marker `v090-step-safety-design=inventory-design-delivered`，证据 `docs/evidence/v090-step-safety-design/`）：逐项盘点 server-side step-safety / budget binding / safe rescheduling 的现有组件与缺失权威；设计结论为**沿用现有组件即可**（closed domain action + receipt contract、Backend `continuation_budget` 权威账本、既有 Gateway→Backend 内部 seam），**无需新 ADR**。**下一唯一任务**：实现该最小设计（有界、幂等、可审计、并发恰一次；未知/不可用一律 fail closed）；若后续切片引入新的持久化权威、信任主体或跨 Plane 调用，**必须先提出 ADR 决定**。 | 维护者明确接受 ADR-0084；ADR-0081/0082/0058/0071/0074 的 superseding 修订 | 不改写历史 verdict；不实现 DSH 进程外 provider 或第二通用 harness；不自动解冻 R3；不切换生产 selector；不部署；不创建/移动 tag/release；不恢复 Phase 100；每个实现切片使用独立 worktree/PR |
 | 依赖资格（D15） | **当前资格状态（B4 之后，2026-09-21）**；ADR-0084 已接受：`terminal-adapter-restart` = **PASS**、`terminal-dsh-runtime-restart` = **PASS**（均为候选/资格层）；B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 为 `BLOCKED_EXTERNAL`；独立监控切片确认 DSH rc.2/alpha.2 provider 资格仍 `BLOCKED_EXTERNAL`（无 out-of-process provider，未升级依赖）；ADR-0083 仅候选/资格层最小实现完成；R4 / production wiring NOT implemented。D15-G **未重跑**，按当前 B1/B2 状态即使重跑仍为 `NO_GO`；**历史已提交快照（不改写）**：D15-4/D15-5/D15-G committed evidence 保持原样。外部 blocker 只阻塞原生独立 child 恢复声明，不再形成全局停止。 | 仅在**完整** BYQ failure-containment gate 通过后才生成具名 superseding assessment（当前 gate `IN_PROGRESS / BLOCKED_INTERNAL`，本 PR 不生成）；按实际采用范围判断候选兼容与晋升，不等待上游 provider 才继续无关路线 | ADR-0084 + ADR-0081/0082；历史证据与 B3/B4 current overlay | `R3_RESUME` 不因文档决定自动变为 YES；不得把 B1/B2 标为 PASS；不得改写历史 D15 verdict；生产切换、部署和 release 独立授权 |
 
 ## 0.9 closeout governance & gap ledger audit（2026-09-20，历史审计快照）
@@ -518,6 +519,44 @@ tag/release，不恢复 Phase 100，不触碰 `codex/phase-100c`/PR #338，不�
   恢复、B1/B2 降级）一律未做。
 - 构建身份推进 `post-u8.189 → post-u8.190`（`scripts/`、`tests/` 属 build inputs，仅重建身份；
   历史 `.189` manifest 与全部证据保留，不改 selector/`compose.yml`/`deployment.json`/制品）。
+
+## 0.9 authoritative step-safety + budget binding + safe rescheduling inventory/design（2026-09-21，权威维护条目）
+
+本批执行“完整 business-recovery gate”的唯一后续设计切片：为
+**authoritative server-side step-safety + budget binding + safe rescheduling**
+做 **inventory + minimal design**。独立
+worktree/分支 `codex/v090-step-safety-design`，基于动态 `origin/main`。这是**设计/证据**，
+**不实现任何 runtime 代码**，不推进 Product Phase，不切换生产 selector，不 deploy，不创建/移动
+tag/release，不恢复 Phase 100，不触碰 `codex/phase-100c`/PR #338，不做 Community 检查或复制，
+不 fork/patch DSH。证据 `docs/evidence/v090-step-safety-design/`（`README.md` +
+`inventory.v1.json` + `design.v1.json`），由 `tests/test_v090_step_safety_design_governance.py`
+守门。
+
+- **Inventory（现有 vs 缺失）**：step-safety 现有 `domain_call_admission`（closed ACTIONS +
+  idempotency_key/request_hash，但**无 per-step 安全类**）、`research_receipts`（精确 receipt
+  对账）、adapter prompt receipt；budget 现有 Backend
+  `research_tasks.continuation_permission`/`continuation_budget`（**权威**，per-event-key
+  at-most-once）与 adapter/DSH guard 镜像；safe-rescheduling 现有 `classify_recovery`/fence/
+  containment ledger 与 Backend reservation dedup。缺失三项：closed per-step
+  idempotent/result_verifiable registry；失联 run 到其精确权威 reservation/event identity 的绑定；
+  有界、恰一次、receipt-first 的 reschedule。MCP 工具描述字符串与客户端 step 字段均**不是**权威。
+- **Minimal design**：contract mapping 保留 `session_failure_containment`；step-safety 权威来自
+  BYQ domain contract（closed registry，未列出即 unknown）；budget 权威来自既有
+  `continuation_budget`，任意未绑定回合保持 `None`→`paused`；reschedule 为确定性 `recovery-v1:`
+  event key 的新 reservation，受 `RECOVERY_ATTEMPT_MAX=3`、原 reservation 与既有 dedup/行锁约束；
+  先查精确 receipt（成功→`settled` 绝不重放，冲突→`blocked`，非幂等/未知→`paused`）；失败一律
+  fail closed；审计沿用 containment ledger + Backend ledger，**无第二个 store**。
+- **ADR 决定 = 无需新 ADR**：设计只做 ordinary closed-contract 扩展并复用既有权威
+  （`domain_call_admission`、`research_receipts`、`continuation_budget`、既有 Gateway→Backend
+  `_catalog_request` 内部 seam），**未引入**新持久化权威、新信任主体或新跨 Plane 调用。若后续
+  实现切片引入其中任一项，**必须先提出 Proposed ADR**。
+- **门禁与边界不变**：**完整 business-recovery gate 仍为 `IN_PROGRESS / BLOCKED_INTERNAL`**
+  （本切片是设计，不是实现）；**不生成也不声称** D15 superseding assessment；B1/B2
+  `BLOCKED_EXTERNAL`、历史 D15-G `NO_GO`、`R3_RESUME = NO` 全部不改写；未实现原生 child resume；
+  未知副作用暂停。
+- 构建身份推进 `post-u8.190 → post-u8.191`（`scripts/`、`tests/`、
+  `services/runtime-adapter/Dockerfile.post-u8-candidate` 属 build inputs，仅重建身份；历史 `.190`
+  manifest 与全部证据保留，不改 selector/`compose.yml`/`deployment.json`/制品）。
 
 ## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19，历史叙述）
 
