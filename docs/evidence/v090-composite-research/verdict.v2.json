@@ -1,0 +1,34 @@
+{
+  "all_pass": false,
+  "coverage_failures": [
+    "scenarios.approval-revoked: BLOCKED (no revoke path exists at the ML strategy or agent approval layer in the committed tree; a rejection is not a revoke and is not substituted)",
+    "scenarios.timeout-terminal: BLOCKED (the isolated ML stack exposes no deterministic timeout boundary distinct from cancel; no timeout terminal can be produced honestly)",
+    "scenarios.data-ready-continuation: BLOCKED (the composite journey exercises the ADR-0045 budgeted continuation, not the ADR-0077 data_ready grant; a real waiting_for_data -> readiness -> bounded data_ready continuation is not implemented in this 0.9 regression)",
+    "scenarios.runtime-adapter-tool-boundary: BLOCKED (Gateway/runtime-adapter pre/post-write response loss and restart at the agent tool-call boundary require scripted-runtime tool-call fault injection (D15 scope); Backend/worker results are not generalized to this boundary)"
+  ],
+  "exit_code": 1,
+  "failures": [],
+  "format_valid": true,
+  "journey_result": "PASS",
+  "scenario_results": {
+    "approval-rejected": "PASS",
+    "approval-revoked": "BLOCKED",
+    "approval-stale-reuse": "PASS",
+    "bounded-continuation-exactly-once": "PASS",
+    "cancel-terminal": "PASS",
+    "data-ready-continuation": "BLOCKED",
+    "duplicate-delivery": "PASS",
+    "late-success": "PASS",
+    "model-or-domain-failure": "PASS",
+    "process-restart-backend": "PASS",
+    "process-restart-gateway": "PASS",
+    "process-restart-ml-worker": "PASS",
+    "queue-worker-resume": "PASS",
+    "response-loss-after-write": "PASS",
+    "response-loss-before-write": "PASS",
+    "runtime-adapter-tool-boundary": "BLOCKED",
+    "timeout-terminal": "BLOCKED"
+  },
+  "schema_version": "byq-v090-composite-research-verdict.v2",
+  "unit_fixture": false
+}

@@ -1,0 +1,1142 @@
+{
+  "cleanup": {
+    "containers_before": 9,
+    "containers_remaining": 0,
+    "networks_remaining": 0,
+    "production_untouched": true,
+    "volumes_remaining": 0
+  },
+  "evidence_class": "runtime-isolated-stack",
+  "execution_model": {
+    "compose_project": "byq-v090-composite-local",
+    "provider": "scripted-keyless"
+  },
+  "generated_at": "2026-09-21T00:40:37Z",
+  "journey": {
+    "id": "improve-strategy-composite.v1",
+    "original_key": "product-ml-training-f6-original-training",
+    "owner": "f6-chain-user",
+    "report": {
+      "baseline_job_id": "backtest_5b6934e015c44ee49569314f0bfb549e",
+      "candidates": [
+        {
+          "job_id": "backtest_5b6934e015c44ee49569314f0bfb549e",
+          "strategy_version_artifact_id": "artifact_377322a6b8cc429b9a299f6bcc31081a",
+          "total_return_micros": 0
+        },
+        {
+          "job_id": "backtest_90bbe13feb6d4d41bb0f76f0aefdb630",
+          "strategy_version_artifact_id": "artifact_49217ba78f6e43f2866f186bc002fd9b",
+          "total_return_micros": 39698
+        }
+      ],
+      "object_id": "artifact_e3ac09fcf2394d75b984e014d708dfbd",
+      "selected_job_id": "backtest_90bbe13feb6d4d41bb0f76f0aefdb630",
+      "status": "validated",
+      "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b"
+    },
+    "result": "PASS",
+    "steps": [
+      {
+        "approval": null,
+        "id": "strategy-improve-proposal",
+        "object_id": "artifact_49217ba78f6e43f2866f186bc002fd9b",
+        "object_kind": "artifact",
+        "original_key": "v090-step-strategy-improve-proposal",
+        "owner": "f6-chain-user",
+        "receipt": {
+          "idempotency_key": "product-ml-strategy-784f0cce993e4d1aa34bead47fec2242",
+          "object_id": "artifact_49217ba78f6e43f2866f186bc002fd9b",
+          "receipt_id": "artifact:artifact_49217ba78f6e43f2866f186bc002fd9b",
+          "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b"
+        },
+        "result": "PASS",
+        "run_id": "5f3864e54adf4689bb97f69dac9fc3ff",
+        "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+        "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+      },
+      {
+        "approval": null,
+        "id": "approval-required-action",
+        "object_id": "artifact_19f6113cb61f4d7aa07b7898a08e0d0a",
+        "object_kind": "artifact",
+        "original_key": "v090-step-approval-required-action",
+        "owner": "f6-chain-user",
+        "receipt": {
+          "idempotency_key": "product-ml-approval-0be7e4800b7d48daac291632504909eb",
+          "object_id": "artifact_19f6113cb61f4d7aa07b7898a08e0d0a",
+          "receipt_id": "artifact:artifact_19f6113cb61f4d7aa07b7898a08e0d0a",
+          "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b"
+        },
+        "result": "PASS",
+        "run_id": "5f3864e54adf4689bb97f69dac9fc3ff",
+        "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+        "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+      },
+      {
+        "approval": {
+          "approval_artifact_id": "artifact_19f6113cb61f4d7aa07b7898a08e0d0a",
+          "decision": "approved",
+          "execution_authorized": true
+        },
+        "id": "execute-original-key-after-approval",
+        "object_id": "mlrun_a4bc51280c3a4345bb4a7656d3e68eab",
+        "object_kind": "run",
+        "original_key": "product-ml-training-f6-original-training",
+        "owner": "f6-chain-user",
+        "receipt": {
+          "idempotency_key": "product-ml-training-f6-original-training",
+          "object_id": "mlrun_a4bc51280c3a4345bb4a7656d3e68eab",
+          "receipt_id": "run:mlrun_a4bc51280c3a4345bb4a7656d3e68eab",
+          "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b"
+        },
+        "result": "PASS",
+        "run_id": "5f3864e54adf4689bb97f69dac9fc3ff",
+        "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+        "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+      },
+      {
+        "approval": null,
+        "id": "training",
+        "object_id": "mlrun_a4bc51280c3a4345bb4a7656d3e68eab",
+        "object_kind": "run",
+        "original_key": "v090-step-training",
+        "owner": "f6-chain-user",
+        "receipt": {
+          "idempotency_key": "product-ml-training-f6-original-training",
+          "object_id": "mlrun_a4bc51280c3a4345bb4a7656d3e68eab",
+          "receipt_id": "run:mlrun_a4bc51280c3a4345bb4a7656d3e68eab",
+          "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b"
+        },
+        "result": "PASS",
+        "run_id": "5f3864e54adf4689bb97f69dac9fc3ff",
+        "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+        "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+      },
+      {
+        "approval": null,
+        "id": "out-of-sample-prediction",
+        "object_id": "artifact_8656ef58ba87409d81e850f4fbbc1ff5",
+        "object_kind": "artifact",
+        "original_key": "v090-step-out-of-sample-prediction",
+        "owner": "f6-chain-user",
+        "receipt": {
+          "idempotency_key": "sha256:648b76500e87147c",
+          "object_id": "artifact_8656ef58ba87409d81e850f4fbbc1ff5",
+          "receipt_id": "artifact:artifact_8656ef58ba87409d81e850f4fbbc1ff5",
+          "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b"
+        },
+        "result": "PASS",
+        "run_id": "5f3864e54adf4689bb97f69dac9fc3ff",
+        "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+        "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+      },
+      {
+        "approval": null,
+        "id": "frozen-signal",
+        "object_id": "artifact_0ea1acc4603d4459b5e3bdeb2ed36e77",
+        "object_kind": "artifact",
+        "original_key": "v090-step-frozen-signal",
+        "owner": "f6-chain-user",
+        "receipt": {
+          "idempotency_key": "sha256:c8892e61e8667619",
+          "object_id": "artifact_0ea1acc4603d4459b5e3bdeb2ed36e77",
+          "receipt_id": "artifact:artifact_0ea1acc4603d4459b5e3bdeb2ed36e77",
+          "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b"
+        },
+        "result": "PASS",
+        "run_id": "5f3864e54adf4689bb97f69dac9fc3ff",
+        "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+        "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+      },
+      {
+        "approval": null,
+        "id": "native-backtest",
+        "object_id": "backtest_90bbe13feb6d4d41bb0f76f0aefdb630",
+        "object_kind": "job",
+        "original_key": "v090-step-native-backtest",
+        "owner": "f6-chain-user",
+        "receipt": {
+          "idempotency_key": "backtest-task-8e0c49e7acfd4d6e935e711a15b8c735",
+          "object_id": "backtest_90bbe13feb6d4d41bb0f76f0aefdb630",
+          "receipt_id": "job:backtest_90bbe13feb6d4d41bb0f76f0aefdb630",
+          "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b"
+        },
+        "result": "PASS",
+        "run_id": "5f3864e54adf4689bb97f69dac9fc3ff",
+        "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+        "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+      },
+      {
+        "approval": null,
+        "id": "old-vs-new-comparison",
+        "object_id": "artifact_e3ac09fcf2394d75b984e014d708dfbd",
+        "object_kind": "artifact",
+        "original_key": "v090-step-old-vs-new-comparison",
+        "owner": "f6-chain-user",
+        "receipt": {
+          "idempotency_key": "f6-comparison-backtest_90bbe13feb6d4d41bb0f76f0aefdb630",
+          "object_id": "artifact_e3ac09fcf2394d75b984e014d708dfbd",
+          "receipt_id": "artifact:artifact_e3ac09fcf2394d75b984e014d708dfbd",
+          "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b"
+        },
+        "result": "PASS",
+        "run_id": "5f3864e54adf4689bb97f69dac9fc3ff",
+        "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+        "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+      },
+      {
+        "approval": null,
+        "id": "report-original-task-terminal",
+        "object_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+        "object_kind": "task",
+        "original_key": "v090-step-report-original-task-terminal",
+        "owner": "f6-chain-user",
+        "receipt": {
+          "idempotency_key": "f6-comparison-backtest_90bbe13feb6d4d41bb0f76f0aefdb630",
+          "object_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+          "receipt_id": "task:task_2398c1cb16a34c438849ad7e95c03f2b",
+          "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b"
+        },
+        "result": "PASS",
+        "run_id": "5f3864e54adf4689bb97f69dac9fc3ff",
+        "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+        "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+      }
+    ],
+    "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+    "terminal": {
+      "completion_evidence_artifact_id": "artifact_e3ac09fcf2394d75b984e014d708dfbd",
+      "status": "completed",
+      "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b"
+    },
+    "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+  },
+  "llm": {
+    "class": "scripted-keyless",
+    "note": "F6 synthetic runtime; service-boundary fault-regression evidence, not real-LLM-quality.",
+    "real_llm_quality": false
+  },
+  "scenarios": [
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "boundary": "gateway-product-api",
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 1,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 1,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "fault_timing": "authenticated POST to an unreachable endpoint; no domain write committed",
+      "final_state": "outcome_unknown_no_write",
+      "id": "response-loss-before-write",
+      "mode": "transport-loss-before-write",
+      "owner": "f6-chain-user",
+      "pid_after": "not_applicable",
+      "pid_before": "not_applicable",
+      "provenance": {
+        "epoch": {
+          "reason": "no executor epoch exists at the ML training boundary",
+          "value": "not_applicable"
+        },
+        "generation": {
+          "reason": "the ML training boundary has no runtime generation ledger",
+          "value": "not_applicable"
+        },
+        "pid": {
+          "reason": "no service process was restarted",
+          "value": "not_applicable"
+        },
+        "run": {
+          "reason": "a manual Product API action creates no agent run",
+          "value": "not_applicable"
+        },
+        "trace": {
+          "reason": "no domain write occurred, so no trace was created",
+          "value": "not_applicable"
+        }
+      },
+      "receipt_ids": [
+        "none:v090-loss-before"
+      ],
+      "recovery_action": "no write occurred; the original key resolves to no object",
+      "result": "PASS",
+      "run_id": "not_applicable",
+      "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+      "terminal_recheck": "outcome_unknown_no_write",
+      "terminal_status_raw": "not_applicable",
+      "trace_id": "not_applicable",
+      "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+    },
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "boundary": "gateway-product-api",
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 2,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 1,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "fault_timing": "authenticated POST sent; response dropped after the commit",
+      "final_state": "confirmed_original_object",
+      "id": "response-loss-after-write",
+      "mode": "transport-loss-after-write",
+      "owner": "f6-chain-user",
+      "pid_after": "not_applicable",
+      "pid_before": "not_applicable",
+      "provenance": {
+        "epoch": {
+          "reason": "no executor epoch exists at the ML training boundary",
+          "value": "not_applicable"
+        },
+        "generation": {
+          "reason": "the ML training boundary has no runtime generation ledger",
+          "value": "not_applicable"
+        },
+        "pid": {
+          "reason": "no service process was restarted",
+          "value": "not_applicable"
+        },
+        "run": {
+          "reason": "a manual Product API action creates no agent run",
+          "value": "not_applicable"
+        },
+        "trace": {
+          "object_id": "mlrun_7359f299916e4a8f836aaeab201932e5",
+          "source": "ml_training_runs.trace_id",
+          "value": "product-ml-training-v090-loss-after"
+        }
+      },
+      "receipt_ids": [
+        "mlrun_7359f299916e4a8f836aaeab201932e5"
+      ],
+      "recovery_action": "read-only reconcile by the original key recovered the committed object",
+      "result": "PASS",
+      "run_id": "not_applicable",
+      "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+      "terminal_recheck": "confirmed_original_object",
+      "terminal_status_raw": "not_applicable",
+      "trace_id": "product-ml-training-v090-loss-after",
+      "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+    },
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "boundary": "gateway-product-api",
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 3,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 2,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "fault_timing": "the same idempotency key was delivered twice",
+      "final_state": "confirmed_original_object",
+      "id": "duplicate-delivery",
+      "mode": "duplicate-idempotency-key",
+      "owner": "f6-chain-user",
+      "pid_after": "not_applicable",
+      "pid_before": "not_applicable",
+      "provenance": {
+        "epoch": {
+          "reason": "no executor epoch exists at the ML training boundary",
+          "value": "not_applicable"
+        },
+        "generation": {
+          "reason": "the ML training boundary has no runtime generation ledger",
+          "value": "not_applicable"
+        },
+        "pid": {
+          "reason": "no service process was restarted",
+          "value": "not_applicable"
+        },
+        "run": {
+          "reason": "a manual Product API action creates no agent run",
+          "value": "not_applicable"
+        },
+        "trace": {
+          "object_id": "mlrun_3a3f3099238243deb925d4c299fd498b",
+          "source": "ml_training_runs.trace_id",
+          "value": "product-ml-training-v090-dup-training"
+        }
+      },
+      "receipt_ids": [
+        "mlrun_3a3f3099238243deb925d4c299fd498b"
+      ],
+      "recovery_action": "the second delivery reused the original object by idempotency key",
+      "result": "PASS",
+      "run_id": "not_applicable",
+      "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+      "terminal_recheck": "confirmed_original_object",
+      "terminal_status_raw": "not_applicable",
+      "trace_id": "product-ml-training-v090-dup-training",
+      "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+    },
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "boundary": "backend",
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 4,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 3,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "fault_timing": "Backend restarted between submission and recovery",
+      "final_state": "confirmed_original_object",
+      "id": "process-restart-backend",
+      "mode": "backend-process-restart",
+      "owner": "f6-chain-user",
+      "pid_after": 1708540,
+      "pid_before": 1700254,
+      "provenance": {
+        "epoch": {
+          "reason": "no executor epoch exists at the ML training boundary",
+          "value": "not_applicable"
+        },
+        "generation": {
+          "reason": "the ML training boundary has no runtime generation ledger",
+          "value": "not_applicable"
+        },
+        "pid": {
+          "after": 1708540,
+          "before": 1700254,
+          "changed": true,
+          "service": "backend",
+          "value": "measured"
+        },
+        "run": {
+          "reason": "a manual Product API action creates no agent run",
+          "value": "not_applicable"
+        },
+        "trace": {
+          "object_id": "mlrun_fb16be1e9d6449b4b661900867a7ae42",
+          "source": "ml_training_runs.trace_id",
+          "value": "product-ml-training-v090-restart-backend"
+        }
+      },
+      "receipt_ids": [
+        "mlrun_fb16be1e9d6449b4b661900867a7ae42"
+      ],
+      "recovery_action": "a fresh Backend process read the original object by the original key",
+      "result": "PASS",
+      "run_id": "not_applicable",
+      "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+      "terminal_recheck": "confirmed_original_object",
+      "terminal_status_raw": "not_applicable",
+      "trace_id": "product-ml-training-v090-restart-backend",
+      "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+    },
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "boundary": "gateway",
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 5,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 4,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "fault_timing": "Gateway restarted between submission and recovery",
+      "final_state": "confirmed_original_object",
+      "id": "process-restart-gateway",
+      "mode": "gateway-process-restart",
+      "owner": "f6-chain-user",
+      "pid_after": 1709945,
+      "pid_before": 1702592,
+      "provenance": {
+        "epoch": {
+          "reason": "no executor epoch exists at the ML training boundary",
+          "value": "not_applicable"
+        },
+        "generation": {
+          "reason": "the ML training boundary has no runtime generation ledger",
+          "value": "not_applicable"
+        },
+        "pid": {
+          "after": 1709945,
+          "before": 1702592,
+          "changed": true,
+          "service": "gateway",
+          "value": "measured"
+        },
+        "run": {
+          "reason": "a manual Product API action creates no agent run",
+          "value": "not_applicable"
+        },
+        "trace": {
+          "object_id": "mlrun_6bb8d235613c401eb19f97118d15cde1",
+          "source": "ml_training_runs.trace_id",
+          "value": "product-ml-training-v090-restart-gateway"
+        }
+      },
+      "receipt_ids": [
+        "mlrun_6bb8d235613c401eb19f97118d15cde1"
+      ],
+      "recovery_action": "the durable submission survived the Gateway restart and reconciled by original key",
+      "result": "PASS",
+      "run_id": "not_applicable",
+      "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+      "terminal_recheck": "confirmed_original_object",
+      "terminal_status_raw": "not_applicable",
+      "trace_id": "product-ml-training-v090-restart-gateway",
+      "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+    },
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "boundary": "ml-worker",
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 6,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 5,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "fault_timing": "ML worker restarted while the run was queued",
+      "final_state": "confirmed_original_object",
+      "id": "process-restart-ml-worker",
+      "mode": "ml-worker-restart",
+      "owner": "f6-chain-user",
+      "pid_after": 1711506,
+      "pid_before": 1698711,
+      "provenance": {
+        "epoch": {
+          "reason": "no executor epoch exists at the ML training boundary",
+          "value": "not_applicable"
+        },
+        "generation": {
+          "reason": "the ML training boundary has no runtime generation ledger",
+          "value": "not_applicable"
+        },
+        "pid": {
+          "after": 1711506,
+          "before": 1698711,
+          "changed": true,
+          "service": "ml-worker",
+          "value": "measured"
+        },
+        "run": {
+          "reason": "a manual Product API action creates no agent run",
+          "value": "not_applicable"
+        },
+        "trace": {
+          "object_id": "mlrun_16300233c0894a80a3982bfd117f35ea",
+          "source": "ml_training_runs.trace_id",
+          "value": "product-ml-training-v090-restart-ml-worker"
+        }
+      },
+      "receipt_ids": [
+        "mlrun_16300233c0894a80a3982bfd117f35ea"
+      ],
+      "recovery_action": "the queued run was recovered by the restarted worker and completed once",
+      "result": "PASS",
+      "run_id": "not_applicable",
+      "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+      "terminal_recheck": "confirmed_original_object",
+      "terminal_status_raw": "not_applicable",
+      "trace_id": "product-ml-training-v090-restart-ml-worker",
+      "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+    },
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "boundary": "ml-worker",
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 7,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 6,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "fault_timing": "submitted while the worker was stopped (status 'waiting_for_data')",
+      "final_state": "reconciled_late_success",
+      "id": "late-success",
+      "mode": "late-completion",
+      "owner": "f6-chain-user",
+      "pid_after": 1713714,
+      "pid_before": 1711506,
+      "provenance": {
+        "epoch": {
+          "reason": "no executor epoch exists at the ML training boundary",
+          "value": "not_applicable"
+        },
+        "generation": {
+          "reason": "the ML training boundary has no runtime generation ledger",
+          "value": "not_applicable"
+        },
+        "pid": {
+          "after": 1713714,
+          "before": 1711506,
+          "changed": true,
+          "service": "ml-worker",
+          "value": "measured"
+        },
+        "run": {
+          "reason": "a manual Product API action creates no agent run",
+          "value": "not_applicable"
+        },
+        "trace": {
+          "object_id": "mlrun_14d0b518dc7a4ec8aaaa11ad05a8e28a",
+          "source": "ml_training_runs.trace_id",
+          "value": "product-ml-training-v090-late-success"
+        }
+      },
+      "receipt_ids": [
+        "mlrun_14d0b518dc7a4ec8aaaa11ad05a8e28a"
+      ],
+      "recovery_action": "late completion reconciled to the original run; no next step was created",
+      "result": "PASS",
+      "run_id": "not_applicable",
+      "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+      "terminal_recheck": "reconciled_late_success",
+      "terminal_status_raw": "not_applicable",
+      "trace_id": "product-ml-training-v090-late-success",
+      "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+    },
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "boundary": "ml-worker",
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 8,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 7,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "fault_timing": "cancel issued before the worker ran; worker released afterwards",
+      "final_state": "cancelled_terminal",
+      "id": "cancel-terminal",
+      "mode": "cancel-before-worker",
+      "owner": "f6-chain-user",
+      "pid_after": "not_applicable",
+      "pid_before": "not_applicable",
+      "provenance": {
+        "epoch": {
+          "reason": "no executor epoch exists at the ML training boundary",
+          "value": "not_applicable"
+        },
+        "generation": {
+          "reason": "the ML training boundary has no runtime generation ledger",
+          "value": "not_applicable"
+        },
+        "pid": {
+          "reason": "no service process was restarted",
+          "value": "not_applicable"
+        },
+        "run": {
+          "reason": "a manual Product API action creates no agent run",
+          "value": "not_applicable"
+        },
+        "trace": {
+          "object_id": "mlrun_a2f18886926d4b1ea4cc2bb343b234f2",
+          "source": "ml_training_runs.trace_id",
+          "value": "product-ml-training-v090-cancel-training"
+        }
+      },
+      "receipt_ids": [
+        "mlrun_a2f18886926d4b1ea4cc2bb343b234f2"
+      ],
+      "recovery_action": "the authoritative terminal stayed cancelled and created no prediction",
+      "result": "PASS",
+      "run_id": "not_applicable",
+      "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+      "terminal_recheck": "cancelled_terminal",
+      "terminal_status_raw": "cancelled",
+      "trace_id": "product-ml-training-v090-cancel-training",
+      "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+    },
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "boundary": "backend-domain",
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 8,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 8,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "fault_timing": "a rejected ML strategy approval was used for a protected training submission",
+      "final_state": "rejected_no_side_effect",
+      "id": "approval-rejected",
+      "mode": "rejected-approval",
+      "owner": "f6-chain-user",
+      "pid_after": "not_applicable",
+      "pid_before": "not_applicable",
+      "provenance": {
+        "epoch": {
+          "reason": "no executor epoch exists at the ML training boundary",
+          "value": "not_applicable"
+        },
+        "generation": {
+          "reason": "the ML training boundary has no runtime generation ledger",
+          "value": "not_applicable"
+        },
+        "pid": {
+          "reason": "no service process was restarted",
+          "value": "not_applicable"
+        },
+        "run": {
+          "reason": "a manual Product API action creates no agent run",
+          "value": "not_applicable"
+        },
+        "trace": {
+          "reason": "a manual approval artifact carries no agent run trace",
+          "value": "not_applicable"
+        }
+      },
+      "receipt_ids": [
+        "artifact_b5dbfc6b72c74521a431c21324d0c8ea"
+      ],
+      "recovery_action": "the protected submission was refused (POST /api/product/ml/training-runs -> 422: {\"error\":{\"code\":\"product_domain_rejected\",\"message\":\"ML strategy requires ex)",
+      "result": "PASS",
+      "run_id": "not_applicable",
+      "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+      "terminal_recheck": "rejected_no_side_effect",
+      "terminal_status_raw": "not_applicable",
+      "trace_id": "not_applicable",
+      "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+    },
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "boundary": "backend-domain",
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 8,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 8,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "fault_timing": "an approval issued for strategy version A was reused for a different version B",
+      "final_state": "stale_reuse_refused",
+      "id": "approval-stale-reuse",
+      "mode": "foreign-approval-reuse",
+      "owner": "f6-chain-user",
+      "pid_after": "not_applicable",
+      "pid_before": "not_applicable",
+      "provenance": {
+        "epoch": {
+          "reason": "no executor epoch exists at the ML training boundary",
+          "value": "not_applicable"
+        },
+        "generation": {
+          "reason": "the ML training boundary has no runtime generation ledger",
+          "value": "not_applicable"
+        },
+        "pid": {
+          "reason": "no service process was restarted",
+          "value": "not_applicable"
+        },
+        "run": {
+          "reason": "a manual Product API action creates no agent run",
+          "value": "not_applicable"
+        },
+        "trace": {
+          "reason": "a manual approval artifact carries no agent run trace",
+          "value": "not_applicable"
+        }
+      },
+      "receipt_ids": [
+        "artifact_b8cca456f9014254a5aebdb1eb10d6aa"
+      ],
+      "recovery_action": "the stale/foreign approval reuse was refused (POST /api/product/ml/training-runs -> 422: {\"error\":{\"code\":\"product_domain_rejected\",\"message\":\"ML strategy requires ex)",
+      "result": "PASS",
+      "run_id": "not_applicable",
+      "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+      "terminal_recheck": "stale_reuse_refused",
+      "terminal_status_raw": "not_applicable",
+      "trace_id": "not_applicable",
+      "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+    },
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "boundary": "ml-worker",
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 9,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 8,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "fault_timing": "submitted while the worker was stopped (status 'waiting_for_data')",
+      "final_state": "continued_after_queue_resume",
+      "id": "queue-worker-resume",
+      "mode": "queue-worker-resume",
+      "owner": "f6-chain-user",
+      "pid_after": 1719753,
+      "pid_before": 1715787,
+      "provenance": {
+        "epoch": {
+          "reason": "no executor epoch exists at the ML training boundary",
+          "value": "not_applicable"
+        },
+        "generation": {
+          "reason": "the ML training boundary has no runtime generation ledger",
+          "value": "not_applicable"
+        },
+        "pid": {
+          "after": 1719753,
+          "before": 1715787,
+          "changed": true,
+          "service": "ml-worker",
+          "value": "measured"
+        },
+        "run": {
+          "reason": "a manual Product API action creates no agent run",
+          "value": "not_applicable"
+        },
+        "trace": {
+          "object_id": "mlrun_5e124858abdd4dfc900a33fbed528a82",
+          "source": "ml_training_runs.trace_id",
+          "value": "product-ml-training-v090-queue-resume"
+        }
+      },
+      "receipt_ids": [
+        "mlrun_5e124858abdd4dfc900a33fbed528a82"
+      ],
+      "recovery_action": "the queue was visibly non-terminal; the resumed worker completed it exactly once",
+      "result": "PASS",
+      "run_id": "not_applicable",
+      "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+      "terminal_recheck": "continued_after_queue_resume",
+      "terminal_status_raw": "not_applicable",
+      "trace_id": "product-ml-training-v090-queue-resume",
+      "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+    },
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "boundary": "backend-domain",
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 9,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 9,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "fault_timing": "observed from the composite journey's authoritative continuation ledger",
+      "final_state": "bounded_continuation_once",
+      "id": "bounded-continuation-exactly-once",
+      "mode": "bounded-continuation-ledger",
+      "owner": "f6-chain-user",
+      "pid_after": "not_applicable",
+      "pid_before": "not_applicable",
+      "provenance": {
+        "epoch": {
+          "reason": "no executor epoch exists at the ML training boundary",
+          "value": "not_applicable"
+        },
+        "generation": {
+          "reason": "the ML training boundary has no runtime generation ledger",
+          "value": "not_applicable"
+        },
+        "pid": {
+          "reason": "no service process was restarted",
+          "value": "not_applicable"
+        },
+        "run": {
+          "object_id": "ab83d47f88124b4198ec9e804d90d710",
+          "source": "continuation_budget.run_id",
+          "value": "ab83d47f88124b4198ec9e804d90d710"
+        },
+        "trace": {
+          "object_id": "ab83d47f88124b4198ec9e804d90d710",
+          "source": "agent_runtime_turns.trace_id",
+          "value": "byq-trace-cd805e163cbe40e6ad25a52c4e005be2"
+        }
+      },
+      "receipt_ids": [
+        "ab83d47f88124b4198ec9e804d90d710"
+      ],
+      "recovery_action": "each durable event key was settled exactly once with one dispatch attempt",
+      "result": "PASS",
+      "run_id": "ab83d47f88124b4198ec9e804d90d710",
+      "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+      "terminal_recheck": "bounded_continuation_once",
+      "terminal_status_raw": "not_applicable",
+      "trace_id": "byq-trace-cd805e163cbe40e6ad25a52c4e005be2",
+      "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+    },
+    {
+      "active_or_pending_orphans": 0,
+      "assertions": {
+        "at_most_once": true,
+        "failure_not_fake_completed": true,
+        "late_result_no_next_step": true,
+        "no_active_pending_orphans": true,
+        "rejection_not_bypassed": true,
+        "traceable_original_goal": true
+      },
+      "boundary": "backend-domain",
+      "db_counts_after": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 9,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "db_counts_before": {
+        "backtest_jobs": 2,
+        "ml_prediction_runs": 1,
+        "ml_training_runs": 9,
+        "research_reports": 1,
+        "signal_snapshots": 1
+      },
+      "fault_timing": "a training submission referenced an unknown strategy identity",
+      "final_state": "domain_rejected",
+      "id": "model-or-domain-failure",
+      "mode": "domain-rejection",
+      "owner": "f6-chain-user",
+      "pid_after": "not_applicable",
+      "pid_before": "not_applicable",
+      "provenance": {
+        "epoch": {
+          "reason": "no executor epoch exists at the ML training boundary",
+          "value": "not_applicable"
+        },
+        "generation": {
+          "reason": "the ML training boundary has no runtime generation ledger",
+          "value": "not_applicable"
+        },
+        "pid": {
+          "reason": "no service process was restarted",
+          "value": "not_applicable"
+        },
+        "run": {
+          "reason": "a manual Product API action creates no agent run",
+          "value": "not_applicable"
+        },
+        "trace": {
+          "reason": "the submission was rejected before any run trace was created",
+          "value": "not_applicable"
+        }
+      },
+      "receipt_ids": [
+        "domain-rejection"
+      ],
+      "recovery_action": "the domain rejection surfaced as a real failure (POST /api/product/ml/training-runs -> 404: {\"error\":{\"code\":\"product_domain_rejected\",\"message\":\"ML receipt watch resour)",
+      "result": "PASS",
+      "run_id": "not_applicable",
+      "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+      "terminal_recheck": "domain_rejected",
+      "terminal_status_raw": "not_applicable",
+      "trace_id": "not_applicable",
+      "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+    },
+    {
+      "boundary": "backend-domain",
+      "id": "approval-revoked",
+      "not_run_reason": "no revoke path exists at the ML strategy or agent approval layer in the committed tree; a rejection is not a revoke and is not substituted",
+      "owner": "f6-chain-user",
+      "result": "BLOCKED",
+      "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+      "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+    },
+    {
+      "boundary": "ml-worker",
+      "id": "timeout-terminal",
+      "not_run_reason": "the isolated ML stack exposes no deterministic timeout boundary distinct from cancel; no timeout terminal can be produced honestly",
+      "owner": "f6-chain-user",
+      "result": "BLOCKED",
+      "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+      "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+    },
+    {
+      "boundary": "backend-domain",
+      "id": "data-ready-continuation",
+      "not_run_reason": "the composite journey exercises the ADR-0045 budgeted continuation, not the ADR-0077 data_ready grant; a real waiting_for_data -> readiness -> bounded data_ready continuation is not implemented in this 0.9 regression",
+      "owner": "f6-chain-user",
+      "result": "BLOCKED",
+      "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+      "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+    },
+    {
+      "boundary": "runtime-adapter",
+      "id": "runtime-adapter-tool-boundary",
+      "not_run_reason": "Gateway/runtime-adapter pre/post-write response loss and restart at the agent tool-call boundary require scripted-runtime tool-call fault injection (D15 scope); Backend/worker results are not generalized to this boundary",
+      "owner": "f6-chain-user",
+      "result": "BLOCKED",
+      "task_id": "task_2398c1cb16a34c438849ad7e95c03f2b",
+      "workspace_id": "workspace_654605f2e4254717b8d3ed100645181b"
+    }
+  ],
+  "schema_version": "byq-v090-composite-research-observations.v2"
+}

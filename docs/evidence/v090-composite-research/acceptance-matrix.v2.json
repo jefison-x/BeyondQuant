@@ -1,0 +1,134 @@
+{
+  "schema_version": "byq-v090-composite-research-acceptance-matrix.v2",
+  "generated_at": "2026-09-21",
+  "frozen": true,
+  "frozen_before_execution": true,
+  "supersedes": "byq-v090-composite-research-acceptance-matrix.v1",
+  "scope": "0.9 strict-sequence step 3 (rectified): one fully successful improve-strategy composite journey plus a service-boundary fault matrix. Each required scenario names its actual service boundary and must carry authoritative provenance (or explicit not_applicable + reason); fabricated generation/epoch/run numbers are rejected. Maintenance/audit only.",
+  "base": {
+    "origin_main_commit": "99b6f92704a526ed700ae495933c944a87fc15c9",
+    "product_phase_marker": 97,
+    "build_revision_at_base": "dsh-0.1.2rc1-post-u8.178"
+  },
+  "authorization": {
+    "develop": true,
+    "push_pr": true,
+    "merge": false,
+    "deploy": false
+  },
+  "non_goals": [
+    "no production deploy or production data access",
+    "no Proposed ADR-0082/0083 implementation",
+    "no production DSH selector switch",
+    "no tag/release creation or movement",
+    "no Phase 100 resume",
+    "no Community repository inspection or copy"
+  ],
+  "results_vocabulary": ["PASS", "FAIL", "NOT_RUN", "BLOCKED"],
+  "evidence_rule": "Missing real evidence MUST be FAIL/BLOCKED. A health check, a declared result, a page/endpoint existence, a unit fixture, or a hardcoded generation/epoch number is never a PASS.",
+  "contract": "scripts/v090/composite_research/contract.v2.json",
+  "observer": "scripts/v090/composite_research/observer.py",
+  "capture_negatives": "scripts/v090/composite_research/capture_negatives.py",
+  "driver": "scripts/v090/composite_research/run_regression.py",
+  "observations_path": "docs/evidence/v090-composite-research/observations.v2.json",
+  "verdict_path": "docs/evidence/v090-composite-research/verdict.v2.json",
+  "negative_controls_path": "docs/evidence/v090-composite-research/negative-controls.v2.json",
+  "composite_journey": {
+    "id": "improve-strategy-composite.v1",
+    "user": "synthetic isolated user",
+    "isolation": "dedicated compose project + dedicated network/volumes + loopback-only ports + fresh synthetic PostgreSQL",
+    "provider": "scripted-keyless deterministic provider",
+    "required_steps": [
+      "strategy-improve-proposal",
+      "approval-required-action",
+      "execute-original-key-after-approval",
+      "training",
+      "out-of-sample-prediction",
+      "frozen-signal",
+      "native-backtest",
+      "old-vs-new-comparison",
+      "report-original-task-terminal"
+    ],
+    "required_invariants": [
+      "owner_workspace_bound",
+      "object_lineage_consistent",
+      "original_key_preserved",
+      "approval_authorized",
+      "identity_stable",
+      "report_consistent",
+      "terminal_state_consistent"
+    ]
+  },
+  "fault_matrix": {
+    "boundaries": "R1-R5 service boundaries: gateway-product-api, backend, gateway, ml-worker, backend-domain, runtime-adapter",
+    "required_assertions": [
+      "at_most_once",
+      "rejection_not_bypassed",
+      "late_result_no_next_step",
+      "failure_not_fake_completed",
+      "traceable_original_goal",
+      "no_active_pending_orphans"
+    ],
+    "per_row_required_fields": [
+      "boundary",
+      "mode",
+      "fault_timing",
+      "pid_before",
+      "pid_after",
+      "db_counts_before",
+      "db_counts_after",
+      "receipt_ids",
+      "trace_id",
+      "run_id",
+      "task_id",
+      "owner",
+      "workspace_id",
+      "recovery_action",
+      "final_state",
+      "terminal_recheck",
+      "assertions",
+      "active_or_pending_orphans",
+      "provenance"
+    ],
+    "provenance_rule": "trace/run/generation/epoch/pid are either a real value with a contract-allowed source (trace associated with the scenario receipt) or literal not_applicable with a reason. Hardcoded generation/epoch without a source is rejected.",
+    "rows": [
+      {"id": "response-loss-before-write", "boundary": "gateway-product-api", "required": true},
+      {"id": "response-loss-after-write", "boundary": "gateway-product-api", "required": true},
+      {"id": "duplicate-delivery", "boundary": "gateway-product-api", "required": true},
+      {"id": "process-restart-backend", "boundary": "backend", "required": true},
+      {"id": "process-restart-gateway", "boundary": "gateway", "required": true},
+      {"id": "process-restart-ml-worker", "boundary": "ml-worker", "required": true},
+      {"id": "late-success", "boundary": "ml-worker", "required": true},
+      {"id": "cancel-terminal", "boundary": "ml-worker", "required": true},
+      {"id": "approval-rejected", "boundary": "backend-domain", "required": true},
+      {"id": "approval-stale-reuse", "boundary": "backend-domain", "required": true},
+      {"id": "queue-worker-resume", "boundary": "ml-worker", "required": true},
+      {"id": "bounded-continuation-exactly-once", "boundary": "backend-domain", "required": true},
+      {"id": "model-or-domain-failure", "boundary": "backend-domain", "required": true},
+      {"id": "approval-revoked", "boundary": "backend-domain", "required": true, "declared_blocked": true},
+      {"id": "timeout-terminal", "boundary": "ml-worker", "required": true, "declared_blocked": true},
+      {"id": "data-ready-continuation", "boundary": "backend-domain", "required": true, "declared_blocked": true},
+      {"id": "runtime-adapter-tool-boundary", "boundary": "runtime-adapter", "required": true, "declared_blocked": true}
+    ],
+    "optional_rows": [
+      {"id": "host-reboot", "reason": "a real host reboot is not authorized and is not equivalent to a container restart"}
+    ]
+  },
+  "acceptance_gates": [
+    {"id": "G-journey", "requirement": "The composite journey runs end-to-end with every required step PASS and consistent lineage/owner/workspace/original-key/approval/identity/report."},
+    {"id": "G-provenance", "requirement": "Every required PASS scenario carries real per-scenario provenance (or explicit not_applicable + reason); no hardcoded generation/epoch is accepted."},
+    {"id": "G-faults", "requirement": "Every required fault row is PASS with the six assertions, real before/after authoritative counts, correct boundary and no orphan."},
+    {"id": "G-observer", "requirement": "The observer is fail-able and every negative control exits non-zero, including provenance, revoke/stale, cancel-completed, late-delta and boundary-impersonation controls."},
+    {"id": "G-isolation", "requirement": "Isolated stack only; production untouched; cleanup leaves zero containers/networks/volumes."},
+    {"id": "G-no-fake-pass", "requirement": "No missing evidence is labeled PASS; failures are labeled FAIL/BLOCKED with a reason."}
+  ],
+  "status": {
+    "journey": "PASS",
+    "fault_matrix": "PASS_WITH_DECLARED_BLOCKED",
+    "observer_selfcheck": "PASS",
+    "capture_negatives": "PASS",
+    "observer_verdict_all_pass": false,
+    "blocked_required_rows": ["approval-revoked", "timeout-terminal", "data-ready-continuation", "runtime-adapter-tool-boundary"],
+    "note": "Frozen before execution. The four declared_blocked rows are honestly BLOCKED with reasons and make the observer verdict not-all-pass; the remaining required rows are real PASS. v1 artifacts are retained but superseded and non-qualifying."
+  }
+}

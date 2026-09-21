@@ -1,0 +1,80 @@
+{
+  "all_cases_pass": true,
+  "all_pass": true,
+  "case_count": 12,
+  "cases": [
+    {
+      "detail": "timeout must not fabricate a receipt",
+      "name": "transport-timeout-not-a-receipt",
+      "post_fix_failed": true,
+      "pre_fix_legacy_passed": true
+    },
+    {
+      "detail": "5xx must not be projected as success",
+      "name": "http-500-not-a-receipt",
+      "post_fix_failed": true,
+      "pre_fix_legacy_passed": true
+    },
+    {
+      "detail": "empty body must not become a canonical receipt",
+      "name": "empty-body-not-a-receipt",
+      "post_fix_failed": true,
+      "pre_fix_legacy_passed": true
+    },
+    {
+      "detail": "a completion flag without identity is not evidence",
+      "name": "completed-without-identity-not-a-receipt",
+      "post_fix_failed": true,
+      "pre_fix_legacy_passed": true
+    },
+    {
+      "detail": "recovery replaying a POST is not allowed",
+      "name": "recovery-must-be-read-only",
+      "post_fix_failed": true,
+      "pre_fix_legacy_passed": true
+    },
+    {
+      "detail": "1 -> 3 side effects is a duplicate",
+      "name": "duplicate-side-effect",
+      "post_fix_failed": true,
+      "pre_fix_legacy_passed": true
+    },
+    {
+      "detail": "a late result must not create the next step",
+      "name": "late-result-created-next-step",
+      "post_fix_failed": true,
+      "pre_fix_legacy_passed": true
+    },
+    {
+      "detail": "an active orphan must be non-zero",
+      "name": "orphan-active-remains",
+      "post_fix_failed": true,
+      "pre_fix_legacy_passed": true
+    },
+    {
+      "detail": "owner mismatch must be rejected",
+      "name": "wrong-owner-attribution",
+      "post_fix_failed": true,
+      "pre_fix_legacy_passed": true
+    },
+    {
+      "detail": "workspace mismatch must be rejected",
+      "name": "wrong-workspace-attribution",
+      "post_fix_failed": true,
+      "pre_fix_legacy_passed": true
+    },
+    {
+      "detail": "a revoked approval must not authorize execution",
+      "name": "revoked-approval-not-authorized",
+      "post_fix_failed": true,
+      "pre_fix_legacy_passed": true
+    },
+    {
+      "detail": "approved without execution_authorized is not authorization",
+      "name": "stale-approval-missing-authorization",
+      "post_fix_failed": true,
+      "pre_fix_legacy_passed": true
+    }
+  ],
+  "schema_version": "byq-v090-composite-research-capture-negatives.v1"
+}

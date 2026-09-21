@@ -1,0 +1,294 @@
+{
+  "schema_version": "byq-v090-composite-research-contract.v1",
+  "generated_at": "2026-09-21",
+  "scope": "0.9 strict-sequence step 3: composite research fault regression. Improve-strategy proposal -> approval-required action -> execute with the original idempotency key after approval -> training -> out-of-sample prediction -> frozen signal -> native backtest -> old-vs-new comparison -> original-task terminal state, plus the R1-R5 fault matrix. This is maintenance/audit; it does not implement Proposed ADR-0082/0083, does not switch the production DSH selector, does not deploy and does not create/move any tag or release.",
+  "required_evidence_class": "runtime-isolated-stack",
+  "llm_evidence_class": "scripted-keyless",
+  "llm_evidence_note": "A keyless deterministic scripted provider drives the composite journey. This is service-boundary fault-regression evidence, NOT real-LLM-quality semantic evidence.",
+  "results_vocabulary": [
+    "PASS",
+    "FAIL",
+    "NOT_RUN",
+    "BLOCKED"
+  ],
+  "not_run_requires_reason": true,
+  "closed_scenario_set": true,
+  "identity": {
+    "task_id_pattern": "^task_[0-9a-f]{32}$",
+    "artifact_id_pattern": "^artifact_[0-9a-f]{32}$",
+    "job_id_pattern": "^backtest_[0-9a-f]{32}$",
+    "run_id_pattern": "^[0-9a-f]{32}$",
+    "owner_required": true,
+    "workspace_required": true,
+    "training_run_id_pattern": "^mlrun_[0-9a-f]{32}$",
+    "prediction_run_id_pattern": "^mlpred_[0-9a-f]{32}$"
+  },
+  "required_assertions": [
+    "at_most_once",
+    "rejection_not_bypassed",
+    "late_result_no_next_step",
+    "failure_not_fake_completed",
+    "traceable_original_goal",
+    "no_active_pending_orphans"
+  ],
+  "composite_journey": {
+    "id": "improve-strategy-composite.v1",
+    "description": "One fully successful end-to-end composite research journey on a synthetic user and an isolated stack.",
+    "required_steps": [
+      {
+        "id": "strategy-improve-proposal",
+        "description": "An improvement proposal for the original strategy is persisted as an artifact bound to the original task.",
+        "requires_object": "artifact",
+        "requires_receipt": true
+      },
+      {
+        "id": "approval-required-action",
+        "description": "An action requiring approval (ML strategy version) is created together with its persisted approval decision.",
+        "requires_object": "artifact",
+        "requires_receipt": true
+      },
+      {
+        "id": "execute-original-key-after-approval",
+        "description": "The approved action is executed with the ORIGINAL idempotency key; the approval is authorized and referenced.",
+        "requires_object": "training_run",
+        "requires_receipt": true,
+        "requires_original_key": true,
+        "requires_approval": true
+      },
+      {
+        "id": "training",
+        "description": "The approved training run is submitted and reaches a completed terminal state.",
+        "requires_object": "training_run",
+        "requires_receipt": true
+      },
+      {
+        "id": "out-of-sample-prediction",
+        "description": "A prediction run over the declared out-of-sample window completes and is bound to the original task and model.",
+        "requires_object": "artifact",
+        "requires_receipt": true
+      },
+      {
+        "id": "frozen-signal",
+        "description": "A validated frozen signal snapshot is produced from the prediction.",
+        "requires_object": "artifact",
+        "requires_receipt": true
+      },
+      {
+        "id": "native-backtest",
+        "description": "A native backtest job executes against the frozen signal and reaches a completed terminal state.",
+        "requires_object": "job",
+        "requires_receipt": true
+      },
+      {
+        "id": "old-vs-new-comparison",
+        "description": "A validated comparison report references the exact original baseline and improved backtest identities and measured results.",
+        "requires_object": "artifact",
+        "requires_receipt": true,
+        "requires_report": true
+      },
+      {
+        "id": "report-original-task-terminal",
+        "description": "The original task reaches a terminal state whose completion evidence is the report from the previous step.",
+        "requires_object": "task",
+        "requires_receipt": true,
+        "requires_terminal": true
+      }
+    ],
+    "required_invariants": [
+      "owner_workspace_bound",
+      "object_lineage_consistent",
+      "original_key_preserved",
+      "approval_authorized",
+      "identity_stable",
+      "report_consistent",
+      "terminal_state_consistent"
+    ]
+  },
+  "required_scenarios": [
+    {
+      "id": "response-loss-before-write",
+      "description": "The transport fails before any domain write commits; the original key must resolve to no side effect and the caller must report outcome_unknown, never a fabricated object.",
+      "required": true,
+      "allowed_final_states": [
+        "outcome_unknown_no_write",
+        "confirmed_no_write"
+      ],
+      "forbidden_final_states": [
+        "fabricated_success",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "failure_not_fake_completed",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ]
+    },
+    {
+      "id": "response-loss-after-write",
+      "description": "A real write commits and the response is lost; a new process recovers the ORIGINAL object by the original key with no duplicate side effect.",
+      "required": true,
+      "allowed_final_states": [
+        "confirmed_original_object"
+      ],
+      "forbidden_final_states": [
+        "duplicate_side_effect",
+        "fabricated_success",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ]
+    },
+    {
+      "id": "process-restart",
+      "description": "The owning service restarts between submission and recovery; a fresh process reads the authoritative persisted state by the original key.",
+      "required": true,
+      "allowed_final_states": [
+        "confirmed_original_object"
+      ],
+      "forbidden_final_states": [
+        "duplicate_side_effect",
+        "lost_result",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ]
+    },
+    {
+      "id": "late-success",
+      "description": "A result arrives after the caller gave up; it must be reconciled to the original object and must NOT silently create the next journey step.",
+      "required": true,
+      "allowed_final_states": [
+        "reconciled_late_success"
+      ],
+      "forbidden_final_states": [
+        "late_result_created_next_step",
+        "fabricated_success",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "late_result_no_next_step",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ]
+    },
+    {
+      "id": "timeout-cancel",
+      "description": "A timeout/cancel and a late result race; exactly one terminal state survives and the late result does not write or flip the state back to success.",
+      "required": true,
+      "allowed_final_states": [
+        "cancelled_terminal",
+        "timed_out_terminal"
+      ],
+      "forbidden_final_states": [
+        "late_result_created_next_step",
+        "fabricated_success",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "late_result_no_next_step",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ]
+    },
+    {
+      "id": "duplicate-delivery",
+      "description": "The same idempotency key is delivered twice, including concurrently; exactly one side effect exists and both deliveries reference the same object identity.",
+      "required": true,
+      "allowed_final_states": [
+        "confirmed_original_object"
+      ],
+      "forbidden_final_states": [
+        "duplicate_side_effect",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ]
+    },
+    {
+      "id": "approval-reject-revoke-stale-reuse",
+      "description": "A rejected, revoked or stale approval must not authorize the protected operation; the rejection cannot be bypassed by retry, replay or a different key.",
+      "required": true,
+      "allowed_final_states": [
+        "rejected_no_side_effect",
+        "revoked_no_side_effect",
+        "stale_reuse_refused"
+      ],
+      "forbidden_final_states": [
+        "rejection_bypassed",
+        "fabricated_success",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "rejection_not_bypassed",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ]
+    },
+    {
+      "id": "data-wait-continuation",
+      "description": "A bounded data wait resolves and the continuation proceeds at most once with the original key; an unresolved wait must not be disguised as completion.",
+      "required": true,
+      "allowed_final_states": [
+        "continued_after_data_ready",
+        "blocked_data_wait_visible"
+      ],
+      "forbidden_final_states": [
+        "fabricated_success",
+        "duplicate_side_effect",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "failure_not_fake_completed",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ]
+    },
+    {
+      "id": "model-or-domain-failure",
+      "description": "A model or domain failure must surface as a real failure, never be disguised as completed, and must leave no active/pending orphan.",
+      "required": true,
+      "allowed_final_states": [
+        "failed_terminal",
+        "domain_rejected"
+      ],
+      "forbidden_final_states": [
+        "fabricated_success",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "failure_not_fake_completed",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ]
+    }
+  ],
+  "optional_scenarios": [
+    {
+      "id": "host-reboot",
+      "description": "A real host reboot is not authorized; a container restart is not equivalent to a host reboot.",
+      "required": false
+    }
+  ],
+  "required_cleanup": {
+    "containers_remaining": 0,
+    "networks_remaining": 0,
+    "volumes_remaining": 0,
+    "production_untouched": true
+  },
+  "required_coverage_gates_qualification": true
+}

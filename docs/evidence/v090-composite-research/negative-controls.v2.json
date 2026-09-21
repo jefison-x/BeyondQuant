@@ -1,0 +1,474 @@
+{
+  "all_controls_pass": true,
+  "baseline_all_pass": true,
+  "control_count": 58,
+  "controls": [
+    {
+      "defect_targeting": false,
+      "first_failure": "journey.frozen-signal: required step missing",
+      "name": "dropped-journey-step",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "journey.training: result 'FAIL' is not PASS",
+      "name": "journey-step-fail",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "journey.training: NOT_RUN (no reason)",
+      "name": "journey-step-not-run",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "journey.native-backtest: missing receipt",
+      "name": "missing-receipt",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "journey.training: owner attribution mismatch",
+      "name": "wrong-owner-attribution",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "journey.training: workspace attribution mismatch",
+      "name": "wrong-workspace-attribution",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "journey.training: task attribution mismatch",
+      "name": "wrong-task-attribution",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "journey.execute-original-key-after-approval: original idempotency key was not preserved",
+      "name": "changed-original-key",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "journey.execute-original-key-after-approval: authorized approval required",
+      "name": "unauthorized-approval",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "journey.report: selected job is not one of the measured candidates",
+      "name": "report-selected-mismatch",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "journey.terminal: original task must be completed",
+      "name": "terminal-not-completed",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "journey.terminal: completion evidence must be the comparison report",
+      "name": "terminal-evidence-mismatch",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "scenarios.timeout-terminal: required scenario missing",
+      "name": "dropped-scenario",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "scenarios.late-success: result 'FAIL' is not PASS",
+      "name": "scenario-fail",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": false
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "scenarios.process-restart-gateway: NOT_RUN (no reason)",
+      "name": "scenario-not-run",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": false
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "scenarios.model-or-domain-failure: BLOCKED (no reason)",
+      "name": "scenario-blocked",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": false
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "scenarios.duplicate-delivery: missing fault_timing",
+      "name": "missing-fault-timing",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "scenarios.response-loss-after-write.db_counts_before: authoritative counts must be a non-empty object",
+      "name": "missing-before-counts",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "scenarios.response-loss-before-write.db_counts_after: authoritative counts must be a non-empty object",
+      "name": "missing-after-counts",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "scenarios.duplicate-delivery: duplicate side effect on 'ml_training_runs' (1 -> 3)",
+      "name": "duplicate-side-effect",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "scenarios.duplicate-delivery: required assertion 'at_most_once' did not hold",
+      "name": "at-most-once-false",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "scenarios.approval-rejected: required assertion 'rejection_not_bypassed' did not hold",
+      "name": "rejection-bypassed",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "scenarios.late-success: required assertion 'late_result_no_next_step' did not hold",
+      "name": "late-result-created-next-step",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "scenarios.model-or-domain-failure: required assertion 'failure_not_fake_completed' did not hold",
+      "name": "failure-fake-completed",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "scenarios.process-restart-backend: required assertion 'traceable_original_goal' did not hold",
+      "name": "untraceable-original-goal",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "scenarios.cancel-terminal: required assertion 'no_active_pending_orphans' did not hold",
+      "name": "orphan-assertion-false",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "scenarios.cancel-terminal: 1 active/pending orphan(s) remain",
+      "name": "orphan-count-nonzero",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "scenarios.late-success: forbidden final state 'late_result_created_next_step'",
+      "name": "forbidden-final-state",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "scenarios.model-or-domain-failure: forbidden final state 'fabricated_success'",
+      "name": "fabricated-final-state",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "cleanup: missing",
+      "name": "missing-cleanup",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "cleanup: containers_remaining is 1, expected 0",
+      "name": "dirty-cleanup",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "observations: runtime evidence_class required",
+      "name": "wrong-evidence-class",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "observations: scripted provider must declare real_llm_quality=false",
+      "name": "real-llm-claim",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "scenarios.late-success: observations may not override contract 'allowed_final_states'",
+      "name": "observation-overrides-contract",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "observations: schema_version 'byq-v090-composite-research-observations.v1' is not 'byq-v090-composite-research-observations.v2'",
+      "name": "wrong-schema-version",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "journey.native-backtest: canonical job id required",
+      "name": "missing-object-id",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "journey.native-backtest: canonical job id required",
+      "name": "malformed-object-id",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "journey.training: receipt.receipt_id is empty",
+      "name": "empty-receipt-id",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "journey.training: canonical run_id required for traceability",
+      "name": "missing-run-id",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "scenarios.process-restart-backend: receipt_ids must be a non-empty list of ids",
+      "name": "missing-receipt-ids",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "scenarios.cancel-terminal: active_or_pending_orphans was not measured",
+      "name": "missing-orphan-measure",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "scenarios.process-restart-backend: missing provenance block",
+      "name": "no-provenance",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "scenarios.process-restart-backend.provenance.generation: a real value requires a source",
+      "name": "provenance-value-without-source",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "scenarios.process-restart-backend.provenance.generation: source 'made.up' is not contract-allowed",
+      "name": "hardcoded-generation",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "scenarios.process-restart-backend.provenance.epoch: not_applicable requires a reason",
+      "name": "not-applicable-without-reason",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "scenarios.process-restart-backend.provenance.trace: trace is not associated with the scenario receipt",
+      "name": "unrelated-trace-object",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "scenarios.process-restart-backend: a restart scenario requires an actual pid change",
+      "name": "restart-without-pid-change",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "scenarios.approval-revoked: required scenario missing",
+      "name": "missing-revoke-scenario",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "scenarios.approval-stale-reuse: required scenario missing",
+      "name": "missing-stale-reuse-scenario",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "scenarios.process-restart-gateway: required scenario missing",
+      "name": "missing-gateway-scenario",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "scenarios.runtime-adapter-tool-boundary: required scenario missing",
+      "name": "missing-adapter-scenario",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "scenarios.cancel-terminal: terminal_recheck disagrees with the final state",
+      "name": "cancel-actually-completed",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "scenarios.cancel-terminal: authoritative terminal status is 'completed', expected 'cancelled'",
+      "name": "cancel-raw-status-completed",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "scenarios.cancel-terminal: forbidden final state 'completed_terminal'",
+      "name": "cancel-completed-final-state",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "scenarios.late-success: next-step key 'ml_prediction_runs' changed (1 -> 2)",
+      "name": "late-delta-one",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "scenarios.queue-worker-resume: mode 'waiting_for_data' impersonates the ADR-0077 data-ready path",
+      "name": "queue-impersonates-data-ready",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "scenarios.queue-worker-resume: final state 'continued_after_data_ready' is not allowed by the contract",
+      "name": "queue-data-ready-final-state",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": false,
+      "first_failure": "scenarios.process-restart-backend: boundary 'gateway' != contract 'backend'",
+      "name": "wrong-boundary",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    }
+  ],
+  "defect_targeting_count": 21,
+  "defect_targeting_pre_fix_passed": true,
+  "schema_version": "byq-v090-composite-research-negative-controls.v2"
+}

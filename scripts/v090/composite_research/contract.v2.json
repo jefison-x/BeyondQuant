@@ -1,0 +1,515 @@
+{
+  "schema_version": "byq-v090-composite-research-contract.v2",
+  "generated_at": "2026-09-21",
+  "scope": "0.9 strict-sequence step 3 (rectified): composite research fault regression. Improve-strategy proposal -> approval-required action -> execute with the original idempotency key after approval -> training -> out-of-sample prediction -> frozen signal -> native backtest -> old-vs-new comparison -> original-task terminal state, plus a service-boundary fault matrix. Each required scenario names its actual service boundary and must carry authoritative provenance or an explicit not_applicable reason; fabricated generation/epoch/run numbers are rejected. This is maintenance/audit; it does not implement Proposed ADR-0082/0083, does not switch the production DSH selector, does not deploy and does not create/move any tag or release.",
+  "supersedes": "byq-v090-composite-research-contract.v1",
+  "required_evidence_class": "runtime-isolated-stack",
+  "llm_evidence_class": "scripted-keyless",
+  "llm_evidence_note": "A keyless deterministic scripted provider drives the composite journey. This is service-boundary fault-regression evidence, NOT real-LLM-quality semantic evidence.",
+  "results_vocabulary": [
+    "PASS",
+    "FAIL",
+    "NOT_RUN",
+    "BLOCKED"
+  ],
+  "not_run_requires_reason": true,
+  "closed_scenario_set": true,
+  "not_applicable_token": "not_applicable",
+  "provenance_required_fields": [
+    "trace",
+    "run",
+    "generation",
+    "epoch",
+    "pid"
+  ],
+  "provenance_allowed_sources": {
+    "trace": [
+      "ml_training_runs.trace_id",
+      "agent_runtime_turns.trace_id"
+    ],
+    "run": [
+      "agent_runtime_turns.root_run_id",
+      "continuation_budget.run_id"
+    ],
+    "generation": [],
+    "epoch": [],
+    "pid": []
+  },
+  "identity": {
+    "task_id_pattern": "^task_[0-9a-f]{32}$",
+    "artifact_id_pattern": "^artifact_[0-9a-f]{32}$",
+    "job_id_pattern": "^backtest_[0-9a-f]{32}$",
+    "run_id_pattern": "^[0-9a-f]{32}$",
+    "training_run_id_pattern": "^mlrun_[0-9a-f]{32}$",
+    "prediction_run_id_pattern": "^mlpred_[0-9a-f]{32}$",
+    "owner_required": true,
+    "workspace_required": true
+  },
+  "required_assertions": [
+    "at_most_once",
+    "rejection_not_bypassed",
+    "late_result_no_next_step",
+    "failure_not_fake_completed",
+    "traceable_original_goal",
+    "no_active_pending_orphans"
+  ],
+  "composite_journey": {
+    "id": "improve-strategy-composite.v1",
+    "description": "One fully successful end-to-end composite research journey on a synthetic user and an isolated stack.",
+    "required_steps": [
+      {
+        "id": "strategy-improve-proposal",
+        "requires_object": "artifact",
+        "requires_receipt": true
+      },
+      {
+        "id": "approval-required-action",
+        "requires_object": "artifact",
+        "requires_receipt": true
+      },
+      {
+        "id": "execute-original-key-after-approval",
+        "requires_object": "training_run",
+        "requires_receipt": true,
+        "requires_original_key": true,
+        "requires_approval": true
+      },
+      {
+        "id": "training",
+        "requires_object": "training_run",
+        "requires_receipt": true
+      },
+      {
+        "id": "out-of-sample-prediction",
+        "requires_object": "artifact",
+        "requires_receipt": true
+      },
+      {
+        "id": "frozen-signal",
+        "requires_object": "artifact",
+        "requires_receipt": true
+      },
+      {
+        "id": "native-backtest",
+        "requires_object": "job",
+        "requires_receipt": true
+      },
+      {
+        "id": "old-vs-new-comparison",
+        "requires_object": "artifact",
+        "requires_receipt": true,
+        "requires_report": true
+      },
+      {
+        "id": "report-original-task-terminal",
+        "requires_object": "task",
+        "requires_receipt": true,
+        "requires_terminal": true
+      }
+    ],
+    "required_invariants": [
+      "owner_workspace_bound",
+      "object_lineage_consistent",
+      "original_key_preserved",
+      "approval_authorized",
+      "identity_stable",
+      "report_consistent",
+      "terminal_state_consistent"
+    ]
+  },
+  "required_scenarios": [
+    {
+      "id": "response-loss-before-write",
+      "boundary": "gateway-product-api",
+      "description": "The Gateway/Product transport fails before any domain write commits; the original key must resolve to no side effect and the caller must not fabricate an object.",
+      "required": true,
+      "requires_pid_change": false,
+      "allowed_final_states": [
+        "outcome_unknown_no_write",
+        "confirmed_no_write"
+      ],
+      "forbidden_final_states": [
+        "fabricated_success",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "failure_not_fake_completed",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ],
+      "forbid_next_step_delta": []
+    },
+    {
+      "id": "response-loss-after-write",
+      "boundary": "gateway-product-api",
+      "description": "A real write commits and the Gateway/Product response is lost; a read-only reconcile by the original key recovers the ORIGINAL object with no duplicate side effect.",
+      "required": true,
+      "requires_pid_change": false,
+      "allowed_final_states": [
+        "confirmed_original_object"
+      ],
+      "forbidden_final_states": [
+        "duplicate_side_effect",
+        "fabricated_success",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ],
+      "forbid_next_step_delta": []
+    },
+    {
+      "id": "duplicate-delivery",
+      "boundary": "gateway-product-api",
+      "description": "The same idempotency key is delivered twice; exactly one side effect exists and both deliveries reference the same object identity.",
+      "required": true,
+      "requires_pid_change": false,
+      "allowed_final_states": [
+        "confirmed_original_object"
+      ],
+      "forbidden_final_states": [
+        "duplicate_side_effect",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ],
+      "forbid_next_step_delta": []
+    },
+    {
+      "id": "process-restart-backend",
+      "boundary": "backend",
+      "description": "The Backend process restarts between submission and recovery; a fresh Backend process reads the authoritative persisted state by the original key.",
+      "required": true,
+      "requires_pid_change": true,
+      "allowed_final_states": [
+        "confirmed_original_object"
+      ],
+      "forbidden_final_states": [
+        "duplicate_side_effect",
+        "lost_result",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ],
+      "forbid_next_step_delta": []
+    },
+    {
+      "id": "process-restart-gateway",
+      "boundary": "gateway",
+      "description": "The Gateway process restarts between submission and recovery; the durable submission survives and the original key reconciles to the same object.",
+      "required": true,
+      "requires_pid_change": true,
+      "allowed_final_states": [
+        "confirmed_original_object"
+      ],
+      "forbidden_final_states": [
+        "duplicate_side_effect",
+        "lost_result",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ],
+      "forbid_next_step_delta": []
+    },
+    {
+      "id": "process-restart-ml-worker",
+      "boundary": "ml-worker",
+      "description": "The ML worker restarts while a run is queued; the queued run is recovered and completes without loss or duplication.",
+      "required": true,
+      "requires_pid_change": true,
+      "allowed_final_states": [
+        "confirmed_original_object"
+      ],
+      "forbidden_final_states": [
+        "duplicate_side_effect",
+        "lost_result",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ],
+      "forbid_next_step_delta": []
+    },
+    {
+      "id": "late-success",
+      "boundary": "ml-worker",
+      "description": "A result arrives after the caller gave up; it is reconciled to the original object and creates NO next journey step (zero new prediction/signal/backtest/report).",
+      "required": true,
+      "requires_pid_change": false,
+      "allowed_final_states": [
+        "reconciled_late_success"
+      ],
+      "forbidden_final_states": [
+        "late_result_created_next_step",
+        "fabricated_success",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "late_result_no_next_step",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ],
+      "forbid_next_step_delta": [
+        "ml_prediction_runs",
+        "signal_snapshots",
+        "backtest_jobs",
+        "research_reports"
+      ]
+    },
+    {
+      "id": "cancel-terminal",
+      "boundary": "ml-worker",
+      "description": "A cancel is authoritative: the terminal state MUST be cancelled, must not reverse after the worker recovers, and must not create a downstream prediction.",
+      "required": true,
+      "requires_pid_change": false,
+      "allowed_final_states": [
+        "cancelled_terminal"
+      ],
+      "forbidden_final_states": [
+        "completed_terminal",
+        "timed_out_terminal",
+        "late_result_created_next_step",
+        "fabricated_success",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "late_result_no_next_step",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ],
+      "forbid_next_step_delta": [
+        "ml_prediction_runs",
+        "signal_snapshots",
+        "backtest_jobs",
+        "research_reports"
+      ],
+      "required_terminal_status": "cancelled"
+    },
+    {
+      "id": "approval-rejected",
+      "boundary": "backend-domain",
+      "description": "A rejected ML strategy approval must not authorize the protected training submission; the rejection cannot be bypassed.",
+      "required": true,
+      "requires_pid_change": false,
+      "allowed_final_states": [
+        "rejected_no_side_effect"
+      ],
+      "forbidden_final_states": [
+        "rejection_bypassed",
+        "fabricated_success",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "rejection_not_bypassed",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ],
+      "forbid_next_step_delta": []
+    },
+    {
+      "id": "approval-stale-reuse",
+      "boundary": "backend-domain",
+      "description": "An approval for one strategy version must not authorize a DIFFERENT version (stale/foreign approval reuse is refused).",
+      "required": true,
+      "requires_pid_change": false,
+      "allowed_final_states": [
+        "stale_reuse_refused"
+      ],
+      "forbidden_final_states": [
+        "rejection_bypassed",
+        "fabricated_success",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "rejection_not_bypassed",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ],
+      "forbid_next_step_delta": []
+    },
+    {
+      "id": "queue-worker-resume",
+      "boundary": "ml-worker",
+      "description": "A submission accepted while the ML worker is stopped stays visibly non-terminal, then resumes and completes exactly once after the worker returns.",
+      "required": true,
+      "requires_pid_change": true,
+      "allowed_final_states": [
+        "continued_after_queue_resume"
+      ],
+      "forbidden_final_states": [
+        "fabricated_success",
+        "duplicate_side_effect",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "failure_not_fake_completed",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ],
+      "forbid_next_step_delta": []
+    },
+    {
+      "id": "bounded-continuation-exactly-once",
+      "boundary": "backend-domain",
+      "description": "The composite journey's authoritative continuation ledger shows each durable event key settled exactly once with one dispatch attempt and no duplicate reservation.",
+      "required": true,
+      "requires_pid_change": false,
+      "allowed_final_states": [
+        "bounded_continuation_once"
+      ],
+      "forbidden_final_states": [
+        "duplicate_side_effect",
+        "fabricated_success",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ],
+      "forbid_next_step_delta": []
+    },
+    {
+      "id": "model-or-domain-failure",
+      "boundary": "backend-domain",
+      "description": "A domain failure must surface as a real failure, never be disguised as completed, and must leave no active/pending orphan.",
+      "required": true,
+      "requires_pid_change": false,
+      "allowed_final_states": [
+        "domain_rejected"
+      ],
+      "forbidden_final_states": [
+        "fabricated_success",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "failure_not_fake_completed",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ],
+      "forbid_next_step_delta": []
+    },
+    {
+      "id": "approval-revoked",
+      "boundary": "backend-domain",
+      "description": "A revoked approval must not authorize the protected operation. No revoke path exists at the ML or agent approval layer in the committed tree, so this is honestly BLOCKED rather than renamed from rejection.",
+      "required": true,
+      "requires_pid_change": false,
+      "allowed_final_states": [
+        "revoked_no_side_effect"
+      ],
+      "forbidden_final_states": [
+        "rejection_bypassed",
+        "fabricated_success",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "rejection_not_bypassed",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ],
+      "forbid_next_step_delta": []
+    },
+    {
+      "id": "timeout-terminal",
+      "boundary": "ml-worker",
+      "description": "A real timeout boundary (distinct from cancel) must produce a timeout terminal. The isolated ML stack exposes no deterministic timeout boundary, so this is honestly BLOCKED.",
+      "required": true,
+      "requires_pid_change": false,
+      "allowed_final_states": [
+        "timed_out_terminal"
+      ],
+      "forbidden_final_states": [
+        "completed_terminal",
+        "cancelled_terminal",
+        "fabricated_success",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "late_result_no_next_step",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ],
+      "forbid_next_step_delta": []
+    },
+    {
+      "id": "data-ready-continuation",
+      "boundary": "backend-domain",
+      "description": "A real waiting_for_data -> authoritative readiness complete -> bounded ADR-0077 data_ready continuation. The composite journey exercises the ADR-0045 budgeted continuation, not the data_ready grant, so this is honestly BLOCKED.",
+      "required": true,
+      "requires_pid_change": false,
+      "allowed_final_states": [
+        "continued_after_data_ready"
+      ],
+      "forbidden_final_states": [
+        "fabricated_success",
+        "duplicate_side_effect",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "failure_not_fake_completed",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ],
+      "forbid_next_step_delta": []
+    },
+    {
+      "id": "runtime-adapter-tool-boundary",
+      "boundary": "runtime-adapter",
+      "description": "Gateway/runtime-adapter pre/post-write response loss and restart at the agent tool-call boundary. Requires scripted-runtime tool-call fault injection (D15 scope), so this is honestly BLOCKED.",
+      "required": true,
+      "requires_pid_change": true,
+      "allowed_final_states": [
+        "confirmed_original_object"
+      ],
+      "forbidden_final_states": [
+        "duplicate_side_effect",
+        "fabricated_success",
+        "orphan_active"
+      ],
+      "required_assertions": [
+        "at_most_once",
+        "traceable_original_goal",
+        "no_active_pending_orphans"
+      ],
+      "forbid_next_step_delta": []
+    }
+  ],
+  "optional_scenarios": [
+    {
+      "id": "host-reboot",
+      "required": false,
+      "description": "A real host reboot is not authorized; a container restart is not equivalent to a host reboot."
+    }
+  ],
+  "required_cleanup": {
+    "containers_remaining": 0,
+    "networks_remaining": 0,
+    "volumes_remaining": 0,
+    "production_untouched": true
+  },
+  "required_coverage_gates_qualification": true
+}
