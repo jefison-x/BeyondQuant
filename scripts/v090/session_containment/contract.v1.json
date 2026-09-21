@@ -43,6 +43,24 @@
       "expect": {"status": "failed", "interrupted": false}
     },
     {
+      "id": "missing-summary-session-not-interrupted",
+      "required": true,
+      "kind": "loss_evidence",
+      "expect": {"status": "failed", "interrupted": false}
+    },
+    {
+      "id": "missing-terminal-run-not-interrupted",
+      "required": true,
+      "kind": "loss_evidence",
+      "expect": {"status": "failed", "interrupted": false}
+    },
+    {
+      "id": "invalid-terminal-run-not-interrupted",
+      "required": true,
+      "kind": "loss_evidence",
+      "expect": {"status": "failed", "interrupted": false}
+    },
+    {
       "id": "cancelled-not-interrupted",
       "required": true,
       "kind": "loss_evidence",

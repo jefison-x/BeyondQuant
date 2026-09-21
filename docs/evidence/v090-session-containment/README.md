@@ -46,9 +46,13 @@ superseding assessment.
 - **No second store.** The `/tmp` attempt ledger was removed. Recovery is
   read-only, so restart/corruption/concurrency cannot reopen an attempt.
 - **Interruption is evidence-bound.** An ordinary `session.failed` stays
-  `failed`; `cancelled` stays `cancelled`; `discarded` keeps its semantics;
+  `failed`; `cancelled` stays `cancelled`; `discarded` keeps its semantics.
   `interrupted` is projected only when the fenced containment record matches the
-  session/trace and the exact run.
+  **same session and trace** and, when a terminal exists, the terminal carries a
+  **valid `run_id` strictly equal** to the containment `interrupted_run_id`.
+  A missing summary session binding, a missing terminal run or an invalid
+  terminal run stays the ordinary status. Only a genuinely terminal-free trace
+  may project `interrupted` from the fenced containment itself.
 - **Preservation is observed, not asserted.** The boundary invariant is
   `boundary_verified: false`; a field is `preserved` only when an authoritative
   catalog/trace read proves it, otherwise `unknown`/`unavailable`.
@@ -61,11 +65,20 @@ superseding assessment.
   source-digest bound.
 - `verdict.v2.json` — fail-able observer verdict (`format_valid=true`,
   `all_pass=true`).
-- `negative-controls.v2.json` — 24 negative controls, all rejected; 24
+- `negative-controls.v2.json` — 27 negative controls, all rejected; 27
   defect-targeting controls that the pre-fix result-trusting algorithm would have
   reported as PASS.
 - `design-check.v1.json` — pre-step authoritative-model inventory and minimal
   design check.
+
+## Delivery status
+
+This PR delivers **containment + fail-closed read-only classification** only. The
+full ADR-0084 business-recovery gate (authoritative server-side step-safety +
+budget binding + safe rescheduling) remains **`IN_PROGRESS / BLOCKED_INTERNAL`**.
+The next sole task is an inventory + minimal design for that authority; if it
+requires a new persistence authority, trust subject or cross-Plane call, an ADR
+decision must be proposed first. No D15 superseding assessment is started.
 
 ## Boundary facts (unchanged)
 

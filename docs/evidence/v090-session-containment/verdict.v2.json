@@ -42,6 +42,27 @@
     },
     {
       "failures": [],
+      "id": "missing-summary-session-not-interrupted",
+      "kind": "loss_evidence",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "missing-terminal-run-not-interrupted",
+      "kind": "loss_evidence",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
+      "id": "invalid-terminal-run-not-interrupted",
+      "kind": "loss_evidence",
+      "required": true,
+      "verdict": "PASS"
+    },
+    {
+      "failures": [],
       "id": "cancelled-not-interrupted",
       "kind": "loss_evidence",
       "required": true,

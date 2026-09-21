@@ -67,13 +67,16 @@ def containment_match(adapter_containment: object, session_id: str, trace_id: st
     """Return the fenced containment record only when it binds this session/trace.
 
     The adapter summary is the authoritative loss evidence. A record for another
-    session/trace, a missing run identity or an unknown loss cause is not
-    evidence and must not turn an ordinary failure into an interruption.
+    session/trace, a missing session binding, a missing run identity or an
+    unknown loss cause is not evidence and must not turn an ordinary failure into
+    an interruption.
     """
 
     if not isinstance(adapter_containment, dict) or not adapter_containment.get("contained"):
         return None
-    if adapter_containment.get("session_id") not in (None, session_id):
+    # The summary MUST bind the exact session; a missing/absent binding is not
+    # evidence (it cannot be inferred from the endpoint path alone).
+    if adapter_containment.get("session_id") != session_id:
         return None
     latest = adapter_containment.get("latest")
     if not isinstance(latest, dict) or latest.get("trace_id") != trace_id:
@@ -91,11 +94,17 @@ def loss_from_evidence(
 ) -> dict:
     """Derive the truthful terminal status from trace + fenced loss evidence.
 
-    ``interrupted`` is projected **only** when the adapter's fenced containment
-    record matches this session/trace and the exact terminal run. An ordinary
-    model/tool failure stays ``failed``; a cancel stays ``cancelled``; a
-    discarded result keeps its existing semantics; an unproven close stays
-    ``closed``.
+    Explicit contract for projecting ``interrupted``:
+
+    * With a terminal event: the fenced containment record must match the same
+      session/trace AND the terminal must carry a valid ``run_id`` strictly equal
+      to the containment ``interrupted_run_id``. A missing, invalid or different
+      run stays the ordinary ``failed``/``discarded``/``closed`` status.
+    * With genuinely no terminal event: the fenced containment record itself is
+      the authoritative loss terminal, so ``interrupted`` may be projected.
+
+    An ordinary model/tool failure stays ``failed``; a cancel stays
+    ``cancelled``; a discarded result keeps its existing semantics.
     """
 
     owned = _owned(events, session_id, trace_id)
@@ -107,6 +116,8 @@ def loss_from_evidence(
         "interrupted_run_id": None, "loss_cause": None, "last_terminal_sequence": None,
     }
     if last is None:
+        # No terminal at all: the fenced containment is the authoritative loss
+        # terminal (explicit contract rule).
         if match is not None:
             return {**base, "status": INTERRUPTED, "interrupted": True,
                     "interrupted_run_id": match["interrupted_run_id"],
@@ -119,7 +130,9 @@ def loss_from_evidence(
         return {**base, "status": "completed", "last_terminal_sequence": sequence}
     if kind == CANCELLED:
         return {**base, "status": "cancelled", "cancelled": True, "last_terminal_sequence": sequence}
-    if match is not None and (run is None or run == match["interrupted_run_id"]):
+    # Strict terminal-run binding: the run must be present, valid and exactly the
+    # containment run. `run is None` is NOT a wildcard.
+    if match is not None and run is not None and run == match["interrupted_run_id"]:
         return {**base, "status": INTERRUPTED, "interrupted": True,
                 "interrupted_run_id": match["interrupted_run_id"],
                 "loss_cause": match["loss_cause"], "last_terminal_sequence": sequence}

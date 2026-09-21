@@ -1,11 +1,11 @@
 {
   "provenance": {
-    "captured_at": 1789987335.155715,
+    "captured_at": 1789988786.4189186,
     "harness": "runtime-adapter synthetic compatibility + gateway read-only module",
     "source_sha256": {
       "packages/contracts/session_failure_containment.py": "sha256:20eca020f8f9adcf84f87b97d4a59931950b7a8f3161590c323c3274bcc26234",
       "services/gateway/app/main.py": "sha256:9a159bb334f99734d6887a15ee34120ad3cc447b9223a650f814a7199b5d6899",
-      "services/gateway/app/session_containment.py": "sha256:e1f35f4df99b289172979295e8a3356706e2fc807ad2a7aa2623d259aaad775f",
+      "services/gateway/app/session_containment.py": "sha256:983c88214fd147243d2117e5eb3e05799a0d76c1cef07c468bc04fad3c9dcf1a",
       "services/runtime-adapter/app/containment.py": "sha256:f77e2679f28da13ade9b870ab74570d0c28d3dba035d5a096618800b28113d18",
       "services/runtime-adapter/app/runtime.py": "sha256:307bfac64be166080845fe4d1590d92d7153712d32f88d34dd23826301cb381c"
     }
@@ -32,7 +32,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789987335.1250153,
+        "observed_at": 1789988786.37952,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -58,7 +58,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789987335.12503,
+        "observed_at": 1789988786.379543,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -84,7 +84,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789987335.125028,
+        "observed_at": 1789988786.3795395,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -110,7 +110,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789987335.1250255,
+        "observed_at": 1789988786.3795357,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -146,7 +146,7 @@
         "trace_id": "trace-1"
       },
       "provenance": {
-        "observed_at": 1789987335.1249976,
+        "observed_at": 1789988786.3794963,
         "source": "gateway-session-containment"
       },
       "verdict": "PASS"
@@ -165,7 +165,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789987335.1249998,
+        "observed_at": 1789988786.379498,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -184,15 +184,64 @@
         },
         "expected_trace_id": "cap-loss-trace",
         "history_unchanged": true,
-        "interrupted_run_id": "a4ae14f9118444acb984f54058bf0009",
+        "interrupted_run_id": "5943e91969fa4c45940db5af752b923c",
         "loss_cause": "executor-loss",
         "status": "interrupted",
         "terminal_added": true,
         "trace_id": "cap-loss-trace"
       },
       "provenance": {
-        "observed_at": 1789987335.1249914,
+        "observed_at": 1789988786.379476,
         "source": "runtime-adapter-test-harness"
+      },
+      "verdict": "PASS"
+    },
+    "invalid-terminal-run-not-interrupted": {
+      "observed": {
+        "adapter_containment": {
+          "attempts": 1,
+          "contained": true,
+          "latest": {
+            "attempt": 1,
+            "executor_epoch": 1,
+            "interrupted_generation": "generation-dead",
+            "interrupted_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "loss_cause": "executor-loss",
+            "trace_id": "trace-1"
+          },
+          "schema_version": "session-containment-summary.v1",
+          "session_id": "runtime-1"
+        },
+        "events": [
+          {
+            "kind": "session.started",
+            "payload": {
+              "run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "sequence": 1,
+            "session_id": "runtime-1",
+            "source": "runtime-adapter",
+            "timestamp": "t",
+            "trace_id": "trace-1"
+          },
+          {
+            "kind": "session.failed",
+            "payload": {
+              "run_id": "not-a-run"
+            },
+            "sequence": 2,
+            "session_id": "runtime-1",
+            "source": "runtime-adapter",
+            "timestamp": "t",
+            "trace_id": "trace-1"
+          }
+        ],
+        "session_id": "runtime-1",
+        "trace_id": "trace-1"
+      },
+      "provenance": {
+        "observed_at": 1789988786.3794954,
+        "source": "gateway-session-containment"
       },
       "verdict": "PASS"
     },
@@ -210,13 +259,13 @@
         },
         "expected_trace_id": "cap-late-trace",
         "history_unchanged": true,
-        "interrupted_run_id": "dca9ed5ac4d442a4ba52050d0fa450ec",
+        "interrupted_run_id": "bf3cb1594ea44909be4a560a30141c86",
         "loss_cause": "executor-loss",
         "status": "interrupted",
         "trace_id": "cap-late-trace"
       },
       "provenance": {
-        "observed_at": 1789987335.1249926,
+        "observed_at": 1789988786.3794777,
         "source": "runtime-adapter-test-harness"
       },
       "verdict": "PASS"
@@ -265,7 +314,7 @@
         "trace_id": "trace-1"
       },
       "provenance": {
-        "observed_at": 1789987335.124996,
+        "observed_at": 1789988786.379485,
         "source": "gateway-session-containment"
       },
       "verdict": "PASS"
@@ -314,7 +363,102 @@
         "trace_id": "trace-1"
       },
       "provenance": {
-        "observed_at": 1789987335.1249971,
+        "observed_at": 1789988786.3794868,
+        "source": "gateway-session-containment"
+      },
+      "verdict": "PASS"
+    },
+    "missing-summary-session-not-interrupted": {
+      "observed": {
+        "adapter_containment": {
+          "attempts": 1,
+          "contained": true,
+          "latest": {
+            "attempt": 1,
+            "executor_epoch": 1,
+            "interrupted_generation": "generation-dead",
+            "interrupted_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "loss_cause": "executor-loss",
+            "trace_id": "trace-1"
+          },
+          "schema_version": "session-containment-summary.v1"
+        },
+        "events": [
+          {
+            "kind": "session.started",
+            "payload": {
+              "run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "sequence": 1,
+            "session_id": "runtime-1",
+            "source": "runtime-adapter",
+            "timestamp": "t",
+            "trace_id": "trace-1"
+          },
+          {
+            "kind": "session.failed",
+            "payload": {
+              "run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "sequence": 2,
+            "session_id": "runtime-1",
+            "source": "runtime-adapter",
+            "timestamp": "t",
+            "trace_id": "trace-1"
+          }
+        ],
+        "session_id": "runtime-1",
+        "trace_id": "trace-1"
+      },
+      "provenance": {
+        "observed_at": 1789988786.3794913,
+        "source": "gateway-session-containment"
+      },
+      "verdict": "PASS"
+    },
+    "missing-terminal-run-not-interrupted": {
+      "observed": {
+        "adapter_containment": {
+          "attempts": 1,
+          "contained": true,
+          "latest": {
+            "attempt": 1,
+            "executor_epoch": 1,
+            "interrupted_generation": "generation-dead",
+            "interrupted_run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "loss_cause": "executor-loss",
+            "trace_id": "trace-1"
+          },
+          "schema_version": "session-containment-summary.v1",
+          "session_id": "runtime-1"
+        },
+        "events": [
+          {
+            "kind": "session.started",
+            "payload": {
+              "run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "sequence": 1,
+            "session_id": "runtime-1",
+            "source": "runtime-adapter",
+            "timestamp": "t",
+            "trace_id": "trace-1"
+          },
+          {
+            "kind": "session.failed",
+            "payload": {},
+            "sequence": 2,
+            "session_id": "runtime-1",
+            "source": "runtime-adapter",
+            "timestamp": "t",
+            "trace_id": "trace-1"
+          }
+        ],
+        "session_id": "runtime-1",
+        "trace_id": "trace-1"
+      },
+      "provenance": {
+        "observed_at": 1789988786.3794935,
         "source": "gateway-session-containment"
       },
       "verdict": "PASS"
@@ -323,12 +467,12 @@
       "observed": {
         "negative_controls": {
           "all_controls_rejected": true,
-          "control_count": 24,
-          "defect_targeting_count": 24
+          "control_count": 27,
+          "defect_targeting_count": 27
         }
       },
       "provenance": {
-        "observed_at": 1789987335.1555302,
+        "observed_at": 1789988786.418754,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -377,7 +521,7 @@
         "trace_id": "trace-1"
       },
       "provenance": {
-        "observed_at": 1789987335.124995,
+        "observed_at": 1789988786.3794837,
         "source": "gateway-session-containment"
       },
       "verdict": "PASS"
@@ -403,7 +547,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789987335.125032,
+        "observed_at": 1789988786.3795464,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -444,7 +588,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789987335.1555405,
+        "observed_at": 1789988786.4187686,
         "source": "runtime-adapter-test-harness"
       },
       "verdict": "PASS"
@@ -454,7 +598,7 @@
         "source_sha256": "sha256:9a159bb334f99734d6887a15ee34120ad3cc447b9223a650f814a7199b5d6899"
       },
       "provenance": {
-        "observed_at": 1789987335.1251438,
+        "observed_at": 1789988786.379702,
         "source": "gateway-session-containment"
       },
       "verdict": "PASS"
@@ -472,7 +616,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789987335.1249986,
+        "observed_at": 1789988786.3794973,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -498,7 +642,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789987335.1250226,
+        "observed_at": 1789988786.3795311,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -517,7 +661,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789987335.1250002,
+        "observed_at": 1789988786.3794987,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"
@@ -543,7 +687,7 @@
         }
       },
       "provenance": {
-        "observed_at": 1789987335.1250196,
+        "observed_at": 1789988786.3795264,
         "source": "contract-pure-function"
       },
       "verdict": "PASS"

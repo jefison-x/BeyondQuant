@@ -179,6 +179,28 @@ def capture() -> dict:
         "mismatched-trace-not-interrupted": entry(
             {"events": _events(), "session_id": "runtime-1", "trace_id": "trace-1",
              "adapter_containment": _containment(trace_id="trace-other")}, "gateway-session-containment"),
+        "missing-summary-session-not-interrupted": entry(
+            {"events": _events(), "session_id": "runtime-1", "trace_id": "trace-1",
+             "adapter_containment": {k: v for k, v in _containment().items() if k != "session_id"}},
+            "gateway-session-containment"),
+        "missing-terminal-run-not-interrupted": entry(
+            {"events": [{"trace_id": "trace-1", "session_id": "runtime-1", "sequence": 1,
+                         "timestamp": "t", "kind": "session.started", "source": "runtime-adapter",
+                         "payload": {"run_id": RUN_A}},
+                        {"trace_id": "trace-1", "session_id": "runtime-1", "sequence": 2,
+                         "timestamp": "t", "kind": "session.failed", "source": "runtime-adapter",
+                         "payload": {}}],
+             "session_id": "runtime-1", "trace_id": "trace-1",
+             "adapter_containment": _containment()}, "gateway-session-containment"),
+        "invalid-terminal-run-not-interrupted": entry(
+            {"events": [{"trace_id": "trace-1", "session_id": "runtime-1", "sequence": 1,
+                         "timestamp": "t", "kind": "session.started", "source": "runtime-adapter",
+                         "payload": {"run_id": RUN_A}},
+                        {"trace_id": "trace-1", "session_id": "runtime-1", "sequence": 2,
+                         "timestamp": "t", "kind": "session.failed", "source": "runtime-adapter",
+                         "payload": {"run_id": "not-a-run"}}],
+             "session_id": "runtime-1", "trace_id": "trace-1",
+             "adapter_containment": _containment()}, "gateway-session-containment"),
         "cancelled-not-interrupted": entry(
             {"events": _events(terminal="session.cancelled"), "session_id": "runtime-1",
              "trace_id": "trace-1", "adapter_containment": None}, "gateway-session-containment"),

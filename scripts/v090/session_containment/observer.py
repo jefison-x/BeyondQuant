@@ -40,6 +40,9 @@ DEFECT_TARGETING_CONTROLS = (
     "ordinary-failed-marked-interrupted",
     "mismatched-run-marked-interrupted",
     "mismatched-trace-marked-interrupted",
+    "missing-summary-session-marked-interrupted",
+    "missing-terminal-run-marked-interrupted",
+    "invalid-terminal-run-marked-interrupted",
     "stale-generation-not-fenced",
     "duplicate-terminal-not-fenced",
     "terminal-reopen-not-fenced",
@@ -425,6 +428,26 @@ def valid_fixture(contract: dict) -> dict:
              "latest": {"trace_id": "trace-other", "loss_cause": "executor-loss",
                         "interrupted_run_id": run_a, "interrupted_generation": "g", "executor_epoch": 1}}},
         source="gateway-session-containment")
+    add("missing-summary-session-not-interrupted",
+        {"events": events, "session_id": "runtime-1", "trace_id": "trace-1",
+         "adapter_containment": {"schema_version": "s", "contained": True,
+             "latest": {"trace_id": "trace-1", "loss_cause": "executor-loss",
+                        "interrupted_run_id": run_a, "interrupted_generation": "g", "executor_epoch": 1}}},
+        source="gateway-session-containment")
+    add("missing-terminal-run-not-interrupted",
+        {"events": [events[0], {**events[1], "payload": {}}], "session_id": "runtime-1",
+         "trace_id": "trace-1",
+         "adapter_containment": {"schema_version": "s", "session_id": "runtime-1", "contained": True,
+             "latest": {"trace_id": "trace-1", "loss_cause": "executor-loss",
+                        "interrupted_run_id": run_a, "interrupted_generation": "g", "executor_epoch": 1}}},
+        source="gateway-session-containment")
+    add("invalid-terminal-run-not-interrupted",
+        {"events": [events[0], {**events[1], "payload": {"run_id": "not-a-run"}}],
+         "session_id": "runtime-1", "trace_id": "trace-1",
+         "adapter_containment": {"schema_version": "s", "session_id": "runtime-1", "contained": True,
+             "latest": {"trace_id": "trace-1", "loss_cause": "executor-loss",
+                        "interrupted_run_id": run_a, "interrupted_generation": "g", "executor_epoch": 1}}},
+        source="gateway-session-containment")
     add("cancelled-not-interrupted",
         {"events": [{**events[0]}, {**events[1], "kind": "session.cancelled"}],
          "session_id": "runtime-1", "trace_id": "trace-1", "adapter_containment": None},
@@ -494,6 +517,12 @@ def _controls(contract: dict) -> list[tuple[str, dict]]:
             payload={"run_id": "b" * 32})),
         mutate("mismatched-trace-marked-interrupted", lambda v: sc(v, "mismatched-trace-not-interrupted")[
             "adapter_containment"]["latest"].update(trace_id="trace-1")),
+        mutate("missing-summary-session-marked-interrupted", lambda v: sc(v, "missing-summary-session-not-interrupted")[
+            "adapter_containment"].update(session_id="runtime-1")),
+        mutate("missing-terminal-run-marked-interrupted", lambda v: sc(v, "missing-terminal-run-not-interrupted")[
+            "events"][1].update(payload={"run_id": "a" * 32})),
+        mutate("invalid-terminal-run-marked-interrupted", lambda v: sc(v, "invalid-terminal-run-not-interrupted")[
+            "events"][1].update(payload={"run_id": "a" * 32})),
         mutate("stale-generation-not-fenced", lambda v: sc(v, "stale-generation-terminal-fenced").update(
             call={"function": "assert_generation_fenced", "kwargs": {
                 "authoritative_epoch": 2, "authoritative_generation": "g2",

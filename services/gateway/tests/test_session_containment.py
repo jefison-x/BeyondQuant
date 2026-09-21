@@ -74,6 +74,39 @@ def test_containment_without_a_run_identity_is_not_evidence() -> None:
     assert loss["status"] == "failed"
 
 
+def test_missing_summary_session_binding_is_not_evidence() -> None:
+    containment = _containment()
+    containment.pop("session_id")
+    loss = sc.loss_from_evidence(_interrupted_events(terminal="session.failed"),
+                                 "runtime-1", "trace-1", containment)
+    assert loss["status"] == "failed"
+    assert loss["interrupted"] is False
+    assert loss["interrupted_run_id"] is None
+
+
+def test_missing_terminal_run_is_not_interruption() -> None:
+    events = _interrupted_events(terminal="session.failed")
+    events[-1]["payload"] = {}
+    loss = sc.loss_from_evidence(events, "runtime-1", "trace-1", _containment())
+    assert loss["status"] == "failed"
+    assert loss["interrupted"] is False
+
+
+def test_invalid_terminal_run_is_not_interruption() -> None:
+    events = _interrupted_events(terminal="session.failed")
+    events[-1]["payload"] = {"run_id": "not-a-run"}
+    loss = sc.loss_from_evidence(events, "runtime-1", "trace-1", _containment())
+    assert loss["status"] == "failed"
+    assert loss["interrupted"] is False
+
+
+def test_no_terminal_and_matching_containment_is_the_loss_terminal() -> None:
+    loss = sc.loss_from_evidence([_event(1, "session.started", run_id=RUN_A)],
+                                 "runtime-1", "trace-1", _containment())
+    assert loss["status"] == "interrupted"
+    assert loss["interrupted_run_id"] == RUN_A
+
+
 def test_matching_fenced_containment_projects_interrupted() -> None:
     loss = sc.loss_from_evidence(_interrupted_events(terminal="session.failed"),
                                  "runtime-1", "trace-1", _containment())

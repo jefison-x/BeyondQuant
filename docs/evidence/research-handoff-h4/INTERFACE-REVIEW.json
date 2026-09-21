@@ -20938,7 +20938,7 @@
       ],
       "source_sha256": "sha256:9a159bb334f99734d6887a15ee34120ad3cc447b9223a650f814a7199b5d6899",
       "dependencies_sha256": {
-        "services/gateway/app/session_containment.py": "sha256:e1f35f4df99b289172979295e8a3356706e2fc807ad2a7aa2623d259aaad775f",
+        "services/gateway/app/session_containment.py": "sha256:983c88214fd147243d2117e5eb3e05799a0d76c1cef07c468bc04fad3c9dcf1a",
         "packages/contracts/session_failure_containment.py": "sha256:20eca020f8f9adcf84f87b97d4a59931950b7a8f3161590c323c3274bcc26234",
         "services/gateway/app/conversation_recovery.py": "sha256:424a75d579d9987ce447c3197d1d576df2a6ac374ebc5b6be4c727891335f7a1",
         "services/gateway/app/trace_store.py": "sha256:cc536d8f93af32b7848748dc2ef469f6ce4bbf1e4f0f0b97309d891859f214a1"
@@ -21004,7 +21004,7 @@
       ],
       "source_sha256": "sha256:9a159bb334f99734d6887a15ee34120ad3cc447b9223a650f814a7199b5d6899",
       "dependencies_sha256": {
-        "services/gateway/app/session_containment.py": "sha256:e1f35f4df99b289172979295e8a3356706e2fc807ad2a7aa2623d259aaad775f",
+        "services/gateway/app/session_containment.py": "sha256:983c88214fd147243d2117e5eb3e05799a0d76c1cef07c468bc04fad3c9dcf1a",
         "packages/contracts/session_failure_containment.py": "sha256:20eca020f8f9adcf84f87b97d4a59931950b7a8f3161590c323c3274bcc26234",
         "services/gateway/app/user_session.py": "sha256:284f214148f3aa690667533a44900708692594d741101179f224bf1832bcc866",
         "services/gateway/app/trace_store.py": "sha256:cc536d8f93af32b7848748dc2ef469f6ce4bbf1e4f0f0b97309d891859f214a1"

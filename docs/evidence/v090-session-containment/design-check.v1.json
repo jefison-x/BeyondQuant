@@ -36,6 +36,9 @@
     "d15_g": "NO_GO",
     "r3_resume": "NO",
     "production_selector": "dsh-0.1.2rc1",
+    "full_business_recovery_gate": "IN_PROGRESS/BLOCKED_INTERNAL",
+    "delivered_scope": "containment + fail-closed read-only classification",
+    "next_task": "inventory + minimal design for authoritative server-side step-safety + budget binding + safe rescheduling; ADR first if a new persistence authority, trust subject or cross-Plane call is required",
     "superseding_assessment": "not_created_in_this_pr",
     "native_child_resume": "not_implemented",
     "unknown_side_effects": "pause"

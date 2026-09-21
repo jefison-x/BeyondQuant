@@ -34,6 +34,9 @@ REQUIRED_SCENARIOS = {
     "ordinary-failed-not-interrupted",
     "mismatched-run-not-interrupted",
     "mismatched-trace-not-interrupted",
+    "missing-summary-session-not-interrupted",
+    "missing-terminal-run-not-interrupted",
+    "invalid-terminal-run-not-interrupted",
     "cancelled-not-interrupted",
     "stale-generation-terminal-fenced",
     "duplicate-terminal-rejected",
@@ -90,7 +93,10 @@ class ObserverFailAbilityTests(unittest.TestCase):
         names = {item["name"] for item in result["controls"]}
         for expected in ("executor-loss-fake-completed", "before-after-diverged",
                          "ordinary-failed-marked-interrupted", "mismatched-run-marked-interrupted",
-                         "mismatched-trace-marked-interrupted", "authority-unavailable-allowed",
+                         "mismatched-trace-marked-interrupted",
+                         "missing-summary-session-marked-interrupted",
+                         "missing-terminal-run-marked-interrupted",
+                         "invalid-terminal-run-marked-interrupted", "authority-unavailable-allowed",
                          "preservation-constant-claim", "preservation-boundary-self-verified",
                          "endpoint-source-mismatch", "success-receipt-replayed"):
             self.assertIn(expected, names)
@@ -109,6 +115,12 @@ class ObserverFailAbilityTests(unittest.TestCase):
                                "executor_epoch": 1}}),
             lambda value: value["scenarios"]["preservation-not-constant"]["observed"].update(
                 after={"session_started": 0, "prompt_receipts": 0, "run_events": 0}),
+            lambda value: value["scenarios"]["missing-summary-session-not-interrupted"]["observed"][
+                "adapter_containment"].update(session_id="runtime-1"),
+            lambda value: value["scenarios"]["missing-terminal-run-not-interrupted"]["observed"][
+                "events"][1].update(payload={"run_id": "a" * 32}),
+            lambda value: value["scenarios"]["invalid-terminal-run-not-interrupted"]["observed"][
+                "events"][1].update(payload={"run_id": "a" * 32}),
         ):
             broken = json.loads(OBSERVATIONS.read_text(encoding="utf-8"))
             mutate(broken)
@@ -181,15 +193,35 @@ class BoundaryTests(unittest.TestCase):
         status = (ROOT / "docs/roadmap/STATUS.md").read_text(encoding="utf-8")
         for marker in ("<!-- byq:v090-step5-b1-subagent-child-crash=blocked-external -->",
                        "<!-- byq:v090-step5-b2-adapter-restart=blocked-external -->",
-                       "<!-- byq:v090-session-containment=complete -->",
+                       "<!-- byq:v090-session-containment=containment-classification-delivered -->",
+                       "<!-- byq:session-failure-containment=in-progress-blocked-internal -->",
+                       "<!-- byq:session-failure-containment-next=authoritative-step-safety-and-budget-inventory -->",
                        "<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.190 -->"):
             self.assertIn(marker, status)
         self.assertIn("R3_RESUME = NO", status)
         self.assertIn("D15-G", status)
 
-    def test_no_superseding_assessment_is_claimed(self):
+    def test_status_rejects_complete_next_contradiction(self):
+        status = (ROOT / "docs/roadmap/STATUS.md").read_text(encoding="utf-8")
+        # The full ADR-0084 gate is NOT complete: a `complete` value for it, or a
+        # slice `complete` marker alongside a `next` marker for the same gate, is
+        # the self-contradiction this rectification removed.
+        self.assertNotIn("<!-- byq:session-failure-containment=complete -->", status)
+        self.assertNotIn("<!-- byq:session-failure-containment=next -->", status)
+        self.assertNotIn("<!-- byq:v090-session-containment=complete -->", status)
+        self.assertIn("IN_PROGRESS / BLOCKED_INTERNAL", status)
+        self.assertIn("authoritative server-side step-safety + budget binding", status)
+        # A `next` marker must exist precisely because the gate is not complete.
+        self.assertIn("<!-- byq:session-failure-containment-next=", status)
+
+    def test_no_superseding_assessment_while_full_gate_unpassed(self):
         status = (ROOT / "docs/roadmap/STATUS.md").read_text(encoding="utf-8")
         self.assertNotIn("byq:v090-d15-superseding=passed", status)
+        # The document must explicitly refuse the claim while the full gate is
+        # unpassed, rather than assert a passed superseding assessment.
+        self.assertIn("不生成也不声称", status)
+        self.assertNotIn("superseding assessment 已通过", status)
+        self.assertNotIn("superseding assessment passed", status)
         for path in EVIDENCE.rglob("*"):
             if path.is_file():
                 self.assertNotIn("superseding_assessment_passed",

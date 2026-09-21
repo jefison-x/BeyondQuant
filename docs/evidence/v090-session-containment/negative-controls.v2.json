@@ -1,7 +1,7 @@
 {
   "all_controls_pass": true,
   "baseline_all_pass": true,
-  "control_count": 24,
+  "control_count": 27,
   "controls": [
     {
       "defect_targeting": true,
@@ -47,6 +47,30 @@
       "defect_targeting": true,
       "first_failure": "mismatched-trace-not-interrupted: status='interrupted' != contract 'failed'",
       "name": "mismatched-trace-marked-interrupted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "missing-summary-session-not-interrupted: status='interrupted' != contract 'failed'",
+      "name": "missing-summary-session-marked-interrupted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "missing-terminal-run-not-interrupted: status='interrupted' != contract 'failed'",
+      "name": "missing-terminal-run-marked-interrupted",
+      "observed_all_pass": false,
+      "observed_exit_code": 1,
+      "pre_fix_legacy_all_pass": true
+    },
+    {
+      "defect_targeting": true,
+      "first_failure": "invalid-terminal-run-not-interrupted: status='interrupted' != contract 'failed'",
+      "name": "invalid-terminal-run-marked-interrupted",
       "observed_all_pass": false,
       "observed_exit_code": 1,
       "pre_fix_legacy_all_pass": true
@@ -196,7 +220,7 @@
       "pre_fix_legacy_all_pass": true
     }
   ],
-  "defect_targeting_count": 24,
+  "defect_targeting_count": 27,
   "defect_targeting_pre_fix_passed": true,
   "schema_version": "byq-v090-session-containment-negative-controls.v2"
 }
