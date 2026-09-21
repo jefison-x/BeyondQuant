@@ -16,6 +16,21 @@ def module(name):
     return result
 
 
+def _check(name, run_id, conclusion="SUCCESS", *, status="COMPLETED", started="2026-09-21T18:00:00Z"):
+    return {"name": name, "status": status, "conclusion": conclusion,
+            "detailsUrl": f"https://github.com/o/r/actions/runs/{run_id}/job/1",
+            "startedAt": started}
+
+
+def _run(run_id, head, *, name="BeyondQuant CI", status="completed", conclusion="success"):
+    return {str(run_id): {"head_sha": head, "status": status, "conclusion": conclusion, "name": name}}
+
+
+def _pr(head, checks, runs):
+    return {"headRefOid": head, "baseRefName": "main", "mergeable": "MERGEABLE",
+            "statusCheckRollup": checks, "runs": runs}
+
+
 class GovernanceCiTests(unittest.TestCase):
     def test_classifier_failure_cannot_become_an_empty_successful_plan(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -154,11 +169,12 @@ test -z "$DEEPSEEK_API_KEY$TUSHARE_TOKEN$BYQ_FEEDBACK_GITHUB_TOKEN$BYQ_FEEDBACK_
         evaluate = module("check-github-gates").evaluate
         repo = {"allow_auto_merge": True, "allow_squash_merge": True}
         protection = {"required_status_checks": {"strict": True, "contexts": ["local-ci", "ci-gate"]}}
+        head = "a" * 40
         self.assertTrue(evaluate(repo, None))
         self.assertTrue(evaluate({**repo, "allow_auto_merge": False}, protection))
         self.assertTrue(evaluate(repo, {"required_status_checks": {"strict": False}}))
-        checks = [{"name": name, "status": "COMPLETED", "conclusion": "SUCCESS"} for name in ("local-ci", "ci-gate")]
-        pr = {"baseRefName": "main", "mergeable": "MERGEABLE", "statusCheckRollup": checks}
+        pr = _pr(head, [_check("local-ci", 100, started="2026-09-21T18:00:00Z"),
+                        _check("ci-gate", 100, started="2026-09-21T18:00:01Z")], {**_run(100, head)})
         self.assertEqual(evaluate(repo, protection, pr), [])
         extended = {"required_status_checks": {"strict": True, "contexts": ["local-ci", "ci-gate", "security"]}}
         self.assertTrue(evaluate(repo, extended, pr))
@@ -167,8 +183,50 @@ test -z "$DEEPSEEK_API_KEY$TUSHARE_TOKEN$BYQ_FEEDBACK_GITHUB_TOKEN$BYQ_FEEDBACK_
         self.assertEqual(evaluate(repo, review, {**pr, "reviewDecision": "APPROVED"}), [])
         for result in ("SKIPPED", "NEUTRAL", "FAILURE", "CANCELLED"):
             with self.subTest(result=result):
-                checks[0]["conclusion"] = result
-                self.assertTrue(evaluate(repo, protection, pr))
+                bad = _pr(head, [_check("local-ci", 100, result, started="2026-09-21T18:00:00Z"),
+                                 _check("ci-gate", 100, started="2026-09-21T18:00:01Z")], {**_run(100, head)})
+                self.assertTrue(evaluate(repo, protection, bad))
+
+    def test_merge_preflight_selects_only_the_latest_run_for_the_exact_head(self):
+        evaluate = module("check-github-gates").evaluate
+        repo = {"allow_auto_merge": True, "allow_squash_merge": True}
+        protection = {"required_status_checks": {"strict": True, "contexts": ["local-ci", "ci-gate"]}}
+        head = "b" * 40
+        # Older run on the SAME head: cancelled, exposing the generic matrix
+        # `checks` name plus failed aggregate gates.
+        old = [_check("plan", 100, "CANCELLED", started="2026-09-21T18:17:11Z"),
+               _check("checks", 100, "CANCELLED", started="2026-09-21T18:17:12Z"),
+               _check("local-ci", 100, "FAILURE", started="2026-09-21T18:17:15Z"),
+               _check("ci-gate", 100, "FAILURE", started="2026-09-21T18:17:21Z")]
+        # Newer run on the same head: expanded lane names, all green.
+        new = [_check("plan", 200, started="2026-09-21T18:17:28Z"),
+               _check("checks (backend, false)", 200, started="2026-09-21T18:17:39Z"),
+               _check("local-ci", 200, started="2026-09-21T18:36:40Z"),
+               _check("ci-gate", 200, started="2026-09-21T18:36:48Z")]
+        pr = _pr(head, old + new, {**_run(100, head, conclusion="cancelled"), **_run(200, head)})
+        self.assertEqual(evaluate(repo, protection, pr), [])
+        # Latest run failure / cancellation / incompleteness is BLOCKED.
+        for conclusion, status in (("failure", "completed"), ("cancelled", "completed"),
+                                   ("success", "in_progress")):
+            with self.subTest(conclusion=conclusion, status=status):
+                runs = {**_run(100, head, conclusion="cancelled"),
+                        **_run(200, head, status=status, conclusion=conclusion)}
+                self.assertTrue(evaluate(repo, protection, {**pr, "runs": runs}))
+        # Missing run metadata (ownership unconfirmed) is BLOCKED.
+        self.assertTrue(evaluate(repo, protection, {**pr, "runs": _run(100, head, conclusion="cancelled")}))
+        # A different head's success is NOT adopted.
+        runs = {**_run(100, head, conclusion="cancelled"), **_run(200, "c" * 40)}
+        self.assertTrue(evaluate(repo, protection, {**pr, "runs": runs}))
+        # The older cancelled suite alone is BLOCKED, never silently accepted.
+        self.assertTrue(evaluate(repo, protection, _pr(head, old,
+            _run(100, head, conclusion="cancelled"))))
+
+    def test_pull_request_trigger_excludes_body_only_edits(self):
+        workflow = (ROOT / ".github/workflows/ci-selfhosted.yml").read_text()
+        self.assertIn("types: [opened, synchronize, reopened, ready_for_review]", workflow)
+        self.assertNotIn("types: [opened, synchronize, reopened, edited", workflow)
+        self.assertNotIn("edited]", workflow)
+
 
     def test_log_redaction_retains_failure_but_removes_secrets(self):
         redact = module("redact-log").redact
