@@ -1,0 +1,23 @@
+{
+  "schema_version": "byq-v090-business-recovery-acceptance-contract.v1",
+  "provenance_allowed_sources": [
+    "real-isolated-services"
+  ],
+  "stack": {
+    "compose_project": "byq-v090-recovery",
+    "services": ["postgres", "backend", "gateway", "runtime-adapter", "mcp"],
+    "provider": "controlled-keyless",
+    "production_stack_untouched": true
+  },
+  "required_scenarios": [
+    {"id": "real-executor-loss-and-recovery", "boundary": "backend+gateway+adapter+postgres", "required": true},
+    {"id": "negative-forged-loss-run", "boundary": "backend", "required": true},
+    {"id": "negative-snapshot-change-for-existing-trigger", "boundary": "backend", "required": true},
+    {"id": "negative-unknown-cost-paused", "boundary": "backend", "required": true},
+    {"id": "negative-below-model-call-floor", "boundary": "backend", "required": true},
+    {"id": "negative-ordinal-cap", "boundary": "backend", "required": true},
+    {"id": "negative-stale-target-epoch", "boundary": "backend", "required": true},
+    {"id": "negative-recovery-new-key", "boundary": "backend-domain-claim", "required": true},
+    {"id": "negative-recovery-cross-task", "boundary": "backend-domain-claim", "required": true}
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "all_pass": true,
+  "failures": [],
+  "format_valid": true,
+  "required_count": 9,
+  "scenarios": {
+    "negative-below-model-call-floor": {
+      "derived_failures": [],
+      "result": "PASS"
+    },
+    "negative-forged-loss-run": {
+      "derived_failures": [],
+      "result": "PASS"
+    },
+    "negative-ordinal-cap": {
+      "derived_failures": [],
+      "result": "PASS"
+    },
+    "negative-recovery-cross-task": {
+      "derived_failures": [],
+      "result": "PASS"
+    },
+    "negative-recovery-new-key": {
+      "derived_failures": [],
+      "result": "PASS"
+    },
+    "negative-snapshot-change-for-existing-trigger": {
+      "derived_failures": [],
+      "result": "PASS"
+    },
+    "negative-stale-target-epoch": {
+      "derived_failures": [],
+      "result": "PASS"
+    },
+    "negative-unknown-cost-paused": {
+      "derived_failures": [],
+      "result": "PASS"
+    },
+    "real-executor-loss-and-recovery": {
+      "derived_failures": [],
+      "result": "PASS"
+    }
+  },
+  "schema_version": "byq-v090-business-recovery-acceptance-verdict.v1"
+}

@@ -7,7 +7,7 @@
       "services/gateway/app/main.py": "sha256:1814fb1e1afb2f0bea79fff8b84698f77e55d33611d2ff223555455cf73b433a",
       "services/gateway/app/session_containment.py": "sha256:983c88214fd147243d2117e5eb3e05799a0d76c1cef07c468bc04fad3c9dcf1a",
       "services/runtime-adapter/app/containment.py": "sha256:f77e2679f28da13ade9b870ab74570d0c28d3dba035d5a096618800b28113d18",
-      "services/runtime-adapter/app/runtime.py": "sha256:bddf146bd3a55d12129836a6c054cff3122d9bf32696de35d7bf5df09f1f64aa"
+      "services/runtime-adapter/app/runtime.py": "sha256:6926a2c6b39f167c7b817d308dcfd4c06bb66aa5e8c62d6da517b3f593766761"
     }
   },
   "scenarios": {

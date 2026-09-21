@@ -55,9 +55,13 @@ def test_lost_executor_run_is_interrupted_and_business_state_survives(
         # survive; no second model call was made.
         kinds = [event["kind"] for event in rehydrated.history]
         assert "session.started" in kinds and "session.closed" in kinds
+        # The durable receipt proves the run *started*, but the fenced containment
+        # proves this exact run was lost, so reconcile must NOT report a live or
+        # complete accepted result; the Gateway then reaches the ADR-0084 recovery
+        # seam instead of short-circuiting on the original receipt.
         digest = hashlib.sha256(content.encode()).hexdigest()
         assert restarted.reconcile_prompt("loss-1", "loss-original-key", digest) == {
-            "schema_version": "prompt-receipt.v1", "state": "accepted", "run_id": root,
+            "schema_version": "prompt-receipt.v1", "state": "outcome_unknown",
         }
         assert FakeHarness.instances[0].run_count == 1
 
