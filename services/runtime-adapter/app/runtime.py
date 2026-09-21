@@ -2011,7 +2011,8 @@ class RuntimeAdapter:
         return (set(admission) == {"schema_version", "state", "stop", "reason"}
             and admission.get("state") in {"blocked", "correctable_failure"}
             and admission.get("reason") in {"call_evidence_pending", "prior_call_outcome_unknown", "unchanged_failed_input",
-                "correction_budget_exhausted", "call_retention_bound", "correction_failed"})
+                "correction_budget_exhausted", "call_retention_bound", "correction_failed",
+                "recovery_envelope_violation"})
 
     @staticmethod
     def _guard_seconds(name: str, *, default: float, allow_disabled: bool = False, maximum: float = 3600.0) -> float:

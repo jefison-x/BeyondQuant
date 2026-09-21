@@ -95,6 +95,52 @@ class DomainCallEvidenceMixin:
             raise AgentConflict("domain call execution authority is no longer active")
         return conversation["conversation_id"]
 
+    @staticmethod
+    def _recovery_claim_gate(connection, *, owner, workspace, session, root, action, task_id,
+                             idempotency_key, request_sha256, input_sha256):
+        """Runtime recovery-mode invariant for a domain-call claim.
+
+        Returns ``None`` to allow, or a closed reason to reject. A root that is a
+        Backend-bound recovery target run may claim ONLY the exact original
+        five-tuple recorded in its in-row attempt envelope. While a recovery
+        attempt is pending (allocated, not yet bound), no side-effecting claim is
+        allowed, which closes the admission-to-writeback window. A different task,
+        action, key or hash — including ``may_produce_new_key`` actions — is
+        rejected. Non-recovery roots are unaffected.
+        """
+
+        if not isinstance(root, str) or not root:
+            return None
+        rows = execute(connection, """SELECT t.task_id, t.continuation_budget FROM research_tasks t
+            JOIN product_conversations c ON c.conversation_id = t.conversation_id
+            WHERE c.runtime_session_id=:session AND t.owner_principal=:owner
+              AND t.workspace_id=:workspace""",
+            {'session': session, 'owner': owner, 'workspace': workspace})
+        attempts = [(row['task_id'], attempt) for row in rows
+                    for reservation in (row.get('continuation_budget') or [])
+                    for attempt in (reservation.get('recovery_attempts') or [])]
+        if not attempts:
+            return None
+        bound = next(((attempt_task, attempt) for attempt_task, attempt in attempts
+                      if attempt.get('run_id') == root), None)
+        if bound is not None:
+            attempt_task, attempt = bound
+            if attempt.get('status') not in {'accepted', 'settled'}:
+                return 'recovery_envelope_violation'
+            if attempt_task != task_id or attempt.get('envelope_mode') != 'exact_reuse':
+                return 'recovery_envelope_violation'
+            identity = [action, task_id, idempotency_key, request_sha256, input_sha256]
+            allowed = [list(call) for call in (attempt.get('allowed_calls') or [])]
+            if identity not in allowed:
+                return 'recovery_envelope_violation'
+            return None
+        if any(attempt.get('status') == 'reserved' and attempt.get('run_id') is None
+               for _, attempt in attempts):
+            # A recovery admission is in flight; until its target run is
+            # authoritatively bound, no side-effecting claim may be admitted.
+            return 'recovery_envelope_violation'
+        return None
+
     def claim_domain_call(self, action, payload, *, trusted_owner, trusted_workspace,
                           trusted_session_id, trusted_trace_id, trusted_generation, trusted_root):
         """Commit the debit before domain validation; proof arrival never executes."""
@@ -113,6 +159,13 @@ class DomainCallEvidenceMixin:
             # that ordering window into an ambiguous domain-write conflict.
             self._require_lifecycle_workspace(connection, context["owner"], context["workspace"])
             self._lifecycle_lock(connection, "root:" + context["root"])
+            recovery_violation = self._recovery_claim_gate(connection,
+                owner=context["owner"], workspace=context["workspace"], session=context["session"],
+                root=context["root"], action=action, task_id=value["task_id"],
+                idempotency_key=value["idempotency_key"], request_sha256=value["request_sha256"],
+                input_sha256=value["input_sha256"])
+            if recovery_violation is not None:
+                return {"state": "blocked", "reason": recovery_violation}
             proof = fetch_one(connection, """SELECT * FROM agent_domain_call_evidence
                 WHERE owner_principal=:owner AND workspace_id=:workspace AND session_id=:session AND trace_id=:trace
                 AND root_run_id=:root AND task_id=:task_id AND action=:action AND idempotency_key=:idempotency_key

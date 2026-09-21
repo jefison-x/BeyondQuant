@@ -98,15 +98,22 @@ forward (`services/gateway/app/recovery_carrier.py`); the Adapter validate/atomi
 (`services/runtime-adapter/app/business_recovery.py` wired into `submit_prompt`) that recomputes and
 atomically compares the CURRENT snapshot (`idle=true`) under `record.lock` before creating the new
 root/target generation, returning the accepted receipt with the live target epoch/generation/run in
-the existing prompt response; the accepted target written back through the existing receipt route; and
-the Adapter's durable guard charge bound through that same route (unknown stays paused).
+the existing prompt response; the accepted target written back through the existing receipt route; the
+Adapter's durable guard charge bound through that same route (unknown stays paused); and a **runtime
+recovery-mode invariant** (`claim_domain_call` → `_recovery_claim_gate`) that, for a Backend-bound
+recovery target root, allows ONLY exact original five-tuple reuse (new key/action/task →
+`recovery_envelope_violation`, which the Adapter treats as a stop) and rejects any side-effecting
+claim while a recovery attempt is pending. Session-global continuity is judged over the full
+session/trace closure and the replay set is scoped to the current task + exact lost root.
 Acceptance is real behavior, not string tests: a Postgres-backed concurrency test proves same
 trigger+same snapshot allocates exactly once and a retry reuses the original attempt/ordinal, a
 snapshot change cannot rewrite/consume another ordinal, budget is not double-deducted, unknown
 cost/evidence conflict/model-floor/ordinal-cap fail closed, the accepted target receipt is persisted
-and stale targets are fenced, and forged policy/loss facts cannot obtain a carrier; the adapter test
-injects digest tamper, tail append, idle flip, containment mismatch and stale target fences; the
-fail-able observer rejects 25 defect-targeting negative controls. **No new ADR was required**
+and stale targets are fenced, forged policy/loss facts cannot obtain a carrier, a real claim path
+rejects a recovery root's new key / new-key action / foreign task, a legal non-first-root sequence
+is not a false gap, and a foreign task's call is not replay authority; the adapter test injects digest
+tamper, tail append, idle flip, containment mismatch, stale target fences and the recovery-violation
+stop; the fail-able observer rejects 25 defect-targeting negative controls. **No new ADR was required**
 (in-row authority only; no new cross-Plane authority, trust subject, DB migration or new domain key).
 The retained 0.9 closeout
 order is: **this gate → real recovery acceptance → formally upgrade the repo default dependency/

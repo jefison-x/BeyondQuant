@@ -334,3 +334,13 @@ def test_prompt_route_returns_the_accepted_recovery_target(tmp_path, monkeypatch
     finally:
         adapter.close()
         FakeHarness.allow_run.set()
+
+
+def test_recovery_envelope_violation_stops_the_run():
+    """The Backend's runtime recovery-mode rejection is a stop, not a soft error."""
+
+    from app.runtime import RuntimeAdapter
+    result = {'service': 'beyondquant-mcp', 'status': 'error', 'backend': {'admission': {
+        'schema_version': 'domain-call-admission.v1', 'state': 'blocked', 'stop': True,
+        'reason': 'recovery_envelope_violation'}}}
+    assert RuntimeAdapter._domain_stop_result(result) is True

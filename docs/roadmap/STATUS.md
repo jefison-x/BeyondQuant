@@ -673,21 +673,38 @@ tag/release，不恢复 Phase 100，不触碰 `codex/phase-100c`/PR #338，不�
   `STEP_SAFETY` 由 `domain_call_admission.ACTIONS` 派生，只允许只读或精确复用原
   `(action, task_id, idempotency_key, request_sha256, input_sha256)`；`may_produce_new_key` 为保守
   分类且**永远 ineligible**（允许新 key 须另立 Proposed ADR，本 PR 不开启/不暗示）。
+- **runtime 不变式（P1-D）**：恢复模式不再只是起始判断。Backend 在行内 attempt 持久化
+  `envelope_mode` 与 `allowed_calls`（**不**扩封闭 carrier）；`DomainCallEvidenceMixin.claim_domain_call`
+  在**每次** claim 时经 `_recovery_claim_gate` 判定该 root 是否为 Backend 绑定的 recovery target
+  run——是则**只**允许精确复用原五元组（不同 action/key/hash/task、`may_produce_new_key` 一律
+  `recovery_envelope_violation`）；recovery attempt 处于 pending（已分配未绑定）时**任何**副作用 claim
+  一律拒绝（关闭 admission→writeback 窗口）；非 recovery root 不受影响。Adapter 将
+  `recovery_envelope_violation` 视为**停止**（`_domain_stop_result`），运行中无法铸造新 domain key。
+- **session-global 作用域（P1-E）**：`_recovery_policy_facts` 改为对**完整 session/trace 闭包**判
+  连续性（`sequence` 为 session 级主序列，合法非首 root 从 N>1 开始不再误报 gap），replay envelope
+  再按**当前 task + 精确 lost root** 过滤，其他 root/task 的调用不进入本 reservation 的 replay 权威。
 - **真实证据（非字符串测试）**：Postgres-backed 并发测试证明**同一 trigger+同一 snapshot 恰一次**、
   retry 复用原 attempt/ordinal、snapshot 变化**不得**改写或消耗另一 ordinal、ordinal cap、未知
   费用/证据冲突/floor fail closed、无二次扣减（`services/backend/tests/test_business_recovery.py`）；
+  同文件含**真实 claim-path** 负例（recovery root 新 key / 新 key action / 不同 task 一律
+  `recovery_envelope_violation`）、非首 root 序列合法、以及 foreign-task 调用不构成 replay 权威；
   Adapter 真实 journal 测试含 fault injection（digest 篡改、tail append、idle 翻转、containment
-  不匹配、stale target epoch/generation、迟到 generation fence）（`services/runtime-adapter/tests/
-  test_business_recovery.py`）；fail-able observer（25 项 defect-targeting 负例全部被拒）与真实
-  adapter journal 证据 `docs/evidence/v090-business-recovery/`，由
+  不匹配、stale target epoch/generation、迟到 generation fence、recovery violation stop）（`services/
+  runtime-adapter/tests/test_business_recovery.py`）；fail-able observer（25 项 defect-targeting 负例
+  全部被拒）与真实 adapter journal 证据 `docs/evidence/v090-business-recovery/`，由
   `tests/test_v090_business_recovery.py` 守门。
 - **P2 证据噪声收口**：`docs/evidence/research-handoff-h4/INTERFACE-REVIEW.json` 的改动**仅为
   digest 刷新且可复现**：本 PR 修改了 `services/backend/app/main.py`（267 行 source 行）、
   `services/gateway/app/main.py`、`services/runtime-adapter/app/main.py`、
-  `services/runtime-adapter/app/runtime.py`、`services/backend/app/research_continuation.py`，fail-closed
-  auditor（`scripts/ci/check-reliability-review.py`）要求每个 source/dependency digest 与当前树一致；
-  刷新后 `complete=true`（missing/stale/fake=0），未刷新则非零退出。无结构/字段/行增删，无
-  `auth_api.py`/`server.ts` 等无关文件 churn（已撤销）。`docs/evidence/v090-session-containment/
+  `services/runtime-adapter/app/runtime.py`、`services/backend/app/research_continuation.py`、
+  `services/backend/app/domain_call_admission.py`，fail-closed auditor
+  （`scripts/ci/check-reliability-review.py`）要求每个 source/dependency digest 与当前树一致；
+  刷新后 `complete=true`（missing/stale/fake=0），未刷新则非零退出。生成命令
+  `python3 scripts/ci/check-reliability-review.py` 定位 stale 行后仅重写其 digest；机器校验
+  `python3 scripts/v090/business_recovery/check_ledger_diff.py --base origin/main` 证明
+  **digest-only**：`entry_count 569=569`、`entry_identity_multiset_unchanged=true`、
+  `manual_surface_identity_unchanged=true`、`non_digest_content_identical=true`、exit 0。无结构/字段/
+  行增删，无 `auth_api.py`/`server.ts` 等无关文件 churn（已撤销）。`docs/evidence/v090-session-containment/
   observations.v2.json` 仅更新因果相关 digest（runtime.py + gateway main.py 的 provenance 与 endpoint
   场景 digest），保留原时间戳/run id，不再整文件重生成。
 - **边界与门禁不变**：`recovery_attempts` 是既有 authority 行的**行内 JSONB 子记录**，非独立

@@ -187,19 +187,25 @@ def test_unknown_cost_pauses_and_evidence_conflict_blocks(monkeypatch):
 
 def test_policy_facts_are_derived_from_persisted_evidence(monkeypatch):
     from app import research_continuation as rc
-    observed = {}
+    observed = []
 
     def fake_execute(connection, statement, params):
-        observed[statement.split('FROM', 1)[1].split()[0]] = params
-        if 'agent_domain_call_evidence' in statement:
+        observed.append((statement, params))
+        if 'SELECT sequence FROM agent_domain_call_evidence' in statement:
+            return [{'sequence': 1}]
+        if 'FROM agent_domain_call_evidence' in statement:
             return [{'sequence': 1, 'task_id': 'task_x', 'action': 'byq_ml_strategy_create',
                      'idempotency_key': 'idem-1', 'request_sha256': 'a' * 64, 'input_sha256': 'b' * 64}]
         return [{'task_id': 'task_x', 'action': 'byq_ml_strategy_create', 'idempotency_key': 'idem-1',
                  'request_sha256': 'a' * 64, 'input_sha256': 'b' * 64, 'status': 'succeeded'}]
 
     monkeypatch.setattr(rc, 'execute', fake_execute)
-    facts = rc.ResearchContinuationMixin._recovery_policy_facts(None, lost_run_id=LOST, task_id='task_x')
-    assert observed['agent_domain_call_evidence'] == {'root': LOST}
+    facts = rc.ResearchContinuationMixin._recovery_policy_facts(None, lost_run_id=LOST,
+        task_id='task_x', session_id='session-a', owner='alice', workspace='workspace-a')
+    # The closure is session-scoped; the replay set is root+task scoped.
+    assert observed[0][1] == {'owner': 'alice', 'workspace': 'workspace-a', 'session': 'session-a'}
+    assert observed[1][1] == {'owner': 'alice', 'workspace': 'workspace-a', 'session': 'session-a',
+                              'root': LOST, 'task': 'task_x'}
     assert facts['read_only'] is False
     assert facts['conflict'] is False and facts['unresolved'] is False
     assert facts['occurred'] == facts['replayed']
@@ -224,3 +230,124 @@ def test_cumulative_exact_charge_is_not_double_deducted():
     fresh = {'status': 'reserved', 'charged_tokens': None, 'run_id': None,
              'recovery_attempts': []}
     assert ResearchContinuationMixin._recovery_cumulative_charge(fresh) == 0
+
+
+ORIG_GENERATION = 'generation-orig'
+
+
+def _seed_root(store, task, *, root, sequence, key, action='byq_strategy_validate',
+               agent_run_id=None):
+    """Seed real session-global domain-call evidence for one root/task."""
+
+    from app.agent_research import AgentResearchStore
+    from tests.test_agent_run_lifecycle import apply, start
+    from packages.contracts.domain_call_admission import request_evidence
+
+    ctx = trusted_agent_context('budget-user', actor='byq-product-agent-budget-session',
+        session_id='budget-session', trace_id='budget-trace', dsh_run_id=ORIG_GENERATION)
+    agents = AgentResearchStore()
+    try:
+        if agent_run_id is None:
+            apply(agents, ctx, root, key=key)
+            agent_run_id = start(agents, ctx, key)['run_id']
+        conversation_id = store.get_task(task)['conversation_id']
+        payload = {'task_id': task, 'agent_run_id': agent_run_id, 'idempotency_key': key,
+                   'strategy': {'code': 'synthetic'}}
+        evidence = {'schema_version': 'domain-call-observed.v1', 'sequence': sequence,
+                    'root_run_id': root, 'generation': ORIG_GENERATION,
+                    'call_id': f'orig-{sequence}',
+                    **request_evidence(action, payload, trace_id='budget-trace')}
+        agents.consume_domain_call_evidence(evidence,
+            trusted_owner='budget-user', trusted_workspace=ctx['x-byq-workspace-id'],
+            trusted_session_id='budget-session', trusted_trace_id='budget-trace',
+            conversation_id=conversation_id)
+    finally:
+        agents.close()
+    return agent_run_id, payload
+
+
+def test_recovery_claim_path_rejects_new_key_and_new_key_action():
+    """Real claim path: a bound recovery root may only replay the exact original."""
+
+    from app.agent_research import AgentResearchStore
+
+    store, task, context, payload = setup_permission()
+    agents = AgentResearchStore()
+    try:
+        original_run, original_payload = _seed_root(store, task, root=LOST, sequence=1, key='orig-key')
+        reservation_id = _reserve_and_accept(store, task, context, payload, run=LOST)
+        outcome = store.claim_continuation_dispatch(task, reservation_id, trusted_context=context,
+            recovery=_recovery(run=LOST))
+        assert outcome['dispatch'] is True, outcome
+        attempt_key = outcome['recovery_attempt']['attempt_key']
+        recovery_root = 'e' * 32
+        store.record_continuation_receipt(task, trusted_context=context, reservation_id=reservation_id,
+            status='accepted', run_id=recovery_root, attempt_key=attempt_key,
+            target_executor_epoch=2, target_generation='generation-target', charged_tokens=1_048_584)
+
+        def claim(action, data):
+            return agents.claim_domain_call(action, data, trusted_owner='budget-user',
+                trusted_workspace=context['workspace_id'], trusted_session_id='budget-session',
+                trusted_trace_id='budget-trace', trusted_generation='generation-recovery',
+                trusted_root=recovery_root)
+
+        # A new idempotency key for the same safe action is rejected.
+        assert claim('byq_strategy_validate',
+            {**original_payload, 'idempotency_key': 'brand-new-key'}) == {
+                'state': 'blocked', 'reason': 'recovery_envelope_violation'}
+        # A may_produce_new_key action is rejected.
+        assert claim('byq_strategy_version_create', {
+            'task_id': task, 'agent_run_id': original_run, 'idempotency_key': 'orig-key',
+            'draft_artifact_id': 'draft_synthetic'}) == {
+                'state': 'blocked', 'reason': 'recovery_envelope_violation'}
+        # A different task is rejected.
+        other = store.create_task({'owner_principal': 'budget-user', 'title': 'Synthetic other',
+            'objective': 'x', 'trace_id': 'budget-trace', 'idempotency_key': 'other-task'},
+            trusted_context=context)['task_id']
+        assert claim('byq_strategy_validate', {**original_payload, 'task_id': other}) == {
+            'state': 'blocked', 'reason': 'recovery_envelope_violation'}
+        # The exact original five-tuple passes the envelope gate; it then requires
+        # its own root evidence through the existing seam.
+        allowed = claim('byq_strategy_validate', original_payload)
+        assert allowed.get('reason') != 'recovery_envelope_violation'
+    finally:
+        agents.close()
+        store.close()
+
+
+def test_recovery_after_a_prior_root_sequence_is_not_falsely_blocked():
+    """Session-global sequence N>1 for a legal non-first root is not a gap."""
+
+    store, task, context, payload = setup_permission()
+    try:
+        _seed_root(store, task, root='a' * 32, sequence=1, key='orig-a')
+        _seed_root(store, task, root=LOST, sequence=2, key='orig-b')
+        reservation_id = _reserve_and_accept(store, task, context, payload, run=LOST)
+        outcome = store.claim_continuation_dispatch(task, reservation_id, trusted_context=context,
+            recovery=_recovery(run=LOST))
+        assert outcome['dispatch'] is True, outcome
+    finally:
+        store.close()
+
+
+def test_recovery_policy_facts_excludes_a_foreign_task_call():
+    """Another task's call in the same root/session is not replay authority."""
+
+    from app.research_continuation import ResearchContinuationMixin
+
+    store, task, context, payload = setup_permission()
+    try:
+        run, _ = _seed_root(store, task, root=LOST, sequence=1, key='orig-key')
+        other = store.create_task({'owner_principal': 'budget-user', 'title': 'Synthetic other',
+            'objective': 'x', 'trace_id': 'budget-trace', 'idempotency_key': 'other-task'},
+            trusted_context=context)['task_id']
+        _seed_root(store, other, root=LOST, sequence=2, key='foreign-key', agent_run_id=run)
+        with store._transaction() as connection:
+            facts = ResearchContinuationMixin._recovery_policy_facts(connection, lost_run_id=LOST,
+                task_id=task, session_id='budget-session', owner='budget-user',
+                workspace=context['workspace_id'])
+        assert facts['gap'] is False
+        assert [call['task_id'] for call in facts['occurred']] == [task]
+        assert all(call['idempotency_key'] != 'foreign-key' for call in facts['occurred'])
+    finally:
+        store.close()

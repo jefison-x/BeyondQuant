@@ -571,30 +571,39 @@ class ResearchContinuationMixin:
         return total
 
     @staticmethod
-    def _recovery_policy_facts(connection, *, lost_run_id: str, task_id: str) -> dict | None:
+    def _recovery_policy_facts(connection, *, lost_run_id: str, task_id: str, session_id: str,
+                               owner: str, workspace: str) -> dict | None:
         """Derive step-safety/budget facts from BYQ's own authoritative evidence.
 
-        Nothing here is caller-provided. The occurred-call set is the persisted
-        session-global ``agent_domain_call_evidence`` for the exact lost root; the
-        reconciliation is the persisted ``agent_domain_call_claims``. A gap or an
-        unresolved claim is returned as a non-eligible classification rather than
-        being treated as permission.
+        Nothing here is caller-provided. Session-global continuity is judged over
+        the FULL session/trace closure (``agent_domain_call_evidence`` is a
+        session-level primary sequence, so a legal non-first root starts at N>1).
+        The replay envelope is then scoped to the CURRENT task and the exact lost
+        root only, so another root's or task's calls can never become this
+        reservation's replay authority.
         """
 
+        closure = execute(connection, """SELECT sequence FROM agent_domain_call_evidence
+            WHERE owner_principal=:owner AND workspace_id=:workspace AND session_id=:session
+            ORDER BY sequence""", {'owner': owner, 'workspace': workspace, 'session': session_id})
+        sequences = [row['sequence'] for row in closure]
+        if sequences != list(range(1, len(sequences) + 1)):
+            return {'gap': True, 'occurred': [], 'replayed': [], 'read_only': False,
+                    'unresolved': False, 'conflict': False}
         evidence = execute(connection, """SELECT sequence, task_id, action, idempotency_key,
                 request_sha256, input_sha256 FROM agent_domain_call_evidence
-            WHERE root_run_id=:root ORDER BY sequence""", {'root': lost_run_id})
+            WHERE owner_principal=:owner AND workspace_id=:workspace AND session_id=:session
+              AND root_run_id=:root AND task_id=:task ORDER BY sequence""",
+            {'owner': owner, 'workspace': workspace, 'session': session_id,
+             'root': lost_run_id, 'task': task_id})
         occurred = [{'action': row['action'], 'task_id': row['task_id'],
                      'idempotency_key': row['idempotency_key'],
                      'request_sha256': row['request_sha256'], 'input_sha256': row['input_sha256']}
                     for row in evidence]
-        sequences = [row['sequence'] for row in evidence]
-        if sequences != list(range(1, len(sequences) + 1)):
-            return {'gap': True, 'occurred': occurred, 'replayed': [], 'read_only': False,
-                    'unresolved': False, 'conflict': False}
         claims = execute(connection, """SELECT task_id, action, idempotency_key, request_sha256,
-                input_sha256, status FROM agent_domain_call_claims WHERE root_run_id=:root""",
-            {'root': lost_run_id})
+                input_sha256, status FROM agent_domain_call_claims
+            WHERE root_run_id=:root AND task_id=:task""",
+            {'root': lost_run_id, 'task': task_id})
         by_key = {(row['action'], row['task_id'], row['idempotency_key']): row for row in evidence}
         unresolved = False
         conflict = False
@@ -634,7 +643,9 @@ class ResearchContinuationMixin:
         authoritative_runs.update(a.get('run_id') for a in (row.get('recovery_attempts') or []))
         if lost not in authoritative_runs:
             return {'status': 'blocked', 'reason': 'lost_run_not_authoritative'}
-        facts = self._recovery_policy_facts(connection, lost_run_id=lost, task_id=task['task_id'])
+        facts = self._recovery_policy_facts(connection, lost_run_id=lost, task_id=task['task_id'],
+            session_id=conversation['runtime_session_id'], owner=task['owner_principal'],
+            workspace=task['workspace_id'])
         if facts is None or facts['gap']:
             return {'status': 'paused', 'reason': 'session_global_evidence_gap'}
         if facts['unresolved']:
@@ -675,6 +686,14 @@ class ResearchContinuationMixin:
                 snapshot_digest=recovery['snapshot_digest'])
         except recovery_contract.RecoveryRejected as exc:
             return {'status': 'blocked', 'reason': exc.code}
+        if created:
+            # Persist the runtime-enforceable envelope on the in-row attempt (NOT
+            # on the closed carrier): the claim path reads it to allow ONLY exact
+            # original five-tuple reuse for this recovery target run.
+            attempt['envelope_mode'] = envelope['mode']
+            attempt['allowed_calls'] = [
+                [call['action'], call['task_id'], call['idempotency_key'],
+                 call['request_sha256'], call['input_sha256']] for call in facts['replayed']]
         updated = {**row, 'recovery_attempts': [*attempts, attempt] if created else attempts,
                    'status': 'reserved', 'next_attempt_at': now.isoformat()}
         ledger = [updated if r is row else r for r in ledger]
