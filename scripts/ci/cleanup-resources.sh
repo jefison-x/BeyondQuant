@@ -40,6 +40,12 @@ RUNTIME_CANDIDATE_VOL="byq-ci-runtime-candidate-data-$SCOPE"
 RUNTIME_BASELINE_BENCH_VOL="byq-ci-runtime-baseline-bench-$SCOPE"
 RUNTIME_CANDIDATE_BENCH_VOL="byq-ci-runtime-candidate-bench-$SCOPE"
 
+# Run/attempt-scoped manifest of the exact immutable image ids the build captured.
+# The same path is derived from BYQ_CI_SCOPE by both local-ci.sh (writer) and this
+# independent always-cleanup process, so cleanup can remove a dangling image whose
+# mutable run-scoped tag is already gone. It is never shared across scopes.
+MANIFEST="$REPO_ROOT/.ci-artifacts/$SCOPE/image-ids.env"
+
 export COMPOSE_PROJECT_NAME="$PROJECT"
 export COMPOSE_FILE="$REPO_ROOT/compose.yml"
 export COMPOSE_DISABLE_ENV_FILE=1 COMPOSE_ENV_FILES=/dev/null COMPOSE_PROFILES=""
@@ -62,10 +68,82 @@ volume_resources=("$BYQ_POSTGRES_VOLUME_NAME" "$BYQ_DOMAIN_VOLUME_NAME" "$BYQ_ML
   "$RUNTIME_BASELINE_BENCH_VOL" "$RUNTIME_CANDIDATE_BENCH_VOL")
 [ "$KEEP_POSTGRES" -eq 1 ] || volume_resources+=("$PG_VOL")
 
+manifest_ids=()
+manifest_state="missing"   # missing | valid | invalid
+retained_shared_ids=()
+
 if ! docker info >/dev/null 2>&1; then
   echo "CI cleanup verification failed: Docker daemon is unavailable" >&2
   exit 1
 fi
+
+# Load and strictly validate the manifest. A missing manifest is backward
+# compatible (tag-only cleanup). Invalid content fails closed: no value from the
+# file is ever handed to `docker image rm`.
+load_manifest_ids() {
+  manifest_ids=()
+  manifest_state="missing"
+  [ -f "$MANIFEST" ] || return 0
+  manifest_state="valid"
+  local line service image_id
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -z "$line" ] && continue
+    case "$line" in
+      *=*) ;;
+      *)
+        echo "CI cleanup manifest invalid: missing '=' in line: $line" >&2
+        manifest_ids=(); manifest_state="invalid"; return 1 ;;
+    esac
+    service="${line%%=*}"; image_id="${line#*=}"
+    case "$service" in
+      ''|*[!a-z0-9-]*)
+        echo "CI cleanup manifest invalid: bad service '$service'" >&2
+        manifest_ids=(); manifest_state="invalid"; return 1 ;;
+    esac
+    if [[ ! "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+      echo "CI cleanup manifest invalid: not an immutable image id: $image_id" >&2
+      manifest_ids=(); manifest_state="invalid"; return 1
+    fi
+    manifest_ids+=("$image_id")
+  done < "$MANIFEST"
+  return 0
+}
+
+# 0 when the image exists and carries at least one repo tag NOT owned by this
+# scope. Such an image is shared with another scope and must never be deleted.
+# Ownership is an exact `$PROJECT-<service>` match, never a prefix, so a scope
+# name that is a prefix of another cannot misclassify a foreign tag as ours.
+image_has_foreign_tag() {
+  local image_id="$1" tag service ours
+  docker image inspect "$image_id" >/dev/null 2>&1 || return 1
+  while IFS= read -r tag; do
+    [ -z "$tag" ] && continue
+    ours=0
+    for service in "${image_resources[@]}"; do
+      if [ "$tag" = "$PROJECT-$service" ]; then ours=1; break; fi
+    done
+    [ "$ours" -eq 1 ] || return 0
+  done < <(docker image inspect "$image_id" --format '{{range .RepoTags}}{{println .}}{{end}}' 2>/dev/null || true)
+  return 1
+}
+
+# Remove the exact manifest image ids: only images that are dangling (tag already
+# lost) or referenced exclusively by this scope's tags. Never a global prune and
+# never an image another scope still references.
+remove_manifest_images() {
+  [ "$manifest_state" = "valid" ] || return 0
+  local image_id seen=""
+  for image_id in "${manifest_ids[@]}"; do
+    [ -z "$image_id" ] && continue
+    case " $seen " in *" $image_id "*) continue ;; esac
+    seen="$seen $image_id"
+    docker image inspect "$image_id" >/dev/null 2>&1 || continue
+    if image_has_foreign_tag "$image_id"; then
+      continue
+    fi
+    docker image rm "$image_id" >/dev/null 2>&1 || true
+  done
+}
 
 cleanup_exact_resources() {
   if [ "$KEEP_POSTGRES" -eq 0 ]; then
@@ -87,6 +165,8 @@ cleanup_exact_resources() {
   for service in "${image_resources[@]}"; do
     docker image rm "$PROJECT-$service" >/dev/null 2>&1 || true
   done
+  # With the exact tags gone, remove the exact captured ids (dangling residue).
+  remove_manifest_images
   docker volume rm "$RUNTIME_CANDIDATE_VOL" "$RUNTIME_BASELINE_BENCH_VOL" \
     "$RUNTIME_CANDIDATE_BENCH_VOL" >/dev/null 2>&1 || true
   docker rm -f "$BACKEND" >/dev/null 2>&1 || true
@@ -98,10 +178,17 @@ cleanup_exact_resources() {
 }
 
 scoped_resources_exist() {
-  local service resource
+  local service resource image_id
   for service in "${image_resources[@]}"; do
     docker image inspect "$PROJECT-$service" >/dev/null 2>&1 && return 0
   done
+  if [ "$manifest_state" = "valid" ]; then
+    for image_id in "${manifest_ids[@]}"; do
+      [ -z "$image_id" ] && continue
+      docker image inspect "$image_id" >/dev/null 2>&1 || continue
+      image_has_foreign_tag "$image_id" || return 0
+    done
+  fi
   [ "$KEEP_POSTGRES" -eq 1 ] || [ -z "$(docker ps -aq --filter "label=byq.ci.scope=$SCOPE")" ] || return 0
   [ -z "$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT")" ] || return 0
   for resource in "${network_resources[@]}"; do
@@ -112,6 +199,8 @@ scoped_resources_exist() {
   done
   return 1
 }
+
+load_manifest_ids || true   # invalid content is recorded, not fatal here
 
 if [ "$VERIFY_ONLY" -eq 0 ]; then
   max_attempts="${BYQ_CI_CLEANUP_MAX_ATTEMPTS:-12}"
@@ -140,12 +229,28 @@ if [ "$VERIFY_ONLY" -eq 0 ]; then
 fi
 
 failures=0
+if [ "$manifest_state" = "invalid" ]; then
+  echo "CI cleanup verification failed: invalid image-id manifest: $MANIFEST" >&2
+  failures=$((failures + 1))
+fi
 for service in "${image_resources[@]}"; do
   if docker image inspect "$PROJECT-$service" >/dev/null 2>&1; then
     echo "CI cleanup verification failed: image tag remains: $PROJECT-$service" >&2
     failures=$((failures + 1))
   fi
 done
+if [ "$manifest_state" = "valid" ]; then
+  for image_id in "${manifest_ids[@]}"; do
+    [ -z "$image_id" ] && continue
+    docker image inspect "$image_id" >/dev/null 2>&1 || continue
+    if image_has_foreign_tag "$image_id"; then
+      retained_shared_ids+=("$image_id")
+      continue
+    fi
+    echo "CI cleanup verification failed: manifest image id remains: $image_id" >&2
+    failures=$((failures + 1))
+  done
+fi
 if [ "$KEEP_POSTGRES" -eq 0 ] && [ -n "$(docker ps -aq --filter "label=byq.ci.scope=$SCOPE")" ]; then
   echo "CI cleanup verification failed: labeled containers remain for $SCOPE" >&2
   failures=$((failures + 1))
@@ -168,6 +273,18 @@ for resource in "${volume_resources[@]}"; do
 done
 
 if [ "$failures" -gt 0 ]; then
+  if [ "$manifest_state" = "valid" ]; then
+    echo "CI cleanup retained manifest for diagnostics: $MANIFEST" >&2
+  fi
   exit 1
+fi
+
+# Exact-scope residue is gone; retire the manifest so it cannot be replayed.
+if [ "$manifest_state" = "valid" ]; then
+  rm -f "$MANIFEST"
+fi
+if [ "${#retained_shared_ids[@]}" -gt 0 ]; then
+  printf 'CI cleanup retained shared image id(s) owned by another scope: %s\n' \
+    "${retained_shared_ids[*]}"
 fi
 [ "$QUIET" -eq 1 ] || echo "CI cleanup verified: $SCOPE"

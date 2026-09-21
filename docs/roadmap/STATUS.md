@@ -30,7 +30,7 @@
 <!-- byq:v090-dsh-provider-qualification=blocked-external -->
 <!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->
 <!-- byq:phase-100-p100-c=paused-not-delivery -->
-<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.187 -->
+<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.188 -->
 
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|
@@ -438,6 +438,20 @@ D15-G 保持 **`NO_GO`** 且**未重跑**，**`R3_RESUME = NO`**，0.9 未关闭
   `post-u8.186 → post-u8.187`（`scripts/`、`tests/` 属 build inputs，仅重建身份；历史 manifest 与
   全部证据保留）。**未改历史 verdict、未改生产 selector/compose/deployment、未 deploy/tag/release、
   未运行 Full CI、未触碰 `codex/adr-gate-rationalization`。**
+- **追加：cleanup image-id 收口（2026-09-21，同 PR）**：维护者指出运行侧 immutable-id 修复未闭合其
+  启用的清理场景——tag 丢失而 ID 仍在时，旧 cleanup 只按 tag 校验，会留下 dangling image 却误报成功。
+  现 `local-ci.sh` 在构建后把本次实际捕获的 `service=sha256:<64hex>` 列表原子写入按
+  `BYQ_CI_SCOPE` 严格隔离的 manifest（`.ci-artifacts/$BYQ_CI_SCOPE/image-ids.env`）；独立
+  `always-cleanup` 进程读取同一路径，**校验后才**对精确 ID 执行 `docker image rm`（仅当该 ID 无其他
+  scope 的 tag），清理后**同时验证 tag 与精确 ID 均消失**。缺失 manifest 保持向后兼容；内容非法
+  一律 fail-closed 且**绝不**把文件内容交给 `docker image rm`。**无 global prune、不删除其他 scope/
+  共享镜像**；identity/backend/schema/cleanup gate 均未放宽。行为测试
+  `tests/test_ci_cleanup_image_ids.py`（strict fake docker：tag 丢失 ID 仍在被移除、tag+ID 双移除、
+  shared foreign-tag 不删除、foreign-scope manifest 不读取、非法/畸形 manifest fail-closed、缺失
+  manifest 向后兼容、重复 ID 去重）。构建身份推进
+  `post-u8.187 → post-u8.188`（`scripts/`、`tests/` 属 build inputs，仅重建身份；历史 manifest 与
+  全部证据保留）。**未改历史 verdict、未改生产 selector/compose/deployment、未 deploy/tag/release、
+  未运行 Full CI、未取消或重跑当前 CI、未触碰 PR #349。**
 
 ## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19，历史叙述）
 

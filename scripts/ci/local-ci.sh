@@ -366,8 +366,15 @@ ci_image_ref() {
   fi
 }
 
+# Run/attempt-scoped manifest of the exact captured image ids, consumed by the
+# independent always-cleanup process so a dangling image (tag lost but id still
+# present) is removed and verified. Path is strictly isolated by BYQ_CI_SCOPE.
+ci_image_manifest_path() {
+  printf '%s' "$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE/image-ids.env"
+}
+
 build_test_images() {
-  local services=() service image_id
+  local services=() service image_id manifest tmp
   python3 scripts/dsh/release.py check --historical-inputs || return 1
   python3 scripts/dsh/promotion.py check || return 1
   python3 -c 'from scripts.dsh import build_revision as b; [b.check(b.selected_build_id(r)) for r in sorted(b.RELEASES)]' || return 1
@@ -395,6 +402,14 @@ build_test_images() {
     CI_IMAGE_IDS["$service"]="$image_id"
     printf '%s\n' "$image_id"
   done
+  manifest="$(ci_image_manifest_path)"
+  tmp="$manifest.tmp.$$"
+  mkdir -p "$(dirname "$manifest")"
+  : > "$tmp"
+  for service in "${services[@]}"; do
+    printf '%s=%s\n' "$service" "${CI_IMAGE_IDS[$service]}" >> "$tmp"
+  done
+  mv -f "$tmp" "$manifest"
 }
 resolve_ci_compose_urls() {
   local frontend_address gateway_address

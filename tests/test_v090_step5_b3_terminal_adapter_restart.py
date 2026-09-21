@@ -39,7 +39,7 @@ VERDICT = EVIDENCE / "verdict.v1.json"
 CONTROLS = EVIDENCE / "negative-controls.v1.json"
 SCOPE = EVIDENCE / "scope-probe.v1.json"
 PROVENANCE = EVIDENCE / "provenance.v1.json"
-CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.187"
+CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.188"
 
 B3 = "terminal-adapter-restart"
 B3_OWNER = "d15-5-candidate-attachment-layer"

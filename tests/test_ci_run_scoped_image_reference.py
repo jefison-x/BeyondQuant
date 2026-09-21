@@ -6,8 +6,11 @@ build and a later step, `docker run <tag>` would attempt a registry pull and fai
 with a confusing pull-access error. The lane now captures the immutable image id
 immediately after build and uses `--pull=never` for backend/mcp run-scoped runs,
 so a missing image fails closed instead of resolving a stale image from a
-registry. These assertions lock that behaviour in and prove the cleanup and
-identity gates are unchanged (not relaxed).
+registry. The same captured ids are persisted to a run/attempt-scoped manifest that
+the independent always-cleanup process consumes, so a dangling image (tag lost but
+id present) is removed and verified too. The identity gate is unchanged (not
+relaxed); the cleanup image-id behavior is covered end to end by
+``tests/test_ci_cleanup_image_ids.py``.
 
 Runs under ``unittest``.
 """
@@ -65,8 +68,19 @@ class RunScopedImageReferenceTests(unittest.TestCase):
             "--format '{{.Id}}')\" || return 1",
             self.script)
 
-    def test_cleanup_gate_is_unchanged_and_still_removes_run_scoped_tags(self):
+    def test_captured_ids_are_persisted_to_a_run_scoped_manifest(self):
+        self.assertIn("ci_image_manifest_path()", self.script)
+        self.assertIn(
+            'printf \'%s\' "$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE/image-ids.env"',
+            self.script)
+        self.assertIn('printf \'%s=%s\\n\' "$service" "${CI_IMAGE_IDS[$service]}"', self.script)
+        # The cleanup gate consumes the same scope-scoped manifest and removes the
+        # exact captured ids (behavior is proven in test_ci_cleanup_image_ids.py).
+        self.assertIn(
+            'MANIFEST="$REPO_ROOT/.ci-artifacts/$SCOPE/image-ids.env"', self.cleanup)
         self.assertIn('docker image rm "$PROJECT-$service"', self.cleanup)
+        self.assertIn('docker image rm "$image_id"', self.cleanup)
+        self.assertIn("image_has_foreign_tag", self.cleanup)
         self.assertIn("CI cleanup verification failed: image tag remains", self.cleanup)
 
     def test_helper_returns_captured_id_and_only_falls_back_to_run_scoped_tag(self):
