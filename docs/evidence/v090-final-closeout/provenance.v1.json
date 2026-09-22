@@ -2,13 +2,13 @@
   "artifacts": [
     {
       "id": "status_md",
-      "introduced_by": "74e4cd8d6c56b24631ad5cf2e07f42ace06f19cb",
+      "introduced_by": "8021838761d35430bca2c18ac7a9a176bc867477",
       "introduced_date": "2026-09-22",
       "kind": "text",
       "layer": "authority",
       "modified_in_closeout_commit": true,
       "path": "docs/roadmap/STATUS.md",
-      "sha256": "sha256:3571d8aaad45a022adee8af23158e3f019f26c14a44ae9f28646ef28e1eb1231",
+      "sha256": "sha256:21cd117b725b073ebe2bc6aef096b43a0d4fdcbb085726c59c667116f3df906d",
       "stage": "repository-state"
     },
     {

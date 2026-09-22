@@ -11,6 +11,12 @@
 > 2026-09-12 修订：下文根900秒、child600秒及后台每回合900秒默认硬上限已由
 > [ADR-0072](ADR-0072-long-running-research-checkpoints.md)具名替代；旧许可和历史验收事实保留。
 
+> 2026-09-22 修订：[ADR-0085](ADR-0085-deterministic-research-continuation.md) 已具名替代
+> §4 中“用自由文本完整模型回合重新发现并执行下一动作”的实现方式。任务绑定许可、owner/workspace/
+> conversation/task/artifact lineage、逐动作审批、预算、取消和 at-most-once 约束继续有效；BYQ 现在
+> 必须先用领域执行计划/reducer 推导精确 next action，确定性动作不启动模型，只有研究判断阶段才使用
+> 最小有界 DSH 回合。历史验收事实不改写。
+
 ## 1. 恢复与失败事实
 
 Gateway 从持久公开消息和规范化 WorkflowTrace 提供 bounded completed history、最近未回答
@@ -37,6 +43,10 @@ BYQ在安全验证与授权后，先原子保存owner/workspace-scoped提交iden
 不新建通用队列/Agent harness；扩展已有领域任务、lease和通知设施。
 
 ## 4. 有限的后台续接授权
+
+本节保留授权范围和安全上限；其当前执行模型由 ADR-0085 收窄。`8次后台模型回合` 是许可/安全
+硬上限，不是编排目标，也不得被用作“尝试到有进展”为止的循环。每个异步事件先进入 BYQ 领域
+执行计划；等待和确定性转换不消耗模型回合，无持久进展的研究判断按 ADR-0085 立即停止。
 
 用户明确要求完成复合研究任务时，BYQ持久化任务绑定的续接许可；许可只允许恢复原目标、查询结果，
 以及执行经现有BYQ策略另行判定已授权的下一动作。单个策略审批不授权所有训练/预测/回测。

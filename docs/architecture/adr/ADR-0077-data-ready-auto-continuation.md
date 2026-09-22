@@ -6,6 +6,12 @@
 - Relates: ADR-0045（数据需求与通知边界）、ADR-0051（审批续接）、ADR-0062（U8 可靠性边界）、ADR-0065（任务续接预算准入）、ADR-0072（长研究检查点）
 - Supersedes: 无。仅对 ADR-0045 §3「默认下一回合投递」增加一个具名、有界的例外，已于 2026-09-19 获维护者接受。
 
+> 2026-09-22 修订：[ADR-0085](ADR-0085-deterministic-research-continuation.md) 已替代本 ADR 中
+> “grantless data-ready 事件启动通用完整模型回合”的实现方式。`ready-v1:` 事件身份、任务绑定、账本、
+> 去重、资格、预算和逐动作审批边界保留；事件现在只允许 BYQ reducer 做确定性推进和用户通知。
+> 需要研究判断的后续模型回合必须有显式 task/plan continuation grant，并使用最小阶段接口。
+> post-u8.142/.143 记录保留为历史实现与事故成因，不再是当前目标行为。
+
 ## Context
 
 生产观察：小巴创建回测任务后，信号生产 job 进入 `waiting_for_data`，模型回合结束；数据到位后

@@ -1943,3 +1943,69 @@ across row order and the content-addressed identity is unchanged for identical l
 oversized frames and rows fail closed with the stable `bars exceeds ...`/frame-shape errors. The 32 MiB
 caps, sandbox resource envelope, MCP schema, Gateway and frontend are unchanged. No Accepted ADR text is
 changed.
+
+## 0.9.1 deterministic research continuation — ADR-0085 P0–P4（maintenance, 2026-09-22）
+
+维护者于 2026-09-22 明确接受 ADR-0085 的完整决定，并授权按 P0→P4 **每步独立
+worktree/branch/PR** 实施，随后明确把整组整改定为 **0.9.1 稳定性版本**。该计划不推进 Product Phase；
+0.10 与 Phase 100 恢复继续冻结。每一步只在前一步合并后开始，禁止把 P0–P4 合并为一个大 PR，
+禁止以扩大模型调用/token 上限替代计划状态机。
+
+真实事故基线与根因见 `docs/evidence/harness-continuation-audit-20260922/`。目标边界是：BYQ
+拥有量化领域 `research-execution-plan.v1`、精确 next action、审批绑定、业务幂等和事件 reducer；
+DSH 继续拥有通用 Agent Loop、session、context、compaction 和 generic guards。不得 fork DSH、
+建立第二个通用 harness/session store，或让 Product Agent 读取完整执行快照。
+
+### P0 — 止损与事实一致性（当前唯一可执行任务）
+
+范围严格限定为：
+
+1. 将 Product Agent MCP `byq_signal_snapshot_get` 改为最大 64 KiB 的安全摘要投影；完整
+   `bars_frame`、逐日 benchmark、逐标 index、完整 signals/corporate actions 继续只供可信
+   Backend/Worker 使用。Backend 内部回测合同与不可变 snapshot identity 不变。
+2. data-ready 事件/意图直接携带由 Backend 确定推导的 `backtest_task_id`、`phase`、枚举
+   `next_action`、精确 resource references、approval requirement 和 expected postcondition；模型不得
+   重建 create 参数或幂等键。
+3. 关闭旧的 grantless “通用完整模型回合” data-ready 路径。无显式 task/plan grant 时只允许
+   reducer 做确定性状态推进与用户通知；不得承诺自动完成后续研究判断。
+4. continuation budget/guard 以 `needs_attention` 终止时，原子更新 ResearchTask 的结构化 progress/
+   blocker 和 Product 投影；保留 conversation active 与 task failure 的区别。
+5. Runtime prompt 正常、失败、中断或预算终态时立即关闭对应 RuntimeGeneration ledger，写入准确
+   state/`ended_at`，且不得让迟到 generation 覆盖新 generation。
+6. UI/运维投影区分 `reserved_token_ceiling` 与可证明的 actual input/cache/output usage；修正最小
+   额度与“自动完成”说明。不得把保守预留 8,454,144 token 报告为实际消费。
+
+P0 验收必须包含：MCP 响应大小/禁止字段合同；`signaljob_<hex>`→`backtesttask_<hex>` 精确身份；
+grantless 零模型确定性推进/通知；budget exhaustion 后 task/session/generation/product state 一致；
+Gateway/Backend/Adapter 重启与迟到终态负例；现有普通前台对话/Backtest Worker 不回归。P0 只提交
+Draft PR 和相应证据，不 deploy、不恢复当前失败的生产研究任务、不启动 P1。
+
+### P1 — `research-execution-plan.v1`
+
+在 P0 合并后，新增框架无关 schema、持久计划、task/plan version CAS、合法 stage/action 转换、
+精确 prerequisite/reference/approval/idempotency/expected-postcondition 和最小 Product 投影。首批只覆盖
+普通策略三轮回测，不扩展 ML、实盘或 0.10 数据能力。无法唯一迁移的旧任务进入 needs_attention，
+不得猜测。
+
+### P2 — 审批与异步事件统一
+
+在 P1 合并后，把计划型 approval、data-ready、backtest-completed、user-resume 和 recovery 统一到
+一个 task/plan/event ledger。同一 task 最多一个 admitted continuation。批准只执行绑定 plan version
+的精确命令；兼容审批路径不得推进计划型任务。
+
+### P3 — 最小研究判断回合
+
+在 P2 合并后，为真正需要模型判断的 stage 提供有界计划投影、有限回测分析摘要、最小只读工具和
+proposal commit 命令。默认每研究阶段最多两次模型调用；第一次检查无 durable progress 即
+`needs_attention/no_durable_progress`，禁止通过子代理或重复读取耗尽八次调用。
+
+### P4 — 真实闭环与故障矩阵
+
+在 P3 合并后，使用真实 Product API + DSH 完成：复合任务 → 对话内 continuation grant → 策略审批
+→ 数据就绪 → 回测执行审批 → 三轮完成/分析/修正 → 选择最优 → 模拟账户审批/创建 → task
+completed。每个异步交接点注入 Gateway/Backend/Adapter/Worker 重启；断言无重复对象、精确预算、
+任务/会话/generation/回执状态一致、模型不可见原始行情/完整执行快照。最后才允许隔离生产 canary；
+恢复“后台自动完成复合研究”的产品声明和任何部署仍需独立证据与授权。
+
+P4 完成只表示 0.9.1 开发与稳定性验收候选就绪；0.9.1 的版本号写入、正式发布清单、生产部署、
+tag/release 与用户验收窗口分别执行，不由本计划自动授权。
