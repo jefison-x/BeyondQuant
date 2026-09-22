@@ -107,6 +107,12 @@ def settle_needs_attention(store, fixture, intent):
 
 
 def test_ready_signal_job_enqueues_exactly_one_data_ready_continuation(monkeypatch, tmp_path):
+    """ADR-0085 P0: a grantless data-ready event notifies deterministically.
+
+    Without an explicit task/plan grant the reducer must NOT start a generic
+    model turn. It advances the durable progress and records an at-most-once
+    notification carrying the exact Backend-derived next action.
+    """
     fixture = setup_ready(monkeypatch, tmp_path)
     store, task, conversation, context = (fixture['store'], fixture['payload']['task_id'],
         fixture['conversation'], fixture['context'])
@@ -114,14 +120,19 @@ def test_ready_signal_job_enqueues_exactly_one_data_ready_continuation(monkeypat
         assert store.claim_conversation_continuation(conversation, trusted_context=context, admit=False) == {
             'status': 'eligible', 'task_id': task}
         intent = store.claim_conversation_continuation(conversation, trusted_context=context)
-        assert intent['status'] == 'intent'
+        assert intent['status'] == 'notified'
         receipt = intent['receipt']
-        assert receipt['grant_kind'] == 'data_ready'
+        assert receipt['grant_kind'] == 'data_ready_notification'
         assert receipt['event_key'].startswith('ready-v1:')
-        assert fixture['job_id'] in receipt['instruction']
-        assert fixture['artifact_id'] in receipt['instruction']
-        assert intent['may_dispatch'] is True
-        assert intent['reservation']['task_id'] == task
+        assert receipt['token_limit'] == 0
+        # No model grant, no dispatchable reservation and no instruction.
+        assert receipt['instruction'] is None
+        assert 'reservation' not in intent
+        assert receipt['executable']['backtest_task_id'].startswith('backtesttask_')
+        assert receipt['executable']['next_action'] in {'create', 'execute', 'wait', 'review_result'}
+        assert intent['executable']['references']['signal_producer_job_id'] == fixture['job_id']
+        assert intent['executable']['references']['signal_snapshot_artifact_id'] == fixture['artifact_id']
+        assert receipt['outcome'] == 'notified'
         assert len(continuation_budget(store, task)) == 1
     finally:
         fixture['store'].close()
@@ -130,6 +141,7 @@ def test_ready_signal_job_enqueues_exactly_one_data_ready_continuation(monkeypat
 
 
 def test_data_ready_budget_covers_a_bounded_multi_call_turn(monkeypatch, tmp_path):
+    """The grantless notification reserves no model budget at all."""
     from app.research_continuation import (DATA_READY_INPUT_CEILING, DATA_READY_MAX_CALLS,
         DATA_READY_MAX_OUTPUT_TOKENS, DATA_READY_TOKEN_LIMIT)
     per_call = DATA_READY_INPUT_CEILING + DATA_READY_MAX_OUTPUT_TOKENS
@@ -140,13 +152,15 @@ def test_data_ready_budget_covers_a_bounded_multi_call_turn(monkeypatch, tmp_pat
         fixture['conversation'], fixture['context'])
     try:
         intent = store.claim_conversation_continuation(conversation, trusted_context=context)
-        assert intent['status'] == 'intent'
+        assert intent['status'] == 'notified'
         receipt = intent['receipt']
-        assert receipt['grant_kind'] == 'data_ready'
-        assert receipt['token_limit'] == DATA_READY_TOKEN_LIMIT
-        # Two model calls -- the minimum a tool-calling turn needs -- each charge
-        # the conservative per-call ceiling and must fit inside the reservation.
-        assert intent['reservation']['token_limit'] >= 2 * per_call
+        assert receipt['grant_kind'] == 'data_ready_notification'
+        # The notification is settled immediately with zero token liability, so
+        # it can never be reported as model usage.
+        assert receipt['token_limit'] == 0
+        assert receipt['charged_tokens'] == 0
+        assert receipt['status'] == 'settled'
+        assert 'reservation' not in intent
     finally:
         fixture['store'].close()
         fixture['backtests'].close()
@@ -163,11 +177,14 @@ def test_duplicate_polls_and_restart_never_enqueue_a_second_turn(monkeypatch, tm
             receipts = list(pool.map(
                 lambda instance: instance.claim_conversation_continuation(conversation, trusted_context=context),
                 (store, other)))
-        reservation_id = receipts[0]['receipt']['reservation_id']
-        assert reservation_id == receipts[1]['receipt']['reservation_id']
+        # Exactly one concurrent caller creates the notification; the other sees
+        # 'waiting' because the settled event is already recorded. No second
+        # deterministic notification and no model turn is produced.
+        notified = [item for item in receipts if item['status'] == 'notified']
+        assert len(notified) == 1
+        assert all(item['status'] in {'notified', 'waiting'} for item in receipts)
+        assert notified[0]['receipt']['grant_kind'] == 'data_ready_notification'
         assert len(continuation_budget(store, task)) == 1
-        store.record_continuation_receipt(task, trusted_context=context, reservation_id=reservation_id,
-            status='settled', charged_tokens=1048576, settlement_sha256='a' * 64, outcome='completed')
         store.close()
         restarted = ResearchStore()
         try:
@@ -230,6 +247,16 @@ def test_data_ready_scope_admits_only_the_original_task(monkeypatch, tmp_path):
     store, task, conversation, context = (fixture['store'], fixture['payload']['task_id'],
         fixture['conversation'], fixture['context'])
     try:
+        # ADR-0085 P0: grantless data-ready is notify-only, so the task-bound
+        # scope check is exercised through an explicit budgeted continuation.
+        store.create_continuation_permission(task, {
+            'token_limit': 8000000, 'max_turns': 8, 'valid_seconds': 86400,
+            'idempotency_key': 'data-ready-scope-grant',
+            'confirmed_artifact_ids': [fixture['payload']['strategy_version_artifact_id']]},
+            trusted_context=context)
+        # The grant must predate the readiness transition for the bounded scan.
+        fixture['jobs']._execute("UPDATE signal_producer_jobs SET updated_at=now() WHERE job_id=:job",
+            {'job': fixture['job_id']})
         reservation_id = store.claim_conversation_continuation(
             conversation, trusted_context=context)['receipt']['reservation_id']
         store.record_continuation_receipt(task, trusted_context=context,
@@ -430,13 +457,14 @@ def test_data_ready_rearm_without_a_budget_permission(monkeypatch, tmp_path):
         fixture['conversation'], fixture['context'])
     try:
         first = store.claim_conversation_continuation(conversation, trusted_context=context)
-        assert first['receipt']['grant_kind'] == 'data_ready'
+        assert first['receipt']['grant_kind'] == 'data_ready_notification'
         first_key = first['receipt']['event_key']
-        settle_needs_attention(store, fixture, first)
+        # A distinct data-ready event re-arms a second deterministic notification
+        # without any model grant and without a needs_attention block.
         add_ready_event(fixture, key='ready-snapshot-grantless', content={'synthetic': 'data-ready-grantless'})
         intent = store.claim_conversation_continuation(conversation, trusted_context=context)
-        assert intent['status'] == 'intent'
-        assert intent['receipt']['grant_kind'] == 'data_ready'
+        assert intent['status'] == 'notified'
+        assert intent['receipt']['grant_kind'] == 'data_ready_notification'
         assert intent['receipt']['event_key'] != first_key
         assert len(continuation_budget(store, task)) == 2
     finally:

@@ -54,8 +54,10 @@ function exactBacktestResponse(path:string,value:Record<string,any>):boolean {
     : value.job?.job_id === job[1];
   const task=path.match(/^\/v1\/research\/backtest-tasks\/(backtesttask_(?:ml_)?[0-9a-f]{32})(?:\/(?:execute|cancel))?$/);
   if(task) return value.task?.backtest_task_id === task[1];
-  const snapshot=path.match(/^\/v1\/research\/signal-snapshots\/(artifact_[0-9a-f]{32})$/);
-  if(snapshot) return value.snapshot?.artifact_id === snapshot[1] && value.snapshot?.kind === 'signal_snapshot';
+  const snapshot=path.match(/^\/v1\/research\/signal-snapshots\/(artifact_[0-9a-f]{32})\/summary$/);
+  if(snapshot) return value.summary?.schema_version === 'signal-snapshot-summary.v1'
+    && value.summary?.artifact?.artifact_id === snapshot[1]
+    && value.summary?.artifact?.kind === 'signal_snapshot';
   return true;
 }
 
@@ -200,7 +202,7 @@ export function fetchByqSignalSnapshotGet(
   artifactId: string,
   fetcher: Fetcher = fetch,
 ): Promise<ByqBacktestResult> {
-  return requestBacktest(backendUrl, `/v1/research/signal-snapshots/${encodeURIComponent(artifactId)}`, { method: "GET" }, fetcher);
+  return requestBacktest(backendUrl, `/v1/research/signal-snapshots/${encodeURIComponent(artifactId)}/summary`, { method: "GET" }, fetcher);
 }
 
 export function fetchByqBacktestRun(
