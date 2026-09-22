@@ -1956,7 +1956,7 @@ worktree/branch/PR** 实施，随后明确把整组整改定为 **0.9.1 稳定�
 DSH 继续拥有通用 Agent Loop、session、context、compaction 和 generic guards。不得 fork DSH、
 建立第二个通用 harness/session store，或让 Product Agent 读取完整执行快照。
 
-### P0 — 止损与事实一致性（当前唯一可执行任务）
+### P0 — 止损与事实一致性（已并入 `main`）
 
 范围严格限定为：
 
@@ -1980,12 +1980,14 @@ grantless 零模型确定性推进/通知；budget exhaustion 后 task/session/g
 Gateway/Backend/Adapter 重启与迟到终态负例；现有普通前台对话/Backtest Worker 不回归。P0 只提交
 Draft PR 和相应证据，不 deploy、不恢复当前失败的生产研究任务、不启动 P1。
 
-### P1 — `research-execution-plan.v1`
+### P1 — `research-execution-plan.v1`（当前唯一可执行任务）
 
 在 P0 合并后，新增框架无关 schema、持久计划、task/plan version CAS、合法 stage/action 转换、
 精确 prerequisite/reference/approval/idempotency/expected-postcondition 和最小 Product 投影。首批只覆盖
 普通策略三轮回测，不扩展 ML、实盘或 0.10 数据能力。无法唯一迁移的旧任务进入 needs_attention，
-不得猜测。
+不得猜测。P1 只交付合同、持久化/CAS、服务端 reducer 可调用的**内部 store seam** 与**只读
+Product GET**；不得暴露 execution-plan create/advance/legacy 等 agent-facing 写路由，P2 才把
+approval/data-ready/backtest-completed/user-resume/recovery 的权威事件接入 reducer 并派生 next state。
 
 ### P2 — 审批与异步事件统一
 

@@ -8,7 +8,7 @@
       "layer": "authority",
       "modified_in_closeout_commit": false,
       "path": "docs/roadmap/STATUS.md",
-      "sha256": "sha256:c626b1422ed3275de346a8e79028adab20c428eab371de2cd09374a4df1fe82e",
+      "sha256": "sha256:3d079254c0603de4df3034e0172baa8c1787fb0213bde6274836b6c81dbdaeae",
       "stage": "repository-state"
     },
     {
@@ -140,7 +140,7 @@
       "layer": "provenance",
       "modified_in_closeout_commit": true,
       "path": "docs/evidence/d15/d15-superseding/provenance.v1.json",
-      "sha256": "sha256:a9980f03285713a5cd987ea12fd9f1a721af0c317c61790194937aa4628ad9cb",
+      "sha256": "sha256:8f2a7b807062001a7db507355beb342bbb72f5ef5ec6bb0750fef3c641141fcc",
       "stage": "D15-superseding"
     },
     {
@@ -173,7 +173,7 @@
       "layer": "repo-default-upgrade",
       "modified_in_closeout_commit": true,
       "path": "docs/evidence/v090-dsh-015rc1-default-upgrade/default-upgrade.v1.json",
-      "sha256": "sha256:baba94eb30f1b2752c1821c155cb0845eb4e68ad1d0a9fa57f0d2c705f444510",
+      "sha256": "sha256:14fd2bced854e44eae667613fc924157c9ec8b803dc876734fad0c5409a1077b",
       "stage": "0.9-closeout"
     }
   ],

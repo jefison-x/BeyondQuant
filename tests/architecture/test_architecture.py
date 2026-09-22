@@ -848,6 +848,27 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         )
         self.assertEqual(documented, implemented)
 
+    def test_adr0085_p1_execution_plan_surface_is_read_only(self) -> None:
+        # ADR-0085 P1 ships contract, persistence/CAS, an internal store seam and
+        # a read-only Product projection. A plan write route (create/advance/
+        # legacy) would let a model choose workflow next_state, so it MUST NOT
+        # exist on the Gateway/Product or agent-facing Backend surface.
+        product_api = (ROOT / "services/gateway/app/product_api.py").read_text()
+        self.assertEqual(
+            re.findall(r'(?m)^@router\.(get|post|put|delete)\("([^"]*execution-plan[^"]*)"',
+                       product_api),
+            [("get", "/research/tasks/{task_id}/execution-plan")],
+        )
+        backend = (ROOT / "services/backend/app/main.py").read_text()
+        self.assertEqual(
+            re.findall(r'(?m)^@app\.(get|post|put|delete)\("([^"]*execution-plan[^"]*)"', backend),
+            [("get", "/v1/research/tasks/{task_id}/execution-plan")],
+        )
+        openapi = (ROOT / "docs/contracts/product-api.openapi.yaml").read_text()
+        self.assertIn("/api/product/research/tasks/{task_id}/execution-plan:", openapi)
+        self.assertNotIn("execution-plan/advance", openapi)
+        self.assertNotIn("execution-plan/legacy", openapi)
+
     def test_phase23_historical_parity_matrix_and_ui_smoke_exist(self) -> None:
         matrix = ROOT / "docs/roadmap/COMMUNITY_FEATURE_PARITY_MATRIX.md"
         self.assertTrue(matrix.exists())

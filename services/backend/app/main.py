@@ -2045,6 +2045,15 @@ def revoke_research_continuation_permission(task_id: str, payload: dict[str, Any
     return _research_call(operation)
 
 
+@app.get("/v1/research/tasks/{task_id}/execution-plan")
+def get_research_execution_plan(task_id: str, request: Request) -> dict[str, object]:
+    # ADR-0085 P1 exposes ONLY a read-only plan projection. Plan create/advance
+    # is an internal reducer/store seam, never an agent-facing write route: a
+    # model must not choose workflow next_state.
+    context = _required_agent_context(request, include_workspace=True)
+    return _research_call(lambda: research_store.get_execution_plan(task_id, trusted_context=context))
+
+
 @app.get("/v1/research/tasks")
 def list_research_tasks(request: Request) -> dict[str, object]:
     context = _required_agent_context(request)

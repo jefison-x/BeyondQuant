@@ -595,6 +595,13 @@ def product_research_handoff(task_id: str, request: Request) -> dict[str, object
                             headers=_trusted_agent_headers(request))
 
 
+@router.get("/research/tasks/{task_id}/execution-plan")
+def product_research_execution_plan(task_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/research/tasks/{quote(task_id, safe='')}/execution-plan",
+                            headers=_trusted_agent_headers(request))
+
+
 @router.get("/research/tasks")
 def product_research_tasks(request: Request) -> dict[str, object]:
     _product_principal(request)

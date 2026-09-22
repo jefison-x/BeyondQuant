@@ -147,7 +147,7 @@
       "layer": "repo-default-upgrade",
       "modified_in_superseding_commit": true,
       "path": "docs/evidence/v090-dsh-015rc1-default-upgrade/default-upgrade.v1.json",
-      "sha256": "sha256:baba94eb30f1b2752c1821c155cb0845eb4e68ad1d0a9fa57f0d2c705f444510",
+      "sha256": "sha256:14fd2bced854e44eae667613fc924157c9ec8b803dc876734fad0c5409a1077b",
       "stage": "0.9-closeout"
     },
     {
