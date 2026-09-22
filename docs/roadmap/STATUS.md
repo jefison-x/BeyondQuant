@@ -1,7 +1,8 @@
 # BeyondQuant 状态
 
-0.9 **开发收口**（development closeout）已完成并进入维护者测试与 0.9.x 小版本窗口。真实复合研究
-接续事故审计已完成，维护者于 2026-09-22 接受 ADR-0085；当前唯一获授权实现切片是
+0.9.0 **开发收口**（development closeout）已完成。维护者已将本轮会话/长研究整改确定为
+**0.9.1 稳定性版本**；真实复合研究接续事故审计已完成，维护者于 2026-09-22 接受 ADR-0085；
+当前唯一获授权实现切片是
 **ADR-0085 P0 止损与事实一致性**。P0→P4 必须逐项、逐独立 PR 推进，前项合并后才开始后项。
 0.10 与 Phase 100 恢复仍**未授权硬停止**，R3 不自动启动。见下方“权威当前状态”。
 
@@ -35,7 +36,8 @@
 <!-- byq:v090-dsh-provider-qualification=blocked-external -->
 <!-- byq:adr-0084=accepted -->
 <!-- byq:adr-0085=accepted -->
-<!-- byq:harness-continuation=adr-accepted-p0-next -->
+<!-- byq:harness-continuation=adr-accepted-p0-next-version-0.9.1 -->
+<!-- byq:maintenance-release-target=0.9.1-stability -->
 <!-- byq:session-failure-containment=real-recovery-acceptance-passed -->
 <!-- byq:v090-business-recovery=implementation-delivered -->
 <!-- byq:v090-business-recovery-acceptance=real-passes -->
@@ -52,7 +54,7 @@
 |---|---|---|---|---|
 | Product | 最近完成 Phase 97（marker 97） | 未授权任何新的 Product Phase | 维护者阶段性授权 + 本文件 next phase | 一阶段一 worktree/Draft PR；Human Merge Gate；不得自授新 Phase |
 | 数据/资格 | Phase 98/99 `COMPLETE`；Phase 100 **仍 `PAUSED`**：P100-A/P100-B 已并入 `main`，P100-C 只存在于暂停且未交付的 Draft #338，P100-D/P100-E 冻结，维护者未授权恢复；Phase 101 `COMPLETE`；**0.10 与 Phase 100 恢复未授权**。S3/历史成分准备属于 0.10.0，不是 0.9 gate。 | 0.9 的 fail-containment/recovery gate、coherent DSH `0.1.5-rc.1` 仓库默认升级、具名 D15 superseding assessment 与**独立最终 0.9 开发收口**均已完成并真实验收（marker `v090-final-closeout=complete`，证据 `docs/evidence/v090-final-closeout/`）；下一步为**维护者测试与 0.9.x 小版本功能追加/优化窗口**。**不得**据此恢复 Phase 100 或启动 0.10——二者仍需维护者单独授权。 | Phase 100 原授权 + ADR-0074/0084 | 仅 Tushare；不得从未审查分支推断完成；数据来源、时点、单位、许可与完整性失败继续 fail closed；不因外部可选能力冻结无关调查 |
-| 维护（当前） | **0.9 独立最终开发收口已完成**（marker `v090-final-closeout=complete`）；业务恢复真实验收保持 `v090-business-recovery-acceptance=real-passes`，仓库默认 DSH 升级保持 `v090-dsh-default-upgrade=promoted`，具名 D15 assessment 保持 `v090-d15-superseding-assessment=established`；B1/B2 仍 `BLOCKED_EXTERNAL`，`terminal-adapter-restart` 与 `terminal-dsh-runtime-restart` 均保持候选/资格层 **PASS**，历史 D15-G `NO_GO` 与 `R3_RESUME = NO` 不改写。真实复合研究接续事故后，ADR-0085 已于 2026-09-22 获维护者完整接受；审计见 `docs/evidence/harness-continuation-audit-20260922/`。P0–P4 属维护者测试与 0.9.x 小版本可靠性维护，不推进 Product Phase。 | **下一个且唯一可执行任务 = ADR-0085 P0 止损与事实一致性**：有界 signal snapshot MCP 投影、data-ready 精确 backtest task/next action、budget exhaustion→ResearchTask needs_attention、RuntimeGeneration 终态关闭、UI 预算/自动完成语义修正，并停用旧 grantless 通用模型 data-ready continuation。P0 合并前不得开始 P1。 | 维护者 2026-09-22 明确接受 ADR-0085 并授权 P0→P4 每步独立 PR | 不 deploy、不 tag/release、不恢复 Phase 100、不启动 0.10；不建第二通用 harness；不放宽逐动作审批；每步独立 worktree/PR；前一步合并后再开始下一步 |
+| 维护（当前） | **0.9 独立最终开发收口已完成**（marker `v090-final-closeout=complete`）；业务恢复真实验收保持 `v090-business-recovery-acceptance=real-passes`，仓库默认 DSH 升级保持 `v090-dsh-default-upgrade=promoted`，具名 D15 assessment 保持 `v090-d15-superseding-assessment=established`；B1/B2 仍 `BLOCKED_EXTERNAL`，`terminal-adapter-restart` 与 `terminal-dsh-runtime-restart` 均保持候选/资格层 **PASS**，历史 D15-G `NO_GO` 与 `R3_RESUME = NO` 不改写。真实复合研究接续事故后，ADR-0085 已于 2026-09-22 获维护者完整接受；审计见 `docs/evidence/harness-continuation-audit-20260922/`。P0–P4 共同组成 0.9.1 稳定性版本，不推进 Product Phase；0.9.1 正式发布/部署仍需独立授权。 | **下一个且唯一可执行任务 = ADR-0085 P0 止损与事实一致性**：有界 signal snapshot MCP 投影、data-ready 精确 backtest task/next action、budget exhaustion→ResearchTask needs_attention、RuntimeGeneration 终态关闭、UI 预算/自动完成语义修正，并停用旧 grantless 通用模型 data-ready continuation。P0 合并前不得开始 P1。 | 维护者 2026-09-22 明确接受 ADR-0085 并授权 P0→P4 每步独立 PR | 不 deploy、不 tag/release、不恢复 Phase 100、不启动 0.10；不建第二通用 harness；不放宽逐动作审批；每步独立 worktree/PR；前一步合并后再开始下一步 |
 | 依赖资格（D15） | **当前资格状态（B4 之后，2026-09-21）**；ADR-0084 已接受：`terminal-adapter-restart` = **PASS**、`terminal-dsh-runtime-restart` = **PASS**（均为候选/资格层）；B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 为 `BLOCKED_EXTERNAL`；独立监控切片确认 DSH rc.2/alpha.2 provider 资格仍 `BLOCKED_EXTERNAL`（无 out-of-process provider，未升级依赖）；ADR-0083 仅候选/资格层最小实现完成；R4 / production wiring NOT implemented。D15-G **未重跑**，按当前 B1/B2 状态即使重跑仍为 `NO_GO`；**历史已提交快照（不改写）**：D15-4/D15-5/D15-G committed evidence 保持原样。外部 blocker 只阻塞原生独立 child 恢复声明，不再形成全局停止。2026-09-22 具名 D15 superseding assessment 已建立（`docs/evidence/d15/d15-superseding/`）：B1/B2 仍 `BLOCKED_EXTERNAL`、B3/B4 候选 PASS、实际采用范围候选兼容 PASS 且晋升仅仓库默认、bounded R3 范围确立且 `R3_RESUME = NO`、原生独立 child resume 未实现。 | **已生成具名 D15 superseding assessment**（marker `v090-d15-superseding-assessment=established`）；完整 failure-containment gate 已通过真实隔离验收，按实际采用范围判断候选兼容与晋升已完成；独立最终 0.9 收口已完成（marker `v090-final-closeout=complete`）；下一步为**维护者测试与 0.9.x 小版本功能追加/优化窗口**（不启动 0.10、不自动解冻 R3） | ADR-0084 + ADR-0081/0082；历史证据与 B3/B4 current overlay | `R3_RESUME` 不因文档决定自动变为 YES；不得把 B1/B2 标为 PASS；不得改写历史 D15 verdict；生产切换、部署和 release 独立授权 |
 
 ## 0.9 closeout governance & gap ledger audit（2026-09-20，历史审计快照）

@@ -5,10 +5,11 @@
 - Accepted: 2026-09-22（维护者明确“接受 ADR-0085 的完整决定”，并授权标为 Accepted、
   同步修订 ADR-0062/0065/0077、STATUS 与专项计划，随后按 P0→P4 每步独立 PR 实施；
   0.10.0 继续冻结。）
+- Version assignment: 2026-09-22，维护者随后明确“本次稳定性修复定为0.9.1版本”。
 - Decision owner: BeyondQuant maintainer
 - Relates: ADR-0017、ADR-0044、ADR-0045、ADR-0051、ADR-0062、ADR-0065、ADR-0077、ADR-0079、ADR-0084
 - Supersedes: ADR-0062 §4 中以自由文本恢复完整研究任务的实现方式；ADR-0077 中数据就绪后启动通用完整模型回合的实现方式；不改变其任务绑定、预算、身份、审批和 at-most-once 安全要求。
-- Scope: 0.9.x 会话/长研究可靠性维护；不启动 0.10.0，不授权生产部署、正式 release/tag、付费资源、破坏性数据操作或自动批准业务动作。
+- Scope: 0.9.1 会话/长研究稳定性版本；不启动 0.10.0，不授权生产部署、正式 release/tag、付费资源、破坏性数据操作或自动批准业务动作。
 
 ## 背景
 
@@ -177,7 +178,8 @@ approval、data-ready、backtest-completed、user-resume 和 recovery 进入同�
 
 执行完整三轮研究 E2E、各交接点故障注入、成本/负载上限和隔离 canary。全部通过后才恢复“后台自动完成复合研究”的产品声明。
 
-每个 P0–P4 使用独立 worktree/branch/PR；前一项合并后再开始下一项。P0–P4 都属于 0.9.x 可靠性维护，不推进 0.10.0。
+每个 P0–P4 使用独立 worktree/branch/PR；前一项合并后再开始下一项。P0–P4 共同组成 0.9.1
+稳定性版本，不推进 0.10.0。0.9.1 的正式部署、tag/release 和发布清单仍是独立维护者决定。
 
 ## 后果与取舍
 

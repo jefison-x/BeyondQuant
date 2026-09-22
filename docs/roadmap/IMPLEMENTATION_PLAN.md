@@ -1944,10 +1944,10 @@ oversized frames and rows fail closed with the stable `bars exceeds ...`/frame-s
 caps, sandbox resource envelope, MCP schema, Gateway and frontend are unchanged. No Accepted ADR text is
 changed.
 
-## 0.9.x deterministic research continuation — ADR-0085 P0–P4（maintenance, 2026-09-22）
+## 0.9.1 deterministic research continuation — ADR-0085 P0–P4（maintenance, 2026-09-22）
 
 维护者于 2026-09-22 明确接受 ADR-0085 的完整决定，并授权按 P0→P4 **每步独立
-worktree/branch/PR** 实施。该计划属于 0.9.x 会话与长研究可靠性维护，不推进 Product Phase；
+worktree/branch/PR** 实施，随后明确把整组整改定为 **0.9.1 稳定性版本**。该计划不推进 Product Phase；
 0.10 与 Phase 100 恢复继续冻结。每一步只在前一步合并后开始，禁止把 P0–P4 合并为一个大 PR，
 禁止以扩大模型调用/token 上限替代计划状态机。
 
@@ -2006,3 +2006,6 @@ proposal commit 命令。默认每研究阶段最多两次模型调用；第一�
 completed。每个异步交接点注入 Gateway/Backend/Adapter/Worker 重启；断言无重复对象、精确预算、
 任务/会话/generation/回执状态一致、模型不可见原始行情/完整执行快照。最后才允许隔离生产 canary；
 恢复“后台自动完成复合研究”的产品声明和任何部署仍需独立证据与授权。
+
+P4 完成只表示 0.9.1 开发与稳定性验收候选就绪；0.9.1 的版本号写入、正式发布清单、生产部署、
+tag/release 与用户验收窗口分别执行，不由本计划自动授权。
