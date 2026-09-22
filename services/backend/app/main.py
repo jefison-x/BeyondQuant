@@ -99,6 +99,7 @@ from .backtest import (
     snapshot_bars,
     membership_fingerprint,
 )
+from packages.contracts.signal_snapshot_summary import summarize_signal_snapshot
 from .backtest_task import (
     task_id_from_signal_job,
     is_ml_backtest_task,
@@ -3490,6 +3491,30 @@ def get_signal_snapshot(artifact_id: str, request: Request) -> dict[str, object]
         if artifact["kind"] != "signal_snapshot":
             raise ResearchNotFound("signal snapshot not found")
         return {"snapshot": artifact}
+
+    return _research_call(operation)
+
+
+@app.get("/v1/research/signal-snapshots/{artifact_id}/summary")
+def get_signal_snapshot_summary(artifact_id: str, request: Request) -> dict[str, object]:
+    """ADR-0085 P0: bounded, safe Product-Agent projection (<= 64 KiB).
+
+    The full immutable snapshot remains available to trusted Backend/Worker
+    consumers through ``GET /v1/research/signal-snapshots/{artifact_id}``. This
+    Product-facing projection never returns the raw execution panel, per-day
+    benchmark rows, per-symbol indexes, complete signals or corporate-action
+    rows.
+    """
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        artifact = _owned_research_entity("artifact", artifact_id, context)
+        if artifact["kind"] != "signal_snapshot":
+            raise ResearchNotFound("signal snapshot not found")
+        document = artifact.get("content")
+        if not isinstance(document, dict):
+            raise ResearchNotFound("signal snapshot content is unavailable")
+        return {"summary": summarize_signal_snapshot(artifact, document)}
 
     return _research_call(operation)
 

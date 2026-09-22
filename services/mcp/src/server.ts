@@ -1216,7 +1216,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
   server.registerTool(
     "byq_signal_snapshot_get",
     {
-      description: "Read an immutable, validated BYQ signal_snapshot artifact (frozen backtest input, ADR-0017). Read-only.",
+      description: "Read a bounded (<= 64 KiB) safe summary of an immutable, validated BYQ signal_snapshot artifact: identity/hash/status/lineage, date range, universe/benchmark identifiers and counts, signal/action/bar counts, execution parameters, readiness/integrity and a few diagnostic samples. It never returns the raw bars frame, benchmark rows, per-symbol indexes, complete signals or corporate-action rows. Read-only.",
       inputSchema: { artifact_id: z.string() },
     },
     (args) => byqSignalSnapshotGet(args, trustedContext),
