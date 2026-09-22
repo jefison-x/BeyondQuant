@@ -1,0 +1,94 @@
+{
+  "all_pass": true,
+  "assessment_id": "d15-superseding-assessment.v1",
+  "assessment_valid": true,
+  "candidate": {
+    "npm_packages": "0.1.5-rc.1",
+    "python_sdk": "0.1.5rc1",
+    "release": "dsh-0.1.5rc1"
+  },
+  "claimed_components": {
+    "b1_subagent_child_crash": "BLOCKED_EXTERNAL",
+    "b2_subagent_byq_adapter_restart": "BLOCKED_EXTERNAL",
+    "b3_terminal_adapter_restart": "PASS_CANDIDATE",
+    "b4_terminal_dsh_runtime_restart": "PASS_CANDIDATE",
+    "candidate_compatibility_actual_scope": "PASS",
+    "candidate_promotion_actual_scope": "REPO_DEFAULT_PROMOTED",
+    "coherent_dsh_default_upgrade": "PASS",
+    "historical_d15_g": "NO_GO_PRESERVED",
+    "native_independent_child_resume": "NOT_IMPLEMENTED",
+    "r3_resume": "NO",
+    "replacement_gate_business_recovery": "PASS"
+  },
+  "claimed_r3_permitted_scope": [
+    "safe_failure",
+    "observation",
+    "cleanup",
+    "new_generation_recovery"
+  ],
+  "constraints": {
+    "b1_b2_downgraded": false,
+    "native_independent_child_resume": "NOT_IMPLEMENTED",
+    "phase_100_resumed": false,
+    "production_deployment": "none",
+    "r3_bounded_scope": [
+      "safe_failure",
+      "observation",
+      "cleanup",
+      "new_generation_recovery"
+    ],
+    "r3_resume": "NO",
+    "release_or_tag_created": false,
+    "zero_ten_started": false
+  },
+  "decision": "SUPERSEDING_ASSESSMENT_ESTABLISHED",
+  "decision_claimed": "SUPERSEDING_ASSESSMENT_ESTABLISHED",
+  "decision_vocabulary": [
+    "SUPERSEDING_ASSESSMENT_ESTABLISHED",
+    "SUPERSEDING_ASSESSMENT_NOT_ESTABLISHED"
+  ],
+  "derived_components": {
+    "b1_subagent_child_crash": "BLOCKED_EXTERNAL",
+    "b2_subagent_byq_adapter_restart": "BLOCKED_EXTERNAL",
+    "b3_terminal_adapter_restart": "PASS_CANDIDATE",
+    "b4_terminal_dsh_runtime_restart": "PASS_CANDIDATE",
+    "candidate_compatibility_actual_scope": "PASS",
+    "candidate_promotion_actual_scope": "REPO_DEFAULT_PROMOTED",
+    "coherent_dsh_default_upgrade": "PASS",
+    "historical_d15_g": "NO_GO_PRESERVED",
+    "native_independent_child_resume": "NOT_IMPLEMENTED",
+    "r3_resume": "NO",
+    "replacement_gate_business_recovery": "PASS"
+  },
+  "derived_r3_permitted_scope": [
+    "safe_failure",
+    "observation",
+    "cleanup",
+    "new_generation_recovery"
+  ],
+  "established": true,
+  "exit_code": 0,
+  "expected_component_mismatch": {},
+  "expected_components": {
+    "b1_subagent_child_crash": "BLOCKED_EXTERNAL",
+    "b2_subagent_byq_adapter_restart": "BLOCKED_EXTERNAL",
+    "b3_terminal_adapter_restart": "PASS_CANDIDATE",
+    "b4_terminal_dsh_runtime_restart": "PASS_CANDIDATE",
+    "candidate_compatibility_actual_scope": "PASS",
+    "candidate_promotion_actual_scope": "REPO_DEFAULT_PROMOTED",
+    "coherent_dsh_default_upgrade": "PASS",
+    "historical_d15_g": "NO_GO_PRESERVED",
+    "native_independent_child_resume": "NOT_IMPLEMENTED",
+    "r3_resume": "NO",
+    "replacement_gate_business_recovery": "PASS"
+  },
+  "failures": [],
+  "format_valid": true,
+  "honest": true,
+  "honesty_failures": [],
+  "native_independent_child_resume": "NOT_IMPLEMENTED",
+  "production_promotion_model": "repository-default-only; production deployment/release/tag remain separate (none claimed)",
+  "r3_resume": "NO",
+  "required_component_count": 11,
+  "schema_version": "byq-d15-superseding-verdict.v1"
+}

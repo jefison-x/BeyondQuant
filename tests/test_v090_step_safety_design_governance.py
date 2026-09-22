@@ -32,7 +32,7 @@ ADAPTER_BUDGET = ROOT / "services/runtime-adapter/app/continuation_budget.py"
 ADAPTER_CONTAINMENT = ROOT / "services/runtime-adapter/app/containment.py"
 CONTAINMENT_TEST = ROOT / "services/runtime-adapter/tests/test_session_containment.py"
 ADR_DIR = ROOT / "docs/architecture/adr"
-CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.200"
+CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.201"
 
 CARRIER_FIELDS = {
     "attempt_key", "ordinal", "trigger_key", "interrupted_run_id",

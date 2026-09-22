@@ -1,0 +1,50 @@
+{
+  "schema_version": "byq-d15-superseding-assessment-input.v1",
+  "assessment_id": "d15-superseding-assessment.v1",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "python_sdk": "0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1"
+  },
+  "decision": "SUPERSEDING_ASSESSMENT_ESTABLISHED",
+  "components": {
+    "historical_d15_g": "NO_GO_PRESERVED",
+    "replacement_gate_business_recovery": "PASS",
+    "coherent_dsh_default_upgrade": "PASS",
+    "b1_subagent_child_crash": "BLOCKED_EXTERNAL",
+    "b2_subagent_byq_adapter_restart": "BLOCKED_EXTERNAL",
+    "b3_terminal_adapter_restart": "PASS_CANDIDATE",
+    "b4_terminal_dsh_runtime_restart": "PASS_CANDIDATE",
+    "native_independent_child_resume": "NOT_IMPLEMENTED",
+    "candidate_compatibility_actual_scope": "PASS",
+    "candidate_promotion_actual_scope": "REPO_DEFAULT_PROMOTED",
+    "r3_resume": "NO"
+  },
+  "r3_permitted_scope": [
+    "safe_failure",
+    "observation",
+    "cleanup",
+    "new_generation_recovery"
+  ],
+  "residual_external_blockers": [
+    "b1_subagent_child_crash",
+    "b2_subagent_byq_adapter_restart"
+  ],
+  "adopted_scope": "repository-default DSH 0.1.5-rc.1 with the ADR-0084 containment/business-recovery gate and candidate-layer B3/B4 terminal attachment; no production deployment, release or tag",
+  "constraints": {
+    "r3_resume": "NO",
+    "r3_bounded_scope": [
+      "safe_failure",
+      "observation",
+      "cleanup",
+      "new_generation_recovery"
+    ],
+    "native_independent_child_resume": "NOT_IMPLEMENTED",
+    "production_deployment": "none",
+    "release_or_tag_created": false,
+    "phase_100_resumed": false,
+    "zero_ten_started": false,
+    "b1_b2_downgraded": false
+  },
+  "provenance": "docs/evidence/d15/d15-superseding/provenance.v1.json"
+}

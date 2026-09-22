@@ -1,0 +1,191 @@
+{
+  "all_controls_rejected": true,
+  "control_count": 21,
+  "controls": [
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "SUPERSEDING_ASSESSMENT_ESTABLISHED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-b1-pass"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "SUPERSEDING_ASSESSMENT_ESTABLISHED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-b2-pass"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "SUPERSEDING_ASSESSMENT_ESTABLISHED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-native-child-resume-implemented"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "SUPERSEDING_ASSESSMENT_NOT_ESTABLISHED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-replacement-gate-pass-when-source-failed"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "SUPERSEDING_ASSESSMENT_NOT_ESTABLISHED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-upgrade-pass-when-source-incoherent"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "SUPERSEDING_ASSESSMENT_NOT_ESTABLISHED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-b3-pass-when-source-blocked"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "SUPERSEDING_ASSESSMENT_NOT_ESTABLISHED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-b4-pass-when-source-blocked"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "SUPERSEDING_ASSESSMENT_NOT_ESTABLISHED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "rewrite-historical-d15-g"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "SUPERSEDING_ASSESSMENT_ESTABLISHED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-r3-resume-yes"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "SUPERSEDING_ASSESSMENT_ESTABLISHED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "widen-r3-scope"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "SUPERSEDING_ASSESSMENT_ESTABLISHED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "drop-r3-scope"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "SUPERSEDING_ASSESSMENT_ESTABLISHED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": false,
+      "name": "claim-production-promotion"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "SUPERSEDING_ASSESSMENT_ESTABLISHED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "candidate-mismatch"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "SUPERSEDING_ASSESSMENT_ESTABLISHED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": false,
+      "name": "invalid-decision"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "SUPERSEDING_ASSESSMENT_ESTABLISHED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "self-declared-verdict"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "SUPERSEDING_ASSESSMENT_ESTABLISHED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "self-declared-established"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "SUPERSEDING_ASSESSMENT_ESTABLISHED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "self-declared-coverage"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "SUPERSEDING_ASSESSMENT_ESTABLISHED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "drop-required-component"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "SUPERSEDING_ASSESSMENT_ESTABLISHED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "extra-component"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "SUPERSEDING_ASSESSMENT_NOT_ESTABLISHED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-established-when-not"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "SUPERSEDING_ASSESSMENT_NOT_ESTABLISHED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-promoted-when-not"
+    }
+  ],
+  "defect_targeting_pre_fix_passed": [
+    "claim-b1-pass",
+    "claim-b2-pass",
+    "claim-native-child-resume-implemented",
+    "claim-replacement-gate-pass-when-source-failed",
+    "claim-upgrade-pass-when-source-incoherent",
+    "claim-b3-pass-when-source-blocked",
+    "claim-b4-pass-when-source-blocked",
+    "rewrite-historical-d15-g",
+    "claim-r3-resume-yes",
+    "widen-r3-scope",
+    "drop-r3-scope",
+    "candidate-mismatch",
+    "self-declared-verdict",
+    "self-declared-established",
+    "self-declared-coverage",
+    "drop-required-component",
+    "extra-component",
+    "claim-established-when-not",
+    "claim-promoted-when-not"
+  ],
+  "defect_targeting_pre_fix_passed_count": 19,
+  "known_good_fixture_all_pass": true,
+  "known_good_fixture_components": {
+    "b1_subagent_child_crash": "BLOCKED_EXTERNAL",
+    "b2_subagent_byq_adapter_restart": "BLOCKED_EXTERNAL",
+    "b3_terminal_adapter_restart": "PASS_CANDIDATE",
+    "b4_terminal_dsh_runtime_restart": "PASS_CANDIDATE",
+    "candidate_compatibility_actual_scope": "PASS",
+    "candidate_promotion_actual_scope": "REPO_DEFAULT_PROMOTED",
+    "coherent_dsh_default_upgrade": "PASS",
+    "historical_d15_g": "NO_GO_PRESERVED",
+    "native_independent_child_resume": "NOT_IMPLEMENTED",
+    "r3_resume": "NO",
+    "replacement_gate_business_recovery": "PASS"
+  },
+  "known_good_fixture_decision": "SUPERSEDING_ASSESSMENT_ESTABLISHED",
+  "schema_version": "byq-d15-superseding-negative-controls.v1"
+}

@@ -1,0 +1,286 @@
+{
+  "schema_version": "byq-d15-superseding-contract.v1",
+  "generated_at": "2026-09-22",
+  "assessment_id": "d15-superseding-assessment.v1",
+  "name": "D15 named superseding assessment (ADR-0084 gate reclassification)",
+  "scope": "Reclassify the D15 gate scope for the current adopted range under Accepted ADR-0084, using the merged real business-recovery acceptance and the coherent DSH 0.1.5-rc.1 repository default upgrade as evidence. It does not rewrite the historical D15-4/D15-5/D15-G verdicts, does not mark native independent child resume as implemented, does not unfreeze R3, does not authorize a production deployment/release/tag and does not start 0.10.",
+  "candidate": {
+    "release": "dsh-0.1.5rc1",
+    "python_sdk": "0.1.5rc1",
+    "npm_packages": "0.1.5-rc.1"
+  },
+  "decision_vocabulary": [
+    "SUPERSEDING_ASSESSMENT_ESTABLISHED",
+    "SUPERSEDING_ASSESSMENT_NOT_ESTABLISHED"
+  ],
+  "status_vocabulary": [
+    "NO_GO_PRESERVED",
+    "REWRITTEN",
+    "PASS",
+    "FAIL",
+    "NOT_PASS",
+    "BLOCKED_EXTERNAL",
+    "NOT_BLOCKED",
+    "PASS_CANDIDATE",
+    "NOT_IMPLEMENTED",
+    "IMPLEMENTED",
+    "REPO_DEFAULT_PROMOTED",
+    "NOT_PROMOTED",
+    "NO",
+    "YES",
+    "MISSING"
+  ],
+  "r3_permitted_scope_expected": [
+    "safe_failure",
+    "observation",
+    "cleanup",
+    "new_generation_recovery"
+  ],
+  "source_artifacts": [
+    {
+      "id": "d15_g_verdict",
+      "stage": "D15-G",
+      "layer": "architecture-decision",
+      "path": "docs/evidence/d15/d15-g/verdict.v1.json"
+    },
+    {
+      "id": "d15_g_capability_matrix",
+      "stage": "D15-G",
+      "layer": "architecture-decision",
+      "path": "docs/evidence/d15/d15-g/capability-matrix.v1.json"
+    },
+    {
+      "id": "d15_4_verdict",
+      "stage": "D15-4",
+      "layer": "native-subagent-fork",
+      "path": "docs/evidence/d15/d15-4/verdict.v2.json"
+    },
+    {
+      "id": "d15_5_verdict",
+      "stage": "D15-5",
+      "layer": "native-persistent-terminal",
+      "path": "docs/evidence/d15/d15-5/verdict.v1.json"
+    },
+    {
+      "id": "b2_verdict",
+      "stage": "step-5-B2",
+      "layer": "candidate-composition",
+      "path": "docs/evidence/v090-step5-b2-adapter-restart/verdict.v1.json"
+    },
+    {
+      "id": "b3_verdict",
+      "stage": "step-5-B3",
+      "layer": "candidate-attachment",
+      "path": "docs/evidence/v090-step5-b3-terminal-adapter-restart/verdict.v1.json"
+    },
+    {
+      "id": "b4_verdict",
+      "stage": "step-5-B4",
+      "layer": "candidate-attachment",
+      "path": "docs/evidence/v090-step5-b4-terminal-dsh-runtime-restart/verdict.v1.json"
+    },
+    {
+      "id": "b4_current_overlay",
+      "stage": "step-5-B4",
+      "layer": "state-overlay",
+      "path": "docs/evidence/v090-step5-b4-terminal-dsh-runtime-restart/current-overlay.v1.json"
+    },
+    {
+      "id": "provider_rc2_verdict",
+      "stage": "provider-qualification",
+      "layer": "external-dependency",
+      "path": "docs/evidence/v090-dsh-provider-qualification/verdict.rc2.v1.json"
+    },
+    {
+      "id": "provider_alpha2_verdict",
+      "stage": "provider-qualification",
+      "layer": "external-dependency",
+      "path": "docs/evidence/v090-dsh-provider-qualification/verdict.alpha2.v1.json"
+    },
+    {
+      "id": "business_recovery_verdict",
+      "stage": "ADR-0084-gate",
+      "layer": "implementation",
+      "path": "docs/evidence/v090-business-recovery/verdict.v1.json"
+    },
+    {
+      "id": "business_recovery_acceptance_verdict",
+      "stage": "ADR-0084-gate",
+      "layer": "real-isolated-acceptance",
+      "path": "docs/evidence/v090-business-recovery-acceptance/verdict.v1.json"
+    },
+    {
+      "id": "business_recovery_acceptance_observations",
+      "stage": "ADR-0084-gate",
+      "layer": "real-isolated-acceptance",
+      "path": "docs/evidence/v090-business-recovery-acceptance/observations.v1.json"
+    },
+    {
+      "id": "session_containment_verdict",
+      "stage": "ADR-0084-gate",
+      "layer": "containment-classification",
+      "path": "docs/evidence/v090-session-containment/verdict.v2.json"
+    },
+    {
+      "id": "default_upgrade",
+      "stage": "0.9-closeout",
+      "layer": "repo-default-upgrade",
+      "path": "docs/evidence/v090-dsh-015rc1-default-upgrade/default-upgrade.v1.json"
+    },
+    {
+      "id": "default_upgrade_rollback",
+      "stage": "0.9-closeout",
+      "layer": "repo-default-upgrade",
+      "path": "docs/evidence/v090-dsh-015rc1-default-upgrade/rollback.v1.json"
+    },
+    {
+      "id": "deployment_config",
+      "stage": "0.9-closeout",
+      "layer": "live-selector",
+      "path": "config/dsh/deployment.json"
+    }
+  ],
+  "required_components": [
+    {
+      "id": "historical_d15_g",
+      "name": "historical D15-G verdict preserved un-rewritten",
+      "expected": "NO_GO_PRESERVED",
+      "derived_from": ["d15_g_verdict", "d15_g_capability_matrix"],
+      "description": "The committed D15-G verdict remains NO_GO over the audit-time D15-2..D15-5 snapshot with exactly the four atomic required blockers; this assessment references it but does not rewrite it."
+    },
+    {
+      "id": "replacement_gate_business_recovery",
+      "name": "ADR-0084 replacement gate (BYQ session failure containment and business recovery)",
+      "expected": "PASS",
+      "derived_from": ["business_recovery_verdict", "business_recovery_acceptance_verdict", "business_recovery_acceptance_observations", "session_containment_verdict"],
+      "description": "The current required gate passed at implementation level and in a real isolated service combination, with truthful cleanup and production untouched."
+    },
+    {
+      "id": "coherent_dsh_default_upgrade",
+      "name": "coherent DSH 0.1.5-rc.1 repository default upgrade with preserved rollback",
+      "expected": "PASS",
+      "derived_from": ["default_upgrade", "default_upgrade_rollback", "deployment_config"],
+      "description": "The repository default dependency/selector is the coherent 0.1.5-rc.1 pairing, readiness matched, and the 0.1.2rc1 rollback baseline is preserved. It does not claim a production deployment."
+    },
+    {
+      "id": "b1_subagent_child_crash",
+      "name": "B1 subagent-child-crash",
+      "expected": "BLOCKED_EXTERNAL",
+      "derived_from": ["provider_rc2_verdict", "provider_alpha2_verdict", "d15_4_verdict"],
+      "description": "No out-of-process continuable provider exists in the examined releases (rc.2/alpha.2); the historical D15-4 required item stays BLOCKED. It is not reclassified to PASS."
+    },
+    {
+      "id": "b2_subagent_byq_adapter_restart",
+      "name": "B2 subagent-byq-adapter-restart",
+      "expected": "BLOCKED_EXTERNAL",
+      "derived_from": ["b2_verdict", "d15_4_verdict"],
+      "description": "No committed BYQ composition rebinds a persisted continuable child across an adapter restart; the candidate probe is external/dependency BLOCKED and the historical D15-4 required item stays BLOCKED."
+    },
+    {
+      "id": "b3_terminal_adapter_restart",
+      "name": "B3 terminal-adapter-restart (candidate/qualification layer)",
+      "expected": "PASS_CANDIDATE",
+      "derived_from": ["b3_verdict"],
+      "description": "Candidate/qualification-layer minimal TerminalAttachment lifecycle PASS; it does not rewrite the historical D15-5 BLOCKED snapshot and is not production R4 wiring."
+    },
+    {
+      "id": "b4_terminal_dsh_runtime_restart",
+      "name": "B4 terminal-dsh-runtime-restart (candidate/qualification layer)",
+      "expected": "PASS_CANDIDATE",
+      "derived_from": ["b4_verdict", "b4_current_overlay"],
+      "description": "Candidate/qualification-layer real DSH runtime restart PASS with truthful lost/interrupted semantics; it does not rewrite the historical D15-5/D15-G snapshots and is not production R4 wiring."
+    },
+    {
+      "id": "native_independent_child_resume",
+      "name": "native independent child resume implementation claim",
+      "expected": "NOT_IMPLEMENTED",
+      "derived_from": ["provider_rc2_verdict", "provider_alpha2_verdict", "b2_verdict", "d15_4_verdict"],
+      "description": "Native independent child-process resume remains unimplemented; B1/B2 are BLOCKED_EXTERNAL and no BLOCKED item may be reported as an implemented capability."
+    },
+    {
+      "id": "candidate_compatibility_actual_scope",
+      "name": "candidate compatibility for the actually adopted scope",
+      "expected": "PASS",
+      "derived_from": ["replacement_gate_business_recovery", "coherent_dsh_default_upgrade", "b3_terminal_adapter_restart", "b4_terminal_dsh_runtime_restart"],
+      "description": "For the adopted scope the candidate compatibility is satisfied by the real containment/recovery gate, the coherent default upgrade and the B3/B4 candidate PASS. Per ADR-0084 B1/B2 do not gate candidate compatibility for this scope."
+    },
+    {
+      "id": "candidate_promotion_actual_scope",
+      "name": "candidate promotion for the actually adopted scope",
+      "expected": "REPO_DEFAULT_PROMOTED",
+      "derived_from": ["default_upgrade", "deployment_config"],
+      "description": "The candidate is promoted to the repository default dependency/selector only. A production deployment, release or tag is a separate decision and is not performed or claimed."
+    },
+    {
+      "id": "r3_resume",
+      "name": "R3 full unfreeze",
+      "expected": "NO",
+      "derived_from": ["d15_g_verdict", "provider_rc2_verdict", "provider_alpha2_verdict", "b2_verdict"],
+      "description": "R3 full resume stays NO: the historical D15-G remains NO_GO and native independent child recovery is unimplemented. The bounded R3 scope is captured separately and is not a full unfreeze."
+    }
+  ],
+  "rules": {
+    "assessment_is_derived_from_sources_not_declared": true,
+    "every_required_component_must_equal_its_expected_truth": true,
+    "no_rewrite_of_historical_d15_verdicts": true,
+    "blocked_external_must_not_be_reported_as_implemented": true,
+    "replacement_gate_must_pass_for_the_assessment_to_be_established": true,
+    "coherent_upgrade_must_pass_for_the_assessment_to_be_established": true,
+    "r3_bounded_scope_requires_the_replacement_gate_and_persisting_external_blockers": true,
+    "r3_resume_requires_all_native_capabilities_pass": true,
+    "production_promotion_and_repo_default_promotion_are_distinct": true,
+    "assessment_does_not_authorize_deployment_release_or_tag": true
+  },
+  "constraints": {
+    "r3_resume": "NO",
+    "r3_bounded_scope": [
+      "safe_failure",
+      "observation",
+      "cleanup",
+      "new_generation_recovery"
+    ],
+    "native_independent_child_resume": "NOT_IMPLEMENTED",
+    "production_deployment": "none",
+    "release_or_tag_created": false,
+    "phase_100_resumed": false,
+    "zero_ten_started": false,
+    "b1_b2_downgraded": false
+  },
+  "forbidden_assessment_fields": [
+    "all_pass",
+    "assessment_established",
+    "assessment_valid",
+    "self_declared_verdict",
+    "coverage",
+    "native_child_resume_implemented_in_memory",
+    "production_deployed",
+    "release_or_tag_created",
+    "phase_100_resumed",
+    "zero_ten_started"
+  ],
+  "fail_closed": [
+    "candidate mismatch",
+    "decision not in the decision vocabulary",
+    "missing or extra required component id (closed set)",
+    "a claimed component status that differs from the independently derived status",
+    "a claimed r3_permitted_scope that differs from the derived bounded scope",
+    "an assessment that reports a BLOCKED_EXTERNAL capability as PASS/IMPLEMENTED",
+    "an assessment that reports native independent child resume as implemented",
+    "an assessment that reports a production deployment, release or tag",
+    "an assessment that claims R3 full resume (r3_resume=YES)",
+    "an assessment that drops or widens the bounded R3 scope",
+    "a decision that differs from the independently derived decision",
+    "missing or hash-mismatched source evidence",
+    "unreadable or malformed source evidence (fail closed to MISSING, never a default pass)",
+    "an assessment that declares its own verdict/coverage/established fields",
+    "a replacement gate that is not PASS while the assessment claims an established assessment",
+    "a coherent default upgrade that is not PASS while the assessment claims an established assessment",
+    "an assessment that rewrites the historical D15-G verdict into GO/PASS"
+  ],
+  "notes": {
+    "purpose": "A named, machine-readable, fail-able superseding assessment. It truthfully reclassifies the D15 gate scope for the current adopted range under ADR-0084 without rewriting the historical D15-G verdict. The observer fails (non-zero) when the assessment is invalid, dishonest, overclaims implemented native child resume, hides a regression in the replacement gate, or relies on missing evidence.",
+    "gate_model": "B1/B2 remain BLOCKED_EXTERNAL and are not global prerequisites for 0.9.x closeout, candidate compatibility, the bounded R3 scope or unrelated roadmap work (ADR-0084 §3). The replacement gate is BYQ session failure containment and business recovery.",
+    "r3_model": "r3_permitted_scope is the bounded thin-supervisor scope only (safe failure, observation, cleanup, new generation recovery). r3_resume stays NO because native independent child recovery is unimplemented and the historical D15-G remains NO_GO.",
+    "production_model": "Promotion in this assessment means the repository default dependency/selector only. Production deployment, release and tag remain separate decisions and are neither performed nor claimed."
+  }
+}
