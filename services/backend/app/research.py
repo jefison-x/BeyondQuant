@@ -16,6 +16,10 @@ from .db import bounded_metadata_transaction, PgStoreMixin, ensure_column, execu
 from .db import schema_bootstrap_lock
 from .web_research import normalize_web_research_evidence, validate_web_research_evidence
 from .research_continuation import ResearchContinuationMixin
+from .research_execution_plan import (
+    ResearchExecutionPlanMixin,
+    SCHEMA_DDL as EXECUTION_PLAN_SCHEMA_DDL,
+)
 from .research_handoff import ResearchHandoffMixin
 from .research_receipts import ResearchReceiptMixin, SCHEMA_DDL as RECEIPT_SCHEMA_DDL
 
@@ -246,7 +250,10 @@ def _row_dict(row: dict[str, Any]) -> dict[str, object]:
     return dict(row)
 
 
-class ResearchStore(ResearchHandoffMixin, ResearchReceiptMixin, ResearchContinuationMixin, PgStoreMixin):
+class ResearchStore(
+    ResearchHandoffMixin, ResearchReceiptMixin, ResearchContinuationMixin,
+    ResearchExecutionPlanMixin, PgStoreMixin,
+):
     """Backend-owned durable repository for Phase 9 business entities (ADR-0016 PG)."""
 
     SCHEMA_DDL: list[str] = [
@@ -348,6 +355,9 @@ class ResearchStore(ResearchHandoffMixin, ResearchReceiptMixin, ResearchContinua
             PRIMARY KEY(entity_type, entity_id, idempotency_key)
         )
         """,
+        # ADR-0085 P1 plan tables reference research_tasks, so they are created
+        # only after it (and after every table they depend on).
+        *EXECUTION_PLAN_SCHEMA_DDL,
     ]
 
     def __init__(self, database_url: str | None = None) -> None:

@@ -44,7 +44,7 @@ CONTROLS = EVIDENCE / "negative-controls.v1.json"
 SCOPE = EVIDENCE / "scope-probe.v1.json"
 PROVENANCE = EVIDENCE / "provenance.v1.json"
 OVERLAY = EVIDENCE / "current-overlay.v1.json"
-CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.205"
+CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.206"
 
 B4 = "terminal-dsh-runtime-restart"
 B4_OWNER = "d15-5-candidate-attachment-layer"

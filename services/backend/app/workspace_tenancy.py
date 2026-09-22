@@ -77,6 +77,7 @@ MIGRATION_SCHEMA_DDL = [
 WORKSPACE_TABLES = (
     "product_conversations", "product_conversation_messages",
     "research_tasks", "experiments", "artifacts", "research_transitions",
+    "research_execution_plans", "research_execution_plan_receipts",
     "agent_runs", "agent_audit", "agent_approvals",
     "data_demands",
     "signal_producer_jobs", "ml_training_runs", "backtest_jobs",
@@ -118,6 +119,13 @@ INHERITED_TABLES: dict[str, tuple[tuple[str, ...], str, str]] = {
         "LEFT JOIN experiments ex ON c.entity_type = 'experiment' AND ex.experiment_id = c.entity_id "
         "LEFT JOIN artifacts ar ON c.entity_type = 'artifact' AND ar.artifact_id = c.entity_id",
         "COALESCE(rt.workspace_id, ex.workspace_id, ar.workspace_id)",
+    ),
+    "research_execution_plans": (
+        ("task_id",), "LEFT JOIN research_tasks p ON p.task_id = c.task_id", "p.workspace_id",
+    ),
+    "research_execution_plan_receipts": (
+        ("task_id", "idempotency_key"), "LEFT JOIN research_tasks p ON p.task_id = c.task_id",
+        "p.workspace_id",
     ),
     "stock_pool_snapshots": (("snapshot_id",), "LEFT JOIN stock_pools p ON p.pool_id = c.pool_id", "p.workspace_id"),
     "stock_pool_snapshot_members": (("snapshot_id", "symbol"), "LEFT JOIN stock_pool_snapshots p ON p.snapshot_id = c.snapshot_id", "p.workspace_id"),
@@ -163,6 +171,8 @@ RELATION_CHECKS = {
     "conversation_message": "SELECT COUNT(*) AS count FROM product_conversation_messages c JOIN product_conversations p ON p.conversation_id=c.conversation_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
     "experiment_task": "SELECT COUNT(*) AS count FROM experiments c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
     "artifact_task": "SELECT COUNT(*) AS count FROM artifacts c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
+    "execution_plan_task": "SELECT COUNT(*) AS count FROM research_execution_plans c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
+    "execution_plan_receipt_task": "SELECT COUNT(*) AS count FROM research_execution_plan_receipts c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
     "agent_audit_run": "SELECT COUNT(*) AS count FROM agent_audit c JOIN agent_runs p ON p.run_id=c.run_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
     "agent_approval_run": "SELECT COUNT(*) AS count FROM agent_approvals c JOIN agent_runs p ON p.run_id=c.run_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
     "signal_task": "SELECT COUNT(*) AS count FROM signal_producer_jobs c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
@@ -394,6 +404,8 @@ class WorkspaceTenancyStore(PgStoreMixin):
             "product_conversation_messages": ("product_conversations", "conversation_id", "conversation_id"),
             "experiments": ("research_tasks", "task_id", "task_id"),
             "artifacts": ("research_tasks", "task_id", "task_id"),
+            "research_execution_plans": ("research_tasks", "task_id", "task_id"),
+            "research_execution_plan_receipts": ("research_tasks", "task_id", "task_id"),
             "agent_audit": ("agent_runs", "run_id", "run_id"),
             "agent_approvals": ("agent_runs", "run_id", "run_id"),
             "signal_producer_jobs": ("research_tasks", "task_id", "task_id"),
