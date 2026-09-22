@@ -29,7 +29,7 @@ Allowed questions cover strategy drafts, bounded backtest analysis, round compar
 Run from the repository root:
 
 ```bash
-python3 tests/jev/validate_benchmark.py
+python3 benchmarks/jev/validate_benchmark.py
 ```
 
 ## Useful calibration slices
