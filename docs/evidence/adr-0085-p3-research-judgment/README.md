@@ -112,5 +112,9 @@ production database is called by the tests).
 - No real three-round journey / fault matrix / canary (that is P4). Capturing the
   result from a real DSH model turn and the full journey remain P4.
 - No deployment, tag/release, Phase 100 resume or 0.10 start.
-- `R3_RESUME = NO`; D15-G remains `NO_GO`; the D15-4 verdict is not rewritten (its
-  composition reachability count tracks the added foreground persona).
+- `R3_RESUME = NO`; D15-G remains `NO_GO`. The historical D15-4
+  `reachability.v1.json` snapshot is NOT recomputed: it keeps its pre-P3
+  `enable_run_in_background_false: 5` fact (the five delegates), and the CURRENT
+  composition structure (five delegates + the one bounded `research-judgment-turn`
+  role) is verified in `tests/architecture/test_architecture.py`, not in the
+  historical snapshot.

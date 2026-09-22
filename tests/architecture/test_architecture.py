@@ -924,9 +924,17 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         from packages.contracts.research_judgment import STAGE_ALLOWED_TOOLS
 
         composition = (ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()
+        # The CURRENT composition has exactly the five existing delegates plus
+        # the single bounded judgment role; the historical D15-4 snapshot is NOT
+        # recomputed from this (it keeps its pre-P3 fact `5`).
+        delegate_tools = re.findall(r"(?m)^\s*toolName:\s*(byq_delegate_\w+)$", composition)
+        self.assertEqual(len(delegate_tools), 5, delegate_tools)
+        self.assertEqual(composition.count("toolName: byq_research_judgment_turn"), 1)
         self.assertIn("- id: research-judgment-turn", composition)
         block = composition.split("- id: research-judgment-turn", 1)[1].split("\n- id:", 1)[0]
         self.assertIn("toolName: byq_research_judgment_turn", block)
+        self.assertIn("provider: spawn", block)
+        self.assertIn("enableRunInBackground: false", block)
         self.assertIn("maxDepth: 0", block)
         allow = block.split("allow:", 1)[1]
         for tool in sorted({tool for tools in STAGE_ALLOWED_TOOLS.values() for tool in tools}):

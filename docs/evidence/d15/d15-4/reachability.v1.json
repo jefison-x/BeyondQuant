@@ -14,7 +14,7 @@
     "composes_spawn_provider": true,
     "composes_fork_provider": true,
     "delegate_tool_count": 5,
-    "enable_run_in_background_false": 6,
+    "enable_run_in_background_false": 5,
     "enable_run_in_background_true": 0,
     "compat_inherits_0_1_2_contract": true,
     "tool_subagent_start_continuable_call_sites": 2,

@@ -236,11 +236,15 @@
         - byq_backtest_task_cancel
     maxDepth: 1
 
-# ADR-0085 P3: the ONLY bounded research-judgment role. Its toolFilter is a
-# static, exact read-only allowlist, so a judgment turn invoked through this
-# persona physically cannot call a write/approval/execute tool (there is no
-# agent-facing proposal tool; the proposal channel is the trusted internal
-# adapter invocation). It has no subagents (maxDepth: 0).
+# ADR-0085 P3: the SINGLE bounded foreground research-judgment role. It is
+# itself launched by @deepseek-ai/dsh-tool-subagent in the foreground (provider:
+# spawn, enableRunInBackground: false); maxDepth: 0 forbids it from spawning any
+# further subagent, so one judgment turn cannot restore the historical 8-call
+# investigation. Its toolFilter is a static exact read-only allowlist, so the
+# model invoked through it cannot call a write/approval/execute/routing tool and
+# has no agent-facing proposal tool (the proposal channel is the trusted
+# internal adapter invocation). Each call counts against the Backend per-stage
+# durable admission bound of two.
 - id: research-judgment-turn
   name: '@deepseek-ai/dsh-tool-subagent'
   config:

@@ -4,5 +4,5 @@
   "rollback_release": "dsh-0.1.2rc1",
   "promoted_build": "dsh-0.1.5rc1-post-u8.210",
   "rollback_build": "dsh-0.1.2rc1-post-u8.199",
-  "promoted_descriptor_hash": "sha256:58ab24860209745098b1e482cd3e476472e6cb49fcdabb0a1d903fdb2da2fae3"
+  "promoted_descriptor_hash": "sha256:a7adc09f1fe889c9c2ad40a0edef0dd2c5a6303fe3dff77a6544992e6091158f"
 }

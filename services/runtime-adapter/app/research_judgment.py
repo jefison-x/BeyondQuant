@@ -6,11 +6,15 @@ research-judgment stage it:
 1. admits exactly one bounded model call through the named Backend seam (the
    server derives the 1-based count and the two-call bound; the adapter never
    supplies a count);
-2. runs the DSH turn INSIDE the dedicated bounded judgment persona
+2. runs the DSH turn INSIDE the single bounded foreground judgment role
    ``RESEARCH_JUDGMENT_PERSONA_TOOL`` (``plugins/dsh-byq`` composition). That
-   persona's ``toolFilter`` is a static exact read-only allowlist, so the model
-   invoked through it has no write/approval/execute/routing/identity tool and no
-   proposal tool;
+   role is itself a ``@deepseek-ai/dsh-tool-subagent`` foreground instance
+   (``provider: spawn``, ``enableRunInBackground: false``) with ``maxDepth: 0``,
+   so it cannot spawn further subagents and cannot restore the historical
+   eight-call investigation. Its ``toolFilter`` is a static exact read-only
+   allowlist, so the model invoked through it has no
+   write/approval/execute/routing/identity tool and no proposal tool. One call
+   counts against the Backend per-stage durable admission bound of two;
 3. submits the CLOSED model result to the named server-side result operation,
    which atomically validates/commits an accepted proposal, records the
    authoritative durable-progress receipt, completes the call admission and

@@ -46,7 +46,7 @@
     },
     "composition_identity": {
       "path": "plugins/dsh-byq/profiles/dsh-0.1.5rc1-continuable/byq-product.identity.json",
-      "sha256": "sha256:3e18859142ec4c84607a94a399ac56d3b660b038e4bb98c6354fa30094673aff"
+      "sha256": "sha256:8222ae8fcb4c263189cfe3b118cb637ad6f7ed845cdf5c07cc43747f55b3ed4a"
     }
   },
   "base": {
