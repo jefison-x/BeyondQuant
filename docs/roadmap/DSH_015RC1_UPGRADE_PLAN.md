@@ -20,8 +20,38 @@ changes gate scope without rewriting them:
   the old label, do not overwrite old evidence, and do not wait for the upstream provider before
   continuing work that does not depend on native independent-child recovery.
 
-`R3_RESUME` remains `NO` until the new containment evidence is reviewed; ADR-0084 does not
-automatically switch the production selector or authorize deployment/release/tag.
+### Named D15 superseding assessment (established 2026-09-22)
+
+The named superseding assessment is now established in
+`codex/v090-d15-superseding-assessment` (evidence `docs/evidence/d15/d15-superseding/`;
+fail-able observer `scripts/d15/superseding_assessment/observer.py`). It references the
+historical D15-4/D15-5/D15-G verdicts without rewriting them and independently derives:
+
+- historical D15-G `NO_GO_PRESERVED` (the committed NO_GO and its four atomic blockers are
+  unchanged);
+- the ADR-0084 replacement gate **BYQ session failure containment and business recovery**
+  `PASS` (real isolated acceptance 9/9, containment/classification, cleanup zero, production
+  untouched);
+- the coherent DSH `0.1.5-rc.1` repository default upgrade `PASS` (readiness matched, 0.1.2rc1
+  rollback preserved, no production deployment claimed);
+- B1 `subagent-child-crash` and B2 `subagent-byq-adapter-restart` `BLOCKED_EXTERNAL`;
+  B3/B4 candidate-layer `PASS_CANDIDATE`; native independent child resume `NOT_IMPLEMENTED`;
+- candidate compatibility for the **actually adopted scope** `PASS` and promotion
+  `REPO_DEFAULT_PROMOTED` (repository default only; production deployment/release/tag remain
+  separate);
+- the bounded R3 scope `[safe_failure, observation, cleanup, new_generation_recovery]` with
+  `R3_RESUME = NO`.
+
+This does not rerun D15-G, does not deploy, does not create a tag/release, does not resume
+Phase 100 and does not start 0.10. The final 0.9 closeout remains a separate, maintainer-gated
+step. Because the assessment adds build inputs (and the follow-up authority-table consistency
+fix adds a governance test), the identity advances `post-u8.200 -> post-u8.201 -> post-u8.202`.
+
+`R3_RESUME` remains `NO`: this assessment only establishes the **bounded permitted R3
+scope** (safe failure, observation, cleanup, new generation recovery). Actually starting or
+implementing R3 requires a subsequent explicit step, and the final 0.9 closeout does not
+automatically start R3. ADR-0084 does not automatically switch the production selector or
+authorize deployment/release/tag.
 
 Status: **D15-0 done, D15-1 candidate built/started/probed, D15-2 session V3
 migration PASS (format layer only), D15-3 native persistence-layer session

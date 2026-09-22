@@ -1,0 +1,178 @@
+{
+  "artifacts": [
+    {
+      "id": "d15_g_verdict",
+      "introduced_by": "2601dfd4111b227b6a7036a037ee87c3fa4e159d",
+      "introduced_date": "2026-09-20",
+      "layer": "architecture-decision",
+      "modified_in_superseding_commit": false,
+      "path": "docs/evidence/d15/d15-g/verdict.v1.json",
+      "sha256": "sha256:b16b7d3ce88d940b494d909452619e495be6452256ec9a1bbd02af7b9ef31690",
+      "stage": "D15-G"
+    },
+    {
+      "id": "d15_g_capability_matrix",
+      "introduced_by": "2601dfd4111b227b6a7036a037ee87c3fa4e159d",
+      "introduced_date": "2026-09-20",
+      "layer": "architecture-decision",
+      "modified_in_superseding_commit": false,
+      "path": "docs/evidence/d15/d15-g/capability-matrix.v1.json",
+      "sha256": "sha256:31adbff8e1717c3bd77fe791d9cf904d550b12c5d0b2e6069612a8dad34a9184",
+      "stage": "D15-G"
+    },
+    {
+      "id": "d15_4_verdict",
+      "introduced_by": "940f9843d7ef8570da5e2afe85bff7f77fca5e6c",
+      "introduced_date": "2026-09-20",
+      "layer": "native-subagent-fork",
+      "modified_in_superseding_commit": false,
+      "path": "docs/evidence/d15/d15-4/verdict.v2.json",
+      "sha256": "sha256:63058ce3a1857c1cf5794f99781171162f94f3f165fa08c4e8b76ff0004830bb",
+      "stage": "D15-4"
+    },
+    {
+      "id": "d15_5_verdict",
+      "introduced_by": "91d86b0788ebffe1736dcb3ca42aad964076c059",
+      "introduced_date": "2026-09-20",
+      "layer": "native-persistent-terminal",
+      "modified_in_superseding_commit": false,
+      "path": "docs/evidence/d15/d15-5/verdict.v1.json",
+      "sha256": "sha256:fb99ff7fcd3a975ce7487e0627f2a88ed630509ed72f79fca140e75c24f92190",
+      "stage": "D15-5"
+    },
+    {
+      "id": "b2_verdict",
+      "introduced_by": "a2ce7d562c041bb886b11b196e74ca83d3b6f5d2",
+      "introduced_date": "2026-09-21",
+      "layer": "candidate-composition",
+      "modified_in_superseding_commit": false,
+      "path": "docs/evidence/v090-step5-b2-adapter-restart/verdict.v1.json",
+      "sha256": "sha256:cf859ee4a3bb5fbb91cbd5cffcaf7119431476c1e7afdf3d2622d992c0cb5721",
+      "stage": "step-5-B2"
+    },
+    {
+      "id": "b3_verdict",
+      "introduced_by": "6b3d3e2e602aeed65591f7a381db1e6cb8eaffda",
+      "introduced_date": "2026-09-21",
+      "layer": "candidate-attachment",
+      "modified_in_superseding_commit": false,
+      "path": "docs/evidence/v090-step5-b3-terminal-adapter-restart/verdict.v1.json",
+      "sha256": "sha256:7c36128c138da2cea89f6b315c0def4cb0a5531e66d4d20502de6eebb92a0cb3",
+      "stage": "step-5-B3"
+    },
+    {
+      "id": "b4_verdict",
+      "introduced_by": "ff12669374a98ab71dad4c0c38a377f590926bef",
+      "introduced_date": "2026-09-21",
+      "layer": "candidate-attachment",
+      "modified_in_superseding_commit": false,
+      "path": "docs/evidence/v090-step5-b4-terminal-dsh-runtime-restart/verdict.v1.json",
+      "sha256": "sha256:d0fdd8a51ca659f76ccda8f5511c1c77bff39d1c33821f9e95f755ca1a1450d0",
+      "stage": "step-5-B4"
+    },
+    {
+      "id": "b4_current_overlay",
+      "introduced_by": "ff12669374a98ab71dad4c0c38a377f590926bef",
+      "introduced_date": "2026-09-21",
+      "layer": "state-overlay",
+      "modified_in_superseding_commit": false,
+      "path": "docs/evidence/v090-step5-b4-terminal-dsh-runtime-restart/current-overlay.v1.json",
+      "sha256": "sha256:3cb91abbd59d8074cca59f0d4af5399332a3ef76b178c17f80d1ac0bb1b13621",
+      "stage": "step-5-B4"
+    },
+    {
+      "id": "provider_rc2_verdict",
+      "introduced_by": "27c5ac7facf73830e6f4dc363169a9b813864e5b",
+      "introduced_date": "2026-09-21",
+      "layer": "external-dependency",
+      "modified_in_superseding_commit": false,
+      "path": "docs/evidence/v090-dsh-provider-qualification/verdict.rc2.v1.json",
+      "sha256": "sha256:03df43d59a79882d968ac98be64f31cb2388e093577160d9b55cad9acd1ffeed",
+      "stage": "provider-qualification"
+    },
+    {
+      "id": "provider_alpha2_verdict",
+      "introduced_by": "27c5ac7facf73830e6f4dc363169a9b813864e5b",
+      "introduced_date": "2026-09-21",
+      "layer": "external-dependency",
+      "modified_in_superseding_commit": false,
+      "path": "docs/evidence/v090-dsh-provider-qualification/verdict.alpha2.v1.json",
+      "sha256": "sha256:ad53f4970dc12c39c623e87cea82f5f51d0a1d3c27fd4daf6b03dc099eabdce7",
+      "stage": "provider-qualification"
+    },
+    {
+      "id": "business_recovery_verdict",
+      "introduced_by": "d9062052a53c2ad3d9a4f661aa732c1369b15f71",
+      "introduced_date": "2026-09-22",
+      "layer": "implementation",
+      "modified_in_superseding_commit": false,
+      "path": "docs/evidence/v090-business-recovery/verdict.v1.json",
+      "sha256": "sha256:1191a4acd1ac5c0ea5f6ac8047100540e619bbef0b0a39c008d1281463196401",
+      "stage": "ADR-0084-gate"
+    },
+    {
+      "id": "business_recovery_acceptance_verdict",
+      "introduced_by": "4671c3e948b77c75a87c84a514888974f683a54b",
+      "introduced_date": "2026-09-21",
+      "layer": "real-isolated-acceptance",
+      "modified_in_superseding_commit": false,
+      "path": "docs/evidence/v090-business-recovery-acceptance/verdict.v1.json",
+      "sha256": "sha256:d9a9c842bb16a477520f0aea3ea8724246c36368b5cc0b0d5c67ec0e4f09de05",
+      "stage": "ADR-0084-gate"
+    },
+    {
+      "id": "business_recovery_acceptance_observations",
+      "introduced_by": "4671c3e948b77c75a87c84a514888974f683a54b",
+      "introduced_date": "2026-09-21",
+      "layer": "real-isolated-acceptance",
+      "modified_in_superseding_commit": false,
+      "path": "docs/evidence/v090-business-recovery-acceptance/observations.v1.json",
+      "sha256": "sha256:7e84e27b98f8dd79f14f8affaac38065b2bd026fd0d8c3a836d21524f6bf2316",
+      "stage": "ADR-0084-gate"
+    },
+    {
+      "id": "session_containment_verdict",
+      "introduced_by": "a6dbf7b9262121db800679bd52d19641233e08ce",
+      "introduced_date": "2026-09-21",
+      "layer": "containment-classification",
+      "modified_in_superseding_commit": false,
+      "path": "docs/evidence/v090-session-containment/verdict.v2.json",
+      "sha256": "sha256:bd6cd6eecd560fd454a81469f3828adc5a31c55991ee45b7902e03225340b755",
+      "stage": "ADR-0084-gate"
+    },
+    {
+      "id": "default_upgrade",
+      "introduced_by": "713cc0cb74205f898eb5b844512a0b40e34e2025",
+      "introduced_date": "2026-09-22",
+      "layer": "repo-default-upgrade",
+      "modified_in_superseding_commit": true,
+      "path": "docs/evidence/v090-dsh-015rc1-default-upgrade/default-upgrade.v1.json",
+      "sha256": "sha256:d15ef18419ddbedc3172c2f8d6a4dd85788e246e81a9302d325930c3e07fa68e",
+      "stage": "0.9-closeout"
+    },
+    {
+      "id": "default_upgrade_rollback",
+      "introduced_by": "8a4e4fe41771a25c472fa24195aedccf3f53a6a8",
+      "introduced_date": "2026-09-22",
+      "layer": "repo-default-upgrade",
+      "modified_in_superseding_commit": false,
+      "path": "docs/evidence/v090-dsh-015rc1-default-upgrade/rollback.v1.json",
+      "sha256": "sha256:09f5a930363df260c1966e37723f4038db73da6a9cb147ff5ee0dad52de3277e",
+      "stage": "0.9-closeout"
+    },
+    {
+      "id": "deployment_config",
+      "introduced_by": "8a4e4fe41771a25c472fa24195aedccf3f53a6a8",
+      "introduced_date": "2026-09-22",
+      "layer": "live-selector",
+      "modified_in_superseding_commit": false,
+      "path": "config/dsh/deployment.json",
+      "sha256": "sha256:02f05701ffd610b25d5076575396a38c252e610f230aa80961453faa1a13fb3e",
+      "stage": "0.9-closeout"
+    }
+  ],
+  "generated_at": "2026-09-22",
+  "generated_from_head": "713cc0cb74205f898eb5b844512a0b40e34e2025",
+  "note": "Source evidence reused by the named D15 superseding assessment. introduced_by is the last commit that touched the path; modified_in_superseding_commit marks paths changed by the superseding assessment commit itself. Historical D15-4/D15-5/D15-G verdicts are referenced and never rewritten.",
+  "schema_version": "byq-d15-superseding-provenance.v1"
+}

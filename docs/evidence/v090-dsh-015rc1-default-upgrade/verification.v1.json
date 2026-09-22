@@ -1,7 +1,7 @@
 {
   "default_release": "dsh-0.1.5rc1",
-  "promoted_build": "dsh-0.1.5rc1-post-u8.200",
-  "promoted_descriptor_hash": "sha256:604bf7a861f34fc3f1cfb6ec61d2b542ecc8ea512fc66faa8403bbd67cbd6fe2",
+  "promoted_build": "dsh-0.1.5rc1-post-u8.202",
+  "promoted_descriptor_hash": "sha256:de48aeaefb7a93c3ea4f99063ac335f1b615dbd30bd313850112ba63e8428322",
   "rollback_build": "dsh-0.1.2rc1-post-u8.199",
   "rollback_release": "dsh-0.1.2rc1",
   "schema_version": "byq-v090-dsh-default-upgrade-verification.v1",
