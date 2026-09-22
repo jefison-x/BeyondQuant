@@ -12,64 +12,71 @@ For ONLY the genuine research-judgment plan stages (`strategy_draft`,
 1. a framework-neutral, CLOSED and bounded stage-input/proposal contract;
 2. a durable per-stage **model-call admission/receipt** (authoritative count);
 3. authoritative durable-progress evidence derived from persisted BYQ records;
-4. a **stage-scoped runtime enforcement** so the judgment turn has only the exact
-   read-only tools (MCP dispatch boundary);
-5. a named server-side proposal seam plus atomic task/plan terminal convergence;
-6. one concrete trusted **runtime-adapter internal invocation** through
-   admission → closed model result → validation/commit/progress receipt.
+4. a dedicated bounded judgment DSH **persona** with a static exact read-only
+   `toolFilter`;
+5. an **atomic** trusted result operation (proposal commit + progress receipt +
+   admission completion + terminal convergence in ONE transaction);
+6. one concrete trusted runtime-adapter internal invocation through that persona.
 
 The model may propose a bounded research judgment. It can NEVER choose the
 workflow `next_action`, object identity, approval execution, idempotency key, job
 routing, recovery or continuation state. There is **no** generic
 plan/event/proposal write route and no agent-facing write tool.
 
-## Blockers fixed
+## Design
 
-1. **Two-call limit now enforced authoritatively.** `admit_research_stage_call`
-   persists a `research_judgment_stage_calls` row per task/plan/stage under the
-   task-row lock and derives the 1-based `call_index`; the caller supplies only a
-   `call_identity`. A third admission/plan revision fails closed
-   (`StageModelCallLimitExceeded`), exact replay is free, and concurrent
-   admission never exceeds two (unique `(task, plan_version, stage, call_index)`).
-2. **Progress is authoritative, not caller-asserted.** `record_research_stage_progress`
-   takes a CLOSED durable-evidence descriptor (`none`/`plan_advance`/`artifact`/
-   `experiment`/`backtest_job`) and derives/binds the identity from the named
-   persisted record. A bare digest or any record not owned by the task fails
-   closed. A plan advance caused by an accepted proposal is authoritative
-   progress and cannot be suppressed. The FIRST completed check without progress
-   atomically sets plan **and** ResearchTask to `needs_attention` /
-   `no_durable_progress`.
-3. **Stage-scoped runtime enforcement.** `services/mcp/src/research-judgment-admission.ts`
-   admits ONLY the exact read-only tools for the stage when the trusted adapter
-   sets `x-byq-research-judgment-stage`, and blocks every write/approval/execute
-   tool. The Python contract `STAGE_ALLOWED_TOOLS` and the TS `STAGE_READ_TOOLS`
-   table are held identical by an architecture test.
-4. **Concrete internal invocation.** Backend private endpoints
-   `POST /internal/research-judgment/{task_id}/admit` and `/result` (trusted
-   runtime-adapter consumer) plus `services/runtime-adapter/app/research_judgment.py`
-   admit a call, run the bounded turn, and submit the CLOSED model result through
-   validation/commit/progress receipt. Agent-facing MCP/Browser stays read-only.
-   Capturing the result from a real DSH model turn and the full three-round
-   journey remain P4 per ADR-0085; P3 does not claim a completed real journey.
-5. **Terminal convergence.** A `final_selection` commit completes the
-   ResearchTask through the existing validated completion path (same-task
-   validated evidence + no unfinished jobs) in the SAME transaction as the plan
-   CAS, so the task and plan never disagree about being terminal.
+### Bounded judgment persona (not a client header)
+
+The judgment turn runs INSIDE the composition role `research-judgment-turn`
+(`toolName: byq_research_judgment_turn`, `maxDepth: 0`, foreground one-shot). Its
+`toolFilter.allow` is a static exact read-only allowlist
+(`byq_agent_context`, `byq_research_get`, `byq_research_stage_input_get`,
+`byq_backtest_task_get`, `byq_backtest_analysis_get`). The model invoked through
+that role has no write/approval/execute/routing/identity tool and no proposal
+tool; the capability cannot be omitted or widened by model output. The
+`byq_research_stage_input_get` read tool is exposed ONLY to that role. The
+runtime adapter (`RESEARCH_JUDGMENT_PERSONA_TOOL`) invokes exactly that role; an
+architecture test fails CI if the constant and the generated composition diverge,
+and asserts the enumerated tools are write-free. (`@deepseek-ai/dsh-tool-subagent`
+is the official rc.1 bounded-role seam; ADR-0038 records that rc.1 has no root
+tool filter, so the bounded role is a subagent persona.)
+
+### Atomic trusted result
+
+`POST /internal/research-judgment/{task_id}/result` calls ONE named store
+operation, `record_research_judgment_result`, which in a single transaction:
+validates a closed proposal, commits it through the deterministic reducer/plan
+CAS, records the authoritative durable-progress receipt, completes the stage-call
+admission and (for `final_selection`) converges the ResearchTask through the
+existing validated completion path. The named evidence record is verified even
+when an accepted proposal already advanced the plan. Any failure leaves the plan,
+task, stage-call ledger and receipts unchanged; an exact replay returns the same
+stored receipt without another write.
+
+### Two-call bound and fence
+
+`admit_research_stage_call` persists a `research_judgment_stage_calls` row per
+`(task, plan_version, stage)` under the task-row lock and derives the 1-based
+count; the caller supplies only a `call_identity`. A third admission fails closed,
+exact replay is free, and concurrent admission never exceeds two. A FIRST
+completed check without authoritative progress atomically sets plan and
+ResearchTask to `needs_attention/no_durable_progress`.
 
 ## Files
 
 - `packages/contracts/research_judgment.py` — closed stage-input/proposal,
-  progress-evidence and admission schemas; bounds; forbidden raw/routing fields;
-  pure commit reducer; two-call bound; first-check fence.
+  admission, progress-evidence and judgment-result schemas; bounds; forbidden
+  raw/routing fields; pure commit reducer; two-call bound; first-check fence.
 - `services/backend/app/research_judgment.py` — read-only stage input, durable
-  admission, authoritative progress + atomic fence, named proposal commit,
-  atomic terminal completion.
+  admission, atomic result operation, authoritative progress + atomic fence,
+  named proposal commit, atomic terminal completion.
 - `services/backend/app/main.py` — read-only stage-input route and the two
   private research-judgment consumer routes.
-- `services/mcp/src/research-judgment.ts`, `research-judgment-admission.ts`,
-  `server.ts` — bounded read-only tool and stage-scoped enforcement.
+- `services/mcp/src/research-judgment.ts`, `server.ts` — bounded read-only tool.
+- `plugins/dsh-byq/compositions/templates/byq-product-sdk.cordis.yml` — the
+  bounded judgment persona (regenerated composition/identity/profiles).
 - `services/runtime-adapter/app/research_judgment.py` — concrete trusted
-  invocation (admit → bounded turn → closed result → commit/receipt).
+  invocation: admit → bounded persona turn → atomic result.
 - `plugins/dsh-byq/runtime/byq-continuation-budget.js` — two-call mirror.
 
 ## Evidence / reproduce
@@ -77,6 +84,7 @@ plan/event/proposal write route and no agent-facing write tool.
 ```bash
 python3 -m unittest tests.test_research_judgment_contract tests.test_research_judgment_benchmark
 python3 -m unittest tests.architecture.test_architecture
+python3 -m unittest tests.test_dsh_d15_4_subagent tests.test_dsh_d15_4_continuable_wiring
 python3 -m unittest tests.test_reliability_review_audit tests.test_v090_final_closeout
 python3 benchmarks/jev/validate_benchmark.py
 # isolated PostgreSQL:
@@ -88,11 +96,12 @@ python3 -m pytest -q services/runtime-adapter/tests/test_research_judgment.py
 cd services/mcp && npm run build && npm test
 ```
 
-Targeted evidence: concurrent admission <=2; replay free; fabricated progress
-rejected; first no-progress atomic fence; bounded-role tool enumeration has no
-writes; internal invocation through commit; zero model calls for deterministic
-stages; stale bindings and replay conflicts fail closed; final task/plan terminal
-consistency.
+Focused evidence: bounded role/composition enumerates only exact read tools with
+no optional-header bypass; missing/forged stage binding fails closed; valid
+proposal plus invalid progress evidence causes zero state changes; injected
+failure between proposal decision and call completion rolls back everything;
+exact result replay is stable and free; concurrent admission <=2; no-progress
+fence; deterministic zero-call; terminal consistency.
 
 The 60-case offline `benchmarks/jev` dataset and rubric are reused ONLY as a
 deterministic calibration fixture (never a router; no model, paid API or
@@ -100,6 +109,8 @@ production database is called by the tests).
 
 ## Non-claims
 
-- No real three-round journey / fault matrix / canary (that is P4).
+- No real three-round journey / fault matrix / canary (that is P4). Capturing the
+  result from a real DSH model turn and the full journey remain P4.
 - No deployment, tag/release, Phase 100 resume or 0.10 start.
-- `R3_RESUME = NO`; D15-G remains `NO_GO`; historical verdicts are not rewritten.
+- `R3_RESUME = NO`; D15-G remains `NO_GO`; the D15-4 verdict is not rewritten (its
+  composition reachability count tracks the added foreground persona).

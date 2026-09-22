@@ -311,6 +311,11 @@ def test_commit_rejects_forged_routing_raw_payloads_and_stale_versions():
         wrong_task = _proposal(plan, "backtest_analysis", "backtest_analysis", task_id="task_" + "b" * 32)
         with pytest.raises(InvalidTransition):
             store.commit_research_proposal(task, wrong_task, trusted_context=context)
+        # A forged stage binding (a proposal valid for another stage) fails closed.
+        forged_stage = _proposal(plan, "iteration_comparison", "select_iteration",
+                                 iteration=3, selected_iteration=3)
+        with pytest.raises(InvalidTransition):
+            store.commit_research_proposal(task, forged_stage, trusted_context=context)
     finally:
         store.close()
 
@@ -347,6 +352,112 @@ def test_commit_escalation_stops_at_needs_attention():
         assert escalated["stage"] == "needs_attention"
         assert escalated["reason"] == "escalation_requested"
         assert _task_row(store, task)["progress"]["blocked_reason"] == "escalation_requested"
+    finally:
+        store.close()
+
+
+# --------------------------------------------------------------------------- #
+# Atomic trusted result operation
+# --------------------------------------------------------------------------- #
+
+def _receipt_count(store, task):
+    row = store._fetch_one("""SELECT COUNT(*) AS count FROM research_execution_plan_receipts
+        WHERE task_id = :task""", {"task": task})
+    return int(row["count"])
+
+
+def test_atomic_result_commits_then_replays_without_another_write():
+    store, task, context = _setup()
+    try:
+        plan = _seed_plan(store, task, "backtest_analysis")
+        store.admit_research_stage_call(task, {"call_identity": "turn-a"}, trusted_context=context)
+        payload = {
+            "call_identity": "turn-a", "durable_evidence": {"kind": "none"},
+            "proposal": _proposal(plan, "backtest_analysis", "backtest_analysis")}
+        first = store.record_research_judgment_result(task, payload, trusted_context=context)
+        assert first["replayed"] is False
+        assert first["proposal"]["stage"] == "iteration_comparison"
+        assert first["progress"]["outcome"] == "advance"
+        assert _plan_row(store, task)["stage"] == "iteration_comparison"
+        receipts = _receipt_count(store, task)
+        assert receipts == 1
+
+        replay = store.record_research_judgment_result(task, payload, trusted_context=context)
+        assert replay["replayed"] is True
+        assert replay["proposal"] == first["proposal"]
+        assert _receipt_count(store, task) == receipts
+        assert _plan_row(store, task)["plan_version"] == 2
+    finally:
+        store.close()
+
+
+def test_atomic_result_invalid_evidence_after_valid_proposal_changes_nothing():
+    store, task, context = _setup()
+    try:
+        plan = _seed_plan(store, task, "backtest_analysis")
+        before_task = _task_row(store, task)
+        store.admit_research_stage_call(task, {"call_identity": "turn-a"}, trusted_context=context)
+        payload = {
+            "call_identity": "turn-a",
+            "durable_evidence": {"kind": "artifact", "id": "artifact_" + "e" * 32},
+            "proposal": _proposal(plan, "backtest_analysis", "backtest_analysis")}
+        with pytest.raises(ValueError):
+            store.record_research_judgment_result(task, payload, trusted_context=context)
+        persisted = _plan_row(store, task)
+        assert persisted["plan_version"] == plan["plan_version"]
+        assert persisted["stage"] == "backtest_analysis"
+        assert _receipt_count(store, task) == 0
+        assert _task_row(store, task)["version"] == before_task["version"]
+        call = store._fetch_one("""SELECT status, result_json FROM research_judgment_stage_calls
+            WHERE task_id = :task AND call_identity = 'turn-a'""", {"task": task})
+        assert call["status"] == "admitted" and call["result_json"] is None
+    finally:
+        store.close()
+
+
+def test_atomic_result_injected_failure_rolls_back_everything():
+    store, task, context = _setup()
+    try:
+        plan = _seed_plan(store, task, "backtest_analysis")
+        before_task = _task_row(store, task)
+        store.admit_research_stage_call(task, {"call_identity": "turn-a"}, trusted_context=context)
+
+        def _explode(*args, **kwargs):
+            raise RuntimeError("injected failure between proposal decision and call completion")
+
+        store._complete_stage_call = _explode
+        payload = {
+            "call_identity": "turn-a", "durable_evidence": {"kind": "none"},
+            "proposal": _proposal(plan, "backtest_analysis", "backtest_analysis")}
+        with pytest.raises(RuntimeError):
+            store.record_research_judgment_result(task, payload, trusted_context=context)
+        persisted = _plan_row(store, task)
+        assert persisted["plan_version"] == plan["plan_version"]
+        assert persisted["stage"] == "backtest_analysis"
+        assert _receipt_count(store, task) == 0
+        assert _task_row(store, task)["version"] == before_task["version"]
+        call = store._fetch_one("""SELECT status, result_json FROM research_judgment_stage_calls
+            WHERE task_id = :task AND call_identity = 'turn-a'""", {"task": task})
+        assert call["status"] == "admitted" and call["result_json"] is None
+    finally:
+        store.close()
+
+
+def test_atomic_result_for_unadmitted_call_and_no_progress_fence():
+    store, task, context = _setup()
+    try:
+        _seed_plan(store, task, "backtest_analysis")
+        with pytest.raises(InvalidTransition):
+            store.record_research_judgment_result(
+                task, {"call_identity": "never-admitted", "durable_evidence": {"kind": "none"}},
+                trusted_context=context)
+        store.admit_research_stage_call(task, {"call_identity": "turn-a"}, trusted_context=context)
+        fenced = store.record_research_judgment_result(
+            task, {"call_identity": "turn-a", "durable_evidence": {"kind": "none"}},
+            trusted_context=context)
+        assert fenced["progress"]["plan_moved_to_needs_attention"] is True
+        assert _plan_row(store, task)["stage"] == "needs_attention"
+        assert _task_row(store, task)["progress"]["blocked_reason"] == "no_durable_progress"
     finally:
         store.close()
 

@@ -446,6 +446,26 @@ def validate_stage_progress_request(value: object) -> dict[str, object]:
     return value
 
 
+def validate_judgment_result_request(value: object) -> dict[str, object]:
+    """Closed model result envelope for the trusted atomic result operation.
+
+    It always carries the authoritative durable-evidence descriptor and may carry
+    one closed proposal. It never carries a progress digest, a routing target, an
+    identity or an idempotency key.
+    """
+
+    if not isinstance(value, dict) or not {"call_identity", "durable_evidence"} <= set(value):
+        raise ValueError("research judgment result must carry call identity and evidence")
+    if set(value) - {"call_identity", "durable_evidence", "proposal"}:
+        unknown = sorted(set(value) - {"call_identity", "durable_evidence", "proposal"})
+        raise ValueError(f"research judgment result has invalid fields (unknown={unknown})")
+    validate_call_identity(value["call_identity"])
+    validate_progress_evidence(value["durable_evidence"])
+    if value.get("proposal") is not None:
+        validate_proposal(value["proposal"])
+    return value
+
+
 def _decision(outcome: str, reason: str) -> dict[str, object]:
     if outcome not in OUTCOMES:
         raise ValueError("research judgment outcome is unknown")

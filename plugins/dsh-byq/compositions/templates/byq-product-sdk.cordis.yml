@@ -170,7 +170,6 @@
         - byq_agent_audit
         - byq_research_task_create
         - byq_research_get
-        - byq_research_stage_input_get
         - byq_experiment_create
         - byq_artifact_create
         - byq_strategy_validate
@@ -194,7 +193,6 @@
         - byq_agent_authorize
         - byq_agent_audit
         - byq_research_get
-        - byq_research_stage_input_get
         - byq_backtest_task_prepare
         - byq_backtest_task_create
         - byq_backtest_task_get
@@ -237,6 +235,27 @@
         - byq_backtest_task_execute
         - byq_backtest_task_cancel
     maxDepth: 1
+
+# ADR-0085 P3: the ONLY bounded research-judgment role. Its toolFilter is a
+# static, exact read-only allowlist, so a judgment turn invoked through this
+# persona physically cannot call a write/approval/execute tool (there is no
+# agent-facing proposal tool; the proposal channel is the trusted internal
+# adapter invocation). It has no subagents (maxDepth: 0).
+- id: research-judgment-turn
+  name: '@deepseek-ai/dsh-tool-subagent'
+  config:
+    provider: spawn
+    toolName: byq_research_judgment_turn
+    enableRunInBackground: false
+    persona: "You are the BYQ bounded research-judgment role for exactly one research stage. Read ONLY the bounded stage input and bounded analysis summaries available to you. You have no write, approval, execution, routing, identity, idempotency or job tool, and you must never invent an object id, an idempotency key, a next action or an approval. Reach a bounded judgment (or an explicit evidence-insufficient/escalation stop) and return one closed result. If the judgment would need any write or routing capability, report the blocker instead of attempting it. Never expose internal schema fields, tool names or Artifact IDs."
+    toolFilter:
+      allow:
+        - byq_agent_context
+        - byq_research_get
+        - byq_research_stage_input_get
+        - byq_backtest_task_get
+        - byq_backtest_analysis_get
+    maxDepth: 0
 
 # Qualified and Product-enabled DSH plugin entries are generated here. The
 # template never names candidate packages directly.

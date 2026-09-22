@@ -78,14 +78,21 @@ def render_patch(*, continuable: bool = False) -> str:
     )
     if continuable:
         # Candidate-specific D15-4 wiring: keep provider: spawn and the exact
-        # same delegate/toolFilter/MCP blocks, but route each delegate to the
-        # native `startContinuable` branch (background + continuable mode). The
-        # 0.1.2 production patch below is not affected because generation of the
-        # candidate profile is a separate output file.
-        inserted = inserted.replace(
-            "    enableRunInBackground: false\n    backgroundMode: one-shot\n",
-            "    enableRunInBackground: true\n    backgroundMode: continuable\n",
-        )
+        # same delegate/toolFilter/MCP blocks, but route each of the FIVE
+        # byq_delegate_* tools onto the native `startContinuable` branch
+        # (background + continuable mode). The bounded research-judgment role
+        # (ADR-0085 P3) is deliberately NOT a delegate and MUST stay foreground
+        # one-shot, so the transform is applied per delegate block only.
+        parts = inserted.split("\n- id: ")
+        converted = [parts[0]]
+        for part in parts[1:]:
+            if any(f"toolName: {delegate}" in part for delegate in DELEGATES):
+                part = part.replace(
+                    "    enableRunInBackground: false\n    backgroundMode: one-shot\n",
+                    "    enableRunInBackground: true\n    backgroundMode: continuable\n",
+                )
+            converted.append(part)
+        inserted = "\n- id: ".join(converted)
     rendered = template.replace(
         MARKER,
         provider.rstrip() + "\n\n- insert:\n" + _indent(inserted, 4),
@@ -102,10 +109,15 @@ def render_patch(*, continuable: bool = False) -> str:
     for required_boundary in required:
         if required_boundary not in rendered:
             raise ValueError(f"candidate patch lacks required boundary: {required_boundary}")
-    if continuable and "backgroundMode: one-shot" in rendered:
-        raise ValueError("continuable candidate patch must not contain a one-shot delegate")
-    if not continuable and "backgroundMode: continuable" in rendered:
-        raise ValueError("production candidate patch must not contain a continuable delegate")
+    for delegate in DELEGATES:
+        block = _block(rendered, f"toolName: {delegate}", "toolFilter:")
+        if continuable and "backgroundMode: continuable" not in block:
+            raise ValueError(f"continuable candidate patch must route {delegate} to continuable")
+        if not continuable and "backgroundMode: one-shot" not in block:
+            raise ValueError(f"production candidate patch must keep {delegate} one-shot")
+    if continuable and "backgroundMode: continuable" in _block(
+            rendered, "- id: research-judgment-turn", "maxDepth: 0"):
+        raise ValueError("the bounded research-judgment role must stay foreground one-shot")
     for inherited_security_service in ("subprocess", "bash-sandbox", "permission-presets"):
         if f"- id: {inherited_security_service}\n  disabled: true" in rendered:
             raise ValueError(

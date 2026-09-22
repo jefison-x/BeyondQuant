@@ -6,12 +6,15 @@ research-judgment stage it:
 1. admits exactly one bounded model call through the named Backend seam (the
    server derives the 1-based count and the two-call bound; the adapter never
    supplies a count);
-2. runs the DSH judgment turn whose MCP surface is enforced read-only by the
-   stage header (``research-judgment-admission.ts``); the model has no write
-   tool and no proposal tool;
-3. submits the CLOSED model result to the named server-side proposal channel,
-   which validates and commits an accepted proposal and records the authoritative
-   durable-progress receipt.
+2. runs the DSH turn INSIDE the dedicated bounded judgment persona
+   ``RESEARCH_JUDGMENT_PERSONA_TOOL`` (``plugins/dsh-byq`` composition). That
+   persona's ``toolFilter`` is a static exact read-only allowlist, so the model
+   invoked through it has no write/approval/execute/routing/identity tool and no
+   proposal tool;
+3. submits the CLOSED model result to the named server-side result operation,
+   which atomically validates/commits an accepted proposal, records the
+   authoritative durable-progress receipt, completes the call admission and
+   converges a terminal ResearchTask.
 
 There is no generic plan/proposal/event write route and no agent-facing write.
 """
@@ -22,8 +25,10 @@ import json
 import urllib.error
 import urllib.request
 
-# The trusted header that turns on the MCP stage-scoped read-only enforcement.
-RESEARCH_JUDGMENT_STAGE_HEADER = "x-byq-research-judgment-stage"
+# The dedicated bounded judgment persona's model-facing tool name. It MUST match
+# the generated composition's `research-judgment-turn` entry; an architecture
+# test fails CI on divergence.
+RESEARCH_JUDGMENT_PERSONA_TOOL = "byq_research_judgment_turn"
 _RESULT_FIELDS = frozenset({"proposal", "durable_evidence"})
 
 
@@ -56,6 +61,16 @@ def _call(post, url: str, payload: dict, headers: dict, timeout: float) -> dict:
     return value
 
 
+def enforce_bounded_result_shape(model_result: object) -> dict:
+    """Reject anything that is not a closed proposal/no-progress result."""
+
+    if not isinstance(model_result, dict) or set(model_result) - _RESULT_FIELDS:
+        raise ResearchJudgmentError("invalid closed research judgment result")
+    if model_result.get("proposal") is not None and not isinstance(model_result["proposal"], dict):
+        raise ResearchJudgmentError("invalid closed research judgment result")
+    return model_result
+
+
 def admit_research_judgment_turn(
     *, backend_url: str, task_id: str, trusted_headers: dict, call_identity: str,
     transport=None, timeout: float = 8.0,
@@ -72,16 +87,15 @@ def submit_research_judgment_result(
     *, backend_url: str, task_id: str, trusted_headers: dict, call_identity: str,
     model_result: object, transport=None, timeout: float = 8.0,
 ) -> dict:
-    """Submit the CLOSED model result to the named server-side proposal channel."""
+    """Submit the CLOSED model result to the atomic server-side result operation."""
 
-    if not isinstance(model_result, dict) or set(model_result) - _RESULT_FIELDS:
-        raise ResearchJudgmentError("invalid closed research judgment result")
+    result = enforce_bounded_result_shape(model_result)
     payload = {
         "call_identity": call_identity,
-        "durable_evidence": model_result.get("durable_evidence", {"kind": "none"}),
+        "durable_evidence": result.get("durable_evidence", {"kind": "none"}),
     }
-    if model_result.get("proposal") is not None:
-        payload["proposal"] = model_result["proposal"]
+    if result.get("proposal") is not None:
+        payload["proposal"] = result["proposal"]
     post = transport or _http_post
     return _call(
         post, f"{backend_url}/internal/research-judgment/{task_id}/result",
@@ -90,19 +104,19 @@ def submit_research_judgment_result(
 
 def run_bounded_research_judgment(
     *, backend_url: str, task_id: str, trusted_headers: dict, call_identity: str,
-    model_runner, transport=None, timeout: float = 8.0,
+    turn_runner, transport=None, timeout: float = 8.0,
 ) -> dict:
-    """Admit, run the bounded turn, then submit the closed result.
+    """Admit, run the turn inside the bounded persona, then submit the result.
 
-    ``model_runner`` receives the admission (including the bounded stage input)
-    and returns the closed result. The stage header is set by the caller's DSH
-    session so the MCP surface stays read-only for the turn.
+    ``turn_runner`` receives the admission (with the bounded stage input) and the
+    bounded persona tool name, and MUST run the DSH turn inside that persona so
+    the model cannot reach any write tool.
     """
 
     admission = admit_research_judgment_turn(
         backend_url=backend_url, task_id=task_id, trusted_headers=trusted_headers,
         call_identity=call_identity, transport=transport, timeout=timeout)
-    model_result = model_runner(admission)
+    model_result = turn_runner(admission, RESEARCH_JUDGMENT_PERSONA_TOOL)
     return submit_research_judgment_result(
         backend_url=backend_url, task_id=task_id, trusted_headers=trusted_headers,
         call_identity=call_identity, model_result=model_result, transport=transport,

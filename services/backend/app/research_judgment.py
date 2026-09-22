@@ -14,16 +14,16 @@ Named server-side seams and NOTHING ELSE:
   bound are derived from a persisted per-task/plan/stage counter under the
   task-row lock. A caller can never choose, reset or exceed the count, and an
   exact replay returns the same admission.
-* ``record_research_stage_progress`` completes an admitted call. The caller names
-  a durable BYQ record (never a digest); the seam derives and binds the progress
-  identity from persisted facts. A fabricated record fails closed. The FIRST
-  completed check without authoritative progress atomically moves the plan AND
-  ResearchTask to ``needs_attention`` with reason ``no_durable_progress``.
-* ``commit_research_proposal`` validates a CLOSED, bounded proposal, derives the
-  exact next plan state through the framework-neutral reducer, and commits it
-  through the same plan compare-and-swap the P1/P2 reducers use. A
-  ``final_selection`` commit atomically completes the ResearchTask too, so the
-  task and the plan never disagree about being terminal.
+* ``record_research_judgment_result`` is the ATOMIC trusted result operation used
+  by the runtime-adapter consumer. In ONE transaction it validates a closed
+  proposal, commits it through the deterministic reducer/plan CAS, records the
+  authoritative durable-progress receipt, completes the stage-call admission and
+  (for a terminal stage) converges the ResearchTask. Any failure rolls back the
+  plan, task, call ledger and receipts together. An exact replay returns the same
+  receipt without another write.
+* ``commit_research_proposal`` / ``record_research_stage_progress`` remain the
+  narrower named seams for direct server callers and are implemented on top of
+  the same transaction-internal helpers.
 
 There is NO generic plan/event/proposal write route and no agent-facing write
 tool. The internal invocation endpoints are trusted service-to-service only.
@@ -53,6 +53,8 @@ from packages.contracts.research_judgment import (
     stage_model_call_limit,
     stage_model_call_outcome,
     stage_requires_model,
+    validate_judgment_result_request,
+    validate_progress_evidence,
     validate_proposal,
     validate_stage_admission_request,
     validate_stage_input,
@@ -104,6 +106,8 @@ _COMPLETION_EVIDENCE_REFERENCE_KINDS = (
     "strategy_version", "strategy_approval", "signal_snapshot", "backtest_result",
 )
 
+RESULT_RECEIPT_SCHEMA_VERSION = "research-judgment-result-receipt.v1"
+
 
 def _hash(value: object) -> str:
     return "sha256:" + hashlib.sha256(
@@ -112,7 +116,7 @@ def _hash(value: object) -> str:
 
 
 class ResearchJudgmentMixin:
-    """Read-only stage input, durable admission, authoritative progress and commit."""
+    """Read-only stage input, durable admission, atomic commit/progress and fence."""
 
     @staticmethod
     def _require_model_stage(stage: object) -> str:
@@ -142,12 +146,7 @@ class ResearchJudgmentMixin:
 
     def admit_research_stage_call(self, task_id: str, payload: object, *,
                                   trusted_context: dict) -> dict:
-        """Reserve one bounded model call for the current plan stage.
-
-        The call index is derived from a persisted counter under the task-row
-        lock; the caller supplies only a call identity. Replay is idempotent and a
-        third concurrent/sequential admission fails closed.
-        """
+        """Reserve one bounded model call for the current plan stage."""
 
         from .research import InvalidTransition, ResearchNotFound
 
@@ -188,22 +187,24 @@ class ResearchJudgmentMixin:
             return self._stage_admission(row, task, plan)
 
     # ------------------------------------------------------------------ #
-    # Authoritative durable-progress completion + fence
+    # Atomic trusted result operation
     # ------------------------------------------------------------------ #
 
-    def record_research_stage_progress(self, task_id: str, payload: object, *,
-                                       trusted_context: dict) -> dict:
-        """Complete one admitted call with authoritative durable evidence.
+    def record_research_judgment_result(self, task_id: str, payload: object, *,
+                                        trusted_context: dict) -> dict:
+        """Validate + commit + progress + complete in ONE transaction.
 
-        The caller names a durable BYQ record; it never supplies a digest. The
-        derived progress identity is bound to that persisted record. A first
-        completed check without progress fences the plan and task atomically.
+        A valid proposal whose durable evidence is malformed/foreign leaves the
+        plan, task, stage-call ledger and receipts unchanged. An exact replay
+        returns the stored receipt without another write.
         """
 
         from .research import InvalidTransition, ResearchNotFound
 
-        request = validate_stage_progress_request(payload)
+        request = validate_judgment_result_request(payload)
         call_identity = str(request["call_identity"])
+        evidence = request["durable_evidence"]
+        proposal = request.get("proposal")
         with self._transaction() as connection:
             task = self._plan_task(connection, task_id, trusted_context, lock=True)
             plan_row = self._load_current_plan(connection, task["task_id"], lock=True)
@@ -220,45 +221,179 @@ class ResearchJudgmentMixin:
                 return {**stored, "replayed": True}
             if row["status"] != "admitted":
                 raise InvalidTransition("research stage call is not completable")
-            # The admission's own stage owns the bound: a committed proposal may
-            # already have advanced the plan, which is itself authoritative
-            # progress and must not be re-fenced.
             self._require_model_stage(row["stage"])
-            plan_advanced = plan["plan_version"] > int(row["plan_version"])
-            if plan_advanced:
-                progress_identity = _hash({
-                    "kind": "plan_advance", "task_id": task["task_id"],
-                    "plan_version": plan["plan_version"],
-                    "last_progress_identity": plan.get("last_progress_identity")})
-            else:
-                progress_identity = self._derive_progress_identity(
-                    connection, task, plan, row, request["durable_evidence"])
-            if plan_advanced and plan["stage"] != row["stage"]:
-                # An accepted proposal already advanced the plan; this stage turn
-                # is complete and must not invite another call for the old stage.
-                outcome = {"status": "stop", "outcome": "advance", "reason": "stage_advanced",
-                           "model_calls_used": int(row["call_index"]), "model_calls_remaining": 0,
-                           "continue": False}
-            else:
-                outcome = stage_model_call_outcome(
-                    stage=row["stage"], calls_used=int(row["call_index"]),
-                    durable_progress_identity=progress_identity)
-            result = {**outcome, "call_identity": call_identity,
-                      "call_index": int(row["call_index"]), "progress_identity": progress_identity,
-                      "plan_moved_to_needs_attention": False, "replayed": False}
-            if (outcome["status"] == "stop" and outcome["outcome"] == "needs_attention"
-                    and not plan_advanced):
-                self._apply_stage_needs_attention(
-                    connection, task, plan, str(outcome["reason"]),
-                    f"stage-fence-{call_identity}")
-                result["plan_moved_to_needs_attention"] = True
+
+            committed = None
+            if proposal is not None:
+                committed = self._commit_proposal_in_transaction(connection, task, plan, proposal)
+                plan = committed["plan"]
+            progress = self._complete_stage_call(connection, task, plan, row, evidence)
+            receipt = {
+                "schema_version": RESULT_RECEIPT_SCHEMA_VERSION,
+                "call_identity": call_identity,
+                "proposal": committed["projection"] if committed is not None else None,
+                "proposal_identity": committed["proposal_identity"] if committed is not None else None,
+                "progress": progress,
+            }
             execute(connection, """UPDATE research_judgment_stage_calls SET
                 status = 'completed', completed_at = :now, progress_identity = :progress,
                 outcome = :outcome, result_json = :result
                 WHERE task_id = :task AND call_identity = :identity AND status = 'admitted'""",
-                {"now": _now(), "progress": progress_identity, "outcome": outcome["outcome"],
-                 "result": result, "task": task["task_id"], "identity": call_identity})
-            return result
+                {"now": _now(), "progress": progress.get("progress_identity"),
+                 "outcome": progress.get("outcome"), "result": receipt,
+                 "task": task["task_id"], "identity": call_identity})
+            return {**receipt, "replayed": False}
+
+    # ------------------------------------------------------------------ #
+    # Narrow named seams (shared transaction-internal helpers)
+    # ------------------------------------------------------------------ #
+
+    def commit_research_proposal(self, task_id: str, payload: object, *,
+                                 trusted_context: dict) -> dict:
+        """Validate and commit one bounded research-judgment proposal."""
+
+        from .research import ResearchNotFound
+
+        proposal = validate_proposal(payload)
+        if proposal["task_id"] != task_id:
+            from .research import InvalidTransition
+            raise InvalidTransition("research proposal task does not match its route")
+        with self._transaction() as connection:
+            task = self._plan_task(connection, task_id, trusted_context, lock=True)
+            plan_row = self._load_current_plan(connection, task["task_id"], lock=True)
+            if plan_row is None:
+                raise ResearchNotFound("research execution plan not found")
+            plan = validate_plan(plan_row["plan"])
+            committed = self._commit_proposal_in_transaction(connection, task, plan, proposal)
+            return committed["projection"]
+
+    def record_research_stage_progress(self, task_id: str, payload: object, *,
+                                       trusted_context: dict) -> dict:
+        """Complete one admitted call with authoritative durable evidence."""
+
+        from .research import InvalidTransition, ResearchNotFound
+
+        request = validate_stage_progress_request(payload)
+        call_identity = str(request["call_identity"])
+        evidence = request["durable_evidence"]
+        with self._transaction() as connection:
+            task = self._plan_task(connection, task_id, trusted_context, lock=True)
+            plan_row = self._load_current_plan(connection, task["task_id"], lock=True)
+            if plan_row is None:
+                raise ResearchNotFound("research execution plan not found")
+            plan = validate_plan(plan_row["plan"])
+            row = self._load_stage_call(connection, task["task_id"], call_identity, lock=True)
+            if row is None:
+                raise InvalidTransition("research stage call was not admitted")
+            if int(row["plan_version"]) > plan["plan_version"]:
+                raise InvalidTransition("research stage call belongs to a newer plan revision")
+            if row["status"] == "completed":
+                stored = row["result_json"] if isinstance(row["result_json"], dict) else {}
+                return {**stored, "replayed": True}
+            if row["status"] != "admitted":
+                raise InvalidTransition("research stage call is not completable")
+            self._require_model_stage(row["stage"])
+            progress = self._complete_stage_call(connection, task, plan, row, evidence)
+            execute(connection, """UPDATE research_judgment_stage_calls SET
+                status = 'completed', completed_at = :now, progress_identity = :progress,
+                outcome = :outcome, result_json = :result
+                WHERE task_id = :task AND call_identity = :identity AND status = 'admitted'""",
+                {"now": _now(), "progress": progress.get("progress_identity"),
+                 "outcome": progress.get("outcome"), "result": progress,
+                 "task": task["task_id"], "identity": call_identity})
+            return progress
+
+    # ------------------------------------------------------------------ #
+    # Transaction-internal proposal commit
+    # ------------------------------------------------------------------ #
+
+    def _commit_proposal_in_transaction(self, connection, task, plan, payload) -> dict:
+        from .research import IdempotencyConflict, InvalidTransition
+        from .research_execution_plan import project_execution_plan
+
+        proposal = validate_proposal(payload)
+        if proposal["task_id"] != task["task_id"]:
+            raise InvalidTransition("research proposal task does not match the plan")
+        identity = proposal_identity(proposal)
+        request_hash = proposal_request_hash(proposal)
+        receipt = fetch_one(connection, """SELECT * FROM research_execution_plan_receipts
+            WHERE task_id = :task AND idempotency_key = :key""",
+            {"task": task["task_id"], "key": identity})
+        if receipt is not None:
+            if receipt["request_hash"] != request_hash:
+                raise IdempotencyConflict("research proposal identity was reused")
+            return {"plan": validate_plan(receipt["result_json"]),
+                    "projection": {**project_execution_plan(receipt["result_json"]),
+                                   "proposal_identity": identity, "replayed": True},
+                    "proposal_identity": identity, "reason": "replayed", "replayed": True}
+
+        self._require_model_stage(plan["stage"])
+        if proposal["stage"] != plan["stage"]:
+            raise InvalidTransition("research proposal stage does not match the current plan")
+        if proposal["iteration"] != plan["iteration"]:
+            raise InvalidTransition("research proposal iteration does not match the current plan")
+        if proposal["plan_version"] != plan["plan_version"]:
+            raise InvalidTransition("research execution plan version is stale")
+        if proposal["task_version"] != plan["task_version"]:
+            raise InvalidTransition("research execution task version is stale")
+        decision = derive_proposal_commit(plan, proposal)
+        assert_commit_is_legal(plan, decision)
+        if decision["outcome"] == "advance":
+            advanced = self._apply_proposal_advance(connection, task, plan, proposal, decision, identity)
+        elif decision["outcome"] == "needs_attention":
+            advanced = self._apply_stage_needs_attention(
+                connection, task, plan, str(decision["reason"]), identity)
+        else:
+            advanced = plan
+        execute(connection, """INSERT INTO research_execution_plan_receipts
+            (task_id, idempotency_key, request_hash, plan_version, result_json)
+            VALUES (:task_id, :idempotency_key, :request_hash, :plan_version, :result_json)""",
+            {"task_id": task["task_id"], "idempotency_key": identity,
+             "request_hash": request_hash, "plan_version": advanced["plan_version"],
+             "result_json": advanced})
+        return {"plan": advanced, "projection": {**project_execution_plan(advanced),
+                "proposal_identity": identity, "replayed": False, "reason": decision["reason"]},
+                "proposal_identity": identity, "reason": decision["reason"], "replayed": False}
+
+    # ------------------------------------------------------------------ #
+    # Transaction-internal progress completion + fence
+    # ------------------------------------------------------------------ #
+
+    def _complete_stage_call(self, connection, task, plan, admission, evidence) -> dict:
+        """Derive progress, fence if needed, and return the progress result (no write)."""
+
+        evidence = validate_progress_evidence(evidence)
+        # Validate the named evidence record authoritatively EVEN when an accepted
+        # proposal already advanced the plan: a malformed/foreign record must fail
+        # closed and roll the proposal commit back with it.
+        evidence_identity = self._derive_progress_identity(connection, task, plan, admission, evidence)
+        plan_advanced = plan["plan_version"] > int(admission["plan_version"])
+        if plan_advanced:
+            progress_identity = _hash({
+                "kind": "plan_advance", "task_id": task["task_id"],
+                "plan_version": plan["plan_version"],
+                "last_progress_identity": plan.get("last_progress_identity")})
+        else:
+            progress_identity = evidence_identity
+        if plan_advanced and plan["stage"] != admission["stage"]:
+            outcome = {"status": "stop", "outcome": "advance", "reason": "stage_advanced",
+                       "model_calls_used": int(admission["call_index"]),
+                       "model_calls_remaining": 0, "continue": False}
+        else:
+            outcome = stage_model_call_outcome(
+                stage=admission["stage"], calls_used=int(admission["call_index"]),
+                durable_progress_identity=progress_identity)
+        result = {**outcome, "call_identity": admission["call_identity"],
+                  "call_index": int(admission["call_index"]),
+                  "progress_identity": progress_identity,
+                  "plan_moved_to_needs_attention": False, "replayed": False}
+        if (outcome["status"] == "stop" and outcome["outcome"] == "needs_attention"
+                and not plan_advanced):
+            self._apply_stage_needs_attention(
+                connection, task, plan, str(outcome["reason"]),
+                f"stage-fence-{admission['call_identity']}")
+            result["plan_moved_to_needs_attention"] = True
+        return result
 
     def _derive_progress_identity(self, connection, task, plan, admission, evidence) -> str | None:
         """Derive the progress identity from a persisted BYQ record (never a digest)."""
@@ -302,74 +437,6 @@ class ResearchJudgmentMixin:
         raise ValueError("research progress evidence kind is unknown")
 
     # ------------------------------------------------------------------ #
-    # Named server-side proposal seam
-    # ------------------------------------------------------------------ #
-
-    def commit_research_proposal(self, task_id: str, payload: object, *,
-                                 trusted_context: dict) -> dict:
-        """Validate and commit one bounded research-judgment proposal.
-
-        The proposal body is CLOSED and carries no routing/identity authority.
-        The exact next plan state is derived server-side and committed through a
-        plan-version compare-and-swap under the task-row lock.
-        """
-
-        from .research import IdempotencyConflict, InvalidTransition, ResearchNotFound
-        from .research_execution_plan import project_execution_plan
-
-        proposal = validate_proposal(payload)
-        if proposal["task_id"] != task_id:
-            raise InvalidTransition("research proposal task does not match its route")
-        identity = proposal_identity(proposal)
-        request_hash = proposal_request_hash(proposal)
-
-        with self._transaction() as connection:
-            task = self._plan_task(connection, task_id, trusted_context, lock=True)
-            plan_row = self._load_current_plan(connection, task["task_id"], lock=True)
-            if plan_row is None:
-                raise ResearchNotFound("research execution plan not found")
-            plan = validate_plan(plan_row["plan"])
-
-            receipt = fetch_one(connection, """SELECT * FROM research_execution_plan_receipts
-                WHERE task_id = :task AND idempotency_key = :key""",
-                {"task": task["task_id"], "key": identity})
-            if receipt is not None:
-                if receipt["request_hash"] != request_hash:
-                    raise IdempotencyConflict("research proposal identity was reused")
-                return {**project_execution_plan(receipt["result_json"]),
-                        "proposal_identity": identity, "replayed": True}
-
-            self._require_model_stage(plan["stage"])
-            if proposal["stage"] != plan["stage"]:
-                raise InvalidTransition("research proposal stage does not match the current plan")
-            if proposal["iteration"] != plan["iteration"]:
-                raise InvalidTransition("research proposal iteration does not match the current plan")
-            if proposal["plan_version"] != plan["plan_version"]:
-                raise InvalidTransition("research execution plan version is stale")
-            if proposal["task_version"] != plan["task_version"]:
-                raise InvalidTransition("research execution task version is stale")
-
-            decision = derive_proposal_commit(plan, proposal)
-            assert_commit_is_legal(plan, decision)
-
-            if decision["outcome"] == "advance":
-                advanced = self._apply_proposal_advance(
-                    connection, task, plan, proposal, decision, identity)
-            elif decision["outcome"] == "needs_attention":
-                advanced = self._apply_stage_needs_attention(
-                    connection, task, plan, str(decision["reason"]), identity)
-            else:
-                advanced = plan
-            execute(connection, """INSERT INTO research_execution_plan_receipts
-                (task_id, idempotency_key, request_hash, plan_version, result_json)
-                VALUES (:task_id, :idempotency_key, :request_hash, :plan_version, :result_json)""",
-                {"task_id": task["task_id"], "idempotency_key": identity,
-                 "request_hash": request_hash, "plan_version": advanced["plan_version"],
-                 "result_json": advanced})
-            return {**project_execution_plan(advanced), "proposal_identity": identity,
-                    "replayed": False, "reason": decision["reason"]}
-
-    # ------------------------------------------------------------------ #
     # Commit helpers
     # ------------------------------------------------------------------ #
 
@@ -393,10 +460,6 @@ class ResearchJudgmentMixin:
         except ValueError as error:
             raise InvalidTransition(str(error)) from error
         if target_stage == "completed":
-            # ADR-0085 §7: the terminal transition must converge atomically. The
-            # ResearchTask completion uses the existing validated transition path
-            # (same-task validated evidence + no unfinished jobs) inside this same
-            # transaction, so task and plan are never inconsistent.
             new_task_version = self._complete_research_task(connection, task, plan, identity)
             advanced = validate_plan({**advanced, "task_version": new_task_version})
         cas_row = fetch_one(connection, """UPDATE research_execution_plans SET
@@ -433,9 +496,6 @@ class ResearchJudgmentMixin:
             "linked_objects": [],
             "completion_evidence": evidence_ids,
         }
-        # The generic transition enforces the real completion invariants
-        # (validated same-task evidence, no unfinished domain jobs) and bumps the
-        # task version in this same transaction.
         self.transition("research_task", task["task_id"], "completed",
                         f"{identity}-complete", progress=checkpoint,
                         require_completion_evidence=True, _connection=connection)
@@ -444,11 +504,7 @@ class ResearchJudgmentMixin:
         return int(updated["version"])
 
     def _apply_stage_needs_attention(self, connection, task, plan, reason, identity):
-        """Atomically move plan + ResearchTask to ``needs_attention``.
-
-        The historical eight-call continuation budget is NOT touched: this is a
-        durable stop, not a reservation.
-        """
+        """Atomically move plan + ResearchTask to ``needs_attention``."""
 
         from .research import InvalidTransition
 

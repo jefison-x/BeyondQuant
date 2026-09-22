@@ -123,7 +123,6 @@ import {
 } from "./data-demand.js";
 import { PageCallBudget, boundedIntegerEnvironment } from "./page-budget.js";
 import { fetchByqResearchStageInput } from "./research-judgment.js";
-import { researchJudgmentAdmission } from "./research-judgment-admission.js";
 import {
   fetchByqFeedbackCreate, fetchByqFeedbackGet, fetchByqFeedbackReceipt, fetchByqFeedbackList, fetchByqFeedbackOptions,
   fetchByqFeedbackPreview, fetchByqFeedbackSubmit, fetchByqFeedbackUpdate,
@@ -1562,7 +1561,7 @@ const observedHandler = observeDomainSchemaFailures(createMcpHandler(buildServer
     return safeDomainAdmission({ detail: { schema_version: "domain-call-admission.v1", state: "unknown" } });
   }
 });
-const handler = toNodeHandler(researchJudgmentAdmission(continuationAdmission(observedHandler, async (reservation, call, request) => {
+const handler = toNodeHandler(continuationAdmission(observedHandler, async (reservation, call, request) => {
   const context = completeAgentContext({ request });
   if (!context) return false;
   const response = await trustedBackendFetcher(context)(`${BACKEND_URL}/internal/task-continuation/${reservation}/authorize-tool`, {
@@ -1573,7 +1572,7 @@ const handler = toNodeHandler(researchJudgmentAdmission(continuationAdmission(ob
   const value = await response.json() as Record<string, unknown>;
   return value.schema_version === 'continuation-action-admission.v1' && value.admitted === true
     && value.reservation_id === reservation;
-})));
+}));
 
 const httpServer = createServer(async (request, response) => {
   let url: URL;

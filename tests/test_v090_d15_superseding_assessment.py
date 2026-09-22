@@ -31,7 +31,7 @@ OBSERVER = SUPERSEDING / "observer.py"
 CONTRACT = SUPERSEDING / "contract.v1.json"
 EVIDENCE = ROOT / "docs/evidence/d15/d15-superseding"
 
-CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.209"
+CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.210"
 CANDIDATE = "dsh-0.1.5rc1"
 ROLLBACK = "dsh-0.1.2rc1"
 
@@ -299,7 +299,7 @@ class BoundaryTests(unittest.TestCase):
             "<!-- byq:v090-d15-superseding-assessment=established -->",
             "<!-- byq:v090-step5-b1-subagent-child-crash=blocked-external -->",
             "<!-- byq:v090-step5-b2-adapter-restart=blocked-external -->",
-            "<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.209 -->",
+            "<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.210 -->",
         ):
             self.assertIn(marker, status)
         self.assertIn("具名 D15 superseding assessment", status)

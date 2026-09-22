@@ -537,24 +537,13 @@ def admit_research_judgment_call(task_id: str, payload: dict[str, Any], request:
 
 @app.post('/internal/research-judgment/{task_id}/result')
 def record_research_judgment_result(task_id: str, payload: dict[str, Any], request: Request) -> dict:
-    # ADR-0085 P3 private runtime-adapter consumer. It takes the CLOSED model
-    # result, commits an accepted proposal through the named seam, then records
-    # the authoritative durable-progress receipt. Agent-facing MCP/Browser stays
-    # read-only and there is no generic plan/proposal write route.
+    # ADR-0085 P3 private runtime-adapter consumer. ONE atomic named store
+    # operation validates/commits an accepted proposal, records the authoritative
+    # durable-progress receipt, completes the stage-call admission and converges a
+    # terminal ResearchTask. A failure leaves plan/task/call/receipts unchanged.
     context = _continuation_consumer_context(request)
-    allowed = {'call_identity', 'durable_evidence', 'proposal'}
-    if not {'call_identity', 'durable_evidence'} <= set(payload) or set(payload) - allowed:
-        raise HTTPException(status_code=422, detail='invalid research judgment result fields')
-    committed = None
-    if payload.get('proposal') is not None:
-        committed = _research_call(lambda: research_store.commit_research_proposal(
-            task_id, payload['proposal'], trusted_context=context))
-    progress = _research_call(lambda: research_store.record_research_stage_progress(
-        task_id, {'call_identity': payload['call_identity'],
-                  'durable_evidence': payload['durable_evidence']},
-        trusted_context=context))
-    return {'schema_version': 'research-judgment-result-receipt.v1',
-            'progress': progress, 'proposal': committed}
+    return _research_call(lambda: research_store.record_research_judgment_result(
+        task_id, payload, trusted_context=context))
 
 
 @app.post("/internal/domain-call-evidence/{conversation_id}")

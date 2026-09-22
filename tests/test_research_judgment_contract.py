@@ -30,6 +30,7 @@ from packages.contracts.research_judgment import (
     stage_model_call_limit,
     stage_model_call_outcome,
     stage_requires_model,
+    validate_judgment_result_request,
     validate_progress_evidence,
     validate_proposal,
     validate_stage_admission_request,
@@ -310,6 +311,19 @@ class AdmissionAndEvidenceTests(unittest.TestCase):
                         {"kind": "artifact", "id": "artifact_" + "a" * 32, "extra": 1}):
             with self.assertRaises(ValueError):
                 validate_progress_evidence(invalid)
+
+    def test_judgment_result_envelope_is_closed_and_evidence_is_a_record(self) -> None:
+        base = {"call_identity": "turn-a", "durable_evidence": {"kind": "none"}}
+        self.assertEqual(validate_judgment_result_request(base), base)
+        with_proposal = {**base, "proposal": proposal("backtest_analysis", "backtest_analysis")}
+        self.assertEqual(validate_judgment_result_request(with_proposal), with_proposal)
+        for invalid in ({"call_identity": "turn-a"},
+                        {**base, "progress_identity": "sha256:" + "a" * 64},
+                        {**base, "durable_evidence": {"kind": "digest", "id": "x"}},
+                        {**base, "proposal": {"not": "a proposal"}},
+                        {**base, "unknown": 1}):
+            with self.assertRaises(ValueError):
+                validate_judgment_result_request(invalid)
 
     def test_progress_request_binds_identity_and_evidence(self) -> None:
         valid = {"call_identity": "turn-a", "durable_evidence": {"kind": "none"}}

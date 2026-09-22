@@ -179,7 +179,10 @@ class D15SubagentEvidenceTests(unittest.TestCase):
         self.assertTrue(facts["composes_spawn_provider"])
         self.assertTrue(facts["composes_fork_provider"])
         self.assertEqual(facts["delegate_tool_count"], 5)
-        self.assertEqual(facts["enable_run_in_background_false"], 5)
+        # ADR-0085 P3 adds one foreground bounded judgment persona, so the
+        # composition now has six foreground subagent tools (five delegates plus
+        # the bounded research-judgment role); the delegate count is unchanged.
+        self.assertEqual(facts["enable_run_in_background_false"], 6)
         self.assertEqual(facts["enable_run_in_background_true"], 0)
         self.assertTrue(facts["compat_inherits_0_1_2_contract"])
         by_interface = {item["interface"]: item for item in reachability["interfaces"]}

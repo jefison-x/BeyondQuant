@@ -2,13 +2,13 @@
   "artifacts": [
     {
       "id": "status_md",
-      "introduced_by": "bb27ec589349cd218f6f5837151a04409055c808",
+      "introduced_by": "1111a35b4756ca586beb241b5d0076bf0773b688",
       "introduced_date": "2026-09-23",
       "kind": "text",
       "layer": "authority",
       "modified_in_closeout_commit": true,
       "path": "docs/roadmap/STATUS.md",
-      "sha256": "sha256:a314118c1337dfdc51787b11887c5ec2add8156bf0b718f91e7e798cdae91250",
+      "sha256": "sha256:309c425344f012000abb237aaf3309ddaa49dbbafed3fe428eeaedd024d7db15",
       "stage": "repository-state"
     },
     {
@@ -134,13 +134,13 @@
     },
     {
       "id": "superseding_provenance",
-      "introduced_by": "bb27ec589349cd218f6f5837151a04409055c808",
+      "introduced_by": "1111a35b4756ca586beb241b5d0076bf0773b688",
       "introduced_date": "2026-09-23",
       "kind": "json",
       "layer": "provenance",
       "modified_in_closeout_commit": true,
       "path": "docs/evidence/d15/d15-superseding/provenance.v1.json",
-      "sha256": "sha256:14a3f06f945b6620b9392ccb7e1213251ff9699c22d3a556b8d46c00f95d1f71",
+      "sha256": "sha256:bd150e30a0754e3498c83f87d8a1e68fe168c368af5ecef5d0dce908058194f4",
       "stage": "D15-superseding"
     },
     {
@@ -167,18 +167,18 @@
     },
     {
       "id": "default_upgrade",
-      "introduced_by": "bb27ec589349cd218f6f5837151a04409055c808",
+      "introduced_by": "1111a35b4756ca586beb241b5d0076bf0773b688",
       "introduced_date": "2026-09-23",
       "kind": "json",
       "layer": "repo-default-upgrade",
       "modified_in_closeout_commit": true,
       "path": "docs/evidence/v090-dsh-015rc1-default-upgrade/default-upgrade.v1.json",
-      "sha256": "sha256:6fd58274073047aa8e26db3e452e66f8a0221c637ce3e3017da892eb9e080d8a",
+      "sha256": "sha256:a862a5bb16aa9ba4386c848b0066cf7de0582e61a71c5a250af86aaf0bb5d04e",
       "stage": "0.9-closeout"
     }
   ],
   "generated_at": "2026-09-22",
-  "generated_from_head": "bb27ec589349cd218f6f5837151a04409055c808",
+  "generated_from_head": "1111a35b4756ca586beb241b5d0076bf0773b688",
   "note": "Source evidence reused by the final 0.9 development closeout. introduced_by is the last commit that touched the path; modified_in_closeout_commit marks paths changed by the closeout commit itself. The historical D15-4/D15-5/D15-G verdicts are referenced through the D15 superseding evidence and are never rewritten.",
   "schema_version": "byq-v090-final-closeout-provenance.v1"
 }
