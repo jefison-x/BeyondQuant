@@ -44,7 +44,7 @@ CONTROLS = EVIDENCE / "negative-controls.v1.json"
 SCOPE = EVIDENCE / "scope-probe.v1.json"
 PROVENANCE = EVIDENCE / "provenance.v1.json"
 OVERLAY = EVIDENCE / "current-overlay.v1.json"
-CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.199"
+CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.200"
 
 B4 = "terminal-dsh-runtime-restart"
 B4_OWNER = "d15-5-candidate-attachment-layer"
@@ -349,13 +349,14 @@ class NoSubstitutionTests(unittest.TestCase):
         self.assertNotIn("mountAgentLoopTestHarness", harness)
         self.assertNotIn("dsh-subagent", harness)
 
-    def test_production_selector_is_unchanged(self):
+    def test_production_selector_is_promoted_with_historical_rollback(self):
         deployment = json.loads((ROOT / "config/dsh/deployment.json").read_text(encoding="utf-8"))
-        self.assertEqual(deployment["default_release"], "dsh-0.1.2rc1")
+        self.assertEqual(deployment["default_release"], "dsh-0.1.5rc1")
+        self.assertIn("dsh-0.1.2rc1", deployment["candidate_releases"])
 
     def test_build_revision_is_the_next_unused_id(self):
         from scripts.dsh import build_revision as builds
-        self.assertEqual(builds.selected_build_id("dsh-0.1.2rc1"), CURRENT_BUILD_REVISION)
+        self.assertEqual(builds.selected_build_id("dsh-0.1.5rc1"), CURRENT_BUILD_REVISION)
         self.assertTrue((ROOT / "config/dsh/builds" / f"{CURRENT_BUILD_REVISION}.json").is_file())
         dockerfile = (ROOT / "services/runtime-adapter/Dockerfile.post-u8-candidate").read_text()
         self.assertIn(CURRENT_BUILD_REVISION, dockerfile)

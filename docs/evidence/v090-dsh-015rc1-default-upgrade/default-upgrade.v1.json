@@ -1,0 +1,54 @@
+{
+  "changes": {
+    "compose.yml": "sha256:29f8af024d02823161b089269f3a11a8279e21ab9c31ab5ea331aca6cab7d5e6",
+    "config/dsh/builds/dsh-0.1.5rc1-post-u8.200.json": "sha256:23c19e56710f1e8e98d28f16ceb06c1920f3be37ee8d9e18c0df20bd8664afe9",
+    "config/dsh/candidates/dsh-0.1.5rc1/candidate.json": "sha256:6c7e948c625fed75b36bc51786e46b1428633239ff2db172623ba6d81d339c92",
+    "config/dsh/deployment.json": "sha256:02f05701ffd610b25d5076575396a38c252e610f230aa80961453faa1a13fb3e",
+    "config/dsh/generated/deployment.identity.json": "sha256:ea3a15f5e8578d6f9a05fa6301175e2d69f3d1ad751d94e117f56132d64218fb",
+    "config/dsh/generated/dsh-0.1.2rc1.identity.json": "sha256:da13cd3928bbd82a85aa7e21036f990a5a3cf67ec29d902ea61eaf31c1c3713d",
+    "config/dsh/releases/dsh-0.1.5rc1.json": "sha256:604bf7a861f34fc3f1cfb6ec61d2b542ecc8ea512fc66faa8403bbd67cbd6fe2",
+    "config/dsh/releases/dsh-0.1.5rc1.python.lock": "sha256:69b924ac13f8c5586a5af4b2bcb7eb4dcbbf0ebedd90b985d29aa943f86033e1",
+    "scripts/ci/local-ci.sh": "sha256:417278c8e11c1714f9108ffb1cddea953959a9a63bb622ad0ede5e8a078320e4",
+    "scripts/dsh/build_revision.py": "sha256:6d8890cbde2f7dadc82607bafb6f343ad91efda4d5948cf4c87807274609305b",
+    "services/runtime-adapter/Dockerfile.post-u8-candidate": "sha256:40242a9aa1dbc019a0c2dd95483d51466cd2816e866c24d1cc8fa0f20c190483",
+    "services/runtime-adapter/app/compat/__init__.py": "sha256:5b94c6636c3b1ebb11943d1ed19a29a170eaec6138e2752baf764a8e7d882c62",
+    "services/runtime-adapter/app/compat/dsh_015.py": "sha256:44cf8ed33d2cebcc36e4e8cc05146df87ac45a96857e2f8ecd87c5bccaef60af",
+    "services/runtime-adapter/pyproject.toml": "sha256:ddd81cc911b43955bccbd323eca79c14aef223dd99b3304bca9c488cdfe1315a",
+    "services/runtime-adapter/requirements.candidate.lock": "sha256:3040ac39eb1ead938b87a59b743ca6b7aa28c61cc880a7ce74451ea1de7e541a"
+  },
+  "default_selector": {
+    "authority": "config/dsh/deployment.json",
+    "compose_default": "BYQ_DSH_COMPATIBILITY_RELEASE:-dsh-0.1.5rc1",
+    "identity": "config/dsh/generated/deployment.identity.json",
+    "identity_sha256": "sha256:ea3a15f5e8578d6f9a05fa6301175e2d69f3d1ad751d94e117f56132d64218fb",
+    "selector_env": "BYQ_DSH_COMPATIBILITY_RELEASE",
+    "selector_value": "dsh-0.1.5rc1"
+  },
+  "image": {
+    "dockerfile": "services/runtime-adapter/Dockerfile.post-u8-candidate",
+    "readiness": {
+      "release_id": "dsh-0.1.5rc1",
+      "release_identity": "matched",
+      "runtime_adapter": "ready",
+      "runtime_bin": "deepseek-harness-runtime-bin==0.1.5rc1",
+      "sdk": "deepseek-harness-sdk==0.1.5rc1"
+    },
+    "verified_image": "byq-v090-default-0.1.5rc1-test:local",
+    "verified_image_id": "sha256:a4892dd85c7f94aae337c43ab10e93d85eb09f89faf0273d9b544b4e7d35ed59"
+  },
+  "not_claimed": [
+    "production deployment",
+    "release/tag",
+    "D15 superseding assessment",
+    "Phase 100 resume",
+    "0.10"
+  ],
+  "pairing": {
+    "bundled_npm": "0.1.5-rc.1",
+    "python_runtime_bin": "0.1.5rc1",
+    "python_sdk": "0.1.5rc1",
+    "upstream_tag": "dsh-v0.1.5-rc.1"
+  },
+  "release": "dsh-0.1.5rc1",
+  "schema_version": "byq-v090-dsh-default-upgrade.v1"
+}

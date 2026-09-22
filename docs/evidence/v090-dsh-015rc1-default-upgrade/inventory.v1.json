@@ -1,0 +1,45 @@
+{
+  "base": "4671c3e948b77c75a87c84a514888974f683a54b",
+  "decision": "reuse the qualified candidate assets as the promoted default; do not reimplement DSH; keep dsh-0.1.2rc1 as the rollback candidate",
+  "prior_baseline_rollback": {
+    "build_manifest": {
+      "path": "config/dsh/builds/dsh-0.1.2rc1-post-u8.199.json",
+      "sha256": "sha256:758d92562b157de3603fd292f2be829efb684e62115192582f21d4294f1f90b9"
+    },
+    "candidate_identity": {
+      "path": "config/dsh/generated/dsh-0.1.2rc1.identity.json",
+      "sha256": "sha256:da13cd3928bbd82a85aa7e21036f990a5a3cf67ec29d902ea61eaf31c1c3713d"
+    },
+    "deployed_image": "sha256:301bcd5ac3e7d26a6b61f4f5646ad44409e50f2cd3ab058a37b2bb5605a980ea",
+    "git_commit": "4671c3e948b77c75a87c84a514888974f683a54b",
+    "python_lock": {
+      "path": "config/dsh/releases/dsh-0.1.2rc1.python.lock",
+      "sha256": "sha256:c93b829d8db27c2067fbb1fae67707c7f4fe5d04ab99fdf7993a57014e31b5f6"
+    },
+    "release_descriptor": {
+      "path": "config/dsh/releases/dsh-0.1.2rc1.json",
+      "sha256": "sha256:ee565e5050ded55cdce2ac9e6fb4bc17a11c60926e9838f526b4eead03bd4724"
+    }
+  },
+  "reused_candidate_qualification_assets": {
+    "b_slice_evidence": [
+      "docs/evidence/v090-step5-b3-terminal-adapter-restart/",
+      "docs/evidence/v090-step5-b4-terminal-dsh-runtime-restart/"
+    ],
+    "candidate_dockerfile": "services/runtime-adapter/Dockerfile.dsh-0.1.5rc1-candidate",
+    "candidate_profile": "plugins/dsh-byq/profiles/dsh-0.1.5rc1-continuable/byq-product.patch.yml",
+    "candidate_python_lock": "config/dsh/candidates/dsh-0.1.5rc1/python.lock",
+    "candidate_registry": "config/dsh/candidates/dsh-0.1.5rc1/candidate.json",
+    "candidate_requirements_lock": "services/runtime-adapter/requirements.dsh-0.1.5rc1-candidate.lock",
+    "compat_shim": "services/runtime-adapter/app/compat/dsh_015.py",
+    "d15_evidence": [
+      "docs/evidence/d15/target-decision.v1.json",
+      "docs/evidence/d15/upgrade-recon.v1.json",
+      "docs/evidence/d15/compatibility-ledger.v1.json",
+      "docs/evidence/d15/d15-1/candidate-start-probe.v1.json",
+      "docs/evidence/d15/d15-runtime/observations.v5.json"
+    ]
+  },
+  "schema_version": "byq-v090-dsh-default-upgrade-inventory.v1",
+  "slice": "0.9 formal repo default dependency/selector upgrade to coherent DSH 0.1.5-rc.1"
+}

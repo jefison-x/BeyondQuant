@@ -24,7 +24,7 @@ EVIDENCE = ROOT / "docs/evidence/v090-business-recovery"
 OBSERVATIONS = EVIDENCE / "observations.v1.json"
 VERDICT = EVIDENCE / "verdict.v1.json"
 CONTROLS = EVIDENCE / "negative-controls.v1.json"
-CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.199"
+CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.200"
 
 REQUIRED_SCENARIOS = {
     "same-trigger-same-snapshot-exactly-once",
@@ -201,7 +201,7 @@ class BoundaryTests(unittest.TestCase):
                        "<!-- byq:session-failure-containment=in-progress-blocked-internal -->",
                        "<!-- byq:v090-business-recovery=implementation-delivered -->",
                        "<!-- byq:session-failure-containment-next=real-recovery-acceptance-then-coherent-dsh-0.1.5rc1-upgrade -->",
-                       "<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.199 -->"):
+                       "<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.200 -->"):
             self.assertIn(marker, status)
         self.assertIn("R3_RESUME = NO", status)
         self.assertIn("IN_PROGRESS / BLOCKED_INTERNAL", status)
@@ -215,12 +215,13 @@ class BoundaryTests(unittest.TestCase):
                 self.assertNotIn("superseding_assessment_passed",
                                  path.read_text(encoding="utf-8", errors="ignore"), str(path))
 
-    def test_production_selector_and_dsh_dependency_are_unchanged(self):
+    def test_production_selector_is_promoted_with_historical_rollback(self):
         deployment = json.loads((ROOT / "config/dsh/deployment.json").read_text(encoding="utf-8"))
-        self.assertEqual(deployment["default_release"], "dsh-0.1.2rc1")
+        self.assertEqual(deployment["default_release"], "dsh-0.1.5rc1")
+        self.assertIn("dsh-0.1.2rc1", deployment["candidate_releases"])
         pyproject = (ROOT / "services/runtime-adapter/pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn("deepseek-harness-sdk==0.1.2rc1", pyproject)
-        self.assertIn("deepseek-harness-runtime-bin==0.1.2rc1", pyproject)
+        self.assertIn("deepseek-harness-sdk==0.1.5rc1", pyproject)
+        self.assertIn("deepseek-harness-runtime-bin==0.1.5rc1", pyproject)
 
     def test_historical_d15_g_verdict_is_not_rewritten(self):
         verdict = json.loads(
@@ -229,7 +230,7 @@ class BoundaryTests(unittest.TestCase):
 
     def test_build_revision_is_the_next_unused_id(self):
         from scripts.dsh import build_revision as builds
-        self.assertEqual(builds.selected_build_id("dsh-0.1.2rc1"), CURRENT_BUILD_REVISION)
+        self.assertEqual(builds.selected_build_id("dsh-0.1.5rc1"), CURRENT_BUILD_REVISION)
         self.assertTrue((ROOT / "config/dsh/builds" / f"{CURRENT_BUILD_REVISION}.json").is_file())
         self.assertTrue((ROOT / "config/dsh/builds/dsh-0.1.2rc1-post-u8.196.json").is_file())
 

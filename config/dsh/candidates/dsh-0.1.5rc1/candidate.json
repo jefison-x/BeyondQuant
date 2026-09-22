@@ -1,8 +1,8 @@
 {
   "schema_version": "byq-dsh-candidate.v1",
   "declaration_id": "dsh-0.1.5rc1",
-  "status": "candidate-unqualified",
-  "production_default": "dsh-0.1.2rc1",
+  "status": "promoted",
+  "production_default": "dsh-0.1.5rc1",
   "qualification_target": "dsh-v0.1.5-rc.1",
   "target_npm_version": "0.1.5-rc.1",
   "target_decision": "docs/evidence/d15/target-decision.v1.json",
@@ -34,19 +34,19 @@
     "isolated": true
   },
   "production_boundary": {
-    "default_release_unchanged": true,
-    "default_env_unchanged": true,
-    "existing_artifacts_untouched": true,
+    "default_release_unchanged": false,
+    "default_env_unchanged": false,
+    "existing_artifacts_untouched": false,
     "historical_evidence_untouched": true,
     "database_changes": "none",
     "worker_restarts": "none",
     "rollback_release": "dsh-0.1.2rc1"
   },
   "qualification": {
-    "state": "not-qualified",
+    "state": "qualified",
     "live_start_verified": true,
-    "native_resume_verified": false,
-    "reason": "D15-1 built and keylessly started the isolated candidate (docs/evidence/d15/d15-1/); D15-2 qualified historical v0/v2 session migration, read/resume/append/close/reopen and fail-closed refusal (docs/evidence/d15/d15-2/). D15-3..D15-G native resume/subagent/terminal qualification not yet executed.",
+    "native_resume_verified": true,
+    "reason": "D15-1 built and keylessly started the isolated candidate; D15-2 qualified historical v0/v2 session migration; D15-3/D15-3R qualified native session resume and real isolated BYQ runtime continuity; D15-4/D15-5 and the B2/B3/B4 candidate slices delivered the bounded failure-containment/fault evidence (docs/evidence/d15/, docs/evidence/v090-step5-*). Formal repository default upgrade executed in the 0.9 default-upgrade slice (docs/evidence/v090-dsh-015rc1-default-upgrade/); production deployment remains separately authorized.",
     "blocking_finding": null
   },
   "evidence": {

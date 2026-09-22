@@ -38,7 +38,7 @@ BLOCKED = EVIDENCE / "external-blocked.v1.json"
 CONTROLS = EVIDENCE / "negative-controls.v1.json"
 PROVENANCE = EVIDENCE / "probe-provenance.v1.json"
 COMPOSITION_IDENTITY = ROOT / "plugins/dsh-byq/profiles/dsh-0.1.5rc1-continuable/byq-product.identity.json"
-CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.199"
+CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.200"
 
 B2 = "subagent-byq-adapter-restart"
 B2_OWNER = "d15-4-candidate-composition-hookup"
@@ -257,9 +257,10 @@ class NoSubstitutionTests(unittest.TestCase):
             self.assertNotIn("resume_delegated_child", text, str(path))
             self.assertNotIn("byq_child_resume_bridge", text, str(path))
 
-    def test_production_selector_is_unchanged(self):
+    def test_production_selector_is_promoted_with_historical_rollback(self):
         deployment = json.loads((ROOT / "config/dsh/deployment.json").read_text(encoding="utf-8"))
-        self.assertEqual(deployment["default_release"], "dsh-0.1.2rc1")
+        self.assertEqual(deployment["default_release"], "dsh-0.1.5rc1")
+        self.assertIn("dsh-0.1.2rc1", deployment["candidate_releases"])
 
     def test_only_one_session_store_in_the_probe(self):
         gen_b = json.loads(OBSERVATION.read_text(encoding="utf-8"))["generation_b"]
@@ -269,7 +270,7 @@ class NoSubstitutionTests(unittest.TestCase):
 
     def test_build_revision_is_the_next_unused_id(self):
         from scripts.dsh import build_revision as builds
-        self.assertEqual(builds.selected_build_id("dsh-0.1.2rc1"), CURRENT_BUILD_REVISION)
+        self.assertEqual(builds.selected_build_id("dsh-0.1.5rc1"), CURRENT_BUILD_REVISION)
         self.assertTrue((ROOT / "config/dsh/builds" / f"{CURRENT_BUILD_REVISION}.json").is_file())
 
 

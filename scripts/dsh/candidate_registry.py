@@ -23,7 +23,7 @@ KEYS = {
     "requested_npm_version", "coherent_npm_version", "upstream", "python",
     "runtime", "production_boundary", "qualification", "evidence",
 }
-STATUSES = {"candidate-unqualified", "candidate-qualified", "rejected"}
+STATUSES = {"candidate-unqualified", "candidate-qualified", "rejected", "promoted"}
 UPSTREAM_KEYS = {
     "source_tag", "source_commit", "source_archive_sha256",
     "source_manifest_sha256", "bundled_package_count", "bundled_npm_version",
@@ -69,8 +69,15 @@ def load_candidate(path: Path) -> dict:
     _require(isinstance(identifier, str) and identifier == path.parent.name,
              f"{path}: candidate id must match its directory")
     _require(value["status"] in STATUSES, f"{path}: unknown candidate status")
-    _require(value["production_default"] != identifier,
-             f"{path}: candidate cannot be the production default")
+    promoted = value["status"] == "promoted"
+    if promoted:
+        # A promoted declaration records that this candidate became the current
+        # repository default; the default pointer must agree with it.
+        _require(value["production_default"] == identifier,
+                 f"{path}: promoted candidate must name itself as the current default")
+    else:
+        _require(value["production_default"] != identifier,
+                 f"{path}: candidate cannot be the production default")
     _require(isinstance(value["qualification_target"], str)
              and value["qualification_target"].startswith("dsh-v"),
              f"{path}: qualification target must be a dsh-v release tag")
@@ -122,7 +129,14 @@ def load_candidate(path: Path) -> dict:
              f"{path}: invalid production boundary block")
     for key in ("default_release_unchanged", "default_env_unchanged",
                 "existing_artifacts_untouched", "historical_evidence_untouched"):
-        _require(boundary[key] is True, f"{path}: {key} must be true for a candidate")
+        if promoted:
+            # Promotion intentionally moves the default and adds release
+            # artifacts; historical evidence is still never rewritten.
+            if key in {"default_release_unchanged", "default_env_unchanged"}:
+                _require(boundary[key] is False,
+                         f"{path}: {key} must be false for a promoted candidate")
+        else:
+            _require(boundary[key] is True, f"{path}: {key} must be true for a candidate")
     _require(boundary["database_changes"] == "none"
              and boundary["worker_restarts"] == "none",
              f"{path}: candidate must not change the database or restart workers")
@@ -137,7 +151,8 @@ def load_candidate(path: Path) -> dict:
         _require(qualification["live_start_verified"] is True
                  and qualification["native_resume_verified"] is True,
                  f"{path}: qualified candidate requires live start and native resume evidence")
-    _require((value["status"] == "candidate-qualified") == (qualification["state"] == "qualified"),
+    _require((value["status"] in {"candidate-qualified", "promoted"})
+             == (qualification["state"] == "qualified"),
              f"{path}: candidate status must agree with the qualification state")
     for relative in value["evidence"].values():
         _require(isinstance(relative, str) and (ROOT / relative).is_file(),

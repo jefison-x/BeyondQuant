@@ -24,7 +24,7 @@ EVIDENCE = ROOT / "docs/evidence/v090-session-containment"
 OBSERVATIONS = EVIDENCE / "observations.v2.json"
 VERDICT = EVIDENCE / "verdict.v2.json"
 CONTROLS = EVIDENCE / "negative-controls.v2.json"
-CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.199"
+CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.200"
 
 B1 = "subagent-child-crash"
 B2 = "subagent-byq-adapter-restart"
@@ -196,7 +196,7 @@ class BoundaryTests(unittest.TestCase):
                        "<!-- byq:v090-session-containment=containment-classification-delivered -->",
                        "<!-- byq:session-failure-containment=in-progress-blocked-internal -->",
                        "<!-- byq:session-failure-containment-next=real-recovery-acceptance-then-coherent-dsh-0.1.5rc1-upgrade -->",
-                       "<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.199 -->"):
+                       "<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.200 -->"):
             self.assertIn(marker, status)
         self.assertIn("R3_RESUME = NO", status)
         self.assertIn("D15-G", status)
@@ -248,13 +248,14 @@ class BoundaryTests(unittest.TestCase):
             self.assertNotIn("byq-recovery-attempts", path.read_text(encoding="utf-8"), str(path))
             self.assertNotIn("RecoveryAttemptStore", path.read_text(encoding="utf-8"), str(path))
 
-    def test_production_selector_is_unchanged(self):
+    def test_production_selector_is_promoted_with_historical_rollback(self):
         deployment = json.loads((ROOT / "config/dsh/deployment.json").read_text(encoding="utf-8"))
-        self.assertEqual(deployment["default_release"], "dsh-0.1.2rc1")
+        self.assertEqual(deployment["default_release"], "dsh-0.1.5rc1")
+        self.assertIn("dsh-0.1.2rc1", deployment["candidate_releases"])
 
     def test_build_revision_is_the_next_unused_id(self):
         from scripts.dsh import build_revision as builds
-        self.assertEqual(builds.selected_build_id("dsh-0.1.2rc1"), CURRENT_BUILD_REVISION)
+        self.assertEqual(builds.selected_build_id("dsh-0.1.5rc1"), CURRENT_BUILD_REVISION)
         self.assertTrue((ROOT / "config/dsh/builds" / f"{CURRENT_BUILD_REVISION}.json").is_file())
         self.assertTrue((ROOT / "config/dsh/builds/dsh-0.1.2rc1-post-u8.189.json").is_file())
 

@@ -259,8 +259,8 @@ def test_prompt_rejects_invalid_context_before_claiming_root(adapter):
 
 
 def test_registration_observation_uses_captured_turn_without_exposing_arguments(adapter: RuntimeAdapter):
-    if version("deepseek-harness-sdk") != "0.1.2rc1":
-        pytest.skip("requires qualified 0.1.2 notification carrier")
+    if version("deepseek-harness-sdk") != "0.1.5rc1":
+        pytest.skip("requires qualified 0.1.5 notification carrier")
     from packages.contracts.agent_run_lifecycle import registration_fingerprint
 
     try:

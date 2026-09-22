@@ -16,7 +16,7 @@ class RetirementTests(unittest.TestCase):
             self.assertEqual(archived.read_bytes(), read_blob(builds.RETIRED_SOURCE, original))
 
     def test_only_current_release_can_produce_new_builds(self):
-        self.assertEqual(builds.RELEASES, {'dsh-0.1.2rc1'})
+        self.assertEqual(builds.RELEASES, {'dsh-0.1.5rc1'})
         with self.assertRaisesRegex(ValueError, 'retired release'):
             builds.render('dsh-0.1.1rc1-post-u8.999')
         self.assertEqual(builds.check(builds.RETIRED_BUILD)['release_id'], 'dsh-0.1.1rc1')

@@ -1,0 +1,44 @@
+{
+  "default_under_test": "dsh-0.1.5rc1",
+  "fail_closed": {
+    "defect_targeting": 13,
+    "detail": "each defect-targeting mutation (wrong default, mixed Python pair, unpromoted candidate, false boundary, wrong identity, dependency drift, image selector drift, build/descriptor mismatch, rollback drift) is rejected; a result-trusting gate would pass them",
+    "negative_controls": 13,
+    "verifier": "scripts/v090/dsh_default_upgrade/verify.py"
+  },
+  "not_claimed": "This is keyless service-boundary evidence, not real-LLM-quality semantics, and it is not a production deployment.",
+  "provider": "keyless scripted loopback (no real model credential, no external network)",
+  "results": [
+    {
+      "detail": "services/runtime-adapter/Dockerfile.post-u8-candidate builds and asserts the installed 0.1.5rc1 SDK/runtime-bin pair",
+      "evidence": "docker build byq-v090-default-0.1.5rc1-test:local -> sha256:a4892dd85c7f94aae337c43ab10e93d85eb09f89faf0273d9b544b4e7d35ed59",
+      "id": "image-build",
+      "result": "PASS"
+    },
+    {
+      "detail": "runtime_adapter=ready, release_identity=matched, release_id=dsh-0.1.5rc1",
+      "evidence": "GET /readyz in the built image",
+      "id": "adapter-readiness",
+      "result": "PASS"
+    },
+    {
+      "detail": "244 passed, 40 skipped in /app/tests inside the 0.1.5 image (includes domain-call wire, normalization, containment, business recovery)",
+      "evidence": "docker run ... pytest -q /app/tests",
+      "id": "runtime-unit-and-domain-wire",
+      "result": "PASS"
+    },
+    {
+      "detail": "10 passed; the F6 continuation executor gate accepts the coherent 0.1.5 pair (byte-identical SDK surface) rather than disabling a qualified feature",
+      "evidence": "docker run -e BYQ_BUDGET_SEMANTICS_TEST=1 ... test_continuation_budget_process.py",
+      "id": "continuation-budget-executor",
+      "result": "PASS"
+    },
+    {
+      "detail": "D15 start probe: status PASS, selector dsh-0.1.5rc1, family dsh-0.1.5, start ready, final idle, contiguous event sequence, real mcp__byq tool call/result, message-tool blocked",
+      "evidence": "services/runtime-adapter/tests/d15_candidate_probe.py in the built image",
+      "id": "keyless-start-and-tool-turn",
+      "result": "PASS"
+    }
+  ],
+  "schema_version": "byq-v090-dsh-default-upgrade-business-verification.v1"
+}

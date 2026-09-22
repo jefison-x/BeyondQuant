@@ -70,6 +70,19 @@ frozen, not rolled back (ADR-0081).
   cross-process write leases, continuable subagents and persistent terminal
   tooling. See `docs/evidence/d15/compatibility-ledger.v1.json`.
 
+> **Current update (2026-09-22, default upgrade).** The retained 0.9 closeout
+> step "formally upgrade the repository default dependency/selector" has been
+> executed in `codex/v090-dsh-015rc1-default-upgrade`:
+> `config/dsh/deployment.json` default is now `dsh-0.1.5rc1` and `dsh-0.1.2rc1`
+> is the registered rollback candidate; the registered descriptor/lock,
+> selector identity, production Dockerfile, dependency pins, compose default and
+> build identity (`dsh-0.1.5rc1-post-u8.200`) all move to the coherent
+> `0.1.5-rc.1` pairing. This is a repository-default change only: it does **not**
+> deploy to production, does not create a tag/release, does not generate a D15
+> superseding assessment, keeps B1/B2 `BLOCKED_EXTERNAL` and historical D15-G
+> `NO_GO`, and does not start 0.10. Evidence:
+> `docs/evidence/v090-dsh-015rc1-default-upgrade/`.
+
 ## 1. R3 freeze
 
 R3 status: `PAUSED_PENDING_DSH_015_NATIVE_CONTINUITY_QUALIFICATION`.

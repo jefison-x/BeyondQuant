@@ -1,4 +1,4 @@
-"""D15 candidate boundary for the official DSH 0.1.5 bundled runtime.
+"""Repository-default boundary for the official DSH 0.1.5 bundled runtime.
 
 The Python ``deepseek-harness-sdk`` surface is byte-identical between
 ``0.1.2rc1`` and ``0.1.5rc1`` (see ``docs/evidence/d15/upgrade-recon.v1.json``),
@@ -12,9 +12,10 @@ D15-2..D15-G and is deliberately **not** wired into this compatibility class
 yet; wiring them before qualification would create a second continuity
 implementation (forbidden by ADR-0079/ADR-0081 and the R3 freeze).
 
-This module selects the candidate only when ``BYQ_DSH_COMPATIBILITY_RELEASE``
-is explicitly set to ``dsh-0.1.5rc1``. The production default stays
-``dsh-0.1.2rc1``.
+Since the 0.9 formal default upgrade this boundary is the repository default
+(``BYQ_DSH_COMPATIBILITY_RELEASE`` default ``dsh-0.1.5rc1``); ``dsh-0.1.2rc1``
+remains the retained rollback baseline. The default upgrade does not deploy to
+production and does not adopt native continuity.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from .dsh_012 import Dsh012Compatibility
 
 
 class Dsh015Compatibility(Dsh012Compatibility):
-    """Candidate 0.1.5 boundary; inherits the unchanged SDK observation contract."""
+    """Repository-default 0.1.5 boundary; inherits the unchanged SDK contract."""
 
     family = "dsh-0.1.5"
 

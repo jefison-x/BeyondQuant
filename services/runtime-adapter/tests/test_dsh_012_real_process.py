@@ -16,9 +16,9 @@ from pathlib import Path
 
 
 pytestmark = pytest.mark.skipif(
-    version("deepseek-harness-sdk") != "0.1.2rc1"
+    version("deepseek-harness-sdk") != "0.1.5rc1"
     or os.environ.get("BYQ_DSH_REAL_PROCESS_TEST") != "1",
-    reason="requires the isolated 0.1.2 candidate stack and real BYQ MCP",
+    reason="requires the isolated 0.1.5 default stack and real BYQ MCP",
 )
 
 

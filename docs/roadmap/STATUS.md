@@ -37,7 +37,8 @@
 <!-- byq:session-failure-containment-next=real-recovery-acceptance-then-coherent-dsh-0.1.5rc1-upgrade -->
 <!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->
 <!-- byq:phase-100-p100-c=paused-not-delivery -->
-<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.199 -->
+<!-- byq:v090-dsh-default-upgrade=promoted -->
+<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.200 -->
 
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|
@@ -758,6 +759,53 @@ superseding assessment**，**不启动 0.10**。
   `post-u8.197 → post-u8.198`（`scripts/`、`tests/`、
   `services/runtime-adapter/Dockerfile.post-u8-candidate` 属 build inputs，仅重建身份；历史 `.197`
   manifest 与全部证据保留，不改 selector/`compose.yml`/`deployment.json`/制品）。
+
+## 0.9 正式升级仓库默认 dependency/selector 到 coherent DSH 0.1.5-rc.1（2026-09-22，权威维护条目）
+
+本批执行 0.9 保留收口顺序中的“正式把仓库默认 dependency/selector 升级到 coherent DSH
+`0.1.5-rc.1`（含 rollback/业务验证）”唯一步骤。独立 worktree/分支
+`codex/v090-dsh-015rc1-default-upgrade`，基于动态 `origin/main`
+（`4671c3e948b77c75a87c84a514888974f683a54b`，含 #353）。这是维护/资格，**不推进 Product Phase**，
+**不部署生产**，不创建/移动 tag/release，不恢复 Phase 100，不做 Community 检查或复制，**不生成
+D15 superseding assessment**，**不启动 0.10**；**不重实现 DSH**、不加跨进程 continuable provider、
+不加第二 agent harness。
+
+- **复用既有候选资格资产**：`config/dsh/candidates/dsh-0.1.5rc1/`（声明 + Python lock）、
+  `services/runtime-adapter/Dockerfile.dsh-0.1.5rc1-candidate` 与
+  `requirements.dsh-0.1.5rc1-candidate.lock`、compat shim
+  `services/runtime-adapter/app/compat/dsh_015.py`、D15 证据（target-decision/recon/ledger/
+  D15-1 probe/runtime v5）及 B2/B3/B4 候选切片。
+- **默认 selector/dependency/profile/image 变更**：`config/dsh/deployment.json`
+  `default_release → dsh-0.1.5rc1`、`candidate_releases → [dsh-0.1.2rc1]`（rollback）；新增
+  `config/dsh/releases/dsh-0.1.5rc1.json` 与 `.python.lock`（upstream tag/commit/archive 取自 D15-0）；
+  `candidate.json` 置 `promoted`、`production_default = dsh-0.1.5rc1`；默认 selector identity
+  `config/dsh/generated/deployment.identity.json`（0.1.5）与回滚候选 identity
+  `config/dsh/generated/dsh-0.1.2rc1.identity.json`；`Dockerfile.post-u8-candidate` 选择器/嵌入
+  build manifest/安装断言；`requirements.candidate.lock`、`pyproject.toml` 固定 `0.1.5rc1`；
+  `compose.yml` 默认 `BYQ_DSH_COMPATIBILITY_RELEASE:-dsh-0.1.5rc1` 与 session root；`compat/__init__.py`
+  默认 0.1.5 边界（0.1.2 保留可选）；`build_revision` 当前 release `dsh-0.1.5rc1`、新 build id
+  `dsh-0.1.5rc1-post-u8.200`（`dsh-0.1.2rc1-post-u8.199` 作为冻结回滚身份保留）；
+  `runtime.py` F6 continuation gate 接受同一 coherent 0.1.5 对（避免默认升级静默禁用已资格业务能力）。
+  现有 0.1.2 profile 版本无关、D15-1 已证明可加载于 0.1.5，故不新增 profile。
+- **可验证 rollback**：0.1.2 的 release descriptor / Python lock / `dsh-0.1.2rc1-post-u8.199` build
+  manifest 与 base commit Git blob 逐字节一致；归档 0.1.2 identity 与既部署镜像 digest 记录在案；
+  `verify.py` 对回滚制品漂移 fail closed。
+- **fail-closed 证据**：`scripts/v090/dsh_default_upgrade/verify.py`（+13 项 defect-targeting 负例，
+  `--selfcheck` 全部被拒）；证据 `docs/evidence/v090-dsh-015rc1-default-upgrade/`，由
+  `tests/test_v090_dsh_default_upgrade.py` 守门。
+- **定向真实验证（keyless，非生产部署）**：升级后的 `Dockerfile.post-u8-candidate` 镜像构建成功
+  （`sha256:a4892dd85c7f…`），`/readyz` 报 `release_identity=matched`/`release_id=dsh-0.1.5rc1`；
+  镜像内运行时/领域 wire 套件 244 passed/40 skipped；F6 continuation budget 10 passed；D15 start
+  probe `ready`/`idle`、事件序列连续、真实 `mcp__byq` tool call 且 message tool 仍被阻断。
+- **历史证据仅 digest 刷新**：绑定 `runtime.py` 的两份 v090 证据
+  （`docs/evidence/v090-session-containment/observations.v2.json`、
+  `docs/evidence/v090-business-recovery/observations.v1.json`）与 H4 interface ledger 的
+  `runtime.py` 依赖 digest 因该门禁变更有因果关联，仅刷新 digest，不改结论。
+- **边界不变**：B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 仍
+  `BLOCKED_EXTERNAL`；历史 D15-G 仍 `NO_GO`（不改写）；**不生成** D15 superseding assessment；
+  `R3_RESUME = NO`；**未部署生产**、未创建 tag/release；Phase 100 未恢复；**0.10 未启动**。
+- 构建身份推进 `post-u8.199 → post-u8.200`（`scripts/`、`tests/`、`services/runtime-adapter` 属
+  build inputs；历史 `.199` manifest 与全部证据保留）。
 
 ## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19，历史叙述）
 

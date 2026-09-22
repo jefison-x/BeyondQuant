@@ -7,7 +7,7 @@
       "services/backend/app/research_continuation.py": "sha256:1052e9afc4363fb84228edb5a2fc7464b71ff95546bbc72c6c3c91bd25cd4390",
       "services/gateway/app/recovery_carrier.py": "sha256:e51eacf5e10567a0f1fc6a46dc9f84accce4b6da0a8ead8b73fdda8e98a524fe",
       "services/runtime-adapter/app/business_recovery.py": "sha256:936b4b675f38577b5bd40503b25ce4887e437ed4e9a7b2e0ef25646c3aa46ce8",
-      "services/runtime-adapter/app/runtime.py": "sha256:6926a2c6b39f167c7b817d308dcfd4c06bb66aa5e8c62d6da517b3f593766761"
+      "services/runtime-adapter/app/runtime.py": "sha256:05648066fde34424522e1ad21d905c5751667fbb6d072c02b95747eff076aa82"
     }
   },
   "scenarios": {
