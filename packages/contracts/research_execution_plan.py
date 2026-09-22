@@ -319,6 +319,14 @@ STAGE_ACTION = {stage: spec["action"] for stage, spec in _STAGE_SPEC.items()}
 # Public stage -> exact expected postcondition (ADR-0085 P2 read-only helper).
 STAGE_POSTCONDITION = {stage: spec["postcondition"] for stage, spec in _STAGE_SPEC.items()}
 
+# Public stage -> bound human-approval requirement or None (ADR-0085 P3 helper).
+# A proposal commit derives the target stage's approval requirement itself; an
+# external caller never supplies the action/resource/version binding.
+STAGE_APPROVAL_REQUIREMENT = {
+    stage: (dict(spec["approval"]) if isinstance(spec["approval"], dict) else None)
+    for stage, spec in _STAGE_SPEC.items()
+}
+
 # The single non-cancelled status a stage defaults to when a plan is built
 # directly at that stage (legacy adoption). A stage whose legal set is only
 # ``{completed, cancelled}`` defaults to ``completed``; every other stage has

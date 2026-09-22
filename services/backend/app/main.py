@@ -2054,6 +2054,16 @@ def get_research_execution_plan(task_id: str, request: Request) -> dict[str, obj
     return _research_call(lambda: research_store.get_execution_plan(task_id, trusted_context=context))
 
 
+@app.get("/v1/research/tasks/{task_id}/stage-input")
+def get_research_stage_input(task_id: str, request: Request) -> dict[str, object]:
+    # ADR-0085 P3 exposes ONLY a bounded, read-only research-judgment stage
+    # input. The proposal is committed through the named server-side seam, never
+    # through a generic plan/proposal write route, so a model cannot choose the
+    # workflow next action.
+    context = _required_agent_context(request, include_workspace=True)
+    return _research_call(lambda: research_store.get_research_stage_input(task_id, trusted_context=context))
+
+
 @app.get("/v1/research/tasks")
 def list_research_tasks(request: Request) -> dict[str, object]:
     context = _required_agent_context(request)

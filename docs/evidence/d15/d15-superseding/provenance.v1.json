@@ -142,12 +142,12 @@
     },
     {
       "id": "default_upgrade",
-      "introduced_by": "f0f3268f5f94db91acc1f0af5d79da9edc187ff5",
+      "introduced_by": "8e985f26080cf8800a166bdfa6c386e511d98135",
       "introduced_date": "2026-09-22",
       "layer": "repo-default-upgrade",
       "modified_in_superseding_commit": true,
       "path": "docs/evidence/v090-dsh-015rc1-default-upgrade/default-upgrade.v1.json",
-      "sha256": "sha256:3ad7bc3edf156f7cad7d524507815f1cd24428e2276683874043e49d16695f41",
+      "sha256": "sha256:bfb2a58f2575b386df51db79b06a18100ff53e9bd62570275c416ec8432820e5",
       "stage": "0.9-closeout"
     },
     {
@@ -172,7 +172,7 @@
     }
   ],
   "generated_at": "2026-09-22",
-  "generated_from_head": "f0f3268f5f94db91acc1f0af5d79da9edc187ff5",
+  "generated_from_head": "8e985f26080cf8800a166bdfa6c386e511d98135",
   "note": "Source evidence reused by the named D15 superseding assessment. introduced_by is the last commit that touched the path; modified_in_superseding_commit marks paths changed by the superseding assessment commit itself. Historical D15-4/D15-5/D15-G verdicts are referenced and never rewritten.",
   "schema_version": "byq-d15-superseding-provenance.v1"
 }

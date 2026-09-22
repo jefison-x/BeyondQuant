@@ -25,6 +25,7 @@ from .research_continuation_ledger import (
     SCHEMA_DDL as CONTINUATION_LEDGER_SCHEMA_DDL,
 )
 from .research_handoff import ResearchHandoffMixin
+from .research_judgment import ResearchJudgmentMixin
 from .research_receipts import ResearchReceiptMixin, SCHEMA_DDL as RECEIPT_SCHEMA_DDL
 
 
@@ -256,7 +257,7 @@ def _row_dict(row: dict[str, Any]) -> dict[str, object]:
 
 class ResearchStore(
     ResearchHandoffMixin, ResearchReceiptMixin, ResearchContinuationMixin,
-    ResearchExecutionPlanMixin, ResearchContinuationLedgerMixin, PgStoreMixin,
+    ResearchExecutionPlanMixin, ResearchContinuationLedgerMixin, ResearchJudgmentMixin, PgStoreMixin,
 ):
     """Backend-owned durable repository for Phase 9 business entities (ADR-0016 PG)."""
 

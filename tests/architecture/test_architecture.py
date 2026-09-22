@@ -887,6 +887,42 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         ):
             self.assertIn(f"def {adapter}(", ledger)
 
+    def test_adr0085_p3_research_judgment_is_bounded_and_read_only(self) -> None:
+        # ADR-0085 P3: a genuine research-judgment stage gets a READ-ONLY bounded
+        # stage input and a named server-side proposal commit. There is no
+        # agent-facing plan/proposal/event write route.
+        backend = (ROOT / "services/backend/app/main.py").read_text()
+        self.assertEqual(
+            re.findall(r'(?m)^@app\.(get|post|put|delete)\("([^"]*stage-input[^"]*)"', backend),
+            [("get", "/v1/research/tasks/{task_id}/stage-input")],
+        )
+        self.assertEqual(
+            re.findall(r'(?m)^@app\.(get|post|put|delete)\("([^"]*proposal[^"]*)"', backend), [])
+        product_api = (ROOT / "services/gateway/app/product_api.py").read_text()
+        self.assertNotIn("stage-input", product_api)
+        self.assertNotIn("proposal", product_api)
+        seam = (ROOT / "services/backend/app/research_judgment.py").read_text()
+        for method in ("get_research_stage_input", "commit_research_proposal",
+                       "record_research_stage_progress"):
+            self.assertIn(f"def {method}(", seam)
+        self.assertNotIn("def record_continuation_event(", seam)
+        self.assertNotIn("@app.", seam)
+        mcp = (ROOT / "services/mcp/src/server.ts").read_text()
+        self.assertIn('"byq_research_stage_input_get"', mcp)
+        self.assertNotIn("byq_research_judgment_submit", mcp)
+        self.assertNotIn("byq_research_proposal", mcp)
+        composition = (ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()
+        self.assertIn("mcp__byq__byq_research_stage_input_get", composition)
+
+    def test_adr0085_p3_default_stage_call_bound_agrees_across_contract_and_guard(self) -> None:
+        from packages.contracts.research_judgment import DEFAULT_MAX_MODEL_CALLS_PER_STAGE
+
+        guard = (ROOT / "plugins/dsh-byq/runtime/byq-continuation-budget.js").read_text()
+        match = re.search(r"(?m)^export const RESEARCH_JUDGMENT_MAX_CALLS = (\d+);$", guard)
+        self.assertIsNotNone(match)
+        self.assertEqual(int(match.group(1)), DEFAULT_MAX_MODEL_CALLS_PER_STAGE)
+        self.assertEqual(DEFAULT_MAX_MODEL_CALLS_PER_STAGE, 2)
+
     def test_phase23_historical_parity_matrix_and_ui_smoke_exist(self) -> None:
         matrix = ROOT / "docs/roadmap/COMMUNITY_FEATURE_PARITY_MATRIX.md"
         self.assertTrue(matrix.exists())

@@ -266,6 +266,7 @@
             - mcp__byq__byq_agent_audit
             - mcp__byq__byq_research_task_create
             - mcp__byq__byq_research_get
+            - mcp__byq__byq_research_stage_input_get
             - mcp__byq__byq_experiment_create
             - mcp__byq__byq_artifact_create
             - mcp__byq__byq_strategy_validate
@@ -290,6 +291,7 @@
             - mcp__byq__byq_agent_authorize
             - mcp__byq__byq_agent_audit
             - mcp__byq__byq_research_get
+            - mcp__byq__byq_research_stage_input_get
             - mcp__byq__byq_backtest_task_prepare
             - mcp__byq__byq_backtest_task_create
             - mcp__byq__byq_backtest_task_get
