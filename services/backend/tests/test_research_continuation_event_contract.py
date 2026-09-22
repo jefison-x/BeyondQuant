@@ -10,12 +10,14 @@ import hashlib
 import pytest
 
 from packages.contracts.research_continuation_event import (
+    AGENT_APPROVAL_PLAN_ACTION,
     EVENT_DECISIONS,
     EVENT_SCHEMA_VERSION,
     EVENT_TYPES,
     EVENT_VERSION,
     FORBIDDEN_EVENT_FIELDS,
     OUTCOMES,
+    PLAN_APPROVAL_ACTION,
     RESULT_STATUSES,
     bind_command_digest,
     bound_approval,
@@ -23,6 +25,7 @@ from packages.contracts.research_continuation_event import (
     event_request_hash,
     event_result_status,
     plan_command_digest,
+    plan_command_idempotency_key,
     reduce_continuation_event,
     validate_event,
 )
@@ -440,6 +443,25 @@ def test_command_digest_is_server_derived_and_version_bound() -> None:
     # An approval-free plan is returned unchanged.
     draft = _strategy_draft_plan()
     assert bind_command_digest(draft) == draft
+
+
+def test_plan_command_idempotency_key_and_action_maps_are_closed() -> None:
+    references = _references(backtest_task=BACKTEST_TASK)
+    plan = _gate_plan("waiting_for_task_execute_approval", references=references,
+                      approval=_approval("backtest_execute", "backtest_task", BACKTEST_TASK, plan=1))
+    key = plan_command_idempotency_key(
+        plan, action="backtest_execute", resource_kind="backtest_task", resource_id=BACKTEST_TASK)
+    assert key.startswith("plancmd_") and len(key) == len("plancmd_") + 32
+    assert key == plan_command_idempotency_key(
+        plan, action="backtest_execute", resource_kind="backtest_task", resource_id=BACKTEST_TASK)
+    assert PLAN_APPROVAL_ACTION == {
+        "strategy_approve": "byq_strategy_approve",
+        "backtest_task_create": "byq_backtest_task_create",
+        "backtest_execute": "byq_backtest_task_execute",
+    }
+    assert AGENT_APPROVAL_PLAN_ACTION == {
+        agent_action: plan_action for plan_action, agent_action in PLAN_APPROVAL_ACTION.items()
+    }
 
 
 def test_data_ready_and_backtest_stale_source_binding_never_advances() -> None:

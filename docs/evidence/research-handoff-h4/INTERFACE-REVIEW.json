@@ -15760,7 +15760,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -15805,7 +15805,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -15850,7 +15850,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -15895,7 +15895,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -15940,7 +15940,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -15985,7 +15985,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16030,7 +16030,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16075,7 +16075,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16120,7 +16120,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16165,7 +16165,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16210,7 +16210,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16255,7 +16255,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16300,7 +16300,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16345,7 +16345,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16390,7 +16390,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16435,7 +16435,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16480,7 +16480,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16525,7 +16525,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16570,7 +16570,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16615,7 +16615,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16660,7 +16660,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16705,7 +16705,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16750,7 +16750,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16795,7 +16795,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16840,7 +16840,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16885,7 +16885,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16930,7 +16930,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -16975,7 +16975,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -17020,7 +17020,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -17065,7 +17065,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -17110,7 +17110,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -17155,7 +17155,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -17200,7 +17200,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -17245,7 +17245,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -17290,7 +17290,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -17335,7 +17335,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -17380,7 +17380,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -17425,7 +17425,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -17470,7 +17470,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -17515,7 +17515,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -17560,7 +17560,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -17605,7 +17605,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -17650,7 +17650,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",
@@ -17695,7 +17695,7 @@
       ],
       "source_sha256": "sha256:fe80bd99628f56484a0708fcc69ae93607467f8ca9406cfa4f5822883031965e",
       "dependencies_sha256": {
-        "services/backend/app/agent_research.py": "sha256:6efed316a11eeb1511086ae4e0643230dbb649c12040de8ab59232263a826feb",
+        "services/backend/app/agent_research.py": "sha256:69cf15db1077a3c4200d513c14175fc500f68b4f8c52639b2e13558306e84259",
         "services/backend/app/learning_loop.py": "sha256:8c9d7a98460d0cd221db24b533fe7e11a062e5179f718eeb2e48e4aa766c05d9",
         "services/backend/app/engineering.py": "sha256:3b153f9796ae71d24b750f2a2e711f454af500b10626dd6da9a5653a9a7ee413",
         "services/backend/app/factor_research.py": "sha256:186612c723b286c6af225ad8dfe2dca22e010d241e4be6dc253b8c03fb939c75",

@@ -17,6 +17,7 @@ from app.agent_research import AgentResearchStore
 from app.conversation_catalog import ConversationCatalogStore
 from app.research import IdempotencyConflict, ResearchNotFound, ResearchStore
 from app.research_continuation_ledger import (
+    ContinuationClaimConflict,
     ContinuationInProgress,
     ContinuationTriggerRequired,
     project_continuation_event,
@@ -194,6 +195,110 @@ def test_plan_approval_adapter_refuses_pending_foreign_and_digest_forged():
         store.close()
 
 
+def _plan_gate(store, task, context, *, key="strategy-gate"):
+    artifact = _create_artifact(store, task, kind="strategy_version", key=key)
+    references = _references(strategy_version=artifact["artifact_id"])
+    plan = _seed_plan(store, task, context, "waiting_for_strategy_approval", references,
+                      approval=_approval("strategy_approve", "strategy_version",
+                                         artifact["artifact_id"], plan=1, params_digest=None))
+    return artifact, plan
+
+
+def _approval_binding(store, approval_id):
+    return store._fetch_one("""SELECT plan_task_id, plan_workspace_id, plan_version,
+        plan_task_version, plan_action, plan_resource_kind, plan_resource_id,
+        plan_params_digest, plan_idempotency_key
+        FROM agent_approvals WHERE approval_id = :id""", {"id": approval_id})
+
+
+def test_plan_approval_binding_is_frozen_at_request_time_and_never_unlocks_a_newer_plan():
+    store, task, context = _setup()
+    try:
+        artifact, _plan = _plan_gate(store, task, context)
+        approval_id = _agent_approval(
+            context["owner_principal"], context["session_id"], context["trace_id"],
+            action="byq_strategy_approve", resource_type="strategy_version",
+            resource_id=artifact["artifact_id"], decision=None, key="frozen-1")
+        binding = _approval_binding(store, approval_id)
+        assert binding["plan_task_id"] == task and binding["plan_version"] == 1
+        assert binding["plan_task_version"] == 1 and binding["plan_action"] == "strategy_approve"
+        assert binding["plan_params_digest"].startswith("sha256:")
+        assert binding["plan_idempotency_key"].startswith("plancmd_")
+        # Advance the plan to v2 while the v1 approval is still unused.
+        store.advance_execution_plan(task, {
+            "expected_plan_version": 1, "expected_task_version": 1,
+            "next_stage": "waiting_for_task_create_approval", "iteration": 1, "status": "waiting",
+            "expected_postcondition": "next_round_task_create_approval_requested",
+            "idempotency_key": "plan-v2",
+            "references": _references(strategy_version=artifact["artifact_id"]),
+            "approval": _approval("backtest_task_create", "strategy_version",
+                                  artifact["artifact_id"], plan=2, params_digest=None)},
+            trusted_context=context)
+        assert store.get_execution_plan(task, trusted_context=context)["plan_version"] == 2
+        agent = AgentResearchStore()
+        try:
+            agent.decide_approval({"approval_id": approval_id, "decision": "approved"},
+                                  trusted_owner=context["owner_principal"],
+                                  trusted_actor="human-reviewer")
+        finally:
+            agent.close()
+        # The stale v1 approval must NOT unlock v2.
+        with pytest.raises(ValueError):
+            store.record_plan_approval_event(task, approval_id, trusted_context=context)
+        assert store.get_execution_plan(task, trusted_context=context)["plan_version"] == 2
+    finally:
+        store.close()
+
+
+def test_plan_approval_binding_rejects_an_altered_command_parameter():
+    import json
+
+    store, task, context = _setup()
+    try:
+        artifact, _plan = _plan_gate(store, task, context)
+        approval_id = _agent_approval(
+            context["owner_principal"], context["session_id"], context["trace_id"],
+            action="byq_strategy_approve", resource_type="strategy_version",
+            resource_id=artifact["artifact_id"], key="alter-1")
+        # Keep action/resource and plan version, but alter a referenced command
+        # parameter; the frozen parameter digest must no longer match.
+        extra = json.dumps({"stock_pool_snapshot": "poolsnap_" + "a" * 32})
+        store._execute("""UPDATE research_execution_plans
+            SET plan = jsonb_set(plan, '{references,stock_pool_snapshot}', CAST(:extra AS jsonb))
+            WHERE task_id = :task""", {"extra": extra, "task": task})
+        with pytest.raises(ValueError):
+            store.record_plan_approval_event(task, approval_id, trusted_context=context)
+        assert store.get_execution_plan(task, trusted_context=context)["plan_version"] == 1
+    finally:
+        store.close()
+
+
+def test_plan_approval_binding_rejects_wrong_task_workspace_version_digest_and_key():
+    store, task, context = _setup()
+    try:
+        artifact, _plan = _plan_gate(store, task, context)
+        corruptions = (
+            ("plan_task_id", "task_" + "9" * 32),
+            ("plan_workspace_id", "workspace_" + "9" * 32),
+            ("plan_version", 99),
+            ("plan_params_digest", "sha256:" + "0" * 64),
+            ("plan_idempotency_key", "plancmd_" + "0" * 32),
+        )
+        for index, (field, value) in enumerate(corruptions):
+            approval_id = _agent_approval(
+                context["owner_principal"], context["session_id"], context["trace_id"],
+                action="byq_strategy_approve", resource_type="strategy_version",
+                resource_id=artifact["artifact_id"], key=f"corrupt-{index}")
+            store._execute(
+                f"UPDATE agent_approvals SET {field} = :value WHERE approval_id = :id",
+                {"value": value, "id": approval_id})
+            with pytest.raises(ValueError):
+                store.record_plan_approval_event(task, approval_id, trusted_context=context)
+        assert store.get_execution_plan(task, trusted_context=context)["plan_version"] == 1
+    finally:
+        store.close()
+
+
 # --------------------------------------------------------------------------- #
 # data_ready: exact signal job identity, no recency
 # --------------------------------------------------------------------------- #
@@ -359,16 +464,17 @@ def test_user_resume_persists_a_durable_pending_intent_claimable_across_restart(
             # The open intent survives a restart and is idempotently claimable.
             listing = restarted.list_continuation_events(task, trusted_context=context)
             assert len(listing["events"]) == 1 and listing["events"][0]["status"] == "pending"
-            claimed = restarted.claim_continuation_intent(task, first["event_id"],
-                                                          trusted_context=context)
+            claimed = restarted.claim_continuation_intent(
+                task, first["event_id"], claimant="worker-1", trusted_context=context)
             assert claimed["status"] == "claimed" and claimed["retry_identity"] == "plan-1"
-            assert restarted.claim_continuation_intent(task, first["event_id"],
-                                                       trusted_context=context) == claimed
+            assert restarted.claim_continuation_intent(
+                task, first["event_id"], claimant="worker-1", trusted_context=context) == claimed
             settled = restarted.settle_continuation_intent(
-                task, first["event_id"], "consumed", trusted_context=context)
+                task, first["event_id"], "consumed", claimant="worker-1", trusted_context=context)
             assert settled["status"] == "settled"
             assert restarted.settle_continuation_intent(
-                task, first["event_id"], "consumed", trusted_context=context) == settled
+                task, first["event_id"], "consumed", claimant="worker-1",
+                trusted_context=context) == settled
             # An exact replay is served from the durable ledger (current settled
             # state), never a second intent.
             replay = restarted.record_user_resume_event(task, trigger_id, trusted_context=context)
@@ -432,12 +538,104 @@ def test_at_most_one_open_intent_per_task():
         with pytest.raises(ContinuationInProgress):
             store.record_recovery_event(task, recovery_trigger, trusted_context=context)
         # Settling the open intent releases the slot for the distinct event.
-        store.settle_continuation_intent(task, first["event_id"], "consumed",
+        store.claim_continuation_intent(task, first["event_id"], claimant="worker-1",
+                                        trusted_context=context)
+        store.settle_continuation_intent(task, first["event_id"], "consumed", claimant="worker-1",
                                          trusted_context=context)
         second = store.record_recovery_event(task, recovery_trigger, trusted_context=context)
         assert second["status"] == "pending"
     finally:
         store.close()
+
+
+def test_claim_is_exclusive_and_settlement_requires_the_same_claimant():
+    store, task, context = _setup()
+    try:
+        store.create_execution_plan(task, {"idempotency_key": "plan-1"}, trusted_context=context)
+        trigger_id = _register_user_resume(store, task, context)
+        first = store.record_user_resume_event(task, trigger_id, trusted_context=context)
+        claimed = store.claim_continuation_intent(task, first["event_id"], claimant="worker-1",
+                                                  trusted_context=context)
+        assert claimed["status"] == "claimed" and claimed["claimed_by"] == "worker-1"
+        # A distinct consumer can never receive or steal the claim.
+        with pytest.raises(ContinuationClaimConflict):
+            store.claim_continuation_intent(task, first["event_id"], claimant="worker-2",
+                                            trusted_context=context)
+        # Settlement is owned by the same claimant.
+        with pytest.raises(ContinuationClaimConflict):
+            store.settle_continuation_intent(task, first["event_id"], "consumed",
+                                             claimant="worker-2", trusted_context=context)
+        # An exact replay by the same claimant is idempotent.
+        assert store.claim_continuation_intent(task, first["event_id"], claimant="worker-1",
+                                               trusted_context=context) == claimed
+        settled = store.settle_continuation_intent(task, first["event_id"], "consumed",
+                                                   claimant="worker-1", trusted_context=context)
+        assert settled["status"] == "settled"
+        with pytest.raises((ValueError, ContinuationClaimConflict)):
+            store.claim_continuation_intent(task, first["event_id"], claimant="worker-2",
+                                            trusted_context=context)
+        with pytest.raises(ContinuationClaimConflict):
+            store.settle_continuation_intent(task, first["event_id"], "consumed",
+                                             claimant="worker-2", trusted_context=context)
+    finally:
+        store.close()
+
+
+def test_concurrent_claimants_only_one_claims_the_intent():
+    store, task, context = _setup()
+    other = ResearchStore()
+    try:
+        store.create_execution_plan(task, {"idempotency_key": "plan-1"}, trusted_context=context)
+        trigger_id = _register_user_resume(store, task, context)
+        first = store.record_user_resume_event(task, trigger_id, trusted_context=context)
+
+        def claim(instance, claimant):
+            try:
+                return instance.claim_continuation_intent(
+                    task, first["event_id"], claimant=claimant, trusted_context=context)
+            except Exception as error:  # noqa: BLE001 - one racer must be refused
+                return {"error": type(error).__name__}
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda pair: claim(*pair),
+                                    ((store, "worker-a"), (other, "worker-b"))))
+        claimed = [item for item in results if item.get("status") == "claimed"]
+        refused = [item for item in results if item.get("error") == "ContinuationClaimConflict"]
+        assert len(claimed) == 1 and len(refused) == 1, results
+        assert claimed[0]["claimed_by"] in {"worker-a", "worker-b"}
+    finally:
+        store.close()
+        other.close()
+
+
+def test_claim_ownership_survives_restart_and_blocks_another_claimant():
+    store, task, context = _setup()
+    try:
+        store.create_execution_plan(task, {"idempotency_key": "plan-1"}, trusted_context=context)
+        trigger_id = _register_user_resume(store, task, context)
+        first = store.record_user_resume_event(task, trigger_id, trusted_context=context)
+        store.claim_continuation_intent(task, first["event_id"], claimant="worker-1",
+                                        trusted_context=context)
+        store.close()
+        restarted = ResearchStore()
+        try:
+            assert restarted.claim_continuation_intent(
+                task, first["event_id"], claimant="worker-1",
+                trusted_context=context)["status"] == "claimed"
+            with pytest.raises(ContinuationClaimConflict):
+                restarted.claim_continuation_intent(
+                    task, first["event_id"], claimant="worker-2", trusted_context=context)
+            with pytest.raises(ContinuationClaimConflict):
+                restarted.settle_continuation_intent(
+                    task, first["event_id"], "consumed", claimant="worker-2",
+                    trusted_context=context)
+            settled = restarted.settle_continuation_intent(
+                task, first["event_id"], "consumed", claimant="worker-1", trusted_context=context)
+            assert settled["status"] == "settled"
+        finally:
+            restarted.close()
+    finally:
+        pass
 
 
 # --------------------------------------------------------------------------- #
@@ -540,36 +738,47 @@ def test_event_projection_is_bounded_and_listing_is_owner_scoped():
 # Compat approval path must be exactly bound, never session-wide
 # --------------------------------------------------------------------------- #
 
-def test_compat_approval_guard_binds_the_exact_plan_resource_only():
+def _continuation_status(approval_id, owner):
+    agent = AgentResearchStore()
+    try:
+        return agent.get_approval(approval_id, trusted_owner=owner)["continuation_status"]
+    finally:
+        agent.close()
+
+
+def test_compat_approval_guard_blocks_the_exact_plan_binding_only():
     store, task, context = _setup()
     try:
-        artifact = _create_artifact(store, task, kind="strategy_version", key="compat-strategy")
-        _seed_plan(store, task, context, "waiting_for_strategy_approval",
-                   _references(strategy_version=artifact["artifact_id"]),
-                   approval=_approval("strategy_approve", "strategy_version",
-                                      artifact["artifact_id"], plan=1))
-        # An approval for an unrelated resource of the same owner/session is NOT
-        # blocked: the guard binds the exact plan resource, not the session.
-        unrelated = _agent_approval(context["owner_principal"], context["session_id"],
-                                    context["trace_id"], action="byq_strategy_approve",
-                                    resource_type="strategy_version",
-                                    resource_id="artifact_" + "e" * 32, key="unrelated-approval")
-        agent = AgentResearchStore()
+        artifact, _plan = _plan_gate(store, task, context, key="compat-strategy")
+        # An unrelated RESOURCE (no matching plan requirement) is not blocked.
+        unrelated_resource = _agent_approval(
+            context["owner_principal"], context["session_id"], context["trace_id"],
+            action="byq_strategy_approve", resource_type="strategy_version",
+            resource_id="artifact_" + "e" * 32, key="unrelated-resource")
+        assert _continuation_status(unrelated_resource, context["owner_principal"]) == "queued"
+        # An unrelated ACTION sharing the same resource is not blocked.
+        unrelated_action = _agent_approval(
+            context["owner_principal"], context["session_id"], context["trace_id"],
+            action="byq_backtest_task_create", resource_type="strategy_version",
+            resource_id=artifact["artifact_id"], key="unrelated-action")
+        assert _continuation_status(unrelated_action, context["owner_principal"]) == "queued"
+        # A foreign owner sharing the resource is not blocked.
+        other, _other_task, other_context = _setup(
+            owner="guard-intruder", session="guard-session-x", trace="guard-trace-x")
         try:
-            row = agent.get_approval(unrelated, trusted_owner=context["owner_principal"])
-            assert row["continuation_status"] == "queued"
+            foreign = _agent_approval(
+                other_context["owner_principal"], other_context["session_id"],
+                other_context["trace_id"], action="byq_strategy_approve",
+                resource_type="strategy_version", resource_id=artifact["artifact_id"],
+                key="foreign-guard")
+            assert _continuation_status(foreign, other_context["owner_principal"]) == "queued"
         finally:
-            agent.close()
-        # The exact plan resource is blocked from the generic compat turn.
-        exact = _agent_approval(context["owner_principal"], context["session_id"],
-                                context["trace_id"], action="byq_strategy_approve",
-                                resource_type="strategy_version",
-                                resource_id=artifact["artifact_id"], key="exact-approval")
-        agent = AgentResearchStore()
-        try:
-            row = agent.get_approval(exact, trusted_owner=context["owner_principal"])
-            assert row["continuation_status"] == "blocked"
-        finally:
-            agent.close()
+            other.close()
+        # The EXACT plan-bound approval is blocked from the generic compat turn.
+        exact = _agent_approval(
+            context["owner_principal"], context["session_id"], context["trace_id"],
+            action="byq_strategy_approve", resource_type="strategy_version",
+            resource_id=artifact["artifact_id"], key="exact-approval")
+        assert _continuation_status(exact, context["owner_principal"]) == "blocked"
     finally:
         store.close()

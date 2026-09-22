@@ -57,13 +57,16 @@ from packages.contracts.research_execution_plan import advance
 from packages.contracts.research_continuation_event import (
     EVENT_TYPES,
     EVENT_VERSION,
+    PLAN_APPROVAL_ACTION,
     RESULT_STATUSES,
+    approval_plan_binding,
     bind_command_digest,
     default_expected_postcondition,
     event_identity,
     event_request_hash,
     event_result_status,
     plan_command_digest,
+    plan_command_idempotency_key,
     reduce_continuation_event,
     validate_event,
 )
@@ -79,12 +82,6 @@ _TRIGGER_KINDS = frozenset({"user_resume", "recovery"})
 _TRIGGER_SOURCE_KINDS = {"user_resume": "user_message", "recovery": "lost_run"}
 _SETTLE_OUTCOMES = frozenset({"consumed", "completed", "failed", "needs_attention"})
 
-# Plan pending-approval action -> the agent approval action that authorizes it.
-_PLAN_APPROVAL_ACTION = {
-    "strategy_approve": "byq_strategy_approve",
-    "backtest_task_create": "byq_backtest_task_create",
-    "backtest_execute": "byq_backtest_task_execute",
-}
 # Resource kinds whose exact task ownership can be proven from a table.
 _ARTIFACT_RESOURCE_KINDS = frozenset({"strategy_version", "strategy_approval"})
 
@@ -95,6 +92,10 @@ class ContinuationInProgress(Exception):
 
 class ContinuationTriggerRequired(Exception):
     """A user-resume/recovery event has no durable authoritative trigger."""
+
+
+class ContinuationClaimConflict(Exception):
+    """A pending intent is claimed by a different consumer identity."""
 
 
 SCHEMA_DDL: list[str] = [
@@ -370,37 +371,56 @@ class ResearchContinuationLedgerMixin:
     # Pending intent claim/settle (crash-safe, idempotent, at-most-once)
     # ------------------------------------------------------------------ #
 
-    def claim_continuation_intent(self, task_id: str, event_id: object, *,
+    def claim_continuation_intent(self, task_id: str, event_id: object, *, claimant: object,
                                   trusted_context: dict) -> dict:
-        """Idempotently claim the task's open pending intent for consumption."""
+        """Exclusively claim the task's open pending intent for one consumer.
+
+        The claim is owned by the caller-supplied, trusted, bounded ``claimant``
+        identity. A distinct claimant can never receive or steal the claim; an
+        exact replay by the SAME claimant is idempotent. The row lock plus the
+        conditional CAS make this exclusive across processes/restarts.
+        """
 
         from .research import ResearchNotFound
 
         event_id = self._require_identity(event_id, "event")
+        claimant = self._require_identity(claimant, "claimant")
         with self._transaction() as connection:
             task = self._plan_task(connection, task_id, trusted_context, lock=True)
             row = self._load_event(connection, task["task_id"], event_id, lock=True)
             if row is None:
                 raise ResearchNotFound("continuation intent not found")
             if row["status"] == "claimed":
+                if row["claimed_by"] != claimant:
+                    raise ContinuationClaimConflict(
+                        "continuation intent is claimed by another consumer")
                 return project_continuation_intent(row)
             if row["status"] != "pending" or not row["admitted"]:
                 raise ValueError("continuation intent is not claimable")
-            execute(connection, """UPDATE research_continuation_events
-                SET status = 'claimed', claimed_at = :now, claimed_by = :owner, updated_at = :now
-                WHERE task_id = :task AND event_id = :event""",
-                {"now": _now(), "owner": task["owner_principal"],
+            claimed = fetch_one(connection, """UPDATE research_continuation_events
+                SET status = 'claimed', claimed_at = :now, claimed_by = :claimant,
+                    updated_at = :now
+                WHERE task_id = :task AND event_id = :event
+                  AND status = 'pending' AND admitted
+                RETURNING *""",
+                {"now": _now(), "claimant": claimant,
                  "task": task["task_id"], "event": event_id})
-            return project_continuation_intent(
-                self._load_event(connection, task["task_id"], event_id, lock=False))
+            if claimed is None:
+                current = self._load_event(connection, task["task_id"], event_id, lock=False)
+                if current is not None and current["status"] == "claimed" and current["claimed_by"] == claimant:
+                    return project_continuation_intent(current)
+                raise ContinuationClaimConflict(
+                    "continuation intent is claimed by another consumer")
+            return project_continuation_intent(claimed)
 
     def settle_continuation_intent(self, task_id: str, event_id: object, outcome: object, *,
-                                   trusted_context: dict) -> dict:
-        """Idempotently settle a claimed/pending intent, releasing at-most-once."""
+                                   claimant: object, trusted_context: dict) -> dict:
+        """Idempotently settle an intent owned by the SAME claimant."""
 
         from .research import IdempotencyConflict, ResearchNotFound
 
         event_id = self._require_identity(event_id, "event")
+        claimant = self._require_identity(claimant, "claimant")
         if outcome not in _SETTLE_OUTCOMES:
             raise ValueError("continuation intent outcome is invalid")
         with self._transaction() as connection:
@@ -408,20 +428,27 @@ class ResearchContinuationLedgerMixin:
             row = self._load_event(connection, task["task_id"], event_id, lock=True)
             if row is None:
                 raise ResearchNotFound("continuation intent not found")
+            if row["claimed_by"] is not None and row["claimed_by"] != claimant:
+                raise ContinuationClaimConflict(
+                    "continuation intent is owned by another consumer")
             if row["status"] == "settled":
                 if row["outcome"] != outcome:
                     raise IdempotencyConflict("continuation intent settlement conflicts")
                 return project_continuation_intent(row)
-            if row["status"] not in {"pending", "claimed"}:
-                raise ValueError("continuation intent is not settleable")
-            execute(connection, """UPDATE research_continuation_events
+            if row["status"] != "claimed" or row["claimed_by"] != claimant:
+                raise ValueError("continuation intent must be claimed by this consumer")
+            settled = fetch_one(connection, """UPDATE research_continuation_events
                 SET admitted = FALSE, status = 'settled', outcome = :outcome,
                     settled_at = :now, updated_at = :now
-                WHERE task_id = :task AND event_id = :event""",
-                {"outcome": outcome, "now": _now(),
+                WHERE task_id = :task AND event_id = :event
+                  AND status = 'claimed' AND claimed_by = :claimant
+                RETURNING *""",
+                {"outcome": outcome, "now": _now(), "claimant": claimant,
                  "task": task["task_id"], "event": event_id})
-            return project_continuation_intent(
-                self._load_event(connection, task["task_id"], event_id, lock=False))
+            if settled is None:
+                raise ContinuationClaimConflict(
+                    "continuation intent is owned by another consumer")
+            return project_continuation_intent(settled)
 
     # ------------------------------------------------------------------ #
     # Bounded read
@@ -592,18 +619,44 @@ class ResearchContinuationLedgerMixin:
         pending = plan.get("approval")
         if not isinstance(pending, dict):
             raise ValueError("plan has no pending approval requirement")
-        if _PLAN_APPROVAL_ACTION.get(pending["action"]) != row["action"]:
+        # ADR-0085 §3/P2: the human approval MUST carry the exact plan-command
+        # binding minted at request time. Re-deriving it from the CURRENT plan
+        # after the decision is forbidden: an unused older approval could then
+        # authorize a later changed plan.
+        binding = approval_plan_binding(row)
+        if binding is None:
+            raise ValueError("plan approval has no durable plan-command binding")
+        if binding["task_id"] != task["task_id"]:
+            raise ValueError("plan approval binding task does not match the plan")
+        if binding["workspace"] != task["workspace_id"]:
+            raise ValueError("plan approval binding workspace does not match the plan")
+        if (binding["plan_version"], binding["task_version"]) != (
+                plan["plan_version"], plan["task_version"]):
+            raise ValueError("plan approval binding is stale for the current plan version")
+        if (binding["action"], binding["resource_kind"], binding["resource_id"]) != (
+                pending["action"], pending["resource_kind"], pending["resource_id"]):
+            raise ValueError("plan approval binding does not match the current plan gate")
+        # The real approval action/resource must also match the binding and gate.
+        if PLAN_APPROVAL_ACTION.get(pending["action"]) != row["action"]:
             raise ValueError("plan approval action does not match the plan gate")
-        if row.get("resource_type") != pending["resource_kind"]:
-            raise ValueError("plan approval resource kind does not match the plan gate")
+        if (row.get("resource_type") != pending["resource_kind"]
+                or row.get("resource_id") != pending["resource_id"]):
+            raise ValueError("plan approval resource does not match the plan gate")
         reference = (plan["references"] or {}).get(pending["resource_kind"])
         if (not isinstance(reference, dict)
-                or reference.get(pending["resource_kind"]) != row.get("resource_id")):
+                or reference.get(pending["resource_kind"]) != pending["resource_id"]):
             raise ValueError("plan approval resource is not bound to the plan reference")
-        _require_resource_owner(connection, task, pending["resource_kind"], row["resource_id"])
+        _require_resource_owner(connection, task, pending["resource_kind"], pending["resource_id"])
         derived = plan_command_digest(
             plan, action=pending["action"], resource_kind=pending["resource_kind"],
             resource_id=pending["resource_id"])
+        derived_key = plan_command_idempotency_key(
+            plan, action=pending["action"], resource_kind=pending["resource_kind"],
+            resource_id=pending["resource_id"])
+        if binding["params_digest"] != derived:
+            raise ValueError("plan approval binding parameter digest is stale")
+        if binding["idempotency_key"] != derived_key:
+            raise ValueError("plan approval binding idempotency key is stale")
         if pending.get("params_digest") not in {None, derived}:
             raise ValueError("plan approval parameter digest does not match the plan command")
         return {

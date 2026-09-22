@@ -55,6 +55,19 @@ EVENT_TYPES = frozenset({
 
 EVENT_DECISIONS = frozenset({"approved", "rejected", "expired", "revoked"})
 
+# Plan human-gate action -> the Agent approval action that authorizes it, and the
+# exact inverse. ADR-0085 §3: a plan-bound human approval MUST bind the exact plan
+# command (plan/task version, action, resource, parameter digest and BYQ
+# idempotency key) at request time, not derive it after the decision.
+PLAN_APPROVAL_ACTION = {
+    "strategy_approve": "byq_strategy_approve",
+    "backtest_task_create": "byq_backtest_task_create",
+    "backtest_execute": "byq_backtest_task_execute",
+}
+AGENT_APPROVAL_PLAN_ACTION = {
+    agent_action: plan_action for plan_action, agent_action in PLAN_APPROVAL_ACTION.items()
+}
+
 # Outcomes the reducer may return. Closed.
 OUTCOMES = frozenset({"advance", "stay", "needs_attention", "retry_current_action"})
 
@@ -511,6 +524,60 @@ def bind_command_digest(plan: object) -> dict[str, object]:
         verified, action=approval["action"], resource_kind=approval["resource_kind"],
         resource_id=approval["resource_id"])
     return validate_plan({**verified, "approval": {**approval, "params_digest": digest}})
+
+
+def plan_command_idempotency_key(
+    plan: object, *, action: str, resource_kind: str, resource_id: str,
+) -> str:
+    """BYQ-minted idempotency key for one exact plan command.
+
+    It is a pure function of the plan command digest, so it is version- and
+    parameter-bound and can never be supplied by an external caller.
+    """
+
+    digest = plan_command_digest(
+        plan, action=action, resource_kind=resource_kind, resource_id=resource_id)
+    return "plancmd_" + digest.removeprefix("sha256:")[:32]
+
+
+# The persisted plan-command binding columns on an ``agent_approvals`` row. They
+# are minted TOGETHER at approval request time; a partial or absent set is not a
+# binding (fail closed).
+_APPROVAL_BINDING_FIELDS = (
+    "plan_task_id", "plan_workspace_id", "plan_version", "plan_task_version",
+    "plan_action", "plan_resource_kind", "plan_resource_id", "plan_params_digest",
+    "plan_idempotency_key",
+)
+_APPROVAL_BINDING_TEXT_FIELDS = (
+    "plan_task_id", "plan_workspace_id", "plan_action", "plan_resource_kind",
+    "plan_resource_id", "plan_params_digest", "plan_idempotency_key",
+)
+
+
+def approval_plan_binding(row: object) -> dict | None:
+    """Extract a persisted plan-command binding from an approval row mapping.
+
+    Pure function shared by the approval store (which mints the binding) and the
+    continuation ledger (which consumes it). A partial, absent or malformed
+    binding returns ``None`` so the caller fails closed.
+    """
+
+    if not isinstance(row, dict):
+        return None
+    for field in _APPROVAL_BINDING_FIELDS:
+        value = row.get(field)
+        if value is None or isinstance(value, bool) or not isinstance(value, (str, int)):
+            return None
+    for field in _APPROVAL_BINDING_TEXT_FIELDS:
+        if not isinstance(row.get(field), str) or not row.get(field):
+            return None
+    return {
+        "task_id": row["plan_task_id"], "workspace": row["plan_workspace_id"],
+        "plan_version": row["plan_version"], "task_version": row["plan_task_version"],
+        "action": row["plan_action"], "resource_kind": row["plan_resource_kind"],
+        "resource_id": row["plan_resource_id"], "params_digest": row["plan_params_digest"],
+        "idempotency_key": row["plan_idempotency_key"],
+    }
 
 
 def event_result_status(outcome: str) -> str:
