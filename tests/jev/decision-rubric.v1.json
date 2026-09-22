@@ -1,0 +1,221 @@
+{
+  "schema_version": "jev-decision-rubric.v1",
+  "purpose": "Offline evaluation of bounded P3 research judgment; never a BYQ router.",
+  "units": {
+    "returns_drawdowns_costs_win_rates": "decimal fractions",
+    "sharpe_calmar_turnover": "ratios",
+    "observations_trades": "counts"
+  },
+  "scope": {
+    "allowed": [
+      "strategy draft comparison",
+      "backtest analysis",
+      "round comparison",
+      "revision proposal",
+      "evidence sufficiency",
+      "bounded model escalation"
+    ],
+    "forbidden": [
+      "workflow next_action",
+      "object identity",
+      "approval execution",
+      "idempotency key generation",
+      "job routing",
+      "recovery or continuation state",
+      "orders or trading instructions"
+    ]
+  },
+  "precedence": [
+    "scope rejection",
+    "evidence hard gates",
+    "sample adequacy",
+    "OOS and cost/regime robustness",
+    "material dominance",
+    "near-tie escalation",
+    "bounded revision"
+  ],
+  "thresholds": {
+    "stable_oos_sharpe_min": 1.15,
+    "meaningful_sharpe_gap_min": 0.15,
+    "max_drawdown_relative_reduction_min": 0.2,
+    "turnover_relative_reduction_min": 0.15,
+    "near_tie_sharpe_gap_lt": 0.08,
+    "near_tie_return_gap_lt": 0.02,
+    "near_tie_drawdown_relative_gap_lt": 0.1,
+    "minimum_oos_observations": 60,
+    "high_confidence_oos_observations": 120,
+    "minimum_closed_trades": 15,
+    "high_confidence_closed_trades": 30,
+    "overfit_oos_to_is_ratio_lt": 0.6,
+    "cost_stress_retention_min": 0.75,
+    "regime_collapse_return_lte": -0.12,
+    "regime_collapse_drawdown_gte": 0.3,
+    "worst_regime_drawdown_preferred_max": 0.25,
+    "bounded_state_max_bytes": 12288,
+    "bounded_case_max_bytes": 24576
+  },
+  "rules": {
+    "EVID_SAMPLE_01": {
+      "if": "OOS observations <60 or closed trades <15",
+      "then": "treat performance claims as insufficient; collect evidence instead of escalating for invented certainty"
+    },
+    "BT_STABILITY_01": {
+      "if": "OOS Sharpe >=1.15 and drawdown is >=20% lower than comparison with no material turnover degradation",
+      "then": "prefer stable candidate"
+    },
+    "BT_NEAR_TIE_02": {
+      "if": "top two Sharpe gap <0.08 and return gap <0.02 and drawdown relative gap <0.10, or metrics conflict",
+      "then": "do not force high-confidence winner; escalate when evidence is complete"
+    },
+    "COST_TURNOVER_03": {
+      "if": "turnover reduction >=15%, net metrics remain qualified, and cost ratio falls",
+      "then": "prefer lower-turnover candidate"
+    },
+    "COST_STRESS_04": {
+      "if": "ranking flips or performance retention under transaction-cost stress <75%",
+      "then": "do not select using gross return"
+    },
+    "DD_REDUCTION_05": {
+      "if": "drawdown falls >=20% while Sharpe degradation is <0.15",
+      "then": "prefer lower-drawdown candidate"
+    },
+    "EVID_COMPLETE_06": {
+      "if": "validated OOS, adequate sample, costs, regime coverage, reproducibility and lineage are present",
+      "then": "evidence is sufficient"
+    },
+    "EVID_MISSING_OOS_07": {
+      "if": "OOS is missing",
+      "then": "insufficient evidence; do not escalate merely to manufacture evidence"
+    },
+    "EVID_CONFLICT_08": {
+      "if": "complete material sources or stress tests disagree",
+      "then": "mark conflicting and escalate bounded interpretation"
+    },
+    "EVID_REPRO_09": {
+      "if": "reproducibility is false",
+      "then": "insufficient evidence"
+    },
+    "LINEAGE_REQUIRED_10": {
+      "if": "required artifact or input lineage is missing",
+      "then": "insufficient and unauditable"
+    },
+    "REGIME_COVERAGE_11": {
+      "if": "a material regime is absent",
+      "then": "do not claim regime robustness"
+    },
+    "EVID_HONEST_BLOCKED_12": {
+      "if": "any required evidence row remains BLOCKED or FAIL",
+      "then": "overall evidence is incomplete regardless of PASS labels"
+    },
+    "REV_KEEP_13": {
+      "if": "qualified OOS is stable and diagnostics show no material localized failure",
+      "then": "keep current research draft"
+    },
+    "REV_POSITION_14": {
+      "if": "losses cluster at high exposure or regime drawdown is high",
+      "then": "propose lower position cap for next offline round"
+    },
+    "REV_STOP_15": {
+      "if": "tail losses occur after entry and current stops rarely trigger",
+      "then": "propose stop sensitivity research"
+    },
+    "REV_MA_16": {
+      "if": "turnover is high and repeated MA reversals or cost degradation dominate",
+      "then": "propose longer MA window research"
+    },
+    "REV_KELLY_17": {
+      "if": "large Kelly fraction coexists with loss streaks and high drawdown",
+      "then": "propose lower Kelly fraction"
+    },
+    "REV_RESEARCH_18": {
+      "if": "metrics are marginal and no diagnosis dominates",
+      "then": "require further research"
+    },
+    "ESC_SIMPLE_19": {
+      "if": "candidate dominance exceeds material thresholds in consistent directions",
+      "then": "Jev decides without stronger LLM"
+    },
+    "ESC_AMBIGUOUS_20": {
+      "if": "complete evidence has near tie, ranking flip, or substantive tradeoff",
+      "then": "escalate to stronger reasoning model"
+    },
+    "ESC_NO_DATA_21": {
+      "if": "evidence is missing or sample is inadequate",
+      "then": "collect evidence; stronger LLM is not a substitute"
+    },
+    "ESC_REGIME_22": {
+      "if": "complete evidence changes winner across material regimes",
+      "then": "escalate bounded interpretation"
+    },
+    "SCOPE_REJECT_23": {
+      "if": "request concerns deterministic workflow, identity, approval, idempotency, routing, recovery or continuation",
+      "then": "reject Jev task and return to BYQ reducer"
+    },
+    "REGIME_COLLAPSE_24": {
+      "if": "a sufficiently sampled regime return <=-12% or max drawdown >=30%",
+      "then": "do not accept overall headline; escalate if near threshold or tradeoffs remain"
+    },
+    "REGIME_STABLE_25": {
+      "if": "all sampled regimes are positive and worst drawdown <=25%",
+      "then": "robustness supports keeping candidate"
+    },
+    "REGIME_REVISE_26": {
+      "if": "one regime materially lags without hard collapse",
+      "then": "propose bounded regime-risk revision"
+    },
+    "NO_ABSOLUTE_RETURN_27": {
+      "if": "higher return has materially worse Sharpe/drawdown/cost",
+      "then": "do not select on absolute return alone"
+    },
+    "MISSING_NONE_OPTION_28": {
+      "if": "evidence is insufficient but choice set omits abstention",
+      "then": "choose safest available answer with low confidence and escalate/refuse forced certainty"
+    },
+    "OOS_DEGRADE_04": {
+      "if": "OOS/IS Sharpe ratio <60%",
+      "then": "treat as likely overfit; prefer adequately retained OOS evidence"
+    }
+  },
+  "confidence": {
+    "high": "hard gate, clearly exceeded multi-metric threshold, or unambiguous escalation/refusal decision",
+    "medium": "qualified but close to one threshold or contains modest noise",
+    "low": "forced candidate preference or unresolved evidence conflict leaves the preferred substantive answer uncertain"
+  },
+  "escalation": {
+    "true_only_when": "complete bounded evidence remains materially ambiguous or choice design forces unsafe certainty",
+    "false_when": "simple dominance, hard scope rejection, or missing evidence that a larger model cannot supply"
+  },
+  "rule_escalation": {
+    "EVID_SAMPLE_01": "forbidden",
+    "BT_STABILITY_01": "forbidden",
+    "BT_NEAR_TIE_02": "required",
+    "COST_TURNOVER_03": "forbidden",
+    "COST_STRESS_04": "forbidden",
+    "DD_REDUCTION_05": "forbidden",
+    "EVID_COMPLETE_06": "forbidden",
+    "EVID_MISSING_OOS_07": "forbidden",
+    "EVID_CONFLICT_08": "required",
+    "EVID_REPRO_09": "forbidden",
+    "LINEAGE_REQUIRED_10": "forbidden",
+    "REGIME_COVERAGE_11": "forbidden",
+    "EVID_HONEST_BLOCKED_12": "forbidden",
+    "REV_KEEP_13": "forbidden",
+    "REV_POSITION_14": "forbidden",
+    "REV_STOP_15": "forbidden",
+    "REV_MA_16": "forbidden",
+    "REV_KELLY_17": "forbidden",
+    "REV_RESEARCH_18": "forbidden",
+    "ESC_SIMPLE_19": "forbidden",
+    "ESC_AMBIGUOUS_20": "required",
+    "ESC_NO_DATA_21": "forbidden",
+    "ESC_REGIME_22": "required",
+    "SCOPE_REJECT_23": "forbidden",
+    "REGIME_COLLAPSE_24": "required",
+    "REGIME_STABLE_25": "forbidden",
+    "REGIME_REVISE_26": "forbidden",
+    "NO_ABSOLUTE_RETURN_27": "forbidden",
+    "MISSING_NONE_OPTION_28": "required",
+    "OOS_DEGRADE_04": "forbidden"
+  },
+  "benchmark_sha256": "a3fbcf3ebe731089414653f9c93a319ab6639c97e2067240b29e1464225f70e4"
+}
