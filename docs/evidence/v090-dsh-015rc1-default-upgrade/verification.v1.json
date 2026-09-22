@@ -1,9 +1,8 @@
 {
+  "status": "PASS",
   "default_release": "dsh-0.1.5rc1",
-  "promoted_build": "dsh-0.1.5rc1-post-u8.204",
-  "promoted_descriptor_hash": "sha256:e06d59650c538c0ccee87ffed976198bf5f8c384523f9c3f0cfeb656bb36e478",
-  "rollback_build": "dsh-0.1.2rc1-post-u8.199",
   "rollback_release": "dsh-0.1.2rc1",
-  "schema_version": "byq-v090-dsh-default-upgrade-verification.v1",
-  "status": "PASS"
+  "promoted_build": "dsh-0.1.5rc1-post-u8.205",
+  "rollback_build": "dsh-0.1.2rc1-post-u8.199",
+  "promoted_descriptor_hash": "sha256:38d05da464d76c85e2453a331960e8f13cddfb458029ea6f366eea58274bb420"
 }
