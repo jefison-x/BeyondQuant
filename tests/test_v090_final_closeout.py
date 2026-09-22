@@ -34,7 +34,7 @@ EVIDENCE = ROOT / "docs/evidence/v090-final-closeout"
 SUPERSEDING = ROOT / "scripts/d15/superseding_assessment"
 SUPERSEDING_CONTRACT = SUPERSEDING / "contract.v1.json"
 
-CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.208"
+CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.209"
 CANDIDATE = "dsh-0.1.5rc1"
 ROLLBACK = "dsh-0.1.2rc1"
 

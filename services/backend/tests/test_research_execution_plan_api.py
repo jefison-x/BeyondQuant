@@ -136,8 +136,10 @@ def test_get_stage_input_refuses_a_deterministic_stage(monkeypatch):
     try:
         # A first call without durable progress moves the plan to needs_attention
         # (a deterministic stage), which must refuse a model turn.
+        store.admit_research_stage_call(task, {"call_identity": "det-fence"}, trusted_context=context)
         store.record_research_stage_progress(
-            task, {"call_index": 1, "durable_progress_identity": None}, trusted_context=context)
+            task, {"call_identity": "det-fence", "durable_evidence": {"kind": "none"}},
+            trusted_context=context)
         assert client.get(f"/v1/research/tasks/{task}/stage-input",
                           headers=headers).status_code == 422
     finally:

@@ -380,6 +380,72 @@ def stage_model_call_outcome(
     }
 
 
+# Authoritative durable-progress evidence kinds. The caller names a durable BYQ
+# record (or an explicit no-progress / plan-advance marker); it NEVER supplies a
+# progress digest, so a fabricated digest cannot pass. The seam derives and binds
+# the identity from the named persisted record.
+PROGRESS_EVIDENCE_KINDS = frozenset({"none", "plan_advance", "artifact", "experiment", "backtest_job"})
+
+# Exact durable-record id shape per evidence kind. A bare digest or any other
+# string is not a durable record and fails closed here.
+_EVIDENCE_ID_PATTERNS = {
+    "artifact": re.compile(r"^artifact_[0-9a-f]{32}$"),
+    "experiment": re.compile(r"^experiment_[0-9a-f]{32}$"),
+    "backtest_job": re.compile(r"^backtest_[0-9a-f]{32}$"),
+}
+
+_STAGE_ADMISSION_FIELDS = frozenset({"call_identity"})
+_STAGE_PROGRESS_FIELDS = frozenset({"call_identity", "durable_evidence"})
+
+
+def validate_call_identity(value: object) -> str:
+    if not isinstance(value, str) or _IDENTITY.fullmatch(value) is None:
+        raise ValueError("research stage call identity is invalid")
+    return value
+
+
+def validate_stage_admission_request(value: object) -> dict[str, object]:
+    """Closed admission request: the trusted caller supplies only its call identity.
+
+    The 1-based call count is NEVER caller-supplied; the durable ledger derives it
+    under the task-row lock and refuses a third admission.
+    """
+
+    if not isinstance(value, dict) or set(value) != _STAGE_ADMISSION_FIELDS:
+        raise ValueError("research stage admission request has invalid fields")
+    validate_call_identity(value["call_identity"])
+    return value
+
+
+def validate_progress_evidence(value: object) -> dict[str, object]:
+    """Closed durable-evidence descriptor (never a caller digest)."""
+
+    if not isinstance(value, dict) or "kind" not in value:
+        raise ValueError("research progress evidence must be an object with a kind")
+    kind = value["kind"]
+    if kind not in PROGRESS_EVIDENCE_KINDS:
+        raise ValueError("research progress evidence kind is unknown")
+    if kind in {"none", "plan_advance"}:
+        if set(value) != {"kind"}:
+            raise ValueError("research progress evidence must be a closed kind")
+    else:
+        if set(value) != {"kind", "id"}:
+            raise ValueError("research progress evidence must be a closed kind/id pair")
+        identity = value["id"]
+        if not isinstance(identity, str) or _EVIDENCE_ID_PATTERNS[kind].fullmatch(identity) is None:
+            raise ValueError("research progress evidence id is not a durable record identity")
+    _bounded(value, maximum=1024, field="progress_evidence")
+    return value
+
+
+def validate_stage_progress_request(value: object) -> dict[str, object]:
+    if not isinstance(value, dict) or set(value) != _STAGE_PROGRESS_FIELDS:
+        raise ValueError("research stage progress request has invalid fields")
+    validate_call_identity(value["call_identity"])
+    validate_progress_evidence(value["durable_evidence"])
+    return value
+
+
 def _decision(outcome: str, reason: str) -> dict[str, object]:
     if outcome not in OUTCOMES:
         raise ValueError("research judgment outcome is unknown")

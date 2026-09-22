@@ -25,7 +25,10 @@ from .research_continuation_ledger import (
     SCHEMA_DDL as CONTINUATION_LEDGER_SCHEMA_DDL,
 )
 from .research_handoff import ResearchHandoffMixin
-from .research_judgment import ResearchJudgmentMixin
+from .research_judgment import (
+    ResearchJudgmentMixin,
+    SCHEMA_DDL as JUDGMENT_SCHEMA_DDL,
+)
 from .research_receipts import ResearchReceiptMixin, SCHEMA_DDL as RECEIPT_SCHEMA_DDL
 
 
@@ -365,6 +368,8 @@ class ResearchStore(
         *EXECUTION_PLAN_SCHEMA_DDL,
         # ADR-0085 P2 continuation ledger references research_tasks too.
         *CONTINUATION_LEDGER_SCHEMA_DDL,
+        # ADR-0085 P3 durable research-judgment model-call admission.
+        *JUDGMENT_SCHEMA_DDL,
     ]
 
     def __init__(self, database_url: str | None = None) -> None:

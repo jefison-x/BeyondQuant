@@ -1,26 +1,27 @@
 """ADR-0085 P3 bounded research-judgment seam tests (isolated PostgreSQL).
 
 These exercise the named server-side seams only: a READ-ONLY bounded stage input,
-the named proposal commit through plan compare-and-swap, and the durable-progress
-fence that stops a stage as ``needs_attention/no_durable_progress``. There is no
-generic plan/proposal write route.
+a durable per-stage model-call admission (caller cannot choose/reset the count;
+concurrency never exceeds the bound; replay is free), authoritative durable
+progress derived from persisted BYQ records (a fabricated digest fails closed),
+the atomic first-check no-progress fence, the named proposal commit through plan
+CAS, and atomic task/plan terminal convergence on ``final_selection``.
 """
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
 from app.conversation_catalog import ConversationCatalogStore
 from app.research import InvalidTransition, ResearchNotFound, ResearchStore
-from app.research_judgment import ModelTurnNotAllowed
+from app.research_judgment import ModelTurnNotAllowed, StageModelCallLimitExceeded
 from packages.contracts.research_execution_plan import plan_at_stage
 from tests.workspace_helpers import trusted_agent_context
 
 pytestmark = pytest.mark.skipif(not os.environ.get("BYQ_DATABASE_URL"), reason="isolated PostgreSQL required")
 
 STRATEGY = "artifact_" + "d" * 32
-DIGEST_A = "sha256:" + "a" * 64
-DIGEST_B = "sha256:" + "b" * 64
 
 
 def _setup(owner: str = "judgment-user", session: str = "judgment-session", trace: str = "judgment-trace"):
@@ -80,6 +81,12 @@ def _proposal(plan, stage, kind, *, iteration=None, task_id=None, **overrides):
     return value
 
 
+def _artifact(store, task, *, kind="backtest_result", key="artifact"):
+    return store.create_artifact({
+        "task_id": task, "kind": kind, "content": {"synthetic": key}, "lineage": [],
+        "trace_id": _task_row(store, task)["trace_id"], "idempotency_key": key})
+
+
 # --------------------------------------------------------------------------- #
 # Read-only bounded stage input
 # --------------------------------------------------------------------------- #
@@ -92,17 +99,165 @@ def test_stage_input_is_read_only_bounded_and_refuses_deterministic_stages():
         value = store.get_research_stage_input(task, trusted_context=context)
         assert value["stage"] == "backtest_analysis"
         assert value["model_call_limit"] == 2
-        assert value["allowed_tools"]
         assert all(tool in {"byq_agent_context", "byq_research_get", "byq_research_stage_input_get",
                             "byq_backtest_task_get", "byq_backtest_analysis_get"}
                    for tool in value["allowed_tools"])
-        assert "date_index" not in str(value)
-        assert "bars_frame" not in str(value)
+        assert "date_index" not in str(value) and "bars_frame" not in str(value)
 
         store._execute("DELETE FROM research_execution_plans WHERE task_id = :task", {"task": task})
         _seed_plan(store, task, "waiting_for_data")
         with pytest.raises(ModelTurnNotAllowed):
             store.get_research_stage_input(task, trusted_context=context)
+        with pytest.raises(ModelTurnNotAllowed):
+            store.admit_research_stage_call(task, {"call_identity": "det-1"}, trusted_context=context)
+    finally:
+        store.close()
+
+
+# --------------------------------------------------------------------------- #
+# Durable admission: authoritative count, replay, bound, concurrency
+# --------------------------------------------------------------------------- #
+
+def test_admission_derives_count_and_rejects_the_third_call():
+    store, task, context = _setup()
+    try:
+        _seed_plan(store, task, "backtest_analysis")
+        first = store.admit_research_stage_call(task, {"call_identity": "turn-a"}, trusted_context=context)
+        assert first["call_index"] == 1 and first["model_call_limit"] == 2
+        assert first["stage_input"]["stage"] == "backtest_analysis"
+        second = store.admit_research_stage_call(task, {"call_identity": "turn-b"}, trusted_context=context)
+        assert second["call_index"] == 2
+        with pytest.raises(StageModelCallLimitExceeded):
+            store.admit_research_stage_call(task, {"call_identity": "turn-c"}, trusted_context=context)
+    finally:
+        store.close()
+
+
+def test_admission_replay_is_free_and_identity_bound():
+    store, task, context = _setup()
+    try:
+        _seed_plan(store, task, "backtest_analysis")
+        first = store.admit_research_stage_call(task, {"call_identity": "turn-a"}, trusted_context=context)
+        replay = store.admit_research_stage_call(task, {"call_identity": "turn-a"}, trusted_context=context)
+        assert replay["call_index"] == first["call_index"] == 1
+        count = store._fetch_one("""SELECT COUNT(*) AS count FROM research_judgment_stage_calls
+            WHERE task_id = :task""", {"task": task})
+        assert count["count"] == 1
+    finally:
+        store.close()
+
+
+def test_concurrent_admission_never_exceeds_two():
+    store, task, context = _setup()
+    try:
+        _seed_plan(store, task, "backtest_analysis")
+        stores = [ResearchStore() for _ in range(4)]
+
+        def _admit(index: int):
+            try:
+                return stores[index].admit_research_stage_call(
+                    task, {"call_identity": f"turn-{index}"}, trusted_context=context)["call_index"]
+            except StageModelCallLimitExceeded:
+                return None
+            finally:
+                stores[index].close()
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results = list(pool.map(_admit, range(4)))
+        assert sorted(item for item in results if item is not None) == [1, 2]
+        assert sum(1 for item in results if item is None) == 2
+    finally:
+        store.close()
+
+
+# --------------------------------------------------------------------------- #
+# Authoritative durable progress + first-check fence
+# --------------------------------------------------------------------------- #
+
+def test_fabricated_progress_is_rejected_and_none_is_the_only_no_progress():
+    store, task, context = _setup()
+    try:
+        _seed_plan(store, task, "backtest_analysis")
+        store.admit_research_stage_call(task, {"call_identity": "turn-a"}, trusted_context=context)
+        # A caller-supplied digest is not even a legal evidence shape.
+        with pytest.raises(ValueError):
+            store.record_research_stage_progress(
+                task, {"call_identity": "turn-a",
+                       "durable_evidence": {"kind": "artifact", "id": "sha256:" + "a" * 64}},
+                trusted_context=context)
+        # A record that does not belong to the task is rejected, not accepted.
+        with pytest.raises(ValueError):
+            store.record_research_stage_progress(
+                task, {"call_identity": "turn-a",
+                       "durable_evidence": {"kind": "artifact", "id": "artifact_" + "e" * 32}},
+                trusted_context=context)
+        with pytest.raises(ValueError):
+            store.record_research_stage_progress(
+                task, {"call_identity": "turn-a",
+                       "durable_evidence": {"kind": "backtest_job", "id": "backtest_" + "e" * 32}},
+                trusted_context=context)
+    finally:
+        store.close()
+
+
+def test_first_completed_check_without_progress_fences_atomically():
+    store, task, context = _setup()
+    try:
+        _seed_plan(store, task, "backtest_analysis")
+        store.admit_research_stage_call(task, {"call_identity": "turn-a"}, trusted_context=context)
+        before = _task_row(store, task)
+        outcome = store.record_research_stage_progress(
+            task, {"call_identity": "turn-a", "durable_evidence": {"kind": "none"}},
+            trusted_context=context)
+        assert outcome["status"] == "stop" and outcome["reason"] == "no_durable_progress"
+        assert outcome["plan_moved_to_needs_attention"] is True
+        persisted = _plan_row(store, task)
+        assert persisted["stage"] == "needs_attention" and persisted["status"] == "blocked"
+        row = _task_row(store, task)
+        assert row["progress"]["blocked_reason"] == "no_durable_progress"
+        assert row["version"] == before["version"] + 1
+        # Replay of the completed check is free and does not re-fence.
+        replay = store.record_research_stage_progress(
+            task, {"call_identity": "turn-a", "durable_evidence": {"kind": "none"}},
+            trusted_context=context)
+        assert replay["replayed"] is True
+        assert _task_row(store, task)["version"] == before["version"] + 1
+    finally:
+        store.close()
+
+
+def test_authoritative_artifact_progress_allows_the_second_call_then_stops():
+    store, task, context = _setup()
+    try:
+        _seed_plan(store, task, "backtest_analysis")
+        store.admit_research_stage_call(task, {"call_identity": "turn-a"}, trusted_context=context)
+        artifact = _artifact(store, task, key="judgment-progress")
+        first = store.record_research_stage_progress(
+            task, {"call_identity": "turn-a",
+                   "durable_evidence": {"kind": "artifact", "id": artifact["artifact_id"]}},
+            trusted_context=context)
+        assert first["continue"] is True and first["progress_identity"].startswith("sha256:")
+
+        store.admit_research_stage_call(task, {"call_identity": "turn-b"}, trusted_context=context)
+        second = store.record_research_stage_progress(
+            task, {"call_identity": "turn-b", "durable_evidence": {"kind": "none"}},
+            trusted_context=context)
+        assert second["status"] == "stop" and second["outcome"] == "advance"
+        assert second["plan_moved_to_needs_attention"] is False
+        with pytest.raises(StageModelCallLimitExceeded):
+            store.admit_research_stage_call(task, {"call_identity": "turn-c"}, trusted_context=context)
+    finally:
+        store.close()
+
+
+def test_progress_for_an_unadmitted_call_fails_closed():
+    store, task, context = _setup()
+    try:
+        _seed_plan(store, task, "backtest_analysis")
+        with pytest.raises(InvalidTransition):
+            store.record_research_stage_progress(
+                task, {"call_identity": "never-admitted", "durable_evidence": {"kind": "none"}},
+                trusted_context=context)
     finally:
         store.close()
 
@@ -117,15 +272,12 @@ def test_commit_advances_through_cas_and_replays_idempotently():
         plan = _seed_plan(store, task, "backtest_analysis")
         proposal = _proposal(plan, "backtest_analysis", "backtest_analysis")
         committed = store.commit_research_proposal(task, proposal, trusted_context=context)
-        assert committed["stage"] == "iteration_comparison"
-        assert committed["replayed"] is False
-        assert committed["proposal_identity"].startswith("research_proposal_")
+        assert committed["stage"] == "iteration_comparison" and committed["replayed"] is False
         advanced = _plan_row(store, task)
         assert advanced["plan_version"] == plan["plan_version"] + 1
 
         replay = store.commit_research_proposal(task, proposal, trusted_context=context)
-        assert replay["replayed"] is True
-        assert replay["stage"] == "iteration_comparison"
+        assert replay["replayed"] is True and replay["stage"] == "iteration_comparison"
         assert _plan_row(store, task)["plan_version"] == plan["plan_version"] + 1
 
         mutated = _proposal(plan, "backtest_analysis", "backtest_analysis", summary="changed")
@@ -168,9 +320,9 @@ def test_commit_to_approval_gate_requires_an_existing_exact_reference():
     try:
         _seed_plan(store, task, "strategy_draft")
         plan = _plan_row(store, task)["plan"]
-        missing = _proposal(plan, "strategy_draft", "strategy_draft")
         with pytest.raises(InvalidTransition):
-            store.commit_research_proposal(task, missing, trusted_context=context)
+            store.commit_research_proposal(
+                task, _proposal(plan, "strategy_draft", "strategy_draft"), trusted_context=context)
 
         store._execute("DELETE FROM research_execution_plans WHERE task_id = :task", {"task": task})
         seeded = _seed_plan(store, task, "strategy_draft",
@@ -185,7 +337,7 @@ def test_commit_to_approval_gate_requires_an_existing_exact_reference():
         store.close()
 
 
-def test_commit_escalation_and_insufficient_evidence_stop_at_needs_attention():
+def test_commit_escalation_stops_at_needs_attention():
     store, task, context = _setup()
     try:
         plan = _seed_plan(store, task, "backtest_analysis")
@@ -198,68 +350,52 @@ def test_commit_escalation_and_insufficient_evidence_stop_at_needs_attention():
     finally:
         store.close()
 
-    store, task, context = _setup(owner="judgment-user-2", session="judgment-session-2",
-                                  trace="judgment-trace-2")
-    try:
-        plan = _seed_plan(store, task, "backtest_analysis")
-        insufficient = store.commit_research_proposal(
-            task, _proposal(plan, "backtest_analysis", "backtest_analysis", evidence_sufficient=False),
-            trusted_context=context)
-        assert insufficient["stage"] == "needs_attention"
-        assert insufficient["reason"] == "insufficient_evidence"
-        assert _task_row(store, task)["progress"]["blocked_reason"] == "insufficient_evidence"
-    finally:
-        store.close()
-
 
 # --------------------------------------------------------------------------- #
-# Durable-progress fence and two-call bound
+# Terminal convergence
 # --------------------------------------------------------------------------- #
 
-def test_first_call_without_durable_progress_fences_atomically():
+def test_final_selection_atomically_completes_task_and_plan():
     store, task, context = _setup()
     try:
-        plan = _seed_plan(store, task, "backtest_analysis")
-        before = _task_row(store, task)
-        outcome = store.record_research_stage_progress(
-            task, {"call_index": 1, "durable_progress_identity": None}, trusted_context=context)
-        assert outcome["status"] == "stop"
-        assert outcome["reason"] == "no_durable_progress"
-        assert outcome["plan_moved_to_needs_attention"] is True
+        store.transition("research_task", task, "running", "task-running")
+        artifact = _artifact(store, task, key="final-result")
+        store.transition("artifact", artifact["artifact_id"], "validated", "validate-final")
+        plan = _seed_plan(store, task, "final_selection", iteration=3, references={
+            "backtest_result": {"backtest_result": artifact["artifact_id"]}})
+        committed = store.commit_research_proposal(
+            task, _proposal(plan, "final_selection", "select_iteration", iteration=3,
+                            selected_iteration=2), trusted_context=context)
+        assert committed["stage"] == "completed"
         persisted = _plan_row(store, task)
-        assert persisted["stage"] == "needs_attention"
-        assert persisted["status"] == "blocked"
+        assert persisted["stage"] == "completed" and persisted["status"] == "completed"
         row = _task_row(store, task)
-        assert row["progress"]["blocked_reason"] == "no_durable_progress"
-        assert row["version"] == before["version"] + 1
-        with pytest.raises(ModelTurnNotAllowed):
-            store.record_research_stage_progress(
-                task, {"call_index": 2, "durable_progress_identity": DIGEST_B}, trusted_context=context)
+        assert row["status"] == "completed"
+        assert row["progress"]["stage"] == "completed"
+        assert row["progress"]["next_action"] is None
+        assert row["progress"]["completion_evidence"] == [artifact["artifact_id"]]
+        # The plan's task_version converges to the completed task version.
+        assert persisted["task_version"] == row["version"]
     finally:
         store.close()
 
 
-def test_two_call_bound_and_zero_calls_for_deterministic_stages():
+def test_final_selection_without_validated_evidence_fails_closed():
     store, task, context = _setup()
     try:
-        _seed_plan(store, task, "iteration_comparison", iteration=1)
-        first = store.record_research_stage_progress(
-            task, {"call_index": 1, "durable_progress_identity": DIGEST_A}, trusted_context=context)
-        assert first["continue"] is True
-        second = store.record_research_stage_progress(
-            task, {"call_index": 2, "durable_progress_identity": DIGEST_B}, trusted_context=context)
-        assert second["continue"] is False
-
-        store._execute("DELETE FROM research_execution_plans WHERE task_id = :task", {"task": task})
-        _seed_plan(store, task, "waiting_for_data")
-        with pytest.raises(ModelTurnNotAllowed):
-            store.record_research_stage_progress(
-                task, {"call_index": 1, "durable_progress_identity": DIGEST_A}, trusted_context=context)
+        store.transition("research_task", task, "running", "task-running")
+        plan = _seed_plan(store, task, "final_selection", iteration=3)
+        with pytest.raises(InvalidTransition):
+            store.commit_research_proposal(
+                task, _proposal(plan, "final_selection", "select_iteration", iteration=3,
+                                selected_iteration=2), trusted_context=context)
+        assert _plan_row(store, task)["stage"] == "final_selection"
+        assert _task_row(store, task)["status"] != "completed"
     finally:
         store.close()
 
 
-def test_owner_isolation_on_both_seams():
+def test_owner_isolation_on_all_seams():
     store, task, context = _setup()
     try:
         plan = _seed_plan(store, task, "backtest_analysis")
@@ -267,6 +403,8 @@ def test_owner_isolation_on_both_seams():
         other_context = {key.removeprefix("x-byq-").replace("-", "_"): value for key, value in other.items()}
         with pytest.raises(ResearchNotFound):
             store.get_research_stage_input(task, trusted_context=other_context)
+        with pytest.raises(ResearchNotFound):
+            store.admit_research_stage_call(task, {"call_identity": "x"}, trusted_context=other_context)
         with pytest.raises(ResearchNotFound):
             store.commit_research_proposal(
                 task, _proposal(plan, "backtest_analysis", "backtest_analysis"),

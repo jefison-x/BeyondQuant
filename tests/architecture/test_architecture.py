@@ -914,6 +914,29 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         composition = (ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()
         self.assertIn("mcp__byq__byq_research_stage_input_get", composition)
 
+    def test_adr0085_p3_stage_scoped_read_only_enforcement_matches_contract(self) -> None:
+        # ADR-0085 P3: the bounded judgment turn is enforced at the MCP dispatch
+        # boundary. The stage header admits ONLY the exact read-only tools; every
+        # write/approval/execute tool is blocked, and the internal proposal
+        # channel is the trusted adapter invocation (no agent write route).
+        from packages.contracts.research_judgment import STAGE_ALLOWED_TOOLS
+
+        admission = (ROOT / "services/mcp/src/research-judgment-admission.ts").read_text()
+        self.assertIn("RESEARCH_JUDGMENT_STAGE_HEADER = 'x-byq-research-judgment-stage'", admission)
+        self.assertIn("STAGE_READ_TOOLS", admission)
+        block = admission.split("STAGE_READ_TOOLS", 1)[1].split("};", 1)[0]
+        for stage, tools in STAGE_ALLOWED_TOOLS.items():
+            self.assertIn(f"{stage}:", block)
+            for tool in tools:
+                self.assertIn(f"'{tool}'", block)
+                self.assertNotRegex(tool, r"_create$|_execute$|_approve$|_decide$|_transition$|_prepare$")
+        backend = (ROOT / "services/backend/app/main.py").read_text()
+        self.assertIn("@app.post('/internal/research-judgment/{task_id}/admit')", backend)
+        self.assertIn("@app.post('/internal/research-judgment/{task_id}/result')", backend)
+        adapter = (ROOT / "services/runtime-adapter/app/research_judgment.py").read_text()
+        self.assertIn("x-byq-research-judgment-stage", adapter)
+        self.assertIn("internal/research-judgment", adapter)
+
     def test_adr0085_p3_default_stage_call_bound_agrees_across_contract_and_guard(self) -> None:
         from packages.contracts.research_judgment import DEFAULT_MAX_MODEL_CALLS_PER_STAGE
 

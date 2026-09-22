@@ -456,22 +456,25 @@ def validate_plan(plan: object) -> dict[str, object]:
     status = plan["status"]
     if status not in STATUSES:
         raise ValueError("research execution plan status is unknown")
+    action = plan["next_action"]
+    if action not in NEXT_ACTIONS:
+        raise ValueError("research execution plan next_action is unknown")
     if stage == CANCEL_STAGE:
         # completed stage carries either completed or cancelled, both terminal.
         if status not in {"completed", "cancelled"}:
             raise ValueError("a terminal plan stage requires a terminal status")
-    elif status not in spec["statuses"]:
-        raise ValueError(f"research execution plan status {status} is invalid for stage {stage}")
-
-    action = plan["next_action"]
-    if action not in NEXT_ACTIONS:
-        raise ValueError("research execution plan next_action is unknown")
-    if stage == CANCEL_STAGE and status == "cancelled":
-        if action != CANCEL_ACTION:
-            raise ValueError("a cancelled plan must carry the cancel action")
-        expected_postcondition = CANCEL_POSTCONDITION
         expected_prerequisites: object = []
+        if status == "cancelled":
+            if action != CANCEL_ACTION:
+                raise ValueError("a cancelled plan must carry the cancel action")
+            expected_postcondition = CANCEL_POSTCONDITION
+        else:
+            if action != _STAGE_SPEC[CANCEL_STAGE]["action"]:
+                raise ValueError("research execution plan next_action does not match its stage")
+            expected_postcondition = _STAGE_SPEC[CANCEL_STAGE]["postcondition"]
     else:
+        if status not in spec["statuses"]:
+            raise ValueError(f"research execution plan status {status} is invalid for stage {stage}")
         if action != spec["action"]:
             raise ValueError("research execution plan next_action does not match its stage")
         expected_postcondition = spec["postcondition"]

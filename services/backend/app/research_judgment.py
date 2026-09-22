@@ -1,32 +1,38 @@
-"""ADR-0085 P3: bounded research-judgment stage input and proposal seam.
+"""ADR-0085 P3: bounded research-judgment stage input, admission and proposal seam.
 
 This is the Backend side of ADR-0085 §6. It is BYQ Domain Workflow, not a second
 generic agent harness: it persists no DSH private context, hidden reasoning, tool
 state or session journal, and it never starts a model turn itself.
 
-Two named server-side seams exist and NOTHING ELSE:
+Named server-side seams and NOTHING ELSE:
 
 * ``get_research_stage_input`` is READ-ONLY. It returns the bounded stage input
-  for a genuine research-judgment stage (bounded plan projection + bounded
-  evidence descriptors + the minimal read-only tool set). A deterministic stage
-  is refused: it MUST use zero model calls.
-* ``commit_research_proposal`` is the named server-side proposal seam. It
-  validates a CLOSED, bounded proposal, derives the exact next plan state through
-  the framework-neutral reducer, and commits it through the same plan
-  compare-and-swap the P1/P2 reducers use. An external caller can never name a
-  target stage/action, an object identity, an approval, an idempotency key, a job
-  route or recovery/continuation state.
-* ``record_research_stage_progress`` enforces the durable-progress fence. After
-  the FIRST model call, a missing durable-progress identity atomically moves the
-  plan and ResearchTask to ``needs_attention`` with reason ``no_durable_progress``
-  instead of retrying, spawning subagents or consuming the eight-call budget.
+  for a genuine research-judgment stage. A deterministic stage is refused: it
+  MUST use zero model calls.
+* ``admit_research_stage_call`` is the durable model-call admission. The trusted
+  caller supplies only its call identity; the 1-based call index and the two-call
+  bound are derived from a persisted per-task/plan/stage counter under the
+  task-row lock. A caller can never choose, reset or exceed the count, and an
+  exact replay returns the same admission.
+* ``record_research_stage_progress`` completes an admitted call. The caller names
+  a durable BYQ record (never a digest); the seam derives and binds the progress
+  identity from persisted facts. A fabricated record fails closed. The FIRST
+  completed check without authoritative progress atomically moves the plan AND
+  ResearchTask to ``needs_attention`` with reason ``no_durable_progress``.
+* ``commit_research_proposal`` validates a CLOSED, bounded proposal, derives the
+  exact next plan state through the framework-neutral reducer, and commits it
+  through the same plan compare-and-swap the P1/P2 reducers use. A
+  ``final_selection`` commit atomically completes the ResearchTask too, so the
+  task and the plan never disagree about being terminal.
 
-There is NO generic plan/event/proposal write route. The proposal is submitted
-by trusted server code through the named seam; the agent-facing surface stays
-read-only (see ``services/mcp`` and ``services/backend/app/main.py``).
+There is NO generic plan/event/proposal write route and no agent-facing write
+tool. The internal invocation endpoints are trusted service-to-service only.
 """
 
 from __future__ import annotations
+
+import hashlib
+import json
 
 from .db import execute, fetch_one
 from packages.contracts.research_execution_plan import (
@@ -44,22 +50,49 @@ from packages.contracts.research_judgment import (
     derive_proposal_commit,
     proposal_identity,
     proposal_request_hash,
+    stage_model_call_limit,
     stage_model_call_outcome,
     stage_requires_model,
     validate_proposal,
+    validate_stage_admission_request,
     validate_stage_input,
+    validate_stage_progress_request,
 )
 
-__all__ = ["ModelTurnNotAllowed", "ResearchJudgmentMixin"]
+__all__ = ["ModelTurnNotAllowed", "StageModelCallLimitExceeded", "ResearchJudgmentMixin",
+           "SCHEMA_DDL"]
 
-# A deterministic plan stage MUST NOT start a model turn. ValueError maps to a
-# safe 422 through the read-only route, never to a model escalation path.
+
 class ModelTurnNotAllowed(ValueError):
-    pass
+    """A deterministic plan stage MUST NOT start a model turn (zero model calls)."""
 
 
-# Closed stage instruction text. It names the bounded judgment; it never names a
-# routing target.
+class StageModelCallLimitExceeded(RuntimeError):
+    """The durable per-stage model-call bound is already reached."""
+
+
+SCHEMA_DDL: list[str] = [
+    """
+    CREATE TABLE IF NOT EXISTS research_judgment_stage_calls (
+        task_id TEXT NOT NULL REFERENCES research_tasks(task_id),
+        call_identity TEXT NOT NULL,
+        plan_version INTEGER NOT NULL,
+        stage TEXT NOT NULL,
+        call_index INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        admitted_at TIMESTAMPTZ NOT NULL,
+        completed_at TIMESTAMPTZ,
+        progress_identity TEXT,
+        outcome TEXT,
+        result_json JSONB,
+        PRIMARY KEY (task_id, call_identity),
+        UNIQUE (task_id, plan_version, stage, call_index)
+    )
+    """,
+    """CREATE INDEX IF NOT EXISTS research_judgment_stage_calls_scope
+        ON research_judgment_stage_calls(task_id, plan_version, stage)""",
+]
+
 _STAGE_INSTRUCTION = {
     "strategy_draft": "Propose the bounded strategy draft judgment for this research task.",
     "backtest_analysis": "Analyse the bounded backtest summary for the current round.",
@@ -67,11 +100,19 @@ _STAGE_INSTRUCTION = {
     "final_selection": "Select the best round or escalate when evidence is insufficient.",
 }
 
-_MAX_EVIDENCE = 32
+_COMPLETION_EVIDENCE_REFERENCE_KINDS = (
+    "strategy_version", "strategy_approval", "signal_snapshot", "backtest_result",
+)
+
+
+def _hash(value: object) -> str:
+    return "sha256:" + hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()
+    ).hexdigest()
 
 
 class ResearchJudgmentMixin:
-    """Read-only stage input, named proposal commit and the no-progress fence."""
+    """Read-only stage input, durable admission, authoritative progress and commit."""
 
     @staticmethod
     def _require_model_stage(stage: object) -> str:
@@ -92,26 +133,173 @@ class ResearchJudgmentMixin:
             if plan_row is None:
                 raise ResearchNotFound("research execution plan not found")
             plan = validate_plan(plan_row["plan"])
-            # A deterministic stage is refused here: it uses zero model calls.
             self._require_model_stage(plan["stage"])
-            evidence = self._stage_evidence(task, plan)
-            payload = {
-                "schema_version": STAGE_INPUT_SCHEMA_VERSION,
-                "task_id": plan["task_id"],
-                "plan_version": plan["plan_version"],
-                "task_version": plan["task_version"],
-                "stage": plan["stage"],
-                "iteration": plan["iteration"],
-                "status": plan["status"],
-                "objective": str(task.get("objective") or "")[:TEXT_MAX],
-                "stage_instruction": _STAGE_INSTRUCTION[plan["stage"]],
-                "proposal_kinds": sorted(STAGE_PROPOSAL_KINDS[plan["stage"]]),
-                "evidence": evidence,
-                "allowed_tools": sorted(self._stage_tools(plan["stage"])),
-                "model_call_limit": self._stage_call_limit(plan["stage"]),
-                "escalation_allowed": True,
-            }
-            return validate_stage_input(payload)
+            return self._build_stage_input(task, plan)
+
+    # ------------------------------------------------------------------ #
+    # Durable model-call admission
+    # ------------------------------------------------------------------ #
+
+    def admit_research_stage_call(self, task_id: str, payload: object, *,
+                                  trusted_context: dict) -> dict:
+        """Reserve one bounded model call for the current plan stage.
+
+        The call index is derived from a persisted counter under the task-row
+        lock; the caller supplies only a call identity. Replay is idempotent and a
+        third concurrent/sequential admission fails closed.
+        """
+
+        from .research import InvalidTransition, ResearchNotFound
+
+        request = validate_stage_admission_request(payload)
+        call_identity = str(request["call_identity"])
+        with self._transaction() as connection:
+            task = self._plan_task(connection, task_id, trusted_context, lock=True)
+            plan_row = self._load_current_plan(connection, task["task_id"], lock=True)
+            if plan_row is None:
+                raise ResearchNotFound("research execution plan not found")
+            plan = validate_plan(plan_row["plan"])
+            self._require_model_stage(plan["stage"])
+            existing = self._load_stage_call(connection, task["task_id"], call_identity, lock=True)
+            if existing is not None:
+                if (existing["plan_version"] != plan["plan_version"]
+                        or existing["stage"] != plan["stage"]):
+                    raise InvalidTransition(
+                        "research stage call identity was reused for another plan revision")
+                return self._stage_admission(existing, task, plan)
+            counted = fetch_one(connection, """SELECT COUNT(*) AS count FROM research_judgment_stage_calls
+                WHERE task_id = :task AND plan_version = :plan AND stage = :stage""",
+                {"task": task["task_id"], "plan": plan["plan_version"], "stage": plan["stage"]})
+            used = int(counted["count"]) if counted else 0
+            limit = stage_model_call_limit(plan["stage"])
+            if used >= limit:
+                raise StageModelCallLimitExceeded(
+                    "research stage model call limit reached for this plan revision")
+            call_index = used + 1
+            execute(connection, """INSERT INTO research_judgment_stage_calls
+                (task_id, call_identity, plan_version, stage, call_index, status, admitted_at,
+                 completed_at, progress_identity, outcome, result_json)
+                VALUES (:task, :identity, :plan, :stage, :index, 'admitted', :now,
+                        NULL, NULL, NULL, NULL)""",
+                {"task": task["task_id"], "identity": call_identity, "plan": plan["plan_version"],
+                 "stage": plan["stage"], "index": call_index, "now": _now()})
+            row = self._load_stage_call(connection, task["task_id"], call_identity, lock=True)
+            assert row is not None
+            return self._stage_admission(row, task, plan)
+
+    # ------------------------------------------------------------------ #
+    # Authoritative durable-progress completion + fence
+    # ------------------------------------------------------------------ #
+
+    def record_research_stage_progress(self, task_id: str, payload: object, *,
+                                       trusted_context: dict) -> dict:
+        """Complete one admitted call with authoritative durable evidence.
+
+        The caller names a durable BYQ record; it never supplies a digest. The
+        derived progress identity is bound to that persisted record. A first
+        completed check without progress fences the plan and task atomically.
+        """
+
+        from .research import InvalidTransition, ResearchNotFound
+
+        request = validate_stage_progress_request(payload)
+        call_identity = str(request["call_identity"])
+        with self._transaction() as connection:
+            task = self._plan_task(connection, task_id, trusted_context, lock=True)
+            plan_row = self._load_current_plan(connection, task["task_id"], lock=True)
+            if plan_row is None:
+                raise ResearchNotFound("research execution plan not found")
+            plan = validate_plan(plan_row["plan"])
+            row = self._load_stage_call(connection, task["task_id"], call_identity, lock=True)
+            if row is None:
+                raise InvalidTransition("research stage call was not admitted")
+            if int(row["plan_version"]) > plan["plan_version"]:
+                raise InvalidTransition("research stage call belongs to a newer plan revision")
+            if row["status"] == "completed":
+                stored = row["result_json"] if isinstance(row["result_json"], dict) else {}
+                return {**stored, "replayed": True}
+            if row["status"] != "admitted":
+                raise InvalidTransition("research stage call is not completable")
+            # The admission's own stage owns the bound: a committed proposal may
+            # already have advanced the plan, which is itself authoritative
+            # progress and must not be re-fenced.
+            self._require_model_stage(row["stage"])
+            plan_advanced = plan["plan_version"] > int(row["plan_version"])
+            if plan_advanced:
+                progress_identity = _hash({
+                    "kind": "plan_advance", "task_id": task["task_id"],
+                    "plan_version": plan["plan_version"],
+                    "last_progress_identity": plan.get("last_progress_identity")})
+            else:
+                progress_identity = self._derive_progress_identity(
+                    connection, task, plan, row, request["durable_evidence"])
+            if plan_advanced and plan["stage"] != row["stage"]:
+                # An accepted proposal already advanced the plan; this stage turn
+                # is complete and must not invite another call for the old stage.
+                outcome = {"status": "stop", "outcome": "advance", "reason": "stage_advanced",
+                           "model_calls_used": int(row["call_index"]), "model_calls_remaining": 0,
+                           "continue": False}
+            else:
+                outcome = stage_model_call_outcome(
+                    stage=row["stage"], calls_used=int(row["call_index"]),
+                    durable_progress_identity=progress_identity)
+            result = {**outcome, "call_identity": call_identity,
+                      "call_index": int(row["call_index"]), "progress_identity": progress_identity,
+                      "plan_moved_to_needs_attention": False, "replayed": False}
+            if (outcome["status"] == "stop" and outcome["outcome"] == "needs_attention"
+                    and not plan_advanced):
+                self._apply_stage_needs_attention(
+                    connection, task, plan, str(outcome["reason"]),
+                    f"stage-fence-{call_identity}")
+                result["plan_moved_to_needs_attention"] = True
+            execute(connection, """UPDATE research_judgment_stage_calls SET
+                status = 'completed', completed_at = :now, progress_identity = :progress,
+                outcome = :outcome, result_json = :result
+                WHERE task_id = :task AND call_identity = :identity AND status = 'admitted'""",
+                {"now": _now(), "progress": progress_identity, "outcome": outcome["outcome"],
+                 "result": result, "task": task["task_id"], "identity": call_identity})
+            return result
+
+    def _derive_progress_identity(self, connection, task, plan, admission, evidence) -> str | None:
+        """Derive the progress identity from a persisted BYQ record (never a digest)."""
+
+        kind = evidence["kind"]
+        if kind == "none":
+            return None
+        if kind == "plan_advance":
+            if plan["plan_version"] <= int(admission["plan_version"]):
+                return None
+            return _hash({"kind": "plan_advance", "task_id": task["task_id"],
+                          "plan_version": plan["plan_version"],
+                          "last_progress_identity": plan.get("last_progress_identity")})
+        if kind in {"artifact", "experiment"}:
+            table, id_column = ("artifacts", "artifact_id") if kind == "artifact" else (
+                "experiments", "experiment_id")
+            row = fetch_one(connection, f"""SELECT * FROM {table}
+                WHERE {id_column} = :id AND task_id = :task AND owner_principal = :owner
+                  AND workspace_id = :workspace""",
+                {"id": evidence["id"], "task": task["task_id"], "owner": task["owner_principal"],
+                 "workspace": task["workspace_id"]})
+            if row is None:
+                raise ValueError("research progress evidence does not belong to this task")
+            if row["created_at"] < admission["admitted_at"]:
+                raise ValueError("research progress evidence predates the admitted call")
+            return _hash({"kind": kind, "id": row[id_column],
+                          "content_sha256": row.get("content_sha256") or row.get("request_hash"),
+                          "created_at": row["created_at"]})
+        if kind == "backtest_job":
+            job = fetch_one(connection, """SELECT * FROM backtest_jobs
+                WHERE job_id = :id AND task_id = :task AND owner_principal = :owner""",
+                {"id": evidence["id"], "task": task["task_id"], "owner": task["owner_principal"]})
+            if job is None:
+                raise ValueError("research progress evidence does not belong to this task")
+            if job["status"] not in {"completed", "failed", "cancelled"}:
+                raise ValueError("research progress backtest job is not terminal")
+            if not isinstance(job.get("result_artifact_id"), str):
+                raise ValueError("research progress backtest job has no durable result")
+            return _hash({"kind": "backtest_job", "id": job["job_id"], "status": job["status"],
+                          "result_artifact_id": job["result_artifact_id"]})
+        raise ValueError("research progress evidence kind is unknown")
 
     # ------------------------------------------------------------------ #
     # Named server-side proposal seam
@@ -142,9 +330,6 @@ class ResearchJudgmentMixin:
                 raise ResearchNotFound("research execution plan not found")
             plan = validate_plan(plan_row["plan"])
 
-            # An exact replay is served from its durable receipt BEFORE any
-            # version check, so a duplicate submission never writes twice and a
-            # mutated body under the same identity is a conflict.
             receipt = fetch_one(connection, """SELECT * FROM research_execution_plan_receipts
                 WHERE task_id = :task AND idempotency_key = :key""",
                 {"task": task["task_id"], "key": identity})
@@ -168,12 +353,12 @@ class ResearchJudgmentMixin:
             assert_commit_is_legal(plan, decision)
 
             if decision["outcome"] == "advance":
-                advanced = self._apply_proposal_advance(connection, task, plan, proposal, decision, identity)
+                advanced = self._apply_proposal_advance(
+                    connection, task, plan, proposal, decision, identity)
             elif decision["outcome"] == "needs_attention":
                 advanced = self._apply_stage_needs_attention(
                     connection, task, plan, str(decision["reason"]), identity)
             else:
-                # A bounded "stay" records the proposal without moving the plan.
                 advanced = plan
             execute(connection, """INSERT INTO research_execution_plan_receipts
                 (task_id, idempotency_key, request_hash, plan_version, result_json)
@@ -183,43 +368,6 @@ class ResearchJudgmentMixin:
                  "result_json": advanced})
             return {**project_execution_plan(advanced), "proposal_identity": identity,
                     "replayed": False, "reason": decision["reason"]}
-
-    # ------------------------------------------------------------------ #
-    # Durable-progress fence
-    # ------------------------------------------------------------------ #
-
-    def record_research_stage_progress(self, task_id: str, payload: object, *,
-                                       trusted_context: dict) -> dict:
-        """Record one model call's durable-progress evidence for the fence.
-
-        The payload carries a BYQ-observed durable-progress identity (or None)
-        and the 1-based model call count. It never carries routing/identity
-        authority. A first call without durable progress stops the stage as
-        ``needs_attention/no_durable_progress`` atomically.
-        """
-
-        from .research import InvalidTransition
-
-        if not isinstance(payload, dict) or set(payload) != {"call_index", "durable_progress_identity"}:
-            raise ValueError("research stage progress request has invalid fields")
-        with self._transaction() as connection:
-            task = self._plan_task(connection, task_id, trusted_context, lock=True)
-            plan_row = self._load_current_plan(connection, task["task_id"], lock=True)
-            if plan_row is None:
-                raise InvalidTransition("research execution plan not found")
-            plan = validate_plan(plan_row["plan"])
-            self._require_model_stage(plan["stage"])
-            outcome = stage_model_call_outcome(
-                stage=plan["stage"], calls_used=payload["call_index"],
-                durable_progress_identity=payload["durable_progress_identity"])
-            if outcome["status"] == "stop" and outcome["outcome"] == "needs_attention":
-                self._apply_stage_needs_attention(
-                    connection, task, plan, str(outcome["reason"]),
-                    f"stage-fence-{plan['task_id']}-{plan['plan_version']}")
-                outcome = {**outcome, "plan_moved_to_needs_attention": True}
-            else:
-                outcome = {**outcome, "plan_moved_to_needs_attention": False}
-            return outcome
 
     # ------------------------------------------------------------------ #
     # Commit helpers
@@ -244,6 +392,13 @@ class ResearchJudgmentMixin:
                 advanced = bind_command_digest(advanced)
         except ValueError as error:
             raise InvalidTransition(str(error)) from error
+        if target_stage == "completed":
+            # ADR-0085 §7: the terminal transition must converge atomically. The
+            # ResearchTask completion uses the existing validated transition path
+            # (same-task validated evidence + no unfinished jobs) inside this same
+            # transaction, so task and plan are never inconsistent.
+            new_task_version = self._complete_research_task(connection, task, plan, identity)
+            advanced = validate_plan({**advanced, "task_version": new_task_version})
         cas_row = fetch_one(connection, """UPDATE research_execution_plans SET
             plan_version = :plan_version, task_version = :task_version, stage = :stage,
             iteration = :iteration, status = :status, next_action = :next_action,
@@ -260,6 +415,33 @@ class ResearchJudgmentMixin:
         if cas_row is None:
             raise InvalidTransition("research execution plan compare-and-swap failed")
         return advanced
+
+    def _complete_research_task(self, connection, task, plan, identity) -> int:
+        """Atomically complete the ResearchTask using validated durable evidence."""
+
+        references = plan.get("references") or {}
+        evidence_ids: list[str] = []
+        for kind in _COMPLETION_EVIDENCE_REFERENCE_KINDS:
+            reference = references.get(kind)
+            if isinstance(reference, dict) and isinstance(reference.get(kind), str):
+                evidence_ids.append(reference[kind])
+        checkpoint = {
+            "schema_version": "research-progress.v1",
+            "stage": "completed",
+            "next_action": None,
+            "blocked_reason": None,
+            "linked_objects": [],
+            "completion_evidence": evidence_ids,
+        }
+        # The generic transition enforces the real completion invariants
+        # (validated same-task evidence, no unfinished domain jobs) and bumps the
+        # task version in this same transaction.
+        self.transition("research_task", task["task_id"], "completed",
+                        f"{identity}-complete", progress=checkpoint,
+                        require_completion_evidence=True, _connection=connection)
+        updated = fetch_one(connection, "SELECT version FROM research_tasks WHERE task_id = :task",
+                            {"task": task["task_id"]})
+        return int(updated["version"])
 
     def _apply_stage_needs_attention(self, connection, task, plan, reason, identity):
         """Atomically move plan + ResearchTask to ``needs_attention``.
@@ -324,12 +506,7 @@ class ResearchJudgmentMixin:
 
     @staticmethod
     def _target_approval(plan: dict, target_stage: str):
-        """Mint the target stage's exact bound approval from the plan's own reference.
-
-        The proposal never supplies the approval, action, resource or version.
-        A missing reference is a closed, honest blocker rather than a guessed
-        identity.
-        """
+        """Mint the target stage's exact bound approval from the plan's own reference."""
 
         from .research import InvalidTransition
 
@@ -348,8 +525,44 @@ class ResearchJudgmentMixin:
             params_digest=None)
 
     # ------------------------------------------------------------------ #
-    # Bounded stage evidence / tools
+    # Persistence / bounded projection helpers
     # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _load_stage_call(connection, task_id: str, call_identity: str, *, lock: bool = False):
+        clause = "FOR UPDATE" if lock else ""
+        return fetch_one(connection, f"""SELECT * FROM research_judgment_stage_calls
+            WHERE task_id = :task AND call_identity = :identity {clause}""",
+            {"task": task_id, "identity": call_identity})
+
+    def _stage_admission(self, row, task, plan) -> dict:
+        return {
+            "call_identity": row["call_identity"],
+            "call_index": int(row["call_index"]),
+            "model_call_limit": stage_model_call_limit(plan["stage"]),
+            "stage": plan["stage"],
+            "plan_version": plan["plan_version"],
+            "task_version": plan["task_version"],
+            "stage_input": self._build_stage_input(task, plan),
+        }
+
+    def _build_stage_input(self, task, plan) -> dict:
+        return validate_stage_input({
+            "schema_version": STAGE_INPUT_SCHEMA_VERSION,
+            "task_id": plan["task_id"],
+            "plan_version": plan["plan_version"],
+            "task_version": plan["task_version"],
+            "stage": plan["stage"],
+            "iteration": plan["iteration"],
+            "status": plan["status"],
+            "objective": str(task.get("objective") or "")[:TEXT_MAX],
+            "stage_instruction": _STAGE_INSTRUCTION[plan["stage"]],
+            "proposal_kinds": sorted(STAGE_PROPOSAL_KINDS[plan["stage"]]),
+            "evidence": self._stage_evidence(plan),
+            "allowed_tools": sorted(self._stage_tools(plan["stage"])),
+            "model_call_limit": stage_model_call_limit(plan["stage"]),
+            "escalation_allowed": True,
+        })
 
     @staticmethod
     def _stage_tools(stage: str):
@@ -358,13 +571,7 @@ class ResearchJudgmentMixin:
         return STAGE_ALLOWED_TOOLS[stage]
 
     @staticmethod
-    def _stage_call_limit(stage: str) -> int:
-        from packages.contracts.research_judgment import stage_model_call_limit
-
-        return stage_model_call_limit(stage)
-
-    @staticmethod
-    def _stage_evidence(task: dict, plan: dict) -> list:
+    def _stage_evidence(plan: dict) -> list:
         """Bounded evidence descriptors: references only, never raw payloads."""
 
         summaries = {
@@ -383,7 +590,7 @@ class ResearchJudgmentMixin:
             if not isinstance(identity, str) or kind not in summaries:
                 continue
             evidence.append({"kind": kind, "id": identity, "summary": summaries[kind]})
-            if len(evidence) >= _MAX_EVIDENCE:
+            if len(evidence) >= 32:
                 return evidence
         if isinstance(plan.get("last_progress_identity"), str):
             evidence.append({

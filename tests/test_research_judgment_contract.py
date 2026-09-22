@@ -16,6 +16,7 @@ from packages.contracts.research_judgment import (
     FORBIDDEN_PROPOSAL_FIELDS,
     JUDGMENT_STAGES,
     NO_DURABLE_PROGRESS,
+    PROGRESS_EVIDENCE_KINDS,
     PROPOSAL_SCHEMA_VERSION,
     STAGE_ALLOWED_TOOLS,
     STAGE_INPUT_MAX_BYTES,
@@ -29,8 +30,11 @@ from packages.contracts.research_judgment import (
     stage_model_call_limit,
     stage_model_call_outcome,
     stage_requires_model,
+    validate_progress_evidence,
     validate_proposal,
+    validate_stage_admission_request,
     validate_stage_input,
+    validate_stage_progress_request,
 )
 
 TASK = "task_" + "a" * 32
@@ -281,6 +285,40 @@ class ModelCallFenceTests(unittest.TestCase):
         for stage in DETERMINISTIC_STAGES:
             with self.assertRaises(ValueError):
                 stage_model_call_outcome(stage=stage, calls_used=1, durable_progress_identity=None)
+
+
+class AdmissionAndEvidenceTests(unittest.TestCase):
+    def test_admission_request_is_closed_and_never_carries_a_count(self) -> None:
+        self.assertEqual(validate_stage_admission_request({"call_identity": "turn-a"}),
+                         {"call_identity": "turn-a"})
+        for invalid in ({"call_identity": "turn-a", "call_index": 1},
+                        {"call_identity": "turn-a", "count": 0}, {}, {"call_index": 1}):
+            with self.assertRaises(ValueError):
+                validate_stage_admission_request(invalid)
+
+    def test_progress_evidence_is_a_closed_durable_record_never_a_digest(self) -> None:
+        self.assertEqual(PROGRESS_EVIDENCE_KINDS,
+                         frozenset({"none", "plan_advance", "artifact", "experiment", "backtest_job"}))
+        for valid in ({"kind": "none"}, {"kind": "plan_advance"},
+                      {"kind": "artifact", "id": "artifact_" + "a" * 32},
+                      {"kind": "experiment", "id": "experiment_" + "a" * 32},
+                      {"kind": "backtest_job", "id": "backtest_" + "a" * 32}):
+            self.assertEqual(validate_progress_evidence(valid), valid)
+        for invalid in ({"kind": "artifact", "id": "sha256:" + "a" * 64},
+                        {"kind": "artifact"}, {"kind": "none", "id": "x"},
+                        {"kind": "digest", "id": "sha256:" + "a" * 64},
+                        {"kind": "artifact", "id": "artifact_" + "a" * 32, "extra": 1}):
+            with self.assertRaises(ValueError):
+                validate_progress_evidence(invalid)
+
+    def test_progress_request_binds_identity_and_evidence(self) -> None:
+        valid = {"call_identity": "turn-a", "durable_evidence": {"kind": "none"}}
+        self.assertEqual(validate_stage_progress_request(valid), valid)
+        for invalid in ({"call_identity": "turn-a"},
+                        {"call_identity": "turn-a", "durable_evidence": {"kind": "none"}, "extra": 1},
+                        {"call_identity": "turn-a", "durable_evidence": {"kind": "unknown"}}):
+            with self.assertRaises(ValueError):
+                validate_stage_progress_request(invalid)
 
 
 if __name__ == "__main__":
