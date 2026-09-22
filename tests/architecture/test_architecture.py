@@ -887,6 +887,82 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         ):
             self.assertIn(f"def {adapter}(", ledger)
 
+    def test_adr0085_p3_research_judgment_is_bounded_and_read_only(self) -> None:
+        # ADR-0085 P3: a genuine research-judgment stage gets a READ-ONLY bounded
+        # stage input and a named server-side proposal commit. There is no
+        # agent-facing plan/proposal/event write route.
+        backend = (ROOT / "services/backend/app/main.py").read_text()
+        self.assertEqual(
+            re.findall(r'(?m)^@app\.(get|post|put|delete)\("([^"]*stage-input[^"]*)"', backend),
+            [("get", "/v1/research/tasks/{task_id}/stage-input")],
+        )
+        self.assertEqual(
+            re.findall(r'(?m)^@app\.(get|post|put|delete)\("([^"]*proposal[^"]*)"', backend), [])
+        product_api = (ROOT / "services/gateway/app/product_api.py").read_text()
+        self.assertNotIn("stage-input", product_api)
+        self.assertNotIn("proposal", product_api)
+        seam = (ROOT / "services/backend/app/research_judgment.py").read_text()
+        for method in ("get_research_stage_input", "commit_research_proposal",
+                       "record_research_stage_progress"):
+            self.assertIn(f"def {method}(", seam)
+        self.assertNotIn("def record_continuation_event(", seam)
+        self.assertNotIn("@app.", seam)
+        mcp = (ROOT / "services/mcp/src/server.ts").read_text()
+        self.assertIn('"byq_research_stage_input_get"', mcp)
+        self.assertNotIn("byq_research_judgment_submit", mcp)
+        self.assertNotIn("byq_research_proposal", mcp)
+        composition = (ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()
+        self.assertIn("mcp__byq__byq_research_stage_input_get", composition)
+
+    def test_adr0085_p3_bounded_judgment_persona_is_statically_read_only(self) -> None:
+        # ADR-0085 P3: the judgment turn runs INSIDE a dedicated composition role
+        # (`research-judgment-turn`) whose toolFilter is a static exact read-only
+        # allowlist. The model invoked through that role has no write/approval/
+        # execute/routing tool and no proposal tool, so the stage capability
+        # cannot be omitted or widened by model output. The proposal channel is
+        # the trusted internal adapter invocation, never an agent-facing write.
+        from packages.contracts.research_judgment import STAGE_ALLOWED_TOOLS
+
+        composition = (ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()
+        # The CURRENT composition has exactly the five existing delegates plus
+        # the single bounded judgment role; the historical D15-4 snapshot is NOT
+        # recomputed from this (it keeps its pre-P3 fact `5`).
+        delegate_tools = re.findall(r"(?m)^\s*toolName:\s*(byq_delegate_\w+)$", composition)
+        self.assertEqual(len(delegate_tools), 5, delegate_tools)
+        self.assertEqual(composition.count("toolName: byq_research_judgment_turn"), 1)
+        self.assertIn("- id: research-judgment-turn", composition)
+        block = composition.split("- id: research-judgment-turn", 1)[1].split("\n- id:", 1)[0]
+        self.assertIn("toolName: byq_research_judgment_turn", block)
+        self.assertIn("provider: spawn", block)
+        self.assertIn("enableRunInBackground: false", block)
+        self.assertIn("maxDepth: 0", block)
+        allow = block.split("allow:", 1)[1]
+        for tool in sorted({tool for tools in STAGE_ALLOWED_TOOLS.values() for tool in tools}):
+            self.assertIn(f"- mcp__byq__{tool}", allow, tool)
+            self.assertNotRegex(tool, r"_create$|_execute$|_approve$|_decide$|_transition$|_prepare$")
+        for write_tool in ("byq_backtest_task_create", "byq_backtest_task_execute",
+                           "byq_strategy_version_create", "byq_agent_approval_decide",
+                           "byq_research_transition", "byq_research_task_create"):
+            self.assertNotIn(write_tool, allow, write_tool)
+        # The stage-input read tool is exposed ONLY to the bounded role.
+        self.assertEqual(composition.count("mcp__byq__byq_research_stage_input_get"), 1)
+        # The adapter's invocation names exactly that role and uses no header.
+        adapter = (ROOT / "services/runtime-adapter/app/research_judgment.py").read_text()
+        self.assertIn("RESEARCH_JUDGMENT_PERSONA_TOOL = \"byq_research_judgment_turn\"", adapter)
+        self.assertNotIn("x-byq-research-judgment-stage", adapter)
+        backend = (ROOT / "services/backend/app/main.py").read_text()
+        self.assertIn("@app.post('/internal/research-judgment/{task_id}/admit')", backend)
+        self.assertIn("@app.post('/internal/research-judgment/{task_id}/result')", backend)
+
+    def test_adr0085_p3_default_stage_call_bound_agrees_across_contract_and_guard(self) -> None:
+        from packages.contracts.research_judgment import DEFAULT_MAX_MODEL_CALLS_PER_STAGE
+
+        guard = (ROOT / "plugins/dsh-byq/runtime/byq-continuation-budget.js").read_text()
+        match = re.search(r"(?m)^export const RESEARCH_JUDGMENT_MAX_CALLS = (\d+);$", guard)
+        self.assertIsNotNone(match)
+        self.assertEqual(int(match.group(1)), DEFAULT_MAX_MODEL_CALLS_PER_STAGE)
+        self.assertEqual(DEFAULT_MAX_MODEL_CALLS_PER_STAGE, 2)
+
     def test_phase23_historical_parity_matrix_and_ui_smoke_exist(self) -> None:
         matrix = ROOT / "docs/roadmap/COMMUNITY_FEATURE_PARITY_MATRIX.md"
         self.assertTrue(matrix.exists())

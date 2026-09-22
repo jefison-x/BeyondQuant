@@ -98,6 +98,63 @@ def test_get_execution_plan_is_owner_scoped_and_404s(monkeypatch):
         store.close()
 
 
+STAGE_INPUT_FIELDS = {
+    "schema_version", "task_id", "plan_version", "task_version", "stage", "iteration",
+    "status", "objective", "stage_instruction", "proposal_kinds", "evidence",
+    "allowed_tools", "model_call_limit", "escalation_allowed",
+}
+
+
+def test_get_stage_input_is_read_only_and_bounded(monkeypatch):
+    store, task, context = _setup("stage-api-owner", "stage-api-s", "stage-api-t", with_plan=True)
+    client = _client(monkeypatch, store)
+    headers = {"x-byq-" + key.replace("_", "-"): value for key, value in context.items()}
+    try:
+        response = client.get(f"/v1/research/tasks/{task}/stage-input", headers=headers)
+        assert response.status_code == 200
+        body = response.json()
+        assert set(body) == STAGE_INPUT_FIELDS
+        assert body["stage"] == "strategy_draft" and body["model_call_limit"] == 2
+        for internal in ("owner_principal", "workspace_id", "conversation_id",
+                         "idempotency_key", "next_action", "references"):
+            assert internal not in body
+        for raw in ("bars_frame", "date_index", "signal_snapshot_rows", "raw_signal_snapshot"):
+            assert raw not in response.text
+        # No write route exists for a plan or a proposal.
+        path = f"/v1/research/tasks/{task}/stage-input"
+        assert client.post(path, headers=headers, json={}).status_code in {404, 405}
+        assert client.put(path, headers=headers, json={}).status_code in {404, 405}
+        assert client.delete(path, headers=headers).status_code in {404, 405}
+    finally:
+        store.close()
+
+
+def test_get_stage_input_refuses_a_deterministic_stage(monkeypatch):
+    store, task, context = _setup("stage-api-det", "stage-api-d-s", "stage-api-d-t", with_plan=True)
+    client = _client(monkeypatch, store)
+    headers = {"x-byq-" + key.replace("_", "-"): value for key, value in context.items()}
+    try:
+        # A first call without durable progress moves the plan to needs_attention
+        # (a deterministic stage), which must refuse a model turn.
+        store.admit_research_stage_call(task, {"call_identity": "det-fence"}, trusted_context=context)
+        store.record_research_stage_progress(
+            task, {"call_identity": "det-fence", "durable_evidence": {"kind": "none"}},
+            trusted_context=context)
+        assert client.get(f"/v1/research/tasks/{task}/stage-input",
+                          headers=headers).status_code == 422
+    finally:
+        store.close()
+
+
+def test_get_stage_input_requires_trusted_context(monkeypatch):
+    store, task, context = _setup("stage-api-ctx", "stage-api-c-s", "stage-api-c-t", with_plan=True)
+    client = _client(monkeypatch, store)
+    try:
+        assert client.get(f"/v1/research/tasks/{task}/stage-input").status_code == 401
+    finally:
+        store.close()
+
+
 def test_execution_plan_has_no_write_route(monkeypatch):
     store, task, context = _setup("plan-api-write", "plan-api-w-s", "plan-api-w-t", with_plan=True)
     client = _client(monkeypatch, store)

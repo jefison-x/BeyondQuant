@@ -24,7 +24,7 @@ EVIDENCE = ROOT / "docs/evidence/v090-business-recovery"
 OBSERVATIONS = EVIDENCE / "observations.v1.json"
 VERDICT = EVIDENCE / "verdict.v1.json"
 CONTROLS = EVIDENCE / "negative-controls.v1.json"
-CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.207"
+CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.210"
 
 REQUIRED_SCENARIOS = {
     "same-trigger-same-snapshot-exactly-once",
@@ -201,7 +201,7 @@ class BoundaryTests(unittest.TestCase):
                        "<!-- byq:session-failure-containment=real-recovery-acceptance-passed -->",
                        "<!-- byq:v090-business-recovery=implementation-delivered -->",
                        "<!-- byq:session-failure-containment-next=v090-final-development-closeout -->",
-                       "<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.207 -->"):
+                       "<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.210 -->"):
             self.assertIn(marker, status)
         self.assertIn("R3_RESUME = NO", status)
         self.assertIn("IN_PROGRESS / BLOCKED_INTERNAL", status)

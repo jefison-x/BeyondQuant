@@ -319,6 +319,14 @@ STAGE_ACTION = {stage: spec["action"] for stage, spec in _STAGE_SPEC.items()}
 # Public stage -> exact expected postcondition (ADR-0085 P2 read-only helper).
 STAGE_POSTCONDITION = {stage: spec["postcondition"] for stage, spec in _STAGE_SPEC.items()}
 
+# Public stage -> bound human-approval requirement or None (ADR-0085 P3 helper).
+# A proposal commit derives the target stage's approval requirement itself; an
+# external caller never supplies the action/resource/version binding.
+STAGE_APPROVAL_REQUIREMENT = {
+    stage: (dict(spec["approval"]) if isinstance(spec["approval"], dict) else None)
+    for stage, spec in _STAGE_SPEC.items()
+}
+
 # The single non-cancelled status a stage defaults to when a plan is built
 # directly at that stage (legacy adoption). A stage whose legal set is only
 # ``{completed, cancelled}`` defaults to ``completed``; every other stage has
@@ -448,22 +456,25 @@ def validate_plan(plan: object) -> dict[str, object]:
     status = plan["status"]
     if status not in STATUSES:
         raise ValueError("research execution plan status is unknown")
+    action = plan["next_action"]
+    if action not in NEXT_ACTIONS:
+        raise ValueError("research execution plan next_action is unknown")
     if stage == CANCEL_STAGE:
         # completed stage carries either completed or cancelled, both terminal.
         if status not in {"completed", "cancelled"}:
             raise ValueError("a terminal plan stage requires a terminal status")
-    elif status not in spec["statuses"]:
-        raise ValueError(f"research execution plan status {status} is invalid for stage {stage}")
-
-    action = plan["next_action"]
-    if action not in NEXT_ACTIONS:
-        raise ValueError("research execution plan next_action is unknown")
-    if stage == CANCEL_STAGE and status == "cancelled":
-        if action != CANCEL_ACTION:
-            raise ValueError("a cancelled plan must carry the cancel action")
-        expected_postcondition = CANCEL_POSTCONDITION
         expected_prerequisites: object = []
+        if status == "cancelled":
+            if action != CANCEL_ACTION:
+                raise ValueError("a cancelled plan must carry the cancel action")
+            expected_postcondition = CANCEL_POSTCONDITION
+        else:
+            if action != _STAGE_SPEC[CANCEL_STAGE]["action"]:
+                raise ValueError("research execution plan next_action does not match its stage")
+            expected_postcondition = _STAGE_SPEC[CANCEL_STAGE]["postcondition"]
     else:
+        if status not in spec["statuses"]:
+            raise ValueError(f"research execution plan status {status} is invalid for stage {stage}")
         if action != spec["action"]:
             raise ValueError("research execution plan next_action does not match its stage")
         expected_postcondition = spec["postcondition"]

@@ -24,7 +24,7 @@ RELEASES = ROOT / "config/dsh/releases"
 GENERATED = ROOT / "config/dsh/generated"
 CANDIDATE = "dsh-0.1.5rc1"
 ROLLBACK = "dsh-0.1.2rc1"
-PROMOTED_BUILD = "dsh-0.1.5rc1-post-u8.207"
+PROMOTED_BUILD = "dsh-0.1.5rc1-post-u8.210"
 ROLLBACK_BUILD = "dsh-0.1.2rc1-post-u8.199"
 BASE_ROLLBACK_BLOBS = {
     "config/dsh/releases/dsh-0.1.2rc1.json": "77bb4cfc0d4c0c25a3b085529cd240a9f77e23e4",

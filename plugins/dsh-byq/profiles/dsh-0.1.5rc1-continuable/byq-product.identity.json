@@ -1,6 +1,6 @@
 {
   "base_profile": "sdk",
-  "composition_hash": "sha256:13cacecd2d90a8da12520d49fad0870b5b827ff199f4bab763c7eb45e67d1676",
+  "composition_hash": "sha256:544f25d3e53f7e35d03e047555cda5e070561e6115289ab37c0cf00741d8ffd0",
   "continuable_wiring": {
     "delegate_result_shape": "{kind: continuable, subagentId}",
     "isolated_candidate_only": true,
@@ -43,7 +43,7 @@
     "server": "byq"
   },
   "patch": "plugins/dsh-byq/profiles/dsh-0.1.5rc1-continuable/byq-product.patch.yml",
-  "patch_sha256": "sha256:13cacecd2d90a8da12520d49fad0870b5b827ff199f4bab763c7eb45e67d1676",
+  "patch_sha256": "sha256:544f25d3e53f7e35d03e047555cda5e070561e6115289ab37c0cf00741d8ffd0",
   "permission_mode": "read-only",
   "profile": "byq-product-continuable-candidate",
   "release_id": "dsh-0.1.5rc1",

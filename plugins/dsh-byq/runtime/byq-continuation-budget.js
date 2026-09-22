@@ -26,6 +26,13 @@ export const DATA_READY_MAX_CALLS = 8;
 export const DATA_READY_CALL_CEILING = CONTINUATION_INPUT_CEILING + DATA_READY_MAX_OUTPUT_TOKENS;
 export const DATA_READY_TOKEN_LIMIT = DATA_READY_MAX_CALLS * DATA_READY_CALL_CEILING;
 
+// ADR-0085 P3: a genuine research-judgment stage uses at most two model calls by
+// default. BYQ owns and enforces the durable-progress fence; this guard mirrors
+// the SAME default so a single stage reservation can never fund more than two
+// calls. tests/architecture/test_architecture.py fails CI if it diverges from
+// packages/contracts/research_judgment.py DEFAULT_MAX_MODEL_CALLS_PER_STAGE.
+export const RESEARCH_JUDGMENT_MAX_CALLS = 2;
+
 // Absolute process-local safety cap, independent of any single reservation.
 const MAX_CALLS = 256;
 

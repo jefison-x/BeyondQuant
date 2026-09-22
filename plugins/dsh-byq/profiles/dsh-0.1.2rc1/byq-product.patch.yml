@@ -334,6 +334,32 @@
             - mcp__byq__byq_backtest_task_cancel
         maxDepth: 1
 
+    # ADR-0085 P3: the SINGLE bounded foreground research-judgment role. It is
+    # itself launched by @deepseek-ai/dsh-tool-subagent in the foreground (provider:
+    # spawn, enableRunInBackground: false); maxDepth: 0 forbids it from spawning any
+    # further subagent, so one judgment turn cannot restore the historical 8-call
+    # investigation. Its toolFilter is a static exact read-only allowlist, so the
+    # model invoked through it cannot call a write/approval/execute/routing tool and
+    # has no agent-facing proposal tool (the proposal channel is the trusted
+    # internal adapter invocation). Each call counts against the Backend per-stage
+    # durable admission bound of two.
+    - id: research-judgment-turn
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: byq_research_judgment_turn
+        enableRunInBackground: false
+        backgroundMode: one-shot
+        persona: "You are the BYQ bounded research-judgment role for exactly one research stage. Read ONLY the bounded stage input and bounded analysis summaries available to you. You have no write, approval, execution, routing, identity, idempotency or job tool, and you must never invent an object id, an idempotency key, a next action or an approval. Reach a bounded judgment (or an explicit evidence-insufficient/escalation stop) and return one closed result. If the judgment would need any write or routing capability, report the blocker instead of attempting it. Never expose internal schema fields, tool names or Artifact IDs."
+        toolFilter:
+          allow:
+            - mcp__byq__byq_agent_context
+            - mcp__byq__byq_research_get
+            - mcp__byq__byq_research_stage_input_get
+            - mcp__byq__byq_backtest_task_get
+            - mcp__byq__byq_backtest_analysis_get
+        maxDepth: 0
+
     - id: mcp-byq
       name: '@deepseek-ai/dsh-mcp-client'
       config:

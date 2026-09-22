@@ -181,6 +181,7 @@ from .research import (
     ResearchPersistenceError,
     ResearchStore,
 )
+from .research_judgment import StageModelCallLimitExceeded
 from .strategy_artifact import (
     content_sha256,
     export_strategy_version,
@@ -520,6 +521,29 @@ def record_task_continuation_receipt(task_id: str, payload: dict[str, Any], requ
         raise HTTPException(status_code=422, detail='original reservation and status required')
     return _research_call(lambda: research_store.record_continuation_receipt(
         task_id, trusted_context=context, **payload))
+
+
+@app.post('/internal/research-judgment/{task_id}/admit')
+def admit_research_judgment_call(task_id: str, payload: dict[str, Any], request: Request) -> dict:
+    # ADR-0085 P3 private runtime-adapter consumer. It reserves one bounded
+    # model call for the current plan stage; the count is server-derived.
+    context = _continuation_consumer_context(request)
+    try:
+        return _research_call(lambda: research_store.admit_research_stage_call(
+            task_id, payload, trusted_context=context))
+    except StageModelCallLimitExceeded as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.post('/internal/research-judgment/{task_id}/result')
+def record_research_judgment_result(task_id: str, payload: dict[str, Any], request: Request) -> dict:
+    # ADR-0085 P3 private runtime-adapter consumer. ONE atomic named store
+    # operation validates/commits an accepted proposal, records the authoritative
+    # durable-progress receipt, completes the stage-call admission and converges a
+    # terminal ResearchTask. A failure leaves plan/task/call/receipts unchanged.
+    context = _continuation_consumer_context(request)
+    return _research_call(lambda: research_store.record_research_judgment_result(
+        task_id, payload, trusted_context=context))
 
 
 @app.post("/internal/domain-call-evidence/{conversation_id}")
@@ -2052,6 +2076,16 @@ def get_research_execution_plan(task_id: str, request: Request) -> dict[str, obj
     # model must not choose workflow next_state.
     context = _required_agent_context(request, include_workspace=True)
     return _research_call(lambda: research_store.get_execution_plan(task_id, trusted_context=context))
+
+
+@app.get("/v1/research/tasks/{task_id}/stage-input")
+def get_research_stage_input(task_id: str, request: Request) -> dict[str, object]:
+    # ADR-0085 P3 exposes ONLY a bounded, read-only research-judgment stage
+    # input. The proposal is committed through the named server-side seam, never
+    # through a generic plan/proposal write route, so a model cannot choose the
+    # workflow next action.
+    context = _required_agent_context(request, include_workspace=True)
+    return _research_call(lambda: research_store.get_research_stage_input(task_id, trusted_context=context))
 
 
 @app.get("/v1/research/tasks")

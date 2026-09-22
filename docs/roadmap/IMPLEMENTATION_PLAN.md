@@ -1989,7 +1989,7 @@ Draft PR 和相应证据，不 deploy、不恢复当前失败的生产研究任�
 Product GET**；不得暴露 execution-plan create/advance/legacy 等 agent-facing 写路由，P2 才把
 approval/data-ready/backtest-completed/user-resume/recovery 的权威事件接入 reducer 并派生 next state。
 
-### P2 — 审批与异步事件统一（当前唯一可执行任务）
+### P2 — 审批与异步事件统一（已并入 `main`）
 
 在 P1 合并后，把计划型 approval、data-ready、backtest-completed、user-resume 和 recovery 统一到
 一个 task/plan/event ledger。同一 task 最多一个 open continuation（数据库 partial unique index，
@@ -2011,11 +2011,18 @@ caller 自证。`retry_current_action` 必须持久化一个复用同一 event l
 pending intent（含原 plan action 与业务 identity），在 P3 尚未接入模型时诚实保持 pending/waiting 或
 needs_attention，不得声称 settled。P2 只提交 Draft PR 和相应证据，不 deploy、不启动 P3。
 
-### P3 — 最小研究判断回合
+### P3 — 最小研究判断回合（当前唯一可执行任务）
 
-在 P2 合并后，为真正需要模型判断的 stage 提供有界计划投影、有限回测分析摘要、最小只读工具和
-proposal commit 命令。默认每研究阶段最多两次模型调用；第一次检查无 durable progress 即
-`needs_attention/no_durable_progress`，禁止通过子代理或重复读取耗尽八次调用。
+在 P2 合并后，为真正需要模型判断的 stage（策略草案、有界回测分析、轮次比较/修正、证据充分性与升级）
+提供框架无关的有界 `research-stage-input.v1`/`research-proposal.v1` 合同、有界计划/证据投影、最小
+只读 MCP surface 和**服务端具名** proposal commit seam（`commit_research_proposal`）加确定性
+reducer/plan CAS。模型只能提出有界研究判断，绝不能选择 workflow `next_action`、对象 identity、
+审批执行、幂等键、job routing、recovery 或 continuation 状态；**不得新增任何通用 plan/event/proposal
+写路由**。stage input 排除 raw/full signal snapshot、bars/frame/index 列表并有显式 byte/item 上限；
+默认每研究阶段最多两次模型调用，第一次检查/调用无 durable progress 即原子转
+`needs_attention` 且 reason=`no_durable_progress`，禁止通过子代理或重复读取耗尽历史八次调用。DSH 继续
+负责 Agent Loop/session/compaction/generic guards，不建第二 harness/session store，不访问 PostgreSQL。
+P3 只提交 Draft PR 和相应证据，不 deploy、不启动 P4。
 
 ### P4 — 真实闭环与故障矩阵
 

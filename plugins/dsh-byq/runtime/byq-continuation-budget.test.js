@@ -10,6 +10,7 @@ import {
   DATA_READY_TOKEN_LIMIT,
   DISPLAY_PROVIDER_RUNTIME_ROUTES,
   QUALIFIED_CONTINUATION_ROUTES,
+  RESEARCH_JUDGMENT_MAX_CALLS,
   continuationRouteQualified,
   createBudgetGate,
   runtimeRouteFor,
@@ -265,6 +266,20 @@ test('an existing short reservation still stops at its original monotonic deadli
     () => wall, () => elapsed);
   elapsed = 900000; wall = 1;
   assert.throws(() => gate(request), /CLOSED/);
+});
+
+test('research-judgment stages default to a two-call bound', () => {
+  assert.equal(RESEARCH_JUDGMENT_MAX_CALLS, 2);
+  const records = [];
+  let wall = 1000;
+  const gate = createBudgetGate(
+    { ...config, tokenLimit: RESEARCH_JUDGMENT_MAX_CALLS * DATA_READY_CALL_CEILING,
+      expiresAt: wall + 60000 },
+    r => records.push(r), () => wall);
+  assert.equal(gate(request).call, 1);
+  assert.equal(gate(request).call, 2);
+  assert.throws(() => gate(request), /BUDGET_EXHAUSTED/);
+  assert.equal(records.length, 2);
 });
 
 test('qualified opencode routes mirror the DSH product composition allowlist',

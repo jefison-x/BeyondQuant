@@ -122,6 +122,7 @@ import {
   type DataDemandLookup,
 } from "./data-demand.js";
 import { PageCallBudget, boundedIntegerEnvironment } from "./page-budget.js";
+import { fetchByqResearchStageInput } from "./research-judgment.js";
 import {
   fetchByqFeedbackCreate, fetchByqFeedbackGet, fetchByqFeedbackReceipt, fetchByqFeedbackList, fetchByqFeedbackOptions,
   fetchByqFeedbackPreview, fetchByqFeedbackSubmit, fetchByqFeedbackUpdate,
@@ -644,6 +645,13 @@ async function byqResearchTaskCreate(args: ResearchTaskCreateRequest, extra: unk
 async function byqResearchGet(args: ResearchLookup, extra: unknown) {
   const context = completeAgentContext(extra);
   return context ? fetchByqResearchLookup(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
+}
+
+async function byqResearchStageInput(args: { task_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context
+    ? fetchByqResearchStageInput(BACKEND_URL, args.task_id, trustedBackendFetcher(context))
+    : agentContextUnavailable();
 }
 
 async function byqSignalSnapshotGet(args: { artifact_id: string }, extra: unknown) {
@@ -1320,6 +1328,14 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
       },
     },
     (args) => byqResearchGet(args, trustedContext),
+  );
+  server.registerTool(
+    "byq_research_stage_input_get",
+    {
+      description: "Read the bounded, read-only research-judgment stage input for one exact research task: bounded plan projection, bounded evidence descriptors and the minimal read-only tool set. It never returns raw bars/frames/index lists or a full signal snapshot and never advances workflow state. A deterministic stage returns an error because it uses zero model calls.",
+      inputSchema: { task_id: z.string().regex(/^task_[0-9a-f]{32}$/) },
+    },
+    (args) => byqResearchStageInput(args, trustedContext),
   );
   server.registerTool(
     "byq_research_transition",
