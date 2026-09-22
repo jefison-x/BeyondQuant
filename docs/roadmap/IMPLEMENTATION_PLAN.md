@@ -2011,7 +2011,7 @@ caller 自证。`retry_current_action` 必须持久化一个复用同一 event l
 pending intent（含原 plan action 与业务 identity），在 P3 尚未接入模型时诚实保持 pending/waiting 或
 needs_attention，不得声称 settled。P2 只提交 Draft PR 和相应证据，不 deploy、不启动 P3。
 
-### P3 — 最小研究判断回合（当前唯一可执行任务）
+### P3 — 最小研究判断回合（已并入 `main`）
 
 在 P2 合并后，为真正需要模型判断的 stage（策略草案、有界回测分析、轮次比较/修正、证据充分性与升级）
 提供框架无关的有界 `research-stage-input.v1`/`research-proposal.v1` 合同、有界计划/证据投影、最小
@@ -2022,11 +2022,11 @@ reducer/plan CAS。模型只能提出有界研究判断，绝不能选择 workfl
 默认每研究阶段最多两次模型调用，第一次检查/调用无 durable progress 即原子转
 `needs_attention` 且 reason=`no_durable_progress`，禁止通过子代理或重复读取耗尽历史八次调用。DSH 继续
 负责 Agent Loop/session/compaction/generic guards，不建第二 harness/session store，不访问 PostgreSQL。
-P3 只提交 Draft PR 和相应证据，不 deploy、不启动 P4。
+P3 已并入 `main`；不 deploy。
 
-### P4 — 真实闭环与故障矩阵
+### P4 — 真实闭环与故障矩阵（当前唯一可执行任务）
 
-在 P3 合并后，使用真实 Product API + DSH 完成：复合任务 → 对话内 continuation grant → 策略审批
+在 P3 已合并后，使用真实 Product API + DSH 完成：复合任务 → 对话内 continuation grant → 策略审批
 → 数据就绪 → 回测执行审批 → 三轮完成/分析/修正 → 选择最优 → 模拟账户审批/创建 → task
 completed。每个异步交接点注入 Gateway/Backend/Adapter/Worker 重启；断言无重复对象、精确预算、
 任务/会话/generation/回执状态一致、模型不可见原始行情/完整执行快照。最后才允许隔离生产 canary；
