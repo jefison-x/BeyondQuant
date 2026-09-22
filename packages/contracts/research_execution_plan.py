@@ -127,6 +127,9 @@ POSTCONDITIONS = frozenset({
     "signal_job_completed_with_validated_snapshot",
     "backtest_execute_approval_requested",
     "backtest_job_queued",
+    # ADR-0085 P2 additive: ``waiting_for_backtest_job`` already declares this
+    # exact postcondition in its stage spec; it was missing from the closed set.
+    "backtest_result_available",
     "backtest_result_analysed",
     "iteration_compared",
     "next_round_task_create_approval_requested",
@@ -271,11 +274,21 @@ CANCEL_POSTCONDITION = "research_cancelled"
 # Legal stage transitions. Human-gate stages lead to a separate READY stage.
 _TRANSITIONS = {
     "strategy_draft": {"waiting_for_strategy_approval", "needs_attention", "completed"},
+    # ADR-0085 P2 additive edges: every high-impact write (task create and task
+    # execute) keeps its OWN human gate instead of collapsing the strategy gate
+    # straight into a write-ready stage. The original
+    # ``waiting_for_strategy_approval -> ready_to_create_backtest_task`` edge is
+    # retained for backward compatibility but the deterministic reducer never
+    # uses it: it routes through the explicit create gate. These are additive
+    # edges only, so the P1 transitions and tests are unchanged.
     "waiting_for_strategy_approval": {
-        "ready_to_create_backtest_task", "needs_attention", "completed",
+        "ready_to_create_backtest_task", "waiting_for_task_create_approval",
+        "needs_attention", "completed",
     },
     "ready_to_create_backtest_task": {"waiting_for_data", "needs_attention", "completed"},
-    "waiting_for_task_create_approval": {"waiting_for_data", "needs_attention", "completed"},
+    "waiting_for_task_create_approval": {
+        "ready_to_create_backtest_task", "waiting_for_data", "needs_attention", "completed",
+    },
     "waiting_for_data": {
         "waiting_for_task_execute_approval", "ready_to_execute_backtest_task",
         "needs_attention", "completed",
@@ -302,6 +315,9 @@ _TRANSITIONS = {
 
 # Public stage -> single legal action table (derived from the stage spec).
 STAGE_ACTION = {stage: spec["action"] for stage, spec in _STAGE_SPEC.items()}
+
+# Public stage -> exact expected postcondition (ADR-0085 P2 read-only helper).
+STAGE_POSTCONDITION = {stage: spec["postcondition"] for stage, spec in _STAGE_SPEC.items()}
 
 # The single non-cancelled status a stage defaults to when a plan is built
 # directly at that stage (legacy adoption). A stage whose legal set is only
@@ -368,10 +384,17 @@ def _validate_approval(
         if value is not None:
             raise ValueError("research execution plan approval is not permitted for its action")
         return
-    if (not isinstance(value, dict)
-            or set(value) != {"action", "resource_kind", "resource_id",
-                              "plan_version", "task_version"}):
+    # ADR-0085 P2 additive field: an approval may carry a BYQ-computed
+    # ``params_digest`` binding the exact action parameters. It is optional for
+    # backward compatibility (P1 plans carry the five-field shape) but when
+    # present it MUST be a closed sha256 digest.
+    base_fields = {"action", "resource_kind", "resource_id", "plan_version", "task_version"}
+    if (not isinstance(value, dict) or set(value) not in (base_fields, base_fields | {"params_digest"})):
         raise ValueError("research execution plan approval requirement is invalid")
+    if "params_digest" in value and (
+            not isinstance(value["params_digest"], str)
+            or _DIGEST.fullmatch(value["params_digest"]) is None):
+        raise ValueError("research execution plan approval params_digest is invalid")
     if value["resource_kind"] not in RESOURCE_KINDS:
         raise ValueError("research execution plan approval resource kind is unknown")
     if value["action"] != required["action"] or value["resource_kind"] != required["resource_kind"]:

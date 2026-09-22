@@ -22,6 +22,12 @@ from typing import Any
 from sqlalchemy.exc import SQLAlchemyError
 
 from packages.contracts.agent_run_lifecycle import registration_fingerprint, validate_lifecycle_event, lifecycle_receipt
+from packages.contracts.research_continuation_event import (
+    AGENT_APPROVAL_PLAN_ACTION,
+    approval_plan_binding,
+    plan_command_digest,
+    plan_command_idempotency_key,
+)
 
 from .db import PgStoreMixin, execute, fetch_one
 from .domain_call_admission import DomainCallEvidenceMixin, DOMAIN_CALL_DDL
@@ -479,9 +485,25 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         "ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS resource_id TEXT",
         "ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS continuation_status TEXT NOT NULL DEFAULT 'not_requested'",
         "ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS continuation_attempt INTEGER NOT NULL DEFAULT 0",
+        # ADR-0085 §3/P2: a plan-bound human approval durably binds the EXACT plan
+        # command at request time (plan/task version, action, resource, parameter
+        # digest and BYQ idempotency key). A compat approval leaves these NULL.
+        "ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS plan_task_id TEXT",
+        "ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS plan_workspace_id TEXT",
+        "ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS plan_version INTEGER",
+        "ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS plan_task_version INTEGER",
+        "ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS plan_action TEXT",
+        "ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS plan_resource_kind TEXT",
+        "ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS plan_resource_id TEXT",
+        "ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS plan_params_digest TEXT",
+        "ALTER TABLE agent_approvals ADD COLUMN IF NOT EXISTS plan_idempotency_key TEXT",
         """
         CREATE INDEX IF NOT EXISTS agent_approvals_owner_pending
             ON agent_approvals(owner_principal, status, created_at DESC)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS agent_approvals_plan_task
+            ON agent_approvals(plan_task_id) WHERE plan_task_id IS NOT NULL
         """,
     ]
 
@@ -865,6 +887,26 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                 {"approval_id": approval_id},
             )
             assert row is not None
+            # ADR-0085 §3: mint the exact plan-command binding SERVER-SIDE, now, if
+            # this approval is the current gate of an existing plan. The binding
+            # is never supplied by the caller and is frozen at request time, so an
+            # unused older approval can never authorize a later changed plan.
+            binding = self._mint_plan_command_binding(connection, row)
+            if binding is not None:
+                execute(connection, """UPDATE agent_approvals SET
+                    plan_task_id=:task, plan_workspace_id=:workspace, plan_version=:plan_version,
+                    plan_task_version=:task_version, plan_action=:action,
+                    plan_resource_kind=:resource_kind, plan_resource_id=:resource_id,
+                    plan_params_digest=:digest, plan_idempotency_key=:key
+                    WHERE approval_id=:approval_id""", {**binding, "approval_id": approval_id})
+                row = fetch_one(
+                    connection,
+                    """SELECT approvals.*, runs.session_id AS source_session_id
+                       FROM agent_approvals approvals JOIN agent_runs runs ON runs.run_id=approvals.run_id
+                       WHERE approvals.approval_id=:approval_id""",
+                    {"approval_id": approval_id},
+                )
+                assert row is not None
             self._record_audit_row(run, action="approval.request", outcome="pending", resource_type="agent_approval", resource_id=approval_id, detail={"action": action}, connection=connection)
         return self._approval_row(row)
 
@@ -902,10 +944,17 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             now = _now()
             status = "approved" if decision == "approved" else "rejected"
             outcome = "authorized" if status == "approved" else "not_authorized"
+            # ADR-0085 §3/§P2: the legacy/compat approval path starts a generic
+            # free-text model turn. It MUST NOT advance a task that already has a
+            # current execution plan; that task's approvals go through the
+            # deterministic plan reducer instead. A plan-bound approval is
+            # durably recorded but never queued for the compat continuation.
+            plan_task = self._plan_bound_task_for_run(connection, row)
+            continuation_status = "blocked" if plan_task is not None else "queued"
             execute(
                 connection,
-                "UPDATE agent_approvals SET status = :status, decision_by = :decision_by, decision_reason = :decision_reason, execution_outcome = :execution_outcome, continuation_status = 'queued', updated_at = :updated_at WHERE approval_id = :approval_id",
-                {"status": status, "decision_by": reviewer, "decision_reason": rationale, "execution_outcome": outcome, "updated_at": now, "approval_id": approval_id},
+                "UPDATE agent_approvals SET status = :status, decision_by = :decision_by, decision_reason = :decision_reason, execution_outcome = :execution_outcome, continuation_status = :continuation_status, updated_at = :updated_at WHERE approval_id = :approval_id",
+                {"status": status, "decision_by": reviewer, "decision_reason": rationale, "execution_outcome": outcome, "continuation_status": continuation_status, "updated_at": now, "approval_id": approval_id},
             )
             updated = fetch_one(
                 connection,
@@ -918,6 +967,11 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             run = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id = :run_id", {"run_id": row["run_id"]})
             assert run is not None
             self._record_audit_row(run, action="approval.decision", outcome=status, resource_type="agent_approval", resource_id=approval_id, detail={"reviewer": reviewer, "decision": decision}, connection=connection)
+            if plan_task is not None:
+                self._record_audit_row(run, action="approval.continuation", outcome="blocked",
+                    resource_type="agent_approval", resource_id=approval_id,
+                    detail={"reason": "plan_task_compat_approval_forbidden",
+                            "task_id": plan_task["task_id"]}, connection=connection)
         return self._approval_row(updated)
 
     def get_approval(self, approval_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
@@ -1057,6 +1111,102 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             assert updated is not None
         return {**self._approval_row(updated), "continuation_changed": changed}
 
+    @staticmethod
+    def _mint_plan_command_binding(connection, approval):
+        """Mint the exact plan-command binding for a plan-gate approval.
+
+        ADR-0085 §3/P2: a plan-bound human approval must bind the EXACT plan
+        command at request time. This resolves the SINGLE current plan whose
+        approval requirement exactly matches the approval's action/resource and
+        returns a version-, parameter- and idempotency-bound record. An approval
+        that does not match exactly one current plan requirement is a compat
+        approval and gets no binding. The binding is never caller-supplied.
+        """
+
+        plan_action = AGENT_APPROVAL_PLAN_ACTION.get(approval.get("action"))
+        resource_type = approval.get("resource_type")
+        resource_id = approval.get("resource_id")
+        if plan_action is None or not isinstance(resource_type, str) or not isinstance(resource_id, str):
+            return None
+        rows = execute(connection, """SELECT p.task_id, p.workspace_id, p.plan
+            FROM research_execution_plans p
+            JOIN research_tasks t ON t.task_id = p.task_id
+            WHERE p.owner_principal = :owner AND t.owner_principal = :owner
+              AND p.plan -> 'approval' ->> 'action' = :plan_action
+              AND p.plan -> 'approval' ->> 'resource_kind' = :resource_type
+              AND p.plan -> 'approval' ->> 'resource_id' = :resource_id
+              AND p.plan -> 'references' -> CAST(:resource_type AS text)
+                    ->> CAST(:resource_type AS text) = :resource_id
+            LIMIT 2""",
+            {"owner": approval["owner_principal"], "plan_action": plan_action,
+             "resource_type": resource_type, "resource_id": resource_id})
+        if not rows or len(rows) != 1:
+            return None
+        plan = rows[0]["plan"]
+        try:
+            digest = plan_command_digest(
+                plan, action=plan_action, resource_kind=resource_type, resource_id=resource_id)
+            key = plan_command_idempotency_key(
+                plan, action=plan_action, resource_kind=resource_type, resource_id=resource_id)
+        except ValueError:
+            return None
+        return {
+            "task": rows[0]["task_id"], "workspace": rows[0]["workspace_id"],
+            "plan_version": plan["plan_version"], "task_version": plan["task_version"],
+            "action": plan_action, "resource_kind": resource_type, "resource_id": resource_id,
+            "digest": digest, "key": key,
+        }
+
+    @staticmethod
+    def _plan_bound_task_for_run(connection, approval):
+        """Return the task iff this approval EXACTLY matches the current plan gate.
+
+        ADR-0085 P2 review: the compat free-text path must not run for a
+        plan-bound task. This proves the persisted plan-command binding (owner +
+        workspace + bound task) against the CURRENT plan's approval requirement
+        (action, resource, plan/task version, parameter digest and BYQ
+        idempotency key). An approval with no binding, an unrelated
+        task/workspace/action sharing a resource, or a binding that no longer
+        matches the current plan requirement is not plan-bound and stays on the
+        isolated compat path.
+        """
+
+        binding = approval_plan_binding(approval)
+        if binding is None:
+            return None
+        row = fetch_one(connection, """SELECT p.task_id, p.plan
+            FROM research_execution_plans p
+            JOIN research_tasks t ON t.task_id = p.task_id
+            WHERE p.task_id = :task AND p.owner_principal = :owner
+              AND t.owner_principal = :owner
+              AND p.workspace_id = :workspace AND t.workspace_id = :workspace""",
+            {"task": binding["task_id"], "owner": approval["owner_principal"],
+             "workspace": binding["workspace"]})
+        if row is None:
+            return None
+        plan = row["plan"]
+        pending = plan.get("approval")
+        if not isinstance(pending, dict):
+            return None
+        if (binding["plan_version"], binding["task_version"]) != (
+                plan["plan_version"], plan["task_version"]):
+            return None
+        if (binding["action"], binding["resource_kind"], binding["resource_id"]) != (
+                pending["action"], pending["resource_kind"], pending["resource_id"]):
+            return None
+        try:
+            digest = plan_command_digest(
+                plan, action=pending["action"], resource_kind=pending["resource_kind"],
+                resource_id=pending["resource_id"])
+            key = plan_command_idempotency_key(
+                plan, action=pending["action"], resource_kind=pending["resource_kind"],
+                resource_id=pending["resource_id"])
+        except ValueError:
+            return None
+        if binding["params_digest"] != digest or binding["idempotency_key"] != key:
+            return None
+        return {"task_id": row["task_id"]}
+
     def _record_approval_binding_blocker(self, connection, approval, expected_resource):
         # Only the explicitly linked task waiting on this same resource is
         # affected. Never choose a task by recency or rewrite a domain status.
@@ -1160,4 +1310,10 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         result = dict(row)
         result.pop("idempotency_key", None)
         result.pop("request_hash", None)
+        # The plan-command binding is internal execution authority; it is never
+        # projected to the agent/Product surface (ADR-0085 §3/P2).
+        for field in ("plan_task_id", "plan_workspace_id", "plan_version", "plan_task_version",
+                      "plan_action", "plan_resource_kind", "plan_resource_id",
+                      "plan_params_digest", "plan_idempotency_key"):
+            result.pop(field, None)
         return result

@@ -2,7 +2,7 @@
   "status": "PASS",
   "default_release": "dsh-0.1.5rc1",
   "rollback_release": "dsh-0.1.2rc1",
-  "promoted_build": "dsh-0.1.5rc1-post-u8.206",
+  "promoted_build": "dsh-0.1.5rc1-post-u8.207",
   "rollback_build": "dsh-0.1.2rc1-post-u8.199",
-  "promoted_descriptor_hash": "sha256:d697fec99e585ac70b3f553e7572810b8b1c1b82deee3ab86f4465b254de57fd"
+  "promoted_descriptor_hash": "sha256:f446d027d6c89dcdba21ca226f85ec45f796e42afd3630a0a5bd4a19d601eeeb"
 }
