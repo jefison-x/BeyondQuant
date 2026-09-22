@@ -1,10 +1,13 @@
 # ADR-0085：确定性研究编排与有界模型接续
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-22
+- Accepted: 2026-09-22（维护者明确“接受 ADR-0085 的完整决定”，并授权标为 Accepted、
+  同步修订 ADR-0062/0065/0077、STATUS 与专项计划，随后按 P0→P4 每步独立 PR 实施；
+  0.10.0 继续冻结。）
 - Decision owner: BeyondQuant maintainer
 - Relates: ADR-0017、ADR-0044、ADR-0045、ADR-0051、ADR-0062、ADR-0065、ADR-0077、ADR-0079、ADR-0084
-- Supersedes if accepted: ADR-0062 §4 中以自由文本恢复完整研究任务的实现方式；ADR-0077 中数据就绪后启动通用完整模型回合的实现方式；不改变其任务绑定、预算、身份、审批和 at-most-once 安全要求。
+- Supersedes: ADR-0062 §4 中以自由文本恢复完整研究任务的实现方式；ADR-0077 中数据就绪后启动通用完整模型回合的实现方式；不改变其任务绑定、预算、身份、审批和 at-most-once 安全要求。
 - Scope: 0.9.x 会话/长研究可靠性维护；不启动 0.10.0，不授权生产部署、正式 release/tag、付费资源、破坏性数据操作或自动批准业务动作。
 
 ## 背景

@@ -8,6 +8,12 @@
 > 2026-09-12 修订：下文根900秒、child600秒及后台每回合900秒默认硬上限已由
 > [ADR-0072](ADR-0072-long-running-research-checkpoints.md)具名替代；旧许可和历史验收事实保留。
 
+> 2026-09-22 修订：[ADR-0085](ADR-0085-deterministic-research-continuation.md) 保留本 ADR 的
+> 准入前保守预留、累计硬上限、未知不退款和根/子调用覆盖要求，同时禁止把预算上限当作工作流
+> 进展机制。确定性领域动作不启动模型；研究判断回合增加 durable-progress fence。产品/运维投影
+> 必须区分 `reserved_token_ceiling` 与可证明的实际 input/cache/output usage，不得把预留上限称为
+> 实际消费。历史预算资格证据不改写。
+
 ## 证据及原假设修正
 
 ADR-0062 要求后台续接保留既有 token/cost 预算，但当前 BYQ Runtime 只实施时间看门狗，
