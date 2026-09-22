@@ -58,7 +58,7 @@ AUDIT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.177"
 # rectification moved it to .193, the P1-L..P1-N design rectification moved it to
 # .194, the P1-O..P1-Q design rectification moved it to .195, and the P1-R
 # contract fix moved it to .196.
-CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.199"
+CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.200"
 
 DECISION_RECORD = ROOT / "docs/evidence/v090-adr-decisions/decision-record.v1.json"
 DECISION_RECORD_MD = ROOT / "docs/evidence/v090-adr-decisions/README.md"
@@ -331,7 +331,7 @@ class GovernanceDocTests(unittest.TestCase):
                        "<!-- byq:v090-full-interface-rebaseline=complete -->",
                        "<!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->",
                        "<!-- byq:phase-100-p100-c=paused-not-delivery -->",
-                       "<!-- byq:build-revision=dsh-0.1.2rc1-post-u8.199 -->"):
+                       "<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.200 -->"):
             self.assertIn(marker, status)
         # Completed historical 0.9 steps must not remain marked active.
         self.assertNotIn("v090-closeout-audit=active", status)
@@ -485,14 +485,15 @@ class NoImplementationTests(unittest.TestCase):
                 offenders.append(str(path.relative_to(ROOT)))
         self.assertEqual(offenders, [])
 
-    def test_production_selector_is_unchanged(self):
+    def test_production_selector_is_promoted_with_historical_rollback(self):
         deployment = json.loads(
             (ROOT / "config/dsh/deployment.json").read_text(encoding="utf-8"))
-        self.assertEqual(deployment["default_release"], "dsh-0.1.2rc1")
+        self.assertEqual(deployment["default_release"], "dsh-0.1.5rc1")
+        self.assertIn("dsh-0.1.2rc1", deployment["candidate_releases"])
 
     def test_audit_build_revision_is_the_next_unused_id(self):
         from scripts.dsh import build_revision as builds
-        self.assertEqual(builds.selected_build_id("dsh-0.1.2rc1"), CURRENT_BUILD_REVISION)
+        self.assertEqual(builds.selected_build_id("dsh-0.1.5rc1"), CURRENT_BUILD_REVISION)
         self.assertTrue((ROOT / "config/dsh/builds" / f"{CURRENT_BUILD_REVISION}.json").is_file())
         dockerfile = (ROOT / "services/runtime-adapter/Dockerfile.post-u8-candidate").read_text()
         self.assertIn(CURRENT_BUILD_REVISION, dockerfile)

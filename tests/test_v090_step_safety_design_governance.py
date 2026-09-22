@@ -32,7 +32,7 @@ ADAPTER_BUDGET = ROOT / "services/runtime-adapter/app/continuation_budget.py"
 ADAPTER_CONTAINMENT = ROOT / "services/runtime-adapter/app/containment.py"
 CONTAINMENT_TEST = ROOT / "services/runtime-adapter/tests/test_session_containment.py"
 ADR_DIR = ROOT / "docs/architecture/adr"
-CURRENT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.199"
+CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.200"
 
 CARRIER_FIELDS = {
     "attempt_key", "ordinal", "trigger_key", "interrupted_run_id",
@@ -266,7 +266,8 @@ class DesignEvidenceTests(unittest.TestCase):
         verdict = _load(ROOT / "docs/evidence/d15/d15-g/verdict.v1.json")
         self.assertEqual(verdict["verdict"], "NO_GO")
         deployment = _load(ROOT / "config/dsh/deployment.json")
-        self.assertEqual(deployment["default_release"], "dsh-0.1.2rc1")
+        self.assertEqual(deployment["default_release"], "dsh-0.1.5rc1")
+        self.assertIn("dsh-0.1.2rc1", deployment["candidate_releases"])
 
 
 class RealCodeFactTests(unittest.TestCase):
@@ -358,7 +359,7 @@ class NoRuntimeImplementationTests(unittest.TestCase):
 
     def test_build_revision_is_the_next_unused_id(self):
         from scripts.dsh import build_revision as builds
-        self.assertEqual(builds.selected_build_id("dsh-0.1.2rc1"), CURRENT_BUILD_REVISION)
+        self.assertEqual(builds.selected_build_id("dsh-0.1.5rc1"), CURRENT_BUILD_REVISION)
         self.assertTrue((ROOT / "config/dsh/builds" / f"{CURRENT_BUILD_REVISION}.json").is_file())
         self.assertTrue((ROOT / "config/dsh/builds/dsh-0.1.2rc1-post-u8.195.json").is_file())
 

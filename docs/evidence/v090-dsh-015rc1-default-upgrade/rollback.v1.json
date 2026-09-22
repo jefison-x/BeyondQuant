@@ -1,0 +1,31 @@
+{
+  "intact_artifacts": {
+    "config/dsh/builds/dsh-0.1.2rc1-post-u8.199.json": {
+      "base_blob": "6e8aba1a3d90b9882211e726cf40599a41c532f0",
+      "sha256": "sha256:758d92562b157de3603fd292f2be829efb684e62115192582f21d4294f1f90b9"
+    },
+    "config/dsh/generated/dsh-0.1.2rc1.identity.json": {
+      "sha256": "sha256:da13cd3928bbd82a85aa7e21036f990a5a3cf67ec29d902ea61eaf31c1c3713d"
+    },
+    "config/dsh/releases/dsh-0.1.2rc1.json": {
+      "base_blob": "77bb4cfc0d4c0c25a3b085529cd240a9f77e23e4",
+      "sha256": "sha256:ee565e5050ded55cdce2ac9e6fb4bc17a11c60926e9838f526b4eead03bd4724"
+    },
+    "config/dsh/releases/dsh-0.1.2rc1.python.lock": {
+      "base_blob": "9bc54d16792e171bb8d20c9ed7656b94049326c3",
+      "sha256": "sha256:c93b829d8db27c2067fbb1fae67707c7f4fe5d04ab99fdf7993a57014e31b5f6"
+    },
+    "prior_production_dockerfile_sha256": "sha256:a03a97b6dfe5fbaf058dfc5b3e7117367e55497107e78fc7f6aead7e4efd1dc8",
+    "prior_production_image": "sha256:301bcd5ac3e7d26a6b61f4f5646ad44409e50f2cd3ab058a37b2bb5605a980ea"
+  },
+  "prior_baseline": "dsh-0.1.2rc1",
+  "procedure": [
+    "Set config/dsh/deployment.json default_release back to dsh-0.1.2rc1 and remove dsh-0.1.2rc1 from candidate_releases (or promote it again)",
+    "Run `python3 scripts/dsh/release.py generate --historical-inputs` to restore config/dsh/generated/deployment.identity.json to the 0.1.2 identity",
+    "Restore services/runtime-adapter/Dockerfile.post-u8-candidate, requirements.candidate.lock and pyproject.toml to the origin/main revision (commit 4671c3e948b77c75a87c84a514888974f683a54b)",
+    "Run `python3 scripts/dsh/build_revision.py check --build dsh-0.1.2rc1-post-u8.199` (the frozen rollback manifest is preserved)",
+    "Rebuild/roll back the runtime-adapter image to the preserved 0.1.2 build and set BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.2rc1"
+  ],
+  "schema_version": "byq-v090-dsh-default-upgrade-rollback.v1",
+  "verified": "scripts/v090/dsh_default_upgrade/verify.py checks rollback artifact git-blob identity against the base commit and the rollback identity/descriptor content"
+}

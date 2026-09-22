@@ -210,10 +210,17 @@ def load_all(*, verify_files: bool = True, historical_inputs: bool = False) -> t
         value = load_json(path)
         validate_release(value, verify_files=verify_files and not historical_inputs)
         if historical_inputs:
-            try:
-                archived_inputs.verify(value)
-            except ValueError as exc:
-                raise ReleaseError(str(exc)) from exc
+            if value["release_id"] in archived_inputs.CURRENT_RELEASES:
+                # A promoted in-tree release: its immutable inputs are the current
+                # build tree until a later requalification commit pins an exact
+                # archived Git tree (the 0.1.1/0.1.2 descriptor-then-archive
+                # pattern). It is never a fallback for an unknown release.
+                validate_release(value, verify_files=True)
+            else:
+                try:
+                    archived_inputs.verify(value)
+                except ValueError as exc:
+                    raise ReleaseError(str(exc)) from exc
         _require(path.stem == value["release_id"], "release filename/id mismatch")
         _require(value["release_id"] not in releases, "duplicate release id")
         releases[value["release_id"]] = value

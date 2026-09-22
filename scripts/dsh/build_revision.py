@@ -10,7 +10,11 @@ import re
 
 ROOT = Path(__file__).resolve().parents[2]
 BUILDS = ROOT / "config/dsh/builds"
-RELEASES = {"dsh-0.1.2rc1"}
+RELEASES = {"dsh-0.1.5rc1"}
+# Frozen rollback revisions retained for the historical U5/U6/U7 stacks and the
+# prior default. They are referenced by exact identity only and are never
+# re-rendered from current sources.
+HISTORICAL_BUILDS = {"dsh-0.1.2rc1": "dsh-0.1.2rc1-post-u8.199"}
 RETIRED_BUILD = "dsh-0.1.1rc1-post-u8.30"
 RETIRED_SOURCE = "b6c8034ed638447aa1d0ddd82af9738df830bbdf"
 KEYS = {"schema_version", "build_id", "release_id", "release_descriptor_hash", "dockerfile", "inputs"}
@@ -66,17 +70,21 @@ def digest(path):
 def selected_build_id(release):
     if release == "dsh-0.1.1rc1":
         return RETIRED_BUILD  # Historical identity only; never a current build.
-    if release not in RELEASES:
-        raise ValueError("unregistered release")
-    return release + "-post-u8.199"
+    if release in RELEASES:
+        return release + "-post-u8.200"
+    if release in HISTORICAL_BUILDS:
+        return HISTORICAL_BUILDS[release]
+    raise ValueError("unregistered release")
 
 
 def identity(build_id):
-    match = re.fullmatch(r"(dsh-0\.1\.[12]rc1)-(u6|u7|post-u8)\.([1-9][0-9]*)", str(build_id))
+    match = re.fullmatch(r"(dsh-0\.1\.[125]rc1)-(u6|u7|post-u8)\.([1-9][0-9]*)", str(build_id))
     if not match:
         raise ValueError("exact registered release and U6/U7/Post-U8 build revision required")
     release = match[1]
-    dockerfile = "services/runtime-adapter/Dockerfile." + match[2] + ("-candidate" if release.endswith("2rc1") else "")
+    dockerfile = "services/runtime-adapter/Dockerfile." + match[2] + (
+        "-candidate" if release.endswith(("2rc1", "5rc1")) else ""
+    )
     return release, dockerfile
 
 
@@ -138,6 +146,18 @@ def check(build_id):
         if (ROOT / relative).read_bytes() != archived:
             raise ValueError("retired build manifest changed")
         return json.loads(archived)
+    release, _ = identity(build_id)
+    if HISTORICAL_BUILDS.get(release) == build_id:
+        # Frozen rollback revision: its inputs were recorded against a prior
+        # tree and are never re-rendered from current sources. Bind it to the
+        # preserved (archived) release descriptor only.
+        path = BUILDS / f"{build_id}.json"
+        value = json.loads(path.read_text())
+        if (value.get("release_id") != release
+                or value.get("release_descriptor_hash")
+                != digest(ROOT / "config/dsh/releases" / f"{release}.json")):
+            raise ValueError("historical build manifest drift")
+        return value
     path = BUILDS / f"{build_id}.json"
     return validate(json.loads(path.read_text()))
 

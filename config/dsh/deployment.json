@@ -1,5 +1,7 @@
 {
   "schema_version": "dsh-deployment.v1",
-  "default_release": "dsh-0.1.2rc1",
-  "candidate_releases": []
+  "default_release": "dsh-0.1.5rc1",
+  "candidate_releases": [
+    "dsh-0.1.2rc1"
+  ]
 }

@@ -17,9 +17,8 @@ class BuildRevisionTests(unittest.TestCase):
             descriptor = builds.ROOT / "config/dsh/releases" / f"{release}.json"
             historical = json.loads(descriptor.read_text())
             self.assertEqual(value["release_descriptor_hash"], builds.digest(descriptor))
-            old_dockerfile = "services/runtime-adapter/Dockerfile" + (".candidate" if release.endswith("2rc1") else "")
-            self.assertEqual(builds.digest(builds.ROOT / old_dockerfile), historical["build_inputs"][old_dockerfile])
-            self.assertNotEqual(value["dockerfile"], old_dockerfile)
+            self.assertEqual(value["dockerfile"], "services/runtime-adapter/Dockerfile.post-u8-candidate")
+            self.assertIn(value["dockerfile"], historical["build_inputs"])
             self.assertIn("packages/operations/admission.py", value["inputs"])
             self.assertIn("services/runtime-adapter/app/main.py", value["inputs"])
             self.assertIn("services/gateway/app/main.py", value["inputs"])
@@ -30,7 +29,7 @@ class BuildRevisionTests(unittest.TestCase):
                 self.assertIn(path, value["inputs"])
 
     def test_forged_revision_missing_input_drift_and_cross_release_fail(self):
-        original = builds.render(builds.selected_build_id("dsh-0.1.2rc1"))
+        original = builds.render(builds.selected_build_id("dsh-0.1.5rc1"))
         mutations = (
             lambda v: v.update(release_id="dsh-0.1.1rc1"),
             lambda v: v.update(release_descriptor_hash="sha256:" + "0" * 64),
@@ -40,7 +39,7 @@ class BuildRevisionTests(unittest.TestCase):
             lambda v: v["inputs"].pop("workers/data/worker.py"),
             lambda v: v["inputs"].update({"workers/ml/worker.py": "sha256:" + "0" * 64}),
             lambda v: v.update(qualified=True),
-            lambda v: v.update(build_id="dsh-0.1.2rc1-u6.999"),
+            lambda v: v.update(build_id="dsh-0.1.5rc1-u6.999"),
         )
         for mutate in mutations:
             value = copy.deepcopy(original)
@@ -50,9 +49,9 @@ class BuildRevisionTests(unittest.TestCase):
 
     def test_create_refuses_to_overwrite_previous_build(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(builds, "BUILDS", Path(directory)), \
-                patch("sys.argv", ["build_revision", "create", "--build", builds.selected_build_id("dsh-0.1.2rc1")]):
+                patch("sys.argv", ["build_revision", "create", "--build", builds.selected_build_id("dsh-0.1.5rc1")]):
             builds.main()
-            path = Path(directory) / f"{builds.selected_build_id('dsh-0.1.2rc1')}.json"
+            path = Path(directory) / f"{builds.selected_build_id('dsh-0.1.5rc1')}.json"
             before = path.read_bytes()
             with self.assertRaises(FileExistsError):
                 builds.main()

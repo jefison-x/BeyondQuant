@@ -16,36 +16,36 @@ RECON = EVIDENCE / "upgrade-recon.v1.json"
 FIXTURES = EVIDENCE / "fixtures/manifest.v1.json"
 TARGET_DECISION = EVIDENCE / "target-decision.v1.json"
 CANDIDATE = "dsh-0.1.5rc1"
-DEFAULT = "dsh-0.1.2rc1"
+DEFAULT = "dsh-0.1.5rc1"
+ROLLBACK = "dsh-0.1.2rc1"
 TARGET_TAG = "dsh-v0.1.5-rc.1"
 
 
 class D15CandidateTests(unittest.TestCase):
-    def test_candidate_registry_declares_one_unqualified_isolated_candidate(self) -> None:
+    def test_candidate_registry_declares_the_promoted_default(self) -> None:
         candidates = candidate_registry.load_candidates()
         self.assertEqual(sorted(candidates), [CANDIDATE])
         value = candidates[CANDIDATE]
-        self.assertEqual(value["status"], "candidate-unqualified")
-        self.assertEqual(value["production_default"], DEFAULT)
+        self.assertEqual(value["status"], "promoted")
+        self.assertEqual(value["production_default"], CANDIDATE)
         self.assertEqual(value["qualification_target"], TARGET_TAG)
         self.assertEqual(value["target_npm_version"], "0.1.5-rc.1")
-        self.assertEqual(value["qualification"]["state"], "not-qualified")
+        self.assertEqual(value["qualification"]["state"], "qualified")
         self.assertTrue(value["qualification"]["live_start_verified"])
-        self.assertFalse(value["qualification"]["native_resume_verified"])
+        self.assertTrue(value["qualification"]["native_resume_verified"])
         self.assertIsNone(value["qualification"]["blocking_finding"])
         self.assertEqual(value["runtime"]["selector_env"], "BYQ_DSH_COMPATIBILITY_RELEASE")
         self.assertEqual(value["runtime"]["selector_value"], CANDIDATE)
         self.assertTrue(value["runtime"]["isolated"])
 
-    def test_candidate_declares_production_boundary_and_rollback(self) -> None:
+    def test_promoted_candidate_declares_the_rollback_baseline(self) -> None:
         boundary = candidate_registry.load_candidates()[CANDIDATE]["production_boundary"]
-        self.assertTrue(boundary["default_release_unchanged"])
-        self.assertTrue(boundary["default_env_unchanged"])
-        self.assertTrue(boundary["existing_artifacts_untouched"])
+        self.assertFalse(boundary["default_release_unchanged"])
+        self.assertFalse(boundary["default_env_unchanged"])
         self.assertTrue(boundary["historical_evidence_untouched"])
         self.assertEqual(boundary["database_changes"], "none")
         self.assertEqual(boundary["worker_restarts"], "none")
-        self.assertEqual(boundary["rollback_release"], DEFAULT)
+        self.assertEqual(boundary["rollback_release"], ROLLBACK)
 
     def test_candidate_declaration_rejects_tampering(self) -> None:
         import copy
@@ -55,10 +55,11 @@ class D15CandidateTests(unittest.TestCase):
             ROOT / "config/dsh/candidates" / CANDIDATE / "candidate.json"
         )
         mutations = (
-            lambda v: v.update(status="candidate-qualified"),
+            lambda v: v.update(status="candidate-unqualified"),
+            lambda v: v.update(production_default=ROLLBACK),
             lambda v: v["runtime"].update(selector_value="something-else"),
             lambda v: v["runtime"].update(isolated=False),
-            lambda v: v["production_boundary"].update(default_release_unchanged=False),
+            lambda v: v["production_boundary"].update(default_release_unchanged=True),
             lambda v: v["production_boundary"].update(database_changes="migrate"),
             lambda v: v["upstream"].update(source_commit="deadbeef"),
             lambda v: v["python"].update(sdk="0.1.5rc2"),
@@ -77,29 +78,31 @@ class D15CandidateTests(unittest.TestCase):
                     with self.assertRaises(candidate_registry.CandidateError):
                         candidate_registry.load_candidate(root / "candidate.json")
 
-    def test_selector_routes_only_the_candidate(self) -> None:
+    def test_selector_routes_only_the_promoted_default(self) -> None:
         selected = candidate_registry.compatibility_selector(CANDIDATE)
         self.assertIsNotNone(selected)
-        self.assertEqual(selected["status"], "candidate-unqualified")
+        self.assertEqual(selected["status"], "promoted")
         self.assertEqual(selected["selector_env"], "BYQ_DSH_COMPATIBILITY_RELEASE")
         self.assertTrue(selected["compatibility_module"].endswith("compat/dsh_015.py"))
-        self.assertIsNone(candidate_registry.compatibility_selector(DEFAULT))
+        self.assertIsNone(candidate_registry.compatibility_selector(ROLLBACK))
 
-    def test_production_default_and_images_are_unchanged(self) -> None:
+    def test_promoted_default_selector_dependency_and_rollback_are_registered(self) -> None:
         deployment = json.loads((ROOT / "config/dsh/deployment.json").read_text())
-        self.assertEqual(deployment["default_release"], DEFAULT)
-        self.assertEqual(deployment["candidate_releases"], [])
+        self.assertEqual(deployment["default_release"], CANDIDATE)
+        self.assertEqual(deployment["candidate_releases"], [ROLLBACK])
         compose = (ROOT / "compose.yml").read_text()
-        self.assertIn("BYQ_DSH_COMPATIBILITY_RELEASE:-dsh-0.1.2rc1", compose)
-        self.assertNotIn("BYQ_DSH_COMPATIBILITY_RELEASE:-dsh-0.1.5rc1", compose)
+        self.assertIn("BYQ_DSH_COMPATIBILITY_RELEASE:-dsh-0.1.5rc1", compose)
+        self.assertNotIn("BYQ_DSH_COMPATIBILITY_RELEASE:-dsh-0.1.2rc1", compose)
         dockerfile = (ROOT / "services/runtime-adapter/Dockerfile.post-u8-candidate").read_text()
-        self.assertIn("BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.2rc1", dockerfile)
-        self.assertNotIn("BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1", dockerfile)
+        self.assertIn("BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1", dockerfile)
+        self.assertNotIn("BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.2rc1", dockerfile)
         pyproject = (ROOT / "services/runtime-adapter/pyproject.toml").read_text()
-        self.assertIn('"deepseek-harness-sdk==0.1.2rc1"', pyproject)
-        self.assertIn('"deepseek-harness-runtime-bin==0.1.2rc1"', pyproject)
-        # The immutable release registry must not be extended by an unqualified candidate.
-        self.assertFalse((ROOT / "config/dsh/releases" / f"{CANDIDATE}.json").exists())
+        self.assertIn('"deepseek-harness-sdk==0.1.5rc1"', pyproject)
+        self.assertIn('"deepseek-harness-runtime-bin==0.1.5rc1"', pyproject)
+        # The promoted release is registered; the prior default is retained as
+        # the rollback candidate descriptor.
+        self.assertTrue((ROOT / "config/dsh/releases" / f"{CANDIDATE}.json").exists())
+        self.assertTrue((ROOT / "config/dsh/releases" / f"{ROLLBACK}.json").exists())
 
     def test_compat_boundary_exposes_candidate_without_wiring_native_adoption(self) -> None:
         compat = (ROOT / "services/runtime-adapter/app/compat/__init__.py").read_text()
@@ -165,15 +168,14 @@ class D15CandidateTests(unittest.TestCase):
         self.assertIn("tool/result", probe["event_types"])
         self.assertTrue(probe["message_tool_blocked"])
 
-    def test_production_default_selector_unchanged_after_candidate_build(self) -> None:
+    def test_candidate_isolated_dockerfile_still_matches_the_promoted_selector(self) -> None:
         deployment = json.loads((ROOT / "config/dsh/deployment.json").read_text())
-        self.assertEqual(deployment["default_release"], DEFAULT)
-        self.assertEqual(deployment["candidate_releases"], [])
+        self.assertEqual(deployment["default_release"], CANDIDATE)
+        self.assertEqual(deployment["candidate_releases"], [ROLLBACK])
         dockerfile = (ROOT / "services/runtime-adapter/Dockerfile.dsh-0.1.5rc1-candidate").read_text()
         self.assertIn("BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1", dockerfile)
         production = (ROOT / "services/runtime-adapter/Dockerfile.post-u8-candidate").read_text()
-        self.assertIn("BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.2rc1", production)
-        self.assertNotIn("dsh-0.1.5rc1", production)
+        self.assertIn("BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1", production)
 
     def test_recon_records_the_unpaired_rc2_blocker(self) -> None:
         recon = json.loads(RECON.read_text())

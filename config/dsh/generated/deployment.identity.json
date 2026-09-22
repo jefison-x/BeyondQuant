@@ -1,34 +1,36 @@
 {
-  "candidate_releases": [],
+  "candidate_releases": [
+    "dsh-0.1.2rc1"
+  ],
   "carrier": {
-    "bundled_package_count": 123,
+    "bundled_package_count": 126,
     "entrypoint": "deepseek-harness-sdk-runtime-linux-x64",
     "kind": "python-bundled-executable",
     "profile": "sdk",
-    "source_archive_sha256": "adf32f642610e52294ffd823b3ad38b86355d05e4c48280bc77912458df56552",
-    "source_commit": "a66e4702047846cdaa10c66c9d3df3951f5ea70d",
-    "source_manifest_sha256": "a8cdf98a24c02947a5dfb36eecad1689dd7f1eba62c05996eabcd59530189387",
-    "source_tag": "dsh-v0.1.2-rc.1"
+    "source_archive_sha256": "23af26a7f422f3d3ba7ce148492e2937af3fe5cc39e8f05dd109e12dadd8262c",
+    "source_commit": "183f08e9c6dde7e36cd2318eaee70b0da08fb35e",
+    "source_manifest_sha256": "1a7b08779d4a2da50ec1d81837eeb43e913256d077add584cb154c221e12283c",
+    "source_tag": "dsh-v0.1.5-rc.1"
   },
   "compatibility_family": "byq-dsh-sdk-v1",
-  "default_release": "dsh-0.1.2rc1",
-  "descriptor_hash": "sha256:ee565e5050ded55cdce2ac9e6fb4bc17a11c60926e9838f526b4eead03bd4724",
+  "default_release": "dsh-0.1.5rc1",
+  "descriptor_hash": "sha256:604bf7a861f34fc3f1cfb6ec61d2b542ecc8ea512fc66faa8403bbd67cbd6fe2",
   "profile": {
     "composition": "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml",
-    "composition_hash": "sha256:e584cee23c7e39ffaaf7d4c583d4762556032b4d4d173285c14c038d98ec6f98",
+    "composition_hash": "sha256:c9b6e790f86dbc8e0bb871440954eaa71d1f02d1d3d335072bcea53a6bb857d3",
     "identity": "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.identity.json",
     "name": "byq-product-candidate"
   },
   "python": {
-    "linux_x86_64_runtime_wheel_sha256": "670d8af06845cc2fc16738f1b030375321f3f8268837152aa3100e14a7b9887d",
-    "runtime_bin": "0.1.2rc1",
-    "sdk": "0.1.2rc1",
-    "sdk_wheel_sha256": "24689eec01e95233feb75ca08a0fe748b491e71682f80d2c04e6f9485f20488a"
+    "linux_x86_64_runtime_wheel_sha256": "ad877237382baff4628969a9ebdbfe38486d971b7987c032d0e29775759b5229",
+    "runtime_bin": "0.1.5rc1",
+    "sdk": "0.1.5rc1",
+    "sdk_wheel_sha256": "8d9897e97e8a95fd738cb2c3e2c563951d824e43847ec6f3b0fb172c0729b4d8"
   },
   "runtime_executor": {
     "deployment_id": "byq-product-runtime",
     "executor_epoch": 1,
-    "runtime_release": "dsh-0.1.2rc1",
+    "runtime_release": "dsh-0.1.5rc1",
     "schema_version": "runtime-executor.v1",
     "volume_identity": "byq-dsh-sessions"
   },

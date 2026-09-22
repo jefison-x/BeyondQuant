@@ -78,8 +78,8 @@ def test_root_mode_rejects_mismatched_profile(root_adapter, monkeypatch, tmp_pat
 
 
 def test_domain_observation_is_durable_private_and_exactly_root_scoped(root_adapter):
-    if version("deepseek-harness-sdk") != "0.1.2rc1":
-        pytest.skip("domain observations are qualified on the pinned 0.1.2 carrier")
+    if version("deepseek-harness-sdk") != "0.1.5rc1":
+        pytest.skip("domain observations are qualified on the pinned 0.1.5 carrier")
     runtime = root_adapter
     context = {"session_id": "private-calls", "trace_id": "private-trace", "owner": "alice", "workspace_id": "workspace_alice"}
     runtime.create_session(context["session_id"], context["trace_id"], context["owner"], context["workspace_id"])
@@ -117,8 +117,8 @@ def test_domain_observation_is_durable_private_and_exactly_root_scoped(root_adap
 
 
 def test_unproven_call_stops_only_its_owned_root(root_adapter, monkeypatch):
-    if version("deepseek-harness-sdk") != "0.1.2rc1":
-        pytest.skip("closed admission stop qualified on 0.1.2 only")
+    if version("deepseek-harness-sdk") != "0.1.5rc1":
+        pytest.skip("closed admission stop qualified on 0.1.5 only")
     runtime = root_adapter
     # Each process needs its own completion signal: the ordinary single-session
     # fixture's class-wide Event makes closing Alice also finish Bob spuriously.

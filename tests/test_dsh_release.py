@@ -20,22 +20,22 @@ SPEC.loader.exec_module(MODULE)
 class DshReleaseTests(unittest.TestCase):
     def test_repository_descriptors_are_closed_and_authorized_u7_default_is_promoted(self) -> None:
         deployment, releases = MODULE.load_all(historical_inputs=True)
-        self.assertEqual(deployment["default_release"], "dsh-0.1.2rc1")
-        self.assertEqual(deployment["candidate_releases"], [])
+        self.assertEqual(deployment["default_release"], "dsh-0.1.5rc1")
+        self.assertEqual(deployment["candidate_releases"], ["dsh-0.1.2rc1"])
         self.assertEqual(releases["dsh-0.1.1rc1"]["python"]["sdk"], "0.1.1rc1")
         self.assertEqual(
             releases["dsh-0.1.2rc1"]["carrier"]["kind"],
             "python-bundled-executable",
         )
         self.assertEqual(
-            releases["dsh-0.1.2rc1"]["profile"]["composition"],
+            releases["dsh-0.1.5rc1"]["profile"]["composition"],
             "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml",
         )
         self.assertEqual(MODULE.render(historical_inputs=True), MODULE.render(historical_inputs=True))
         self.assertEqual(MODULE.OUTPUT_PATH.read_text(), MODULE.render(historical_inputs=True))
         self.assertEqual(
-            MODULE.candidate_output_path("dsh-0.1.1rc1").read_text(),
-            MODULE.render_release("dsh-0.1.1rc1", deployment, releases),
+            MODULE.candidate_output_path("dsh-0.1.2rc1").read_text(),
+            MODULE.render_release("dsh-0.1.2rc1", deployment, releases),
         )
         runtime_package = json.loads(
             (ROOT / "plugins/dsh-byq/runtime/package.json").read_text()

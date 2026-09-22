@@ -133,11 +133,12 @@ class BoundaryTests(unittest.TestCase):
             self.assertIn(marker, status)
         self.assertIn("R3_RESUME = NO", status)
 
-    def test_production_selector_and_dsh_dependency_are_unchanged(self):
+    def test_production_selector_is_promoted_with_historical_rollback(self):
         deployment = json.loads((ROOT / "config/dsh/deployment.json").read_text(encoding="utf-8"))
-        self.assertEqual(deployment["default_release"], "dsh-0.1.2rc1")
+        self.assertEqual(deployment["default_release"], "dsh-0.1.5rc1")
+        self.assertIn("dsh-0.1.2rc1", deployment["candidate_releases"])
         pyproject = (ROOT / "services/runtime-adapter/pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn("deepseek-harness-sdk==0.1.2rc1", pyproject)
+        self.assertIn("deepseek-harness-sdk==0.1.5rc1", pyproject)
 
     def test_historical_d15_g_verdict_is_not_rewritten(self):
         verdict = json.loads(

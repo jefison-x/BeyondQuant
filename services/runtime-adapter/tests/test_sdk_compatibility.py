@@ -5,8 +5,8 @@ from pathlib import Path
 from deepseek_harness import HarnessClient, Notification
 
 
-def test_installed_official_sdk_pair_is_exact_rc1() -> None:
-    expected = "0.1.2rc1"
+def test_installed_official_sdk_pair_is_exact_promoted_release() -> None:
+    expected = "0.1.5rc1"
     assert version("deepseek-harness-sdk") == expected
     assert version("deepseek-harness-runtime-bin") == expected
 

@@ -22,12 +22,12 @@ def _stable_executor_identity(tmp_path_factory: pytest.TempPathFactory) -> Path:
     path = directory / "deployment.identity.json"
     path.write_text(json.dumps({
         "schema_version": "dsh-deployment-identity.v1",
-        "default_release": "dsh-0.1.2rc1",
-        "python": {"sdk": "0.1.2rc1", "runtime_bin": "0.1.2rc1"},
+        "default_release": "dsh-0.1.5rc1",
+        "python": {"sdk": "0.1.5rc1", "runtime_bin": "0.1.5rc1"},
         "runtime_executor": {
             "schema_version": "runtime-executor.v1",
             "deployment_id": "byq-test-runtime",
-            "runtime_release": "dsh-0.1.2rc1",
+            "runtime_release": "dsh-0.1.5rc1",
             "volume_identity": "byq-test-sessions",
             "executor_epoch": 1,
         },

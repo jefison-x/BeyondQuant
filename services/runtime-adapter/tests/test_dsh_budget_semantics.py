@@ -16,8 +16,8 @@ def test_locked_product_composition_has_meter_but_no_agent_budget(tmp_path):
     from importlib.metadata import version
     from deepseek_harness_runtime import bundled_runtime_path
 
-    assert version("deepseek-harness-sdk") == "0.1.2rc1"
-    assert version("deepseek-harness-runtime-bin") == "0.1.2rc1"
+    assert version("deepseek-harness-sdk") == "0.1.5rc1"
+    assert version("deepseek-harness-runtime-bin") == "0.1.5rc1"
     result = subprocess.run(
         [str(bundled_runtime_path()), "--profile", "sdk", "--patch",
          "/opt/byq/profiles/byq-product.patch.yml", "--dump-config"],

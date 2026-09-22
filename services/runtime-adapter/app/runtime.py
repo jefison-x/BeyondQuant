@@ -1710,12 +1710,17 @@ class RuntimeAdapter:
 
     def continuation_qualified(self, record: RuntimeSession) -> bool:
         try:
-            exact = (distribution_version('deepseek-harness-sdk') == '0.1.2rc1'
-                and distribution_version('deepseek-harness-runtime-bin') == '0.1.2rc1')
+            sdk = distribution_version('deepseek-harness-sdk')
+            runtime_bin = distribution_version('deepseek-harness-runtime-bin')
         except PackageNotFoundError:
-            exact = False
+            return False
+        # The continuation executor is qualified on the byq-dsh-sdk-v1 family.
+        # The promoted 0.1.5 default and the retained 0.1.2 rollback expose a
+        # byte-identical Python SDK surface (docs/evidence/d15/upgrade-recon),
+        # so the exact-carrier gate accepts either qualified pair (never mixed).
+        exact = sdk == runtime_bin and sdk in {'0.1.2rc1', '0.1.5rc1'}
         return (os.environ.get('BYQ_F6_EXECUTOR_ENABLED') == '1' and self._root_scoped
-            and self._compatibility.family == 'dsh-0.1.2' and exact
+            and self._compatibility.family in {'dsh-0.1.2', 'dsh-0.1.5'} and exact
             and bool(record.model_resolution.get('api_key'))
             and _continuation_route_qualified(record.model_resolution, self._provider, self._model))
 

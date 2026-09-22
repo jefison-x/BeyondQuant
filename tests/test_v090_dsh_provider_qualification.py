@@ -234,7 +234,8 @@ class CommittedEvidenceTests(unittest.TestCase):
         self.assertEqual(g_verdict["verdict"], "NO_GO")
         self.assertEqual(g_verdict["derived_capabilities"]["subagent-child-crash"], "BLOCKED")
         deployment = json.loads((ROOT / "config/dsh/deployment.json").read_text(encoding="utf-8"))
-        self.assertEqual(deployment["default_release"], "dsh-0.1.2rc1")
+        self.assertEqual(deployment["default_release"], "dsh-0.1.5rc1")
+        self.assertIn("dsh-0.1.2rc1", deployment["candidate_releases"])
 
 
 class NoSubstitutionTests(unittest.TestCase):

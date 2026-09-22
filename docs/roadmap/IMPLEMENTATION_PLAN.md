@@ -1778,6 +1778,48 @@ Build revision: this batch changes `scripts/`, `tests/` and the candidate Docker
 preserved unchanged; no selector, `compose.yml`, `deployment.json`, immutable release registry
 or 0.1.2 artifact/evidence change and no deployment.
 
+## 0.9 formal repo default dependency/selector upgrade to DSH 0.1.5-rc.1 (maintenance, 2026-09-22)
+
+This maintenance batch executes the retained 0.9 closeout step **"formally upgrade the
+repository default dependency/selector to the coherent DSH `0.1.5-rc.1`"**, in an isolated
+worktree/branch/Draft PR based on dynamic `origin/main`. It is maintenance/qualification; it
+does **not** advance a Product Phase, does **not** deploy to production, does **not** create or
+move any tag/release, does **not** resume Phase 100, does **not** inspect or copy the Community
+repository, does **not** generate a D15 superseding assessment and does **not** start 0.10. It
+reimplements no DSH code, adds no cross-process continuable provider and adds no second agent
+harness.
+
+- **Reused candidate assets** (no re-qualification): the D15-1 candidate declaration + Python
+  lock, the isolated candidate Dockerfile/requirements lock, the `dsh_015` compat shim and the
+  D15/B2/B3/B4 evidence.
+- **Default move**: `config/dsh/deployment.json` default `dsh-0.1.5rc1` with `dsh-0.1.2rc1` as
+  the rollback candidate; a new registered `dsh-0.1.5rc1` release descriptor + exact Python lock
+  (upstream tag/commit/archive from D15-0); the promoted candidate declaration; the default
+  selector identity (`config/dsh/generated/deployment.identity.json`) and the rollback identity;
+  `Dockerfile.post-u8-candidate` selector/build-manifest/assert; `requirements.candidate.lock`
+  and `pyproject.toml`; `compose.yml`; the compat default branch; `build_revision` current
+  release and build id `dsh-0.1.5rc1-post-u8.200`; and the F6 continuation gate accepting the
+  coherent 0.1.5 pair so no qualified capability is silently disabled.
+- **Verifiable rollback**: the 0.1.2 release descriptor, Python lock and
+  `dsh-0.1.2rc1-post-u8.199` build manifest are byte-identical to the base commit; the archived
+  0.1.2 identity and prior deployed image digest are recorded; a fail-closed verifier rejects
+  any rollback drift.
+- **Targeted real verification** (keyless): upgraded image build, `/readyz`
+  `release_identity=matched` for `dsh-0.1.5rc1`, in-image runtime/domain-wire suite 244 passed /
+  40 skipped, F6 continuation budget 10 passed, and the D15 start probe `ready`/`idle` with a
+  real `mcp__byq` tool call and contiguous events.
+- **Evidence**: `docs/evidence/v090-dsh-015rc1-default-upgrade/`, with the fail-closed
+  `scripts/v090/dsh_default_upgrade/verify.py` (13 defect-targeting negatives) asserted by
+  `tests/test_v090_dsh_default_upgrade.py`. The two v090 evidence bundles and the H4 interface
+  ledger that bind `runtime.py` are refreshed **digest-only** with unchanged verdicts.
+- **Boundaries unchanged**: B1/B2 `BLOCKED_EXTERNAL`, historical D15-G `NO_GO` (not rewritten),
+  no D15 superseding assessment, `R3_RESUME = NO`, no production deployment, no tag/release, no
+  Phase 100 resume, no 0.10.
+
+Build revision: this batch changes `scripts/`, `tests/`, `services/runtime-adapter` and config
+(build inputs) and advances the production runtime build identity `post-u8.199 → post-u8.200`
+(unused id). The historical `.199` manifest and all evidence are preserved.
+
 ## Maintenance — Delist-boundary coverage correction (ADR-0028)（构建修订 `dsh-0.1.2rc1-post-u8.130`，PR #299）
 
 ADR-0028 point 2 evaluates coverage over each symbol's frozen listing lifecycle. The market-readiness

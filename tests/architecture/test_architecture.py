@@ -1085,8 +1085,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("DeepSeekHarness()", adapter)
 
         pyproject = (ROOT / "services/runtime-adapter/pyproject.toml").read_text()
-        self.assertIn('"deepseek-harness-sdk==0.1.2rc1"', pyproject)
-        self.assertIn('"deepseek-harness-runtime-bin==0.1.2rc1"', pyproject)
+        self.assertIn('"deepseek-harness-sdk==0.1.5rc1"', pyproject)
+        self.assertIn('"deepseek-harness-runtime-bin==0.1.5rc1"', pyproject)
 
         composition = (ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()
         self.assertIn("@deepseek-ai/dsh-sdk-jsonrpc-server", composition)

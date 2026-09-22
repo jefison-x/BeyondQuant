@@ -1,4 +1,4 @@
-"""Real 0.1.2rc1 DSH delegate journeys with a deterministic provider.
+"""Real 0.1.5rc1 DSH delegate journeys with a deterministic provider.
 
 Run only inside the isolated candidate image with a live BYQ MCP. The provider
 controls model output, but DSH loads the real profile, creates the real child
@@ -24,9 +24,9 @@ except ImportError:
 
 
 pytestmark = pytest.mark.skipif(
-    version("deepseek-harness-sdk") != "0.1.2rc1"
+    version("deepseek-harness-sdk") != "0.1.5rc1"
     or os.environ.get("BYQ_DSH_REAL_PROCESS_TEST") != "1",
-    reason="requires the isolated 0.1.2 candidate image and live BYQ MCP",
+    reason="requires the isolated 0.1.5 default image and live BYQ MCP",
 )
 
 DELEGATE_FORBIDDEN = {

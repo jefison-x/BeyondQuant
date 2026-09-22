@@ -15,7 +15,7 @@ from app.runtime import RuntimeAdapter, SessionStatus
 
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("BYQ_DOMAIN_CALL_WIRE_TEST") != "1" or version("deepseek-harness-sdk") != "0.1.2rc1",
+    os.environ.get("BYQ_DOMAIN_CALL_WIRE_TEST") != "1" or version("deepseek-harness-sdk") != "0.1.5rc1",
     reason="explicit loopback official-process identity qualification",
 )
 

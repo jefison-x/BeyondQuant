@@ -332,9 +332,9 @@ prepare_ci_compose_env() {
   # ADR-0069: daily suites use the supported bundled runtime only.
   # Archived rollback images are never rebuilt or executed by routine CI.
   export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-candidate
-  export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.2rc1
+  export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1
   export BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml
-  export BYQ_DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-0.1.2rc1
+  export BYQ_DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-0.1.5rc1
   export BYQ_WEB_EVIDENCE_PROVENANCE_POLICY=/app/qualified-web-evidence-provenance.json
   export BYQ_PLUGIN_REGISTRY_PATH=/app/plugin-registry/product-plugins.json
   export BYQ_BOOTSTRAP_ADMIN_USERNAME="${BYQ_CI_BOOTSTRAP_ADMIN_USERNAME:-ci-admin}"
@@ -744,7 +744,7 @@ value = {'services': {
     'volumes': [{'type': 'bind', 'source': os.environ['F6_TESTS_SOURCE'], 'target': '/app/tests', 'read_only': True}],
     'command': ['python3', '-m', 'tests.f6_synthetic_runtime'], 'environment': {
       'BYQ_F6_EXECUTOR_ENABLED': '1', 'BYQ_F6_SYNTHETIC_RUNTIME': '1', 'DEEPSEEK_API_KEY': 'f6-synthetic-only',
-      'BYQ_DSH_COMPATIBILITY_RELEASE': 'dsh-0.1.2rc1', 'BYQ_DSH_PROCESS_OWNERSHIP': 'root-turn',
+      'BYQ_DSH_COMPATIBILITY_RELEASE': 'dsh-0.1.5rc1', 'BYQ_DSH_PROCESS_OWNERSHIP': 'root-turn',
       'BYQ_DSH_COMPOSITION': '/opt/byq/profiles/byq-product.patch.yml',
       'BYQ_DSH_COMPOSITION_IDENTITY': '/opt/byq/profiles/byq-product.identity.json',
       'DSH_SESSION_ROOT': '/var/lib/byq/dsh-sessions/f6-qualification'}},

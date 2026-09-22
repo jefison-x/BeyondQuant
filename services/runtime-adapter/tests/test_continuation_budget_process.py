@@ -25,7 +25,7 @@ def test_guard_refuses_before_next_http_and_retains_durable_ceiling(tmp_path, al
     from deepseek_harness import DeepSeekHarness, DeepSeekHarnessConfig
     from deepseek_harness_runtime import bundled_runtime_path
 
-    assert version('deepseek-harness-runtime-bin') == '0.1.2rc1'
+    assert version('deepseek-harness-runtime-bin') == '0.1.5rc1'
     requests = []
 
     class Provider(BaseHTTPRequestHandler):
