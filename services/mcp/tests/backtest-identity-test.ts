@@ -14,6 +14,16 @@ for(const fn of [fetchByqBacktestTaskGet,fetchByqBacktestTaskExecute,fetchByqBac
  assert.ok(response.isError || value.status==='outcome_unknown','wrong task cannot confirm original task');
 }
 assert.equal((await fetchByqSignalSnapshotGet('http://backend',artifact,wrong)).isError,true);
+const goodSummary=async()=>new Response(JSON.stringify({summary:{schema_version:'signal-snapshot-summary.v1',
+  artifact:{artifact_id:artifact,kind:'signal_snapshot'},snapshot:{counts:{bar_count:3,signal_count:1}},
+  diagnostic_samples:{bar_sample:[{symbol:'600000.SH',trade_date:'2024-01-01'}]}}}));
+const summary=await fetchByqSignalSnapshotGet('http://backend',artifact,goodSummary);
+assert.equal(summary.isError,false);
+const summaryValue=JSON.parse(summary.content[0].text);
+assert.equal(summaryValue.summary.artifact.artifact_id,artifact);
+for(const forbidden of ['bars_frame','bars','signals','corporate_actions','benchmark','symbols']) {
+  assert.ok(!(forbidden in summaryValue.summary),`bounded summary must not carry ${forbidden}`);
+}
 assert.equal((await fetchByqBacktestAnalysis('http://backend',job,{section:'summary',limit:1,offset:0},wrong)).isError,true);
 for(const [fn,tool] of [[fetchByqBacktestSubmit,'byq_backtest_get'],[fetchByqBacktestTaskCreate,'byq_backtest_task_get']] as const) {
  const response=await fn('http://backend',{task_id:'task_'+'c'.repeat(32),idempotency_key:'original-key'},async()=>{throw Error('ack lost')});

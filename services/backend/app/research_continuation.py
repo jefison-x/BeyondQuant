@@ -12,7 +12,9 @@ from datetime import datetime, timedelta, timezone
 
 from .db import execute, fetch_one
 from .research_handoff_events import handoff_events, handoff_ready
+from .backtest_task import project_backtest_task
 from packages.contracts import business_recovery as recovery_contract
+from packages.contracts.research_executable_action import derive_executable_action
 
 logger = logging.getLogger("byq.research.continuation")
 
@@ -75,6 +77,124 @@ def _request(payload: object) -> dict:
             "max_turns": _positive(payload.get("max_turns", 8), "turn limit", 8),
             "valid_seconds": _positive(payload.get("valid_seconds", 86400), "validity", 86400),
             "turn_timeout_seconds": _positive(payload.get("turn_timeout_seconds", payload.get("valid_seconds", 86400)), "turn timeout", 86400)}
+
+
+def _approved_execution_artifact(connection, *, owner: str, workspace: str, task_id: str,
+                                 strategy_version_artifact_id: object) -> str | None:
+    """Backend-authoritative execution approval for a strategy version."""
+
+    if not isinstance(strategy_version_artifact_id, str):
+        return None
+    row = fetch_one(connection, """SELECT artifact_id FROM artifacts
+        WHERE task_id=:task AND owner_principal=:owner AND workspace_id=:workspace
+          AND kind='strategy_approval' AND status='validated'
+          AND content->>'strategy_version_artifact_id'=:strategy
+          AND content->>'decision'='approved'
+          AND content->>'execution_authorized'='true'
+        ORDER BY created_at, artifact_id LIMIT 1""",
+        {'task': task_id, 'owner': owner, 'workspace': workspace, 'strategy': strategy_version_artifact_id})
+    return row['artifact_id'] if row is not None else None
+
+
+def _backtest_job_for_snapshot(connection, *, owner: str, signal_snapshot_artifact_id: object) -> dict | None:
+    if not isinstance(signal_snapshot_artifact_id, str):
+        return None
+    row = fetch_one(connection, """SELECT job_id, name, status, attempts, max_attempts,
+            summary_json, error_code, error_message, result_artifact_id FROM backtest_jobs
+        WHERE owner_principal=:owner AND request_json->>'signal_snapshot_artifact_id'=:snapshot
+        ORDER BY created_at DESC, job_id DESC LIMIT 1""",
+        {'owner': owner, 'snapshot': signal_snapshot_artifact_id})
+    if row is None:
+        return None
+    return {'job_id': row['job_id'], 'name': row['name'], 'status': row['status'],
+            'attempts': row['attempts'], 'max_attempts': row['max_attempts'],
+            'summary': row['summary_json'], 'error_code': row['error_code'],
+            'error_message': row['error_message'], 'result_artifact_id': row['result_artifact_id']}
+
+
+def _data_ready_executable(connection, task: dict, job: dict) -> dict:
+    """Backend-derived exact next action for a completed signal job.
+
+    Reuses the authoritative ``project_backtest_task`` projection (ADR-0044) so
+    the model never rebuilds create parameters or guesses the task identity.
+    """
+
+    approval_id = _approved_execution_artifact(connection, owner=task['owner_principal'],
+        workspace=task['workspace_id'], task_id=task['task_id'],
+        strategy_version_artifact_id=job.get('strategy_version_artifact_id'))
+    readiness = job.get('readiness_json')
+    signal_projection = {
+        'job_id': job.get('job_id'), 'status': 'completed',
+        'attempt_count': job.get('attempt_count'),
+        'result_artifact_id': job.get('result_artifact_id'),
+        'error_code': job.get('error_code'), 'error_detail': job.get('error_detail'),
+    }
+    projection = project_backtest_task(
+        research_task_id=task['task_id'],
+        strategy_version_artifact_id=str(job.get('strategy_version_artifact_id')),
+        approval_artifact_id=approval_id,
+        stock_pool_snapshot_id=str(job.get('stock_pool_snapshot_id')),
+        readiness=readiness if isinstance(readiness, dict) else None,
+        signal_job=signal_projection,
+        backtest_job=_backtest_job_for_snapshot(connection, owner=task['owner_principal'],
+            signal_snapshot_artifact_id=job.get('result_artifact_id')),
+    )
+    return derive_executable_action(projection)
+
+
+def _deterministic_progress(task: dict, executable: dict) -> dict:
+    """Structured ResearchTask progress advanced without a model turn."""
+
+    existing = task.get('progress') if isinstance(task.get('progress'), dict) else {}
+    linked = existing.get('linked_objects') if isinstance(existing.get('linked_objects'), list) else []
+    stage = {'execute': 'backtest', 'wait': 'data_preparation',
+             'review_result': 'comparison', 'review_failure': 'blocked',
+             'create': 'strategy', 'resolve_blockers': 'blocked'}.get(
+        executable.get('next_action'), 'backtest')
+    blocked_reason = None
+    if stage == 'blocked':
+        blocked_reason = 'backtest_action_requires_review'
+    return {
+        'schema_version': 'research-progress.v1',
+        'stage': stage,
+        'next_action': executable.get('next_action'),
+        'blocked_reason': blocked_reason,
+        'linked_objects': linked,
+        'completion_evidence': existing.get('completion_evidence')
+            if isinstance(existing.get('completion_evidence'), list) else [],
+    }
+
+
+def _needs_attention_progress(task: dict, event_key: str) -> dict:
+    """Structured ResearchTask progress for a budget/guard needs_attention stop."""
+
+    existing = task.get('progress') if isinstance(task.get('progress'), dict) else {}
+    linked = existing.get('linked_objects') if isinstance(existing.get('linked_objects'), list) else []
+    evidence = existing.get('completion_evidence') if isinstance(existing.get('completion_evidence'), list) else []
+    reason = 'continuation_needs_attention:' + str(event_key)[:96]
+    return {
+        'schema_version': 'research-progress.v1',
+        'stage': 'blocked',
+        'next_action': 'needs_attention',
+        'blocked_reason': reason[:160],
+        'linked_objects': linked,
+        'completion_evidence': evidence,
+    }
+
+
+def _notification_receipt(event_key: str, executable: dict, now) -> dict:
+    """Durable at-most-once notification marker; it never reserves a model turn."""
+
+    encoded = json.dumps(executable, sort_keys=True, separators=(',', ':')).encode()
+    return {
+        'reservation_id': 'notification_' + uuid.uuid4().hex,
+        'grant_kind': 'data_ready_notification', 'grant_version': None,
+        'event_key': event_key, 'input_sha256': hashlib.sha256(encoded).hexdigest(),
+        'token_limit': 0, 'status': 'settled', 'run_id': None, 'charged_tokens': 0,
+        'settlement_sha256': hashlib.sha256(('notified:' + event_key).encode()).hexdigest(),
+        'created_at': now.isoformat(), 'instruction': None, 'outcome': 'notified',
+        'executable': executable,
+    }
 
 
 class ResearchContinuationMixin:
@@ -191,7 +311,18 @@ class ResearchContinuationMixin:
         budget = {'token_limit': ledger['token_limit'], 'reserved_tokens': reserved,
             'charged_tokens': charged, 'available_tokens': ledger['token_limit'] - reserved - charged,
             'turns_reserved': len(rows), 'turns_remaining': ledger['max_turns'] - len(rows),
-            'unconfirmed_reservations': sum(row['status'] != 'settled' for row in rows)}
+            'unconfirmed_reservations': sum(row['status'] != 'settled' for row in rows),
+            # ADR-0085 P0/§8: the conservative per-call reservation ceiling is
+            # NOT model usage. Provider-provable actual input/cache/output usage
+            # is only available from the Runtime Adapter's normalized DSH usage
+            # projection, so it is explicitly unknown here rather than faked
+            # from the reservation (never report 8,454,144 as actual usage).
+            'reserved_token_ceiling': reserved + charged,
+            'actual_usage': {
+                'input_tokens': None, 'cache_read_tokens': None, 'output_tokens': None,
+                'model_call_count': None, 'tool_payload_bytes': None,
+                'provenance': 'runtime_adapter_normalized_dsh_usage',
+            }}
         reason = ResearchContinuationMixin._permission_blocked_reason(task, conversation)
         if reason is None:
             if budget['unconfirmed_reservations']:
@@ -203,7 +334,9 @@ class ResearchContinuationMixin:
             else:
                 reason = task.get('continuation_blocked_reason') or 'waiting_for_event'
         return {"schema_version": "task-continuation-permission.v1", "task_id": task["task_id"],
-                "permission": public, "budget": budget, "can_start": False, "blocked_reason": reason}
+                "permission": public, "budget": budget, "can_start": False, "blocked_reason": reason,
+                "blocked_event_key": task.get("continuation_blocked_event_key"),
+                "blocked_reason_detail": task.get("continuation_blocked_reason")}
 
     def create_continuation_permission(self, task_id: str, payload: object, *, trusted_context: dict) -> dict:
         from .research import IdempotencyConflict
@@ -497,24 +630,37 @@ class ResearchContinuationMixin:
                     if not admit:
                         return {'status': 'eligible', 'task_id': task['task_id']}
                     if event.get('data_ready') and not budgeted:
-                        instruction = ('BYQ trusted task continuation. Resume only the original research goal for task '
-                            + task['task_id'] + '. The signal/data preparation this task waited on is now ready: '
-                            'signal_producer_job ' + str(event['identity']) + ' completed with immutable validated '
-                            'signal_snapshot ' + str(event['result_artifact_id']) + '. Re-read this exact task and its '
-                            'progress through BeyondQuant MCP (byq_research_get / byq_backtest_task_get). Reconcile the '
-                            'exact original object before any write. Apply current authorization to each prediction, '
-                            'signal, backtest and comparison action separately. A prior strategy or action approval is '
-                            'not blanket authorization. If approval is needed, persist/request it and explain the '
-                            'blocker. The injected identity is authoritative. Workspace/conversation-wide context and '
-                            'notification inbox calls (including byq_agent_context) are unavailable in this task-bound '
-                            'turn; read only the exact task. Background web search is unavailable. Preserve the original '
-                            'goal; update its durable progress and exact evidence. A completed model turn does not mean '
-                            'the research goal is complete. Do not create a new task or choose a different workspace object.')
-                        receipt = self.reserve_data_ready_budget(task['task_id'], trusted_context=trusted_context,
-                            event_key=event_key,
-                            input_sha256=hashlib.sha256(instruction.encode()).hexdigest(),
-                            instruction=instruction, _connection=connection)
-                        return self._continuation_intent(task, conversation, receipt)
+                        # ADR-0085 P0: with NO explicit task/plan grant only a
+                        # DETERMINISTIC reducer advances and notifies the user.
+                        # It never starts a generic full model turn and never
+                        # promises automatic research completion. The exact
+                        # Backend-derived next action is persisted atomically
+                        # with the durable at-most-once notification marker.
+                        job = fetch_one(connection, 'SELECT * FROM signal_producer_jobs WHERE job_id=:job',
+                            {'job': event['identity']})
+                        if job is None:
+                            continue
+                        executable = _data_ready_executable(connection, task, job)
+                        now = datetime.now(timezone.utc)
+                        receipt = _notification_receipt(event_key, executable, now)
+                        progress = _deterministic_progress(task, executable)
+                        execute(connection, 'UPDATE research_tasks SET continuation_budget=:budget, '
+                            'progress=:progress, continuation_blocked_reason=NULL, '
+                            'continuation_blocked_event_key=NULL WHERE task_id=:task',
+                            {'budget': [*ledger, receipt], 'progress': progress, 'task': task['task_id']})
+                        logger.info('data-ready deterministic notification: task=%s event=%s action=%s '
+                            'backtest_task=%s approval_required=%s', task['task_id'], event_key,
+                            executable['next_action'], executable['backtest_task_id'],
+                            executable['approval_required'])
+                        return {'status': 'notified', 'task_id': task['task_id'],
+                            'conversation_id': task['conversation_id'], 'event_key': event_key,
+                            'executable': executable, 'receipt': receipt}
+                    executable = None
+                    if event.get('data_ready'):
+                        job = fetch_one(connection, 'SELECT * FROM signal_producer_jobs WHERE job_id=:job',
+                            {'job': event['identity']})
+                        if job is not None:
+                            executable = _data_ready_executable(connection, task, job)
                     instruction = ('BYQ trusted task continuation. Resume only the original research goal for task '
                         + task['task_id'] + '. Re-read this exact task and its progress through BeyondQuant MCP. '
                         'The confirmed strategy lineage is ' + json.dumps(permission['confirmed_artifact_ids']) + '. '
@@ -532,7 +678,7 @@ class ResearchContinuationMixin:
                         grant_version=permission['grant_version'], event_key=event_key,
                         input_sha256=hashlib.sha256(instruction.encode()).hexdigest(), token_limit=remaining,
                         instruction=instruction, _connection=connection)
-                    return self._continuation_intent(task, conversation, receipt)
+                    return self._continuation_intent(task, conversation, receipt, executable=executable)
             return {'status': 'waiting'}
 
     @staticmethod
@@ -805,7 +951,8 @@ class ResearchContinuationMixin:
             return {'dispatch': True, 'attempt': row['dispatch_attempts']}
 
     @staticmethod
-    def _continuation_intent(task: dict, conversation: dict, receipt: dict) -> dict:
+    def _continuation_intent(task: dict, conversation: dict, receipt: dict,
+            executable: dict | None = None) -> dict:
         pending_recovery = next((attempt for attempt in (receipt.get('recovery_attempts') or [])
             if attempt.get('status') == 'reserved'), None)
         reservation = {'schema_version': 'task-continuation-reservation.v1',
@@ -815,11 +962,16 @@ class ResearchContinuationMixin:
         if pending_recovery is not None:
             # The Backend mints the closed carrier; the Gateway only forwards it.
             reservation['recovery_attempt'] = recovery_contract.carrier_fields(pending_recovery)
+        if executable is not None:
+            # ADR-0085 P0: the event/intent carries the exact Backend-derived
+            # next action so no consumer re-derives the task identity.
+            reservation['executable'] = executable
         return {'status': 'intent', 'task_id': task['task_id'], 'conversation_id': task['conversation_id'],
             'session_id': conversation['runtime_session_id'], 'trace_id': conversation['trace_id'],
             'may_dispatch': ResearchContinuationMixin._continuation_blocked_reason(task, conversation, receipt) is None
                 and datetime.fromisoformat(receipt['expires_at']) > datetime.now(timezone.utc),
-            'receipt': receipt, 'reservation': reservation}
+            'receipt': receipt, 'reservation': reservation,
+            **({'executable': executable} if executable is not None else {})}
 
     def _record_recovery_receipt(self, task_id: str, *, trusted_context: dict, reservation_id: str,
             attempt_key: str, status: str, run_id: str | None,
@@ -914,8 +1066,14 @@ class ResearchContinuationMixin:
                     return row
                 row.update(status='settled', charged_tokens=charged_tokens, settlement_sha256=settlement_sha256, outcome=outcome)
                 if outcome == 'needs_attention':
-                    execute(connection, "UPDATE research_tasks SET continuation_blocked_reason='continuation_needs_attention', continuation_blocked_event_key=:event WHERE task_id=:task",
-                        {'event': row['event_key'], 'task': task_id})
+                    # ADR-0085 P0: the ResearchTask structured progress/blocker
+                    # and its Product projection are updated atomically with the
+                    # budget settlement in the SAME transaction. A conversation
+                    # may stay active, but the task now carries the exact
+                    # blocking reason and event identity.
+                    progress = _needs_attention_progress(task, row['event_key'])
+                    execute(connection, "UPDATE research_tasks SET continuation_blocked_reason='continuation_needs_attention', continuation_blocked_event_key=:event, progress=:progress WHERE task_id=:task",
+                        {'event': row['event_key'], 'task': task_id, 'progress': progress})
                     logger.info("continuation settled needs_attention: task=%s event=%s reservation=%s",
                         task_id, row['event_key'], reservation_id)
             execute(connection, 'UPDATE research_tasks SET continuation_budget = :budget WHERE task_id = :task',

@@ -611,6 +611,24 @@ class RuntimeAdapter:
         except (OSError, TypeError, ValueError):
             pass
 
+    def _close_generation_ledger(self, record: RuntimeSession, generation_id: str, state: str) -> None:
+        """Close the exact generation ledger on a terminal, fenced against late writes.
+
+        The ledger ``end`` is itself idempotent (it only writes when ``ended_at``
+        is unset), so a late terminal for an already-closed generation cannot
+        reopen or overwrite it. A late terminal for a *replaced* generation is
+        already fenced by ``_terminal_fenced`` before this is reached. The
+        in-memory generation state is updated only when it is still the active
+        generation so a newer generation is never relabelled.
+        """
+
+        if not generation_id:
+            return
+        current = record.current_generation
+        if current is not None and current.generation_id == generation_id:
+            current.state = state
+        self._ledger_end(record, generation_id, state)
+
     def _retire_generation(self, record: RuntimeSession, state: str) -> RuntimeGeneration | None:
         """Retire the active generation without touching durable session state."""
 
@@ -1079,6 +1097,7 @@ class RuntimeAdapter:
                     return
                 record.status = SessionStatus.FAILED
                 self._emit(record, "session.failed", "runtime-adapter", {"error": type(exc).__name__, "run_id": run.run_id})
+                self._close_generation_ledger(record, generation_id, "failed")
             return
 
         with record.lock:
@@ -1121,6 +1140,10 @@ class RuntimeAdapter:
                      "retryable": False if run.domain_stop_code else (
                          run.model_failure_retryable if run.model_failure_code else True), "run_id": run.run_id},
                 )
+                # ADR-0085 P0: a failed/budget-exhausted terminal immediately
+                # closes the exact generation ledger with the accurate state.
+                self._close_generation_ledger(
+                    record, generation_id, "budget_exhausted" if budget_blocked else "failed")
             else:
                 record.status = SessionStatus.IDLE
                 self._emit(
@@ -1129,6 +1152,11 @@ class RuntimeAdapter:
                     "runtime-adapter",
                     {"finish_reason": finish_reason, "run_id": run.run_id},
                 )
+                # A root-scoped turn ends its process here, so its generation is
+                # terminal and must not be left "starting"/"running". A durable
+                # non-root session that returns to IDLE keeps its generation.
+                if self._root_scoped:
+                    self._close_generation_ledger(record, generation_id, "completed")
 
     def cancel_session(self, session_id: str, mode: str) -> dict[str, Any]:
         if mode not in {"soft", "hard"}:
@@ -1157,6 +1185,9 @@ class RuntimeAdapter:
                 "runtime-adapter",
                 {"mode": mode, "persistence": "dsh-owned", "resume": "new-run-after-interrupted", "run_id": run.run_id},
             )
+            if mode == "hard":
+                # ADR-0085 P0: an interrupted terminal closes the generation.
+                self._close_generation_ledger(record, record.runtime_generation, "interrupted")
         if mode == "hard":
             self._compatibility.close(cancelled_harness)
             with record.lock:
