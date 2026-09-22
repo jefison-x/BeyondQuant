@@ -1,0 +1,351 @@
+{
+  "schema_version": "byq-v090-final-closeout-contract.v1",
+  "generated_at": "2026-09-22",
+  "assessment_id": "v090-final-closeout.v1",
+  "name": "BeyondQuant 0.9 development closeout final matrix",
+  "scope": "Independently verify, from the original merged evidence and its hashes, every 0.9 development-closeout required item, and declare V090_DEVELOPMENT_CLOSEOUT_COMPLETE only when all of them equal their evidence-derived expected truth and every boundary constraint holds. External blockers B1/B2 remain BLOCKED_EXTERNAL and only limit native independent child resume (ADR-0084 section 3); they do not gate the development closeout. It does not deploy, does not create or move any tag/release, does not resume Phase 100 and does not start 0.10.",
+  "decision_vocabulary": [
+    "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+    "V090_DEVELOPMENT_CLOSEOUT_BLOCKED"
+  ],
+  "status_vocabulary": [
+    "COMPLETE",
+    "COVERED",
+    "NOT_COVERED",
+    "PASS",
+    "FAIL",
+    "PASS_AS_SCOPED",
+    "NOT_SCOPED",
+    "RECORDED_ACCEPTED",
+    "NOT_RECORDED",
+    "ESTABLISHED",
+    "NOT_ESTABLISHED",
+    "NO_GO_PRESERVED",
+    "REWRITTEN",
+    "BLOCKED_EXTERNAL",
+    "NOT_BLOCKED",
+    "PASS_CANDIDATE",
+    "NOT_IMPLEMENTED",
+    "IMPLEMENTED",
+    "NO",
+    "YES",
+    "MISSING"
+  ],
+  "source_artifacts": [
+    {
+      "id": "status_md",
+      "kind": "text",
+      "stage": "repository-state",
+      "layer": "authority",
+      "path": "docs/roadmap/STATUS.md"
+    },
+    {
+      "id": "closeout_ledger",
+      "kind": "json",
+      "stage": "0.9-closeout-audit",
+      "layer": "gap-ledger",
+      "path": "docs/evidence/v090-closeout/gap-ledger.v1.json"
+    },
+    {
+      "id": "closeout_matrix",
+      "kind": "json",
+      "stage": "0.9-closeout-audit",
+      "layer": "acceptance-matrix",
+      "path": "docs/evidence/v090-closeout/acceptance-matrix.v1.json"
+    },
+    {
+      "id": "f2_research_watch",
+      "kind": "text",
+      "stage": "F2",
+      "layer": "named-slice",
+      "path": "docs/evidence/post-u8-f2-research-watch/AUDIT.md"
+    },
+    {
+      "id": "f2_interface_audit",
+      "kind": "text",
+      "stage": "F2",
+      "layer": "named-slice",
+      "path": "docs/evidence/post-u8-interface-audit/AUDIT.md"
+    },
+    {
+      "id": "full_interface_rebaseline",
+      "kind": "json",
+      "stage": "full-interface-audit",
+      "layer": "rebaseline",
+      "path": "docs/evidence/v090-full-interface-rebaseline/acceptance.v1.json"
+    },
+    {
+      "id": "composite_verdict",
+      "kind": "json",
+      "stage": "composite-research",
+      "layer": "verdict",
+      "path": "docs/evidence/v090-composite-research/verdict.v2.json"
+    },
+    {
+      "id": "composite_matrix",
+      "kind": "json",
+      "stage": "composite-research",
+      "layer": "acceptance-matrix",
+      "path": "docs/evidence/v090-composite-research/acceptance-matrix.v2.json"
+    },
+    {
+      "id": "adr_decision_record",
+      "kind": "json",
+      "stage": "0.9-adr-decisions",
+      "layer": "maintainer-decision",
+      "path": "docs/evidence/v090-adr-decisions/decision-record.v1.json"
+    },
+    {
+      "id": "superseding_contract",
+      "kind": "json",
+      "stage": "D15-superseding",
+      "layer": "assessment-contract",
+      "path": "scripts/d15/superseding_assessment/contract.v1.json"
+    },
+    {
+      "id": "superseding_observer",
+      "kind": "text",
+      "stage": "D15-superseding",
+      "layer": "fail-able-observer",
+      "path": "scripts/d15/superseding_assessment/observer.py"
+    },
+    {
+      "id": "superseding_input",
+      "kind": "json",
+      "stage": "D15-superseding",
+      "layer": "assessment-input",
+      "path": "docs/evidence/d15/d15-superseding/assessment-input.v1.json"
+    },
+    {
+      "id": "superseding_provenance",
+      "kind": "json",
+      "stage": "D15-superseding",
+      "layer": "provenance",
+      "path": "docs/evidence/d15/d15-superseding/provenance.v1.json"
+    },
+    {
+      "id": "superseding_verdict",
+      "kind": "json",
+      "stage": "D15-superseding",
+      "layer": "verdict",
+      "path": "docs/evidence/d15/d15-superseding/verdict.v1.json"
+    },
+    {
+      "id": "deployment_config",
+      "kind": "json",
+      "stage": "0.9-closeout",
+      "layer": "repo-default",
+      "path": "config/dsh/deployment.json"
+    },
+    {
+      "id": "default_upgrade",
+      "kind": "json",
+      "stage": "0.9-closeout",
+      "layer": "repo-default-upgrade",
+      "path": "docs/evidence/v090-dsh-015rc1-default-upgrade/default-upgrade.v1.json"
+    }
+  ],
+  "composite_non_gating_rows": [
+    "approval-revoked",
+    "timeout-terminal",
+    "data-ready-continuation",
+    "runtime-adapter-tool-boundary"
+  ],
+  "scoped_limitations_expected": [
+    "b1_subagent_child_crash",
+    "b2_subagent_byq_adapter_restart",
+    "native_independent_child_resume",
+    "r3_resume"
+  ],
+  "interface_audit_snapshot_path": "docs/evidence/v090-final-closeout/interface-audit.v1.json",
+  "required_items": [
+    {
+      "id": "closeout_audit",
+      "name": "0.9 closeout governance and gap-ledger audit",
+      "expected": "COMPLETE",
+      "derived_from": ["closeout_ledger", "closeout_matrix"],
+      "description": "The audit-time gap ledger and acceptance matrix are committed, versioned and explicitly marked as historical snapshots whose current authority is STATUS.md."
+    },
+    {
+      "id": "f2_unknown_result_reconciliation",
+      "name": "complete F2 unknown-result reconciliation",
+      "expected": "COVERED",
+      "derived_from": ["closeout_ledger", "f2_research_watch", "f2_interface_audit", "full_interface_rebaseline"],
+      "description": "The named F2 slices are covered and the only recorded on-base-commit open reason was the stale H4 whole-interface ledger. The live fail-closed auditor now reports complete=true, so F2 is covered. If the auditor is not complete the item fails closed to NOT_COVERED."
+    },
+    {
+      "id": "full_interface_audit",
+      "name": "remaining full-interface audit (H4 per-interface ledger)",
+      "expected": "COMPLETE",
+      "derived_from": ["full_interface_rebaseline", "interface_audit_snapshot"],
+      "description": "The live fail-closed auditor discovers == reviewed == verified with missing == stale == fake_pass == 0 and no unresolved/manual-pending rows, matching the committed current snapshot."
+    },
+    {
+      "id": "composite_research_fault_regression",
+      "name": "composite research fault regression (0.9 strict-order step 3)",
+      "expected": "PASS_AS_SCOPED",
+      "derived_from": ["composite_verdict", "composite_matrix"],
+      "description": "The frozen v2 matrix shows the composite journey PASS and no gating row FAIL; exactly the contract-fixed non-gating rows are honestly BLOCKED with reasons. Claiming all-pass is rejected; any gating row that is not PASS, or any extra/missing declared-blocked row, fails the derivation."
+    },
+    {
+      "id": "adr_0082_0083_decision",
+      "name": "ADR-0082/ADR-0083 maintainer decision",
+      "expected": "RECORDED_ACCEPTED",
+      "derived_from": ["adr_decision_record"],
+      "description": "The maintainer decision record accepts ADR-0082 (modified: Option 1 only) and ADR-0083 (as proposed), claims no GitHub approval, and implements nothing."
+    },
+    {
+      "id": "containment_business_recovery_gate",
+      "name": "ADR-0084 replacement gate: BYQ session failure containment and business recovery",
+      "expected": "PASS",
+      "derived_from": ["superseding_verdict", "superseding_observer", "superseding_contract"],
+      "description": "Independently re-derived by the D15 superseding observer from the raw containment/business-recovery evidence with provenance verification: real isolated acceptance 9/9, containment/classification PASS, zero cleanup and production untouched."
+    },
+    {
+      "id": "coherent_dsh_default_upgrade",
+      "name": "coherent DSH 0.1.5-rc.1 repository default upgrade with preserved rollback",
+      "expected": "PASS",
+      "derived_from": ["superseding_verdict", "deployment_config", "default_upgrade"],
+      "description": "The repository default dependency/selector is the coherent 0.1.5-rc.1 pairing with readiness matched and the 0.1.2rc1 rollback baseline preserved. It is not a production deployment."
+    },
+    {
+      "id": "d15_superseding_assessment",
+      "name": "named D15 superseding assessment",
+      "expected": "ESTABLISHED",
+      "derived_from": ["superseding_verdict", "superseding_input"],
+      "description": "The committed named D15 superseding assessment is established, honest and format-valid; it references the historical D15 verdicts without rewriting them."
+    },
+    {
+      "id": "historical_d15_g",
+      "name": "historical D15-G verdict preserved un-rewritten",
+      "expected": "NO_GO_PRESERVED",
+      "derived_from": ["superseding_verdict"],
+      "description": "The committed D15-G verdict remains NO_GO with exactly the four atomic required blockers; it is referenced, never rewritten, and D15-G is not re-run."
+    },
+    {
+      "id": "b1_subagent_child_crash",
+      "name": "B1 subagent-child-crash",
+      "expected": "BLOCKED_EXTERNAL",
+      "derived_from": ["superseding_verdict"],
+      "description": "No out-of-process continuable provider exists in the examined releases. It stays BLOCKED_EXTERNAL and only limits native independent child resume; it is not downgraded to PASS and does not gate the development closeout (ADR-0084 section 3)."
+    },
+    {
+      "id": "b2_subagent_byq_adapter_restart",
+      "name": "B2 subagent-byq-adapter-restart",
+      "expected": "BLOCKED_EXTERNAL",
+      "derived_from": ["superseding_verdict"],
+      "description": "No committed BYQ composition rebinds a persisted continuable child across an adapter restart. It stays BLOCKED_EXTERNAL and only limits native independent child resume; it is not downgraded to PASS and does not gate the development closeout (ADR-0084 section 3)."
+    },
+    {
+      "id": "b3_terminal_adapter_restart",
+      "name": "B3 terminal-adapter-restart (candidate/qualification layer)",
+      "expected": "PASS_CANDIDATE",
+      "derived_from": ["superseding_verdict"],
+      "description": "Candidate/qualification-layer minimal TerminalAttachment lifecycle PASS; it does not rewrite the historical D15-5 snapshot and is not production R4 wiring."
+    },
+    {
+      "id": "b4_terminal_dsh_runtime_restart",
+      "name": "B4 terminal-dsh-runtime-restart (candidate/qualification layer)",
+      "expected": "PASS_CANDIDATE",
+      "derived_from": ["superseding_verdict"],
+      "description": "Candidate/qualification-layer real DSH runtime restart PASS with truthful lost/interrupted semantics; it does not rewrite the historical D15-5/D15-G snapshots and is not production R4 wiring."
+    },
+    {
+      "id": "native_independent_child_resume",
+      "name": "native independent child resume",
+      "expected": "NOT_IMPLEMENTED",
+      "derived_from": ["superseding_verdict"],
+      "description": "Native independent child-process resume remains unimplemented; B1/B2 are BLOCKED_EXTERNAL. It is a recorded scoped limitation, not an implemented capability and not a 0.9 developer blocker."
+    },
+    {
+      "id": "r3_resume",
+      "name": "R3 full unfreeze",
+      "expected": "NO",
+      "derived_from": ["superseding_verdict", "status_md"],
+      "description": "R3 full resume stays NO. Only the bounded thin-supervisor scope is permitted; the final closeout does not automatically start R3."
+    }
+  ],
+  "constraint_expected": {
+    "repository_default_release": "dsh-0.1.5rc1",
+    "rollback_candidate": "dsh-0.1.2rc1",
+    "production_deployment": "none",
+    "release_or_tag_created": false,
+    "phase_100_resumed": false,
+    "zero_ten_started": false,
+    "r3_resume": "NO",
+    "b1_b2_downgraded": false,
+    "next_state": "maintainer-testing-and-0.9x-window",
+    "build_revision": "dsh-0.1.5rc1-post-u8.204"
+  },
+  "status_markers_required": [
+    "<!-- byq:v090-final-closeout=complete -->",
+    "<!-- byq:v090-development-closeout=complete -->",
+    "<!-- byq:v090-next=maintainer-testing-and-0.9x-window -->",
+    "<!-- byq:phase-100-p100-c=paused-not-delivery -->",
+    "<!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->",
+    "<!-- byq:v090-dsh-default-upgrade=promoted -->",
+    "<!-- byq:v090-d15-superseding-assessment=established -->"
+  ],
+  "status_markers_forbidden": [
+    "<!-- byq:phase-100-p100-c=delivered -->",
+    "<!-- byq:zero-ten=started -->",
+    "<!-- byq:zero-ten=complete -->",
+    "<!-- byq:v090-production-deploy=verified -->",
+    "<!-- byq:v090-release-tag=created -->"
+  ],
+  "status_top_markers_forbidden": [
+    "<!-- byq:session-failure-containment-next="
+  ],
+  "release_gate": {
+    "formal_0_9_0_release_manifest": "OPEN_NOT_ATTEMPTED",
+    "note": "The formal 0.9.0 release manifest (source SHA, trusted-main full CI, all-service digests, actual composition, migration classification, SBOM, backup, rollback, independent release acceptance, attestation) remains a separate release gate and is NOT satisfied or attempted by this development closeout. Repository-default DSH 0.1.5-rc.1 is not a production deployment."
+  },
+  "rules": {
+    "items_are_derived_from_sources_not_declared": true,
+    "every_required_item_must_equal_its_expected_truth": true,
+    "external_blockers_only_limit_native_independent_child_resume": true,
+    "blocked_external_must_not_be_reported_as_pass_or_implemented": true,
+    "development_closeout_does_not_deploy_or_release": true,
+    "phase_100_and_0_10_remain_unauthorized": true,
+    "r3_is_not_automatically_resumed": true,
+    "no_rewrite_of_historical_d15_verdicts": true,
+    "no_pass_label_is_substituted_for_evidence": true
+  },
+  "forbidden_assessment_fields": [
+    "all_pass",
+    "assessment_valid",
+    "established",
+    "closeout_complete",
+    "self_declared_verdict",
+    "coverage",
+    "production_deployed",
+    "release_or_tag_created",
+    "phase_100_resumed",
+    "zero_ten_started",
+    "native_child_resume_implemented_in_memory"
+  ],
+  "fail_closed": [
+    "candidate/assessment id mismatch",
+    "decision not in the decision vocabulary",
+    "missing or extra required item id (closed set)",
+    "a claimed item status that differs from the independently derived status",
+    "a required item derived as MISSING/NOT_COVERED/FAIL/NOT_SCOPED/NOT_ESTABLISHED while COMPLETE is claimed",
+    "an assessment that reports a BLOCKED_EXTERNAL item as PASS/IMPLEMENTED",
+    "an assessment that reports native independent child resume as implemented",
+    "an assessment that claims R3 full resume (r3_resume=YES) or widens/drops the bounded scope",
+    "an assessment that claims a production deployment, release or tag",
+    "an assessment that claims Phase 100 resumed or 0.10 started",
+    "a constraint mismatch (repository default, rollback candidate, production deployment, release/tag, Phase 100, 0.10, R3, downgrade, next state, build revision)",
+    "a required STATUS marker missing or a forbidden marker present",
+    "a committed byq-release.v1 manifest present (implies a release was created)",
+    "missing or hash-mismatched source evidence",
+    "unreadable or malformed source evidence (fail closed to MISSING, never a default pass)",
+    "an assessment that declares its own verdict/coverage/established fields",
+    "a missing, unreadable or non-complete live interface audit"
+  ],
+  "notes": {
+    "purpose": "A machine-readable, fail-able final 0.9 development closeout matrix. The observer re-derives every required item from the original merged evidence (re-running the D15 superseding derivation for the D15 family), verifies provenance hashes, enforces the boundary constraints and STATUS markers, and only declares V090_DEVELOPMENT_CLOSEOUT_COMPLETE when everything matches. External blockers B1/B2 and the unimplemented native child resume are recorded limitations, not hidden blockers.",
+    "gate_model": "B1/B2 remain BLOCKED_EXTERNAL and only limit native independent child resume (ADR-0084 section 3). They do not gate the 0.9 development closeout. The ADR-0084 replacement gate (BYQ session failure containment and business recovery) plus the coherent DSH 0.1.5-rc.1 repository default upgrade are the current required gates and both pass.",
+    "release_model": "Development closeout is distinct from the formal 0.9.0 release. Repository-default DSH 0.1.5-rc.1 is not a production deployment; no tag/release is created or moved by this batch."
+  }
+}

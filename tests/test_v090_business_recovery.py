@@ -24,7 +24,7 @@ EVIDENCE = ROOT / "docs/evidence/v090-business-recovery"
 OBSERVATIONS = EVIDENCE / "observations.v1.json"
 VERDICT = EVIDENCE / "verdict.v1.json"
 CONTROLS = EVIDENCE / "negative-controls.v1.json"
-CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.202"
+CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.204"
 
 REQUIRED_SCENARIOS = {
     "same-trigger-same-snapshot-exactly-once",
@@ -194,14 +194,14 @@ class BoundaryTests(unittest.TestCase):
             module.closed_recovery_carrier({"recovery_attempt": {**carrier, "live_epoch": 2}})
         self.assertEqual(module.closed_recovery_carrier({"reservation_id": "x"}), {"reservation_id": "x"})
 
-    def test_status_keeps_gate_in_progress_and_b1_b2_unchanged(self):
+    def test_status_records_recovery_acceptance_and_b1_b2_unchanged(self):
         status = (ROOT / "docs/roadmap/STATUS.md").read_text(encoding="utf-8")
         for marker in ("<!-- byq:v090-step5-b1-subagent-child-crash=blocked-external -->",
                        "<!-- byq:v090-step5-b2-adapter-restart=blocked-external -->",
-                       "<!-- byq:session-failure-containment=in-progress-blocked-internal -->",
+                       "<!-- byq:session-failure-containment=real-recovery-acceptance-passed -->",
                        "<!-- byq:v090-business-recovery=implementation-delivered -->",
-                       "<!-- byq:session-failure-containment-next=real-recovery-acceptance-then-coherent-dsh-0.1.5rc1-upgrade -->",
-                       "<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.202 -->"):
+                       "<!-- byq:session-failure-containment-next=v090-final-development-closeout -->",
+                       "<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.204 -->"):
             self.assertIn(marker, status)
         self.assertIn("R3_RESUME = NO", status)
         self.assertIn("IN_PROGRESS / BLOCKED_INTERNAL", status)

@@ -1822,6 +1822,74 @@ Build revision: this batch changes `scripts/`, `tests/`, `services/runtime-adapt
 (build inputs) and advances the production runtime build identity `post-u8.199 → post-u8.200`
 (unused id). The historical `.199` manifest and all evidence are preserved.
 
+## 0.9 independent final development closeout (maintenance, 2026-09-22)
+
+This maintenance batch executes the final 0.9 closeout step: an **independent,
+machine-readable, fail-able 0.9 development closeout**. It is maintenance/
+acceptance; it does **not** advance a Product Phase, does **not** deploy to
+production, does **not** create or move any tag/release, does **not** resume
+Phase 100, does **not** start 0.10 and does **not** automatically start R3. It
+implements no product feature and does not inspect or copy the Community
+repository.
+
+- **Machine-readable final matrix**: `scripts/v090/final_closeout/{contract.v1.json,
+  observer.py,build_provenance.py}` and `docs/evidence/v090-final-closeout/`
+  (`assessment-input.v1.json`, `provenance.v1.json`, `verdict.v1.json`,
+  `negative-controls.v1.json`, `interface-audit.v1.json`). The observer does not
+  trust PASS labels: it independently derives every required item from the
+  original merged evidence, verifies provenance sha256, re-runs the fail-closed
+  full-interface auditor on the current tree and re-runs the named D15
+  superseding derivation (with its provenance verification). The committed
+  verdict is `format_valid=true`, `honest=true`, `complete=true`, `all_pass=true`,
+  exit 0.
+- **Derived decision `V090_DEVELOPMENT_CLOSEOUT_COMPLETE`** (all 15 required
+  items equal their evidence-derived expected truth): closeout audit COMPLETE;
+  F2 unknown-result reconciliation COVERED (its only recorded open reason was
+  the stale H4 ledger; the live audit is now `complete=true`); remaining
+  full-interface audit COMPLETE (`discovered=reviewed=verified=569`,
+  `missing=stale=fake_pass=0`); composite research fault regression
+  `PASS_AS_SCOPED` (journey PASS, 13 gating rows PASS, exactly the four
+  contract-fixed non-gating rows honestly BLOCKED: `approval-revoked`,
+  `timeout-terminal`, `data-ready-continuation`, `runtime-adapter-tool-boundary`;
+  claiming all-pass is rejected); ADR-0082/0083 decision RECORDED_ACCEPTED; the
+  ADR-0084 replacement gate (BYQ session failure containment and business
+  recovery) PASS (real isolated 9/9); coherent DSH `0.1.5-rc.1` repository
+  default upgrade PASS; named D15 superseding assessment ESTABLISHED; historical
+  D15-G `NO_GO_PRESERVED`; B1/B2 `BLOCKED_EXTERNAL`; B3/B4 `PASS_CANDIDATE`;
+  native independent child resume `NOT_IMPLEMENTED`; `R3_RESUME = NO`.
+- **Gate scope**: B1/B2 stay `BLOCKED_EXTERNAL` and, per ADR-0084 section 3,
+  only limit native independent child resume; they are not downgraded, do not
+  gate the development closeout, candidate compatibility, the repository-default
+  promotion or the bounded R3 scope, and may not be hidden. The fail-able
+  observer rejects overclaims (`negative-controls.v1.json`: 29 controls all
+  rejected, 28 defect-targeting) and fails closed on missing/hash-mismatched
+  evidence.
+- **Boundary constraints (machine-checked)**: repository default `dsh-0.1.5rc1`
+  + rollback candidate `dsh-0.1.2rc1`; `production_deployment=none`;
+  `release_or_tag_created=false` (no `byq-release.v1` manifest committed);
+  `phase_100_resumed=false` (`byq:phase-100-p100-c=paused-not-delivery`
+  retained); `zero_ten_started=false`; `r3_resume=NO`; `b1_b2_downgraded=false`;
+  `next_state=maintainer-testing-and-0.9x-window`; build revision synced.
+- **Formal 0.9.0 release gate remains separate and open**:
+  `formal_0_9_0_release_manifest=OPEN_NOT_ATTEMPTED`; the repository default DSH
+  `0.1.5-rc.1` is not a production deployment. Deployment, formal tag/release and
+  the production selector switch remain independent maintainer decisions.
+- **Next state**: the maintainer testing and 0.9.x minor feature addition/
+  optimization window. 0.10 and Phase 100 resume remain unauthorized hard stops;
+  R3 is not automatically started.
+- Consistency is asserted by `tests/test_v090_final_closeout.py`.
+
+Build revision: this batch adds `scripts/v090/final_closeout/` and
+`tests/test_v090_final_closeout.py` (build inputs) and advances the production
+runtime build identity `post-u8.202 → post-u8.203` (unused id); the named-review
+fact-consistency fix (remove the stale top `session-failure-containment-next`
+marker and correct the `维护（当前）` row attribution, plus the observer test that
+rejects the stale top marker) advances it again `post-u8.203 → post-u8.204`
+(unused id). Rebuild identity only: the historical `.202`/`.203` manifests and all
+evidence are preserved unchanged; no selector semantics, `compose.yml` semantics,
+`deployment.json` semantics, immutable release registry or 0.1.2 artifact/evidence
+change and no deployment.
+
 ## Maintenance — Delist-boundary coverage correction (ADR-0028)（构建修订 `dsh-0.1.2rc1-post-u8.130`，PR #299）
 
 ADR-0028 point 2 evaluates coverage over each symbol's frozen listing lifecycle. The market-readiness

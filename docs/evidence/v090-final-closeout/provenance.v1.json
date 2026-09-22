@@ -1,0 +1,184 @@
+{
+  "artifacts": [
+    {
+      "id": "status_md",
+      "introduced_by": "74e4cd8d6c56b24631ad5cf2e07f42ace06f19cb",
+      "introduced_date": "2026-09-22",
+      "kind": "text",
+      "layer": "authority",
+      "modified_in_closeout_commit": true,
+      "path": "docs/roadmap/STATUS.md",
+      "sha256": "sha256:3571d8aaad45a022adee8af23158e3f019f26c14a44ae9f28646ef28e1eb1231",
+      "stage": "repository-state"
+    },
+    {
+      "id": "closeout_ledger",
+      "introduced_by": "ff12669374a98ab71dad4c0c38a377f590926bef",
+      "introduced_date": "2026-09-21",
+      "kind": "json",
+      "layer": "gap-ledger",
+      "modified_in_closeout_commit": false,
+      "path": "docs/evidence/v090-closeout/gap-ledger.v1.json",
+      "sha256": "sha256:932f9670ab122a5729e266542f424218c759cab5d561dc5195ec6e7166321f3f",
+      "stage": "0.9-closeout-audit"
+    },
+    {
+      "id": "closeout_matrix",
+      "introduced_by": "ff12669374a98ab71dad4c0c38a377f590926bef",
+      "introduced_date": "2026-09-21",
+      "kind": "json",
+      "layer": "acceptance-matrix",
+      "modified_in_closeout_commit": false,
+      "path": "docs/evidence/v090-closeout/acceptance-matrix.v1.json",
+      "sha256": "sha256:33f87872a0c03e5bf2704ce71b503896b9a7c41e4e730860c33af536f30a739d",
+      "stage": "0.9-closeout-audit"
+    },
+    {
+      "id": "f2_research_watch",
+      "introduced_by": "b6c8034ed638447aa1d0ddd82af9738df830bbdf",
+      "introduced_date": "2026-09-10",
+      "kind": "text",
+      "layer": "named-slice",
+      "modified_in_closeout_commit": false,
+      "path": "docs/evidence/post-u8-f2-research-watch/AUDIT.md",
+      "sha256": "sha256:b045115ff125733ca703b721582a1e41f3eae06775936ff69e964a47866cf810",
+      "stage": "F2"
+    },
+    {
+      "id": "f2_interface_audit",
+      "introduced_by": "b6c8034ed638447aa1d0ddd82af9738df830bbdf",
+      "introduced_date": "2026-09-10",
+      "kind": "text",
+      "layer": "named-slice",
+      "modified_in_closeout_commit": false,
+      "path": "docs/evidence/post-u8-interface-audit/AUDIT.md",
+      "sha256": "sha256:e7c86d54f1f5501c34969682f0ff099e9017886c8accef08d05deab70df2ce2b",
+      "stage": "F2"
+    },
+    {
+      "id": "full_interface_rebaseline",
+      "introduced_by": "99b6f92704a526ed700ae495933c944a87fc15c9",
+      "introduced_date": "2026-09-21",
+      "kind": "json",
+      "layer": "rebaseline",
+      "modified_in_closeout_commit": false,
+      "path": "docs/evidence/v090-full-interface-rebaseline/acceptance.v1.json",
+      "sha256": "sha256:abf22325d14b868b24c4c10ac285540d6c6b9de5ab7331d370a8a58248ed0966",
+      "stage": "full-interface-audit"
+    },
+    {
+      "id": "composite_verdict",
+      "introduced_by": "f3c3381285a0b452d6080422d135dd9560f6a5f2",
+      "introduced_date": "2026-09-21",
+      "kind": "json",
+      "layer": "verdict",
+      "modified_in_closeout_commit": false,
+      "path": "docs/evidence/v090-composite-research/verdict.v2.json",
+      "sha256": "sha256:abc871766a6ad2f674148ba5854903984b5b328e048e46c42b2a8ca325335dd0",
+      "stage": "composite-research"
+    },
+    {
+      "id": "composite_matrix",
+      "introduced_by": "f3c3381285a0b452d6080422d135dd9560f6a5f2",
+      "introduced_date": "2026-09-21",
+      "kind": "json",
+      "layer": "acceptance-matrix",
+      "modified_in_closeout_commit": false,
+      "path": "docs/evidence/v090-composite-research/acceptance-matrix.v2.json",
+      "sha256": "sha256:eb83e2418846c9a8c987afeecd6b42543ddade71fd0638564510b76b1744a0a6",
+      "stage": "composite-research"
+    },
+    {
+      "id": "adr_decision_record",
+      "introduced_by": "23b5854417cfc847cef544d99b1d904222f5f2cc",
+      "introduced_date": "2026-09-21",
+      "kind": "json",
+      "layer": "maintainer-decision",
+      "modified_in_closeout_commit": false,
+      "path": "docs/evidence/v090-adr-decisions/decision-record.v1.json",
+      "sha256": "sha256:e9b989c9a759165eaaa85825eec7b43f61b3375cdda0c542b8ee5a056b5716f9",
+      "stage": "0.9-adr-decisions"
+    },
+    {
+      "id": "superseding_contract",
+      "introduced_by": "561fe924aa799680360b442a8be0c915fa028b3a",
+      "introduced_date": "2026-09-22",
+      "kind": "json",
+      "layer": "assessment-contract",
+      "modified_in_closeout_commit": false,
+      "path": "scripts/d15/superseding_assessment/contract.v1.json",
+      "sha256": "sha256:efed25e74c19396ed1b2d49edec0adc484d7aeceed2d36ba4821bcc49d6acade",
+      "stage": "D15-superseding"
+    },
+    {
+      "id": "superseding_observer",
+      "introduced_by": "561fe924aa799680360b442a8be0c915fa028b3a",
+      "introduced_date": "2026-09-22",
+      "kind": "text",
+      "layer": "fail-able-observer",
+      "modified_in_closeout_commit": false,
+      "path": "scripts/d15/superseding_assessment/observer.py",
+      "sha256": "sha256:32b6caa19e048f9a3fff17e1b9fdf5083475eed3506cbde96ffb0f2a514d0b75",
+      "stage": "D15-superseding"
+    },
+    {
+      "id": "superseding_input",
+      "introduced_by": "561fe924aa799680360b442a8be0c915fa028b3a",
+      "introduced_date": "2026-09-22",
+      "kind": "json",
+      "layer": "assessment-input",
+      "modified_in_closeout_commit": false,
+      "path": "docs/evidence/d15/d15-superseding/assessment-input.v1.json",
+      "sha256": "sha256:91b461fd05b057dc639ad2c7b6bcfb167be513ab5ce040e9c92f350d3827efc5",
+      "stage": "D15-superseding"
+    },
+    {
+      "id": "superseding_provenance",
+      "introduced_by": "74e4cd8d6c56b24631ad5cf2e07f42ace06f19cb",
+      "introduced_date": "2026-09-22",
+      "kind": "json",
+      "layer": "provenance",
+      "modified_in_closeout_commit": true,
+      "path": "docs/evidence/d15/d15-superseding/provenance.v1.json",
+      "sha256": "sha256:66b0d51a8bb843727a0c504f61581d63e1ce023f65d1c84cadb57caa5d86b0b8",
+      "stage": "D15-superseding"
+    },
+    {
+      "id": "superseding_verdict",
+      "introduced_by": "561fe924aa799680360b442a8be0c915fa028b3a",
+      "introduced_date": "2026-09-22",
+      "kind": "json",
+      "layer": "verdict",
+      "modified_in_closeout_commit": false,
+      "path": "docs/evidence/d15/d15-superseding/verdict.v1.json",
+      "sha256": "sha256:d35a32e62c518fadcebb8534bddf7a5171fca90a1436a9a5579db31dc0102b4e",
+      "stage": "D15-superseding"
+    },
+    {
+      "id": "deployment_config",
+      "introduced_by": "8a4e4fe41771a25c472fa24195aedccf3f53a6a8",
+      "introduced_date": "2026-09-22",
+      "kind": "json",
+      "layer": "repo-default",
+      "modified_in_closeout_commit": false,
+      "path": "config/dsh/deployment.json",
+      "sha256": "sha256:02f05701ffd610b25d5076575396a38c252e610f230aa80961453faa1a13fb3e",
+      "stage": "0.9-closeout"
+    },
+    {
+      "id": "default_upgrade",
+      "introduced_by": "74e4cd8d6c56b24631ad5cf2e07f42ace06f19cb",
+      "introduced_date": "2026-09-22",
+      "kind": "json",
+      "layer": "repo-default-upgrade",
+      "modified_in_closeout_commit": true,
+      "path": "docs/evidence/v090-dsh-015rc1-default-upgrade/default-upgrade.v1.json",
+      "sha256": "sha256:75682e34047ff2fb168fa3f7c2b00de7ca2bc4c2474263c41dce16744a8c0a2a",
+      "stage": "0.9-closeout"
+    }
+  ],
+  "generated_at": "2026-09-22",
+  "generated_from_head": "74e4cd8d6c56b24631ad5cf2e07f42ace06f19cb",
+  "note": "Source evidence reused by the final 0.9 development closeout. introduced_by is the last commit that touched the path; modified_in_closeout_commit marks paths changed by the closeout commit itself. The historical D15-4/D15-5/D15-G verdicts are referenced through the D15 superseding evidence and are never rewritten.",
+  "schema_version": "byq-v090-final-closeout-provenance.v1"
+}

@@ -32,7 +32,7 @@ ADAPTER_BUDGET = ROOT / "services/runtime-adapter/app/continuation_budget.py"
 ADAPTER_CONTAINMENT = ROOT / "services/runtime-adapter/app/containment.py"
 CONTAINMENT_TEST = ROOT / "services/runtime-adapter/tests/test_session_containment.py"
 ADR_DIR = ROOT / "docs/architecture/adr"
-CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.202"
+CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.204"
 
 CARRIER_FIELDS = {
     "attempt_key", "ordinal", "trigger_key", "interrupted_run_id",
@@ -233,7 +233,7 @@ class DesignEvidenceTests(unittest.TestCase):
         status, plan = STATUS.read_text(encoding="utf-8"), PLAN.read_text(encoding="utf-8")
         for marker in (
             "<!-- byq:v090-step-safety-design=inventory-design-delivered -->",
-            "<!-- byq:session-failure-containment=in-progress-blocked-internal -->",
+            "<!-- byq:session-failure-containment=real-recovery-acceptance-passed -->",
             "<!-- byq:v090-step5-b1-subagent-child-crash=blocked-external -->",
             "<!-- byq:v090-step5-b2-adapter-restart=blocked-external -->",
         ):
