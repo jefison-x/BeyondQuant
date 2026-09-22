@@ -58,7 +58,7 @@ AUDIT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.177"
 # rectification moved it to .193, the P1-L..P1-N design rectification moved it to
 # .194, the P1-O..P1-Q design rectification moved it to .195, and the P1-R
 # contract fix moved it to .196.
-CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.201"
+CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.202"
 
 DECISION_RECORD = ROOT / "docs/evidence/v090-adr-decisions/decision-record.v1.json"
 DECISION_RECORD_MD = ROOT / "docs/evidence/v090-adr-decisions/README.md"
@@ -331,7 +331,7 @@ class GovernanceDocTests(unittest.TestCase):
                        "<!-- byq:v090-full-interface-rebaseline=complete -->",
                        "<!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->",
                        "<!-- byq:phase-100-p100-c=paused-not-delivery -->",
-                       "<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.201 -->"):
+                       "<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.202 -->"):
             self.assertIn(marker, status)
         # Completed historical 0.9 steps must not remain marked active.
         self.assertNotIn("v090-closeout-audit=active", status)
@@ -601,6 +601,57 @@ class CurrentStateAfterB4Tests(unittest.TestCase):
         slices = _matrix()["dsh_0_1_5_rc1_closeout_slices"]
         self.assertEqual(slices[2]["current_state_after_b4"], "PASS")
         self.assertEqual(slices[3]["current_state_after_b4"], "PASS")
+
+
+class AuthorityTableConsistencyTests(unittest.TestCase):
+    """The top authority table must not regress to a stale current state.
+
+    Historical sections below the table are snapshots and are allowed to keep
+    their original wording; only the single authoritative table is checked here.
+    """
+
+    STALE_CURRENT_STATE_TOKENS = (
+        "IN_PROGRESS",
+        "BLOCKED_INTERNAL",
+        "尚未生成",
+        "不生成 superseding assessment",
+        "等待 0.9",
+    )
+
+    def _status_lines(self) -> list[str]:
+        return (ROOT / "docs/roadmap/STATUS.md").read_text(encoding="utf-8").splitlines()
+
+    def _authority_table(self) -> str:
+        lines = self._status_lines()
+        header = next(i for i, line in enumerate(lines)
+                      if line.startswith("| 轨道 | 当前步骤 |"))
+        rows = []
+        index = header
+        while index < len(lines) and lines[index].startswith("|"):
+            rows.append(lines[index])
+            index += 1
+        return "\n".join(rows)
+
+    def test_authority_table_has_no_stale_current_state(self):
+        table = self._authority_table()
+        for token in self.STALE_CURRENT_STATE_TOKENS:
+            self.assertNotIn(token, table, token)
+
+    def test_authority_table_records_the_current_facts(self):
+        table = self._authority_table()
+        self.assertIn("v090-d15-superseding-assessment=established", table)
+        self.assertIn("v090-business-recovery-acceptance=real-passes", table)
+        self.assertIn("v090-dsh-default-upgrade=promoted", table)
+        self.assertIn("Phase 100 **仍 `PAUSED`**", table)
+        self.assertIn("**不得**据此恢复 Phase 100 或启动 0.10", table)
+        self.assertIn("独立最终 0.9 收口", table)
+        self.assertIn("不启动 0.10", table)
+
+    def test_historical_sections_may_keep_their_original_stale_wording(self):
+        # Scoping guard: the tokens rejected above are historical facts and must
+        # remain present in the archival sections below the authority table.
+        whole = "\n".join(self._status_lines())
+        self.assertIn("IN_PROGRESS / BLOCKED_INTERNAL", whole)
 
 
 if __name__ == "__main__":

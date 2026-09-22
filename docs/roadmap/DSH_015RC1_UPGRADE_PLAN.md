@@ -44,10 +44,14 @@ historical D15-4/D15-5/D15-G verdicts without rewriting them and independently d
 
 This does not rerun D15-G, does not deploy, does not create a tag/release, does not resume
 Phase 100 and does not start 0.10. The final 0.9 closeout remains a separate, maintainer-gated
-step. Because the assessment adds build inputs, the identity advances `post-u8.200 -> post-u8.201`.
+step. Because the assessment adds build inputs (and the follow-up authority-table consistency
+fix adds a governance test), the identity advances `post-u8.200 -> post-u8.201 -> post-u8.202`.
 
-`R3_RESUME` remains `NO` until the new containment evidence is reviewed; ADR-0084 does not
-automatically switch the production selector or authorize deployment/release/tag.
+`R3_RESUME` remains `NO`: this assessment only establishes the **bounded permitted R3
+scope** (safe failure, observation, cleanup, new generation recovery). Actually starting or
+implementing R3 requires a subsequent explicit step, and the final 0.9 closeout does not
+automatically start R3. ADR-0084 does not automatically switch the production selector or
+authorize deployment/release/tag.
 
 Status: **D15-0 done, D15-1 candidate built/started/probed, D15-2 session V3
 migration PASS (format layer only), D15-3 native persistence-layer session
