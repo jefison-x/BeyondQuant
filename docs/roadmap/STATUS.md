@@ -36,7 +36,6 @@
 <!-- byq:session-failure-containment=real-recovery-acceptance-passed -->
 <!-- byq:v090-business-recovery=implementation-delivered -->
 <!-- byq:v090-business-recovery-acceptance=real-passes -->
-<!-- byq:session-failure-containment-next=v090-final-development-closeout -->
 <!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->
 <!-- byq:phase-100-p100-c=paused-not-delivery -->
 <!-- byq:v090-dsh-default-upgrade=promoted -->
@@ -44,13 +43,13 @@
 <!-- byq:v090-final-closeout=complete -->
 <!-- byq:v090-development-closeout=complete -->
 <!-- byq:v090-next=maintainer-testing-and-0.9x-window -->
-<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.203 -->
+<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.204 -->
 
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|
 | Product | 最近完成 Phase 97（marker 97） | 未授权任何新的 Product Phase | 维护者阶段性授权 + 本文件 next phase | 一阶段一 worktree/Draft PR；Human Merge Gate；不得自授新 Phase |
 | 数据/资格 | Phase 98/99 `COMPLETE`；Phase 100 **仍 `PAUSED`**：P100-A/P100-B 已并入 `main`，P100-C 只存在于暂停且未交付的 Draft #338，P100-D/P100-E 冻结，维护者未授权恢复；Phase 101 `COMPLETE`；**0.10 与 Phase 100 恢复未授权**。S3/历史成分准备属于 0.10.0，不是 0.9 gate。 | 0.9 的 fail-containment/recovery gate、coherent DSH `0.1.5-rc.1` 仓库默认升级、具名 D15 superseding assessment 与**独立最终 0.9 开发收口**均已完成并真实验收（marker `v090-final-closeout=complete`，证据 `docs/evidence/v090-final-closeout/`）；下一步为**维护者测试与 0.9.x 小版本功能追加/优化窗口**。**不得**据此恢复 Phase 100 或启动 0.10——二者仍需维护者单独授权。 | Phase 100 原授权 + ADR-0074/0084 | 仅 Tushare；不得从未审查分支推断完成；数据来源、时点、单位、许可与完整性失败继续 fail closed；不因外部可选能力冻结无关调查 |
-| 维护（当前） | **0.9 独立最终开发收口已完成（marker `v090-final-closeout=complete`，证据 `docs/evidence/v090-final-closeout/`）**：ADR-0084 已接受；恢复门禁 **BYQ session failure containment and business recovery** 已完成并**真实隔离验收通过**（marker `v090-business-recovery-acceptance=real-passes`，证据 `docs/evidence/v090-business-recovery-acceptance/`）；仓库默认 dependency/selector 已正式升级到 coherent DSH `0.1.5-rc.1`（marker `v090-dsh-default-upgrade=promoted`）；**本 PR 建立具名 D15 superseding assessment 且已 established**（marker `v090-d15-superseding-assessment=established`，证据 `docs/evidence/d15/d15-superseding/`：B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 仍 `BLOCKED_EXTERNAL`；B3 `terminal-adapter-restart` 与 B4 `terminal-dsh-runtime-restart` 保持候选/资格层 PASS；bounded R3 范围确立、`R3_RESUME = NO`、原生独立 child resume 未实现、历史 D15-4/D15-5/D15-G verdict 不改写）。历史逐 PR 细节见下方各权威维护条目。 | **下一个可执行任务 = 维护者测试与 0.9.x 小版本功能追加/优化窗口**（本收口 PR 停在维护者门禁；不 deploy、不 tag/release、不恢复 Phase 100、不启动 0.10）。 | 维护者接受的 ADR-0084 + ADR-0081/0082/0083 与 0.9 收口顺序 | 不改写历史 verdict；不实现 DSH 进程外 provider 或第二通用 harness；不自动解冻 R3；不切换生产 selector；不部署；不创建/移动 tag/release；不恢复 Phase 100；每个实现切片使用独立 worktree/PR |
+| 维护（当前） | **0.9 独立最终开发收口已完成（marker `v090-final-closeout=complete`，证据 `docs/evidence/v090-final-closeout/`）**：ADR-0084 已接受；恢复门禁 **BYQ session failure containment and business recovery** 已完成并**真实隔离验收通过**（marker `v090-business-recovery-acceptance=real-passes`，证据 `docs/evidence/v090-business-recovery-acceptance/`）；仓库默认 dependency/selector 已正式升级到 coherent DSH `0.1.5-rc.1`（marker `v090-dsh-default-upgrade=promoted`）；**已合并 #355 已建立具名 D15 superseding assessment 且已 established**（marker `v090-d15-superseding-assessment=established`，证据 `docs/evidence/d15/d15-superseding/`：B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 仍 `BLOCKED_EXTERNAL`；B3 `terminal-adapter-restart` 与 B4 `terminal-dsh-runtime-restart` 保持候选/资格层 PASS；bounded R3 范围确立、`R3_RESUME = NO`、原生独立 child resume 未实现、历史 D15-4/D15-5/D15-G verdict 不改写）。历史逐 PR 细节见下方各权威维护条目。 | **下一个可执行任务 = 维护者测试与 0.9.x 小版本功能追加/优化窗口**（本收口 PR 停在维护者门禁；不 deploy、不 tag/release、不恢复 Phase 100、不启动 0.10）。 | 维护者接受的 ADR-0084 + ADR-0081/0082/0083 与 0.9 收口顺序 | 不改写历史 verdict；不实现 DSH 进程外 provider 或第二通用 harness；不自动解冻 R3；不切换生产 selector；不部署；不创建/移动 tag/release；不恢复 Phase 100；每个实现切片使用独立 worktree/PR |
 | 依赖资格（D15） | **当前资格状态（B4 之后，2026-09-21）**；ADR-0084 已接受：`terminal-adapter-restart` = **PASS**、`terminal-dsh-runtime-restart` = **PASS**（均为候选/资格层）；B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 为 `BLOCKED_EXTERNAL`；独立监控切片确认 DSH rc.2/alpha.2 provider 资格仍 `BLOCKED_EXTERNAL`（无 out-of-process provider，未升级依赖）；ADR-0083 仅候选/资格层最小实现完成；R4 / production wiring NOT implemented。D15-G **未重跑**，按当前 B1/B2 状态即使重跑仍为 `NO_GO`；**历史已提交快照（不改写）**：D15-4/D15-5/D15-G committed evidence 保持原样。外部 blocker 只阻塞原生独立 child 恢复声明，不再形成全局停止。2026-09-22 具名 D15 superseding assessment 已建立（`docs/evidence/d15/d15-superseding/`）：B1/B2 仍 `BLOCKED_EXTERNAL`、B3/B4 候选 PASS、实际采用范围候选兼容 PASS 且晋升仅仓库默认、bounded R3 范围确立且 `R3_RESUME = NO`、原生独立 child resume 未实现。 | **已生成具名 D15 superseding assessment**（marker `v090-d15-superseding-assessment=established`）；完整 failure-containment gate 已通过真实隔离验收，按实际采用范围判断候选兼容与晋升已完成；独立最终 0.9 收口已完成（marker `v090-final-closeout=complete`）；下一步为**维护者测试与 0.9.x 小版本功能追加/优化窗口**（不启动 0.10、不自动解冻 R3） | ADR-0084 + ADR-0081/0082；历史证据与 B3/B4 current overlay | `R3_RESUME` 不因文档决定自动变为 YES；不得把 B1/B2 标为 PASS；不得改写历史 D15 verdict；生产切换、部署和 release 独立授权 |
 
 ## 0.9 closeout governance & gap ledger audit（2026-09-20，历史审计快照）
@@ -866,6 +865,10 @@ Phase**，**不执行最终 0.9 closeout**，不 deploy，不创建/移动 tag/r
 - **边界不变**：B1/B2 仍 `BLOCKED_EXTERNAL`，历史 D15-4/D15-5/D15-G verdict 与文件不改写；
   `R3_RESUME = NO`；**0.9 未关闭**；**本 PR 不执行最终 0.9 closeout**、不 deploy、不 tag/release、
   不恢复 Phase 100、不启动 0.10。下一可执行步骤是**独立的** 0.9 收口，仍受维护者门禁与单独授权。
+- **历史状态序列（仅历史正文记录，不改写）**：在 final closeout 完成前，顶部当前 next marker 曾为
+  `<!-- byq:session-failure-containment-next=v090-final-development-closeout -->`。该序列已由 final
+  closeout 完成取代，当前唯一 next 为 `<!-- byq:v090-next=maintainer-testing-and-0.9x-window -->`；
+  此处的 `-next` 字符串只是历史记录，不再表达当前授权或状态。
 
 ## 0.9 独立最终开发收口（2026-09-22，权威维护条目）
 
@@ -907,7 +910,9 @@ Phase 100，不启动 0.10，不自动解冻 R3，不做 Community 检查或复�
 - **下一状态**：**维护者测试与 0.9.x 小版本功能追加/优化窗口**。**0.10 与 Phase 100 恢复仍为未授权
   硬停止**，R3 不自动启动。
 - 构建身份推进 `post-u8.202 → post-u8.203`（`scripts/`、`tests/` 属 build inputs，仅重建身份；历史
-  `.202` manifest 与全部证据保留，不改生产 selector/`compose.yml`/`deployment.json` 语义）。
+  `.202` manifest 与全部证据保留，不改生产 selector/`compose.yml`/`deployment.json` 语义）；评审修复
+  （顶部权威态一致性：删除陈旧 `session-failure-containment-next` marker、修正 `维护（当前）` 行误指）
+  再推进 `post-u8.203 → post-u8.204`，并同步相关证据哈希与治理测试。
 
 ## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19，历史叙述）
 

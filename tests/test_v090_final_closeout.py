@@ -34,7 +34,7 @@ EVIDENCE = ROOT / "docs/evidence/v090-final-closeout"
 SUPERSEDING = ROOT / "scripts/d15/superseding_assessment"
 SUPERSEDING_CONTRACT = SUPERSEDING / "contract.v1.json"
 
-CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.203"
+CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.204"
 CANDIDATE = "dsh-0.1.5rc1"
 ROLLBACK = "dsh-0.1.2rc1"
 
@@ -248,8 +248,34 @@ class ObserverDerivationTests(unittest.TestCase):
                          "rewrite-historical-d15-g",
                          "claim-production-deployment", "claim-release-tag-created",
                          "claim-phase-100-resumed", "claim-zero-ten-started",
-                         "wrong-next-state", "wrong-build-revision"):
+                         "wrong-next-state", "wrong-build-revision",
+                         "stale-current-next-marker-at-top"):
             self.assertIn(required, names, required)
+
+    def test_stale_current_next_marker_is_rejected_at_top_but_allowed_in_body(self):
+        observer = _observer_module()
+        superseding = _superseding_module()
+        contract = _contract()
+        sources, live, ctx, assessment = observer.good_fixture(
+            contract, _superseding_contract(), superseding)
+        stale = "<!-- byq:session-failure-containment-next=v090-final-development-closeout -->"
+        # Top region (no authority table yet) -> structural rejection.
+        top_sources = copy.deepcopy(sources)
+        top_sources["status_md"] = sources["status_md"] + stale + "\n"
+        verdict = observer.compute_matrix(contract, top_sources, assessment,
+                                          superseding_ctx=ctx, live=live)
+        self.assertFalse(verdict["format_valid"])
+        self.assertTrue(any("stale current-state marker" in failure
+                            for failure in verdict["failures"]))
+        # Historical body below the authority table -> accepted.
+        body_sources = copy.deepcopy(sources)
+        body_sources["status_md"] = (
+            sources["status_md"] + "| 轨道 | 当前步骤 |\n| x |\n" + stale + "\n")
+        self.assertNotIn(stale, observer._status_top(body_sources["status_md"]))
+        verdict = observer.compute_matrix(contract, body_sources, assessment,
+                                          superseding_ctx=ctx, live=live)
+        self.assertTrue(verdict["all_pass"],
+                        verdict["failures"] + verdict["honesty_failures"])
 
 
 class CommittedEvidenceTests(unittest.TestCase):
@@ -361,6 +387,14 @@ class BoundaryTests(unittest.TestCase):
                       "<!-- byq:v090-full-interface-rebaseline=active -->",
                       "<!-- byq:zero-ten=started -->"):
             self.assertNotIn(stale, status)
+        # The superseded "next" marker may survive only in the historical body,
+        # never in the current-state (top) region.
+        top = status.split("| 轨道 | 当前步骤 |")[0]
+        self.assertNotIn("<!-- byq:session-failure-containment-next=", top)
+        self.assertIn("<!-- byq:session-failure-containment-next=", status)
+        self.assertEqual(
+            [line for line in top.splitlines() if line.startswith("<!-- byq:v090-next=")],
+            ["<!-- byq:v090-next=maintainer-testing-and-0.9x-window -->"])
 
     def test_status_authority_table_records_the_next_state(self):
         lines = self._status().splitlines()

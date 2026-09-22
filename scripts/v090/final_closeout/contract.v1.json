@@ -275,7 +275,7 @@
     "r3_resume": "NO",
     "b1_b2_downgraded": false,
     "next_state": "maintainer-testing-and-0.9x-window",
-    "build_revision": "dsh-0.1.5rc1-post-u8.203"
+    "build_revision": "dsh-0.1.5rc1-post-u8.204"
   },
   "status_markers_required": [
     "<!-- byq:v090-final-closeout=complete -->",
@@ -292,6 +292,9 @@
     "<!-- byq:zero-ten=complete -->",
     "<!-- byq:v090-production-deploy=verified -->",
     "<!-- byq:v090-release-tag=created -->"
+  ],
+  "status_top_markers_forbidden": [
+    "<!-- byq:session-failure-containment-next="
   ],
   "release_gate": {
     "formal_0_9_0_release_manifest": "OPEN_NOT_ATTEMPTED",

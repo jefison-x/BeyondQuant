@@ -277,6 +277,16 @@ def _marker_value(status_text: str, marker_prefix: str) -> str | None:
     return match.group(1) if match else None
 
 
+def _status_top(status_text: str) -> str:
+    """The current-state region: everything before the single authority table.
+
+    Historical sections below the authority table may keep stale machine markers
+    for provenance; the top region is the current state and must not.
+    """
+    index = status_text.find("| 轨道 | 当前步骤 |")
+    return status_text if index < 0 else status_text[:index]
+
+
 def derive_items(contract: dict, sources: dict, live: dict, superseding_ctx: dict) -> dict[str, str]:
     superseding_module = superseding_ctx["module"]
     sv = superseding_ctx["verdict"]
@@ -426,6 +436,12 @@ def compute_matrix(contract: dict, sources: dict, assessment: dict, *,
     for marker in contract.get("status_markers_forbidden", []):
         if marker in status_text:
             failures.append(f"forbidden STATUS marker present: {marker}")
+    # The current-state region (above the authority table) must not carry a stale
+    # superseded "next" marker; historical sections below may keep it.
+    status_top = _status_top(status_text)
+    for marker in contract.get("status_top_markers_forbidden", []):
+        if marker in status_top:
+            failures.append(f"stale current-state marker present at top: {marker}")
 
     # The formal 0.9.0 release gate is explicitly open and must not be claimed.
     release_gate = assessment.get("release_gate")
@@ -534,7 +550,7 @@ _REQUIRED_STATUS_MARKERS = (
     "<!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->\n"
     "<!-- byq:v090-dsh-default-upgrade=promoted -->\n"
     "<!-- byq:v090-d15-superseding-assessment=established -->\n"
-    "<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.203 -->\n"
+    "<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.204 -->\n"
 )
 
 _COMPLETE_AUDIT = {
@@ -791,6 +807,13 @@ def _mutations(contract, superseding_contract, superseding_module):
         "<!-- byq:v090-next=maintainer-testing-and-0.9x-window -->\n",
         "<!-- byq:zero-ten=started -->\n")
     add("forbidden-status-marker", lambda v: None, sources=bad_status)
+
+    # A stale superseded "next" marker in the current-state (top) region.
+    stale_top = copy.deepcopy(good_sources)
+    stale_top["status_md"] = (
+        _REQUIRED_STATUS_MARKERS
+        + "<!-- byq:session-failure-containment-next=v090-final-development-closeout -->\n")
+    add("stale-current-next-marker-at-top", lambda v: None, sources=stale_top)
     return mutations
 
 

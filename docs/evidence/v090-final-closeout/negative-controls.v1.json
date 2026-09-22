@@ -1,6 +1,6 @@
 {
   "all_controls_rejected": true,
-  "control_count": 29,
+  "control_count": 30,
   "controls": [
     {
       "fixed_all_pass": false,
@@ -204,6 +204,13 @@
       "fixed_exit_code": 1,
       "legacy_all_pass": true,
       "name": "forbidden-status-marker"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "stale-current-next-marker-at-top"
     }
   ],
   "defect_targeting_pre_fix_passed": [
@@ -234,9 +241,10 @@
     "drop-required-item",
     "extra-item",
     "missing-release-gate",
-    "forbidden-status-marker"
+    "forbidden-status-marker",
+    "stale-current-next-marker-at-top"
   ],
-  "defect_targeting_pre_fix_passed_count": 28,
+  "defect_targeting_pre_fix_passed_count": 29,
   "known_good_fixture_all_pass": true,
   "known_good_fixture_decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
   "known_good_fixture_items": {

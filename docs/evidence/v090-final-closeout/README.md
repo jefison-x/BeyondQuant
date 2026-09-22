@@ -128,7 +128,10 @@ hard stops; R3 is not automatically started.
 ## Build identity sync
 
 This batch adds build inputs (`scripts/`, `tests/`), so the build identity
-advances `dsh-0.1.5rc1-post-u8.202 -> post-u8.203`. `scripts/dsh/build_revision.py`,
+advances `dsh-0.1.5rc1-post-u8.202 -> post-u8.203`; the named-review fact-consistency
+fix (remove the stale top `session-failure-containment-next` marker, correct the
+`维护（当前）` row attribution) advances it again `post-u8.203 -> post-u8.204`.
+`scripts/dsh/build_revision.py`,
 `Dockerfile.post-u8-candidate`, `scripts/v090/dsh_default_upgrade/verify.py`, the
 promoted release descriptor, the generated `deployment.identity.json` and the
 `default-upgrade.v1.json` digest entries are synced (digest-only where causally

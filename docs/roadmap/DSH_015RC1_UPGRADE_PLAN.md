@@ -64,7 +64,9 @@ is **not** a production deployment and the formal 0.9.0 release manifest gate re
 
 The next state is the **maintainer testing and 0.9.x minor feature addition/optimization
 window**; `R3_RESUME` stays `NO` until a separate explicit step. Because this batch adds build
-inputs (`scripts/`, `tests/`), the identity advances `post-u8.202 -> post-u8.203`.
+inputs (`scripts/`, `tests/`), the identity advances `post-u8.202 -> post-u8.203`; the
+named-review fact-consistency fix (stale top current-state marker removal and `维护（当前）`
+attribution correction) advances it again `post-u8.203 -> post-u8.204`.
 
 `R3_RESUME` remains `NO`: this assessment only establishes the **bounded permitted R3
 scope** (safe failure, observation, cleanup, new generation recovery). Actually starting or

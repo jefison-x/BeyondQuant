@@ -1881,10 +1881,14 @@ repository.
 
 Build revision: this batch adds `scripts/v090/final_closeout/` and
 `tests/test_v090_final_closeout.py` (build inputs) and advances the production
-runtime build identity `post-u8.202 → post-u8.203` (unused id). Rebuild identity
-only: the historical `.202` manifest and all evidence are preserved unchanged;
-no selector semantics, `compose.yml` semantics, `deployment.json` semantics,
-immutable release registry or 0.1.2 artifact/evidence change and no deployment.
+runtime build identity `post-u8.202 → post-u8.203` (unused id); the named-review
+fact-consistency fix (remove the stale top `session-failure-containment-next`
+marker and correct the `维护（当前）` row attribution, plus the observer test that
+rejects the stale top marker) advances it again `post-u8.203 → post-u8.204`
+(unused id). Rebuild identity only: the historical `.202`/`.203` manifests and all
+evidence are preserved unchanged; no selector semantics, `compose.yml` semantics,
+`deployment.json` semantics, immutable release registry or 0.1.2 artifact/evidence
+change and no deployment.
 
 ## Maintenance — Delist-boundary coverage correction (ADR-0028)（构建修订 `dsh-0.1.2rc1-post-u8.130`，PR #299）
 
