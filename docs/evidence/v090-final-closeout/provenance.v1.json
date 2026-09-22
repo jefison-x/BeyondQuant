@@ -2,13 +2,13 @@
   "artifacts": [
     {
       "id": "status_md",
-      "introduced_by": "fd5a5083bb48324cd42df4a43b6095d4f5e1afad",
+      "introduced_by": "5adf84927a3376bbec72cf160d447cbba7c52fb9",
       "introduced_date": "2026-09-23",
       "kind": "text",
       "layer": "authority",
       "modified_in_closeout_commit": false,
       "path": "docs/roadmap/STATUS.md",
-      "sha256": "sha256:309c425344f012000abb237aaf3309ddaa49dbbafed3fe428eeaedd024d7db15",
+      "sha256": "sha256:891665416639fded27b720a52afada71c9c397ae6cb1166d735f7a1838325dcc",
       "stage": "repository-state"
     },
     {
@@ -178,7 +178,7 @@
     }
   ],
   "generated_at": "2026-09-22",
-  "generated_from_head": "fd5a5083bb48324cd42df4a43b6095d4f5e1afad",
+  "generated_from_head": "5adf84927a3376bbec72cf160d447cbba7c52fb9",
   "note": "Source evidence reused by the final 0.9 development closeout. introduced_by is the last commit that touched the path; modified_in_closeout_commit marks paths changed by the closeout commit itself. The historical D15-4/D15-5/D15-G verdicts are referenced through the D15 superseding evidence and are never rewritten.",
   "schema_version": "byq-v090-final-closeout-provenance.v1"
 }
