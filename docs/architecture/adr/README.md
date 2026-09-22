@@ -23,6 +23,11 @@ Proposed 只允许规划/验证，不授权越界实现。Accepted 必须记录�
 
 当前与 Phase 相关的 Accepted 决策也列在 `docs/roadmap/STATUS.md` 中：
 
+- [ADR-0085](ADR-0085-deterministic-research-continuation.md)（Proposed，2026-09-22）针对真实复合研究
+  接续失败，提议由 BYQ 持久化机器可执行的领域 next-action 计划和统一事件 reducer；确定性领域转换
+  不再启动通用模型回合，研究判断才使用最小有界 DSH 回合，同时收窄 Product Agent 的完整信号快照
+  读取。该提议尚未获维护者接受，不授权实现或改变当前 Accepted 边界。
+
 维护决策：[ADR-0066](ADR-0066-domain-validation-call-admission.md) 已于 2026-09-08 获维护者接受，
 为 F7 增加精确领域调用归属与持久纠错准入；先完成隔离资格验证再接入首批两工具，不推进 Product Phase。
 
