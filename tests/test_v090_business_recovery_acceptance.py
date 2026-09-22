@@ -128,7 +128,7 @@ class BoundaryTests(unittest.TestCase):
         status = (ROOT / "docs/roadmap/STATUS.md").read_text(encoding="utf-8")
         for marker in ("<!-- byq:v090-step5-b1-subagent-child-crash=blocked-external -->",
                        "<!-- byq:v090-step5-b2-adapter-restart=blocked-external -->",
-                       "<!-- byq:session-failure-containment=in-progress-blocked-internal -->",
+                       "<!-- byq:session-failure-containment=real-recovery-acceptance-passed -->",
                        "<!-- byq:v090-business-recovery=implementation-delivered -->"):
             self.assertIn(marker, status)
         self.assertIn("R3_RESUME = NO", status)

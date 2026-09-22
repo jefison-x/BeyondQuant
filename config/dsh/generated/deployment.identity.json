@@ -14,7 +14,7 @@
   },
   "compatibility_family": "byq-dsh-sdk-v1",
   "default_release": "dsh-0.1.5rc1",
-  "descriptor_hash": "sha256:de48aeaefb7a93c3ea4f99063ac335f1b615dbd30bd313850112ba63e8428322",
+  "descriptor_hash": "sha256:241e5063b1f0e11f78b690cb1311d162bc278a4023fbdb78823a1c997787159c",
   "profile": {
     "composition": "plugins/dsh-byq/profiles/dsh-0.1.2rc1/byq-product.patch.yml",
     "composition_hash": "sha256:c9b6e790f86dbc8e0bb871440954eaa71d1f02d1d3d335072bcea53a6bb857d3",

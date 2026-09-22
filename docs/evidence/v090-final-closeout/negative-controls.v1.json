@@ -1,0 +1,260 @@
+{
+  "all_controls_rejected": true,
+  "control_count": 29,
+  "controls": [
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-b1-pass"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-b2-pass"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-native-child-resume-implemented"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-r3-resume-yes"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-composite-all-pass"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-historical-d15-g-pass"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_BLOCKED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-d15-superseding-established"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_BLOCKED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-full-interface-complete-when-incomplete"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_BLOCKED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-f2-covered-when-ledger-incomplete"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_BLOCKED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-full-interface-complete-when-snapshot-diverges"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_BLOCKED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-closeout-complete-when-superseding-not-established"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_BLOCKED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "rewrite-historical-d15-g"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_BLOCKED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-adr-recorded-when-not"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_BLOCKED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-composite-pass-when-evidence-missing"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_BLOCKED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-production-deployment"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_BLOCKED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-release-tag-created"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-phase-100-resumed"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "claim-zero-ten-started"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "wrong-next-state"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "wrong-build-revision"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "hide-scoped-limitation"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "self-declared-verdict"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "self-declared-established"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "self-declared-coverage"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": false,
+      "name": "invalid-decision"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "drop-required-item"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "extra-item"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "missing-release-gate"
+    },
+    {
+      "fixed_all_pass": false,
+      "fixed_decision": "V090_DEVELOPMENT_CLOSEOUT_BLOCKED",
+      "fixed_exit_code": 1,
+      "legacy_all_pass": true,
+      "name": "forbidden-status-marker"
+    }
+  ],
+  "defect_targeting_pre_fix_passed": [
+    "claim-b1-pass",
+    "claim-b2-pass",
+    "claim-native-child-resume-implemented",
+    "claim-r3-resume-yes",
+    "claim-composite-all-pass",
+    "claim-historical-d15-g-pass",
+    "claim-d15-superseding-established",
+    "claim-full-interface-complete-when-incomplete",
+    "claim-f2-covered-when-ledger-incomplete",
+    "claim-full-interface-complete-when-snapshot-diverges",
+    "claim-closeout-complete-when-superseding-not-established",
+    "rewrite-historical-d15-g",
+    "claim-adr-recorded-when-not",
+    "claim-composite-pass-when-evidence-missing",
+    "claim-production-deployment",
+    "claim-release-tag-created",
+    "claim-phase-100-resumed",
+    "claim-zero-ten-started",
+    "wrong-next-state",
+    "wrong-build-revision",
+    "hide-scoped-limitation",
+    "self-declared-verdict",
+    "self-declared-established",
+    "self-declared-coverage",
+    "drop-required-item",
+    "extra-item",
+    "missing-release-gate",
+    "forbidden-status-marker"
+  ],
+  "defect_targeting_pre_fix_passed_count": 28,
+  "known_good_fixture_all_pass": true,
+  "known_good_fixture_decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+  "known_good_fixture_items": {
+    "adr_0082_0083_decision": "RECORDED_ACCEPTED",
+    "b1_subagent_child_crash": "BLOCKED_EXTERNAL",
+    "b2_subagent_byq_adapter_restart": "BLOCKED_EXTERNAL",
+    "b3_terminal_adapter_restart": "PASS_CANDIDATE",
+    "b4_terminal_dsh_runtime_restart": "PASS_CANDIDATE",
+    "closeout_audit": "COMPLETE",
+    "coherent_dsh_default_upgrade": "PASS",
+    "composite_research_fault_regression": "PASS_AS_SCOPED",
+    "containment_business_recovery_gate": "PASS",
+    "d15_superseding_assessment": "ESTABLISHED",
+    "f2_unknown_result_reconciliation": "COVERED",
+    "full_interface_audit": "COMPLETE",
+    "historical_d15_g": "NO_GO_PRESERVED",
+    "native_independent_child_resume": "NOT_IMPLEMENTED",
+    "r3_resume": "NO"
+  },
+  "schema_version": "byq-v090-final-closeout-negative-controls.v1"
+}

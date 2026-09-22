@@ -43,9 +43,28 @@ historical D15-4/D15-5/D15-G verdicts without rewriting them and independently d
   `R3_RESUME = NO`.
 
 This does not rerun D15-G, does not deploy, does not create a tag/release, does not resume
-Phase 100 and does not start 0.10. The final 0.9 closeout remains a separate, maintainer-gated
-step. Because the assessment adds build inputs (and the follow-up authority-table consistency
-fix adds a governance test), the identity advances `post-u8.200 -> post-u8.201 -> post-u8.202`.
+Phase 100 and does not start 0.10. Because the assessment adds build inputs (and the
+follow-up authority-table consistency fix adds a governance test), the identity advanced
+`post-u8.200 -> post-u8.201 -> post-u8.202`.
+
+### Independent final 0.9 development closeout (complete 2026-09-22)
+
+The independent final 0.9 development closeout is now complete
+(`V090_DEVELOPMENT_CLOSEOUT_COMPLETE`), derived by the machine-readable, fail-able matrix in
+`docs/evidence/v090-final-closeout/` (observer `scripts/v090/final_closeout/observer.py`).
+It independently re-derives every required 0.9 development item from the original merged
+evidence and hashes: the ADR-0084 replacement gate (BYQ session failure containment and
+business recovery) PASS, the coherent DSH `0.1.5-rc.1` repository default upgrade PASS, the
+named D15 superseding assessment ESTABLISHED, B1/B2 `BLOCKED_EXTERNAL` (only limiting native
+independent child resume), B3/B4 candidate-layer `PASS_CANDIDATE`, historical D15-G
+`NO_GO_PRESERVED`, native independent child resume `NOT_IMPLEMENTED` and `R3_RESUME = NO`.
+The development closeout does **not** deploy, does **not** create or move a tag/release, does
+**not** resume Phase 100 and does **not** start 0.10; the repository default DSH `0.1.5-rc.1`
+is **not** a production deployment and the formal 0.9.0 release manifest gate remains open.
+
+The next state is the **maintainer testing and 0.9.x minor feature addition/optimization
+window**; `R3_RESUME` stays `NO` until a separate explicit step. Because this batch adds build
+inputs (`scripts/`, `tests/`), the identity advances `post-u8.202 -> post-u8.203`.
 
 `R3_RESUME` remains `NO`: this assessment only establishes the **bounded permitted R3
 scope** (safe failure, observation, cleanup, new generation recovery). Actually starting or

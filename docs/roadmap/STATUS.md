@@ -1,6 +1,8 @@
 # BeyondQuant 状态
 
-研究流程连续性维护：见[下一阶段整改目标](RESEARCH_HANDOFF_PLAN.md)，先完成审批后原目标交接，再补持久交接与授权续接连接；不推进 Product Phase。
+0.9 **开发收口**（development closeout）已完成并通过机器可读、可失败的最终矩阵验收（证据
+`docs/evidence/v090-final-closeout/`）。下一步为**维护者测试与 0.9.x 小版本功能追加/优化窗口**；
+0.10 与 Phase 100 恢复仍**未授权硬停止**，R3 不自动启动。见下方“权威当前状态”。
 
 <!-- byq:current-completed-phase=97 -->
 
@@ -31,22 +33,25 @@
 <!-- byq:v090-step5-b4-terminal-dsh-runtime-restart=complete -->
 <!-- byq:v090-dsh-provider-qualification=blocked-external -->
 <!-- byq:adr-0084=accepted -->
-<!-- byq:session-failure-containment=in-progress-blocked-internal -->
+<!-- byq:session-failure-containment=real-recovery-acceptance-passed -->
 <!-- byq:v090-business-recovery=implementation-delivered -->
 <!-- byq:v090-business-recovery-acceptance=real-passes -->
-<!-- byq:session-failure-containment-next=real-recovery-acceptance-then-coherent-dsh-0.1.5rc1-upgrade -->
+<!-- byq:session-failure-containment-next=v090-final-development-closeout -->
 <!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->
 <!-- byq:phase-100-p100-c=paused-not-delivery -->
 <!-- byq:v090-dsh-default-upgrade=promoted -->
 <!-- byq:v090-d15-superseding-assessment=established -->
-<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.202 -->
+<!-- byq:v090-final-closeout=complete -->
+<!-- byq:v090-development-closeout=complete -->
+<!-- byq:v090-next=maintainer-testing-and-0.9x-window -->
+<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.203 -->
 
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|
 | Product | 最近完成 Phase 97（marker 97） | 未授权任何新的 Product Phase | 维护者阶段性授权 + 本文件 next phase | 一阶段一 worktree/Draft PR；Human Merge Gate；不得自授新 Phase |
-| 数据/资格 | Phase 98/99 `COMPLETE`；Phase 100 **仍 `PAUSED`**：P100-A/P100-B 已并入 `main`，P100-C 只存在于暂停且未交付的 Draft #338，P100-D/P100-E 冻结，维护者未授权恢复；Phase 101 `COMPLETE`；**0.10 与 Phase 100 恢复未授权**。S3/历史成分准备属于 0.10.0，不是 0.9 gate。 | 0.9 的 fail-containment/recovery gate 与 coherent DSH `0.1.5-rc.1` 仓库默认升级均已完成并真实验收；本 PR 的具名 D15 superseding assessment 已 established。下一步为**独立最终 0.9 收口**（维护者门禁，本 PR 不执行），之后进入维护者测试与小版本窗口。**不得**据此恢复 Phase 100 或启动 0.10——二者仍需维护者单独授权。 | Phase 100 原授权 + ADR-0074/0084 | 仅 Tushare；不得从未审查分支推断完成；数据来源、时点、单位、许可与完整性失败继续 fail closed；不因外部可选能力冻结无关调查 |
-| 维护（当前） | **0.9 收口治理（ADR-0084）当前事实**：ADR-0084 已接受；恢复门禁 **BYQ session failure containment and business recovery** 已完成并**真实隔离验收通过**（marker `v090-business-recovery-acceptance=real-passes`，证据 `docs/evidence/v090-business-recovery-acceptance/`）；仓库默认 dependency/selector 已正式升级到 coherent DSH `0.1.5-rc.1`（marker `v090-dsh-default-upgrade=promoted`）；**本 PR 建立具名 D15 superseding assessment 且已 established**（marker `v090-d15-superseding-assessment=established`，证据 `docs/evidence/d15/d15-superseding/`：B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 仍 `BLOCKED_EXTERNAL`；B3 `terminal-adapter-restart` 与 B4 `terminal-dsh-runtime-restart` 保持候选/资格层 PASS；bounded R3 范围确立、`R3_RESUME = NO`、原生独立 child resume 未实现、历史 D15-4/D15-5/D15-G verdict 不改写）。历史逐 PR 细节见下方各权威维护条目。 | **独立最终 0.9 收口**（独立 PR，维护者门禁；本 PR 不执行，不 deploy、不 tag/release、不恢复 Phase 100、不启动 0.10）。 | 维护者接受的 ADR-0084 + ADR-0081/0082/0083 与 0.9 收口顺序 | 不改写历史 verdict；不实现 DSH 进程外 provider 或第二通用 harness；不自动解冻 R3；不切换生产 selector；不部署；不创建/移动 tag/release；不恢复 Phase 100；每个实现切片使用独立 worktree/PR |
-| 依赖资格（D15） | **当前资格状态（B4 之后，2026-09-21）**；ADR-0084 已接受：`terminal-adapter-restart` = **PASS**、`terminal-dsh-runtime-restart` = **PASS**（均为候选/资格层）；B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 为 `BLOCKED_EXTERNAL`；独立监控切片确认 DSH rc.2/alpha.2 provider 资格仍 `BLOCKED_EXTERNAL`（无 out-of-process provider，未升级依赖）；ADR-0083 仅候选/资格层最小实现完成；R4 / production wiring NOT implemented。D15-G **未重跑**，按当前 B1/B2 状态即使重跑仍为 `NO_GO`；**历史已提交快照（不改写）**：D15-4/D15-5/D15-G committed evidence 保持原样。外部 blocker 只阻塞原生独立 child 恢复声明，不再形成全局停止。2026-09-22 具名 D15 superseding assessment 已建立（`docs/evidence/d15/d15-superseding/`）：B1/B2 仍 `BLOCKED_EXTERNAL`、B3/B4 候选 PASS、实际采用范围候选兼容 PASS 且晋升仅仓库默认、bounded R3 范围确立且 `R3_RESUME = NO`、原生独立 child resume 未实现。 | **已生成具名 D15 superseding assessment**（marker `v090-d15-superseding-assessment=established`）；完整 failure-containment gate 已通过真实隔离验收，按实际采用范围判断候选兼容与晋升已完成；下一步为**独立** 0.9 收口（维护者门禁，本 PR 不执行，且不启动 0.10） | ADR-0084 + ADR-0081/0082；历史证据与 B3/B4 current overlay | `R3_RESUME` 不因文档决定自动变为 YES；不得把 B1/B2 标为 PASS；不得改写历史 D15 verdict；生产切换、部署和 release 独立授权 |
+| 数据/资格 | Phase 98/99 `COMPLETE`；Phase 100 **仍 `PAUSED`**：P100-A/P100-B 已并入 `main`，P100-C 只存在于暂停且未交付的 Draft #338，P100-D/P100-E 冻结，维护者未授权恢复；Phase 101 `COMPLETE`；**0.10 与 Phase 100 恢复未授权**。S3/历史成分准备属于 0.10.0，不是 0.9 gate。 | 0.9 的 fail-containment/recovery gate、coherent DSH `0.1.5-rc.1` 仓库默认升级、具名 D15 superseding assessment 与**独立最终 0.9 开发收口**均已完成并真实验收（marker `v090-final-closeout=complete`，证据 `docs/evidence/v090-final-closeout/`）；下一步为**维护者测试与 0.9.x 小版本功能追加/优化窗口**。**不得**据此恢复 Phase 100 或启动 0.10——二者仍需维护者单独授权。 | Phase 100 原授权 + ADR-0074/0084 | 仅 Tushare；不得从未审查分支推断完成；数据来源、时点、单位、许可与完整性失败继续 fail closed；不因外部可选能力冻结无关调查 |
+| 维护（当前） | **0.9 独立最终开发收口已完成（marker `v090-final-closeout=complete`，证据 `docs/evidence/v090-final-closeout/`）**：ADR-0084 已接受；恢复门禁 **BYQ session failure containment and business recovery** 已完成并**真实隔离验收通过**（marker `v090-business-recovery-acceptance=real-passes`，证据 `docs/evidence/v090-business-recovery-acceptance/`）；仓库默认 dependency/selector 已正式升级到 coherent DSH `0.1.5-rc.1`（marker `v090-dsh-default-upgrade=promoted`）；**本 PR 建立具名 D15 superseding assessment 且已 established**（marker `v090-d15-superseding-assessment=established`，证据 `docs/evidence/d15/d15-superseding/`：B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 仍 `BLOCKED_EXTERNAL`；B3 `terminal-adapter-restart` 与 B4 `terminal-dsh-runtime-restart` 保持候选/资格层 PASS；bounded R3 范围确立、`R3_RESUME = NO`、原生独立 child resume 未实现、历史 D15-4/D15-5/D15-G verdict 不改写）。历史逐 PR 细节见下方各权威维护条目。 | **下一个可执行任务 = 维护者测试与 0.9.x 小版本功能追加/优化窗口**（本收口 PR 停在维护者门禁；不 deploy、不 tag/release、不恢复 Phase 100、不启动 0.10）。 | 维护者接受的 ADR-0084 + ADR-0081/0082/0083 与 0.9 收口顺序 | 不改写历史 verdict；不实现 DSH 进程外 provider 或第二通用 harness；不自动解冻 R3；不切换生产 selector；不部署；不创建/移动 tag/release；不恢复 Phase 100；每个实现切片使用独立 worktree/PR |
+| 依赖资格（D15） | **当前资格状态（B4 之后，2026-09-21）**；ADR-0084 已接受：`terminal-adapter-restart` = **PASS**、`terminal-dsh-runtime-restart` = **PASS**（均为候选/资格层）；B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 为 `BLOCKED_EXTERNAL`；独立监控切片确认 DSH rc.2/alpha.2 provider 资格仍 `BLOCKED_EXTERNAL`（无 out-of-process provider，未升级依赖）；ADR-0083 仅候选/资格层最小实现完成；R4 / production wiring NOT implemented。D15-G **未重跑**，按当前 B1/B2 状态即使重跑仍为 `NO_GO`；**历史已提交快照（不改写）**：D15-4/D15-5/D15-G committed evidence 保持原样。外部 blocker 只阻塞原生独立 child 恢复声明，不再形成全局停止。2026-09-22 具名 D15 superseding assessment 已建立（`docs/evidence/d15/d15-superseding/`）：B1/B2 仍 `BLOCKED_EXTERNAL`、B3/B4 候选 PASS、实际采用范围候选兼容 PASS 且晋升仅仓库默认、bounded R3 范围确立且 `R3_RESUME = NO`、原生独立 child resume 未实现。 | **已生成具名 D15 superseding assessment**（marker `v090-d15-superseding-assessment=established`）；完整 failure-containment gate 已通过真实隔离验收，按实际采用范围判断候选兼容与晋升已完成；独立最终 0.9 收口已完成（marker `v090-final-closeout=complete`）；下一步为**维护者测试与 0.9.x 小版本功能追加/优化窗口**（不启动 0.10、不自动解冻 R3） | ADR-0084 + ADR-0081/0082；历史证据与 B3/B4 current overlay | `R3_RESUME` 不因文档决定自动变为 YES；不得把 B1/B2 标为 PASS；不得改写历史 D15 verdict；生产切换、部署和 release 独立授权 |
 
 ## 0.9 closeout governance & gap ledger audit（2026-09-20，历史审计快照）
 
@@ -862,6 +867,48 @@ Phase**，**不执行最终 0.9 closeout**，不 deploy，不创建/移动 tag/r
   `R3_RESUME = NO`；**0.9 未关闭**；**本 PR 不执行最终 0.9 closeout**、不 deploy、不 tag/release、
   不恢复 Phase 100、不启动 0.10。下一可执行步骤是**独立的** 0.9 收口，仍受维护者门禁与单独授权。
 
+## 0.9 独立最终开发收口（2026-09-22，权威维护条目）
+
+本批执行 0.9 保留收口顺序中的最后一步：**独立 0.9 最终开发收口**（development closeout）。
+独立 worktree/分支 `codex/v090-final-closeout`，基于动态 `origin/main`（`561fe92`，含 #355）。
+这是维护/验收，**不推进 Product Phase**，**不部署生产**，不创建/移动 tag/release，不恢复
+Phase 100，不启动 0.10，不自动解冻 R3，不做 Community 检查或复制，不实现产品新功能。
+
+- **机器可读、可失败的最终矩阵**：`scripts/v090/final_closeout/{contract.v1.json,observer.py,
+  build_provenance.py}` 与 `docs/evidence/v090-final-closeout/`（`assessment-input.v1.json`、
+  `provenance.v1.json`、`verdict.v1.json`、`negative-controls.v1.json`、`interface-audit.v1.json`）。
+  观察器**不信任 PASS 标签**：它从原始已合并证据独立派生每个必需项、校验 provenance sha256、
+  现场重跑 fail-closed 全接口审计、并重新运行具名 D15 superseding 派生（含其 provenance 校验）。
+  提交 verdict `format_valid=true`、`honest=true`、`complete=true`、`all_pass=true`、exit 0。
+- **派生结论 `V090_DEVELOPMENT_CLOSEOUT_COMPLETE`**（全部 15 个必需项等于证据派生的期望真值）：
+  closeout 审计 COMPLETE；F2 unknown-result reconciliation COVERED（其唯一 open 原因是 H4 台账
+  非当前，现现场审计 `complete=true`）；剩余全接口审计 COMPLETE（`discovered=reviewed=verified=569`、
+  `missing=stale=fake_pass=0`）；复合研究故障回归 **PASS_AS_SCOPED**（旅程 PASS、13 个 gating 行
+  全 PASS、恰有合同固定的 4 个非 gating 行诚实 BLOCKED：`approval-revoked`/`timeout-terminal`/
+  `data-ready-continuation`/`runtime-adapter-tool-boundary`；声称 all-pass 被拒绝）；ADR-0082/0083
+  决定 RECORDED_ACCEPTED；ADR-0084 取代门禁 containment/business recovery PASS（真实隔离 9/9）；
+  coherent DSH `0.1.5-rc.1` 仓库默认升级 PASS；具名 D15 superseding assessment ESTABLISHED；
+  historical D15-G `NO_GO_PRESERVED`（不改写、未重跑）；B1 `subagent-child-crash` 与 B2
+  `subagent-byq-adapter-restart` `BLOCKED_EXTERNAL`；B3/B4 候选/资格层 `PASS_CANDIDATE`；原生
+  独立 child resume `NOT_IMPLEMENTED`；`R3_RESUME = NO`。
+- **门禁作用域**：B1/B2 保持 `BLOCKED_EXTERNAL`，按 ADR-0084 §3 **仅限制原生独立 child resume**，
+  不 gate 0.9 开发收口、不 gate 候选兼容/仓库默认晋升、不 gate bounded R3 范围。B1/B2 未被降级，
+  原生独立 child 恢复未被声称实现；观察器拒绝把这些限制隐藏或改写成 PASS（`negative-controls.v1.json`
+  共 29 项控制全部被拒，28 项 defect-targeting，已知良好 fixture 正常通过）。
+- **边界约束（机器校验）**：仓库默认 `dsh-0.1.5rc1` + 回滚候选 `dsh-0.1.2rc1`；`production_deployment=none`；
+  `release_or_tag_created=false`（仓库无 `byq-release.v1` manifest）；`phase_100_resumed=false`
+  （`byq:phase-100-p100-c=paused-not-delivery` 保持）；`zero_ten_started=false`；`r3_resume=NO`；
+  `b1_b2_downgraded=false`；`next_state=maintainer-testing-and-0.9x-window`；`build_revision` 同步。
+  观察器对缺项、哈希不符、越权约束、STATUS marker 冲突一律 fail closed。
+- **正式 0.9.0 发布门禁保持独立且未启动**：正式 release manifest（源码 SHA、trusted-main 全量 CI、
+  全服务 digest、实际组合、迁移分类、SBOM、备份、回退、独立发布验收、attestation）仍为
+  `OPEN_NOT_ATTEMPTED`，**不属于**开发收口范围；仓库默认 DSH `0.1.5-rc.1` **不等于**生产部署。
+  部署、正式 tag/release、生产 selector 切换均为独立维护者决定，本批未执行也未声称。
+- **下一状态**：**维护者测试与 0.9.x 小版本功能追加/优化窗口**。**0.10 与 Phase 100 恢复仍为未授权
+  硬停止**，R3 不自动启动。
+- 构建身份推进 `post-u8.202 → post-u8.203`（`scripts/`、`tests/` 属 build inputs，仅重建身份；历史
+  `.202` manifest 与全部证据保留，不改生产 selector/`compose.yml`/`deployment.json` 语义）。
+
 ## 维护收口：ADR-0047 聚合边界、运行连续性、数据就绪续接与可逆归档（2026-09-19，历史叙述）
 
 本批次为维护，不推进 Product Phase。顶部机器 marker 仍保持最近完成的 Product Phase 97；
@@ -1645,8 +1692,14 @@ Post-Phase 90 Management Action Consistency Maintenance 依据 ADR-0050 将股�
 ## 当前授权边界
 
 - Product Phase 49-97 与相应 Accepted ADR/计划均已完成；**下一 Product Phase 尚未授权**。
-  独立数据/资格轨道 Phase 98 已授权、99/101 完成、100 进行中；当前维护为 D15 整改；完整权威状态
-  见顶部“权威当前状态”。
+  独立数据/资格轨道 Phase 98 已授权、99/101 完成、100 进行中；**0.9 开发收口已完成**，当前维护
+  进入维护者测试与 0.9.x 小版本功能追加/优化窗口；完整权威状态见顶部“权威当前状态”。
+- 2026-09-22 **0.9 独立最终开发收口**已完成：机器可读、可失败的最终矩阵
+  [`docs/evidence/v090-final-closeout/`](../evidence/v090-final-closeout/README.md) 派生
+  `V090_DEVELOPMENT_CLOSEOUT_COMPLETE`；B1/B2 保持 `BLOCKED_EXTERNAL`（仅限制原生独立 child
+  resume），历史 D15-G 仍 `NO_GO`（不改写、未重跑），`R3_RESUME = NO`，仓库默认 DSH
+  `0.1.5-rc.1` **不等于**生产部署。**0.10 与 Phase 100 恢复仍为未授权硬停止**；本批不 deploy、
+  不创建/移动 tag/release、不启动 R3。
 - 2026-09-20 **0.9 closeout governance & gap ledger audit** 本批为审计/治理：只做事实审计、
   plan/STATUS 修订、机器可读 acceptance matrix 与审计测试；不实现 Proposed ADR-0082/0083、
   不切换生产 selector、不 deploy、不创建/移动 tag/release。Phase 100 的 P100-C..E 冻结；

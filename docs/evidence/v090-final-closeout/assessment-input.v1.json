@@ -1,0 +1,46 @@
+{
+  "schema_version": "byq-v090-final-closeout-assessment-input.v1",
+  "assessment_id": "v090-final-closeout.v1",
+  "decision": "V090_DEVELOPMENT_CLOSEOUT_COMPLETE",
+  "items": {
+    "closeout_audit": "COMPLETE",
+    "f2_unknown_result_reconciliation": "COVERED",
+    "full_interface_audit": "COMPLETE",
+    "composite_research_fault_regression": "PASS_AS_SCOPED",
+    "adr_0082_0083_decision": "RECORDED_ACCEPTED",
+    "containment_business_recovery_gate": "PASS",
+    "coherent_dsh_default_upgrade": "PASS",
+    "d15_superseding_assessment": "ESTABLISHED",
+    "historical_d15_g": "NO_GO_PRESERVED",
+    "b1_subagent_child_crash": "BLOCKED_EXTERNAL",
+    "b2_subagent_byq_adapter_restart": "BLOCKED_EXTERNAL",
+    "b3_terminal_adapter_restart": "PASS_CANDIDATE",
+    "b4_terminal_dsh_runtime_restart": "PASS_CANDIDATE",
+    "native_independent_child_resume": "NOT_IMPLEMENTED",
+    "r3_resume": "NO"
+  },
+  "scoped_limitations": [
+    "b1_subagent_child_crash",
+    "b2_subagent_byq_adapter_restart",
+    "native_independent_child_resume",
+    "r3_resume"
+  ],
+  "constraints": {
+    "repository_default_release": "dsh-0.1.5rc1",
+    "rollback_candidate": "dsh-0.1.2rc1",
+    "production_deployment": "none",
+    "release_or_tag_created": false,
+    "phase_100_resumed": false,
+    "zero_ten_started": false,
+    "r3_resume": "NO",
+    "b1_b2_downgraded": false,
+    "next_state": "maintainer-testing-and-0.9x-window",
+    "build_revision": "dsh-0.1.5rc1-post-u8.203"
+  },
+  "release_gate": {
+    "formal_0_9_0_release_manifest": "OPEN_NOT_ATTEMPTED",
+    "note": "The formal 0.9.0 release manifest (source SHA, trusted-main full CI, all-service digests, actual composition, migration classification, SBOM, backup, rollback, independent release acceptance, attestation) remains a separate release gate and is NOT satisfied or attempted by this development closeout. Repository-default DSH 0.1.5-rc.1 is not a production deployment."
+  },
+  "scope": "0.9 development closeout. B1/B2 remain BLOCKED_EXTERNAL and only limit native independent child resume (ADR-0084 section 3); historical D15-G stays NO_GO; R3_RESUME=NO; the repository default DSH 0.1.5-rc.1 is not a production deployment. No deploy, no tag/release, no Phase 100 resume, no 0.10 start.",
+  "provenance": "docs/evidence/v090-final-closeout/provenance.v1.json"
+}
