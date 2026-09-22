@@ -1980,7 +1980,7 @@ grantless 零模型确定性推进/通知；budget exhaustion 后 task/session/g
 Gateway/Backend/Adapter 重启与迟到终态负例；现有普通前台对话/Backtest Worker 不回归。P0 只提交
 Draft PR 和相应证据，不 deploy、不恢复当前失败的生产研究任务、不启动 P1。
 
-### P1 — `research-execution-plan.v1`（当前唯一可执行任务）
+### P1 — `research-execution-plan.v1`（已并入 `main`）
 
 在 P0 合并后，新增框架无关 schema、持久计划、task/plan version CAS、合法 stage/action 转换、
 精确 prerequisite/reference/approval/idempotency/expected-postcondition 和最小 Product 投影。首批只覆盖
@@ -1989,11 +1989,27 @@ Draft PR 和相应证据，不 deploy、不恢复当前失败的生产研究任�
 Product GET**；不得暴露 execution-plan create/advance/legacy 等 agent-facing 写路由，P2 才把
 approval/data-ready/backtest-completed/user-resume/recovery 的权威事件接入 reducer 并派生 next state。
 
-### P2 — 审批与异步事件统一
+### P2 — 审批与异步事件统一（当前唯一可执行任务）
 
 在 P1 合并后，把计划型 approval、data-ready、backtest-completed、user-resume 和 recovery 统一到
-一个 task/plan/event ledger。同一 task 最多一个 admitted continuation。批准只执行绑定 plan version
-的精确命令；兼容审批路径不得推进计划型任务。
+一个 task/plan/event ledger。同一 task 最多一个 open continuation（数据库 partial unique index，
+而非进程内瞬时标记）。批准只执行绑定 plan version 的精确命令；兼容审批路径不得推进计划型任务。
+
+P2 **不新增任何通用事件写 HTTP/MCP/Browser 路由**，也不保留 `record_continuation_event(raw_payload)`
+这类可伪造的公开 seam。事件只通过五个服务端具名 adapter 进入 ledger，每个 adapter 只接受精确的
+持久权威记录 identity（`agent_approvals.approval_id`、`signal_producer_jobs.job_id`、
+`backtest_jobs.job_id`、耐久 continuation trigger receipt），并从数据库加载其余事实：decision/
+status/action/resource、owner/workspace、plan/task version、references、expected postcondition、
+BYQ 计算的参数摘要和业务幂等键。data-ready/backtest-completed 必须按精确 job identity 查询并验证，
+禁止按 latest 选行；source identity、event identity、版本、references、摘要与幂等键全部由服务端从
+持久事实生成，外部请求不得传入。stale/late 事件按 source 记录保存的 observed version 或 plan 的
+持久 reference binding 判定。
+
+`user_resume`/`recovery` 必须绑定已有的耐久 user action/recovery trigger/receipt（真实用户消息或
+真实丢失 runtime turn）；系统缺少可证明权威记录时 fail closed 或新增最小 BYQ 领域 receipt，绝不让
+caller 自证。`retry_current_action` 必须持久化一个复用同一 event ledger 的可幂等 claim/settle
+pending intent（含原 plan action 与业务 identity），在 P3 尚未接入模型时诚实保持 pending/waiting 或
+needs_attention，不得声称 settled。P2 只提交 Draft PR 和相应证据，不 deploy、不启动 P3。
 
 ### P3 — 最小研究判断回合
 

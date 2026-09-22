@@ -869,6 +869,24 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("execution-plan/advance", openapi)
         self.assertNotIn("execution-plan/legacy", openapi)
 
+    def test_adr0085_p2_continuation_events_have_no_generic_write_route(self) -> None:
+        # ADR-0085 P2: continuation events enter ONLY through named server-side
+        # adapters that load authoritative records. There is no generic
+        # event-write HTTP/MCP/Browser route and no raw public
+        # ``record_continuation_event`` seam a caller could forge.
+        backend = (ROOT / "services/backend/app/main.py").read_text()
+        product_api = (ROOT / "services/gateway/app/product_api.py").read_text()
+        self.assertNotIn("continuation-events", backend)
+        self.assertNotIn("continuation-events", product_api)
+        ledger = (ROOT / "services/backend/app/research_continuation_ledger.py").read_text()
+        self.assertNotIn("def record_continuation_event(", ledger)
+        for adapter in (
+            "record_plan_approval_event", "record_data_ready_event",
+            "record_backtest_completed_event", "record_user_resume_event",
+            "record_recovery_event",
+        ):
+            self.assertIn(f"def {adapter}(", ledger)
+
     def test_phase23_historical_parity_matrix_and_ui_smoke_exist(self) -> None:
         matrix = ROOT / "docs/roadmap/COMMUNITY_FEATURE_PARITY_MATRIX.md"
         self.assertTrue(matrix.exists())

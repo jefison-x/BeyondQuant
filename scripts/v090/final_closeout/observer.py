@@ -550,7 +550,7 @@ _REQUIRED_STATUS_MARKERS = (
     "<!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->\n"
     "<!-- byq:v090-dsh-default-upgrade=promoted -->\n"
     "<!-- byq:v090-d15-superseding-assessment=established -->\n"
-    "<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.206 -->\n"
+    "<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.207 -->\n"
 )
 
 _COMPLETE_AUDIT = {

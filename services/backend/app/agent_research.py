@@ -902,10 +902,17 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             now = _now()
             status = "approved" if decision == "approved" else "rejected"
             outcome = "authorized" if status == "approved" else "not_authorized"
+            # ADR-0085 §3/§P2: the legacy/compat approval path starts a generic
+            # free-text model turn. It MUST NOT advance a task that already has a
+            # current execution plan; that task's approvals go through the
+            # deterministic plan reducer instead. A plan-bound approval is
+            # durably recorded but never queued for the compat continuation.
+            plan_task = self._plan_bound_task_for_run(connection, row)
+            continuation_status = "blocked" if plan_task is not None else "queued"
             execute(
                 connection,
-                "UPDATE agent_approvals SET status = :status, decision_by = :decision_by, decision_reason = :decision_reason, execution_outcome = :execution_outcome, continuation_status = 'queued', updated_at = :updated_at WHERE approval_id = :approval_id",
-                {"status": status, "decision_by": reviewer, "decision_reason": rationale, "execution_outcome": outcome, "updated_at": now, "approval_id": approval_id},
+                "UPDATE agent_approvals SET status = :status, decision_by = :decision_by, decision_reason = :decision_reason, execution_outcome = :execution_outcome, continuation_status = :continuation_status, updated_at = :updated_at WHERE approval_id = :approval_id",
+                {"status": status, "decision_by": reviewer, "decision_reason": rationale, "execution_outcome": outcome, "continuation_status": continuation_status, "updated_at": now, "approval_id": approval_id},
             )
             updated = fetch_one(
                 connection,
@@ -918,6 +925,11 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             run = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id = :run_id", {"run_id": row["run_id"]})
             assert run is not None
             self._record_audit_row(run, action="approval.decision", outcome=status, resource_type="agent_approval", resource_id=approval_id, detail={"reviewer": reviewer, "decision": decision}, connection=connection)
+            if plan_task is not None:
+                self._record_audit_row(run, action="approval.continuation", outcome="blocked",
+                    resource_type="agent_approval", resource_id=approval_id,
+                    detail={"reason": "plan_task_compat_approval_forbidden",
+                            "task_id": plan_task["task_id"]}, connection=connection)
         return self._approval_row(updated)
 
     def get_approval(self, approval_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
@@ -1056,6 +1068,32 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             )
             assert updated is not None
         return {**self._approval_row(updated), "continuation_changed": changed}
+
+    @staticmethod
+    def _plan_bound_task_for_run(connection, approval):
+        """Return the plan-bound task EXACTLY referenced by this approval's resource.
+
+        ADR-0085 P2 review: the compat free-text path must not advance a
+        plan-bound task. The binding must be exact (owner + the plan's own
+        persisted resource reference), never a same-session/trace ``LIMIT 1``
+        guess that would block unrelated tasks sharing a conversation. An
+        approval without an exact resource binding cannot be proven plan-bound,
+        so it is left to the isolated compat path.
+        """
+
+        resource_type = approval.get("resource_type")
+        resource_id = approval.get("resource_id")
+        if not isinstance(resource_type, str) or not isinstance(resource_id, str):
+            return None
+        return fetch_one(connection, """SELECT p.task_id FROM research_execution_plans p
+            JOIN research_tasks t ON t.task_id = p.task_id
+            LEFT JOIN artifacts a ON a.artifact_id = :resource
+            WHERE p.owner_principal = :owner AND t.owner_principal = :owner
+              AND p.plan -> 'references' -> CAST(:kind AS text) ->> CAST(:kind AS text) = :resource
+              AND (a.artifact_id IS NULL OR a.task_id = t.task_id)
+            LIMIT 1""",
+            {"owner": approval["owner_principal"], "kind": resource_type,
+             "resource": resource_id})
 
     def _record_approval_binding_blocker(self, connection, approval, expected_resource):
         # Only the explicitly linked task waiting on this same resource is

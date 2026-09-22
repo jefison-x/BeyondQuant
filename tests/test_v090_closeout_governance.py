@@ -58,7 +58,7 @@ AUDIT_BUILD_REVISION = "dsh-0.1.2rc1-post-u8.177"
 # rectification moved it to .193, the P1-L..P1-N design rectification moved it to
 # .194, the P1-O..P1-Q design rectification moved it to .195, and the P1-R
 # contract fix moved it to .196.
-CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.206"
+CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.207"
 
 DECISION_RECORD = ROOT / "docs/evidence/v090-adr-decisions/decision-record.v1.json"
 DECISION_RECORD_MD = ROOT / "docs/evidence/v090-adr-decisions/README.md"
@@ -331,7 +331,7 @@ class GovernanceDocTests(unittest.TestCase):
                        "<!-- byq:v090-full-interface-rebaseline=complete -->",
                        "<!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->",
                        "<!-- byq:phase-100-p100-c=paused-not-delivery -->",
-                       "<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.206 -->"):
+                       "<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.207 -->"):
             self.assertIn(marker, status)
         # Completed historical 0.9 steps must not remain marked active.
         self.assertNotIn("v090-closeout-audit=active", status)
