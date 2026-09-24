@@ -1,0 +1,355 @@
+{
+  "assertions": {},
+  "cleanup": {
+    "containers": 0,
+    "networks": 0,
+    "production_untouched": true,
+    "volumes": 0
+  },
+  "evidence_class": "research-store-component",
+  "faults": [
+    {
+      "id": "restart-gateway-after-approval-requested",
+      "provenance": {
+        "boundary": "gateway",
+        "generation": "not_applicable",
+        "pid": "not_applicable",
+        "receipt": "not_applicable",
+        "source": "agent_approvals"
+      },
+      "reason": "requires_runtime_isolated_stack",
+      "status": "BLOCKED"
+    },
+    {
+      "id": "restart-backend-after-data-ready",
+      "provenance": {
+        "boundary": "backend",
+        "generation": "not_applicable",
+        "pid": "not_applicable",
+        "receipt": "not_applicable",
+        "source": "research_continuation_events"
+      },
+      "reason": "requires_runtime_isolated_stack",
+      "status": "BLOCKED"
+    },
+    {
+      "id": "restart-runtime-adapter-after-judgment-admission",
+      "provenance": {
+        "boundary": "runtime-adapter",
+        "generation": "not_applicable",
+        "pid": "not_applicable",
+        "receipt": "not_applicable",
+        "source": "research_judgment_stage_calls"
+      },
+      "reason": "requires_runtime_isolated_stack",
+      "status": "BLOCKED"
+    },
+    {
+      "id": "restart-worker-mid-backtest",
+      "provenance": {
+        "boundary": "backtest-worker",
+        "generation": "not_applicable",
+        "pid": "not_applicable",
+        "receipt": "not_applicable",
+        "source": "backtest_jobs"
+      },
+      "reason": "requires_runtime_isolated_stack",
+      "status": "BLOCKED"
+    },
+    {
+      "id": "restart-gateway-after-backtest-completed",
+      "provenance": {
+        "boundary": "gateway",
+        "generation": "not_applicable",
+        "pid": "not_applicable",
+        "receipt": "not_applicable",
+        "source": "research_continuation_events"
+      },
+      "reason": "requires_runtime_isolated_stack",
+      "status": "BLOCKED"
+    },
+    {
+      "id": "restart-backend-between-claim-and-settle",
+      "provenance": {
+        "boundary": "backend",
+        "generation": "not_applicable",
+        "pid": "not_applicable",
+        "receipt": "not_applicable",
+        "source": "research_continuation_events"
+      },
+      "reason": "requires_runtime_isolated_stack",
+      "status": "BLOCKED"
+    },
+    {
+      "id": "duplicate-event-replay",
+      "provenance": {
+        "boundary": "backend",
+        "generation": "not_applicable",
+        "pid": "component",
+        "receipt": "not_applicable",
+        "source": "research_continuation_events"
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "late-stale-event",
+      "provenance": {
+        "boundary": "backend",
+        "generation": "not_applicable",
+        "pid": "not_applicable",
+        "receipt": "not_applicable",
+        "source": "research_continuation_events"
+      },
+      "reason": "requires_runtime_isolated_stack",
+      "status": "BLOCKED"
+    }
+  ],
+  "journey": {
+    "id": "adr0085-compound-research.v1",
+    "steps": [
+      {
+        "id": "task-created",
+        "provenance": {
+          "boundary": "product-api",
+          "generation": "not_applicable",
+          "pid": "component",
+          "receipt": "not_applicable",
+          "source": "research_tasks"
+        },
+        "status": "PASS"
+      },
+      {
+        "id": "continuation-grant",
+        "provenance": {
+          "boundary": "backend",
+          "generation": "not_applicable",
+          "pid": "component",
+          "receipt": "not_applicable",
+          "source": "research_execution_plans"
+        },
+        "status": "PASS"
+      },
+      {
+        "id": "strategy-draft-turn",
+        "provenance": {
+          "boundary": "runtime-adapter",
+          "generation": "not_applicable",
+          "pid": "not_applicable",
+          "receipt": "not_applicable",
+          "source": "research_judgment_stage_calls"
+        },
+        "reason": "requires_runtime_isolated_stack",
+        "status": "BLOCKED"
+      },
+      {
+        "id": "round-analysis",
+        "provenance": {
+          "boundary": "runtime-adapter",
+          "generation": "not_applicable",
+          "pid": "not_applicable",
+          "receipt": "not_applicable",
+          "source": "research_judgment_stage_calls"
+        },
+        "reason": "requires_runtime_isolated_stack",
+        "status": "BLOCKED"
+      },
+      {
+        "id": "final-selection",
+        "provenance": {
+          "boundary": "runtime-adapter",
+          "generation": "not_applicable",
+          "pid": "not_applicable",
+          "receipt": "not_applicable",
+          "source": "research_execution_plans"
+        },
+        "reason": "requires_runtime_isolated_stack",
+        "status": "BLOCKED"
+      },
+      {
+        "id": "paper-account",
+        "provenance": {
+          "boundary": "backend",
+          "generation": "not_applicable",
+          "pid": "not_applicable",
+          "receipt": "not_applicable",
+          "source": "paper_accounts"
+        },
+        "reason": "requires_runtime_isolated_stack",
+        "status": "BLOCKED"
+      },
+      {
+        "id": "task-completed",
+        "provenance": {
+          "boundary": "backend",
+          "generation": "not_applicable",
+          "pid": "not_applicable",
+          "receipt": "not_applicable",
+          "source": "research_tasks"
+        },
+        "reason": "requires_runtime_isolated_stack",
+        "status": "BLOCKED"
+      },
+      {
+        "id": "strategy-approval",
+        "provenance": {
+          "boundary": "backend",
+          "generation": "not_applicable",
+          "pid": "component",
+          "receipt": "not_applicable",
+          "source": "agent_approvals"
+        },
+        "status": "PASS"
+      },
+      {
+        "id": "task-create-approval",
+        "provenance": {
+          "boundary": "backend",
+          "generation": "not_applicable",
+          "pid": "component",
+          "receipt": "not_applicable",
+          "source": "agent_approvals"
+        },
+        "status": "PASS"
+      },
+      {
+        "id": "backtest-execute",
+        "provenance": {
+          "boundary": "backtest-worker",
+          "generation": "not_applicable",
+          "pid": "component",
+          "receipt": "not_applicable",
+          "source": "backtest_jobs"
+        },
+        "status": "PASS"
+      },
+      {
+        "id": "backtest-completed",
+        "provenance": {
+          "boundary": "backtest-worker",
+          "generation": "not_applicable",
+          "pid": "component",
+          "receipt": "not_applicable",
+          "source": "research_continuation_events"
+        },
+        "status": "PASS"
+      },
+      {
+        "id": "backtest-task-create",
+        "provenance": {
+          "boundary": "backend",
+          "generation": "not_applicable",
+          "pid": "not_applicable",
+          "receipt": "not_applicable",
+          "source": "signal_producer_jobs"
+        },
+        "reason": "requires_runtime_isolated_stack",
+        "status": "BLOCKED"
+      },
+      {
+        "id": "data-ready",
+        "provenance": {
+          "boundary": "signal-worker",
+          "generation": "not_applicable",
+          "pid": "not_applicable",
+          "receipt": "not_applicable",
+          "source": "research_continuation_events"
+        },
+        "reason": "requires_runtime_isolated_stack",
+        "status": "BLOCKED"
+      },
+      {
+        "id": "execute-approval",
+        "provenance": {
+          "boundary": "backend",
+          "generation": "not_applicable",
+          "pid": "not_applicable",
+          "receipt": "not_applicable",
+          "source": "agent_approvals"
+        },
+        "reason": "requires_runtime_isolated_stack",
+        "status": "BLOCKED"
+      },
+      {
+        "id": "rounds-2-3",
+        "provenance": {
+          "boundary": "backend",
+          "generation": "not_applicable",
+          "pid": "not_applicable",
+          "receipt": "not_applicable",
+          "source": "research_execution_plans"
+        },
+        "reason": "requires_runtime_isolated_stack",
+        "status": "BLOCKED"
+      }
+    ]
+  },
+  "llm_evidence_class": "not_applicable",
+  "raw": {
+    "approvals": [
+      {
+        "action": "byq_strategy_approve",
+        "approval_id": "agent_approval_8cec4018e13140828ce59bcd305a079b",
+        "idempotency_key": "sha256:5024802719b35124",
+        "params_digest": "sha256:7bf874589a33d7c3",
+        "plan_version": 1,
+        "resource_id": "artifact_982996ac094547619d1f7f6120abc49f",
+        "resource_type": "strategy_version",
+        "status": "approved",
+        "task_version": 1
+      }
+    ],
+    "budget_exact": false,
+    "cleanup": {
+      "containers": 0,
+      "networks": 0,
+      "production_untouched": true,
+      "volumes": 0
+    },
+    "continuation_open_count": 0,
+    "counts": {
+      "agent_approvals": 2,
+      "artifacts": 4,
+      "backtest_jobs": 2,
+      "research_continuation_events": 4,
+      "research_execution_plans": 7,
+      "research_tasks": 7
+    },
+    "duplicate_objects": [],
+    "events": [
+      {
+        "admitted": false,
+        "event_id": "continuation_event_f7158b843d728f34720d36a97fa10f7e",
+        "event_type": "backtest_completed",
+        "status": "advanced"
+      }
+    ],
+    "faults": {
+      "duplicate-event-replay": {
+        "duplicate_objects": [],
+        "recovered": true,
+        "replay_returned_same_event": true,
+        "second_advance": false
+      }
+    },
+    "generation_exact": false,
+    "generation_status": "not_applicable",
+    "model_calls_by_stage": {},
+    "model_chose_routing": false,
+    "model_visible_forbidden_hits": [],
+    "plan": {
+      "iteration": 1,
+      "plan_version": 1,
+      "stage": "strategy_draft",
+      "status": "active",
+      "task_version": 1
+    },
+    "receipt_exact": false,
+    "receipt_status": "not_applicable",
+    "restarts": {},
+    "session_status": "not_applicable",
+    "stage_call_total": 0,
+    "stage_input_serialized_bytes": 495,
+    "task_status": "running"
+  },
+  "schema_version": "byq-v091-continuation-p4-observations.v1"
+}

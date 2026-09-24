@@ -27,10 +27,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime, timezone
 
 from .db import execute, fetch_one
 from packages.contracts.research_execution_plan import (
     READY_STAGES,
+    RESOURCE_KINDS,
     STAGE_ACTION,
     advance,
     classify_legacy_task,
@@ -197,21 +199,107 @@ class ResearchExecutionPlanMixin:
             raise ValueError("research execution plan requires the bound conversation")
         return conversation_id
 
+    @staticmethod
+    def _grant_references(connection, task: dict, conversation_id: str) -> dict:
+        """Derive the plan's trusted references from the persisted active grant.
+
+        Runs inside the plan-creation transaction/lock. Fail closed when the grant
+        is inactive, when a confirmed artifact lacks its pinned digest (no ID-only
+        fallback), when an artifact is no longer validated or its digest changed,
+        or when the grant confirms multiple artifacts of the same resource kind.
+        """
+
+        from .research import InvalidTransition
+
+        grant = task.get("continuation_permission")
+        if not isinstance(grant, dict) or grant.get("revoked_at") is not None:
+            raise InvalidTransition("an execution plan requires an active continuation grant")
+        entries = grant.get("confirmed_artifacts")
+        if not isinstance(entries, list) or not entries:
+            raise InvalidTransition(
+                "the continuation grant has no confirmed validated artifacts")
+        references: dict = {
+            "research_task": {"research_task": task["task_id"]},
+            "conversation": {"conversation": conversation_id},
+        }
+        bound: dict[str, str] = {}
+        confirmed: list[tuple[str, str]] = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise InvalidTransition("the continuation grant artifact entry is invalid")
+            artifact_id = entry.get("artifact_id")
+            pinned = entry.get("content_sha256")
+            if not isinstance(artifact_id, str) or not isinstance(pinned, str):
+                raise InvalidTransition(
+                    "a confirmed artifact is missing its pinned identity/digest")
+            confirmed.append((artifact_id, pinned))
+        # Lock every confirmed artifact row FOR SHARE in a deterministic order.
+        # The plan transaction already holds the task-row lock, and the artifact
+        # supersede/transition path (research.transition) takes the artifact row
+        # FOR UPDATE without taking the task row, so a plain read here could
+        # observe `validated`/matching digest and still insert a plan after a
+        # concurrent supersede committed (READ COMMITTED). FOR SHARE conflicts
+        # with that UPDATE: the read blocks until the concurrent transaction
+        # commits and then re-reads the committed (possibly invalidated) row, so
+        # no plan is ever created from an already-superseded artifact. Sorting
+        # keeps a consistent lock order for multi-artifact grants.
+        for artifact_id, pinned in sorted(confirmed):
+            row = fetch_one(connection, """SELECT artifact_id, kind, task_id,
+                owner_principal, workspace_id, status, content_sha256
+                FROM artifacts WHERE artifact_id = :id FOR SHARE""", {"id": artifact_id})
+            if row is None or row["task_id"] != task["task_id"] \
+                    or row["owner_principal"] != task["owner_principal"] \
+                    or row["workspace_id"] != task["workspace_id"]:
+                raise InvalidTransition("granted artifact does not belong to the task")
+            if row["status"] != "validated":
+                raise InvalidTransition("a granted artifact is no longer validated")
+            if pinned != row["content_sha256"]:
+                raise InvalidTransition("a granted artifact digest no longer matches the grant")
+            if row["kind"] not in RESOURCE_KINDS:
+                continue
+            prior = bound.get(row["kind"])
+            if prior is not None and prior != row["artifact_id"]:
+                raise InvalidTransition(
+                    "the grant confirms multiple artifacts of the same kind")
+            bound[row["kind"]] = row["artifact_id"]
+        for kind, artifact_id in bound.items():
+            references[kind] = {kind: artifact_id}
+        return references
+
     def _load_current_plan(self, connection, task_id: str, *, lock: bool):
         clause = "FOR UPDATE" if lock else ""
         return fetch_one(connection,
             f"SELECT * FROM research_execution_plans WHERE task_id = :task {clause}",
             {"task": task_id})
 
-    def create_execution_plan(self, task_id: str, payload: object, *, trusted_context: dict) -> dict:
+    def create_execution_plan(self, task_id: str, payload: object, *, trusted_context: dict,
+                              require_active_grant: bool = False,
+                              bind_grant_references: bool = False) -> dict:
         from .research import IdempotencyConflict, InvalidTransition
 
         request = _create_request(payload)
         with self._transaction() as connection:
             task = self._plan_task(connection, task_id, trusted_context, lock=True)
+            grant = task.get("continuation_permission")
+            if require_active_grant:
+                # Re-validate the grant INSIDE this transaction (the task row is
+                # locked), so a revoke/expiry that raced between the caller's read
+                # and plan creation can never produce a plan from a dead grant.
+                if not isinstance(grant, dict) or grant.get("revoked_at") is not None:
+                    raise InvalidTransition(
+                        "an execution plan requires an active continuation grant")
+                expires_at = grant.get("expires_at")
+                if not isinstance(expires_at, str) or \
+                        datetime.fromisoformat(expires_at) <= datetime.now(timezone.utc):
+                    raise InvalidTransition("the continuation grant has expired")
             conversation_id = self._require_conversation(task)
             if task["status"] in {"completed", "failed", "cancelled"}:
                 raise InvalidTransition("a terminal research task cannot start an execution plan")
+            # Bind the grant's trusted references in THIS SAME transaction/lock as
+            # the plan insert, so an artifact that goes invalid between a caller's
+            # earlier read and creation cannot slip in.
+            references = self._grant_references(connection, task, conversation_id) \
+                if bind_grant_references else request.get("references")
             request_hash = _request_hash(task["task_id"], request)
             existing = self._load_current_plan(connection, task["task_id"], lock=True)
             if existing is not None:
@@ -223,7 +311,7 @@ class ResearchExecutionPlanMixin:
                 task_id=task["task_id"], owner_principal=task["owner_principal"],
                 workspace_id=task["workspace_id"], conversation_id=conversation_id,
                 task_version=task["version"], idempotency_key=request["idempotency_key"],
-                references=request.get("references"), iteration=request.get("iteration", 1),
+                references=references, iteration=request.get("iteration", 1),
                 last_progress_identity=request.get("last_progress_identity"))
             execute(connection, """INSERT INTO research_execution_plans
                 (task_id, owner_principal, workspace_id, conversation_id, plan_version,

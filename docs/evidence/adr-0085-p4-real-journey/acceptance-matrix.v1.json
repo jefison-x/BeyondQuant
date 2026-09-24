@@ -1,0 +1,58 @@
+{
+  "schema_version": "byq-v091-continuation-p4-acceptance-matrix.v1",
+  "generated_at": "2026-09-23",
+  "frozen_before_capture": true,
+  "contract": "scripts/v091/continuation_p4/contract.v1.json",
+  "adr": "ADR-0085",
+  "slice": "P4",
+  "results_vocabulary": ["PASS", "FAIL", "NOT_RUN", "BLOCKED"],
+  "journey_id": "adr0085-compound-research.v1",
+  "journey_rows": [
+    {"id": "task-created", "required": true, "gating": true},
+    {"id": "continuation-grant", "required": true, "gating": true},
+    {"id": "strategy-draft-turn", "required": true, "gating": true},
+    {"id": "strategy-approval", "required": true, "gating": true},
+    {"id": "task-create-approval", "required": true, "gating": true},
+    {"id": "backtest-task-create", "required": true, "gating": true},
+    {"id": "data-ready", "required": true, "gating": true},
+    {"id": "execute-approval", "required": true, "gating": true},
+    {"id": "backtest-execute", "required": true, "gating": true},
+    {"id": "backtest-completed", "required": true, "gating": true},
+    {"id": "round-analysis", "required": true, "gating": true},
+    {"id": "rounds-2-3", "required": true, "gating": true},
+    {"id": "final-selection", "required": true, "gating": true},
+    {"id": "paper-account", "required": true, "gating": true},
+    {"id": "task-completed", "required": true, "gating": true}
+  ],
+  "fault_rows": [
+    {"id": "restart-gateway-after-approval-requested", "required": true, "gating": true},
+    {"id": "restart-backend-after-data-ready", "required": true, "gating": true},
+    {"id": "restart-runtime-adapter-after-judgment-admission", "required": true, "gating": true},
+    {"id": "restart-worker-mid-backtest", "required": true, "gating": true},
+    {"id": "restart-gateway-after-backtest-completed", "required": true, "gating": true},
+    {"id": "restart-backend-between-claim-and-settle", "required": true, "gating": true},
+    {"id": "duplicate-event-replay", "required": true, "gating": true},
+    {"id": "late-stale-event", "required": true, "gating": true}
+  ],
+  "assertion_rows": [
+    {"id": "no_duplicate_business_objects", "required": true},
+    {"id": "at_most_one_open_continuation", "required": true},
+    {"id": "exact_approval_binding", "required": true},
+    {"id": "exact_event_identity_and_replay", "required": true},
+    {"id": "exact_stage_call_admission", "required": true},
+    {"id": "exact_continuation_budget", "required": true},
+    {"id": "exact_generation_and_receipt", "required": true},
+    {"id": "model_visible_input_is_bounded_projection_only", "required": true},
+    {"id": "model_cannot_choose_action_identity_approval_idempotency_routing_or_recovery", "required": true},
+    {"id": "deterministic_transitions_use_zero_model_calls", "required": true},
+    {"id": "cleanup_zero_and_production_untouched", "required": true}
+  ],
+  "non_gating_note": "Any row that a keyless scripted provider cannot prove and that genuinely requires a paid real model is reported as BLOCKED with reason 'maintainer_canary_required'; it is never reported PASS and it keeps all_pass=false.",
+  "non_claims": [
+    "No production deployment, version-number write, tag or release.",
+    "No production canary; only an isolated non-production stack.",
+    "No real-LLM research-quality semantic claim.",
+    "No Phase 100 resume and no 0.10 start.",
+    "No second generic agent harness or session store."
+  ]
+}

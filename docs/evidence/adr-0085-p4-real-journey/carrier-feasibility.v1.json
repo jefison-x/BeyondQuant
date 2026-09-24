@@ -1,0 +1,74 @@
+{
+  "bounded_composition": {
+    "disables": [
+      "skill-filesystem",
+      "tool-skill",
+      "skills",
+      "web",
+      "tool-web",
+      "web-search-deepseek"
+    ],
+    "foreground_one_shot": true,
+    "keeps": [
+      "agent-loop",
+      "session-persistence-jsonl",
+      "compaction-basic",
+      "llm routes",
+      "research-judgment-turn persona"
+    ],
+    "path": "plugins/dsh-byq/profiles/dsh-0.1.5rc1-continuable/byq-research-judgment.patch.yml",
+    "removes": [
+      "5 byq_delegate_* subagent tools",
+      "mcp-byq (full MCP surface)"
+    ]
+  },
+  "carrier_sha256": "sha256:6f68ce88d98307533ee8fa58a8125de4dc019ab16fac8b512cec141a2d1961f8",
+  "command": "docker run --rm --entrypoint python -v \"$PWD:/repo:ro\" -e PROBE_PATCH=<patch> byq-d15-runtime-candidate:local /repo/scripts/v091/continuation_p4/carrier_feasibility_probe.py",
+  "method": "real DSH 0.1.5rc1 carrier + keyless recording provider; the provider request body carries the authoritative root tool array (agent-spine built-ins and MCP tools included), so this is not a YAML guess",
+  "overclaim_correction": "earlier feasibility=PROVEN and PROVEN_BY_CARRIER_PROBE were corrected: this probe proves only the no-MCP root tool surface",
+  "proven": {
+    "root_surface_with_no_mcp": true,
+    "statement": "with the dedicated composition and NO MCP client, the real carrier starts and the ROOT provider request exposes exactly one tool: byq_research_judgment_turn; no built-in shell/fs/web/skill/delegate/MCP tool is exposed at the root"
+  },
+  "remaining_unproven": [
+    "the child persona was never actually invoked (the probe provider returned plain text), so the child toolFilter and closed result are unproven",
+    "no read-only MCP was loaded, so the persona cannot fetch the five bounded read-only tools and their bounded/sensitive field behaviour is unproven",
+    "no Product API -> Runtime Adapter -> DSH -> Backend closed loop has been run"
+  ],
+  "remaining_work": [
+    "add a minimal read-only MCP subset (only the 5 bounded read-only tools) and load it in the dedicated composition so the persona can read bounded evidence",
+    "add the Runtime Adapter real turn_runner that builds a harness with this composition, prompts with the admission bounded stage projection, parses the closed result and submits it to the existing atomic Backend result route",
+    "add the minimal internal closed-schema endpoint (task/session/call identity only; persona/tools/url/headers/result server-derived)",
+    "run the frozen P4 journey and fault matrix through the real Product API -> Runtime Adapter -> DSH carrier -> Backend loop"
+  ],
+  "runs": [
+    {
+      "conclusion": "agent-spine built-ins (bash/pwsh/jobs/fs/fs-search/commands/goal/plan/workflow/spill/todo/str-replace-editor/web-fetch) are already disabled by the committed disable list, but delegates, skill and web_search remain exposed; a dedicated composition must remove them.",
+      "patch": "plugins/dsh-byq/profiles/dsh-0.1.5rc1-continuable/byq-product.patch.yml (MCP entry removed only, to start without a live MCP server)",
+      "run_ok": true,
+      "started": true,
+      "tool_count": 8,
+      "tool_names": [
+        "byq_delegate_backtest_analysis",
+        "byq_delegate_factor_research",
+        "byq_delegate_market_research",
+        "byq_delegate_ml_research",
+        "byq_delegate_strategy_research",
+        "byq_research_judgment_turn",
+        "skill",
+        "web_search"
+      ]
+    },
+    {
+      "conclusion": "the dedicated static bounded composition starts on the real carrier and the ROOT session exposes EXACTLY ONE tool: the bounded research-judgment-turn persona. No write/approval/execute/routing/identity/idempotency/job/delegate/skill/web/fs/shell/MCP tool is exposed. foreground one-shot: enableRunInBackground=false with backgroundMode=one-shot in the dedicated profile.",
+      "patch": "plugins/dsh-byq/profiles/dsh-0.1.5rc1-continuable/byq-research-judgment.patch.yml (dedicated bounded composition)",
+      "run_ok": true,
+      "started": true,
+      "tool_count": 1,
+      "tool_names": [
+        "byq_research_judgment_turn"
+      ]
+    }
+  ],
+  "schema_version": "byq-adr0085-p4-carrier-feasibility.v1"
+}

@@ -1,0 +1,47 @@
+{
+  "schema_version": "byq-adr0085-p4-read-only-mcp-subset.v1",
+  "purpose": "ADR-0085 P4 isolated read-only MCP surface for the bounded research-judgment composition; non-exposure, not permission denial",
+  "gate_env": "BYQ_MCP_READ_ONLY_SUBSET=1",
+  "dedicated_isolation": {
+    "read_only_port_env": "BYQ_MCP_READ_ONLY_PORT",
+    "read_only_token_env": "BYQ_MCP_READ_ONLY_TOKEN",
+    "product_port_env": "PORT",
+    "product_token_env": "BYQ_MCP_TOKEN",
+    "note": "In read-only mode the server reads ONLY the dedicated port/token and refuses to start without a valid TCP port and token, so it can never silently share the Product endpoint or credential."
+  },
+  "implementation": "services/mcp/src/server.ts buildServer uses an explicit, type-checked guarded registration function (no registerTool overwrite); in read-only mode only the five bounded read tools are registered and every other registration is a no-op. The default surface is unchanged.",
+  "test": "services/mcp/tests/read-only-subset-test.ts (wired into services/mcp/package.json npm test)",
+  "test_method": "spawns two real servers on separate ephemeral ports with separate credentials and calls the REAL MCP tools/list through @modelcontextprotocol/client; a failed start or an unanswered tools/list fails the test, so a trailing exit 0 cannot mask a broken surface",
+  "negative_control": "patching the built server to ignore BYQ_MCP_READ_ONLY_SUBSET makes the same test exit 1 (subset == full surface), proving the assertion is fail-able",
+  "observed": {
+    "full_surface_tool_count": 82,
+    "read_only_subset_tool_count": 5,
+    "read_only_tools": [
+      "byq_agent_context",
+      "byq_backtest_analysis_get",
+      "byq_backtest_task_get",
+      "byq_research_get",
+      "byq_research_stage_input_get"
+    ],
+    "forbidden_tools_absent_from_subset": [
+      "byq_strategy_version_create",
+      "byq_strategy_approve",
+      "byq_backtest_task_create",
+      "byq_backtest_task_execute",
+      "byq_research_transition",
+      "byq_research_task_create",
+      "byq_paper_account_create",
+      "byq_agent_approval_decide",
+      "byq_ml_training_create",
+      "byq_web_evidence_create"
+    ],
+    "product_token_rejected_by_read_only": true,
+    "read_only_token_rejected_by_product": true
+  },
+  "remaining_unproven": [
+    "root and child actual tool arrays captured from the real DSH carrier with this read-only MCP loaded",
+    "the five read tools' bounded return sizes and sensitive-field behaviour",
+    "the child persona actually invoked and its closed result parsed",
+    "real Product API -> Runtime Adapter -> DSH -> Backend closed loop"
+  ]
+}

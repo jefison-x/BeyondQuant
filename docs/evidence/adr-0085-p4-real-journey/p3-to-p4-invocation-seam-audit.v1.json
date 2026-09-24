@@ -1,0 +1,133 @@
+{
+  "adr_required_mechanism": "research stages expose only the bounded plan projection, bounded result summaries, a minimal read-only tool set and one closed proposal channel; ADR-0085 P3 authorizes a minimal DSH composition/MCP surface for this.",
+  "carrier": {
+    "acp_session_methods": [
+      "session/agent-busy",
+      "session/attachment",
+      "session/attachment-invalid",
+      "session/canOpenWorkspacePath",
+      "session/cancel",
+      "session/close",
+      "session/conflict",
+      "session/control",
+      "session/create",
+      "session/created",
+      "session/delete",
+      "session/disposed",
+      "session/end-seed",
+      "session/event",
+      "session/flush",
+      "session/follow",
+      "session/fork",
+      "session/fork-unavailable",
+      "session/invalid-time-zone",
+      "session/list",
+      "session/load",
+      "session/model-unavailable",
+      "session/modelCatalog",
+      "session/new",
+      "session/not-found",
+      "session/openWorkspacePath",
+      "session/page",
+      "session/prompt",
+      "session/queue-item-not-found",
+      "session/rename",
+      "session/request_permission",
+      "session/resume",
+      "session/search",
+      "session/selectModel",
+      "session/set_config_option",
+      "session/set_mode",
+      "session/set_model",
+      "session/steer-unavailable",
+      "session/title",
+      "session/title-invalid",
+      "session/title-llm-request",
+      "session/update",
+      "session/updateQueue",
+      "session/workspace-attach-failed"
+    ],
+    "carrier_path": "/usr/local/lib/python3.11/site-packages/deepseek_harness_runtime/runtime/deepseek-harness-sdk-runtime-linux-x64",
+    "carrier_sha256": "sha256:6f68ce88d98307533ee8fa58a8125de4dc019ab16fac8b512cec141a2d1961f8",
+    "host_callable_methods": [
+      "initialize",
+      "session/new",
+      "session/load",
+      "session/prompt",
+      "session/cancel",
+      "session/close",
+      "session/fork",
+      "session/list"
+    ],
+    "host_callable_tool_invocation_evidence": "no session/* ACP method or SDK method starts/invokes a named composition role or tool; subagent/start is a plugin event (ctx.on) emitted into a live in-process child, and tools/list|tools/call are MCP server capabilities. toolFilter/persona are subagent-descriptor keys (child-scoped), not a root-level filter; the mcp-client config has no tool allow/deny list.",
+    "host_callable_tool_invocation_method_present": false,
+    "mcp_client_tool_allowlist_supported": false,
+    "root_level_tool_filter_supported": false,
+    "subagent_start_is_plugin_event": true
+  },
+  "composition": {
+    "background_disabled": true,
+    "bounded_single_delegation_level": true,
+    "composition": "plugins/dsh-byq/profiles/dsh-0.1.5rc1-continuable/byq-research-judgment.patch.yml",
+    "foreground_one_shot": true,
+    "max_depth": 1,
+    "persona_registered_as_model_facing_tool": true,
+    "persona_tool_name": "byq_research_judgment_turn",
+    "provider": "spawn",
+    "registration_plugin": "@deepseek-ai/dsh-tool-subagent"
+  },
+  "conclusion": "P3_TO_P4_WIRING_GAP_NOT_UPSTREAM_BLOCKER",
+  "feasibility_evidence": [
+    "carrier-feasibility.v1.json",
+    "carrier-readonly-mcp-child.v1.json"
+  ],
+  "feasibility_status": "PROVEN_BY_CARRIER_PROBE",
+  "forbidden_workarounds": [
+    "generic prompt asking the model to choose the persona tool",
+    "endpoint/driver directly assembling model_result",
+    "direct function callback bypassing the real DSH carrier",
+    "self-built runner or second generic harness",
+    "using permission denial as a substitute for non-exposure"
+  ],
+  "full_feasibility": "READ_ONLY_MCP_AND_CHILD_PERSONA_PROVEN",
+  "host_named_role_api_available": false,
+  "mcp_client_tool_allowlist_supported": false,
+  "missing_piece": "BYQ must implement the minimal read-only MCP surface, the dedicated bounded composition and the Runtime Adapter turn_runner/endpoint; this is BYQ wiring, not an upstream DSH capability.",
+  "p3_turn_runner_wired_in_production": false,
+  "remaining_unproven": [
+    "Runtime Adapter real turn_runner wired to the bounded composition",
+    "Backend closed-result route invoked from the real carrier result",
+    "real Product API -> Runtime Adapter -> DSH -> Backend closed loop",
+    "three-round journey and the async-handoff fault matrix"
+  ],
+  "required_minimal_isolation": "a minimal read-only MCP subset endpoint (only the bounded read-only tools) plus a dedicated static bounded composition that loads it and the bounded research-judgment-turn persona; the root exposes no write/approval/execute/routing/identity/idempotency/job/delegate tool, and the closed result is captured by the host and submitted to the existing atomic Backend route.",
+  "root_level_tool_filter_supported": false,
+  "root_surface_without_mcp_proven": true,
+  "schema_version": "byq-adr0085-p3-to-p4-invocation-seam-audit.v1",
+  "sdk_exposes_role_or_tool_selector": false,
+  "sdk_surface": {
+    "DeepSeekHarness": {
+      "close": "(self) -> 'None'",
+      "run": "(self, input: 'str | list[JsonObject]', *, session_id: 'str | None' = None, on_notification: 'Callable[[Notification], None] | None' = None) -> 'RunResult'",
+      "start": "(self) -> 'None'",
+      "start_session": "(self, session_id: 'str | None' = None) -> \"'Session'\""
+    },
+    "HarnessClient": {
+      "close": "(self) -> 'None'",
+      "initialize": "(self, *, cwd: 'str', provider: 'str', model: 'str', reasoning_effort: 'str | None' = None, max_tokens: 'int | None' = None) -> 'InitializeResponse'",
+      "next_notification": "(self) -> 'Notification'",
+      "next_request": "(self) -> 'IncomingRequest'",
+      "notify": "(self, method: 'str', params: 'JsonObject | None' = None) -> 'None'",
+      "request": "(self, method: 'str', params: 'JsonObject | None', *, response_model: 'type[ModelT]', timeout_seconds: 'float | None' = None, on_notification: 'Callable[[Notification], None] | None' = None, notification_filter: 'NotificationFilter | None' = None, notification_subscription: \"'NotificationSubscription | None'\" = None) -> 'ModelT'",
+      "respond": "(self, request_id: 'str | int', result: 'JsonValue') -> 'None'",
+      "respond_error": "(self, request_id: 'str | int', *, code: 'int', message: 'str', data: 'JsonValue | None' = None) -> 'None'",
+      "session_prompt": "(self, session_id: 'str', content_blocks: 'list[JsonObject]', *, on_notification: 'Callable[[Notification], None] | None' = None, notification_subscription: \"'NotificationSubscription | None'\" = None) -> 'str'",
+      "start": "(self) -> 'None'",
+      "subscribe_notifications": "(self, notification_filter: 'NotificationFilter | None' = None) -> \"'NotificationSubscription'\"",
+      "subscribe_session_notifications": "(self, session_id: 'str') -> \"'NotificationSubscription'\""
+    },
+    "Session": {
+      "run": "(self, input: 'str | list[JsonObject]', *, on_notification: 'Callable[[Notification], None] | None' = None) -> 'RunResult'"
+    }
+  }
+}

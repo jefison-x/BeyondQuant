@@ -32,7 +32,7 @@ def inventory():
                                     "audit_status": "NEEDS_EVIDENCE"})
     for path in sorted((ROOT / "services/mcp/src").glob("*.ts")):
         source = path.read_text()
-        for match in re.finditer(r'\.registerTool\(\s*"([^"]+)"', source):
+        for match in re.finditer(r'\bregisterTool\(\s*"([^"]+)"', source):
             entries.append({"kind": "mcp_tool", "file": str(path.relative_to(ROOT)),
                             "line": source[:match.start()].count("\n") + 1,
                             "name": match.group(1), "audit_status": "NEEDS_EVIDENCE"})

@@ -1,0 +1,135 @@
+{
+  "all_observed": true,
+  "call_count": 3,
+  "child_invoked": true,
+  "child_tool_arrays": [
+    [
+      "mcp__byq__byq_agent_context",
+      "mcp__byq__byq_backtest_analysis_get",
+      "mcp__byq__byq_backtest_task_get",
+      "mcp__byq__byq_research_get",
+      "mcp__byq__byq_research_stage_input_get"
+    ]
+  ],
+  "command": "docker run --rm --network host --entrypoint python -v \"$PWD:/repo:ro\" -e PROBE_PATCH=plugins/dsh-byq/profiles/dsh-0.1.5rc1-continuable/byq-research-judgment.patch.yml -e BYQ_MCP_READ_ONLY_URL=http://127.0.0.1:<read-only-port>/mcp/v1 -e BYQ_MCP_READ_ONLY_TOKEN=<read-only-token> byq-d15-runtime-candidate:local /repo/scripts/v091/continuation_p4/carrier_readonly_mcp_probe.py",
+  "correction": "the earlier composition used maxDepth: 0, which made the bounded persona UNSpawnable on the real carrier ('subagent depth 1 exceeds maxDepth 0'); the real probe proved this and the dedicated composition now uses maxDepth: 1 (one delegation level; grandchildren at depth 2 are still refused)",
+  "env_separation": "the dedicated composition reads only BYQ_MCP_READ_ONLY_URL/BYQ_MCP_READ_ONLY_TOKEN; the generic Product BYQ_MCP_URL/BYQ_MCP_TOKEN are never read, and the trusted Runtime Adapter guard fails closed on missing or colliding values",
+  "mcp_tool_count": 5,
+  "mcp_tools_list": [
+    "byq_agent_context",
+    "byq_backtest_analysis_get",
+    "byq_backtest_task_get",
+    "byq_research_get",
+    "byq_research_stage_input_get"
+  ],
+  "mcp_url": "http://127.0.0.1:8392/mcp/v1",
+  "method": "real DSH carrier + keyless scripted provider; the provider request body carries the authoritative tool array; the probe also queries the MCP endpoint's real tools/list and exits non-zero unless every observed fact matches the bounded surface",
+  "patch": "/repo/plugins/dsh-byq/profiles/dsh-0.1.5rc1-continuable/byq-research-judgment.patch.yml",
+  "proven": {
+    "all_observed": true,
+    "carrier_started": true,
+    "child_persona_invoked": true,
+    "child_tool_array": "exactly the five read-only MCP tools (static toolFilter allowlist)",
+    "mcp_tools_list_from_the_loaded_endpoint": "exactly the five bounded read tools",
+    "provider_call_count": 3,
+    "root_tool_array": "byq_research_judgment_turn + exactly the five read-only MCP tools; no write/approval/execute/routing tool",
+    "run_ok": true,
+    "violations": []
+  },
+  "purpose": "ADR-0085 P4: prove on the REAL DSH 0.1.5rc1 carrier that the dedicated bounded composition loads the isolated read-only MCP endpoint, invokes the bounded research-judgment child persona, and exposes no write/approval/execute/routing tool.",
+  "remaining_unproven": [
+    "Runtime Adapter real turn_runner wired to this composition",
+    "Backend closed-result route invoked from the real carrier child result",
+    "real Product API -> Runtime Adapter -> DSH -> Backend closed loop",
+    "three-round journey and the async-handoff fault matrix"
+  ],
+  "requests": [
+    {
+      "action": "tool_call",
+      "index": 0,
+      "last_tool_excerpt": "",
+      "message_count": 3,
+      "message_roles": [
+        "system",
+        "user",
+        "user"
+      ],
+      "role": "root",
+      "tool_count": 6,
+      "tool_names": [
+        "byq_research_judgment_turn",
+        "mcp__byq__byq_agent_context",
+        "mcp__byq__byq_backtest_analysis_get",
+        "mcp__byq__byq_backtest_task_get",
+        "mcp__byq__byq_research_get",
+        "mcp__byq__byq_research_stage_input_get"
+      ]
+    },
+    {
+      "action": "text",
+      "index": 1,
+      "last_tool_excerpt": "",
+      "message_count": 3,
+      "message_roles": [
+        "system",
+        "user",
+        "user"
+      ],
+      "role": "child",
+      "tool_count": 5,
+      "tool_names": [
+        "mcp__byq__byq_agent_context",
+        "mcp__byq__byq_backtest_analysis_get",
+        "mcp__byq__byq_backtest_task_get",
+        "mcp__byq__byq_research_get",
+        "mcp__byq__byq_research_stage_input_get"
+      ]
+    },
+    {
+      "action": "text",
+      "index": 2,
+      "last_tool_excerpt": "\"closed bounded judgment: evidence sufficient; no write, approval, execution or routing capability is needed.\"",
+      "message_count": 6,
+      "message_roles": [
+        "system",
+        "user",
+        "user",
+        "assistant",
+        "tool",
+        "user"
+      ],
+      "role": "root",
+      "tool_count": 6,
+      "tool_names": [
+        "byq_research_judgment_turn",
+        "mcp__byq__byq_agent_context",
+        "mcp__byq__byq_backtest_analysis_get",
+        "mcp__byq__byq_backtest_task_get",
+        "mcp__byq__byq_research_get",
+        "mcp__byq__byq_research_stage_input_get"
+      ]
+    }
+  ],
+  "root_tool_arrays": [
+    [
+      "byq_research_judgment_turn",
+      "mcp__byq__byq_agent_context",
+      "mcp__byq__byq_backtest_analysis_get",
+      "mcp__byq__byq_backtest_task_get",
+      "mcp__byq__byq_research_get",
+      "mcp__byq__byq_research_stage_input_get"
+    ],
+    [
+      "byq_research_judgment_turn",
+      "mcp__byq__byq_agent_context",
+      "mcp__byq__byq_backtest_analysis_get",
+      "mcp__byq__byq_backtest_task_get",
+      "mcp__byq__byq_research_get",
+      "mcp__byq__byq_research_stage_input_get"
+    ]
+  ],
+  "run_ok": true,
+  "schema_version": "byq-adr0085-p4-carrier-readonly-mcp-child.v1",
+  "started": true,
+  "violations": []
+}

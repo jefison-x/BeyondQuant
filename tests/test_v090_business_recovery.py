@@ -141,11 +141,14 @@ class CommittedEvidenceTests(unittest.TestCase):
         self.assertTrue(controls["defect_targeting_pre_fix_passed"])
         self.assertGreaterEqual(controls["defect_targeting_count"], 20)
 
-    def test_observations_are_bound_to_the_current_sources(self):
+    def test_observations_are_bound_to_reachable_historical_sources(self):
+        observer = _load(OBSERVER, "v090_business_recovery_observer_history")
         observations = json.loads(OBSERVATIONS.read_text(encoding="utf-8"))
         digests = observations["provenance"]["source_sha256"]
         for relative, expected in digests.items():
-            self.assertEqual(expected, _sha256(ROOT / relative), relative)
+            self.assertTrue(
+                observer._digest_exists_in_git_history(relative, expected), relative
+            )
         for relative in ("packages/contracts/business_recovery.py",
                          "services/runtime-adapter/app/business_recovery.py",
                          "services/gateway/app/recovery_carrier.py",

@@ -1,0 +1,277 @@
+{
+  "schema_version": "byq-v091-continuation-p4-contract.v1",
+  "generated_at": "2026-09-23",
+  "adr": "ADR-0085",
+  "slice": "P4",
+  "version_target": "0.9.1",
+  "scope": "ADR-0085 P4 real compound-research journey and per-handoff fault matrix. One compound ResearchTask is driven through the real Product API and the real DSH/runtime-adapter boundary: create compound task -> conversation continuation grant -> strategy approval -> data ready -> backtest execute approval -> three rounds of complete/analyse/revise -> deterministic best-result selection -> simulated-account approval/creation -> ResearchTask completed. At each real asynchronous hand-off an isolated non-production component restart (Gateway/Backend/Runtime Adapter/Worker) is injected and no duplicate ResearchTask/plan/artifact/experiment/backtest/order/account may exist and approval/event/stage-call/continuation-budget/generation/receipt state must be exact. The model may only ever see the bounded P3 stage projection. This is maintenance/stability evidence for 0.9.1; it does not deploy, does not write a version number, does not create/move any tag or release, does not run a production canary, does not resume Phase 100 and does not start 0.10.",
+  "required_evidence_class": "runtime-isolated-stack",
+  "llm_evidence_class": "scripted-keyless",
+  "llm_evidence_note": "A keyless deterministic scripted provider drives the journey through the real DSH/runtime-adapter and Product API boundaries. This is service-boundary and contract evidence, NOT real-LLM research-quality semantic evidence; any semantic claim that needs a paid real model is recorded as a maintainer canary requirement, never as PASS.",
+  "results_vocabulary": ["PASS", "FAIL", "NOT_RUN", "BLOCKED"],
+  "not_run_requires_reason": true,
+  "closed_scenario_set": true,
+  "not_applicable_token": "not_applicable",
+  "provenance_required_fields": ["boundary", "source", "pid", "generation", "receipt"],
+  "provenance_allowed_sources": {
+    "boundary": [
+      "gateway",
+      "backend",
+      "runtime-adapter",
+      "signal-worker",
+      "backtest-worker",
+      "product-api",
+      "research-store",
+      "not_applicable"
+    ],
+    "source": [
+      "research_tasks",
+      "research_execution_plans",
+      "research_continuation_events",
+      "research_judgment_stage_calls",
+      "agent_approvals",
+      "signal_producer_jobs",
+      "backtest_jobs",
+      "artifacts",
+      "paper_accounts",
+      "runtime_generations",
+      "real-isolated-services"
+    ],
+    "pid": [],
+    "generation": [],
+    "receipt": []
+  },
+  "identity": {
+    "task_id_pattern": "^task_[0-9a-f]{32}$",
+    "plan_id_pattern": "^task_[0-9a-f]{32}$",
+    "artifact_id_pattern": "^artifact_[0-9a-f]{32}$",
+    "signal_job_id_pattern": "^signaljob_[0-9a-f]{32}$",
+    "backtest_task_id_pattern": "^backtesttask_[0-9a-f]{32}$",
+    "backtest_job_id_pattern": "^backtest_[0-9a-f]{32}$",
+    "approval_id_pattern": "^agent_approval_[0-9a-f]{32}$",
+    "paper_account_id_pattern": "^paperaccount_[0-9a-f]{32}$",
+    "owner_required": true,
+    "workspace_required": true
+  },
+  "required_assertions": [
+    "no_duplicate_business_objects",
+    "at_most_one_open_continuation",
+    "exact_approval_binding",
+    "exact_event_identity_and_replay",
+    "exact_stage_call_admission",
+    "exact_continuation_budget",
+    "exact_generation_and_receipt",
+    "model_visible_input_is_bounded_projection_only",
+    "model_cannot_choose_action_identity_approval_idempotency_routing_or_recovery",
+    "deterministic_transitions_use_zero_model_calls",
+    "cleanup_zero_and_production_untouched"
+  ],
+  "forbidden_model_visible_fields": [
+    "bars",
+    "bars_frame",
+    "frame",
+    "frame_index",
+    "date_index",
+    "symbol_index",
+    "signals",
+    "corporate_actions",
+    "benchmark_ohlcv",
+    "raw_signal_snapshot",
+    "full_execution_snapshot",
+    "hidden_reasoning",
+    "tool_state",
+    "session_journal"
+  ],
+  "bounded_stage_projection": {
+    "max_serialized_bytes": 65536,
+    "max_evidence_items": 32,
+    "allowed_keys": [
+      "schema_version",
+      "task_id",
+      "plan_version",
+      "task_version",
+      "stage",
+      "iteration",
+      "status",
+      "objective",
+      "stage_instruction",
+      "proposal_kinds",
+      "evidence",
+      "allowed_tools",
+      "model_call_limit",
+      "escalation_allowed"
+    ],
+    "forbidden_write_tools": [
+      "byq_research_transition",
+      "byq_strategy_version_create",
+      "byq_strategy_approve",
+      "byq_backtest_task_create",
+      "byq_backtest_task_execute",
+      "byq_paper_account_create"
+    ]
+  },
+  "required_journey_steps": [
+    {
+      "id": "task-created",
+      "boundary": "product-api",
+      "description": "A compound research task is created through the real Product API; exactly one ResearchTask exists.",
+      "provenance_source": "research_tasks"
+    },
+    {
+      "id": "continuation-grant",
+      "boundary": "product-api",
+      "description": "A conversation continuation grant is established and exactly one execution plan is created for the task.",
+      "provenance_source": "research_execution_plans"
+    },
+    {
+      "id": "strategy-draft-turn",
+      "boundary": "runtime-adapter",
+      "description": "The bounded research-judgment turn at strategy_draft uses <=2 durable model calls, exposes only the bounded stage projection, and advances the plan to waiting_for_strategy_approval.",
+      "provenance_source": "research_judgment_stage_calls"
+    },
+    {
+      "id": "strategy-approval",
+      "boundary": "backend",
+      "description": "The exact plan-bound strategy approval is requested and approved; the plan advances deterministically with zero model calls.",
+      "provenance_source": "agent_approvals"
+    },
+    {
+      "id": "task-create-approval",
+      "boundary": "backend",
+      "description": "The exact plan-bound backtest-task-create approval is requested and approved; the plan advances deterministically.",
+      "provenance_source": "agent_approvals"
+    },
+    {
+      "id": "backtest-task-create",
+      "boundary": "backend",
+      "description": "The deterministic create action submits the exact backtest task identity; the plan advances to waiting_for_data.",
+      "provenance_source": "signal_producer_jobs"
+    },
+    {
+      "id": "data-ready",
+      "boundary": "signal-worker",
+      "description": "A completed signal job with a validated snapshot is recorded by exact job identity; the plan advances with zero model calls.",
+      "provenance_source": "research_continuation_events"
+    },
+    {
+      "id": "execute-approval",
+      "boundary": "backend",
+      "description": "The exact plan-bound backtest-execute approval is requested and approved; the plan advances deterministically.",
+      "provenance_source": "agent_approvals"
+    },
+    {
+      "id": "backtest-execute",
+      "boundary": "backtest-worker",
+      "description": "The deterministic execute action queues the exact backtest job; the plan advances to waiting_for_backtest_job.",
+      "provenance_source": "backtest_jobs"
+    },
+    {
+      "id": "backtest-completed",
+      "boundary": "backtest-worker",
+      "description": "A terminal backtest job is recorded by exact job identity; the plan advances to backtest_analysis with zero model calls.",
+      "provenance_source": "research_continuation_events"
+    },
+    {
+      "id": "round-analysis",
+      "boundary": "runtime-adapter",
+      "description": "The bounded backtest-analysis judgment turn advances the plan to iteration_comparison.",
+      "provenance_source": "research_judgment_stage_calls"
+    },
+    {
+      "id": "rounds-2-3",
+      "boundary": "backend",
+      "description": "Two further rounds advance iteration 1->2->3 through the exact create gate, never skipping an iteration.",
+      "provenance_source": "research_execution_plans"
+    },
+    {
+      "id": "final-selection",
+      "boundary": "runtime-adapter",
+      "description": "The final-selection judgment deterministically selects the best round and converges the plan to completed.",
+      "provenance_source": "research_execution_plans"
+    },
+    {
+      "id": "paper-account",
+      "boundary": "backend",
+      "description": "The simulated account is approved and created exactly once through the bound approval and Product API.",
+      "provenance_source": "paper_accounts"
+    },
+    {
+      "id": "task-completed",
+      "boundary": "backend",
+      "description": "ResearchTask, plan, RuntimeSession/Generation, continuation receipt and Product projection agree on completion.",
+      "provenance_source": "research_tasks"
+    }
+  ],
+  "required_fault_scenarios": [
+    {
+      "id": "restart-gateway-after-approval-requested",
+      "boundary": "gateway",
+      "handoff": "strategy_approval_requested",
+      "fault": "restart_gateway",
+      "description": "Restart the Gateway after the bound approval request is durable and before the decision; after recovery the same approval binding is reused and no duplicate approval/event/plan exists.",
+      "provenance_source": "agent_approvals"
+    },
+    {
+      "id": "restart-backend-after-data-ready",
+      "boundary": "backend",
+      "handoff": "data_ready_admitted",
+      "fault": "restart_backend",
+      "description": "Restart the Backend after a data-ready event is admitted but before its consumer settles; after recovery there is exactly one advanced plan and no duplicate event.",
+      "provenance_source": "research_continuation_events"
+    },
+    {
+      "id": "restart-runtime-adapter-after-judgment-admission",
+      "boundary": "runtime-adapter",
+      "handoff": "judgment_turn_admitted",
+      "fault": "restart_runtime_adapter",
+      "description": "Restart the Runtime Adapter after a durable stage-call admission but before the result commit; after recovery the admission is replayed free and no third call is created.",
+      "provenance_source": "research_judgment_stage_calls"
+    },
+    {
+      "id": "restart-worker-mid-backtest",
+      "boundary": "backtest-worker",
+      "handoff": "backtest_job_running",
+      "fault": "restart_worker",
+      "description": "Restart the backtest worker while a job is running; after recovery the job terminates once and the plan advances once.",
+      "provenance_source": "backtest_jobs"
+    },
+    {
+      "id": "restart-gateway-after-backtest-completed",
+      "boundary": "gateway",
+      "handoff": "backtest_completed_recorded",
+      "fault": "restart_gateway",
+      "description": "Restart the Gateway after the backtest-completed event is recorded; after recovery no duplicate analysis stage call or event exists.",
+      "provenance_source": "research_continuation_events"
+    },
+    {
+      "id": "restart-backend-between-claim-and-settle",
+      "boundary": "backend",
+      "handoff": "retry_intent_claimed",
+      "fault": "restart_backend",
+      "description": "Restart the Backend between claiming and settling a durable pending intent; the same claimant resumes the claim exactly once and a foreign claimant is refused.",
+      "provenance_source": "research_continuation_events"
+    },
+    {
+      "id": "duplicate-event-replay",
+      "boundary": "backend",
+      "handoff": "event_replayed",
+      "fault": "duplicate_event",
+      "description": "Replay the exact same source identity; the durable ledger row is returned and no second advance or business object is written.",
+      "provenance_source": "research_continuation_events"
+    },
+    {
+      "id": "late-stale-event",
+      "boundary": "backend",
+      "handoff": "stale_event",
+      "fault": "late_event",
+      "description": "A stale/late event for an already-advanced plan records needs_attention and never advances the newer plan.",
+      "provenance_source": "research_continuation_events"
+    }
+  ],
+  "required_cleanup": {
+    "containers": 0,
+    "networks": 0,
+    "volumes": 0,
+    "production_untouched": true
+  }
+}

@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import secrets
@@ -229,6 +230,8 @@ from .ml_validation import MLValidationError
 
 SERVICE = "byq-backend"
 VERSION = "0.1.0"
+
+logger = logging.getLogger("byq.backend")
 
 app = FastAPI(title="BeyondQuant Backend", version=VERSION)
 # Tests may install an explicit provider at this seam. Production resolves the
@@ -4536,11 +4539,38 @@ def decide_agent_approval(approval_id: str, payload: dict[str, Any], request: Re
     context = _required_agent_context(request, payload)
     request_payload = dict(payload)
     request_payload["approval_id"] = approval_id
-    return _agent_call(lambda: {"approval": agent_store.decide_approval(
+    result = _agent_call(lambda: {"approval": agent_store.decide_approval(
         request_payload,
         trusted_owner=context["owner_principal"],
         trusted_actor=context["actor_principal"],
     )})
+    # ADR-0085 P4: a real human decision on a PLAN-BOUND approval advances the
+    # plan through the durable deterministic ledger with zero model calls. The
+    # compat free-text path stays blocked for the same approval.
+    _advance_plan_after_approval(approval_id, context)
+    return result
+
+
+def _advance_plan_after_approval(approval_id: str, context: dict[str, Any]) -> None:
+    """Record the deterministic plan approval event for a decided plan gate.
+
+    The decision is already durable; the ledger adapter is idempotent, so a
+    transient failure here never rewrites the decision and the trusted consumer
+    can always re-drive it by the exact approval id.
+    """
+
+    target = agent_store.plan_bound_approval_target(
+        approval_id, trusted_owner=context["owner_principal"])
+    if target is None or target.get("decision") not in {"approved", "rejected"}:
+        return
+    try:
+        research_store.record_plan_approval_event(
+            target["task_id"], approval_id,
+            trusted_context={"owner_principal": target["owner_principal"],
+                             "workspace_id": target["workspace_id"]})
+    except Exception:  # noqa: BLE001 - decision durable; consumer re-drives
+        logger.warning("plan approval event not recorded yet",
+                       extra={"approval_id": approval_id, "task_id": target["task_id"]})
 
 
 @app.post("/v1/agents/approvals/{approval_id}/continuation")

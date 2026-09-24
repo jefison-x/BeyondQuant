@@ -1,0 +1,136 @@
+{
+  "all_rejected": true,
+  "baseline_passes": true,
+  "controls": [
+    {
+      "accepted_by_legacy_gate": true,
+      "defect_targeting": true,
+      "name": "missing-required-journey-row",
+      "rejected_by_fixed_gate": true
+    },
+    {
+      "accepted_by_legacy_gate": true,
+      "defect_targeting": true,
+      "name": "missing-required-fault-row",
+      "rejected_by_fixed_gate": true
+    },
+    {
+      "accepted_by_legacy_gate": true,
+      "defect_targeting": true,
+      "name": "journey-status-pass-without-raw-facts",
+      "rejected_by_fixed_gate": true
+    },
+    {
+      "accepted_by_legacy_gate": true,
+      "defect_targeting": true,
+      "name": "fault-status-pass-without-restart",
+      "rejected_by_fixed_gate": true
+    },
+    {
+      "accepted_by_legacy_gate": true,
+      "defect_targeting": true,
+      "name": "no-duplicate-objects-violated",
+      "rejected_by_fixed_gate": true
+    },
+    {
+      "accepted_by_legacy_gate": true,
+      "defect_targeting": true,
+      "name": "open-continuation-count-two",
+      "rejected_by_fixed_gate": true
+    },
+    {
+      "accepted_by_legacy_gate": true,
+      "defect_targeting": true,
+      "name": "approval-binding-mismatch",
+      "rejected_by_fixed_gate": true
+    },
+    {
+      "accepted_by_legacy_gate": true,
+      "defect_targeting": true,
+      "name": "duplicate-event-double-advance",
+      "rejected_by_fixed_gate": true
+    },
+    {
+      "accepted_by_legacy_gate": true,
+      "defect_targeting": true,
+      "name": "stage-call-third-call",
+      "rejected_by_fixed_gate": true
+    },
+    {
+      "accepted_by_legacy_gate": true,
+      "defect_targeting": true,
+      "name": "budget-not-exact",
+      "rejected_by_fixed_gate": true
+    },
+    {
+      "accepted_by_legacy_gate": true,
+      "defect_targeting": true,
+      "name": "generation-not-converged",
+      "rejected_by_fixed_gate": true
+    },
+    {
+      "accepted_by_legacy_gate": true,
+      "defect_targeting": true,
+      "name": "receipt-not-converged",
+      "rejected_by_fixed_gate": true
+    },
+    {
+      "accepted_by_legacy_gate": true,
+      "defect_targeting": true,
+      "name": "forbidden-raw-field-visible",
+      "rejected_by_fixed_gate": true
+    },
+    {
+      "accepted_by_legacy_gate": true,
+      "defect_targeting": true,
+      "name": "stage-input-over-bound",
+      "rejected_by_fixed_gate": true
+    },
+    {
+      "accepted_by_legacy_gate": true,
+      "defect_targeting": true,
+      "name": "model-chose-next-action",
+      "rejected_by_fixed_gate": true
+    },
+    {
+      "accepted_by_legacy_gate": true,
+      "defect_targeting": true,
+      "name": "deterministic-transition-used-model",
+      "rejected_by_fixed_gate": true
+    },
+    {
+      "accepted_by_legacy_gate": true,
+      "defect_targeting": true,
+      "name": "cleanup-nonzero",
+      "rejected_by_fixed_gate": true
+    },
+    {
+      "accepted_by_legacy_gate": true,
+      "defect_targeting": true,
+      "name": "production-touched",
+      "rejected_by_fixed_gate": true
+    },
+    {
+      "accepted_by_legacy_gate": true,
+      "defect_targeting": true,
+      "name": "forged-provenance-source",
+      "rejected_by_fixed_gate": true
+    },
+    {
+      "accepted_by_legacy_gate": true,
+      "defect_targeting": true,
+      "name": "stale-event-advanced-plan",
+      "rejected_by_fixed_gate": true
+    },
+    {
+      "accepted_by_legacy_gate": true,
+      "defect_targeting": true,
+      "name": "restart-pid-unchanged",
+      "rejected_by_fixed_gate": true
+    }
+  ],
+  "defect_targeting": 21,
+  "defect_targeting_all_masked_by_legacy": true,
+  "schema_version": "byq-v091-continuation-p4-negative-controls.v1",
+  "total": 21
+}

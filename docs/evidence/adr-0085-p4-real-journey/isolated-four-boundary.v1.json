@@ -1,0 +1,674 @@
+{
+  "all_observed": true,
+  "approval_handoff": {
+    "approval_id": "agent_approval_fb788e8c0f7e45e99740f985a8dc7149",
+    "decision_action": "byq_strategy_approve",
+    "decision_status": "approved",
+    "event_count": 1,
+    "event_count_after_replay": 1,
+    "plan_after_decision": [
+      "3",
+      "waiting_for_task_create_approval",
+      "1"
+    ],
+    "plan_after_replay": [
+      "3",
+      "waiting_for_task_create_approval",
+      "1"
+    ],
+    "provider_calls_after": 9,
+    "provider_calls_before": 9,
+    "task_provider_calls_after_handoff": 3,
+    "task_provider_calls_before_handoff": 3
+  },
+  "boundaries": {
+    "adapter": "authenticated internal judgment route returned a server-derived call identity/attempt",
+    "backend": "stage call admitted then completed (call_index 1); atomic receipt; plan reached waiting_for_strategy_approval with the approval bound to the exact validated strategy_version; the trusted request minted the plan-command-bound strategy approval and the user decision advanced the plan to waiting_for_task_create_approval with zero model calls; the second bound approval advanced to ready_to_create_backtest_task and the trusted deterministic create_backtest_task action advanced the plan to waiting_for_data with zero model calls and an idempotent replay",
+    "dsh": "real DSH carrier invoked the bounded persona; the child saw exactly the five read-only MCP tools",
+    "product_api": "real Gateway conversation + validated strategy_version fixture + continuation grant (confirmed artifacts deterministically bound into plan references)"
+  },
+  "boundary1_product_api": {
+    "confirmed_strategy_version": "artifact_2682ed79e5fc48298426534bd14e2800",
+    "gateway": "http://127.0.0.1:18100",
+    "http_calls": 7,
+    "initial_plan": {
+      "approval": null,
+      "expected_postcondition": "strategy_draft_created",
+      "iteration": 1,
+      "next_action": "draft_strategy",
+      "plan_version": 1,
+      "schema_version": "research-execution-plan.v1",
+      "stage": "strategy_draft",
+      "status": "active",
+      "task_id": "task_52416a19f3cf4114889c7614bdc90324",
+      "task_version": 1
+    },
+    "session_id": "conversation_22f54bd9e1754448833abaf02008cedb",
+    "task_id": "task_52416a19f3cf4114889c7614bdc90324"
+  },
+  "boundary2_adapter": {
+    "response": {
+      "adapter_invocation": {
+        "attempt": "1:strategy_draft:1",
+        "call_identity": "byq-judgment-b7bcae878198f384f04917871f449b1c",
+        "id": "byq-adapter-c858b822624c4d9e9c5abc3366ea835c"
+      },
+      "dsh_generation": {
+        "id": null,
+        "note": "adapter invocation id is not a persisted runtime generation",
+        "status": "not_available"
+      },
+      "receipt": {
+        "call_identity": "byq-judgment-b7bcae878198f384f04917871f449b1c",
+        "progress": {
+          "call_identity": "byq-judgment-b7bcae878198f384f04917871f449b1c",
+          "call_index": 1,
+          "continue": false,
+          "model_calls_remaining": 0,
+          "model_calls_used": 1,
+          "outcome": "advance",
+          "plan_moved_to_needs_attention": false,
+          "progress_identity": "sha256:0708b777e6774154c94a50fa65ff0773c4a2dfdf16ac6d26a395cba3718932d9",
+          "reason": "stage_advanced",
+          "replayed": false,
+          "status": "stop"
+        },
+        "proposal": {
+          "approval": {
+            "action": "strategy_approve",
+            "params_digest": "sha256:7bff25c3f8c9819d587e5b64a138b591dd6d356b04a8ad9c37387997da3fadc5",
+            "plan_version": 2,
+            "resource_id": "artifact_2682ed79e5fc48298426534bd14e2800",
+            "resource_kind": "strategy_version",
+            "task_version": 1
+          },
+          "expected_postcondition": "strategy_approval_requested",
+          "iteration": 1,
+          "next_action": "request_strategy_approval",
+          "plan_version": 2,
+          "proposal_identity": "research_proposal_8bbd5f8b946648c80b19376a18654342",
+          "reason": "strategy_draft_committed",
+          "replayed": false,
+          "schema_version": "research-execution-plan.v1",
+          "stage": "waiting_for_strategy_approval",
+          "status": "waiting",
+          "task_id": "task_52416a19f3cf4114889c7614bdc90324",
+          "task_version": 1
+        },
+        "proposal_identity": "research_proposal_8bbd5f8b946648c80b19376a18654342",
+        "replayed": false,
+        "schema_version": "research-judgment-result-receipt.v1"
+      }
+    },
+    "status": 200
+  },
+  "boundary3_dsh": {
+    "positive_provider_delta": 3,
+    "provider": {
+      "calls": 9,
+      "calls_by_task": {
+        "task_21f64ef8b0714321aa7f6aa4c4f0e6e7": 3,
+        "task_52416a19f3cf4114889c7614bdc90324": 3,
+        "task_c7f1885013cc427aab4d1a35f016181b": 3
+      },
+      "child_calls": 3,
+      "last_available_tools": [
+        "byq_research_judgment_turn",
+        "mcp__byq__byq_agent_context",
+        "mcp__byq__byq_backtest_analysis_get",
+        "mcp__byq__byq_backtest_task_get",
+        "mcp__byq__byq_research_get",
+        "mcp__byq__byq_research_stage_input_get"
+      ],
+      "per_call": [
+        {
+          "action": "tool_call",
+          "bounded_input_bytes": 710,
+          "bounded_input_digest": "sha256:95d172ae322267e6e4570b93dae30df36a8b0ca7d4691f8163b90d51ecdf2f1e",
+          "bounded_input_fields": [
+            "allowed_tools",
+            "escalation_allowed",
+            "evidence",
+            "iteration",
+            "model_call_limit",
+            "objective",
+            "plan_version",
+            "proposal_kinds",
+            "schema_version",
+            "stage",
+            "stage_instruction",
+            "status",
+            "task_id",
+            "task_version"
+          ],
+          "call": 1,
+          "forbidden_raw_hits": [],
+          "has_tool_result": false,
+          "input_plan_version": 1,
+          "input_stage": "strategy_draft",
+          "input_task_id": "task_c7f1885013cc427aab4d1a35f016181b",
+          "input_task_version": 1,
+          "role": "root",
+          "stage_input_stage": "strategy_draft",
+          "tools": [
+            "byq_research_judgment_turn",
+            "mcp__byq__byq_agent_context",
+            "mcp__byq__byq_backtest_analysis_get",
+            "mcp__byq__byq_backtest_task_get",
+            "mcp__byq__byq_research_get",
+            "mcp__byq__byq_research_stage_input_get"
+          ]
+        },
+        {
+          "action": "closed_result",
+          "bounded_input_bytes": 710,
+          "bounded_input_digest": "sha256:95d172ae322267e6e4570b93dae30df36a8b0ca7d4691f8163b90d51ecdf2f1e",
+          "bounded_input_fields": [
+            "allowed_tools",
+            "escalation_allowed",
+            "evidence",
+            "iteration",
+            "model_call_limit",
+            "objective",
+            "plan_version",
+            "proposal_kinds",
+            "schema_version",
+            "stage",
+            "stage_instruction",
+            "status",
+            "task_id",
+            "task_version"
+          ],
+          "call": 2,
+          "forbidden_raw_hits": [],
+          "has_tool_result": false,
+          "input_plan_version": 1,
+          "input_stage": "strategy_draft",
+          "input_task_id": "task_c7f1885013cc427aab4d1a35f016181b",
+          "input_task_version": 1,
+          "role": "child",
+          "stage_input_stage": "strategy_draft",
+          "tools": [
+            "mcp__byq__byq_agent_context",
+            "mcp__byq__byq_backtest_analysis_get",
+            "mcp__byq__byq_backtest_task_get",
+            "mcp__byq__byq_research_get",
+            "mcp__byq__byq_research_stage_input_get"
+          ]
+        },
+        {
+          "action": "final_text",
+          "bounded_input_bytes": 710,
+          "bounded_input_digest": "sha256:95d172ae322267e6e4570b93dae30df36a8b0ca7d4691f8163b90d51ecdf2f1e",
+          "bounded_input_fields": [
+            "allowed_tools",
+            "escalation_allowed",
+            "evidence",
+            "iteration",
+            "model_call_limit",
+            "objective",
+            "plan_version",
+            "proposal_kinds",
+            "schema_version",
+            "stage",
+            "stage_instruction",
+            "status",
+            "task_id",
+            "task_version"
+          ],
+          "call": 3,
+          "forbidden_raw_hits": [],
+          "has_tool_result": true,
+          "input_plan_version": 1,
+          "input_stage": "strategy_draft",
+          "input_task_id": "task_c7f1885013cc427aab4d1a35f016181b",
+          "input_task_version": 1,
+          "role": "root",
+          "stage_input_stage": "strategy_draft",
+          "tools": [
+            "byq_research_judgment_turn",
+            "mcp__byq__byq_agent_context",
+            "mcp__byq__byq_backtest_analysis_get",
+            "mcp__byq__byq_backtest_task_get",
+            "mcp__byq__byq_research_get",
+            "mcp__byq__byq_research_stage_input_get"
+          ]
+        },
+        {
+          "action": "tool_call",
+          "bounded_input_bytes": 710,
+          "bounded_input_digest": "sha256:bf2fbf9928aac13c346c9e7bab19e4cf53055b79342d6bf829b1184c5296c5f9",
+          "bounded_input_fields": [
+            "allowed_tools",
+            "escalation_allowed",
+            "evidence",
+            "iteration",
+            "model_call_limit",
+            "objective",
+            "plan_version",
+            "proposal_kinds",
+            "schema_version",
+            "stage",
+            "stage_instruction",
+            "status",
+            "task_id",
+            "task_version"
+          ],
+          "call": 4,
+          "forbidden_raw_hits": [],
+          "has_tool_result": false,
+          "input_plan_version": 1,
+          "input_stage": "strategy_draft",
+          "input_task_id": "task_21f64ef8b0714321aa7f6aa4c4f0e6e7",
+          "input_task_version": 1,
+          "role": "root",
+          "stage_input_stage": "strategy_draft",
+          "tools": [
+            "byq_research_judgment_turn",
+            "mcp__byq__byq_agent_context",
+            "mcp__byq__byq_backtest_analysis_get",
+            "mcp__byq__byq_backtest_task_get",
+            "mcp__byq__byq_research_get",
+            "mcp__byq__byq_research_stage_input_get"
+          ]
+        },
+        {
+          "action": "closed_result",
+          "bounded_input_bytes": 710,
+          "bounded_input_digest": "sha256:bf2fbf9928aac13c346c9e7bab19e4cf53055b79342d6bf829b1184c5296c5f9",
+          "bounded_input_fields": [
+            "allowed_tools",
+            "escalation_allowed",
+            "evidence",
+            "iteration",
+            "model_call_limit",
+            "objective",
+            "plan_version",
+            "proposal_kinds",
+            "schema_version",
+            "stage",
+            "stage_instruction",
+            "status",
+            "task_id",
+            "task_version"
+          ],
+          "call": 5,
+          "forbidden_raw_hits": [],
+          "has_tool_result": false,
+          "input_plan_version": 1,
+          "input_stage": "strategy_draft",
+          "input_task_id": "task_21f64ef8b0714321aa7f6aa4c4f0e6e7",
+          "input_task_version": 1,
+          "role": "child",
+          "stage_input_stage": "strategy_draft",
+          "tools": [
+            "mcp__byq__byq_agent_context",
+            "mcp__byq__byq_backtest_analysis_get",
+            "mcp__byq__byq_backtest_task_get",
+            "mcp__byq__byq_research_get",
+            "mcp__byq__byq_research_stage_input_get"
+          ]
+        },
+        {
+          "action": "final_text",
+          "bounded_input_bytes": 710,
+          "bounded_input_digest": "sha256:bf2fbf9928aac13c346c9e7bab19e4cf53055b79342d6bf829b1184c5296c5f9",
+          "bounded_input_fields": [
+            "allowed_tools",
+            "escalation_allowed",
+            "evidence",
+            "iteration",
+            "model_call_limit",
+            "objective",
+            "plan_version",
+            "proposal_kinds",
+            "schema_version",
+            "stage",
+            "stage_instruction",
+            "status",
+            "task_id",
+            "task_version"
+          ],
+          "call": 6,
+          "forbidden_raw_hits": [],
+          "has_tool_result": true,
+          "input_plan_version": 1,
+          "input_stage": "strategy_draft",
+          "input_task_id": "task_21f64ef8b0714321aa7f6aa4c4f0e6e7",
+          "input_task_version": 1,
+          "role": "root",
+          "stage_input_stage": "strategy_draft",
+          "tools": [
+            "byq_research_judgment_turn",
+            "mcp__byq__byq_agent_context",
+            "mcp__byq__byq_backtest_analysis_get",
+            "mcp__byq__byq_backtest_task_get",
+            "mcp__byq__byq_research_get",
+            "mcp__byq__byq_research_stage_input_get"
+          ]
+        },
+        {
+          "action": "tool_call",
+          "bounded_input_bytes": 710,
+          "bounded_input_digest": "sha256:ade7f645643e33f76448dae1f05da1ca3fc46a40f9bb3772ab62fc1a32e868d9",
+          "bounded_input_fields": [
+            "allowed_tools",
+            "escalation_allowed",
+            "evidence",
+            "iteration",
+            "model_call_limit",
+            "objective",
+            "plan_version",
+            "proposal_kinds",
+            "schema_version",
+            "stage",
+            "stage_instruction",
+            "status",
+            "task_id",
+            "task_version"
+          ],
+          "call": 7,
+          "forbidden_raw_hits": [],
+          "has_tool_result": false,
+          "input_plan_version": 1,
+          "input_stage": "strategy_draft",
+          "input_task_id": "task_52416a19f3cf4114889c7614bdc90324",
+          "input_task_version": 1,
+          "role": "root",
+          "stage_input_stage": "strategy_draft",
+          "tools": [
+            "byq_research_judgment_turn",
+            "mcp__byq__byq_agent_context",
+            "mcp__byq__byq_backtest_analysis_get",
+            "mcp__byq__byq_backtest_task_get",
+            "mcp__byq__byq_research_get",
+            "mcp__byq__byq_research_stage_input_get"
+          ]
+        },
+        {
+          "action": "closed_result",
+          "bounded_input_bytes": 710,
+          "bounded_input_digest": "sha256:ade7f645643e33f76448dae1f05da1ca3fc46a40f9bb3772ab62fc1a32e868d9",
+          "bounded_input_fields": [
+            "allowed_tools",
+            "escalation_allowed",
+            "evidence",
+            "iteration",
+            "model_call_limit",
+            "objective",
+            "plan_version",
+            "proposal_kinds",
+            "schema_version",
+            "stage",
+            "stage_instruction",
+            "status",
+            "task_id",
+            "task_version"
+          ],
+          "call": 8,
+          "forbidden_raw_hits": [],
+          "has_tool_result": false,
+          "input_plan_version": 1,
+          "input_stage": "strategy_draft",
+          "input_task_id": "task_52416a19f3cf4114889c7614bdc90324",
+          "input_task_version": 1,
+          "role": "child",
+          "stage_input_stage": "strategy_draft",
+          "tools": [
+            "mcp__byq__byq_agent_context",
+            "mcp__byq__byq_backtest_analysis_get",
+            "mcp__byq__byq_backtest_task_get",
+            "mcp__byq__byq_research_get",
+            "mcp__byq__byq_research_stage_input_get"
+          ]
+        },
+        {
+          "action": "final_text",
+          "bounded_input_bytes": 710,
+          "bounded_input_digest": "sha256:ade7f645643e33f76448dae1f05da1ca3fc46a40f9bb3772ab62fc1a32e868d9",
+          "bounded_input_fields": [
+            "allowed_tools",
+            "escalation_allowed",
+            "evidence",
+            "iteration",
+            "model_call_limit",
+            "objective",
+            "plan_version",
+            "proposal_kinds",
+            "schema_version",
+            "stage",
+            "stage_instruction",
+            "status",
+            "task_id",
+            "task_version"
+          ],
+          "call": 9,
+          "forbidden_raw_hits": [],
+          "has_tool_result": true,
+          "input_plan_version": 1,
+          "input_stage": "strategy_draft",
+          "input_task_id": "task_52416a19f3cf4114889c7614bdc90324",
+          "input_task_version": 1,
+          "role": "root",
+          "stage_input_stage": "strategy_draft",
+          "tools": [
+            "byq_research_judgment_turn",
+            "mcp__byq__byq_agent_context",
+            "mcp__byq__byq_backtest_analysis_get",
+            "mcp__byq__byq_backtest_task_get",
+            "mcp__byq__byq_research_get",
+            "mcp__byq__byq_research_stage_input_get"
+          ]
+        }
+      ],
+      "root_calls": 3,
+      "service": "byq-p4-judgment-provider",
+      "tool_calls_emitted": 3
+    },
+    "task_provider_calls": 3
+  },
+  "boundary4_backend": {
+    "call_identity": "byq-judgment-b7bcae878198f384f04917871f449b1c",
+    "final_plan": [
+      "2",
+      "waiting_for_strategy_approval",
+      "1"
+    ],
+    "plan_approval": {
+      "action": "strategy_approve",
+      "params_digest": "sha256:7bff25c3f8c9819d587e5b64a138b591dd6d356b04a8ad9c37387997da3fadc5",
+      "plan_version": 2,
+      "resource_id": "artifact_2682ed79e5fc48298426534bd14e2800",
+      "resource_kind": "strategy_version",
+      "task_version": 1
+    },
+    "plan_references": {
+      "conversation": {
+        "conversation": "conversation_22f54bd9e1754448833abaf02008cedb"
+      },
+      "research_task": {
+        "research_task": "task_52416a19f3cf4114889c7614bdc90324"
+      },
+      "strategy_version": {
+        "strategy_version": "artifact_2682ed79e5fc48298426534bd14e2800"
+      }
+    },
+    "receipt_call_identity": "byq-judgment-b7bcae878198f384f04917871f449b1c",
+    "receipt_progress": {
+      "call_identity": "byq-judgment-b7bcae878198f384f04917871f449b1c",
+      "call_index": 1,
+      "continue": false,
+      "model_calls_remaining": 0,
+      "model_calls_used": 1,
+      "outcome": "advance",
+      "plan_moved_to_needs_attention": false,
+      "progress_identity": "sha256:0708b777e6774154c94a50fa65ff0773c4a2dfdf16ac6d26a395cba3718932d9",
+      "reason": "stage_advanced",
+      "replayed": false,
+      "status": "stop"
+    },
+    "stage_call_rows": [
+      [
+        "byq-judgment-b7bcae878198f384f04917871f449b1c",
+        "completed",
+        "1",
+        "advance"
+      ]
+    ]
+  },
+  "boundary_request": {
+    "attempt": "1:strategy_draft:1",
+    "identity": {
+      "x-byq-dsh-run-id": "byq-session-914ad2660ce3438a91115a43f9365597",
+      "x-byq-judgment-attempt": "1:strategy_draft:1",
+      "x-byq-session-id": "byq-session-914ad2660ce3438a91115a43f9365597",
+      "x-byq-trace-id": "byq-trace-258c989989144ed088cb03ff4556ce2a",
+      "x-byq-workspace-id": "workspace_acda58634d9d4750a0613f97f1703c5c"
+    }
+  },
+  "boundary_stage_projection": {
+    "observed_by_provider": {
+      "bounded_input_bytes": 710,
+      "bounded_input_digest": "sha256:ade7f645643e33f76448dae1f05da1ca3fc46a40f9bb3772ab62fc1a32e868d9",
+      "bounded_input_fields": [
+        "allowed_tools",
+        "escalation_allowed",
+        "evidence",
+        "iteration",
+        "model_call_limit",
+        "objective",
+        "plan_version",
+        "proposal_kinds",
+        "schema_version",
+        "stage",
+        "stage_instruction",
+        "status",
+        "task_id",
+        "task_version"
+      ],
+      "child_tools": [
+        "mcp__byq__byq_agent_context",
+        "mcp__byq__byq_backtest_analysis_get",
+        "mcp__byq__byq_backtest_task_get",
+        "mcp__byq__byq_research_get",
+        "mcp__byq__byq_research_stage_input_get"
+      ],
+      "forbidden_raw_hits": [],
+      "input_plan_version": 1,
+      "input_stage": "strategy_draft",
+      "input_task_id": "task_52416a19f3cf4114889c7614bdc90324",
+      "input_task_version": 1
+    },
+    "trusted_backend": {
+      "allowed_tools": [
+        "byq_agent_context",
+        "byq_research_get",
+        "byq_research_stage_input_get"
+      ],
+      "digest": "sha256:ade7f645643e33f76448dae1f05da1ca3fc46a40f9bb3772ab62fc1a32e868d9",
+      "fields": [
+        "allowed_tools",
+        "escalation_allowed",
+        "evidence",
+        "iteration",
+        "model_call_limit",
+        "objective",
+        "plan_version",
+        "proposal_kinds",
+        "schema_version",
+        "stage",
+        "stage_instruction",
+        "status",
+        "task_id",
+        "task_version"
+      ],
+      "serialized_bytes": 710
+    }
+  },
+  "cleanup": {
+    "containers": 0,
+    "networks": 0,
+    "production_untouched": true,
+    "scope": "byq-p4-judgment (isolated non-production); production beyondquant stack untouched",
+    "volumes": 0
+  },
+  "command": "BYQ_P4_ROOT=<worktree> python3 scripts/v091/continuation_p4/run_p4_isolated.py",
+  "evidence_class": "runtime-isolated-stack",
+  "http_business_calls": 10,
+  "llm_evidence_class": "scripted-keyless (judgment-aware, non-LLM-quality)",
+  "method": "isolated D15 runtime-qualification stack + compose.p4-judgment.yml; the model-visible input metrics come from the judgment-aware provider's real child request, cross-checked against the trusted Backend stage input; per-task provider call accounting isolates one real turn from the cumulative provider counter",
+  "negative_controls": {
+    "forged_attempt_status": 503,
+    "forged_token_status": 401,
+    "no_token_status": 401,
+    "provider_calls_after": 6,
+    "provider_calls_before": 6,
+    "stage_calls_after": 0,
+    "stage_calls_before": 0
+  },
+  "next_handoff": {
+    "plan_after_action": [
+      "5",
+      "waiting_for_data",
+      "1"
+    ],
+    "plan_after_action_replay": [
+      "5",
+      "waiting_for_data",
+      "1"
+    ],
+    "plan_after_task_create_approval": [
+      "4",
+      "ready_to_create_backtest_task",
+      "1"
+    ],
+    "signal_job_created": true,
+    "task_create_approval_id": "agent_approval_d69b45fdf6e0405693892f84174aa7d6",
+    "task_provider_calls": 3
+  },
+  "outcome": "strategy_draft_committed -> waiting_for_strategy_approval -> (user approved) -> waiting_for_task_create_approval -> (user approved) -> ready_to_create_backtest_task -> deterministic create_backtest_task -> waiting_for_data",
+  "project": "byq-p4-judgment",
+  "purpose": "ADR-0085 P4 REAL isolated non-production four-boundary slice for the NORMAL strategy_draft branch plus TWO real deterministic handoffs: Product API -> authenticated Runtime Adapter -> real DSH child persona -> Backend admit/result receipt -> verified strategy approval -> deterministic task-create approval -> trusted deterministic create_backtest_task action -> waiting_for_data.",
+  "remaining_unproven": [
+    "the data-ready event, execute approval, backtest execute/completion and the three-round journey",
+    "the independent async-handoff fault matrix",
+    "a verifiable cross-process attempt lease for dead in-flight recovery",
+    "the signal_producer_job and stock-pool snapshot in this run are honest isolated fixtures for the deterministic action; a real signal-worker data-ready event is still not driven"
+  ],
+  "replay": {
+    "model_turn_skipped": true,
+    "provider_calls_after": 9,
+    "provider_calls_before": 9,
+    "replayed": true,
+    "stage_calls": "1",
+    "status": 200
+  },
+  "schema_version": "byq-adr0085-p4-isolated-four-boundary.v1",
+  "trusted_stage_input": {
+    "allowed_tools": [
+      "byq_agent_context",
+      "byq_research_get",
+      "byq_research_stage_input_get"
+    ],
+    "digest": "sha256:ade7f645643e33f76448dae1f05da1ca3fc46a40f9bb3772ab62fc1a32e868d9",
+    "fields": [
+      "allowed_tools",
+      "escalation_allowed",
+      "evidence",
+      "iteration",
+      "model_call_limit",
+      "objective",
+      "plan_version",
+      "proposal_kinds",
+      "schema_version",
+      "stage",
+      "stage_instruction",
+      "status",
+      "task_id",
+      "task_version"
+    ],
+    "forbidden_raw_hits": [],
+    "serialized_bytes": 710
+  },
+  "violations": []
+}

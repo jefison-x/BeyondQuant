@@ -522,3 +522,137 @@ def test_owner_isolation_on_all_seams():
                 trusted_context=other_context)
     finally:
         store.close()
+
+
+def test_stage_call_retry_after_interruption_reuses_the_same_attempt_identity():
+    """Fail-able repro: a retry must reuse the durable attempt identity.
+
+    The old adapter generated a fresh call_identity per POST, so an admit that
+    succeeded but lost its result (adapter restart/timeout) would create a second
+    stage_call and consume the stage's second model-call slot. With the
+    authoritative plan-derived identity, the retry is a free replay.
+    """
+
+    import hashlib
+
+    store, task, context = _setup("retry-user", "retry-session", "retry-trace")
+    try:
+        _seed_plan(store, task, "backtest_analysis")
+        plan = _plan_row(store, task)["plan"]
+        attempt = f"{plan['plan_version']}:{plan['stage']}:{plan['iteration']}"
+        # Mirrors services/runtime-adapter/app/research_judgment_boundary.derive_call_identity.
+        identity = "byq-judgment-" + hashlib.sha256(
+            f"{task}:{attempt}".encode()).hexdigest()[:32]
+        first = store.admit_research_stage_call(
+            task, {"call_identity": identity}, trusted_context=context)
+        assert first["call_index"] == 1
+        replay = store.admit_research_stage_call(
+            task, {"call_identity": identity}, trusted_context=context)
+        assert replay["call_index"] == 1
+        count = store._fetch_one(
+            "SELECT COUNT(*) AS c FROM research_judgment_stage_calls WHERE task_id = :t",
+            {"t": task})["c"]
+        assert count == 1
+        # A fresh identity (the defect) would consume the second slot and a third
+        # would be refused; this records the failure mode the retry-stable identity
+        # avoids.
+        second = store.admit_research_stage_call(
+            task, {"call_identity": "byq-judgment-second"}, trusted_context=context)
+        assert second["call_index"] == 2
+        with pytest.raises(StageModelCallLimitExceeded):
+            store.admit_research_stage_call(
+                task, {"call_identity": "byq-judgment-third"}, trusted_context=context)
+    finally:
+        store.close()
+
+
+def test_admit_exposes_created_and_replays_completed_with_receipt():
+    import hashlib
+
+    store, task, context = _setup("admit-user", "admit-session", "admit-trace")
+    try:
+        _seed_plan(store, task, "backtest_analysis")
+        plan = _plan_row(store, task)["plan"]
+        attempt = f"{plan['plan_version']}:{plan['stage']}:{plan['iteration']}"
+        identity = "byq-judgment-" + hashlib.sha256(
+            f"{task}:{attempt}".encode()).hexdigest()[:32]
+        admission = store.admit_research_stage_call(
+            task, {"call_identity": identity, "attempt_binding": attempt},
+            trusted_context=context)
+        assert admission["created"] is True and admission["status"] == "admitted"
+        replay = store.admit_research_stage_call(
+            task, {"call_identity": identity, "attempt_binding": attempt},
+            trusted_context=context)
+        assert replay["created"] is False and replay["status"] == "admitted"
+
+        result = store.record_research_judgment_result(
+            task, {"call_identity": identity, "durable_evidence": {"kind": "none"},
+                   "proposal": _proposal(plan, "backtest_analysis", "backtest_analysis")},
+            trusted_context=context)
+        # The proposal actually advanced the plan (so the old attempt binding is
+        # now stale). This is what makes the late-retry ordering test meaningful.
+        advanced = _plan_row(store, task)
+        assert advanced["plan_version"] == plan["plan_version"] + 1
+        assert advanced["plan"]["stage"] == "iteration_comparison"
+        before_count = store._fetch_one(
+            "SELECT COUNT(*) AS c FROM research_judgment_stage_calls WHERE task_id = :t",
+            {"t": task})["c"]
+
+        # A retry whose response was lost returns the stored receipt and does NOT
+        # report a fresh admission, even though the plan has advanced past the
+        # attempt's stage and the old attempt binding no longer matches it.
+        late = store.admit_research_stage_call(
+            task, {"call_identity": identity, "attempt_binding": attempt},
+            trusted_context=context)
+        assert late["status"] == "completed" and late["created"] is False
+        # The FIRST response only differs from the persisted receipt by the
+        # transient `replayed` marker; compare EVERY persisted field.
+        assert result["replayed"] is False
+        persisted = {key: value for key, value in result.items() if key != "replayed"}
+        assert late["receipt"] == persisted
+        assert "replayed" not in late["receipt"]
+        assert late["call_index"] == 1 and late["stage"] == "backtest_analysis"
+        # No new stage call, no model call, and the plan is unchanged.
+        after_count = store._fetch_one(
+            "SELECT COUNT(*) AS c FROM research_judgment_stage_calls WHERE task_id = :t",
+            {"t": task})["c"]
+        assert after_count == before_count == 1
+        unchanged = _plan_row(store, task)
+        assert unchanged["plan_version"] == advanced["plan_version"]
+        assert unchanged["plan"]["stage"] == "iteration_comparison"
+    finally:
+        store.close()
+
+
+def test_forged_or_stale_attempt_binding_cannot_consume_budget():
+    import hashlib
+
+    store, task, context = _setup("attempt-user", "attempt-session", "attempt-trace")
+    try:
+        _seed_plan(store, task, "backtest_analysis")
+        plan = _plan_row(store, task)["plan"]
+
+        def identity(attempt: str) -> str:
+            return "byq-judgment-" + hashlib.sha256(
+                f"{task}:{attempt}".encode()).hexdigest()[:32]
+
+        good = f"{plan['plan_version']}:{plan['stage']}:{plan['iteration']}"
+        store.admit_research_stage_call(
+            task, {"call_identity": identity(good), "attempt_binding": good},
+            trusted_context=context)
+        before = store._fetch_one(
+            "SELECT COUNT(*) AS c FROM research_judgment_stage_calls WHERE task_id = :t",
+            {"t": task})["c"]
+        for bad in (f"{plan['plan_version'] + 9}:{plan['stage']}:{plan['iteration']}",
+                    f"{plan['plan_version']}:iteration_comparison:{plan['iteration']}",
+                    f"{plan['plan_version']}:{plan['stage']}:{plan['iteration'] + 9}"):
+            with pytest.raises(InvalidTransition):
+                store.admit_research_stage_call(
+                    task, {"call_identity": identity(bad), "attempt_binding": bad},
+                    trusted_context=context)
+        after = store._fetch_one(
+            "SELECT COUNT(*) AS c FROM research_judgment_stage_calls WHERE task_id = :t",
+            {"t": task})["c"]
+        assert after == before == 1
+    finally:
+        store.close()
