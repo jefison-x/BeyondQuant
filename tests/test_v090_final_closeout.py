@@ -51,7 +51,7 @@ def _frozen_historical_root():
         item for item in provenance["artifacts"]
         if item["path"] == "docs/roadmap/STATUS.md"
     )
-    snapshot = EVIDENCE / "status.snapshot.md"
+    snapshot = EVIDENCE / "status.snapshot.txt"
     historical_status = snapshot.read_bytes()
     self_hash = "sha256:" + hashlib.sha256(historical_status).hexdigest()
     if self_hash != status["sha256"]:

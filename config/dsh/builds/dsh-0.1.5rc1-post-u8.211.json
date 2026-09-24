@@ -881,7 +881,7 @@
     "tests/test_v090_d15_superseding_assessment.py": "sha256:e149dce478996e2f21d7a4649e5130fbd97f44397a86de7fae694ba2cd4b5912",
     "tests/test_v090_dsh_default_upgrade.py": "sha256:aaaf7001b8182eee9465b3286c4f8aad583ae5553998936433fc4033e5edcdc4",
     "tests/test_v090_dsh_provider_qualification.py": "sha256:8a1f323f5c5233943cb4d601fa742c0b48bcb2bf69f22b5509cb435e2e8480a1",
-    "tests/test_v090_final_closeout.py": "sha256:de62bd73d5201609a74ff1df311df8e7766256d678d470c16eee0e4f6ee9781d",
+    "tests/test_v090_final_closeout.py": "sha256:b4f8b50087ae400d84dd7d1ef88f7ff50d9e5259f9363d2c7f2094dcf4502a73",
     "tests/test_v090_gsplit_decision.py": "sha256:7e8d131ef0d7930dd2694df29c0da753ee4a0f11fbbc08498fba876f21fb0d63",
     "tests/test_v090_session_containment.py": "sha256:73bc2c939541633c492b68d283c42085d47f35e49fc149b6dd2be907b7ca1f9f",
     "tests/test_v090_step5_b2_adapter_restart.py": "sha256:250df7787f06a3c0fcb4c282132c969d934172f99c64a5a1767c0fea4bfbcf41",
