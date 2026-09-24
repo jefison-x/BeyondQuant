@@ -1,0 +1,158 @@
+{
+  "acceptance_assertions": [
+    "boundary 1 (Product API): real Gateway HTTP task/grant/plan responses; plan stage is strategy_draft.",
+    "boundary 2 (Adapter): the authenticated internal route returns a real receipt with a server-derived call_identity and dsh_run_id; the request body carries no routing/identity; unauthenticated and forged-token callers are rejected before any admission.",
+    "boundary 3 (DSH): the real carrier invoked the bounded child persona with exactly the five read-only tools (already proven by carrier-turn-runner.v1.json); the adapter call must produce the same.",
+    "boundary 4 (Backend): the research_judgment_stage_calls row is admitted then completed for that exact call_identity; a proposal is committed atomically or the admission fails closed; no duplicate objects.",
+    "model non-choices: no next_action/identity/approval/idempotency/routing/recovery in any observed model-visible tool or request.",
+    "no model-visible raw/full signal snapshot, bars/frame/date_index, or full execution snapshot."
+  ],
+  "exactly_once_across_interrupts": {
+    "attempt_authority": "the trusted caller supplies x-byq-judgment-attempt = persisted plan version:stage:iteration; a NEW call rejects a stale/forged/future attempt binding before creating any stage call (no budget consumption); a COMPLETED call is replayed by identity regardless of the binding.",
+    "concurrency": {
+      "behavior": "a duplicate/concurrent request for a live attempt returns 409 research_judgment_in_progress and writes NOTHING; the original owner's real proposal is the only result committed",
+      "follow_up": "a verifiable durable attempt lease (owner + expiry) is required before safe convergence/abandonment; until then fail closed without mutating business state",
+      "no_recovery_claim": "there is no verifiable lease/receipt proving the original owner died, so a genuinely dead in-flight attempt stays admitted and is NOT auto-converged; real cross-process resume is NOT implemented or claimed, and the corresponding fault-matrix row stays not-passed"
+    },
+    "defect": "the adapter always ran the turn_runner after admit; a retry of a call that had already committed its result (lost response, or a late retry after the plan advanced) ran a second paid DSH/provider turn. A follow-up defect fenced any duplicate in-flight admission to needs_attention, which a concurrent request could use to terminate a live turn. A third defect checked the attempt binding before the completed replay, so a late retry after the plan advanced never reached the stored receipt.",
+    "fix": "admit checks the COMPLETED call FIRST (idempotent replay of the stored receipt, before any attempt/current-plan check), so a late retry with the old attempt returns the original receipt even after the plan advanced; only then does it validate the attempt binding against the current plan and create a call. The adapter returns the stored receipt for completed calls; for an existing in-flight admission it does NOT terminate or mutate the turn but fails closed with ResearchJudgmentInProgress (HTTP 409) because no cross-process lease exists to prove the old owner is terminal.",
+    "reproduction": [
+      "services/backend/tests/test_research_judgment.py: an actually-advancing proposal (backtest_analysis -> iteration_comparison) then a late retry with the OLD attempt returns the original receipt, adds NO stage call and leaves the plan unchanged; forged/stale/future attempts add no row",
+      "services/runtime-adapter/tests/test_research_judgment.py: completed admission => stored receipt with no model turn; in-flight duplicate => ResearchJudgmentInProgress with no result write; an overlapping concurrent duplicate cannot preempt the original proposal",
+      "services/runtime-adapter/tests/test_research_judgment_turn.py: any non-none durable_evidence from the child fails closed",
+      "tests/test_research_judgment_contract.py: optional attempt binding is closed/validated; first call without durable progress cannot continue"
+    ],
+    "second_call_reachability": "a stage's second model call requires model-supplied durable progress (artifact/experiment/backtest_job). The bounded judgment adapter may NOT supply a durable evidence identity (extract_closed_result fails closed on any non-none durable_evidence) and the persona has no write tool, so the second call is unreachable through this adapter; the identity plan_version:stage:iteration therefore covers the single judgment call per stage/iteration. A future continue-second-call flow needs an explicit durable attempt discriminator."
+  },
+  "isolated_four_boundary_loop": {
+    "cleanup": {
+      "containers": 0,
+      "networks": 0,
+      "production_untouched": true,
+      "scope": "byq-p4-judgment (isolated non-production); production beyondquant stack untouched",
+      "volumes": 0
+    },
+    "evidence": "isolated-four-boundary.v1.json",
+    "executed": true,
+    "observed": {
+      "adapter": "authenticated internal judgment route returned a server-derived call identity/attempt",
+      "approval_handoff": "trusted plan-command-bound strategy approval request -> Product API user decision -> deterministic plan advance to waiting_for_task_create_approval with ZERO model calls; duplicate decision changed nothing",
+      "backend": "research_judgment_stage_calls admitted then completed (call_index 1); atomic receipt committed; plan reached waiting_for_strategy_approval with the approval bound to the exact validated strategy_version; then the second bound approval advanced to ready_to_create_backtest_task and the trusted deterministic create_backtest_task action advanced the plan to waiting_for_data",
+      "dsh": "real DSH carrier invoked the bounded persona; the child returned a NON-escalating strategy_draft proposal through the five read-only MCP tools",
+      "negative_controls": "no token 401, forged token 401, forged attempt rejected, zero stage calls from controls",
+      "next_handoff": "second trusted plan-command-bound task-create approval -> Product API user decision -> ready_to_create_backtest_task -> trusted deterministic create_backtest_task action -> waiting_for_data; duplicate action replay changed nothing and the deterministic handoffs made ZERO extra model calls",
+      "product_api": "real Gateway conversation + validated strategy_version fixture + continuation grant; the grant's confirmed validated artifacts are deterministically bound into the plan references by the Backend seam",
+      "provider_call_accounting": "per-task provider accounting proves the real judgment turn made exactly 3 calls (root/child/root); the cumulative provider counter is shared across isolated runs and is NOT attributed to one task",
+      "replay": "a duplicate completed request returned the stored receipt (replayed, model turn skipped), added no stage call and made ZERO extra provider calls",
+      "stage_projection": "measured from the provider's real child request: 710 bytes, 14 closed fields, read-only child tool whitelist, no forbidden raw key; digest cross-checked against the trusted Backend stage input"
+    },
+    "outcome": "strategy_draft_committed -> waiting_for_strategy_approval -> (user approved) -> waiting_for_task_create_approval -> (user approved) -> ready_to_create_backtest_task -> deterministic create_backtest_task -> waiting_for_data",
+    "stack": "D15 runtime-qualification stack + compose.p4-judgment.yml (dedicated read-only MCP service, judgment-aware keyless provider, current code mounted)",
+    "still_unproven": [
+      "the data-ready event, execute approval, backtest execute/completion and the full three-round journey",
+      "the independent async-handoff fault matrix",
+      "a verifiable cross-process attempt lease for dead in-flight recovery",
+      "a real signal-worker data-ready event (this run's signal job/snapshot are honest isolated fixtures)"
+    ]
+  },
+  "minimal_trusted_entry": {
+    "authentication": "shared runtime service token: header x-byq-runtime-judgment-token must equal BYQ_RUNTIME_JUDGMENT_TOKEN (hmac.compare_digest); unset token => 503 disabled; missing/wrong => 401 before any admission or model turn",
+    "authoritative_binding": "the Backend admission transaction validates task<->owner<->workspace (research_execution_plan._plan_task) BEFORE any model call; network isolation is NOT treated as authentication",
+    "caller_supplies": [
+      "exact task_id",
+      "trusted BYQ context headers (owner/workspace/actor/trace/session)",
+      "the service token"
+    ],
+    "forbidden": [
+      "model result",
+      "next action",
+      "target stage",
+      "approval",
+      "idempotency key",
+      "routing/recovery",
+      "caller-chosen call identity"
+    ],
+    "non_goals": [
+      "second harness/session store",
+      "DSH fork",
+      "generic MCP/write route",
+      "model-chosen identity/routing",
+      "Product DSH engineering authority"
+    ],
+    "request_body": "ignored",
+    "route": "POST /internal/runtime/research-judgment/{task_id}/run",
+    "server_derived": [
+      "retry-stable durable call_identity derived from task + persisted plan version/stage/iteration (sha256)",
+      "adapter invocation id (uuid4, adapter-local label, NOT a persisted runtime generation)",
+      "read-only MCP endpoint/token",
+      "dedicated composition path",
+      "provider/model route"
+    ]
+  },
+  "next_steps": [
+    "provision a dedicated read-only MCP service in the isolated stack (BYQ_MCP_READ_ONLY_URL/TOKEN) and set BYQ_RUNTIME_JUDGMENT_TOKEN on runtime-adapter via a P4 compose override",
+    "add a judgment-aware keyless scripted provider branch that emits the persona tool call and the closed JSON child result",
+    "run scripts/v091/continuation_p4/run_journey.py in an isolated byq-v091-continuation scope and re-derive the observer verdict from raw facts",
+    "then extend to three rounds and the independent async-handoff fault matrix"
+  ],
+  "not_executed": {
+    "reason": "the normal strategy_draft loop and two deterministic handoffs (strategy approval -> task-create approval -> create_backtest_task -> waiting_for_data) ran; the data-ready event, execute approval, backtest execute/completion, the three-round journey and the async-handoff fault matrix are still not executed.",
+    "three_round_journey_and_fault_matrix": false
+  },
+  "proven": {
+    "adapter_route_authenticated_and_unit_tested": "services/runtime-adapter/tests/test_research_judgment_api.py (runtime image; skips on host without FastAPI)",
+    "dsh_child_role_on_real_carrier": "docs/evidence/adr-0085-p4-real-journey/carrier-turn-runner.v1.json",
+    "read_only_mcp_surface": "docs/evidence/adr-0085-p4-real-journey/read-only-mcp-subset.v1.json"
+  },
+  "purpose": "ADR-0085 P4: inventory the real Product API -> Runtime Adapter -> DSH -> Backend seam, define the authenticated minimal trusted entry and its acceptance assertions, and honestly record what is proven vs not yet executed.",
+  "resolved_blockers": [
+    {
+      "id": "no-read-only-mcp-service",
+      "resolution": "compose.p4-judgment.yml adds a dedicated read-only MCP service (subset=1, port 8301, dedicated token)"
+    },
+    {
+      "id": "provider-not-judgment-aware",
+      "resolution": "scripts/v091/continuation_p4/judgment_scripted_provider.py emits the persona tool call and the closed child JSON"
+    },
+    {
+      "id": "tmp-opencode-hardcoded-write",
+      "resolution": "the P4 driver uses its own worktree-local compose override and never the composite F6 /tmp/opencode path"
+    },
+    {
+      "id": "no-p4-scope-images",
+      "resolution": "existing D15 images reused with the current tree bind-mounted; no heavy rebuild needed"
+    },
+    {
+      "id": "strategy_version_reference_gap",
+      "resolution": "the trusted Backend plan-creation seam now derives plan references from the persisted grant's confirmed validated artifacts (server-side, no model identity)"
+    }
+  ],
+  "retry_idempotency": {
+    "defect": "the first authenticated version generated a fresh call_identity (uuid4) per POST, so an admit that succeeded but lost its result (adapter restart/timeout) created a second stage_call and consumed the stage's second model-call slot, breaking the exact-budget and no-duplicate acceptance.",
+    "fix": "the durable call_identity is now derived server-side from task_id + the persisted plan's version/stage/iteration supplied by the authenticated service (x-byq-judgment-attempt); a retry of the same logical turn reuses the same identity and the Backend admission replays for free, while a legitimate new stage/plan revision/iteration gets a new identity.",
+    "generation_honesty": "the adapter response labels the per-request value as adapter_invocation.id and reports dsh_generation.status=not_available; no mapping to a persisted RuntimeGeneration is claimed",
+    "reproduction": [
+      "services/runtime-adapter/tests/test_research_judgment_boundary.py: derivation is deterministic and attempt-scoped, attempt binding is required/exact",
+      "services/runtime-adapter/tests/test_research_judgment_api.py (runtime image): two POSTs with the same attempt reuse one call_identity; a changed attempt gets a new one; a missing attempt is rejected before admission",
+      "services/backend/tests/test_research_judgment.py::test_stage_call_retry_after_interruption_reuses_the_same_attempt_identity (isolated PostgreSQL): stable identity => 1 stage_call row and call_index 1 on retry; a fresh identity would take call_index 2 and a third would be refused"
+    ]
+  },
+  "schema_version": "byq-adr0085-p4-four-boundary-closed-loop-status.v1",
+  "seam_inventory": {
+    "adapter_entry": "Runtime Adapter internal route POST /internal/runtime/research-judgment/{task_id}/run (services/runtime-adapter/app/research_judgment_api.py) -> run_stage_judgment -> run_bounded_research_judgment.",
+    "backend": "Backend internal /internal/research-judgment/{task_id}/admit (durable, server-derived call count) and /internal/research-judgment/{task_id}/result (atomic proposal commit + progress + stage-call completion + task convergence).",
+    "dsh_role": "Dedicated bounded composition byq-research-judgment.patch.yml: root exposes byq_research_judgment_turn + the five read-only MCP tools; the child persona is the first delegation level (maxDepth 1) and sees exactly the five read-only tools.",
+    "plan_dispatch": "Backend internal plan-continuation seam (research_plan_continuation.py plan_continuation_dispatch) returns the exact bounded next step; a genuine stage returns kind=judgment_turn with the closed bounded stage input.",
+    "product_api": "Gateway/Product API creates the compound ResearchTask and the conversation continuation grant; the execution plan starts at stage strategy_draft (driven by scripts/v091/continuation_p4/run_journey.py)."
+  },
+  "security_review_remediation": {
+    "driver_reaudit": "the driver no longer sends dsh_run_id=session_id+'-p4'; it sends the real conversation runtime_session_id as context and records the adapter-returned server-derived dsh_run_id and call_identity in the raw judgment evidence",
+    "finding": "the earlier route trusted arbitrary x-byq-* headers and derived call_identity from forgeable header values, so a non-trusted caller could trigger admission/model calls",
+    "fix": "added shared service-token authentication (401/503 before any entry call), server-generated call_identity and dsh_run_id, and documented that the authoritative task/owner/workspace/stage binding is the Backend admission transaction",
+    "threat_reproduction": "services/runtime-adapter/tests/test_research_judgment_api.py: no token => 401, forged token => 401, disabled => 503, incomplete context => 401, and in every rejected case a spy proves run_stage_judgment (admission/model turn) was NOT reached; the accepted case shows call_identity/dsh_run_id are server-derived and never equal a caller header/body value"
+  },
+  "verdict_impact": {
+    "p4_verdict": "all_pass=false",
+    "reason": "the frozen matrix journey and fault rows still require the real four-boundary isolated-stack run; no PASS label substitutes for it"
+  }
+}

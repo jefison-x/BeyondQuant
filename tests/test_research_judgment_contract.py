@@ -297,6 +297,23 @@ class AdmissionAndEvidenceTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_stage_admission_request(invalid)
 
+    def test_admission_request_accepts_an_optional_attempt_binding_only(self) -> None:
+        self.assertEqual(
+            validate_stage_admission_request({
+                "call_identity": "turn-a", "attempt_binding": "3:backtest_analysis:1"}),
+            {"call_identity": "turn-a", "attempt_binding": "3:backtest_analysis:1"})
+        for invalid in ("3:backtest_analysis", "Backtest:1", "3:backtest_analysis:",
+                        "future:backtest_analysis:1", 5, None):
+            with self.assertRaises(ValueError):
+                validate_stage_admission_request(
+                    {"call_identity": "turn-a", "attempt_binding": invalid})
+
+    def test_attempt_binding_matches_the_persisted_plan(self) -> None:
+        from packages.contracts.research_judgment import attempt_binding
+        self.assertEqual(attempt_binding(3, "backtest_analysis", 1), "3:backtest_analysis:1")
+        self.assertNotEqual(attempt_binding(4, "backtest_analysis", 1),
+                            attempt_binding(3, "backtest_analysis", 1))
+
     def test_progress_evidence_is_a_closed_durable_record_never_a_digest(self) -> None:
         self.assertEqual(PROGRESS_EVIDENCE_KINDS,
                          frozenset({"none", "plan_advance", "artifact", "experiment", "backtest_job"}))

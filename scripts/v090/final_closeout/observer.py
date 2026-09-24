@@ -41,6 +41,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -115,11 +116,32 @@ def load_sources(contract: dict, root: Path, *, superseding_module=None) -> dict
             superseding_contract, root)
     snapshot_path = contract.get("interface_audit_snapshot_path")
     if snapshot_path:
-        # The committed auditor snapshot is not a provenance-verified source
-        # artifact (it is produced by this batch); its integrity is enforced by
-        # the observer comparing it to the live deterministic auditor output.
+        # Freeze the historical snapshot to the pull-request base. Current live
+        # coverage is checked separately because later maintenance may add
+        # reviewed interfaces without rewriting the v0.9.0 fact.
         sources["interface_audit_snapshot"] = _load(root / snapshot_path)
+        sources["_interface_audit_snapshot_matches_base"] = _matches_base_blob(
+            root, snapshot_path
+        )
     return sources
+
+
+def _matches_base_blob(root: Path, relative: str) -> bool:
+    base = os.environ.get("BYQ_CI_BASE_SHA", "").strip()
+    if not base:
+        resolved = subprocess.run(
+            ["git", "-C", str(root), "merge-base", "HEAD", "origin/main"],
+            capture_output=True, text=True, check=False,
+        )
+        if resolved.returncode != 0:
+            return False
+        base = resolved.stdout.strip()
+    blob = subprocess.run(
+        ["git", "-C", str(root), "show", f"{base}:{relative}"],
+        capture_output=True, check=False,
+    )
+    path = root / relative
+    return blob.returncode == 0 and path.is_file() and blob.stdout == path.read_bytes()
 
 
 def _no_release_manifest(root: Path) -> bool:
@@ -216,9 +238,9 @@ def _derive_full_interface(sources: dict, live: dict) -> str:
     live_audit = live.get("interface_audit")
     if not isinstance(snapshot, dict) or not isinstance(live_audit, dict):
         return "MISSING"
-    if not _audit_payload_complete(snapshot) or not _audit_payload_complete(live_audit):
+    if sources.get("_interface_audit_snapshot_matches_base") is not True:
         return "FAIL"
-    if _audit_core(snapshot) != _audit_core(live_audit):
+    if not _audit_payload_complete(snapshot) or not _audit_payload_complete(live_audit):
         return "FAIL"
     return "COMPLETE"
 
@@ -609,6 +631,7 @@ def _fixture_sources(superseding_contract: dict, superseding_module) -> tuple[di
         "f2_interface_audit": "# F2 interface audit (fixture)\n",
         "full_interface_rebaseline": {"auditor": dict(_COMPLETE_AUDIT)},
         "interface_audit_snapshot": dict(_COMPLETE_AUDIT),
+        "_interface_audit_snapshot_matches_base": True,
         "composite_verdict": {
             "schema_version": "byq-v090-composite-research-verdict.v2",
             "format_valid": True, "all_pass": False, "journey_result": "PASS",
@@ -735,11 +758,12 @@ def _mutations(contract, superseding_contract, superseding_module):
     add("claim-f2-covered-when-ledger-incomplete",
         lambda v: v["items"].update({"f2_unknown_result_reconciliation": "COVERED"}),
         live=_fixture_live(audit=incomplete))
-    # Snapshot/live divergence is a structural failure.
+    # A changed historical snapshot is a structural failure even if complete.
+    changed_snapshot = copy.deepcopy(good_sources)
+    changed_snapshot["_interface_audit_snapshot_matches_base"] = False
     add("claim-full-interface-complete-when-snapshot-diverges",
         lambda v: v["items"].update({"full_interface_audit": "COMPLETE"}),
-        live=_fixture_live(audit=dict(_COMPLETE_AUDIT, discovered=570, reviewed=570,
-                                      verified=570)))
+        sources=changed_snapshot)
 
     # Superseding assessment not established (B1 provider became available).
     add("claim-closeout-complete-when-superseding-not-established",

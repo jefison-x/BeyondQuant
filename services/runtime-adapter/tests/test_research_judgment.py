@@ -93,3 +93,128 @@ def test_persona_binding_is_the_enforcement_channel_not_a_header():
     assert "x-byq-research-judgment-stage" not in source
     for forbidden in ("/v1/research/tasks", "continuation-events", "execution-plan"):
         assert forbidden not in source
+
+
+def test_read_only_mcp_endpoint_is_dedicated_and_fails_closed():
+    # A dedicated read-only endpoint is accepted.
+    assert judgment.resolve_read_only_mcp_endpoint({
+        "BYQ_MCP_READ_ONLY_URL": "http://mcp-readonly:8301/mcp/v1",
+        "BYQ_MCP_READ_ONLY_TOKEN": "read-only-token",
+        "BYQ_MCP_URL": "http://mcp:8300/mcp/v1",
+        "BYQ_MCP_TOKEN": "product-token",
+    }) == {"url": "http://mcp-readonly:8301/mcp/v1", "token": "read-only-token"}
+
+    # Missing URL/token fails closed (never silently falls back to the Product MCP).
+    for missing in (
+        {},
+        {"BYQ_MCP_READ_ONLY_TOKEN": "read-only-token"},
+        {"BYQ_MCP_READ_ONLY_URL": "http://mcp-readonly:8301/mcp/v1"},
+        {"BYQ_MCP_READ_ONLY_URL": "  ", "BYQ_MCP_READ_ONLY_TOKEN": "x"},
+    ):
+        with pytest.raises(judgment.ResearchJudgmentError):
+            judgment.resolve_read_only_mcp_endpoint(missing)
+
+    # A collision with the Product endpoint or credential fails closed.
+    for collision in (
+        {"BYQ_MCP_READ_ONLY_URL": "http://mcp:8300/mcp/v1",
+         "BYQ_MCP_READ_ONLY_TOKEN": "read-only-token", "BYQ_MCP_URL": "http://mcp:8300/mcp/v1"},
+        {"BYQ_MCP_READ_ONLY_URL": "http://mcp-readonly:8301/mcp/v1",
+         "BYQ_MCP_READ_ONLY_TOKEN": "product-token", "BYQ_MCP_TOKEN": "product-token"},
+    ):
+        with pytest.raises(judgment.ResearchJudgmentError):
+            judgment.resolve_read_only_mcp_endpoint(collision)
+
+
+def test_completed_admission_replays_without_running_the_model():
+    transport, calls = _recording_transport([{
+        "call_identity": "turn-a", "status": "completed", "created": False,
+        "receipt": {"schema_version": "research-judgment-result-receipt.v1",
+                    "call_identity": "turn-a", "progress": {"continue": False}}}])
+    seen: list = []
+
+    def turn_runner(admission, persona_tool):
+        seen.append(admission)
+        return {"proposal": {}}
+
+    receipt = judgment.run_bounded_research_judgment(
+        backend_url="http://backend:8000", task_id="task_" + "a" * 32, trusted_headers={},
+        call_identity="turn-a", transport=transport, turn_runner=turn_runner)
+    assert receipt["replayed"] is True and receipt["model_turn_skipped"] is True
+    assert seen == []
+    assert len(calls) == 1
+
+
+def test_in_flight_admission_does_not_terminate_the_live_turn():
+    # A duplicate request for an already-admitted attempt must fail closed with an
+    # explicit in-progress and write NOTHING (it must not fence the live turn to
+    # needs_attention, and it must not run a model turn).
+    transport, calls = _recording_transport([
+        {"call_identity": "turn-a", "status": "admitted", "created": False,
+         "call_index": 1, "stage_input": {}}])
+    seen: list = []
+
+    def turn_runner(admission, persona_tool):
+        seen.append(admission)
+        return {"proposal": {}}
+
+    with pytest.raises(judgment.ResearchJudgmentInProgress):
+        judgment.run_bounded_research_judgment(
+            backend_url="http://backend:8000", task_id="task_" + "a" * 32, trusted_headers={},
+            call_identity="turn-a", transport=transport, turn_runner=turn_runner)
+    assert seen == []
+    assert len(calls) == 1  # admit only; no result write
+
+
+def test_concurrent_duplicate_cannot_preempt_the_original_turn():
+    # First owner admits and is still running; a second owner's duplicate request
+    # gets an in-progress and writes nothing. The original owner then commits its
+    # real proposal; the duplicate never replaced it with a no-progress fence.
+    class Transport:
+        def __init__(self):
+            self.payloads = []
+            self.admitted = False
+
+        def __call__(self, url, payload, headers, timeout):
+            self.payloads.append({"url": url, "payload": payload})
+            if url.endswith("/admit"):
+                if not self.admitted:
+                    self.admitted = True
+                    return {"call_identity": "turn-a", "status": "admitted",
+                            "created": True, "call_index": 1, "stage_input": {}}
+                return {"call_identity": "turn-a", "status": "admitted", "created": False,
+                        "call_index": 1, "stage_input": {}}
+            return {"schema_version": "research-judgment-result-receipt.v1",
+                    "progress": {"outcome": "advance"}, "proposal": {"summary": "real"}}
+
+    transport = Transport()
+
+    def turn_runner(admission, persona_tool):
+        # Simulate a concurrent duplicate arriving while the original turn runs.
+        with pytest.raises(judgment.ResearchJudgmentInProgress):
+            judgment.run_bounded_research_judgment(
+                backend_url="http://backend:8000", task_id="task_" + "a" * 32,
+                trusted_headers={}, call_identity="turn-a", transport=transport,
+                turn_runner=lambda *_: {"proposal": {}})
+        return {"proposal": {"summary": "real"}}
+
+    receipt = judgment.run_bounded_research_judgment(
+        backend_url="http://backend:8000", task_id="task_" + "a" * 32, trusted_headers={},
+        call_identity="turn-a", transport=transport, turn_runner=turn_runner)
+    assert receipt["proposal"]["summary"] == "real"
+    result_writes = [p for p in transport.payloads if p["url"].endswith("/result")]
+    assert len(result_writes) == 1
+    assert result_writes[0]["payload"]["proposal"]["summary"] == "real"
+    assert result_writes[0]["payload"]["durable_evidence"] == {"kind": "none"}
+
+
+def test_attempt_binding_is_sent_to_admit():
+    transport, calls = _recording_transport([
+        {"call_identity": "turn-a", "status": "admitted", "created": True,
+         "call_index": 1, "stage_input": {"stage": "backtest_analysis"}},
+        {"ok": True}])
+    judgment.run_bounded_research_judgment(
+        backend_url="http://backend:8000", task_id="task_" + "a" * 32, trusted_headers={},
+        call_identity="turn-a", attempt="3:backtest_analysis:1", transport=transport,
+        turn_runner=lambda admission, tool: {"proposal": {}})
+    assert calls[0]["payload"] == {"call_identity": "turn-a",
+                                   "attempt_binding": "3:backtest_analysis:1"}

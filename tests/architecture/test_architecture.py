@@ -954,6 +954,35 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("@app.post('/internal/research-judgment/{task_id}/admit')", backend)
         self.assertIn("@app.post('/internal/research-judgment/{task_id}/result')", backend)
 
+    def test_adr0085_p4_plan_continuation_seam_is_bounded(self) -> None:
+        # ADR-0085 P4: the trusted consumer seam creates the plan for a granted
+        # task, mints the exact plan-bound approval, executes the READY
+        # deterministic action and advances the plan from a real human decision.
+        # It exposes no generic plan/event write route, no model-facing write
+        # capability and no raw execution snapshot field.
+        backend = (ROOT / "services/backend/app/main.py").read_text()
+        self.assertNotIn("continuation-events", backend)
+        self.assertNotIn("/execution-plan/advance", backend)
+        self.assertNotIn("/execution-plan/legacy", backend)
+        seam = (ROOT / "services/backend/app/research_plan_continuation.py").read_text()
+        for method in ("ensure_execution_plan", "plan_continuation_dispatch",
+                       "request_plan_approval", "apply_deterministic_action_result"):
+            self.assertIn(f"def {method}(", seam)
+        self.assertNotIn("@app.", seam)
+        self.assertNotIn("def record_continuation_event(", seam)
+        self.assertIn("bounded_projection_only", seam)
+        for forbidden in ("byq_backtest_task_create", "byq_backtest_task_execute",
+                          "byq_strategy_approve", "byq_research_transition"):
+            self.assertNotIn(forbidden, seam)
+        for raw in ("bars_frame", "date_index", "symbol_index", "corporate_actions"):
+            self.assertNotIn(raw, seam)
+        # Grant creation creates the plan; the approval route advances it.
+        continuation = (ROOT / "services/backend/app/research_continuation.py").read_text()
+        self.assertIn("self.ensure_execution_plan(task_id, trusted_context=trusted_context)",
+                      continuation)
+        self.assertIn("_advance_plan_after_approval(approval_id, context)", backend)
+        self.assertIn("record_plan_approval_event", backend)
+
     def test_adr0085_p3_default_stage_call_bound_agrees_across_contract_and_guard(self) -> None:
         from packages.contracts.research_judgment import DEFAULT_MAX_MODEL_CALLS_PER_STAGE
 

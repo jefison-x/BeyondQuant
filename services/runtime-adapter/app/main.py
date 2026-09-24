@@ -16,6 +16,7 @@ from packages.contracts.prompt_rejection import credential_rejection
 from packages.contracts import business_recovery as recovery_contract
 
 from .runtime import ModelCredentialUnavailable, RuntimeAdapter, SessionConflict, StaleSessionLease
+from .research_judgment_api import router as research_judgment_router
 
 
 class CreateSessionRequest(BaseModel):
@@ -44,6 +45,9 @@ class PromptRequest(BaseModel):
 
 adapter = RuntimeAdapter()
 app = FastAPI(title="BeyondQuant DSH Runtime Adapter", version="0.1.0")
+# ADR-0085 P4: the INTERNAL bounded research-judgment entry. It is not part of
+# the Product API and never exposes a generic write route.
+app.include_router(research_judgment_router)
 
 
 def require_chat_admission():

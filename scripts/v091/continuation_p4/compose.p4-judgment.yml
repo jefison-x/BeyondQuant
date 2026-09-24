@@ -1,0 +1,89 @@
+# ADR-0085 P4 isolated four-boundary judgment stack (non-production, keyless).
+#
+# Extends scripts/d15/runtime_continuity/compose.runtime-qual.yml. It reuses the
+# existing isolated Gateway/Product API, Backend, Runtime Adapter and DSH carrier
+# images, mounts the CURRENT tree code into them, and adds:
+#   * mcp-readonly: a dedicated read-only MCP instance (five bounded read tools,
+#     its own port/token) that never shares the Product MCP endpoint/credential;
+#   * judgment-provider: a keyless judgment-aware scripted provider that really
+#     drives the DSH child/tool path.
+# No production stack, volume, credential or paid API is touched.
+#
+# Required env:
+#   BYQ_P4_ROOT       absolute repo/worktree root (bind-mount source)
+#   BYQ_P4_COMPOSE    absolute path of this file
+#
+# Usage:
+#   docker compose -p byq-p4-judgment \
+#     -f scripts/d15/runtime_continuity/compose.runtime-qual.yml \
+#     -f scripts/v091/continuation_p4/compose.p4-judgment.yml up -d --no-build
+
+services:
+  backend:
+    volumes:
+      - ${BYQ_P4_ROOT}/services/backend/app:/app/app:ro
+      - ${BYQ_P4_ROOT}/packages:/app/packages:ro
+      - ${BYQ_P4_ROOT}/plugins/dsh-byq/registry:/app/plugin-registry:ro
+
+  gateway:
+    volumes:
+      - ${BYQ_P4_ROOT}/services/gateway/app:/app/app:ro
+      - ${BYQ_P4_ROOT}/packages:/app/packages:ro
+
+  mcp-readonly:
+    image: byq-d15-runtime-mcp:local
+    environment:
+      BYQ_BACKEND_URL: http://backend:8000
+      BYQ_MCP_READ_ONLY_SUBSET: "1"
+      BYQ_MCP_READ_ONLY_PORT: "8301"
+      BYQ_MCP_READ_ONLY_TOKEN: d15-synthetic-readonly-only
+      BYQ_WEB_EVIDENCE_PROVENANCE_POLICY: /app/dsh-0.1.2rc1.web-evidence-provenance.json
+    volumes:
+      - ${BYQ_P4_ROOT}/services/mcp/dist:/app/dist:ro
+    command: ["node", "dist/src/server.js"]
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8301/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+    networks: [d15_internal]
+
+  judgment-provider:
+    image: byq-d15-runtime-scripted-provider:local
+    environment:
+      JUDGMENT_PROVIDER_PORT: "8901"
+    volumes:
+      - ${BYQ_P4_ROOT}/scripts/v091/continuation_p4:/p4:ro
+    command: ["python3", "/p4/judgment_scripted_provider.py"]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8901/healthz',timeout=3)"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+    networks: [d15_internal]
+
+  runtime-adapter:
+    volumes:
+      - d15_sessions:/var/lib/byq/dsh-sessions
+      - ${BYQ_P4_ROOT}/scripts/d15/runtime_continuity/candidate.identity.json:/opt/byq/releases/candidate.identity.json:ro
+      - ${BYQ_P4_ROOT}/services/runtime-adapter/app:/app/app:ro
+      - ${BYQ_P4_ROOT}/packages:/app/packages:ro
+      - ${BYQ_P4_ROOT}/plugins/dsh-byq/profiles/dsh-0.1.5rc1-continuable/byq-research-judgment.patch.yml:/opt/byq/profiles/byq-research-judgment.patch.yml:ro
+    environment:
+      DEEPSEEK_BASE_URL: http://judgment-provider:8901
+      BYQ_RUNTIME_JUDGMENT_TOKEN: d15-synthetic-judgment-only
+      BYQ_JUDGMENT_COMPOSITION: /opt/byq/profiles/byq-research-judgment.patch.yml
+      BYQ_MCP_READ_ONLY_URL: http://mcp-readonly:8301/mcp/v1
+      BYQ_MCP_READ_ONLY_TOKEN: d15-synthetic-readonly-only
+    depends_on:
+      mcp:
+        condition: service_healthy
+      mcp-readonly:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+      judgment-provider:
+        condition: service_healthy

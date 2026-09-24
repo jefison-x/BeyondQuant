@@ -35,9 +35,48 @@ import urllib.request
 RESEARCH_JUDGMENT_PERSONA_TOOL = "byq_research_judgment_turn"
 _RESULT_FIELDS = frozenset({"proposal", "durable_evidence"})
 
+# ADR-0085 P4: the bounded judgment turn must reach ONLY the isolated read-only
+# MCP endpoint. The trusted Runtime Adapter derives it from dedicated variables
+# and fails closed if they are missing or collide with the Product MCP endpoint
+# or credential, so a misconfiguration can never load the full 82-tool surface.
+_READ_ONLY_URL_ENV = "BYQ_MCP_READ_ONLY_URL"
+_READ_ONLY_TOKEN_ENV = "BYQ_MCP_READ_ONLY_TOKEN"
+_PRODUCT_URL_ENV = "BYQ_MCP_URL"
+_PRODUCT_TOKEN_ENV = "BYQ_MCP_TOKEN"
+
 
 class ResearchJudgmentError(RuntimeError):
     """A bounded research-judgment invocation failed closed."""
+
+
+class ResearchJudgmentInProgress(ResearchJudgmentError):
+    """The same durable attempt is already admitted by a live owner.
+
+    A duplicate/concurrent request must NOT terminate the original turn; it waits
+    or returns an explicit in-progress. There is no cross-process lease yet, so we
+    cannot prove the old owner is terminal and therefore never mutate state here.
+    """
+
+
+def resolve_read_only_mcp_endpoint(env) -> dict:
+    """Derive the isolated read-only MCP endpoint or fail closed.
+
+    A missing read-only URL/token, or a read-only endpoint/credential that is the
+    same as the Product MCP, is a configuration error: the bounded persona could
+    otherwise discover the full Product surface.
+    """
+
+    url = (env.get(_READ_ONLY_URL_ENV) or "").strip()
+    token = (env.get(_READ_ONLY_TOKEN_ENV) or "").strip()
+    if not url or not token:
+        raise ResearchJudgmentError(
+            "read-only MCP endpoint is not configured for the bounded judgment turn")
+    product_url = (env.get(_PRODUCT_URL_ENV) or "").strip()
+    product_token = (env.get(_PRODUCT_TOKEN_ENV) or "").strip()
+    if url == product_url or token == product_token:
+        raise ResearchJudgmentError(
+            "read-only MCP endpoint or credential collides with the Product MCP")
+    return {"url": url, "token": token}
 
 
 def _http_post(url: str, payload: dict, headers: dict, timeout: float) -> dict:
@@ -77,14 +116,17 @@ def enforce_bounded_result_shape(model_result: object) -> dict:
 
 def admit_research_judgment_turn(
     *, backend_url: str, task_id: str, trusted_headers: dict, call_identity: str,
-    transport=None, timeout: float = 8.0,
+    attempt: str | None = None, transport=None, timeout: float = 8.0,
 ) -> dict:
     """Reserve one bounded model call; the backend derives the count and bound."""
 
     post = transport or _http_post
+    payload: dict = {"call_identity": call_identity}
+    if attempt is not None:
+        payload["attempt_binding"] = attempt
     return _call(
         post, f"{backend_url}/internal/research-judgment/{task_id}/admit",
-        {"call_identity": call_identity}, trusted_headers, timeout)
+        payload, trusted_headers, timeout)
 
 
 def submit_research_judgment_result(
@@ -108,18 +150,36 @@ def submit_research_judgment_result(
 
 def run_bounded_research_judgment(
     *, backend_url: str, task_id: str, trusted_headers: dict, call_identity: str,
-    turn_runner, transport=None, timeout: float = 8.0,
+    turn_runner, attempt: str | None = None, transport=None, timeout: float = 8.0,
 ) -> dict:
     """Admit, run the turn inside the bounded persona, then submit the result.
 
     ``turn_runner`` receives the admission (with the bounded stage input) and the
     bounded persona tool name, and MUST run the DSH turn inside that persona so
     the model cannot reach any write tool.
+
+    Exactly-once behavior across interrupts:
+
+    * a COMPLETED admission returns its stored receipt and runs NO model turn (a
+      lost response or a late retry after the plan advanced is a free replay);
+    * an existing in-flight admission is NOT terminated by a duplicate/concurrent
+      request: we cannot prove the original owner is dead, so we fail closed with
+      ``ResearchJudgmentInProgress`` and leave all business state unchanged (to be
+      surfaced as an explicit in-progress). Convergence would require a verifiable
+      lease/receipt, which does not exist yet; a real cross-process resume is NOT
+      claimed;
+    * only a freshly created admission runs the model turn.
     """
 
     admission = admit_research_judgment_turn(
         backend_url=backend_url, task_id=task_id, trusted_headers=trusted_headers,
-        call_identity=call_identity, transport=transport, timeout=timeout)
+        call_identity=call_identity, attempt=attempt, transport=transport, timeout=timeout)
+    if admission.get("status") == "completed":
+        stored = admission.get("receipt") if isinstance(admission.get("receipt"), dict) else {}
+        return {**stored, "replayed": True, "model_turn_skipped": True}
+    if admission.get("created") is False:
+        raise ResearchJudgmentInProgress(
+            "bounded judgment attempt is already admitted by a live owner")
     model_result = turn_runner(admission, RESEARCH_JUDGMENT_PERSONA_TOOL)
     return submit_research_judgment_result(
         backend_url=backend_url, task_id=task_id, trusted_headers=trusted_headers,

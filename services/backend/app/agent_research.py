@@ -974,6 +974,29 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                             "task_id": plan_task["task_id"]}, connection=connection)
         return self._approval_row(updated)
 
+    def plan_bound_approval_target(self, approval_id: object, *,
+                                   trusted_owner: str | None = None) -> dict[str, object] | None:
+        """Public, bounded read of the plan-command binding of a decided approval.
+
+        ADR-0085 P4: the trusted HTTP route uses this to deterministically record
+        the plan approval event after a real human decision. It returns only the
+        bound task/workspace and the authoritative decision, never the internal
+        digest/key. A compat approval (no binding) returns ``None``.
+        """
+
+        approval_id = _entity_id(approval_id, field="approval_id", prefix="agent_approval")
+        row = self._fetch_one("SELECT * FROM agent_approvals WHERE approval_id = :id",
+                              {"id": approval_id})
+        if row is None:
+            return None
+        if trusted_owner and row["owner_principal"] != trusted_owner:
+            return None
+        binding = approval_plan_binding(row)
+        if binding is None:
+            return None
+        return {"task_id": binding["task_id"], "workspace_id": binding["workspace"],
+                "owner_principal": row["owner_principal"], "decision": row["status"]}
+
     def get_approval(self, approval_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         approval_id = _entity_id(approval_id, field="approval_id", prefix="agent_approval")
         row = self._fetch_one(

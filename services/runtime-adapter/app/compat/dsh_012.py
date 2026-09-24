@@ -127,6 +127,28 @@ class Dsh012Compatibility:
         harness.close()
 
     @staticmethod
+    def bounded_subagent_result(notification: object) -> str | None:
+        """Return an ok subagent's final assistant text, or None.
+
+        ADR-0085 P4 uses this to capture the bounded research-judgment child's
+        closed result. It is the only raw notification-payload read for that
+        purpose and stays inside this versioned compatibility boundary.
+        """
+
+        if not isinstance(notification, Notification):
+            return None
+        if notification.method != "subagent.finished":
+            return None
+        payload = notification.payload
+        if not isinstance(payload, dict) or payload.get("status") != "ok":
+            return None
+        for block in payload.get("lastAssistantMessage") or []:
+            if isinstance(block, dict) and block.get("type") == "text" \
+                    and isinstance(block.get("text"), str):
+                return block["text"]
+        return None
+
+    @staticmethod
     def observe(notification: object, *, root_session_id: str) -> RuntimeObservation:
         observation = Dsh012Compatibility._observe(notification, root_session_id=root_session_id)
         if isinstance(notification, Notification) and isinstance(notification.payload, dict):

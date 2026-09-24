@@ -1,0 +1,77 @@
+{
+  "all_observed": true,
+  "child_invoked": true,
+  "closed_result": {
+    "proposal": {
+      "escalate": false,
+      "evidence_sufficient": true,
+      "iteration": 1,
+      "plan_version": 1,
+      "proposal_kind": "backtest_analysis",
+      "schema_version": "research-proposal.v1",
+      "stage": "backtest_analysis",
+      "summary": "bounded judgment",
+      "task_id": "task_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "task_version": 1
+    }
+  },
+  "command": "docker run --rm --network host --entrypoint python -v \"$PWD:/repo:ro\" -e BYQ_MCP_READ_ONLY_URL=http://127.0.0.1:<read-only-port>/mcp/v1 -e BYQ_MCP_READ_ONLY_TOKEN=<read-only-token> byq-d15-runtime-candidate:local /repo/scripts/v091/continuation_p4/carrier_turn_runner_probe.py",
+  "forbidden_exposed": [],
+  "method": "imports app.research_judgment_turn.DshBoundedTurnRunner inside the candidate image; keyless scripted provider returns the closed JSON child result; live isolated read-only MCP endpoint; exits non-zero unless the closed result and non-exposure facts hold",
+  "proven": {
+    "all_observed": true,
+    "child_invoked": true,
+    "closed_result_has_no_durable_evidence": true,
+    "closed_result_proposal_kind": "backtest_analysis",
+    "forbidden_exposed": [],
+    "provider_call_roles": [
+      "root",
+      "child",
+      "root"
+    ],
+    "runner_ok": true
+  },
+  "purpose": "ADR-0085 P4: the REAL Runtime Adapter turn_runner builds the real DSH harness over the dedicated bounded composition through the versioned app.compat boundary, invokes the bounded child persona and extracts the closed proposal from the real subagent.finished notification.",
+  "remaining_unproven": [
+    "minimal internal entry (admit -> real DSH -> atomic Backend result) and the Backend result route invoked for real",
+    "real Product API -> Runtime Adapter -> DSH -> Backend closed loop",
+    "three-round journey and the async-handoff fault matrix"
+  ],
+  "requests": [
+    {
+      "role": "root",
+      "tool_names": [
+        "byq_research_judgment_turn",
+        "mcp__byq__byq_agent_context",
+        "mcp__byq__byq_backtest_analysis_get",
+        "mcp__byq__byq_backtest_task_get",
+        "mcp__byq__byq_research_get",
+        "mcp__byq__byq_research_stage_input_get"
+      ]
+    },
+    {
+      "role": "child",
+      "tool_names": [
+        "mcp__byq__byq_agent_context",
+        "mcp__byq__byq_backtest_analysis_get",
+        "mcp__byq__byq_backtest_task_get",
+        "mcp__byq__byq_research_get",
+        "mcp__byq__byq_research_stage_input_get"
+      ]
+    },
+    {
+      "role": "root",
+      "tool_names": [
+        "byq_research_judgment_turn",
+        "mcp__byq__byq_agent_context",
+        "mcp__byq__byq_backtest_analysis_get",
+        "mcp__byq__byq_backtest_task_get",
+        "mcp__byq__byq_research_get",
+        "mcp__byq__byq_research_stage_input_get"
+      ]
+    }
+  ],
+  "runner_ok": true,
+  "schema_version": "byq-adr0085-p4-carrier-turn-runner.v1",
+  "violations": []
+}

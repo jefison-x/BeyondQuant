@@ -1,4 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { resolve as resolvePath } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
@@ -130,10 +132,30 @@ import {
 
 const SERVICE = "beyondquant-mcp";
 const VERSION = "0.1.0";
-const PORT = Number(process.env.PORT ?? "8300");
 const MCP_PATH = "/mcp/v1";
 const BACKEND_URL = process.env.BYQ_BACKEND_URL ?? "http://backend:8000";
-const MCP_TOKEN = process.env.BYQ_MCP_TOKEN;
+
+// ADR-0085 P4: the bounded research-judgment composition must not be able to
+// discover any write/approval/execute/routing/identity/job tool. When
+// BYQ_MCP_READ_ONLY_SUBSET=1 the server registers ONLY these five bounded read
+// tools and refuses to start unless it was given its own dedicated port and
+// token, so it can never silently share the Product MCP endpoint or credential.
+// The default (unset) surface is byte-for-byte unchanged.
+const READ_ONLY_JUDGMENT_TOOLS = [
+  "byq_agent_context",
+  "byq_research_get",
+  "byq_research_stage_input_get",
+  "byq_backtest_task_get",
+  "byq_backtest_analysis_get",
+] as const;
+const READ_ONLY_JUDGMENT_TOOL_SET: ReadonlySet<string> = new Set(READ_ONLY_JUDGMENT_TOOLS);
+const READ_ONLY_SUBSET = process.env.BYQ_MCP_READ_ONLY_SUBSET === "1";
+const PORT = READ_ONLY_SUBSET
+  ? Number(process.env.BYQ_MCP_READ_ONLY_PORT ?? "")
+  : Number(process.env.PORT ?? "8300");
+const MCP_TOKEN = READ_ONLY_SUBSET
+  ? process.env.BYQ_MCP_READ_ONLY_TOKEN
+  : process.env.BYQ_MCP_TOKEN;
 const BACKTEST_ANALYSIS_PAGE_LIMIT = boundedIntegerEnvironment(
   "BYQ_BACKTEST_ANALYSIS_PAGE_CALL_LIMIT", 6, 1, 20,
 );
@@ -191,10 +213,6 @@ const webEvidenceContentSchema = z.object({
   }).strict(),
 }).strict();
 
-if (!MCP_TOKEN) {
-  throw new Error("BYQ_MCP_TOKEN is required to start the MCP service");
-}
-
 function healthPayload(): Record<string, string> {
   return { service: SERVICE, status: "ok", version: VERSION };
 }
@@ -209,7 +227,7 @@ function writeJson(response: ServerResponse, statusCode: number, payload: unknow
 }
 
 function authorized(request: IncomingMessage): boolean {
-  return request.headers.authorization === `Bearer ${MCP_TOKEN}`;
+  return Boolean(MCP_TOKEN) && request.headers.authorization === `Bearer ${MCP_TOKEN}`;
 }
 
 async function byqHealth() {
@@ -679,12 +697,27 @@ async function byqWebEvidenceCreate(args: WebEvidenceCreateRequest, extra: unkno
   return context ? fetchByqWebEvidenceCreate(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
-function buildServer(factoryContext: unknown = undefined): McpServer {
+export function buildServer(factoryContext: unknown = undefined): McpServer {
   const factory = factoryContext as { request?: { headers?: unknown }; requestInfo?: { headers?: unknown } } | undefined;
   const trustedContext = { ...agentContext(factoryContext),
     [privateRoot]: headerValue(factory?.request?.headers ?? factory?.requestInfo?.headers, "x-byq-root-run-id") };
   const server = new McpServer({ name: SERVICE, version: VERSION });
-  server.registerTool(
+  // ADR-0085 P4: explicit, type-checked registration gate. In the isolated
+  // read-only subset only the five bounded read tools are registered; every
+  // other registration is a no-op, so the bounded judgment root/persona cannot
+  // discover any write/approval/execute/routing/identity/job tool. This is
+  // non-exposure, not permission denial, and the default surface is unchanged.
+  const rawRegisterTool = server.registerTool.bind(server) as McpServer["registerTool"];
+  const registerTool: McpServer["registerTool"] = READ_ONLY_SUBSET
+    ? ((name: string, ...rest: unknown[]) => {
+        if (!READ_ONLY_JUDGMENT_TOOL_SET.has(name)) {
+          return undefined as never;
+        }
+        return (rawRegisterTool as unknown as (n: string, ...r: unknown[]) => unknown)(
+          name, ...rest) as never;
+      }) as unknown as McpServer["registerTool"]
+    : rawRegisterTool;
+  registerTool(
     "byq_health",
     {
       description: "Return BeyondQuant MCP and Backend health status.",
@@ -692,7 +725,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     byqHealth,
   );
-  server.registerTool(
+  registerTool(
     "byq_product_help_query",
     {
       description: "Search the versioned BYQ product guide and return bounded fixed Product routes. Read-only; this never grants access or mutates Domain state.",
@@ -700,12 +733,12 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => queryProductHelp(args),
   );
-  server.registerTool(
+  registerTool(
     "byq_feedback_options",
     { description: "Read privacy rules and bounded choices for owner feedback. No GitHub account is required.", inputSchema: {} },
     () => { const fetcher = feedbackFetcher(trustedContext); return fetcher ? fetchByqFeedbackOptions(BACKEND_URL, fetcher) : agentContextUnavailable(); },
   );
-  server.registerTool(
+  registerTool(
     "byq_feedback_list",
     { description: "List a bounded page of feedback owned by the current trusted workspace.", inputSchema: {
       status: z.enum(["all", "draft", "submitted", "triaged", "accepted", "rejected", "duplicate", "withdrawn"]).optional(),
@@ -714,7 +747,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     } },
     (args) => { const fetcher = feedbackFetcher(trustedContext); return fetcher ? fetchByqFeedbackList(BACKEND_URL, args, fetcher) : agentContextUnavailable(); },
   );
-  server.registerTool(
+  registerTool(
     "byq_feedback_get",
     { description: "Read one feedback item owned by the current trusted workspace.", inputSchema: z.union([
       z.object({feedback_id:z.string().regex(/^feedback_[0-9a-f]{32}$/)}).strict(),
@@ -723,24 +756,24 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     ]) },
     (args) => { const fetcher = feedbackFetcher(trustedContext); return fetcher ? ('operation' in args ? fetchByqFeedbackReceipt(BACKEND_URL,args,fetcher) : fetchByqFeedbackGet(BACKEND_URL, args.feedback_id, fetcher)) : agentContextUnavailable(); },
   );
-  server.registerTool(
+  registerTool(
     "byq_feedback_create_draft",
     { description: "Create a private owner-scoped feedback draft. This does not submit or publish it.", inputSchema: { ...feedbackContentShape, idempotency_key: z.string().min(1).max(128) } },
     (args) => { const fetcher = feedbackFetcher(trustedContext); return fetcher ? fetchByqFeedbackCreate(BACKEND_URL, args, fetcher) : agentContextUnavailable(); },
   );
-  server.registerTool(
+  registerTool(
     "byq_feedback_update_draft",
     { description: "Update a private owner-scoped feedback draft. This does not submit or publish it.", inputSchema: {
       feedback_id: z.string().regex(/^feedback_[0-9a-f]{32}$/), expected_version: z.number().int().positive(), idempotency_key: z.string().min(1).max(128), content: z.object(feedbackContentShape).strict(),
     } },
     (args) => { const fetcher = feedbackFetcher(trustedContext); const { feedback_id, ...payload } = args; return fetcher ? fetchByqFeedbackUpdate(BACKEND_URL, feedback_id, payload, fetcher) : agentContextUnavailable(); },
   );
-  server.registerTool(
+  registerTool(
     "byq_feedback_preview",
     { description: "Generate the exact privacy-safe public candidate snapshot for a draft. Show it to the user before any submit call.", inputSchema: { feedback_id: z.string().regex(/^feedback_[0-9a-f]{32}$/), expected_version: z.number().int().positive() } },
     (args) => { const fetcher = feedbackFetcher(trustedContext); return fetcher ? fetchByqFeedbackPreview(BACKEND_URL, args.feedback_id, args.expected_version, fetcher) : agentContextUnavailable(); },
   );
-  server.registerTool(
+  registerTool(
     "byq_feedback_submit",
     { description: "Submit an exact preview after its product_feedback approval is approved in the global approval center. This resumes the original conversation without another confirmation.", inputSchema: {
       feedback_id: z.string().regex(/^feedback_[0-9a-f]{32}$/), expected_version: z.number().int().positive(), preview_hash: z.string().regex(/^[0-9a-f]{64}$/),
@@ -748,7 +781,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     } },
     (args) => { const fetcher = feedbackFetcher(trustedContext); const { feedback_id, ...payload } = args; return fetcher ? fetchByqFeedbackSubmit(BACKEND_URL, feedback_id, payload, fetcher) : agentContextUnavailable(); },
   );
-  server.registerTool(
+  registerTool(
     "byq_workflow_card_propose",
     {
       description: "Propose one bounded BYQ strategy, stock-candidate, or optimization presentation card. This never mutates Domain state or grants approval.",
@@ -757,14 +790,14 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     proposeWorkflowCard,
   );
   const poolContext = () => completeAgentContext(trustedContext);
-  server.registerTool(
+  registerTool(
     "byq_index_pool_catalog",
     { description: "Read the closed six-index catalogue and verified constituent readiness at or before an explicit research date. This never downloads provider data.", inputSchema: {
       requested_as_of: z.string().regex(/^\d{8}$/),
     } },
     (args) => { const context = poolContext(); return context ? fetchByqIndexPoolCatalog(BACKEND_URL, args.requested_as_of, context) : agentContextUnavailable(); },
   );
-  server.registerTool(
+  registerTool(
     "byq_index_pool_create",
     { description: "Create an explicitly requested owner-scoped index pool from verified canonical weights. Choose historical_snapshot for a one-time past-date pool; follow_index tracks new constituents. One snapshot is not a multi-year membership series. Returns an accepted materialization job, not completed members. Freeze original date, mode and idempotency key.", inputSchema: {
       index_symbol: z.enum(["000016.SH", "000300.SH", "000688.SH", "000905.SH", "000852.SH", "399006.SZ"]),
@@ -774,7 +807,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     } },
     (args) => { const context = poolContext(); return context ? fetchByqIndexPoolCreate(BACKEND_URL, args, context) : agentContextUnavailable(); },
   );
-  server.registerTool(
+  registerTool(
     "byq_index_pool_status",
     { description: "Supply exactly one identity: pool_id reads the last ten materializations; the original idempotency_key precisely reconciles an unknown creation. An unconfirmed receipt is unknown, not absent. A pool is usable only after materialization succeeds and an immutable snapshot exists.", inputSchema: {
       pool_id: z.string().regex(/^stock_pool_[0-9a-f]{32}$/).optional(),
@@ -790,12 +823,12 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
         : fetchByqIndexPoolReconcile(BACKEND_URL, args.idempotency_key!, context);
     },
   );
-  server.registerTool(
+  registerTool(
     "byq_pool_list",
     { description: "List owner-scoped BYQ Stock Pools.", inputSchema: {} },
     () => { const context = poolContext(); return context ? fetchByqPoolList(BACKEND_URL, context) : agentContextUnavailable(); },
   );
-  server.registerTool(
+  registerTool(
     "byq_pool_get",
     { description: "Read one exact Stock Pool or reconcile its original creation key without replaying a write.", inputSchema: z.union([
       z.object({ pool_id:z.string() }).strict(),
@@ -805,7 +838,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
       ? fetchByqPoolGet(BACKEND_URL, args.pool_id, context)
       : fetchByqPoolCreationReconcile(BACKEND_URL, args.creation_kind, args.idempotency_key, context)) : agentContextUnavailable(); },
   );
-  server.registerTool(
+  registerTool(
     "byq_pool_create",
     { description: "Create an owner-scoped custom Stock Pool and first immutable snapshot.", inputSchema: {
       idempotency_key: z.string().min(1).max(128),
@@ -815,7 +848,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     } },
     (args) => { const context = poolContext(); return context ? fetchByqPoolCreate(BACKEND_URL, { ...args, pool_type: "custom" }, context) : agentContextUnavailable(); },
   );
-  server.registerTool(
+  registerTool(
     "byq_pool_snapshot_replace",
     { description: "Append or idempotently reuse a complete custom-pool membership snapshot.", inputSchema: {
       pool_id: z.string(), expected_current_snapshot_id: z.string(), idempotency_key: z.string(),
@@ -824,24 +857,24 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     } },
     (args) => { const context = poolContext(); const { pool_id, ...body } = args; return context ? fetchByqPoolSnapshotReplace(BACKEND_URL, pool_id, body, context) : agentContextUnavailable(); },
   );
-  server.registerTool(
+  registerTool(
     "byq_pool_history",
     { description: "List immutable snapshot history for one owner-scoped Stock Pool.", inputSchema: { pool_id: z.string() } },
     (args) => { const context = poolContext(); return context ? fetchByqPoolHistory(BACKEND_URL, args.pool_id, context) : agentContextUnavailable(); },
   );
-  server.registerTool(
+  registerTool(
     "byq_pool_lifecycle",
     { description: "Activate, deactivate, or tombstone-delete an owner-scoped Stock Pool.", inputSchema: {
       pool_id: z.string(), status: z.enum(["active", "inactive", "deleted"]), reason: z.string(), idempotency_key: z.string(),
     } },
     (args) => { const context = poolContext(); const { pool_id, ...body } = args; return context ? fetchByqPoolLifecycle(BACKEND_URL, pool_id, body, context) : agentContextUnavailable(); },
   );
-  server.registerTool(
+  registerTool(
     "byq_paper_account_list",
     { description: "List owner-scoped BYQ simulation-only Paper Trading accounts.", inputSchema: {} },
     () => { const context = poolContext(); return context ? fetchByqPaperAccounts(BACKEND_URL, context) : agentContextUnavailable(); },
   );
-  server.registerTool(
+  registerTool(
     "byq_paper_account_get",
     { description: "Read one owner-scoped Paper Trading account projection.", inputSchema: z.union([
       z.object({account_id:z.string()}).strict(),
@@ -850,17 +883,17 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     ]) },
     (args) => { const context = poolContext(); return context ? ('operation' in args ? fetchByqPaperReceipt(BACKEND_URL,args,context) : fetchByqPaperAccount(BACKEND_URL, args.account_id, context)) : agentContextUnavailable(); },
   );
-  server.registerTool(
+  registerTool(
     "byq_paper_order_get",
     { description: "Read one persisted owner-scoped paper order audit projection.", inputSchema: { account_id: z.string(), order_id: z.string() } },
     (args) => { const context = poolContext(); return context ? fetchByqPaperOrder(BACKEND_URL, args.account_id, args.order_id, context) : agentContextUnavailable(); },
   );
-  server.registerTool(
+  registerTool(
     "byq_paper_snapshot_list",
     { description: "List immutable settlement snapshots for one owner-scoped paper account.", inputSchema: { account_id: z.string() } },
     (args) => { const context = poolContext(); return context ? fetchByqPaperSnapshots(BACKEND_URL, args.account_id, context) : agentContextUnavailable(); },
   );
-  server.registerTool(
+  registerTool(
     "byq_agent_context",
     {
       description: "Return trusted BYQ identity, bounded data/ML notifications and original-conversation research task candidates. Candidates are not automatic task selection; read the exact task before continuing and ask when ambiguous. Unavailable or none_bound is not proof that no previous task exists.",
@@ -868,7 +901,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     () => byqAgentContext({}, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_agent_roles",
     {
       description: "List the versioned BYQ quant research role catalogue and capability policy.",
@@ -876,7 +909,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     byqAgentRoles,
   );
-  server.registerTool(
+  registerTool(
     "byq_agent_run_start",
     {
       description: "Register an owner-scoped AgentRun. parent_run_id is only for delegation from an active parent in this current root/session/generation; never reuse a completed run from an earlier turn. pending_binding cannot authorize actions. For pending or unknown outcomes query the ORIGINAL idempotency_key with receipt_only=true; never mint a replacement key or assume success.",
@@ -889,7 +922,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqAgentRunStart(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_agent_authorize",
     {
       description: "Ask BYQ whether the active role may invoke a domain action; approval-required actions never auto-authorize.",
@@ -902,7 +935,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqAgentAuthorize(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_agent_audit",
     {
       description: "Append a bounded, owner-scoped audit outcome for a BYQ domain action.",
@@ -917,7 +950,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqAgentAudit(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_agent_audit_get",
     {
       description: "Read the owner-scoped audit view for one BYQ agent_run_* identifier; a byq-session-* runtime ID is invalid.",
@@ -925,7 +958,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqAgentAuditGet(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_agent_approval_request",
     {
       description: "Create a pending BYQ human approval for a consequential agent action. Strategy approval requires resource_type=strategy_version; ML strategy approval requires ml_strategy_version; feedback submission requires product_feedback. Use the exact resource ID, never generic artifact.",
@@ -940,7 +973,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqAgentApprovalRequest(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_agent_approval_get",
     {
       description: "Read one owner-scoped BYQ agent approval and its separate execution outcome.",
@@ -948,7 +981,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqAgentApprovalGet(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_agent_approval_decide",
     {
       description: "Record a trusted human approval decision; the initiating agent cannot self-approve.",
@@ -960,7 +993,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqAgentApprovalDecide(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_market_session_context",
     {
       description: "Read today's verified SSE trading-session state and the latest complete persisted BYQ market-data session. This never calls a live provider and is distinct from the runtime wall clock.",
@@ -968,7 +1001,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqMarketSessionContext(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_data_demand_create",
     {
       description: "Ask the trusted BYQ Data Center to prepare a bounded frozen stock-pool/date scope. This queues durable repair work and never gives the Agent Provider access.",
@@ -995,7 +1028,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqDataDemandCreate(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_data_demand_get",
     {
       description: "Read verified preparation progress for one owner-scoped data-demand.v1 request.",
@@ -1006,7 +1039,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqDataDemandGet(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_market_daily",
     {
       description: "Read BYQ-synchronized durable A-share daily bars with explicit cutoff and completeness; never calls a live provider.",
@@ -1019,7 +1052,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqMarketDaily(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_market_valuation",
     {
       description: "Read exact-session BYQ valuation fields from durable data with explicit completeness evidence. This tool never calls a provider or fills missing values.",
@@ -1035,7 +1068,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqMarketValuation(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_market_fundamentals",
     {
       description: "Read the latest BYQ financial report visible after its conservative next-day announcement boundary. This tool never calls a provider or fills missing values.",
@@ -1049,7 +1082,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqMarketFundamentals(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_backtest_task_prepare",
     {
       description: "Read-only preflight for a user-level backtest task. Resolves BYQ strategy, approval, frozen pool and market readiness without creating domain state.",
@@ -1067,7 +1100,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqBacktestTaskPrepare(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_backtest_task_create",
     {
       description: "Create an approved backtest task using BYQ-owned signal preparation; never accepts raw bars or signals.",
@@ -1086,7 +1119,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqBacktestTaskCreate(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_backtest_task_get",
     {
       description: "Read derived task state by backtest_task_id OR recover a signal-backed creation receipt using the original task_id and idempotency_key. Choose exactly one identity. This lookup only recovers an execution whose response was not observed; if the approved create was never submitted, execute it once with this exact original key. Unknown never permits duplicate resubmission; a confirmed receipt provides the ID for a subsequent state read.",
@@ -1095,7 +1128,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqBacktestTaskGet(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_backtest_task_execute",
     {
       description: "Execute an approved task only after trusted signal production created an immutable frozen snapshot.",
@@ -1103,7 +1136,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqBacktestTaskExecute(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_backtest_task_cancel",
     {
       description: "Cancel the active signal-preparation or backtest component when its BYQ state transition permits cancellation.",
@@ -1111,7 +1144,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqBacktestTaskCancel(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_backtest_get",
     {
       description: "Read a BYQ backtest summary by job_id OR reconcile a lost submission receipt using the original task_id and idempotency_key. Choose exactly one identity. An unknown receipt never authorizes resubmission.",
@@ -1120,7 +1153,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqBacktestGet(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_backtest_analysis_get",
     {
       description: "Read a bounded, owner-scoped analysis of an immutable completed BYQ backtest. The summary already contains deterministic return, drawdown-window, daily-risk, realized-trade, cost, benchmark and blocked-order diagnostics and is sufficient for a normal review. Detail sections provide only a first-page evidence sample; raw daily/equity series and object-store results are intentionally unavailable to the Agent. Every successful result reports remaining calls. Exhaustion is a normal stop-and-answer result, never a reason to retry or wait.",
@@ -1133,17 +1166,17 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqBacktestAnalysis(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_ml_capabilities",
     { description: "Read the closed BYQ machine-learning capability catalogue and bounded parameter limits.", inputSchema: {} },
     (args) => byqMlCapabilities(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_ml_workspace_get",
     { description: "Locate owner-scoped ML tasks, frozen pools, safe artifacts and training runs without model objects or raw feature rows.", inputSchema: {} },
     (args) => byqMlWorkspace(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_ml_studies",
     { description: "Search and page the owner-scoped ML research catalogue without loading study details or result rows.", inputSchema: {
       query: z.string().max(100).default(""),
@@ -1153,19 +1186,19 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     } },
     (args) => byqMlStudies(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_ml_study_get",
     { description: "Read one selected ML study with bounded safe run and artifact metadata; large prediction rows remain separate and unavailable to the Agent.", inputSchema: {
       ml_strategy_artifact_id: z.string().regex(/^artifact_[0-9a-f]{32}$/),
     } },
     (args) => byqMlStudyGet(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_ml_strategy_create",
     { description: "Create a validated closed-profile ML strategy: v1 LightGBM compatibility, v2 purged walk-forward with a qualified learner, or an explicit HS300 regime-expert plan. Human approval remains a separate Product action.", inputSchema: domainValidationSchemas.byq_ml_strategy_create },
     (args) => byqMlStrategyCreate(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_ml_strategy_approve",
     { description: "Materialize an exact ML strategy approval after the matching human Agent approval has been granted in the Product approval center.", inputSchema: {
       task_id: z.string(), experiment_id: z.string().optional(),
@@ -1176,7 +1209,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     } },
     (args) => byqMlStrategyApprove(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_ml_training_create",
     { description: "Create an approval-gated trusted ML training run from a human-approved closed strategy and frozen stock-pool snapshot. Call once per approved action; an outcome_unknown result requires read reconciliation and must not be blindly retried.", inputSchema: {
       task_id: z.string(), experiment_id: z.string().optional(), ml_strategy_artifact_id: z.string(),
@@ -1184,7 +1217,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     } },
     (args) => byqMlTrainingCreate(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_ml_training_get",
     { description: "Read one owner-scoped training run, or reconcile an unknown submission by its exact original idempotency key. Supply exactly one identity. An unconfirmed receipt is unknown, not proof of absence.", inputSchema: {
       training_run_id: z.string().regex(/^mlrun_[0-9a-f]{32}$/).optional(),
@@ -1192,14 +1225,14 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     } },
     (args) => byqMlTrainingGet(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_ml_training_cancel",
     { description: "Cancel an eligible approval-gated ML training run without accessing the model object.", inputSchema: {
       training_run_id: z.string().regex(/^mlrun_[0-9a-f]{32}$/),
     } },
     (args) => byqMlTrainingCancel(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_ml_prediction_create",
     { description: "Create an approval-gated prediction run that freezes out-of-sample ranking, standard signals, and a derived backtest-task.v1 reference.", inputSchema: {
       task_id: z.string(), experiment_id: z.string().optional(), model_artifact_id: z.string(),
@@ -1214,14 +1247,14 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     } },
     (args) => byqMlPredictionCreate(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_ml_prediction_get",
     { description: "Read safe prediction, frozen-signal, and derived backtest-task status without model objects or raw feature rows.", inputSchema: {
       prediction_run_id: z.string().regex(/^mlpred_[0-9a-f]{32}$/),
     } },
     (args) => byqMlPredictionGet(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_signal_snapshot_get",
     {
       description: "Read a bounded (<= 64 KiB) safe summary of an immutable, validated BYQ signal_snapshot artifact: identity/hash/status/lineage, date range, universe/benchmark identifiers and counts, signal/action/bar counts, execution parameters, readiness/integrity and a few diagnostic samples. It never returns the raw bars frame, benchmark rows, per-symbol indexes, complete signals or corporate-action rows. Read-only.",
@@ -1229,7 +1262,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqSignalSnapshotGet(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_factor_compute",
     {
       description: "Validate and compute a deterministic BYQ factor from point-in-time snapshots.",
@@ -1237,7 +1270,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqFactorCompute(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_strategy_draft_save",
     {
       description: "Durably save a strategy draft (Phase 33); tolerates intermediate edits that do not yet pass static validation.",
@@ -1251,7 +1284,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqStrategyDraftSave(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_strategy_draft_delete",
     {
       description: "Delete (soft-supersede) an owner-scoped strategy draft (Phase 33).",
@@ -1259,7 +1292,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqStrategyDraftDelete(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_strategy_validate",
     {
       description: "Validate and persist a StrategyDraft. script must define class CustomStrategy with exactly one synchronous generate_signals(self, data, parameters) or generate_target_weights(self, data, portfolio_state, parameters). A planned research task is valid. On 422, use the safe validation message for at most one repair.",
@@ -1267,7 +1300,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqStrategyValidate(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_strategy_version_create",
     {
       description: "Materialize an immutable content-addressed StrategyVersion from a validated draft.",
@@ -1275,7 +1308,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqStrategyVersionCreate(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_strategy_approve",
     {
       description: "Record an auditable approval decision separate from future execution outcome.",
@@ -1293,7 +1326,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqStrategyApprove(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_strategy_export",
     {
       description: "Return a deterministic, secret-free StrategyVersion export.",
@@ -1301,7 +1334,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqStrategyExport(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_research_task_create",
     {
       description: "Create a durable BYQ ResearchTask with idempotency and trace provenance.",
@@ -1315,7 +1348,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqResearchTaskCreate(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_research_get",
     {
       description: "Read one BYQ research entity by entity_id, inspect its durable submission watch by watch_id, OR reconcile a lost creation receipt with its original idempotency_key. Experiment/Artifact key lookup requires the original task_id. Choose exactly one identity. For entity_id or watch_id omit task_id; task_id is only for Experiment/Artifact idempotency_key lookup. Missing receipt is outcome_unknown, never permission to create again.",
@@ -1329,7 +1362,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqResearchGet(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_research_stage_input_get",
     {
       description: "Read the bounded, read-only research-judgment stage input for one exact research task: bounded plan projection, bounded evidence descriptors and the minimal read-only tool set. It never returns raw bars/frames/index lists or a full signal snapshot and never advances workflow state. A deterministic stage returns an error because it uses zero model calls.",
@@ -1337,7 +1370,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqResearchStageInput(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_research_transition",
     {
       description: "Persist an owner-scoped research transition and optional task checkpoint. Task/Experiment statuses are planned, running, completed, failed, cancelled; blocked belongs to progress.stage, not target_status. Keep exact task, stage, linked objects, next action and blocker across model turns. Task completion requires validated same-task evidence and no unfinished domain jobs. Typed domain artifacts require their dedicated producer, not generic validation.",
@@ -1358,7 +1391,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqResearchTransition(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_experiment_create",
     {
       description: "Create a durable Experiment. input_snapshot.sources must be a non-empty array of objects with provider, endpoint and request_fingerprint from real data provenance; do not fabricate sources.",
@@ -1372,7 +1405,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqExperimentCreate(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_artifact_create",
     {
       description: "Create a bounded, hashed, lineage-bearing BYQ Artifact.",
@@ -1388,7 +1421,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqArtifactCreate(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_web_evidence_create",
     {
       description: "Promote qualified search-only web results into a versioned, research-only BYQ Artifact with strict source and time provenance.",
@@ -1404,7 +1437,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqWebEvidenceCreate(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_learning_run_start",
     {
       description: "Start a bounded, owner-scoped BYQ learning run with explicit budgets and stopping rules.",
@@ -1425,7 +1458,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqLearningRunStart(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_learning_run_get",
     {
       description: "Read one owner-scoped BYQ learning run and its bounded state.",
@@ -1433,7 +1466,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqLearningRunGet(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_learning_iteration_record",
     {
       description: "Append one ordered, idempotent learning iteration to an active bounded run.",
@@ -1450,7 +1483,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqLearningIterationRecord(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_learning_iteration_list",
     {
       description: "Read the ordered, replayable iteration history of one BYQ learning run.",
@@ -1458,7 +1491,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqLearningIterationList(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_learning_run_review",
     {
       description: "Record a trusted human review that approves or rejects an awaiting learning run.",
@@ -1470,7 +1503,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqLearningRunReview(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_evaluation_signal_create",
     {
       description: "Create a finite, artifact-backed BYQ evaluation signal for a metric.",
@@ -1487,7 +1520,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqLearningSignalCreate(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_evaluation_signal_get",
     {
       description: "Read one owner-scoped BYQ evaluation signal.",
@@ -1495,7 +1528,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqLearningSignalGet(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_experiment_compare",
     {
       description: "Compare two experiments' deterministic evaluation signals for one metric.",
@@ -1508,7 +1541,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqExperimentCompare(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_lesson_propose",
     {
       description: "Propose a bounded BYQ lesson from validated artifact or evaluation-signal evidence.",
@@ -1522,7 +1555,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqLessonPropose(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_lesson_get",
     {
       description: "Read one owner-scoped BYQ lesson and its promotion history.",
@@ -1530,7 +1563,7 @@ function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     (args) => byqLessonGet(args, trustedContext),
   );
-  server.registerTool(
+  registerTool(
     "byq_lesson_review",
     {
       description: "Record a trusted human promotion decision for a proposed lesson.",
@@ -1613,9 +1646,23 @@ const httpServer = createServer(async (request, response) => {
   }
 });
 
-httpServer.listen(PORT, "0.0.0.0", () => {
-  console.log(`${SERVICE} listening on ${MCP_PATH}`);
-});
+const isMain = process.argv[1] !== undefined
+  && pathToFileURL(resolvePath(process.argv[1])).href === import.meta.url;
+
+if (isMain && !MCP_TOKEN) {
+  throw new Error(READ_ONLY_SUBSET
+    ? "BYQ_MCP_READ_ONLY_TOKEN is required to start the read-only MCP service"
+    : "BYQ_MCP_TOKEN is required to start the MCP service");
+}
+if (isMain && READ_ONLY_SUBSET && !(Number.isInteger(PORT) && PORT > 0 && PORT <= 65535)) {
+  throw new Error("BYQ_MCP_READ_ONLY_PORT must be a valid TCP port to start the read-only MCP service");
+}
+
+if (isMain) {
+  httpServer.listen(PORT, "0.0.0.0", () => {
+    console.log(`${SERVICE} listening on ${MCP_PATH}`);
+  });
+}
 
 async function shutdown(): Promise<void> {
   await new Promise<void>((resolve, reject) => {
@@ -1623,5 +1670,7 @@ async function shutdown(): Promise<void> {
   });
 }
 
-process.once("SIGTERM", () => void shutdown().then(() => process.exit(0)));
-process.once("SIGINT", () => void shutdown().then(() => process.exit(0)));
+if (isMain) {
+  process.once("SIGTERM", () => void shutdown().then(() => process.exit(0)));
+  process.once("SIGINT", () => void shutdown().then(() => process.exit(0)));
+}

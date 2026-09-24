@@ -353,30 +353,36 @@ class ResearchContinuationMixin:
                     digest = hashlib.sha256(json.dumps(request, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
                 if existing["idempotency_key"] != request["idempotency_key"] or existing["request_sha256"] != digest:
                     raise IdempotencyConflict("continuation permission cannot be replaced or replenished")
-                return self._continuation_view(task, conversation)
-            if task["status"] not in {"planned", "running"} or conversation["status"] != "active":
-                raise ValueError("continuation task or conversation is inactive")
-            confirmed_artifacts = []
-            for artifact_id in request["confirmed_artifact_ids"]:
-                artifact = fetch_one(connection, """SELECT artifact_id, content_sha256 FROM artifacts
-                    WHERE artifact_id = :artifact AND task_id = :task AND owner_principal = :owner
-                      AND workspace_id = :workspace AND status = 'validated' FOR SHARE""",
-                    {"artifact": artifact_id, "task": task_id, "owner": task["owner_principal"],
-                     "workspace": task["workspace_id"]})
-                if artifact is None:
-                    raise ValueError("confirmed artifact must be validated and belong to the exact task")
-                confirmed_artifacts.append(artifact)
-            now = datetime.now(timezone.utc)
-            ledger = {**request, "request_sha256": digest, "grant_version": 1,
-                      "confirmed_artifacts": confirmed_artifacts, "handoff_version": 1,
-                      "owner_principal": task["owner_principal"], "workspace_id": task["workspace_id"],
-                      "conversation_id": task["conversation_id"], "confirmed_by": trusted_context["actor_principal"],
-                      "created_at": now.isoformat(), "expires_at": (now + timedelta(seconds=request["valid_seconds"])).isoformat(),
-                      "revoked_at": None, "revoked_by": None}
-            execute(connection, """UPDATE research_tasks SET continuation_permission = :ledger
-                WHERE task_id = :task""", {"ledger": ledger, "task": task_id})
-            task["continuation_permission"] = ledger
-            return self._continuation_view(task, conversation)
+                view = self._continuation_view(task, conversation)
+            else:
+                if task["status"] not in {"planned", "running"} or conversation["status"] != "active":
+                    raise ValueError("continuation task or conversation is inactive")
+                confirmed_artifacts = []
+                for artifact_id in request["confirmed_artifact_ids"]:
+                    artifact = fetch_one(connection, """SELECT artifact_id, content_sha256 FROM artifacts
+                        WHERE artifact_id = :artifact AND task_id = :task AND owner_principal = :owner
+                          AND workspace_id = :workspace AND status = 'validated' FOR SHARE""",
+                        {"artifact": artifact_id, "task": task_id, "owner": task["owner_principal"],
+                         "workspace": task["workspace_id"]})
+                    if artifact is None:
+                        raise ValueError("confirmed artifact must be validated and belong to the exact task")
+                    confirmed_artifacts.append(artifact)
+                now = datetime.now(timezone.utc)
+                ledger = {**request, "request_sha256": digest, "grant_version": 1,
+                          "confirmed_artifacts": confirmed_artifacts, "handoff_version": 1,
+                          "owner_principal": task["owner_principal"], "workspace_id": task["workspace_id"],
+                          "conversation_id": task["conversation_id"], "confirmed_by": trusted_context["actor_principal"],
+                          "created_at": now.isoformat(), "expires_at": (now + timedelta(seconds=request["valid_seconds"])).isoformat(),
+                          "revoked_at": None, "revoked_by": None}
+                execute(connection, """UPDATE research_tasks SET continuation_permission = :ledger
+                    WHERE task_id = :task""", {"ledger": ledger, "task": task_id})
+                task["continuation_permission"] = ledger
+                view = self._continuation_view(task, conversation)
+        # ADR-0085 P4: establishing or replaying the grant guarantees the single
+        # current plan exists for the compound task (idempotent, fail closed).
+        # This runs AFTER the grant transaction so the task-row lock is released.
+        self.ensure_execution_plan(task_id, trusted_context=trusted_context)
+        return view
 
     def get_continuation_permission(self, task_id: str, *, trusted_context: dict) -> dict:
         with self._transaction() as connection:

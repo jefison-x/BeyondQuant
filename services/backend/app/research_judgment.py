@@ -152,20 +152,42 @@ class ResearchJudgmentMixin:
 
         request = validate_stage_admission_request(payload)
         call_identity = str(request["call_identity"])
+        attempt = request.get("attempt_binding")
         with self._transaction() as connection:
             task = self._plan_task(connection, task_id, trusted_context, lock=True)
+            # A COMPLETED call is an idempotent replay FIRST, before any attempt or
+            # current-plan check: its result may already have advanced the plan (and
+            # even moved it to a non-judgment stage), so a late retry with the old
+            # identity must return the stored receipt instead of failing the
+            # attempt/plan binding. It never creates a row or runs a model turn.
+            existing = self._load_stage_call(connection, task["task_id"], call_identity, lock=True)
+            if existing is not None and existing["status"] == "completed":
+                return {
+                    "call_identity": existing["call_identity"], "status": "completed",
+                    "receipt": existing["result_json"], "created": False,
+                    "call_index": int(existing["call_index"]), "stage": existing["stage"],
+                    "plan_version": int(existing["plan_version"]),
+                }
             plan_row = self._load_current_plan(connection, task["task_id"], lock=True)
             if plan_row is None:
                 raise ResearchNotFound("research execution plan not found")
             plan = validate_plan(plan_row["plan"])
             self._require_model_stage(plan["stage"])
-            existing = self._load_stage_call(connection, task["task_id"], call_identity, lock=True)
+            if attempt is not None:
+                from packages.contracts.research_judgment import attempt_binding
+                if attempt != attempt_binding(plan["plan_version"], plan["stage"], plan["iteration"]):
+                    # A stale/forged/future attempt must not consume the stage budget.
+                    raise InvalidTransition(
+                        "research stage attempt binding does not match the current plan")
             if existing is not None:
                 if (existing["plan_version"] != plan["plan_version"]
                         or existing["stage"] != plan["stage"]):
                     raise InvalidTransition(
                         "research stage call identity was reused for another plan revision")
-                return self._stage_admission(existing, task, plan)
+                admission = self._stage_admission(existing, task, plan)
+                admission["status"] = existing["status"]
+                admission["created"] = False
+                return admission
             counted = fetch_one(connection, """SELECT COUNT(*) AS count FROM research_judgment_stage_calls
                 WHERE task_id = :task AND plan_version = :plan AND stage = :stage""",
                 {"task": task["task_id"], "plan": plan["plan_version"], "stage": plan["stage"]})
@@ -184,7 +206,10 @@ class ResearchJudgmentMixin:
                  "stage": plan["stage"], "index": call_index, "now": _now()})
             row = self._load_stage_call(connection, task["task_id"], call_identity, lock=True)
             assert row is not None
-            return self._stage_admission(row, task, plan)
+            admission = self._stage_admission(row, task, plan)
+            admission["status"] = "admitted"
+            admission["created"] = True
+            return admission
 
     # ------------------------------------------------------------------ #
     # Atomic trusted result operation

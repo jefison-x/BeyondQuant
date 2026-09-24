@@ -395,7 +395,9 @@ _EVIDENCE_ID_PATTERNS = {
 }
 
 _STAGE_ADMISSION_FIELDS = frozenset({"call_identity"})
+_STAGE_ADMISSION_OPTIONAL_FIELDS = frozenset({"attempt_binding"})
 _STAGE_PROGRESS_FIELDS = frozenset({"call_identity", "durable_evidence"})
+_ATTEMPT_BINDING = re.compile(r"^[0-9]+:[a-z_]+:[0-9]+$")
 
 
 def validate_call_identity(value: object) -> str:
@@ -404,16 +406,34 @@ def validate_call_identity(value: object) -> str:
     return value
 
 
+def validate_attempt_binding(value: object) -> str:
+    if not isinstance(value, str) or _ATTEMPT_BINDING.fullmatch(value) is None:
+        raise ValueError("research stage attempt binding is invalid")
+    return value
+
+
+def attempt_binding(plan_version: object, stage: object, iteration: object) -> str:
+    """The authoritative per-stage attempt binding derived from the persisted plan."""
+
+    return f"{int(plan_version)}:{stage}:{int(iteration)}"
+
+
 def validate_stage_admission_request(value: object) -> dict[str, object]:
     """Closed admission request: the trusted caller supplies only its call identity.
 
     The 1-based call count is NEVER caller-supplied; the durable ledger derives it
-    under the task-row lock and refuses a third admission.
+    under the task-row lock and refuses a third admission. An optional
+    ``attempt_binding`` lets the trusted caller prove it derived its call identity
+    from the CURRENT persisted plan; the Backend still rejects a stale/forged
+    binding before creating any call.
     """
 
-    if not isinstance(value, dict) or set(value) != _STAGE_ADMISSION_FIELDS:
+    if not isinstance(value, dict) or "call_identity" not in value \
+            or set(value) - (_STAGE_ADMISSION_FIELDS | _STAGE_ADMISSION_OPTIONAL_FIELDS):
         raise ValueError("research stage admission request has invalid fields")
     validate_call_identity(value["call_identity"])
+    if "attempt_binding" in value:
+        validate_attempt_binding(value["attempt_binding"])
     return value
 
 

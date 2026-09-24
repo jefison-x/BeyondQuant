@@ -154,3 +154,18 @@ def test_invalid_registration_arguments_never_produce_a_binding(arguments):
         "callId": "registration", "name": "mcp__byq__byq_agent_run_start", "arguments": arguments,
     }), root_session_id="root")
     assert observation.registration_key is None
+
+
+def test_bounded_subagent_result_returns_only_ok_child_text():
+    from deepseek_harness import Notification
+
+    ok = Notification(method="subagent.finished", payload={
+        "status": "ok", "lastAssistantMessage": [
+            {"type": "text", "text": '{"proposal": {}}'}]})
+    assert Dsh012Compatibility.bounded_subagent_result(ok) == '{"proposal": {}}'
+    failed = Notification(method="subagent.finished", payload={
+        "status": "error", "lastAssistantMessage": [{"type": "text", "text": "x"}]})
+    assert Dsh012Compatibility.bounded_subagent_result(failed) is None
+    assert Dsh012Compatibility.bounded_subagent_result(
+        Notification(method="session.event", payload={})) is None
+    assert Dsh012Compatibility.bounded_subagent_result(object()) is None
