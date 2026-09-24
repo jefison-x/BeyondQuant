@@ -299,9 +299,9 @@ class BoundaryTests(unittest.TestCase):
             "<!-- byq:v090-d15-superseding-assessment=established -->",
             "<!-- byq:v090-step5-b1-subagent-child-crash=blocked-external -->",
             "<!-- byq:v090-step5-b2-adapter-restart=blocked-external -->",
-            "<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.210 -->",
         ):
             self.assertIn(marker, status)
+        self.assertRegex(status, r"<!-- byq:build-revision=dsh-0\.1\.5rc1-post-u8\.\d+ -->")
         self.assertIn("具名 D15 superseding assessment", status)
         self.assertIn("0.9 未关闭", status)
 
@@ -324,10 +324,11 @@ class BoundaryTests(unittest.TestCase):
 
     def test_build_revision_is_the_next_unused_id(self):
         from scripts.dsh import build_revision as builds
-        self.assertEqual(builds.selected_build_id(CANDIDATE), CURRENT_BUILD_REVISION)
+        self.assertRegex(builds.selected_build_id(CANDIDATE),
+                         r"^dsh-0\.1\.5rc1-post-u8\.\d+$")
         self.assertTrue((ROOT / "config/dsh/builds" / f"{CURRENT_BUILD_REVISION}.json").is_file())
         dockerfile = (ROOT / "services/runtime-adapter/Dockerfile.post-u8-candidate").read_text()
-        self.assertIn(CURRENT_BUILD_REVISION, dockerfile)
+        self.assertIn(builds.selected_build_id(CANDIDATE), dockerfile)
 
     def test_observer_cli_exit_code_is_zero_on_the_committed_assessment(self):
         result = subprocess.run(

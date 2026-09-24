@@ -25,6 +25,7 @@ deployment; the formal 0.9.0 release manifest gate remains separate and open.
 | [`verdict.v1.json`](verdict.v1.json) | fail-able observer output: independently derived decision, `format_valid`, `honest`, `complete`, `all_pass`, exit 0 |
 | [`negative-controls.v1.json`](negative-controls.v1.json) | selfcheck: known-good fixture completes; 29 controls all rejected (28 defect-targeting) |
 | [`interface-audit.v1.json`](interface-audit.v1.json) | the committed live fail-closed full-interface auditor output at this commit |
+| [`status.snapshot.md`](status.snapshot.md) | exact provenance-bound historical `STATUS.md` bytes used to replay the closeout observer in shallow CI clones |
 | contract + observer | `scripts/v090/final_closeout/{contract.v1.json,observer.py,build_provenance.py}` |
 
 ## Derived closeout matrix

@@ -36,7 +36,12 @@ SUPERSEDING_CONTRACT = SUPERSEDING / "contract.v1.json"
 
 
 def _frozen_historical_root():
-    """Return a root whose STATUS is the provenance-bound historical file."""
+    """Return a root whose STATUS is the provenance-bound historical file.
+
+    The snapshot is committed with the evidence so shallow CI clones can
+    reproduce the historical observer without fetching arbitrary Git history.
+    Its bytes must still match the original provenance digest.
+    """
 
     import tempfile
 
@@ -46,10 +51,12 @@ def _frozen_historical_root():
         item for item in provenance["artifacts"]
         if item["path"] == "docs/roadmap/STATUS.md"
     )
-    historical_status = subprocess.check_output(
-        ["git", "show", f"{status['introduced_by']}:docs/roadmap/STATUS.md"],
-        cwd=ROOT,
-    )
+    snapshot = EVIDENCE / "status.snapshot.md"
+    historical_status = snapshot.read_bytes()
+    self_hash = "sha256:" + hashlib.sha256(historical_status).hexdigest()
+    if self_hash != status["sha256"]:
+        raise AssertionError(
+            f"historical STATUS snapshot drift: {self_hash} != {status['sha256']}")
     for entry in ROOT.iterdir():
         target = root / entry.name
         if entry.name != "docs":

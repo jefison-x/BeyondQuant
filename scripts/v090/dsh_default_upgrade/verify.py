@@ -22,6 +22,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 RELEASES = ROOT / "config/dsh/releases"
 GENERATED = ROOT / "config/dsh/generated"
+SNAPSHOT_DIR: Path | None = None
+SNAPSHOT_FILES = {
+    "config/dsh/releases/dsh-0.1.5rc1.json": "promotion-snapshot.release.json",
+    "config/dsh/generated/deployment.identity.json": "promotion-snapshot.identity.json",
+    "services/runtime-adapter/Dockerfile.post-u8-candidate": "promotion-snapshot.Dockerfile",
+    "scripts/dsh/build_revision.py": "promotion-snapshot.build_revision.py",
+}
 CANDIDATE = "dsh-0.1.5rc1"
 ROLLBACK = "dsh-0.1.2rc1"
 PROMOTED_BUILD = "dsh-0.1.5rc1-post-u8.210"
@@ -43,8 +50,14 @@ class Drift(ValueError):
     pass
 
 
+def _resolve(path: str) -> Path:
+    if SNAPSHOT_DIR is not None and path in SNAPSHOT_FILES:
+        return SNAPSHOT_DIR / SNAPSHOT_FILES[path]
+    return ROOT / path
+
+
 def _read_text(path: str) -> str:
-    return (ROOT / path).read_text(encoding="utf-8")
+    return _resolve(path).read_text(encoding="utf-8")
 
 
 def _read_json(path: str) -> dict:
@@ -163,7 +176,7 @@ def verify() -> dict:
     rollback_release = _read_json(f"config/dsh/releases/{ROLLBACK}.json")
     rollback_identity = _read_json(f"config/dsh/generated/{ROLLBACK}.identity.json")
     descriptor_hash = "sha256:" + hashlib.sha256(
-        (RELEASES / f"{CANDIDATE}.json").read_bytes()).hexdigest()
+        _resolve(f"config/dsh/releases/{CANDIDATE}.json").read_bytes()).hexdigest()
     manifest = _read_json(f"config/dsh/builds/{PROMOTED_BUILD}.json")
     check_deployment(deployment)
     check_promoted_release(release, candidate)
@@ -199,7 +212,7 @@ def _selfcheck() -> int:
     build_id = PROMOTED_BUILD
     manifest = _read_json(f"config/dsh/builds/{PROMOTED_BUILD}.json")
     descriptor_hash = "sha256:" + hashlib.sha256(
-        (RELEASES / f"{CANDIDATE}.json").read_bytes()).hexdigest()
+        _resolve(f"config/dsh/releases/{CANDIDATE}.json").read_bytes()).hexdigest()
     import copy
 
     negatives = []
@@ -248,9 +261,18 @@ def _selfcheck() -> int:
 
 
 def main() -> int:
+    global ROOT, RELEASES, GENERATED, SNAPSHOT_DIR
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--selfcheck", action="store_true")
+    parser.add_argument("--root", type=Path, default=ROOT,
+                        help="repository or immutable evidence root to verify")
+    parser.add_argument("--snapshot-dir", type=Path,
+                        help="promotion-time identity snapshots for historical replay")
     args = parser.parse_args()
+    ROOT = args.root.resolve()
+    RELEASES = ROOT / "config/dsh/releases"
+    GENERATED = ROOT / "config/dsh/generated"
+    SNAPSHOT_DIR = args.snapshot_dir.resolve() if args.snapshot_dir else None
     if args.selfcheck:
         return _selfcheck()
     try:

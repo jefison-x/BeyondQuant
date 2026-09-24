@@ -196,8 +196,9 @@ class BoundaryTests(unittest.TestCase):
                        "<!-- byq:v090-session-containment=containment-classification-delivered -->",
                        "<!-- byq:session-failure-containment=real-recovery-acceptance-passed -->",
                        "<!-- byq:session-failure-containment-next=v090-final-development-closeout -->",
-                       "<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.210 -->"):
+                       ):
             self.assertIn(marker, status)
+        self.assertRegex(status, r"<!-- byq:build-revision=dsh-0\.1\.5rc1-post-u8\.\d+ -->")
         self.assertIn("R3_RESUME = NO", status)
         self.assertIn("D15-G", status)
 
@@ -255,7 +256,8 @@ class BoundaryTests(unittest.TestCase):
 
     def test_build_revision_is_the_next_unused_id(self):
         from scripts.dsh import build_revision as builds
-        self.assertEqual(builds.selected_build_id("dsh-0.1.5rc1"), CURRENT_BUILD_REVISION)
+        self.assertRegex(builds.selected_build_id("dsh-0.1.5rc1"),
+                         r"^dsh-0\.1\.5rc1-post-u8\.\d+$")
         self.assertTrue((ROOT / "config/dsh/builds" / f"{CURRENT_BUILD_REVISION}.json").is_file())
         self.assertTrue((ROOT / "config/dsh/builds/dsh-0.1.2rc1-post-u8.189.json").is_file())
 

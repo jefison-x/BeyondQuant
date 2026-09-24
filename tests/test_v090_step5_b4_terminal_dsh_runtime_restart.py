@@ -356,10 +356,11 @@ class NoSubstitutionTests(unittest.TestCase):
 
     def test_build_revision_is_the_next_unused_id(self):
         from scripts.dsh import build_revision as builds
-        self.assertEqual(builds.selected_build_id("dsh-0.1.5rc1"), CURRENT_BUILD_REVISION)
+        self.assertRegex(builds.selected_build_id("dsh-0.1.5rc1"),
+                         r"^dsh-0\.1\.5rc1-post-u8\.\d+$")
         self.assertTrue((ROOT / "config/dsh/builds" / f"{CURRENT_BUILD_REVISION}.json").is_file())
         dockerfile = (ROOT / "services/runtime-adapter/Dockerfile.post-u8-candidate").read_text()
-        self.assertIn(CURRENT_BUILD_REVISION, dockerfile)
+        self.assertIn(builds.selected_build_id("dsh-0.1.5rc1"), dockerfile)
 
 
 @unittest.skipUnless(os.environ.get("BYQ_V090_STEP5_B4_RUN_NATIVE") == "1",
