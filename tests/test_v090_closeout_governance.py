@@ -331,8 +331,9 @@ class GovernanceDocTests(unittest.TestCase):
                        "<!-- byq:v090-full-interface-rebaseline=complete -->",
                        "<!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->",
                        "<!-- byq:phase-100-p100-c=paused-not-delivery -->",
-                       "<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.210 -->"):
+                       ):
             self.assertIn(marker, status)
+        self.assertRegex(status, r"<!-- byq:build-revision=dsh-0\.1\.5rc1-post-u8\.\d+ -->")
         # Completed historical 0.9 steps must not remain marked active.
         self.assertNotIn("v090-closeout-audit=active", status)
         self.assertNotIn("v090-full-interface-rebaseline=active", status)
@@ -493,10 +494,11 @@ class NoImplementationTests(unittest.TestCase):
 
     def test_audit_build_revision_is_the_next_unused_id(self):
         from scripts.dsh import build_revision as builds
-        self.assertEqual(builds.selected_build_id("dsh-0.1.5rc1"), CURRENT_BUILD_REVISION)
+        self.assertRegex(builds.selected_build_id("dsh-0.1.5rc1"),
+                         r"^dsh-0\.1\.5rc1-post-u8\.\d+$")
         self.assertTrue((ROOT / "config/dsh/builds" / f"{CURRENT_BUILD_REVISION}.json").is_file())
         dockerfile = (ROOT / "services/runtime-adapter/Dockerfile.post-u8-candidate").read_text()
-        self.assertIn(CURRENT_BUILD_REVISION, dockerfile)
+        self.assertIn(builds.selected_build_id("dsh-0.1.5rc1"), dockerfile)
         # The historical closeout revision remains an immutable committed manifest.
         self.assertTrue((ROOT / "config/dsh/builds" / f"{AUDIT_BUILD_REVISION}.json").is_file())
 
@@ -536,9 +538,9 @@ class CurrentStateAfterB4Tests(unittest.TestCase):
         # The audit-time "both terminal slices not started" line must not come back.
         self.assertNotIn("`terminal-adapter-restart` / `terminal-dsh-runtime-restart`（owner", status)
 
-    def test_maintenance_row_names_b3_and_b4_pass(self):
+    def test_dependency_row_names_b3_and_b4_pass(self):
         row = next(line for line in self._status().splitlines()
-                   if line.startswith("| 维护（当前） |"))
+                   if line.startswith("| 依赖资格（D15） |"))
         self.assertIn("terminal-adapter-restart", row)
         self.assertIn("terminal-dsh-runtime-restart", row)
         self.assertIn("PASS", row)
@@ -640,8 +642,8 @@ class AuthorityTableConsistencyTests(unittest.TestCase):
     def test_authority_table_records_the_current_facts(self):
         table = self._authority_table()
         self.assertIn("v090-d15-superseding-assessment=established", table)
-        self.assertIn("v090-business-recovery-acceptance=real-passes", table)
-        self.assertIn("v090-dsh-default-upgrade=promoted", table)
+        self.assertIn("failure-containment gate 已通过真实隔离验收", table)
+        self.assertIn("coherent DSH `0.1.5-rc.1` 仓库默认升级", table)
         self.assertIn("Phase 100 **仍 `PAUSED`**", table)
         self.assertIn("**不得**据此恢复 Phase 100 或启动 0.10", table)
         self.assertIn("独立最终 0.9 收口", table)

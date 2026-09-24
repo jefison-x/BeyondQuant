@@ -75,6 +75,13 @@ while the message tool stays blocked.
 result-trusting gate passes them). This is keyless service-boundary evidence,
 not real-LLM-quality semantics.
 
+The four `promotion-snapshot.*` files preserve the exact promotion-time
+release descriptor, deployment identity, runtime Dockerfile and build selector.
+`verify.py --snapshot-dir ...` replays the complete historical verifier against
+those bytes while immutable application, dependency and rollback inputs continue
+to come from the repository. This keeps historical evidence reproducible in a
+shallow CI checkout after the current operational build revision advances.
+
 ## Boundaries (unchanged)
 
 B1 `subagent-child-crash` and B2 `subagent-byq-adapter-restart` remain

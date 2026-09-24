@@ -14,6 +14,13 @@ VERIFY = ROOT / "scripts/v090/dsh_default_upgrade/verify.py"
 CANDIDATE = "dsh-0.1.5rc1"
 ROLLBACK = "dsh-0.1.2rc1"
 
+SNAPSHOT_FILES = {
+    "config/dsh/releases/dsh-0.1.5rc1.json": "promotion-snapshot.release.json",
+    "config/dsh/generated/deployment.identity.json": "promotion-snapshot.identity.json",
+    "services/runtime-adapter/Dockerfile.post-u8-candidate": "promotion-snapshot.Dockerfile",
+    "scripts/dsh/build_revision.py": "promotion-snapshot.build_revision.py",
+}
+
 
 def _load(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -25,20 +32,22 @@ def _sha256(path: Path) -> str:
 
 class DefaultUpgradeVerifierTests(unittest.TestCase):
     def test_verifier_passes_and_is_fail_closed(self) -> None:
-        result = subprocess.run(["python3", str(VERIFY)], cwd=ROOT,
+        result = subprocess.run(["python3", str(VERIFY), "--snapshot-dir", str(EVIDENCE)], cwd=ROOT,
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(json.loads(result.stdout)["status"], "PASS")
-        selfcheck = subprocess.run(["python3", str(VERIFY), "--selfcheck"], cwd=ROOT,
+        selfcheck = subprocess.run(["python3", str(VERIFY), "--snapshot-dir", str(EVIDENCE),
+                                    "--selfcheck"], cwd=ROOT,
                                    capture_output=True, text=True)
         self.assertEqual(selfcheck.returncode, 0, selfcheck.stdout + selfcheck.stderr)
         payload = json.loads(selfcheck.stdout)
         self.assertGreaterEqual(payload["negative_controls"], 10)
         self.assertEqual(payload["negative_controls"], payload["defect_targeting"])
 
-    def test_committed_verification_matches_the_current_tree(self) -> None:
+    def test_committed_verification_matches_the_promotion_snapshot(self) -> None:
         committed = _load(EVIDENCE / "verification.v1.json")
-        result = subprocess.run(["python3", str(VERIFY)], cwd=ROOT,
+        result = subprocess.run(["python3", str(VERIFY), "--snapshot-dir",
+                                 str(EVIDENCE)], cwd=ROOT,
                                 capture_output=True, text=True)
         live = json.loads(result.stdout)
         for key in ("status", "default_release", "rollback_release",
@@ -62,13 +71,15 @@ class DefaultUpgradeEvidenceTests(unittest.TestCase):
             item = baseline[key]
             self.assertEqual(item["sha256"], _sha256(ROOT / item["path"]), key)
 
-    def test_default_upgrade_evidence_matches_the_current_tree(self) -> None:
+    def test_default_upgrade_evidence_matches_the_promotion_snapshot(self) -> None:
         evidence = _load(EVIDENCE / "default-upgrade.v1.json")
         self.assertEqual(evidence["release"], CANDIDATE)
         self.assertEqual(evidence["pairing"]["python_sdk"], "0.1.5rc1")
         self.assertEqual(evidence["pairing"]["bundled_npm"], "0.1.5-rc.1")
         for relative, digest in evidence["changes"].items():
-            self.assertEqual(digest, _sha256(ROOT / relative), relative)
+            source = (EVIDENCE / SNAPSHOT_FILES[relative]
+                      if relative in SNAPSHOT_FILES else ROOT / relative)
+            self.assertEqual(digest, _sha256(source), relative)
         self.assertEqual(evidence["default_selector"]["identity"],
                          "config/dsh/generated/deployment.identity.json")
 

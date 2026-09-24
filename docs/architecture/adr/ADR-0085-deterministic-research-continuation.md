@@ -106,7 +106,7 @@ Backend/Worker 继续保存完整不可变 signal snapshot 作为回测输入。
 - 无进展、重复同一读取或重复同一动作：第一次即停止为 `needs_attention/no_durable_progress`；
 - 不允许用连续 8 次模型调用充当进展检测机制。
 
-正常研究判断阶段目标上限为 2 次模型调用：一次产生工具/提交动作，一次形成最终受限结果。确有证据时可按具名阶段提高，但预算是安全上限，不是编排算法。
+研究判断的模型调用预算按 [ADR-0086](ADR-0086-layered-research-request-budget.md) 约束**单次具名请求**，不再适用固定“最多 2 次”上限。每次 root/child provider 调用均须在发出前经过请求级硬门禁；具名阶段配置调用次数、输入、输出、工具 payload 与耗时上限。无 durable progress 的首次检查立即停止，不能靠放大上限代替进展判断。
 
 ### 7. 统一接续事件和状态收敛
 
@@ -123,7 +123,7 @@ approval、data-ready、backtest-completed、user-resume 和 recovery 进入同�
 
 ### 8. 预算区分预留与实际使用
 
-继续保留每次调用的保守额度预留和硬调用上限。对用户、任务和运维投影同时记录：
+legacy continuation 保留其原有保守预留与硬调用上限；研究判断请求按 [ADR-0086](ADR-0086-layered-research-request-budget.md) 使用独立请求级上限和可证明实耗，不要求跨进程持久业务余额。对用户、任务和运维投影区分记录：
 
 - `reserved_token_ceiling`；
 - DSH/provider 可证明的 `actual_input_tokens`、`cache_read_tokens`、`output_tokens`；
@@ -143,7 +143,7 @@ approval、data-ready、backtest-completed、user-resume 和 recovery 进入同�
 1. 数据就绪事件在零模型调用下投影出精确 `backtest_task_id`、phase 和 next action。
 2. 已批准的精确确定性动作在零模型调用下提交；未批准动作稳定停在 `waiting_for_approval`。
 3. Product Agent MCP 的 signal snapshot 返回不超过 64 KiB，且不含完整 bars/frame/benchmark/corporate-action 行。
-4. 每个模型研究阶段默认不超过 2 次模型调用；无 durable progress 在第一次检查后停止。
+4. 每次具名研究判断请求遵循 ADR-0086 的请求前 root/child provider 门禁与多维硬上限；无 durable progress 在第一次检查后停止。
 5. 同一 event 重放、Gateway/Backend/Adapter/Worker 重启和迟到终态不会重复写业务对象。
 6. RuntimeSession、RuntimeGeneration、continuation receipt、ResearchTask progress 和 Product projection 对完成/失败/中断事实一致。
 7. 真实 Product API + DSH 旅程完成：创建复合任务 → continuation grant → 策略审批 → 数据就绪 → 回测执行审批 → 完成/分析/修正三轮 → 选择最优 → 模拟账户审批/创建 → task completed。
