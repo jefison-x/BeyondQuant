@@ -212,7 +212,7 @@
     "config/dsh/archive/dsh-0.1.1rc1/package-lock.json.archive": "sha256:c61cd5af35ab95642757ebcd20c4785ffd99e3262501383caaa2eebba3a6907a",
     "config/dsh/archive/dsh-0.1.1rc1/package.json.archive": "sha256:eb5a91967a22929e0f43b1919f60f785d02046467c5c59d4907af87385dd03bb",
     "config/dsh/deployment.json": "sha256:02f05701ffd610b25d5076575396a38c252e610f230aa80961453faa1a13fb3e",
-    "config/dsh/generated/deployment.identity.json": "sha256:b071ca2506412f34689e61bf3f3f5f38873fb6627727b22a4ab1fa948ef99dc8",
+    "config/dsh/generated/deployment.identity.json": "sha256:c676c01b0d237a6688b1db2235d1b2eaf0c71ebc258722e0c2cc290bae7cce0b",
     "config/dsh/generated/dsh-0.1.1rc1.identity.json": "sha256:46517d85d2777f444683fff86a3087a4f3e6b5b98ad78e668cb2faf70226a40f",
     "config/dsh/generated/dsh-0.1.2rc1.identity.json": "sha256:da13cd3928bbd82a85aa7e21036f990a5a3cf67ec29d902ea61eaf31c1c3713d",
     "config/dsh/generated/dsh-0.1.2rc1.web-evidence-provenance.json": "sha256:2bd150b24423e42bdedb07ac9f2a4496af16f0258bf35e0acadaedea4c0c9103",
@@ -220,7 +220,7 @@
     "config/dsh/generated/qualified-rollback-web-evidence-provenance.json": "sha256:adb790c4f8fb059f73041507253a2da41088ce44b2f7e59052e0cc81376e24de",
     "config/dsh/generated/qualified-web-evidence-provenance.json": "sha256:76f417b50e554df14ffaeef024cc35fe2e9d77e6c90484ea88301e5ed0228b65",
     "config/dsh/generated/web-evidence-provenance.json": "sha256:734042e0923be3497fc9563720fef52e1ffb0f36d2cb9afd5c56011af15f7543",
-    "config/dsh/releases/dsh-0.1.5rc1.json": "sha256:a7adc09f1fe889c9c2ad40a0edef0dd2c5a6303fe3dff77a6544992e6091158f",
+    "config/dsh/releases/dsh-0.1.5rc1.json": "sha256:32ff9d6fbaed7f0e91dac1fc22ee28a115eb29d0654d9668d6f1691bbd4c00a2",
     "config/dsh/releases/dsh-0.1.5rc1.python.lock": "sha256:69b924ac13f8c5586a5af4b2bcb7eb4dcbbf0ebedd90b985d29aa943f86033e1",
     "deploy/feedback-hub-cloudflare/migrations/0001_central_feedback.sql": "sha256:d09fb65e9fc09945bb307d72459f373965d50007af0cb60352cc19291cc59322",
     "deploy/feedback-hub-cloudflare/migrations/0002_publication_create_permit.sql": "sha256:575b3d7453ad12ac37680d439d0dfdb1c48fd5dc1929cfd6e36f704f4b0da80b",
@@ -910,7 +910,7 @@
     "workers/signal/Dockerfile": "sha256:5ac2cd83605bf6b1cfa22e14492f87f982ea027eec2c62749d8c14a4c2176816",
     "workers/signal/worker.py": "sha256:bba6b0a081f3133f365459180944ba87cd4c90a37807118bfb45aa1ba78118d6"
   },
-  "release_descriptor_hash": "sha256:a7adc09f1fe889c9c2ad40a0edef0dd2c5a6303fe3dff77a6544992e6091158f",
+  "release_descriptor_hash": "sha256:32ff9d6fbaed7f0e91dac1fc22ee28a115eb29d0654d9668d6f1691bbd4c00a2",
   "release_id": "dsh-0.1.5rc1",
   "schema_version": "byq-dsh-build.v1"
 }
