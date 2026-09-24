@@ -2036,13 +2036,13 @@ ADR-0086 已获接受：P4 须先建立按具名请求配置的 provider 调用/
 
 为避免真实闭环验收继续堆积在单个长期 PR，P4 按以下顺序拆成独立、可审查的维护切片；每项必须在前项合并后才开始：
 
-1. **P4-A — 集成基础冻结**：收口现有隔离四边界栈、证据生成器和负控。未真实观察的矩阵行必须保持 `false`，整体 `all_pass=false`；不得用路由存在、静态健康检查或 mock-only PASS 代替业务证据。
-2. **P4-B — 正常三轮旅程**：在 ADR-0086 请求级门禁下跑通策略草案、审批、数据就绪、三轮回测分析/修正、最终选择、模拟账户审批/创建和 task completed。该切片先证明无故障正常路径，模型仍只提交有界研究判断。
+1. **P4-A — 集成基础冻结（已并入 `main`）**：收口现有隔离四边界栈、证据生成器和负控。未真实观察的矩阵行必须保持 `false`，整体 `all_pass=false`；不得用路由存在、静态健康检查或 mock-only PASS 代替业务证据。
+2. **P4-B — 正常三轮旅程（candidate，Draft PR，未合并）**：复用 P4-A 隔离四边界栈，在 ADR-0086 请求级门禁下真实观察到正常复合研究主链（策略草案、审批、数据就绪、三轮回测分析/修正、最终选择、确定性模拟账户审批/创建、task completed）。ADR-0086 门禁为**按具名 stage/profile 显式配置**的请求级多维硬上限（provider 调用/attempt/input/**declared** output/tool payload/deadline/concurrency/cancel；非全局常数），在每次 root/child provider 请求前拦截，按 remaining deadline 约束上游并丢弃超限/迟到结果；闭合最小 provider 头转发（仅 `authorization`/`content-type`/`accept`）；未声明/0/bool/负/冲突/超 profile 的 output cap 在请求前 fail closed；provider 实际 usage 与 declared 上限分离记录，**无法证明实际 output usage 时 fail closed（`actual_usage_unknown`，不转发/提交）**；非跨进程固定 2 次；stage-call 准入计数与 continuation 账本各守原义。按 **ADR-0087**（Accepted 2026-09-25）新增确定性模拟账户门：`final_selection → waiting_for_paper_account_approval → ready_to_create_paper_account → completed`，BYQ 服务端派生账户参数/identity/params digest/idempotency key，经现有 Product API / `PaperTradingStore` 幂等创建后由确定性 CAS 收口，replay 返回同一账户且不创建 order/position/fill。故 P4-B `verdict.v1.json` 为 `format_valid=true, all_pass=true`（**仅 P4-B scoped**），不声称 P4 故障矩阵、P4-C、P4 整体 all_pass 或阶段完成，**不解锁 P4-C1**。
 3. **P4-C1 — Adapter 故障安全收敛**：验证 Adapter/DSH 进程中断时未决模型 attempt 不被自动重发，迟到结果被隔离，系统进入可解释的 pending/`needs_attention`。本项不宣称 DSH 原生跨进程恢复。
 4. **P4-C2 — Backend claim/settle 真实消费路径**：让现有耐久 pending intent 经真实服务端 consumer 完成 claim、执行和 settle；分别注入 Backend/Worker 重启，证明幂等、CAS、receipt 和对象唯一性。
 5. **P4-D — 统一终验**：从干净隔离栈执行一次有 owner 的最终矩阵，汇总 P4-A/B/C1/C2 的原始证据并生成唯一 verdict。P4-D 不新增生产功能；任一必需行未观察即保持 `all_pass=false`。
 
-P4-A 当前且唯一可执行；P4-B/P4-C1/P4-C2/P4-D 尚未授权并行启动。现有 P4 Draft PR 只承担 P4-A，不能在同一 PR 中继续吸收后续切片。
+P4-B 当前为候选事实，P4-C1/P4-C2/P4-D 尚未授权并行启动。P4 整体证据仍保持 `all_pass=false`。
 
 P4 完成只表示 0.9.1 开发与稳定性验收候选就绪；0.9.1 的版本号写入、正式发布清单、生产部署、
 tag/release 与用户验收窗口分别执行，不由本计划自动授权。

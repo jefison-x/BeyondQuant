@@ -458,6 +458,7 @@ def test_plan_command_idempotency_key_and_action_maps_are_closed() -> None:
         "strategy_approve": "byq_strategy_approve",
         "backtest_task_create": "byq_backtest_task_create",
         "backtest_execute": "byq_backtest_task_execute",
+        "create_paper_account": "byq_paper_account_create",
     }
     assert AGENT_APPROVAL_PLAN_ACTION == {
         agent_action: plan_action for plan_action, agent_action in PLAN_APPROVAL_ACTION.items()

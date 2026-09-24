@@ -218,3 +218,41 @@ def test_attempt_binding_is_sent_to_admit():
         turn_runner=lambda admission, tool: {"proposal": {}})
     assert calls[0]["payload"] == {"call_identity": "turn-a",
                                    "attempt_binding": "3:backtest_analysis:1"}
+
+
+def test_failed_turn_is_not_auto_retried_and_not_submitted():
+    # ADR-0086 §3: a gate refusal (e.g. actual_usage_unknown) fails the turn
+    # closed. It must NOT auto-retry the same pending attempt and must NOT submit
+    # any result; a later duplicate is an explicit in-progress.
+    class Transport:
+        def __init__(self):
+            self.payloads = []
+
+        def __call__(self, url, payload, headers, timeout):
+            self.payloads.append({"url": url, "payload": payload})
+            if url.endswith("/admit"):
+                created = not any(p["url"].endswith("/admit") for p in self.payloads[:-1])
+                return {"call_identity": "turn-a", "status": "admitted",
+                        "created": created, "call_index": 1, "stage_input": {}}
+            raise AssertionError("a failed turn must not submit a result")
+
+    transport = Transport()
+
+    def failing_runner(admission, persona_tool):
+        raise judgment.ResearchJudgmentError(
+            "bounded judgment request budget refused a provider call: actual_usage_unknown")
+
+    with pytest.raises(judgment.ResearchJudgmentError):
+        judgment.run_bounded_research_judgment(
+            backend_url="http://backend:8000", task_id="task_" + "a" * 32, trusted_headers={},
+            call_identity="turn-a", transport=transport, turn_runner=failing_runner)
+    admits = [p for p in transport.payloads if p["url"].endswith("/admit")]
+    assert len(admits) == 1  # no automatic retry of the same pending attempt
+
+    # A retry reuses the same in-flight admission and is refused, not re-run.
+    with pytest.raises(judgment.ResearchJudgmentInProgress):
+        judgment.run_bounded_research_judgment(
+            backend_url="http://backend:8000", task_id="task_" + "a" * 32, trusted_headers={},
+            call_identity="turn-a", transport=transport,
+            turn_runner=lambda *_: {"proposal": {}})
+    assert not any(p["url"].endswith("/result") for p in transport.payloads)

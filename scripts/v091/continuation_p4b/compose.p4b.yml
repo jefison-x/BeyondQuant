@@ -1,0 +1,11 @@
+# ADR-0085 P4-B isolated normal three-round journey stack (non-production, keyless).
+#
+# Extends the P4-A judgment stack (compose.runtime-qual.yml + compose.p4-judgment.yml)
+# and only swaps the keyless provider for the journey-aware one and adds the
+# ADR-0086 request-gate journal path. No production stack, volume, credential or
+# paid API is touched.
+services:
+  judgment-provider:
+    volumes:
+      - ${BYQ_P4_ROOT}/scripts/v091/continuation_p4b:/p4b:ro
+    command: ["python3", "/p4b/judgment_scripted_provider.py"]

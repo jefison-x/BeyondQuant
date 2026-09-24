@@ -547,7 +547,10 @@ def derive_proposal_commit(plan: object, proposal: object) -> dict[str, object]:
         selected = verified_proposal.get("selected_iteration")
         if not isinstance(selected, int) or not 1 <= selected <= MAX_ROUNDS:
             return _decision("needs_attention", "selected_iteration_out_of_range")
-        return _advance("completed", "completed", "research_completed")
+        # ADR-0087: selecting the best round hands off to the explicit
+        # deterministic paper-account approval gate; it never completes directly.
+        return _advance("waiting_for_paper_account_approval", "waiting",
+                        "final_selection_committed")
     return _decision("needs_attention", "proposal_stage_not_applicable")
 
 

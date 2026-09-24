@@ -21069,7 +21069,7 @@
       "source_sha256": "sha256:77594d5ddbc04b5e45e25bdc817621528f8d99bd8766062b95ce3832ac97b352",
       "dependencies_sha256": {
         "services/backend/app/research_execution_plan.py": "sha256:521d14491078bb8ae55d121bda8883417efd867274dae1b3c30fd600bf525398",
-        "packages/contracts/research_execution_plan.py": "sha256:007711fae0acbebdd7f671e4d59c1a3a8cba57e667174053b7857a1763b9b323",
+        "packages/contracts/research_execution_plan.py": "sha256:0b03a07f408d8f48e576b01b9904e5289c8794b779d7dee899b1f7417faed053",
         "services/backend/app/research.py": "sha256:c195df4edee49875b4ff208d6edc1c8f14c7b1fbf25d75fc2f9f92f85e397233"
       },
       "line": 2048,
@@ -21136,8 +21136,8 @@
       ],
       "source_sha256": "sha256:77594d5ddbc04b5e45e25bdc817621528f8d99bd8766062b95ce3832ac97b352",
       "dependencies_sha256": {
-        "services/backend/app/research_judgment.py": "sha256:fab30f2582d2a16482193755e65247a4a5af9fb785fee902dc47c06e2e6a88e6",
-        "packages/contracts/research_judgment.py": "sha256:4e910c776b96b994e5564147b5b3d46d2ea7282a9cc1a0e0954762aba7cc4ce1",
+        "services/backend/app/research_judgment.py": "sha256:e713f74124acd939306e3cf8c0c046d17b1ca75a6a676cbd2d6100cd4b156b4a",
+        "packages/contracts/research_judgment.py": "sha256:83ef633c9ced756e96dbb277cb8d6ce56a8160d63141c388ca55c80166f2ac81",
         "services/backend/app/research.py": "sha256:c195df4edee49875b4ff208d6edc1c8f14c7b1fbf25d75fc2f9f92f85e397233"
       }
     },
@@ -21192,8 +21192,8 @@
       ],
       "source_sha256": "sha256:77594d5ddbc04b5e45e25bdc817621528f8d99bd8766062b95ce3832ac97b352",
       "dependencies_sha256": {
-        "services/backend/app/research_judgment.py": "sha256:fab30f2582d2a16482193755e65247a4a5af9fb785fee902dc47c06e2e6a88e6",
-        "packages/contracts/research_judgment.py": "sha256:4e910c776b96b994e5564147b5b3d46d2ea7282a9cc1a0e0954762aba7cc4ce1",
+        "services/backend/app/research_judgment.py": "sha256:e713f74124acd939306e3cf8c0c046d17b1ca75a6a676cbd2d6100cd4b156b4a",
+        "packages/contracts/research_judgment.py": "sha256:83ef633c9ced756e96dbb277cb8d6ce56a8160d63141c388ca55c80166f2ac81",
         "services/backend/app/research.py": "sha256:c195df4edee49875b4ff208d6edc1c8f14c7b1fbf25d75fc2f9f92f85e397233"
       },
       "kind": "route",
@@ -21224,8 +21224,8 @@
       ],
       "source_sha256": "sha256:77594d5ddbc04b5e45e25bdc817621528f8d99bd8766062b95ce3832ac97b352",
       "dependencies_sha256": {
-        "services/backend/app/research_judgment.py": "sha256:fab30f2582d2a16482193755e65247a4a5af9fb785fee902dc47c06e2e6a88e6",
-        "packages/contracts/research_judgment.py": "sha256:4e910c776b96b994e5564147b5b3d46d2ea7282a9cc1a0e0954762aba7cc4ce1",
+        "services/backend/app/research_judgment.py": "sha256:e713f74124acd939306e3cf8c0c046d17b1ca75a6a676cbd2d6100cd4b156b4a",
+        "packages/contracts/research_judgment.py": "sha256:83ef633c9ced756e96dbb277cb8d6ce56a8160d63141c388ca55c80166f2ac81",
         "services/backend/app/research.py": "sha256:c195df4edee49875b4ff208d6edc1c8f14c7b1fbf25d75fc2f9f92f85e397233"
       },
       "kind": "route",
@@ -21257,7 +21257,7 @@
         "services/runtime-adapter/tests/test_research_judgment_api.py",
         "docs/evidence/adr-0085-p4-real-journey/README.md"
       ],
-      "source_sha256": "sha256:01b13100acc9dc626ac44cdd36da0b6e6a734eb20e090c0b562f9fcf4b1f0364"
+      "source_sha256": "sha256:7a5f3b5e546b067916f3815c0515a64cbaeade26c75abd284ad0cd265b899fc0"
     },
     {
       "kind": "route",
@@ -21283,7 +21283,7 @@
         "services/runtime-adapter/tests/test_research_judgment_api.py",
         "docs/evidence/adr-0085-p4-real-journey/README.md"
       ],
-      "source_sha256": "sha256:01b13100acc9dc626ac44cdd36da0b6e6a734eb20e090c0b562f9fcf4b1f0364"
+      "source_sha256": "sha256:7a5f3b5e546b067916f3815c0515a64cbaeade26c75abd284ad0cd265b899fc0"
     }
   ],
   "manual_surfaces": [

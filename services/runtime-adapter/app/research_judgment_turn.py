@@ -22,6 +22,11 @@ from .research_judgment import (
     ResearchJudgmentError,
     resolve_read_only_mcp_endpoint,
 )
+from .research_request_gate import (
+    RequestGateBlocked,
+    RequestGateProxy,
+    build_request_gate,
+)
 
 # The dedicated bounded composition deployed into the Runtime Adapter image (NOT
 # the shared Product composition, whose identity is bound by the frozen B2
@@ -146,23 +151,52 @@ class DshBoundedTurnRunner:
         self._session_id = session_id
         self._environment = environment
         self._run_harness = run_harness
+        self._gate = None
+        self._admission = None
 
     def __call__(self, admission: dict, persona_tool: str) -> dict:
         prompt = build_persona_prompt(admission, persona_tool)
-        text = (self._run_harness or self._default_run_harness)(prompt)
+        self._admission = admission
+        try:
+            text = (self._run_harness or self._default_run_harness)(prompt)
+        except RequestGateBlocked as error:
+            # ADR-0086: a provider request that exceeds the request-scoped budget
+            # is refused BEFORE it is issued; the turn fails closed, never widened.
+            raise ResearchJudgmentError(
+                f"bounded judgment request budget refused a provider call: {error.reason}"
+            ) from error
         return extract_closed_result(text, persona_tool)
 
+    def _open_gate(self, admission: dict) -> None:
+        """Open the request-scoped provider gate for this named judgment request."""
+
+        stage = admission.get("stage")
+        request_id = admission.get("call_identity")
+        if not isinstance(stage, str) or not isinstance(request_id, str):
+            raise ResearchJudgmentError("bounded judgment admission is missing its stage/identity")
+        journal = None
+        if self._session_root:
+            journal = (Path(self._session_root).parent / "byq-request-gate"
+                       / f"{request_id}.jsonl")
+        self._gate = build_request_gate(stage, request_id=request_id, journal=journal)
+
+    def gate_summary(self) -> dict | None:
+        """The request-scoped gate limits and receipts, or None if no gate ran."""
+
+        if self._gate is None:
+            return None
+        return {"limits": self._gate.limits, "receipts": self._gate.receipts(),
+                "cancelled": self._gate.cancelled}
+
     def _default_run_harness(self, prompt: str) -> str | None:
+        self._open_gate(self._admission)
         endpoint = resolve_read_only_mcp_endpoint(dict(os.environ))
+        upstream = (self._environment.get("DEEPSEEK_BASE_URL") or "").strip()
+        if self._gate is None or not upstream:
+            raise ResearchJudgmentError(
+                "bounded judgment request gate is not configured for the provider boundary")
         harness_env = {**self._environment,
                        **build_read_only_harness_env(endpoint, self._identity)}
-        runtime_command = self._compatibility.runtime_command(
-            Path(self._session_root), "node")
-        harness = self._compatibility.build_harness(
-            provider=self._provider, model=self._model,
-            composition=Path(self._composition_path),
-            session_root=Path(self._session_root), runtime_command=runtime_command,
-            environment=harness_env)
         captured: dict = {}
 
         def on_notification(notification: object) -> None:
@@ -170,13 +204,23 @@ class DshBoundedTurnRunner:
             if text is not None:
                 captured["text"] = text
 
-        self._compatibility.start(harness)
-        try:
-            session = self._compatibility.prepare_prompt(harness, self._session_id)
-            self._compatibility.run_prepared_prompt(session, prompt, on_notification)
-        finally:
+        with RequestGateProxy(self._gate, upstream) as proxy:
+            # The harness reaches the real provider ONLY through the request gate.
+            harness_env["DEEPSEEK_BASE_URL"] = proxy.base_url
+            runtime_command = self._compatibility.runtime_command(
+                Path(self._session_root), "node")
+            harness = self._compatibility.build_harness(
+                provider=self._provider, model=self._model,
+                composition=Path(self._composition_path),
+                session_root=Path(self._session_root), runtime_command=runtime_command,
+                environment=harness_env)
+            self._compatibility.start(harness)
             try:
-                self._compatibility.close(harness)
-            except Exception:  # noqa: BLE001
-                pass
+                session = self._compatibility.prepare_prompt(harness, self._session_id)
+                self._compatibility.run_prepared_prompt(session, prompt, on_notification)
+            finally:
+                try:
+                    self._compatibility.close(harness)
+                except Exception:  # noqa: BLE001
+                    pass
         return captured.get("text")
