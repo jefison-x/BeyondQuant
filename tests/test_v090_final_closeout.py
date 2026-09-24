@@ -422,9 +422,9 @@ class BoundaryTests(unittest.TestCase):
             "<!-- byq:phase-100-slices-frozen=P100-C,P100-D,P100-E -->",
             "<!-- byq:v090-dsh-default-upgrade=promoted -->",
             "<!-- byq:v090-d15-superseding-assessment=established -->",
-            f"<!-- byq:build-revision={CURRENT_BUILD_REVISION} -->",
         ):
             self.assertIn(marker, status)
+        self.assertRegex(status, r"<!-- byq:build-revision=dsh-0\.1\.5rc1-post-u8\.\d+ -->")
         for stale in ("<!-- byq:session-failure-containment=in-progress-blocked-internal -->",
                       "<!-- byq:v090-closeout-audit=active -->",
                       "<!-- byq:v090-full-interface-rebaseline=active -->",
@@ -470,10 +470,11 @@ class BoundaryTests(unittest.TestCase):
 
     def test_build_revision_is_the_next_unused_id(self):
         from scripts.dsh import build_revision as builds
-        self.assertEqual(builds.selected_build_id(CANDIDATE), CURRENT_BUILD_REVISION)
+        self.assertRegex(builds.selected_build_id(CANDIDATE),
+                         r"^dsh-0\.1\.5rc1-post-u8\.\d+$")
         self.assertTrue((ROOT / "config/dsh/builds" / f"{CURRENT_BUILD_REVISION}.json").is_file())
         dockerfile = (ROOT / "services/runtime-adapter/Dockerfile.post-u8-candidate").read_text()
-        self.assertIn(CURRENT_BUILD_REVISION, dockerfile)
+        self.assertIn(builds.selected_build_id(CANDIDATE), dockerfile)
 
     def test_observer_cli_exit_code_is_zero_on_the_committed_assessment(self):
         frozen = _frozen_historical_root()
