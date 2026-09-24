@@ -1,0 +1,72 @@
+{
+  "schema_version": "byq-v091-continuation-p4b-contract.v1",
+  "generated_at": "2026-09-24",
+  "adr": ["ADR-0085", "ADR-0086"],
+  "slice": "P4-B",
+  "version_target": "0.9.1",
+  "scope": "ADR-0085 P4-B NORMAL three-round compound-research journey (no fault matrix). One compound ResearchTask is driven through the real Product API, the authenticated Runtime Adapter judgment route, the real DSH child/tool invocation and the committed Backend deterministic seams: create compound task -> conversation continuation grant -> bounded strategy-draft judgment -> exact plan-bound strategy approval -> task-create approval -> deterministic create -> data-ready -> execute approval -> deterministic execute -> backtest-completed -> backtest-analysis judgment -> iteration_comparison -> three rounds -> final-selection judgment -> BYQ deterministic best-result selection and ResearchTask completed -> one simulated paper account created through the real Product API. Every judgment request runs through the ADR-0086 request-scoped provider gate (provider call / input / output / tool payload / deadline / attempt / concurrency) which records the DECLARED ceiling separately from the provider-reported ACTUAL usage. The model only ever submits a bounded research proposal. P4-B proves ONLY the normal research main chain; the paper-account approval binding is an OPEN BLOCKER (no closed plan/approval gate exists), so the P4-B verdict is format_valid=true, all_pass=false. P4-B never claims the P4 fault matrix, P4-C, an overall P4 all_pass or phase completion.",
+  "required_evidence_class": "runtime-isolated-stack",
+  "llm_evidence_class": "scripted-keyless",
+  "llm_evidence_note": "A keyless deterministic journey-aware provider drives every judgment stage through the real DSH child/tool path. This is service-boundary/contract evidence, NOT real-LLM research-quality semantic evidence.",
+  "results_vocabulary": ["PASS", "FAIL", "NOT_RUN", "BLOCKED"],
+  "provenance_allowed_sources": {
+    "boundary": ["gateway", "backend", "runtime-adapter", "backtest-worker", "product-api", "not_applicable"],
+    "source": ["research_tasks", "research_execution_plans", "research_continuation_events",
+               "research_judgment_stage_calls", "agent_approvals", "signal_producer_jobs",
+               "backtest_jobs", "artifacts", "paper_accounts", "real-isolated-services"]
+  },
+  "required_journey_steps": [
+    {"id": "task-created", "description": "Exactly one compound ResearchTask exists and is running/completed."},
+    {"id": "continuation-grant", "description": "A conversation continuation grant created exactly one execution plan."},
+    {"id": "strategy-draft-turn", "description": "The bounded strategy_draft judgment advanced the plan to waiting_for_strategy_approval."},
+    {"id": "strategy-approval", "description": "The exact plan-bound strategy approval was approved."},
+    {"id": "task-create-approval", "description": "The exact plan-bound backtest-task-create approval was approved."},
+    {"id": "backtest-task-create", "description": "The deterministic create action recorded a signal job."},
+    {"id": "data-ready", "description": "A data-ready event advanced the plan with zero model calls."},
+    {"id": "execute-approval", "description": "The exact plan-bound backtest-execute approval was approved."},
+    {"id": "backtest-execute", "description": "The deterministic execute action queued a backtest job."},
+    {"id": "backtest-completed", "description": "A backtest-completed event advanced the plan to backtest_analysis."},
+    {"id": "round-analysis", "description": "Each of the three rounds ran a bounded backtest_analysis judgment."},
+    {"id": "rounds-2-3", "description": "The plan advanced iteration 1->2->3 through the exact create gate, never skipping."},
+    {"id": "final-selection", "description": "The final-selection judgment converges the plan to the deterministic paper-account approval gate (waiting_for_paper_account_approval); completion happens only after the plan-bound account creation."},
+    {"id": "paper-account", "description": "The simulated account is created exactly once through the exact plan-bound paper_account_create approval (ADR-0087) and the real Product API; an exact replay returns the same account, the deterministic action CAS completes the plan/task, and no order/position/fill is created."},
+    {"id": "task-completed", "description": "ResearchTask and plan agree on completion."}
+  ],
+  "required_gate_rows": [
+    {"id": "gate-limits-declared", "description": "Every judgment request declared a closed request-scoped budget from its OWN named BYQ-trusted stage profile (full provider call/input/declared output/tool payload/deadline/attempt/concurrency limits plus an evidence note); no global constant and no caller override."},
+    {"id": "gate-root-and-child-covered", "description": "Both root and child provider requests traversed the gate and were admitted within budget."},
+    {"id": "gate-request-scoped", "description": "Each judgment request had its own budget/identity; counters are request-scoped, not a cross-process fixed max-2."},
+    {"id": "gate-blocks-over-budget", "description": "Every over-budget, over-limit, unprovable-usage or late request was refused BEFORE/INSTEAD OF forwarding (host negative controls); unknown stage/profile, missing fields and forged/raised caller budgets fail closed."},
+    {"id": "gate-usage-actual-vs-ceiling", "description": "ADR-0086 §3: receipts record the DECLARED ceiling separately from provider-reported ACTUAL input/cache/output tokens and elapsed time, or a structured unknown; a proven over-ceiling or non-forwarded result is never PASS."}
+  ],
+  "required_assertions": [
+    "no_duplicate_business_objects",
+    "exact_approval_binding",
+    "exact_event_identity_and_replay",
+    "exact_stage_call_admission",
+    "model_visible_input_is_bounded_projection_only",
+    "deterministic_transitions_use_zero_model_calls",
+    "request_gate_is_per_request_not_cross_process",
+    "paper_account_exact_approval_binding_and_idempotent_creation",
+    "cleanup_zero_and_production_untouched"
+  ],
+  "forbidden_model_visible_fields": [
+    "bars", "bars_frame", "frame", "frame_index", "date_index", "symbol_index",
+    "signals", "corporate_actions", "benchmark_ohlcv", "raw_signal_snapshot",
+    "full_execution_snapshot", "hidden_reasoning", "tool_state", "session_journal"
+  ],
+  "bounded_stage_projection": {"max_serialized_bytes": 65536},
+  "read_only_child_tools": [
+    "mcp__byq__byq_agent_context", "mcp__byq__byq_research_get",
+    "mcp__byq__byq_research_stage_input_get", "mcp__byq__byq_backtest_task_get",
+    "mcp__byq__byq_backtest_analysis_get"
+  ],
+  "paper_account_decision": "ADR-0087 (Accepted 2026-09-25): the simulated account enters the research loop ONLY through the BYQ deterministic plan/approval/action path. final_selection hands off to waiting_for_paper_account_approval; the exact plan-command-bound paper_account_create approval authorizes ready_to_create_paper_account; BYQ derives name/cash/resource/params_digest/idempotency_key; the trusted consumer creates the account through the existing Product API boundary; the deterministic action CAS commits the account reference and completes the plan/task in one transaction. The model only proposes 'enter simulated validation'; it never creates the account, chooses its identity, approves, mints an idempotency key or executes orders. An exact replay returns the same account/receipt with zero model calls; no order/position/fill is created.",
+  "non_claims": [
+    "P4-B proves only the normal path; the async-handoff fault matrix, P4-C1/P4-C2 and P4-D are not run.",
+    "No production deployment, version write, tag or release.",
+    "No real-LLM research-quality semantic claim (keyless scripted provider).",
+    "No Phase 100 resume and no 0.10 start.",
+    "No second generic agent harness or session store."
+  ]
+}

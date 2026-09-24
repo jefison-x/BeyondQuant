@@ -123,6 +123,13 @@
     defaultContextWindow: 1000000
     streamIdleTimeoutMs: 172800000
 
+# ADR-0086: the bounded research-judgment request declares a real output-token
+# ceiling so the request-scoped provider gate can enforce it. This mirrors the
+# legacy continuation guard's per-call output cap.
+- id: llm-deepseek
+  config:
+    maxTokens: 8192
+
 - id: llm-pi-ai
   config:
     providers:

@@ -52,6 +52,8 @@ STAGES = frozenset({
     "backtest_analysis",
     "iteration_comparison",
     "final_selection",
+    "waiting_for_paper_account_approval",
+    "ready_to_create_paper_account",
     "needs_attention",
     "completed",
 })
@@ -62,11 +64,13 @@ APPROVAL_WAIT_STAGES = frozenset({
     "waiting_for_strategy_approval",
     "waiting_for_task_create_approval",
     "waiting_for_task_execute_approval",
+    "waiting_for_paper_account_approval",
 })
 
 READY_STAGES = frozenset({
     "ready_to_create_backtest_task",
     "ready_to_execute_backtest_task",
+    "ready_to_create_paper_account",
 })
 
 ACTION_STAGES = frozenset({
@@ -87,6 +91,8 @@ NEXT_ACTIONS = frozenset({
     "analyse_backtest_result",
     "compare_iterations",
     "select_best_iteration",
+    "request_paper_account_approval",
+    "create_paper_account",
     "resolve_blockers",
     "notify_user",
     "cancel_research",
@@ -100,6 +106,7 @@ RESOURCE_KINDS = frozenset({
     "research_task", "conversation", "strategy_version", "strategy_approval",
     "stock_pool_snapshot", "signal_producer_job", "signal_snapshot",
     "backtest_task", "backtest_job", "backtest_result", "ml_prediction",
+    "paper_account",
 })
 
 # Closed prerequisites: exact domain facts that must already hold.
@@ -115,6 +122,7 @@ PREREQUISITES = frozenset({
     "backtest_result_available",
     "iteration_analysis_complete",
     "previous_iteration_settled",
+    "paper_account_create_approved",
 })
 
 # Closed expected postconditions: the exact domain fact the action must create.
@@ -134,6 +142,8 @@ POSTCONDITIONS = frozenset({
     "iteration_compared",
     "next_round_task_create_approval_requested",
     "best_iteration_selected",
+    "paper_account_approval_requested",
+    "paper_account_created",
     "blocks_resolved_or_confirmed",
     "user_notified",
     "research_cancelled",
@@ -165,6 +175,12 @@ ACTION_CAPABILITIES = {
     "analyse_backtest_result": frozenset({"byq_research_get", "byq_backtest_analysis_get"}),
     "compare_iterations": frozenset({"byq_research_get", "byq_backtest_task_get"}),
     "select_best_iteration": frozenset({"byq_research_get"}),
+    # ADR-0087 human gate: the agent may only read; it may NOT approve or create.
+    "request_paper_account_approval": frozenset({"byq_research_get"}),
+    # ADR-0087 READY action: BYQ server executes the deterministic Product API
+    # account creation; the declared capability is a BYQ domain capability, never
+    # an MCP write tool granted to the model.
+    "create_paper_account": frozenset({"byq_research_get", "byq_paper_account_create"}),
     "resolve_blockers": frozenset({"byq_research_get"}),
     "notify_user": frozenset(),
     "cancel_research": frozenset({"byq_research_get"}),
@@ -176,13 +192,19 @@ ACTION_APPROVAL = {
                              "resource_kind": "strategy_version"},
     "execute_backtest_task": {"action": "backtest_execute",
                               "resource_kind": "backtest_task"},
+    # ADR-0087: the human approval authorizes the EXACT execution action name
+    # (not a different label), so the approved command and the executed command
+    # have an explicit 1:1 mapping.
+    "create_paper_account": {"action": "create_paper_account",
+                             "resource_kind": "research_task"},
 }
 
 # Actions that are deterministic domain actions and must NEVER start a model
 # turn (ADR-0085 §2.1).
 DETERMINISTIC_ACTIONS = frozenset({
     "create_backtest_task", "wait_for_data", "execute_backtest_task",
-    "wait_for_backtest_job", "resolve_blockers", "notify_user", "cancel_research",
+    "wait_for_backtest_job", "create_paper_account", "resolve_blockers",
+    "notify_user", "cancel_research",
 })
 
 # Stage -> (single legal action, legal status set, allowed prerequisite set,
@@ -253,6 +275,19 @@ _STAGE_SPEC: dict[str, dict[str, object]] = {
         "postcondition": "best_iteration_selected",
         "approval": None,
     },
+    "waiting_for_paper_account_approval": {
+        "action": "request_paper_account_approval", "statuses": {"waiting"},
+        "prerequisites": {"previous_iteration_settled"},
+        "postcondition": "paper_account_approval_requested",
+        # ADR-0087: the approval authorizes the EXACT execution action name.
+        "approval": {"action": "create_paper_account", "resource_kind": "research_task"},
+    },
+    "ready_to_create_paper_account": {
+        "action": "create_paper_account", "statuses": {"active"},
+        "prerequisites": {"paper_account_create_approved"},
+        "postcondition": "paper_account_created",
+        "approval": {"action": "create_paper_account", "resource_kind": "research_task"},
+    },
     "needs_attention": {
         "action": "resolve_blockers", "statuses": {"blocked"},
         "prerequisites": set(), "postcondition": "blocks_resolved_or_confirmed",
@@ -302,13 +337,20 @@ _TRANSITIONS = {
     "iteration_comparison": {
         "waiting_for_task_create_approval", "final_selection", "needs_attention", "completed",
     },
-    "final_selection": {"completed", "needs_attention"},
+    # ADR-0087: final selection NEVER completes the research directly; it hands
+    # off to the explicit deterministic paper-account approval gate.
+    "final_selection": {"waiting_for_paper_account_approval", "needs_attention"},
+    "waiting_for_paper_account_approval": {
+        "ready_to_create_paper_account", "needs_attention", "completed",
+    },
+    "ready_to_create_paper_account": {"completed", "needs_attention"},
     "needs_attention": {
         "strategy_draft", "waiting_for_strategy_approval",
         "ready_to_create_backtest_task", "waiting_for_task_create_approval",
         "waiting_for_data", "waiting_for_task_execute_approval",
         "ready_to_execute_backtest_task", "waiting_for_backtest_job",
         "backtest_analysis", "iteration_comparison",
+        "waiting_for_paper_account_approval", "ready_to_create_paper_account",
     },
     "completed": set(),
 }

@@ -217,7 +217,10 @@ class CommitReducerTests(unittest.TestCase):
         final = plan("final_selection", iteration=3)
         decision = derive_proposal_commit(
             final, proposal("final_selection", "select_iteration", iteration=3, selected_iteration=2))
-        self.assertEqual((decision["outcome"], decision["next_stage"]), ("advance", "completed"))
+        # ADR-0087: final selection hands off to the deterministic paper-account
+        # approval gate; it never completes the research directly.
+        self.assertEqual((decision["outcome"], decision["next_stage"]),
+                         ("advance", "waiting_for_paper_account_approval"))
 
     def test_escalation_and_insufficient_evidence_stop_without_routing(self) -> None:
         base = plan("backtest_analysis")

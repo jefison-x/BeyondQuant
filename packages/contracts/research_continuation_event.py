@@ -63,6 +63,7 @@ PLAN_APPROVAL_ACTION = {
     "strategy_approve": "byq_strategy_approve",
     "backtest_task_create": "byq_backtest_task_create",
     "backtest_execute": "byq_backtest_task_execute",
+    "create_paper_account": "byq_paper_account_create",
 }
 AGENT_APPROVAL_PLAN_ACTION = {
     agent_action: plan_action for plan_action, agent_action in PLAN_APPROVAL_ACTION.items()
@@ -120,6 +121,14 @@ _APPROVAL_TARGET = {
         "backtest_execute", "backtest_task",
         "ready_to_execute_backtest_task", "active",
         "backtest_execute", "backtest_task",
+    ),
+    # ADR-0087: after final selection, the exact plan-bound approval authorizes
+    # the EXACT `create_paper_account` execution command (same action name) and
+    # hands off to ready_to_create_paper_account; it does NOT complete research.
+    "waiting_for_paper_account_approval": (
+        "create_paper_account", "research_task",
+        "ready_to_create_paper_account", "active",
+        "create_paper_account", "research_task",
     ),
 }
 
@@ -487,6 +496,28 @@ def _reduce_recovery(plan: dict, event: dict, facts: dict) -> dict:
     return _retry_decision(plan, "recovery_retry_current_action")
 
 
+PAPER_ACCOUNT_CREATE_ACTION = "create_paper_account"
+PAPER_ACCOUNT_DEFAULT_CASH = "100000.0000"
+
+
+def paper_account_execution_parameters(plan: object) -> dict:
+    """The exact deterministic `create_paper_account` execution command.
+
+    ADR-0087: every value is derived server-side from the persisted task/plan and
+    BYQ policy defaults; a client or model never supplies or overrides any field.
+    """
+
+    verified = validate_plan(plan)
+    return {
+        "schema_version": "paper-account-create-command.v1",
+        "action": PAPER_ACCOUNT_CREATE_ACTION,
+        "resource_kind": "research_task",
+        "resource_id": verified["task_id"],
+        "name": f"research-paper-{verified['task_id'][-12:]}",
+        "cash": PAPER_ACCOUNT_DEFAULT_CASH,
+    }
+
+
 def plan_command_digest(
     plan: object, *, action: str, resource_kind: str, resource_id: str,
 ) -> str:
@@ -496,9 +527,23 @@ def plan_command_digest(
     command belongs to, the action and its exact resource, and every persisted
     plan reference. Server code derives it; an external caller never supplies
     it, so an approval can never be pinned to a caller-chosen parameter set.
+
+    ADR-0087: for the `create_paper_account` execution command the digest binds
+    the derived account parameters (name/cash) and action/resource, and it is
+    intentionally independent of the plan revision so the SAME frozen approval
+    authorization survives the waiting-gate -> READY plan-version advance. The
+    plan/task revision binding is still enforced separately from the approval
+    row's `plan_version`/`plan_task_version`.
     """
 
     verified = validate_plan(plan)
+    if action == PAPER_ACCOUNT_CREATE_ACTION:
+        return _hash({
+            "task_id": verified["task_id"],
+            "action": action, "resource_kind": resource_kind, "resource_id": resource_id,
+            "execution": paper_account_execution_parameters(verified),
+            "references": verified["references"],
+        })
     return _hash({
         "task_id": verified["task_id"],
         "plan_version": verified["plan_version"],

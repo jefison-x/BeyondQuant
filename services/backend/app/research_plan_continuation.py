@@ -69,6 +69,10 @@ _DETERMINISTIC_RESULT = {
         "action": "execute_backtest_task", "source": "backtest_job_id",
         "next_stage": "waiting_for_backtest_job",
     },
+    "ready_to_create_paper_account": {
+        "action": "create_paper_account", "source": "paper_account_id",
+        "next_stage": "completed",
+    },
 }
 
 
@@ -278,6 +282,74 @@ class ResearchPlanContinuationMixin:
             {"owner": task["owner_principal"]})
 
     # ------------------------------------------------------------------ #
+    # ADR-0087: BYQ-derived deterministic paper-account creation parameters
+    # ------------------------------------------------------------------ #
+
+    def paper_account_create_parameters(self, task_id: str, *, trusted_context: dict) -> dict:
+        """READ-ONLY: the FROZEN approved deterministic account creation command.
+
+        ADR-0087: the human approval froze the exact `create_paper_account`
+        execution command (derived name/cash/resource/action plus its
+        params_digest and idempotency key). This method returns EXACTLY that
+        frozen binding — read from the persisted approved approval row and the
+        plan's bound approval requirement — without ever recomputing a different
+        key for a newer plan version. A missing/wrong/stale/tampered approval
+        fails closed.
+        """
+
+        from .research import InvalidTransition, ResearchNotFound
+        from packages.contracts.research_continuation_event import (
+            PAPER_ACCOUNT_CREATE_ACTION,
+            paper_account_execution_parameters,
+        )
+
+        with self._transaction() as connection:
+            task = self._plan_task(connection, task_id, trusted_context, lock=False)
+            plan_row = self._load_current_plan(connection, task["task_id"], lock=False)
+            if plan_row is None:
+                raise ResearchNotFound("research execution plan not found")
+            plan = validate_plan(plan_row["plan"])
+            if plan["stage"] != "ready_to_create_paper_account":
+                raise InvalidTransition(
+                    "the plan is not at the deterministic paper-account action")
+            frozen = plan["approval"]
+            if (not isinstance(frozen, dict)
+                    or frozen.get("action") != PAPER_ACCOUNT_CREATE_ACTION
+                    or frozen.get("resource_kind") != "research_task"
+                    or frozen.get("resource_id") != task["task_id"]
+                    or not isinstance(frozen.get("params_digest"), str)):
+                raise InvalidTransition("the plan has no frozen paper-account command binding")
+            frozen_digest = frozen["params_digest"]
+            frozen_key = "plancmd_" + frozen_digest.removeprefix("sha256:")[:32]
+            approved = fetch_one(connection, """SELECT * FROM agent_approvals
+                WHERE plan_task_id = :task AND plan_action = :action AND status = 'approved'
+                ORDER BY created_at DESC LIMIT 1""",
+                {"task": task["task_id"], "action": PAPER_ACCOUNT_CREATE_ACTION})
+            if approved is None:
+                raise InvalidTransition("no approved paper-account command exists")
+            if (approved["plan_params_digest"] != frozen_digest
+                    or approved["plan_idempotency_key"] != frozen_key
+                    or approved["plan_resource_kind"] != "research_task"
+                    or approved["plan_resource_id"] != task["task_id"]
+                    or int(approved["plan_version"]) + 1 != plan["plan_version"]
+                    or int(approved["plan_task_version"]) != plan["task_version"]):
+                raise InvalidTransition(
+                    "the approved paper-account command does not match the frozen plan binding")
+            execution = paper_account_execution_parameters(plan)
+            return {
+                "task_id": task["task_id"],
+                "owner_principal": task["owner_principal"],
+                "workspace_id": task["workspace_id"],
+                "plan_version": plan["plan_version"], "task_version": plan["task_version"],
+                "action": PAPER_ACCOUNT_CREATE_ACTION,
+                "resource_kind": "research_task", "resource_id": task["task_id"],
+                "params_digest": frozen_digest, "idempotency_key": frozen_key,
+                "name": execution["name"], "cash": execution["cash"],
+                "approval_id": approved["approval_id"],
+                "approval_plan_version": int(approved["plan_version"]),
+            }
+
+    # ------------------------------------------------------------------ #
     # Deterministic action result -> plan CAS
     # ------------------------------------------------------------------ #
 
@@ -309,8 +381,8 @@ class ResearchPlanContinuationMixin:
                 # Idempotent replay: if the plan already recorded this exact
                 # source, return it; otherwise the plan is not at a READY action.
                 source_kind, source_id = next(iter(payload.items()))
-                if source_kind in {"signal_job_id", "backtest_job_id"} and self._plan_has_source(
-                        plan, source_kind, source_id):
+                if source_kind in {"signal_job_id", "backtest_job_id", "paper_account_id"} \
+                        and self._plan_has_source(plan, source_kind, source_id):
                     return project_execution_plan(plan)
                 raise InvalidTransition("the plan is not at a deterministic action stage")
             source_kind, source_id = next(iter(payload.items()))
@@ -329,7 +401,7 @@ class ResearchPlanContinuationMixin:
                               "backtest_task": {"backtest_task": task_id_from_signal_job(source_id)}}
                 progress_identity = _hash({
                     "kind": "signal_producer_job", "id": row["job_id"], "status": row["status"]})
-            else:
+            elif spec["source"] == "backtest_job_id":
                 row = fetch_one(connection, """SELECT * FROM backtest_jobs
                     WHERE job_id = :id AND task_id = :task AND owner_principal = :owner""",
                     {"id": source_id, "task": task["task_id"], "owner": task["owner_principal"]})
@@ -339,19 +411,41 @@ class ResearchPlanContinuationMixin:
                               "backtest_job": {"backtest_job": source_id}}
                 progress_identity = _hash({
                     "kind": "backtest_job", "id": row["job_id"], "status": row["status"]})
+            else:
+                # ADR-0087: the deterministic account creation result names the
+                # exact account; it MUST belong to this task's owner/workspace.
+                row = fetch_one(connection, """SELECT * FROM paper_accounts
+                    WHERE account_id = :id AND owner_principal = :owner
+                      AND workspace_id = :workspace AND status <> 'deleted'""",
+                    {"id": source_id, "owner": task["owner_principal"],
+                     "workspace": task["workspace_id"]})
+                if row is None:
+                    raise InvalidTransition(
+                        "deterministic result paper account does not belong to this task")
+                references = {**plan["references"],
+                              "paper_account": {"paper_account": source_id}}
+                progress_identity = _hash({
+                    "kind": "paper_account", "id": row["account_id"], "status": row["status"],
+                    "version": int(row["version"])})
             next_stage = spec["next_stage"]
             idempotency_key = f"planaction-{spec['action']}-{source_id}"
             try:
                 advanced = advance(
                     plan, expected_plan_version=plan["plan_version"],
                     expected_task_version=plan["task_version"], next_stage=next_stage,
-                    iteration=plan["iteration"], status="waiting",
+                    iteration=plan["iteration"], status="completed" if next_stage == "completed" else "waiting",
                     expected_postcondition=STAGE_POSTCONDITION[next_stage],
                     idempotency_key=idempotency_key, references=references,
                     prerequisites=None, approval=None,
                     last_progress_identity=progress_identity)
             except ValueError as error:
                 raise InvalidTransition(str(error)) from error
+            if next_stage == "completed":
+                # ADR-0087: commit the account receipt/reference and converge the
+                # ResearchTask in the SAME transaction as the plan CAS.
+                new_task_version = self._complete_research_task(
+                    connection, task, plan, idempotency_key)
+                advanced = validate_plan({**advanced, "task_version": new_task_version})
             cas_row = fetch_one(connection, """UPDATE research_execution_plans SET
                 plan_version = :plan_version, task_version = :task_version, stage = :stage,
                 iteration = :iteration, status = :status, next_action = :next_action,
@@ -375,5 +469,8 @@ class ResearchPlanContinuationMixin:
         if source_kind == "signal_job_id":
             ref = references.get("signal_producer_job")
             return isinstance(ref, dict) and ref.get("signal_producer_job") == source_id
-        ref = references.get("backtest_job")
-        return isinstance(ref, dict) and ref.get("backtest_job") == source_id
+        if source_kind == "backtest_job_id":
+            ref = references.get("backtest_job")
+            return isinstance(ref, dict) and ref.get("backtest_job") == source_id
+        ref = references.get("paper_account")
+        return isinstance(ref, dict) and ref.get("paper_account") == source_id

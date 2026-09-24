@@ -1,0 +1,54 @@
+{
+  "schema_version": "byq-v091-continuation-p4b-acceptance-matrix.v1",
+  "generated_at": "2026-09-24",
+  "frozen_before_capture": true,
+  "contract": "scripts/v091/continuation_p4b/contract.v1.json",
+  "adr": ["ADR-0085", "ADR-0086"],
+  "slice": "P4-B",
+  "results_vocabulary": ["PASS", "FAIL", "NOT_RUN", "BLOCKED"],
+  "journey_id": "adr0085-p4b-normal-journey.v1",
+  "journey_rows": [
+    {"id": "task-created", "required": true, "gating": true},
+    {"id": "continuation-grant", "required": true, "gating": true},
+    {"id": "strategy-draft-turn", "required": true, "gating": true},
+    {"id": "strategy-approval", "required": true, "gating": true},
+    {"id": "task-create-approval", "required": true, "gating": true},
+    {"id": "backtest-task-create", "required": true, "gating": true},
+    {"id": "data-ready", "required": true, "gating": true},
+    {"id": "execute-approval", "required": true, "gating": true},
+    {"id": "backtest-execute", "required": true, "gating": true},
+    {"id": "backtest-completed", "required": true, "gating": true},
+    {"id": "round-analysis", "required": true, "gating": true},
+    {"id": "rounds-2-3", "required": true, "gating": true},
+    {"id": "final-selection", "required": true, "gating": true},
+    {"id": "paper-account", "required": true, "gating": true},
+    {"id": "task-completed", "required": true, "gating": true}
+  ],
+  "gate_rows": [
+    {"id": "gate-limits-declared", "required": true, "gating": true},
+    {"id": "gate-root-and-child-covered", "required": true, "gating": true},
+    {"id": "gate-request-scoped", "required": true, "gating": true},
+    {"id": "gate-blocks-over-budget", "required": true, "gating": true},
+    {"id": "gate-usage-actual-vs-ceiling", "required": true, "gating": true}
+  ],
+  "assertion_rows": [
+    {"id": "no_duplicate_business_objects", "required": true},
+    {"id": "exact_approval_binding", "required": true},
+    {"id": "exact_event_identity_and_replay", "required": true},
+    {"id": "exact_stage_call_admission", "required": true},
+    {"id": "model_visible_input_is_bounded_projection_only", "required": true},
+    {"id": "deterministic_transitions_use_zero_model_calls", "required": true},
+    {"id": "request_gate_is_per_request_not_cross_process", "required": true},
+    {"id": "paper_account_exact_approval_binding_and_idempotent_creation", "required": true},
+    {"id": "cleanup_zero_and_production_untouched", "required": true}
+  ],
+  "non_gating_note": "P4-B proves the normal three-round research main chain, the ADR-0086 request-scoped provider gate and the ADR-0087 deterministic paper-account approval/creation. The asynchronous-handoff fault matrix, P4-C1, P4-C2 and P4-D are NOT run here; this slice never claims an overall P4 all_pass or phase completion. The paper-account row is a REQUIRED/GATING row derived from the raw facts: exactly one account, an exact plan-bound byq_paper_account_create approval (plan_action=paper_account_create, resource_kind=research_task, resource_id=task_id, params_digest, plan_idempotency_key, plan/task versions), created through the real Product API, an exact replay returning the same account, the deterministic CAS completing plan/task, and no order/position/fill.",
+  "non_claims": [
+    "No production deployment, version-number write, tag or release.",
+    "No production canary; only an isolated non-production stack.",
+    "No real-LLM research-quality semantic claim.",
+    "No Phase 100 resume and no 0.10 start.",
+    "No second generic agent harness or session store.",
+    "No claim of the P4 fault matrix, P4-C or an overall P4 all_pass."
+  ]
+}

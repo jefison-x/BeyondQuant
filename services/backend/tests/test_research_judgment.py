@@ -466,41 +466,46 @@ def test_atomic_result_for_unadmitted_call_and_no_progress_fence():
 # Terminal convergence
 # --------------------------------------------------------------------------- #
 
-def test_final_selection_atomically_completes_task_and_plan():
+def test_final_selection_hands_off_to_the_paper_account_gate():
     store, task, context = _setup()
     try:
         store.transition("research_task", task, "running", "task-running")
         artifact = _artifact(store, task, key="final-result")
         store.transition("artifact", artifact["artifact_id"], "validated", "validate-final")
         plan = _seed_plan(store, task, "final_selection", iteration=3, references={
+            "research_task": {"research_task": task},
             "backtest_result": {"backtest_result": artifact["artifact_id"]}})
         committed = store.commit_research_proposal(
             task, _proposal(plan, "final_selection", "select_iteration", iteration=3,
                             selected_iteration=2), trusted_context=context)
-        assert committed["stage"] == "completed"
+        # ADR-0087: final selection NEVER completes research directly; it enters
+        # the explicit deterministic paper-account approval gate.
+        assert committed["stage"] == "waiting_for_paper_account_approval"
         persisted = _plan_row(store, task)
-        assert persisted["stage"] == "completed" and persisted["status"] == "completed"
+        assert persisted["stage"] == "waiting_for_paper_account_approval"
+        assert persisted["status"] == "waiting"
         row = _task_row(store, task)
-        assert row["status"] == "completed"
-        assert row["progress"]["stage"] == "completed"
-        assert row["progress"]["next_action"] is None
-        assert row["progress"]["completion_evidence"] == [artifact["artifact_id"]]
-        # The plan's task_version converges to the completed task version.
-        assert persisted["task_version"] == row["version"]
+        assert row["status"] != "completed"
+        approval = persisted["plan"]["approval"]
+        assert approval["action"] == "create_paper_account"
+        assert approval["resource_kind"] == "research_task"
+        assert approval["resource_id"] == task
     finally:
         store.close()
 
 
-def test_final_selection_without_validated_evidence_fails_closed():
+def test_final_selection_without_validated_evidence_defers_completion():
+    # The final-selection commit only reaches the paper-account gate; the
+    # validated-evidence requirement now applies at the deterministic completion
+    # (covered by tests/test_research_paper_account_continuation.py).
     store, task, context = _setup()
     try:
         store.transition("research_task", task, "running", "task-running")
         plan = _seed_plan(store, task, "final_selection", iteration=3)
-        with pytest.raises(InvalidTransition):
-            store.commit_research_proposal(
-                task, _proposal(plan, "final_selection", "select_iteration", iteration=3,
-                                selected_iteration=2), trusted_context=context)
-        assert _plan_row(store, task)["stage"] == "final_selection"
+        committed = store.commit_research_proposal(
+            task, _proposal(plan, "final_selection", "select_iteration", iteration=3,
+                            selected_iteration=2), trusted_context=context)
+        assert committed["stage"] == "waiting_for_paper_account_approval"
         assert _task_row(store, task)["status"] != "completed"
     finally:
         store.close()

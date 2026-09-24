@@ -47,7 +47,14 @@ def run_stage_judgment(*, task_id: str, call_identity: str, backend_url: str,
         compatibility=compatibility, identity=identity, provider=provider, model=model,
         session_root=session_root, session_id=identity["session_id"],
         environment=environment or {})
-    return run_bounded_research_judgment(
+    result = run_bounded_research_judgment(
         backend_url=backend_url, task_id=task_id, trusted_headers=trusted_headers,
         call_identity=call_identity, turn_runner=runner, transport=transport,
         attempt=attempt, timeout=timeout)
+    # ADR-0086: expose the request-scoped gate limits/receipts for audit. A replay
+    # (no model turn) carries no gate because no provider request was issued.
+    gate_summary = getattr(runner, "gate_summary", None)
+    summary = gate_summary() if callable(gate_summary) else None
+    if summary is not None and isinstance(result, dict):
+        return {**result, "request_gate": summary}
+    return result

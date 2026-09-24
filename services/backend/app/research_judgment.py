@@ -521,6 +521,13 @@ class ResearchJudgmentMixin:
             "linked_objects": [],
             "completion_evidence": evidence_ids,
         }
+        # ADR-0085 P4: a fully deterministic plan journey may converge straight
+        # from a granted, planned task without a separate model "run". Start the
+        # task in the SAME transaction so the completion transition is legal and
+        # the task version converges atomically with the plan.
+        if task["status"] == "planned":
+            self.transition("research_task", task["task_id"], "running",
+                            f"{identity}-start", _connection=connection)
         self.transition("research_task", task["task_id"], "completed",
                         f"{identity}-complete", progress=checkpoint,
                         require_completion_evidence=True, _connection=connection)

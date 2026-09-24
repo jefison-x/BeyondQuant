@@ -63,14 +63,16 @@ def run_judgment(task_id: str, request: Request) -> dict:
     from .compat import compatibility_for_release
 
     release = os.environ.get("BYQ_DSH_COMPATIBILITY_RELEASE", "dsh-0.1.5rc1")
-    session_root = Path(os.environ.get("DSH_SESSION_ROOT", "/var/lib/byq/dsh-sessions")) \
-        / "research-judgment" / task_id
     # Retry-stable, authoritative: the durable stage-call identity is derived from
     # the exact task and the persisted plan's version/stage/iteration, NOT from any
     # per-request random value or caller-chosen id. A retry after an interrupted
     # admission+result therefore reuses the same admission instead of consuming a
     # second model-call slot.
     call_identity = derive_call_identity(task_id, attempt)
+    # Each named judgment request gets its OWN DSH home, so a later request for a
+    # different stage never collides with an existing DSH session.
+    session_root = Path(os.environ.get("DSH_SESSION_ROOT", "/var/lib/byq/dsh-sessions")) \
+        / "research-judgment" / task_id / call_identity
     # The adapter invocation id is an adapter-local label for this DSH process. It
     # is NOT claimed to be, or mapped to, a persisted RuntimeGeneration.
     adapter_invocation_id = "byq-adapter-" + uuid.uuid4().hex

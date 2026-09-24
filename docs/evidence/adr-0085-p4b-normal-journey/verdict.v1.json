@@ -1,0 +1,41 @@
+{
+  "all_pass": true,
+  "blocked_rows": {},
+  "derived_assertions": {
+    "cleanup_zero_and_production_untouched": true,
+    "deterministic_transitions_use_zero_model_calls": true,
+    "exact_approval_binding": true,
+    "exact_event_identity_and_replay": true,
+    "exact_stage_call_admission": true,
+    "model_visible_input_is_bounded_projection_only": true,
+    "no_duplicate_business_objects": true,
+    "paper_account_exact_approval_binding_and_idempotent_creation": true,
+    "request_gate_is_per_request_not_cross_process": true
+  },
+  "derived_rows": {
+    "gate:gate-blocks-over-budget": true,
+    "gate:gate-limits-declared": true,
+    "gate:gate-request-scoped": true,
+    "gate:gate-root-and-child-covered": true,
+    "gate:gate-usage-actual-vs-ceiling": true,
+    "journey:backtest-completed": true,
+    "journey:backtest-execute": true,
+    "journey:backtest-task-create": true,
+    "journey:continuation-grant": true,
+    "journey:data-ready": true,
+    "journey:execute-approval": true,
+    "journey:final-selection": true,
+    "journey:paper-account": true,
+    "journey:round-analysis": true,
+    "journey:rounds-2-3": true,
+    "journey:strategy-approval": true,
+    "journey:strategy-draft-turn": true,
+    "journey:task-completed": true,
+    "journey:task-create-approval": true,
+    "journey:task-created": true
+  },
+  "failures": [],
+  "format_valid": true,
+  "limitations": [],
+  "schema_version": "byq-v091-continuation-p4b-verdict.v1"
+}
