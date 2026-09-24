@@ -2019,7 +2019,7 @@ needs_attention，不得声称 settled。P2 只提交 Draft PR 和相应证据�
 reducer/plan CAS。模型只能提出有界研究判断，绝不能选择 workflow `next_action`、对象 identity、
 审批执行、幂等键、job routing、recovery 或 continuation 状态；**不得新增任何通用 plan/event/proposal
 写路由**。stage input 排除 raw/full signal snapshot、bars/frame/index 列表并有显式 byte/item 上限；
-默认每研究阶段最多两次模型调用，第一次检查/调用无 durable progress 即原子转
+历史 P3 默认每 stage 最多两次准入研究回合（不是 provider 调用计数）；ADR-0086 已修订真实模型调用门禁为单次具名请求的分层硬上限。第一次检查/调用无 durable progress 即原子转
 `needs_attention` 且 reason=`no_durable_progress`，禁止通过子代理或重复读取耗尽历史八次调用。DSH 继续
 负责 Agent Loop/session/compaction/generic guards，不建第二 harness/session store，不访问 PostgreSQL。
 P3 已并入 `main`；不 deploy。
@@ -2031,6 +2031,18 @@ P3 已并入 `main`；不 deploy。
 completed。每个异步交接点注入 Gateway/Backend/Adapter/Worker 重启；断言无重复对象、精确预算、
 任务/会话/generation/回执状态一致、模型不可见原始行情/完整执行快照。最后才允许**隔离非生产 canary**；
 生产 canary、部署、版本号写入、tag/release 与恢复“后台自动完成复合研究”的产品声明仍需独立证据与授权。
+
+ADR-0086 已获接受：P4 须先建立按具名请求配置的 provider 调用/输入/输出/工具 payload/耗时硬上限，并在每次 root/child provider 请求前拦截；原有 stage-call 准入计数与 continuation 账本各守原义。仅替换固定常数或事后拒绝结果均不算门禁通过。跨进程未决 attempt 不自动重发，历史证据不改写。
+
+为避免真实闭环验收继续堆积在单个长期 PR，P4 按以下顺序拆成独立、可审查的维护切片；每项必须在前项合并后才开始：
+
+1. **P4-A — 集成基础冻结**：收口现有隔离四边界栈、证据生成器和负控。未真实观察的矩阵行必须保持 `false`，整体 `all_pass=false`；不得用路由存在、静态健康检查或 mock-only PASS 代替业务证据。
+2. **P4-B — 正常三轮旅程**：在 ADR-0086 请求级门禁下跑通策略草案、审批、数据就绪、三轮回测分析/修正、最终选择、模拟账户审批/创建和 task completed。该切片先证明无故障正常路径，模型仍只提交有界研究判断。
+3. **P4-C1 — Adapter 故障安全收敛**：验证 Adapter/DSH 进程中断时未决模型 attempt 不被自动重发，迟到结果被隔离，系统进入可解释的 pending/`needs_attention`。本项不宣称 DSH 原生跨进程恢复。
+4. **P4-C2 — Backend claim/settle 真实消费路径**：让现有耐久 pending intent 经真实服务端 consumer 完成 claim、执行和 settle；分别注入 Backend/Worker 重启，证明幂等、CAS、receipt 和对象唯一性。
+5. **P4-D — 统一终验**：从干净隔离栈执行一次有 owner 的最终矩阵，汇总 P4-A/B/C1/C2 的原始证据并生成唯一 verdict。P4-D 不新增生产功能；任一必需行未观察即保持 `all_pass=false`。
+
+P4-A 当前且唯一可执行；P4-B/P4-C1/P4-C2/P4-D 尚未授权并行启动。现有 P4 Draft PR 只承担 P4-A，不能在同一 PR 中继续吸收后续切片。
 
 P4 完成只表示 0.9.1 开发与稳定性验收候选就绪；0.9.1 的版本号写入、正式发布清单、生产部署、
 tag/release 与用户验收窗口分别执行，不由本计划自动授权。

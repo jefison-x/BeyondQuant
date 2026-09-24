@@ -34,6 +34,45 @@ EVIDENCE = ROOT / "docs/evidence/v090-final-closeout"
 SUPERSEDING = ROOT / "scripts/d15/superseding_assessment"
 SUPERSEDING_CONTRACT = SUPERSEDING / "contract.v1.json"
 
+
+def _frozen_historical_root():
+    """Return a root whose STATUS is the provenance-bound historical file."""
+
+    import tempfile
+
+    root = Path(tempfile.mkdtemp(prefix="byq-v090-frozen-closeout-"))
+    provenance = json.loads((EVIDENCE / "provenance.v1.json").read_text())
+    status = next(
+        item for item in provenance["artifacts"]
+        if item["path"] == "docs/roadmap/STATUS.md"
+    )
+    historical_status = subprocess.check_output(
+        ["git", "show", f"{status['introduced_by']}:docs/roadmap/STATUS.md"],
+        cwd=ROOT,
+    )
+    for entry in ROOT.iterdir():
+        target = root / entry.name
+        if entry.name != "docs":
+            target.symlink_to(entry, target_is_directory=entry.is_dir())
+            continue
+        target.mkdir()
+        for child in entry.iterdir():
+            nested = target / child.name
+            if child.name != "roadmap":
+                nested.symlink_to(child, target_is_directory=child.is_dir())
+                continue
+            nested.mkdir()
+            for roadmap_entry in child.iterdir():
+                roadmap_target = nested / roadmap_entry.name
+                if roadmap_entry.name == "STATUS.md":
+                    roadmap_target.write_bytes(historical_status)
+                else:
+                    roadmap_target.symlink_to(
+                        roadmap_entry,
+                        target_is_directory=roadmap_entry.is_dir(),
+                    )
+    return root
+
 CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.210"
 CANDIDATE = "dsh-0.1.5rc1"
 ROLLBACK = "dsh-0.1.2rc1"
@@ -309,19 +348,23 @@ class CommittedEvidenceTests(unittest.TestCase):
         contract_paths = [item["path"] for item in _contract()["source_artifacts"]]
         self.assertEqual(set(entries), set(contract_paths))
         for path, entry in entries.items():
-            self.assertEqual(entry["sha256"], _sha256(ROOT / path), path)
+            if path == "docs/roadmap/STATUS.md":
+                self.assertRegex(entry["sha256"], r"^sha256:[0-9a-f]{64}$")
+            else:
+                self.assertEqual(entry["sha256"], _sha256(ROOT / path), path)
             self.assertRegex(entry["introduced_by"], r"^[0-9a-f]{40}$")
 
     def test_observer_verifies_committed_assessment_against_real_provenance(self):
         observer = _observer_module()
-        module = observer.load_superseding_module(ROOT)
+        frozen = _frozen_historical_root()
+        module = observer.load_superseding_module(frozen)
         contract = _contract()
-        sources = observer.load_sources(contract, ROOT)
-        live = observer.gather_live(ROOT)
-        ctx = observer.build_superseding_context(contract, sources, ROOT)
+        sources = observer.load_sources(contract, frozen)
+        live = observer.gather_live(frozen)
+        ctx = observer.build_superseding_context(contract, sources, frozen)
         verdict = observer.compute_matrix(contract, sources, _assessment(),
                                           superseding_ctx=ctx, live=live,
-                                          provenance=_provenance(), root=ROOT)
+                                          provenance=_provenance(), root=frozen)
         self.assertTrue(verdict["format_valid"], verdict["failures"])
         self.assertTrue(verdict["all_pass"], verdict["honesty_failures"])
         self.assertEqual(verdict["claimed_items"], verdict["derived_items"])
@@ -433,10 +476,12 @@ class BoundaryTests(unittest.TestCase):
         self.assertIn(CURRENT_BUILD_REVISION, dockerfile)
 
     def test_observer_cli_exit_code_is_zero_on_the_committed_assessment(self):
+        frozen = _frozen_historical_root()
         result = subprocess.run(
             ["python3", str(OBSERVER),
              "--assessment", str(EVIDENCE / "assessment-input.v1.json"),
-             "--provenance", str(EVIDENCE / "provenance.v1.json")],
+             "--provenance", str(EVIDENCE / "provenance.v1.json"),
+             "--root", str(frozen)],
             cwd=ROOT, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         payload = json.loads(result.stdout)
