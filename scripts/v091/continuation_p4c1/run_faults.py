@@ -22,6 +22,7 @@ decision, no model routing/identity/approval authority.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -59,6 +60,38 @@ def _load(name: str, path: Path):
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _redact_key(value: str) -> str:
+    """Replace one high-entropy plan-command key with a stable digest marker."""
+
+    if value.startswith("sha256:"):
+        return value
+    return "sha256:" + hashlib.sha256(value.encode()).hexdigest()[:16]
+
+
+def _redact_idempotency_keys(value: object) -> object:
+    """Deterministically redact BYQ-minted plan-command idempotency keys.
+
+    The raw plan snapshots returned across the boundary carry the full
+    high-entropy plan-command key, which secret scanners flag as a generic API
+    key. Evidence only needs to prove the *presence* and *stable identity* of
+    that binding, never publish the full value. This replaces each
+    ``idempotency_key`` with a reproducible digest marker (identical inputs map
+    to identical markers), so plan/replay identity and before/after equality are
+    preserved: a truthful redaction, not a fabricated value.
+    """
+
+    if isinstance(value, dict):
+        return {
+            key: (_redact_key(item)
+                  if key == "idempotency_key" and isinstance(item, str)
+                  else _redact_idempotency_keys(item))
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_idempotency_keys(item) for item in value]
+    return value
 
 
 class FaultDriver:
@@ -614,6 +647,7 @@ class FaultDriver:
             cleanup = self.j.stack_down()
             if observations is not None:
                 observations["raw"]["cleanup"] = cleanup
+                observations = _redact_idempotency_keys(observations)
                 out.write_text(json.dumps(observations, indent=2, sort_keys=True) + "\n",
                                encoding="utf-8")
         return observations

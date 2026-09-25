@@ -90,6 +90,13 @@ fields are rejected `422`, a non-`none` durable-evidence identity is rejected
 - `scripts/v091/continuation_p4c1/run_faults.py` injected the faults and wrote
   `observations.v1.json`, then tore the isolated stack down to zero
   containers/networks/volumes with production untouched.
+- Before serializing the evidence the driver deterministically redacts every
+  plan-command `idempotency_key` to a stable `sha256:<digest>` marker
+  (`_redact_idempotency_keys`): the raw high-entropy key is never published,
+  while its presence and stable identity are preserved, so before/after plan
+  equality and replay identity are unaffected. This is a truthful source-level
+  redaction, not a fabricated value, and it is what keeps the evidence clear of
+  secret-scanner false positives.
 - The fail-able observer (`observer.py`) re-derives every row/assertion from the
   raw facts and produced `verdict.v1.json` (`format_valid=true`,
   `all_pass=true`).

@@ -25,7 +25,7 @@
     "scripts/dsh/candidate_profile.py": "sha256:58e5b32dbcb1afc377ff8e12c1049fc2317529439e60a9a030c55230d4544054",
     "scripts/dsh/root_profile.py": "sha256:48789e00d300ef6aa30c6682b7458cbd43655e410153e09c743bcfc3e9ef3f19",
     "services/runtime-adapter/Dockerfile.candidate": "sha256:ebf0237c3bc9c28aa8bf6d07125048ad12d510c2233965c4c7cf830deec78c0f",
-    "services/runtime-adapter/Dockerfile.post-u8-candidate": "sha256:50b9b44cd31bf5373dd288801e7e1b0a18f52f844ea2b16ca325ef185b91988f",
+    "services/runtime-adapter/Dockerfile.post-u8-candidate": "sha256:5d00eab2483a2a780bbbcd0c600a770c4d347b5cd0941104e32a51bd537ee81a",
     "services/runtime-adapter/app/compat/__init__.py": "sha256:5b94c6636c3b1ebb11943d1ed19a29a170eaec6138e2752baf764a8e7d882c62",
     "services/runtime-adapter/app/compat/dsh_012.py": "sha256:2220785a9668b7beefd9b4f41bc85ea3045c8dff77eb16a66affc1acb8e0d84e",
     "services/runtime-adapter/app/compat/dsh_015.py": "sha256:44cf8ed33d2cebcc36e4e8cc05146df87ac45a96857e2f8ecd87c5bccaef60af",

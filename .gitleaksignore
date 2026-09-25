@@ -11,3 +11,9 @@ fcee92c55382b66313be3e4ad7cb47c0727a1456:services/mcp/tests/contract-test.ts:gen
 
 # Fixed synthetic pagination idempotency key; not authentication material.
 df5e8990fb092e0f678ef5f0aa9d59cce5679904:scripts/evidence/h4-strategy-pagination-fixture.py:generic-api-key:11
+
+# BYQ-minted ADR-0085 P4-C1 plan-command idempotency key: a high-entropy
+# binding value, not authentication material. The P4-C1 driver now redacts it
+# at the source, so current evidence carries only sha256:<digest> markers; this
+# exact pre-redaction historical finding is the sole suppression.
+561f9db69bf2b7661354be97990935ca1fa46ee7:docs/evidence/adr-0085-p4c1-adapter-fault-safe/observations.v1.json:generic-api-key:634

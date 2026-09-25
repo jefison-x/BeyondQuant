@@ -35,6 +35,14 @@ def _load_observer():
     return module
 
 
+def _load_driver():
+    spec = importlib.util.spec_from_file_location("p4c1_run_faults", HERE / "run_faults.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["p4c1_run_faults"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 class ContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -139,6 +147,50 @@ class FaultProviderTests(unittest.TestCase):
         self.assertIn('"research-judgment" in lowered', source)
         # Direct real Backend result seam for late/forged results.
         self.assertIn("/internal/research-judgment/", source)
+
+
+class RedactionTests(unittest.TestCase):
+    def test_idempotency_keys_redact_stably_without_the_raw_value(self):
+        driver = _load_driver()
+        raw_key = "example-plan-key"
+        nested_key = "example-research-proposal-key"
+        raw = {
+            "idempotency_key": raw_key,
+            "nested": [{"idempotency_key": nested_key}],
+            "other": "plan-command-label",
+        }
+        once = driver._redact_idempotency_keys(raw)
+        twice = driver._redact_idempotency_keys(once)
+        self.assertNotIn(raw_key, json.dumps(once))
+        self.assertNotIn(nested_key, json.dumps(once))
+        self.assertTrue(once["idempotency_key"].startswith("sha256:"))
+        # Deterministic and idempotent: identical inputs map to identical markers.
+        self.assertEqual(once, twice)
+        self.assertEqual(driver._redact_key("same"), driver._redact_key("same"))
+        self.assertNotEqual(driver._redact_key("same"), driver._redact_key("other"))
+        # Only the key-bearing field is redacted; every other value is untouched.
+        self.assertEqual(once["other"], "plan-command-label")
+
+    def test_committed_observations_publish_no_raw_idempotency_key(self):
+        blob = OBSERVATIONS_PATH.read_text(encoding="utf-8")
+        for prefix in ("plan-grant-", "research_proposal_", "stage-fence-"):
+            self.assertNotIn(prefix, blob)
+        observations = json.loads(blob)
+        keys: list[str] = []
+
+        def walk(node: object) -> None:
+            if isinstance(node, dict):
+                for name, item in node.items():
+                    if name == "idempotency_key" and isinstance(item, str):
+                        keys.append(item)
+                    walk(item)
+            elif isinstance(node, list):
+                for item in node:
+                    walk(item)
+
+        walk(observations)
+        self.assertTrue(keys)
+        self.assertTrue(all(value.startswith("sha256:") for value in keys), keys)
 
 
 class SliceBoundaryTests(unittest.TestCase):
