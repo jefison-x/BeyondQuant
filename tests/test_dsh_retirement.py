@@ -25,7 +25,7 @@ class RetirementTests(unittest.TestCase):
         ci = (ROOT / 'scripts/ci/local-ci.sh').read_text()
         self.assertNotIn('export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.1rc1', ci)
         self.assertNotIn('baseline-benchmark.json', ci)
-        self.assertIn('Dockerfile.post-u8-candidate', ci)
+        self.assertIn('Dockerfile.post-u8-216-candidate', ci)
         self.assertIn('Dockerfile.post-u8-candidate', (ROOT / 'compose.yml').read_text())
 
     def test_old_execution_entries_are_removed_and_archived(self):

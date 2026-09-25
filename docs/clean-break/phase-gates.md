@@ -1,5 +1,11 @@
 # Phase 0–6 gate record
 
+## Phase 7 slice 1 gate — Gateway private proxy removal (2026-09-25)
+
+The maintainer explicitly approved deletion of the six private Gateway pass-through routes. [Slice record](phase7-gateway-proxy.md) names their replacement Product API and exact scope. The first gate failed on old `.215` build-source drift; it remained closed while current build `.216` was added with a revision-specific Dockerfile and tracked Compose override. Frozen `.215`, original Adapter Dockerfile, DSH release descriptor and `compose.yml` stayed byte-identical. The H4 current interface ledger now has exactly the six removed routes retired and 572 surviving interfaces reviewed with zero stale/missing/fake entries.
+
+**Tester:** PASS — Gateway 274/274 in offline read-only container; full architecture unittest 918 OK with 11 existing skips before the final Compose override; independent post-override architecture 195/195; current `.216` and frozen `.215` build checks, DSH release historical-input and promotion checks, reliability auditor, Compose default/explicit/CI resolution, shell syntax and diff check PASS. **Independent Sol Reviewer:** Functional PASS / Tests PASS / Clean Break Architecture PASS on actual diff, build identity, frozen sources and historical-test scope. **Root acceptance:** **PASS for slice 1 only**. Phase 7 overall is still in progress; no full-stack smoke, browser Golden Scenario, Phase 8 resource cleanup or database cleanup is claimed. The next Phase 7 slice requires its own bounded design, Tester, Reviewer and Root acceptance.
+
 ## Current activation follow-up (2026-09-25)
 
 The planning verdict below predates [ADR-0088](../architecture/adr/ADR-0088-clean-break-baseline-activation.md). ADR-0088 records the maintainer's explicit Clean Break direction and activates the six 0.10 ADRs on this branch. Of 87 old ADRs, 82 are historical Product Core records and five retain only non-product governance/security scope. The former CLOSED verdict below is the original Phase 0–6 snapshot, not the latest activation outcome.

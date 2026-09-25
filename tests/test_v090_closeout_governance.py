@@ -498,7 +498,7 @@ class NoImplementationTests(unittest.TestCase):
                          r"^dsh-0\.1\.5rc1-post-u8\.\d+$")
         self.assertTrue((ROOT / "config/dsh/builds" / f"{CURRENT_BUILD_REVISION}.json").is_file())
         dockerfile = (ROOT / "services/runtime-adapter/Dockerfile.post-u8-candidate").read_text()
-        self.assertIn(builds.selected_build_id("dsh-0.1.5rc1"), dockerfile)
+        self.assertIn("dsh-0.1.5rc1-post-u8.215", dockerfile)
         # The historical closeout revision remains an immutable committed manifest.
         self.assertTrue((ROOT / "config/dsh/builds" / f"{AUDIT_BUILD_REVISION}.json").is_file())
 

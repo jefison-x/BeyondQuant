@@ -18,11 +18,11 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PREVIOUS_BUILD = "dsh-0.1.5rc1-post-u8.214"
-# sha256 of config/dsh/builds/dsh-0.1.5rc1-post-u8.214.json as committed at
-# 561f9db6; the frozen manifest must never be rewritten.
+PREVIOUS_BUILD = "dsh-0.1.5rc1-post-u8.215"
+# sha256 of config/dsh/builds/dsh-0.1.5rc1-post-u8.215.json as committed in the
+# Phase 7 base; the frozen manifest must never be rewritten.
 PREVIOUS_BUILD_SHA256 = (
-    "fbb1cbd04573d2a97eb2a743225423c621b715b58b0f4eae647ee00534664029")
+    "81a7631851ca3d90caa8ce15b27911b45e3d1cb8537189ca973a534271106c56")
 
 
 class CurrentBuildRevisionTests(unittest.TestCase):
@@ -40,7 +40,7 @@ class CurrentBuildRevisionTests(unittest.TestCase):
         from scripts.dsh import build_revision as builds
 
         selected = builds.selected_build_id("dsh-0.1.5rc1")
-        dockerfile = (ROOT / "services/runtime-adapter/Dockerfile.post-u8-candidate").read_text()
+        dockerfile = (ROOT / builds.identity(selected)[1]).read_text()
         self.assertIn(
             f"COPY config/dsh/builds/{selected}.json /opt/byq/builds/build.identity.json",
             dockerfile)

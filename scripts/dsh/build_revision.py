@@ -17,6 +17,12 @@ RELEASES = {"dsh-0.1.5rc1"}
 HISTORICAL_BUILDS = {"dsh-0.1.2rc1": "dsh-0.1.2rc1-post-u8.199"}
 RETIRED_BUILD = "dsh-0.1.1rc1-post-u8.30"
 RETIRED_SOURCE = "b6c8034ed638447aa1d0ddd82af9738df830bbdf"
+# The previous default remains bound to its original release Dockerfile. It is
+# historical evidence only; current source changes get a new revision-specific
+# Dockerfile and manifest.
+FROZEN_BUILDS = {
+    "dsh-0.1.5rc1-post-u8.215": "sha256:81a7631851ca3d90caa8ce15b27911b45e3d1cb8537189ca973a534271106c56",
+}
 KEYS = {"schema_version", "build_id", "release_id", "release_descriptor_hash", "dockerfile", "inputs"}
 SOURCE_ROOTS = (
     "services/runtime-adapter/app", "services/gateway/app", "services/backend/app",
@@ -46,7 +52,7 @@ FIXED_INPUTS = (
     "config/dsh/archive/dsh-0.1.1rc1/package-lock.json.archive",
     "scripts/dsh/build_revision.py",
     "scripts/dsh/historical_inputs.py", "scripts/dsh/release.py",
-    "scripts/ci/local-ci.sh", "compose.yml",
+    "scripts/ci/local-ci.sh", "compose.yml", "compose.override.yml",
     ".dockerignore", "services/mcp/tsconfig.json", "apps/frontend/nginx.conf",
     "apps/frontend/index.html", "apps/frontend/vite.config.ts", "apps/frontend/tsconfig.app.json",
     "apps/frontend/tsconfig.json", "apps/frontend/tsconfig.node.json",
@@ -71,7 +77,7 @@ def selected_build_id(release):
     if release == "dsh-0.1.1rc1":
         return RETIRED_BUILD  # Historical identity only; never a current build.
     if release in RELEASES:
-        return release + "-post-u8.215"
+        return release + "-post-u8.216"
     if release in HISTORICAL_BUILDS:
         return HISTORICAL_BUILDS[release]
     raise ValueError("unregistered release")
@@ -82,9 +88,12 @@ def identity(build_id):
     if not match:
         raise ValueError("exact registered release and U6/U7/Post-U8 build revision required")
     release = match[1]
-    dockerfile = "services/runtime-adapter/Dockerfile." + match[2] + (
-        "-candidate" if release.endswith(("2rc1", "5rc1")) else ""
-    )
+    if release == "dsh-0.1.5rc1" and match[2] == "post-u8" and int(match[3]) >= 216:
+        dockerfile = f"services/runtime-adapter/Dockerfile.post-u8-{match[3]}-candidate"
+    else:
+        dockerfile = "services/runtime-adapter/Dockerfile." + match[2] + (
+            "-candidate" if release.endswith(("2rc1", "5rc1")) else ""
+        )
     return release, dockerfile
 
 
@@ -146,6 +155,17 @@ def check(build_id):
         if (ROOT / relative).read_bytes() != archived:
             raise ValueError("retired build manifest changed")
         return json.loads(archived)
+    if build_id in FROZEN_BUILDS:
+        path = BUILDS / f"{build_id}.json"
+        value = json.loads(path.read_text())
+        release, dockerfile = identity(build_id)
+        if (digest(path) != FROZEN_BUILDS[build_id]
+                or value.get("release_id") != release
+                or value.get("dockerfile") != dockerfile
+                or value.get("release_descriptor_hash")
+                != digest(ROOT / "config/dsh/releases" / f"{release}.json")):
+            raise ValueError("frozen build manifest drift")
+        return value
     release, _ = identity(build_id)
     if HISTORICAL_BUILDS.get(release) == build_id:
         # Frozen rollback revision: its inputs were recorded against a prior
