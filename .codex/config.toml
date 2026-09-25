@@ -1,0 +1,28 @@
+model = "gpt-6-sol"
+model_reasoning_effort = "medium"
+
+[agents]
+enabled = true
+default_subagent_model = "gpt-6-luna"
+default_subagent_reasoning_effort = "max"
+max_concurrent_threads_per_session = 4
+
+[agents.explorer]
+description = "Read-only BYQ code and contract investigation; return concise findings with file evidence."
+config_file = "agents/explorer.toml"
+
+[agents.worker]
+description = "Implement a bounded BYQ subsystem with one writer and explicit acceptance criteria."
+config_file = "agents/worker.toml"
+
+[agents.researcher]
+description = "Research only the external API or dependency facts needed for the current task."
+config_file = "agents/researcher.toml"
+
+[agents.tester]
+description = "Run focused verification and report PASS/FAIL with exact commands and failures."
+config_file = "agents/tester.toml"
+
+[agents.reviewer]
+description = "Independently review actual diff, contracts, tests, security and Clean Break boundaries."
+config_file = "agents/reviewer.toml"

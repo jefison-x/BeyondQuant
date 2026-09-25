@@ -144,3 +144,20 @@ it must not hard-code a main SHA or transient PR state. Derive the clean base
 with `git rev-parse origin/main` after synchronizing `main`. An Accepted ADR
 and the current phase acceptance criteria are required before moving to the
 next phase.
+
+## Clean Break development program (candidate)
+
+The explicitly requested BYQ 0.10 Clean Break is tracked in
+[`docs/clean-break/`](docs/clean-break/README.md). Its project Codex defaults
+and role duties are in [development-agent-mode.md](docs/clean-break/development-agent-mode.md).
+Use Sol medium as Root/architecture owner, Luna max for bounded Explorer,
+Worker, Researcher and Tester tasks, and an independent Sol medium Reviewer.
+Use at most four subagents, usually one or two; assign one writer per subsystem.
+Each phase ends with Tester, independent Reviewer and Root PASS before the next
+phase. Keep Engineering tools and MCP separate from Product DSH and BYQ MCP.
+
+The Phase 0–6 package is a proposed architecture and cleanup plan. It does not
+make the old Accepted ADRs historical yet or authorize Phase 7 deletion. The
+new baseline requires maintainer acceptance and the repository governance
+updates identified in its ADR index. Existing security, Community read-only,
+worktree, test, PR and deployment gates continue to apply.
