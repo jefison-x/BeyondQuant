@@ -11,7 +11,7 @@
 且不新增任何通用 plan/event/proposal 写路由；历史 D15 snapshot（D15-4/D15-5/D15-G）不改写。
 维护者 2026-09-24 已接受 ADR-0086，取消 ADR-0085 §6 固定“最多 2 次”模型调用上限；P4 当前实现仍须补每次 root/child provider 请求前的请求级多维门禁与实测证据，不能把决定接受等同验收通过。
 P4 已按维护者 2026-09-24 决定拆为 P4-A→P4-B→P4-C1→P4-C2→P4-D。**ADR-0085 P4-A 集成基础冻结已合并**（已并入 `main`，其 `all_pass=false` verdict 不改写）；
-**当前唯一实现切片是 P4-B 正常三轮旅程（candidate，Draft PR）**：复用 P4-A 隔离四边界栈，在 ADR-0086 请求级门禁下真实观察到正常复合研究**主链**
+**ADR-0085 P4-B 正常三轮旅程已合并**（已并入 `main`）：复用 P4-A 隔离四边界栈，在 ADR-0086 请求级门禁下真实观察到正常复合研究**主链**
 （策略草案→精确审批→数据就绪→执行审批→三轮分析/修正→确定性选优→Product API 模拟账户→task completed），
 gate 为**按具名 stage/profile 显式配置**的请求级多维硬上限（provider 调用/attempt/input/**declared** output/tool payload/deadline/concurrency/cancel；非全局常数），
 在每次 root/child provider 请求前拦截，按 remaining deadline 约束上游并丢弃超限/迟到结果；闭合最小 provider 头转发（仅 `authorization`/`content-type`/`accept`，绝不转发 BYQ 内部 token/cookie/hop-by-hop）；
@@ -20,8 +20,10 @@ gate 为**按具名 stage/profile 显式配置**的请求级多维硬上限（pr
 维护者 2026-09-25 接受 **ADR-0087**（确定性模拟账户审批与创建）：模拟账户进入研究闭环必须走 BYQ 确定性 plan/approval/action，
 模型只能提出“建议进入模拟验证”。`final_selection` 先进入 `waiting_for_paper_account_approval`，精确 plan-command 绑定的 `create_paper_account` 审批冻结 name/cash/resource/action 及 digest/idempotency key，
 审批推进到 `ready_to_create_paper_account` 后**只读取该冻结绑定**（即使 plan_version 增长也不重算不同 key），经现有 Product API / `PaperTradingStore` 幂等创建，再由确定性 CAS 提交账户 reference 并收口 plan/task；replay 返回同一账户，且不创建 order/position/fill。
-**P4-B scoped `verdict.v1.json` 现为 `format_valid=true, all_pass=true`**（observer 逐字段证明 approval digest/key 与实际 create params digest/key 精确相等；仅限正常主链 + ADR-0086 请求门禁 + ADR-0087 确定性账户门；**不声称 P4 故障矩阵、P4-C、P4 整体 all_pass 或阶段完成，也不解锁 P4-C1**）。P4-C1/P4-C2/P4-D 未授权并行。
-P0→P4 必须逐项、逐独立 PR 推进，前项合并后才开始后项。
+**P4-B scoped `verdict.v1.json` 现为 `format_valid=true, all_pass=true`**（observer 逐字段证明 approval digest/key 与实际 create params digest/key 精确相等；仅限正常主链 + ADR-0086 请求门禁 + ADR-0087 确定性账户门；**不声称 P4 故障矩阵、P4-C、P4 整体 all_pass 或阶段完成**）。P4-A/P4-B 既有 verdict 不改写。
+**当前唯一实现切片是 P4-C1 Adapter/DSH 故障安全收敛（candidate，Draft PR）**：复用 P4-A/P4-B 隔离四边界栈与 keyless scripted deterministic provider，真实注入
+Adapter 进程在 provider 请求在途时的 OS 进程中断、DSH runtime 子进程中断、真实卡住与正常长运行、以及旧 attempt 的迟到/伪造结果提交；验证未决模型 attempt 在进程重启后**不自动重发**（重试为显式 `409 research_judgment_in_progress`、零新 provider 调用、零新 stage call），旧 attempt 迟到结果**只作精确 replay 或被拒绝且绝不二次提交**，无重复 provider 调用/event/task/artifact/backtest/approval/paper 对象，系统收敛到合同允许的 durable `admitted` pending 或 `needs_attention/no_durable_progress`。**P4-C1 不声称 DSH 已实现原生跨进程 continuation/provider recovery，也不实现或宣称 P4-C2（Backend claim/settle 真实 consumer）与 P4-D（统一终验）**。
+P4-C2/P4-D 尚未开始。P0→P4 必须逐项、逐独立 PR 推进，前项合并后才开始后项。
 0.10 与 Phase 100 恢复仍**未授权硬停止**，R3 不自动启动。见下方“权威当前状态”。
 
 <!-- byq:current-completed-phase=97 -->
@@ -56,10 +58,11 @@ P0→P4 必须逐项、逐独立 PR 推进，前项合并后才开始后项。
 <!-- byq:adr-0085=accepted -->
 <!-- byq:adr-0086=accepted -->
 <!-- byq:adr-0087=accepted -->
-<!-- byq:harness-continuation=adr-accepted-p0-merged-p1-merged-p2-merged-p3-merged-p4a-merged-p4b-candidate-version-0.9.1 -->
+<!-- byq:harness-continuation=adr-accepted-p0-merged-p1-merged-p2-merged-p3-merged-p4a-merged-p4b-merged-p4c1-candidate-version-0.9.1 -->
 <!-- byq:v091-continuation-p3=complete -->
 <!-- byq:v091-continuation-p4a=merged -->
-<!-- byq:v091-continuation-p4b=candidate -->
+<!-- byq:v091-continuation-p4b=merged -->
+<!-- byq:v091-continuation-p4c1=candidate -->
 <!-- byq:maintenance-release-target=0.9.1-stability -->
 <!-- byq:session-failure-containment=real-recovery-acceptance-passed -->
 <!-- byq:v090-business-recovery=implementation-delivered -->
@@ -71,13 +74,13 @@ P0→P4 必须逐项、逐独立 PR 推进，前项合并后才开始后项。
 <!-- byq:v090-final-closeout=complete -->
 <!-- byq:v090-development-closeout=complete -->
 <!-- byq:v090-next=maintainer-testing-and-0.9x-window -->
-<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.213 -->
+<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.214 -->
 
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|
 | Product | 最近完成 Phase 97（marker 97） | 未授权任何新的 Product Phase | 维护者阶段性授权 + 本文件 next phase | 一阶段一 worktree/Draft PR；Human Merge Gate；不得自授新 Phase |
 | 数据/资格 | Phase 98/99 `COMPLETE`；Phase 100 **仍 `PAUSED`**：P100-A/P100-B 已并入 `main`，P100-C 只存在于暂停且未交付的 Draft #338，P100-D/P100-E 冻结，维护者未授权恢复；Phase 101 `COMPLETE`；**0.10 与 Phase 100 恢复未授权**。S3/历史成分准备属于 0.10.0，不是 0.9 gate。 | 0.9 的 fail-containment/recovery gate、coherent DSH `0.1.5-rc.1` 仓库默认升级、具名 D15 superseding assessment 与**独立最终 0.9 开发收口**均已完成并真实验收（marker `v090-final-closeout=complete`，证据 `docs/evidence/v090-final-closeout/`）；下一步为**维护者测试与 0.9.x 小版本功能追加/优化窗口**。**不得**据此恢复 Phase 100 或启动 0.10——二者仍需维护者单独授权。 | Phase 100 原授权 + ADR-0074/0084 | 仅 Tushare；不得从未审查分支推断完成；数据来源、时点、单位、许可与完整性失败继续 fail closed；不因外部可选能力冻结无关调查 |
-| 维护（当前） | 0.9 开发收口已完成；ADR-0085 P0–P3 已并入 `main`；**P4-A 集成基础冻结已并入 `main`**（其 `all_pass=false` verdict 不改写）；**P4-B 正常三轮旅程为 candidate（Draft PR，未合并）**：复用 P4-A 隔离四边界栈，在 ADR-0086 请求级多维门禁下真实观察到正常复合研究主链，并按 **ADR-0087** 走通确定性 `paper_account_create` 审批→Product API 幂等创建→确定性 CAS 收口，`verdict.v1.json` 为 `format_valid=true, all_pass=true`（仅 P4-B scoped）。ADR-0086 已接受并取代固定“最多 2 次 provider 调用”的解释；历史 P3 stage-call 准入计数、continuation 账本和首次无进展即停止仍保持各自语义。历史 D15 快照不改写。 | **下一个且唯一可执行任务 = P4-B 正常三轮旅程**（candidate 待人工审查合并；合并前不开始后续切片）：之后按 P4-C1 Adapter 故障安全收敛 → P4-C2 Backend claim/settle 真实消费路径 → P4-D 统一终验顺序逐 PR 推进，前项合并后才开始后项。0.10 与 Phase 100 恢复继续冻结。 | 维护者 2026-09-22 接受 ADR-0085 并授权 P0→P4；维护者 2026-09-24 接受 ADR-0086 并批准 P4-A→P4-D 拆分；维护者 2026-09-25 接受 ADR-0087（P4-B 范围内确定性模拟账户门） | 不 deploy、不 tag/release、不恢复 Phase 100、不启动 0.10；不建第二通用 harness；不放宽逐动作审批；每项独立 worktree/PR；前项合并后再开始后项 |
+| 维护（当前） | 0.9 开发收口已完成；ADR-0085 P0–P3 已并入 `main`；**P4-A 集成基础冻结已并入 `main`**（其 `all_pass=false` verdict 不改写）；**P4-B 正常三轮旅程已并入 `main`**（复用 P4-A 隔离四边界栈，在 ADR-0086 请求级多维门禁下真实观察到正常复合研究主链，并按 **ADR-0087** 走通确定性 `paper_account_create` 审批→Product API 幂等创建→确定性 CAS 收口，`verdict.v1.json` 为 `format_valid=true, all_pass=true`，仅 P4-B scoped）。ADR-0086 已接受并取代固定“最多 2 次 provider 调用”的解释；历史 P3 stage-call 准入计数、continuation 账本和首次无进展即停止仍保持各自语义。历史 D15 快照不改写。 | **下一个且唯一可执行任务 = P4-C1 Adapter/DSH 故障安全收敛**（candidate，Draft PR；合并前不开始后续切片）：之后按 P4-C2 Backend claim/settle 真实消费路径 → P4-D 统一终验顺序逐 PR 推进，前项合并后才开始后项。P4-C2/P4-D 未开始；0.10 与 Phase 100 恢复继续冻结。 | 维护者 2026-09-22 接受 ADR-0085 并授权 P0→P4；维护者 2026-09-24 接受 ADR-0086 并批准 P4-A→P4-D 拆分；维护者 2026-09-25 接受 ADR-0087（P4-B 范围内确定性模拟账户门） | 不 deploy、不 tag/release、不恢复 Phase 100、不启动 0.10；不建第二通用 harness；不放宽逐动作审批；每项独立 worktree/PR；前项合并后再开始后项；不声称 DSH 原生跨进程恢复 |
 | 依赖资格（D15） | **当前资格状态（B4 之后，2026-09-21）**；ADR-0084 已接受：`terminal-adapter-restart` = **PASS**、`terminal-dsh-runtime-restart` = **PASS**（均为候选/资格层）；B1 `subagent-child-crash` 与 B2 `subagent-byq-adapter-restart` 为 `BLOCKED_EXTERNAL`；独立监控切片确认 DSH rc.2/alpha.2 provider 资格仍 `BLOCKED_EXTERNAL`（无 out-of-process provider，未升级依赖）；ADR-0083 仅候选/资格层最小实现完成；R4 / production wiring NOT implemented。D15-G **未重跑**，按当前 B1/B2 状态即使重跑仍为 `NO_GO`；**历史已提交快照（不改写）**：D15-4/D15-5/D15-G committed evidence 保持原样。外部 blocker 只阻塞原生独立 child 恢复声明，不再形成全局停止。2026-09-22 具名 D15 superseding assessment 已建立（`docs/evidence/d15/d15-superseding/`）：B1/B2 仍 `BLOCKED_EXTERNAL`、B3/B4 候选 PASS、实际采用范围候选兼容 PASS 且晋升仅仓库默认、bounded R3 范围确立且 `R3_RESUME = NO`、原生独立 child resume 未实现。 | **已生成具名 D15 superseding assessment**（marker `v090-d15-superseding-assessment=established`）；完整 failure-containment gate 已通过真实隔离验收，按实际采用范围判断候选兼容与晋升已完成；独立最终 0.9 收口已完成（marker `v090-final-closeout=complete`）；下一步为**维护者测试与 0.9.x 小版本功能追加/优化窗口**（不启动 0.10、不自动解冻 R3） | ADR-0084 + ADR-0081/0082；历史证据与 B3/B4 current overlay | `R3_RESUME` 不因文档决定自动变为 YES；不得把 B1/B2 标为 PASS；不得改写历史 D15 verdict；生产切换、部署和 release 独立授权 |
 
 ## 0.9 closeout governance & gap ledger audit（2026-09-20，历史审计快照）

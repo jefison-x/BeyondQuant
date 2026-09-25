@@ -1,0 +1,11 @@
+# ADR-0085 P4-C1 isolated Adapter/DSH fault-convergence stack (non-production, keyless).
+#
+# Extends the P4-A judgment stack (compose.runtime-qual.yml + compose.p4-judgment.yml)
+# and only swaps the keyless provider for the fault-mode one. No production stack,
+# volume, credential or paid API is touched. No second harness is created: the
+# Runtime Adapter / Backend / Gateway / MCP services are exactly the P4-A/P4-B ones.
+services:
+  judgment-provider:
+    volumes:
+      - ${BYQ_P4_ROOT}/scripts/v091/continuation_p4c1:/p4c1:ro
+    command: ["python3", "/p4c1/fault_provider.py"]

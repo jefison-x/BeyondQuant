@@ -1,0 +1,699 @@
+{
+  "evidence_class": "runtime-isolated-stack",
+  "llm_evidence_class": "scripted-keyless",
+  "raw": {
+    "adapter_binding": {
+      "derives_identity_server_side": true,
+      "forbidden_result_fields": [],
+      "foreign_evidence_status": 422,
+      "rejects_non_none_durable_evidence": true,
+      "result_closed_fields": true,
+      "unknown_field_status": 422
+    },
+    "boundary_controls": {
+      "adapter_identity_unchanged": true,
+      "forged_attempt_status": 503,
+      "forged_token_status": 401,
+      "no_token_status": 401,
+      "provider_calls_delta": 0,
+      "stage_calls_delta": 0,
+      "task_id": "task_137b97ef90cc415cbb1b8d75a832115e"
+    },
+    "cleanup": {
+      "containers": 0,
+      "networks": 0,
+      "production_untouched": true,
+      "scope": "byq-p4-judgment (isolated non-production)",
+      "volumes": 0
+    },
+    "convergence": {
+      "fabricated_completed_state": false,
+      "terminal_states_observed": [
+        "pending_admitted",
+        "needs_attention_no_durable_progress"
+      ]
+    },
+    "durable_identity": {
+      "adapter_call_identity": "byq-judgment-eefbdb6d6030afa57227678fdc94e3b9",
+      "call_index": 1,
+      "duplicate_call_index": false,
+      "generation_consistent": true,
+      "receipt_call_identity": "byq-judgment-eefbdb6d6030afa57227678fdc94e3b9",
+      "stage_call_identity": "byq-judgment-eefbdb6d6030afa57227678fdc94e3b9"
+    },
+    "fault_injection": {
+      "adapter_kill": {
+        "adapter_pid_after": 3204673,
+        "adapter_pid_before": 3202943,
+        "killed_while_provider_inflight": true
+      },
+      "dsh_child_kill": {
+        "adapter_alive": true,
+        "adapter_pid_after": 3204673,
+        "adapter_pid_before": 3204673,
+        "dsh_child_dead": true,
+        "dsh_pid": 34
+      }
+    },
+    "non_claims": {
+      "dsh_native_recovery_claimed": false
+    },
+    "provenance": {
+      "boundary": "real-isolated-services",
+      "source": "real-isolated-services"
+    },
+    "provider_controls": {
+      "f1_provider_after": "normal"
+    },
+    "scenarios": {
+      "F1": {
+        "adapter_pid_after": 3204673,
+        "adapter_pid_before": 3202943,
+        "attempt": "1:strategy_draft:1",
+        "counts_after": {
+          "agent_approvals": 0,
+          "artifacts": 3,
+          "backtest_jobs": 0,
+          "paper_accounts": 0,
+          "paper_fills": 0,
+          "paper_orders": 0,
+          "paper_positions": 0,
+          "research_continuation_events": 0,
+          "research_execution_plans": 1,
+          "research_judgment_stage_calls": 1,
+          "research_tasks": 1,
+          "signal_producer_jobs": 0
+        },
+        "counts_before": {
+          "agent_approvals": 0,
+          "artifacts": 3,
+          "backtest_jobs": 0,
+          "paper_accounts": 0,
+          "paper_fills": 0,
+          "paper_orders": 0,
+          "paper_positions": 0,
+          "research_continuation_events": 0,
+          "research_execution_plans": 1,
+          "research_judgment_stage_calls": 1,
+          "research_tasks": 1,
+          "signal_producer_jobs": 0
+        },
+        "driver_call_during_kill": {
+          "error": "RemoteDisconnected",
+          "status": null
+        },
+        "duplicate_objects": [],
+        "inflight_state": {
+          "child_inflight": 1,
+          "child_started": 1,
+          "mode": "block_child",
+          "released": false
+        },
+        "killed_while_provider_inflight": true,
+        "plan_after": {
+          "allowed_capabilities": [
+            "byq_research_get",
+            "byq_strategy_version_create"
+          ],
+          "approval": null,
+          "conversation_id": "conversation_d3cc4485600d4071a98b7b16973c63ae",
+          "expected_postcondition": "strategy_draft_created",
+          "idempotency_key": "plan-grant-task_dcb8ee37415a472cbd6a46106d2a5549",
+          "iteration": 1,
+          "last_progress_identity": null,
+          "next_action": "draft_strategy",
+          "owner_principal": "d15admin",
+          "plan_version": 1,
+          "prerequisites": [],
+          "references": {
+            "conversation": {
+              "conversation": "conversation_d3cc4485600d4071a98b7b16973c63ae"
+            },
+            "research_task": {
+              "research_task": "task_dcb8ee37415a472cbd6a46106d2a5549"
+            },
+            "strategy_version": {
+              "strategy_version": "artifact_9c4092ca06fe427093d8c0a4d98d648f"
+            }
+          },
+          "schema_version": "research-execution-plan.v1",
+          "stage": "strategy_draft",
+          "status": "active",
+          "task_id": "task_dcb8ee37415a472cbd6a46106d2a5549",
+          "task_version": 1,
+          "workspace_id": "workspace_7a00637c81ad4f9cb26c5c828df80d0e"
+        },
+        "plan_before": {
+          "allowed_capabilities": [
+            "byq_research_get",
+            "byq_strategy_version_create"
+          ],
+          "approval": null,
+          "conversation_id": "conversation_d3cc4485600d4071a98b7b16973c63ae",
+          "expected_postcondition": "strategy_draft_created",
+          "idempotency_key": "plan-grant-task_dcb8ee37415a472cbd6a46106d2a5549",
+          "iteration": 1,
+          "last_progress_identity": null,
+          "next_action": "draft_strategy",
+          "owner_principal": "d15admin",
+          "plan_version": 1,
+          "prerequisites": [],
+          "references": {
+            "conversation": {
+              "conversation": "conversation_d3cc4485600d4071a98b7b16973c63ae"
+            },
+            "research_task": {
+              "research_task": "task_dcb8ee37415a472cbd6a46106d2a5549"
+            },
+            "strategy_version": {
+              "strategy_version": "artifact_9c4092ca06fe427093d8c0a4d98d648f"
+            }
+          },
+          "schema_version": "research-execution-plan.v1",
+          "stage": "strategy_draft",
+          "status": "active",
+          "task_id": "task_dcb8ee37415a472cbd6a46106d2a5549",
+          "task_version": 1,
+          "workspace_id": "workspace_7a00637c81ad4f9cb26c5c828df80d0e"
+        },
+        "provider_calls_after": 2,
+        "provider_calls_before": 0,
+        "retry": {
+          "body": {
+            "detail": {
+              "code": "research_judgment_in_progress"
+            }
+          },
+          "code": "research_judgment_in_progress",
+          "provider_calls_delta": 0,
+          "receipt_present": false,
+          "status": 409
+        },
+        "stage_calls": [
+          {
+            "call_identity": "byq-judgment-a5b46f05f266ea2f690284c5f119f7a6",
+            "call_index": 1,
+            "outcome": null,
+            "stage": "strategy_draft",
+            "status": "admitted"
+          }
+        ],
+        "task_id": "task_dcb8ee37415a472cbd6a46106d2a5549",
+        "task_status_after": "planned"
+      },
+      "F2": {
+        "adapter_pid_after": 3204673,
+        "adapter_pid_before": 3204673,
+        "attempt": "1:strategy_draft:1",
+        "duplicate_objects": [],
+        "kill": {
+          "dsh_args": "/usr/local/lib/python3.11/site-packages/deepseek_harness_runtime/runtime/deepseek-harness-sdk-runtime-linux-x64 --profile sdk --patch /opt/byq/profiles/byq-research-judgment.patch.yml",
+          "dsh_dead": true,
+          "dsh_pid": 34,
+          "processes_after": [
+            {
+              "args": "python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8400",
+              "pid": 1,
+              "ppid": 0
+            },
+            {
+              "args": "/usr/local/lib/python3.11/site-packages/deepseek_harness_runtime/runtime/deepseek-harness-sdk-runtime-linux-x64 --profile sdk --patch /opt/byq/profiles/byq-product.patch.yml",
+              "pid": 18,
+              "ppid": 1
+            },
+            {
+              "args": "python3 -",
+              "pid": 68,
+              "ppid": 0
+            }
+          ],
+          "processes_before": [
+            {
+              "args": "python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8400",
+              "pid": 1,
+              "ppid": 0
+            },
+            {
+              "args": "/usr/local/lib/python3.11/site-packages/deepseek_harness_runtime/runtime/deepseek-harness-sdk-runtime-linux-x64 --profile sdk --patch /opt/byq/profiles/byq-product.patch.yml",
+              "pid": 18,
+              "ppid": 1
+            },
+            {
+              "args": "/usr/local/lib/python3.11/site-packages/deepseek_harness_runtime/runtime/deepseek-harness-sdk-runtime-linux-x64 --profile sdk --patch /opt/byq/profiles/byq-research-judgment.patch.yml",
+              "pid": 34,
+              "ppid": 1
+            },
+            {
+              "args": "python3 -",
+              "pid": 49,
+              "ppid": 0
+            }
+          ]
+        },
+        "plan_after": {
+          "allowed_capabilities": [
+            "byq_research_get",
+            "byq_strategy_version_create"
+          ],
+          "approval": null,
+          "conversation_id": "conversation_13a02c0005eb4ac1b744093a1f0ddc9d",
+          "expected_postcondition": "strategy_draft_created",
+          "idempotency_key": "plan-grant-task_28441dec679743dc9b4abbdccd1f9972",
+          "iteration": 1,
+          "last_progress_identity": null,
+          "next_action": "draft_strategy",
+          "owner_principal": "d15admin",
+          "plan_version": 1,
+          "prerequisites": [],
+          "references": {
+            "conversation": {
+              "conversation": "conversation_13a02c0005eb4ac1b744093a1f0ddc9d"
+            },
+            "research_task": {
+              "research_task": "task_28441dec679743dc9b4abbdccd1f9972"
+            },
+            "strategy_version": {
+              "strategy_version": "artifact_acec43dd251b4fae8ab4d152c9dd8ab5"
+            }
+          },
+          "schema_version": "research-execution-plan.v1",
+          "stage": "strategy_draft",
+          "status": "active",
+          "task_id": "task_28441dec679743dc9b4abbdccd1f9972",
+          "task_version": 1,
+          "workspace_id": "workspace_7a00637c81ad4f9cb26c5c828df80d0e"
+        },
+        "plan_before": {
+          "allowed_capabilities": [
+            "byq_research_get",
+            "byq_strategy_version_create"
+          ],
+          "approval": null,
+          "conversation_id": "conversation_13a02c0005eb4ac1b744093a1f0ddc9d",
+          "expected_postcondition": "strategy_draft_created",
+          "idempotency_key": "plan-grant-task_28441dec679743dc9b4abbdccd1f9972",
+          "iteration": 1,
+          "last_progress_identity": null,
+          "next_action": "draft_strategy",
+          "owner_principal": "d15admin",
+          "plan_version": 1,
+          "prerequisites": [],
+          "references": {
+            "conversation": {
+              "conversation": "conversation_13a02c0005eb4ac1b744093a1f0ddc9d"
+            },
+            "research_task": {
+              "research_task": "task_28441dec679743dc9b4abbdccd1f9972"
+            },
+            "strategy_version": {
+              "strategy_version": "artifact_acec43dd251b4fae8ab4d152c9dd8ab5"
+            }
+          },
+          "schema_version": "research-execution-plan.v1",
+          "stage": "strategy_draft",
+          "status": "active",
+          "task_id": "task_28441dec679743dc9b4abbdccd1f9972",
+          "task_version": 1,
+          "workspace_id": "workspace_7a00637c81ad4f9cb26c5c828df80d0e"
+        },
+        "result_submitted": false,
+        "retry": {
+          "body": {
+            "detail": {
+              "code": "research_judgment_in_progress"
+            }
+          },
+          "code": "research_judgment_in_progress",
+          "provider_calls_delta": 0,
+          "receipt_present": false,
+          "status": 409
+        },
+        "stage_calls": [
+          {
+            "call_identity": "byq-judgment-5a0c8681886170b8a7a9862b8c5f1e36",
+            "call_index": 1,
+            "outcome": "",
+            "plan_version": 1,
+            "stage": "strategy_draft",
+            "status": "admitted"
+          }
+        ],
+        "task_id": "task_28441dec679743dc9b4abbdccd1f9972",
+        "turn": {
+          "code": "research_judgment_failed_closed",
+          "status": 503
+        }
+      },
+      "F3": {
+        "receipt_returned": false,
+        "retries": [
+          {
+            "code": "research_judgment_in_progress",
+            "provider_calls_delta": 0,
+            "receipt_present": false,
+            "status": 409
+          },
+          {
+            "code": "research_judgment_in_progress",
+            "provider_calls_delta": 0,
+            "receipt_present": false,
+            "status": 409
+          }
+        ],
+        "stage_calls_count": 1
+      },
+      "F4": {
+        "attempt": "1:strategy_draft:1",
+        "completed_call": "byq-judgment-eefbdb6d6030afa57227678fdc94e3b9",
+        "late_request": {
+          "model_turn_skipped": true,
+          "provider_calls_delta": 0,
+          "replayed": true,
+          "status": 200
+        },
+        "plan_after": {
+          "allowed_capabilities": [
+            "byq_research_get"
+          ],
+          "approval": {
+            "action": "strategy_approve",
+            "params_digest": "sha256:4ae67a825311e04c84705bbb19b413b70ef8fb80c176e726a7c10607bb83e35c",
+            "plan_version": 2,
+            "resource_id": "artifact_205b9e01147a490480b1fc5e58eb0717",
+            "resource_kind": "strategy_version",
+            "task_version": 1
+          },
+          "conversation_id": "conversation_9d62ffc7098e40c4b88108c9b1e5ac2e",
+          "expected_postcondition": "strategy_approval_requested",
+          "idempotency_key": "research_proposal_8a0038ef7870b30c9a8fb00342799314",
+          "iteration": 1,
+          "last_progress_identity": null,
+          "next_action": "request_strategy_approval",
+          "owner_principal": "d15admin",
+          "plan_version": 2,
+          "prerequisites": [
+            "strategy_draft_validated"
+          ],
+          "references": {
+            "conversation": {
+              "conversation": "conversation_9d62ffc7098e40c4b88108c9b1e5ac2e"
+            },
+            "research_task": {
+              "research_task": "task_755933a7fd824bbbbdf32b7427a09721"
+            },
+            "strategy_version": {
+              "strategy_version": "artifact_205b9e01147a490480b1fc5e58eb0717"
+            }
+          },
+          "schema_version": "research-execution-plan.v1",
+          "stage": "waiting_for_strategy_approval",
+          "status": "waiting",
+          "task_id": "task_755933a7fd824bbbbdf32b7427a09721",
+          "task_version": 1,
+          "workspace_id": "workspace_7a00637c81ad4f9cb26c5c828df80d0e"
+        },
+        "plan_before": {
+          "allowed_capabilities": [
+            "byq_research_get"
+          ],
+          "approval": {
+            "action": "strategy_approve",
+            "params_digest": "sha256:4ae67a825311e04c84705bbb19b413b70ef8fb80c176e726a7c10607bb83e35c",
+            "plan_version": 2,
+            "resource_id": "artifact_205b9e01147a490480b1fc5e58eb0717",
+            "resource_kind": "strategy_version",
+            "task_version": 1
+          },
+          "conversation_id": "conversation_9d62ffc7098e40c4b88108c9b1e5ac2e",
+          "expected_postcondition": "strategy_approval_requested",
+          "idempotency_key": "research_proposal_8a0038ef7870b30c9a8fb00342799314",
+          "iteration": 1,
+          "last_progress_identity": null,
+          "next_action": "request_strategy_approval",
+          "owner_principal": "d15admin",
+          "plan_version": 2,
+          "prerequisites": [
+            "strategy_draft_validated"
+          ],
+          "references": {
+            "conversation": {
+              "conversation": "conversation_9d62ffc7098e40c4b88108c9b1e5ac2e"
+            },
+            "research_task": {
+              "research_task": "task_755933a7fd824bbbbdf32b7427a09721"
+            },
+            "strategy_version": {
+              "strategy_version": "artifact_205b9e01147a490480b1fc5e58eb0717"
+            }
+          },
+          "schema_version": "research-execution-plan.v1",
+          "stage": "waiting_for_strategy_approval",
+          "status": "waiting",
+          "task_id": "task_755933a7fd824bbbbdf32b7427a09721",
+          "task_version": 1,
+          "workspace_id": "workspace_7a00637c81ad4f9cb26c5c828df80d0e"
+        },
+        "stage_calls_count_unchanged": true,
+        "task_id": "task_755933a7fd824bbbbdf32b7427a09721",
+        "turn": {
+          "progress_outcome": "advance",
+          "status": 200
+        }
+      },
+      "F5": {
+        "counts_after": {
+          "agent_approvals": 0,
+          "artifacts": 3,
+          "backtest_jobs": 0,
+          "paper_accounts": 0,
+          "paper_fills": 0,
+          "paper_orders": 0,
+          "paper_positions": 0,
+          "research_continuation_events": 0,
+          "research_execution_plans": 3,
+          "research_judgment_stage_calls": 1,
+          "research_tasks": 3,
+          "signal_producer_jobs": 0
+        },
+        "counts_before": {
+          "agent_approvals": 0,
+          "artifacts": 3,
+          "backtest_jobs": 0,
+          "paper_accounts": 0,
+          "paper_fills": 0,
+          "paper_orders": 0,
+          "paper_positions": 0,
+          "research_continuation_events": 0,
+          "research_execution_plans": 3,
+          "research_judgment_stage_calls": 1,
+          "research_tasks": 3,
+          "signal_producer_jobs": 0
+        },
+        "forged_result_rejected": true,
+        "forged_result_status": 409,
+        "old_result": {
+          "rejected": false,
+          "replayed": true,
+          "second_write": false,
+          "status": 200
+        },
+        "plan_after": {
+          "allowed_capabilities": [
+            "byq_research_get"
+          ],
+          "approval": {
+            "action": "strategy_approve",
+            "params_digest": "sha256:4ae67a825311e04c84705bbb19b413b70ef8fb80c176e726a7c10607bb83e35c",
+            "plan_version": 2,
+            "resource_id": "artifact_205b9e01147a490480b1fc5e58eb0717",
+            "resource_kind": "strategy_version",
+            "task_version": 1
+          },
+          "conversation_id": "conversation_9d62ffc7098e40c4b88108c9b1e5ac2e",
+          "expected_postcondition": "strategy_approval_requested",
+          "idempotency_key": "research_proposal_8a0038ef7870b30c9a8fb00342799314",
+          "iteration": 1,
+          "last_progress_identity": null,
+          "next_action": "request_strategy_approval",
+          "owner_principal": "d15admin",
+          "plan_version": 2,
+          "prerequisites": [
+            "strategy_draft_validated"
+          ],
+          "references": {
+            "conversation": {
+              "conversation": "conversation_9d62ffc7098e40c4b88108c9b1e5ac2e"
+            },
+            "research_task": {
+              "research_task": "task_755933a7fd824bbbbdf32b7427a09721"
+            },
+            "strategy_version": {
+              "strategy_version": "artifact_205b9e01147a490480b1fc5e58eb0717"
+            }
+          },
+          "schema_version": "research-execution-plan.v1",
+          "stage": "waiting_for_strategy_approval",
+          "status": "waiting",
+          "task_id": "task_755933a7fd824bbbbdf32b7427a09721",
+          "task_version": 1,
+          "workspace_id": "workspace_7a00637c81ad4f9cb26c5c828df80d0e"
+        },
+        "plan_before": {
+          "allowed_capabilities": [
+            "byq_research_get"
+          ],
+          "approval": {
+            "action": "strategy_approve",
+            "params_digest": "sha256:4ae67a825311e04c84705bbb19b413b70ef8fb80c176e726a7c10607bb83e35c",
+            "plan_version": 2,
+            "resource_id": "artifact_205b9e01147a490480b1fc5e58eb0717",
+            "resource_kind": "strategy_version",
+            "task_version": 1
+          },
+          "conversation_id": "conversation_9d62ffc7098e40c4b88108c9b1e5ac2e",
+          "expected_postcondition": "strategy_approval_requested",
+          "idempotency_key": "research_proposal_8a0038ef7870b30c9a8fb00342799314",
+          "iteration": 1,
+          "last_progress_identity": null,
+          "next_action": "request_strategy_approval",
+          "owner_principal": "d15admin",
+          "plan_version": 2,
+          "prerequisites": [
+            "strategy_draft_validated"
+          ],
+          "references": {
+            "conversation": {
+              "conversation": "conversation_9d62ffc7098e40c4b88108c9b1e5ac2e"
+            },
+            "research_task": {
+              "research_task": "task_755933a7fd824bbbbdf32b7427a09721"
+            },
+            "strategy_version": {
+              "strategy_version": "artifact_205b9e01147a490480b1fc5e58eb0717"
+            }
+          },
+          "schema_version": "research-execution-plan.v1",
+          "stage": "waiting_for_strategy_approval",
+          "status": "waiting",
+          "task_id": "task_755933a7fd824bbbbdf32b7427a09721",
+          "task_version": 1,
+          "workspace_id": "workspace_7a00637c81ad4f9cb26c5c828df80d0e"
+        },
+        "task_id": "task_755933a7fd824bbbbdf32b7427a09721"
+      },
+      "F6": {
+        "auto_fenced_live_attempt": false,
+        "fabricated_completed": false,
+        "killed_retry": {
+          "code": "research_judgment_in_progress",
+          "receipt_present": false,
+          "status": 409
+        },
+        "original_turn": {
+          "status": 200
+        },
+        "recovery_claimed": false,
+        "same_outcome": true,
+        "stuck_retry": {
+          "code": "research_judgment_in_progress",
+          "receipt_present": false,
+          "status": 409
+        },
+        "task_id": "task_1ce9bf18c9d34423b7a454190d2f2c13"
+      },
+      "F7": {
+        "attempt": "1:strategy_draft:1",
+        "completed_stage_calls": 1,
+        "duplicate_concurrent": {
+          "code": "research_judgment_in_progress",
+          "preempted_original": false,
+          "status": 409
+        },
+        "duplicate_objects": [],
+        "expected_provider_calls": 3,
+        "plan_advanced_once": true,
+        "provider_calls_delta_total": 3,
+        "task_id": "task_16aa797e39a544abbf27316a99420a23",
+        "turn": {
+          "code": null,
+          "status": 200
+        }
+      },
+      "F8": {
+        "attempt": "1:strategy_draft:1",
+        "completed_stage_calls": 1,
+        "duplicate_objects": [],
+        "no_over_limit_calls": true,
+        "plan_after": {
+          "allowed_capabilities": [
+            "byq_research_get"
+          ],
+          "approval": null,
+          "conversation_id": "conversation_cf661cddedd24517957481496cd3fa9b",
+          "expected_postcondition": "blocks_resolved_or_confirmed",
+          "idempotency_key": "stage-fence-byq-judgment-04be2800765b2814d29ccf672676b5e5",
+          "iteration": 1,
+          "last_progress_identity": null,
+          "next_action": "resolve_blockers",
+          "owner_principal": "d15admin",
+          "plan_version": 2,
+          "prerequisites": [],
+          "references": {
+            "conversation": {
+              "conversation": "conversation_cf661cddedd24517957481496cd3fa9b"
+            },
+            "research_task": {
+              "research_task": "task_3a83a8538c854f60b37a4d6f345268b2"
+            },
+            "strategy_version": {
+              "strategy_version": "artifact_95528ab699094d3f98c453ae772be69d"
+            }
+          },
+          "schema_version": "research-execution-plan.v1",
+          "stage": "needs_attention",
+          "status": "blocked",
+          "task_id": "task_3a83a8538c854f60b37a4d6f345268b2",
+          "task_version": 2,
+          "workspace_id": "workspace_7a00637c81ad4f9cb26c5c828df80d0e"
+        },
+        "provider_calls_delta": 3,
+        "stage_call_outcome": "needs_attention",
+        "task_id": "task_3a83a8538c854f60b37a4d6f345268b2",
+        "task_progress_after": {
+          "blocked_reason": "no_durable_progress",
+          "completion_evidence": [],
+          "linked_objects": [],
+          "next_action": "needs_attention",
+          "schema_version": "research-progress.v1",
+          "stage": "blocked"
+        },
+        "task_status_after": "planned",
+        "turn": {
+          "status": 200
+        }
+      },
+      "F9": {
+        "duplicate_objects": [],
+        "expected_counts": {
+          "paper_accounts": 0,
+          "paper_fills": 0,
+          "paper_orders": 0,
+          "paper_positions": 0,
+          "research_execution_plans": 7,
+          "research_judgment_stage_calls": 6,
+          "research_tasks": 7
+        },
+        "observed_counts": {
+          "paper_accounts": 0,
+          "paper_fills": 0,
+          "paper_orders": 0,
+          "paper_positions": 0,
+          "research_execution_plans": 7,
+          "research_judgment_stage_calls": 6,
+          "research_tasks": 7
+        }
+      }
+    }
+  },
+  "schema_version": "byq-v091-continuation-p4c1-observations.v1"
+}
