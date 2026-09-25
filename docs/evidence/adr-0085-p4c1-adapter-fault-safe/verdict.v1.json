@@ -1,0 +1,36 @@
+{
+  "all_pass": true,
+  "blocked_rows": {},
+  "derived_assertions": {
+    "boundary_auth_and_forged_attempt_fail_closed": true,
+    "cleanup_zero_and_production_untouched": true,
+    "convergence_is_contract_allowed_and_explainable": true,
+    "dsh_native_cross_process_recovery_not_claimed": true,
+    "durable_attempt_identity_call_index_exact": true,
+    "late_result_isolated_or_rejected": true,
+    "model_cannot_decide_recovery_identity_or_routing": true,
+    "no_auto_resend_of_pending_attempt": true,
+    "no_duplicate_business_objects": true,
+    "no_duplicate_provider_calls": true
+  },
+  "derived_rows": {
+    "B1-boundary-auth-and-forged-attempt-fail-closed": true,
+    "B2-cleanup-zero-and-production-untouched": true,
+    "B3-durable-identity-call-index-exact": true,
+    "B4-model-cannot-decide-recovery-identity": true,
+    "B5-convergence-is-contract-allowed": true,
+    "F1-adapter-process-killed-inflight": true,
+    "F2-dsh-child-killed-adapter-alive": true,
+    "F3-pending-not-auto-resent-after-restart": true,
+    "F4-late-old-attempt-request-isolated": true,
+    "F5-late-old-attempt-result-isolated": true,
+    "F6-unprovable-owner-termination-stays-pending": true,
+    "F7-normal-long-run-completes-once": true,
+    "F8-no-durable-progress-converges-needs-attention": true,
+    "F9-no-duplicate-business-objects": true
+  },
+  "failures": [],
+  "format_valid": true,
+  "limitations": [],
+  "schema_version": "byq-v091-continuation-p4c1-verdict.v1"
+}

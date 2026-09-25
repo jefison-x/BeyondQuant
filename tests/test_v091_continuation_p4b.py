@@ -239,7 +239,7 @@ class SliceBoundaryTests(unittest.TestCase):
 
     def test_status_marks_p4b_candidate_and_keeps_hard_stops(self):
         status = (ROOT / "docs/roadmap/STATUS.md").read_text(encoding="utf-8")
-        self.assertIn("byq:v091-continuation-p4b=candidate", status)
+        self.assertIn("byq:v091-continuation-p4b=merged", status)
         self.assertIn("0.10 与 Phase 100 恢复仍**未授权硬停止**", status)
         self.assertIn("byq:v090-d15-superseding-assessment=established", status)
 

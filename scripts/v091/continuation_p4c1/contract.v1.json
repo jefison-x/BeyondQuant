@@ -1,0 +1,81 @@
+{
+  "schema_version": "byq-v091-continuation-p4c1-contract.v1",
+  "generated_at": "2026-09-25",
+  "adr": ["ADR-0085", "ADR-0086", "ADR-0084"],
+  "slice": "P4-C1",
+  "version_target": "0.9.1",
+  "scope": "ADR-0085 P4-C1 Adapter/DSH fault-safe convergence. Reuses the committed P4-A/P4-B isolated four-boundary stack (Product API/Gateway -> authenticated Runtime Adapter judgment route -> real DSH child/runtime subprocess -> Backend/MCP admit+result seams) with a keyless scripted deterministic provider. It injects real process faults at the Adapter/DSH boundary (adapter process kill during an in-flight provider request; DSH runtime child kill inside a live adapter; a genuinely stuck provider; a normal long-running provider; a no-durable-progress result) and verifies the DURABLE convergence contract: an undecided model attempt is never automatically re-sent after a process restart; a late/duplicate/foreign result of an old attempt is isolated (exact replay) or rejected and never committed twice; no duplicate provider call, proposal, event, ResearchTask, artifact, experiment, backtest, approval, paper-account/order/position/fill is created; and the system reaches a contract-allowed, explainable pending (durable 'admitted' stage call) or 'needs_attention' state. The model never decides next_action, identity, approval, idempotency, routing or recovery state. P4-C1 does NOT claim DSH-native cross-process continuation or provider recovery, does NOT implement or claim P4-C2 (Backend claim/settle consumer) or P4-D (unified final verdict), and does not claim an overall P4 all_pass.",
+  "required_evidence_class": "runtime-isolated-stack",
+  "llm_evidence_class": "scripted-keyless",
+  "llm_evidence_note": "A keyless deterministic fault-mode provider drives the real DSH child/runtime subprocess path. This is service-boundary/contract evidence, NOT real-LLM research-quality semantic evidence.",
+  "results_vocabulary": ["PASS", "FAIL", "NOT_RUN", "BLOCKED"],
+  "provenance_allowed_sources": {
+    "boundary": ["gateway", "backend", "runtime-adapter", "dsh", "product-api", "not_applicable"],
+    "source": ["research_tasks", "research_execution_plans", "research_continuation_events",
+               "research_judgment_stage_calls", "agent_approvals", "artifacts",
+               "signal_producer_jobs", "backtest_jobs", "paper_accounts",
+               "real-isolated-services"]
+  },
+  "required_fault_rows": [
+    {"id": "F1-adapter-process-killed-inflight",
+     "description": "While a provider request is in flight, the Runtime Adapter OS process is really killed and restarted. The same undecided attempt is retried and is refused with an explicit in-progress (409) WITHOUT any new provider call, new stage call or business write; the durable stage call stays one 'admitted' row with call_index 1 and the plan/plan_version/iteration are unchanged."},
+    {"id": "F2-dsh-child-killed-adapter-alive",
+     "description": "The real DSH runtime child OS process is really killed INSIDE a live Runtime Adapter process. The bounded turn fails closed (503) and submits no result; the adapter pid is unchanged, the durable stage call stays 'admitted' and a retry of the same attempt is an explicit 409 in-progress with zero new provider calls."},
+    {"id": "F3-pending-not-auto-resent-after-restart",
+     "description": "After the adapter restart, repeated retries of the undecided attempt are each an explicit 409 in-progress with zero provider calls, no new stage call and no receipt; the pending attempt is never automatically re-sent."},
+    {"id": "F4-late-old-attempt-request-isolated",
+     "description": "After a legitimate judgment turn completes and advances the plan, a late request for the OLD attempt returns the stored receipt as an exact replay (model turn skipped) with zero provider calls, no new stage call and no plan/object change."},
+    {"id": "F5-late-old-attempt-result-isolated",
+     "description": "A late result submitted to the real Backend result seam for the OLD (already completed) call identity is an exact replay of the stored receipt and never a second write; a forged/foreign call identity is rejected; the plan and every business object count are unchanged."},
+    {"id": "F6-unprovable-owner-termination-stays-pending",
+     "description": "A killed adapter owner and a genuinely stuck (still-live, provider blocked) owner produce the SAME undecided pending outcome: an explicit in-progress with a closed code and no fabricated receipt; the live/stale attempt is not auto-fenced to needs_attention and no recovery is claimed because the old owner's termination cannot be proved."},
+    {"id": "F7-normal-long-run-completes-once",
+     "description": "A genuinely running long turn (provider alive but delayed) completes once and advances the plan; a concurrent duplicate during the run is an explicit 409 in-progress and preempts nothing; the turn makes exactly its profile provider calls, exactly one stage call is completed and no duplicate business object is created. This distinguishes a normal long run from a killed/stuck owner."},
+    {"id": "F8-no-durable-progress-converges-needs-attention",
+     "description": "A fresh bounded turn whose closed result carries no durable progress atomically moves the plan AND the ResearchTask to needs_attention with reason no_durable_progress in one transaction; exactly one stage call is completed with outcome needs_attention and no duplicate business object is created."},
+    {"id": "F9-no-duplicate-business-objects",
+     "description": "Across every fault scenario the observed object counts equal the expected counts: exactly one ResearchTask and one execution plan per scenario, one stage-call row per attempt, and no duplicate event/artifact/approval/job/backtest/paper account/order/position/fill."}
+  ],
+  "required_boundary_rows": [
+    {"id": "B1-boundary-auth-and-forged-attempt-fail-closed",
+     "description": "Real boundary controls over the authenticated adapter route: a missing service token, a forged token and a forged/stale attempt binding are all refused and reach neither the provider nor the durable stage-call ledger."},
+    {"id": "B2-cleanup-zero-and-production-untouched",
+     "description": "The isolated stack is torn down to zero containers/networks/volumes and the production compose project is never touched."},
+    {"id": "B3-durable-identity-call-index-exact",
+     "description": "The adapter-derived call identity, the Backend stage-call identity and the receipt call identity are exactly equal; call_index is server-derived and exact; the plan CAS and generation state are consistent across the fault."},
+    {"id": "B4-model-cannot-decide-recovery-identity",
+     "description": "The adapter derives the call identity/attempt/read-only endpoint/DSH home server-side; a model result can never supply a next_action, identity, approval, idempotency key, routing or recovery state, and a non-'none' durable evidence identity fails closed."},
+    {"id": "B5-convergence-is-contract-allowed",
+     "description": "Every observed terminal state after a fault is either an undecided durable 'admitted' pending or a structured needs_attention; there is no fabricated completed/recovered state and no state outside the closed plan/attempt vocabulary."}
+  ],
+  "required_assertions": [
+    "no_auto_resend_of_pending_attempt",
+    "late_result_isolated_or_rejected",
+    "durable_attempt_identity_call_index_exact",
+    "no_duplicate_provider_calls",
+    "no_duplicate_business_objects",
+    "convergence_is_contract_allowed_and_explainable",
+    "model_cannot_decide_recovery_identity_or_routing",
+    "dsh_native_cross_process_recovery_not_claimed",
+    "boundary_auth_and_forged_attempt_fail_closed",
+    "cleanup_zero_and_production_untouched"
+  ],
+  "fault_injection_modes": {
+    "adapter_process_kill": "docker kill the isolated runtime-adapter container during an in-flight provider request",
+    "dsh_child_kill": "SIGKILL the real bundled DSH runtime child OS process inside the live runtime-adapter container",
+    "provider_block_child": "the keyless provider holds the child provider request open (a genuinely stuck owner)",
+    "provider_delay_child": "the keyless provider delays the child provider response (a normal long-running owner)",
+    "provider_no_progress_child": "the keyless provider returns a valid closed result with no durable progress"
+  },
+  "in_progress_code": "research_judgment_in_progress",
+  "fail_closed_code": "research_judgment_failed_closed",
+  "non_claims": [
+    "P4-C1 verifies Adapter/DSH process-interruption convergence only; it does NOT claim DSH-native cross-process continuation or provider recovery.",
+    "P4-C1 does NOT implement or claim P4-C2 (Backend claim/settle real consumer) or P4-D (unified final verdict).",
+    "No overall P4 all_pass and no phase completion.",
+    "No production deployment, version write, tag or release.",
+    "No real-LLM research-quality semantic claim (keyless scripted provider).",
+    "No Phase 100 resume and no 0.10 start.",
+    "No second generic agent harness or session store."
+  ]
+}

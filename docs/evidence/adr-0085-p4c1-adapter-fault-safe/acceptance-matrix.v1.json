@@ -1,0 +1,50 @@
+{
+  "schema_version": "byq-v091-continuation-p4c1-acceptance-matrix.v1",
+  "generated_at": "2026-09-25",
+  "frozen_before_capture": true,
+  "contract": "scripts/v091/continuation_p4c1/contract.v1.json",
+  "adr": ["ADR-0085", "ADR-0086", "ADR-0084"],
+  "slice": "P4-C1",
+  "results_vocabulary": ["PASS", "FAIL", "NOT_RUN", "BLOCKED"],
+  "journey_id": "adr0085-p4c1-adapter-fault-safe.v1",
+  "fault_rows": [
+    {"id": "F1-adapter-process-killed-inflight", "required": true, "gating": true},
+    {"id": "F2-dsh-child-killed-adapter-alive", "required": true, "gating": true},
+    {"id": "F3-pending-not-auto-resent-after-restart", "required": true, "gating": true},
+    {"id": "F4-late-old-attempt-request-isolated", "required": true, "gating": true},
+    {"id": "F5-late-old-attempt-result-isolated", "required": true, "gating": true},
+    {"id": "F6-unprovable-owner-termination-stays-pending", "required": true, "gating": true},
+    {"id": "F7-normal-long-run-completes-once", "required": true, "gating": true},
+    {"id": "F8-no-durable-progress-converges-needs-attention", "required": true, "gating": true},
+    {"id": "F9-no-duplicate-business-objects", "required": true, "gating": true}
+  ],
+  "boundary_rows": [
+    {"id": "B1-boundary-auth-and-forged-attempt-fail-closed", "required": true, "gating": true},
+    {"id": "B2-cleanup-zero-and-production-untouched", "required": true, "gating": true},
+    {"id": "B3-durable-identity-call-index-exact", "required": true, "gating": true},
+    {"id": "B4-model-cannot-decide-recovery-identity", "required": true, "gating": true},
+    {"id": "B5-convergence-is-contract-allowed", "required": true, "gating": true}
+  ],
+  "assertion_rows": [
+    {"id": "no_auto_resend_of_pending_attempt", "required": true},
+    {"id": "late_result_isolated_or_rejected", "required": true},
+    {"id": "durable_attempt_identity_call_index_exact", "required": true},
+    {"id": "no_duplicate_provider_calls", "required": true},
+    {"id": "no_duplicate_business_objects", "required": true},
+    {"id": "convergence_is_contract_allowed_and_explainable", "required": true},
+    {"id": "model_cannot_decide_recovery_identity_or_routing", "required": true},
+    {"id": "dsh_native_cross_process_recovery_not_claimed", "required": true},
+    {"id": "boundary_auth_and_forged_attempt_fail_closed", "required": true},
+    {"id": "cleanup_zero_and_production_untouched", "required": true}
+  ],
+  "non_gating_note": "P4-C1 verifies Adapter/DSH process-interruption fault-safe convergence over the committed P4-A/P4-B isolated four-boundary stack: an undecided model attempt is never auto-resent after a process restart, a late/duplicate/foreign old-attempt result is isolated or rejected and never double-committed, no provider call/proposal/event/task/artifact/experiment/backtest/approval/paper-account/order/position/fill is duplicated, and the system reaches a contract-allowed explainable pending (durable 'admitted') or needs_attention state. It does NOT claim DSH-native cross-process continuation/provider recovery, does NOT implement or claim P4-C2 (Backend claim/settle real consumer) or P4-D (unified final verdict), and never claims an overall P4 all_pass or phase completion.",
+  "non_claims": [
+    "No DSH-native cross-process continuation or provider recovery claim.",
+    "No P4-C2 Backend claim/settle real consumer.",
+    "No P4-D unified final verdict and no overall P4 all_pass.",
+    "No production deployment, version-number write, tag or release.",
+    "No real-LLM research-quality semantic claim.",
+    "No Phase 100 resume and no 0.10 start.",
+    "No second generic agent harness or session store."
+  ]
+}
