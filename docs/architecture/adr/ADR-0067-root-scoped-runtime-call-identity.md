@@ -1,5 +1,11 @@
 # ADR-0067：根回合隔离的 Runtime 调用身份
 
+> **Historical-only under BYQ 0.10 Clean Break.** This ADR records a pre-Clean-Break
+> decision and evidence. Its former Accepted status is historical, not current
+> architecture authority. See [ADR-0088](ADR-0088-clean-break-baseline-activation.md)
+> and the [current baseline](../../clean-break/adr/README.md).
+
+
 - Status: Accepted
 - Date: 2026-09-08
 - Scope: 补齐 ADR-0066 两工具准入在当前官方 DSH 0.1.2rc1 下缺少 HTTP 根归属的问题。

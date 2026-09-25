@@ -1,5 +1,11 @@
 # ADR-0058：DSH 版本制品、兼容适配与可重复升级
 
+> **Historical-only under BYQ 0.10 Clean Break.** This ADR records a pre-Clean-Break
+> decision and evidence. Its former Accepted status is historical, not current
+> architecture authority. See [ADR-0088](ADR-0088-clean-break-baseline-activation.md)
+> and the [current baseline](../../clean-break/adr/README.md).
+
+
 - Status: Accepted
 - Date: 2026-09-05
 - Decision scope: DSH maintenance U0–U8；不改变 Product Phase 97 的完成状态

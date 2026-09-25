@@ -1,5 +1,17 @@
 # AI Coding Agent Rules
 
+## Current BYQ 0.10 Clean Break scope
+
+[ADR-0088](docs/architecture/adr/ADR-0088-clean-break-baseline-activation.md)
+and [Clean Break ADR-001–006](docs/clean-break/adr/README.md) are the current
+product architecture in this branch. The numbered rules below retain their
+security, tenancy, Community read-only, testing, worktree and human merge
+requirements. References to pre-Clean-Break ADRs, 0.9/P4 routing, old
+WorkflowTrace/runtime models and legacy migration obligations are historical
+where they conflict with the new baseline. The current next phase is defined
+at the top of `docs/roadmap/STATUS.md`; only the human merge/deployment gates
+below remain unchanged. Product DSH never receives Engineering privileges.
+
 These rules apply to Codex, DSH engineering agents, and any other AI coding agent working in this repository.
 
 1. Read `ARCHITECTURE.md` before making architectural changes.
@@ -145,7 +157,7 @@ with `git rev-parse origin/main` after synchronizing `main`. An Accepted ADR
 and the current phase acceptance criteria are required before moving to the
 next phase.
 
-## Clean Break development program (candidate)
+## Clean Break development program
 
 The explicitly requested BYQ 0.10 Clean Break is tracked in
 [`docs/clean-break/`](docs/clean-break/README.md). Its project Codex defaults
@@ -156,8 +168,8 @@ Use at most four subagents, usually one or two; assign one writer per subsystem.
 Each phase ends with Tester, independent Reviewer and Root PASS before the next
 phase. Keep Engineering tools and MCP separate from Product DSH and BYQ MCP.
 
-The Phase 0–6 package is a proposed architecture and cleanup plan. It does not
-make the old Accepted ADRs historical yet or authorize Phase 7 deletion. The
-new baseline requires maintainer acceptance and the repository governance
-updates identified in its ADR index. Existing security, Community read-only,
-worktree, test, PR and deployment gates continue to apply.
+The Phase 0–6 package and ADR-0088 establish the current architecture in this
+branch. Phase 7 is authorized only as bounded, tested removal with direct
+replacement for live public paths. Phase 8 data/environment deletion requires
+verified final archive and exact resource classification. Existing security,
+Community read-only, worktree, test, PR and deployment gates continue to apply.

@@ -1,6 +1,7 @@
 # ADR-006 — Extension and configuration model
 
-- Status: Proposed
+- Status: Accepted under ADR-0088 (2026-09-25)
+- Acceptance: maintainer's explicit Tool/Job/Artifact/Adapter extension specification, recorded by [ADR-0088](../../architecture/adr/ADR-0088-clean-break-baseline-activation.md).
 
 ## Decision
 
@@ -11,3 +12,7 @@ Before adding an abstraction, document its concrete problem, owner, why existing
 ## Acceptance
 
 Architecture review finds no new generic WorkflowEngine, SessionManager, recovery service or source-writing Product Agent capability. A DSH or developer-agent upgrade does not require a new BYQ core concept.
+
+## Alternative and consequence
+
+A plugin marketplace, dependency solver or generic workflow platform would expand Core without a proven domain need and is rejected. New capabilities must show owner and bounded contract first.

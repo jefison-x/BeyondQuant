@@ -1,5 +1,11 @@
 # ADR-0072：长研究进度检查与显式期限
 
+> **Historical-only under BYQ 0.10 Clean Break.** This ADR records a pre-Clean-Break
+> decision and evidence. Its former Accepted status is historical, not current
+> architecture authority. See [ADR-0088](ADR-0088-clean-break-baseline-activation.md)
+> and the [current baseline](../../clean-break/adr/README.md).
+
+
 - Status: Accepted
 - Date: 2026-09-12
 - Acceptance: 维护者明确授权“取消根回合15分钟、子 Agent 10分钟默认硬终止；每15分钟检查进度；新后台回合期限随许可有效期，最长24小时；旧许可、预算和取消控制保留”。

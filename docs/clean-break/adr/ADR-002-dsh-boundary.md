@@ -1,6 +1,7 @@
 # ADR-002 — DSH runtime boundary
 
-- Status: Proposed
+- Status: Accepted under ADR-0088 (2026-09-25)
+- Acceptance: maintainer's explicit sole-harness and thin-adapter specification, recorded by [ADR-0088](../../architecture/adr/ADR-0088-clean-break-baseline-activation.md).
 
 ## Decision
 
@@ -11,3 +12,7 @@ BYQ MCP remains the stable Agent-to-Domain boundary. MCP exposes domain commands
 ## Acceptance
 
 Contract tests cover the actual qualified DSH API, error/cancel behavior and event normalization. No BYQ Agent session/child-run recovery store remains. Business `outcome_unknown` and financial side-effect safeguards remain enforceable independently of DSH session state.
+
+## Alternative and consequence
+
+A BYQ recovery bridge or forked DSH would duplicate the harness and is rejected. Unsupported native DSH continuity remains an explicit feature limitation until qualified upstream support exists.

@@ -1,5 +1,11 @@
 # ADR-0008：Phase 12 Native Backtest Job 与 Worker Boundary
 
+> **Historical-only under BYQ 0.10 Clean Break.** This ADR records a pre-Clean-Break
+> decision and evidence. Its former Accepted status is historical, not current
+> architecture authority. See [ADR-0088](ADR-0088-clean-break-baseline-activation.md)
+> and the [current baseline](../../clean-break/adr/README.md).
+
+
 - Status: Accepted
 - Date: 2026-08-16
 - Decision scope: Phase 12 Quant Domain Backtest execution

@@ -1,5 +1,11 @@
 # ADR-0059：开发治理与 CI 证据一致性
 
+> **Current non-product governance/security policy; historical as Product Core architecture.**
+> Its exact process or security scope remains effective under
+> [ADR-0088](ADR-0088-clean-break-baseline-activation.md), while the
+> [Clean Break baseline](../../clean-break/adr/README.md) controls BYQ 0.10 Product Core.
+
+
 - Status: Accepted
 - Date: 2026-09-05
 - Decision scope: maintenance workflow、Engineering/operator 权限说明与 CI integrity；不改变 Product 权限或 DSH baseline

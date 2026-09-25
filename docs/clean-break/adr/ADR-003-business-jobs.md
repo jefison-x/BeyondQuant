@@ -1,6 +1,7 @@
 # ADR-003 — Business jobs and workers
 
-- Status: Proposed
+- Status: Accepted under ADR-0088 (2026-09-25)
+- Acceptance: maintainer's explicit long-compute Job/Worker specification, recorded by [ADR-0088](../../architecture/adr/ADR-0088-clean-break-baseline-activation.md).
 
 ## Decision
 
@@ -11,3 +12,7 @@ Existing specialized Job tables may be retained behind a common contract when co
 ## Acceptance
 
 New workspace can run long backtest and ML jobs; session interruption does not cancel them; duplicate commands resolve to one business result; result identity is an Artifact ID.
+
+## Alternative and consequence
+
+Keeping a DSH session or generic workflow alive for long compute would couple compute lifetime to Agent runtime and is rejected. Workers need independent lifecycle, persistence and restart tests.

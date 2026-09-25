@@ -1,6 +1,6 @@
 # Clean Break development agent mode (Phase 0)
 
-Status: candidate on `clean-break/runtime-simplification`; this document governs the Clean Break worktree after its phase gate. It does not grant Product DSH Engineering privileges.
+Status: active on `clean-break/runtime-simplification` under ADR-0088. It does not grant Product DSH Engineering privileges.
 
 ## Inventory and merge decision
 

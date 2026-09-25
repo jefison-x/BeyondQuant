@@ -1,6 +1,7 @@
 # ADR-004 — Workspace and data lifecycle
 
-- Status: Proposed
+- Status: Accepted under ADR-0088 (2026-09-25)
+- Acceptance: maintainer's explicit disposable-runtime, reset and old-DB archive specification, recorded by [ADR-0088](../../architecture/adr/ADR-0088-clean-break-baseline-activation.md).
 
 ## Decision
 
@@ -11,3 +12,7 @@ Old BYQ databases receive one verified, checksum-recorded, read-only final archi
 ## Acceptance
 
 Isolated tests show reset scope and idempotency; seed after reset works; old archive is readable and checksum-valid but never auto-restored or used by tests.
+
+## Alternative and consequence
+
+Migrating old runtime rows would preserve unwanted architecture and is rejected. The old database remains a verified read-only rollback/reference archive, not a new-schema input. Cleanup cannot precede backup verification.

@@ -1,6 +1,6 @@
 # BYQ 0.10 Clean Break preparation
 
-This directory is the Phase 0–6 review package. The user explicitly requested a development-period Clean Break and no historical runtime/data compatibility. Its architecture decisions are **proposed until the phase gate and maintainer acceptance/merge**. Existing Accepted ADRs remain the current baseline until superseded; Phase 7 destructive work must not start early. No old database, Docker volume, container or runtime code is deleted by this package.
+This directory contains the Phase 0–6 review package and the accepted BYQ 0.10 architecture baseline activated by [ADR-0088](../architecture/adr/ADR-0088-clean-break-baseline-activation.md) in the Clean Break branch. The maintainer explicitly requested a development-period Clean Break with no historical runtime/data compatibility. Phase 7 proceeds only in bounded reviewed slices; no old database, Docker volume, container or runtime code was deleted by the Phase 0–6 package.
 
 ## Documents
 

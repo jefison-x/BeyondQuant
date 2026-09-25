@@ -1,5 +1,16 @@
 # BeyondQuant 开发流程
 
+## Current Clean Break task route
+
+For the explicitly authorized BYQ 0.10 Clean Break, [ADR-0088](architecture/adr/ADR-0088-clean-break-baseline-activation.md)
+and the [phase plan](clean-break/fidelity-and-execution-plan.md) replace the old
+0.9/P4 "Next phase" instructions below. Keep isolated worktrees, tests,
+contract-first boundary changes, security separation and the existing human
+PR/merge/deployment gates. A Clean Break phase advances only after Tester,
+independent Sol Reviewer and Root PASS. Final old-DB backup and exact resource
+identity precede Phase 8 data/environment removal. The prior phase-specific
+instructions below are historical where they conflict with this route.
+
 本流程对后续 Codex Phase 和 Engineering Plane 变更具有强制性。“Continue
 development”是指：读取 `docs/roadmap/STATUS.md`，识别其中的 `Next phase`，并执行
 `docs/roadmap/IMPLEMENTATION_PLAN.md` 所定义的该 Phase 范围；它不表示可以从仓库

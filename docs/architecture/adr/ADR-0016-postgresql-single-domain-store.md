@@ -1,5 +1,11 @@
 # ADR-0016：PostgreSQL 作为唯一 BYQ Domain Store（移除 SQLite）
 
+> **Historical-only under BYQ 0.10 Clean Break.** This ADR records a pre-Clean-Break
+> decision and evidence. Its former Accepted status is historical, not current
+> architecture authority. See [ADR-0088](ADR-0088-clean-break-baseline-activation.md)
+> and the [current baseline](../../clean-break/adr/README.md).
+
+
 - Status: Accepted
 - Date: 2026-08-17
 - Decision scope: BeyondQuant Next 的 Data Plane domain persistence

@@ -1,5 +1,13 @@
 # Phase 0–6 gate record
 
+## Current activation follow-up (2026-09-25)
+
+The planning verdict below predates [ADR-0088](../architecture/adr/ADR-0088-clean-break-baseline-activation.md). ADR-0088 records the maintainer's explicit Clean Break direction and activates the six 0.10 ADRs on this branch. Of 87 old ADRs, 82 are historical Product Core records and five retain only non-product governance/security scope. The former CLOSED verdict below is the original Phase 0–6 snapshot, not the latest activation outcome.
+
+**Activation gate:** Tester PASS (195 architecture tests, 2 explicit Clean Break governance tests, 73 legacy governance tests, 105 changed Markdown files checked, build-revision check and `git diff --check`); independent Sol Reviewer **Functional PASS / Tests PASS / Clean Break Architecture PASS** after examining the actual diff, governance/security carve-outs and build-identity regression fix; Root **PASS** for the accepted 0.10 architecture and Phase 7 entry. Phase 7 may now perform bounded code deletion only after a same-slice public-contract/replacement test and its own Tester → Reviewer → Root gate. No Phase 7 code deletion had begun when this activation decision was recorded. Phase 8 resource/data cleanup remains CLOSED until the actual DB/resource identity and verified final archive are proven. The explicit governance test lives under `docs/clean-break/validation/` and is a named phase-gate command, not part of default `unittest discover -s tests`.
+
+## Original Phase 0–6 planning record
+
 Recorded 2026-09-25. The first-round read-only investigations were parallel where independent; documentation was assembled in one isolated worktree. No Phase 7 destructive work began. `PASS` below certifies the stated **planning-phase deliverable**, not Product runtime functionality or activation of a Proposed ADR.
 
 | Phase | Tester evidence | Independent Sol Reviewer | Root acceptance |
@@ -20,6 +28,6 @@ Recorded 2026-09-25. The first-round read-only investigations were parallel wher
 - `make dev-check`: exit 0, but `files: 0`/`component_tests: NOT_RUN`. The first invocation saw untracked files; a repeat after staging also reported zero because its syntax scanner covers Python, shell and JSON, while this package contains TOML, Markdown and TSV. It is not counted as coverage of those formats.
 - No Product API, browser, DSH runtime or Golden Scenario was run. No DB backup or Docker cleanup was performed.
 
-## Formal outcome
+## Original planning outcome (before ADR-0088 activation)
 
 **Functional: PASS for Phase 0–6 planning package. Tests: PASS for focused static/architecture checks. Clean Break Architecture: PASS for proposed design. Phase 7 implementation gate: CLOSED.** It opens only after the new ADR baseline is explicitly accepted and integrated, old normative docs are superseded, each live deletion has a replacement interface and passing contract test, and the actual DB/retention state is identified before any data/environment destruction. A final verified DB archive is required before old DB volume cleanup. Human PR/merge gates continue to apply.

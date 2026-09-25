@@ -1,5 +1,11 @@
 # ADR-0074：0.10 数据基准与资格调查边界
 
+> **Historical-only under BYQ 0.10 Clean Break.** This ADR records a pre-Clean-Break
+> decision and evidence. Its former Accepted status is historical, not current
+> architecture authority. See [ADR-0088](ADR-0088-clean-break-baseline-activation.md)
+> and the [current baseline](../../clean-break/adr/README.md).
+
+
 - Status: Accepted
 - Date: 2026-09-17
 - Relates: ADR-0071（1.0 机器学习发布计划）、ADR-0072、ADR-0062、ADR-0059、ADR-0084

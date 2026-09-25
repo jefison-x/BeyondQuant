@@ -1,5 +1,11 @@
 # ADR-0087：确定性模拟账户审批与创建（研究闭环收口）
 
+> **Historical-only under BYQ 0.10 Clean Break.** This ADR records a pre-Clean-Break
+> decision and evidence. Its former Accepted status is historical, not current
+> architecture authority. See [ADR-0088](ADR-0088-clean-break-baseline-activation.md)
+> and the [current baseline](../../clean-break/adr/README.md).
+
+
 - Status: **Accepted**
 - Date: 2026-09-25
 - Accepted: 2026-09-25（维护者明确接受模拟账户进入研究闭环的第一种架构方案：
