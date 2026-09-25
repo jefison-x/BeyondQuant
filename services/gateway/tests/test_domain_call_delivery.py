@@ -86,7 +86,7 @@ def test_mismatched_backend_receipts_exhaust_without_new_domain_execution(tmp_pa
 
 
 def test_idle_private_source_stops_http_polling_until_public_root_changes(tmp_path):
-    from tests.test_agent_lifecycle_delivery import event
+    from test_agent_lifecycle_delivery import event
     now, reads = [1000.], []
     def source(ctx, cursor):
         reads.append(cursor)
