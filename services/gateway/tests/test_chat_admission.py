@@ -16,8 +16,6 @@ def test_maintenance_rejects_before_user_history_or_runtime_writes(monkeypatch, 
         ("/v1/agent/sessions", {}),
         ("/v1/agent/sessions/synthetic/turns", {"content": "synthetic retained input"}),
         ("/v1/agent/sessions/synthetic/resume", {}),
-        ("/internal/runtime/sessions", {"session_id": "synthetic", "trace_id": "synthetic"}),
-        ("/internal/runtime/sessions/synthetic/prompt", {"content": "synthetic"}),
     ):
         response = client.post(path, json=body)
         assert response.status_code == 503

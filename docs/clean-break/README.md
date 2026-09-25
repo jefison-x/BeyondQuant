@@ -11,5 +11,6 @@ This directory contains the Phase 0–6 review package and the accepted BYQ 0.10
 - [Ownership and deletion plan](ownership-and-deletion-plan.md) — Phase 5–6 decisions and P4 disposition.
 - [Fidelity and execution plan](fidelity-and-execution-plan.md) — user journeys, risks and Phase 7–17 order.
 - [Phase gates](phase-gates.md) — Tester, independent Reviewer and Root verdicts with activation limits.
+- [Phase 7 Gateway slice](phase7-gateway-proxy.md) — first bounded removal and replacement contract.
 
 Each phase records Tester, independent Sol Reviewer and Root verdict. A design PASS allows the next planning phase; it is not evidence that code, data backup or real-browser functionality has passed.

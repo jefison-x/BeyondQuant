@@ -524,15 +524,6 @@ async def product_auth_error_handler(request: Request, exc: ProductAuthError) ->
     )
 
 
-class RuntimeSessionRequest(BaseModel):
-    session_id: str
-    trace_id: str
-
-
-class PromptRequest(BaseModel):
-    content: str
-
-
 class ProductPromptRequest(BaseModel):
     content: str = Field(min_length=1, max_length=12_000)
 
@@ -1744,71 +1735,3 @@ def product_workflow_events(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache, no-store", "X-Accel-Buffering": "no"},
     )
-
-
-@app.get("/internal/runtime/health")
-def runtime_health() -> dict[str, object]:
-    """Internal adapter health seam; no DSH event or session schema crosses it."""
-
-    try:
-        response = httpx.get(f"{RUNTIME_ADAPTER_URL}/readyz", timeout=2.0)
-        response.raise_for_status()
-    except httpx.HTTPError as exc:
-        return {"service": SERVICE, "status": "degraded", "runtime_adapter": str(exc)}
-    return {"service": SERVICE, "status": "ok", "runtime_adapter": response.json()}
-
-
-@app.post("/internal/runtime/sessions", status_code=201, dependencies=[Depends(require_chat_admission)])
-def create_runtime_session(request: RuntimeSessionRequest) -> dict[str, object]:
-    """Private Phase 6 compatibility seam; product traffic uses /v1/agent."""
-
-    return _adapter_post(
-        "/internal/runtime/sessions",
-        payload=request.model_dump(),
-    )
-
-
-@app.post("/internal/runtime/sessions/{session_id}/prompt", status_code=202, dependencies=[Depends(require_chat_admission)])
-def submit_runtime_prompt(session_id: str, request: PromptRequest) -> dict[str, object]:
-    return _adapter_post(
-        f"/internal/runtime/sessions/{session_id}/prompt",
-        payload=request.model_dump(),
-        timeout=5.0,
-    )
-
-
-@app.post("/internal/runtime/sessions/{session_id}/cancel")
-def cancel_runtime_session(session_id: str, mode: str = "hard") -> dict[str, object]:
-    return _adapter_post(
-        f"/internal/runtime/sessions/{session_id}/cancel?mode={mode}",
-        timeout=5.0,
-    )
-
-
-@app.post("/internal/runtime/sessions/{session_id}/release")
-def release_runtime_session(session_id: str) -> dict[str, object]:
-    return _adapter_post(
-        f"/internal/runtime/sessions/{session_id}/release",
-        timeout=5.0,
-    )
-
-
-@app.get("/internal/workflows/{session_id}/events")
-def workflow_events(session_id: str) -> StreamingResponse:
-    """Private Phase 6 SSE bridge carrying BYQ envelopes only."""
-
-    def stream() -> Iterator[bytes]:
-        try:
-            with httpx.stream(
-                "GET",
-                f"{RUNTIME_ADAPTER_URL}/internal/runtime/sessions/{session_id}/events",
-                timeout=None,
-            ) as response:
-                if response.status_code == 404:
-                    return
-                response.raise_for_status()
-                yield from response.iter_bytes()
-        except httpx.HTTPError:
-            return
-
-    return StreamingResponse(stream(), media_type="text/event-stream")
