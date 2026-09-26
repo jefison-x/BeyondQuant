@@ -15,5 +15,6 @@ This directory contains the Phase 0–6 review package and the accepted BYQ 0.10
 - [Phase 7 generation history slice](phase7-generation-ledger.md) — second bounded removal and gate evidence.
 - [Phase 7 child lifecycle qualification](phase7-child-lifecycle-qualification.md) — current DSH 0.1.5rc1 contract gap and NO-GO cutover decision.
 - [Phase 7 containment route slice](phase7-gateway-containment-routes.md) — third bounded removal and gate evidence.
+- [Phase 7 ResearchTask business action design](phase7-pending-business-action.md) — reviewed next-slice boundary; implementation pending.
 
 Each phase records Tester, independent Sol Reviewer and Root verdict. A design PASS allows the next planning phase; it is not evidence that code, data backup or real-browser functionality has passed.
