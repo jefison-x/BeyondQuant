@@ -1,6 +1,6 @@
 # Phase 7 slice 2 — retire advisory generation history
 
-Status: implementation complete; final test and Phase Gate pending. Slice 1 passed separately.
+Status: Phase Gate PASS for this bounded slice. Slice 1 passed separately; Phase 7 overall remains in progress.
 
 ## Ownership decision
 
@@ -19,3 +19,7 @@ The promoted `dsh-0.1.5rc1` release descriptor and all 34 declared inputs match 
 - No code writes or reads `generation-ledger`; no new state store or compatibility shim is added.
 - Current build identity gets a new immutable revision, preserving `.215` and `.216`; Compose default and CI choose it. The H4 interface ledger is reconciled against the actual diff.
 - Runtime Adapter affected/full tests, architecture unittest, build/release checks, and `git diff --check` run before independent Sol Reviewer and Root acceptance. No Phase 8 environment/database cleanup is implied.
+
+## Gate evidence
+
+Candidate commit `a2d134ed` passed the full repository unittest suite (918 tests, 11 skipped) after the new runtime source entered Git history. The Runtime Adapter suite passed in an offline, read-only container (283 passed, 52 skipped). H4 audited 572/572 interfaces with zero stale or missing records. Historical DSH release inputs, frozen `.215`/`.216` and current `.217` build manifests, promotion, Compose resolution and diff checks passed. The independent Sol Reviewer examined the actual diff and reported Functional PASS and Clean Break Architecture PASS with no blocking finding. Root accepts this deletion only; broader Adapter/session ownership remains for qualified later slices.

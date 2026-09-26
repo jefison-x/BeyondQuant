@@ -1,5 +1,11 @@
 # Phase 0–6 gate record
 
+## Phase 7 slice 2 gate — advisory generation history removal (2026-09-27)
+
+[Slice record](phase7-generation-ledger.md) binds the deletion to candidate commit `a2d134ed`. The file-backed generation ledger and duplicate in-memory history are removed; active generation fencing, lifecycle journal, containment and business recovery remain. Historical `dsh-0.1.5rc1` inputs are pinned to the exact pre-Clean-Break Git tree, while current source is bound by build revision `.217`.
+
+**Tester:** independent static/build checks PASS (architecture 195, H4 572/572, historical release, `.215`/`.216`/`.217` manifests, promotion, Compose and diff); its unprivileged environment could not access Docker. Root completed the approved offline, read-only container run: Runtime Adapter **283 passed, 52 skipped**. Post-commit full repository unittest: **918 tests OK, 11 skipped**. **Independent Sol Reviewer:** Functional PASS / Clean Break Architecture PASS on actual diff, interfaces and historical release boundary; its Tests verdict was pending the Docker run, now satisfied by Root verification. **Root acceptance:** **PASS for slice 2 only**. Phase 7 overall remains in progress. This gate does not authorize Phase 8 cleanup, old database changes, push, PR readiness or merge.
+
 ## Phase 7 slice 1 gate — Gateway private proxy removal (2026-09-25)
 
 The maintainer explicitly approved deletion of the six private Gateway pass-through routes. [Slice record](phase7-gateway-proxy.md) names their replacement Product API and exact scope. The first gate failed on old `.215` build-source drift; it remained closed while current build `.216` was added with a revision-specific Dockerfile and tracked Compose override. Frozen `.215`, original Adapter Dockerfile, DSH release descriptor and `compose.yml` stayed byte-identical. The H4 current interface ledger now has exactly the six removed routes retired and 572 surviving interfaces reviewed with zero stale/missing/fake entries.
