@@ -1,5 +1,9 @@
 # Phase 0–6 gate record
 
+## Phase 7 next live deletion qualification (2026-09-27)
+
+After slice 3, read-only Explorer audits found no further standalone safe deletion in workflow, plugin, Backend runtime receipts or current DSH compatibility. Those paths carry live ResearchTask state, domain-call authorization, Product contracts or selected SDK/build provenance. `child_lease.py` is a live timeout and correlation guard; [its qualification record](phase7-child-lifecycle-qualification.md) is **NO-GO** for removal with locked DSH 0.1.5rc1. An official tagged-release check found that v0.1.7-rc.2 also lacks the required public Python root attach/resume/cancel/status and durable child rebind/status/cancel contract. Independent Tester verified the note and sources; independent Sol Reviewer returned Functional PASS / Tests PASS for documentation / Clean Break Architecture PASS and agreed the broader deletion remains NO-GO. Root accepts this **investigation result**, not Phase 7 completion. Phase 8 remains closed. Reopen a live deletion slice only with an exact-release DSH contract and same-slice replacement tests, or a separately bounded BYQ business-state rewrite that preserves authorization and outcome safety.
+
 ## Phase 7 slice 3 gate — standalone containment/recovery URL removal (2026-09-27)
 
 [Slice record](phase7-gateway-containment-routes.md) binds the deletion to final candidate `1a825125`. The two standalone Gateway GET paths and OpenAPI operations are removed. Owner-scoped `GET /v1/agent/sessions/{id}` remains the Product API for normalized trace replay and fail-closed containment classification; no Adapter, Backend, DSH or financial safety path changed.
