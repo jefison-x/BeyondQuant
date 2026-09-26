@@ -2,7 +2,7 @@
 
 ## Phase 7 slice 4 design gate — ResearchTask business action (2026-09-27)
 
-[Candidate design](phase7-pending-business-action.md) passes the read-only Explorer → static Tester → independent Sol Reviewer → Root **design** gate. Its approved boundary replaces event-as-state only with BYQ-owned pending business action, preserves exact approval/Job proof and unknown-outcome safety, and explicitly excludes DSH Agent continuation. The live approval decision-to-action crash gap and `workspace_tenancy.py` consistency checks are required cutover work. The action schema choice, implementation, tests and slice gate remain open. Phase 7 overall and Phase 8 remain closed.
+[Candidate design](phase7-pending-business-action.md) passes the read-only Explorer → static Tester → independent Sol Reviewer → Root **design** gate. Its approved boundary replaces event-as-state only with BYQ-owned pending business action, preserves exact approval/Job proof and unknown-outcome safety, and explicitly excludes DSH Agent continuation. A subsequent transaction/schema review selected one task-owned `research_task_actions` table with an atomic approval/action write, pending-only reconciler, stale-binding fail-closed rule and common lock order; independent Sol Reviewer marked that schema design GO. The implementation, tests and slice gate remain open. Phase 7 overall and Phase 8 remain closed.
 
 ## Phase 7 next live deletion qualification (2026-09-27)
 

@@ -1,6 +1,6 @@
 # Phase 7 slice 4 candidate — explicit ResearchTask business action
 
-Status: design gate PASS; schema choice and implementation gate pending. No schema or runtime cutover has begun.
+Status: design and schema choice PASS; implementation and slice gate pending. No schema or runtime cutover has begun.
 
 ## Ownership decision
 
@@ -8,7 +8,7 @@ Status: design gate PASS; schema choice and implementation gate pending. No sche
 
 The current production caller records an exact, plan-bound approval decision. Tests exercise the other event adapters, triggers, and claim/settle entry points; historical P4 scripts additionally exercise approval, data-ready and backtest adapters. None has an identified Product event API consumer. This does not make their safety semantics disposable. Approval binding, owner/workspace isolation, request digest, stable action identity, one open action per task, and plan/task version CAS must survive in the replacement contract.
 
-The live `decide_agent_approval` handoff commits the approval decision first, then catches and logs every continuation-ledger failure. The replacement must persist an unresolved action tied to the exact approval ID and implement deterministic reconciliation until the plan CAS succeeds. A crash between approval commit and action registration must be recoverable from BYQ approval facts; a successful response must not imply the plan advanced when it did not.
+The live `decide_agent_approval` handoff commits the approval decision first, then catches and logs every continuation-ledger failure. The replacement must commit the decided approval and exact-ID pending action in **one database transaction**; action insertion failure rolls back both. A deterministic reconciler retries only existing pending actions after a crash between that commit and the plan CAS. No scan or migration of old approval rows is needed. A successful response must not imply the plan advanced when it did not.
 
 ## Cutover boundary
 
@@ -20,13 +20,21 @@ An action whose next step requires model judgment, including `draft_strategy` or
 
 1. Inventory every production caller, Product route, schema object and test that reads or writes the old ledger, including `workspace_tenancy.py` table registration and consistency checks. Prove the replacement of each live caller in the same slice; remove historical-only adapters from the current runtime rather than retaining a compatibility shim.
 2. Specify the minimal new record and statuses using BYQ business terms. Keep action/Job identity stable and preserve exact task, workspace, plan and task-version binding.
-3. Add tests for approval pre-binding, crash-between-commits reconciliation by exact approval ID, visible unresolved handoff, late/version-stale input, duplicate identity, changed-source/body replay conflict, concurrent one-open invariant, claimant ownership, owner/workspace isolation and unknown outcome. Include a negative test that Agent reasoning actions cannot be Worker-claimed or auto-settled, and require exact Job/Artifact proof for deterministic settlement.
+3. Add tests for approval pre-binding, atomic decision/action rollback, crash after atomic commit but before plan CAS, visible unresolved handoff, late/version-stale input, duplicate identity, changed-source/body replay conflict, concurrent one-open invariant, claimant ownership, owner/workspace isolation and unknown outcome. Include a negative test that Agent reasoning actions cannot be Worker-claimed or auto-settled, and require exact Job/Artifact proof for deterministic settlement.
 4. Review the schema and actual diff against ADR-001/003/005, the current Product API, Audit/Event rules, DSH ownership and the Functional Fidelity Matrix. Do not count historical P4 tests as proof of the new contract.
 5. Run the affected Backend and integration suites, current build/release/H4 checks, independent Sol Reviewer and Root gate. Phase 8 remains closed until this and other Phase 7 live-runtime slices are accepted.
 
-## Open design question
+## Schema decision
 
-Choose between a task-owned pending-action row and a small business-action table only after checking the transaction and authorization call graph. Do not introduce a generic workflow engine, universal command bus, second Agent session manager or event replay store. If the current DSH API gap prevents a faithful same-slice cutover of any live Product behavior, return NO-GO with the exact missing contract instead of weakening the tests.
+Use one small `research_task_actions` table, owned by ResearchTask. A task column would be overwritten by each successive approval and lose the durable replay result for earlier action IDs unless another receipt store were added. The table stores stable action and source approval IDs, task/owner/workspace, plan/task versions, canonical source/request digests, frozen action/resource/parameter binding, business idempotency key, status, bounded result and timestamps. `PRIMARY KEY (task_id, action_id)`, `UNIQUE(source_approval_id)` and `UNIQUE(task_id, idempotency_key)` protect identity and replay; a partial unique index enforces one unresolved action per task. `workspace_tenancy.py` must register the new table in `WORKSPACE_TABLES`, its `(task_id, action_id)` key in `INHERITED_TABLES`, and its task parent binding in `RELATION_CHECKS` in the same cutover. Do not add a first-pass foreign key to `agent_approvals`, which is created after the ResearchStore schema; validate the approval row transactionally instead.
+
+The approval store's decision transaction owns inserting the pending action using the same connection after acquiring the required task, plan and approval locks. It validates the frozen plan binding before commit; no nested transaction or later best-effort insert is allowed. After commit, a BYQ deterministic reconciler reads existing pending actions by exact ID, rechecks the approval and digest, applies the plan/task CAS, and records an `applied`, `waiting_for_agent`, or `needs_attention` outcome in the same transaction. `waiting_for_agent` and `needs_attention` remain unresolved; neither can be claimed as a Worker Job. The Product approval response must expose the business-action status separately from the approval decision. Old rows, old event history and old runtime state are not imported.
+
+A plan binding is recognized by the presence of any frozen `plan_*` field, before checking whether the current plan still matches it. A stale, incomplete or mismatched plan-bound approval must fail closed or produce a visible `needs_attention` business fact; it must **never** fall through to the generic free-text approval continuation. Cover this with a stale-binding decision test. Use one lock order in both the decision and reconciler transactions: task → plan → approval → action. The decision path may first read the immutable approval ID/binding without a lock to locate the task, then acquire those locks and revalidate before writing. Unbound approvals keep their separate approval-only path. Test concurrent decision/reconciliation for deadlock and duplicate action outcomes.
+
+`waiting_for_agent` and `needs_attention` deliberately occupy the one-open slot. This slice does not provide automatic resolution or supersession; they are visible blocked ResearchTask states until an authorized exact-action resolution contract is designed and tested. An unknown external or financial outcome must never be cleared by a generic retry or workspace notification. Do not count this cutover as complete Agent continuation or full Functional Fidelity.
+
+Do not introduce a generic workflow engine, universal command bus, second Agent session manager or event replay store. If the current DSH API gap prevents a faithful same-slice cutover of any live Product behavior, return NO-GO with the exact missing contract instead of weakening the tests.
 
 ## Design review
 
