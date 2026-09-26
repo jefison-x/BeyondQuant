@@ -1,5 +1,11 @@
 # Phase 0–6 gate record
 
+## Phase 7 slice 3 gate — standalone containment/recovery URL removal (2026-09-27)
+
+[Slice record](phase7-gateway-containment-routes.md) binds the deletion to final candidate `1a825125`. The two standalone Gateway GET paths and OpenAPI operations are removed. Owner-scoped `GET /v1/agent/sessions/{id}` remains the Product API for normalized trace replay and fail-closed containment classification; no Adapter, Backend, DSH or financial safety path changed.
+
+**Tester:** independent focused checks PASS (33 tests, H4 570/570, historical release, frozen `.215`–`.217` and current `.218` build, Compose, diff); its separate full run encountered read-only `.ci-artifacts` write errors and a Node worker environment failure. Root verified the final candidate in the approved offline, read-only Gateway container: **274 passed**, and ran full repository unittest with writable test artifacts: **918 tests OK, 11 skipped**. **Independent Sol Reviewer:** Functional PASS / Tests PASS / Clean Break Architecture PASS after directly inspecting the corrected replacement-route H4/OpenAPI entry and `.218` source binding. **Root acceptance:** **PASS for slice 3 only**. Phase 7 overall remains open; no Phase 8 cleanup, DB change, push or merge is claimed.
+
 ## Phase 7 slice 2 gate — advisory generation history removal (2026-09-27)
 
 [Slice record](phase7-generation-ledger.md) binds the deletion to candidate commit `a2d134ed`. The file-backed generation ledger and duplicate in-memory history are removed; active generation fencing, lifecycle journal, containment and business recovery remain. Historical `dsh-0.1.5rc1` inputs are pinned to the exact pre-Clean-Break Git tree, while current source is bound by build revision `.217`.
