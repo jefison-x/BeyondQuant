@@ -15,15 +15,11 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE_COMMITS = {
     "dsh-0.1.1rc1": "ce6493f006d9b857f38d81306bbccfcff1a8fbe4",
     "dsh-0.1.2rc1": "243f8ed6487301eae7a9062357d7060896fedf6f",
+    # Pre-Clean-Break main contains the exact descriptor and all 34 declared
+    # inputs. The release remains qualified as a historical SDK/runtime pair;
+    # current BYQ application sources are bound by build_revision instead.
+    "dsh-0.1.5rc1": "d4c6a9e34f531d27dd0e94804be6ed0aa6f9fde3",
 }
-# Releases promoted in-tree whose descriptor-creating commit is not yet frozen
-# into an archived Git tree (the historical 0.1.1/0.1.2 pattern: descriptor
-# first, exact-tree archive in a later requalification commit). They are
-# verified against the current build inputs and their build manifest instead of
-# a pinned commit. This set is never a fallback for an *unknown* release.
-CURRENT_RELEASES = {"dsh-0.1.5rc1"}
-
-
 def read_blob(commit: str, path: str) -> bytes:
     relative = PurePosixPath(path)
     if (not re.fullmatch(r"[0-9a-f]{40}", commit) or not path

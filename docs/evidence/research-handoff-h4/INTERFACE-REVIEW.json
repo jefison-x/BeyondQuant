@@ -3619,7 +3619,7 @@
         "services/mcp/src/domain-validation-schema.ts": "sha256:e0454153f2f29caaefc0174939bb59c0442379a0f05bcb11e438875dab03a191",
         "services/mcp/src/domain-admission.ts": "sha256:f5c4fa396a5d1d8629073b9ae5f8e3ffb738708b11d42e44f3636b608528529e",
         "services/mcp/src/strategy.ts": "sha256:fac4515504840c96c72107de196ba9b765610560d172d214523fb7990200eefe",
-        "services/runtime-adapter/app/runtime.py": "sha256:704833dfcd0c39d7953ddd7fcfb9a51e6485c9ad642e71fb912066f4fefe4b69"
+        "services/runtime-adapter/app/runtime.py": "1f2b1dc2703c0c8db6c5e07b5034f7b3bcde88e2facfc1257b23a269b3c49bed"
       }
     },
     {
@@ -3659,7 +3659,7 @@
         "services/mcp/src/domain-validation-schema.ts": "sha256:e0454153f2f29caaefc0174939bb59c0442379a0f05bcb11e438875dab03a191",
         "services/mcp/src/domain-admission.ts": "sha256:f5c4fa396a5d1d8629073b9ae5f8e3ffb738708b11d42e44f3636b608528529e",
         "services/mcp/src/strategy.ts": "sha256:fac4515504840c96c72107de196ba9b765610560d172d214523fb7990200eefe",
-        "services/runtime-adapter/app/runtime.py": "sha256:704833dfcd0c39d7953ddd7fcfb9a51e6485c9ad642e71fb912066f4fefe4b69"
+        "services/runtime-adapter/app/runtime.py": "1f2b1dc2703c0c8db6c5e07b5034f7b3bcde88e2facfc1257b23a269b3c49bed"
       }
     },
     {

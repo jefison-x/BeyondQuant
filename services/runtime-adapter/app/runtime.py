@@ -34,7 +34,7 @@ from .compat import RuntimeCompatibility, RuntimeObservation, compatibility_for_
 from .identifiers import contained_session_path, validate_identifier
 from .lifecycle_journal import JournalIdentityMismatch, LifecycleJournal, JournalBusy
 from .executor_identity import ExecutorIdentityError
-from . import containment, generation_ledger
+from . import containment
 from . import business_recovery
 from .continuation_budget import (CONTINUATION_MAX_OUTPUT_TOKENS, persist_settlement,
     recovered_settlement, validate_reservation, create_guard_patch, read_guard)
@@ -142,7 +142,6 @@ class RuntimeGeneration:
     session_id: str
     native_session_id: str
     executor_epoch: int = 0
-    started_at: float = field(default_factory=time.time)
     state: str = GenerationState.STARTING
     process_root_id: str = field(default="", repr=False)
     harness: Any = field(default=None, repr=False)
@@ -198,7 +197,6 @@ class RuntimeSession:
     executor_epoch: int = 0
     continuity: str | None = None
     current_generation: RuntimeGeneration | None = field(default=None, repr=False)
-    generations: list[RuntimeGeneration] = field(default_factory=list, repr=False)
 
     def _generation(self) -> RuntimeGeneration:
         """Return the active generation, creating an unbound placeholder."""
@@ -588,46 +586,14 @@ class RuntimeAdapter:
             return True
         return False
 
-    def _ledger_begin(self, record: RuntimeSession, generation: RuntimeGeneration,
-                      root_run_id: str | None) -> None:
-        try:
-            generation_ledger.begin(
-                self._evidence_root(), record.session_id,
-                generation_id=generation.generation_id,
-                executor_epoch=generation.executor_epoch,
-                root_run_id=root_run_id, started_at=generation.started_at,
-            )
-        except (OSError, TypeError, ValueError):
-            # Generation history is advisory continuity metadata. It must never
-            # make a run fail; the lifecycle journal remains the sole evidence.
-            pass
-
-    def _ledger_end(self, record: RuntimeSession, generation_id: str, state: str) -> None:
-        try:
-            generation_ledger.end(
-                self._evidence_root(), record.session_id,
-                generation_id=generation_id, state=state, ended_at=time.time(),
-            )
-        except (OSError, TypeError, ValueError):
-            pass
-
-    def _close_generation_ledger(self, record: RuntimeSession, generation_id: str, state: str) -> None:
-        """Close the exact generation ledger on a terminal, fenced against late writes.
-
-        The ledger ``end`` is itself idempotent (it only writes when ``ended_at``
-        is unset), so a late terminal for an already-closed generation cannot
-        reopen or overwrite it. A late terminal for a *replaced* generation is
-        already fenced by ``_terminal_fenced`` before this is reached. The
-        in-memory generation state is updated only when it is still the active
-        generation so a newer generation is never relabelled.
-        """
+    def _close_generation(self, record: RuntimeSession, generation_id: str, state: str) -> None:
+        """Update the active generation state after a fenced terminal."""
 
         if not generation_id:
             return
         current = record.current_generation
         if current is not None and current.generation_id == generation_id:
             current.state = state
-        self._ledger_end(record, generation_id, state)
 
     def _retire_generation(self, record: RuntimeSession, state: str) -> RuntimeGeneration | None:
         """Retire the active generation without touching durable session state."""
@@ -636,16 +602,12 @@ class RuntimeAdapter:
         if generation is None:
             return None
         generation.state = state
-        record.generations.append(generation)
         record.current_generation = None
-        if len(record.generations) > 32:
-            del record.generations[:-32]
-        self._ledger_end(record, generation.generation_id, state)
         return generation
 
     def _install_generation(
         self, record: RuntimeSession, *, native_session_id: str, executor_epoch: int,
-        process_root_id: str = "", root_run_id: str | None = None,
+        process_root_id: str = "",
         retired_state: str = GenerationState.CLOSED, generation_id: str | None = None,
     ) -> RuntimeGeneration:
         """Replace any active generation with a NEW one; identity is unchanged."""
@@ -661,7 +623,6 @@ class RuntimeAdapter:
         )
         record.current_generation = generation
         record.executor_epoch = generation.executor_epoch
-        self._ledger_begin(record, generation, root_run_id)
         return generation
 
     def create_session(
@@ -899,7 +860,7 @@ class RuntimeAdapter:
                 self._install_generation(
                     record, native_session_id=private_session,
                     executor_epoch=record.executor_epoch, process_root_id=root_id,
-                    generation_id=generation, root_run_id=root_id,
+                    generation_id=generation,
                 )
                 installed = record.current_generation
                 installed.harness = harness
@@ -1097,7 +1058,7 @@ class RuntimeAdapter:
                     return
                 record.status = SessionStatus.FAILED
                 self._emit(record, "session.failed", "runtime-adapter", {"error": type(exc).__name__, "run_id": run.run_id})
-                self._close_generation_ledger(record, generation_id, "failed")
+                self._close_generation(record, generation_id, "failed")
             return
 
         with record.lock:
@@ -1140,9 +1101,9 @@ class RuntimeAdapter:
                      "retryable": False if run.domain_stop_code else (
                          run.model_failure_retryable if run.model_failure_code else True), "run_id": run.run_id},
                 )
-                # ADR-0085 P0: a failed/budget-exhausted terminal immediately
-                # closes the exact generation ledger with the accurate state.
-                self._close_generation_ledger(
+                # ADR-0085 P0: a failed/budget-exhausted terminal updates the
+                # active generation state with the accurate outcome.
+                self._close_generation(
                     record, generation_id, "budget_exhausted" if budget_blocked else "failed")
             else:
                 record.status = SessionStatus.IDLE
@@ -1156,7 +1117,7 @@ class RuntimeAdapter:
                 # terminal and must not be left "starting"/"running". A durable
                 # non-root session that returns to IDLE keeps its generation.
                 if self._root_scoped:
-                    self._close_generation_ledger(record, generation_id, "completed")
+                    self._close_generation(record, generation_id, "completed")
 
     def cancel_session(self, session_id: str, mode: str) -> dict[str, Any]:
         if mode not in {"soft", "hard"}:
@@ -1187,7 +1148,7 @@ class RuntimeAdapter:
             )
             if mode == "hard":
                 # ADR-0085 P0: an interrupted terminal closes the generation.
-                self._close_generation_ledger(record, record.runtime_generation, "interrupted")
+                self._close_generation(record, record.runtime_generation, "interrupted")
         if mode == "hard":
             self._compatibility.close(cancelled_harness)
             with record.lock:
@@ -1557,23 +1518,6 @@ class RuntimeAdapter:
                 continuity=(continuity.INTERRUPTED if isinstance(lost_root, dict)
                             else continuity.REHYDRATED),
             )
-            # Reconcile any generation left open by a previous process (the lost
-            # open root is truthfully marked interrupted) and load the bounded
-            # BYQ generation history. This never alters session identity,
-            # sequence or journal evidence.
-            try:
-                ledger_rows = generation_ledger.reconcile(
-                    evidence_root, session_id,
-                    interrupted_generation=interrupted_generation, ended_at=time.time(),
-                )
-            except (OSError, TypeError, ValueError):
-                ledger_rows = []
-            for row in ledger_rows:
-                record.generations.append(RuntimeGeneration(
-                    generation_id=row["generation_id"], session_id=session_id,
-                    native_session_id="", executor_epoch=row["executor_epoch"],
-                    started_at=row["started_at"], state=row["state"],
-                ))
             if isinstance(lost_root, dict):
                 record.status = SessionStatus.FAILED
                 record.interrupted_run_id = lost_root.get("root_run_id")

@@ -18,11 +18,11 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PREVIOUS_BUILD = "dsh-0.1.5rc1-post-u8.215"
-# sha256 of config/dsh/builds/dsh-0.1.5rc1-post-u8.215.json as committed in the
-# Phase 7 base; the frozen manifest must never be rewritten.
+PREVIOUS_BUILD = "dsh-0.1.5rc1-post-u8.216"
+# sha256 of config/dsh/builds/dsh-0.1.5rc1-post-u8.216.json as committed in the
+# Phase 7 slice 1 gate; the frozen manifest must never be rewritten.
 PREVIOUS_BUILD_SHA256 = (
-    "81a7631851ca3d90caa8ce15b27911b45e3d1cb8537189ca973a534271106c56")
+    "0a28e9c6037f82caf367df1928217439f7e3936669f334c60fc1603226aa57ee")
 
 
 class CurrentBuildRevisionTests(unittest.TestCase):

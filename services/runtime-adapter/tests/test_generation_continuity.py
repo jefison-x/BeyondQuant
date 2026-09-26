@@ -13,6 +13,7 @@ from packages.contracts.runtime_continuity import (
     FRESH, INTERRUPTED, REATTACHED, REHYDRATED, STATUSES, valid_continuity,
 )
 
+from app.containment import latest as latest_containment
 from app.lifecycle_journal import LifecycleJournal
 from app.runtime import RuntimeAdapter, SessionStatus
 from .test_process_cleanup import FakeHarness, adapter, wait_for_status  # noqa: F401
@@ -86,16 +87,19 @@ def test_restart_rehydrates_with_new_generation_and_stable_identity(
         assert rehydrated.session_id == "r2-restart"
         assert rehydrated.trace_id == "r2-restart-trace"
         assert rehydrated.sequence == durable_sequence + 1
-        # A brand-new generation replaced the lost one; the previous generation
-        # remains recorded in the bounded BYQ generation history.
+        # A brand-new generation replaced the old process binding. The journal
+        # remains authoritative for the completed run and trace sequence.
         new_generation = _generation_id(restarted, "r2-restart")
         assert new_generation != first_generation
-        assert any(item.generation_id == first_generation for item in rehydrated.generations)
         # Durable lifecycle evidence is intact and still contains the run.
         state = LifecycleJournal.read(
             restarted._session_root / "byq-lifecycle-evidence" / "r2-restart.json")
         assert state["sequence"] >= durable_sequence
-        assert any(event["kind"] == "session.result" for event in state["events"])
+        assert state["open_root"] is None
+        assert any(event["kind"] == "session.started"
+                   and event["payload"]["run_id"] == root for event in state["events"])
+        assert any(event["kind"] == "session.result"
+                   and event["payload"]["run_id"] == root for event in state["events"])
     finally:
         restarted.close()
         adapter.close()
@@ -129,9 +133,23 @@ def test_crashed_generation_is_interrupted_and_a_new_generation_rehydrates(
         rehydrated = restarted._get("r2-crash")
         assert rehydrated.session_id == "r2-crash"
         assert _generation_id(restarted, "r2-crash") != first_generation
-        previous = [item for item in rehydrated.generations
-                    if item.generation_id == first_generation]
-        assert previous and previous[0].state == INTERRUPTED
+        evidence_root = restarted._session_root / "byq-lifecycle-evidence"
+        state = LifecycleJournal.read(evidence_root / "r2-crash.json")
+        assert state["open_root"] is None
+        started_runs = {
+            event["payload"]["run_id"] for event in state["events"]
+            if event["kind"] == "session.started"
+        }
+        closed_runs = {
+            event["payload"]["run_id"] for event in state["events"]
+            if event["kind"] == "session.closed"
+        }
+        assert closed_runs & started_runs
+        interrupted_run_id = next(iter(closed_runs & started_runs))
+        loss = latest_containment(evidence_root, "r2-crash")
+        assert loss is not None
+        assert loss["interrupted_generation"] == first_generation
+        assert loss["interrupted_run_id"] == interrupted_run_id
     finally:
         restarted.close()
         FakeHarness.allow_run.set()
