@@ -23,6 +23,7 @@ RETIRED_SOURCE = "b6c8034ed638447aa1d0ddd82af9738df830bbdf"
 FROZEN_BUILDS = {
     "dsh-0.1.5rc1-post-u8.215": "sha256:81a7631851ca3d90caa8ce15b27911b45e3d1cb8537189ca973a534271106c56",
     "dsh-0.1.5rc1-post-u8.216": "sha256:0a28e9c6037f82caf367df1928217439f7e3936669f334c60fc1603226aa57ee",
+    "dsh-0.1.5rc1-post-u8.217": "sha256:249ef7d02019b52596f74182164a323a902a7597ba9f5f41f12ddc19c98bcb19",
 }
 KEYS = {"schema_version", "build_id", "release_id", "release_descriptor_hash", "dockerfile", "inputs"}
 SOURCE_ROOTS = (
@@ -60,6 +61,7 @@ FIXED_INPUTS = (
     "apps/frontend/vitest.config.ts", "apps/frontend/playwright.config.ts",
     "apps/frontend/playwright.real.config.ts", "apps/frontend/playwright.f6.config.ts", ".github/workflows/ci-selfhosted.yml",
     "docs/contracts/product-capability-catalog.v1.json",
+    "docs/contracts/product-api.openapi.yaml",
     "config/dsh/generated/web-evidence-provenance.json",
     "config/dsh/deployment.json", "config/dsh/generated/dsh-0.1.1rc1.identity.json",
     "config/dsh/generated/product-plugin-registry.json",
@@ -78,7 +80,7 @@ def selected_build_id(release):
     if release == "dsh-0.1.1rc1":
         return RETIRED_BUILD  # Historical identity only; never a current build.
     if release in RELEASES:
-        return release + "-post-u8.217"
+        return release + "-post-u8.218"
     if release in HISTORICAL_BUILDS:
         return HISTORICAL_BUILDS[release]
     raise ValueError("unregistered release")

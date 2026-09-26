@@ -231,7 +231,7 @@ def capture() -> dict:
         "owner-workspace-mismatch-blocks": entry(
             _classification(_base_inputs(owner_matches=False)), "contract-pure-function"),
         "recovery-endpoint-never-submits": entry(
-            {"source_sha256": observer._digest(ROOT / "services/gateway/app/main.py")},
+            {"source_sha256": observer._historical_source_digest("services/gateway/app/main.py")},
             "gateway-session-containment"),
         "observer-breakable": entry(
             {"negative_controls": _selfcheck(contract, observer)}, "contract-pure-function"),

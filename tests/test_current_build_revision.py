@@ -18,11 +18,20 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PREVIOUS_BUILD = "dsh-0.1.5rc1-post-u8.216"
-# sha256 of config/dsh/builds/dsh-0.1.5rc1-post-u8.216.json as committed in the
-# Phase 7 slice 1 gate; the frozen manifest must never be rewritten.
-PREVIOUS_BUILD_SHA256 = (
-    "0a28e9c6037f82caf367df1928217439f7e3936669f334c60fc1603226aa57ee")
+FROZEN_ARTIFACTS = {
+    "dsh-0.1.5rc1-post-u8.215": (
+        "services/runtime-adapter/Dockerfile.post-u8-candidate",
+        "81a7631851ca3d90caa8ce15b27911b45e3d1cb8537189ca973a534271106c56",
+        "5d00eab2483a2a780bbbcd0c600a770c4d347b5cd0941104e32a51bd537ee81a"),
+    "dsh-0.1.5rc1-post-u8.216": (
+        "services/runtime-adapter/Dockerfile.post-u8-216-candidate",
+        "0a28e9c6037f82caf367df1928217439f7e3936669f334c60fc1603226aa57ee",
+        "5220e479fbfd34e3103c26cd45432ac0b2a510a1113aa0167c3a969032c40e07"),
+    "dsh-0.1.5rc1-post-u8.217": (
+        "services/runtime-adapter/Dockerfile.post-u8-217-candidate",
+        "249ef7d02019b52596f74182164a323a902a7597ba9f5f41f12ddc19c98bcb19",
+        "5846687f3ece97ad869dd540eea07f6e82e74caf6cc91467c7bd91c4a1665853"),
+}
 
 
 class CurrentBuildRevisionTests(unittest.TestCase):
@@ -45,11 +54,16 @@ class CurrentBuildRevisionTests(unittest.TestCase):
             f"COPY config/dsh/builds/{selected}.json /opt/byq/builds/build.identity.json",
             dockerfile)
 
-    def test_previous_frozen_manifest_is_not_rewritten(self) -> None:
-        frozen = ROOT / "config/dsh/builds" / f"{PREVIOUS_BUILD}.json"
-        self.assertTrue(frozen.is_file())
-        self.assertEqual(
-            hashlib.sha256(frozen.read_bytes()).hexdigest(), PREVIOUS_BUILD_SHA256)
+    def test_frozen_build_manifests_and_dockerfiles_are_not_rewritten(self) -> None:
+        for build_id, (dockerfile, manifest_sha256, dockerfile_sha256) in FROZEN_ARTIFACTS.items():
+            manifest = ROOT / "config/dsh/builds" / f"{build_id}.json"
+            docker_source = ROOT / dockerfile
+            self.assertTrue(manifest.is_file(), build_id)
+            self.assertTrue(docker_source.is_file(), dockerfile)
+            self.assertEqual(hashlib.sha256(manifest.read_bytes()).hexdigest(),
+                             manifest_sha256, build_id)
+            self.assertEqual(hashlib.sha256(docker_source.read_bytes()).hexdigest(),
+                             dockerfile_sha256, dockerfile)
 
 
 if __name__ == "__main__":

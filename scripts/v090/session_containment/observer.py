@@ -27,10 +27,19 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from scripts.dsh.historical_inputs import read_blob
+
 DEFAULT_CONTRACT = HERE / "contract.v1.json"
 
 OBSERVATIONS_SCHEMA = "byq-v090-session-containment-observations.v2"
 VERDICT_SCHEMA = "byq-v090-session-containment-verdict.v2"
+PRE_CLEAN_BREAK_COMMIT = "d4c6a9e34f531d27dd0e94804be6ed0aa6f9fde3"
+HISTORICAL_PROVENANCE_SOURCES = frozenset({
+    "services/gateway/app/main.py",
+    "services/runtime-adapter/app/runtime.py",
+})
 NEGATIVE_SCHEMA = "byq-v090-session-containment-negative-controls.v2"
 
 DEFECT_TARGETING_CONTROLS = (
@@ -79,6 +88,19 @@ def _load(path: Path):
 
 def _digest(path: Path) -> str:
     return "sha256:" + hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _historical_source_bytes(relative: str) -> bytes:
+    """Read a source file from the exact pre-Clean-Break tree used by v0.9 evidence."""
+
+    try:
+        return read_blob(PRE_CLEAN_BREAK_COMMIT, relative)
+    except ValueError as exc:
+        raise Failure(f"historical source unavailable: {relative}") from exc
+
+
+def _historical_source_digest(relative: str) -> str:
+    return "sha256:" + hashlib.sha256(_historical_source_bytes(relative)).hexdigest()
 
 
 def _gateway_module():
@@ -228,7 +250,7 @@ def _check_preservation(contract, observed, expect, ctx, failures):
 
 
 def _recovery_endpoint_body() -> str:
-    source = (ROOT / "services/gateway/app/main.py").read_text(encoding="utf-8")
+    source = _historical_source_bytes("services/gateway/app/main.py").decode("utf-8")
     match = re.search(r"^def get_recovery_classification\(.*?(?=^@app\.|\Z)",
                       source, flags=re.DOTALL | re.MULTILINE)
     return match.group(0) if match else ""
@@ -246,9 +268,9 @@ def _check_no_submit(contract, observed, expect, ctx, failures):
             failures.append(f"{ctx}: recovery endpoint references a prompt submission")
     if '"submitted": False' not in body:
         failures.append(f"{ctx}: recovery endpoint does not declare no submission")
-    if isinstance(observed, dict) and observed.get("source_sha256") != _digest(
-            ROOT / "services/gateway/app/main.py"):
-        failures.append(f"{ctx}: observed source digest does not match the current endpoint")
+    if isinstance(observed, dict) and observed.get("source_sha256") != _historical_source_digest(
+            "services/gateway/app/main.py"):
+        failures.append(f"{ctx}: observed source digest does not match the pre-Clean-Break endpoint")
 
 
 def _check_meta(contract, observed, expect, ctx, failures):
@@ -285,8 +307,11 @@ def _source_digests() -> dict:
             _digest(ROOT / "services/runtime-adapter/app/runtime.py"),
         "services/gateway/app/session_containment.py":
             _digest(ROOT / "services/gateway/app/session_containment.py"),
+        # The endpoint observation is historical evidence. Bind this one source
+        # to its exact pre-Clean-Break tree; current Gateway contracts are tested
+        # independently under services/gateway/tests.
         "services/gateway/app/main.py":
-            _digest(ROOT / "services/gateway/app/main.py"),
+            _historical_source_digest("services/gateway/app/main.py"),
     }
 
 
@@ -303,7 +328,13 @@ def _verify_provenance_digests(observations: dict, failures: list[str]) -> None:
         if not path.is_file():
             failures.append(f"provenance: missing source {relative}")
             continue
-        if _digest(path) != expected:
+        accepted = {_digest(path)}
+        # These two paths changed in Clean Break slices 2 and 3. Their committed
+        # v0.9 digests may match only the exact pinned pre-Clean-Break Git tree;
+        # every other provenance source stays current-bound.
+        if relative in HISTORICAL_PROVENANCE_SOURCES:
+            accepted.add(_historical_source_digest(relative))
+        if expected not in accepted:
             failures.append(f"provenance: source digest mismatch for {relative}")
 
 
@@ -482,7 +513,7 @@ def valid_fixture(contract: dict) -> dict:
                          "sources": {"conversation": "backend-product-catalog",
                                      "workflow_trace": "gateway-trace-store"}}})
     add("recovery-endpoint-never-submits", {
-        "source_sha256": _digest(ROOT / "services/gateway/app/main.py")})
+        "source_sha256": _historical_source_digest("services/gateway/app/main.py")})
     add("observer-breakable", {"negative_controls": {
         "all_controls_rejected": True, "control_count": len(DEFECT_TARGETING_CONTROLS),
         "defect_targeting_count": len(DEFECT_TARGETING_CONTROLS)}})

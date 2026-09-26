@@ -36,7 +36,6 @@ from .trace_store import TraceConflict, TraceStore
 from .conversation_recovery import project_recovery
 from .session_containment import (
     containment_match,
-    loss_from_evidence,
     preservation_projection,
     project_containment,
 )
@@ -1456,63 +1455,6 @@ def get_product_session(session_id: str, request: Request) -> dict[str, object]:
     )
     return {"conversation": public, "messages": messages, "events": events,
             "containment": containment}
-
-
-@app.get("/v1/agent/sessions/{session_id}/containment")
-def get_product_containment(session_id: str, request: Request) -> dict[str, object]:
-    session = _product_session(request, session_id)
-    body = _catalog_request(
-        "GET", f"/v1/product/conversations/{session_id}", session.principal, session.workspace_id)
-    conversation = body.get("conversation")
-    if not isinstance(conversation, dict):
-        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
-    return {"containment": _session_containment_projection(
-        request,
-        conversation_id=session.conversation_id,
-        runtime_session_id=session.session_id,
-        trace_id=session.trace_id,
-        principal_subject=session.principal.subject,
-        workspace_id=session.workspace_id,
-        conversation=conversation,
-        events=trace_store.read(session.session_id),
-    )}
-
-
-@app.get("/v1/agent/sessions/{session_id}/recovery")
-def get_recovery_classification(session_id: str, request: Request) -> dict[str, object]:
-    """Read-only recovery classification. Never submits a prompt or an attempt.
-
-    Automatic rescheduling requires authoritative server-side step-safety and
-    budget metadata. That metadata is absent, so the classification fails closed
-    to ``paused``/``needs_confirmation`` and no adapter prompt is ever sent. A
-    cancel or an unverified authority is resolved without any adapter call.
-    """
-
-    session = _product_session(request, session_id)
-    body = _catalog_request(
-        "GET", f"/v1/product/conversations/{session_id}", session.principal, session.workspace_id)
-    conversation = body.get("conversation")
-    if not isinstance(conversation, dict):
-        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
-    events = trace_store.read(session.session_id)
-    authority = _recovery_authority(
-        request, principal_subject=session.principal.subject,
-        workspace_id=session.workspace_id, conversation=conversation)
-    # A cancel is resolved from the trace alone; every other case reads the
-    # read-only adapter containment summary (never a prompt/submit).
-    trace_only_loss = loss_from_evidence(events, session.session_id, session.trace_id)
-    projection = _session_containment_projection(
-        request,
-        conversation_id=session.conversation_id,
-        runtime_session_id=session.session_id,
-        trace_id=session.trace_id,
-        principal_subject=session.principal.subject,
-        workspace_id=session.workspace_id,
-        conversation=conversation,
-        events=events,
-        fetch_adapter=not trace_only_loss["cancelled"],
-    )
-    return {"containment": projection, "submitted": False}
 
 
 @app.get("/v1/agent/sessions/{session_id}/lifecycle-delivery")

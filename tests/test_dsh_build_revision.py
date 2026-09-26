@@ -26,17 +26,21 @@ class BuildRevisionTests(unittest.TestCase):
             for path in ("workers/data/worker.py", "workers/ml/worker.py",
                          "services/signal-sandbox/runner.py", "infra/postgres/init/10-byq-databases.sql",
                          "scripts/ci/cleanup-resources.sh", "tests/test_dsh_build_revision.py",
-                         "apps/frontend/vitest.config.ts", ".github/workflows/ci-selfhosted.yml"):
+                         "apps/frontend/vitest.config.ts", ".github/workflows/ci-selfhosted.yml",
+                         "docs/contracts/product-api.openapi.yaml"):
                 self.assertIn(path, value["inputs"])
 
     def test_previous_and_current_post_u8_builds_keep_distinct_dockerfiles(self):
         frozen = "dsh-0.1.5rc1-post-u8.215"
+        previous = "dsh-0.1.5rc1-post-u8.217"
         current = builds.selected_build_id("dsh-0.1.5rc1")
         self.assertEqual(builds.identity(frozen)[1],
                          "services/runtime-adapter/Dockerfile.post-u8-candidate")
-        self.assertEqual(current, "dsh-0.1.5rc1-post-u8.217")
-        self.assertEqual(builds.identity(current)[1],
+        self.assertEqual(builds.identity(previous)[1],
                          "services/runtime-adapter/Dockerfile.post-u8-217-candidate")
+        self.assertEqual(current, "dsh-0.1.5rc1-post-u8.218")
+        self.assertEqual(builds.identity(current)[1],
+                         "services/runtime-adapter/Dockerfile.post-u8-218-candidate")
 
     def test_forged_revision_missing_input_drift_and_cross_release_fail(self):
         original = builds.render(builds.selected_build_id("dsh-0.1.5rc1"))

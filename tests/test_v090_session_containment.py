@@ -122,8 +122,17 @@ class CommittedEvidenceTests(unittest.TestCase):
     def test_observations_record_historical_source_digests(self):
         observations = json.loads(OBSERVATIONS.read_text(encoding="utf-8"))
         digests = observations["provenance"]["source_sha256"]
+        observer = _load(OBSERVER, "v090_session_containment_historical_sources")
+        self.assertEqual(observer.HISTORICAL_PROVENANCE_SOURCES, {
+            "services/gateway/app/main.py",
+            "services/runtime-adapter/app/runtime.py",
+        })
         for relative, expected in digests.items():
             self.assertRegex(expected, r"^sha256:[0-9a-f]{64}$", relative)
+            if relative in observer.HISTORICAL_PROVENANCE_SOURCES:
+                self.assertEqual(expected, observer._historical_source_digest(relative), relative)
+            else:
+                self.assertEqual(expected, observer._digest(ROOT / relative), relative)
         for relative in ("services/runtime-adapter/app/containment.py",
                          "services/gateway/app/session_containment.py",
                          "services/gateway/app/main.py"):
@@ -151,11 +160,11 @@ class CommittedEvidenceTests(unittest.TestCase):
 
 
 class BoundaryTests(unittest.TestCase):
-    def test_recovery_endpoint_cannot_submit(self):
-        source = (ROOT / "services/gateway/app/main.py").read_text(encoding="utf-8")
-        start = source.index("def get_recovery_classification(")
-        end = source.index("@app.", start)
-        body = source[start:end]
+    def test_historical_recovery_endpoint_cannot_submit(self):
+        observer = _load(OBSERVER, "v090_session_containment_historical_endpoint")
+        body = observer._recovery_endpoint_body()
+        self.assertIn('@app.get("/v1/agent/sessions/{session_id}/recovery")',
+                      observer._historical_source_bytes("services/gateway/app/main.py").decode())
         self.assertNotIn("_adapter_post", body)
         self.assertNotIn("/prompt", body)
         self.assertNotIn("_runtime_recovery_payload", body)

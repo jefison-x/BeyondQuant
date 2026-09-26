@@ -333,8 +333,12 @@ class RealCodeFactTests(unittest.TestCase):
 
 
 class NoRuntimeImplementationTests(unittest.TestCase):
-    def test_recovery_endpoint_still_never_submits(self):
-        source = GATEWAY_MAIN.read_text(encoding="utf-8")
+    def test_historical_recovery_endpoint_still_never_submits(self):
+        from scripts.dsh.historical_inputs import read_blob
+
+        source = read_blob(
+            "d4c6a9e34f531d27dd0e94804be6ed0aa6f9fde3",
+            "services/gateway/app/main.py").decode("utf-8")
         start = source.index("def get_recovery_classification(")
         end = source.index("@app.", start)
         body = source[start:end]
