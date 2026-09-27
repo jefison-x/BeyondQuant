@@ -1,5 +1,26 @@
 # Phase 0–6 gate record
 
+## Phase 7 Product MCP unknown-claim evidence gate (2026-09-27)
+
+[Bounded evidence](phase7-product-mcp-unknown-claim-evidence.md) follows a real
+Gateway Product turn and four Product MCP calls to one durable `executing`
+strategy-validation claim. A test-only Backend callback exception produces
+non-retryable `outcome_unknown`; Adapter PID-1 loss and a fresh boot leave the
+old root/run revoked, that exact claim unchanged, zero artifacts and zero MCP
+replay. The disposable stack and its images/credentials were removed. Selected
+`.231` embeds its exact build identity; `.230` is frozen.
+
+**Tester:** PASS — 12 focused build/retirement tests, 74 architecture tests,
+syntax, shell and diff checks, selected `.231` and frozen `.230`. Root's
+disposable Product MCP integration probe and separate `.231` image identity
+check passed. **Independent Sol Reviewer:** Functional PASS / Tests PASS /
+Clean Break Architecture PASS after direct staged-diff, contract, fixture,
+build and evidence inspection. **Root acceptance:** PASS for this bounded
+unknown-claim/Adapter-loss proof only. The injected exception does not prove
+arbitrary power loss or external side-effect rollback; live journal, Gateway
+lifecycle delivery and Backend authority fences remain. Phase 7 overall OPEN;
+Phase 8 CLOSED.
+
 ## Phase 7 late domain-proof regression gate (2026-09-27)
 
 [Bounded evidence](phase7-late-domain-proof-evidence.md) restores inert late
