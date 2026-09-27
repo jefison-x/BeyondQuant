@@ -1,5 +1,9 @@
 # Phase 0–6 gate record
 
+## Phase 7 slice 5 design gate — historical event/P4 archive (2026-09-27)
+
+[Candidate design](phase7-historical-event-archive.md) passes read-only Explorer → static Tester → independent Sol Reviewer → Root **design** gate. The exact P4-A/B/C1 harness and obsolete event-contract group has no live production import; the design requires a same-slice RED architecture contract before deletion, then historical replay pointers to pinned commit `2f8aca4a`, frozen `.219` inputs and a new `.220` current build. Tester and Reviewer both returned Functional/Tests design/Clean Break Architecture PASS after the pre-deletion test, STATUS marker and frozen `.218`/`.219` checks were specified. Root accepts **design PASS only**. No slice-5 file deletion, implementation test or implementation Reviewer gate is claimed. Phase 7 overall remains open and Phase 8 closed.
+
 ## Phase 7 slice 4 gate — ResearchTask business action (2026-09-27)
 
 The current event-state continuation ledger and its production imports are removed. A plan-bound approval and its exact ResearchTask action now commit atomically; identical decision POSTs can retry the pending action, while conflicting replays and missing actions fail closed. Product API exposes the action status without handing settlement to DSH. Historical P4 scripts and the unused event contract remain for a later bounded archival decision.
