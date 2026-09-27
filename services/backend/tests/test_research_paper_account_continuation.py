@@ -19,7 +19,7 @@ import pytest
 from app.agent_research import AgentResearchStore
 from app.paper_trading import PaperTradingStore
 from app.research import InvalidTransition, ResearchStore
-from packages.contracts.research_continuation_event import (
+from packages.contracts.research_plan_approval import (
     plan_command_digest,
     plan_command_idempotency_key,
 )
@@ -68,16 +68,16 @@ def _validated_result_artifact(store, task, *, key):
 
 
 def _decide_and_advance(store, agent, context, approval_id, decision="approved"):
-    agent.decide_approval(
+    decided = agent.decide_approval(
         {"approval_id": approval_id, "decision": decision},
-        trusted_owner=context["owner_principal"], trusted_actor="human-reviewer")
-    target = agent.plan_bound_approval_target(
-        approval_id, trusted_owner=context["owner_principal"])
-    if decision == "approved":
-        store.record_plan_approval_event(
-            target["task_id"], approval_id,
-            trusted_context={"owner_principal": target["owner_principal"],
-                             "workspace_id": target["workspace_id"]})
+        trusted_owner=context["owner_principal"], trusted_actor="human-reviewer",
+        trusted_workspace=context["workspace_id"])
+    action = decided["business_action"]
+    assert action["status"] == "pending"
+    return store.reconcile_research_task_action(
+        action["task_id"], action["action_id"],
+        trusted_context={"owner_principal": context["owner_principal"],
+                         "workspace_id": context["workspace_id"]})
 
 
 def _create_account(store, task, *, key, name=None):
@@ -197,14 +197,11 @@ def test_stale_approval_binding_is_rejected():
         # Advance the plan underneath the approval (simulated stale binding).
         store._execute("UPDATE research_execution_plans SET plan_version = plan_version + 1"
                        " WHERE task_id = :task", {"task": task})
-        agent.decide_approval(
-            {"approval_id": request["approval_id"], "decision": "approved"},
-            trusted_owner=context["owner_principal"], trusted_actor="human-reviewer")
         with pytest.raises(Exception):
-            store.record_plan_approval_event(
-                task, request["approval_id"],
-                trusted_context={"owner_principal": context["owner_principal"],
-                                 "workspace_id": context["workspace_id"]})
+            agent.decide_approval(
+                {"approval_id": request["approval_id"], "decision": "approved"},
+                trusted_owner=context["owner_principal"], trusted_actor="human-reviewer",
+                trusted_workspace=context["workspace_id"])
         assert _task_row(store, task)["status"] != "completed"
     finally:
         store.close()

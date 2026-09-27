@@ -1,8 +1,12 @@
 # Phase 0–6 gate record
 
-## Phase 7 slice 4 design gate — ResearchTask business action (2026-09-27)
+## Phase 7 slice 4 gate — ResearchTask business action (2026-09-27)
 
-[Candidate design](phase7-pending-business-action.md) passes the read-only Explorer → static Tester → independent Sol Reviewer → Root **design** gate. Its approved boundary replaces event-as-state only with BYQ-owned pending business action, preserves exact approval/Job proof and unknown-outcome safety, and explicitly excludes DSH Agent continuation. A subsequent transaction/schema review selected one task-owned `research_task_actions` table with an atomic approval/action write, pending-only reconciler, stale-binding fail-closed rule and common lock order; independent Sol Reviewer marked that schema design GO. The implementation, tests and slice gate remain open. Phase 7 overall and Phase 8 remain closed.
+The current event-state continuation ledger and its production imports are removed. A plan-bound approval and its exact ResearchTask action now commit atomically; identical decision POSTs can retry the pending action, while conflicting replays and missing actions fail closed. Product API exposes the action status without handing settlement to DSH. Historical P4 scripts and the unused event contract remain for a later bounded archival decision.
+
+**Tester:** isolated PostgreSQL 45/45, complete Gateway 275/275, repository unittest 918 OK (11 skipped); current `.219` build, historical release inputs, H4 570/570 with zero stale/fake entries, and diff check PASS. **Independent Sol Reviewer:** Functional PASS / Tests PASS / Clean Break Architecture PASS after direct diff, SQL, Product projection and schema review. **Root acceptance:** **PASS for slice 4 only**. Pending actions require an identical decision POST for retry; `waiting_for_agent` and `needs_attention` remain unresolved. Phase 7 overall remains open because public DSH Agent attach/resume and child rebind contracts are absent; Phase 8 remains closed.
+
+[Candidate design](phase7-pending-business-action.md) passes the read-only Explorer → static Tester → independent Sol Reviewer → Root **design** gate. Its approved boundary replaces event-as-state only with BYQ-owned pending business action, preserves exact approval/Job proof and unknown-outcome safety, and explicitly excludes DSH Agent continuation. A subsequent transaction/schema review selected one task-owned `research_task_actions` table with an atomic approval/action write, pending-only reconciler, stale-binding fail-closed rule and common lock order; independent Sol Reviewer marked that schema design GO. The design gate was followed by the tested slice implementation above. Phase 7 overall and Phase 8 remain closed.
 
 ## Phase 7 next live deletion qualification (2026-09-27)
 

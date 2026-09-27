@@ -20,10 +20,7 @@ from .research_execution_plan import (
     ResearchExecutionPlanMixin,
     SCHEMA_DDL as EXECUTION_PLAN_SCHEMA_DDL,
 )
-from .research_continuation_ledger import (
-    ResearchContinuationLedgerMixin,
-    SCHEMA_DDL as CONTINUATION_LEDGER_SCHEMA_DDL,
-)
+from .research_task_actions import ResearchTaskActionMixin, SCHEMA_DDL as TASK_ACTION_SCHEMA_DDL
 from .research_handoff import ResearchHandoffMixin
 from .research_judgment import (
     ResearchJudgmentMixin,
@@ -261,7 +258,7 @@ def _row_dict(row: dict[str, Any]) -> dict[str, object]:
 
 class ResearchStore(
     ResearchHandoffMixin, ResearchReceiptMixin, ResearchContinuationMixin,
-    ResearchExecutionPlanMixin, ResearchContinuationLedgerMixin, ResearchJudgmentMixin,
+    ResearchExecutionPlanMixin, ResearchTaskActionMixin, ResearchJudgmentMixin,
     ResearchPlanContinuationMixin, PgStoreMixin,
 ):
     """Backend-owned durable repository for Phase 9 business entities (ADR-0016 PG)."""
@@ -368,8 +365,9 @@ class ResearchStore(
         # ADR-0085 P1 plan tables reference research_tasks, so they are created
         # only after it (and after every table they depend on).
         *EXECUTION_PLAN_SCHEMA_DDL,
-        # ADR-0085 P2 continuation ledger references research_tasks too.
-        *CONTINUATION_LEDGER_SCHEMA_DDL,
+        # ResearchTask owns current business-action state. Approval decisions
+        # insert the exact action atomically, but the schema belongs here.
+        *TASK_ACTION_SCHEMA_DDL,
         # ADR-0085 P3 durable research-judgment model-call admission.
         *JUDGMENT_SCHEMA_DDL,
     ]

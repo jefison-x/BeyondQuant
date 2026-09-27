@@ -358,16 +358,16 @@ paths:
     get: {summary: 返回 owner-scoped strategy backtest counts., responses: *okResponses}
 
   /api/product/approvals:
-    get: {summary: 列出 owner-scoped approvals., responses: *okResponses}
+    get: {summary: 列出 owner-scoped approvals，并只读投影独立的 ResearchTask business_action 状态。, responses: *okResponses}
   /api/product/approvals/{approval_id}:
     parameters: [{$ref: "#/components/parameters/ApprovalId"}]
-    get: {summary: 获取 one owner-scoped approval., responses: *okResponses}
+    get: {summary: 获取 owner-scoped approval 与只读 business_action 状态；不触发 reconciliation。, responses: *okResponses}
   /api/product/approvals/{approval_id}/decision:
     parameters: [{$ref: "#/components/parameters/ApprovalId"}]
-    post: {summary: 记录 an owner-scoped approval decision., responses: *okResponses}
+    post: {summary: 记录 owner-scoped 决策，并按原审批 ID 重试其原子提交的 pending ResearchTask action。, responses: *okResponses}
   /api/product/approvals/{approval_id}/continue:
     parameters: [{$ref: "#/components/parameters/ApprovalId"}]
-    post: {summary: 幂等续接 the approval's original durable conversation., responses: *okResponses}
+    post: {summary: 读取 plan-bound approval 的 business_action 状态；不把 DSH conversation 当作 action settlement authority。, responses: *okResponses}
 
   /api/product/profile:
     get: {summary: 返回 the authenticated user profile., responses: *okResponses}

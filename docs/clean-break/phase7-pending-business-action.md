@@ -1,6 +1,6 @@
 # Phase 7 slice 4 candidate — explicit ResearchTask business action
 
-Status: design and schema choice PASS; implementation and slice gate pending. No schema or runtime cutover has begun.
+Status: design, implementation, PostgreSQL/Gateway regression, independent Sol review and Root slice gate PASS. Phase 7 overall and Phase 8 remain open/closed respectively; this is not full Agent continuation.
 
 ## Ownership decision
 
@@ -41,4 +41,4 @@ Do not introduce a generic workflow engine, universal command bus, second Agent 
 
 ## Design review
 
-Read-only Explorer found a conditional GO for BYQ business-state replacement without DSH attach/resume/status, but no authorization to simulate Agent continuation. Static Tester verified the sole production ledger caller, schema/tenancy references and acceptance checks. Independent Sol Reviewer returned Functional PASS / Clean Break Architecture PASS for this design after the approval handoff, lost-run trigger, action-specific settlement, source/body replay and tenancy gaps were made explicit. Root accepts **design PASS only**; code, tests and the Phase 7 slice gate remain pending.
+Read-only Explorer found a conditional GO for BYQ business-state replacement without DSH attach/resume/status, but no authorization to simulate Agent continuation. Static Tester verified the sole production ledger caller, schema/tenancy references and acceptance checks. Independent Sol Reviewer returned Functional PASS / Clean Break Architecture PASS for this design after the approval handoff, lost-run trigger, action-specific settlement, source/body replay and tenancy gaps were made explicit. Root accepts **design PASS only**. The implemented slice replaces the current approval/event handoff and removes the current event ledger. PostgreSQL 45/45, Gateway 275/275, repository unittest 918 OK (11 skipped), H4 570/570, `.219` and historical build checks pass; independent Sol Reviewer and Root accept this slice only.

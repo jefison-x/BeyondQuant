@@ -14,7 +14,7 @@ import pytest
 
 from app.agent_research import AgentResearchStore
 from app.research import InvalidTransition, ResearchStore
-from packages.contracts.research_continuation_event import (
+from packages.contracts.research_plan_approval import (
     plan_command_digest,
     plan_command_idempotency_key,
 )
@@ -23,6 +23,7 @@ from tests.test_research_continuation_ledger import (
     BACKTEST_TASK,
     STRATEGY,
     _approval,
+    _create_artifact,
     _insert_backtest_job,
     _references,
     _seed_plan,
@@ -126,7 +127,7 @@ def test_request_plan_approval_mints_exact_binding_and_replays():
             agent.close()
 
 
-def test_human_approval_decision_advances_the_plan_through_the_ledger():
+def test_human_approval_decision_advances_the_plan_through_the_business_action():
     store, task, context = _setup(owner="p4-approve", session="p4-s4", trace="p4-t4")
     agent = None
     try:
@@ -139,23 +140,20 @@ def test_human_approval_decision_advances_the_plan_through_the_ledger():
         request = store.request_plan_approval(task, trusted_context=context)
         decided = agent.decide_approval(
             {"approval_id": request["approval_id"], "decision": "approved"},
-            trusted_owner=context["owner_principal"], trusted_actor="human-reviewer")
-        # The compat free-text path is blocked for a plan-bound approval.
-        assert decided["continuation_status"] == "blocked"
-        # The trusted route consumer records the deterministic plan approval event.
-        target = agent.plan_bound_approval_target(
-            request["approval_id"], trusted_owner=context["owner_principal"])
-        assert target["task_id"] == task and target["decision"] == "approved"
-        store.record_plan_approval_event(
-            target["task_id"], request["approval_id"],
-            trusted_context={"owner_principal": target["owner_principal"],
-                             "workspace_id": target["workspace_id"]})
+            trusted_owner=context["owner_principal"], trusted_actor="human-reviewer",
+            trusted_workspace=context["workspace_id"])
+        action = decided["business_action"]
+        assert action["task_id"] == task and action["status"] == "pending"
+        # The POST reconciles only this exact pending action after the decision
+        # transaction committed. GET remains a read-only projection.
+        result = store.reconcile_research_task_action(task, action["action_id"],
+            trusted_context={"owner_principal": context["owner_principal"],
+                             "workspace_id": context["workspace_id"]})
+        assert result["status"] == "applied"
         plan = store.get_execution_plan(task, trusted_context=context)
         assert plan["stage"] == "waiting_for_task_create_approval"
-        events = store.list_continuation_events(task, trusted_context=context)
-        assert len(events["events"]) == 1
-        assert events["events"][0]["event_type"] == "plan_approval"
-        assert events["events"][0]["status"] == "advanced"
+        projected = agent.get_approval(request["approval_id"], trusted_owner=context["owner_principal"])
+        assert projected["business_action"] == {**action, "status": "applied"}
     finally:
         store.close()
         if agent is not None:
@@ -171,6 +169,13 @@ def test_deterministic_action_result_advances_and_replays():
                               params_digest=None))
         _insert_backtest_job(store, task, context, job_id=BACKTEST_JOB, status="queued",
                              result_id=None, key="p4-bt")
+        with pytest.raises(InvalidTransition, match="exact completed backtest job"):
+            store.apply_deterministic_action_result(
+                task, {"backtest_job_id": BACKTEST_JOB}, trusted_context=context)
+        result_id = _create_artifact(store, task, kind="backtest_result", key="p4-bt-result")
+        store.transition("artifact", result_id, "validated", "p4-bt-result-validate")
+        store._execute("UPDATE backtest_jobs SET status = 'completed', result_artifact_id = :result"
+                       " WHERE job_id = :job", {"result": result_id, "job": BACKTEST_JOB})
         advanced = store.apply_deterministic_action_result(
             task, {"backtest_job_id": BACKTEST_JOB}, trusted_context=context)
         assert advanced["stage"] == "waiting_for_backtest_job"

@@ -1,6 +1,7 @@
-"""ADR-0085 P2 contract tests: closed event envelope + deterministic reducer.
+"""Historical ADR-0085 event-contract tests; the current runtime uses actions.
 
-Pure logic: no PostgreSQL, no model turn, no HTTP route.
+These preserve pure reducer evidence for the removed event-state design. They
+do not certify or exercise a current runtime caller.
 """
 
 from __future__ import annotations

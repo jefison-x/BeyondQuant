@@ -22,8 +22,9 @@ from typing import Any
 from sqlalchemy.exc import SQLAlchemyError
 
 from packages.contracts.agent_run_lifecycle import registration_fingerprint, validate_lifecycle_event, lifecycle_receipt
-from packages.contracts.research_continuation_event import (
+from packages.contracts.research_plan_approval import (
     AGENT_APPROVAL_PLAN_ACTION,
+    PLAN_APPROVAL_ACTION,
     approval_plan_binding,
     plan_command_digest,
     plan_command_idempotency_key,
@@ -31,6 +32,12 @@ from packages.contracts.research_continuation_event import (
 
 from .db import PgStoreMixin, execute, fetch_one
 from .domain_call_admission import DomainCallEvidenceMixin, DOMAIN_CALL_DDL
+from .research_task_actions import (
+    approval_decision_digest,
+    approval_source_digest,
+    insert_pending_approval_action,
+    project_research_task_action,
+)
 
 
 APPROVAL_RESOURCE_TYPES = {
@@ -52,6 +59,11 @@ _SECRET_KEY_FRAGMENTS = (
     "privatekey",
     "credential",
     "authorization",
+)
+_PLAN_BINDING_FIELDS = (
+    "plan_task_id", "plan_workspace_id", "plan_version", "plan_task_version",
+    "plan_action", "plan_resource_kind", "plan_resource_id", "plan_params_digest",
+    "plan_idempotency_key",
 )
 
 
@@ -910,7 +922,9 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             self._record_audit_row(run, action="approval.request", outcome="pending", resource_type="agent_approval", resource_id=approval_id, detail={"action": action}, connection=connection)
         return self._approval_row(row)
 
-    def decide_approval(self, payload: object, *, trusted_owner: str | None = None, trusted_actor: str | None = None) -> dict[str, object]:
+    def decide_approval(self, payload: object, *, trusted_owner: str | None = None,
+                        trusted_actor: str | None = None,
+                        trusted_workspace: str | None = None) -> dict[str, object]:
         if not isinstance(payload, dict):
             raise ValueError("agent approval decision must be an object")
         allowed = {"approval_id", "decision", "rationale"}
@@ -925,10 +939,48 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         reviewer = _principal(trusted_actor, field="reviewer_principal") if trusted_actor else None
         if reviewer is None:
             raise AgentUnauthorized("human approval requires a trusted reviewer principal")
+
+        # Binding presence is checked before decision eligibility. A stale or
+        # partial frozen plan binding is never allowed to fall through to the
+        # generic approval continuation path.
+        pre_row = self._fetch_one(
+            """SELECT approvals.*, runs.session_id AS source_session_id,
+                      runs.owner_principal AS run_owner,
+                      to_jsonb(approvals)->>'workspace_id' AS approval_workspace,
+                      to_jsonb(runs)->>'workspace_id' AS run_workspace
+               FROM agent_approvals approvals JOIN agent_runs runs ON runs.run_id=approvals.run_id
+               WHERE approvals.approval_id=:approval_id""", {"approval_id": approval_id})
+        if pre_row is None:
+            raise AgentNotFound("agent approval not found")
+        if trusted_owner and pre_row["owner_principal"] != trusted_owner:
+            raise AgentUnauthorized("agent approval is not owned by this principal")
+        is_plan_bound = any(pre_row.get(field) is not None for field in _PLAN_BINDING_FIELDS)
+        if is_plan_bound:
+            frozen = approval_plan_binding(pre_row)
+            if frozen is None:
+                raise AgentConflict("frozen plan approval binding is incomplete")
+            if (pre_row.get("approval_workspace") != frozen["workspace"]
+                    or pre_row.get("run_workspace") != frozen["workspace"]
+                    or (trusted_workspace and trusted_workspace != frozen["workspace"])):
+                raise AgentUnauthorized("agent approval is not bound to this workspace")
+            if not self._research_task_actions_available():
+                raise AgentConflict("frozen plan approval business-action storage is unavailable")
+            return self._decide_plan_bound_approval(
+                approval_id, decision, rationale, reviewer, trusted_owner,
+                trusted_workspace, pre_row, frozen)
+        if trusted_workspace and any(
+            workspace is not None and workspace != trusted_workspace
+            for workspace in (pre_row.get("approval_workspace"), pre_row.get("run_workspace"))
+        ):
+            raise AgentUnauthorized("agent approval is not in this workspace")
+
         with self._transaction() as connection:
             row = fetch_one(
                 connection,
-                """SELECT approvals.*, runs.session_id AS source_session_id
+                """SELECT approvals.*, runs.session_id AS source_session_id,
+                          runs.owner_principal AS run_owner,
+                          to_jsonb(approvals)->>'workspace_id' AS approval_workspace,
+                          to_jsonb(runs)->>'workspace_id' AS run_workspace
                    FROM agent_approvals approvals JOIN agent_runs runs ON runs.run_id=approvals.run_id
                    WHERE approvals.approval_id=:approval_id FOR UPDATE OF approvals""",
                 {"approval_id": approval_id},
@@ -937,24 +989,26 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                 raise AgentNotFound("agent approval not found")
             if trusted_owner and row["owner_principal"] != trusted_owner:
                 raise AgentUnauthorized("agent approval is not owned by this principal")
+            if any(row.get(field) is not None for field in _PLAN_BINDING_FIELDS):
+                raise AgentConflict("approval acquired a frozen plan binding while locking")
+            if trusted_workspace and any(
+                workspace is not None and workspace != trusted_workspace
+                for workspace in (row.get("approval_workspace"), row.get("run_workspace"))
+            ):
+                raise AgentUnauthorized("agent approval is not in this workspace")
             if reviewer == row["actor_principal"]:
                 raise AgentForbidden("agent actor cannot self-approve a consequential action")
             if row["status"] != "pending":
+                if row["status"] != decision or (row.get("decision_reason") or "") != rationale:
+                    raise AgentConflict("approval decision replay conflicts with the recorded decision")
                 return self._approval_row(row)
             now = _now()
             status = "approved" if decision == "approved" else "rejected"
             outcome = "authorized" if status == "approved" else "not_authorized"
-            # ADR-0085 §3/§P2: the legacy/compat approval path starts a generic
-            # free-text model turn. It MUST NOT advance a task that already has a
-            # current execution plan; that task's approvals go through the
-            # deterministic plan reducer instead. A plan-bound approval is
-            # durably recorded but never queued for the compat continuation.
-            plan_task = self._plan_bound_task_for_run(connection, row)
-            continuation_status = "blocked" if plan_task is not None else "queued"
             execute(
                 connection,
-                "UPDATE agent_approvals SET status = :status, decision_by = :decision_by, decision_reason = :decision_reason, execution_outcome = :execution_outcome, continuation_status = :continuation_status, updated_at = :updated_at WHERE approval_id = :approval_id",
-                {"status": status, "decision_by": reviewer, "decision_reason": rationale, "execution_outcome": outcome, "continuation_status": continuation_status, "updated_at": now, "approval_id": approval_id},
+                "UPDATE agent_approvals SET status = :status, decision_by = :decision_by, decision_reason = :decision_reason, execution_outcome = :execution_outcome, continuation_status = 'queued', updated_at = :updated_at WHERE approval_id = :approval_id",
+                {"status": status, "decision_by": reviewer, "decision_reason": rationale, "execution_outcome": outcome, "updated_at": now, "approval_id": approval_id},
             )
             updated = fetch_one(
                 connection,
@@ -967,40 +1021,150 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             run = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id = :run_id", {"run_id": row["run_id"]})
             assert run is not None
             self._record_audit_row(run, action="approval.decision", outcome=status, resource_type="agent_approval", resource_id=approval_id, detail={"reviewer": reviewer, "decision": decision}, connection=connection)
-            if plan_task is not None:
-                self._record_audit_row(run, action="approval.continuation", outcome="blocked",
-                    resource_type="agent_approval", resource_id=approval_id,
-                    detail={"reason": "plan_task_compat_approval_forbidden",
-                            "task_id": plan_task["task_id"]}, connection=connection)
         return self._approval_row(updated)
 
-    def plan_bound_approval_target(self, approval_id: object, *,
-                                   trusted_owner: str | None = None) -> dict[str, object] | None:
-        """Public, bounded read of the plan-command binding of a decided approval.
+    def _decide_plan_bound_approval(
+        self, approval_id: str, decision: str, rationale: str, reviewer: str,
+        trusted_owner: str | None, trusted_workspace: str | None,
+        pre_row: dict, frozen: dict,
+    ) -> dict[str, object]:
+        with self._transaction() as connection:
+            task = fetch_one(connection, """SELECT * FROM research_tasks
+                WHERE task_id = :task AND owner_principal = :owner
+                  AND workspace_id = :workspace FOR UPDATE""",
+                {"task": frozen["task_id"], "owner": pre_row["owner_principal"],
+                 "workspace": frozen["workspace"]})
+            if task is None:
+                raise AgentConflict("frozen plan approval task no longer exists")
+            plan_row = fetch_one(connection, """SELECT * FROM research_execution_plans
+                WHERE task_id = :task FOR UPDATE""", {"task": frozen["task_id"]})
+            row = fetch_one(connection, """SELECT approvals.*, runs.session_id AS source_session_id,
+                      runs.owner_principal AS run_owner,
+                      to_jsonb(approvals)->>'workspace_id' AS approval_workspace,
+                      to_jsonb(runs)->>'workspace_id' AS run_workspace
+                FROM agent_approvals approvals JOIN agent_runs runs ON runs.run_id=approvals.run_id
+                WHERE approvals.approval_id=:approval_id FOR UPDATE OF approvals""",
+                {"approval_id": approval_id})
+            if row is None:
+                raise AgentNotFound("agent approval not found")
+            if (row["owner_principal"] != pre_row["owner_principal"]
+                    or row["run_owner"] != row["owner_principal"]
+                    or row.get("approval_workspace") != frozen["workspace"]
+                    or row.get("run_workspace") != frozen["workspace"]
+                    or (trusted_workspace and frozen["workspace"] != trusted_workspace)
+                    or (trusted_owner and row["owner_principal"] != trusted_owner)):
+                raise AgentUnauthorized("agent approval is not owned by this principal")
+            if any(row.get(field) != pre_row.get(field) for field in _PLAN_BINDING_FIELDS):
+                raise AgentConflict("frozen plan approval binding changed while acquiring locks")
+            locked_binding = approval_plan_binding(row)
+            if locked_binding is None or locked_binding != frozen:
+                raise AgentConflict("frozen plan approval binding is incomplete or changed")
+            existing = fetch_one(connection, """SELECT * FROM research_task_actions
+                WHERE source_approval_id = :approval FOR UPDATE""", {"approval": approval_id})
+            if reviewer == row["actor_principal"]:
+                raise AgentForbidden("agent actor cannot self-approve a consequential action")
 
-        ADR-0085 P4: the trusted HTTP route uses this to deterministically record
-        the plan approval event after a real human decision. It returns only the
-        bound task/workspace and the authoritative decision, never the internal
-        digest/key. A compat approval (no binding) returns ``None``.
-        """
+            if row["status"] != "pending":
+                if row["status"] != decision or (row.get("decision_reason") or "") != rationale:
+                    raise AgentConflict("approval decision replay conflicts with the recorded decision")
+                if row["status"] not in {"approved", "rejected"} or existing is None:
+                    raise AgentConflict("decided plan approval has no exact business action")
+                if (existing["source_digest"] != approval_source_digest(row)
+                        or existing["request_digest"] != approval_decision_digest(
+                            approval_id, decision, rationale)
+                        or existing["decision"] != decision):
+                    raise AgentConflict("approval source or canonical request digest changed")
+                return self._approval_with_action(row, existing)
 
-        approval_id = _entity_id(approval_id, field="approval_id", prefix="agent_approval")
-        row = self._fetch_one("SELECT * FROM agent_approvals WHERE approval_id = :id",
-                              {"id": approval_id})
-        if row is None:
-            return None
-        if trusted_owner and row["owner_principal"] != trusted_owner:
-            return None
-        binding = approval_plan_binding(row)
-        if binding is None:
-            return None
-        return {"task_id": binding["task_id"], "workspace_id": binding["workspace"],
-                "owner_principal": row["owner_principal"], "decision": row["status"]}
+            if existing is not None:
+                raise AgentConflict("pending plan approval already has a business action")
+            if not self._validate_plan_approval_binding(connection, row, task, plan_row, locked_binding):
+                raise AgentConflict("frozen plan approval binding is stale or does not match its gate")
+
+            now = _now()
+            status = "approved" if decision == "approved" else "rejected"
+            outcome = "authorized" if status == "approved" else "not_authorized"
+            execute(connection, """UPDATE agent_approvals SET status = :status,
+                decision_by = :decision_by, decision_reason = :decision_reason,
+                execution_outcome = :execution_outcome, continuation_status = 'blocked',
+                updated_at = :updated_at WHERE approval_id = :approval_id""", {
+                "status": status, "decision_by": reviewer, "decision_reason": rationale,
+                "execution_outcome": outcome, "updated_at": now, "approval_id": approval_id,
+            })
+            updated = fetch_one(connection, """SELECT approvals.*, runs.session_id AS source_session_id,
+                      runs.owner_principal AS run_owner,
+                      runs.workspace_id AS run_workspace
+                FROM agent_approvals approvals JOIN agent_runs runs ON runs.run_id=approvals.run_id
+                WHERE approvals.approval_id=:approval_id""", {"approval_id": approval_id})
+            assert updated is not None
+            action = insert_pending_approval_action(
+                connection, updated, binding=locked_binding, decision=status,
+                rationale=rationale, now=now)
+            run = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id = :run_id",
+                            {"run_id": row["run_id"]})
+            assert run is not None
+            self._record_audit_row(run, action="approval.decision", outcome=status,
+                resource_type="agent_approval", resource_id=approval_id,
+                detail={"reviewer": reviewer, "decision": decision,
+                        "business_action_id": action["action_id"]}, connection=connection)
+            return self._approval_with_action(updated, action)
+
+    @staticmethod
+    def _validate_plan_approval_binding(connection, approval, task, plan_row, binding) -> bool:
+        if plan_row is None or approval["run_owner"] != task["owner_principal"]:
+            return False
+        if (task["workspace_id"] != binding["workspace"]
+                or approval["owner_principal"] != task["owner_principal"]
+                or plan_row["owner_principal"] != task["owner_principal"]
+                or plan_row["workspace_id"] != task["workspace_id"]):
+            return False
+        from packages.contracts.research_execution_plan import validate_plan
+        plan = validate_plan(plan_row["plan"])
+        if (plan["task_id"] != task["task_id"] or plan["owner_principal"] != task["owner_principal"]
+                or plan["workspace_id"] != task["workspace_id"]
+                or int(plan["task_version"]) != int(task["version"])
+                or int(plan_row["plan_version"]) != int(plan["plan_version"])
+                or int(plan_row["task_version"]) != int(plan["task_version"])
+                or plan_row["stage"] != plan["stage"]
+                or (binding["plan_version"], binding["task_version"])
+                    != (plan["plan_version"], plan["task_version"])):
+            return False
+        pending = plan.get("approval")
+        if (not isinstance(pending, dict)
+                or (binding["action"], binding["resource_kind"], binding["resource_id"])
+                   != (pending.get("action"), pending.get("resource_kind"), pending.get("resource_id"))
+                or approval.get("action") != PLAN_APPROVAL_ACTION.get(binding["action"])
+                or approval.get("resource_type") != binding["resource_kind"]
+                or approval.get("resource_id") != binding["resource_id"]):
+            return False
+        reference = (plan.get("references") or {}).get(binding["resource_kind"])
+        if not isinstance(reference, dict) or reference.get(binding["resource_kind"]) != binding["resource_id"]:
+            return False
+        if binding["resource_kind"] in {"strategy_version", "strategy_approval"}:
+            artifact = fetch_one(connection, """SELECT artifact_id FROM artifacts
+                WHERE artifact_id = :id AND task_id = :task AND owner_principal = :owner
+                  AND workspace_id = :workspace""", {
+                "id": binding["resource_id"], "task": task["task_id"],
+                "owner": task["owner_principal"], "workspace": task["workspace_id"],
+            })
+            if artifact is None:
+                return False
+        try:
+            digest = plan_command_digest(plan, action=binding["action"],
+                resource_kind=binding["resource_kind"], resource_id=binding["resource_id"])
+            key = plan_command_idempotency_key(plan, action=binding["action"],
+                resource_kind=binding["resource_kind"], resource_id=binding["resource_id"])
+        except ValueError:
+            return False
+        return binding["params_digest"] == digest and binding["idempotency_key"] == key
 
     def get_approval(self, approval_id: object, *, trusted_owner: str | None = None) -> dict[str, object]:
         approval_id = _entity_id(approval_id, field="approval_id", prefix="agent_approval")
         row = self._fetch_one(
-            """SELECT approvals.*, runs.session_id AS source_session_id
+            """SELECT approvals.*, runs.session_id AS source_session_id,
+                      runs.owner_principal AS run_owner,
+                      to_jsonb(approvals)->>'workspace_id' AS approval_workspace,
+                      to_jsonb(runs)->>'workspace_id' AS run_workspace
                FROM agent_approvals approvals
                JOIN agent_runs runs ON runs.run_id = approvals.run_id
                WHERE approvals.approval_id = :approval_id""",
@@ -1010,7 +1174,54 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             raise AgentNotFound("agent approval not found")
         if trusted_owner and row["owner_principal"] != trusted_owner:
             raise AgentUnauthorized("agent approval is not owned by this principal")
-        return self._approval_row(row)
+        return self._approval_with_action(row, self._read_approval_business_action(row))
+
+    def _research_task_actions_available(self) -> bool:
+        relation = self._fetch_one(
+            "SELECT to_regclass('research_task_actions') IS NOT NULL AS available")
+        return bool(relation and relation.get("available"))
+
+    def _read_approval_business_action(self, approval: dict[str, Any]) -> dict | None:
+        """Read an action only for a complete, frozen plan-bound approval."""
+
+        has_frozen_binding = any(
+            approval.get(field) is not None for field in _PLAN_BINDING_FIELDS)
+        if not has_frozen_binding:
+            return None
+        binding = approval_plan_binding(approval)
+        if binding is None:
+            raise AgentConflict("frozen plan approval binding is incomplete")
+        if (approval.get("approval_workspace") != binding["workspace"]
+                or approval.get("run_workspace") != binding["workspace"]
+                or approval.get("run_owner") != approval.get("owner_principal")):
+            raise AgentConflict("frozen plan approval owner or workspace binding is inconsistent")
+        if not self._research_task_actions_available():
+            raise AgentPersistenceError(
+                "frozen plan approval business-action storage is unavailable")
+        action = self._fetch_one("""SELECT * FROM research_task_actions
+            WHERE source_approval_id = :approval AND owner_principal = :owner""",
+            {"approval": approval["approval_id"], "owner": approval["owner_principal"]})
+        if action is None:
+            if approval.get("status") != "pending":
+                raise AgentConflict("decided plan approval has no exact business action")
+            return None
+        expected = {
+            "task_id": binding["task_id"], "workspace_id": binding["workspace"],
+            "plan_version": binding["plan_version"], "task_version": binding["task_version"],
+            "action": binding["action"], "resource_kind": binding["resource_kind"],
+            "resource_id": binding["resource_id"], "params_digest": binding["params_digest"],
+            "idempotency_key": binding["idempotency_key"],
+            "source_digest": approval_source_digest(approval),
+        }
+        if any(action.get(field) != value for field, value in expected.items()):
+            raise AgentConflict("business action does not match its frozen approval")
+        if (approval.get("status") not in {"approved", "rejected"}
+                or action.get("decision") != approval.get("status")
+                or action.get("request_digest") != approval_decision_digest(
+                    approval["approval_id"], approval["status"],
+                    approval.get("decision_reason") or "")):
+            raise AgentConflict("business action does not match the recorded approval decision")
+        return action
 
     def list_approvals(
         self, *, trusted_owner: str | None = None, status: str | None = None,
@@ -1032,7 +1243,10 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             params["status"] = status
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         rows = self._execute(
-            f"""SELECT approvals.*, runs.session_id AS source_session_id
+            f"""SELECT approvals.*, runs.session_id AS source_session_id,
+                       runs.owner_principal AS run_owner,
+                       to_jsonb(approvals)->>'workspace_id' AS approval_workspace,
+                       to_jsonb(runs)->>'workspace_id' AS run_workspace
                 FROM agent_approvals approvals
                 JOIN agent_runs runs ON runs.run_id = approvals.run_id
                 {where}
@@ -1050,7 +1264,8 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             f"SELECT COUNT(*) AS total FROM agent_approvals approvals {pending_where}", params,
         )
         return {
-            "approvals": [self._approval_row(row) for row in rows],
+            "approvals": [self._approval_with_action(
+                row, self._read_approval_business_action(row)) for row in rows],
             "total": int((total_row or {}).get("total", 0)),
             "pending_count": int((pending_row or {}).get("total", 0)),
             "limit": limit,
@@ -1180,56 +1395,6 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             "digest": digest, "key": key,
         }
 
-    @staticmethod
-    def _plan_bound_task_for_run(connection, approval):
-        """Return the task iff this approval EXACTLY matches the current plan gate.
-
-        ADR-0085 P2 review: the compat free-text path must not run for a
-        plan-bound task. This proves the persisted plan-command binding (owner +
-        workspace + bound task) against the CURRENT plan's approval requirement
-        (action, resource, plan/task version, parameter digest and BYQ
-        idempotency key). An approval with no binding, an unrelated
-        task/workspace/action sharing a resource, or a binding that no longer
-        matches the current plan requirement is not plan-bound and stays on the
-        isolated compat path.
-        """
-
-        binding = approval_plan_binding(approval)
-        if binding is None:
-            return None
-        row = fetch_one(connection, """SELECT p.task_id, p.plan
-            FROM research_execution_plans p
-            JOIN research_tasks t ON t.task_id = p.task_id
-            WHERE p.task_id = :task AND p.owner_principal = :owner
-              AND t.owner_principal = :owner
-              AND p.workspace_id = :workspace AND t.workspace_id = :workspace""",
-            {"task": binding["task_id"], "owner": approval["owner_principal"],
-             "workspace": binding["workspace"]})
-        if row is None:
-            return None
-        plan = row["plan"]
-        pending = plan.get("approval")
-        if not isinstance(pending, dict):
-            return None
-        if (binding["plan_version"], binding["task_version"]) != (
-                plan["plan_version"], plan["task_version"]):
-            return None
-        if (binding["action"], binding["resource_kind"], binding["resource_id"]) != (
-                pending["action"], pending["resource_kind"], pending["resource_id"]):
-            return None
-        try:
-            digest = plan_command_digest(
-                plan, action=pending["action"], resource_kind=pending["resource_kind"],
-                resource_id=pending["resource_id"])
-            key = plan_command_idempotency_key(
-                plan, action=pending["action"], resource_kind=pending["resource_kind"],
-                resource_id=pending["resource_id"])
-        except ValueError:
-            return None
-        if binding["params_digest"] != digest or binding["idempotency_key"] != key:
-            return None
-        return {"task_id": row["task_id"]}
-
     def _record_approval_binding_blocker(self, connection, approval, expected_resource):
         # Only the explicitly linked task waiting on this same resource is
         # affected. Never choose a task by recency or rewrite a domain status.
@@ -1333,10 +1498,28 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         result = dict(row)
         result.pop("idempotency_key", None)
         result.pop("request_hash", None)
+        result.pop("run_owner", None)
+        result.pop("business_action_task_id", None)
+        result.pop("business_action_id", None)
+        result.pop("business_action_status", None)
         # The plan-command binding is internal execution authority; it is never
         # projected to the agent/Product surface (ADR-0085 §3/P2).
         for field in ("plan_task_id", "plan_workspace_id", "plan_version", "plan_task_version",
                       "plan_action", "plan_resource_kind", "plan_resource_id",
                       "plan_params_digest", "plan_idempotency_key"):
             result.pop(field, None)
+        return result
+
+    @staticmethod
+    def _approval_with_action(row: dict[str, Any], action: dict | None = None) -> dict[str, object]:
+        if action is None and row.get("business_action_id") is not None:
+            action = {
+                "task_id": row.get("business_action_task_id"),
+                "action_id": row.get("business_action_id"),
+                "status": row.get("business_action_status"),
+            }
+        result = AgentResearchStore._approval_row(row)
+        result["business_action"] = (
+            project_research_task_action(action) if isinstance(action, dict) else None
+        )
         return result

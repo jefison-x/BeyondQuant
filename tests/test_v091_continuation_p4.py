@@ -473,12 +473,13 @@ class SeamBoundaryTests(unittest.TestCase):
         self.assertNotIn("bars_frame", module)
         self.assertNotIn("date_index", module)
 
-    def test_grant_creates_plan_and_approval_route_advances_it(self):
+    def test_grant_creates_plan_and_exact_action_retries_after_decision(self):
         continuation = (ROOT / "services/backend/app/research_continuation.py").read_text(encoding="utf-8")
         self.assertIn("self.ensure_execution_plan(task_id, trusted_context=trusted_context)", continuation)
         backend_main = (ROOT / "services/backend/app/main.py").read_text(encoding="utf-8")
-        self.assertIn("_advance_plan_after_approval(approval_id, context)", backend_main)
-        self.assertIn("record_plan_approval_event", backend_main)
+        self.assertIn("agent_store.decide_approval(", backend_main)
+        self.assertIn("reconcile_research_task_action(", backend_main)
+        self.assertNotIn("record_plan_approval_event", backend_main)
 
     def test_no_second_generic_harness_or_session_store(self):
         module = (ROOT / "services/backend/app/research_plan_continuation.py").read_text(encoding="utf-8")

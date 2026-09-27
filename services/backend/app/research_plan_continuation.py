@@ -1,10 +1,10 @@
 """ADR-0085 P4: minimal trusted plan-continuation production seam.
 
-P0-P3 delivered the closed plan vocabulary, the durable event ledger with five
-named adapters, and the bounded research-judgment turn. They intentionally did
-NOT add a production consumer: the plan store, the ledger adapters and the
-adapter judgment invocation had no runtime caller, and no code created a plan for
-a granted compound task or executed a ``ready_to_*`` deterministic action.
+Earlier plan slices delivered the closed plan vocabulary and bounded
+research-judgment turn. The event-state continuation ledger has since been
+removed; plan approvals now use the ResearchTask business-action contract.
+This module provides the trusted consumer seam for granted tasks and exact
+deterministic Job results.
 
 This module adds ONLY the missing trusted consumer seam, as BYQ Domain Workflow
 (not a second generic agent harness and not a second session store):
@@ -43,7 +43,7 @@ from packages.contracts.research_execution_plan import (
     advance,
     validate_plan,
 )
-from packages.contracts.research_continuation_event import (
+from packages.contracts.research_plan_approval import (
     PLAN_APPROVAL_ACTION,
     bind_command_digest,
     plan_command_digest,
@@ -298,7 +298,7 @@ class ResearchPlanContinuationMixin:
         """
 
         from .research import InvalidTransition, ResearchNotFound
-        from packages.contracts.research_continuation_event import (
+        from packages.contracts.research_plan_approval import (
             PAPER_ACCOUNT_CREATE_ACTION,
             paper_account_execution_parameters,
         )
@@ -396,21 +396,45 @@ class ResearchPlanContinuationMixin:
                     {"id": source_id, "task": task["task_id"], "owner": task["owner_principal"]})
                 if row is None:
                     raise InvalidTransition("deterministic result signal job does not belong to this task")
+                snapshot_id = row.get("result_artifact_id")
+                snapshot = fetch_one(connection, """SELECT artifact_id FROM artifacts
+                    WHERE artifact_id = :artifact AND task_id = :task AND owner_principal = :owner
+                      AND workspace_id = :workspace AND kind = 'signal_snapshot' AND status = 'validated'""", {
+                    "artifact": snapshot_id, "task": task["task_id"],
+                    "owner": task["owner_principal"], "workspace": task["workspace_id"],
+                })
+                if row["status"] != "completed" or snapshot is None:
+                    raise InvalidTransition(
+                        "deterministic result requires the exact completed signal job and validated snapshot")
                 references = {**plan["references"],
                               "signal_producer_job": {"signal_producer_job": source_id},
+                              "signal_snapshot": {"signal_snapshot": snapshot_id},
                               "backtest_task": {"backtest_task": task_id_from_signal_job(source_id)}}
                 progress_identity = _hash({
-                    "kind": "signal_producer_job", "id": row["job_id"], "status": row["status"]})
+                    "kind": "signal_producer_job", "id": row["job_id"],
+                    "status": row["status"], "artifact_id": snapshot_id})
             elif spec["source"] == "backtest_job_id":
                 row = fetch_one(connection, """SELECT * FROM backtest_jobs
                     WHERE job_id = :id AND task_id = :task AND owner_principal = :owner""",
                     {"id": source_id, "task": task["task_id"], "owner": task["owner_principal"]})
                 if row is None:
                     raise InvalidTransition("deterministic result backtest job does not belong to this task")
+                result_id = row.get("result_artifact_id")
+                artifact = fetch_one(connection, """SELECT artifact_id FROM artifacts
+                    WHERE artifact_id = :artifact AND task_id = :task AND owner_principal = :owner
+                      AND workspace_id = :workspace AND kind = 'backtest_result' AND status = 'validated'""", {
+                    "artifact": result_id, "task": task["task_id"],
+                    "owner": task["owner_principal"], "workspace": task["workspace_id"],
+                })
+                if row["status"] != "completed" or artifact is None:
+                    raise InvalidTransition(
+                        "deterministic result requires the exact completed backtest job and validated artifact")
                 references = {**plan["references"],
-                              "backtest_job": {"backtest_job": source_id}}
+                              "backtest_job": {"backtest_job": source_id},
+                              "backtest_result": {"backtest_result": result_id}}
                 progress_identity = _hash({
-                    "kind": "backtest_job", "id": row["job_id"], "status": row["status"]})
+                    "kind": "backtest_job", "id": row["job_id"],
+                    "status": row["status"], "artifact_id": result_id})
             else:
                 # ADR-0087: the deterministic account creation result names the
                 # exact account; it MUST belong to this task's owner/workspace.

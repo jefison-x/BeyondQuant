@@ -4543,34 +4543,30 @@ def decide_agent_approval(approval_id: str, payload: dict[str, Any], request: Re
         request_payload,
         trusted_owner=context["owner_principal"],
         trusted_actor=context["actor_principal"],
+        trusted_workspace=context["workspace_id"],
     )})
-    # ADR-0085 P4: a real human decision on a PLAN-BOUND approval advances the
-    # plan through the durable deterministic ledger with zero model calls. The
-    # compat free-text path stays blocked for the same approval.
-    _advance_plan_after_approval(approval_id, context)
+    # Approval and the exact pending ResearchTask action have already committed
+    # atomically. This POST may reconcile only that action ID. A crash here
+    # leaves a visible pending status on the read-only approval projection, and
+    # an identical POST can safely retry the same reconciliation.
+    approval = result["approval"]
+    action = approval.get("business_action")
+    if isinstance(action, dict) and action.get("status") == "pending":
+        trusted_context = {
+            "owner_principal": context["owner_principal"],
+            "workspace_id": context["workspace_id"],
+        }
+        try:
+            research_store.reconcile_research_task_action(
+                action["task_id"], action["action_id"], trusted_context=trusted_context)
+        except Exception:  # noqa: BLE001 - the durable pending action remains visible for exact replay
+            logger.warning("ResearchTask action remains pending after approval decision",
+                           extra={"approval_id": approval_id,
+                                  "action_id": action.get("action_id"),
+                                  "task_id": action.get("task_id")})
+        result["approval"] = _agent_call(lambda: agent_store.get_approval(
+            approval_id, trusted_owner=context["owner_principal"]))
     return result
-
-
-def _advance_plan_after_approval(approval_id: str, context: dict[str, Any]) -> None:
-    """Record the deterministic plan approval event for a decided plan gate.
-
-    The decision is already durable; the ledger adapter is idempotent, so a
-    transient failure here never rewrites the decision and the trusted consumer
-    can always re-drive it by the exact approval id.
-    """
-
-    target = agent_store.plan_bound_approval_target(
-        approval_id, trusted_owner=context["owner_principal"])
-    if target is None or target.get("decision") not in {"approved", "rejected"}:
-        return
-    try:
-        research_store.record_plan_approval_event(
-            target["task_id"], approval_id,
-            trusted_context={"owner_principal": target["owner_principal"],
-                             "workspace_id": target["workspace_id"]})
-    except Exception:  # noqa: BLE001 - decision durable; consumer re-drives
-        logger.warning("plan approval event not recorded yet",
-                       extra={"approval_id": approval_id, "task_id": target["task_id"]})
 
 
 @app.post("/v1/agents/approvals/{approval_id}/continuation")

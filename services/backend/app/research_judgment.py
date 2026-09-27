@@ -41,7 +41,7 @@ from packages.contracts.research_execution_plan import (
     advance,
     validate_plan,
 )
-from packages.contracts.research_continuation_event import bound_approval, bind_command_digest
+from packages.contracts.research_plan_approval import bound_approval, bind_command_digest
 from packages.contracts.research_judgment import (
     STAGE_INPUT_SCHEMA_VERSION,
     STAGE_PROPOSAL_KINDS,
