@@ -48,41 +48,12 @@ def test_lost_ack_restarts_with_same_event_and_then_stops(tmp_path):
     assert state["last_receipt"] == lifecycle_receipt(writes[0][1])
 
 
-def test_legacy_delivered_terminal_receipt_is_reconciled_once(tmp_path):
-    writes = []
-    traces, session, now, delivery = fixture(tmp_path, lambda ctx, value:
-        writes.append(value) or {"receipt": lifecycle_receipt(value)})
-    traces.append(event())
-    delivery.run_once()
-    path = tmp_path / "session-one.lifecycle.json"
-    state = json.loads(path.read_text())
-    for key in list(state):
-        if key.startswith("terminal_ack_migration_") or key == "durable_terminal_ack_migrated":
-            del state[key]
-    path.write_text(json.dumps(state))
-    delivery.run_once()
-    assert writes == [writes[0], writes[0]]
-    delivery.run_once()
-    assert len(writes) == 2
-    assert json.loads(path.read_text())["durable_terminal_ack_migrated"] is True
-
-
-def test_legacy_ack_migration_preserves_exhausted_retry_budget(tmp_path):
-    writes = []
-    traces, session, now, delivery = fixture(tmp_path, lambda ctx, value: writes.append(value))
-    traces.append(event())
-    delivery.run_once()
-    path = tmp_path / "session-one.lifecycle.json"
-    state = json.loads(path.read_text())
-    for key in list(state):
-        if key.startswith("terminal_ack_migration_") or key == "durable_terminal_ack_migrated":
-            del state[key]
-    state["pending"]["1"]["attempts"] = MAX_ATTEMPTS
-    state["pending"]["1"]["status"] = "exhausted"
-    path.write_text(json.dumps(state))
-    delivery.run_once()
-    assert len(writes) == 1
-    assert json.loads(path.read_text())["pending"]["1"]["attempts"] == MAX_ATTEMPTS
+def test_fresh_lifecycle_delivery_is_up_to_date(tmp_path):
+    _, session, _, delivery = fixture(tmp_path, lambda ctx, value: {"receipt": lifecycle_receipt(value)})
+    context = {"session_id": session.session_id, "trace_id": session.trace_id,
+               "conversation_id": session.conversation_id, "workspace_id": session.workspace_id,
+               "owner": session.principal.subject}
+    assert delivery.status(context)["state"] == "up_to_date"
 
 
 def test_gateway_only_releases_runtime_barrier_after_exact_backend_receipt(monkeypatch):

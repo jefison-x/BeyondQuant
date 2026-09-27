@@ -1,5 +1,22 @@
 # Phase 0–6 gate record
 
+## Phase 7 slice 8 gate — remove legacy terminal ACK migration (2026-09-27)
+
+Gateway lifecycle delivery no longer scans old trace events to migrate the
+pre-Clean-Break memory-only terminal ACK format, nor reports a fresh ledger as
+pending solely because a migration flag is absent. Current exact Backend
+receipt → Adapter terminal ACK delivery, finite retry and `outcome_unknown`
+behavior remain. A fresh ledger reports `up_to_date`. The current immutable
+build identity is `.223`; `.222` and earlier identities remain frozen.
+
+**Tester:** Gateway delivery/trace 19/19 and focused Product cases 15/15 PASS;
+the final fresh-ledger status assertion 1/1 PASS. Current/frozen build and 18
+focused identity checks PASS; no removed production migration keys remain.
+**Independent Sol Reviewer:** Functional PASS / Tests PASS / Clean Break
+Architecture PASS after direct diff and exact receipt/retry review. **Root
+acceptance:** **PASS for slice 8 only**. Phase 7 remains open; Phase 8 remains
+closed.
+
 ## Phase 7 child watchdog disposition gate (2026-09-27)
 
 [ADR-002](adr/ADR-002-dsh-boundary.md) and the

@@ -105,28 +105,6 @@ class LifecycleDelivery:
                 return
             state = json.loads(path.read_text())
             ctx = state["context"]
-            if self.private_source is None and not self.answers and not state.get("durable_terminal_ack_migrated"):
-                # v1 Adapter acknowledgements were memory-only (and a 404 was
-                # accepted). Reconcile already-delivered exact terminal events
-                # once through the same finite outbox. Never replay prompts,
-                # registrations, domain actions, or reset a pending retry budget.
-                target = state.setdefault("terminal_ack_migration_target", state["cursor"])
-                cursor = state.get("terminal_ack_migration_cursor", 0)
-                sources = [source for source in self.traces.read(ctx["session_id"], after_sequence=cursor)
-                           if source["sequence"] <= target][:256]
-                for source in sources:
-                    event = self._project(source, ctx)
-                    if (event and event["outcome"] != "active"
-                            and state.get("terminal_events", {}).get(event["root_run_id"]) == event["sequence"]
-                            and str(event["sequence"]) not in state["pending"]):
-                        state["pending"][str(event["sequence"])] = {
-                            "event": event, "status": "pending", "attempts": 0,
-                            "created_at": self.clock(), "next_at": self.clock()}
-                    state["terminal_ack_migration_cursor"] = source["sequence"]
-                if target == 0 or state.get("terminal_ack_migration_cursor", 0) >= target:
-                    state["durable_terminal_ack_migrated"] = True
-                state["terminal_ack_migration_unavailable"] = not sources and not state.get("durable_terminal_ack_migrated", False)
-                self._save(path, state)
             if (self.recover is not None and not state.get("recovery_done") and not state.get("recovery_exhausted")
                     and self.clock() >= state.get("next_recovery_at", 0)):
                 # Passive evidence recovery, never a prompt/job retry. Throttle
@@ -302,9 +280,7 @@ class LifecycleDelivery:
             changed = self.private_source is None and trace_path.exists() and trace_path.stat().st_mtime_ns != state.get("trace_mtime_ns")
             result["state"] = ("attention_required" if result["exhausted_events"] or result["rejected_events"] else
                                "pending" if result["pending_events"] or changed else "up_to_date")
-            if self.private_source is None and not self.answers and not state.get("durable_terminal_ack_migrated") and result["state"] == "up_to_date":
-                result["state"] = "pending"
-            if state.get("recovery_unavailable") or state.get("terminal_ack_migration_unavailable") or state.get("source_unavailable"):
+            if state.get("recovery_unavailable") or state.get("source_unavailable"):
                 result["state"] = "unavailable"
         except (OSError, ValueError, KeyError, TypeError):
             result["state"] = "unavailable"
