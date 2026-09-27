@@ -24,7 +24,12 @@ from packages.contracts.conversation_rehydration import (
 )
 from packages.contracts.conversation_recovery import normalize_recovery
 from packages.contracts.agent_run_lifecycle import registration_fingerprint, lifecycle_receipt, project_lifecycle_event
-from packages.contracts.domain_call_admission import ACTIONS as DOMAIN_CALL_ACTIONS, request_evidence
+from packages.contracts.domain_call_admission import (
+    ACTIONS as DOMAIN_CALL_ACTIONS,
+    call_evidence_receipt,
+    request_evidence,
+    validate_call_evidence,
+)
 from packages.contracts import runtime_continuity as continuity
 from packages.contracts import session_failure_containment as containment_contract
 
@@ -203,6 +208,11 @@ class RuntimeSession:
     prompt_idempotency: dict[str, tuple[str, str]] = field(default_factory=dict, repr=False)
     terminal_receipts: dict[str, dict] = field(default_factory=dict, repr=False)
     pending_terminal_receipts: set[str] = field(default_factory=set, repr=False)
+    domain_call_evidence: list[dict[str, object]] = field(default_factory=list, repr=False)
+    domain_call_sequence: int = 0
+    # Advances only after Backend returns the exact receipt for each row.
+    domain_call_drained_sequence: int = 0
+    release_finalized: bool = False
     journal: Any = field(default=None, repr=False)
     # Continuation settlements outlive an individual generation, so this ledger
     # stays on the durable session rather than on ephemeral execution state.
@@ -1224,9 +1234,72 @@ class RuntimeAdapter:
             finally:
                 journal.close()
         with record.lock:
+            if (record.trace_id, record.owner_principal, record.workspace_id) != (
+                    context["trace_id"], context["owner"], context["workspace_id"]):
+                raise ValueError("private evidence context mismatch")
             if record.journal is None:
                 raise ValueError("private evidence requires durable owned context")
-            return page(record.journal.state)
+            rows = record.domain_call_evidence[after_sequence:after_sequence + 256]
+            more = len(record.domain_call_evidence) > after_sequence + len(rows)
+            idle = record.active_run is None
+            page = {"schema_version": "domain-call-page.v1", "events": [dict(row) for row in rows],
+                    "more": more, "idle": idle}
+        return page
+
+    def acknowledge_domain_call_evidence(self, context: dict, receipt: object) -> dict:
+        """Acknowledge one exact private domain-call row after Backend acceptance."""
+        LifecycleJournal._context(context)
+        if not isinstance(receipt, dict) or set(receipt) != {
+                "schema_version", "sequence", "root_run_id", "event_sha256"}:
+            raise SessionConflict("private evidence receipt shape mismatch")
+        try:
+            record = self._get(context["session_id"])
+        except KeyError:
+            # A successful ACK may have reaped a released session before its
+            # response reached Backend. The immutable journal row is enough to
+            # validate that exact retry without reacquiring or changing the
+            # recovery lease.
+            try:
+                state = LifecycleJournal.read(
+                    self._session_root / "byq-lifecycle-evidence" / f"{context['session_id']}.json")
+            except FileNotFoundError as exc:
+                raise SessionConflict("private evidence acknowledgement has no durable row") from exc
+            if state["context"] != context:
+                raise SessionConflict("private evidence acknowledgement context mismatch")
+            sequence = receipt.get("sequence")
+            if type(sequence) is not int or not 1 <= sequence <= len(state["calls"]):
+                raise SessionConflict("private evidence receipt sequence is unknown")
+            try:
+                expected = call_evidence_receipt(state["calls"][sequence - 1])
+            except (TypeError, ValueError) as exc:
+                raise SessionConflict("private evidence row is invalid") from exc
+            if expected != receipt:
+                raise SessionConflict("private evidence receipt does not match the observed row")
+            return {"receipt": dict(expected)}
+        with record.lock:
+            if (record.trace_id, record.owner_principal, record.workspace_id) != (
+                    context["trace_id"], context["owner"], context["workspace_id"]):
+                raise SessionConflict("private evidence acknowledgement context mismatch")
+            sequence = receipt.get("sequence")
+            if type(sequence) is not int or not 1 <= sequence <= record.domain_call_sequence:
+                raise SessionConflict("private evidence receipt sequence is unknown")
+            event = record.domain_call_evidence[sequence - 1]
+            try:
+                expected = call_evidence_receipt(event)
+            except (TypeError, ValueError) as exc:
+                raise SessionConflict("private evidence row is invalid") from exc
+            if expected != receipt:
+                raise SessionConflict("private evidence receipt does not match the observed row")
+            if sequence <= record.domain_call_drained_sequence:
+                # Exact retries are harmless while another terminal or later
+                # private row still pins this boot's session evidence.
+                return {"receipt": dict(expected)}
+            if sequence != record.domain_call_drained_sequence + 1:
+                raise SessionConflict("private evidence receipts must be acknowledged in sequence")
+            record.domain_call_drained_sequence = sequence
+            acknowledged = {"receipt": dict(expected)}
+        self._maybe_reap_released(record)
+        return acknowledged
 
     def acknowledge_terminal(self, session_id: str, receipt: object) -> dict:
         """Private Gateway acknowledgement of an exact Backend terminal receipt.
@@ -1264,7 +1337,9 @@ class RuntimeAdapter:
             if record.journal is not None:
                 record.journal.acknowledge_terminal(receipt)
             record.pending_terminal_receipts.discard(root)
-            return {"receipt": dict(receipt)}
+            acknowledged = {"receipt": dict(receipt)}
+        self._maybe_reap_released(record)
+        return acknowledged
 
     def terminal_evidence(self, session_id: str, root_run_id: str, boot_id: str) -> dict:
         """Return the exact observed terminal and its stored receipt for Gateway."""
@@ -1436,15 +1511,28 @@ class RuntimeAdapter:
                 if record.harness is not None:
                     self._compatibility.close(record.harness)
             finally:
-                if record.journal:
-                    record.journal.close()
-                with self._lock:
-                    if self._sessions.get(session_id) is record:
-                        del self._sessions[session_id]
                 with record.lock:
                     for subscriber in list(record.subscribers):
                         subscriber.put(None)
+                    record.release_finalized = True
+                self._maybe_reap_released(record)
         return self.describe_session(record)
+
+    def _maybe_reap_released(self, record: RuntimeSession) -> bool:
+        """Keep private evidence through this boot for lost ACK-response retries."""
+
+        with record.lock:
+            if (record.status != SessionStatus.CLOSED or not record.release_finalized
+                    or record.pending_terminal_receipts
+                    or record.domain_call_drained_sequence != record.domain_call_sequence):
+                return False
+        with self._lock:
+            if self._sessions.get(record.session_id) is not record:
+                return False
+            del self._sessions[record.session_id]
+        if record.journal is not None:
+            record.journal.close()
+        return True
 
     def subscribe(self, session_id: str, *, replay: bool = False) -> queue.Queue[WorkflowTraceEvent | None]:
         record = self._get(session_id)
@@ -1824,7 +1912,7 @@ class RuntimeAdapter:
                     if (observation.kind == "tool.call"
                             and observation.tool_name in {f"mcp__byq__{action}" for action in DOMAIN_CALL_ACTIONS}):
                         if (len(run.domain_calls) >= 1024
-                                or record.journal is not None and len(record.journal.state["calls"]) >= 1024):
+                                or record.domain_call_sequence >= 1024):
                             run.domain_stop_code = "domain-call-retention-bound"
                         else:
                             run.domain_calls.add(observation.call_id)
@@ -1845,17 +1933,22 @@ class RuntimeAdapter:
                             name="byq-domain-stop").start()
                 if (self._root_scoped and source_run is run and runtime_activity and not run.domain_stop_code
                         and observation.domain_arguments is not None and observation.event_sequence is not None
-                        and record.journal is not None and record.process_root_id == run.run_id):
+                        and record.process_root_id == run.run_id):
                     try:
                         evidence = request_evidence(observation.tool_name.removeprefix("mcp__byq__"),
                             observation.domain_arguments, trace_id=record.trace_id)
                     except ValueError:
                         evidence = None
                     if evidence is not None:
-                        record.journal.observe_call({"schema_version": "domain-call-observed.v1",
-                            "sequence": len(record.journal.state["calls"]) + 1,
+                        observed_call = {"schema_version": "domain-call-observed.v1",
+                            "sequence": record.domain_call_sequence + 1,
                             "root_run_id": run.run_id, "generation": record.runtime_generation,
-                            "call_id": observation.call_id, **evidence})
+                            "call_id": observation.call_id, **evidence}
+                        validate_call_evidence(observed_call)
+                        if record.journal is not None:
+                            record.journal.observe_call(observed_call)
+                        record.domain_call_evidence.append(observed_call)
+                        record.domain_call_sequence = observed_call["sequence"]
                 if (runtime_activity and observation.registration_key and record.owner_principal
                         and record.workspace_id and record.runtime_generation):
                     fingerprint = registration_fingerprint(

@@ -112,6 +112,8 @@ def test_bad_backend_current_receipt_keeps_agent_unready(monkeypatch):
 
 
 def test_domain_evidence_uses_original_current_session_boot(monkeypatch):
+    from packages.contracts.domain_call_admission import call_evidence_receipt
+
     main._set_runtime_authority_state(ready=True, boot_id=BOOT_ID, authority_epoch=7)
     monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
     session = main.ProductSession("conversation-one", "session-one", "trace-one",
@@ -119,19 +121,31 @@ def test_domain_evidence_uses_original_current_session_boot(monkeypatch):
     main.product_sessions.add(session)
     monkeypatch.setattr(main, "require_runtime_authority", lambda: None)
     calls = []
+    event = {"schema_version": "domain-call-observed.v1", "sequence": 1,
+        "root_run_id": "a" * 32, "generation": "generation-one", "call_id": "call-one",
+        "action": "byq_strategy_validate", "task_id": "task-one", "agent_run_id": "run-one",
+        "idempotency_key": "key-one", "request_sha256": "b" * 64, "input_sha256": "c" * 64}
+    expected = {"receipt": call_evidence_receipt(event)}
     monkeypatch.setattr(main, "_catalog_request", lambda *args, **kwargs:
-        calls.append((args, kwargs)) or {"receipt": "accepted"})
+        calls.append((args, kwargs)) or expected)
+    acknowledgements = []
+    monkeypatch.setattr(main, "_adapter_post", lambda path, **kwargs:
+        acknowledgements.append((path, kwargs)) or expected)
     context = {"conversation_id": "conversation-one", "session_id": "session-one",
         "trace_id": "trace-one", "workspace_id": "workspace-one", "owner": "alice"}
 
-    assert main._send_domain_call(context, {"sequence": 1}) == {"receipt": "accepted"}
+    assert main._send_domain_call(context, event) == expected
     assert calls[0][1]["runtime_boot_id"] == BOOT_ID
+    assert acknowledgements[0][1]["payload"]["receipt"] == expected["receipt"]
+    monkeypatch.setattr(main, "_adapter_post", lambda *args, **kwargs: {"receipt": "wrong"})
+    with pytest.raises(ValueError, match="acknowledgement mismatch"):
+        main._send_domain_call(context, event)
 
     main._set_runtime_authority_state(ready=True, boot_id="b" * 32, authority_epoch=8)
     with pytest.raises(main.HTTPException) as raised:
-        main._send_domain_call(context, {"sequence": 1})
+        main._send_domain_call(context, event)
     assert raised.value.status_code == 503
-    assert len(calls) == 1
+    assert len(calls) == 2
 
 
 def test_catalog_request_forwards_only_valid_runtime_boot_header(monkeypatch):
@@ -155,6 +169,8 @@ def test_catalog_request_forwards_only_valid_runtime_boot_header(monkeypatch):
 
 def test_terminal_close_requires_exact_adapter_evidence_then_acknowledges(monkeypatch):
     main._set_runtime_authority_state(ready=True, boot_id=BOOT_ID, authority_epoch=7)
+    monkeypatch.setattr(main, "require_runtime_authority", lambda: None)
+    monkeypatch.setattr(main, "_adapter_authority", lambda: {"boot_id": BOOT_ID})
     monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
     session = main.ProductSession("conversation-one", "session-one", "trace-one",
         main.Principal(subject="alice"), workspace_id="workspace-one", boot_id=BOOT_ID)

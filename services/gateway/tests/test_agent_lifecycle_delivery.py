@@ -1,21 +1,18 @@
+from __future__ import annotations
+
 import json
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
 
-from app.agent_lifecycle_delivery import LifecycleDelivery, MAX_ATTEMPTS, DEADLINE_SECONDS
+from app import main
+from app.agent_lifecycle_delivery import LifecycleDelivery
 from app.trace_store import TraceStore
 from packages.contracts.agent_run_lifecycle import lifecycle_receipt, project_lifecycle_event
 
 
-def fixture(tmp_path, send):
-    traces = TraceStore(tmp_path)
-    session = SimpleNamespace(session_id="session-one", trace_id="trace-one", conversation_id="conversation-one",
-                              workspace_id="workspace-one", principal=SimpleNamespace(subject="alice"))
-    now = [1000.0]
-    delivery = LifecycleDelivery(tmp_path, traces, send, clock=lambda: now[0])
-    delivery.register(session)
-    return traces, session, now, delivery
+BOOT_ID = 'a' * 32
 
 
 def event(sequence=1, **overrides):
@@ -24,167 +21,101 @@ def event(sequence=1, **overrides):
             "kind": "session.failed", "payload": {"run_id": "a" * 32}, **overrides}
 
 
-def test_lost_ack_restarts_with_same_event_and_then_stops(tmp_path):
-    writes = []
-    def send(ctx, value):
-        writes.append((ctx, value))
-        if len(writes) == 1:
-            raise TimeoutError("synthetic lost ack")
-        return {"receipt": lifecycle_receipt(value)}
-    traces, session, now, delivery = fixture(tmp_path, send)
-    traces.append(event())  # crash gap: ledger has context, not the event
-    delivery.run_once()
-    assert len(writes) == 1
-    restarted = LifecycleDelivery(tmp_path, TraceStore(tmp_path), send, clock=lambda: now[0])
-    restarted.run_once()
-    assert len(writes) == 1  # backoff survives restart
-    now[0] += 2
-    restarted.run_once()
-    assert writes[0] == writes[1]
-    restarted.run_once()
-    assert len(writes) == 2
-    state = json.loads((tmp_path / "session-one.lifecycle.json").read_text())
-    assert state["pending"] == {}
-    assert state["last_receipt"] == lifecycle_receipt(writes[0][1])
+def context():
+    return {"conversation_id": "conversation-one", "session_id": "session-one",
+            "workspace_id": "workspace-one", "owner": "alice", "trace_id": "trace-one"}
 
 
-def test_fresh_lifecycle_delivery_is_up_to_date(tmp_path):
-    _, session, _, delivery = fixture(tmp_path, lambda ctx, value: {"receipt": lifecycle_receipt(value)})
-    context = {"session_id": session.session_id, "trace_id": session.trace_id,
-               "conversation_id": session.conversation_id, "workspace_id": session.workspace_id,
-               "owner": session.principal.subject}
-    assert delivery.status(context)["state"] == "up_to_date"
+def product_session(boot_id=BOOT_ID):
+    return main.ProductSession("conversation-one", "session-one", "trace-one",
+        main.Principal(subject="alice"), workspace_id="workspace-one", boot_id=boot_id)
+
+
+def use_live_adapter_boot(monkeypatch, boot_id=BOOT_ID):
+    monkeypatch.setattr(main, "_adapter_authority", lambda: {"boot_id": boot_id})
 
 
 def test_active_root_registration_still_uses_the_existing_backend_path(monkeypatch):
-    from app import main
+    monkeypatch.setattr(main, "require_runtime_authority", lambda: None)
+    monkeypatch.setattr(main, "_runtime_authority_snapshot", lambda: {"ready": True, "boot_id": BOOT_ID})
     monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
-    main.product_sessions.add(main.ProductSession(
-        "conversation-one", "session-one", "trace-one", main.Principal(subject="alice"),
-        workspace_id="workspace-one", boot_id="a" * 32,
-    ))
+    main.product_sessions.add(product_session())
     value = project_lifecycle_event(event(kind="agent.run.registration", payload={
         "schema_version": "agent-run-registration-observed.v1",
         "run_id": "a" * 32, "registration_fingerprint": "b" * 64,
     }), "session-one", "trace-one")
-    context = {"conversation_id": "conversation-one", "session_id": "session-one",
-               "workspace_id": "workspace-one", "owner": "alice", "trace_id": "trace-one"}
     reply = {"receipt": lifecycle_receipt(value)}
     calls = []
     monkeypatch.setattr(main, "_catalog_request", lambda *a, **k: calls.append((a, k)) or reply)
     monkeypatch.setattr(main, "_adapter_post", lambda *a, **k: pytest.fail("active roots have no terminal ACK"))
-    assert main._send_agent_lifecycle(context, value) == reply
+    assert main._send_agent_lifecycle(context(), value, expected_boot_id=BOOT_ID) == reply
     assert len(calls) == 1
     assert calls[0][0][1] == "/internal/agent-lifecycle/conversation-one"
     assert calls[0][1]["payload"]["event"] == value
-    assert calls[0][1]["runtime_boot_id"] == "a" * 32
+    assert calls[0][1]["runtime_boot_id"] == BOOT_ID
     assert "boot_id" not in calls[0][1]["payload"]
 
 
-def test_recovery_poll_is_throttled_durable_and_stops_after_recovered(tmp_path):
-    traces, session, now, delivery = fixture(tmp_path, lambda ctx, value: {"receipt": lifecycle_receipt(value)})
+def test_terminal_close_keeps_exact_same_boot_receipt_fence(monkeypatch):
+    monkeypatch.setattr(main, "require_runtime_authority", lambda: None)
+    monkeypatch.setattr(main, "_runtime_authority_snapshot", lambda: {"ready": True, "boot_id": BOOT_ID})
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    main.product_sessions.add(product_session())
+    value = project_lifecycle_event(event(), "session-one", "trace-one")
+    receipt = lifecycle_receipt(value)
+    evidence = {"schema_version": main.RUNTIME_TERMINAL_EVIDENCE_SCHEMA,
+        "session_id": "session-one", "boot_id": BOOT_ID, "root_run_id": value["root_run_id"],
+        "sequence": value["sequence"], "outcome": value["outcome"], "receipt": receipt}
+    reads, closes, acknowledgements = [], [], []
+    monkeypatch.setattr(main, "_adapter_authority", lambda: {"boot_id": BOOT_ID})
+    monkeypatch.setattr(main, "_adapter_get", lambda *a, **k: reads.append((a, k)) or evidence)
+    monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda *a, **k:
+        closes.append((a, k)) or {"receipt": receipt})
+    def acknowledge(*args, **kwargs):
+        acknowledgements.append((args, kwargs))
+        if len(acknowledgements) == 1:
+            # The Adapter persisted this exact ACK and reaped its live record,
+            # but the response was lost. Its durable receipt accepts the retry.
+            raise main.HTTPException(status_code=503, detail="synthetic lost ACK response")
+        return {"receipt": receipt}
+    monkeypatch.setattr(main, "_adapter_post", acknowledge)
+    assert main._send_agent_lifecycle(context(), value, expected_boot_id=BOOT_ID) == {"receipt": receipt}
+    assert reads[0][1]["params"]["boot_id"] == BOOT_ID
+    assert closes[0][0][0] == "POST"
+    assert acknowledgements[0][0][0].endswith("/terminal-receipt")
+    assert len(reads) == len(closes) == 1 and len(acknowledgements) == 2
+    assert acknowledgements[0] == acknowledgements[1]
+
+
+def test_terminal_lifecycle_rejects_a_superseded_boot_before_io(monkeypatch):
+    monkeypatch.setattr(main, "require_runtime_authority", lambda: None)
+    monkeypatch.setattr(main, "_runtime_authority_snapshot", lambda: {"ready": True, "boot_id": BOOT_ID})
     calls = []
-    def recover(ctx):
-        calls.append(ctx)
-        if len(calls) == 1:
-            raise OSError("synthetic restart")
-        traces.append(event())
-        return True
-    delivery.recover = recover
-    delivery.run_once()
-    restarted = LifecycleDelivery(tmp_path, traces, delivery.send, clock=lambda: now[0], recover=recover)
-    restarted.run_once()
-    assert len(calls) == 1
-    now[0] += 30
-    restarted.run_once()
-    assert len(calls) == 2
-    now[0] += 30
-    restarted.run_once()
-    assert len(calls) == 2
-    assert json.loads((tmp_path / "session-one.lifecycle.json").read_text())["pending"] == {}
+    monkeypatch.setattr(main, "_adapter_get", lambda *a, **k: calls.append((a, k)))
+    with pytest.raises(RuntimeError, match="superseded Adapter boot"):
+        main._send_agent_lifecycle(context(), project_lifecycle_event(event(), "session-one", "trace-one"),
+                                   expected_boot_id="b" * 32)
+    assert calls == []
 
 
-def test_recovery_failure_budget_survives_restart(tmp_path):
-    traces, session, now, delivery = fixture(tmp_path, lambda *args: None)
-    calls = []
-    def recover(ctx):
-        calls.append(1)
-        raise ValueError("unproven or unavailable evidence")
-    for _ in range(MAX_ATTEMPTS + 2):
-        delivery = LifecycleDelivery(tmp_path, traces, delivery.send, clock=lambda: now[0], recover=recover)
-        delivery.run_once()
-        now[0] += 3600
-    assert len(calls) == MAX_ATTEMPTS
-    assert json.loads((tmp_path / "session-one.lifecycle.json").read_text())["recovery_exhausted"] is True
-
-
-def test_recovery_attempt_is_charged_before_process_loss(tmp_path):
-    traces, session, now, delivery = fixture(tmp_path, lambda *args: None)
-    calls = []
-    def crash(ctx):
-        calls.append(1)
-        raise SystemExit("synthetic Gateway death after request admission")
-    for _ in range(MAX_ATTEMPTS):
-        delivery = LifecycleDelivery(tmp_path, traces, delivery.send, clock=lambda: now[0], recover=crash)
-        with pytest.raises(SystemExit):
-            delivery.run_once()
-        now[0] += 3600
-    delivery.run_once()
-    assert len(calls) == MAX_ATTEMPTS
-    assert json.loads((tmp_path / "session-one.lifecycle.json").read_text())["recovery_exhausted"] is True
-
-
-def test_recovery_import_rejects_foreign_and_non_lifecycle_data(tmp_path, monkeypatch):
-    from app import main
-    traces, session, now, delivery = fixture(tmp_path, lambda *a: None)
-    monkeypatch.setattr(main, "trace_store", traces)
-    ctx = json.loads((tmp_path / "session-one.lifecycle.json").read_text())["context"]
-    for value in [event(trace_id="foreign"), event(kind="agent.output.delta", payload={"text": "private"})]:
-        monkeypatch.setattr(main, "_adapter_post", lambda *a, **k: {"state": "recovered", "events": [value], "more": False})
-        with pytest.raises(ValueError):
-            main._recover_agent_lifecycle(ctx)
-    assert traces.read(session.session_id) == []
-    monkeypatch.setattr(main, "_adapter_post", lambda *a, **k: {"state": "recovered", "events": [event()], "more": False})
-    assert main._recover_agent_lifecycle(ctx) is True
-    assert len(traces.read(session.session_id)) == 1
-
-
-@pytest.mark.parametrize("failure", ["transport", "wrong_ack"])
-def test_retry_budget_is_durable_and_does_not_block_other_terminal(tmp_path, failure):
-    writes = []
-    def send(ctx, value):
-        writes.append(value)
-        if value["root_run_id"] == "b" * 32:
-            return {"receipt": lifecycle_receipt(value)}
-        if failure == "transport":
-            raise TimeoutError()
-        return {"receipt": {**lifecycle_receipt(value), "event_sha256": "0" * 64}}
-    traces, session, now, delivery = fixture(tmp_path, send)
-    traces.append(event())
-    for _ in range(MAX_ATTEMPTS + 2):
-        LifecycleDelivery(tmp_path, traces, send, clock=lambda: now[0]).run_once()
-        now[0] += 4000
-    assert len(writes) == MAX_ATTEMPTS
-    traces.append(event(2, payload={"run_id": "b" * 32}))
-    delivery.run_once()
-    assert len(writes) == MAX_ATTEMPTS + 1
-    state = json.loads((tmp_path / "session-one.lifecycle.json").read_text())
-    assert state["pending"]["1"]["status"] == "exhausted"
-    assert "2" not in state["pending"]
-
-
-def test_deadline_and_context_cannot_reset(tmp_path):
-    calls = []
-    traces, session, now, delivery = fixture(tmp_path, lambda *args: calls.append(args))
-    traces.append(event())
-    delivery.run_once()
-    now[0] += DEADLINE_SECONDS
-    delivery.register(session)
-    delivery.run_once()
-    assert len(calls) == 1
-    session.principal = SimpleNamespace(subject="bob")
-    with pytest.raises(ValueError):
-        delivery.register(session)
+def test_terminal_ack_does_not_cross_an_adapter_boot_change(monkeypatch):
+    monkeypatch.setattr(main, "require_runtime_authority", lambda: None)
+    monkeypatch.setattr(main, "_runtime_authority_snapshot", lambda: {"ready": True, "boot_id": BOOT_ID})
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    main.product_sessions.add(product_session())
+    value = project_lifecycle_event(event(), "session-one", "trace-one")
+    receipt = lifecycle_receipt(value)
+    evidence = {"schema_version": main.RUNTIME_TERMINAL_EVIDENCE_SCHEMA,
+        "session_id": "session-one", "boot_id": BOOT_ID, "root_run_id": value["root_run_id"],
+        "sequence": value["sequence"], "outcome": value["outcome"], "receipt": receipt}
+    monkeypatch.setattr(main, "_adapter_get", lambda *a, **k: evidence)
+    monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda *a, **k: {"receipt": receipt})
+    monkeypatch.setattr(main, "_adapter_authority", lambda: {"boot_id": "b" * 32})
+    acknowledgements = []
+    monkeypatch.setattr(main, "_adapter_post", lambda *a, **k: acknowledgements.append((a, k)))
+    with pytest.raises(RuntimeError, match="superseded Adapter boot"):
+        main._send_agent_lifecycle(context(), value, expected_boot_id=BOOT_ID)
+    assert acknowledgements == []
 
 
 def test_translation_is_closed_and_ignores_foreign_or_unowned_events():
@@ -201,66 +132,201 @@ def test_translation_is_closed_and_ignores_foreign_or_unowned_events():
         project_lifecycle_event(registered, "session-one", "trace-one")
 
 
-def test_first_terminal_wins_across_restart_and_late_registration_still_delivers(tmp_path):
+def test_collector_is_only_lifecycle_sender_when_delivery_workers_tick(monkeypatch, tmp_path):
+    store = TraceStore(tmp_path)
+    monkeypatch.setattr(main, "trace_store", store)
+    use_live_adapter_boot(monkeypatch)
+    use_live_adapter_boot(monkeypatch)
+    terminal = {**event(kind="session.result"), "session_id": "session-one", "trace_id": "trace-one"}
+    session = product_session()
+
+    def lines():
+        yield "data: " + json.dumps(terminal)
+        session.released = True
+
+    @contextmanager
+    def stream(*args, **kwargs):
+        yield SimpleNamespace(status_code=200, iter_lines=lines)
+
+    monkeypatch.setattr(main.httpx, "stream", stream)
+    sent = []
+    monkeypatch.setattr(main, "_send_agent_lifecycle", lambda ctx, item, **kwargs: sent.append((item, kwargs)))
+    answers = LifecycleDelivery(tmp_path, store, lambda *_: pytest.fail("answer worker sent lifecycle"), answers=True)
+    domain_calls = LifecycleDelivery(tmp_path, store, lambda *_: pytest.fail("domain worker sent lifecycle"),
+        private_source=lambda *_: {"schema_version": "domain-call-page.v1", "events": [], "more": False,
+                                  "idle": True})
+    monkeypatch.setattr(main, "answer_delivery", answers)
+    monkeypatch.setattr(main, "domain_call_delivery", domain_calls)
+    main._collect_trace(session)
+    answers.register(session)
+    domain_calls.register(session)
+    answers.run_once()
+    domain_calls.run_once()
+
+    assert len(sent) == 1
+    assert sent[0][1] == {"expected_boot_id": BOOT_ID}
+    assert len(store.read(session.session_id)) == 1
+    assert not hasattr(main, "lifecycle_delivery")
+    assert not any(route.path.endswith("/lifecycle-delivery") for route in main.app.routes)
+
+
+@pytest.mark.parametrize("first_status", [503, "http_error"])
+def test_collector_reconnects_after_transient_adapter_or_backend_failure(monkeypatch, tmp_path, first_status):
+    store = TraceStore(tmp_path)
+    monkeypatch.setattr(main, "trace_store", store)
+    monkeypatch.setattr(main, "_register_answer_delivery", lambda _: None)
+    use_live_adapter_boot(monkeypatch)
+    use_live_adapter_boot(monkeypatch)
+    terminal = {**event(kind="session.result"), "session_id": "session-one", "trace_id": "trace-one"}
+    opens = []
+    session = product_session()
+
+    def lines():
+        yield "data: " + json.dumps(terminal)
+        session.released = True
+
+    @contextmanager
+    def stream(*args, **kwargs):
+        opens.append(1)
+        if len(opens) == 1 and first_status == "http_error":
+            raise main.httpx.HTTPError("temporary Adapter outage")
+        status = first_status if len(opens) == 1 else 200
+        yield SimpleNamespace(status_code=status, iter_lines=lines)
+
+    monkeypatch.setattr(main.httpx, "stream", stream)
+    sent = []
+    monkeypatch.setattr(main, "_send_agent_lifecycle", lambda ctx, item, **kwargs: sent.append(item))
+    monkeypatch.setattr(main.time, "sleep", lambda _: None)
+    main._collect_trace(session)
+    assert len(opens) == 2
+    assert sent == [project_lifecycle_event(terminal, "session-one", "trace-one")]
+    assert store.read("session-one") == [terminal]
+
+
+def test_collector_keeps_reconnecting_after_more_than_four_same_boot_outages(monkeypatch, tmp_path):
+    store = TraceStore(tmp_path)
+    monkeypatch.setattr(main, "trace_store", store)
+    monkeypatch.setattr(main, "_register_answer_delivery", lambda _: None)
+    use_live_adapter_boot(monkeypatch)
+    terminal = {**event(kind="session.result"), "session_id": "session-one", "trace_id": "trace-one"}
+    session = product_session()
+    opens, delays, sent = [], [], []
+
+    def lines(attempt):
+        if attempt in {6, 7}:
+            yield "data: " + json.dumps(terminal)
+        if attempt == 7:
+            session.released = True
+
+    @contextmanager
+    def stream(*args, **kwargs):
+        opens.append(1)
+        attempt = len(opens)
+        status = 503 if attempt <= 3 else 200
+        yield SimpleNamespace(status_code=status, iter_lines=lambda: lines(attempt))
+
+    monkeypatch.setattr(main.httpx, "stream", stream)
+    monkeypatch.setattr(main, "_send_agent_lifecycle", lambda ctx, item, **kwargs: sent.append(item))
+    monkeypatch.setattr(main.time, "sleep", delays.append)
+    main._collect_trace(session)
+
+    assert len(opens) == 7  # Three 503s and two clean premature EOFs before recovery.
+    assert len(delays) == 6
+    assert all(0 < delay <= main.TRACE_RETRY_MAX_DELAY_SECONDS for delay in delays)
+    assert sent == [project_lifecycle_event(terminal, "session-one", "trace-one")]
+    assert store.read("session-one") == [terminal]
+
+
+def test_collector_retries_the_exact_lifecycle_event_after_temporary_backend_failure(monkeypatch, tmp_path):
+    store = TraceStore(tmp_path)
+    monkeypatch.setattr(main, "trace_store", store)
+    monkeypatch.setattr(main, "_register_answer_delivery", lambda _: None)
+    use_live_adapter_boot(monkeypatch)
+    use_live_adapter_boot(monkeypatch)
+    terminal = {**event(kind="session.result"), "session_id": "session-one", "trace_id": "trace-one"}
+    session = product_session()
+
+    def lines():
+        yield "data: " + json.dumps(terminal)
+        session.released = True
+
+    @contextmanager
+    def stream(*args, **kwargs):
+        yield SimpleNamespace(status_code=200, iter_lines=lines)
+
+    monkeypatch.setattr(main.httpx, "stream", stream)
+    monkeypatch.setattr(main.time, "sleep", lambda _: None)
     calls = []
-    def send(ctx, value):
-        calls.append(value)
-        return {"receipt": lifecycle_receipt(value)}
-    traces, session, now, delivery = fixture(tmp_path, send)
-    traces.append(event(kind="session.cancelled"))
-    delivery.run_once()
-    traces.append(event(2, kind="session.cancelled"))
-    traces.append(event(3, kind="agent.run.registration", payload={
-        "schema_version": "agent-run-registration-observed.v1", "run_id": "a" * 32,
-        "registration_fingerprint": "b" * 64}))
-    LifecycleDelivery(tmp_path, TraceStore(tmp_path), send, clock=lambda: now[0]).run_once()
-    assert [value["sequence"] for value in calls] == [1, 3]
+    def send(ctx, value, **kwargs):
+        calls.append((ctx, value, kwargs))
+        if len(calls) == 1:
+            raise main.HTTPException(status_code=503, detail="synthetic Backend outage")
+    monkeypatch.setattr(main, "_send_agent_lifecycle", send)
+    main._collect_trace(session)
+    assert len(calls) == 2
+    assert calls[0] == calls[1]
+    assert calls[0][2] == {"expected_boot_id": BOOT_ID}
 
 
-def test_two_consumers_cannot_send_same_event_concurrently(tmp_path):
-    import threading
-    entered, release = threading.Event(), threading.Event()
-    calls = []
-    def send(ctx, value):
-        calls.append(value)
-        entered.set()
-        assert release.wait(5)
-        return {"receipt": lifecycle_receipt(value)}
-    traces, session, now, delivery = fixture(tmp_path, send)
-    traces.append(event())
-    thread = threading.Thread(target=delivery.run_once)
-    thread.start()
-    try:
-        assert entered.wait(5)
-        LifecycleDelivery(tmp_path, traces, send).run_once()
-        assert len(calls) == 1
-    finally:
-        release.set()
-        thread.join(5)
-    assert not thread.is_alive()
+def test_collector_reconnects_after_transient_backend_card_hydration(monkeypatch, tmp_path):
+    store = TraceStore(tmp_path)
+    monkeypatch.setattr(main, "trace_store", store)
+    monkeypatch.setattr(main, "_register_answer_delivery", lambda _: None)
+    use_live_adapter_boot(monkeypatch)
+    use_live_adapter_boot(monkeypatch)
+    card = {"session_id": "session-one", "trace_id": "trace-one", "sequence": 1,
+        "timestamp": "2026-09-07T00:00:00+00:00", "source": "runtime-adapter",
+        "kind": "agent.card.approval", "payload": {"approval_id": "approval-one"}}
+    opens, backend_reads = [], []
+    session = product_session()
+
+    @contextmanager
+    def stream(*args, **kwargs):
+        opens.append(1)
+        def lines():
+            yield "data: " + json.dumps(card)
+            if len(opens) > 1:
+                session.released = True
+        yield SimpleNamespace(status_code=200, iter_lines=lines)
+
+    class BackendResponse:
+        def raise_for_status(self):
+            return None
+        def json(self):
+            return {"approval": {"approval_id": "approval-one", "action": "byq_strategy_approve",
+                "status": "pending", "execution_outcome": "not_started"}}
+
+    def backend_get(*args, **kwargs):
+        backend_reads.append((args, kwargs))
+        if len(backend_reads) == 1:
+            raise main.httpx.HTTPError("synthetic Backend outage")
+        return BackendResponse()
+
+    monkeypatch.setattr(main.httpx, "stream", stream)
+    monkeypatch.setattr(main.httpx, "get", backend_get)
+    monkeypatch.setattr(main.time, "sleep", lambda _: None)
+    main._collect_trace(session)
+    assert len(opens) == len(backend_reads) == 2
+    projected = store.read("session-one")
+    assert len(projected) == 1
+    assert projected[0]["source"] == "byq-domain"
 
 
-def test_status_is_owner_scoped_and_never_means_research_completed(monkeypatch, tmp_path):
-    from fastapi.testclient import TestClient
-    from app import main
-    traces, session, now, delivery = fixture(tmp_path, lambda *_: {})
-    monkeypatch.setattr(main, "PRODUCT_TOKEN", "synthetic-lifecycle-token")
-    monkeypatch.setattr(main, "lifecycle_delivery", delivery)
-    client = TestClient(main.app)
-    path = "/v1/agent/sessions/conversation-one/lifecycle-delivery"
-    assert client.get(path).status_code == 401
-    monkeypatch.setattr(main, "_trusted_request_identity", lambda _: (session.principal, session.workspace_id))
-    monkeypatch.setattr(main, "_catalog_request", lambda *_, **__: {"conversation": {
-        "runtime_session_id": session.session_id, "trace_id": session.trace_id}})
-    traces.append(event())
-    assert client.get(path).json()["state"] == "pending"
-    delivery.run_once()
-    now[0] += DEADLINE_SECONDS
-    delivery.run_once()
-    body = client.get(path).json()
-    assert body["state"] == "attention_required"
-    assert body["exhausted_events"] == 1
-    assert body["max_attempts"] == 8
-    assert "root_run_id" not in body and "registration_fingerprint" not in body
-    session.principal = SimpleNamespace(subject="bob")
-    assert client.get(path).json()["state"] == "unavailable"
+def test_collector_fails_closed_when_adapter_boot_changes(monkeypatch, tmp_path):
+    store = TraceStore(tmp_path)
+    monkeypatch.setattr(main, "trace_store", store)
+    monkeypatch.setattr(main, "_register_answer_delivery", lambda _: None)
+    boots = iter([BOOT_ID, "b" * 32])
+    monkeypatch.setattr(main, "_adapter_authority", lambda: {"boot_id": next(boots)})
+    opens = []
+
+    @contextmanager
+    def stream(*args, **kwargs):
+        opens.append(1)
+        yield SimpleNamespace(status_code=503, iter_lines=lambda: ())
+
+    monkeypatch.setattr(main.httpx, "stream", stream)
+    monkeypatch.setattr(main.time, "sleep", lambda _: None)
+    main._collect_trace(product_session(BOOT_ID))
+    assert opens == [1]
+    assert store.read("session-one") == []

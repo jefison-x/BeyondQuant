@@ -6,7 +6,13 @@ import pytest
 from fastapi import HTTPException
 
 from app import main
-from app.task_continuation import TaskContinuationDelivery
+from app.task_continuation import CONTEXT_SCHEMA, TaskContinuationDelivery
+
+
+def write_context(root, context):
+    path = root / f"{context['session_id']}.continuation.json"
+    path.write_text(json.dumps({'schema_version': CONTEXT_SCHEMA, 'context': context}))
+    return path
 
 
 def fixture(monkeypatch):
@@ -138,7 +144,7 @@ def test_registered_conversation_scan_is_bounded_fair_and_flagged(tmp_path, monk
     for i in range(10):
         context = dict(owner='alice', workspace_id='workspace-a', conversation_id=f'conversation-{i}',
             session_id=f'session-{i}', trace_id=f'trace-{i}')
-        (tmp_path / f'{i:02}.lifecycle.json').write_text(json.dumps({'context': context}))
+        write_context(tmp_path, context)
     delivery = TaskContinuationDelivery(tmp_path, called.append)
     monkeypatch.delenv('BYQ_F6_EXECUTOR_ENABLED', raising=False)
     delivery.tick()
@@ -149,6 +155,46 @@ def test_registered_conversation_scan_is_bounded_fair_and_flagged(tmp_path, monk
     delivery.tick()
     assert len(called) == 10
     assert len({c['conversation_id'] for c in called}) == 10
+
+
+def test_collector_registers_business_context_for_gateway_restart(monkeypatch, tmp_path):
+    context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
+        session_id='session-a', trace_id='trace-a')
+    registry = TaskContinuationDelivery(tmp_path, lambda _: None)
+    monkeypatch.setattr(main, 'task_continuation_delivery', registry)
+    monkeypatch.setattr(main, 'domain_call_delivery', SimpleNamespace(register=lambda _: None))
+    monkeypatch.setattr(main, '_register_answer_delivery', lambda _: None)
+    captured = []
+
+    class CapturedThread:
+        def __init__(self, *, target, args, **kwargs):
+            captured.append((target, args))
+        def start(self):
+            return None
+
+    monkeypatch.setattr(main.threading, 'Thread', CapturedThread)
+    session = main.ProductSession(context['conversation_id'], context['session_id'], context['trace_id'],
+        main.Principal(subject=context['owner']), context['workspace_id'])
+    main._start_trace_collector(session)
+
+    path = tmp_path / 'session-a.continuation.json'
+    assert path.exists() and not (tmp_path / 'session-a.lifecycle.json').exists()
+    restarted_calls = []
+    restarted = TaskContinuationDelivery(tmp_path, restarted_calls.append)
+    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
+    restarted.tick()
+    assert restarted_calls == [context]
+    assert captured and captured[0][1] == (session,)
+
+
+def test_registered_context_cannot_change_identity(tmp_path):
+    delivery = TaskContinuationDelivery(tmp_path, lambda _: None)
+    session = main.ProductSession('conversation-a', 'session-a', 'trace-a',
+        main.Principal(subject='alice'), 'workspace-a')
+    delivery.register(session)
+    session.trace_id = 'trace-b'
+    with pytest.raises(ValueError, match='cannot change'):
+        delivery.register(session)
 
 
 def test_background_completion_does_not_release_a_live_browser_stream():
@@ -259,7 +305,7 @@ def test_settlement_releases_only_matching_background_idle_lease():
 def test_passive_receipt_checks_survive_restart_without_f6_model_permission(tmp_path, monkeypatch):
     context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
         session_id='session-a', trace_id='trace-a')
-    (tmp_path / 'a.lifecycle.json').write_text(json.dumps({'context': context}))
+    write_context(tmp_path, context)
     monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '0')
     reads, prompts = [], []
     for _ in range(2):
@@ -271,7 +317,7 @@ def test_passive_receipt_checks_survive_restart_without_f6_model_permission(tmp_
 def test_passive_failure_does_not_block_separately_admitted_f6(tmp_path, monkeypatch):
     context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
         session_id='session-a', trace_id='trace-a')
-    (tmp_path / 'a.lifecycle.json').write_text(json.dumps({'context': context}))
+    write_context(tmp_path, context)
     monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
     prompts = []
     def unavailable(_):
@@ -283,7 +329,7 @@ def test_passive_failure_does_not_block_separately_admitted_f6(tmp_path, monkeyp
 def test_receipt_failure_backoff_survives_restart_and_recovers(tmp_path, monkeypatch):
     context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
         session_id='session-a', trace_id='trace-a')
-    (tmp_path / 'a.lifecycle.json').write_text(json.dumps({'context': context}))
+    write_context(tmp_path, context)
     monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
     clock = [1000.0]
     reads, prompts = [], []
@@ -295,7 +341,7 @@ def test_receipt_failure_backoff_survives_restart_and_recovers(tmp_path, monkeyp
     delivery(missing).tick()
     delivery(missing).tick()
     assert len(reads) == 1 and len(prompts) == 2
-    assert (tmp_path / 'a.lifecycle.json').exists()
+    assert (tmp_path / 'session-a.continuation.json').exists()
     clock[0] += 60
     delivery(reads.append).tick()
     delivery(reads.append).tick()
@@ -305,14 +351,13 @@ def test_receipt_failure_backoff_survives_restart_and_recovers(tmp_path, monkeyp
 def test_receipt_backoff_does_not_cross_context_identity(tmp_path, monkeypatch):
     context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
         session_id='session-a', trace_id='trace-a')
-    path = tmp_path / 'a.lifecycle.json'
-    path.write_text(json.dumps({'context': context}))
+    path = write_context(tmp_path, context)
     monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '0')
     def missing(_):
         raise RuntimeError('unavailable')
     TaskContinuationDelivery(tmp_path, lambda _: None, reconcile=missing, now=lambda: 1000).tick()
     context['trace_id'] = 'trace-b'
-    path.write_text(json.dumps({'context': context}))
+    path.write_text(json.dumps({'schema_version': CONTEXT_SCHEMA, 'context': context}))
     reads = []
     TaskContinuationDelivery(tmp_path, lambda _: None, reconcile=reads.append, now=lambda: 1001).tick()
     assert reads == [context]
@@ -322,8 +367,8 @@ def test_receipt_backoff_does_not_cross_context_identity(tmp_path, monkeypatch):
 def test_corrupt_receipt_backoff_does_not_block_checks_or_f6(tmp_path, monkeypatch, state):
     context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
         session_id='session-a', trace_id='trace-a')
-    (tmp_path / 'a.lifecycle.json').write_text(json.dumps({'context': context}))
-    (tmp_path / 'a.lifecycle.receipt-backoff.json').write_text(state)
+    write_context(tmp_path, context)
+    (tmp_path / 'session-a.continuation.receipt-backoff.json').write_text(state)
     monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
     reads, prompts = [], []
     TaskContinuationDelivery(tmp_path, prompts.append, reconcile=reads.append).tick()

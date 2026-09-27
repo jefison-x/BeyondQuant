@@ -13,10 +13,19 @@ from app.trace_store import TraceStore
 
 
 TOKEN = "phase7-product-token"
+TEST_BOOT_ID = "a" * 32
+
+
+def authorize_runtime_session(monkeypatch, session):
+    session.boot_id = TEST_BOOT_ID
+    monkeypatch.setattr(main, "_runtime_authority_snapshot", lambda: {
+        "ready": True, "boot_id": TEST_BOOT_ID,
+    })
 
 
 def test_new_turn_projects_failed_subject_before_persisting_continue(monkeypatch, tmp_path):
     session = main.ProductSession("conversation", "runtime", "trace", main.Principal(subject="alice"))
+    authorize_runtime_session(monkeypatch, session)
     monkeypatch.setattr(main, "_product_session", lambda *_: session)
     store = TraceStore(tmp_path)
     monkeypatch.setattr(main, "trace_store", store)
@@ -47,6 +56,7 @@ def test_new_turn_projects_failed_subject_before_persisting_continue(monkeypatch
 
 def test_new_root_waits_for_previous_public_answer_to_be_durable(monkeypatch, tmp_path):
     session = main.ProductSession("conversation", "runtime", "trace", main.Principal(subject="alice"))
+    authorize_runtime_session(monkeypatch, session)
     store = TraceStore(tmp_path)
     monkeypatch.setattr(main, "trace_store", store)
     for sequence, kind, payload in [(1, "session.started", {"run_id": "a" * 32}),
@@ -72,6 +82,7 @@ def test_only_exact_pre_admission_rejection_is_known_not_accepted(monkeypatch, m
 
     session = SimpleNamespace(conversation_id="conversation-1", session_id="runtime-1", trace_id="trace-1",
                               principal=None, workspace_id="workspace-1")
+    authorize_runtime_session(monkeypatch, session)
     monkeypatch.setattr(main, "_product_session", lambda *_: session)
     monkeypatch.setattr(main, "_catalog_request", lambda *_, **__: {"messages": [], "message": {"message_id": "message_original"}})
     detail = {"schema_version": "prompt-rejection.v1", "code": "model_credentials_unavailable",
@@ -99,6 +110,7 @@ def test_only_exact_pre_admission_rejection_is_known_not_accepted(monkeypatch, m
 def test_normal_turn_never_claims_acceptance_from_an_invalid_receipt(monkeypatch, receipt) -> None:
     session = SimpleNamespace(conversation_id="conversation-1", session_id="runtime-1", trace_id="trace-1",
                               principal=None, workspace_id="workspace-1")
+    authorize_runtime_session(monkeypatch, session)
     monkeypatch.setattr(main, "_product_session", lambda *_: session)
     monkeypatch.setattr(main, "_catalog_request", lambda *_, **__: {"messages": [], "message": {"message_id": "message_original"}})
     calls = []
@@ -114,6 +126,7 @@ def test_normal_turn_never_claims_acceptance_from_an_invalid_receipt(monkeypatch
 def test_normal_turn_reconciles_original_receipt_without_repeating_prompt(monkeypatch) -> None:
     session = SimpleNamespace(conversation_id="conversation-1", session_id="runtime-1", trace_id="trace-1",
                               principal=None, workspace_id="workspace-1")
+    authorize_runtime_session(monkeypatch, session)
     monkeypatch.setattr(main, "_product_session", lambda *_: session)
     monkeypatch.setattr(main, "_catalog_request", lambda *_, **__: {"messages": [], "message": {"message_id": "message_original"}})
     writes = []
@@ -134,6 +147,7 @@ def test_normal_turn_reconciles_original_receipt_without_repeating_prompt(monkey
 def test_turn_requires_a_durable_message_identity_before_runtime_submission(monkeypatch) -> None:
     session = SimpleNamespace(conversation_id="conversation-1", session_id="runtime-1", trace_id="trace-1",
                               principal=None, workspace_id="workspace-1")
+    authorize_runtime_session(monkeypatch, session)
     monkeypatch.setattr(main, "_product_session", lambda *_: session)
     monkeypatch.setattr(main, "_catalog_request", lambda *_, **__: {"messages": [], "message": {"sequence": 1}})
     writes = []
@@ -144,7 +158,7 @@ def test_turn_requires_a_durable_message_identity_before_runtime_submission(monk
     assert writes == []
 
 
-@pytest.mark.parametrize("persisted_count", [1, 2])
+@pytest.mark.parametrize("persisted_count", [1, 2, 3])
 def test_collector_reconnect_preserves_history_and_accepts_only_its_session(monkeypatch, tmp_path, persisted_count):
     import json
     from contextlib import contextmanager
@@ -155,26 +169,69 @@ def test_collector_reconnect_preserves_history_and_accepts_only_its_session(monk
              "source": "runtime-adapter", "payload": {"status": "ready"}}
     second = {**first, "sequence": 2, "kind": "session.started", "payload": {"run_id": "a" * 32}}
     third = {**second, "sequence": 3, "kind": "session.result"}
+    session = main.ProductSession("conversation-reconnect", "session-reconnect", "trace-reconnect",
+                                  main.Principal(subject="owner-reconnect"), "workspace-reconnect",
+                                  boot_id=TEST_BOOT_ID)
     store.append(first)
-    if persisted_count == 2:
+    if persisted_count >= 2:
         store.append(second)
+    if persisted_count == 3:
+        store.append(third)
+
+    def stream_lines():
+        yield "data: " + json.dumps(first)
+        yield "data: " + json.dumps(second)
+        yield "data: " + json.dumps({**third, "session_id": "another-session"})
+        yield "data: " + json.dumps(third)
+        session.released = True
+
+    @contextmanager
+    def stream(*args, **kwargs):
+        yield SimpleNamespace(status_code=200, iter_lines=stream_lines)
+
+    monkeypatch.setattr(main, "trace_store", store)
+    monkeypatch.setattr(main.httpx, "stream", stream)
+    monkeypatch.setattr(main, "_adapter_authority", lambda: {"boot_id": TEST_BOOT_ID})
+    monkeypatch.setattr(main, "_persist_projected_answer", lambda *_: None)
+    monkeypatch.setattr(main, "answer_delivery", SimpleNamespace(register=lambda *_: None))
+    lifecycle = []
+    monkeypatch.setattr(main, "_send_agent_lifecycle", lambda context, event, **kwargs: lifecycle.append(event))
+    main._collect_trace(session)
+    assert store.read("session-reconnect") == [first, second, third]
+    assert store.read("another-session") == []
+    assert lifecycle == [{"schema_version": "agent-run-lifecycle.v1", "root_run_id": "a" * 32,
+                          "sequence": 3, "outcome": "completed"}]
+
+
+def test_collector_stops_when_exact_terminal_close_is_unconfirmed(monkeypatch, tmp_path):
+    import json
+    from contextlib import contextmanager
+
+    event = {"trace_id": "trace-close", "session_id": "session-close", "sequence": 1,
+             "timestamp": "2026-09-07T00:00:00+00:00", "kind": "session.result",
+             "source": "runtime-adapter", "payload": {"run_id": "a" * 32}}
+    store = TraceStore(tmp_path)
+    later = {**event, "sequence": 2, "kind": "session.ready", "payload": {"status": "ready"}}
 
     @contextmanager
     def stream(*args, **kwargs):
         yield SimpleNamespace(status_code=200, iter_lines=lambda: iter([
-            "data: " + json.dumps(first),
-            "data: " + json.dumps(second),
-            "data: " + json.dumps({**third, "session_id": "another-session"}),
-            "data: " + json.dumps(third),
-        ]))
+            "data: " + json.dumps(event), "data: " + json.dumps(later)]))
 
     monkeypatch.setattr(main, "trace_store", store)
     monkeypatch.setattr(main.httpx, "stream", stream)
-    monkeypatch.setattr(main, "_persist_projected_answer", lambda *_: None)
+    monkeypatch.setattr(main, "_adapter_authority", lambda: {"boot_id": TEST_BOOT_ID})
+    monkeypatch.setattr(main.time, "sleep", lambda _: None)
     monkeypatch.setattr(main, "answer_delivery", SimpleNamespace(register=lambda *_: None))
-    main._collect_trace(SimpleNamespace(session_id="session-reconnect", trace_id="trace-reconnect", released=False))
-    assert store.read("session-reconnect") == [first, second, third]
-    assert store.read("another-session") == []
+    session = main.ProductSession("conversation-close", "session-close", "trace-close",
+                                  main.Principal(subject="owner-close"), "workspace-close",
+                                  boot_id=TEST_BOOT_ID)
+    def fail_and_release(*_, **__):
+        session.released = True
+        raise ValueError("unconfirmed")
+    monkeypatch.setattr(main, "_send_agent_lifecycle", fail_and_release)
+    main._collect_trace(session)
+    assert store.read(session.session_id) == [event]
 
 
 def test_product_api_requires_bearer_auth(monkeypatch) -> None:
@@ -216,11 +273,12 @@ def test_collector_retries_durable_answers_without_runtime_history(monkeypatch, 
     monkeypatch.setattr(main, "trace_store", TraceStore(tmp_path))  # process restart
     monkeypatch.setattr(main, "_catalog_request", catalog)
     monkeypatch.setattr(main.httpx, "stream", missing_runtime)
+    monkeypatch.setattr(main, "_adapter_authority", lambda: {"boot_id": TEST_BOOT_ID})
     from app.agent_lifecycle_delivery import LifecycleDelivery
     monkeypatch.setattr(main, "answer_delivery", LifecycleDelivery(tmp_path, main.trace_store, main._send_owned_answer, answers=True))
     session = main.ProductSession(
         conversation_id="conversation-reconnect", session_id="session-reconnect", trace_id="trace-reconnect",
-        principal=main.Principal(subject="owner-1"), workspace_id="workspace-1")
+        principal=main.Principal(subject="owner-1"), workspace_id="workspace-1", boot_id=TEST_BOOT_ID)
     main._collect_trace(session)
     assert calls == []  # Catalog I/O cannot delay or stop SSE collection.
     main.answer_delivery.run_once()

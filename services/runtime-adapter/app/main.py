@@ -265,6 +265,19 @@ def domain_call_evidence(session_id: str, payload: dict) -> dict:
         raise HTTPException(status_code=409, detail="private evidence is unavailable or unproven") from exc
 
 
+@app.post("/internal/runtime/sessions/{session_id}/domain-call-receipt")
+def acknowledge_domain_call_receipt(session_id: str, payload: dict) -> dict:
+    if set(payload) != {"trace_id", "owner", "workspace_id", "receipt"}:
+        raise HTTPException(status_code=422, detail="exact private evidence receipt context required")
+    try:
+        return adapter.acknowledge_domain_call_evidence({
+            "session_id": session_id,
+            **{key: payload[key] for key in ("trace_id", "owner", "workspace_id")},
+        }, payload["receipt"])
+    except (ValueError, OSError, TypeError, KeyError, SessionConflict) as exc:
+        raise HTTPException(status_code=409, detail="private evidence receipt is unavailable or mismatched") from exc
+
+
 @app.get("/internal/runtime/sessions/{session_id}/prompts/reconcile")
 def reconcile_prompt_receipt(
     session_id: str, idempotency_key: str = Query(min_length=8, max_length=128),

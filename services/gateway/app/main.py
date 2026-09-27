@@ -44,18 +44,22 @@ from .workflow_projection import project_workflow_event
 from .agent_lifecycle_delivery import LifecycleDelivery
 from .task_continuation import TaskContinuationDelivery
 from packages.contracts.agent_run_lifecycle import lifecycle_receipt, project_lifecycle_event
-from packages.contracts.workflow_trace import validate_workflow_trace_event
+from packages.contracts.domain_call_admission import call_evidence_receipt
 
 
 SERVICE = "byq-gateway"
 VERSION = "0.1.0"
+TRACE_LIFECYCLE_SEND_ATTEMPTS = 3
+TRACE_RETRY_DELAY_SECONDS = 0.05
+TRACE_RETRY_MAX_DELAY_SECONDS = 5.0
+
+
 @asynccontextmanager
 async def lifespan(app):
     try:
         _sync_runtime_authority()
     except Exception:
         _set_runtime_authority_state(ready=False)
-    lifecycle_delivery.start()
     answer_delivery.start()
     domain_call_delivery.start()
     task_continuation_delivery.start()
@@ -63,7 +67,6 @@ async def lifespan(app):
         yield
     finally:
         task_continuation_delivery.close()
-        lifecycle_delivery.close()
         answer_delivery.close()
         domain_call_delivery.close()
 
@@ -460,14 +463,18 @@ def _consume_admitted_task_continuation(context):
     mark('accepted', run_id=accepted['run_id'])
 
 
-def _send_agent_lifecycle(context, event):
+def _send_agent_lifecycle(context, event, *, expected_boot_id=None):
+    require_runtime_authority()
+    snapshot = _runtime_authority_snapshot()
+    if (expected_boot_id is not None
+            and (not _valid_runtime_boot_id(expected_boot_id)
+                 or snapshot.get("boot_id") != expected_boot_id)):
+        raise RuntimeError("lifecycle event belongs to a superseded Adapter boot")
     if event["outcome"] == "active":
         # Active registration still uses the existing Backend business path;
         # it opens the exact root for domain-call admission. A durable old
         # event has no authority to re-open a root after its Adapter boot was
         # fenced, so require the original in-process session boot binding.
-        require_runtime_authority()
-        snapshot = _runtime_authority_snapshot()
         session = product_sessions.find_owned(
             context["conversation_id"], Principal(subject=context["owner"]),
         )
@@ -482,12 +489,10 @@ def _send_agent_lifecycle(context, event):
             raise ValueError("lifecycle receipt mismatch")
         return reply
 
-    require_runtime_authority()
-    snapshot = _runtime_authority_snapshot()
     session = product_sessions.find_owned(
         context["conversation_id"], Principal(subject=context["owner"]),
     )
-    boot_id = session.boot_id if session is not None else snapshot.get("boot_id")
+    boot_id = expected_boot_id or (session.boot_id if session is not None else snapshot.get("boot_id"))
     if snapshot.get("ready") is not True or not _valid_runtime_boot_id(boot_id):
         raise RuntimeError("runtime authority is unavailable for terminal close")
     if session is not None and session.boot_id != snapshot.get("boot_id"):
@@ -526,55 +531,46 @@ def _send_agent_lifecycle(context, event):
         raise ValueError("Backend root close receipt does not match Adapter terminal evidence")
 
     # The Adapter barrier is released only after Backend has confirmed the
-    # exact event digest for this root and sequence.
-    acknowledged = _adapter_post(
-        f"/internal/runtime/sessions/{context['session_id']}/terminal-receipt",
-        payload=closed, timeout=5.0)
-    if acknowledged != closed:
-        raise ValueError("runtime terminal acknowledgement mismatch")
-    return closed
+    # exact event digest. Retry this exact receipt in place: replaying the
+    # whole close after a lost ACK response may outlive Adapter's live record.
+    for attempt in range(TRACE_LIFECYCLE_SEND_ATTEMPTS):
+        try:
+            authority = _adapter_authority()
+        except RuntimeError:
+            if attempt + 1 >= TRACE_LIFECYCLE_SEND_ATTEMPTS:
+                raise
+        else:
+            if authority["boot_id"] != boot_id:
+                raise RuntimeError("terminal belongs to a superseded Adapter boot")
+            try:
+                acknowledged = _adapter_post(
+                    f"/internal/runtime/sessions/{context['session_id']}/terminal-receipt",
+                    payload=closed, timeout=5.0)
+            except HTTPException as exc:
+                retryable = exc.status_code in {408, 429} or exc.status_code >= 500
+                if not retryable or attempt + 1 >= TRACE_LIFECYCLE_SEND_ATTEMPTS:
+                    raise
+            except httpx.HTTPError:
+                if attempt + 1 >= TRACE_LIFECYCLE_SEND_ATTEMPTS:
+                    raise
+            else:
+                if acknowledged != closed:
+                    raise ValueError("runtime terminal acknowledgement mismatch")
+                return closed
+        if attempt + 1 < TRACE_LIFECYCLE_SEND_ATTEMPTS:
+            time.sleep(TRACE_RETRY_DELAY_SECONDS * (attempt + 1))
+    raise RuntimeError("runtime terminal acknowledgement remains unconfirmed")
 
 
-def _recover_agent_lifecycle(context):
-    cursor = max((e["sequence"] for e in trace_store.read(context["session_id"])), default=0)
-    reply = _adapter_post(f"/internal/runtime/sessions/{context['session_id']}/recover-evidence", payload={
-        "trace_id": context["trace_id"], "owner": context["owner"], "workspace_id": context["workspace_id"],
-        "after_sequence": cursor}, timeout=5.0)
-    if (set(reply) != {"state", "events", "more"} or reply["state"] not in {"owned", "unknown", "recovered"}
-            or not isinstance(reply["events"], list) or len(reply["events"]) > 256 or type(reply["more"]) is not bool):
-        raise ValueError("invalid recovery receipt")
-    previous = cursor
-    if reply["state"] != "recovered" and (reply["events"] or reply["more"]):
-        raise ValueError("unproven recovery cannot carry events")
-    if reply["state"] == "unknown":
-        raise ValueError("no durable recovery evidence; retain unknown state")
-    for event in reply["events"]:
-        validate_workflow_trace_event(event)
-        if (event["session_id"], event["trace_id"], event["source"]) != (
-                context["session_id"], context["trace_id"], "runtime-adapter") or event["sequence"] <= previous:
-            raise ValueError("foreign or unordered recovery event")
-        if event["kind"] == "session.started":
-            if set(event["payload"]) != {"run_id"}:
-                raise ValueError("invalid recovered root")
-        elif project_lifecycle_event(event, context["session_id"], context["trace_id"]) is None:
-            raise ValueError("non-lifecycle recovery event")
-        previous = event["sequence"]
-    for event in reply["events"]:
-        trace_store.append(event)
-    return reply["state"] == "recovered" and not reply["more"]
-
-
-lifecycle_delivery = LifecycleDelivery(
-    os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"), trace_store, _send_agent_lifecycle,
-    recover=_recover_agent_lifecycle)
 def _reconcile_research_receipts(context):
     return _catalog_request('POST', f"/internal/research-receipts/{context['conversation_id']}/reconcile",
         Principal(subject=context['owner']), context['workspace_id'],
         payload={'session_id':context['session_id'],'trace_id':context['trace_id']})
 
 
-task_continuation_delivery = TaskContinuationDelivery(lifecycle_delivery.root, _consume_task_continuation,
-                                                      reconcile=_reconcile_research_receipts)
+task_continuation_delivery = TaskContinuationDelivery(
+    os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"), _consume_task_continuation,
+    reconcile=_reconcile_research_receipts)
 
 
 def _send_owned_answer(context, event):
@@ -604,10 +600,21 @@ def _send_domain_call(context, event):
     if session is None:
         raise RuntimeError("domain call evidence has no current Adapter session")
     boot_id = _require_session_runtime_authority(session)
-    return _catalog_request("POST", f"/internal/domain-call-evidence/{context['conversation_id']}",
+    reply = _catalog_request("POST", f"/internal/domain-call-evidence/{context['conversation_id']}",
         Principal(subject=context["owner"]), context["workspace_id"], payload={
             "session_id": context["session_id"], "trace_id": context["trace_id"], "event": event},
         runtime_boot_id=boot_id)
+    expected = {"receipt": call_evidence_receipt(event)}
+    if reply != expected:
+        raise ValueError("Backend private evidence receipt mismatch")
+    acknowledged = _adapter_post(
+        f"/internal/runtime/sessions/{context['session_id']}/domain-call-receipt",
+        payload={"trace_id": context["trace_id"], "owner": context["owner"],
+                 "workspace_id": context["workspace_id"], "receipt": reply["receipt"]},
+        timeout=5.0)
+    if acknowledged != expected:
+        raise ValueError("Adapter private evidence acknowledgement mismatch")
+    return reply
 
 
 domain_call_delivery = LifecycleDelivery(
@@ -1057,7 +1064,7 @@ def _adapter_prompt_receipt(session_id: str, key: str, content: str) -> dict[str
 
 
 def _start_trace_collector(session: ProductSession) -> None:
-    lifecycle_delivery.register(session)
+    task_continuation_delivery.register(session)
     domain_call_delivery.register(session)
     _register_answer_delivery(session)
     thread = threading.Thread(
@@ -1074,6 +1081,11 @@ def _collect_trace(session: ProductSession) -> None:
 
     persisted = trace_store.read(session.session_id)
     cursor = max((event["sequence"] for event in persisted), default=0)
+    lifecycle_context = {
+        "session_id": session.session_id, "trace_id": session.trace_id,
+        "conversation_id": session.conversation_id,
+        "workspace_id": session.workspace_id, "owner": session.principal.subject,
+    }
     # A rebind after an idle release or restart must be able to append the
     # Runtime's continuation at exactly persisted+1. Reopen the durable trace
     # so a prior close cannot suppress the rehydrated stream.
@@ -1083,54 +1095,103 @@ def _collect_trace(session: ProductSession) -> None:
     # or no longer replays its old events. Backend deduplicates workflow_sequence.
     _register_answer_delivery(session)
     try:
-        with httpx.stream(
-            "GET",
-            f"{RUNTIME_ADAPTER_URL}/internal/runtime/sessions/{session.session_id}/events",
-            params={"replay": "true"},
-            timeout=None,
-        ) as response:
-            if response.status_code != 200:
-                return
-            for line in response.iter_lines():
-                if isinstance(line, bytes):
-                    line = line.decode("utf-8")
-                if not line.startswith("data: "):
-                    continue
-                try:
-                    event = json.loads(line[6:])
-                    if (not isinstance(event, dict) or event.get("session_id") != session.session_id
-                            or event.get("trace_id") != session.trace_id):
-                        continue
-                    sequence = event.get("sequence")
-                    if type(sequence) is not int or sequence <= cursor:
-                        # Existing BYQ projections remain authoritative. Do not
-                        # rehydrate old cards or append an older replay again.
-                        continue
-                    projected = project_workflow_event(
-                        event,
-                        backend_get=lambda path: _domain_get(path, session),
-                        revision_for=lambda card_id: trace_store.next_card_revision(
-                            session.session_id,
-                            card_id,
-                        ),
-                    )
-                    try:
-                        trace_store.append(projected)
-                    except TraceConflict:
-                        # A real sequence violation is never masked. Stop this
-                        # projection and leave the durable trace intact for an
-                        # explicit rebind/recovery rather than crashing.
-                        return
-                    cursor = sequence
-                except (ValueError, TypeError, json.JSONDecodeError):
-                    # The adapter is the only producer. Invalid data is not
-                    # persisted or reflected to the product client.
-                    continue
-    except httpx.HTTPError:
-        return
+        _collect_trace_events(session, lifecycle_context, cursor)
     finally:
         if session.released:
             trace_store.close(session.session_id)
+
+
+def _collect_trace_events(session: ProductSession, lifecycle_context: dict[str, str], cursor: int) -> None:
+    endpoint = f"{RUNTIME_ADAPTER_URL}/internal/runtime/sessions/{session.session_id}/events"
+    reconnect = 0
+    last_sent_lifecycle_sequence = 0
+    while not session.released:
+        reconnect_required = False
+        try:
+            if session.released:
+                return
+            authority = _adapter_authority()
+            if (not _valid_runtime_boot_id(session.boot_id)
+                    or authority["boot_id"] != session.boot_id):
+                return
+            with httpx.stream(
+                "GET", endpoint, params={"replay": "true"}, timeout=None,
+            ) as response:
+                if response.status_code != 200:
+                    if response.status_code in {408, 429} or response.status_code >= 500:
+                        reconnect_required = True
+                    else:
+                        return
+                else:
+                    for line in response.iter_lines():
+                        if isinstance(line, bytes):
+                            line = line.decode("utf-8")
+                        if not line.startswith("data: "):
+                            continue
+                        try:
+                            event = json.loads(line[6:])
+                            if (not isinstance(event, dict) or event.get("session_id") != session.session_id
+                                    or event.get("trace_id") != session.trace_id):
+                                continue
+                            sequence = event.get("sequence")
+                            if type(sequence) is not int:
+                                continue
+                            if sequence > cursor:
+                                projected = project_workflow_event(
+                                    event,
+                                    backend_get=lambda path: _domain_get(path, session),
+                                    revision_for=lambda card_id: trace_store.next_card_revision(
+                                        session.session_id,
+                                        card_id,
+                                    ),
+                                )
+                                try:
+                                    trace_store.append(projected)
+                                except TraceConflict:
+                                    return
+                                cursor = sequence
+                            # Lifecycle send is tied to this live Adapter stream,
+                            # even when a Gateway restart already persisted the trace.
+                            lifecycle = project_lifecycle_event(event, session.session_id, session.trace_id)
+                        except (ValueError, TypeError, json.JSONDecodeError):
+                            # Invalid Adapter data is neither persisted nor reflected to clients.
+                            continue
+                        if lifecycle is None:
+                            continue
+                        if sequence <= last_sent_lifecycle_sequence:
+                            continue
+                        sent = False
+                        for attempt in range(TRACE_LIFECYCLE_SEND_ATTEMPTS):
+                            try:
+                                _send_agent_lifecycle(
+                                    lifecycle_context, lifecycle, expected_boot_id=session.boot_id,
+                                )
+                                sent = True
+                                last_sent_lifecycle_sequence = sequence
+                                break
+                            except (HTTPException, ValueError, RuntimeError, httpx.HTTPError):
+                                if session.released:
+                                    return
+                                if attempt + 1 < TRACE_LIFECYCLE_SEND_ATTEMPTS:
+                                    time.sleep(TRACE_RETRY_DELAY_SECONDS * (attempt + 1))
+                        if not sent:
+                            # Replay only from the still-live Adapter stream. The
+                            # authority check in the sender fences a replaced boot.
+                            reconnect_required = True
+                            break
+                    if not session.released:
+                        # A live event stream should remain open for the next
+                        # root. Reopen a prematurely ended subscription within
+                        # this same Adapter boot.
+                        reconnect_required = True
+        except (HTTPException, RuntimeError, httpx.HTTPError, OSError):
+            reconnect_required = True
+        if session.released or not reconnect_required:
+            return
+        delay = min(TRACE_RETRY_MAX_DELAY_SECONDS,
+                    TRACE_RETRY_DELAY_SECONDS * (2 ** min(reconnect, 16)))
+        time.sleep(delay)
+        reconnect += 1
 
 
 def _register_answer_delivery(session: ProductSession) -> None:
@@ -1192,9 +1253,16 @@ def _domain_get(path: str, session: ProductSession) -> dict[str, object]:
     try:
         response = httpx.get(f"{BACKEND_URL}{path}", headers=headers, timeout=5.0)
         response.raise_for_status()
-        body = response.json()
-    except (httpx.HTTPError, json.JSONDecodeError) as exc:
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in {408, 429} or exc.response.status_code >= 500:
+            raise HTTPException(status_code=503, detail="owner-scoped card hydration is unavailable") from exc
         raise RuntimeError("owner-scoped card hydration failed") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="owner-scoped card hydration is unavailable") from exc
+    try:
+        body = response.json()
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("owner-scoped card hydration returned invalid JSON") from exc
     if not isinstance(body, dict):
         raise RuntimeError("owner-scoped card hydration returned an invalid response")
     return body
@@ -1656,17 +1724,6 @@ def get_product_session(session_id: str, request: Request) -> dict[str, object]:
     )
     return {"conversation": public, "messages": messages, "events": events,
             "containment": containment}
-
-
-@app.get("/v1/agent/sessions/{session_id}/lifecycle-delivery")
-def get_agent_lifecycle_delivery(session_id: str, request: Request) -> dict:
-    principal, workspace_id = _trusted_request_identity(request)
-    body = _catalog_request("GET", f"/v1/product/conversations/{session_id}", principal, workspace_id)
-    conversation = body.get("conversation")
-    if not isinstance(conversation, dict):
-        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
-    return lifecycle_delivery.status({"conversation_id": session_id, "session_id": conversation["runtime_session_id"],
-        "trace_id": conversation["trace_id"], "workspace_id": workspace_id, "owner": principal.subject})
 
 
 @app.get("/v1/agent/sessions/{session_id}/answer-delivery")

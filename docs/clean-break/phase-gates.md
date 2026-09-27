@@ -1,5 +1,25 @@
 # Phase 0–6 gate record
 
+## Phase 7 lifecycle ownership cutover review (2026-09-28)
+
+Gateway now sends lifecycle evidence from its live Adapter event collector only;
+the old lifecycle delivery worker and public status route are removed. Its
+same-boot reconnect uses capped backoff and stops on release or boot change.
+Adapter reaps released sessions after exact domain-call and terminal receipts,
+while exact ACK response-loss retries remain idempotent. Selected build `.236`
+binds this worktree; `.233`–`.235` are frozen intermediate candidates.
+
+**Tester:** PASS — Gateway 284/284, Adapter root lifecycle 10/10,
+architecture/build 86/86, three named reconnect/ACK/boot-fence regressions
+3/3, and `git diff --check`. Containers used cached images, disabled
+networking, and mounted the worktree read-only. **Independent Sol Reviewer:**
+Functional PASS / Tests PASS / Clean Break Architecture FAIL. The Adapter still
+writes and reads `LifecycleJournal` and exposes `/recover-evidence`; automatic
+approval review twice rejected deletion of that path because it could remove
+cross-process authorization and `outcome_unknown` protections. **Root gate:**
+FAIL for the ownership cutover and Phase 7 overall. Phase 8 remains CLOSED.
+No database, existing data, backup, production service, push or merge changed.
+
 ## Phase 7 Gateway carrier retirement gate (2026-09-28)
 
 [Bounded evidence](phase7-gateway-carrier-retirement.md) removes the historical
