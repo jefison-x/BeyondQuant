@@ -33,7 +33,6 @@ from .normalization import close_public_activities
 from .compat import RuntimeCompatibility, RuntimeObservation, compatibility_for_release
 from .identifiers import contained_session_path, validate_identifier
 from .lifecycle_journal import JournalIdentityMismatch, LifecycleJournal, JournalBusy
-from .executor_identity import ExecutorIdentityError
 from . import containment
 from . import business_recovery
 from .continuation_budget import (CONTINUATION_MAX_OUTPUT_TOKENS, persist_settlement,
@@ -1473,30 +1472,6 @@ class RuntimeAdapter:
         if record is not None:
             return record
         raise KeyError(f"unknown BYQ session: {session_id}")
-
-    def _record_containment(self, evidence_root: Path, journal: Any, context: dict,
-                            lost_root: dict, *, interrupted_generation: str,
-                            loss_cause: str) -> None:
-        """ADR-0084: persist one fenced containment fact for a lost open root.
-
-        A ledger failure never fabricates success: the truthful ``interrupted``
-        lifecycle outcome is already emitted by the journal claim.
-        """
-
-        try:
-            records = containment.read(evidence_root, context["session_id"])
-            attempt = (records[-1]["attempt"] + 1) if records else 1
-            containment.record_loss(
-                evidence_root, context=context,
-                executor=getattr(journal, "executor", None),
-                loss_cause=loss_cause,
-                interrupted_run_id=lost_root.get("root_run_id"),
-                interrupted_generation=interrupted_generation,
-                attempt=attempt, recorded_at=time.time(),
-            )
-        except (OSError, ValueError, containment.ContainmentConflict,
-                containment_contract.FencedWrite, ExecutorIdentityError):
-            pass
 
     def containment_summary(self, session_id: str) -> dict[str, Any]:
         """Bounded, framework-neutral containment projection for the Gateway.

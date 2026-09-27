@@ -1,5 +1,20 @@
 # Phase 0–6 gate record
 
+## Phase 7 slice 7 gate — dead restart rebase paths (2026-09-27)
+
+After slice 6 removed old-session rebind, `RuntimeAdapter._record_containment`
+and `LifecycleJournal.rebase` had no production callers. This slice deletes
+those methods, the sole-use import and the obsolete rebase test. Containment
+reads, terminal receipts, `outcome_unknown` and live business recovery remain.
+The current immutable build identity is `.222`; `.221` is frozen.
+
+**Tester:** pinned DSH 0.1.5rc1 Adapter focused tests 62/62 PASS, no remaining
+references to the removed methods, 18 build identity checks and current/frozen
+build validation PASS. **Independent Sol Reviewer:** Functional PASS / Tests
+PASS / Clean Break Architecture PASS after direct diff and business recovery
+review. **Root acceptance:** **PASS for slice 7 only**. Phase 7 remains open;
+Phase 8 remains closed.
+
 ## Phase 7 slice 6 gate — lost Agent session does not replay (2026-09-27)
 
 The 0.10 interruption scope now ends the old Agent session when its Adapter
