@@ -1,6 +1,6 @@
 # Phase 7 slice 5 candidate — archive obsolete event contract and P4 harness
 
-Status: read-only Explorer conditional GO; design, tests, implementation and slice gate pending. This document does not authorize Phase 8 or a DSH Agent-continuation replacement.
+Status: design and implementation slice gate PASS. The same-slice pre-deletion contract ran RED on the eight scoped archive paths while the live ResearchTask action/approval boundary passed. After deletion, the archive contract passed 3/3; PostgreSQL 45/45, Gateway 275/275, repository unittest 868 OK (11 skipped), current/frozen builds, historical release, H4 and independent Sol review passed. Root accepts this slice only. This document does not authorize Phase 8 or a DSH Agent-continuation replacement.
 
 ## Ownership and reason
 

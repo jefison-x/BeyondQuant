@@ -215,28 +215,51 @@ async-handoff fault matrix remain unexecuted, so the P4 verdict stays
   `format_valid=true`, `all_pass=false`. The P4-B/P4-C/P4-D rows are not inferred
   from the partial probe and are never labelled PASS.
 
-## Reproduce
+## Reproduce historical evidence
+
+The original P4-A replay source is preserved at Git commit `2f8aca4a877d01481be556236c8f56d6ad7fa290`. The old
+harness is archived from the current tree and is **not a current acceptance
+gate**. Each pointer below is a Git blob at that commit. These commands use a
+temporary detached checkout so the replay runs against the recorded source.
+
+Source pointers:
+- `scripts/v091/continuation_p4/observer.py`
+- `scripts/v091/continuation_p4/capture.py`
+- `scripts/v091/continuation_p4/run_journey.py`
+- `tests/test_v091_continuation_p4.py`
 
 ```bash
+set -euo pipefail
+REPLAY_REPO="$(git rev-parse --show-toplevel)"
+REPLAY_ROOT="$(mktemp -d)"
+git worktree add --detach "$REPLAY_ROOT/source" 2f8aca4a877d01481be556236c8f56d6ad7fa290
+cleanup() {
+  cd "$REPLAY_REPO"
+  git worktree remove --force "$REPLAY_ROOT/source"
+  rm -rf -- "$REPLAY_ROOT"
+}
+trap cleanup EXIT
+cd "$REPLAY_ROOT/source"
+
 # Observer self-check (fail-able; 21 defect-targeting controls all rejected).
 python3 scripts/v091/continuation_p4/observer.py --selfcheck
 
-# Governance/contract/matrix tests (architecture lane, no DB, no Docker).
+# Historical governance/contract/matrix tests (no DB, no Docker).
 python3 -m unittest tests.test_v091_continuation_p4
 
-# Re-derive the committed component verdict.
+# Component capture CLI; actual capture requires isolated PostgreSQL/backend.
+python3 scripts/v091/continuation_p4/capture.py --help
+
+# Re-derive the committed component verdict outside the checkout.
 python3 scripts/v091/continuation_p4/observer.py \
     --observations docs/evidence/adr-0085-p4-real-journey/observations.v1.json \
-    --out docs/evidence/adr-0085-p4-real-journey/verdict.v1.json
+    --out "$REPLAY_ROOT/p4-a-verdict.json"
 
 # Real isolated stack (opt-in; requires Docker; no paid API, no production).
 python3 scripts/v091/continuation_p4/run_journey.py \
     --scope byq-v091-continuation-local \
-    --out docs/evidence/adr-0085-p4-real-journey/observations.v1.json
+    --out "$REPLAY_ROOT/p4-a-observations.v1.json"
 ```
-
-Component capture requires an isolated PostgreSQL and the backend container; see
-`capture.py --help`.
 
 ## Non-claims
 
