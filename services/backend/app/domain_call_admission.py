@@ -105,17 +105,13 @@ class DomainCallEvidenceMixin:
         return conversation["conversation_id"]
 
     @staticmethod
-    def _recovery_claim_gate(connection, *, owner, workspace, session, root, action, task_id,
-                             idempotency_key, request_sha256, input_sha256):
-        """Runtime recovery-mode invariant for a domain-call claim.
+    def _recovery_claim_gate(connection, *, owner, workspace, session, root):
+        """Retire prior recovery roots without broadening their call authority.
 
-        Returns ``None`` to allow, or a closed reason to reject. A root that is a
-        Backend-bound recovery target run may claim ONLY the exact original
-        five-tuple recorded in its in-row attempt envelope. While a recovery
-        attempt is pending (allocated, not yet bound), no side-effecting claim is
-        allowed, which closes the admission-to-writeback window. A different task,
-        action, key or hash — including ``may_produce_new_key`` actions — is
-        rejected. Non-recovery roots are unaffected.
+        Clean Break has no automatic Agent replay. Old in-row attempt records may
+        still name runs that were previously admitted, so they remain denied at
+        this root-local authorization fence. Ordinary roots have no such record
+        and proceed through the normal lifecycle, owner, role and evidence checks.
         """
 
         if not isinstance(root, str) or not root:
@@ -130,23 +126,12 @@ class DomainCallEvidenceMixin:
                     for attempt in (reservation.get('recovery_attempts') or [])]
         if not attempts:
             return None
-        bound = next(((attempt_task, attempt) for attempt_task, attempt in attempts
-                      if attempt.get('run_id') == root), None)
-        if bound is not None:
-            attempt_task, attempt = bound
-            if attempt.get('status') not in {'accepted', 'settled'}:
-                return 'recovery_envelope_violation'
-            if attempt_task != task_id or attempt.get('envelope_mode') != 'exact_reuse':
-                return 'recovery_envelope_violation'
-            identity = [action, task_id, idempotency_key, request_sha256, input_sha256]
-            allowed = [list(call) for call in (attempt.get('allowed_calls') or [])]
-            if identity not in allowed:
-                return 'recovery_envelope_violation'
-            return None
+        if any(attempt.get('run_id') == root for _, attempt in attempts):
+            return 'recovery_envelope_violation'
         if any(attempt.get('status') == 'reserved' and attempt.get('run_id') is None
                for _, attempt in attempts):
-            # A recovery admission is in flight; until its target run is
-            # authoritatively bound, no side-effecting claim may be admitted.
+            # An old pending record has no dispatch path and cannot authorize a
+            # new root's business claim while its historical row is unresolved.
             return 'recovery_envelope_violation'
         return None
 
@@ -175,10 +160,8 @@ class DomainCallEvidenceMixin:
             self._require_lifecycle_workspace(connection, context["owner"], context["workspace"])
             self._lifecycle_lock(connection, "root:" + context["root"])
             recovery_violation = self._recovery_claim_gate(connection,
-                owner=context["owner"], workspace=context["workspace"], session=context["session"],
-                root=context["root"], action=action, task_id=value["task_id"],
-                idempotency_key=value["idempotency_key"], request_sha256=value["request_sha256"],
-                input_sha256=value["input_sha256"])
+                owner=context["owner"], workspace=context["workspace"],
+                session=context["session"], root=context["root"])
             if recovery_violation is not None:
                 return {"state": "blocked", "reason": recovery_violation}
             proof = fetch_one(connection, """SELECT * FROM agent_domain_call_evidence

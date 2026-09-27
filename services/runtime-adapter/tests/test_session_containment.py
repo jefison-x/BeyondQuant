@@ -60,7 +60,7 @@ def test_lost_executor_run_is_interrupted_and_business_state_survives(
         summary = restarted.containment_summary("loss-1")
         assert summary["contained"] is False
         assert summary["latest"] is None
-        assert summary["recovery_anchor"]["idle"] is False
+        assert "recovery_anchor" not in summary
         records = containment.read(restarted._session_root / "byq-lifecycle-evidence", "loss-1")
         assert records == []
         assert root
@@ -207,7 +207,7 @@ def test_containment_summary_http_boundary(
         body = client.get("/internal/runtime/sessions/loss-http/containment")
         assert body.status_code == 200
         assert body.json()["contained"] is False
-        assert body.json()["recovery_anchor"]["idle"] is False
+        assert "recovery_anchor" not in body.json()
         # The projection carries no DSH private identity.
         serialized = json.dumps(body.json())
         assert "native_session" not in serialized and "dsh" not in serialized.lower()

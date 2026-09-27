@@ -13,7 +13,6 @@ from pydantic import BaseModel, Field
 from packages.contracts.conversation_rehydration import ConversationContextMessage
 from packages.operations.admission import AdmissionClosed, chat_admission
 from packages.contracts.prompt_rejection import credential_rejection
-from packages.contracts import business_recovery as recovery_contract
 
 from .runtime import (
     ModelCredentialUnavailable,
@@ -172,10 +171,6 @@ def submit_prompt(session_id: str, request: PromptRequest) -> dict[str, object]:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except SessionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except recovery_contract.RecoveryRejected as exc:
-        # A failed recovery admission is never a submit: fail closed with the
-        # closed reason so the caller pauses/blocks instead of retrying blindly.
-        raise HTTPException(status_code=409, detail={"code": exc.code, "paused": exc.paused}) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ModelCredentialUnavailable as exc:
@@ -187,17 +182,7 @@ def submit_prompt(session_id: str, request: PromptRequest) -> dict[str, object]:
             if rejection is not None:
                 raise HTTPException(status_code=503, detail=rejection) from exc
         raise HTTPException(status_code=503, detail="configured model provider is unavailable") from exc
-    response: dict[str, object] = {"accepted": True, "session_id": session_id, "run_id": run_id}
-    recovery = request.continuation_budget.get("recovery_attempt") if isinstance(
-        request.continuation_budget, dict) else None
-    if isinstance(recovery, dict) and isinstance(recovery.get("attempt_key"), str):
-        try:
-            response["recovery"] = adapter.recovery_receipt(session_id, recovery["attempt_key"])
-        except KeyError:
-            # The admission is already durable; a missing in-process projection
-            # is never a fabricated target. The Backend reconciles on the next pass.
-            pass
-    return response
+    return {"accepted": True, "session_id": session_id, "run_id": run_id}
 
 
 @app.post("/internal/runtime/sessions/{session_id}/resume", dependencies=[Depends(require_chat_admission)])

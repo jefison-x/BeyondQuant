@@ -51,8 +51,7 @@ def _fixture(monkeypatch, *, receipt_status='accepted', settled_status='outcome_
             return {'schema_version': 'session-containment-summary.v1', 'session_id': 'session-a',
                 'contained': True, 'attempts': 1,
                 'latest': {'trace_id': 'trace-a', 'loss_cause': 'executor-loss', 'interrupted_run_id': LOST,
-                           'interrupted_generation': 'generation-dead', 'executor_epoch': 1, 'attempt': 1},
-                'recovery_anchor': {'snapshot_tail_sequence': 0, 'snapshot_digest': 'd' * 64, 'idle': True}}
+                           'interrupted_generation': 'generation-dead', 'executor_epoch': 1, 'attempt': 1}}
         if '/continuation-receipt/' in path:
             return settled
         if path.endswith('/prompts/reconcile'):

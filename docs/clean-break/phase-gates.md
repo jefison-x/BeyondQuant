@@ -1,5 +1,27 @@
 # Phase 0–6 gate record
 
+## Phase 7 executable recovery-carrier retirement gate (2026-09-27)
+
+[Bounded evidence](phase7-carrier-retirement-build229-evidence.md) removes
+Backend/Adapter recovery allocation and re-admission while keeping legacy rows
+fail-closed at the domain-call and Gateway boundaries. Original reservation
+reconciliation and unknown-outcome liability remain. Disposable Gateway 30/30,
+Backend target 8/8, Adapter 12/12, historical evidence 24/24, and current build
+and architecture 86/86 passed. Selected `.229` image identity and frozen `.228`
+were verified; the disposable project was removed.
+
+**Tester:** PASS for staged whitespace, syntax, docs, selected/frozen build
+checks, 24 historical tests and 86 build/architecture tests; the recorded
+Compose target runs passed Gateway 30/30, Backend 8/8, Adapter 12/12.
+**Independent Sol Reviewer:** Functional PASS / Tests PASS / Clean Break
+Architecture PASS for this bounded slice after direct staged-diff, boundary,
+historical evidence and build-identity review. **Root acceptance:** PASS for
+retirement of executable recovery-carrier paths and legacy-row rejection only.
+The broader Backend run's unrelated active-root expectation failure remains
+recorded; no full Backend suite PASS is claimed. The retained dead positive
+contract helpers and final journal/authority cutover remain Phase 7 work.
+Phase 7 overall stays OPEN; Phase 8 stays CLOSED.
+
 ## Phase 7 no-replay and build-identity repair gate (2026-09-27)
 
 [Bounded evidence](phase7-no-replay-build227-evidence.md) removes Gateway's

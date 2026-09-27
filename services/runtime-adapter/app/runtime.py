@@ -35,7 +35,6 @@ from .compat import RuntimeCompatibility, RuntimeObservation, compatibility_for_
 from .identifiers import contained_session_path, validate_identifier
 from .lifecycle_journal import JournalIdentityMismatch, LifecycleJournal, JournalBusy
 from . import containment
-from . import business_recovery
 from .continuation_budget import (CONTINUATION_MAX_OUTPUT_TOKENS, persist_settlement,
     recovered_settlement, validate_reservation, create_guard_patch, read_guard)
 from .normalization import NormalizationState, normalize_runtime_observation
@@ -208,10 +207,6 @@ class RuntimeSession:
     # Continuation settlements outlive an individual generation, so this ledger
     # stays on the durable session rather than on ephemeral execution state.
     budget_receipts: dict[str, dict] = field(default_factory=dict, repr=False)
-    # ADR-0084 recovery target receipts, keyed by the Backend-minted attempt key.
-    # They are a bounded in-process projection of the accepted admission; the
-    # Backend row remains the authoritative attempt aggregate. No second store.
-    recovery_receipts: dict[str, dict] = field(default_factory=dict, repr=False)
     interrupted_run_id: str | None = None
     sequence: int = 0
     history: list[WorkflowTraceEvent] = field(default_factory=list)
@@ -840,24 +835,12 @@ class RuntimeAdapter:
             if record.workspace_id and record.pending_terminal_receipts:
                 raise SessionConflict("previous turn domain cleanup is not yet acknowledged")
             budget = None
-            recovery_carrier = None
             if continuation_budget is not None:
                 if not self.continuation_qualified(record):
                     raise ValueError('continuation executor is not enabled')
                 budget = validate_reservation(continuation_budget,
                     owner=record.owner_principal, workspace=record.workspace_id)
-                recovery_carrier = budget.get('recovery_attempt')
-                if recovery_carrier is not None:
-                    # A recovery submission uses its Backend-minted attempt key,
-                    # never the reservation id (which the Adapter would dedup to
-                    # the lost old run). The target epoch/generation are read from
-                    # this Adapter's live record at admission, never asserted by
-                    # the carrier.
-                    if not self._root_scoped:
-                        raise ValueError('recovery requires the root-scoped executor')
-                    if idempotency_key != recovery_carrier['attempt_key']:
-                        raise ValueError('recovery requires its attempt key')
-                elif idempotency_key != budget['reservation_id']:
+                if idempotency_key != budget['reservation_id']:
                     raise ValueError('continuation requires its original reservation key')
                 if not _continuation_route_qualified(record.model_resolution, self._provider, self._model):
                     raise ValueError('selected continuation model is unqualified')
@@ -876,19 +859,6 @@ class RuntimeAdapter:
             elif conversation_recovery is not None:
                 raise ValueError("conversation recovery requires an explicit context projection")
             effective_content = rehydrated_prompt(context, content, recovery)
-            verified_recovery = None
-            if recovery_carrier is not None:
-                # Validate-then-atomic-compare-and-start under `record.lock`, BEFORE
-                # any new root/generation is created. The CURRENT snapshot must
-                # still be byte-identical to the Backend-anchored one AND idle.
-                # A tail append, an idle flip, a tampered digest or a check-then-
-                # start race fails closed here with no prompt submitted.
-                if record.journal is None:
-                    raise ValueError('recovery requires durable owned evidence')
-                verified_recovery = business_recovery.admission_precheck(
-                    journal_state=record.journal.state, carrier=recovery_carrier,
-                    reservation_id=budget['reservation_id'],
-                    evidence_root=self._evidence_root(), session_id=record.session_id)
             if budget is not None and not record.process_used:
                 self._compatibility.close(record.harness)
                 record.process_closed = True
@@ -940,14 +910,6 @@ class RuntimeAdapter:
             record.status = SessionStatus.RUNNING
             if idempotency_key is not None:
                 record.prompt_idempotency[idempotency_key] = (identity_content, run.run_id)
-            if verified_recovery is not None:
-                # The accepted receipt binds the attempt to this Adapter's LIVE
-                # target epoch/generation. The Backend persists it; the Adapter
-                # never mints or asserts a target epoch.
-                record.recovery_receipts[verified_recovery['attempt_key']] = business_recovery.accepted_receipt(
-                    verified_recovery, reservation_id=budget['reservation_id'], run_id=run.run_id,
-                    target_executor_epoch=record.executor_epoch,
-                    target_generation=record.runtime_generation)
             try:
                 self._emit(record, "session.started", "runtime-adapter", {"run_id": run.run_id})
             except BaseException:
@@ -1580,11 +1542,9 @@ class RuntimeAdapter:
     def containment_summary(self, session_id: str) -> dict[str, Any]:
         """Bounded, framework-neutral containment projection for the Gateway.
 
-        The read-only ``recovery_anchor`` is the Adapter's own fixed snapshot of
-        the session-global call closure, issued only when no root is open. It is
-        Adapter-owned execution evidence (never DSH state, never client input) and
-        lets the existing continuation consumer detect a fenced loss and rearm the
-        original reservation without a new cross-Plane endpoint.
+        The projection exposes only the durable loss identity and cause needed
+        for Gateway containment classification. It does not authorize a new
+        prompt or a replacement Agent run.
         """
 
         validate_identifier(session_id, field="session_id")
@@ -1594,7 +1554,6 @@ class RuntimeAdapter:
             "schema_version": "session-containment-summary.v1",
             "session_id": session_id, "contained": bool(records),
             "attempts": len(records), "latest": None,
-            "recovery_anchor": self._recovery_anchor(evidence_root, session_id),
         }
         if records:
             latest = records[-1]
@@ -1610,22 +1569,6 @@ class RuntimeAdapter:
                 "attempt": latest["attempt"],
             }
         return summary
-
-    def _recovery_anchor(self, evidence_root: Path, session_id: str) -> dict[str, Any] | None:
-        """Fixed ``{tail, digest, idle}`` for the current journal, or ``None``."""
-
-        try:
-            state = LifecycleJournal.read(evidence_root / f"{session_id}.json")
-        except (FileNotFoundError, OSError, ValueError):
-            return None
-        if state.get("open_root") is not None:
-            return {"snapshot_tail_sequence": None, "snapshot_digest": None, "idle": False}
-        try:
-            snapshot = business_recovery.snapshot_from_state(state)
-        except ValueError:
-            return None
-        return {"snapshot_tail_sequence": snapshot["tail_sequence"],
-                "snapshot_digest": snapshot["digest"], "idle": snapshot["idle"]}
 
     def continuation_qualified(self, record: RuntimeSession) -> bool:
         try:
@@ -1712,24 +1655,6 @@ class RuntimeAdapter:
             if record.continuation_budget and record.continuation_budget['reservation_id'] == reservation_id:
                 return self._budget_receipt(record)
             return record.budget_receipts.get(reservation_id) or recover()
-
-    def recovery_receipt(self, session_id: str, attempt_key: str) -> dict:
-        """Bounded in-process projection of an accepted recovery admission.
-
-        The Backend row is the authoritative attempt aggregate; this only lets
-        the Gateway forward the exact target epoch/generation this Adapter read
-        under the admission lock. Unknown/foreign attempt keys fail closed.
-        """
-
-        validate_identifier(session_id, field='session_id')
-        if not isinstance(attempt_key, str):
-            raise ValueError('invalid recovery attempt key')
-        record = self._get(session_id)
-        with record.lock:
-            receipt = record.recovery_receipts.get(attempt_key)
-            if receipt is None:
-                raise KeyError(f'unknown recovery attempt: {attempt_key}')
-            return dict(receipt)
 
     def _build_harness(
         self,

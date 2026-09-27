@@ -37,7 +37,7 @@ def fixture(monkeypatch):
         reads.append((path, params))
         if '/containment' in path:
             return {'schema_version': 'session-containment-summary.v1', 'session_id': 'session-a',
-                    'contained': False, 'latest': None, 'recovery_anchor': None}
+                    'contained': False, 'latest': None}
         if '/continuation-receipt/' in path:
             return settlement
         if path.endswith('/prompts/reconcile'):
