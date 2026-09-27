@@ -8,6 +8,13 @@ CI must be complete relative to a change's impact, fast for narrow changes, isol
 `beyondquant` Product stack, and resource-clean after success, failure, timeout, or cancellation.
 Path selection is an impact graph, not permission to skip a changed component's complete suite.
 
+This is the required **PR/hosted CI** gate for all subsequent BYQ development.
+The [development workflow](../DEVELOPMENT_WORKFLOW.md) defines the lighter local
+slice gate: focused behavior and boundary tests plus diff checks. Do not repeat
+the complete hosted suite locally by habit; run it locally when needed to
+diagnose a failure or meet a specific phase acceptance requirement. A local
+PASS without required hosted checks does not authorize merge.
+
 ## Profiles
 
 Browser verification is tool-neutral (ADR-0059, 2026-09-09 amendment).
@@ -41,6 +48,9 @@ source of truth and has architecture tests for representative routes.
 - New commits cancel an older run for the same PR.
 - A merge to `main` does not repeat the same full suite; nightly Full detects cross-change drift.
 - Full CI remains available through `workflow_dispatch` and is mandatory for release candidates.
+- A phase may require real Golden or clean-environment rebuild evidence at its
+  acceptance milestone. That requirement does not make Full CI or Compose a
+  default for each intermediate slice.
 - A failing selected check is a failing required check. Selection may not hide an assertion failure.
 - Every PR (including same-repository), nightly and manual test run uses a standard ephemeral GitHub-hosted
   ubuntu-24.04 VM with read-only token and no production secrets/network. No self-hosted lane remains;

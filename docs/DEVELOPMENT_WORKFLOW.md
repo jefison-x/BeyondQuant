@@ -23,6 +23,39 @@ AGENTS 为入口，ARCHITECTURE 定义持久边界，Accepted ADR 定义具名�
 及范围，不重复询问已授权的正常步骤；新增生产服务、数据破坏、release/tag 或架构扩权须另行决策。
 当前任务的授权记录放在专项执行表/证据中，不把一次会话授权写成永久通用规则。
 
+## 通用风险分级验证门禁
+
+本节适用于后续 Product Phase、维护、依赖升级和文档工作；专项计划可以增加与
+本阶段验收直接相关的证据，但不得把过去阶段的完整日志、历史构建矩阵或全仓
+测试机械复制为每个切片的必跑项。每个实现切片先记录 Git 起点与受影响边界，
+在隔离分支提交可回退的源码。宿主级资源清理前，源码和配置应另有一份不在待删
+资源中的副本；真实 secret 不进 Git。
+
+| 变更范围 | 本地切片验收 | PR/阶段验收 |
+|---|---|---|
+| 文档、历史归档、无调用者的死代码 | diff、链接/引用、调用者证据；规范性文件运行架构测试 | CI 选择文档/架构检查 |
+| 单组件行为或普通缺陷 | 修改行为的定向单元/合同测试及必要构建 | 受影响组件的完整 build/unit/contract suite 由必需 PR CI 执行 |
+| 公共 API、MCP、DSH、共享合同、schema、Job/Worker | 边界合同、错误/授权路径、相关集成；schema 从全新基线验证 | 按影响运行组件与集成 CI；用户可见流程变化验证真实 Product API/浏览器 |
+| 审批、租户、凭据、资金或不可逆外部动作 | 对应不变量与失败/未知结果路径，必要时隔离真实进程 | 保留专项安全验收；不能用 mock 或无关全仓 PASS 代替 |
+| Compose、开发环境、资源清理 | 配置校验、限定资源的预览及受影响服务启动 | 环境里程碑从源码、模板、schema 和 seed 做一次清洁重建 |
+| 阶段收口、发布候选 | 阶段功能清单与尚未覆盖的风险 | 阶段规定的 Golden/真实流程；发布候选必跑 Full CI |
+
+本地默认 `make dev-check`、`git diff --check` 和定向测试。长期分支若默认
+`dev-check` 的 `origin/main` 基线因已提交的旧切片失败，可用
+`python3 scripts/ci/dev-check.py --base <本切片起点提交>` 验证当前切片，并把
+继承性失败单独记录；不得借此忽略当前切片引入的问题。规范性架构或合同改动
+必须有实际架构测试证据。完整受影响组件套件、集成及浏览器检查由
+[CI 策略](operations/ci-policy.md)按影响选择；本地仅在定向验证不足、调试
+失败或专项验收要求时重复。没有 PR CI 的本地 PASS 只能证明本地切片，不能
+充当合并门禁。
+
+开发环境可重建性在环境或阶段里程碑验证，不在每个代码切片重跑完整 Compose。
+从空环境重建的测试默认使用新 schema、最小 seed 和新数据，不要求恢复历史用户
+数据或缓存。若任务涉及必须保留的真实数据、schema/存储格式迁移、备份恢复或
+生产部署，则按其专项计划验证数据安全与恢复；不能把开发期可丢弃数据规则
+套用到真实用户数据。任何必需测试未运行须记为 `NOT_RUN` 和门禁限制；失败
+的选中测试不能用额外无关测试冲抵。
+
 ## 必须遵循的顺序
 
 1. 阅读 `AGENTS.md`、`ARCHITECTURE.md`、`docs/roadmap/STATUS.md`、
@@ -37,20 +70,21 @@ AGENTS 为入口，ARCHITECTURE 定义持久边界，Accepted ADR 定义具名�
    下创建隔离 worktree 和 feature branch，运行 `python3 scripts/ci/verify-worktree.py <worktree>`。
    所有实现修改必须在其中完成。无权限时申请适当目录权限，不能自行把整个 /tmp 当作根。
 5. 实现满足当前 Phase 的最小 contract-first 变更。不得修改旧 Community 仓库。
-6. 依据 ADR-0070，本地先运行 `make dev-check` 和必要定向测试；以下完整套件可以由远端 PR CI 执行，
-   不要求本地和 GitHub 重复。规范改动的架构测试须有真实执行证据。按 ci-policy 运行所需 architecture test；规范修改必须运行。
-7. 运行受影响组件完整 unit test。
-8. 运行受影响组件完整 contract test 和 build。
-9. integration-risk 才运行无密钥 smoke/integration/browser；专项验收要求更严格时不能降低。
+6. 按上述通用门禁运行本地 diff/语法、定向行为与合同测试；规范改动必须运行
+   相关架构测试。记录每项 PASS/FAIL/NOT_RUN 与覆盖边界。
+7. 依据 [CI 策略](operations/ci-policy.md)确认受影响组件及集成风险，确保 PR CI
+   执行完整受影响 build/unit/contract suite；本地无需重复一遍已由 CI 覆盖的套件。
+8. 仅在变更影响真实 Product 流程、专项阶段要求或故障诊断时增加本地
+   smoke/integration/browser；UI 阶段必须完成规定的真实浏览器验收。
    真实模型评测是独立授权/证据层，不向 required keyless CI 注入真实 secret。
-10. 运行 `git diff --check`，检查完整 diff，并执行安全和架构自审。
-11. 在 feature branch 上有意识地提交；只有 push/pr 授权覆盖时才 push 该分支。
-12. 授权覆盖时创建以 `main` 为目标的 Draft PR，说明范围、证据、已知限制和剩余决策；否则本地交接。
-13. 已推送时用 `scripts/ci/watch-ci.py`（精确 PR/head/run、单次读取或有界短观察）
+9. 运行 `git diff --check`，检查完整 diff，并执行安全和架构自审。
+10. 在 feature branch 上有意识地提交；只有 push/pr 授权覆盖时才 push 该分支。
+11. 授权覆盖时创建以 `main` 为目标的 Draft PR，说明范围、证据、已知限制和剩余决策；否则本地交接。
+12. 已推送时用 `scripts/ci/watch-ci.py`（精确 PR/head/run、单次读取或有界短观察）
     等待远端 CI 并记录结果，不用长期 grep+sleep 循环；未推送时如实记录本地验证，不能
     冒充远端 CI。只在 feature branch 中修复失败。
-14. 最终复核文件、测试、依赖 pin 和边界变更。
-15. 默认停在人工合并门禁；仅本文件明确的预发布例外可进入 auto-merge，绝不直接 push 到 `main`。
+13. 最终复核文件、测试、依赖 pin 和边界变更。
+14. 默认停在人工合并门禁；仅本文件明确的预发布例外可进入 auto-merge，绝不直接 push 到 `main`。
 
 CI 必须遵循 `docs/operations/ci-policy.md`：PR 运行 change-impact selective profile，
 受影响组件运行完整 suite；Compose/真实浏览器只由 integration-risk 变化触发。任何 CI
