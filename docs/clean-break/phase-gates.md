@@ -1,5 +1,24 @@
 # Phase 0–6 gate record
 
+## Phase 7 Gateway carrier retirement gate (2026-09-28)
+
+[Bounded evidence](phase7-gateway-carrier-retirement.md) removes the historical
+Gateway recovery-carrier module and live import. An old carrier stops after
+exact original receipt reconciliation, before dispatch or prompt; ordinary
+first dispatch remains. Historical evidence reads its pinned source from Git.
+Focused Gateway image tests passed 31/31, historical unittest 12/12 and
+observer self-check passed. Selected `.232` freezes changed source; `.231`
+remains immutable.
+
+**Tester:** PASS — historical unittest 12/12, current/frozen build tests 12/12,
+architecture 74/74, historical observer self-check with 25/25 negative
+controls, syntax and diff checks. Root's isolated Gateway image run passed
+31/31. **Independent Sol Reviewer:** Functional PASS / Tests PASS / Clean Break
+Architecture PASS after direct staged-diff, historical-source, receipt and
+build review. **Root acceptance:** PASS for Gateway carrier retirement only.
+The live Adapter journal, Gateway lifecycle delivery and Backend authority
+fence remain; Phase 7 overall OPEN and Phase 8 CLOSED.
+
 ## Phase 7 Product MCP unknown-claim evidence gate (2026-09-27)
 
 [Bounded evidence](phase7-product-mcp-unknown-claim-evidence.md) follows a real

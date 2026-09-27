@@ -24,7 +24,7 @@ def _fixture(monkeypatch, *, receipt_status='accepted', settled_status='outcome_
         reservation_id='continuation_' + 'a' * 32, task_id='task_' + 'b' * 32, owner='alice',
         workspace_id='workspace-a', token_limit=3000000, expires_at='2030-01-01T00:00:00+00:00')
     if stale_carrier:
-        reservation['recovery_attempt'] = CARRIER
+        reservation['recovery_attempt'] = stale_carrier if isinstance(stale_carrier, dict) else CARRIER
     receipt = dict(reservation_id=reservation['reservation_id'], instruction='Exact original task only.',
         status=receipt_status, run_id=None if receipt_status == 'reserved' else LOST)
     intent = dict(status='intent', task_id=reservation['task_id'], conversation_id='conversation-a',
@@ -124,9 +124,10 @@ def test_exact_original_reconcile_acceptance_is_recorded_without_another_prompt(
     assert prompts == []
 
 
-def test_stale_recovery_carrier_fails_closed_without_dispatch_or_prompt(monkeypatch):
+@pytest.mark.parametrize('carrier', [CARRIER, {'invented': 'authority'}])
+def test_stale_recovery_carrier_fails_closed_without_dispatch_or_prompt(monkeypatch, carrier):
     context, intent, writes, prompts, adapter_reads = _fixture(monkeypatch,
-        receipt_status='reserved', stale_carrier=True)
+        receipt_status='reserved', stale_carrier=carrier)
 
     main._consume_admitted_task_continuation(context)
 

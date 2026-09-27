@@ -32,6 +32,10 @@ ROOT = HERE.parents[2]
 DEFAULT_CONTRACT = HERE / "contract.v1.json"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+from scripts.dsh.historical_inputs import read_blob  # noqa: E402
+
+HISTORICAL_GATEWAY_COMMIT = "2f8aca4a877d01481be556236c8f56d6ad7fa290"
+HISTORICAL_GATEWAY_PATH = "services/gateway/app/recovery_carrier.py"
 
 OBSERVATIONS_SCHEMA = "byq-v090-business-recovery-observations.v1"
 VERDICT_SCHEMA = "byq-v090-business-recovery-verdict.v1"
@@ -79,21 +83,18 @@ def _load(path: Path):
         raise Failure(f"malformed artifact: {path}: {exc}") from exc
 
 
-def _digest(path: Path) -> str:
-    return "sha256:" + hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-
 def _contract_module():
     from packages.contracts import business_recovery as contract
     return contract
 
 
 def _gateway_module():
-    spec = importlib.util.spec_from_file_location(
-        "byq_observer_gateway_recovery_carrier",
-        ROOT / "services/gateway/app/recovery_carrier.py")
+    # The historical verdict checks the captured 0.9 implementation, never
+    # the current Product Gateway after Clean Break deleted this carrier.
+    source = read_blob(HISTORICAL_GATEWAY_COMMIT, HISTORICAL_GATEWAY_PATH)
+    spec = importlib.util.spec_from_loader("byq_observer_gateway_recovery_carrier", loader=None)
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    exec(compile(source, HISTORICAL_GATEWAY_PATH, "exec"), module.__dict__)
     return module
 
 
@@ -334,18 +335,17 @@ _CHECKERS = {
 
 
 def _source_digests() -> dict:
-    return {
-        "packages/contracts/business_recovery.py":
-            _digest(ROOT / "packages/contracts/business_recovery.py"),
-        "services/runtime-adapter/app/business_recovery.py":
-            _digest(ROOT / "services/runtime-adapter/app/business_recovery.py"),
-        "services/runtime-adapter/app/runtime.py":
-            _digest(ROOT / "services/runtime-adapter/app/runtime.py"),
-        "services/gateway/app/recovery_carrier.py":
-            _digest(ROOT / "services/gateway/app/recovery_carrier.py"),
-        "services/backend/app/research_continuation.py":
-            _digest(ROOT / "services/backend/app/research_continuation.py"),
-    }
+    # Self-check belongs to the captured 0.9 source tree. Its current Product
+    # counterparts may be changed or deleted by Clean Break.
+    paths = (
+        "packages/contracts/business_recovery.py",
+        "services/runtime-adapter/app/business_recovery.py",
+        "services/runtime-adapter/app/runtime.py",
+        HISTORICAL_GATEWAY_PATH,
+        "services/backend/app/research_continuation.py",
+    )
+    return {path: "sha256:" + hashlib.sha256(
+        read_blob(HISTORICAL_GATEWAY_COMMIT, path)).hexdigest() for path in paths}
 
 
 def _digest_exists_in_git_history(relative: str, expected: str) -> bool:

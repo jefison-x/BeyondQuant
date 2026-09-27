@@ -134,8 +134,8 @@ class CommittedEvidenceTests(unittest.TestCase):
 
 class BoundaryTests(unittest.TestCase):
     def test_no_new_store_migration_cross_plane_authority_or_trust_subject(self):
-        for relative in ("packages/contracts/business_recovery.py",
-                         "services/gateway/app/recovery_carrier.py"):
+        self.assertFalse((ROOT / "services/gateway/app/recovery_carrier.py").exists())
+        for relative in ("packages/contracts/business_recovery.py",):
             text = (ROOT / relative).read_text(encoding="utf-8")
             self.assertNotIn("psycopg", text, relative)
             self.assertNotIn("asyncpg", text, relative)
