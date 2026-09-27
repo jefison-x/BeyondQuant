@@ -1,5 +1,23 @@
 # Phase 0–6 gate record
 
+## Phase 7 remaining authority cutover design gate (2026-09-27)
+
+[Candidate contract](phase7-authority-cutover.md) traces the still-live Adapter
+journal → Gateway lifecycle delivery → Backend root authority path and defines
+one vertical replacement. Read-only Luna Explorers found that an old DSH child
+can call MCP directly, so a startup-only Backend sweep is insufficient.
+The candidate requires a fresh, process-bound live Adapter proof before every
+Agent-to-Domain MCP tool, Backend verification/rotation of business authority,
+and direct exact-root close. It preserves unknown external outcomes and stable
+Job/Artifact IDs without same-session DSH recovery. **Tester:** design/static
+PASS (`check-docs.py --base HEAD`, whitespace and source comparison).
+**Independent Sol Reviewer:** Functional PASS / Tests PASS for design only /
+Clean Break Architecture PASS. **Root acceptance:** PASS for the design boundary
+only. No implementation, deletion, Phase 7 overall PASS, Phase 8 entry,
+deployment, or old-data cleanup follows from this decision. The current
+exact-root authorization fence remains until the same-cutover implementation
+passes the contracts in the candidate document.
+
 ## Phase 7 slice 10 gate — pinned foreground child process (2026-09-27)
 
 [Slice record](phase7-live-child-process.md) adds an opt-in test against the
