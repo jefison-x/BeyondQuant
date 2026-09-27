@@ -1,0 +1,29 @@
+# Test-only overlay for a uniquely named disposable Phase 7 project.
+# Project names, networks, volumes, and credentials come from the caller's
+# generated env/override files; this overlay adds no shared resource identity.
+services:
+  postgres:
+    restart: "no"
+  backend:
+    restart: "no"
+  mcp:
+    restart: "no"
+  runtime-adapter:
+    restart: "no"
+    command: ["python3", "/probe/phase7_compose_gateway_root_probe.py"]
+    environment:
+      BYQ_PHASE7_GATEWAY_ROOT_PROBE: "1"
+      BYQ_DSH_PROVIDER: deepseek-official
+      BYQ_DSH_MODEL: deepseek-v4-flash
+      BYQ_DSH_RUN_TIMEOUT_SECONDS: "0"
+      BYQ_DSH_PROGRESS_CHECK_INTERVAL_SECONDS: "600"
+      BYQ_DSH_NO_PROGRESS_TIMEOUT_SECONDS: "600"
+      BYQ_DSH_SUBAGENT_TIMEOUT_SECONDS: "600"
+    volumes:
+      - type: bind
+        source: ./services/runtime-adapter/tests/phase7_compose_gateway_root_probe.py
+        target: /probe/phase7_compose_gateway_root_probe.py
+        read_only: true
+  gateway:
+    restart: "no"
+    ports: !reset []

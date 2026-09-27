@@ -1,5 +1,26 @@
 # Phase 0–6 gate record
 
+## Phase 7 active-root Gateway-only restart gate (2026-09-27)
+
+[Live evidence](phase7-gateway-active-root-restart-evidence.md) uses a fresh,
+scoped five-service Compose project. A durable test user starts a Product API
+turn; real DSH calls Product MCP `byq_agent_run_start`; the Backend holds one
+active root and one fingerprint-bound active AgentRun. The scripted model then
+blocks. Restarting Gateway alone preserves the Adapter boot, Backend authority
+epoch, root and AgentRun. The competing Product turn is rejected at Adapter
+prompt admission with 409, and authenticated model request count stays 2→2.
+The test project, volumes, network, images and temporary credentials were
+cleaned; no Product runtime source or schema was changed.
+
+**Tester:** bounded PASS for syntax, fail-closed runner preflight, staged diff
+and evidence consistency; Docker was run by Root, not independently by Tester.
+**Independent Sol Reviewer:** Functional PASS / Tests PASS / Clean Break
+Architecture PASS after inspecting the actual final diff, schema, Compose,
+credential boundary and ADR alignment. **Root acceptance:** **PASS for this
+active-root restart evidence slice only**. Unknown-outcome roots, exact terminal
+close, lost-response retry and old journal/replay removal remain open. Phase 7
+overall is OPEN; Phase 8 is CLOSED.
+
 ## Phase 7 remaining authority cutover design gate (2026-09-27)
 
 [Candidate contract](phase7-authority-cutover.md) traces the still-live Adapter
