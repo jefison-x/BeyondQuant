@@ -1,5 +1,27 @@
 # Phase 0–6 gate record
 
+## Phase 7 journal cutover and final old-DB archive (2026-09-28)
+
+The maintainer authorized discarding old Agent sessions and all BYQ user-state
+data, including accounts and global configuration. The current Product DB volume
+selected by the local `.env` is `byq-postgres-clean-20260904`; it was shut down
+and copied read-only. Its final logical archive is
+`/home/jefison/backups/byq-clean-break-final-20260927T234310Z/byq-domain.dump`
+(SHA-256 `0d62af957f545da40fc13083914c1d4cc614f04414fe6806d36bc772a4d06183`).
+The archive's private read-only manifest records the source identity, 119
+public tables and a successful isolated full restore with selected row counts.
+Both temporary database volumes and containers were removed. The original DB
+volume and all user data remain untouched; no Phase 8 cleanup began.
+
+An attempted source patch to remove `LifecycleJournal` imports and stale-lease
+protection was rejected by automatic approval review. The stated concern was
+loss of live cross-process authorization/recovery protections and possible
+duplicate or unauthorized business calls; data-cleanup authorization alone
+was judged insufficient for that code-level change. No source change was made
+and no workaround was attempted. **Root gate:** Phase 7 remains OPEN and
+Phase 8 CLOSED pending explicit code-cutover authorization and the required
+Tester → independent Reviewer → Root acceptance.
+
 ## Phase 7 lifecycle ownership cutover review (2026-09-28)
 
 Gateway now sends lifecycle evidence from its live Adapter event collector only;
