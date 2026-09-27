@@ -300,7 +300,9 @@ class DomainCallEvidenceMixin:
                 if existing["trace_id"] != context["trace"] or existing["evidence_json"] != evidence:
                     raise AgentConflict("private call sequence conflicts with its durable evidence")
                 return existing["receipt_json"]
-            self._domain_identity(connection, evidence, context, active=True)
+            # Evidence is an inert observation. A late exact proof may establish
+            # an existing claim's receipt after terminal/revocation; new claims
+            # and execution still require active authority below.
             root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root", context)
             if root is None:
                 raise AgentConflict("runtime root binding is not yet confirmed")

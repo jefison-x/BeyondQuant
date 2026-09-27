@@ -1,5 +1,23 @@
 # Phase 0–6 gate record
 
+## Phase 7 late domain-proof regression gate (2026-09-27)
+
+[Bounded evidence](phase7-late-domain-proof-evidence.md) restores inert late
+proof ingestion for exact existing-claim `unknown` receipts while new claims
+and domain writes still require active root authority. Fresh isolated
+PostgreSQL tests passed 47/47; current build/architecture tests passed 86/86.
+Selected `.230` and frozen `.229` checks passed; disposable resources were
+removed.
+
+**Tester:** PASS for staged whitespace, syntax, docs, selected/frozen build
+checks and 86 focused build/architecture tests; Root's disposable PostgreSQL
+run passed 47/47. **Independent Sol Reviewer:** Functional PASS / Tests PASS /
+Clean Break Architecture PASS after direct staged-diff and authority review.
+**Root acceptance:** PASS for inert late evidence and exact existing-claim
+reconciliation only. New claims and writes still require active authority.
+The final cutover and post-deletion `outcome_unknown` proof remain unaccepted.
+Phase 7 overall stays OPEN; Phase 8 stays CLOSED.
+
 ## Phase 7 executable recovery-carrier retirement gate (2026-09-27)
 
 [Bounded evidence](phase7-carrier-retirement-build229-evidence.md) removes
