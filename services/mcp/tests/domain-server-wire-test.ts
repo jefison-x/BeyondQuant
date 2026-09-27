@@ -132,7 +132,7 @@ try {
         authProvider: { token: async () => "synthetic-wire-token" },
         requestInit: { headers },
       }));
-    const callsBeforeRejectedWrite = requests.length;
+    const callsBeforeRejectedWrite: number = requests.length;
     const rejectedBootWrite = await missingOrMalformedBootClient.callTool({
       name: "byq_strategy_validate",
       arguments: { ...args, idempotency_key: bootHeader ?? "boot-id-missing" },

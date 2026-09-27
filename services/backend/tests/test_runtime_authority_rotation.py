@@ -22,6 +22,7 @@ pytestmark = pytest.mark.skipif(not os.environ.get("BYQ_DATABASE_URL"), reason="
 
 
 def _task(research, ctx, conversation, key):
+    assert conversation["runtime_session_id"] == ctx["x-byq-session-id"]
     return research.create_task({
         "owner_principal": ctx["x-byq-owner-principal"],
         "title": "Synthetic authority task",
@@ -31,7 +32,9 @@ def _task(research, ctx, conversation, key):
     }, trusted_context={
         "owner_principal": ctx["x-byq-owner-principal"],
         "workspace_id": ctx["x-byq-workspace-id"],
-        "conversation_id": conversation["conversation_id"],
+        "actor_principal": ctx["x-byq-actor-principal"],
+        "trace_id": ctx["x-byq-trace-id"],
+        "session_id": ctx["x-byq-session-id"],
     })
 
 

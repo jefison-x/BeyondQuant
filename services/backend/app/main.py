@@ -4714,7 +4714,7 @@ def list_agent_approvals(
 
 @app.post("/v1/agents/approvals/{approval_id}/decision")
 def decide_agent_approval(approval_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
-    context = _required_agent_context(request, payload)
+    context = _required_agent_context(request, payload, include_workspace=True)
     request_payload = dict(payload)
     request_payload["approval_id"] = approval_id
     result = _agent_call(lambda: {"approval": agent_store.decide_approval(
