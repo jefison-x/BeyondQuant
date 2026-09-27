@@ -1,5 +1,29 @@
 # Phase 0–6 gate record
 
+## Phase 7 slice 9 gate — historical journal adoption and lease repair (2026-09-27)
+
+[Slice record](phase7-journal-legacy.md) removes v1–v3 lifecycle-journal
+migration, old-session lease reanchor, boot-stale archive operators and their
+historical tests/runbook. The current v4 evidence journal, exact terminal ACK,
+epoch write fence and Adapter → Gateway → Backend root authorization closure
+remain. A missing executor epoch cannot bootstrap over any existing journal.
+Current build `.224` binds the new source; `.223` is frozen. No database,
+volume, container or Product API changed.
+
+**Tester:** focused journal/executor 28/28, build identity 7/7, selected
+architecture 3/3, `.223`/`.224` identity, slice `dev-check`, documentation and
+diff checks PASS. Gateway lifecycle delivery 11 PASS; three host-only cases
+could not import FastAPI, and focused Adapter process cleanup could not import
+`deepseek_harness` on the host. The killed-Adapter → Gateway → Backend wire
+journey is **NOT_RUN** because its live Backend/test environment is absent;
+this is an integration limit, not a claimed PASS.
+**Independent Sol Reviewer:** Functional PASS / Tests PASS with that limit /
+Clean Break Architecture PASS after direct diff, caller, contract, build and
+authorization-boundary review. **Root acceptance:** **PASS for slice 9 only**.
+Old v1–v3 evidence must not be mounted into the fresh 0.10 environment with
+active Backend roots. Phase 7 remains open; Phase 8 resource cleanup remains
+closed.
+
 ## Phase 7 slice 8 gate — remove legacy terminal ACK migration (2026-09-27)
 
 Gateway lifecycle delivery no longer scans old trace events to migrate the

@@ -258,15 +258,14 @@ def _journal_envelopes(root: Path) -> list[tuple[Path, str]]:
 
 
 def _bootstrap_reason(root: Path) -> str:
-    """Return the bootstrap reason, or fail closed when stable journals exist."""
+    """Bootstrap only an empty evidence root; existing journals need their epoch."""
 
     envelopes = _journal_envelopes(root)
-    stable = [path for path, schema in envelopes if schema == "byq-lifecycle-journal.v4"]
-    if stable:
+    if envelopes:
         raise ExecutorIdentityError(
-            "stable journal identity cannot be proven: executor epoch state is missing; "
+            "journal identity cannot be proven: executor epoch state is missing; "
             "explicit takeover required")
-    return "legacy-journal-migration" if envelopes else "bootstrap"
+    return "bootstrap"
 
 
 def _maximum_journal_epoch(root: Path) -> int:

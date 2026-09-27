@@ -25,6 +25,15 @@ stable business ID. This narrows the required continuity behavior; it does
 not make BYQ the owner of DSH session or child recovery. Live delegated turns
 still require bounded completion, cancellation and explicit failure behavior.
 
+An Adapter process loss must still revoke the exact BYQ root's domain-call
+authority. The current bounded lifecycle evidence delivery closes that root in
+the Backend and obtains an exact terminal acknowledgement before admitting a
+new turn. It does not reconstruct a DSH session, rerun a prompt or resume a
+child. Keep this authorization fence until a tested replacement atomically
+closes the Backend root; a missing Adapter session or a Gateway error alone
+does not revoke domain-call authority. Historical journal formats and
+old-session repair are not inputs to the 0.10 runtime.
+
 BYQ MCP remains the stable Agent-to-Domain boundary. MCP exposes domain commands and bounded read models, not Redis, queue, GPU node, process, table or filesystem internals. Browser requests use Product API. Product runtime and development agents/tools are isolated. If DSH lacks a required generic continuity feature, record the limitation and qualify a DSH version; do not recreate the harness in BYQ.
 
 For the Phase 7 Gateway cutover, the public `/v1/agent/*` and `/v1/workflows/*` Product API paths are the only browser-facing conversation/trace routes. Gateway MUST remove exactly its old pass-through `GET /internal/runtime/health`, `POST /internal/runtime/sessions`, `POST /internal/runtime/sessions/{id}/prompt|cancel|release`, and `GET /internal/workflows/{id}/events` handlers. Gateway may still call the Runtime Adapter's internal API as a service client until the adapter itself is simplified in a separately qualified slice; removing Gateway pass-through does not delete the Adapter transport or make raw DSH schemas public. The old ADR-0004 requirement to retain that Gateway compatibility seam is superseded by ADR-0088 and this decision.

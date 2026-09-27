@@ -1,4 +1,4 @@
-"""ADR-0079 R1: stable executor identity, monotonic epoch fencing, v3 migration.
+"""Current-v4 stable executor identity and monotonic epoch fencing.
 
 The headline acceptance is that a simulated host reboot (a changed
 ``/proc/sys/kernel/random/boot_id``) produces ZERO stale sessions. The stable
@@ -7,8 +7,6 @@ boot-id read raise to prove independence.
 """
 from __future__ import annotations
 
-import copy
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -21,7 +19,6 @@ from app import executor_identity
 from app.executor_identity import ExecutorIdentity, ExecutorTakeoverBusy
 from app.lifecycle_journal import JournalBusy, JournalIdentityMismatch, LifecycleJournal
 from app.contracts import make_workflow_trace_event
-from packages.contracts.agent_run_lifecycle import lifecycle_receipt, project_lifecycle_event
 
 
 def context(session_id: str) -> dict:
@@ -33,15 +30,6 @@ def event(sequence: int, ctx: dict, kind: str = "session.started", **payload) ->
     return make_workflow_trace_event(
         session_id=ctx["session_id"], trace_id=ctx["trace_id"], sequence=sequence,
         kind=kind, source="runtime-adapter", payload={"run_id": "a" * 32, **payload})
-
-
-def call_evidence(root: str, generation: str) -> dict:
-    return {
-        "schema_version": "domain-call-observed.v1", "sequence": 1, "root_run_id": root,
-        "generation": generation, "call_id": "private-call-one", "action": "byq_strategy_validate",
-        "task_id": "task-one", "agent_run_id": "run-one", "idempotency_key": "key-one",
-        "request_sha256": "b" * 64, "input_sha256": "c" * 64,
-    }
 
 
 def test_startup_bootstraps_epoch_once_on_an_empty_volume(tmp_path):
@@ -133,20 +121,9 @@ def test_explicit_takeover_increments_epoch_and_fences_old_writer(tmp_path):
             journal.observe(event(1, ctx), generation="generation-one")
     finally:
         journal.close()
-    # A stale old-epoch journal cannot be re-claimed without explicit repair.
+    # A journal from the prior epoch remains fail-closed after takeover.
     with pytest.raises(JournalIdentityMismatch):
         LifecycleJournal.claim(tmp_path, ctx)
-    # The exceptional re-anchor path adopts the new epoch and preserves evidence.
-    stored = LifecycleJournal.read(tmp_path / f"{ctx['session_id']}.json")["lease_identity"]
-    repaired = LifecycleJournal.reanchor_lease(
-        tmp_path, ctx["session_id"], expected_stored_lease=stored)
-    assert repaired["status"] == "reanchored"
-    assert repaired["executor_epoch"] == 2
-    reclaimed = LifecycleJournal.claim(tmp_path, ctx)
-    try:
-        assert reclaimed.state["executor_epoch"] == 2
-    finally:
-        reclaimed.close()
 
 
 def test_concurrent_takeover_has_exactly_one_winner(tmp_path):
@@ -170,6 +147,31 @@ def test_missing_epoch_fails_closed_for_stable_journals(tmp_path):
         LifecycleJournal.claim(tmp_path, ctx)
 
 
+@pytest.mark.parametrize("schema", [
+    "byq-lifecycle-journal.v1",
+    "byq-lifecycle-journal.v2",
+    "byq-lifecycle-journal.v3",
+    "unknown-journal-schema",
+])
+def test_missing_epoch_never_bootstraps_over_existing_journal(tmp_path, schema):
+    ctx = context("existing-journal")
+    journal = LifecycleJournal.claim(tmp_path, ctx, create=True)
+    path = journal.path
+    journal.close()
+
+    envelope = json.loads(path.read_text(encoding="utf-8"))
+    envelope["schema_version"] = schema
+    path.write_text(json.dumps(envelope, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+    before = path.read_bytes()
+    epoch_path = executor_identity.state_path(tmp_path)
+    epoch_path.unlink()
+
+    with pytest.raises(JournalIdentityMismatch, match="epoch state is missing"):
+        LifecycleJournal.claim(tmp_path, ctx)
+    assert not epoch_path.exists()
+    assert path.read_bytes() == before
+
+
 def test_corrupt_epoch_fails_closed(tmp_path):
     ctx = context("corrupt-epoch")
     journal = LifecycleJournal.claim(tmp_path, ctx, create=True)
@@ -188,60 +190,6 @@ def test_deployment_identity_mismatch_fails_closed(tmp_path):
         executor_identity.state_path(tmp_path), "test")
     with pytest.raises(JournalIdentityMismatch):
         LifecycleJournal.claim(tmp_path, ctx, executor=other)
-
-
-def test_legacy_v3_journal_migrates_to_v4_preserving_all_evidence(tmp_path):
-    ctx = context("legacy-v3")
-    journal = LifecycleJournal.claim(tmp_path, ctx, create=True)
-    journal.observe(event(1, ctx), generation="generation-one", prompt=("original-key", "b" * 64))
-    journal.observe_call(call_evidence("a" * 32, "generation-one"))
-    terminal = event(2, ctx, "session.result")
-    journal.observe(terminal, generation="generation-one")
-    receipt = lifecycle_receipt(project_lifecycle_event(terminal, ctx["session_id"], ctx["trace_id"]))
-    journal.acknowledge_terminal(receipt)
-    snapshot = copy.deepcopy(journal.state)
-    path = journal.path
-    journal.close()
-
-    # Downgrade the stored envelope to a legacy boot-bound v3 journal.
-    envelope = json.loads(path.read_text(encoding="utf-8"))
-    del envelope["state"]["executor_identity"]
-    del envelope["state"]["executor_epoch"]
-    envelope["state"]["lease_identity"] = "f" * 64
-    envelope["schema_version"] = "byq-lifecycle-journal.v3"
-    encoded = json.dumps(envelope["state"], sort_keys=True, separators=(",", ":")).encode()
-    envelope["sha256"] = hashlib.sha256(encoded).hexdigest()
-    path.write_text(json.dumps(envelope, sort_keys=True, separators=(",", ":")), encoding="utf-8")
-
-    migrated = LifecycleJournal.claim(tmp_path, ctx)
-    try:
-        assert migrated.state["executor_identity"] == "byq-test-runtime"
-        assert migrated.state["executor_epoch"] == 1
-        assert migrated.state["lease_identity"] == migrated.lease_identity
-        for field in ("context", "sequence", "open_root", "events", "prompts", "terminal_acks", "calls"):
-            assert migrated.state[field] == snapshot[field]
-        assert migrated.state["calls"][0]["call_id"] == "private-call-one"
-    finally:
-        migrated.close()
-    # The migrated journal claims cleanly on disk as a stable v4 journal.
-    persisted = json.loads(path.read_text(encoding="utf-8"))
-    assert persisted["schema_version"] == "byq-lifecycle-journal.v4"
-    again = LifecycleJournal.claim(tmp_path, ctx)
-    try:
-        assert again.state["sequence"] == snapshot["sequence"]
-    finally:
-        again.close()
-
-
-def _downgrade_to_legacy_v3(path):
-    envelope = json.loads(path.read_text(encoding="utf-8"))
-    del envelope["state"]["executor_identity"]
-    del envelope["state"]["executor_epoch"]
-    envelope["state"]["lease_identity"] = "f" * 64
-    envelope["schema_version"] = "byq-lifecycle-journal.v3"
-    encoded = json.dumps(envelope["state"], sort_keys=True, separators=(",", ":")).encode()
-    envelope["sha256"] = hashlib.sha256(encoded).hexdigest()
-    path.write_text(json.dumps(envelope, sort_keys=True, separators=(",", ":")), encoding="utf-8")
 
 
 def test_takeover_cannot_interleave_between_validation_and_durable_write(tmp_path, monkeypatch):
@@ -339,91 +287,3 @@ def test_old_epoch_writer_is_fenced_after_takeover(tmp_path):
             journal.observe(event(1, ctx), generation="generation-one")
     finally:
         journal.close()
-
-
-def test_takeover_cannot_interleave_with_legacy_adoption(tmp_path, monkeypatch):
-    """A legacy v3 -> v4 adoption is also fenced and lock-scoped."""
-
-    ctx = context("legacy-toctou")
-    boot = LifecycleJournal.claim(tmp_path, ctx, create=True)
-    path = boot.path
-    boot.close()
-    _downgrade_to_legacy_v3(path)
-
-    entered = threading.Event()
-    release = threading.Event()
-    attempting = threading.Event()
-    takeover_done = threading.Event()
-    takeover_refused = threading.Event()
-    errors: list[BaseException] = []
-    holder: dict = {}
-    original_replace = os.replace
-
-    def guarded_replace(src, dst, *args, **kwargs):
-        if Path(dst) == path and not entered.is_set():
-            entered.set()
-            if not release.wait(timeout=10):
-                raise AssertionError("adoption write was never released")
-        return original_replace(src, dst, *args, **kwargs)
-
-    monkeypatch.setattr(os, "replace", guarded_replace)
-
-    def adopt():
-        try:
-            holder["journal"] = LifecycleJournal.claim(tmp_path, ctx)
-        except BaseException as exc:  # pragma: no cover - surfaced below
-            errors.append(exc)
-
-    def take():
-        attempting.set()
-        try:
-            LifecycleJournal.takeover_executor_epoch(
-                tmp_path, reason="concurrent takeover during legacy adoption")
-            takeover_done.set()
-        except ExecutorTakeoverBusy:
-            takeover_refused.set()
-        except BaseException as exc:  # pragma: no cover
-            errors.append(exc)
-
-    adopter = threading.Thread(target=adopt)
-    taker = threading.Thread(target=take)
-    try:
-        adopter.start()
-        assert entered.wait(timeout=10), "the adoption never reached os.replace"
-        taker.start()
-        assert attempting.wait(timeout=10)
-        time.sleep(0.5)
-        assert not takeover_done.is_set(), (
-            "takeover completed inside the legacy adoption window")
-        release.set()
-        adopter.join(timeout=10)
-        taker.join(timeout=10)
-        assert not adopter.is_alive() and not taker.is_alive()
-        assert errors == []
-        assert takeover_refused.is_set() and not takeover_done.is_set()
-        winner = LifecycleJournal.takeover_executor_epoch(
-            tmp_path, reason="takeover after the legacy adoption becomes durable")
-        assert winner["executor_epoch"] == 2
-        assert LifecycleJournal.read(path)["executor_epoch"] == 1
-    finally:
-        release.set()
-        adopter.join(timeout=10)
-        taker.join(timeout=10)
-        if holder.get("journal") is not None:
-            holder["journal"].close()
-
-
-def test_reanchor_fails_closed_when_epoch_advances_after_resolve(tmp_path, monkeypatch):
-    ctx = context("reanchor-race")
-    journal = LifecycleJournal.claim(tmp_path, ctx, create=True)
-    journal.close()
-    stale = executor_identity.resolve(tmp_path)
-    stored = LifecycleJournal.read(tmp_path / f"{ctx['session_id']}.json")["lease_identity"]
-    LifecycleJournal.takeover_executor_epoch(
-        tmp_path, reason="advance the epoch after the repair resolved the identity")
-    monkeypatch.setattr(
-        LifecycleJournal, "_resolve_executor",
-        staticmethod(lambda root, executor=None: stale))
-    with pytest.raises(JournalIdentityMismatch):
-        LifecycleJournal.reanchor_lease(
-            tmp_path, ctx["session_id"], expected_stored_lease=stored)

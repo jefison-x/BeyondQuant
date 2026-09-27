@@ -33,6 +33,19 @@ Status: review candidate; **no runtime code, schema or migration was removed**. 
 | REPLACE | Multiple adapter/gateway/backend runtime receipts with one DSH status boundary plus BYQ business IDs; old schema with fresh baseline, no old runtime migrations; scattered env reads with SystemConfig/WorkspaceConfig/TaskConfig; old Compose/Makefile lifecycle with scoped dev commands. |
 | ARCHIVE | Pre-Clean-Break ADRs and P4 evidence as historical only; final old DB dump/config manifest as read-only archive; old runtime migrations and historical CI artifacts as reference where retention requires. Do not use archives as test or migration input. |
 
+### Phase 7 authority qualification
+
+The current Adapter journal → Gateway lifecycle delivery → Backend root
+terminal transaction is a live domain authorization fence. After Adapter
+process loss, it delivers evidence for the exact root and closes its Backend
+domain-call admission; it does not recover or replay the DSH Agent. Removing
+delivery before an equivalent atomic Backend close would leave an active root
+authorized and could block ResearchTask handoff. The generic recovery
+disposition above therefore remains a target, not a deletion authorization for
+this live path. Old journal v1–v3 adoption and old-session lease repair have
+zero migration priority and can be removed independently, with v4 integrity,
+current lifecycle delivery and terminal ACK retained.
+
 ### P4 disposition
 
 P4-A/B real-journey evidence remains historical. P4-C1 is in current main despite stale STATUS candidate text. Preserve P4-C2 worktree/branch only as unreviewed reference; do not merge or build Clean Break from it. P4-D is not assumed complete. **Keep semantics**: deterministic domain action, ResearchTask CAS, exact approval/parameters digest, bounded market-data projection, business idempotency, one Job/Artifact identity, explicit unknown financial outcome. **Discard implementation shape**: generic generation ledger, executor lease/fencing/takeover, child-runtime recovery, cross-service session receipt choreography and event-as-state continuation. Do not claim DSH native cross-process continuation merely because P4 safety tests passed.

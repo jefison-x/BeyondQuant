@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import copy
-import datetime as dt
 import fcntl
 import hashlib
 import json
@@ -23,13 +22,6 @@ from packages.contracts.domain_call_admission import validate_call_evidence
 MAX_BYTES = 8 * 1024 * 1024
 MAX_PRIVATE_CALLS = 1024
 JOURNAL_SCHEMA_VERSION = "byq-lifecycle-journal.v4"
-JOURNAL_SCHEMA_VERSIONS = frozenset({
-    "byq-lifecycle-journal.v1", "byq-lifecycle-journal.v2",
-    "byq-lifecycle-journal.v3", "byq-lifecycle-journal.v4",
-})
-REANCHOR_AUDIT_DIR = "reanchor-audit"
-REANCHOR_SCHEMA_VERSION = "byq-lifecycle-lease-reanchor.v1"
-_LEASE_HEX = re.compile(r"[0-9a-f]{64}")
 _TOKEN_HEX = re.compile(r"[0-9a-f]{32}")
 _LOCAL_FILESYSTEMS = {"ext2", "ext3", "ext4", "xfs", "btrfs", "overlay", "tmpfs"}
 
@@ -46,14 +38,6 @@ class JournalIdentityMismatch(ValueError):
     an explicit, stable fail-closed condition. It must not be collapsed into
     "unknown session" or a generic server fault. A host reboot never changes
     the identity.
-    """
-
-
-class LeaseReanchorConflict(ValueError):
-    """The stored lease identity is not the value the operator expected.
-
-    ADR-0078 re-lease fails closed on this conflict; it never blind-overwrites a
-    lease that changed between inventory and apply.
     """
 
 
@@ -96,16 +80,6 @@ class LifecycleJournal:
     def _lease_identity(executor, st_dev, st_ino, token):
         return executor_identity.lease_identity(executor, st_dev, st_ino, token)
 
-    @staticmethod
-    def _adopt_executor(state, executor, lease_identity):
-        """First controlled claim of a legacy boot-bound journal -> stable v4."""
-
-        adopted = copy.deepcopy(state)
-        adopted["executor_identity"] = executor.deployment_id
-        adopted["executor_epoch"] = executor.executor_epoch
-        adopted["lease_identity"] = lease_identity
-        return adopted
-
     @classmethod
     def claim(cls, root, context, *, create=False, executor=None):
         cls._context(context)
@@ -138,20 +112,12 @@ class LifecycleJournal:
             obj.lease_identity = cls._lease_identity(obj.executor, stat.st_dev, stat.st_ino, token)
             if obj.path.exists():
                 envelope = cls._read_envelope(obj.path)
-                state = cls._migrate(envelope)
+                state = cls.validate(envelope["state"])
                 if state["context"] != context:
                     raise JournalIdentityMismatch("journal identity mismatch")
-                if envelope["schema_version"] != JOURNAL_SCHEMA_VERSION:
-                    # The first controlled claim of a legacy boot-bound journal
-                    # adopts the stable executor identity exactly once, under
-                    # the exclusive owner lock, preserving all evidence. The
-                    # fenced save also holds the epoch shared lock across
-                    # validation and persistence so a takeover cannot slip in.
-                    state = cls._adopt_executor(state, obj.executor, obj.lease_identity)
-                    obj._save(state)
-                elif (state.get("executor_identity") != obj.executor.deployment_id
-                      or state.get("executor_epoch") != obj.executor.executor_epoch
-                      or state["lease_identity"] != obj.lease_identity):
+                if (state["executor_identity"] != obj.executor.deployment_id
+                        or state["executor_epoch"] != obj.executor.executor_epoch
+                        or state["lease_identity"] != obj.lease_identity):
                     raise JournalIdentityMismatch("journal identity mismatch")
                 obj.state = state
                 if obj.state["open_root"] is not None:
@@ -179,156 +145,10 @@ class LifecycleJournal:
             raise
 
     @classmethod
-    def reanchor_lease(cls, root, session_id, *, expected_stored_lease, executor=None):
-        """Explicitly re-bind a durable journal to the stable executor (ADR-0079).
-
-        This is the exceptional repair path, not the reboot path: normal restart
-        and reboot preserve the stable lease. Under the journal's exclusive owner
-        lock (and the exclusive epoch lock) ONLY the executor binding is
-        rewritten: ``executor_identity``, ``executor_epoch`` and
-        ``lease_identity``. ``sequence``, ``events``, ``prompts``,
-        ``terminal_acks``, ``calls``, ``open_root`` and ``context`` are preserved
-        exactly; no domain or database state is touched. A legacy v3 journal is
-        migrated to v4 in the same step.
-
-        Fails closed: a live owner (lock held), a concurrent takeover, an
-        unknown/malformed journal, an invalid expected lease, or a stored lease
-        that changed since inventory all abort without mutating. A stored lease
-        already equal to the current one is an idempotent no-op. A per-session
-        audit record (timestamp, old and new lease, prior and new journal
-        sha256) is committed atomically beside the journal before returning.
-        """
-
-        validate_identifier(session_id, field="session_id")
-        if not isinstance(expected_stored_lease, str) or _LEASE_HEX.fullmatch(expected_stored_lease) is None:
-            raise ValueError("invalid expected lease identity")
-        root = Path(root)
-        if root.is_symlink():
-            raise ValueError("journal directory cannot be a symlink")
-        cls._require_local_coherent_filesystem(root)
-        identity = cls._resolve_executor(root, executor)
-        path = root / (session_id + ".json")
-        lock_path = root / (session_id + ".lock")
-        if path.is_symlink() or lock_path.is_symlink():
-            raise ValueError("journal cannot be a symlink")
-        obj = cls()
-        obj.root = root
-        obj.executor = identity
-        obj.path = path
-        obj.lock = None
-        staged = None
-        saved = False
-        try:
-            try:
-                obj.lock = os.open(lock_path, os.O_RDWR | os.O_NOFOLLOW)
-            except FileNotFoundError:
-                raise FileNotFoundError("no durable runtime evidence") from None
-            try:
-                fcntl.flock(obj.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError as exc:
-                raise JournalBusy("the original evidence owner is still present") from exc
-            token = os.read(obj.lock, 128).decode("ascii")
-            if _TOKEN_HEX.fullmatch(token) is None:
-                raise ValueError("original owner lock identity is missing")
-            if not path.exists():
-                raise FileNotFoundError("no durable runtime evidence")
-            stat = os.fstat(obj.lock)
-            current = cls._lease_identity(identity, stat.st_dev, stat.st_ino, token)
-            with executor_identity.epoch_lock(root, exclusive=True):
-                # The identity was resolved before this exclusive lock. A
-                # takeover that completed in between advanced the authoritative
-                # epoch, so re-binding to the resolved identity would resurrect
-                # a stale epoch. Fail closed; the operator re-runs the repair.
-                authoritative = executor_identity.read_epoch_state(root)
-                if (authoritative is None
-                        or authoritative["deployment_id"] != identity.deployment_id
-                        or authoritative["executor_epoch"] != identity.executor_epoch):
-                    raise JournalIdentityMismatch(
-                        "executor epoch changed during lease re-anchor")
-                envelope = cls._read_envelope(path)
-                state = cls._migrate(envelope)
-                stored = state["lease_identity"]
-                base = {
-                    "session_id": session_id,
-                    "previous_lease_identity": stored,
-                    "current_lease_identity": current,
-                    "executor_identity": identity.deployment_id,
-                    "executor_epoch": identity.executor_epoch,
-                    "database_rows_modified": False,
-                    "production_data_deleted": False,
-                }
-                if stored == current and state.get("executor_identity") == identity.deployment_id:
-                    return {**base, "status": "current", "changed": False,
-                            "previous_journal_sha256": None, "journal_sha256": None,
-                            "audit_path": None}
-                if stored != expected_stored_lease:
-                    raise LeaseReanchorConflict(
-                        "stored lease identity does not match the expected value")
-                prior_sha256 = envelope["sha256"]
-                new_state = cls._adopt_executor(state, identity, current)
-                new_sha256 = hashlib.sha256(
-                    json.dumps(new_state, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-                audit = {
-                    "schema_version": REANCHOR_SCHEMA_VERSION,
-                    "timestamp": dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
-                    "action": "reanchor_lease",
-                    "session_id": session_id,
-                    "previous_lease_identity": stored,
-                    "lease_identity": current,
-                    "executor_identity": identity.deployment_id,
-                    "executor_epoch": identity.executor_epoch,
-                    "previous_journal_sha256": prior_sha256,
-                    "journal_sha256": new_sha256,
-                    "preserved": ["context", "sequence", "open_root", "events", "prompts",
-                                  "terminal_acks", "calls"],
-                    "reversible": True,
-                    "database_rows_modified": False,
-                    "production_data_deleted": False,
-                }
-                staged, final = cls._stage_reanchor_audit(root, audit)
-                # The exclusive epoch lock is already held for this whole
-                # critical section; tell _save not to re-acquire it. Re-taking
-                # the shared lock here would self-deadlock on flock.
-                obj._save(new_state, fenced=False, epoch_locked=True)
-                saved = True
-                cls._commit_reanchor_audit(staged, final)
-                staged = None
-                return {**base, "status": "reanchored", "changed": True,
-                        "previous_journal_sha256": prior_sha256, "journal_sha256": new_sha256,
-                        "audit_path": str(final)}
-        finally:
-            if staged is not None and not saved:
-                Path(staged).unlink(missing_ok=True)
-            obj.close()
-
-    @classmethod
     def takeover_executor_epoch(cls, root, *, reason, operator=None):
         """Explicit, audited executor takeover; increments the monotonic epoch."""
 
         return executor_identity.takeover(root, reason=reason, operator=operator)
-
-    @staticmethod
-    def _stage_reanchor_audit(root, audit):
-        directory = root / REANCHOR_AUDIT_DIR
-        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-        final = directory / f"{audit['session_id']}.{audit['timestamp']}.json"
-        if final.exists():
-            raise FileExistsError(f"reanchor audit already exists: {final}")
-        fd, name = tempfile.mkstemp(prefix=".reanchor-", dir=directory)
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump(audit, stream, sort_keys=True, separators=(",", ":"))
-            stream.flush()
-            os.fsync(stream.fileno())
-        return name, final
-
-    @staticmethod
-    def _commit_reanchor_audit(staged, final):
-        os.replace(staged, final)
-        directory = os.open(Path(final).parent, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
 
     @staticmethod
     def _read_envelope(path):
@@ -338,9 +158,10 @@ class LifecycleJournal:
         if len(data) > MAX_BYTES:
             raise ValueError("journal exceeds recovery bound")
         envelope = json.loads(data)
-        if (not isinstance(envelope, dict) or set(envelope) != {"schema_version", "state", "sha256"}
-                or envelope["schema_version"] not in JOURNAL_SCHEMA_VERSIONS):
+        if (not isinstance(envelope, dict) or set(envelope) != {"schema_version", "state", "sha256"}):
             raise ValueError("invalid journal envelope")
+        if envelope["schema_version"] != JOURNAL_SCHEMA_VERSION:
+            raise ValueError("unsupported journal schema")
         state = envelope["state"]
         digest = hashlib.sha256(json.dumps(state, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         if envelope["sha256"] != digest:
@@ -348,41 +169,24 @@ class LifecycleJournal:
         return envelope
 
     @staticmethod
-    def _migrate(envelope):
-        state = envelope["state"]
-        schema = envelope["schema_version"]
-        # Verify historical bytes before the explicit, fail-closed migration.
-        # A v1 journal proves no terminal acknowledgements, never implicit ACK.
-        if schema == "byq-lifecycle-journal.v1":
-            if not isinstance(state, dict) or "terminal_acks" in state:
-                raise ValueError("invalid historical journal state")
-            state["terminal_acks"] = {}
-        if schema in {"byq-lifecycle-journal.v1", "byq-lifecycle-journal.v2"}:
-            if not isinstance(state, dict) or "calls" in state:
-                raise ValueError("invalid historical private evidence state")
-            state["calls"] = []
-        return LifecycleJournal.validate(state)
-
-    @staticmethod
     def read(path):
-        return LifecycleJournal._migrate(LifecycleJournal._read_envelope(path))
+        return LifecycleJournal.validate(LifecycleJournal._read_envelope(path)["state"])
 
     @staticmethod
     def validate(state):
-        base = {"context", "sequence", "open_root", "events", "prompts", "terminal_acks", "calls", "lease_identity"}
-        stable = {"executor_identity", "executor_epoch"}
-        if not isinstance(state, dict) or set(state) not in (base, base | stable):
+        expected = {
+            "context", "sequence", "open_root", "events", "prompts", "terminal_acks",
+            "calls", "lease_identity", "executor_identity", "executor_epoch",
+        }
+        if not isinstance(state, dict) or set(state) != expected:
             raise ValueError("invalid journal state")
         if not isinstance(state["lease_identity"], str) or re.fullmatch("[0-9a-f]{64}", state["lease_identity"]) is None:
             raise ValueError("invalid owner lock identity")
-        if stable <= set(state):
-            if (not isinstance(state["executor_identity"], str)
-                    or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{2,127}", state["executor_identity"]) is None):
-                raise ValueError("invalid stable executor identity")
-            if type(state["executor_epoch"]) is not int or not 1 <= state["executor_epoch"] < 2**63:
-                raise ValueError("invalid stable executor epoch")
-        elif stable & set(state):
-            raise ValueError("incomplete stable executor identity")
+        if (not isinstance(state["executor_identity"], str)
+                or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{2,127}", state["executor_identity"]) is None):
+            raise ValueError("invalid stable executor identity")
+        if type(state["executor_epoch"]) is not int or not 1 <= state["executor_epoch"] < 2**63:
+            raise ValueError("invalid stable executor epoch")
         if (not isinstance(state["events"], list) or not isinstance(state["prompts"], dict)
                 or not isinstance(state["terminal_acks"], dict)):
             raise ValueError("invalid journal collections")
@@ -449,32 +253,19 @@ class LifecycleJournal:
                 raise ValueError("private call evidence has no matching journal root")
         return state
 
-    def _save(self, state, *, fenced=True, epoch_locked=False):
+    def _save(self, state):
         self.validate(state)
-        if "executor_identity" not in state or "executor_epoch" not in state:
-            raise ValueError("journal state lacks a stable executor identity")
         data = self._encode(state)
-        if epoch_locked:
-            # The caller already holds the epoch lock for a critical section
-            # that spans validation and persistence (the reanchor path holds the
-            # exclusive lock). Never re-acquire it here: a second flock on a
-            # different descriptor would self-deadlock.
-            if fenced:
-                executor_identity.assert_write_allowed_locked(
-                    self.root, state["executor_identity"], state["executor_epoch"])
-            self._persist(data)
-            return
         # Hold the epoch shared lock across BOTH the fence check and the whole
         # durable write. A takeover needs the exclusive lock, so it can never
         # complete between validation and os.replace/fsync; a takeover that
         # already completed before we acquired the lock is caught here.
         with executor_identity.epoch_lock(self.root, exclusive=False):
-            if fenced:
-                try:
-                    executor_identity.assert_write_allowed_locked(
-                        self.root, state["executor_identity"], state["executor_epoch"])
-                except ExecutorIdentityError as exc:
-                    raise JournalIdentityMismatch(str(exc)) from exc
+            try:
+                executor_identity.assert_write_allowed_locked(
+                    self.root, state["executor_identity"], state["executor_epoch"])
+            except ExecutorIdentityError as exc:
+                raise JournalIdentityMismatch(str(exc)) from exc
             self._persist(data)
 
     def _encode(self, state):
