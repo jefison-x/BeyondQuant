@@ -5,6 +5,9 @@ This policy refines the evidence required by the [phase plan](fidelity-and-execu
 and [Phase 7 deletion plan](ownership-and-deletion-plan.md). It does not relax the
 Tester → independent Sol Reviewer → Root PASS sequence, the human PR/merge gate,
 required hosted CI, or BYQ authorization and financial safety invariants.
+The [general development gate](../DEVELOPMENT_WORKFLOW.md#通用风险分级验证门禁)
+applies as well; this document specifies the Clean Break phase milestones and
+old-runtime data policy.
 
 ## Recoverable development baseline
 
@@ -37,8 +40,8 @@ and checksum-verified; it is never an input to the new schema.
    and focused tests for the changed behavior. The default `make dev-check`
    compares the entire branch with `origin/main`; report an inherited failure
    separately rather than attributing it to the current slice. Run architecture
-   tests for normative architecture or
-   contract changes. Run affected component build/tests locally only when the
+   tests for normative architecture or contract changes. Run affected component
+   build/tests locally only when the
    focused tests do not cover the integration risk or when diagnosis requires
    them. A passing unrelated full-repository suite is not a substitute for the
    focused contract.

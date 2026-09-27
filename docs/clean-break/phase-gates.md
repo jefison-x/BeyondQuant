@@ -1,5 +1,27 @@
 # Phase 0–6 gate record
 
+## General development verification policy gate (2026-09-27)
+
+The maintainer extended risk-selected verification to all later BYQ development.
+The [general workflow](../DEVELOPMENT_WORKFLOW.md#通用风险分级验证门禁)
+now assigns focused local checks to each slice, complete affected-component
+suites to required PR CI, and clean rebuild/Golden evidence to the relevant
+phase milestone. The [CI policy](../operations/ci-policy.md) still requires
+its selected checks; real UI journeys, security/financial invariants, retained
+user-data safety, release Full CI and human merge/deployment gates remain.
+
+**Tester:** `check-docs.py --base HEAD` PASS (4 Markdown files after the gate
+record was added),
+`dev-check.py --base HEAD` PASS (0 changed code files), `git diff --check HEAD`
+PASS, architecture unittest 198/198 PASS; change classifier selected docs and
+architecture only. Default branch-wide diff still finds the unrelated existing
+blank line documented below. Product suites and hosted PR CI were NOT_RUN for
+this documentation-only local change. **Independent Sol Reviewer:** Functional
+PASS / Tests PASS for policy scope / Architecture PASS after direct diff and
+ADR-0070/0088, CI, UI and data-safety review. **Root acceptance:** PASS for
+the general verification-policy change only. Phase 7 remains open; this does
+not authorize push, merge, deployment or historical-data deletion.
+
 ## Clean Break verification policy gate (2026-09-27)
 
 The maintainer directed a lighter development-period gate: committed source
