@@ -1,5 +1,28 @@
 # Phase 0–6 gate record
 
+## Phase 7 normal terminal close lost-response gate (2026-09-27)
+
+[Live evidence](phase7-terminal-close-lost-response-evidence.md) exercises a fresh
+six-service disposable Compose project through Product API, real Product MCP,
+DSH and the Backend. A test-only private proxy forwarded the first exact root
+close to Backend, received its 200 receipt, then dropped the Gateway response.
+Backend root and fingerprint-bound AgentRun were already closed while Adapter
+had no terminal ACK, Gateway retained one pending event, and a same-session
+prompt was blocked with 409. A test-gated retry returned 503 without Backend
+forwarding; after host release, an identical retry received the original
+Backend receipt, Adapter journal acquired that ACK, and Gateway delivery became
+`up_to_date`. The provider made no duplicate request. Six containers and all
+project volumes, networks, images and temporary credentials were cleaned.
+
+**Tester:** bounded PASS after direct six-file review, syntax/AST,
+`dev-check`, docs and diff checks; the initial counter-label defect was fixed
+and rechecked. **Independent Sol Reviewer:** Functional PASS / Tests PASS /
+Clean Break Architecture PASS after direct interface, ADR, fixture, evidence
+and incremental counter-label review. The reviewer did not rerun Docker; the
+live Compose run and scoped teardown were performed by Root. **Root acceptance:**
+**PASS for this normal terminal lost-response evidence slice only**. Phase 7
+overall is OPEN; Phase 8 is CLOSED.
+
 ## Phase 7 active-root Gateway-only restart gate (2026-09-27)
 
 [Live evidence](phase7-gateway-active-root-restart-evidence.md) uses a fresh,
