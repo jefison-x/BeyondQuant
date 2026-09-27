@@ -325,7 +325,7 @@ def test_product_process_cannot_start_next_turn_until_exact_terminal_ack(adapter
 
 
 @pytest.mark.parametrize("ack_while_released", [False, True])
-def test_terminal_ack_barrier_survives_session_release_and_recreation(adapter, ack_while_released):
+def test_terminal_receipt_survives_release_without_rebinding_the_session(adapter, ack_while_released):
     try:
         adapter.create_session("durable-ack", "durable-trace", "alice", "workspace_alice")
         root = adapter.submit_prompt("durable-ack", "synthetic first")
@@ -337,13 +337,13 @@ def test_terminal_ack_barrier_survives_session_release_and_recreation(adapter, a
             count = len(FakeHarness.instances)
             assert adapter.acknowledge_terminal("durable-ack", receipt) == {"receipt": receipt}
             assert len(FakeHarness.instances) == count  # evidence only, no process
-        adapter.create_session("durable-ack", "durable-trace", "alice", "workspace_alice")
         if not ack_while_released:
-            with pytest.raises(SessionConflict, match="cleanup"):
-                adapter.submit_prompt("durable-ack", "synthetic second")
             adapter.acknowledge_terminal("durable-ack", receipt)
-        assert root not in adapter._get("durable-ack").pending_terminal_receipts
-        assert adapter.submit_prompt("durable-ack", "synthetic second") != root
+        state = runtime_module.LifecycleJournal.read(
+            adapter._session_root / "byq-lifecycle-evidence" / "durable-ack.json")
+        assert root in state["terminal_acks"]
+        with pytest.raises(SessionConflict, match="interrupted"):
+            adapter.create_session("durable-ack", "durable-trace", "alice", "workspace_alice")
     finally:
         adapter.close()
 
@@ -513,13 +513,10 @@ def test_recovery_and_durable_prompt_lookup_never_construct_or_run_a_harness(ada
     assert content not in journal.path.read_text()
     with pytest.raises(ValueError):
         adapter.recover_evidence({**ctx, "owner": "bob"})
-    try:
+    with pytest.raises(SessionConflict, match="interrupted"):
         adapter.create_session("orphan", "orphan-trace", "alice", "workspace_alice")
-        assert adapter.submit_prompt("orphan", content, idempotency_key="original-prompt") == root
-        assert FakeHarness.instances[0].run_count == 0
-        assert adapter._get("orphan").sequence > 5
-    finally:
-        adapter.close()
+    assert FakeHarness.instances == []
+    adapter.close()
 
 
 def test_failed_journal_write_prevents_model_start_and_shutdown_still_closes_process(adapter, monkeypatch):
@@ -1106,8 +1103,8 @@ def test_conversation_context_rejects_private_or_unbounded_shapes(adapter: Runti
         )
 
 
-def test_resume_is_idempotent_after_runtime_recreation(adapter: RuntimeAdapter) -> None:
-    adapter.create_session("s-ready", "t-ready", initial_sequence=7)
+def test_resume_is_idempotent_for_a_live_adapter_session(adapter: RuntimeAdapter) -> None:
+    adapter.create_session("s-ready", "t-ready")
 
     resumed = adapter.resume_session("s-ready")
 

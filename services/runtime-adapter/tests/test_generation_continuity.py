@@ -15,7 +15,7 @@ from packages.contracts.runtime_continuity import (
 
 from app.containment import latest as latest_containment
 from app.lifecycle_journal import LifecycleJournal
-from app.runtime import RuntimeAdapter, SessionStatus
+from app.runtime import RuntimeAdapter, SessionConflict, SessionStatus
 from .test_process_cleanup import FakeHarness, adapter, wait_for_status  # noqa: F401
 from .test_session_rehydration import _simulate_process_death
 
@@ -48,17 +48,17 @@ def test_fresh_session_is_fresh_and_live_generation_reattaches(adapter: RuntimeA
     adapter.close()
 
 
-def test_recreation_with_durable_evidence_is_rehydrated(adapter: RuntimeAdapter) -> None:
+def test_released_session_identity_cannot_be_reused(adapter: RuntimeAdapter) -> None:
     adapter.create_session("r2-new", "r2-new-trace", "alice", "workspace_alice")
     adapter.release_session("r2-new")
-    # A released adapter session is gone from memory but its journal remains;
-    # the durable session is rehydrated rather than reported as brand new.
-    recreated = adapter.create_session("r2-new", "r2-new-trace", "alice", "workspace_alice")
-    assert recreated["continuity"] == REHYDRATED
+    # Durable lifecycle evidence prevents an old stable ID from becoming a new
+    # Agent session after its runtime record is gone.
+    with pytest.raises(SessionConflict, match="interrupted"):
+        adapter.create_session("r2-new", "r2-new-trace", "alice", "workspace_alice")
     adapter.close()
 
 
-def test_restart_rehydrates_with_new_generation_and_stable_identity(
+def test_restart_rejects_old_identity_and_preserves_durable_lifecycle_evidence(
     adapter: RuntimeAdapter,
 ) -> None:
     FakeHarness.allow_run.set()
@@ -75,22 +75,13 @@ def test_restart_rehydrates_with_new_generation_and_stable_identity(
 
     restarted = RuntimeAdapter(adapter._compatibility)
     try:
-        rebound = restarted.create_session(
-            "r2-restart", "r2-restart-trace", "alice", "workspace_alice",
-            durable_sequence, [{"role": "user", "content": "earlier public turn"}],
-        )
-        assert rebound["continuity"] == REHYDRATED
-
-        rehydrated = restarted._get("r2-restart")
-        # The durable session identity and the persisted trace sequence survive
-        # generation replacement.
-        assert rehydrated.session_id == "r2-restart"
-        assert rehydrated.trace_id == "r2-restart-trace"
-        assert rehydrated.sequence == durable_sequence + 1
-        # A brand-new generation replaced the old process binding. The journal
-        # remains authoritative for the completed run and trace sequence.
-        new_generation = _generation_id(restarted, "r2-restart")
-        assert new_generation != first_generation
+        with pytest.raises(SessionConflict, match="interrupted"):
+            restarted.create_session(
+                "r2-restart", "r2-restart-trace", "alice", "workspace_alice",
+                durable_sequence, [{"role": "user", "content": "earlier public turn"}],
+            )
+        with pytest.raises(KeyError):
+            restarted.submit_prompt("r2-restart", "must not replay")
         # Durable lifecycle evidence is intact and still contains the run.
         state = LifecycleJournal.read(
             restarted._session_root / "byq-lifecycle-evidence" / "r2-restart.json")
@@ -105,7 +96,7 @@ def test_restart_rehydrates_with_new_generation_and_stable_identity(
         adapter.close()
 
 
-def test_crashed_generation_is_interrupted_and_a_new_generation_rehydrates(
+def test_crashed_generation_is_unavailable_and_never_rebound(
     adapter: RuntimeAdapter,
 ) -> None:
     FakeHarness.allow_run.clear()
@@ -124,32 +115,19 @@ def test_crashed_generation_is_interrupted_and_a_new_generation_rehydrates(
 
     restarted = RuntimeAdapter(adapter._compatibility)
     try:
-        rebound = restarted.create_session(
-            "r2-crash", "r2-crash-trace", "alice", "workspace_alice", 1, [],
-        )
-        # Truthful: the previous run/generation was terminated, not silently
-        # reattached, and a new generation carries the durable session forward.
-        assert rebound["continuity"] == INTERRUPTED
-        rehydrated = restarted._get("r2-crash")
-        assert rehydrated.session_id == "r2-crash"
-        assert _generation_id(restarted, "r2-crash") != first_generation
+        with pytest.raises(SessionConflict, match="interrupted"):
+            restarted.create_session(
+                "r2-crash", "r2-crash-trace", "alice", "workspace_alice", 1, [],
+            )
+        with pytest.raises(KeyError):
+            restarted.submit_prompt("r2-crash", "must not replay")
         evidence_root = restarted._session_root / "byq-lifecycle-evidence"
         state = LifecycleJournal.read(evidence_root / "r2-crash.json")
-        assert state["open_root"] is None
-        started_runs = {
-            event["payload"]["run_id"] for event in state["events"]
-            if event["kind"] == "session.started"
-        }
-        closed_runs = {
-            event["payload"]["run_id"] for event in state["events"]
-            if event["kind"] == "session.closed"
-        }
-        assert closed_runs & started_runs
-        interrupted_run_id = next(iter(closed_runs & started_runs))
+        assert state["open_root"] is not None
+        assert state["open_root"]["root_run_id"]
         loss = latest_containment(evidence_root, "r2-crash")
-        assert loss is not None
-        assert loss["interrupted_generation"] == first_generation
-        assert loss["interrupted_run_id"] == interrupted_run_id
+        assert loss is None
+        assert first_generation
     finally:
         restarted.close()
         FakeHarness.allow_run.set()

@@ -1098,14 +1098,15 @@ def _restore_product_session(conversation_id: str, principal: Principal, workspa
                 "workspace_id": session.workspace_id,
                 "owner_principal": session.principal.subject,
                 "initial_sequence": initial_sequence,
+                "attach_live_only": True,
                 "conversation_context": conversation_context,
                 **({"conversation_recovery": recovery} if recovery is not None else {}),
             },
         )
     except HTTPException as exc:
-        # A 409 means Gateway restarted while this adapter session survived.
-        if exc.status_code != 409:
-            raise
+        if _is_lost_runtime_session(exc):
+            _raise_agent_session_interrupted()
+        raise
     try:
         product_sessions.add(session)
     except RuntimeError:
@@ -1161,6 +1162,25 @@ def _product_session(request: Request, session_id: str) -> ProductSession:
         return _restore_product_session(session_id, principal, workspace_id)
 
 
+_LOST_RUNTIME_SESSION_MARKER = "BYQ runtime session was interrupted"
+
+
+def _is_lost_runtime_session(error: HTTPException) -> bool:
+    detail = getattr(error, "adapter_conflict_detail", "")
+    return error.status_code == 404 or (
+        error.status_code == 409 and isinstance(detail, str)
+        and _LOST_RUNTIME_SESSION_MARKER in detail
+    )
+
+
+def _raise_agent_session_interrupted() -> None:
+    raise ProductError(
+        409,
+        "agent_session_interrupted",
+        "This Agent session was interrupted when its runtime process ended. Start a new Agent session and query durable BYQ Jobs by job_id to continue.",
+    )
+
+
 def _runtime_recovery_payload(session: ProductSession) -> dict[str, object]:
     """Fresh, bounded public history for one newly admitted root, never DSH state."""
     catalog = _catalog_request("GET", f"/v1/product/conversations/{session.conversation_id}",
@@ -1195,16 +1215,6 @@ def _runtime_recovery_payload(session: ProductSession) -> dict[str, object]:
     if recovery is not None:
         payload["conversation_recovery"] = recovery
     return payload
-
-
-def _replace_lost_runtime_session(session: ProductSession) -> ProductSession:
-    """Rehydrate durable context after the Adapter lost only its private state."""
-
-    product_sessions.remove_owned(session.conversation_id, session.principal)
-    trace_store.close(session.session_id)
-    return _restore_product_session(
-        session.conversation_id, session.principal, session.workspace_id
-    )
 
 
 TRANSIENT_ROOT_CONFLICTS = (
@@ -1310,10 +1320,9 @@ def _continue_approval_conversation(
                     f"/internal/runtime/sessions/{session.session_id}/prompt", payload=payload, timeout=5.0)
                 break
             except HTTPException as exc:
-                if exc.status_code == 404:
-                    session = _replace_lost_runtime_session(session)
-                    payload = continuation_payload()
-                    continue
+                if _is_lost_runtime_session(exc):
+                    mark("failed")
+                    return {"status": "failed"}
                 if exc.status_code == 409 and _transient_root_conflict(exc):
                     conflict = exc
                     continue
@@ -1521,22 +1530,15 @@ def submit_product_turn(
                            "原消息的保存回执尚未确认，本次未启动模型；请先核对原会话。")
     prompt_payload["idempotency_key"] = message_id
     try:
-        try:
-            body = _adapter_post(
-                f"/internal/runtime/sessions/{session.session_id}/prompt",
-                payload=prompt_payload, timeout=5.0,
-            )
-        except HTTPException as exc:
-            if exc.status_code != 404:
-                raise
-            session = _replace_lost_runtime_session(session)
-            body = _adapter_post(
-                f"/internal/runtime/sessions/{session.session_id}/prompt",
-                payload=prompt_payload, timeout=5.0,
-            )
+        body = _adapter_post(
+            f"/internal/runtime/sessions/{session.session_id}/prompt",
+            payload=prompt_payload, timeout=5.0,
+        )
         if not isinstance(body, dict) or body.get("accepted") is not True or not _valid_prompt_run_id(body.get("run_id")):
             raise HTTPException(status_code=502, detail="prompt receipt is unconfirmed")
     except HTTPException as exc:
+        if _is_lost_runtime_session(exc):
+            _raise_agent_session_interrupted()
         key = prompt_payload.get("idempotency_key")
         if isinstance(exc, PromptAdmissionRejected) or exc.status_code < 500 or not isinstance(key, str):
             raise
@@ -1563,13 +1565,9 @@ def resume_product_session(session_id: str, request: Request) -> dict[str, objec
             payload=resume_payload,
         )
     except HTTPException as exc:
-        if exc.status_code != 404:
-            raise
-        session = _replace_lost_runtime_session(session)
-        body = _adapter_post(
-            f"/internal/runtime/sessions/{session.session_id}/resume",
-            payload=resume_payload,
-        )
+        if _is_lost_runtime_session(exc):
+            _raise_agent_session_interrupted()
+        raise
     return {
         "session_id": session.conversation_id,
         "trace_id": session.trace_id,
@@ -1591,11 +1589,12 @@ def cancel_product_session(
     path = f"/internal/runtime/sessions/{session.session_id}/cancel"
     if request.mode != "hard":
         path += f"?mode={request.mode}"
-    body = _adapter_post(
-        path,
-        payload=None,
-        timeout=5.0,
-    )
+    try:
+        body = _adapter_post(path, payload=None, timeout=5.0)
+    except HTTPException as exc:
+        if _is_lost_runtime_session(exc):
+            _raise_agent_session_interrupted()
+        raise
     return {
         "session_id": session.conversation_id,
         "trace_id": session.trace_id,

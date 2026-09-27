@@ -18,7 +18,7 @@ from packages.contracts.session_failure_containment import FencedWrite
 from app import containment
 from app import executor_identity
 from app.executor_identity import ExecutorFenced, ExecutorIdentity
-from app.runtime import RuntimeAdapter, SessionStatus
+from app.runtime import RuntimeAdapter, SessionConflict, SessionStatus
 from .test_process_cleanup import FakeHarness, adapter, wait_for_status  # noqa: F401
 from .test_session_rehydration import _simulate_process_death
 
@@ -42,23 +42,15 @@ def test_lost_executor_run_is_interrupted_and_business_state_survives(
     _simulate_process_death(adapter)
     restarted = _restart(adapter)
     try:
-        rebound = restarted.create_session(
-            "loss-1", "loss-trace", "alice", "workspace_alice", durable_sequence, [],
-        )
-        # Honest terminal: the lost incomplete run is interrupted, never completed
-        # and never silently reattached.
-        assert rebound["continuity"] == "interrupted"
-        rehydrated = restarted._get("loss-1")
-        assert rehydrated.session_id == "loss-1"
-        assert rehydrated.trace_id == "loss-trace"
-        # Conversation identity, public history and the durable prompt receipt
-        # survive; no second model call was made.
-        kinds = [event["kind"] for event in rehydrated.history]
-        assert "session.started" in kinds and "session.closed" in kinds
-        # The durable receipt proves the run *started*, but the fenced containment
-        # proves this exact run was lost, so reconcile must NOT report a live or
-        # complete accepted result; the Gateway then reaches the ADR-0084 recovery
-        # seam instead of short-circuiting on the original receipt.
+        with pytest.raises(KeyError):
+            restarted.submit_prompt("loss-1", "must not be replayed")
+        with pytest.raises(SessionConflict, match="interrupted"):
+            restarted.create_session(
+                "loss-1", "loss-trace", "alice", "workspace_alice", durable_sequence, [],
+            )
+        # The durable receipt proves that the run started, but the old runtime
+        # is gone. Preserve uncertainty without claiming the run completed or
+        # automatically admitting another turn.
         digest = hashlib.sha256(content.encode()).hexdigest()
         assert restarted.reconcile_prompt("loss-1", "loss-original-key", digest) == {
             "schema_version": "prompt-receipt.v1", "state": "outcome_unknown",
@@ -66,20 +58,12 @@ def test_lost_executor_run_is_interrupted_and_business_state_survives(
         assert FakeHarness.instances[0].run_count == 1
 
         summary = restarted.containment_summary("loss-1")
-        assert summary["contained"] is True
-        assert summary["latest"]["loss_cause"] == "executor-loss"
-        assert summary["latest"]["interrupted_run_id"] == root
-        assert summary["latest"]["interrupted_generation"]
-        assert summary["latest"]["executor_epoch"] >= 1
-        # Framework-neutral trace binding: the Gateway may only project
-        # interrupted when this matches the exact session/trace.
-        assert summary["latest"]["trace_id"] == "loss-trace"
+        assert summary["contained"] is False
+        assert summary["latest"] is None
+        assert summary["recovery_anchor"]["idle"] is False
         records = containment.read(restarted._session_root / "byq-lifecycle-evidence", "loss-1")
-        # The record carries the execution-boundary assertion, not business
-        # evidence: the adapter cannot and does not claim business preservation.
-        assert all(record["boundary_invariant"] == containment_contract.BOUNDARY_INVARIANT
-                   for record in records)
-        assert all("preserved" not in record for record in records)
+        assert records == []
+        assert root
     finally:
         restarted.close()
         FakeHarness.allow_run.set()
@@ -209,11 +193,18 @@ def test_containment_summary_http_boundary(adapter: RuntimeAdapter, monkeypatch)
     monkeypatch.setattr(main, "adapter", restarted)
     client = TestClient(main.app)
     try:
-        restarted.create_session("loss-http", "loss-http-trace", "alice", "workspace_alice", 1, [])
+        prompt = client.post("/internal/runtime/sessions/loss-http/prompt", json={"content": "must not replay"})
+        assert prompt.status_code == 404
+        recreated = client.post("/internal/runtime/sessions", json={
+            "session_id": "loss-http", "trace_id": "loss-http-trace",
+            "owner_principal": "alice", "workspace_id": "workspace_alice", "initial_sequence": 1,
+        })
+        assert recreated.status_code == 409
+        assert "interrupted" in recreated.json()["detail"]
         body = client.get("/internal/runtime/sessions/loss-http/containment")
         assert body.status_code == 200
-        assert body.json()["contained"] is True
-        assert body.json()["latest"]["loss_cause"] == "executor-loss"
+        assert body.json()["contained"] is False
+        assert body.json()["recovery_anchor"]["idle"] is False
         # The projection carries no DSH private identity.
         serialized = json.dumps(body.json())
         assert "native_session" not in serialized and "dsh" not in serialized.lower()

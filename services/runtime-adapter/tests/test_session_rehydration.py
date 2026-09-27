@@ -1,11 +1,8 @@
-"""ADR-0046 restart survivability: durable sessions rebind after process death.
+"""Adapter process loss ends the Agent session without replaying its prompt.
 
-A deploy recreates the runtime-adapter container. The in-memory ``_sessions``
-map is empty afterwards, but the BYQ lifecycle journal and DSH session root are
-durable. A follow-up prompt/events/subscribe for such a session must rehydrate
-the record from disk instead of returning 404, and the public BYQ sequence must
-continue from the durable/gateway-persisted value so the Gateway trace never
-sees a false gap.
+BYQ lifecycle evidence and exact prompt receipts remain durable for read-only
+business reconciliation, while runtime operations require a live in-memory DSH
+session. A new Agent session uses a new stable ID.
 """
 from __future__ import annotations
 
@@ -14,7 +11,8 @@ import json
 
 import pytest
 
-from app.runtime import RuntimeAdapter, SessionStatus
+from app.runtime import RuntimeAdapter, SessionConflict, SessionStatus
+from app.lifecycle_journal import LifecycleJournal
 from .test_process_cleanup import FakeHarness, adapter, release_compatibility, wait_for_status
 
 
@@ -32,7 +30,40 @@ def _simulate_process_death(runtime: RuntimeAdapter) -> None:
         runtime._sessions.clear()
 
 
-def test_rehydrated_session_continues_after_adapter_restart(adapter: RuntimeAdapter) -> None:
+def test_gateway_attaches_only_to_a_live_adapter_session(adapter: RuntimeAdapter) -> None:
+    adapter.create_session("live-attach", "live-trace", "alice", "workspace_alice")
+    assert adapter.attach_live_session(
+        "live-attach", "live-trace", "alice", "workspace_alice",
+    )["session_id"] == "live-attach"
+    with pytest.raises(SessionConflict, match="identity conflicts"):
+        adapter.attach_live_session("live-attach", "live-trace", "other", "workspace_alice")
+    _simulate_process_death(adapter)
+    with pytest.raises(SessionConflict, match="interrupted"):
+        adapter.attach_live_session("live-attach", "live-trace", "alice", "workspace_alice")
+
+
+def test_http_create_requires_workspace_scoped_identity(
+    adapter: RuntimeAdapter, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi.testclient import TestClient
+    from app import main
+
+    monkeypatch.setattr(main, "adapter", adapter)
+    client = TestClient(main.app)
+    for identity in (
+        {"owner_principal": "alice"},
+        {"owner_principal": "alice", "workspace_id": ""},
+        {"owner_principal": "", "workspace_id": "workspace_alice"},
+    ):
+        response = client.post("/internal/runtime/sessions", json={
+            "session_id": "unscoped", "trace_id": "unscoped-trace", **identity,
+        })
+        assert response.status_code == 422
+    with pytest.raises(KeyError):
+        adapter._get("unscoped")
+
+
+def test_adapter_restart_does_not_rebind_a_completed_session(adapter: RuntimeAdapter) -> None:
     FakeHarness.allow_run.set()
     try:
         adapter.create_session("restart-1", "restart-trace", "alice", "workspace_alice")
@@ -46,33 +77,26 @@ def test_rehydrated_session_continues_after_adapter_restart(adapter: RuntimeAdap
 
         restarted = RuntimeAdapter(adapter._compatibility)
         try:
-            subscriber = restarted.subscribe("restart-1", replay=True)
-            replayed = []
-            while not subscriber.empty():
-                replayed.append(subscriber.get())
-            assert [event["sequence"] for event in replayed] == sorted(
-                event["sequence"] for event in replayed
-            )
-
-            second = restarted.submit_prompt("restart-1", "second synthetic turn")
-            assert restarted._get("restart-1").harness is not None, "harness not bound"
-            assert second and second != first
-            wait_for_status(restarted, "restart-1", SessionStatus.IDLE)
-
-            started = [
-                event for event in restarted._get("restart-1").history
-                if event["kind"] == "session.started" and event["payload"]["run_id"] == second
-            ]
-            assert started, "rehydrated prompt did not emit session.started"
-            assert started[0]["sequence"] == durable + 1
-            assert started[0]["trace_id"] == "restart-trace"
+            with pytest.raises(KeyError):
+                restarted.submit_prompt("restart-1", "second synthetic turn")
+            with pytest.raises(KeyError):
+                restarted.subscribe("restart-1", replay=True)
+            with pytest.raises(SessionConflict, match="interrupted"):
+                restarted.create_session(
+                    "restart-1", "restart-trace", "alice", "workspace_alice", durable, [],
+                )
+            state = LifecycleJournal.read(
+                restarted._session_root / "byq-lifecycle-evidence" / "restart-1.json")
+            assert state["open_root"] is None
+            assert any(event["kind"] == "session.result"
+                       and event["payload"]["run_id"] == first for event in state["events"])
         finally:
             restarted.close()
     finally:
         adapter.close()
 
 
-def test_rehydrated_session_rebases_public_sequence_to_persisted_trace(
+def test_adapter_restart_rejects_old_identity_even_with_a_persisted_trace_cursor(
     adapter: RuntimeAdapter,
 ) -> None:
     """A journal ahead only on non-durable events must not create a trace gap.
@@ -97,19 +121,18 @@ def test_rehydrated_session_rebases_public_sequence_to_persisted_trace(
 
         rebound = RuntimeAdapter(adapter._compatibility)
         try:
-            created = rebound.create_session(
-                "restart-2", "restart-trace-2", "alice", "workspace_alice",
-                persisted, [{"role": "user", "content": "earlier synthetic turn"}],
-            )
-            assert created["status"] == SessionStatus.READY
-            assert rebound._get("restart-2").sequence == persisted + 1
+            with pytest.raises(SessionConflict, match="interrupted"):
+                rebound.create_session(
+                    "restart-2", "restart-trace-2", "alice", "workspace_alice",
+                    persisted, [{"role": "user", "content": "earlier synthetic turn"}],
+                )
         finally:
             rebound.close()
     finally:
         adapter.close()
 
 
-def test_root_scoped_rehydrated_session_binds_a_reserved_root(
+def test_root_scoped_session_cannot_be_reused_after_adapter_restart(
     monkeypatch: pytest.MonkeyPatch, tmp_path,
 ) -> None:
     """Production ``root-turn`` ownership resumes with a reserved root id."""
@@ -142,25 +165,19 @@ def test_root_scoped_rehydrated_session_binds_a_reserved_root(
 
         restarted = RuntimeAdapter(compatibility)
         try:
-            second = restarted.submit_prompt("root-rehydrate", "second root turn")
-            assert second != root and len(second) == 32
-            wait_for_status(restarted, "root-rehydrate", SessionStatus.IDLE)
-            started = [item for item in restarted._get("root-rehydrate").history
-                       if item["kind"] == "session.started" and item["payload"]["run_id"] == second]
-            assert started and started[0]["sequence"] == durable + 1
+            with pytest.raises(KeyError):
+                restarted.submit_prompt("root-rehydrate", "second root turn")
+            with pytest.raises(SessionConflict, match="interrupted"):
+                restarted.create_session(
+                    "root-rehydrate", "root-trace", "alice", "workspace_alice", durable, [],
+                )
         finally:
             restarted.close()
     finally:
         first.close()
 
 
-def test_diverged_durable_tail_is_reanchored_on_rebind(adapter: RuntimeAdapter) -> None:
-    """A frozen Gateway trace resumes gap-free from its persisted cursor.
-
-    The Runtime can keep emitting while no collector persists it. On rebind,
-    durable evidence the Gateway never saw is re-anchored at persisted + 1 so
-    the registration event is delivered contiguously and the run can bind.
-    """
+def test_diverged_durable_tail_does_not_authorize_rebinding(adapter: RuntimeAdapter) -> None:
 
     FakeHarness.allow_run.set()
     try:
@@ -185,21 +202,11 @@ def test_diverged_durable_tail_is_reanchored_on_rebind(adapter: RuntimeAdapter) 
 
         rebound = RuntimeAdapter(adapter._compatibility)
         try:
-            created = rebound.create_session(
-                "restart-tail", "restart-tail-trace", "alice", "workspace_alice",
-                gateway_cursor, [],
-            )
-            assert created["status"] == SessionStatus.READY
-            replayed = [
-                item for item in rebound._get("restart-tail").history
-                if item["sequence"] > gateway_cursor
-            ]
-            assert [item["sequence"] for item in replayed] == [
-                gateway_cursor + 1, gateway_cursor + 2, gateway_cursor + 3, gateway_cursor + 4,
-            ]
-            assert [item["kind"] for item in replayed] == [
-                "session.started", "agent.run.registration", "session.result", "session.ready",
-            ]
+            with pytest.raises(SessionConflict, match="interrupted"):
+                rebound.create_session(
+                    "restart-tail", "restart-tail-trace", "alice", "workspace_alice",
+                    gateway_cursor, [],
+                )
         finally:
             rebound.close()
     finally:
@@ -207,21 +214,21 @@ def test_diverged_durable_tail_is_reanchored_on_rebind(adapter: RuntimeAdapter) 
 
 
 @pytest.mark.parametrize("shutdown", ["release", "close"])
-def test_rehydrated_session_shutdown_without_a_process_is_safe(
+def test_lost_session_has_no_adapter_record_to_release_or_subscribe(
     adapter: RuntimeAdapter, shutdown: str,
 ) -> None:
-    """An events-only rehydration owns no DSH process yet."""
-
     adapter.create_session("restart-shutdown", "restart-shutdown-trace", "alice", "workspace_alice")
     _simulate_process_death(adapter)
     restarted = RuntimeAdapter(adapter._compatibility)
-    restarted.subscribe("restart-shutdown")
+    with pytest.raises(KeyError):
+        restarted.subscribe("restart-shutdown")
     if shutdown == "release":
-        assert restarted.release_session("restart-shutdown")["status"] == SessionStatus.CLOSED
+        with pytest.raises(KeyError):
+            restarted.release_session("restart-shutdown")
     restarted.close()
 
 
-def test_http_boundary_after_restart_is_404_or_accepted(adapter: RuntimeAdapter, monkeypatch) -> None:
+def test_http_boundary_after_restart_rejects_the_old_session(adapter: RuntimeAdapter, monkeypatch) -> None:
     from fastapi.testclient import TestClient
     from app import main
 
@@ -239,10 +246,15 @@ def test_http_boundary_after_restart_is_404_or_accepted(adapter: RuntimeAdapter,
         assert client.post("/internal/runtime/sessions/never-existed/prompt",
                            json={"content": "synthetic"}).status_code == 404
         assert client.get("/internal/runtime/sessions/never-existed/events").status_code == 404
-        accepted = client.post("/internal/runtime/sessions/restart-http/prompt",
-                               json={"content": "second synthetic turn"})
-        assert accepted.status_code == 202
-        assert accepted.json()["accepted"] is True and accepted.json()["run_id"]
+        rejected = client.post("/internal/runtime/sessions/restart-http/prompt",
+                              json={"content": "second synthetic turn"})
+        assert rejected.status_code == 404
+        recreated = client.post("/internal/runtime/sessions", json={
+            "session_id": "restart-http", "trace_id": "restart-http-trace",
+            "owner_principal": "alice", "workspace_id": "workspace_alice", "initial_sequence": 1,
+        })
+        assert recreated.status_code == 409
+        assert "interrupted" in recreated.json()["detail"]
     finally:
         restarted.close()
         adapter.close()
@@ -285,15 +297,12 @@ def _stale_session(adapter: RuntimeAdapter, session_id: str) -> int:
 
 
 def test_stale_lease_is_explicit_and_distinct_from_unknown(adapter: RuntimeAdapter) -> None:
-    from app.runtime import StaleSessionLease
-
     durable = _stale_session(adapter, "stale-1")
     restarted = RuntimeAdapter(adapter._compatibility)
     try:
-        with pytest.raises(StaleSessionLease) as stale:
+        with pytest.raises(KeyError):
             restarted.submit_prompt("stale-1", "second synthetic turn")
-        assert stale.value.code == "stale_session_lease"
-        with pytest.raises(StaleSessionLease):
+        with pytest.raises(SessionConflict, match="interrupted"):
             restarted.create_session(
                 "stale-1", "stale-1-trace", "alice", "workspace_alice", durable, [],
             )
@@ -305,9 +314,7 @@ def test_stale_lease_is_explicit_and_distinct_from_unknown(adapter: RuntimeAdapt
         adapter.close()
 
 
-def test_valid_session_rehydrates_while_a_stale_one_is_rejected(adapter: RuntimeAdapter) -> None:
-    from app.runtime import StaleSessionLease
-
+def test_valid_and_stale_old_sessions_are_both_unavailable_after_restart(adapter: RuntimeAdapter) -> None:
     FakeHarness.allow_run.set()
     try:
         adapter.create_session("valid-1", "valid-1-trace", "alice", "workspace_alice")
@@ -319,11 +326,11 @@ def test_valid_session_rehydrates_while_a_stale_one_is_rejected(adapter: Runtime
 
         restarted = RuntimeAdapter(adapter._compatibility)
         try:
-            accepted = restarted.submit_prompt("valid-1", "second synthetic turn")
-            assert accepted
-            wait_for_status(restarted, "valid-1", SessionStatus.IDLE)
-            assert restarted._get("valid-1").sequence >= durable
-            with pytest.raises(StaleSessionLease):
+            with pytest.raises(KeyError):
+                restarted.submit_prompt("valid-1", "second synthetic turn")
+            with pytest.raises(SessionConflict, match="interrupted"):
+                restarted.create_session("valid-1", "valid-1-trace", "alice", "workspace_alice", durable, [])
+            with pytest.raises(KeyError):
                 restarted.submit_prompt("stale-2", "second synthetic turn")
         finally:
             restarted.close()
@@ -331,7 +338,7 @@ def test_valid_session_rehydrates_while_a_stale_one_is_rejected(adapter: Runtime
         adapter.close()
 
 
-def test_http_stale_lease_is_409_with_stable_code(adapter: RuntimeAdapter, monkeypatch) -> None:
+def test_http_old_session_is_rejected_after_adapter_restart(adapter: RuntimeAdapter, monkeypatch) -> None:
     from fastapi.testclient import TestClient
     from app import main
 
@@ -342,8 +349,7 @@ def test_http_stale_lease_is_409_with_stable_code(adapter: RuntimeAdapter, monke
     try:
         prompt = client.post("/internal/runtime/sessions/stale-http/prompt",
                              json={"content": "second synthetic turn"})
-        assert prompt.status_code == 409
-        assert prompt.json()["code"] == "stale_session_lease"
+        assert prompt.status_code == 404
 
         created = client.post("/internal/runtime/sessions", json={
             "session_id": "stale-http", "trace_id": "stale-http-trace",
@@ -351,7 +357,7 @@ def test_http_stale_lease_is_409_with_stable_code(adapter: RuntimeAdapter, monke
             "initial_sequence": durable,
         })
         assert created.status_code == 409
-        assert created.json()["code"] == "stale_session_lease"
+        assert "interrupted" in created.json()["detail"]
 
         unknown = client.get("/internal/runtime/sessions/never-existed/events")
         assert unknown.status_code == 404

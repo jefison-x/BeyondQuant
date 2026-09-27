@@ -1,5 +1,25 @@
 # Phase 0–6 gate record
 
+## Phase 7 slice 6 gate — lost Agent session does not replay (2026-09-27)
+
+The 0.10 interruption scope now ends the old Agent session when its Adapter
+process state is lost. Gateway attaches only to a surviving in-memory Adapter
+session; a lost session returns `409 agent_session_interrupted` on attempted
+operations and never recreates the old ID or reposts the original prompt.
+Exact prompt receipts remain readable for `outcome_unknown`, and an authorized
+new Agent session may query durable BYQ Jobs by `job_id`. Live resume and
+child timeout/cancellation remain in place. No terminal trace event is
+fabricated from an unproven process loss. The current build identity is `.221`;
+frozen `.215`–`.220` are unchanged.
+
+**Tester:** focused Gateway 54/54 and pinned DSH 0.1.5rc1 Adapter 55/55 PASS
+with read-only source mounts; 18 focused build checks, `.221` current and
+frozen build identities, documentation check and diff check PASS. **Independent
+Sol Reviewer:** Functional PASS / Tests PASS / Clean Break Architecture PASS
+after actual diff, Product identity, receipt, ADR and build review. **Root
+acceptance:** **PASS for slice 6 only**. Phase 7 remains open for further
+runtime simplification and live child qualification; Phase 8 remains closed.
+
 ## General development verification policy gate (2026-09-27)
 
 The maintainer extended risk-selected verification to all later BYQ development.

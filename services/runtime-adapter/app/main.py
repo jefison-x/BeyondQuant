@@ -22,9 +22,10 @@ from .research_judgment_api import router as research_judgment_router
 class CreateSessionRequest(BaseModel):
     session_id: str
     trace_id: str
-    workspace_id: str | None = None
-    owner_principal: str | None = None
+    workspace_id: str = Field(min_length=1)
+    owner_principal: str = Field(min_length=1)
     initial_sequence: int = 0
+    attach_live_only: bool = False
     conversation_context: list[ConversationContextMessage] = Field(default_factory=list)
     conversation_recovery: dict[str, object] | None = None
 
@@ -117,6 +118,11 @@ def runtime_operations() -> dict[str, object]:
 @app.post("/internal/runtime/sessions", status_code=201, dependencies=[Depends(require_chat_admission)])
 def create_session(request: CreateSessionRequest) -> dict[str, object]:
     try:
+        if request.attach_live_only:
+            return adapter.attach_live_session(
+                request.session_id, request.trace_id, request.owner_principal,
+                request.workspace_id,
+            )
         return adapter.create_session(
             request.session_id, request.trace_id, request.owner_principal, request.workspace_id,
             request.initial_sequence, request.conversation_context,
@@ -266,7 +272,7 @@ def continuation_budget_receipt(session_id: str, reservation_id: str) -> dict:
 @app.get('/internal/runtime/sessions/{session_id}/continuation-qualification')
 def continuation_qualification(session_id: str) -> dict:
     try:
-        record = adapter._get(session_id, rehydrate=False)
+        record = adapter._get(session_id)
     except KeyError:
         return {'qualified': False, 'reason': 'session_missing'}
     with record.lock:

@@ -2,6 +2,39 @@
 
 Status: **NO-GO for deleting `child_lease.py` with the qualified DSH 0.1.5rc1 Python SDK**. This is a read-only qualification decision, not a Phase 7 deletion gate or a change to the accepted 0.10 ownership model.
 
+## 0.10 interruption scope decision (2026-09-27)
+
+The maintainer narrowed functional fidelity: after an Agent interruption, a
+new DSH session retrieves a durable BYQ Job by `job_id`; 0.10 does not require
+reattaching the old Agent or rebinding an in-flight child after DSH process
+restart. The old item 4 restart/rebind gate is therefore removed from the
+0.10 cutover contract. An operation against a lost old session reports
+`agent_session_interrupted` and does not replay the original turn. If the
+turn's outcome cannot be proven, BYQ leaves it unknown instead of inventing
+a terminal trace event. The Product conversation catalog may still show the
+historical conversation as `active`; that field describes the conversation's
+archive state, not proof of a running Agent. This removes the restart-continuity
+dependency from the acceptance plan. It does **not** by itself authorize
+deleting `child_lease.py`: the live child still needs bounded timeout, root
+cancellation, unambiguous failure and a normalized Product projection. Until
+that replacement passes a focused contract on the pinned runtime, direct
+deletion remains NO-GO. No BYQ child recovery bridge is permitted. A timeout
+may be reported as a failure when that is the actual observed terminal;
+`interrupted` requires evidence of interruption and must not be inferred from
+an ordinary `session.failed` event.
+
+The pinned DSH 0.1.5rc1 `timeout-policy` reads an optional tool `timeoutMs`.
+BYQ's `tool-subagent` has no such deadline, and the policy's cancellation is
+cooperative even when a tool declares one. DSH therefore does not replace
+BYQ's current foreground-child bound. A future lease removal may instead use
+a bounded root-turn deadline and close the dedicated root DSH process, if a
+focused contract proves child completion, timeout, cancellation, late-result
+discard and Product terminal projection. The current root hard cap is disabled
+by default, so simply removing the child timer would permit an unbounded wait.
+This conclusion follows the pinned [timeout policy](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.1.5-rc.1/packages/guard/timeout-policy/src/index.ts),
+[foreground subagent tool](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.1.5-rc.1/packages/subagent/tool-subagent/src/index.ts),
+and [Python SDK API](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.1.5-rc.1/python/sdk/src/deepseek_harness/api.py).
+
 ## Current boundary
 
 DSH owns child Agent execution. The BYQ Adapter currently correlates child notifications with the parent delegation and uses `ChildLease` for per-child activity and timeout. Its expiry closes the active harness and emits a failure; Gateway projects that failure to Product clients. Deleting only the lease would make the ordinary root no-progress timeout apply to healthy long child turns, while dropping the timeout would leave stuck turns without bounded cleanup. Business idempotency and unknown external outcomes remain BYQ domain safety regardless of child runtime ownership.
@@ -14,12 +47,14 @@ An official upstream release check on 2026-09-27 found v0.1.7-rc.2 as the newest
 
 ## Required cutover contract
 
-Before replacing this live BYQ lease, qualify one exact DSH release and test:
+Before replacing this live BYQ lease, test one bounded design against the
+qualified DSH release. Either use a public DSH child handle/progress contract,
+or use a root-turn deadline that closes the dedicated DSH process. Both paths
+must prove:
 
-1. A stable DSH child handle bound to parent and invocation/call IDs; duplicate, foreign, late and out-of-order observations cannot complete the wrong delegation.
-2. A status snapshot or event cursor with monotonic per-child progress and terminal result for parallel children; DSH owns inactivity and hard-limit policy if BYQ's lease disappears.
-3. Idempotent child cancellation with terminal confirmation, or an explicit root-close fallback with proven terminal behavior.
-4. Lookup/rebind of the same handle after Adapter and child restart, or an explicit interruption outcome that preserves BYQ business safety.
-5. Gateway Product projection remains framework-neutral; no raw DSH event schema reaches the frontend.
+1. Duplicate, foreign, late and out-of-order child observations cannot complete the wrong delegation.
+2. Every foreground delegation has a bounded timeout; healthy child work is not cut off by the shorter root no-progress timer, and an unresponsive child cannot wait forever.
+3. Cancellation has terminal confirmation or a proven root-close fallback; late results cannot be committed.
+4. Gateway Product projection remains framework-neutral; no raw DSH event schema reaches the frontend. Same-child lookup/rebind after DSH process restart is outside 0.10 scope.
 
 Use the real qualified runtime and replacement contract tests in one bounded slice. Do not add a BYQ generic child manager, compatibility bridge, or private DSH SDK dependency. Until the contract passes, keep `child_lease.py` and its safety tests. No DB, Docker or workspace cleanup follows from this note.

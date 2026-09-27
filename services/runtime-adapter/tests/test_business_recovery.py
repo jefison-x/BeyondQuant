@@ -17,7 +17,7 @@ import pytest
 from packages.contracts import business_recovery as contract
 from app import business_recovery as recovery
 from app import containment
-from app.runtime import RuntimeAdapter
+from app.runtime import RuntimeAdapter, SessionConflict
 from .test_process_cleanup import FakeHarness, release_compatibility
 from .test_session_rehydration import _simulate_process_death
 
@@ -52,25 +52,29 @@ def _qualify(adapter: RuntimeAdapter, monkeypatch) -> None:
 
 
 def _lost_session(tmp_path: Path, monkeypatch) -> tuple[RuntimeAdapter, dict]:
-    """Produce a truthful executor-loss containment fact on a real journal."""
+    """Create a hard-cancelled turn with a live, explicitly resumed session."""
 
     FakeHarness.reset()
     adapter = _root_scoped_adapter(tmp_path, monkeypatch)
     adapter.create_session("rec-1", "rec-trace", "alice", "workspace_alice")
-    adapter.submit_prompt("rec-1", "synthetic long research")
+    root = adapter.submit_prompt("rec-1", "synthetic long research")
     assert FakeHarness.run_started.wait(2.0)
     record = adapter._get("rec-1")
-    durable_sequence = record.sequence
-    _simulate_process_death(adapter)
-    restarted = RuntimeAdapter(adapter._compatibility)
-    _qualify(restarted, monkeypatch)
-    restarted.create_session("rec-1", "rec-trace", "alice", "workspace_alice", durable_sequence, [])
-    recorded = restarted.containment_summary("rec-1")["latest"]
-    # The Gateway acknowledges the lost root's durable terminal before a
-    # rearm, exactly as the real continuation consumer does.
-    record = restarted._get("rec-1")
-    restarted.acknowledge_terminal("rec-1", record.terminal_receipts[recorded["interrupted_run_id"]])
-    return restarted, recorded
+    interrupted_generation = record.runtime_generation
+    adapter.cancel_session("rec-1", "hard")
+    context = record.journal.state["context"]
+    containment.record_loss(
+        adapter._session_root / "byq-lifecycle-evidence", context=context,
+        executor=record.journal.executor, loss_cause="runtime-loss",
+        interrupted_run_id=root, interrupted_generation=interrupted_generation,
+        attempt=1, recorded_at=1.0,
+    )
+    # This is the supported live recovery path: an explicit resume while the
+    # Adapter process remains present, followed by the normal terminal receipt.
+    adapter.acknowledge_terminal("rec-1", record.terminal_receipts[root])
+    adapter.resume_session("rec-1")
+    recorded = adapter.containment_summary("rec-1")["latest"]
+    return adapter, recorded
 
 
 def _carrier(recorded: dict, *, reservation_id: str, snapshot: dict, digest: str | None = None,
@@ -348,21 +352,15 @@ def _plain_reservation() -> dict:
     }
 
 
-def test_lost_original_prompt_is_never_reconciled_as_accepted(tmp_path, monkeypatch):
-    """A durably lost run's original prompt reconcile must reach recovery.
-
-    ADR-0084: the Gateway reconciles the original prompt before it decides on
-    recovery. If a lost run's original receipt were reported ``accepted`` the
-    Gateway would short-circuit and never reach the recovery seam.
-    """
+def test_lost_original_prompt_remains_unknown_without_session_rebind(tmp_path, monkeypatch):
+    """An open prompt receipt remains unknown after Adapter process loss."""
 
     from app import runtime as runtime_module
 
     FakeHarness.reset()
     adapter = _root_scoped_adapter(tmp_path, monkeypatch)
-    # The synthetic compatibility harness has no DSH guard plugin journal; the
-    # guard read is unrelated to the reconcile behavior under test. Closing the
-    # initial harness must not release the new run, so the lost run stays open.
+    # The synthetic harness has no DSH guard plugin journal; keep the run open
+    # until process loss so its accepted receipt must reconcile as unknown.
     monkeypatch.setattr(runtime_module, "read_guard", lambda *args, **kwargs: {"charged_tokens": 1})
     monkeypatch.setattr(FakeHarness, "close", lambda self: None)
     try:
@@ -372,7 +370,6 @@ def test_lost_original_prompt_is_never_reconciled_as_accepted(tmp_path, monkeypa
         adapter.submit_prompt("rec-1", content, idempotency_key=reservation["reservation_id"],
                               conversation_context=[], continuation_budget=reservation)
         assert FakeHarness.run_started.wait(2.0)
-        durable_sequence = adapter._get("rec-1").sequence
         identity = json.dumps({"content": content, "reservation": reservation},
                               sort_keys=True, separators=(",", ":"))
         digest = hashlib.sha256(identity.encode()).hexdigest()
@@ -380,11 +377,12 @@ def test_lost_original_prompt_is_never_reconciled_as_accepted(tmp_path, monkeypa
         assert adapter.reconcile_prompt("rec-1", reservation["reservation_id"], digest)["state"] == "accepted"
         _simulate_process_death(adapter)
         restarted = RuntimeAdapter(adapter._compatibility)
-        _qualify(restarted, monkeypatch)
-        restarted.create_session("rec-1", "rec-trace", "alice", "workspace_alice", durable_sequence, [])
-        recorded = restarted.containment_summary("rec-1")["latest"]
-        assert recorded["loss_cause"] == "executor-loss"
-        # The lost run is not a live/complete result: recovery must be reachable.
+        with pytest.raises(SessionConflict, match="interrupted"):
+            restarted.create_session("rec-1", "rec-trace", "alice", "workspace_alice")
+        with pytest.raises(KeyError):
+            restarted.submit_prompt("rec-1", content, idempotency_key=reservation["reservation_id"])
+        # The lost run is not a live/complete result, and no rebind or replay is
+        # available after process loss.
         assert restarted.reconcile_prompt("rec-1", reservation["reservation_id"], digest) == {
             "schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
     finally:

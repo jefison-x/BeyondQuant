@@ -39,6 +39,10 @@ FROZEN_ARTIFACTS = {
         "services/runtime-adapter/Dockerfile.post-u8-219-candidate",
         "9e2c09fa832d8dca6fa989bf9a83adb2ebf8f66b2f6ceb79cf1cebe44219357d",
         "5a434b8e62e21e136efa1d73a2ad86604b105882d4903120480cd90be69dec74"),
+    "dsh-0.1.5rc1-post-u8.220": (
+        "services/runtime-adapter/Dockerfile.post-u8-220-candidate",
+        "9f02f3649ff5dc968157d4fc87d1907e1df04ff95e0cc7024e40b5077ce45eed",
+        "0c28f16092192c727f8f1916bc82518cc5652527e4e9705f89a55e7f5f560b63"),
 }
 
 

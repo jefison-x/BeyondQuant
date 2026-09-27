@@ -1,9 +1,8 @@
-"""Gateway continuity when the runtime-adapter is recreated by a deploy.
+"""Gateway trace continuity for a surviving live Adapter session.
 
-The adapter rehydrates its durable session and continues the public BYQ
-sequence at ``persisted + 1``. The Gateway must reopen the durable trace and
-project the rehydrated lifecycle so a new turn binds instead of staying
-``pending_binding``. Real gaps/backwards/reused sequences must still fail.
+Gateway recreation may attach to an existing in-memory Adapter session and
+reopen its trace. Adapter process loss never rebinds the old Agent session.
+Real gaps, backwards and reused sequences must still fail.
 """
 from __future__ import annotations
 
@@ -34,8 +33,7 @@ def test_reopened_trace_continues_from_persisted_sequence(tmp_path: Path) -> Non
         store.append(event("session-1", "trace-1", sequence, "session.progress", {"step": sequence}))
     store.close("session-1")
 
-    # A deploy recreates the Gateway process; the durable trace is required to
-    # receive the rehydrated runtime's continuation at persisted + 1.
+    # A Gateway restart can reopen its trace for a surviving Adapter session.
     restarted = TraceStore(tmp_path)
     assert [item["sequence"] for item in restarted.read("session-1")] == [1, 2, 3, 4, 5]
     restarted.reopen("session-1")
@@ -49,7 +47,7 @@ def test_reopened_trace_continues_from_persisted_sequence(tmp_path: Path) -> Non
         restarted.append(event("session-1", "trace-1", 6, "session.progress", {"step": 99}))
 
 
-def test_restore_seeds_persisted_sequence_and_reopens_trace(monkeypatch, tmp_path: Path) -> None:
+def test_restore_attaches_live_session_and_reopens_trace(monkeypatch, tmp_path: Path) -> None:
     store = TraceStore(tmp_path)
     for sequence in range(1, 5):
         store.append(event("runtime-private", "trace-1", sequence, "session.progress", {"step": sequence}))
@@ -78,9 +76,9 @@ def test_restore_seeds_persisted_sequence_and_reopens_trace(monkeypatch, tmp_pat
     assert posts == [("/internal/runtime/sessions", {
         "session_id": "runtime-private", "trace_id": "trace-1",
         "workspace_id": "workspace_bootstrap_unresolved", "owner_principal": main.PRODUCT_PRINCIPAL,
-        "initial_sequence": 4, "conversation_context": [],
+        "initial_sequence": 4, "attach_live_only": True, "conversation_context": [],
     })]
-    # The trace was reopened for the rehydrated runtime's continuation.
+    # The trace was reopened for the surviving runtime's continuation.
     assert store.append(event("runtime-private", "trace-1", 5, "session.progress", {"step": 5})) is True
     assert collectors == ["runtime-private"]
 

@@ -520,7 +520,7 @@ def test_answer_receipt_must_match_exact_durable_fragment(monkeypatch, change):
         "payload": {"delta": "synthetic answer"}}) is False
 
 
-def test_restore_recreates_runtime_after_full_restart_and_continues_sequence(monkeypatch, tmp_path: Path) -> None:
+def test_restore_attaches_surviving_runtime_and_continues_sequence(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
     store = TraceStore(tmp_path)
     monkeypatch.setattr(main, "trace_store", store)
@@ -565,7 +565,7 @@ def test_restore_recreates_runtime_after_full_restart_and_continues_sequence(mon
     assert adapter_calls == [("/internal/runtime/sessions", {
         "session_id": "runtime-private", "trace_id": "trace-1",
         "workspace_id": "workspace_bootstrap_unresolved", "owner_principal": main.PRODUCT_PRINCIPAL,
-        "initial_sequence": 7,
+        "initial_sequence": 7, "attach_live_only": True,
         "conversation_recovery": {
             "schema_version": "conversation-recovery.v2",
             "session_id": "runtime-private", "trace_id": "trace-1",
@@ -622,10 +622,11 @@ def test_restore_accepts_an_adapter_session_that_survived_gateway_restart(monkey
         "trace_id": "trace-1", "status": "active",
     }})
 
-    def conflict(*_args, **_kwargs):
-        raise main.HTTPException(status_code=409, detail="already exists")
+    def live_attach(*_args, **kwargs):
+        assert kwargs["payload"]["attach_live_only"] is True
+        return {"session_id": "runtime-private", "trace_id": "trace-1", "status": "ready"}
 
-    monkeypatch.setattr(main, "_adapter_post", conflict)
+    monkeypatch.setattr(main, "_adapter_post", live_attach)
     collectors: list[str] = []
     monkeypatch.setattr(main, "_start_trace_collector", lambda session: collectors.append(session.session_id))
 
@@ -637,7 +638,29 @@ def test_restore_accepts_an_adapter_session_that_survived_gateway_restart(monkey
     assert collectors == ["runtime-private"]
 
 
-def test_resume_rehydrates_when_only_runtime_adapter_restarted(monkeypatch, tmp_path: Path) -> None:
+def test_restore_surfaces_an_interrupted_adapter_session(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    monkeypatch.setattr(main, "trace_store", TraceStore(tmp_path))
+    monkeypatch.setattr(main, "_catalog_request", lambda *_args, **_kwargs: {"conversation": {
+        "conversation_id": "conversation_1", "runtime_session_id": "runtime-private",
+        "trace_id": "trace-1", "status": "active",
+    }})
+
+    def interrupted(*_args, **_kwargs):
+        error = main.HTTPException(status_code=409, detail="runtime adapter rejected the request")
+        error.adapter_conflict_detail = "BYQ runtime session was interrupted; start a new Agent session"
+        raise error
+
+    monkeypatch.setattr(main, "_adapter_post", interrupted)
+    with pytest.raises(main.ProductError) as raised:
+        main._restore_product_session(
+            "conversation_1", main.Principal(subject=main.PRODUCT_PRINCIPAL), "workspace_bootstrap_unresolved"
+        )
+
+    assert raised.value.code == "agent_session_interrupted"
+
+
+def test_resume_reports_interruption_when_runtime_adapter_lost_the_session(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
     monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
     monkeypatch.setattr(main, "trace_store", TraceStore(tmp_path))
@@ -661,9 +684,7 @@ def test_resume_rehydrates_when_only_runtime_adapter_restarted(monkeypatch, tmp_
 
     def adapter(path, **_kwargs):
         calls.append(path)
-        if calls == ["/internal/runtime/sessions/runtime-private/resume"]:
-            raise main.HTTPException(status_code=404, detail="lost")
-        return {"status": "ready", "resumed_from_run_id": None}
+        raise main.HTTPException(status_code=404, detail="unknown BYQ session")
 
     monkeypatch.setattr(main, "_adapter_post", adapter)
     monkeypatch.setattr(main, "_start_trace_collector", lambda _session: None)
@@ -671,12 +692,9 @@ def test_resume_rehydrates_when_only_runtime_adapter_restarted(monkeypatch, tmp_
         "/v1/agent/sessions/conversation_1/resume",
         headers={"Authorization": f"Bearer {TOKEN}"},
     )
-    assert response.status_code == 200
-    assert calls == [
-        "/internal/runtime/sessions/runtime-private/resume",
-        "/internal/runtime/sessions",
-        "/internal/runtime/sessions/runtime-private/resume",
-    ]
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "agent_session_interrupted"
+    assert calls == ["/internal/runtime/sessions/runtime-private/resume"]
 
 
 def test_create_product_session_projects_fresh_continuity(monkeypatch, tmp_path: Path) -> None:
@@ -733,7 +751,7 @@ def test_resume_product_session_projects_continuity_without_dsh_identity(
     assert "generation-" not in str(body)
 
 
-def test_turn_rehydrates_after_runtime_loss_without_duplicating_user_message(
+def test_turn_reports_runtime_loss_without_reposting_the_persisted_user_message(
     monkeypatch, tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
@@ -765,9 +783,7 @@ def test_turn_rehydrates_after_runtime_loss_without_duplicating_user_message(
         calls.append(path)
         if path.endswith("/prompt"):
             assert _kwargs["payload"]["idempotency_key"] == "message_stable_retry"
-        if calls == ["/internal/runtime/sessions/runtime-private/prompt"]:
-            raise main.HTTPException(status_code=404, detail="lost")
-        return {"status": "ready", "accepted": True, "run_id": "run-rehydrated"}
+        raise main.HTTPException(status_code=404, detail="unknown BYQ session")
 
     monkeypatch.setattr(main, "_adapter_post", adapter)
     monkeypatch.setattr(main, "_start_trace_collector", lambda _session: None)
@@ -776,11 +792,7 @@ def test_turn_rehydrates_after_runtime_loss_without_duplicating_user_message(
         headers={"Authorization": f"Bearer {TOKEN}"},
         json={"content": "follow-up"},
     )
-    assert response.status_code == 202
-    assert response.json()["run_id"] == "run-rehydrated"
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "agent_session_interrupted"
     assert catalog_writes == [{"content": "follow-up"}]
-    assert calls == [
-        "/internal/runtime/sessions/runtime-private/prompt",
-        "/internal/runtime/sessions",
-        "/internal/runtime/sessions/runtime-private/prompt",
-    ]
+    assert calls == ["/internal/runtime/sessions/runtime-private/prompt"]
