@@ -1,6 +1,6 @@
 # Phase 7 next-slice qualification — delegated child lifecycle
 
-Status: **NO-GO for deleting `child_lease.py` with the qualified DSH 0.1.5rc1 Python SDK**. This is a read-only qualification decision, not a Phase 7 deletion gate or a change to the accepted 0.10 ownership model.
+Status: **KEEP the transient `child_lease.py` process watchdog with the qualified DSH 0.1.5rc1 Python SDK** under ADR-002. This is not approval for a BYQ child Agent lifecycle or restart bridge. Phase 7 can remove generic child recovery without deleting this live safety guard.
 
 ## 0.10 interruption scope decision (2026-09-27)
 
@@ -29,8 +29,14 @@ cooperative even when a tool declares one. DSH therefore does not replace
 BYQ's current foreground-child bound. A future lease removal may instead use
 a bounded root-turn deadline and close the dedicated root DSH process, if a
 focused contract proves child completion, timeout, cancellation, late-result
-discard and Product terminal projection. The current root hard cap is disabled
-by default, so simply removing the child timer would permit an unbounded wait.
+discard and Product terminal projection. Compose's fallback root hard cap is
+disabled (`0`), while `.env.example` sets `900s`; the effective bound depends
+on the developer's environment. With the Compose fallback, simply removing
+the child timer would permit an unbounded wait.
+An absolute root deadline would also cut off a healthy delegated research turn
+that continues reporting progress. Refreshing one root deadline from any child
+would let a healthy sibling mask a stuck one. The current small, transient
+per-child watchdog is therefore retained; it owns no child execution state.
 This conclusion follows the pinned [timeout policy](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.1.5-rc.1/packages/guard/timeout-policy/src/index.ts),
 [foreground subagent tool](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.1.5-rc.1/packages/subagent/tool-subagent/src/index.ts),
 and [Python SDK API](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.1.5-rc.1/python/sdk/src/deepseek_harness/api.py).
@@ -57,4 +63,7 @@ must prove:
 3. Cancellation has terminal confirmation or a proven root-close fallback; late results cannot be committed.
 4. Gateway Product projection remains framework-neutral; no raw DSH event schema reaches the frontend. Same-child lookup/rebind after DSH process restart is outside 0.10 scope.
 
-Use the real qualified runtime and replacement contract tests in one bounded slice. Do not add a BYQ generic child manager, compatibility bridge, or private DSH SDK dependency. Until the contract passes, keep `child_lease.py` and its safety tests. No DB, Docker or workspace cleanup follows from this note.
+Use the real qualified runtime and replacement contract tests if this guard is
+ever removed. Do not add a BYQ generic child manager, compatibility bridge, or
+private DSH SDK dependency. Keep `child_lease.py` and its safety tests under
+the current pin. No DB, Docker or workspace cleanup follows from this note.

@@ -1,5 +1,24 @@
 # Phase 0–6 gate record
 
+## Phase 7 child watchdog disposition gate (2026-09-27)
+
+[ADR-002](adr/ADR-002-dsh-boundary.md) and the
+[ownership plan](ownership-and-deletion-plan.md) now retain the transient
+`ChildLease` process watchdog under pinned DSH 0.1.5rc1. DSH executes the
+child; the Adapter only validates live progress, bounds inactivity and closes
+its dedicated root process on timeout. It does not persist or recover child
+execution. A single root deadline cannot preserve the current long-progress
+and sibling-stall behavior. This is a **KEEP qualification**, not a new runtime
+implementation or approval to delete the guard.
+
+**Tester:** docs check PASS, architecture 198/198, pinned SDK Adapter
+`test_child_lease.py` 6/6 and focused cleanup 26/26, Gateway projection 31/31,
+diff check PASS. Real DSH child-timeout Product journey **NOT_RUN**.
+**Independent Sol Reviewer:** Functional PASS / Tests PASS for documentation
+scope / Clean Break Architecture PASS after direct diff and runtime boundary
+review. **Root acceptance:** **PASS for this retention decision only**. Phase 7
+remains open; Phase 8 remains closed.
+
 ## Phase 7 slice 7 gate — dead restart rebase paths (2026-09-27)
 
 After slice 6 removed old-session rebind, `RuntimeAdapter._record_containment`

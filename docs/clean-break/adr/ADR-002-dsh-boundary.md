@@ -7,6 +7,16 @@
 
 DSH is the only Product Agent harness. BYQ's DSH adapter translates the supported DSH API to framework-neutral BYQ contracts: start, input, cancel, live status and bounded event projection as available in the qualified DSH version. Live continuation within an existing Adapter session remains supported; reattach to a session lost with the Adapter process is optional and needs its own qualified DSH contract before any feature promises it. The adapter may own a transport client and transient correlation map; it does not own a generic session manager, generation ledger, executor lease, child lifecycle, checkpoint, replay or recovery coordinator. A DSH upgrade should primarily change this adapter and its contract tests.
 
+While the pinned DSH 0.1.5rc1 foreground delegation has no effective child
+deadline, the Adapter may keep an in-memory watchdog for the DSH process it
+owns. It correlates validated child progress with an active root call, bounds
+inactivity, closes that dedicated process on timeout, and discards late
+results. This is process safety at the translation boundary: it does not
+start, schedule, persist, reattach, resume or recover a child Agent. It must
+not grow into a generic child lifecycle service. Remove it only after an
+equivalent qualified DSH deadline or a tested simpler root bound preserves
+healthy long research and detects a stalled child despite sibling progress.
+
 For the 0.10 Clean Break acceptance scope, a DSH process restart does not have
 to reattach the same Agent session or rebind an in-flight child. An interrupted
 Agent turn must not be reported as completed or automatically replayed. The
