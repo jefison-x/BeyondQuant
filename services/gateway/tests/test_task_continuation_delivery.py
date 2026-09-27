@@ -165,25 +165,47 @@ def test_background_completion_does_not_release_a_live_browser_stream():
 
 
 @pytest.mark.parametrize('missing', [False, True])
-def test_restarted_gateway_observes_original_runtime_without_replacing_unknown_process(monkeypatch, missing):
+def test_restarted_gateway_attaches_to_original_runtime_without_prompting(monkeypatch, missing):
     context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
         session_id='session-a', trace_id='trace-a')
     registry = main.ProductSessionRegistry()
     monkeypatch.setattr(main, 'product_sessions', registry)
-    started, reopened = [], []
-    monkeypatch.setattr(main, '_continuation_adapter_get', lambda path: {'qualified': not missing,
+    started, reopened, adapter_posts, catalog_reads = [], [], [], []
+    monkeypatch.setattr(main, 'trace_store', SimpleNamespace(read=lambda *_: [], reopen=reopened.append))
+    monkeypatch.setattr(main, '_continuation_adapter_get', lambda path, params=None: {'qualified': not missing,
         'reason': 'session_missing' if missing else None})
     monkeypatch.setattr(main, '_start_trace_collector', started.append)
-    monkeypatch.setattr(main.trace_store, 'reopen', reopened.append)
-    def forbidden(*args, **kwargs):
-        raise AssertionError('receipt observation cannot create a replacement model process')
-    monkeypatch.setattr(main, '_restore_product_session', forbidden)
+    def catalog(method, path, principal, workspace, payload=None):
+        catalog_reads.append((method, path, principal.subject, workspace, payload))
+        return {'conversation': {
+            'conversation_id': context['conversation_id'], 'runtime_session_id': context['session_id'],
+            'trace_id': context['trace_id'], 'status': 'active',
+        }, 'messages': []}
+    def adapter_post(path, *, payload=None, timeout=20.0):
+        adapter_posts.append((path, payload))
+        if path == '/internal/runtime/sessions':
+            assert payload['attach_live_only'] is True
+            return {'session_id': context['session_id'], 'trace_id': context['trace_id'],
+                    'status': 'ready', 'boot_id': 'a' * 32}
+        raise AssertionError(f'unexpected Adapter POST: {path}')
+    monkeypatch.setattr(main, '_catalog_request', catalog)
+    monkeypatch.setattr(main, '_adapter_post', adapter_post)
+
     session = main._attach_continuation_observer(context)
     if missing:
         assert session is None and started == reopened == []
+        assert catalog_reads == [] and adapter_posts == []
     else:
         assert session.session_id == context['session_id'] and session.workspace_id == context['workspace_id']
         assert started == [session] and reopened == [context['session_id']]
+        assert catalog_reads == [(
+            'GET', '/v1/product/conversations/conversation-a', 'alice', 'workspace-a', None)]
+        assert adapter_posts == [('/internal/runtime/sessions', {
+            'session_id': context['session_id'], 'trace_id': context['trace_id'],
+            'workspace_id': context['workspace_id'], 'owner_principal': 'alice',
+            'initial_sequence': 0, 'attach_live_only': True, 'conversation_context': [],
+        })]
+        assert not any(path.endswith('/prompt') for path, _ in adapter_posts)
         assert main._attach_continuation_observer(context) is session
         assert started == [session]
 

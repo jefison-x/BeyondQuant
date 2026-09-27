@@ -54,4 +54,3 @@ def test_rejection_is_terminal_for_the_exact_gate_and_mismatch_fails_closed():
         resource_kind="backtest_task", resource_id="backtesttask_" + "e" * 32,
         params_digest=digest)
     assert mismatch == {"outcome": "needs_attention", "reason": "approval_binding_mismatch"}
-

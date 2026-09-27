@@ -59,6 +59,14 @@ FROZEN_ARTIFACTS = {
         "services/runtime-adapter/Dockerfile.post-u8-224-candidate",
         "14728a669b4285fd99b0fffeea035010a6dfbc01355a6ccaf6a5f4520bb2e762",
         "c0a41c014c5de5a6228df3bf407f200e47725aef1d9d087a363fcf4043cbff18"),
+    "dsh-0.1.5rc1-post-u8.225": (
+        "services/runtime-adapter/Dockerfile.post-u8-225-candidate",
+        "ffca2b671d3de7967195d75cd6be689f217caea452117bb9cf825e7d04a4a824",
+        "50a9de8aaa89435407a2af1fc6fa55bdba61916b94f2f8a9ed2d0878bebc3085"),
+    "dsh-0.1.5rc1-post-u8.226": (
+        "services/runtime-adapter/Dockerfile.post-u8-226-candidate",
+        "d5b2dc0f1c606d1ae7e063e832f50820d797b9f4f26c9c61fbb6d00bda0d0a14",
+        "c947bf9118934a594a23c09b75d28b9edf02bc86d90e3c590b0dd4a5dc35a39b"),
 }
 
 
@@ -77,10 +85,15 @@ class CurrentBuildRevisionTests(unittest.TestCase):
         from scripts.dsh import build_revision as builds
 
         selected = builds.selected_build_id("dsh-0.1.5rc1")
-        dockerfile = (ROOT / builds.identity(selected)[1]).read_text()
+        dockerfile_path = ROOT / builds.identity(selected)[1]
+        dockerfile = dockerfile_path.read_text()
         self.assertIn(
             f"COPY config/dsh/builds/{selected}.json /opt/byq/builds/build.identity.json",
             dockerfile)
+        previous = ROOT / "services/runtime-adapter/Dockerfile.post-u8-226-candidate"
+        expected = previous.read_text().replace(
+            "dsh-0.1.5rc1-post-u8.226.json", f"{selected}.json")
+        self.assertEqual(dockerfile, expected)
 
     def test_frozen_build_manifests_and_dockerfiles_are_not_rewritten(self) -> None:
         for build_id, (dockerfile, manifest_sha256, dockerfile_sha256) in FROZEN_ARTIFACTS.items():

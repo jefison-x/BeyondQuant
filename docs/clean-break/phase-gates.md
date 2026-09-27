@@ -1,5 +1,24 @@
 # Phase 0–6 gate record
 
+## Phase 7 no-replay and build-identity repair gate (2026-09-27)
+
+[Bounded evidence](phase7-no-replay-build227-evidence.md) removes Gateway's
+automatic lost-reservation Agent prompt replay, preserves exact original
+receipt/charge reconciliation and ordinary first dispatch, and creates immutable
+selected build `.227` without rewriting `.226`. Isolated Gateway tests passed
+30/30; 13 focused build tests and a disposable `.227` image/embedded-ID check
+passed. Both test projects and temporary credentials were cleaned.
+
+**Tester:** PASS for staged whitespace, local syntax, docs, 86 focused
+root tests, and current/frozen build checks. Host Gateway/Backend tests lacked
+FastAPI/SQLAlchemy; Root's isolated Gateway Compose run passed 30/30.
+**Independent Sol Reviewer:** Functional PASS / Tests PASS / Clean Break
+Architecture PASS for this bounded slice after inspecting the staged diff and
+build identities. **Root acceptance:** PASS for no automatic lost-turn replay
+and immutable `.227` selection only. Remaining Backend/Adapter recovery carrier
+and final authority-fence deletion are not accepted by this gate. Phase 7
+overall stays OPEN; Phase 8 stays CLOSED.
+
 ## Phase 7 overall acceptance attempt (2026-09-27)
 
 **Reviewed HEAD:** `f418f0e3` on `clean-break/runtime-simplification`.
