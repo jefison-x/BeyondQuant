@@ -1,5 +1,58 @@
 # Phase 0–6 gate record
 
+## Phase 7 overall acceptance attempt (2026-09-27)
+
+**Reviewed HEAD:** `f418f0e3` on `clean-break/runtime-simplification`.
+This is an overall phase gate, separate from the bounded slice PASS records below.
+The review was read-only; no database, container, volume, backup or Product
+service was changed, and no Phase 8 work began.
+
+**Functional: FAIL for phase completion.** The accepted removal scope is not
+finished. Adapter still owns `RuntimeSession`/`ActiveRun`/generation and a
+session map (`services/runtime-adapter/app/runtime.py`), with a live v4
+`LifecycleJournal`; Gateway still owns lifecycle recovery and durable delivery
+(`services/gateway/app/main.py`, `agent_lifecycle_delivery.py`); Backend still
+stores generic `agent_runtime_turns`/registration/receipt state
+(`services/backend/app/agent_research.py`). Gateway's lost-reservation recovery
+carrier also still has a path that submits a prompt and needs an explicit
+ADR-002 disposition. The journal → Gateway → Backend path is currently a
+business-call authorization fence, so none of these live pieces may be deleted
+without the same-slice replacement and outcome-safety proof required by
+[the authority cutover contract](phase7-authority-cutover.md).
+
+**Tests: FAIL for overall gate.** Bounded live evidence passes Adapter death and
+Product MCP silence, Gateway-only restart with an active root, and normal
+`completed` exact close after a lost response. It does not test the final
+post-deletion boundary or `outcome_unknown` after that cutover. The independent
+Tester ran the historical archive contract (3/3 PASS) and docs check (127
+changed Markdown files PASS). Current selected build revision `.226` failed
+`tests/test_current_build_revision.py` (2 pass, 1 error): its manifest omits
+11 Phase 7 evidence/fixture inputs and hashes drift for Backend main, the
+Backend rotation test, and the MCP domain wire test. The independent Sol
+Reviewer reproduced selected-build drift; local CI checks this identity before
+image build. Branch-wide `git diff --check origin/main...HEAD` and
+`dev-check.py --base origin/main` also fail on an inherited trailing blank line
+in `services/backend/tests/test_research_plan_approval_contract.py:57`.
+Focused Gateway host tests were NOT_RUN because FastAPI is unavailable in the
+host environment; no full Docker or database test was rerun for this review.
+
+**Clean Break Architecture: FAIL for phase completion.** The live generic
+session/journal/replay ownership is still present, although bounded boot
+rotation and exact close paths exist. The independently qualified transient
+`ChildLease` watchdog is allowed by ADR-002 and is not a blocker. No current
+authorization bypass was demonstrated; the blocker is that the current safety
+fence has not yet been replaced and removed.
+
+**Independent Sol Reviewer:** Functional FAIL / Tests FAIL / Clean Break
+Architecture FAIL after direct code, ADR, contract, evidence and selected-build
+inspection. **Root acceptance:** **NO PASS for Phase 7 overall**. Phase 7 stays
+OPEN and Phase 8 stays CLOSED. Next, repair current build identity/branch gate,
+resolve the lost-reservation replay disposition, complete the business-authority
+cutover with unknown-outcome and concurrent-claim proof, then delete the
+remaining generic Adapter/Gateway/Backend runtime owners in bounded slices and
+repeat this overall gate. Prior slice PASS records remain valid only for their
+stated boundaries.
+
 ## Phase 7 normal terminal close lost-response gate (2026-09-27)
 
 [Live evidence](phase7-terminal-close-lost-response-evidence.md) exercises a fresh
