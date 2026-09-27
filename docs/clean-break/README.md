@@ -10,6 +10,7 @@ This directory contains the Phase 0–6 review package and the accepted BYQ 0.10
 - [ADR baseline](adr/README.md) — Phase 4 proposed decisions.
 - [Ownership and deletion plan](ownership-and-deletion-plan.md) — Phase 5–6 decisions and P4 disposition.
 - [Fidelity and execution plan](fidelity-and-execution-plan.md) — user journeys, risks and Phase 7–17 order.
+- [Development verification gates](verification-gates.md) — risk-selected slice tests, review and rebuild milestones.
 - [Phase gates](phase-gates.md) — Tester, independent Reviewer and Root verdicts with activation limits.
 - [Phase 7 Gateway slice](phase7-gateway-proxy.md) — first bounded removal and replacement contract.
 - [Phase 7 generation history slice](phase7-generation-ledger.md) — second bounded removal and gate evidence.

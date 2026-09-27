@@ -61,7 +61,7 @@ flowchart TD
 
 ## Implementation sequence after planning gate
 
-Each phase uses one isolated branch/worktree and required human PR gate unless a newly accepted ADR changes it. Each step ends Tester → independent Sol Reviewer → Root PASS before the next begins.
+Each phase uses one isolated branch/worktree and required human PR gate unless a newly accepted ADR changes it. Each step ends Tester → independent Sol Reviewer → Root PASS before the next begins. The [development verification gate](verification-gates.md) defines risk-selected slice evidence, Phase 9 command/service qualification, and Phase 15–16 full rebuild and Golden milestones; historical-data restoration and repeated full-suite runs are not per-slice gates.
 
 7. Remove duplicate Agent/session/child/runtime recovery in bounded vertical slices. Delete dead code first; for live paths, cut over directly to an existing DSH translation or existing BYQ Job/Worker in the same slice and pass public contract tests. Do not leave an interim broken public path or add a compatibility bridge.
 8. Archive verified old DB, then clean only classified old BYQ containers/volumes/networks/images in inventory order.

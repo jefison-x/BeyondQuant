@@ -1,5 +1,27 @@
 # Phase 0–6 gate record
 
+## Clean Break verification policy gate (2026-09-27)
+
+The maintainer directed a lighter development-period gate: committed source
+rollback and a rebuildable fresh Compose environment, without old user/runtime
+data or cache restoration. [The verification policy](verification-gates.md)
+now requires a scoped local check and focused contract evidence per slice,
+retains required risk-selected hosted CI and Tester → independent Sol Reviewer
+→ Root PASS, and schedules full rebuild/Golden verification after the fresh
+schema baseline. This changes verification timing, not Product architecture,
+financial/authorization invariants, archive requirements or merge authority.
+
+**Tester:** changed-document links and whitespace PASS; Clean Break governance
+2/2 and architecture 198/198 PASS; slice-scoped `dev-check.py --base HEAD`
+PASS (no changed code files; component suites NOT_RUN). Default branch-wide
+`make dev-check` finds a pre-existing trailing blank line in
+`services/backend/tests/test_research_plan_approval_contract.py:57`, outside
+this slice. **Independent Sol Reviewer:** Functional PASS / Tests PASS for
+documentation scope / Clean Break Architecture PASS after direct diff and
+ADR-0088/CI/phase-plan consistency review. **Root acceptance:** PASS for
+the verification-policy change only. Phase 7 overall remains open; no runtime
+code, database, container, CI workflow, PR or merge changed in this slice.
+
 ## Phase 7 slice 5 design gate — historical event/P4 archive (2026-09-27)
 
 [Candidate design](phase7-historical-event-archive.md) passed the read-only Explorer → static Tester → independent Sol Reviewer → Root **design** gate. Before deletion, the same-slice contract test ran RED: the live ResearchTask action/approval boundary passed, all eight scoped archive paths remained, and replay READMEs lacked the pinned source pointers. The exact obsolete event contract, paired test, P4-A/B/C1 script directories and top-level harness tests are now deleted. Replay docs and the runtime-adapter test docstring pin historical source to `2f8aca4a877d01481be556236c8f56d6ad7fa290`. The post-delete contract (3/3), architecture/static/build checks (95), `.220` plus frozen `.215`–`.219`, historical release inputs, H4 (570/570; zero missing/stale/fake-pass) and diff check pass. **Tester:** isolated PostgreSQL 45/45, complete Gateway 275/275, repository unittest 868 OK (11 skipped), post-delete archive contract 3/3, `.220` and frozen `.215`–`.219`, historical release inputs, H4 570/570 (zero missing/stale/fake-pass), Compose selected Dockerfile and diff checks PASS. A real temporary worktree cleanup smoke also passed after Tester found a replay README cleanup defect and Root fixed it. **Independent Sol Reviewer:** Functional PASS / Tests PASS / Clean Break Architecture PASS after actual diff, frozen manifests, historical pointers and final README review. **Root acceptance:** **PASS for slice 5 only**. Phase 7 overall remains open for DSH Agent continuation and other live ownership work; Phase 8 remains closed.

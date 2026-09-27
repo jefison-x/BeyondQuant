@@ -9,7 +9,14 @@ contract-first boundary changes, security separation and the existing human
 PR/merge/deployment gates. A Clean Break phase advances only after Tester,
 independent Sol Reviewer and Root PASS. Final old-DB backup and exact resource
 identity precede Phase 8 data/environment removal. The prior phase-specific
-instructions below are historical where they conflict with this route.
+instructions below are historical where they conflict with this route. For local
+Clean Break slice verification use the [risk-selected development gate](clean-break/verification-gates.md):
+focused behavior tests and affected boundaries first, with complete affected
+component/integration suites in required hosted PR CI and full rebuild/Golden
+verification at their named milestones. Local steps 7–9 below do not require
+repeating every affected component's complete suite or full Compose after each
+slice when required hosted CI supplies that evidence. No old runtime/user/cache
+data restoration is a Clean Break test.
 
 本流程对后续 Codex Phase 和 Engineering Plane 变更具有强制性。“Continue
 development”是指：读取 `docs/roadmap/STATUS.md`，识别其中的 `Next phase`，并执行
