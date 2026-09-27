@@ -41,3 +41,13 @@ def _stable_executor_identity(tmp_path_factory: pytest.TempPathFactory) -> Path:
             os.environ.pop("BYQ_DSH_RELEASE_IDENTITY", None)
         else:
             os.environ["BYQ_DSH_RELEASE_IDENTITY"] = previous
+
+
+@pytest.fixture
+def allow_current_runtime_authority(monkeypatch: pytest.MonkeyPatch):
+    """Isolate legacy Adapter API tests from the external Backend authority row."""
+
+    def allow(adapter) -> None:
+        monkeypatch.setattr(adapter, "require_current_backend_authority", lambda: None)
+
+    return allow

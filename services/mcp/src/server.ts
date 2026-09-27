@@ -35,6 +35,7 @@ import {
   fetchByqAgentAuthorize,
   fetchByqAgentRoles,
   fetchByqAgentRunStart,
+  isValidRuntimeBootId,
   type AgentResult,
   type AgentContext,
 } from "./agent.js";
@@ -50,6 +51,7 @@ import {
   fetchByqLessonGet,
   fetchByqLessonPropose,
   fetchByqLessonReview,
+  type LearningContext,
 } from "./learning.js";
 import {
   fetchByqStrategyApprove,
@@ -78,6 +80,7 @@ import {
   fetchByqPoolCreationReconcile,
   fetchByqIndexPoolCatalog, fetchByqIndexPoolCreate, fetchByqIndexPoolStatus, fetchByqIndexPoolReconcile,
   fetchByqPoolSnapshotReplace,
+  type PoolContext,
 } from "./stock-pool.js";
 import {
   fetchByqPaperAccount, fetchByqPaperReceipt,
@@ -262,10 +265,12 @@ function agentContext(extra: unknown): AgentContext {
       trace_id: value.trace_id,
       session_id: value.session_id,
       dsh_run_id: value.dsh_run_id,
+      runtime_boot_id: isValidRuntimeBootId(value.runtime_boot_id) ? value.runtime_boot_id : undefined,
     };
   }
   const request = (extra as { request?: { headers?: unknown }; requestInfo?: { headers?: unknown } } | undefined);
   const headers = request?.request?.headers ?? request?.requestInfo?.headers;
+  const runtimeBootId = headerValue(headers, "x-byq-runtime-boot-id");
   return {
     workspace_id: headerValue(headers, "x-byq-workspace-id"),
     owner_principal: headerValue(headers, "x-byq-owner-principal"),
@@ -273,6 +278,7 @@ function agentContext(extra: unknown): AgentContext {
     trace_id: headerValue(headers, "x-byq-trace-id"),
     session_id: headerValue(headers, "x-byq-session-id"),
     dsh_run_id: headerValue(headers, "x-byq-dsh-run-id"),
+    runtime_boot_id: isValidRuntimeBootId(runtimeBootId) ? runtimeBootId : undefined,
   };
 }
 
@@ -283,15 +289,27 @@ function agentContextUnavailable(): AgentResult {
   };
 }
 
-function completeAgentContext(extra: unknown): Required<AgentContext> | undefined {
+type CompleteAgentContext = Required<Omit<AgentContext, "runtime_boot_id">> & Pick<AgentContext, "runtime_boot_id">;
+
+function completeAgentContext(extra: unknown): CompleteAgentContext | undefined {
   const context = agentContext(extra);
   if (!context.workspace_id || !context.owner_principal || !context.actor_principal || !context.trace_id || !context.session_id || !context.dsh_run_id) {
     return undefined;
   }
-  return context as Required<AgentContext>;
+  if (!READ_ONLY_SUBSET && context.actor_principal !== `byq-product-agent-${context.session_id}`) return undefined;
+  // The dedicated read-only MCP subset has no mutating tools. Product MCP
+  // requires the exact process boot identity on every Agent-context request.
+  if (!READ_ONLY_SUBSET && !isValidRuntimeBootId(context.runtime_boot_id)) return undefined;
+  return context as CompleteAgentContext;
 }
 
-function trustedBackendFetcher(context: Required<AgentContext>): typeof fetch {
+function completeLearningContext(extra: unknown): LearningContext | undefined {
+  const context = completeAgentContext(extra);
+  if (!context || !isValidRuntimeBootId(context.runtime_boot_id)) return undefined;
+  return { ...context, runtime_boot_id: context.runtime_boot_id };
+}
+
+function trustedBackendFetcher(context: CompleteAgentContext): typeof fetch {
   return (input, init) => {
     const headers = new Headers(init?.headers);
     headers.set("x-byq-workspace-id", context.workspace_id);
@@ -300,6 +318,11 @@ function trustedBackendFetcher(context: Required<AgentContext>): typeof fetch {
     headers.set("x-byq-trace-id", context.trace_id);
     headers.set("x-byq-session-id", context.session_id);
     headers.set("x-byq-dsh-run-id", context.dsh_run_id);
+    if (isValidRuntimeBootId(context.runtime_boot_id)) {
+      headers.set("x-byq-runtime-boot-id", context.runtime_boot_id);
+    } else {
+      headers.delete("x-byq-runtime-boot-id");
+    }
     return fetch(input, { ...init, headers });
   };
 }
@@ -401,69 +424,69 @@ async function byqAgentApprovalDecide(args: { approval_id: string; decision: str
 }
 
 async function byqLearningRunStart(args: Record<string, unknown>, extra: unknown) {
-  const context = completeAgentContext(extra);
+  const context = completeLearningContext(extra);
   return context ? fetchByqLearningRunStart(BACKEND_URL, args, context) : agentContextUnavailable();
 }
 
 async function byqLearningRunGet(args: { run_id: string } | { task_id: string; idempotency_key: string }, extra: unknown) {
-  const context = completeAgentContext(extra);
+  const context = completeLearningContext(extra);
   if (!context) return agentContextUnavailable();
   return "idempotency_key" in args ? fetchByqLearningReceipt(BACKEND_URL, "run", args, context)
     : fetchByqLearningRunGet(BACKEND_URL, args.run_id, context);
 }
 
 async function byqLearningIterationRecord(args: { run_id: string } & Record<string, unknown>, extra: unknown) {
-  const context = completeAgentContext(extra);
+  const context = completeLearningContext(extra);
   if (!context) return agentContextUnavailable();
   const { run_id, ...request } = args;
   return fetchByqLearningIterationRecord(BACKEND_URL, run_id, request, context);
 }
 
 async function byqLearningIterationList(args: { run_id: string; idempotency_key?: string }, extra: unknown) {
-  const context = completeAgentContext(extra);
+  const context = completeLearningContext(extra);
   if (!context) return agentContextUnavailable();
   return args.idempotency_key ? fetchByqLearningReceipt(BACKEND_URL,"iteration",{run_id:args.run_id,idempotency_key:args.idempotency_key},context)
     : fetchByqLearningIterationList(BACKEND_URL, args.run_id, context);
 }
 
 async function byqLearningRunReview(args: { run_id: string; decision: string; rationale?: string }, extra: unknown) {
-  const context = completeAgentContext(extra);
+  const context = completeLearningContext(extra);
   if (!context) return agentContextUnavailable();
   const { run_id, ...request } = args;
   return fetchByqLearningRunReview(BACKEND_URL, run_id, request, context);
 }
 
 async function byqLearningSignalCreate(args: Record<string, unknown>, extra: unknown) {
-  const context = completeAgentContext(extra);
+  const context = completeLearningContext(extra);
   return context ? fetchByqLearningSignalCreate(BACKEND_URL, args, context) : agentContextUnavailable();
 }
 
 async function byqLearningSignalGet(args: { signal_id: string } | { task_id: string; idempotency_key: string }, extra: unknown) {
-  const context = completeAgentContext(extra);
+  const context = completeLearningContext(extra);
   if (!context) return agentContextUnavailable();
   return "idempotency_key" in args ? fetchByqLearningReceipt(BACKEND_URL, "signal", args, context)
     : fetchByqLearningSignalGet(BACKEND_URL, args.signal_id, context);
 }
 
 async function byqExperimentCompare(args: Record<string, unknown>, extra: unknown) {
-  const context = completeAgentContext(extra);
+  const context = completeLearningContext(extra);
   return context ? fetchByqExperimentCompare(BACKEND_URL, args, context) : agentContextUnavailable();
 }
 
 async function byqLessonPropose(args: Record<string, unknown>, extra: unknown) {
-  const context = completeAgentContext(extra);
+  const context = completeLearningContext(extra);
   return context ? fetchByqLessonPropose(BACKEND_URL, args, context) : agentContextUnavailable();
 }
 
 async function byqLessonGet(args: { lesson_id: string } | { task_id: string; idempotency_key: string }, extra: unknown) {
-  const context = completeAgentContext(extra);
+  const context = completeLearningContext(extra);
   if (!context) return agentContextUnavailable();
   return "idempotency_key" in args ? fetchByqLearningReceipt(BACKEND_URL, "lesson", args, context)
     : fetchByqLessonGet(BACKEND_URL, args.lesson_id, context);
 }
 
 async function byqLessonReview(args: { lesson_id: string; decision: string; rationale?: string }, extra: unknown) {
-  const context = completeAgentContext(extra);
+  const context = completeLearningContext(extra);
   if (!context) return agentContextUnavailable();
   const { lesson_id, ...request } = args;
   return fetchByqLessonReview(BACKEND_URL, lesson_id, request, context);
@@ -789,7 +812,11 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
     },
     proposeWorkflowCard,
   );
-  const poolContext = () => completeAgentContext(trustedContext);
+  const poolContext = (): PoolContext | undefined => {
+    const context = completeAgentContext(trustedContext);
+    if (!context || !isValidRuntimeBootId(context.runtime_boot_id)) return undefined;
+    return { ...context, runtime_boot_id: context.runtime_boot_id };
+  };
   registerTool(
     "byq_index_pool_catalog",
     { description: "Read the closed six-index catalogue and verified constituent readiness at or before an explicit research date. This never downloads provider data.", inputSchema: {

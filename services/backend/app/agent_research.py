@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 
 from packages.contracts.agent_run_lifecycle import registration_fingerprint, validate_lifecycle_event, lifecycle_receipt
@@ -30,7 +31,7 @@ from packages.contracts.research_plan_approval import (
     plan_command_idempotency_key,
 )
 
-from .db import PgStoreMixin, execute, fetch_one
+from .db import PgStoreMixin, execute, fetch_one, transaction
 from .domain_call_admission import DomainCallEvidenceMixin, DOMAIN_CALL_DDL
 from .research_task_actions import (
     approval_decision_digest,
@@ -49,6 +50,8 @@ APPROVAL_RESOURCE_TYPES = {
 MAX_DETAIL_BYTES = 16 * 1024
 _ID_PATTERN = re.compile(r"^(?:agent_run|agent_approval|agent_audit)_[0-9a-f]{32}$")
 _TRACE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+_RUNTIME_BOOT_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _PRINCIPAL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}$")
 _SECRET_KEY_FRAGMENTS = (
     "token",
@@ -352,6 +355,12 @@ def _trace(value: object, *, field: str = "trace_id") -> str:
     return normalized
 
 
+def _runtime_boot_id(value: object) -> str:
+    if not isinstance(value, str) or _RUNTIME_BOOT_PATTERN.fullmatch(value) is None:
+        raise ValueError("runtime boot id must be 32 lowercase hexadecimal characters")
+    return value
+
+
 def _idempotency(value: object) -> str:
     return _text(value, field="idempotency_key", max_length=128)
 
@@ -423,6 +432,9 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             dsh_run_id TEXT NOT NULL,
             parent_run_id TEXT,
             status TEXT NOT NULL,
+            authority_status TEXT NOT NULL DEFAULT 'active'
+                CHECK (authority_status IN ('active','authority_revoked_unconfirmed','closed')),
+            authority_boot_id TEXT,
             idempotency_key TEXT NOT NULL,
             request_hash TEXT NOT NULL,
             created_at TIMESTAMPTZ NOT NULL,
@@ -438,7 +450,24 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             root_run_id TEXT PRIMARY KEY, owner_principal TEXT NOT NULL, workspace_id TEXT NOT NULL,
             session_id TEXT NOT NULL, trace_id TEXT NOT NULL,
             status TEXT NOT NULL CHECK (status IN ('active','completed','failed','cancelled','interrupted')),
-            terminal_sequence BIGINT, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL
+            authority_status TEXT NOT NULL DEFAULT 'active'
+                CHECK (authority_status IN ('active','authority_revoked_unconfirmed','closed')),
+            authority_boot_id TEXT,
+            terminal_sequence BIGINT, terminal_event_sha256 TEXT,
+            created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL
+        )""",
+        """CREATE TABLE IF NOT EXISTS agent_runtime_authority_current (
+            authority_key TEXT PRIMARY KEY CHECK (authority_key = 'current'),
+            boot_id TEXT NOT NULL,
+            epoch BIGINT NOT NULL CHECK (epoch > 0),
+            receipt_json JSONB NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL
+        )""",
+        """CREATE TABLE IF NOT EXISTS agent_runtime_authority_boot_receipts (
+            boot_id TEXT PRIMARY KEY,
+            epoch BIGINT NOT NULL UNIQUE,
+            receipt_json JSONB NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL
         )""",
         """CREATE TABLE IF NOT EXISTS agent_runtime_registrations (
             registration_fingerprint TEXT PRIMARY KEY,
@@ -524,15 +553,30 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
     def __init__(self, database_url: str | None = None) -> None:
         try:
             super().__init__(database_url)
+            self.runtime_authority_guard_engine = create_engine(
+                self.database_url,
+                pool_size=8,
+                max_overflow=0,
+                pool_timeout=0.25,
+                pool_pre_ping=True,
+                future=True,
+            )
         except SQLAlchemyError as exc:
             raise AgentPersistenceError("agent research storage is unavailable") from exc
+
+    def close(self) -> None:
+        guard_engine = getattr(self, "runtime_authority_guard_engine", None)
+        if guard_engine is not None:
+            guard_engine.dispose()
+        super().close()
 
     @classmethod
     def from_env(cls) -> "AgentResearchStore":
         return cls()
 
     def start_run(self, payload: object, *, trusted_owner: str | None = None, trusted_actor: str | None = None,
-                  trusted_workspace: str | None = None, require_runtime_binding: bool = False) -> dict[str, object]:
+                  trusted_workspace: str | None = None, trusted_boot_id: str | None = None,
+                  require_runtime_binding: bool = False) -> dict[str, object]:
         if not isinstance(payload, dict):
             raise ValueError("agent run request must be an object")
         allowed = {"owner_principal", "actor_principal", "role_id", "trace_id", "session_id", "dsh_run_id", "parent_run_id", "idempotency_key"}
@@ -558,6 +602,8 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         key = _idempotency(payload.get("idempotency_key"))
         if require_runtime_binding and not trusted_workspace:
             raise AgentUnauthorized("runtime binding requires a trusted workspace")
+        if trusted_boot_id is not None:
+            trusted_boot_id = _runtime_boot_id(trusted_boot_id)
         fingerprint = (registration_fingerprint(owner, trusted_workspace, actor, trace_id, session_id, dsh_run_id, key)
                        if trusted_workspace else None)
         request = {
@@ -573,6 +619,11 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         }
         request_hash = _hash(request)
         with self._transaction() as connection:
+            authority = None
+            if require_runtime_binding or trusted_boot_id is not None:
+                self._lifecycle_lock(connection, "runtime-authority:current")
+                authority = self._require_current_runtime_boot(
+                    connection, trusted_boot_id, required=require_runtime_binding)
             if trusted_workspace:
                 self._require_lifecycle_workspace(connection, owner, trusted_workspace)
             # Serialize a registration receipt with its independently observed
@@ -588,6 +639,8 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             if existing is not None:
                 if existing["request_hash"] != request_hash:
                     raise AgentConflict("agent run idempotency key was reused")
+                if authority is not None and existing.get("authority_boot_id") != authority["boot_id"]:
+                    raise AgentConflict("agent run belongs to a superseded runtime boot")
                 return self._run_row(existing)
             binding = fetch_one(connection, """SELECT t.* FROM agent_runtime_registrations r
                 JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
@@ -596,11 +649,17 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                 raise AgentUnauthorized("runtime registration does not match trusted context")
             root_run_id = binding["root_run_id"] if binding else None
             status = binding["status"] if binding else ("pending_binding" if require_runtime_binding else "active")
+            if binding and authority is not None and (
+                    binding["authority_status"] == "authority_revoked_unconfirmed"
+                    or binding["authority_boot_id"] != authority["boot_id"]):
+                raise AgentConflict("runtime registration belongs to a superseded boot")
             if parent_run_id:
                 parent = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id = :parent_run_id", {"parent_run_id": parent_run_id})
                 if parent is None or parent["owner_principal"] != owner:
                     raise AgentForbidden("parent agent run is not owned by this principal")
-                if (parent["status"] != "active" or parent["actor_principal"] != actor
+                if (parent["status"] != "active" or parent.get("authority_status", "active") != "active"
+                        or (authority is not None and parent.get("authority_boot_id") != authority["boot_id"])
+                        or parent["actor_principal"] != actor
                         or parent["session_id"] != session_id or parent["dsh_run_id"] != dsh_run_id
                         or (root_run_id is not None and parent.get("root_run_id") != root_run_id)
                         or (not require_runtime_binding and parent.get("root_run_id") != root_run_id)):
@@ -614,14 +673,16 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                 connection,
                 """INSERT INTO agent_runs
                 (run_id, owner_principal, actor_principal, role_id, role_version,
-                 trace_id, session_id, dsh_run_id, parent_run_id, status,
+                 trace_id, session_id, dsh_run_id, parent_run_id, status, authority_status, authority_boot_id,
                  idempotency_key, request_hash, created_at, updated_at, version,
                  root_run_id, runtime_registration_fingerprint)
                 VALUES (:run_id, :owner, :actor, :role_id, :role_version,
-                        :trace_id, :session_id, :dsh_run_id, :parent_run_id, :status,
+                        :trace_id, :session_id, :dsh_run_id, :parent_run_id, :status, :authority_status, :authority_boot_id,
                         :key, :request_hash, :created_at, :updated_at, 1, :root_run_id, :fingerprint)""",
                 {"run_id": run_id, "owner": owner, "actor": actor, "role_id": role_id, "role_version": role.version,
                  "trace_id": trace_id, "session_id": session_id, "dsh_run_id": dsh_run_id, "parent_run_id": parent_run_id,
+                 "authority_status": binding["authority_status"] if binding else "active",
+                 "authority_boot_id": authority["boot_id"] if authority is not None else None,
                  "key": key, "request_hash": request_hash, "created_at": now, "updated_at": now,
                  "status": status, "root_run_id": root_run_id, "fingerprint": fingerprint},
             )
@@ -634,6 +695,158 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
     @staticmethod
     def _lifecycle_lock(connection: Any, key: str) -> None:
         execute(connection, "SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))", {"key": key})
+
+    def current_runtime_authority(self) -> dict[str, object] | None:
+        """Return only the non-secret current boot identity for readiness checks."""
+        row = self._fetch_one("""SELECT boot_id, epoch FROM agent_runtime_authority_current
+            WHERE authority_key='current'""")
+        if row is None:
+            return None
+        return {"schema_version": "byq-runtime-authority-current.v1",
+                "boot_id": row["boot_id"], "authority_epoch": row["epoch"], "status": "current"}
+
+    @staticmethod
+    def _current_authority_row(connection, *, for_update: bool = False):
+        suffix = " FOR UPDATE" if for_update else ""
+        return fetch_one(connection, """SELECT boot_id, epoch, receipt_json
+            FROM agent_runtime_authority_current WHERE authority_key='current'""" + suffix)
+
+    def _require_current_runtime_boot(self, connection, trusted_boot_id: str | None,
+                                      *, required: bool = False):
+        """Fence a runtime mutation to the current Backend-issued boot receipt.
+
+        Callers take the runtime-authority advisory lock before calling this and
+        retain it until the transaction commits, serializing authority changes
+        with the write they admit.
+        """
+        if trusted_boot_id is not None:
+            trusted_boot_id = _runtime_boot_id(trusted_boot_id)
+        authority = self._current_authority_row(connection)
+        if authority is None:
+            if required or trusted_boot_id is not None:
+                raise AgentConflict("runtime authority is not initialized")
+            return None
+        if trusted_boot_id is None or trusted_boot_id != authority["boot_id"]:
+            raise AgentUnauthorized("runtime boot does not match current Backend authority")
+        return authority
+
+    def rotate_runtime_authority(self, boot_id: object) -> dict[str, object]:
+        """Atomically publish one new boot and revoke the previous boot's roots.
+
+        Runtime status and unresolved domain-call claims are deliberately left
+        intact: revocation is a business-authority fact, not evidence that an
+        external action completed or failed.
+        """
+        boot_id = _runtime_boot_id(boot_id)
+        # Take the exclusive request gate before _transaction() acquires the
+        # store's process lock. Product Agent requests take the shared gate
+        # before any handler reaches a store lock; this prevents lock inversion
+        # while rotation drains in-flight requests.
+        with transaction(self.runtime_authority_guard_engine) as gate_connection:
+            self._lifecycle_lock(gate_connection, "runtime-authority:agent-writers")
+            return self._rotate_runtime_authority_under_gate(boot_id)
+
+    def _rotate_runtime_authority_under_gate(self, boot_id: str) -> dict[str, object]:
+        with self._transaction() as connection:
+            self._lifecycle_lock(connection, "runtime-authority:current")
+            current = self._current_authority_row(connection, for_update=True)
+            prior = fetch_one(connection, """SELECT receipt_json FROM agent_runtime_authority_boot_receipts
+                WHERE boot_id=:boot_id""", {"boot_id": boot_id})
+            if current is not None and current["boot_id"] == boot_id:
+                return current["receipt_json"]
+            if prior is not None:
+                raise AgentConflict("runtime boot id was already superseded")
+
+            roots = execute(connection, """SELECT root_run_id FROM agent_runtime_turns
+                WHERE status='active' AND authority_status='active' ORDER BY root_run_id""")
+            for root in roots:
+                self._lifecycle_lock(connection, "root:" + root["root_run_id"])
+                registrations = execute(connection, """SELECT registration_fingerprint
+                    FROM agent_runtime_registrations WHERE root_run_id=:root
+                    ORDER BY registration_fingerprint""", {"root": root["root_run_id"]})
+                for registration in registrations:
+                    self._lifecycle_lock(connection, "registration:" + registration["registration_fingerprint"])
+            pending = execute(connection, """SELECT DISTINCT runtime_registration_fingerprint AS fingerprint
+                FROM agent_runs WHERE status='pending_binding'
+                  AND authority_status='active' AND runtime_registration_fingerprint IS NOT NULL
+                ORDER BY runtime_registration_fingerprint""")
+            for registration in pending:
+                self._lifecycle_lock(connection, "registration:" + registration["fingerprint"])
+
+            now = _now()
+            revoked_roots = execute(connection, """UPDATE agent_runtime_turns
+                SET authority_status='authority_revoked_unconfirmed',updated_at=:now
+                WHERE status='active' AND authority_status='active' RETURNING root_run_id""", {"now": now})
+            revoked_runs = execute(connection, """UPDATE agent_runs r
+                SET authority_status='authority_revoked_unconfirmed',updated_at=:now,version=version+1
+                WHERE r.authority_status='active' AND r.status IN ('active','pending_binding')
+                  AND (r.status='pending_binding' OR r.root_run_id IN (SELECT root_run_id FROM agent_runtime_turns
+                        WHERE authority_status='authority_revoked_unconfirmed')
+                  )
+                RETURNING r.run_id""", {"now": now})
+            epoch = 1 if current is None else current["epoch"] + 1
+            receipt = {"schema_version": "byq-runtime-authority-receipt.v1",
+                       "boot_id": boot_id, "authority_epoch": epoch,
+                       "revoked_root_count": len(revoked_roots),
+                       "revoked_agent_run_count": len(revoked_runs), "status": "current"}
+            encoded = json.dumps(receipt, sort_keys=True, separators=(",", ":"))
+            execute(connection, """INSERT INTO agent_runtime_authority_boot_receipts
+                (boot_id,epoch,receipt_json,created_at)
+                VALUES (:boot_id,:epoch,CAST(:receipt AS jsonb),:now)""",
+                {"boot_id": boot_id, "epoch": epoch, "receipt": encoded, "now": now})
+            execute(connection, """INSERT INTO agent_runtime_authority_current
+                (authority_key,boot_id,epoch,receipt_json,updated_at)
+                VALUES ('current',:boot_id,:epoch,CAST(:receipt AS jsonb),:now)
+                ON CONFLICT (authority_key) DO UPDATE SET boot_id=EXCLUDED.boot_id,
+                    epoch=EXCLUDED.epoch,receipt_json=EXCLUDED.receipt_json,updated_at=EXCLUDED.updated_at""",
+                {"boot_id": boot_id, "epoch": epoch, "receipt": encoded, "now": now})
+        return receipt
+
+    def close_runtime_root(self, root_run_id: object, *, boot_id: object, sequence: object,
+                           outcome: object, event_sha256: object) -> dict[str, object]:
+        """Close exactly the root and terminal event proven by Adapter evidence."""
+        if not isinstance(root_run_id, str) or re.fullmatch(r"[0-9a-f]{32}", root_run_id) is None:
+            raise ValueError("invalid exact root run identity")
+        boot_id = _runtime_boot_id(boot_id)
+        if type(sequence) is not int or not 1 <= sequence <= 2**63 - 1:
+            raise ValueError("invalid runtime lifecycle sequence")
+        if outcome not in {"completed", "failed", "cancelled", "interrupted"}:
+            raise ValueError("invalid runtime lifecycle outcome")
+        if not isinstance(event_sha256, str) or _SHA256_PATTERN.fullmatch(event_sha256) is None:
+            raise ValueError("event_sha256 must be 64 lowercase hexadecimal characters")
+        receipt = {"schema_version": "agent-run-lifecycle-receipt.v1", "sequence": sequence,
+                   "root_run_id": root_run_id, "event_sha256": event_sha256}
+        with self._transaction() as connection:
+            self._lifecycle_lock(connection, "runtime-authority:current")
+            self._lifecycle_lock(connection, "root:" + root_run_id)
+            root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:id",
+                             {"id": root_run_id})
+            if root is None:
+                raise AgentNotFound("runtime root not found")
+            if root["status"] != "active":
+                if (root["status"], root["terminal_sequence"], root["terminal_event_sha256"]) == (
+                        outcome, sequence, event_sha256):
+                    return receipt
+                raise AgentConflict("runtime root already has different terminal evidence")
+            authority = self._require_current_runtime_boot(connection, boot_id, required=True)
+            if (root["authority_status"] != "active" or root["authority_boot_id"] != authority["boot_id"]):
+                raise AgentConflict("runtime root no longer has current business authority")
+            registrations = execute(connection, """SELECT registration_fingerprint
+                FROM agent_runtime_registrations WHERE root_run_id=:root
+                ORDER BY registration_fingerprint""", {"root": root_run_id})
+            for registration in registrations:
+                self._lifecycle_lock(connection, "registration:" + registration["registration_fingerprint"])
+            now = _now()
+            execute(connection, """UPDATE agent_runtime_turns SET status=:outcome,authority_status='closed',
+                terminal_sequence=:sequence,terminal_event_sha256=:digest,updated_at=:now
+                WHERE root_run_id=:root AND status='active' AND authority_status='active'""",
+                {"outcome": outcome, "sequence": sequence, "digest": event_sha256,
+                 "now": now, "root": root_run_id})
+            execute(connection, """UPDATE agent_runs SET status=:outcome,authority_status='closed',
+                updated_at=:now,version=version+1 WHERE root_run_id=:root
+                AND status IN ('active','pending_binding') AND authority_status='active'""",
+                {"outcome": outcome, "now": now, "root": root_run_id})
+        return receipt
 
     @staticmethod
     def _require_lifecycle_workspace(connection: Any, owner: str, workspace: str,
@@ -660,10 +873,12 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
     def consume_runtime_lifecycle_event(self, event: object, **context: str) -> dict:
         event = validate_lifecycle_event(event)
         receipt = lifecycle_receipt(event)
+        trusted_boot_id = context.get("trusted_boot_id")
         params = {"owner": context["trusted_owner"], "workspace": context["trusted_workspace"],
                   "session": context["trusted_session_id"], "trace": context["trusted_trace_id"],
                   "sequence": receipt["sequence"]}
         with self._transaction() as connection:
+            self._lifecycle_lock(connection, "runtime-authority:current")
             self._require_lifecycle_workspace(connection, params["owner"], params["workspace"],
                                               terminal_cleanup=event["outcome"] != "active")
             self._lifecycle_lock(connection, "receipt:" + json.dumps(params, sort_keys=True))
@@ -673,6 +888,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                 if existing["trace_id"] != params["trace"] or existing["receipt_json"] != receipt:
                     raise AgentConflict("runtime sequence conflicts with its durable receipt")
                 return receipt
+            self._require_current_runtime_boot(connection, trusted_boot_id)
             self.apply_runtime_lifecycle_event(event, **context, _connection=connection)
             execute(connection, """INSERT INTO agent_runtime_receipts
                 (owner_principal,workspace_id,session_id,trace_id,sequence,receipt_json)
@@ -690,7 +906,8 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         return self._run_row(row)
 
     def apply_runtime_lifecycle_event(self, event: object, *, trusted_owner: str, trusted_workspace: str,
-                                     trusted_session_id: str, trusted_trace_id: str, _connection=None) -> dict[str, object]:
+                                     trusted_session_id: str, trusted_trace_id: str,
+                                     trusted_boot_id: str | None = None, _connection=None) -> dict[str, object]:
         """Consume only a trusted BYQ projection; not a Product/model command.
 
         Terminal receipt, bindings, AgentRun updates and audits share one
@@ -701,22 +918,34 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         workspace = _trace(trusted_workspace, field="workspace_id")
         session = _trace(trusted_session_id, field="session_id")
         trace = _trace(trusted_trace_id, field="trace_id")
+        if trusted_boot_id is not None:
+            trusted_boot_id = _runtime_boot_id(trusted_boot_id)
         root_id, outcome = event["root_run_id"], event["outcome"]
         fingerprint = event.get("registration_fingerprint")
         with (nullcontext(_connection) if _connection is not None else self._transaction()) as connection:
+            self._lifecycle_lock(connection, "runtime-authority:current")
+            authority = self._require_current_runtime_boot(connection, trusted_boot_id)
             active_identity = self._require_lifecycle_workspace(connection, owner, workspace,
                                                                terminal_cleanup=outcome != "active")
             self._lifecycle_lock(connection, "root:" + root_id)
             root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:id", {"id": root_id})
             if root and (root["owner_principal"], root["workspace_id"], root["session_id"], root["trace_id"]) != (owner, workspace, session, trace):
                 raise AgentUnauthorized("runtime root does not match trusted context")
+            if root and authority is not None:
+                if root["authority_status"] == "authority_revoked_unconfirmed" or root["authority_boot_id"] != authority["boot_id"]:
+                    raise AgentConflict("runtime root belongs to a superseded boot")
+                if root["authority_status"] == "closed" and not (outcome == "active" and fingerprint):
+                    raise AgentConflict("runtime root is already closed")
             if root is None:
                 if not active_identity:
                     raise AgentUnauthorized("disabled identity cannot create a runtime root")
                 execute(connection, """INSERT INTO agent_runtime_turns
-                    (root_run_id, owner_principal, workspace_id, session_id, trace_id, status, created_at, updated_at)
-                    VALUES (:id,:owner,:workspace,:session,:trace,'active',:now,:now)""",
-                    {"id": root_id, "owner": owner, "workspace": workspace, "session": session, "trace": trace, "now": _now()})
+                    (root_run_id, owner_principal, workspace_id, session_id, trace_id, status,
+                     authority_status,authority_boot_id,created_at,updated_at)
+                    VALUES (:id,:owner,:workspace,:session,:trace,'active','active',:boot_id,:now,:now)""",
+                    {"id": root_id, "owner": owner, "workspace": workspace, "session": session,
+                     "trace": trace, "boot_id": authority["boot_id"] if authority is not None else None,
+                     "now": _now()})
                 root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:id", {"id": root_id})
             assert root is not None
             if fingerprint:
@@ -730,15 +959,21 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                         status=CASE WHEN r.parent_run_id IS NOT NULL AND NOT EXISTS (
                             SELECT 1 FROM agent_runs p WHERE p.run_id=r.parent_run_id AND p.root_run_id=:id
                         ) THEN 'failed' ELSE :status END,
+                        authority_status=CASE WHEN :authority_status='closed' THEN 'closed' ELSE r.authority_status END,
+                        authority_boot_id=COALESCE(:boot_id,r.authority_boot_id),
                         updated_at=:now,version=version+1
                     WHERE runtime_registration_fingerprint=:fp AND owner_principal=:owner AND workspace_id=:workspace
                       AND session_id=:session AND trace_id=:trace AND root_run_id IS NULL
-                      AND status IN ('pending_binding','active') RETURNING *""",
-                    {"id": root_id, "status": root["status"], "now": _now(), "fp": fingerprint,
+                      AND authority_status='active' AND status IN ('pending_binding','active') RETURNING *""",
+                    {"id": root_id, "status": root["status"], "authority_status": root["authority_status"],
+                     "now": _now(), "fp": fingerprint,
+                     "boot_id": authority["boot_id"] if authority is not None else None,
                      "owner": owner, "workspace": workspace, "session": session, "trace": trace})
             else:
                 if root["status"] != "active":
-                    if root["status"] != outcome or root["terminal_sequence"] != event["sequence"]:
+                    if (root["status"] != outcome or root["terminal_sequence"] != event["sequence"]
+                            or (root.get("terminal_event_sha256") is not None
+                                and root["terminal_event_sha256"] != lifecycle_receipt(event)["event_sha256"])):
                         raise AgentConflict("runtime terminal evidence conflicts with its original receipt")
                     return dict(root)
                 # Freeze registrations against concurrent start_run inserts.
@@ -746,19 +981,39 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                     WHERE root_run_id=:id ORDER BY registration_fingerprint""", {"id": root_id})
                 for binding in bindings:
                     self._lifecycle_lock(connection, "registration:" + binding["registration_fingerprint"])
-                execute(connection, """UPDATE agent_runtime_turns SET status=:status,terminal_sequence=:sequence,
-                    updated_at=:now WHERE root_run_id=:id""",
-                    {"status": outcome, "sequence": event["sequence"], "now": _now(), "id": root_id})
+                execute(connection, """UPDATE agent_runtime_turns SET status=:status,authority_status='closed',
+                    terminal_sequence=:sequence,terminal_event_sha256=:digest,updated_at=:now
+                    WHERE root_run_id=:id""",
+                    {"status": outcome, "sequence": event["sequence"], "digest": lifecycle_receipt(event)["event_sha256"],
+                     "now": _now(), "id": root_id})
                 root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:id", {"id": root_id})
-                changed = execute(connection, """UPDATE agent_runs SET status=:status,updated_at=:now,version=version+1
-                    WHERE root_run_id=:id AND status IN ('active','pending_binding') RETURNING *""",
+                changed = execute(connection, """UPDATE agent_runs SET status=:status,authority_status='closed',
+                    updated_at=:now,version=version+1
+                    WHERE root_run_id=:id AND authority_status='active' AND status IN ('active','pending_binding') RETURNING *""",
                     {"status": outcome, "now": _now(), "id": root_id})
             for run in changed:
                 self._record_runtime_binding_audit(connection, run, root)
         return dict(root)
 
+    def _check_agent_run_authority(self, connection, row: dict[str, Any], authority,
+                                   trusted_boot_id: str | None) -> None:
+        if row.get("authority_status", "active") != "active":
+            raise AgentForbidden("agent run business authority is no longer active")
+        if authority is None:
+            return
+        if row.get("authority_boot_id") != authority["boot_id"]:
+            raise AgentForbidden("agent run belongs to a superseded runtime boot")
+        root_id = row.get("root_run_id")
+        if root_id is not None:
+            root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:id",
+                             {"id": root_id})
+            if (root is None or root["status"] != "active" or root["authority_status"] != "active"
+                    or root["authority_boot_id"] != authority["boot_id"]):
+                raise AgentForbidden("agent run root no longer has current business authority")
+
     def authorize(self, payload: object, *, trusted_owner: str | None = None, trusted_actor: str | None = None,
-                  trusted_session_id: str | None = None, trusted_dsh_run_id: str | None = None) -> dict[str, object]:
+                  trusted_session_id: str | None = None, trusted_dsh_run_id: str | None = None,
+                  trusted_boot_id: str | None = None) -> dict[str, object]:
         if not isinstance(payload, dict):
             raise ValueError("agent authorization request must be an object")
         allowed = {"run_id", "action", "resource_type", "resource_id"}
@@ -769,25 +1024,34 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         action = _text(payload.get("action"), field="action", max_length=128)
         resource_type = payload.get("resource_type")
         resource_id = payload.get("resource_id")
-        row = self._fetch_one("SELECT * FROM agent_runs WHERE run_id = :run_id", {"run_id": run_id})
-        if row is None:
-            raise AgentNotFound("agent run not found")
-        self._check_run_access(row, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
-        self._check_runtime_context(row, trusted_session_id, trusted_dsh_run_id)
-        role = ROLE_BY_ID[row["role_id"]]
-        index_action = action in {"byq_index_pool_catalog", "byq_index_pool_create", "byq_index_pool_status"}
-        if action not in role.allowed_tools or (index_action and row["role_version"] != "2.1.0"):
-            self._record_audit_row(row, action=action, outcome="denied", resource_type=resource_type, resource_id=resource_id, detail={"reason": "role_tool_not_allowed"})
-            raise AgentForbidden("agent role is not authorized for this domain action")
-        requires_approval = action in role.approval_required_actions
-        result = {
-            "authorized": not requires_approval,
-            "decision": "approval_required" if requires_approval else "allowed",
-            "run_id": run_id,
-            "role_id": row["role_id"],
-            "action": action,
-        }
-        self._record_audit_row(row, action=action, outcome="approval_required" if requires_approval else "authorized", resource_type=resource_type, resource_id=resource_id, detail=result)
+        if trusted_boot_id is not None:
+            trusted_boot_id = _runtime_boot_id(trusted_boot_id)
+        with self._transaction() as connection:
+            self._lifecycle_lock(connection, "runtime-authority:current")
+            authority = self._require_current_runtime_boot(connection, trusted_boot_id)
+            row = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id = :run_id", {"run_id": run_id})
+            if row is None:
+                raise AgentNotFound("agent run not found")
+            self._check_run_access(row, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
+            self._check_agent_run_authority(connection, row, authority, trusted_boot_id)
+            self._check_runtime_context(row, trusted_session_id, trusted_dsh_run_id)
+            role = ROLE_BY_ID[row["role_id"]]
+            index_action = action in {"byq_index_pool_catalog", "byq_index_pool_create", "byq_index_pool_status"}
+            if action not in role.allowed_tools or (index_action and row["role_version"] != "2.1.0"):
+                self._record_audit_row(row, action=action, outcome="denied", resource_type=resource_type,
+                    resource_id=resource_id, detail={"reason": "role_tool_not_allowed"}, connection=connection)
+                raise AgentForbidden("agent role is not authorized for this domain action")
+            requires_approval = action in role.approval_required_actions
+            result = {
+                "authorized": not requires_approval,
+                "decision": "approval_required" if requires_approval else "allowed",
+                "run_id": run_id,
+                "role_id": row["role_id"],
+                "action": action,
+            }
+            self._record_audit_row(row, action=action,
+                outcome="approval_required" if requires_approval else "authorized",
+                resource_type=resource_type, resource_id=resource_id, detail=result, connection=connection)
         return result
 
     def record_audit(self, payload: object, *, trusted_owner: str | None = None, trusted_actor: str | None = None) -> dict[str, object]:
@@ -821,7 +1085,8 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         return {"run": self._run_row(run), "events": [self._audit_row(row) for row in rows]}
 
     def create_approval(self, payload: object, *, trusted_owner: str | None = None, trusted_actor: str | None = None,
-                        trusted_session_id: str | None = None, trusted_dsh_run_id: str | None = None) -> dict[str, object]:
+                        trusted_session_id: str | None = None, trusted_dsh_run_id: str | None = None,
+                        trusted_boot_id: str | None = None) -> dict[str, object]:
         if not isinstance(payload, dict):
             raise ValueError("agent approval request must be an object")
         allowed = {"run_id", "action", "reason", "resource_type", "resource_id", "idempotency_key"}
@@ -847,11 +1112,16 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         if expected_resource and (resource_type != expected_resource or resource_id is None):
             raise ValueError(f"{action} requires resource_type={expected_resource} and resource_id")
         key = _idempotency(payload.get("idempotency_key"))
+        if trusted_boot_id is not None:
+            trusted_boot_id = _runtime_boot_id(trusted_boot_id)
         with self._transaction() as connection:
+            self._lifecycle_lock(connection, "runtime-authority:current")
+            authority = self._require_current_runtime_boot(connection, trusted_boot_id)
             run = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id = :run_id", {"run_id": run_id})
             if run is None:
                 raise AgentNotFound("agent run not found")
             self._check_run_access(run, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
+            self._check_agent_run_authority(connection, run, authority, trusted_boot_id)
             self._check_runtime_context(run, trusted_session_id, trusted_dsh_run_id)
             role = ROLE_BY_ID[run["role_id"]]
             if action not in role.approval_required_actions:
@@ -1433,7 +1703,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             raise AgentUnauthorized("agent run is not owned by this principal")
         if trusted_actor and row["actor_principal"] != trusted_actor:
             raise AgentUnauthorized("agent actor does not match the active run")
-        if row["status"] != "active":
+        if row["status"] != "active" or row.get("authority_status", "active") != "active":
             raise AgentForbidden("agent run is not active")
 
     def _record_audit_row(self, run: dict[str, Any], *, action: object, outcome: object, resource_type: object, resource_id: object, detail: object, connection: Any = None) -> dict[str, object]:

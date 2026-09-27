@@ -30,6 +30,7 @@ def observed():
         **request_evidence("byq_strategy_validate", payload, trace_id="trace-test")}
     scope = {"trusted_owner": "alice", "trusted_workspace": ctx["x-byq-workspace-id"],
         "trusted_session_id": "session-test", "trusted_trace_id": "trace-test",
+        "trusted_boot_id": ctx["x-byq-runtime-boot-id"],
         "conversation_id": conversation["conversation_id"]}
     yield agents, evidence, scope, ctx
     agents.close()

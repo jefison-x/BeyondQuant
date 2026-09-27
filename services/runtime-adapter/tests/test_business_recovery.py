@@ -306,12 +306,15 @@ def test_containment_summary_exposes_idle_recovery_anchor(tmp_path, monkeypatch)
         FakeHarness.allow_run.set()
 
 
-def test_prompt_route_returns_the_accepted_recovery_target(tmp_path, monkeypatch):
+def test_prompt_route_returns_the_accepted_recovery_target(
+    tmp_path, monkeypatch, allow_current_runtime_authority,
+):
     from fastapi.testclient import TestClient
     from app import main
 
     adapter, recorded = _lost_session(tmp_path, monkeypatch)
     monkeypatch.setattr(main, "adapter", adapter)
+    allow_current_runtime_authority(adapter)
     client = TestClient(main.app)
     try:
         record = adapter._get("rec-1")

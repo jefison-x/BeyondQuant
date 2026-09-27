@@ -62,7 +62,7 @@ def test_restore_attaches_live_session_and_reopens_trace(monkeypatch, tmp_path: 
 
     def adapter(path, *, payload=None, timeout=20.0):
         posts.append((path, payload))
-        return {"status": "ready"}
+        return {"status": "ready", "boot_id": "a" * 32}
 
     monkeypatch.setattr(main, "_adapter_post", adapter)
     collectors: list[str] = []

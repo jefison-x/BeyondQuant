@@ -1,3 +1,5 @@
+import { isValidRuntimeBootId } from "./agent.js";
+
 const BACKEND_TIMEOUT_MS = 8000;
 
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
@@ -8,6 +10,7 @@ export type PaperContext = {
   trace_id: string;
   session_id: string;
   dsh_run_id: string;
+  runtime_boot_id?: string;
 };
 export type PaperResult = { content: Array<{ type: "text"; text: string }>; isError: boolean };
 
@@ -29,6 +32,9 @@ async function requestPaper(
         "x-byq-trace-id": context.trace_id,
         "x-byq-session-id": context.session_id,
         "x-byq-dsh-run-id": context.dsh_run_id,
+        ...(isValidRuntimeBootId(context.runtime_boot_id)
+          ? { "x-byq-runtime-boot-id": context.runtime_boot_id }
+          : {}),
       },
       signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
     });

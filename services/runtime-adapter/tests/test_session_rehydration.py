@@ -43,12 +43,13 @@ def test_gateway_attaches_only_to_a_live_adapter_session(adapter: RuntimeAdapter
 
 
 def test_http_create_requires_workspace_scoped_identity(
-    adapter: RuntimeAdapter, monkeypatch: pytest.MonkeyPatch,
+    adapter: RuntimeAdapter, monkeypatch: pytest.MonkeyPatch, allow_current_runtime_authority,
 ) -> None:
     from fastapi.testclient import TestClient
     from app import main
 
     monkeypatch.setattr(main, "adapter", adapter)
+    allow_current_runtime_authority(adapter)
     client = TestClient(main.app)
     for identity in (
         {"owner_principal": "alice"},
@@ -228,7 +229,9 @@ def test_lost_session_has_no_adapter_record_to_release_or_subscribe(
     restarted.close()
 
 
-def test_http_boundary_after_restart_rejects_the_old_session(adapter: RuntimeAdapter, monkeypatch) -> None:
+def test_http_boundary_after_restart_rejects_the_old_session(
+    adapter: RuntimeAdapter, monkeypatch, allow_current_runtime_authority,
+) -> None:
     from fastapi.testclient import TestClient
     from app import main
 
@@ -241,6 +244,7 @@ def test_http_boundary_after_restart_rejects_the_old_session(adapter: RuntimeAda
 
     restarted = RuntimeAdapter(adapter._compatibility)
     monkeypatch.setattr(main, "adapter", restarted)
+    allow_current_runtime_authority(restarted)
     client = TestClient(main.app)
     try:
         assert client.post("/internal/runtime/sessions/never-existed/prompt",
@@ -338,13 +342,16 @@ def test_valid_and_stale_old_sessions_are_both_unavailable_after_restart(adapter
         adapter.close()
 
 
-def test_http_old_session_is_rejected_after_adapter_restart(adapter: RuntimeAdapter, monkeypatch) -> None:
+def test_http_old_session_is_rejected_after_adapter_restart(
+    adapter: RuntimeAdapter, monkeypatch, allow_current_runtime_authority,
+) -> None:
     from fastapi.testclient import TestClient
     from app import main
 
     durable = _stale_session(adapter, "stale-http")
     restarted = RuntimeAdapter(adapter._compatibility)
     monkeypatch.setattr(main, "adapter", restarted)
+    allow_current_runtime_authority(restarted)
     client = TestClient(main.app, raise_server_exceptions=False)
     try:
         prompt = client.post("/internal/runtime/sessions/stale-http/prompt",

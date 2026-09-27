@@ -184,6 +184,9 @@ def release_compatibility(tmp_path: Path) -> object:
 def adapter(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> RuntimeAdapter:
     FakeHarness.reset()
     monkeypatch.delenv("BYQ_CREDENTIAL_RESOLVER_TOKEN", raising=False)
+    # These shared unit fixtures exercise session-scoped behavior. Root-turn
+    # process ownership has its own fixture that supplies a verified profile.
+    monkeypatch.setenv("BYQ_DSH_PROCESS_OWNERSHIP", "session")
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
     monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))

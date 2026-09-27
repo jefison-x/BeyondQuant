@@ -11,7 +11,12 @@ export type AgentContext = {
   trace_id?: string;
   session_id?: string;
   dsh_run_id?: string;
+  runtime_boot_id?: string;
 };
+
+export function isValidRuntimeBootId(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{32}$/.test(value);
+}
 
 export type AgentResult = {
   content: Array<{ type: "text"; text: string }>;
@@ -40,9 +45,11 @@ function contextHeaders(context: AgentContext | undefined): Record<string, strin
     ["trace_id", "x-byq-trace-id"],
     ["session_id", "x-byq-session-id"],
     ["dsh_run_id", "x-byq-dsh-run-id"],
+    ["runtime_boot_id", "x-byq-runtime-boot-id"],
   ];
   for (const [field, header] of mapping) {
     const value = context[field];
+    if (field === "runtime_boot_id" && !isValidRuntimeBootId(value)) continue;
     if (value) headers[header] = value;
   }
   return headers;

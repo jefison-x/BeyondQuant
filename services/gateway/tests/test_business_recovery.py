@@ -70,7 +70,7 @@ def _fixture(monkeypatch, *, contained=True, trace_id='trace-a', dispatch=None, 
     monkeypatch.setattr(main, '_catalog_request', backend)
     monkeypatch.setattr(main, '_continuation_adapter_get', adapter)
     monkeypatch.setattr(main.product_sessions, 'get_owned',
-        lambda *args: SimpleNamespace(session_id='session-a', trace_id='trace-a'))
+        lambda *args: SimpleNamespace(session_id='session-a', trace_id='trace-a', boot_id='a' * 32))
     monkeypatch.setattr(main.product_sessions, 'idle_release_generation', lambda session: None)
     monkeypatch.setattr(main.product_sessions, 'hold_continuation', lambda *args: True)
     monkeypatch.setattr(main.product_sessions, 'finish_continuation', lambda *args: None)

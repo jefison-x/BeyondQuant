@@ -7,6 +7,7 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 // Runs the actual BYQ server factory. The Backend is deliberately synthetic;
 // authoritative persistence/ownership is tested separately against PostgreSQL.
 const root = "a".repeat(32);
+const runtimeBootId = "c".repeat(32);
 const requests: Array<{ path: string; body: Record<string, unknown> }> = [];
 let schemaCalls = 0;
 const researchContext = { schema_version: "research-task-context.v1", status: "available", has_more: false,
@@ -15,6 +16,7 @@ const researchContext = { schema_version: "research-task-context.v1", status: "a
 const backend = createServer(async (req, res) => {
   if (req.method === "GET") {
     assert.ok(["/v1/agent/data-demand-notifications", "/v1/agent/research-context"].includes(req.url ?? ""));
+    assert.equal(req.headers["x-byq-runtime-boot-id"], runtimeBootId);
     assert.equal(req.headers["x-byq-root-run-id"], undefined); // private header is limited to qualified admitted actions
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify(req.url === "/v1/agent/research-context" ? researchContext : { notifications: [] }));
@@ -26,6 +28,7 @@ const backend = createServer(async (req, res) => {
   assert.equal(req.headers["x-byq-root-run-id"], root);
   assert.equal(req.headers["x-byq-actor-principal"], "byq-product-agent-session-wire");
   assert.equal(req.headers["x-byq-dsh-run-id"], "generation-wire");
+  assert.equal(req.headers["x-byq-runtime-boot-id"], runtimeBootId);
   requests.push({ path: req.url ?? "", body });
   let status = 201;
   let result: unknown = { artifact: { artifact_id: "synthetic-artifact", status: "validated" } };
@@ -71,6 +74,7 @@ try {
       "x-byq-root-run-id": root, "x-byq-owner-principal": "alice", "x-byq-workspace-id": "workspace-wire",
       "x-byq-session-id": "session-wire", "x-byq-trace-id": "trace-wire",
       "x-byq-dsh-run-id": "generation-wire", "x-byq-actor-principal": "byq-product-agent-session-wire",
+      "x-byq-runtime-boot-id": runtimeBootId,
     } },
   }));
   const context = await client.callTool({ name: "byq_agent_context", arguments: {} });
@@ -114,7 +118,49 @@ try {
   assert.equal(requests.at(-1)?.path, "/v1/research/strategies/versions");
   assert.equal(requests.at(-1)?.body.trace_id, "trace-wire");
   assert.equal(requests.at(-1)?.body.agent_run_id, "run-wire");
-  console.log("domain-server-wire: trusted factory root, exact pending resend, SDK rejection and closed stop PASS");
+
+  for (const bootHeader of [undefined, "D".repeat(32)]) {
+    const missingOrMalformedBootClient = new Client({ name: "byq-missing-runtime-boot", version: "1.0.0" });
+    const headers: Record<string, string> = {
+      "x-byq-root-run-id": root, "x-byq-owner-principal": "alice", "x-byq-workspace-id": "workspace-wire",
+      "x-byq-session-id": "session-wire", "x-byq-trace-id": "trace-wire",
+      "x-byq-dsh-run-id": "generation-wire", "x-byq-actor-principal": "byq-product-agent-session-wire",
+    };
+    if (bootHeader !== undefined) headers["x-byq-runtime-boot-id"] = bootHeader;
+    await missingOrMalformedBootClient.connect(new StreamableHTTPClientTransport(
+      new URL(endpoint + "/mcp/v1"), {
+        authProvider: { token: async () => "synthetic-wire-token" },
+        requestInit: { headers },
+      }));
+    const callsBeforeRejectedWrite = requests.length;
+    const rejectedBootWrite = await missingOrMalformedBootClient.callTool({
+      name: "byq_strategy_validate",
+      arguments: { ...args, idempotency_key: bootHeader ?? "boot-id-missing" },
+    });
+    assert.equal(rejectedBootWrite.isError, true);
+    assert.equal(requests.length, callsBeforeRejectedWrite,
+      "missing or malformed boot identity must stop a mutation before Backend");
+    await missingOrMalformedBootClient.close();
+  }
+  const actorSpoofClient = new Client({ name: "byq-human-actor-spoof", version: "1.0.0" });
+  await actorSpoofClient.connect(new StreamableHTTPClientTransport(new URL(endpoint + "/mcp/v1"), {
+    authProvider: { token: async () => "synthetic-wire-token" },
+    requestInit: { headers: {
+      "x-byq-root-run-id": root, "x-byq-owner-principal": "alice", "x-byq-workspace-id": "workspace-wire",
+      "x-byq-session-id": "session-wire", "x-byq-trace-id": "trace-wire",
+      "x-byq-dsh-run-id": "generation-wire", "x-byq-actor-principal": "alice",
+      "x-byq-runtime-boot-id": runtimeBootId,
+    } },
+  }));
+  const callsBeforeSpoofedAuthorization = requests.length;
+  const rejectedSpoofedAuthorization = await actorSpoofClient.callTool({ name: "byq_agent_authorize", arguments: {
+    run_id: "agent_run_" + "a".repeat(32), action: "byq_market_daily",
+  } });
+  assert.equal(rejectedSpoofedAuthorization.isError, true);
+  assert.equal(requests.length, callsBeforeSpoofedAuthorization,
+    "Product MCP must reject a human actor before forwarding Agent authorization to Backend");
+  await actorSpoofClient.close();
+  console.log("domain-server-wire: boot identity forwarding, actor binding, and fail-closed mutations PASS");
 } finally {
   await client.close();
   server.kill("SIGTERM");

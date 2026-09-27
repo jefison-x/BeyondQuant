@@ -4,6 +4,7 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 
 const endpoint = process.env.MCP_URL ?? "http://127.0.0.1:8300/mcp/v1";
 const token = process.env.BYQ_MCP_TOKEN;
+const adapterUrl = process.env.BYQ_RUNTIME_ADAPTER_URL ?? "http://runtime-adapter:8400";
 const symbol = process.env.BYQ_REAL_MARKET_SYMBOL;
 const startDate = process.env.BYQ_REAL_MARKET_START_DATE;
 const endDate = process.env.BYQ_REAL_MARKET_END_DATE;
@@ -13,16 +14,31 @@ if (!token || !symbol || !startDate || !endDate) {
   throw new Error("BYQ_MCP_TOKEN and BYQ_REAL_MARKET_* inputs are required");
 }
 
+const adapterAuthorityResponse = await fetch(adapterUrl + "/internal/runtime/authority");
+if (!adapterAuthorityResponse.ok) {
+  throw new Error("Runtime Adapter authority identity is required for the MCP contract test");
+}
+const adapterAuthority = await adapterAuthorityResponse.json() as Record<string, unknown>;
+const runtimeBootId = adapterAuthority.boot_id;
+if (adapterAuthority.schema_version !== "byq-runtime-adapter-authority.v1"
+    || adapterAuthority.status !== "ready"
+    || typeof runtimeBootId !== "string" || !/^[0-9a-f]{32}$/.test(runtimeBootId)) {
+  throw new Error("Runtime Adapter authority identity is invalid for the MCP contract test");
+}
+
+const sessionId = "session_phase61_persisted_market";
+
 const transport = new StreamableHTTPClientTransport(new URL(endpoint), {
   authProvider: { token: async () => token },
   requestInit: {
     headers: {
       "x-byq-workspace-id": "workspace_phase61_acceptance",
       "x-byq-owner-principal": "user:phase61-acceptance",
-      "x-byq-actor-principal": "agent:phase61-acceptance",
+      "x-byq-actor-principal": `byq-product-agent-${sessionId}`,
       "x-byq-trace-id": "trace_phase61_persisted_market",
-      "x-byq-session-id": "session_phase61_persisted_market",
+      "x-byq-session-id": sessionId,
       "x-byq-dsh-run-id": "dsh_phase61_persisted_market",
+      "x-byq-runtime-boot-id": runtimeBootId,
     },
   },
 });

@@ -153,12 +153,13 @@ def test_resume_after_hard_cancel_reports_interrupted_with_new_generation(
 
 
 def test_continuity_status_crosses_the_runtime_http_boundary(
-    adapter: RuntimeAdapter, monkeypatch: pytest.MonkeyPatch,
+    adapter: RuntimeAdapter, monkeypatch: pytest.MonkeyPatch, allow_current_runtime_authority,
 ) -> None:
     from fastapi.testclient import TestClient
     from app import main
 
     monkeypatch.setattr(main, "adapter", adapter)
+    allow_current_runtime_authority(adapter)
     client = TestClient(main.app)
     try:
         created = client.post("/internal/runtime/sessions", json={

@@ -13,6 +13,7 @@ const context = {
   trace_id: "trace-learning-mcp-1",
   session_id: "session-learning-mcp-1",
   dsh_run_id: "dsh-run-learning-mcp-1",
+  runtime_boot_id: "c".repeat(32),
 };
 
 const start = await fetchByqLearningRunStart(
@@ -22,6 +23,7 @@ const start = await fetchByqLearningRunStart(
   async (url, init) => {
     assert.equal(url, "http://backend:8000/v1/learning/runs");
     assert.equal(init?.headers && (init.headers as Record<string, string>)["x-byq-owner-principal"], "alice");
+    assert.equal((init?.headers as Record<string, string>)["x-byq-runtime-boot-id"], "c".repeat(32));
     assert.doesNotMatch(String(init?.body), /password|secret|token/i);
     return new Response(JSON.stringify({ run: { task_id:"task_0123456789abcdef0123456789abcdef", learning_run_id: "learning_run_0123456789abcdef0123456789abcdef", status: "active" } }), { status: 201 });
   },
@@ -36,6 +38,7 @@ const iterated = await fetchByqLearningIterationRecord(
   async (url, init) => {
     assert.equal(url, "http://backend:8000/v1/learning/runs/learning_run_0123456789abcdef0123456789abcdef/iterations");
     assert.equal((init?.headers as Record<string, string>)["x-byq-session-id"], "session-learning-mcp-1");
+    assert.equal((init?.headers as Record<string, string>)["x-byq-runtime-boot-id"], "c".repeat(32));
     return new Response(JSON.stringify({ iteration: { iteration_id:"learning_iteration_0123456789abcdef0123456789abcdef", learning_run_id:"learning_run_0123456789abcdef0123456789abcdef", iteration_index: 1 }, run: { learning_run_id:"learning_run_0123456789abcdef0123456789abcdef", status: "awaiting_review" } }), { status: 201 });
   },
 );

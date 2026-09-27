@@ -5,6 +5,7 @@ import hashlib
 import os
 import queue
 import re
+import secrets
 import shutil
 import threading
 import time
@@ -40,6 +41,21 @@ from .continuation_budget import (CONTINUATION_MAX_OUTPUT_TOKENS, persist_settle
 from .normalization import NormalizationState, normalize_runtime_observation
 
 
+_PROCESS_BOOT_PID = os.getpid()
+_PROCESS_BOOT_ID = secrets.token_hex(16)
+
+
+def _process_boot_id() -> str:
+    """Return one random identity per OS process, including after a fork."""
+
+    global _PROCESS_BOOT_PID, _PROCESS_BOOT_ID
+    pid = os.getpid()
+    if pid != _PROCESS_BOOT_PID:
+        _PROCESS_BOOT_PID = pid
+        _PROCESS_BOOT_ID = secrets.token_hex(16)
+    return _PROCESS_BOOT_ID
+
+
 class SessionConflict(RuntimeError):
     """The requested lifecycle operation is invalid for the current state."""
 
@@ -49,6 +65,10 @@ SESSION_LOST_DETAIL = "BYQ runtime session was interrupted; start a new Agent se
 
 class ModelCredentialUnavailable(RuntimeError):
     """A model-keyed Product turn was requested without its provider secret."""
+
+
+class RuntimeAuthorityUnavailable(RuntimeError):
+    """Backend has not fenced this Adapter process for Agent traffic."""
 
 
 class StaleSessionLease(RuntimeError):
@@ -174,6 +194,7 @@ class RuntimeSession:
 
     session_id: str
     trace_id: str
+    boot_id: str
     owner_principal: str | None = None
     workspace_id: str | None = None
     model_resolution: dict[str, object] = field(default_factory=dict, repr=False)
@@ -368,6 +389,9 @@ class RuntimeAdapter:
         self._model = os.environ.get("BYQ_DSH_MODEL", "deepseek-v4-flash")
         self._model_api_key = os.environ.get("DEEPSEEK_API_KEY")
         self._backend_url = os.environ.get("BYQ_BACKEND_URL", "http://backend:8000")
+        # Process identity is deliberately ephemeral: all Adapter instances in
+        # this OS process share it, while a new process gets a fresh 128-bit token.
+        self.boot_id = _process_boot_id()
         self._resolver_token = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
         self._run_timeout_seconds = self._guard_seconds(
             "BYQ_DSH_RUN_TIMEOUT_SECONDS", default=0.0, allow_disabled=True, maximum=86400.0,
@@ -443,6 +467,38 @@ class RuntimeAdapter:
                 SessionStatus.CLOSED,
             ],
         }
+
+    def authority_identity(self) -> dict[str, str]:
+        """Return the transport identity used by Gateway to fence this process."""
+
+        return {
+            "schema_version": "byq-runtime-adapter-authority.v1",
+            "boot_id": self.boot_id,
+            "status": "ready",
+        }
+
+    def require_current_backend_authority(self) -> None:
+        """Fail closed unless Backend has committed this exact Adapter boot."""
+
+        try:
+            response = httpx.get(
+                f"{self._backend_url.rstrip('/')}/internal/runtime-authority/current",
+                timeout=2.0,
+            )
+            response.raise_for_status()
+            current = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise RuntimeAuthorityUnavailable("Backend runtime authority is unavailable") from exc
+        if (not isinstance(current, dict)
+                or set(current) != {"schema_version", "boot_id", "authority_epoch", "status"}
+                or current.get("schema_version") != "byq-runtime-authority-current.v1"
+                or not isinstance(current.get("boot_id"), str)
+                or re.fullmatch(r"[0-9a-f]{32}", current["boot_id"]) is None
+                or type(current.get("authority_epoch")) is not int
+                or current["authority_epoch"] < 1
+                or current.get("status") != "current"
+                or current.get("boot_id") != self.boot_id):
+            raise RuntimeAuthorityUnavailable("Backend runtime authority is not current")
 
     def operations_snapshot(self) -> dict[str, Any]:
         """Return process-local, normalized runtime accounting only."""
@@ -692,6 +748,7 @@ class RuntimeAdapter:
             record = RuntimeSession(
                 session_id=session_id,
                 trace_id=trace_id,
+                boot_id=self.boot_id,
                 owner_principal=owner_principal,
                 workspace_id=workspace_id,
                 model_resolution=model_resolution,
@@ -1247,6 +1304,52 @@ class RuntimeAdapter:
             record.pending_terminal_receipts.discard(root)
             return {"receipt": dict(receipt)}
 
+    def terminal_evidence(self, session_id: str, root_run_id: str, boot_id: str) -> dict:
+        """Return the exact observed terminal and its stored receipt for Gateway."""
+
+        if re.fullmatch(r"[0-9a-f]{32}", boot_id) is None:
+            raise SessionConflict("terminal evidence boot identity is invalid")
+        if re.fullmatch(r"[0-9a-f]{32}", root_run_id) is None:
+            raise SessionConflict("terminal evidence root identity is invalid")
+        if boot_id != self.boot_id:
+            raise SessionConflict("terminal evidence belongs to another Adapter boot")
+        with self._lock:
+            record = self._sessions.get(session_id)
+            records = list(self._sessions.items())
+        for other_session_id, other in records:
+            if other_session_id == session_id:
+                continue
+            with other.lock:
+                active_root = other.active_run.run_id if other.active_run is not None else None
+                if root_run_id in other.terminal_receipts or active_root == root_run_id:
+                    raise SessionConflict("terminal root belongs to another session")
+        if record is None:
+            raise KeyError(f"terminal evidence unavailable for {session_id}")
+        with record.lock:
+            if record.boot_id != boot_id:
+                raise SessionConflict("terminal evidence belongs to another Adapter boot")
+            receipt = record.terminal_receipts.get(root_run_id)
+            if receipt is None:
+                raise KeyError(f"terminal evidence unavailable for {root_run_id}")
+            terminal = None
+            for event in reversed(record.history):
+                projected = project_lifecycle_event(event, record.session_id, record.trace_id)
+                if (projected is not None and projected["root_run_id"] == root_run_id
+                        and projected["outcome"] != "active"):
+                    terminal = projected
+                    break
+            if terminal is None:
+                raise SessionConflict("stored terminal receipt has no matching terminal event")
+            return {
+                "schema_version": "byq-runtime-terminal-evidence.v1",
+                "session_id": record.session_id,
+                "boot_id": record.boot_id,
+                "root_run_id": root_run_id,
+                "sequence": terminal["sequence"],
+                "outcome": terminal["outcome"],
+                "receipt": dict(receipt),
+            }
+
     def resume_session(
         self, session_id: str, *, conversation_context: object = None,
         conversation_recovery: object = None,
@@ -1407,6 +1510,7 @@ class RuntimeAdapter:
             return {
                 "session_id": record.session_id,
                 "trace_id": record.trace_id,
+                "boot_id": record.boot_id,
                 "status": record.status,
                 "active_prompt": record.active_run is not None,
                 "process_ownership": "dedicated",
@@ -1645,6 +1749,10 @@ class RuntimeAdapter:
         environment = {
             "BYQ_MCP_URL": os.environ.get("BYQ_MCP_URL", "http://mcp:8300/mcp/v1"),
             "BYQ_MCP_TOKEN": os.environ.get("BYQ_MCP_TOKEN", ""),
+            # Bind every DSH process launched by this Adapter process to its
+            # process authority identity; root-scoped children inherit the same
+            # boot identity through this owned environment.
+            "BYQ_RUNTIME_BOOT_ID": self.boot_id,
             "BYQ_OWNER_PRINCIPAL": owner_principal or "",
             "BYQ_WORKSPACE_ID": workspace_id or "",
             # The authenticated user owns the session, while the Product DSH

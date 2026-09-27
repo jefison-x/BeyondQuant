@@ -257,7 +257,8 @@ def test_product_turn_passes_only_prompt_semantics_to_runtime(monkeypatch, tmp_p
             return None
 
         def json(self) -> dict[str, object]:
-            return {"status": "ready"} if len(calls) == 1 else {"accepted": True, "run_id": "run-1"}
+            return ({"status": "ready", "boot_id": "a" * 32} if len(calls) == 1
+                    else {"accepted": True, "run_id": "run-1"})
 
     def fake_post(url: str, *, json: dict[str, object] | None, timeout: float) -> FakeResponse:
         calls.append((url, json))
@@ -294,7 +295,7 @@ def test_failed_catalog_create_releases_ephemeral_runtime(monkeypatch) -> None:
     monkeypatch.setattr(
         main,
         "_adapter_post",
-        lambda path, **_kwargs: calls.append(path) or {"status": "ready"},
+        lambda path, **_kwargs: calls.append(path) or {"status": "ready", "boot_id": "a" * 32},
     )
     monkeypatch.setattr(
         main,
@@ -552,7 +553,8 @@ def test_restore_attaches_surviving_runtime_and_continues_sequence(monkeypatch, 
     monkeypatch.setattr(
         main,
         "_adapter_post",
-        lambda path, *, payload=None, timeout=20.0: adapter_calls.append((path, payload)) or {"status": "ready"},
+        lambda path, *, payload=None, timeout=20.0: adapter_calls.append((path, payload)) or {
+            "status": "ready", "boot_id": "a" * 32},
     )
     collectors: list[str] = []
     monkeypatch.setattr(main, "_start_trace_collector", lambda session: collectors.append(session.session_id))
@@ -624,7 +626,8 @@ def test_restore_accepts_an_adapter_session_that_survived_gateway_restart(monkey
 
     def live_attach(*_args, **kwargs):
         assert kwargs["payload"]["attach_live_only"] is True
-        return {"session_id": "runtime-private", "trace_id": "trace-1", "status": "ready"}
+        return {"session_id": "runtime-private", "trace_id": "trace-1", "status": "ready",
+                "boot_id": "a" * 32}
 
     monkeypatch.setattr(main, "_adapter_post", live_attach)
     collectors: list[str] = []
@@ -667,7 +670,7 @@ def test_resume_reports_interruption_when_runtime_adapter_lost_the_session(monke
     principal = main.Principal(subject=main.PRODUCT_PRINCIPAL)
     session = main.ProductSession(
         conversation_id="conversation_1", session_id="runtime-private", trace_id="trace-1",
-        principal=principal, workspace_id="workspace_bootstrap_unresolved",
+        principal=principal, workspace_id="workspace_bootstrap_unresolved", boot_id="a" * 32,
     )
     main.product_sessions.add(session)
     monkeypatch.setattr(main, "_catalog_request", lambda *_args, **_kwargs: {
@@ -702,7 +705,8 @@ def test_create_product_session_projects_fresh_continuity(monkeypatch, tmp_path:
     monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
     monkeypatch.setattr(main, "trace_store", TraceStore(tmp_path))
     monkeypatch.setattr(main, "_start_trace_collector", lambda _session: None)
-    monkeypatch.setattr(main, "_adapter_post", lambda *_a, **_k: {"status": "ready", "continuity": "fresh"})
+    monkeypatch.setattr(main, "_adapter_post", lambda *_a, **_k: {
+        "status": "ready", "boot_id": "a" * 32, "continuity": "fresh"})
     monkeypatch.setattr(main, "_catalog_request", lambda *_a, **_k: {"conversation": {
         "conversation_id": "conversation_new", "runtime_session_id": "runtime-new",
         "trace_id": "trace-new", "status": "active",
@@ -725,7 +729,7 @@ def test_resume_product_session_projects_continuity_without_dsh_identity(
     principal = main.Principal(subject=main.PRODUCT_PRINCIPAL)
     main.product_sessions.add(main.ProductSession(
         conversation_id="conversation_1", session_id="runtime-private", trace_id="trace-1",
-        principal=principal, workspace_id="workspace_bootstrap_unresolved",
+        principal=principal, workspace_id="workspace_bootstrap_unresolved", boot_id="a" * 32,
     ))
     monkeypatch.setattr(main, "_catalog_request", lambda *_a, **_k: {
         "conversation": {
@@ -735,7 +739,8 @@ def test_resume_product_session_projects_continuity_without_dsh_identity(
         "messages": [],
     })
     monkeypatch.setattr(main, "_adapter_post", lambda *_a, **_k: {
-        "status": "ready", "resumed_from_run_id": None, "continuity": "reattached",
+        "status": "ready", "boot_id": "a" * 32,
+        "resumed_from_run_id": None, "continuity": "reattached",
     })
 
     response = TestClient(main.app).post(
@@ -760,7 +765,7 @@ def test_turn_reports_runtime_loss_without_reposting_the_persisted_user_message(
     principal = main.Principal(subject=main.PRODUCT_PRINCIPAL)
     main.product_sessions.add(main.ProductSession(
         conversation_id="conversation_1", session_id="runtime-private", trace_id="trace-1",
-        principal=principal, workspace_id="workspace_bootstrap_unresolved",
+        principal=principal, workspace_id="workspace_bootstrap_unresolved", boot_id="a" * 32,
     ))
     catalog_writes: list[dict[str, object]] = []
 

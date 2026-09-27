@@ -15,7 +15,13 @@ from packages.operations.admission import AdmissionClosed, chat_admission
 from packages.contracts.prompt_rejection import credential_rejection
 from packages.contracts import business_recovery as recovery_contract
 
-from .runtime import ModelCredentialUnavailable, RuntimeAdapter, SessionConflict, StaleSessionLease
+from .runtime import (
+    ModelCredentialUnavailable,
+    RuntimeAdapter,
+    RuntimeAuthorityUnavailable,
+    SessionConflict,
+    StaleSessionLease,
+)
 from .research_judgment_api import router as research_judgment_router
 
 
@@ -53,6 +59,13 @@ app.include_router(research_judgment_router)
 
 def require_chat_admission():
     with chat_admission():
+        try:
+            adapter.require_current_backend_authority()
+        except RuntimeAuthorityUnavailable as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "runtime_authority_unavailable"},
+            ) from exc
         yield
 
 
@@ -108,6 +121,11 @@ def healthz() -> dict[str, str]:
 @app.get("/readyz")
 def readyz() -> dict[str, object]:
     return {"service": "byq-dsh-runtime-adapter", "status": "ok", **adapter.readiness()}
+
+
+@app.get("/internal/runtime/authority")
+def runtime_authority() -> dict[str, str]:
+    return adapter.authority_identity()
 
 
 @app.get("/internal/runtime/operations")
@@ -216,6 +234,20 @@ def acknowledge_terminal(session_id: str, payload: dict) -> dict:
         raise HTTPException(status_code=409, detail="durable terminal evidence is unconfirmed") from exc
     except OSError as exc:
         raise HTTPException(status_code=503, detail="terminal acknowledgement could not be persisted") from exc
+
+
+@app.get("/internal/runtime/sessions/{session_id}/terminal-evidence")
+def terminal_evidence(
+    session_id: str,
+    root_run_id: str = Query(min_length=32, max_length=32),
+    boot_id: str = Query(min_length=32, max_length=32),
+) -> dict:
+    try:
+        return adapter.terminal_evidence(session_id, root_run_id, boot_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="terminal evidence unavailable") from exc
+    except SessionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/internal/runtime/sessions/{session_id}/containment")

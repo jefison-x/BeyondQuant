@@ -180,7 +180,9 @@ def test_terminal_settlement_guard_rejects_duplicate_and_late(adapter: RuntimeAd
         contract.assert_terminal_settlement(settled={2: "completed"}, write_attempt=1, write_terminal="interrupted")
 
 
-def test_containment_summary_http_boundary(adapter: RuntimeAdapter, monkeypatch) -> None:
+def test_containment_summary_http_boundary(
+    adapter: RuntimeAdapter, monkeypatch, allow_current_runtime_authority,
+) -> None:
     from fastapi.testclient import TestClient
     from app import main
 
@@ -191,6 +193,7 @@ def test_containment_summary_http_boundary(adapter: RuntimeAdapter, monkeypatch)
     _simulate_process_death(adapter)
     restarted = _restart(adapter)
     monkeypatch.setattr(main, "adapter", restarted)
+    allow_current_runtime_authority(restarted)
     client = TestClient(main.app)
     try:
         prompt = client.post("/internal/runtime/sessions/loss-http/prompt", json={"content": "must not replay"})

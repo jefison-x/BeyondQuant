@@ -7,6 +7,7 @@ import asyncio
 import threading
 import time
 import uuid
+import re
 from datetime import datetime, timezone
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
@@ -51,6 +52,10 @@ SERVICE = "byq-gateway"
 VERSION = "0.1.0"
 @asynccontextmanager
 async def lifespan(app):
+    try:
+        _sync_runtime_authority()
+    except Exception:
+        _set_runtime_authority_state(ready=False)
     lifecycle_delivery.start()
     answer_delivery.start()
     domain_call_delivery.start()
@@ -73,6 +78,151 @@ BACKEND_URL = os.environ.get("BYQ_BACKEND_URL", "http://backend:8000")
 PRODUCT_TOKEN = os.environ.get("BYQ_PRODUCT_TOKEN")
 PRODUCT_PRINCIPAL = os.environ.get("BYQ_PRODUCT_PRINCIPAL", "product-user")
 trace_store = TraceStore(os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"))
+
+RUNTIME_ADAPTER_AUTHORITY_PATH = "/internal/runtime/authority"
+RUNTIME_AUTHORITY_BOOT_SCHEMA = "byq-runtime-authority-boot.v1"
+RUNTIME_AUTHORITY_RECEIPT_SCHEMA = "byq-runtime-authority-receipt.v1"
+RUNTIME_AUTHORITY_CURRENT_SCHEMA = "byq-runtime-authority-current.v1"
+RUNTIME_TERMINAL_EVIDENCE_SCHEMA = "byq-runtime-terminal-evidence.v1"
+RUNTIME_ROOT_CLOSE_SCHEMA = "byq-runtime-root-close.v1"
+_runtime_authority_lock = threading.RLock()
+_runtime_authority_sync_lock = threading.Lock()
+_runtime_authority_state: dict[str, object] = {
+    "ready": False,
+    "boot_id": None,
+    "authority_epoch": None,
+}
+
+
+def _valid_runtime_boot_id(value: object) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{32}", value) is not None
+
+
+def _set_runtime_authority_state(*, ready: bool, boot_id: str | None = None,
+                                 authority_epoch: int | None = None) -> None:
+    with _runtime_authority_lock:
+        _runtime_authority_state.update({
+            "ready": ready,
+            "boot_id": boot_id if ready else None,
+            "authority_epoch": authority_epoch if ready else None,
+        })
+
+
+def _runtime_authority_snapshot() -> dict[str, object]:
+    with _runtime_authority_lock:
+        return dict(_runtime_authority_state)
+
+
+def require_runtime_authority() -> None:
+    try:
+        _sync_runtime_authority()
+        if _runtime_authority_snapshot().get("ready") is not True:
+            raise RuntimeError("runtime authority was not established")
+    except Exception as exc:
+        _set_runtime_authority_state(ready=False)
+        raise HTTPException(status_code=503, detail="Agent runtime authority is not ready") from exc
+
+
+def _adapter_authority() -> dict[str, object]:
+    try:
+        response = httpx.get(f"{RUNTIME_ADAPTER_URL}{RUNTIME_ADAPTER_AUTHORITY_PATH}", timeout=3.0)
+        response.raise_for_status()
+        body = response.json()
+    except httpx.HTTPError as exc:
+        raise RuntimeError("runtime adapter authority is unavailable") from exc
+    except ValueError as exc:
+        raise RuntimeError("runtime adapter authority returned invalid JSON") from exc
+    if (not isinstance(body, dict) or set(body) != {"schema_version", "boot_id", "status"}
+            or body.get("schema_version") != "byq-runtime-adapter-authority.v1"
+            or not _valid_runtime_boot_id(body.get("boot_id")) or body.get("status") != "ready"):
+        raise RuntimeError("runtime adapter authority receipt is invalid")
+    return body
+
+
+def _backend_runtime_authority_request(method: str, path: str,
+                                      payload: dict[str, object] | None = None) -> dict[str, object]:
+    headers: dict[str, str] = {}
+    if path != "/internal/runtime-authority/current":
+        token = os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN", "")
+        if not token:
+            raise RuntimeError("Gateway runtime authority credential is missing")
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        response = httpx.request(
+            method,
+            f"{BACKEND_URL}{path}",
+            json=payload,
+            headers=headers,
+            timeout=5.0,
+        )
+        response.raise_for_status()
+        body = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise RuntimeError("Backend runtime authority request failed") from exc
+    if not isinstance(body, dict):
+        raise RuntimeError("Backend runtime authority response is invalid")
+    return body
+
+
+def _validate_runtime_authority_receipt(body: object, boot_id: str) -> int:
+    if not isinstance(body, dict) or set(body) != {"receipt"}:
+        raise RuntimeError("Backend runtime authority receipt is invalid")
+    receipt = body["receipt"]
+    if (not isinstance(receipt, dict)
+            or set(receipt) != {"schema_version", "boot_id", "authority_epoch", "revoked_root_count",
+                               "revoked_agent_run_count", "status"}
+            or receipt.get("schema_version") != RUNTIME_AUTHORITY_RECEIPT_SCHEMA
+            or receipt.get("boot_id") != boot_id or receipt.get("status") != "current"
+            or type(receipt.get("authority_epoch")) is not int or receipt["authority_epoch"] < 1
+            or type(receipt.get("revoked_root_count")) is not int or receipt["revoked_root_count"] < 0
+            or type(receipt.get("revoked_agent_run_count")) is not int
+            or receipt["revoked_agent_run_count"] < 0):
+        raise RuntimeError("Backend runtime authority receipt is invalid")
+    return receipt["authority_epoch"]
+
+
+def _validate_runtime_authority_current(body: object, boot_id: str, authority_epoch: int) -> None:
+    if (not isinstance(body, dict)
+            or set(body) != {"schema_version", "boot_id", "authority_epoch", "status"}
+            or body.get("schema_version") != RUNTIME_AUTHORITY_CURRENT_SCHEMA
+            or body.get("boot_id") != boot_id or body.get("authority_epoch") != authority_epoch
+            or body.get("status") != "current"):
+        raise RuntimeError("Backend runtime authority does not match the Adapter boot")
+
+
+def _sync_runtime_authority() -> dict[str, object]:
+    """Fence the Adapter process boot in Backend before Agent mutations are admitted."""
+    with _runtime_authority_sync_lock:
+        try:
+            adapter = _adapter_authority()
+            boot_id = adapter["boot_id"]
+            previous = _runtime_authority_snapshot()
+            if previous.get("ready") is True and previous.get("boot_id") == boot_id:
+                current = _backend_runtime_authority_request("GET", "/internal/runtime-authority/current")
+                _validate_runtime_authority_current(
+                    current, boot_id, previous["authority_epoch"],
+                )
+                return {"boot_id": boot_id, "authority_epoch": previous["authority_epoch"]}
+            response = _backend_runtime_authority_request("POST", "/internal/runtime-authority/boot", {
+                "schema_version": RUNTIME_AUTHORITY_BOOT_SCHEMA,
+                "boot_id": boot_id,
+            })
+            authority_epoch = _validate_runtime_authority_receipt(response, boot_id)
+            current = _backend_runtime_authority_request("GET", "/internal/runtime-authority/current")
+            _validate_runtime_authority_current(current, boot_id, authority_epoch)
+        except Exception:
+            _set_runtime_authority_state(ready=False)
+            raise
+        _set_runtime_authority_state(ready=True, boot_id=boot_id, authority_epoch=authority_epoch)
+        return {"boot_id": boot_id, "authority_epoch": authority_epoch}
+
+
+def _require_session_runtime_authority(session: ProductSession) -> str:
+    snapshot = _runtime_authority_snapshot()
+    if (snapshot.get("ready") is not True or not _valid_runtime_boot_id(session.boot_id)
+            or session.boot_id != snapshot.get("boot_id")):
+        raise HTTPException(status_code=503, detail="Agent session authority is not current")
+    return session.boot_id
 
 
 def _continuation_adapter_get(path: str, params=None) -> dict:
@@ -169,6 +319,10 @@ def _recovery_authority(
 
 
 def _consume_task_continuation(context):
+    try:
+        require_runtime_authority()
+    except HTTPException:
+        return
     with chat_admission():
         _consume_admitted_task_continuation(context)
 
@@ -186,15 +340,7 @@ def _attach_continuation_observer(context):
     if state.get('reason') == 'session_missing':
         return None
     product_sessions.remove_owned(context['conversation_id'], principal)
-    session = ProductSession(conversation_id=context['conversation_id'], session_id=context['session_id'],
-        trace_id=context['trace_id'], principal=principal, workspace_id=context['workspace_id'])
-    try:
-        product_sessions.add(session)
-    except RuntimeError:
-        return product_sessions.get_owned(context['conversation_id'], principal)
-    trace_store.reopen(session.session_id)
-    _start_trace_collector(session)
-    return session
+    return _restore_product_session(context['conversation_id'], principal, context['workspace_id'])
 
 
 def _consume_admitted_task_continuation(context):
@@ -228,6 +374,8 @@ def _consume_admitted_task_continuation(context):
             conversation, context['session_id'], context['trace_id']):
         raise ValueError('continuation conversation identity changed')
     observer = _attach_continuation_observer(context)
+    if observer is not None:
+        _require_session_runtime_authority(observer)
     reservation, receipt = closed_recovery_carrier(intent['reservation']), intent['receipt']
     identity = reservation['reservation_id']
     task = intent['task_id']
@@ -284,6 +432,7 @@ def _consume_admitted_task_continuation(context):
     except HTTPException:
         product_sessions.remove_owned(conversation, principal)
         session = _restore_product_session(conversation, principal, workspace)
+    _require_session_runtime_authority(session)
     if observer is not session:
         if not product_sessions.hold_continuation(session, identity, reservation['expires_at']):
             return
@@ -299,6 +448,8 @@ def _consume_admitted_task_continuation(context):
     if carrier is None and backend('dispatch', {'reservation_id': identity}, task=task).get('dispatch') is not True:
         # A durable already-allocated recovery rearm does not re-claim dispatch.
         return
+    require_runtime_authority()
+    _require_session_runtime_authority(session)
     try:
         accepted = _adapter_post(f'/internal/runtime/sessions/{session.session_id}/prompt', payload=payload, timeout=5.0)
     except HTTPException as exc:
@@ -369,11 +520,14 @@ def _resume_lost_reservation(*, backend, mark, task, identity, reservation, rece
         session = _restore_product_session(conversation, principal, workspace)
     if session is None:
         return True
+    _require_session_runtime_authority(session)
     if not product_sessions.hold_continuation(session, identity, reservation['expires_at']):
         return True
     recovered = closed_recovery_carrier({**reservation, 'recovery_attempt': carrier})
     payload = {'content': instruction, 'require_model_key': True, 'idempotency_key': carrier['attempt_key'],
         'continuation_budget': recovered, **_runtime_recovery_payload(session)}
+    require_runtime_authority()
+    _require_session_runtime_authority(session)
     try:
         accepted = _adapter_post(f'/internal/runtime/sessions/{session_id}/prompt', payload=payload, timeout=5.0)
     except HTTPException as exc:
@@ -393,21 +547,78 @@ def _resume_lost_reservation(*, backend, mark, task, identity, reservation, rece
 
 
 def _send_agent_lifecycle(context, event):
-    reply = _catalog_request("POST", f"/internal/agent-lifecycle/{context['conversation_id']}",
-        Principal(subject=context["owner"]), context["workspace_id"], payload={
-            "session_id": context["session_id"], "trace_id": context["trace_id"], "event": event})
-    if reply != {"receipt": lifecycle_receipt(event)}:
-        raise ValueError("lifecycle receipt mismatch")
-    if event["outcome"] != "active":
-        # ADR-0067: a missing process is not a durable acknowledgement. The
-        # Adapter can now persist this receipt using its journal alone. Any
-        # missing evidence remains a bounded pending delivery, including 404.
-        acknowledged = _adapter_post(
-            f"/internal/runtime/sessions/{context['session_id']}/terminal-receipt",
-            payload=reply, timeout=5.0)
-        if acknowledged != reply:
-            raise ValueError("runtime terminal acknowledgement mismatch")
-    return reply
+    if event["outcome"] == "active":
+        # Active registration still uses the existing Backend business path;
+        # it opens the exact root for domain-call admission. A durable old
+        # event has no authority to re-open a root after its Adapter boot was
+        # fenced, so require the original in-process session boot binding.
+        require_runtime_authority()
+        snapshot = _runtime_authority_snapshot()
+        session = product_sessions.find_owned(
+            context["conversation_id"], Principal(subject=context["owner"]),
+        )
+        if (session is None or not _valid_runtime_boot_id(session.boot_id)
+                or session.boot_id != snapshot.get("boot_id")):
+            raise RuntimeError("active lifecycle event has no current Adapter boot binding")
+        reply = _catalog_request("POST", f"/internal/agent-lifecycle/{context['conversation_id']}",
+            Principal(subject=context["owner"]), context["workspace_id"], payload={
+                "session_id": context["session_id"], "trace_id": context["trace_id"],
+                "event": event}, runtime_boot_id=session.boot_id)
+        if reply != {"receipt": lifecycle_receipt(event)}:
+            raise ValueError("lifecycle receipt mismatch")
+        return reply
+
+    require_runtime_authority()
+    snapshot = _runtime_authority_snapshot()
+    session = product_sessions.find_owned(
+        context["conversation_id"], Principal(subject=context["owner"]),
+    )
+    boot_id = session.boot_id if session is not None else snapshot.get("boot_id")
+    if snapshot.get("ready") is not True or not _valid_runtime_boot_id(boot_id):
+        raise RuntimeError("runtime authority is unavailable for terminal close")
+    if session is not None and session.boot_id != snapshot.get("boot_id"):
+        raise RuntimeError("terminal belongs to a superseded Adapter boot")
+
+    evidence = _adapter_get(
+        f"/internal/runtime/sessions/{context['session_id']}/terminal-evidence",
+        params={"root_run_id": event["root_run_id"], "boot_id": boot_id},
+        timeout=5.0,
+    )
+    receipt = evidence.get("receipt") if isinstance(evidence, dict) else None
+    if (not isinstance(evidence, dict)
+            or set(evidence) != {"schema_version", "session_id", "boot_id", "root_run_id", "sequence",
+                                 "outcome", "receipt"}
+            or evidence.get("schema_version") != RUNTIME_TERMINAL_EVIDENCE_SCHEMA
+            or evidence.get("session_id") != context["session_id"]
+            or evidence.get("boot_id") != boot_id
+            or evidence.get("root_run_id") != event["root_run_id"]
+            or evidence.get("sequence") != event["sequence"]
+            or evidence.get("outcome") != event["outcome"]
+            or receipt != lifecycle_receipt(event)):
+        raise ValueError("Adapter terminal evidence does not match the exact lifecycle event")
+
+    closed = _backend_runtime_authority_request(
+        "POST",
+        f"/internal/runtime-authority/roots/{event['root_run_id']}/close",
+        {
+            "schema_version": RUNTIME_ROOT_CLOSE_SCHEMA,
+            "boot_id": boot_id,
+            "sequence": event["sequence"],
+            "outcome": event["outcome"],
+            "event_sha256": receipt["event_sha256"],
+        },
+    )
+    if closed != {"receipt": receipt}:
+        raise ValueError("Backend root close receipt does not match Adapter terminal evidence")
+
+    # The Adapter barrier is released only after Backend has confirmed the
+    # exact event digest for this root and sequence.
+    acknowledged = _adapter_post(
+        f"/internal/runtime/sessions/{context['session_id']}/terminal-receipt",
+        payload=closed, timeout=5.0)
+    if acknowledged != closed:
+        raise ValueError("runtime terminal acknowledgement mismatch")
+    return closed
 
 
 def _recover_agent_lifecycle(context):
@@ -472,9 +683,17 @@ def _read_domain_calls(context, cursor):
 
 
 def _send_domain_call(context, event):
+    require_runtime_authority()
+    session = product_sessions.find_owned(
+        context["conversation_id"], Principal(subject=context["owner"]),
+    )
+    if session is None:
+        raise RuntimeError("domain call evidence has no current Adapter session")
+    boot_id = _require_session_runtime_authority(session)
     return _catalog_request("POST", f"/internal/domain-call-evidence/{context['conversation_id']}",
         Principal(subject=context["owner"]), context["workspace_id"], payload={
-            "session_id": context["session_id"], "trace_id": context["trace_id"], "event": event})
+            "session_id": context["session_id"], "trace_id": context["trace_id"], "event": event},
+        runtime_boot_id=boot_id)
 
 
 domain_call_delivery = LifecycleDelivery(
@@ -544,6 +763,7 @@ class ProductSession:
     trace_id: str
     principal: Principal
     workspace_id: str = "workspace_bootstrap_unresolved"
+    boot_id: str | None = None
     released: bool = False
     public_streams: int = 0
     release_generation: int = 0
@@ -782,6 +1002,12 @@ def readyz() -> dict[str, str]:
     }
 
 
+@app.get("/agent-readyz")
+def agent_readyz() -> dict[str, str]:
+    require_runtime_authority()
+    return {"service": SERVICE, "status": "ready"}
+
+
 def _authenticate(authorization: str | None) -> Principal:
     try:
         return authenticate_bearer(
@@ -866,6 +1092,25 @@ def _adapter_post(path: str, *, payload: dict[str, object] | None = None, timeou
                             payload.get("idempotency_key"), payload.get("content"))):
                     raise PromptAdmissionRejected(status_code=503, detail=detail) from exc
         raise HTTPException(status_code=status, detail=detail) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="runtime adapter unavailable") from exc
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail="runtime adapter returned an invalid response") from exc
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=502, detail="runtime adapter returned an invalid response")
+    return body
+
+
+def _adapter_get(path: str, *, params: dict[str, object] | None = None,
+                 timeout: float = 20.0) -> dict[str, object]:
+    try:
+        response = httpx.get(f"{RUNTIME_ADAPTER_URL}{path}", params=params, timeout=timeout)
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code,
+                            detail="runtime adapter evidence is unavailable") from exc
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=503, detail="runtime adapter unavailable") from exc
     try:
@@ -1049,12 +1294,17 @@ def _catalog_request(
     *,
     payload: dict[str, object] | None = None,
     params: dict[str, object] | None = None,
+    runtime_boot_id: str | None = None,
 ) -> dict[str, object]:
     headers = {
         "x-byq-workspace-id": workspace_id,
         "x-byq-owner-principal": principal.subject,
         "x-byq-actor-principal": principal.subject,
     }
+    if runtime_boot_id is not None:
+        if not _valid_runtime_boot_id(runtime_boot_id):
+            raise HTTPException(status_code=503, detail="runtime boot identity is invalid")
+        headers["x-byq-runtime-boot-id"] = runtime_boot_id
     try:
         response = httpx.request(
             method, f"{BACKEND_URL}{path}", json=payload, params=params, headers=headers, timeout=8.0
@@ -1090,7 +1340,7 @@ def _restore_product_session(conversation_id: str, principal: Principal, workspa
     public_messages, recovery = project_recovery(body.get("messages"), persisted_events, session.session_id, session.trace_id)
     conversation_context = _conversation_context(public_messages)
     try:
-        _adapter_post(
+        attached = _adapter_post(
             "/internal/runtime/sessions",
             payload={
                 "session_id": session.session_id,
@@ -1103,6 +1353,7 @@ def _restore_product_session(conversation_id: str, principal: Principal, workspa
                 **({"conversation_recovery": recovery} if recovery is not None else {}),
             },
         )
+        session.boot_id = _adopt_runtime_session_boot(attached)
     except HTTPException as exc:
         if _is_lost_runtime_session(exc):
             _raise_agent_session_interrupted()
@@ -1160,6 +1411,16 @@ def _product_session(request: Request, session_id: str) -> ProductSession:
         if exc.status_code != 404:
             raise
         return _restore_product_session(session_id, principal, workspace_id)
+
+
+def _adopt_runtime_session_boot(reply: object) -> str:
+    boot_id = reply.get("boot_id") if isinstance(reply, dict) else None
+    snapshot = _runtime_authority_snapshot()
+    if (not _valid_runtime_boot_id(boot_id) or snapshot.get("ready") is not True
+            or boot_id != snapshot.get("boot_id")):
+        _set_runtime_authority_state(ready=False)
+        raise HTTPException(status_code=503, detail="runtime session boot does not match Backend authority")
+    return boot_id
 
 
 _LOST_RUNTIME_SESSION_MARKER = "BYQ runtime session was interrupted"
@@ -1236,6 +1497,10 @@ def continue_approval_conversation(
 ) -> dict[str, str]:
     try:
         with chat_admission():
+            try:
+                require_runtime_authority()
+            except HTTPException:
+                return {"status": "queued"}
             return _continue_approval_conversation(request, conversation_id, approval_id, decision, action)
     except AdmissionClosed:
         # The decision endpoint already durably queued the continuation. Do not
@@ -1299,6 +1564,9 @@ def _continue_approval_conversation(
     prompt_attempted = False
     try:
         session = _product_session(request, conversation_id)
+        _require_session_runtime_authority(session)
+        require_runtime_authority()
+        _require_session_runtime_authority(session)
 
         def continuation_payload() -> dict[str, object]:
             return {"content": instruction, "require_model_key": True,
@@ -1347,7 +1615,8 @@ def _continue_approval_conversation(
     }
 
 
-@app.post("/v1/agent/sessions", status_code=201, dependencies=[Depends(require_chat_admission)])
+@app.post("/v1/agent/sessions", status_code=201,
+          dependencies=[Depends(require_chat_admission), Depends(require_runtime_authority)])
 def create_product_session(request: Request) -> dict[str, object]:
     principal, workspace_id = _trusted_request_identity(request)
     session_id = f"byq-session-{uuid.uuid4().hex}"
@@ -1357,6 +1626,14 @@ def create_product_session(request: Request) -> dict[str, object]:
         payload={"session_id": session_id, "trace_id": trace_id,
                  "workspace_id": workspace_id, "owner_principal": principal.subject},
     )
+    try:
+        boot_id = _adopt_runtime_session_boot(body)
+    except HTTPException:
+        try:
+            _adapter_post(f"/internal/runtime/sessions/{session_id}/release", timeout=5.0)
+        except HTTPException:
+            pass
+        raise
     try:
         catalog = _catalog_request(
             "POST", "/v1/product/conversations", principal, workspace_id,
@@ -1379,6 +1656,7 @@ def create_product_session(request: Request) -> dict[str, object]:
         trace_id=trace_id,
         principal=principal,
         workspace_id=workspace_id,
+        boot_id=boot_id,
     )
     product_sessions.add(session)
     _start_trace_collector(session)
@@ -1508,13 +1786,15 @@ def update_product_session(
     }}
 
 
-@app.post("/v1/agent/sessions/{session_id}/turns", status_code=202, dependencies=[Depends(require_chat_admission)])
+@app.post("/v1/agent/sessions/{session_id}/turns", status_code=202,
+          dependencies=[Depends(require_chat_admission), Depends(require_runtime_authority)])
 def submit_product_turn(
     session_id: str,
     request: ProductPromptRequest,
     http_request: Request,
 ) -> dict[str, object]:
     session = _product_session(http_request, session_id)
+    _require_session_runtime_authority(session)
     # Snapshot before saving the new demand, so a short "continue" cannot
     # replace the previous unanswered research subject in recovery context.
     recovery_payload = _runtime_recovery_payload(session)
@@ -1555,9 +1835,11 @@ def submit_product_turn(
     }
 
 
-@app.post("/v1/agent/sessions/{session_id}/resume", dependencies=[Depends(require_chat_admission)])
+@app.post("/v1/agent/sessions/{session_id}/resume",
+          dependencies=[Depends(require_chat_admission), Depends(require_runtime_authority)])
 def resume_product_session(session_id: str, request: Request) -> dict[str, object]:
     session = _product_session(request, session_id)
+    _require_session_runtime_authority(session)
     resume_payload = _runtime_recovery_payload(session)
     try:
         body = _adapter_post(
@@ -1579,13 +1861,14 @@ def resume_product_session(session_id: str, request: Request) -> dict[str, objec
     }
 
 
-@app.post("/v1/agent/sessions/{session_id}/cancel")
+@app.post("/v1/agent/sessions/{session_id}/cancel", dependencies=[Depends(require_runtime_authority)])
 def cancel_product_session(
     session_id: str,
     request: ProductCancelRequest,
     http_request: Request,
 ) -> dict[str, object]:
     session = _product_session(http_request, session_id)
+    _require_session_runtime_authority(session)
     path = f"/internal/runtime/sessions/{session.session_id}/cancel"
     if request.mode != "hard":
         path += f"?mode={request.mode}"

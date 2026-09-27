@@ -23,21 +23,36 @@ def fingerprint(ctx, key):
     return hashlib.sha256(json.dumps(values, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
 
 
+def _ensure_runtime_boot(store, ctx):
+    current = store.current_runtime_authority()
+    if current is None:
+        boot_id = ctx.get("x-byq-runtime-boot-id", "f" * 32)
+        store.rotate_runtime_authority(boot_id)
+    else:
+        boot_id = current["boot_id"]
+    ctx["x-byq-runtime-boot-id"] = boot_id
+    return boot_id
+
+
 def start(store, ctx, key, **overrides):
+    boot_id = _ensure_runtime_boot(store, ctx)
     payload = {"role_id": "quant_orchestrator", "trace_id": ctx["x-byq-trace-id"],
                "session_id": ctx["x-byq-session-id"], "dsh_run_id": ctx["x-byq-dsh-run-id"],
                "idempotency_key": key, **overrides}
     return store.start_run(payload, trusted_owner=ctx["x-byq-owner-principal"],
                            trusted_actor=ctx["x-byq-actor-principal"],
-                           trusted_workspace=ctx["x-byq-workspace-id"], require_runtime_binding=True)
+                           trusted_workspace=ctx["x-byq-workspace-id"], trusted_boot_id=boot_id,
+                           require_runtime_binding=True)
 
 
 def apply(store, ctx, root, *, key=None, outcome="active", sequence=1):
+    boot_id = _ensure_runtime_boot(store, ctx)
     return store.apply_runtime_lifecycle_event({
         "schema_version": "agent-run-lifecycle.v1", "root_run_id": root, "sequence": sequence,
         "outcome": outcome, **({"registration_fingerprint": fingerprint(ctx, key)} if key else {}),
     }, trusted_owner=ctx["x-byq-owner-principal"], trusted_workspace=ctx["x-byq-workspace-id"],
-        trusted_session_id=ctx["x-byq-session-id"], trusted_trace_id=ctx["x-byq-trace-id"])
+        trusted_session_id=ctx["x-byq-session-id"], trusted_trace_id=ctx["x-byq-trace-id"],
+        trusted_boot_id=boot_id)
 
 
 @pytest.mark.parametrize("outcome", ["completed", "failed", "cancelled", "interrupted"])
@@ -49,15 +64,17 @@ def test_exact_turn_closes_bound_runs_but_not_next_turn_or_business_approval(out
         first = start(store, ctx, "first")
         approval = store.create_approval({"run_id": first["run_id"], "action": "byq_backtest_task_execute",
             "reason": "Synthetic", "resource_type": "backtest_task", "resource_id": "backtesttask_synthetic",
-            "idempotency_key": "synthetic-approval"})
+            "idempotency_key": "synthetic-approval"}, trusted_boot_id=ctx["x-byq-runtime-boot-id"])
         apply(store, ctx, "b" * 32, key="second", sequence=3)
         second = start(store, ctx, "second")
         apply(store, ctx, "a" * 32, outcome=outcome, sequence=2)
         assert start(store, ctx, "first")["status"] == outcome
         assert start(store, ctx, "second")["status"] == "active"
-        assert store.authorize({"run_id": second["run_id"], "action": "byq_factor_compute"})["authorized"]
+        assert store.authorize({"run_id": second["run_id"], "action": "byq_factor_compute"},
+                               trusted_boot_id=ctx["x-byq-runtime-boot-id"])["authorized"]
         with pytest.raises(AgentForbidden):
-            store.authorize({"run_id": first["run_id"], "action": "byq_factor_compute"})
+            store.authorize({"run_id": first["run_id"], "action": "byq_factor_compute"},
+                            trusted_boot_id=ctx["x-byq-runtime-boot-id"])
         persisted = store._fetch_one("SELECT * FROM agent_approvals WHERE approval_id=:id", {"id": approval["approval_id"]})
         assert persisted["status"] == "pending"
         assert persisted["execution_outcome"] == approval["execution_outcome"]
@@ -74,7 +91,8 @@ def test_missing_binding_is_not_authorized_and_late_binding_obeys_durable_termin
     pending = start(store, ctx, "delayed")
     assert pending["status"] == "pending_binding"
     with pytest.raises(AgentForbidden):
-        store.authorize({"run_id": pending["run_id"], "action": "byq_factor_compute"})
+        store.authorize({"run_id": pending["run_id"], "action": "byq_factor_compute"},
+                        trusted_boot_id=ctx["x-byq-runtime-boot-id"])
     apply(store, ctx, "c" * 32, outcome="failed", sequence=9)
     store.close()
     store = AgentResearchStore()

@@ -48,7 +48,8 @@ def fixture(monkeypatch):
         raise AssertionError(path)
     monkeypatch.setattr(main, '_catalog_request', backend)
     monkeypatch.setattr(main, '_continuation_adapter_get', adapter)
-    monkeypatch.setattr(main.product_sessions, 'get_owned', lambda *args: SimpleNamespace(session_id='session-a'))
+    monkeypatch.setattr(main.product_sessions, 'get_owned',
+        lambda *args: SimpleNamespace(session_id='session-a', boot_id='a' * 32))
     monkeypatch.setattr(main.product_sessions, 'idle_release_generation', lambda session: None)
     monkeypatch.setattr(main.product_sessions, 'hold_continuation', lambda *args: True)
     monkeypatch.setattr(main.product_sessions, 'finish_continuation', lambda *args: None)

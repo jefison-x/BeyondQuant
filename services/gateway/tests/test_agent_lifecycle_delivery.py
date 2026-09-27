@@ -56,28 +56,29 @@ def test_fresh_lifecycle_delivery_is_up_to_date(tmp_path):
     assert delivery.status(context)["state"] == "up_to_date"
 
 
-def test_gateway_only_releases_runtime_barrier_after_exact_backend_receipt(monkeypatch):
+def test_active_root_registration_still_uses_the_existing_backend_path(monkeypatch):
     from app import main
-    from fastapi import HTTPException
-    value = project_lifecycle_event(event(), "session-one", "trace-one")
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    main.product_sessions.add(main.ProductSession(
+        "conversation-one", "session-one", "trace-one", main.Principal(subject="alice"),
+        workspace_id="workspace-one", boot_id="a" * 32,
+    ))
+    value = project_lifecycle_event(event(kind="agent.run.registration", payload={
+        "schema_version": "agent-run-registration-observed.v1",
+        "run_id": "a" * 32, "registration_fingerprint": "b" * 64,
+    }), "session-one", "trace-one")
     context = {"conversation_id": "conversation-one", "session_id": "session-one",
                "workspace_id": "workspace-one", "owner": "alice", "trace_id": "trace-one"}
     reply = {"receipt": lifecycle_receipt(value)}
     calls = []
-    monkeypatch.setattr(main, "_catalog_request", lambda *a, **k: {})
-    monkeypatch.setattr(main, "_adapter_post", lambda *a, **k: calls.append(k) or reply)
-    with pytest.raises(ValueError):
-        main._send_agent_lifecycle(context, value)
-    assert calls == []
-    monkeypatch.setattr(main, "_catalog_request", lambda *a, **k: reply)
+    monkeypatch.setattr(main, "_catalog_request", lambda *a, **k: calls.append((a, k)) or reply)
+    monkeypatch.setattr(main, "_adapter_post", lambda *a, **k: pytest.fail("active roots have no terminal ACK"))
     assert main._send_agent_lifecycle(context, value) == reply
-    assert calls == [{"payload": reply, "timeout": 5.0}]
-    for status in [404, 409, 503]:
-        def fail(*a, **k):
-            raise HTTPException(status_code=status)
-        monkeypatch.setattr(main, "_adapter_post", fail)
-        with pytest.raises(HTTPException):
-            main._send_agent_lifecycle(context, value)
+    assert len(calls) == 1
+    assert calls[0][0][1] == "/internal/agent-lifecycle/conversation-one"
+    assert calls[0][1]["payload"]["event"] == value
+    assert calls[0][1]["runtime_boot_id"] == "a" * 32
+    assert "boot_id" not in calls[0][1]["payload"]
 
 
 def test_recovery_poll_is_throttled_durable_and_stops_after_recovered(tmp_path):
