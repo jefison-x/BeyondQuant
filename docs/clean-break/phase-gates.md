@@ -1,5 +1,25 @@
 # Phase 0–6 gate record
 
+## Phase 7 slice 10 gate — pinned foreground child process (2026-09-27)
+
+[Slice record](phase7-live-child-process.md) adds an opt-in test against the
+locked DSH 0.1.5rc1 Product composition. A real foreground child starts and
+finishes; a blocked child hits its dedicated inactivity deadline or hard
+cancel; each path closes the owned root process and rejects late success. No
+Product runtime, DSH API, schema or status semantics changed. Current build
+`.225` binds the test and CI invocation; `.224` is frozen.
+
+**Tester:** isolated real DSH 3/3, ChildLease 6/6 and focused process cleanup
+3/3 in its intended session fixture mode PASS. The initial combined cleanup
+run had three fixture setup errors under root-turn mode; the corrected
+session-mode run passed. Current/frozen build, 13 focused identity/CI checks,
+docs, slice `dev-check` and diff checks PASS. Full Product/Backend/browser
+journeys and remote CI are **NOT_RUN**. **Independent Sol Reviewer:**
+Functional PASS / Tests PASS with those limits / Clean Break Architecture PASS
+after direct test, CI, manifest and boundary review. **Root acceptance:**
+**PASS for slice 10 only**. `ChildLease` remains the bounded, transient process
+watchdog under ADR-002. Phase 7 remains open; Phase 8 remains closed.
+
 ## Phase 7 slice 9 gate — historical journal adoption and lease repair (2026-09-27)
 
 [Slice record](phase7-journal-legacy.md) removes v1–v3 lifecycle-journal

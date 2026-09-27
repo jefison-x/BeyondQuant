@@ -2,6 +2,12 @@
 
 Status: **KEEP the transient `child_lease.py` process watchdog with the qualified DSH 0.1.5rc1 Python SDK** under ADR-002. This is not approval for a BYQ child Agent lifecycle or restart bridge. Phase 7 can remove generic child recovery without deleting this live safety guard.
 
+[Phase 7 slice 10](phase7-live-child-process.md) now exercises the locked
+foreground child in a real pinned DSH process: normal finish, dedicated
+timeout, hard cancel, owned process close and late-result rejection pass.
+This qualifies the live guard for those cases; it does not establish
+process-restart rebind or multi-child progress cadence.
+
 ## 0.10 interruption scope decision (2026-09-27)
 
 The maintainer narrowed functional fidelity: after an Agent interruption, a

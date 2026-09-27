@@ -331,7 +331,7 @@ prepare_ci_compose_env() {
   export BYQ_FEEDBACK_HUB_URL=""
   # ADR-0069: daily suites use the supported bundled runtime only.
   # Archived rollback images are never rebuilt or executed by routine CI.
-  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-224-candidate
+  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-225-candidate
   export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1
   export BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml
   export BYQ_DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-0.1.5rc1
@@ -548,7 +548,7 @@ check_runtime() {
 }
 
 check_dsh_candidate() {
-  step "runtime-adapter: real 0.1.2rc1 candidate qualification"
+  step "runtime-adapter: real 0.1.5rc1 candidate qualification"
   local benchmark_dir="$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE"
   mkdir -p "$benchmark_dir"
   ensure_ci_mcp || { bad "candidate live MCP dependency"; return; }
@@ -592,7 +592,9 @@ check_dsh_candidate() {
       -e BYQ_DSH_REAL_PROCESS_TEST=1 -v "$CI_CANDIDATE_VOL:/var/lib/byq/dsh-sessions" \
       -v "$REPO_ROOT/tests/dsh_upgrade:/qualification:ro" "$candidate_image" \
       python3 -m pytest -q -p no:cacheprovider \
-      /app/tests/test_dsh_012_real_process.py /qualification/test_candidate_journeys.py; then
+      /app/tests/test_dsh_012_real_process.py \
+      /app/tests/test_dsh015_foreground_child_process.py \
+      /qualification/test_candidate_journeys.py; then
     bad "candidate real-process/delegate journeys"; return
   fi
   if ! run_interruptible docker run --name "$CI_CANDIDATE_TEST" "${common[@]}" \
