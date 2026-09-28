@@ -250,7 +250,7 @@ ensure_clean_postgres() {
       -e POSTGRES_DB=byq_domain -e POSTGRES_USER=byq_app -e POSTGRES_PASSWORD=byq-app-dev \
       -v "$CI_PG_VOL":/var/lib/postgresql/data \
       -v "$REPO_ROOT/infra/postgres/init:/docker-entrypoint-initdb.d:ro" \
-      postgres:16-alpine >/dev/null
+      postgres:16-alpine postgres -c max_connections=300 >/dev/null
   fi
   for _ in $(seq 1 30); do
     # The entrypoint's temporary init server listens only on the Unix socket.
@@ -334,7 +334,7 @@ prepare_ci_compose_env() {
   export BYQ_FEEDBACK_HUB_URL=""
   # ADR-0069: daily suites use the supported bundled runtime only.
   # Archived rollback images are never rebuilt or executed by routine CI.
-  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-262-candidate
+  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-263-candidate
   export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1
   export BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml
   export BYQ_DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-0.1.5rc1
