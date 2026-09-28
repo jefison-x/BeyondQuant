@@ -223,7 +223,8 @@ test -z "$DEEPSEEK_API_KEY$TUSHARE_TOKEN$BYQ_FEEDBACK_GITHUB_TOKEN$BYQ_FEEDBACK_
 
     def test_pull_request_trigger_excludes_body_only_edits(self):
         workflow = (ROOT / ".github/workflows/ci-selfhosted.yml").read_text()
-        self.assertIn("types: [opened, synchronize, reopened, ready_for_review]", workflow)
+        self.assertIn("types: [opened, synchronize, reopened]", workflow)
+        self.assertNotIn("ready_for_review]", workflow)
         self.assertNotIn("types: [opened, synchronize, reopened, edited", workflow)
         self.assertNotIn("edited]", workflow)
 

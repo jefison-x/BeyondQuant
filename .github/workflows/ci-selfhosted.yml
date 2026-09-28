@@ -4,10 +4,9 @@ name: BeyondQuant CI
 
 on:
   pull_request:
-    # Avoid re-running expensive CI for PR-body-only edits (`edited`). Keep the
-    # default lifecycle events plus `ready_for_review`, which the Draft -> ready
-    # flow requires to run the merge gate on the exact head.
-    types: [opened, synchronize, reopened, ready_for_review]
+    # The successful exact-head Draft run remains valid when only the PR's
+    # review state changes. A new commit still triggers a fresh required run.
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
     inputs:
       profile:

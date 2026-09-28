@@ -250,10 +250,12 @@ ensure_clean_postgres() {
       -e POSTGRES_DB=byq_domain -e POSTGRES_USER=byq_app -e POSTGRES_PASSWORD=byq-app-dev \
       -v "$CI_PG_VOL":/var/lib/postgresql/data \
       -v "$REPO_ROOT/infra/postgres/init:/docker-entrypoint-initdb.d:ro" \
-      postgres:16-alpine >/dev/null
+      postgres:16-alpine postgres -c max_connections=300 >/dev/null
   fi
   for _ in $(seq 1 30); do
-    docker exec "$CI_PG" pg_isready -U byq_app -d byq_domain >/dev/null 2>&1 && return 0
+    # The entrypoint's temporary init server listens only on the Unix socket.
+    # TCP readiness becomes true after init scripts finish and the final server starts.
+    docker exec "$CI_PG" pg_isready -h 127.0.0.1 -U byq_app -d byq_domain >/dev/null 2>&1 && return 0
     sleep 1
   done
   return 1
@@ -332,7 +334,7 @@ prepare_ci_compose_env() {
   export BYQ_FEEDBACK_HUB_URL=""
   # ADR-0069: daily suites use the supported bundled runtime only.
   # Archived rollback images are never rebuilt or executed by routine CI.
-  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-259-candidate
+  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-263-candidate
   export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1
   export BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml
   export BYQ_DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-0.1.5rc1
@@ -462,17 +464,12 @@ check_backend() {
   step "backend: pytest against clean postgres"
   ensure_clean_postgres || { bad "clean postgres"; return; }
   RESOURCES_TOUCHED=1
-  if run_interruptible docker run --pull=never --rm --name "$CI_BACKEND_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET" \
-      -e BYQ_DATABASE_URL="postgresql+psycopg://byq_test:byq-test-dev@$CI_PG:5432/byq_domain_test" \
-      -e PYTHONDONTWRITEBYTECODE=1 \
-      -v "$REPO_ROOT/services/backend:/app" -w /app \
-      -v "$REPO_ROOT/workers:/app/workers:ro" \
-      -v "$REPO_ROOT/plugins/dsh-byq/registry:/app/plugin-registry:ro" \
-      -e BYQ_WEB_EVIDENCE_PROVENANCE_POLICY=/opt/byq-evidence/web-evidence-provenance.json \
-      -v "$REPO_ROOT/config/dsh/generated/web-evidence-provenance.json:/opt/byq-evidence/web-evidence-provenance.json:ro" \
-      -v "$REPO_ROOT/config/dsh/generated/dsh-0.1.2rc1.web-evidence-provenance.json:/opt/byq-evidence/dsh-0.1.2rc1.web-evidence-provenance.json:ro" \
-      "$(ci_image_ref backend)" python -m pytest -q -p no:cacheprovider \
-      tests --durations=20 --durations-min=1.0; then
+  # Every test module runs once. Three independent databases keep committed
+  # writes and schema resets isolated while allowing the complete suite to run
+  # concurrently on the same exact Backend image.
+  if run_interruptible python3 scripts/ci/run_backend_shards.py \
+      --repo-root "$REPO_ROOT" --scope "$BYQ_CI_SCOPE" --network "$CI_PG_NET" \
+      --postgres "$CI_PG" --image "$(ci_image_ref backend)"; then
     ok "backend tests"; else bad "backend tests"; fi
   # Deferred-reset isolation regression: the same schema-isolation tests run in
   # a fixed-seed shuffled order, proving per-test cleanup is order-independent.

@@ -46,6 +46,9 @@ source of truth and has architecture tests for representative routes.
 
 - Pull requests run the risk-selected profile.
 - New commits cancel an older run for the same PR.
+- Changing an already tested PR from Draft to Ready does not rerun the same
+  exact-head suite. The required checks remain bound to that commit; merge
+  preflight still verifies the latest successful run and live PR authorization.
 - A merge to `main` does not repeat the same full suite; nightly Full detects cross-change drift.
 - Full CI remains available through `workflow_dispatch` and is mandatory for release candidates.
 - A phase may require real Golden or clean-environment rebuild evidence at its
