@@ -8,19 +8,22 @@ The `.237` and `.238` deletion slices passed their bounded gates.
 Clean Break Architecture FAIL. **Independent Sol Reviewer:** the same overall
 verdict after direct code, current ADR-002 and ownership-plan inspection.
 **Root acceptance:** NO PASS for Phase 7 overall; Phase 8 remains CLOSED.
+The overall Tests FAIL means the remaining live cutover has no acceptance
+evidence yet; it does not negate the passing `.237`/`.238` tests.
+Phase 7 does not gate on Job/Worker, Artifact, Approval/Audit, Workspace
+reset, dev-environment rebuild, final schema baseline, or Golden scenarios;
+those belong to later phases.
 
 The remaining live owners are Adapter `RuntimeSession`/`ActiveRun`/generation
 management, Backend `agent_runtime_turns` with domain-call authorization
 dependencies, and Gateway durable lifecycle/domain-evidence delivery. The
 current exact Backend root-close and ACK path is an authorization fence; its
 retention is required until a tested replacement atomically revokes the exact
-business root. The next bounded vertical slice is a minimal BYQ business
-authority fact with exact owner/workspace/session/trace/boot, current
-active/revoked/closed state, terminal receipt and domain-call admission.
-Cut Backend generic root lifecycle dependencies over with schema, registration,
-boot rotation, close, claim, evidence and execution contracts together; keep
-the Adapter/Gateway transport and fence until that slice passes race,
-lost-response and unknown-outcome tests. This finding is an ownership and
+business root. The next bounded vertical slice cuts only the generic Agent
+root-lifecycle dependency from BYQ business-call authority. It must preserve
+exact boot revocation, terminal receipt, and unknown-outcome admission across
+the Backend boundary and the Adapter/Gateway transport. It does not require a
+general Backend or product-domain rewrite. This finding is an ownership and
 evidence gap, not a finding that the retained business guard is unsafe.
 
 ## Phase 7 dead persistence deletion gate (2026-09-28)
