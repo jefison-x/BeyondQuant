@@ -12,7 +12,7 @@ from app.agent_research import AgentConflict, AgentResearchStore, AgentUnauthori
 from app.conversation_catalog import ConversationCatalogStore
 from app.db import execute
 from app.research import ResearchStore
-from packages.contracts.agent_run_lifecycle import registration_fingerprint
+from packages.contracts.agent_run_lifecycle import lifecycle_receipt, registration_fingerprint
 from packages.contracts.domain_call_admission import call_evidence_receipt, request_evidence
 from tests.test_agent_run_lifecycle import apply, start
 from tests.workspace_helpers import trusted_agent_context
@@ -197,6 +197,28 @@ def test_terminal_close_persists_exact_adapter_digest_and_is_idempotent_after_ro
         assert root_row == {"status": "failed", "authority_status": "closed",
                             "terminal_sequence": 7, "terminal_event_sha256": digest}
         assert run_row == {"status": "failed", "authority_status": "closed"}
+    finally:
+        store.close()
+
+
+def test_plain_agent_turn_without_domain_registration_closes_exact_root():
+    boot = "e" * 32
+    root = "4" * 32
+    ctx = trusted_agent_context("authority-plain-turn-user", actor="byq-product-agent-plain",
+        session_id="session-plain", trace_id="trace-plain", dsh_run_id="generation-plain")
+    store = AgentResearchStore()
+    try:
+        store.rotate_runtime_authority(boot)
+        event = {"schema_version": "agent-run-lifecycle.v1", "root_run_id": root,
+                 "sequence": 1, "outcome": "active"}
+        receipt = store.consume_runtime_lifecycle_event(event,
+            trusted_owner=ctx["x-byq-owner-principal"],
+            trusted_workspace=ctx["x-byq-workspace-id"],
+            trusted_session_id=ctx["x-byq-session-id"],
+            trusted_trace_id=ctx["x-byq-trace-id"], trusted_boot_id=boot)
+        assert receipt == lifecycle_receipt(event)
+        assert store.close_runtime_root(root, boot_id=boot, sequence=2,
+            outcome="completed", event_sha256="5" * 64)["root_run_id"] == root
     finally:
         store.close()
 

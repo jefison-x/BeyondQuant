@@ -1,6 +1,8 @@
 import unittest
 
-from packages.contracts.agent_run_lifecycle import registration_fingerprint, validate_lifecycle_event
+from packages.contracts.agent_run_lifecycle import (
+    project_lifecycle_event, registration_fingerprint, validate_lifecycle_event,
+)
 
 
 class AgentRunLifecycleContractTests(unittest.TestCase):
@@ -32,12 +34,21 @@ class AgentRunLifecycleContractTests(unittest.TestCase):
     def test_registration_and_terminal_evidence_remain_separate(self):
         event = {"schema_version": "agent-run-lifecycle.v1", "root_run_id": "a" * 32,
                  "sequence": 1, "outcome": "active"}
-        with self.assertRaises(ValueError):
-            validate_lifecycle_event(event)
+        self.assertEqual(validate_lifecycle_event(event), event)
         bound = {**event, "registration_fingerprint": "b" * 64}
         self.assertEqual(validate_lifecycle_event(bound), bound)
+        with self.assertRaises(ValueError):
+            validate_lifecycle_event({**event, "registration_fingerprint": None})
         terminal = {**event, "sequence": 2, "outcome": "failed"}
         self.assertEqual(validate_lifecycle_event(terminal), terminal)
+
+    def test_session_start_opens_root_without_inventing_agent_registration(self):
+        event = {"session_id": "session", "trace_id": "trace", "source": "runtime-adapter",
+                 "kind": "session.started", "sequence": 1, "payload": {"run_id": "a" * 32}}
+        self.assertEqual(project_lifecycle_event(event, "session", "trace"), {
+            "schema_version": "agent-run-lifecycle.v1", "root_run_id": "a" * 32,
+            "sequence": 1, "outcome": "active",
+        })
 
 
 if __name__ == "__main__":

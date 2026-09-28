@@ -35,7 +35,8 @@ def validate_lifecycle_event(value: object) -> dict:
         raise ValueError("invalid runtime lifecycle outcome")
     fingerprint = value.get("registration_fingerprint")
     if outcome == "active":
-        if not isinstance(fingerprint, str) or re.fullmatch(r"[0-9a-f]{64}", fingerprint) is None:
+        if "registration_fingerprint" in value and (not isinstance(fingerprint, str)
+                                                     or re.fullmatch(r"[0-9a-f]{64}", fingerprint) is None):
             raise ValueError("registration requires an exact fingerprint")
     elif "registration_fingerprint" in value:
         raise ValueError("terminal events cannot register a new agent")
@@ -58,12 +59,14 @@ def project_lifecycle_event(event: dict, session_id: str, trace_id: str) -> dict
     kind = event.get("kind")
     outcomes = {"session.result": "completed", "session.failed": "failed",
                 "session.cancelled": "cancelled", "session.closed": "interrupted"}
-    if kind != "agent.run.registration" and kind not in outcomes:
+    if kind not in {"session.started", "agent.run.registration"} and kind not in outcomes:
         return None
     if "run_id" not in payload:  # idle close/startup failure has no exact turn
         return None
     value = {"schema_version": "agent-run-lifecycle.v1", "root_run_id": payload["run_id"],
              "sequence": event.get("sequence"), "outcome": outcomes.get(kind, "active")}
+    if kind == "session.started" and set(payload) != {"run_id"}:
+        raise ValueError("invalid observed root start")
     if kind == "agent.run.registration":
         if (set(payload) != {"schema_version", "run_id", "registration_fingerprint"}
                 or payload.get("schema_version") != "agent-run-registration-observed.v1"):

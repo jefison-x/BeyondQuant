@@ -332,7 +332,7 @@ prepare_ci_compose_env() {
   export BYQ_FEEDBACK_HUB_URL=""
   # ADR-0069: daily suites use the supported bundled runtime only.
   # Archived rollback images are never rebuilt or executed by routine CI.
-  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-246-candidate
+  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-247-candidate
   export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1
   export BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml
   export BYQ_DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-0.1.5rc1
@@ -774,7 +774,7 @@ PYCODE
     # Summarize the new continuation warnings using fixed categories only.
     # The existing bounded Compose tail below retains its own log policy.
     docker compose logs --no-color gateway 2>/dev/null | \
-      rg 'task continuation (prompt rejected: category=|delivery paused: stage=)' | tail -12 || true
+      grep -E 'task continuation (prompt rejected: category=|delivery paused: stage=)' | tail -12 || true
     docker compose logs --no-color --tail 40 runtime-adapter gateway backend || true
     bad "F6 real-domain chain and Gateway restart"; export COMPOSE_FILE="$original_compose"; return
   fi
