@@ -29,6 +29,9 @@ persisted **completed public Product messages** as ordinary input to that
 root. This is not DSH-private session/context restoration. The former
 failed-turn `conversation_recovery` envelope, which inferred unanswered work
 from trace events, is outside this boundary and was removed in Phase 10.
+Completion is checked against the scoped, closed Backend business-root record
+and its exact terminal receipt. Trace events correlate persisted Product
+answers with roots; they do not decide root status.
 
 This phase removes the old Adapter behavior that built a *new* DSH process
 under an interrupted or failed BYQ session ID. The live READY original-harness

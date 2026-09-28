@@ -1,4 +1,4 @@
 services:
   runtime-adapter:
     build:
-      dockerfile: ${BYQ_DSH_RUNTIME_DOCKERFILE:-services/runtime-adapter/Dockerfile.post-u8-252-candidate}
+      dockerfile: ${BYQ_DSH_RUNTIME_DOCKERFILE:-services/runtime-adapter/Dockerfile.post-u8-253-candidate}

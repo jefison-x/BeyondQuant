@@ -143,13 +143,18 @@ def _adapter_authority() -> dict[str, object]:
 
 
 def _backend_runtime_authority_request(method: str, path: str,
-                                      payload: dict[str, object] | None = None) -> dict[str, object]:
+                                      payload: dict[str, object] | None = None,
+                                      scope: ProductSession | None = None) -> dict[str, object]:
     headers: dict[str, str] = {}
     if path != "/internal/runtime-authority/current":
         token = os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN", "")
         if not token:
             raise RuntimeError("Gateway runtime authority credential is missing")
         headers["Authorization"] = f"Bearer {token}"
+    if scope is not None:
+        headers.update({"x-byq-owner-principal": scope.principal.subject,
+                        "x-byq-workspace-id": scope.workspace_id,
+                        "x-byq-trace-id": scope.trace_id})
     try:
         response = httpx.request(
             method,
@@ -1377,7 +1382,7 @@ def _conversation_context(value: object) -> list[ConversationContextMessage]:
 
 
 _FAILED_OR_CANCELLED_TERMINALS = {
-    "session.failed", "session.cancelled", "session.result.discarded",
+    "session.failed", "session.cancelled", "session.closed",
 }
 _SHORT_CONTINUATIONS = frozenset({
     "继续", "继续吧", "请继续", "继续处理", "接着做", "接着研究", "重试", "再试一次",
@@ -1405,6 +1410,48 @@ def _runtime_events(events: object, session_id: str, trace_id: str) -> list[dict
                    and event.get("source") == "runtime-adapter"
                    and type(event.get("sequence")) is int),
                   key=lambda event: event["sequence"])
+
+
+def _attested_runtime_events(events: list[dict[str, object]], session: ProductSession) -> list[dict[str, object]]:
+    """Use trace only to correlate public output; Backend DB owns terminal truth."""
+    terminals = {"session.result", "session.failed", "session.cancelled", "session.closed"}
+    if not any(event.get("kind") in terminals for event in events):
+        return events
+    try:
+        body = _backend_runtime_authority_request(
+            "GET", f"/internal/runtime-authority/sessions/{session.session_id}/roots", scope=session,
+        )
+        if set(body) != {"schema_version", "roots"} or body["schema_version"] != "byq-business-root-status.v1":
+            raise ValueError("invalid business root status response")
+        roots = body["roots"]
+        if not isinstance(roots, list) or len(roots) > 500:
+            raise ValueError("invalid business root status list")
+        indexed: dict[str, dict[str, object]] = {}
+        for row in roots:
+            if (not isinstance(row, dict) or set(row) != {"root_run_id", "status", "authority_status",
+                                                        "terminal_sequence", "terminal_event_sha256"}
+                    or not isinstance(row["root_run_id"], str) or row["root_run_id"] in indexed):
+                raise ValueError("invalid business root status row")
+            indexed[row["root_run_id"]] = row
+        attested: list[dict[str, object]] = []
+        for event in events:
+            if event.get("kind") not in terminals:
+                attested.append(event)
+                continue
+            lifecycle = project_lifecycle_event(event, session.session_id, session.trace_id)
+            if lifecycle is None:
+                continue
+            receipt = lifecycle_receipt(lifecycle)
+            row = indexed.get(lifecycle["root_run_id"])
+            if (row is None or row["status"] != lifecycle["outcome"]
+                    or row["authority_status"] != "closed"
+                    or row["terminal_sequence"] != receipt["sequence"]
+                    or row["terminal_event_sha256"] != receipt["event_sha256"]):
+                raise ValueError("business root terminal is not confirmed")
+            attested.append(event)
+    except (RuntimeError, ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=503, detail="business root completion is unavailable") from exc
+    return attested
 
 
 def _successful_public_answers(
@@ -1558,7 +1605,9 @@ def _runtime_conversation_payload(
     if not isinstance(catalog.get("messages"), list):
         raise HTTPException(status_code=502, detail="conversation history projection is unavailable")
     events = trace_store.read(session.session_id)
-    owned = _runtime_events(events, session.session_id, session.trace_id)
+    owned = _attested_runtime_events(
+        _runtime_events(events, session.session_id, session.trace_id), session,
+    )
     if current_message is not None:
         _reject_ambiguous_continuation_after_failure(
             owned, session.session_id, session.trace_id, current_message,

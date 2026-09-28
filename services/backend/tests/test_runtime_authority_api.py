@@ -102,3 +102,121 @@ def test_runtime_authority_identity_fields_fail_closed_before_database_access():
             assert "event_sha256" in str(error)
         else:
             raise AssertionError("invalid event digest was accepted")
+
+
+def test_runtime_roots_projection_filters_in_storage_and_fails_closed_over_limit(monkeypatch):
+    from app.agent_research import AgentPersistenceError, AgentResearchStore
+
+    store = object.__new__(AgentResearchStore)
+    captured = {}
+
+    def fetch(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [{"root_run_id": "a" * 32, "status": "active", "authority_status": "active",
+                 "terminal_sequence": None, "terminal_event_sha256": None}]
+
+    monkeypatch.setattr(store, "_execute", fetch)
+    result = store.runtime_roots_for_scope(owner_principal="owner", workspace_id="workspace_1",
+                                           session_id="session_1", trace_id="trace_1")
+    assert captured["params"] == {"owner": "owner", "workspace": "workspace_1", "session": "session_1",
+                                   "trace": "trace_1", "limit": 501}
+    assert "WHERE owner_principal=:owner AND workspace_id=:workspace" in captured["sql"]
+    assert "AND session_id=:session AND trace_id=:trace" in captured["sql"]
+    assert "ORDER BY created_at, root_run_id" in captured["sql"]
+    assert result["schema_version"] == "byq-business-root-status.v1"
+    assert result["roots"] == [{"root_run_id": "a" * 32, "status": "active", "authority_status": "active",
+                                "terminal_sequence": None, "terminal_event_sha256": None}]
+
+    monkeypatch.setattr(store, "_execute", lambda _sql, _params: [{}] * 501)
+    with pytest.raises(AgentPersistenceError, match="bounded result"):
+        store.runtime_roots_for_scope(owner_principal="owner", workspace_id="workspace_1",
+                                      session_id="session_1", trace_id="trace_1")
+
+
+@pytest.mark.skipif(not os.environ.get("BYQ_DATABASE_URL"), reason="requires isolated PostgreSQL")
+def test_runtime_roots_endpoint_is_bearer_protected_and_exactly_scoped(monkeypatch):
+    from uuid import uuid4
+
+    from fastapi.testclient import TestClient
+    from app import main
+    from app.agent_research import AgentResearchStore
+    from tests.workspace_helpers import trusted_agent_context
+
+    monkeypatch.setattr(main, "RUNTIME_AUTHORITY_TOKEN", "synthetic-service-token")
+    store = AgentResearchStore()
+    client = TestClient(main.app)
+    try:
+        authority = store.current_runtime_authority()
+        if authority is None:
+            authority = store.rotate_runtime_authority(uuid4().hex)
+        boot_id = authority["boot_id"]
+
+        matching = trusted_agent_context(
+            f"runtime-roots-{uuid4().hex[:12]}", session_id="roots-session",
+            trace_id="roots-trace", dsh_run_id="roots-generation",
+        )
+        another_owner = trusted_agent_context(
+            f"runtime-roots-{uuid4().hex[:12]}", session_id="roots-session",
+            trace_id="roots-trace", dsh_run_id="roots-generation",
+        )
+        other_session = {**matching, "x-byq-session-id": "other-roots-session"}
+        other_trace = {**matching, "x-byq-trace-id": "other-roots-trace"}
+
+        def open_root(context, root_id):
+            return store.apply_runtime_lifecycle_event(
+                {"schema_version": "agent-run-lifecycle.v1", "root_run_id": root_id,
+                 "sequence": 1, "outcome": "active"},
+                trusted_owner=context["x-byq-owner-principal"],
+                trusted_workspace=context["x-byq-workspace-id"],
+                trusted_session_id=context["x-byq-session-id"],
+                trusted_trace_id=context["x-byq-trace-id"], trusted_boot_id=boot_id,
+            )
+
+        active_root, terminal_root = sorted((uuid4().hex, uuid4().hex))
+        open_root(matching, terminal_root)
+        store.close_runtime_root(terminal_root, boot_id=boot_id, sequence=9,
+                                 outcome="completed", event_sha256="c" * 64)
+        open_root(matching, active_root)
+        open_root(other_owner, uuid4().hex)
+        open_root(other_session, uuid4().hex)
+        open_root(other_trace, uuid4().hex)
+
+        # Equal timestamps exercise the documented root_run_id tie break.
+        store._execute("UPDATE agent_runtime_turns SET created_at=TIMESTAMPTZ '2026-01-01 00:00:00+00' "
+                       "WHERE root_run_id IN (:first,:second)",
+                       {"first": terminal_root, "second": active_root})
+
+        path = "/internal/runtime-authority/sessions/roots-session/roots"
+        assert client.get(path).status_code == 401
+        headers = {
+            "Authorization": "Bearer synthetic-service-token",
+            "x-byq-owner-principal": matching["x-byq-owner-principal"],
+            "x-byq-workspace-id": matching["x-byq-workspace-id"],
+            "x-byq-trace-id": matching["x-byq-trace-id"],
+        }
+        response = client.get(path, headers=headers)
+        assert response.status_code == 200, response.text
+        assert response.json() == {
+            "schema_version": "byq-business-root-status.v1",
+            "roots": [
+                {"root_run_id": active_root, "status": "active", "authority_status": "active",
+                 "terminal_sequence": None, "terminal_event_sha256": None},
+                {"root_run_id": terminal_root, "status": "completed", "authority_status": "closed",
+                 "terminal_sequence": 9, "terminal_event_sha256": "c" * 64},
+            ],
+        }
+        wrong_trace = {**headers, "x-byq-trace-id": "other-roots-trace"}
+        wrong_workspace = {**headers, "x-byq-workspace-id": another_owner["x-byq-workspace-id"]}
+        wrong_owner = {
+            **headers,
+            "x-byq-owner-principal": another_owner["x-byq-owner-principal"],
+            "x-byq-workspace-id": another_owner["x-byq-workspace-id"],
+        }
+        assert client.get(path, headers=wrong_trace).json()["roots"] == []
+        assert client.get(path, headers=wrong_workspace).json()["roots"] == []
+        assert client.get(path, headers=wrong_owner).json()["roots"] == []
+        assert client.get("/internal/runtime-authority/sessions/other-roots-session/roots",
+                          headers=headers).json()["roots"] == []
+    finally:
+        store.close()

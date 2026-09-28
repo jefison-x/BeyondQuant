@@ -12,6 +12,9 @@ data. With the qualified 0.1.5rc1 root-scoped process boundary, a newly
 admitted healthy turn may supply a bounded selection of **completed public
 messages** as ordinary input to a fresh DSH root. This does not restore a DSH
 session, private context, compaction, tool result, checkpoint or failed turn.
+The Product conversation rows and BYQ's exact, closed business-root receipt
+must confirm completion. A trace event may correlate a public answer with a
+root, but cannot decide whether that root completed.
 DSH alone reasons over that input and runs tools/delegation. BYQ must not
 construct an inferred unanswered-task or failure-recovery instruction from
 trace events. A failed/interrupted turn needs a new Agent session or an

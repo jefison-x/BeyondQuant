@@ -616,6 +616,17 @@ def rotate_runtime_authority(payload: dict[str, Any], request: Request) -> dict[
     return _agent_call(lambda: {"receipt": agent_store.rotate_runtime_authority(payload["boot_id"])})
 
 
+@app.get("/internal/runtime-authority/sessions/{session_id}/roots")
+def get_runtime_roots_for_session(session_id: str, request: Request) -> dict[str, object]:
+    _require_runtime_authority_bearer(request)
+    return _agent_call(lambda: agent_store.runtime_roots_for_scope(
+        owner_principal=request.headers.get("x-byq-owner-principal"),
+        workspace_id=request.headers.get("x-byq-workspace-id"),
+        session_id=session_id,
+        trace_id=request.headers.get("x-byq-trace-id"),
+    ))
+
+
 @app.post("/internal/runtime-authority/roots/{root_run_id}/close")
 def close_runtime_authority_root(root_run_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
     _require_runtime_authority_bearer(request)

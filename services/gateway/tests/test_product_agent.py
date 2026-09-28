@@ -74,6 +74,7 @@ def authorize_runtime_session(monkeypatch, session):
 def test_ambiguous_continue_after_failed_or_cancelled_turn_requires_explicit_instruction(
     monkeypatch, tmp_path, terminal_kind,
 ):
+    monkeypatch.setattr(main, "_attested_runtime_events", lambda events, _session: events)
     session = main.ProductSession("conversation", "runtime", "trace", main.Principal(subject="alice"))
     authorize_runtime_session(monkeypatch, session)
     monkeypatch.setattr(main, "_product_session", lambda *_: session)
@@ -103,6 +104,7 @@ def test_ambiguous_continue_after_failed_or_cancelled_turn_requires_explicit_ins
 
 
 def test_explicit_instruction_after_failure_uses_completed_public_transcript_only(monkeypatch, tmp_path):
+    monkeypatch.setattr(main, "_attested_runtime_events", lambda events, _session: events)
     session = main.ProductSession("conversation", "runtime", "trace", main.Principal(subject="alice"))
     authorize_runtime_session(monkeypatch, session)
     monkeypatch.setattr(main, "_product_session", lambda *_: session)
@@ -172,6 +174,7 @@ def test_explicit_instruction_after_failure_uses_completed_public_transcript_onl
 
 
 def test_new_root_waits_for_previous_public_answer_to_be_durable(monkeypatch, tmp_path):
+    monkeypatch.setattr(main, "_attested_runtime_events", lambda events, _session: events)
     session = main.ProductSession("conversation", "runtime", "trace", main.Principal(subject="alice"))
     authorize_runtime_session(monkeypatch, session)
     store = TraceStore(tmp_path)
@@ -195,6 +198,37 @@ def test_new_root_waits_for_previous_public_answer_to_be_durable(monkeypatch, tm
         {"role": "assistant", "content": "凯利仓位研究方案"},
     ]}
     assert "conversation_recovery" not in transcript
+
+
+def test_public_terminal_requires_matching_backend_business_root(monkeypatch):
+    session = main.ProductSession("conversation", "runtime", "trace", main.Principal(subject="alice"))
+    terminal = {"session_id": "runtime", "trace_id": "trace", "source": "runtime-adapter",
+                "sequence": 3, "kind": "session.result", "payload": {"run_id": "a" * 32}}
+    lifecycle = main.project_lifecycle_event(terminal, "runtime", "trace")
+    receipt = main.lifecycle_receipt(lifecycle)
+    row = {"root_run_id": "a" * 32, "status": "completed", "authority_status": "closed",
+           "terminal_sequence": 3, "terminal_event_sha256": receipt["event_sha256"]}
+    calls = []
+    def backend(method, path, payload=None, scope=None):
+        calls.append((method, path, scope))
+        return {"schema_version": "byq-business-root-status.v1", "roots": [row]}
+    monkeypatch.setattr(main, "_backend_runtime_authority_request", backend)
+    assert main._attested_runtime_events([terminal], session) == [terminal]
+    assert calls == [("GET", "/internal/runtime-authority/sessions/runtime/roots", session)]
+    row["status"] = "failed"
+    with pytest.raises(main.HTTPException) as raised:
+        main._attested_runtime_events([terminal], session)
+    assert raised.value.status_code == 503
+    row["status"] = "completed"
+    row["authority_status"] = "active"
+    with pytest.raises(main.HTTPException) as raised:
+        main._attested_runtime_events([terminal], session)
+    assert raised.value.status_code == 503
+    row["authority_status"] = "closed"
+    row["terminal_event_sha256"] = "0" * 64
+    with pytest.raises(main.HTTPException) as raised:
+        main._attested_runtime_events([terminal], session)
+    assert raised.value.status_code == 503
 
 
 @pytest.mark.parametrize("mutation", [None, {"session_id": "other-session"},

@@ -48,6 +48,7 @@ APPROVAL_RESOURCE_TYPES = {
 }
 
 MAX_DETAIL_BYTES = 16 * 1024
+MAX_RUNTIME_ROOT_STATUS_ROOTS = 500
 _ID_PATTERN = re.compile(r"^(?:agent_run|agent_approval|agent_audit)_[0-9a-f]{32}$")
 _TRACE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 _RUNTIME_BOOT_PATTERN = re.compile(r"^[0-9a-f]{32}$")
@@ -704,6 +705,35 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             return None
         return {"schema_version": "byq-runtime-authority-current.v1",
                 "boot_id": row["boot_id"], "authority_epoch": row["epoch"], "status": "current"}
+
+    def runtime_roots_for_scope(self, *, owner_principal: object, workspace_id: object,
+                                session_id: object, trace_id: object) -> dict[str, object]:
+        """Return an exact, bounded read-only projection of roots in one session scope."""
+        owner = _principal(owner_principal, field="owner_principal")
+        workspace = _trace(workspace_id, field="workspace_id")
+        session = _trace(session_id, field="session_id")
+        trace = _trace(trace_id, field="trace_id")
+        rows = self._execute("""SELECT root_run_id, status, authority_status,
+                terminal_sequence, terminal_event_sha256
+            FROM agent_runtime_turns
+            WHERE owner_principal=:owner AND workspace_id=:workspace
+              AND session_id=:session AND trace_id=:trace
+            ORDER BY created_at, root_run_id
+            LIMIT :limit""",
+            {"owner": owner, "workspace": workspace, "session": session,
+             "trace": trace, "limit": MAX_RUNTIME_ROOT_STATUS_ROOTS + 1})
+        if len(rows) > MAX_RUNTIME_ROOT_STATUS_ROOTS:
+            raise AgentPersistenceError("runtime root projection exceeds its bounded result")
+        return {
+            "schema_version": "byq-business-root-status.v1",
+            "roots": [{
+                "root_run_id": row["root_run_id"],
+                "status": row["status"],
+                "authority_status": row["authority_status"],
+                "terminal_sequence": row["terminal_sequence"],
+                "terminal_event_sha256": row["terminal_event_sha256"],
+            } for row in rows],
+        }
 
     @staticmethod
     def _current_authority_row(connection, *, for_update: bool = False):

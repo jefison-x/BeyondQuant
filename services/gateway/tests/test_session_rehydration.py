@@ -76,7 +76,7 @@ def test_restore_attaches_live_session_and_reopens_trace(monkeypatch, tmp_path: 
     assert posts == [("/internal/runtime/sessions", {
         "session_id": "runtime-private", "trace_id": "trace-1",
         "workspace_id": "workspace_bootstrap_unresolved", "owner_principal": main.PRODUCT_PRINCIPAL,
-        "initial_sequence": 4, "attach_live_only": True, "conversation_context": [],
+        "initial_sequence": 4, "attach_live_only": True,
     })]
     # The trace was reopened for the surviving runtime's continuation.
     assert store.append(event("runtime-private", "trace-1", 5, "session.progress", {"step": 5})) is True
