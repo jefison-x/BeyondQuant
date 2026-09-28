@@ -91,11 +91,10 @@ class AuditorFailClosedTests(unittest.TestCase):
         value = json.loads(LEDGER.read_text(encoding="utf-8"))
         self.assertGreater(len(value["entries"]), 500)
         self.assertEqual(value["schema_version"], "h4-interface-review.v1")
-        historical = subprocess.check_output(
-            ["git", "show", "2f8aca4a:docs/evidence/research-handoff-h4/INTERFACE-REVIEW.json"],
-            cwd=ROOT,
-        )
-        self.assertEqual(hashlib.sha256(LEDGER.read_bytes()).digest(), hashlib.sha256(historical).digest())
+        # The old branch commit is not guaranteed in a fresh shallow checkout
+        # after Clean Break's squash merge. Pin the archived artifact bytes.
+        self.assertEqual(hashlib.sha256(LEDGER.read_bytes()).hexdigest(),
+                         "56b09cc97164ff2fe9630f9abc9b5e1ac9762475494acf9e9af2d376bcd7ed54")
 
     def test_missing_row_is_reported_and_not_complete(self):
         with tempfile.TemporaryDirectory() as directory:

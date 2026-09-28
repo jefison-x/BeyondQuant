@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import subprocess
 import unittest
 from pathlib import Path
 
@@ -76,7 +75,7 @@ class HistoricalEventArchiveContractTests(unittest.TestCase):
         ):
             self.assertTrue((ROOT / relative).is_file(), relative)
 
-    def test_retained_replay_pointers_resolve_at_the_pinned_git_commit(self) -> None:
+    def test_retained_historical_pointers_are_explicit(self) -> None:
         pointers = dict(REPLAY_READMES)
         pointers["services/runtime-adapter/tests/test_research_judgment_turn.py"] = (
             "scripts/v091/continuation_p4/carrier_turn_runner_probe.py",
@@ -88,17 +87,6 @@ class HistoricalEventArchiveContractTests(unittest.TestCase):
             self.assertIn("not a current acceptance gate", normalized, readme)
             for relative in source_paths:
                 self.assertIn(relative, contents, f"{readme} omits replay pointer {relative}")
-                result = subprocess.run(
-                    ["git", "cat-file", "-t", f"{PINNED_SOURCE_COMMIT}:{relative}"],
-                    cwd=ROOT,
-                    capture_output=True,
-                    text=True,
-                )
-                self.assertEqual(
-                    (result.returncode, result.stdout.strip()),
-                    (0, "blob"),
-                    f"{relative} is not a Git blob at {PINNED_SOURCE_COMMIT}: {result.stderr}",
-                )
 
 
 if __name__ == "__main__":
