@@ -1,5 +1,29 @@
 # Phase 0–6 gate record
 
+## Phase 7 bounded legacy-runtime removal — Root acceptance (2026-09-28)
+
+[Exit evidence](phase7-exit-evidence.md) and [live-state classification](phase7-exit-classification.md)
+close the finite Phase 7 gate below. The final slice removed the old-row
+`recovery_attempts` admission scan and unwired Gateway recovery callback;
+earlier accepted slices removed the old Adapter journal, disk persistence,
+takeover and compatibility routes. Current BYQ business authorization and
+`outcome_unknown` safeguards remain.
+
+**Tester:** Functional PASS / Tests PASS for this bounded scope: Gateway 25/25,
+Backend isolated PostgreSQL 8/8 (five authority/unknown cases plus three route
+rejection cases), architecture 198/198, selected `.239`/frozen `.238` build
+checks, syntax and diff PASS. Exact test containers, network and image tags
+were removed and verified absent. **Independent Sol Reviewer:** Functional
+PASS / Tests PASS / Clean Break Architecture PASS after direct diff, ADR,
+business-boundary and build inspection. **Root acceptance:** **PASS for Phase 7
+legacy-runtime removal and explicit later-phase handoff only.** The prior
+`ae574cb8` FAIL below remains historical evidence under the earlier expanded
+gate; it is superseded for current Phase 7 exit by this prospective gate and
+new tests. Phase 8 may begin only within its separate archive/resource and
+authorization gate. Adapter generic lifecycle/context ownership, Backend
+mixed runtime tables, full 0.10 architecture and Golden functionality remain
+unaccepted Phase 10/14/17 obligations.
+
 ## Phase 7 scope correction (2026-09-28; prospective gate)
 
 The maintainer identified that the earlier overall review had expanded Phase 7

@@ -2,18 +2,20 @@
 
 ## Current authority — BYQ 0.10 Clean Break (2026-09-25)
 
-<!-- byq:clean-break-current-phase=7 -->
+<!-- byq:clean-break-current-phase=8 -->
 
 The maintainer's explicit Clean Break direction supersedes the 0.9/P4 and Phase 100
 implementation routing below. The current architecture is [ADR-0088](../architecture/adr/ADR-0088-clean-break-baseline-activation.md)
 and [Clean Break ADR-001–006](../clean-break/adr/README.md). Phase 0–6 planning,
 freeze, inventory, proposed baseline and ownership/deletion review are complete;
-the baseline is now accepted in the Clean Break branch. **Next phase: Clean Break
-Phase 7 — bounded legacy-runtime removal**, with each live path replaced and
-contract-tested in the same slice, then Tester → independent Sol Reviewer → Root
-PASS. Phase 8 Docker/volume/database cleanup remains blocked on exact resource
-classification and verified final old-DB archive. No production deployment or
-release is authorized.
+the baseline is now accepted in the Clean Break branch. Phase 7 bounded
+legacy-runtime removal passed its [limited gate](../clean-break/phase-gates.md),
+with remaining Agent lifecycle ownership explicitly assigned to Phase 10/14/17.
+**Next phase: Clean Break Phase 8 — classified old-environment cleanup.**
+Resource deletion requires exact inventory, verified final old-DB archive and
+separate operation authorization; the current source/test authorization does
+not authorize touching existing databases, user data, backups or services.
+No production deployment or release is authorized.
 
 P4-C1 code is in `main`; the P4-C2 local branch/worktree remains unreviewed
 historical reference, and P4-D is not claimed complete. The previous 0.9/P4

@@ -104,37 +104,6 @@ class DomainCallEvidenceMixin:
                 raise AgentConflict("domain call belongs to a superseded runtime boot")
         return conversation["conversation_id"]
 
-    @staticmethod
-    def _recovery_claim_gate(connection, *, owner, workspace, session, root):
-        """Retire prior recovery roots without broadening their call authority.
-
-        Clean Break has no automatic Agent replay. Old in-row attempt records may
-        still name runs that were previously admitted, so they remain denied at
-        this root-local authorization fence. Ordinary roots have no such record
-        and proceed through the normal lifecycle, owner, role and evidence checks.
-        """
-
-        if not isinstance(root, str) or not root:
-            return None
-        rows = execute(connection, """SELECT t.task_id, t.continuation_budget FROM research_tasks t
-            JOIN product_conversations c ON c.conversation_id = t.conversation_id
-            WHERE c.runtime_session_id=:session AND t.owner_principal=:owner
-              AND t.workspace_id=:workspace""",
-            {'session': session, 'owner': owner, 'workspace': workspace})
-        attempts = [(row['task_id'], attempt) for row in rows
-                    for reservation in (row.get('continuation_budget') or [])
-                    for attempt in (reservation.get('recovery_attempts') or [])]
-        if not attempts:
-            return None
-        if any(attempt.get('run_id') == root for _, attempt in attempts):
-            return 'recovery_envelope_violation'
-        if any(attempt.get('status') == 'reserved' and attempt.get('run_id') is None
-               for _, attempt in attempts):
-            # An old pending record has no dispatch path and cannot authorize a
-            # new root's business claim while its historical row is unresolved.
-            return 'recovery_envelope_violation'
-        return None
-
     def claim_domain_call(self, action, payload, *, trusted_owner, trusted_workspace,
                           trusted_session_id, trusted_trace_id, trusted_generation, trusted_root,
                           trusted_boot_id=None):
@@ -159,11 +128,6 @@ class DomainCallEvidenceMixin:
             self._lifecycle_lock(connection, "runtime-authority:current")
             self._require_lifecycle_workspace(connection, context["owner"], context["workspace"])
             self._lifecycle_lock(connection, "root:" + context["root"])
-            recovery_violation = self._recovery_claim_gate(connection,
-                owner=context["owner"], workspace=context["workspace"],
-                session=context["session"], root=context["root"])
-            if recovery_violation is not None:
-                return {"state": "blocked", "reason": recovery_violation}
             proof = fetch_one(connection, """SELECT * FROM agent_domain_call_evidence
                 WHERE owner_principal=:owner AND workspace_id=:workspace AND session_id=:session AND trace_id=:trace
                 AND root_run_id=:root AND task_id=:task_id AND action=:action AND idempotency_key=:idempotency_key
