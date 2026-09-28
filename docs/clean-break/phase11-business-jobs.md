@@ -5,6 +5,10 @@ workspace data-import Job boundaries passed their bounded gates. Base:
 Phase 10 local PASS commit `ecc5bf74`. This is not a claim that full functional
 fidelity has passed.
 
+For the repository PR gate, the Phase 11 commits were replayed onto the Phase 10
+merged `main` baseline. The local slice evidence below records the original
+isolated checks; hosted CI and PR review apply to the replayed head.
+
 ## Existing owner and first slice
 
 Specialized BYQ stores remain authoritative; no generic workflow engine or
@@ -192,6 +196,18 @@ the Job stores, cancel routes, MCP reconciliation, role version fence and
 affected tests and accepts **Phase 11 local PASS**. Hosted CI and human PR/
 merge gates remain separate; full Product/Golden qualification remains
 Phases 15–16.
+
+During repository review, Backtest Worker completion was tightened: its
+validated result Artifact and terminal Job update now share one short
+PostgreSQL transaction under the current attempt's Job row lock. Completion
+checks the Artifact's task, owner, workspace, input and result binding.
+Cancellation or an expired attempt cannot commit a success Artifact. The
+focused cancellation/finalization/expired-claim regression passed on a fresh
+disposable PostgreSQL 16 database (1 passed); the container, network and
+temporary image were removed. An independent Tester then ran the full affected
+Backend file on a second disposable PostgreSQL 16 database (8 passed in
+12.21 seconds), including the concurrency regression, and removed the exact
+test resources. Hosted CI remains a separate gate.
 
 ## Handoffs after Phase 11
 

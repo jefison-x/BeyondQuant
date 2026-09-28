@@ -51,6 +51,7 @@ MAX_SIGNALS = AGGREGATE_ROW_LIMIT
 MAX_ACTIONS = 10_000
 MAX_BENCHMARK_BARS = 5_000
 MAX_RESULT_BYTES = 32 * 1024 * 1024
+BACKTEST_CLAIM_LEASE_SECONDS = 900
 SIGNAL_SNAPSHOT_SCHEMA_VERSION = "signal-snapshot-v2"
 MAX_SNAPSHOT_BYTES = MAX_RESULT_BYTES
 MAX_LOG_ENTRIES = 500
@@ -1868,24 +1869,108 @@ class BacktestJobStore(PgStoreMixin):
         )
         return None if row is None else str(row["job_id"])
 
-    def complete(self, job_id: object, *, expected_attempt: int, result_reference: dict[str, object], result_artifact_id: str, summary: dict[str, object]) -> dict[str, object]:
-        job_id = _text(job_id, field="job_id", max_length=64)
-        with self._transaction() as connection:
-            now = _now()
-            updated = fetch_one(
-                connection,
-                """UPDATE backtest_jobs SET status = 'completed', result_reference_json = :result_reference,
+    @staticmethod
+    def _validate_completion_attempt(expected_attempt: object) -> int:
+        if isinstance(expected_attempt, bool) or not isinstance(expected_attempt, int) or expected_attempt < 1:
+            raise ValueError("expected_attempt must be a positive integer")
+        return expected_attempt
+
+    def _require_current_attempt(self, connection, job_id: str, expected_attempt: int) -> dict[str, object]:
+        row = fetch_one(
+            connection,
+            """SELECT *, updated_at > clock_timestamp() -
+                      make_interval(secs => CAST(:lease_seconds AS double precision)) AS claim_is_live
+               FROM backtest_jobs WHERE job_id=:job_id FOR UPDATE""",
+            {"job_id": job_id, "lease_seconds": BACKTEST_CLAIM_LEASE_SECONDS},
+        )
+        if row is None:
+            raise BacktestNotFound("backtest job not found")
+        if (row["status"] != "running" or int(row["attempts"]) != expected_attempt
+                or not row["claim_is_live"]):
+            raise BacktestConflict("backtest claim is no longer current")
+        return row
+
+    @staticmethod
+    def _complete_in_transaction(
+        connection, *, job_id: str, expected_attempt: int, result_reference: dict[str, object],
+        result_artifact_id: str, summary: dict[str, object],
+    ) -> None:
+        now = _now()
+        updated = fetch_one(
+            connection,
+            """UPDATE backtest_jobs AS job SET status = 'completed', result_reference_json = :result_reference,
                 result_artifact_id = :result_artifact_id, summary_json = :summary,
-                updated_at = :updated_at, finished_at = :finished_at
-                WHERE job_id = :job_id AND status = 'running' AND attempts = :attempt
-                RETURNING job_id""",
-                {"result_reference": result_reference, "result_artifact_id": result_artifact_id,
-                 "summary": summary, "updated_at": now, "finished_at": now,
-                 "job_id": job_id, "attempt": expected_attempt},
+                error_code = NULL, error_message = NULL, updated_at = :updated_at, finished_at = :finished_at
+                WHERE job.job_id = :job_id AND job.status = 'running' AND job.attempts = :attempt
+                  AND job.updated_at > clock_timestamp() -
+                      make_interval(secs => CAST(:lease_seconds AS double precision))
+                  AND EXISTS (
+                    SELECT 1 FROM artifacts AS artifact
+                    WHERE artifact.artifact_id = :result_artifact_id
+                      AND artifact.task_id = job.task_id
+                      AND artifact.owner_principal = job.owner_principal
+                      AND artifact.workspace_id = job.workspace_id
+                      AND artifact.experiment_id IS NOT DISTINCT FROM job.experiment_id
+                      AND artifact.kind = 'backtest_result' AND artifact.status = 'validated'
+                      AND artifact.idempotency_key = 'backtest-result-' || job.job_id
+                      AND artifact.trace_id = job.request_json->>'trace_id'
+                      AND artifact.content->>'execution_outcome' = 'completed'
+                      AND artifact.content->>'job_id' = job.job_id
+                      AND artifact.content->>'input_manifest_id' = job.input_manifest_id
+                      AND artifact.content->>'strategy_version_artifact_id' = job.strategy_version_artifact_id
+                      AND artifact.content->>'approval_artifact_id' = job.approval_artifact_id
+                      AND artifact.content->'result_reference' = CAST(:result_reference AS jsonb)
+                  )
+                RETURNING job.job_id""",
+            {"result_reference": result_reference, "result_artifact_id": result_artifact_id,
+             "summary": summary, "updated_at": now, "finished_at": now, "job_id": job_id,
+             "attempt": expected_attempt, "lease_seconds": BACKTEST_CLAIM_LEASE_SECONDS},
+        )
+        if updated is None:
+            raise BacktestConflict("backtest claim or result artifact is no longer current")
+
+    def complete(
+        self, job_id: object, *, expected_attempt: int, result_reference: dict[str, object],
+        result_artifact_id: str, summary: dict[str, object],
+    ) -> dict[str, object]:
+        """Complete only a live attempt with its exact validated result Artifact."""
+        identity = _text(job_id, field="job_id", max_length=64)
+        attempt = self._validate_completion_attempt(expected_attempt)
+        with self._transaction() as connection:
+            self._complete_in_transaction(
+                connection, job_id=identity, expected_attempt=attempt, result_reference=result_reference,
+                result_artifact_id=result_artifact_id, summary=summary,
             )
-            if updated is None:
-                raise BacktestConflict("backtest claim is no longer current")
-        return self.get(job_id)
+        return self.get(identity)
+
+    def complete_with_artifact(
+        self, job_id: object, *, expected_attempt: int, result_reference: dict[str, object],
+        summary: dict[str, object], research_store: Any, artifact_payload: dict[str, object],
+    ) -> dict[str, object]:
+        """Atomically validate the result Artifact and complete its live Job."""
+        identity = _text(job_id, field="job_id", max_length=64)
+        attempt = self._validate_completion_attempt(expected_attempt)
+        # Computation and object storage have already finished. Only short
+        # relational writes run while the Job row is locked, fencing cancel and
+        # stale-attempt recovery until Artifact + Job commit together.
+        with self._transaction() as connection:
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            execute(connection, "SET LOCAL statement_timeout = '5s'")
+            self._require_current_attempt(connection, identity, attempt)
+            artifact = research_store.create_artifact(artifact_payload, _connection=connection)
+            if artifact["status"] == "draft":
+                artifact = research_store.transition(
+                    "artifact", artifact["artifact_id"], "validated",
+                    f"backtest-result-validate-{identity}", _connection=connection,
+                )
+            if artifact["status"] != "validated":
+                raise BacktestConflict("backtest result Artifact is not validated")
+            self._complete_in_transaction(
+                connection, job_id=identity, expected_attempt=attempt,
+                result_reference=result_reference, result_artifact_id=str(artifact["artifact_id"]),
+                summary=summary,
+            )
+        return self.get(identity)
 
     def retry_or_fail(self, job_id: object, *, expected_attempt: int, error_code: str, error_message: str) -> dict[str, object]:
         job_id = _text(job_id, field="job_id", max_length=64)
@@ -2155,7 +2240,7 @@ class BacktestWorker:
                 "summary": summary,
                 "execution_outcome": "completed",
             }
-            artifact = self.research_store.create_artifact({
+            artifact_payload = {
                 "task_id": job["task_id"],
                 "experiment_id": job["experiment_id"],
                 "kind": "backtest_result",
@@ -2167,17 +2252,14 @@ class BacktestWorker:
                 ],
                 "trace_id": request["trace_id"],
                 "idempotency_key": f"backtest-result-{job['job_id']}",
-            })
-            if artifact["status"] == "draft":
-                artifact = self.research_store.transition(
-                    "artifact", artifact["artifact_id"], "validated", f"backtest-result-validate-{job['job_id']}"
-                )
-            return self.jobs.complete(
+            }
+            return self.jobs.complete_with_artifact(
                 job_id,
                 expected_attempt=attempt,
                 result_reference=reference,
-                result_artifact_id=str(artifact["artifact_id"]),
                 summary=summary,
+                research_store=self.research_store,
+                artifact_payload=artifact_payload,
             )
         except BacktestResourceExceeded as error:
             return self.jobs.retry_or_fail(job_id, expected_attempt=attempt, error_code="resource_limit", error_message=str(error))

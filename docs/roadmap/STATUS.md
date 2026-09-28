@@ -11,9 +11,9 @@ freeze, inventory, proposed baseline and ownership/deletion review are complete;
 the baseline is now accepted in the Clean Break branch. Phase 7 bounded
 legacy-runtime removal passed its [limited gate](../clean-break/phase-gates.md),
 with remaining Agent lifecycle ownership explicitly assigned to Phase 10/14/17.
-**Clean Break Phase 11 — Business Job: local PASS. Next phase: Phase 12 —
-Artifact / Approval / Audit, after the Phase 11 branch passes its repository
-PR and merge gate.**
+**Clean Break Phase 11 — Business Job: local PASS. Next phase: Clean Break
+Phase 12 — Artifact / Approval / Audit, after the Phase 11 branch passes its
+repository PR and merge gate.**
 Phase 8 classified cleanup and Phase 9 rebuildable developer environment passed
 their [local Root gates](../clean-break/phase-gates.md). Phase 9 supplies a
 worktree-scoped dev stack and cleanup; Workspace reset, fresh-schema seed and

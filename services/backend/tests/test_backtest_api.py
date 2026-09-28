@@ -5,6 +5,8 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from threading import Event
 
 import os
 
@@ -13,6 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main
+from app import backtest as backtest_module
 from app.backtest import (
     BacktestJobStore,
     BacktestWorker,
@@ -545,6 +548,125 @@ def _fresh_harness(monkeypatch, tmp_path) -> tuple[ResearchStore, BacktestJobSto
     client = TestClient(main.app)
     client.headers.update(_owner_headers("product-user"))
     return store, jobs, objects, client
+
+
+def _submit_fixture_backtest(client: TestClient, chain: dict[str, object], *, key: str) -> dict[str, object]:
+    task = chain["task"]
+    version = chain["version"]
+    approval = chain["approval"]
+    assert isinstance(task, dict) and isinstance(version, dict) and isinstance(approval, dict)
+    response = client.post("/v1/research/backtests", json={
+        "task_id": task["task_id"],
+        "strategy_version_artifact_id": version["artifact"]["artifact_id"],
+        "approval_artifact_id": approval["artifact"]["artifact_id"],
+        "trace_id": "byq-trace-backtest-atomic",
+        "idempotency_key": f"backtest-{key}",
+        **_snapshot_input(),
+    })
+    assert response.status_code == 202, response.text
+    return response.json()["job"]
+
+
+def test_backtest_finalization_fences_cancel_and_expired_claim(monkeypatch, tmp_path) -> None:
+    store, jobs, objects, client = _fresh_harness(monkeypatch, tmp_path)
+    chain = _create_strategy_chain(client, key="atomic-finalization")
+    worker = BacktestWorker(jobs, store, objects)
+    task_id = chain["task"]["task_id"]
+
+    # Cancellation that commits before finalization wins and creates no result Artifact.
+    cancelled_job = _submit_fixture_backtest(client, chain, key="cancel-first")
+    original_run = backtest_module.run_native_backtest
+    execution_finished, release_execution = Event(), Event()
+
+    def pause_after_execution(manifest):
+        result = original_run(manifest)
+        execution_finished.set()
+        assert release_execution.wait(5)
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(backtest_module, "run_native_backtest", pause_after_execution)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pending = pool.submit(worker.run_once, cancelled_job["job_id"])
+            try:
+                assert execution_finished.wait(5)
+                assert jobs.cancel(cancelled_job["job_id"])["status"] == "cancelled"
+            finally:
+                release_execution.set()
+            assert pending.result(timeout=10)["status"] == "cancelled"
+    cancelled_artifacts = store._fetch_one(
+        "SELECT COUNT(*) AS n FROM artifacts WHERE task_id=:task AND idempotency_key=:key",
+        {"task": task_id, "key": f"backtest-result-{cancelled_job['job_id']}"},
+    )
+    assert cancelled_artifacts["n"] == 0
+    assert jobs.get(cancelled_job["job_id"])["result_artifact_id"] is None
+
+    # If finalization locks the Job first, owner cancellation waits and then sees
+    # the committed success. The Artifact and Job cannot split across outcomes.
+    completing_job = _submit_fixture_backtest(client, chain, key="complete-first")
+    artifact_started, release_artifact = Event(), Event()
+    create_artifact = store.create_artifact
+
+    def pause_result_artifact(payload, *args, **kwargs):
+        if payload.get("kind") == "backtest_result":
+            artifact_started.set()
+            assert release_artifact.wait(5)
+        return create_artifact(payload, *args, **kwargs)
+
+    canceller = BacktestJobStore()
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(store, "create_artifact", pause_result_artifact)
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                pending = pool.submit(worker.run_once, completing_job["job_id"])
+                assert artifact_started.wait(5)
+                cancellation_started = Event()
+
+                def cancel_from_separate_store():
+                    cancellation_started.set()
+                    return canceller.cancel(completing_job["job_id"])
+
+                cancellation = pool.submit(cancel_from_separate_store)
+                try:
+                    assert cancellation_started.wait(5)
+                    with pytest.raises(FutureTimeoutError):
+                        cancellation.result(timeout=0.2)
+                finally:
+                    release_artifact.set()
+                completed = pending.result(timeout=10)
+                after_cancel = cancellation.result(timeout=10)
+        assert completed["status"] == after_cancel["status"] == "completed"
+        artifact = store.get_artifact(completed["result_artifact_id"])
+        assert artifact["status"] == "validated"
+        assert artifact["content"]["job_id"] == completing_job["job_id"]
+        assert artifact["content"]["input_manifest_id"] == completing_job["input_manifest_id"]
+        assert artifact["content"]["result_reference"] == completed["result_reference"]
+    finally:
+        release_artifact.set()
+        canceller.close()
+
+    # A claim past the worker's recovery lease also fails before Artifact writes.
+    expired_job = _submit_fixture_backtest(client, chain, key="expired-claim")
+
+    def expire_claim_after_execution(manifest):
+        result = original_run(manifest)
+        jobs._execute(
+            "UPDATE backtest_jobs SET updated_at=now() - interval '1 hour' WHERE job_id=:job_id",
+            {"job_id": expired_job["job_id"]},
+        )
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(backtest_module, "run_native_backtest", expire_claim_after_execution)
+        assert worker.run_once(expired_job["job_id"])["status"] == "queued"
+    expired_artifacts = store._fetch_one(
+        "SELECT COUNT(*) AS n FROM artifacts WHERE task_id=:task AND idempotency_key=:key",
+        {"task": task_id, "key": f"backtest-result-{expired_job['job_id']}"},
+    )
+    assert expired_artifacts["n"] == 0
+    assert jobs.get(expired_job["job_id"])["result_artifact_id"] is None
+    store.close()
+    jobs.close()
 
 
 def test_signal_snapshot_create_and_backtest_submit(monkeypatch, tmp_path) -> None:

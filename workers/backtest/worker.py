@@ -12,7 +12,7 @@ import os
 import signal
 import time
 
-from app.backtest import BacktestJobStore, BacktestWorker, LocalObjectStore
+from app.backtest import BACKTEST_CLAIM_LEASE_SECONDS, BacktestJobStore, BacktestWorker, LocalObjectStore
 from app.research import ResearchStore
 
 
@@ -42,7 +42,7 @@ def main() -> int:
         while running:
             # The backtest engine has a bounded 300-second run. A longer stale
             # window avoids requeueing ordinary live work after worker restart.
-            recovered = jobs.requeue_stale(older_than_seconds=900)
+            recovered = jobs.requeue_stale(older_than_seconds=BACKTEST_CLAIM_LEASE_SECONDS)
             if recovered:
                 logger.warning("requeued %d stale backtest job(s)", recovered)
             job_id = jobs.next_queued_id()
