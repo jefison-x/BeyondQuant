@@ -1,5 +1,25 @@
 # Phase 0–6 gate record
 
+## Phase 9 rebuildable developer environment — local Root gate (2026-09-28)
+
+[Implementation contract](phase9-dev-environment.md) and [execution evidence](phase9-evidence.md)
+cover the worktree-scoped configuration, explicit service selections, scoped
+preview/apply cleanup and honest Phase 13/14 dependencies. Root observed the
+isolated core stack healthy (PostgreSQL, Backend, Product MCP, Runtime Adapter,
+Gateway), Gateway `/readyz` HTTP 200, then stop and exact project cleanup with
+no resources remaining. A second PostgreSQL cleanup run passed after the final
+container mount/network checks. No old DB, backup or Product stack was used.
+
+**Tester:** lifecycle 6/6, Clean Break governance 2/2, generated Compose config
+and diff check PASS; Docker socket was unavailable in its executor, so live
+Docker checks were separately run by Root. **Independent Sol Reviewer:**
+Functional PASS / Tests PASS / Clean Break Architecture PASS after actual diff,
+interfaces, ADR and evidence review. **Root acceptance:** **Phase 9 local PASS**
+for its bounded milestone. Reset/seed and full fresh-schema Golden rebuild
+remain explicitly NOT_RUN for Phases 13–16. Hosted CI and human PR/merge gates
+remain separate; no push, merge or deployment occurred. Phase 10 may begin in a
+new isolated worktree, but has not begun.
+
 ## Phase 8 classified old-environment cleanup (2026-09-28)
 
 Following the maintainer's broader deletion approval, the [exact manifest](phase8-final-targets.json)

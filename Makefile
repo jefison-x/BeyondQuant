@@ -38,3 +38,29 @@ local-ci:
 # Lightweight local feedback; complete suites execute in hosted PR CI.
 dev-check:
 	python3 scripts/ci/dev-check.py
+
+# Isolated Clean Break developer stack. Phase 9 owns the lifecycle wrapper.
+.PHONY: dev-init dev-start dev-stop dev-reset dev-clean dev-seed dev-test
+DEV_PROFILE ?= core
+DEV_CLEAN_APPLY ?= 0
+
+dev-init:
+	python3 scripts/dev/environment.py init
+
+dev-start:
+	python3 scripts/dev/environment.py start --profile $(DEV_PROFILE)
+
+dev-stop:
+	python3 scripts/dev/environment.py stop
+
+dev-reset:
+	python3 scripts/dev/environment.py reset
+
+dev-clean:
+	python3 scripts/dev/environment.py clean $(if $(filter 1,$(DEV_CLEAN_APPLY)),--apply,--dry-run)
+
+dev-seed:
+	python3 scripts/dev/environment.py seed
+
+dev-test:
+	python3 scripts/dev/environment.py test

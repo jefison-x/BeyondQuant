@@ -1,14 +1,16 @@
 # Local debugging override only. This is not a production deployment config.
 services:
   gateway:
-    ports:
-      - "127.0.0.1:8100:8100"
+    ports: !override
+      - "${BYQ_GATEWAY_BIND:-127.0.0.1:0}:8100"
   mcp:
     ports:
-      - "127.0.0.1:8300:8300"
+      - "${BYQ_DEV_MCP_BIND:-127.0.0.1:0}:8300"
   backend:
     ports:
-      - "127.0.0.1:8000:8000"
+      - "${BYQ_DEV_BACKEND_BIND:-127.0.0.1:0}:8000"
   runtime-adapter:
+    build:
+      dockerfile: services/runtime-adapter/Dockerfile.post-u8-251-candidate
     ports:
-      - "127.0.0.1:8400:8400"
+      - "${BYQ_DEV_ADAPTER_BIND:-127.0.0.1:0}:8400"
