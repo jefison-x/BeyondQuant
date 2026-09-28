@@ -6,11 +6,11 @@ Status: review candidate; **no runtime code, schema or migration was removed**. 
 
 | Concept | Current implementation / duplication | Final owner | Disposition |
 |---|---|---|---|
-| Session | DSH session plus Adapter `RuntimeSession`; BYQ `product_conversations` is user-facing history | DSH Agent session; BYQ Conversation | DELETE generic Adapter session management; KEEP Conversation |
-| Run | DSH turn, Adapter `ActiveRun`, Backend `agent_runtime_turns`, `agent_runs` | DSH turn; BYQ authorized business action | DELETE root lifecycle store; REWRITE `agent_runs` to necessary business action/audit semantics |
+| Session | DSH session plus Adapter `RuntimeSession`; BYQ `product_conversations` is user-facing history | DSH Agent session; BYQ Conversation | DELETE generic Adapter session lifecycle ownership; classify each live field by behavior, with unresolved ownership a Phase 10 blocker; KEEP Conversation |
+| Run | DSH turn, Adapter `ActiveRun`, Backend `agent_runtime_turns`, `agent_runs` | DSH turn; BYQ authorized business action | DELETE generic run lifecycle/replay/recovery; classify exact Backend root authority separately from DSH run ownership; defer schema normalization to Phase 14 |
 | ChildRun/Subagent | DSH executes child; Adapter `ChildLease`, `agent_runs.parent_run_id` | DSH lifecycle; BYQ transient process watchdog/correlation | KEEP bounded in-memory watchdog while pinned DSH lacks an effective deadline; DELETE child takeover/recovery; KEEP business parent relation/ID if used |
 | Checkpoint | DSH session checkpoint; ResearchTask progress also called checkpoint | DSH context; BYQ ResearchTask/Job progress | DELETE BYQ generic context checkpoint; KEEP business progress |
-| Recovery/lease/fencing | Adapter journal/generation/executor fencing, Gateway delivery, Backend continuation receipts | DSH generic recovery; BYQ business idempotency/unknown outcome | DELETE generic path; REWRITE bounded business safety path |
+| Recovery/lease/fencing | Adapter journal/generation/executor fencing, Gateway delivery, Backend continuation receipts | DSH generic recovery; BYQ business idempotency/unknown outcome | DELETE generic Agent lifecycle/recovery path; KEEP exact business authority close receipt while needed; qualify Gateway delivery at the Phase 10 Adapter/Gateway boundary and simplify residual delivery in Phase 17 |
 | Workflow | DSH generic orchestration; BYQ `ResearchExecutionPlan` domain state | DSH reasoning; BYQ ResearchTask | KEEP explicit domain transitions; DELETE generic workflow compatibility |
 | Agent/role | DSH persona/tool registry; Backend role/capability catalog | DSH runtime; BYQ authorization/MCP | REWRITE duplicate allowlists with Backend/MCP as safety authority |
 | Event | `research_continuation_events` stores claim/settle state, more than notification | BYQ pending business command or Job; event notification | REPLACE durable intent with explicit state; event becomes notification |
@@ -28,9 +28,9 @@ Status: review candidate; **no runtime code, schema or migration was removed**. 
 | Decision | Targets and reason |
 |---|---|
 | KEEP | BYQ Workspace/RBAC, ResearchTask domain facts, Strategy/Experiment, domain validation, BYQ MCP mediation, business idempotency, exact approval binding, unknown external/financial outcome safety, existing backtest/ML/data workers, Artifact IDs, user-visible Conversation, and the Adapter's transient `ChildLease` process watchdog under ADR-002 while pinned DSH lacks an equivalent bound. |
-| DELETE | Generic `RuntimeSession`/`ActiveRun` ownership in `services/runtime-adapter/app/runtime.py`; child takeover/recovery (not the transient watchdog); generation/executor lifecycle state in `generation_ledger.py`/`lifecycle_journal.py`; Gateway recovery-by-delivery; Backend `agent_runtime_turns` and generic run recovery; compatibility-only DSH SDK adapters and candidate Dockerfiles after current DSH API qualification. Exact files/schema must be checked in Phase 7 before deletion. |
+| DELETE | Generic Agent session/run/generation/child lifecycle ownership, recovery/replay, child takeover, obsolete generation/executor persistence, compatibility-only runtime routes and dead runtime code. Classify `RuntimeSession`/`ActiveRun` field by field; do not assume they are only transport correlation. Classify Gateway close delivery and Backend `agent_runtime_turns` by behavior. Unresolved Adapter ownership is a Phase 10 blocker; qualify Gateway delivery at that boundary and remove residual indirection in Phase 17; old runtime table cleanup is Phase 14. Exact files/schema must be checked before deletion. |
 | REWRITE | `research_execution_plan.py` to the minimum ResearchTask domain transitions; `research_continuation_ledger.py` from event-as-state to explicit pending business action/Job; `agent_runs` to necessary authorization/audit facts; `workflow_trace.py`/`trace_store.py` as bounded UI notification/projection; Job and Artifact contracts; Approval and Audit. |
-| REPLACE | Multiple adapter/gateway/backend runtime receipts with one DSH status boundary plus BYQ business IDs; old schema with fresh baseline, no old runtime migrations; scattered env reads with SystemConfig/WorkspaceConfig/TaskConfig; old Compose/Makefile lifecycle with scoped dev commands. |
+| REPLACE | Generic runtime receipts with DSH status plus BYQ business IDs while preserving exact business authorization/close receipts; old schema with fresh baseline, no old runtime migrations; scattered env reads with SystemConfig/WorkspaceConfig/TaskConfig; old Compose/Makefile lifecycle with scoped dev commands. |
 | ARCHIVE | Pre-Clean-Break ADRs and P4 evidence as historical only; final old DB dump/config manifest as read-only archive; old runtime migrations and historical CI artifacts as reference where retention requires. Do not use archives as test or migration input. |
 
 ### Phase 7 authority qualification
@@ -42,9 +42,10 @@ domain-call admission; it does not recover or replay the DSH Agent. Removing
 delivery before an equivalent atomic Backend close would leave an active root
 authorized and could block ResearchTask handoff. The generic recovery
 disposition above therefore remains a target, not a deletion authorization for
-this live path. Old journal v1–v3 adoption and old-session lease repair have
-zero migration priority and can be removed independently, with v4 integrity,
-current lifecycle delivery and terminal ACK retained.
+this live path. Historical journal adoption and old-session lease repair have
+zero migration priority. The Adapter journal has since been removed in the
+`.237` slice; current lifecycle delivery and terminal ACK remain as a business
+authorization fence pending their later qualified simplification.
 
 ### P4 disposition
 
@@ -52,4 +53,4 @@ P4-A/B real-journey evidence remains historical. P4-C1 is in current main despit
 
 ## Phase 7 entry gate
 
-Before deleting each candidate: identify callers and public contract; state replacement owner and data fate; prove no financial/authorization invariant is lost; inspect schema and deleted component diff; then Tester, Reviewer and Root sign off. Dead or historical-only code uses caller/reference evidence; a live boundary requires a focused contract/architecture test that fails on the old behavior or otherwise detects the intended change. The [development verification gate](verification-gates.md) selects the remaining tests by impact. Phase 7 deletes dead paths first. Any live public path must be cut over in the same bounded Phase 7 slice to a version-qualified DSH API translation or existing BYQ Job/Worker path, with its contract tests passing; a temporary compatibility bridge is forbidden. Phase 10 then completes the broader adapter qualification and contract, while Phase 11 unifies the already-working Job contracts. The proposed ADRs must be accepted and current STATUS/architecture docs superseded. No `DROP TABLE`, volume removal or old DB migration follows from this planning document alone.
+Before deleting each candidate: identify callers and public contract; state replacement owner and data fate; prove no financial/authorization invariant is lost; inspect schema and deleted component diff; then Tester, Reviewer and Root sign off. Dead or historical-only code uses caller/reference evidence; a live boundary requires a focused contract/architecture test that detects the intended change. The [development verification gate](verification-gates.md) selects the remaining tests by impact. Phase 7 closes when identified legacy recovery/compatibility paths are gone and remaining live state is classified by lifecycle ownership with explicit unresolved Phase 10/14/17 handoffs; it does not certify final Clean Break architecture. No full cross-service redesign or table deletion is a Phase 7 gate. Any live public path actually removed must be cut over in the same slice with passing contract tests; a temporary compatibility bridge is forbidden. Phase 10 completes Adapter qualification and Gateway boundary checks, Phase 11 unifies Job contracts, Phase 14 establishes the fresh database baseline, and Phase 17 removes residual indirection. No `DROP TABLE`, volume removal or old DB migration follows from this planning document alone.

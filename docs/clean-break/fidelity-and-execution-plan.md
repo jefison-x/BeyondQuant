@@ -63,26 +63,33 @@ flowchart TD
 
 Each phase uses one isolated branch/worktree and required human PR gate unless a newly accepted ADR changes it. Each step ends Tester → independent Sol Reviewer → Root PASS before the next begins. The [development verification gate](verification-gates.md) defines risk-selected slice evidence, Phase 9 command/service qualification, and Phase 15–16 full rebuild and Golden milestones; historical-data restoration and repeated full-suite runs are not per-slice gates.
 
-Phase 7 is limited to duplicate **Agent runtime ownership** and the business
-authorization boundary directly needed to remove it. Its exit gate does not
-require rebuilding the dev environment, unifying Jobs, normalizing Artifacts,
-rewriting Approval/Audit, implementing Workspace reset, establishing the final
-fresh database baseline, or passing the full functional fidelity and Golden
-scenarios. Those are assigned to later phases below. A live business-call
-authority fact must remain enforceable while its generic Agent-lifecycle carrier is removed;
-this calls for a bounded Backend/Adapter/Gateway cutover, not a rewrite of
-every BYQ component.
+Phase 7 retires identified legacy Agent recovery and compatibility paths. Its
+exit gate is a finite classification of the remaining live Adapter, Gateway
+and Backend state: record each state item, its actual owner and caller, whether
+it decides Agent session/run/generation/child lifecycle or recovers/replays an
+Agent, and its later disposition. A name such as `RuntimeSession` or
+`agent_runtime_turns` alone is not a failure, but an in-memory object is not
+automatically mere transport correlation. Transient DSH transport correlation
+and the exact BYQ business-call authorization/close receipt may remain. Do not
+remove a live business safety fence merely to make the Phase 7 deletion list
+empty. Record any generic Agent lifecycle owner not removed in Phase 7 as an
+explicit unresolved Phase 10 blocker; never call it Clean Break complete.
+Do not turn Phase 7 into a full Backend/Adapter/Gateway rewrite.
+The final thin Adapter contract belongs to Phase 10, and the fresh schema and
+old runtime table cleanup belong to Phase 14. Jobs, Artifacts, Approval/Audit,
+Workspace reset, dev environment rebuild, full fidelity and Golden scenarios
+retain their assigned later phases.
 
-7. Remove duplicate Agent/session/child/runtime recovery in bounded vertical slices. Delete dead code first; for live paths, cut over directly to an existing DSH translation or existing BYQ Job/Worker in the same slice and pass public contract tests. Do not leave an interim broken public path or add a compatibility bridge.
+7. Remove identified duplicate Agent/session/child recovery and compatibility paths in bounded slices. Classify remaining live state by actual Agent lifecycle ownership against ADR-002, preserve tested business authority and unknown-outcome behavior, and publish finite Phase 10/14/17 handoffs for unresolved owners. Any live path actually removed needs a same-slice replacement and targeted public contract test. Do not leave a broken public path or add a compatibility bridge.
 8. Archive verified old DB, then clean only classified old BYQ containers/volumes/networks/images in inventory order.
 9. Build scoped dev lifecycle, templates, profiles and minimal seed; prove `dev-clean` dry run.
-10. Qualify current DSH API and implement thin adapter with contract/error/cancel tests.
+10. Qualify current DSH API and implement thin adapter with contract/error/cancel tests; check the Gateway/Adapter terminal-receipt boundary and identify durable delivery that is still needed solely for BYQ business authorization.
 11. Establish common Job ID/state contract and worker-backed backtest, training, optimization, factor and data-import paths.
 12. Normalize Artifact IDs, three-level Approval and structured Audit; retain domain fact records.
 13. Implement scoped, idempotent Reset Runtime and Reset Workspace.
 14. Establish fresh schema baseline and seed; old DB remains archive only.
 15. Verify full functional fidelity from empty schema/workspace via real Product API and browser where UI applies.
 16. Run Golden Scenarios A–F, including GPU/credential-qualified paths and ML worker restart evidence; DSH process restart is outside the 0.10 acceptance scope.
-17. Search and delete residual duplicate owner, compatibility, generic workflow, event-as-state, Agent-owned compute and dev-tool leakage; rerun contract and Golden gates.
+17. Search and delete residual duplicate owner, unnecessary Gateway delivery indirection, compatibility, generic workflow, event-as-state, Agent-owned compute and dev-tool leakage; rerun contract and Golden gates.
 
 No Phase 7 destructive refactor begins before Phase 0–6 gate and accepted ADR. Full 0.10 completion requires the real functionality evidence above; this planning package makes no such claim.

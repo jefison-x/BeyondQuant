@@ -1,5 +1,43 @@
 # Phase 0–6 gate record
 
+## Phase 7 scope correction (2026-09-28; prospective gate)
+
+The maintainer identified that the earlier overall review had expanded Phase 7
+into a full three-service redesign. The `ae574cb8` FAIL below remains the
+historical verdict under that earlier gate; it is not retroactively changed to
+PASS. The current Phase 7 exit review uses this finite checklist:
+
+1. Confirm the identified legacy Agent replay/recovery, child takeover,
+   compatibility routes and dead persistence paths are removed with their
+   existing bounded Tester/Reviewer evidence.
+2. Inspect the remaining Adapter, Gateway and Backend live state once and
+   classify each as transient DSH transport correlation, BYQ business-call
+   authorization/terminal receipt, or generic Agent lifecycle ownership. Test
+   ownership of session/run/generation/child status and decisions as well as
+   recovery/replay; in-memory state is not automatically mere correlation. A
+   symbol name or retained database table is not itself a failing finding.
+3. Remove any remaining identified legacy recovery/compatibility behavior with
+   a targeted contract. Keep the exact business close fence and
+   `outcome_unknown`. Record any remaining generic Agent lifecycle owner as an
+   explicit unresolved Phase 10 blocker; Phase 7 may pass only for its bounded
+   legacy-removal scope, not for the final Clean Break architecture. Record old
+   runtime schema cleanup for Phase 14.
+4. Run only the affected architecture/contract checks, then independent Sol
+   Reviewer and Root acceptance for Phase 7's stated scope. Phase 8 stays
+   closed until this review passes. Full architecture acceptance remains gated
+   on Phase 10/14 and the final simplification audit.
+
+Do not add Job/Worker, Artifact, Approval/Audit, Workspace reset, dev rebuild,
+full Golden scenarios, DSH cross-process attach/rebind, or broad Backend/Gateway
+rewrites to the Phase 7 exit gate.
+
+**Documentation correction gate:** 198 architecture checks and `git diff --check`
+PASS. Independent Sol Reviewer: Functional PASS / Tests PASS / Clean Break
+Architecture PASS for this prospective gate wording after inspecting the actual
+diff and ADR-001/002. Root accepts the finite scope correction only. No runtime
+code or Phase 7 overall acceptance is claimed; the historical FAIL below and
+Phase 8 CLOSED status remain in force.
+
 ## Phase 7 overall re-review after .238 (2026-09-28)
 
 **Reviewed HEAD:** `ae574cb8` in the isolated Clean Break branch.
