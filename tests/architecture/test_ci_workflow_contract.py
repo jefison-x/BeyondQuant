@@ -92,7 +92,8 @@ class CiWorkflowContractTests(unittest.TestCase):
         local_ci = (ROOT / "scripts/ci/local-ci.sh").read_text()
         self.assertIn("[byq-timing] phase=", local_ci)
         self.assertIn("[byq-timing] total seconds=", local_ci)
-        self.assertIn("--durations=20 --durations-min=1.0", local_ci)
+        backend_shards = (ROOT / "scripts/ci/run_backend_shards.py").read_text()
+        self.assertIn('"--durations=20", "--durations-min=1.0"', backend_shards)
         # Measurement must not introduce a second workflow or a schedule change.
         workflows = sorted(path.name for path in (ROOT / ".github/workflows").glob("*.yml"))
         self.assertEqual(workflows, ["ci-selfhosted.yml", "promote-images.yml", "release-images.yml"])
