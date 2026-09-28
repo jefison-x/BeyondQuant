@@ -50,7 +50,7 @@ from packages.contracts.domain_call_admission import call_evidence_receipt
 
 SERVICE = "byq-gateway"
 VERSION = "0.1.0"
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('uvicorn.error')
 TRACE_LIFECYCLE_SEND_ATTEMPTS = 3
 TRACE_RETRY_DELAY_SECONDS = 0.05
 TRACE_RETRY_MAX_DELAY_SECONDS = 5.0

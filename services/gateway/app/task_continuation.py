@@ -15,7 +15,7 @@ from pathlib import Path
 CONTEXT_SCHEMA = 'task-continuation-context.v1'
 MAX_CONTEXT_BYTES = 4096
 _CONTEXT_FIELDS = {'session_id', 'trace_id', 'conversation_id', 'workspace_id', 'owner'}
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('uvicorn.error')
 
 
 class TaskContinuationDelivery:
