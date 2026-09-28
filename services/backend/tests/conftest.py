@@ -120,11 +120,13 @@ STORE_BOOTSTRAP_STATS = {"count": 0, "seconds": 0.0}
 def _reset_schema(url: str) -> None:
     engine = _ORIGINAL_CREATE_DB_ENGINE(url)
     try:
-        with engine.connect() as connection:
-            autocommit = connection.execution_options(isolation_level="AUTOCOMMIT")
-            autocommit.execute(text("DROP SCHEMA public CASCADE"))
-            autocommit.execute(text("CREATE SCHEMA public"))
-            run_ddl(autocommit, REGISTERED_SCHEMA_DDL)
+        # PostgreSQL DDL is transactional. One commit for the entire fresh
+        # schema avoids hundreds of per-statement AUTOCOMMIT round trips while
+        # preserving the same clean schema before every database-using test.
+        with engine.begin() as connection:
+            connection.execute(text("DROP SCHEMA public CASCADE"))
+            connection.execute(text("CREATE SCHEMA public"))
+            run_ddl(connection, REGISTERED_SCHEMA_DDL)
     finally:
         engine.dispose()
 
@@ -213,8 +215,8 @@ def _byq_reset_schema():
     The actual ``DROP SCHEMA public CASCADE`` + full registered DDL runs on the
     first connection checkout of the test, so a pure-logic test that never opens
     a connection leaves the schema untouched. The reset still uses one fresh
-    AUTOCOMMIT connection (ADR-0016 plan section 5.1) so it never reuses a
-    pooled connection that previously dropped the schema.
+    connection from a fresh engine, so it never reuses a pooled connection
+    that previously dropped the schema. The rebuild commits atomically.
     """
     url = _require_test_database_url()
     if url is None:

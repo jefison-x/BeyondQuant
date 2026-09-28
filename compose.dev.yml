@@ -11,6 +11,6 @@ services:
       - "${BYQ_DEV_BACKEND_BIND:-127.0.0.1:0}:8000"
   runtime-adapter:
     build:
-      dockerfile: services/runtime-adapter/Dockerfile.post-u8-259-candidate
+      dockerfile: services/runtime-adapter/Dockerfile.post-u8-260-candidate
     ports:
       - "${BYQ_DEV_ADAPTER_BIND:-127.0.0.1:0}:8400"
