@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+import subprocess
+import sys
+import time
 
 import os
 
@@ -11,6 +15,7 @@ from fastapi.testclient import TestClient
 from app import main
 from app.backtest import (
     BacktestJobStore,
+    BacktestWorker,
     LocalObjectStore,
     ObjectIntegrityError,
     membership_fingerprint,
@@ -96,6 +101,26 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
     job = submit.json()["job"]
     assert job["status"] == "queued"
     assert job["name"] == "沪深300动量验证"
+    assert jobs.list_backtests(owner_principal="product-user", workspace_id="workspace_foreign")["backtests"] == []
+    original_get = jobs.get
+    original_summary = jobs.get_backtest_summary
+    original_analysis = jobs.analysis_context
+    with monkeypatch.context() as foreign_workspace:
+        foreign_workspace.setattr(jobs, "get", lambda identity: {
+            **original_get(identity), "workspace_id": "workspace_foreign",
+        })
+        foreign_workspace.setattr(jobs, "get_backtest_summary", lambda identity: {
+            **original_summary(identity), "workspace_id": "workspace_foreign",
+        })
+        foreign_workspace.setattr(jobs, "analysis_context", lambda identity: {
+            **original_analysis(identity), "workspace_id": "workspace_foreign",
+        })
+        for suffix in ("", "/summary", "/manifest", "/result", "/analysis"):
+            assert client.get(f"/v1/research/backtests/{job['job_id']}{suffix}").status_code == 404
+        for method in ("run", "cancel"):
+            assert client.post(f"/v1/research/backtests/{job['job_id']}/{method}").status_code == 404
+        assert client.delete(f"/v1/research/backtests/{job['job_id']}").status_code == 404
+    assert original_get(job["job_id"])["status"] == "queued"
     assert client.get(
         f"/v1/research/backtests/{job['job_id']}",
         headers=_owner_headers("other-user"),
@@ -108,6 +133,31 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
         f"/v1/research/backtests/{job['job_id']}/cancel",
         headers=_owner_headers("other-user"),
     ).status_code == 404
+    worker_environment = {
+        **os.environ,
+        "BYQ_BACKTEST_OBJECT_ROOT": str(tmp_path / "objects"),
+        "BYQ_BACKTEST_POLL_SECONDS": "0.1",
+    }
+    worker_environment.pop("BYQ_BACKTEST_JOB_ID", None)
+    worker_script = Path(__file__).resolve().parents[3] / "workers" / "backtest" / "worker.py"
+    worker_process = subprocess.Popen(
+        [sys.executable, str(worker_script)], env=worker_environment,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    try:
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline and jobs.get(job["job_id"])["status"] == "queued":
+            assert worker_process.poll() is None, "polling backtest worker exited before claiming the job"
+            time.sleep(0.1)
+        while time.monotonic() < deadline and jobs.get(job["job_id"])["status"] == "running":
+            assert worker_process.poll() is None, "polling backtest worker exited before completing the job"
+            time.sleep(0.1)
+        assert jobs.get(job["job_id"])["status"] == "completed"
+    finally:
+        worker_process.terminate()
+        _, worker_stderr = worker_process.communicate(timeout=10)
+    assert worker_process.returncode == 0, worker_stderr
+    monkeypatch.setattr(main, "BacktestWorker", lambda *args: pytest.fail("Backend request must not execute backtest"), raising=False)
     run_response = client.post(
         f"/v1/research/backtests/{job['job_id']}/run",
         params={"projection": "summary"},
@@ -117,6 +167,21 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
     fetched = client.get(f"/v1/research/backtests/{job['job_id']}")
     assert fetched.status_code == 200
     assert fetched.json()["job"]["result_artifact_id"].startswith("artifact_")
+    new_agent_session = trusted_agent_context(
+        "product-user", session_id="new-agent-session", dsh_run_id="new-agent-root",
+    )
+    relinked = client.get(f"/v1/research/backtests/{job['job_id']}", headers=new_agent_session)
+    assert relinked.status_code == 200
+    assert relinked.json()["business_job"]["job_id"] == job["job_id"]
+    assert relinked.json()["business_job"]["result_ref"] == fetched.json()["job"]["result_artifact_id"]
+    assert fetched.json()["business_job"] == {
+        "job_id": job["job_id"], "workspace_id": task["workspace_id"],
+        "type": "BACKTEST", "status": "SUCCEEDED", "progress": 100,
+        "input_ref": job["input_manifest_id"],
+        "result_ref": fetched.json()["job"]["result_artifact_id"],
+        "error": None, "created_at": fetched.json()["job"]["created_at"],
+        "started_at": None, "finished_at": fetched.json()["job"]["finished_at"],
+    }
     result = client.get(
         f"/v1/research/backtests/{job['job_id']}/result",
         headers=_owner_headers("product-user"),
@@ -237,7 +302,7 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
         f"/v1/research/backtests/{job['job_id']}",
         headers=_owner_headers("other-user"),
     )
-    assert denied_delete.status_code == 409
+    assert denied_delete.status_code == 404
     deleted = client.delete(
         f"/v1/research/backtests/{job['job_id']}",
         params={"projection": "summary"},
@@ -261,13 +326,13 @@ def _owner_headers(principal: str) -> dict[str, str]:
 def test_backtest_feature_diagnostics_follow_safe_ml_lineage(monkeypatch) -> None:
     artifacts = {
         "artifact_signal": {
-            "owner_principal": "product-user", "kind": "signal_snapshot",
+            "owner_principal": "product-user", "workspace_id": "workspace-test", "kind": "signal_snapshot",
             "content": {"source": {"ml_lineage": {
                 "feature_snapshot_artifact_id": "artifact_feature",
             }}},
         },
         "artifact_feature": {
-            "owner_principal": "product-user", "kind": "ml_feature_snapshot",
+            "owner_principal": "product-user", "workspace_id": "workspace-test", "kind": "ml_feature_snapshot",
             "content": {
                 "coverage": {"usable_rows": 80, "candidate_rows": 100, "usable_ratio": 0.8},
                 "excluded": {"warmup_or_missing": 18, "label_outside_split": 2, "non_finite": 0},
@@ -282,14 +347,14 @@ def test_backtest_feature_diagnostics_follow_safe_ml_lineage(monkeypatch) -> Non
 
     monkeypatch.setattr(main, "research_store", Research())
     diagnostics = main._backtest_feature_diagnostics(
-        owner_principal="product-user", signal_snapshot_artifact_id="artifact_signal",
+        owner_principal="product-user", workspace_id="workspace-test", signal_snapshot_artifact_id="artifact_signal",
     )
     assert diagnostics is not None
     assert diagnostics["coverage"]["usable_ratio"] == 0.8
     assert diagnostics["excluded"]["label_outside_split"] == 2
     assert "object_reference" not in str(diagnostics)
     assert main._backtest_feature_diagnostics(
-        owner_principal="other-user", signal_snapshot_artifact_id="artifact_signal",
+        owner_principal="other-user", workspace_id="workspace-test", signal_snapshot_artifact_id="artifact_signal",
     ) is None
 
 
@@ -344,7 +409,8 @@ def _create_completed_backtest(client: TestClient, *, key: str) -> dict[str, obj
     )
     assert submit.status_code == 202, submit.text
     job = submit.json()["job"]
-    assert client.post(f"/v1/research/backtests/{job['job_id']}/run").json()["job"]["status"] == "completed"
+    assert client.post(f"/v1/research/backtests/{job['job_id']}/run").json()["job"]["status"] == "queued"
+    assert BacktestWorker(main.backtest_store, main.research_store, main.backtest_objects).run_once(job["job_id"])["status"] == "completed"
     return client.get(f"/v1/research/backtests/{job['job_id']}").json()["job"]
 
 
@@ -526,7 +592,8 @@ def test_signal_snapshot_create_and_backtest_submit(monkeypatch, tmp_path) -> No
     )
     assert submit.status_code == 202, submit.text
     job = submit.json()["job"]
-    assert client.post(f"/v1/research/backtests/{job['job_id']}/run").json()["job"]["status"] == "completed"
+    assert client.post(f"/v1/research/backtests/{job['job_id']}/run").json()["job"]["status"] == "queued"
+    assert BacktestWorker(main.backtest_store, main.research_store, main.backtest_objects).run_once(job["job_id"])["status"] == "completed"
     result = client.get(
         f"/v1/research/backtests/{job['job_id']}/result", headers=_owner_headers("product-user")
     ).json()["result"]

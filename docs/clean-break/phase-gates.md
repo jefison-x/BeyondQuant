@@ -1,5 +1,17 @@
 # Phase 0–6 gate record
 
+## Phase 11 Business Job — first bounded slice (2026-09-28)
+
+[Execution record](phase11-business-jobs.md): the common backtest/training Job
+read projection and independent polling backtest Worker passed focused tests on
+a disposable PostgreSQL database, including concurrent claim, stale attempt
+fencing, cancellation, attempt exhaustion, workspace isolation and retrieval
+from a new Agent session. Compose config and diff checks passed; exact test
+resources were removed. Independent Tester: PASS. Independent Sol Reviewer:
+Functional PASS / Tests PASS / Clean Break Architecture PASS. **Root acceptance:
+first slice local PASS; Phase 11 overall OPEN.** Factor, optimization, admin
+data import and remaining training boundary work are not claimed complete.
+
 ## Phase 10 thin DSH Adapter — bounded resume-removal slice (2026-09-28)
 
 The [transport contract](phase10-dsh-contract.md) and

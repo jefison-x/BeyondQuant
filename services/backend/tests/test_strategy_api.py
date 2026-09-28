@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.agent_research import AgentResearchStore
-from app.backtest import BacktestJobStore, LocalObjectStore, membership_fingerprint
+from app.backtest import BacktestJobStore, BacktestWorker, LocalObjectStore, membership_fingerprint
 from app.db import execute
 from app.research import ResearchStore
 from test_strategy_artifact import strategy_payload
@@ -482,7 +482,8 @@ def test_strategy_version_history_and_backtest_count(monkeypatch, tmp_path) -> N
     )
     assert submit.status_code == 202, submit.text
     job = submit.json()["job"]
-    assert client.post(f"/v1/research/backtests/{job['job_id']}/run").json()["job"]["status"] == "completed"
+    assert client.post(f"/v1/research/backtests/{job['job_id']}/run").json()["job"]["status"] == "queued"
+    assert BacktestWorker(main.backtest_store, main.research_store, main.backtest_objects).run_once(job["job_id"])["status"] == "completed"
 
     # Place the actual completed job's version beyond the first 1000 versions.
     with store._transaction() as connection:

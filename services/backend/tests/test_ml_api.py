@@ -95,6 +95,12 @@ def test_training_receipt_precedes_coverage_scan_and_repair_and_retries_stay_sta
     run = response.json()["training_run"]
     assert run["status"] == "waiting_for_data"
     assert run["readiness"]["state"] == "pending"
+    fetched = client.get(f"/v1/research/ml/training-runs/{run['training_run_id']}", headers=headers)
+    assert fetched.status_code == 200
+    assert fetched.json()["business_job"]["job_id"] == run["training_run_id"]
+    assert fetched.json()["business_job"]["workspace_id"] == headers["x-byq-workspace-id"]
+    assert fetched.json()["business_job"]["type"] == "TRAINING"
+    assert fetched.json()["business_job"]["status"] == "QUEUED"
     confirmed_watch = client.get("/v1/research/ml/training-submissions/reconcile", headers=headers,
                                  params={"idempotency_key": "receipt-1"}).json()["receipt_watch"]
     assert confirmed_watch["state"] == "confirmed"

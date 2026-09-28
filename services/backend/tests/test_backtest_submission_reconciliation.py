@@ -41,7 +41,6 @@ def test_original_receipt_late_commit_reconnect_and_process_read(monkeypatch, tm
     for name in ("create", "get", "list_backtests", "list_backtest_summaries", "get_input_manifest"):
         monkeypatch.setattr(replacement, name, forbidden)
     monkeypatch.setattr(main, "_validated_backtest_request", forbidden)
-    monkeypatch.setattr(main, "BacktestWorker", forbidden)
     for _ in range(2):
         response = client.get(PATH, params=params)
         assert response.status_code == 200, response.text
