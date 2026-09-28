@@ -1,5 +1,28 @@
 # Phase 0–6 gate record
 
+## Phase 7 overall re-review after .238 (2026-09-28)
+
+**Reviewed HEAD:** `ae574cb8` in the isolated Clean Break branch.
+The `.237` and `.238` deletion slices passed their bounded gates.
+**Independent Tester:** Functional FAIL / Tests FAIL for overall acceptance /
+Clean Break Architecture FAIL. **Independent Sol Reviewer:** the same overall
+verdict after direct code, current ADR-002 and ownership-plan inspection.
+**Root acceptance:** NO PASS for Phase 7 overall; Phase 8 remains CLOSED.
+
+The remaining live owners are Adapter `RuntimeSession`/`ActiveRun`/generation
+management, Backend `agent_runtime_turns` with domain-call authorization
+dependencies, and Gateway durable lifecycle/domain-evidence delivery. The
+current exact Backend root-close and ACK path is an authorization fence; its
+retention is required until a tested replacement atomically revokes the exact
+business root. The next bounded vertical slice is a minimal BYQ business
+authority fact with exact owner/workspace/session/trace/boot, current
+active/revoked/closed state, terminal receipt and domain-call admission.
+Cut Backend generic root lifecycle dependencies over with schema, registration,
+boot rotation, close, claim, evidence and execution contracts together; keep
+the Adapter/Gateway transport and fence until that slice passes race,
+lost-response and unknown-outcome tests. This finding is an ownership and
+evidence gap, not a finding that the retained business guard is unsafe.
+
 ## Phase 7 dead persistence deletion gate (2026-09-28)
 
 [Bounded evidence](phase7-dead-persistence-evidence.md) records deletion of
