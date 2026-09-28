@@ -19,7 +19,6 @@ from .runtime import (
     RuntimeAdapter,
     RuntimeAuthorityUnavailable,
     SessionConflict,
-    StaleSessionLease,
 )
 from .research_judgment_api import router as research_judgment_router
 
@@ -71,14 +70,6 @@ def require_chat_admission():
 @app.exception_handler(AdmissionClosed)
 async def admission_closed_handler(request, exc: AdmissionClosed):
     return JSONResponse(status_code=503, content={"detail": "chat maintenance; retry later"})
-
-
-@app.exception_handler(StaleSessionLease)
-async def stale_session_lease_handler(request, exc: StaleSessionLease):
-    # A durable session whose journal lease was issued before a host reboot can
-    # never be re-claimed. Surface it explicitly instead of a 404 (unknown) or a
-    # 503 (storage fault) so callers can archive it and operators can act.
-    return JSONResponse(status_code=409, content={"detail": str(exc), "code": exc.code})
 
 
 class _AsyncSubscriberBridge:
@@ -147,8 +138,6 @@ def create_session(request: CreateSessionRequest) -> dict[str, object]:
         )
     except SessionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except StaleSessionLease:
-        raise
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
@@ -197,8 +186,6 @@ def resume_session(session_id: str, request: ResumeSessionRequest | None = None)
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except SessionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except StaleSessionLease:
-        raise
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
@@ -216,9 +203,9 @@ def acknowledge_terminal(session_id: str, payload: dict) -> dict:
     except SessionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=409, detail="durable terminal evidence is unconfirmed") from exc
+        raise HTTPException(status_code=409, detail="terminal evidence is unconfirmed") from exc
     except OSError as exc:
-        raise HTTPException(status_code=503, detail="terminal acknowledgement could not be persisted") from exc
+        raise HTTPException(status_code=503, detail="terminal acknowledgement failed") from exc
 
 
 @app.get("/internal/runtime/sessions/{session_id}/terminal-evidence")
@@ -233,25 +220,6 @@ def terminal_evidence(
         raise HTTPException(status_code=404, detail="terminal evidence unavailable") from exc
     except SessionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-
-
-@app.get("/internal/runtime/sessions/{session_id}/containment")
-def session_containment(session_id: str) -> dict:
-    """Bounded BYQ containment projection (ADR-0084); no DSH private state."""
-    try:
-        return adapter.containment_summary(session_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail="invalid session identity") from exc
-
-@app.post("/internal/runtime/sessions/{session_id}/recover-evidence")
-def recover_evidence(session_id: str, payload: dict) -> dict:
-    if set(payload) != {"trace_id", "owner", "workspace_id", "after_sequence"}:
-        raise HTTPException(status_code=422, detail="exact recovery context required")
-    try:
-        return adapter.recover_evidence({"session_id": session_id, **{k: payload[k]
-            for k in ("trace_id", "owner", "workspace_id")}}, payload["after_sequence"])
-    except (ValueError, OSError, TypeError, KeyError) as exc:
-        raise HTTPException(status_code=409, detail="runtime recovery evidence is unavailable or unproven") from exc
 
 
 @app.post("/internal/runtime/sessions/{session_id}/domain-call-evidence")

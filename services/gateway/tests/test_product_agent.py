@@ -16,6 +16,53 @@ TOKEN = "phase7-product-token"
 TEST_BOOT_ID = "a" * 32
 
 
+def test_active_catalog_status_requires_a_current_live_adapter_binding(monkeypatch, tmp_path):
+    monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
+    monkeypatch.setattr(main, "trace_store", TraceStore(tmp_path))
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    monkeypatch.setattr(main, "_adapter_containment", lambda _session_id: None)
+    monkeypatch.setattr(main, "_runtime_authority_snapshot", lambda: {
+        "ready": True, "boot_id": "b" * 32, "authority_epoch": 7,
+    })
+    monkeypatch.setattr(main, "_adapter_authority", lambda: {"boot_id": "b" * 32})
+    monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda *_args, **_kwargs: {
+        "schema_version": main.RUNTIME_AUTHORITY_CURRENT_SCHEMA,
+        "boot_id": "b" * 32, "authority_epoch": 7, "status": "current",
+    })
+    conversation = {
+        "conversation_id": "conversation_1", "runtime_session_id": "runtime_1",
+        "trace_id": "trace_1", "title": "研究", "status": "active",
+    }
+    monkeypatch.setattr(main, "_catalog_request", lambda *_args, **_kwargs: {
+        "conversation": conversation, "messages": [],
+    })
+    client = TestClient(main.app)
+
+    def status():
+        response = client.get("/v1/agent/sessions/conversation_1",
+                              headers={"Authorization": f"Bearer {TOKEN}"})
+        assert response.status_code == 200
+        return response.json()
+
+    # After Gateway restart there is no live binding to prove the old catalog
+    # status; after Adapter boot rotation a retained old binding is stale.
+    assert status()["conversation"]["status"] == "unknown"
+    assert status()["containment"]["status"] == "unknown"
+    session = main.ProductSession("conversation_1", "runtime_1", "trace_1",
+                                  main.Principal(subject=main.PRODUCT_PRINCIPAL))
+    session.boot_id = TEST_BOOT_ID
+    main.product_sessions.add(session)
+    assert status()["conversation"]["status"] == "interrupted"
+    assert status()["containment"]["status"] == "interrupted"
+    session.boot_id = "b" * 32
+    assert status()["conversation"]["status"] == "active"
+    monkeypatch.setattr(main, "_backend_runtime_authority_request",
+                        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("down")))
+    assert status()["conversation"]["status"] == "unknown"
+    monkeypatch.setattr(main, "_adapter_authority", lambda: (_ for _ in ()).throw(RuntimeError("down")))
+    assert status()["conversation"]["status"] == "unknown"
+
+
 def authorize_runtime_session(monkeypatch, session):
     session.boot_id = TEST_BOOT_ID
     monkeypatch.setattr(main, "_runtime_authority_snapshot", lambda: {

@@ -1,5 +1,24 @@
 # Phase 0–6 gate record
 
+## Phase 7 Adapter journal cutover gate (2026-09-28)
+
+The maintainer explicitly accepted deleting Adapter persistence safeguards and
+abandoning cross-process Adapter recovery. [Current evidence](phase7-journal-cutover-evidence.md)
+records the `.237` source cutover, unit/architecture checks, three isolated
+Compose scenarios, and scoped cleanup. Earlier entries below record the
+historical decision before that authorization and are superseded for this
+specific journal-removal question.
+
+**Tester:** PASS for bounded live-path cutover, selected `.237` manifest,
+focused checks, syntax and diff; Root's three disposable Compose scenarios
+passed and their resources were removed. **Independent Sol Reviewer:**
+Functional PASS / Tests PASS / Clean Break Architecture PASS after direct
+diff, interface, build, test and evidence inspection. **Root acceptance:**
+PASS for this bounded journal-removal slice. Disconnected containment,
+executor identity, operator scripts and settlement persistence helpers remain
+for separate Phase 7 deletion review. Phase 7 overall remains OPEN; Phase 8
+remains CLOSED. No existing DB/backup cleanup, push, merge, or deployment.
+
 ## Phase 7 journal cutover and final old-DB archive (2026-09-28)
 
 The maintainer authorized discarding old Agent sessions and all BYQ user-state

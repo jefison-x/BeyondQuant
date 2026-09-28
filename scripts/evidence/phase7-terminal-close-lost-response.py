@@ -94,7 +94,7 @@ def main() -> None:
     if (adapter_environment.get("BYQ_PHASE7_TERMINAL_FIXTURE") != "1"
             or adapter_environment.get("BYQ_DSH_COMPATIBILITY_RELEASE") != "dsh-0.1.5rc1"
             or services[ADAPTER_SERVICE].get("build", {}).get("dockerfile")
-            != "services/runtime-adapter/Dockerfile.post-u8-226-candidate"):
+            != "services/runtime-adapter/Dockerfile.post-u8-237-candidate"):
         raise AssertionError("Adapter fixture or pinned DSH selection differs")
     proxy_environment = services[PROXY_SERVICE].get("environment", {})
     if (proxy_environment.get("BYQ_PHASE7_TERMINAL_CLOSE_PROXY") != "1"
@@ -254,27 +254,6 @@ except urllib.error.HTTPError as error:
             raise AssertionError("Backend AgentRun query did not return a list")
         return result
 
-    def adapter_journal_ack(session_id: str, root_id: str) -> dict | None:
-        # Read only the exact durable receipt; do not emit the journal or context.
-        script = r'''
-import json, os, pathlib, sys
-session_id, root_id = sys.argv[1:3]
-base = pathlib.Path(os.environ.get("DSH_SESSION_ROOT", "/var/lib/byq/dsh-sessions"))
-path = base / "byq-lifecycle-evidence" / (session_id + ".json")
-try:
-    envelope = json.loads(path.read_text())
-    state = envelope["state"]
-    receipt = state["terminal_acks"].get(root_id)
-except FileNotFoundError:
-    receipt = None
-print(json.dumps({"receipt": receipt}))
-'''
-        output = run(compose + [
-            "exec", "-T", ADAPTER_SERVICE, "python3", "-c", script, session_id, root_id,
-        ])
-        reply = json.loads(output)
-        return reply.get("receipt")
-
     def provider_markers() -> list[dict]:
         logs = run(compose + ["logs", "--no-color", ADAPTER_SERVICE])
         markers: list[dict] = []
@@ -309,15 +288,6 @@ print(json.dumps({"receipt": receipt}))
         if not isinstance(boot_id, str) or ROOT_PATTERN.fullmatch(boot_id) is None:
             raise AssertionError("Adapter authority identity is malformed")
         return boot_id
-
-    def lifecycle_status(cookie: str) -> dict:
-        reply = gateway_request(
-            "gateway", "GET",
-            f"/v1/agent/sessions/{conversation_id}/lifecycle-delivery", cookie=cookie,
-        )
-        if reply["status"] != 200 or not isinstance(reply.get("body"), dict):
-            raise AssertionError("Gateway lifecycle delivery status is unavailable")
-        return reply["body"]
 
     def proxy_observed() -> dict:
         reply = proxy_request("GET", "/_phase7/observed")
@@ -414,20 +384,6 @@ print(json.dumps({"receipt": receipt}))
     if any(row.get("pid1") != 1 for row in active_markers if "pid1" in row):
         raise AssertionError("the scripted provider is not owned by Adapter PID 1")
 
-    def active_delivery_ready() -> dict | None:
-        status = lifecycle_status(cookie)
-        if (status.get("pending_events") == 0
-                and status.get("exhausted_events") == 0
-                and status.get("rejected_events") == 0
-                and status.get("state") == "up_to_date"):
-            return status
-        return None
-
-    wait_for(
-        "Gateway did not acknowledge the active AgentRun registration",
-        active_delivery_ready,
-    )
-
     # Signal only the qualified Adapter container. Its PID-1 handler releases
     # one synthetic final completion from the loopback provider.
     current_adapter = inspect(ADAPTER_SERVICE)
@@ -509,18 +465,9 @@ print(json.dumps({"receipt": receipt}))
             or terminal_evidence.get("receipt") != first_receipt):
         raise AssertionError("Adapter terminal evidence differs from Backend's first receipt")
 
-    if adapter_journal_ack(runtime_session_id, root_id) is not None:
-        raise AssertionError("Adapter acknowledged a terminal before the lost response was retried")
-    delivery_pending = lifecycle_status(cookie)
-    if (delivery_pending.get("pending_events") != 1
-            or delivery_pending.get("exhausted_events") != 0
-            or delivery_pending.get("rejected_events") != 0
-            or delivery_pending.get("state") != "pending"):
-        raise AssertionError("Gateway did not retain the terminal event as pending")
-
     # Probe Adapter admission directly while its exact terminal receipt is
     # pending. This is an internal assertion only; it cannot start a new DSH
-    # request because the durable cleanup barrier must reject it first.
+    # request because the same-boot cleanup barrier must reject it first.
     blocked = gateway_request(
         "adapter", "POST", f"/internal/runtime/sessions/{runtime_session_id}/prompt",
         {"content": "This prompt must be blocked by pending terminal cleanup.",
@@ -539,9 +486,6 @@ print(json.dumps({"receipt": receipt}))
     )
     if request_count_before_allow != 2:
         raise AssertionError("pending-cleanup prompt triggered another provider request")
-    if adapter_journal_ack(runtime_session_id, root_id) is not None:
-        raise AssertionError("Adapter journal acquired an ACK before Gateway received the close reply")
-
     pre_allow_retry = wait_for(
         "proxy did not reject an exact close retry before host release",
         lambda: (
@@ -565,25 +509,18 @@ print(json.dumps({"receipt": receipt}))
     if allowed["body"].get("root_run_id") != root_id:
         raise AssertionError("proxy armed a retry for another root")
 
-    def retry_complete() -> tuple[dict, dict, dict] | None:
+    def retry_complete() -> dict | None:
         observed = proxy_observed()
-        ack = adapter_journal_ack(runtime_session_id, root_id)
-        delivery = lifecycle_status(cookie)
         if (observed["retry_forwarded"] == 1
                 and observed["retry_status"] == 200
                 and observed["retry_receipt"] == first_receipt
                 and observed["first_receipt"] == first_receipt
-                and observed["allow_count"] == 1
-                and ack == first_receipt
-                and delivery.get("pending_events") == 0
-                and delivery.get("exhausted_events") == 0
-                and delivery.get("rejected_events") == 0
-                and delivery.get("state") == "up_to_date"):
-            return observed, ack, delivery
+                and observed["allow_count"] == 1):
+            return observed
         return None
 
-    final_proxy, final_ack, final_delivery = wait_for(
-        "Gateway did not retry and acknowledge the exact Backend terminal receipt",
+    final_proxy = wait_for(
+        "Gateway did not retry the exact Backend terminal receipt",
         retry_complete, seconds=30,
     )
     final_roots = roots(conversation_id)
@@ -598,8 +535,6 @@ print(json.dumps({"receipt": receipt}))
             or final_proxy["withheld_rejections"] != final_proxy["pre_allow_rejections"]
             or final_proxy["allow_count"] != 1):
         raise AssertionError("proxy did not withhold pre-release retries or observed duplicate release")
-    if final_ack != first_receipt or final_delivery.get("state") != "up_to_date":
-        raise AssertionError("Adapter ACK or Gateway lifecycle delivery differs from the first close")
     final_markers = provider_markers()
     final_provider_requests = sum(
         row.get("phase7_terminal_fixture") == "PROVIDER_REQUEST"
@@ -622,7 +557,6 @@ print(json.dumps({"receipt": receipt}))
         "terminal_sequence": first_receipt["sequence"],
         "terminal_event_sha256": first_receipt["event_sha256"],
         "backend_retry_receipt_exact": True,
-        "adapter_terminal_ack_exact": True,
         "pending_prompt_status": blocked["status"],
         "provider_requests": final_provider_requests,
         "gateway_close_requests": final_proxy["close_requests"],

@@ -1,11 +1,7 @@
-"""ADR-0079 R2: durable session identity vs ephemeral runtime generations.
-
-A durable BYQ AgentSession can be served by generation-1..N. This suite proves
-that replacing a generation (adapter restart, crash, resume) never changes the
-durable session identity, never loses evidence/sequence, and reports one honest
-framework-neutral continuity status.
-"""
+"""In-boot generation replacement and fresh-session continuity contracts."""
 from __future__ import annotations
+
+import hashlib
 
 import pytest
 
@@ -13,8 +9,6 @@ from packages.contracts.runtime_continuity import (
     FRESH, INTERRUPTED, REATTACHED, REHYDRATED, STATUSES, valid_continuity,
 )
 
-from app.containment import latest as latest_containment
-from app.lifecycle_journal import LifecycleJournal
 from app.runtime import RuntimeAdapter, SessionConflict, SessionStatus
 from .test_process_cleanup import FakeHarness, adapter, wait_for_status  # noqa: F401
 from .test_session_rehydration import _simulate_process_death
@@ -33,14 +27,15 @@ def test_continuity_vocabulary_is_closed_and_framework_neutral() -> None:
     assert not valid_continuity(None)
 
 
-def test_fresh_session_is_fresh_and_live_generation_reattaches(adapter: RuntimeAdapter) -> None:
+def test_fresh_session_and_live_adapter_reattachment(adapter: RuntimeAdapter) -> None:
     created = adapter.create_session("r2-fresh", "r2-fresh-trace", "alice", "workspace_alice")
     assert created["continuity"] == FRESH
     first_generation = _generation_id(adapter, "r2-fresh")
+    native_session = adapter._get("r2-fresh").runtime_session_id
+    assert native_session != "r2-fresh"
 
     resumed = adapter.resume_session("r2-fresh")
 
-    # Path A: the original in-process generation is still alive and is reused.
     assert resumed["continuity"] == REATTACHED
     assert resumed["resumed_from_run_id"] is None
     assert _generation_id(adapter, "r2-fresh") == first_generation
@@ -48,89 +43,45 @@ def test_fresh_session_is_fresh_and_live_generation_reattaches(adapter: RuntimeA
     adapter.close()
 
 
-def test_released_session_identity_cannot_be_reused(adapter: RuntimeAdapter) -> None:
+def test_released_public_id_starts_a_new_native_dsh_session(adapter: RuntimeAdapter) -> None:
     adapter.create_session("r2-new", "r2-new-trace", "alice", "workspace_alice")
+    old_native_session = adapter._get("r2-new").runtime_session_id
     adapter.release_session("r2-new")
-    # Durable lifecycle evidence prevents an old stable ID from becoming a new
-    # Agent session after its runtime record is gone.
-    with pytest.raises(SessionConflict, match="interrupted"):
-        adapter.create_session("r2-new", "r2-new-trace", "alice", "workspace_alice")
+
+    created = adapter.create_session("r2-new", "r2-new-trace", "alice", "workspace_alice")
+
+    assert created["continuity"] == FRESH
+    assert adapter._get("r2-new").runtime_session_id != old_native_session
+    assert not (adapter._session_root / "byq-lifecycle-evidence").exists()
     adapter.close()
 
 
-def test_restart_rejects_old_identity_and_preserves_durable_lifecycle_evidence(
-    adapter: RuntimeAdapter,
-) -> None:
+def test_adapter_restart_has_no_old_session_or_prompt_receipt(adapter: RuntimeAdapter) -> None:
     FakeHarness.allow_run.set()
-    created = adapter.create_session("r2-restart", "r2-restart-trace", "alice", "workspace_alice")
-    assert created["continuity"] == FRESH
-    first_generation = _generation_id(adapter, "r2-restart")
-    root = adapter.submit_prompt("r2-restart", "first synthetic turn")
+    adapter.create_session("r2-restart", "r2-restart-trace", "alice", "workspace_alice")
+    root = adapter.submit_prompt("r2-restart", "first synthetic turn", idempotency_key="restart-key-01")
     wait_for_status(adapter, "r2-restart", SessionStatus.IDLE)
     record = adapter._get("r2-restart")
-    durable_sequence = record.sequence
+    old_native_session = record.runtime_session_id
+    sequence = record.sequence
     adapter.acknowledge_terminal("r2-restart", record.terminal_receipts[root])
-    assert durable_sequence > 1
     _simulate_process_death(adapter)
 
     restarted = RuntimeAdapter(adapter._compatibility)
     try:
-        with pytest.raises(SessionConflict, match="interrupted"):
-            restarted.create_session(
-                "r2-restart", "r2-restart-trace", "alice", "workspace_alice",
-                durable_sequence, [{"role": "user", "content": "earlier public turn"}],
-            )
+        digest = hashlib.sha256(b"first synthetic turn").hexdigest()
+        assert restarted.reconcile_prompt("r2-restart", "restart-key-01", digest)["state"] == "outcome_unknown"
         with pytest.raises(KeyError):
             restarted.submit_prompt("r2-restart", "must not replay")
-        # Durable lifecycle evidence is intact and still contains the run.
-        state = LifecycleJournal.read(
-            restarted._session_root / "byq-lifecycle-evidence" / "r2-restart.json")
-        assert state["sequence"] >= durable_sequence
-        assert state["open_root"] is None
-        assert any(event["kind"] == "session.started"
-                   and event["payload"]["run_id"] == root for event in state["events"])
-        assert any(event["kind"] == "session.result"
-                   and event["payload"]["run_id"] == root for event in state["events"])
-    finally:
-        restarted.close()
-        adapter.close()
-
-
-def test_crashed_generation_is_unavailable_and_never_rebound(
-    adapter: RuntimeAdapter,
-) -> None:
-    FakeHarness.allow_run.clear()
-    adapter.create_session("r2-crash", "r2-crash-trace", "alice", "workspace_alice")
-    first_generation = _generation_id(adapter, "r2-crash")
-    adapter.submit_prompt("r2-crash", "long synthetic turn")
-    assert FakeHarness.run_started.wait(1.0)
-
-    # Ungraceful adapter/DSH death while the root is still open. Detach the
-    # dead worker so it cannot append after the journal lock is released.
-    with adapter._lock:
-        record = adapter._sessions["r2-crash"]
-        record.active_run = None
-        record.journal.close()
-        del adapter._sessions["r2-crash"]
-
-    restarted = RuntimeAdapter(adapter._compatibility)
-    try:
         with pytest.raises(SessionConflict, match="interrupted"):
             restarted.create_session(
-                "r2-crash", "r2-crash-trace", "alice", "workspace_alice", 1, [],
+                "r2-restart", "r2-restart-trace", "alice", "workspace_alice", sequence,
             )
-        with pytest.raises(KeyError):
-            restarted.submit_prompt("r2-crash", "must not replay")
-        evidence_root = restarted._session_root / "byq-lifecycle-evidence"
-        state = LifecycleJournal.read(evidence_root / "r2-crash.json")
-        assert state["open_root"] is not None
-        assert state["open_root"]["root_run_id"]
-        loss = latest_containment(evidence_root, "r2-crash")
-        assert loss is None
-        assert first_generation
+        restarted.create_session("r2-restart", "r2-restart-trace", "alice", "workspace_alice")
+        assert restarted._get("r2-restart").runtime_session_id != old_native_session
+        assert restarted._get("r2-restart").history[0]["kind"] == "session.ready"
     finally:
         restarted.close()
-        FakeHarness.allow_run.set()
         adapter.close()
 
 
@@ -152,7 +103,7 @@ def test_resume_after_hard_cancel_reports_interrupted_with_new_generation(
     adapter.close()
 
 
-def test_continuity_status_crosses_the_runtime_http_boundary(
+def test_continuity_status_crosses_runtime_http_boundary(
     adapter: RuntimeAdapter, monkeypatch: pytest.MonkeyPatch, allow_current_runtime_authority,
 ) -> None:
     from fastapi.testclient import TestClient
@@ -172,5 +123,11 @@ def test_continuity_status_crosses_the_runtime_http_boundary(
         resumed = client.post("/internal/runtime/sessions/r2-http/resume", json={})
         assert resumed.status_code == 200
         assert resumed.json()["continuity"] == REATTACHED
+
+        stale = client.post("/internal/runtime/sessions", json={
+            "session_id": "r2-http-stale", "trace_id": "r2-http-stale-trace",
+            "owner_principal": "alice", "workspace_id": "workspace_alice", "initial_sequence": 1,
+        })
+        assert stale.status_code == 409
     finally:
         adapter.close()

@@ -122,9 +122,6 @@ def test_domain_observation_is_private_in_memory_and_exactly_root_scoped(root_ad
             "arguments": json.dumps(second_arguments)}}})
     runtime._on_notification(record, second_notice, source_run=run,
                              source_runtime_session_id=record.runtime_session_id)
-    from app.lifecycle_journal import LifecycleJournal
-    monkeypatch.setattr(LifecycleJournal, "claim", lambda *args, **kwargs: pytest.fail(
-        "live private evidence must come from RuntimeSession memory"))
     assert len(record.domain_call_evidence) == 2
     evidence = record.domain_call_evidence[0]
     second_evidence = record.domain_call_evidence[1]
@@ -186,7 +183,7 @@ def test_domain_observation_is_private_in_memory_and_exactly_root_scoped(root_ad
     assert client.post(ack_path, json={**payload, "receipt": wrong_receipt}).status_code == 409
     with pytest.raises(SessionConflict, match="context mismatch"):
         runtime.acknowledge_domain_call_evidence({**context, "trace_id": "foreign-trace"}, second_receipt)
-    with pytest.raises(SessionConflict, match="sequence is unknown"):
+    with pytest.raises(SessionConflict, match="not owned by this Adapter boot"):
         runtime.acknowledge_domain_call_evidence(context, {**second_receipt, "sequence": 3})
     assert len(FakeHarness.instances) == count
 

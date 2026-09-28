@@ -328,49 +328,53 @@ def test_product_process_cannot_start_next_turn_until_exact_terminal_ack(adapter
 
 
 @pytest.mark.parametrize("ack_while_released", [False, True])
-def test_terminal_receipt_survives_release_without_rebinding_the_session(adapter, ack_while_released):
+def test_terminal_ack_lost_response_retries_after_reap_only_in_same_adapter_boot(
+    adapter, ack_while_released, monkeypatch,
+):
     try:
         adapter.create_session("durable-ack", "durable-trace", "alice", "workspace_alice")
+        original_native_session = adapter._get("durable-ack").runtime_session_id
         root = adapter.submit_prompt("durable-ack", "synthetic first")
         FakeHarness.allow_run.set()
         wait_for_status(adapter, "durable-ack", SessionStatus.IDLE)
         receipt = adapter._get("durable-ack").terminal_receipts[root]
+        evidence = adapter.terminal_evidence("durable-ack", root, adapter.boot_id)
         adapter.release_session("durable-ack")
         if ack_while_released:
             count = len(FakeHarness.instances)
             assert adapter.acknowledge_terminal("durable-ack", receipt) == {"receipt": receipt}
             assert len(FakeHarness.instances) == count  # evidence only, no process
         if not ack_while_released:
-            adapter.acknowledge_terminal("durable-ack", receipt)
-        state = runtime_module.LifecycleJournal.read(
-            adapter._session_root / "byq-lifecycle-evidence" / "durable-ack.json")
-        assert root in state["terminal_acks"]
-        with pytest.raises(SessionConflict, match="interrupted"):
-            adapter.create_session("durable-ack", "durable-trace", "alice", "workspace_alice")
-    finally:
-        adapter.close()
+            assert adapter.acknowledge_terminal("durable-ack", receipt) == {"receipt": receipt}
+        with pytest.raises(KeyError):
+            adapter._get("durable-ack")
+        # The backend may have committed before its ACK response was lost.
+        # The exact same-boot receipt remains retryable after the session is reaped.
+        assert adapter.acknowledge_terminal("durable-ack", receipt) == {"receipt": receipt}
+        assert adapter.terminal_evidence("durable-ack", root, adapter.boot_id) == evidence
+        with pytest.raises(KeyError):
+            adapter.terminal_evidence("durable-ack", "f" * 32, adapter.boot_id)
+        with pytest.raises(SessionConflict):
+            adapter.acknowledge_terminal("other-session", receipt)
+        with pytest.raises(SessionConflict, match="another session"):
+            adapter.terminal_evidence("other-session", root, adapter.boot_id)
 
+        new_boot = RuntimeAdapter(adapter._compatibility)
+        monkeypatch.setattr(new_boot, "boot_id", "f" * 32)
+        try:
+            with pytest.raises(SessionConflict):
+                new_boot.acknowledge_terminal("durable-ack", receipt)
+            with pytest.raises(SessionConflict, match="another Adapter boot"):
+                new_boot.terminal_evidence("durable-ack", root, adapter.boot_id)
+        finally:
+            new_boot.close()
 
-def test_terminal_ack_write_failure_does_not_release_admission(adapter, monkeypatch):
-    try:
-        adapter.create_session("ack-disk-failure", "ack-disk-trace", "alice", "workspace_alice")
-        root = adapter.submit_prompt("ack-disk-failure", "synthetic first")
-        FakeHarness.allow_run.set()
-        wait_for_status(adapter, "ack-disk-failure", SessionStatus.IDLE)
-        record = adapter._get("ack-disk-failure")
-        save = record.journal._save
-
-        def fail(state):
-            raise OSError("synthetic unavailable storage")
-
-        monkeypatch.setattr(record.journal, "_save", fail)
-        with pytest.raises(OSError):
-            adapter.acknowledge_terminal("ack-disk-failure", record.terminal_receipts[root])
-        assert root in record.pending_terminal_receipts
-        assert record.journal.state["terminal_acks"] == {}
-        with pytest.raises(SessionConflict, match="cleanup"):
-            adapter.submit_prompt("ack-disk-failure", "synthetic second")
-        monkeypatch.setattr(record.journal, "_save", save)
+        # Reusing the public ID starts a fresh native DSH session with no old
+        # prompt receipt; the old DSH session identity is never reopened.
+        adapter.create_session("durable-ack", "durable-trace", "alice", "workspace_alice")
+        assert adapter._get("durable-ack").runtime_session_id != original_native_session
+        digest = hashlib.sha256(b"synthetic first").hexdigest()
+        assert adapter.reconcile_prompt("durable-ack", root, digest)["state"] == "outcome_unknown"
     finally:
         adapter.close()
 
@@ -490,51 +494,38 @@ def test_terminal_receipt_http_is_closed_and_exact_session_scoped(adapter, monke
         assert client.post("/internal/runtime/sessions/other-http/terminal-receipt",
                            json={"receipt": receipt}).status_code == 409
         assert client.post("/internal/runtime/sessions/missing/terminal-receipt",
-                           json={"receipt": receipt}).status_code == 404
+                           json={"receipt": receipt}).status_code == 409
         assert client.post(path, json={"receipt": receipt}).json() == {"receipt": receipt}
     finally:
         adapter.close()
 
 
-def test_recovery_and_durable_prompt_lookup_never_construct_or_run_a_harness(adapter):
-    from app.lifecycle_journal import LifecycleJournal
-    from app.contracts import make_workflow_trace_event
-    ctx = {"session_id": "orphan", "trace_id": "orphan-trace", "owner": "alice", "workspace_id": "workspace_alice"}
-    journal = LifecycleJournal.claim(adapter._session_root / "byq-lifecycle-evidence", ctx, create=True)
-    content = "synthetic private prompt not stored"
-    root = "a" * 32
-    journal.observe(make_workflow_trace_event(session_id="orphan", trace_id="orphan-trace", sequence=4,
-        kind="session.started", source="runtime-adapter", payload={"run_id": root}),
-        generation="old-generation", prompt=("original-prompt", hashlib.sha256(content.encode()).hexdigest()))
-    assert adapter.recover_evidence(ctx)["state"] == "owned"
-    journal.close()
-    recovered = adapter.recover_evidence(ctx)
-    assert [e["kind"] for e in recovered["events"]] == ["session.started", "session.closed"]
-    assert adapter.recover_evidence(ctx, after_sequence=5)["events"] == []
-    assert adapter.reconcile_prompt("orphan", "original-prompt", hashlib.sha256(content.encode()).hexdigest())["run_id"] == root
-    assert FakeHarness.instances == []
-    assert content not in journal.path.read_text()
-    with pytest.raises(ValueError):
-        adapter.recover_evidence({**ctx, "owner": "bob"})
+def test_missing_session_prompt_reconcile_is_unknown_and_recovery_route_is_gone(adapter, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    monkeypatch.setattr(main, "adapter", adapter)
+    client = TestClient(main.app)
+    digest = hashlib.sha256(b"old prompt").hexdigest()
+    assert adapter.reconcile_prompt("orphan", "original-prompt", digest) == {
+        "schema_version": "prompt-receipt.v1", "state": "outcome_unknown",
+    }
+    assert client.post("/internal/runtime/sessions/orphan/recover-evidence", json={
+        "trace_id": "orphan-trace", "owner": "alice", "workspace_id": "workspace_alice",
+        "after_sequence": 0,
+    }).status_code == 404
     with pytest.raises(SessionConflict, match="interrupted"):
-        adapter.create_session("orphan", "orphan-trace", "alice", "workspace_alice")
+        adapter.create_session("orphan", "orphan-trace", "alice", "workspace_alice", initial_sequence=4)
     assert FakeHarness.instances == []
+
+
+def test_fresh_session_keeps_history_and_receipts_in_memory(adapter):
+    adapter.create_session("memory-only", "memory-trace", "alice", "workspace_alice", initial_sequence=0)
+    record = adapter._get("memory-only")
+    assert record.sequence == 1  # `session.ready` is the first live event.
+    assert record.history[0]["kind"] == "session.ready"
+    assert not (adapter._session_root / "byq-lifecycle-evidence").exists()
     adapter.close()
-
-
-def test_failed_journal_write_prevents_model_start_and_shutdown_still_closes_process(adapter, monkeypatch):
-    adapter.create_session("disk-failure", "disk-trace", "alice", "workspace_alice")
-    record = adapter._get("disk-failure")
-    def fail(*args, **kwargs):
-        raise OSError("synthetic evidence storage failure")
-    monkeypatch.setattr(record.journal, "_save", fail)
-    with pytest.raises(OSError):
-        adapter.submit_prompt("disk-failure", "must not execute", idempotency_key="disk-failure-key")
-    assert FakeHarness.instances[0].run_count == 0
-    with pytest.raises(OSError):
-        adapter.close()
-    assert FakeHarness.instances[0].closed
-    assert record.journal.lock is None
 
 
 def test_default_long_research_uses_checkpoints_instead_of_wall_clock_ceiling(
@@ -1021,25 +1012,28 @@ def test_delegate_notifications_track_subagent_lifetime_without_exposing_raw_nam
     adapter.cancel_session("s-child-events", "hard")
 
 
-def test_session_creation_can_continue_a_durable_trace_sequence(adapter: RuntimeAdapter) -> None:
-    created = adapter.create_session("s-sequence", "t-sequence", initial_sequence=41)
+def test_session_creation_accepts_only_a_fresh_zero_sequence(adapter: RuntimeAdapter) -> None:
+    with pytest.raises(SessionConflict, match="interrupted"):
+        adapter.create_session("s-sequence-old", "t-sequence-old", initial_sequence=41)
+    assert FakeHarness.instances == []
 
+    created = adapter.create_session("s-sequence", "t-sequence", initial_sequence=0)
     record = adapter._get("s-sequence")
     assert created["status"] == SessionStatus.READY
-    assert record.history[0]["sequence"] == 42
-    assert record.sequence == 42
-    assert record.runtime_session_id.startswith("resume-")
+    assert record.history[0]["sequence"] == 1
+    assert record.sequence == 1
+    assert record.runtime_session_id.startswith("session-")
     adapter.release_session("s-sequence")
 
 
-def test_recreated_runtime_uses_private_generation_and_bounded_public_context(
+def test_fresh_runtime_uses_private_dsh_session_and_bounded_public_context(
     adapter: RuntimeAdapter,
 ) -> None:
     FakeHarness.allow_run.set()
     adapter.create_session(
         "s-durable",
         "t-durable",
-        initial_sequence=9,
+        initial_sequence=0,
         conversation_context=[
             {"role": "user", "content": "第一轮问题"},
             {"role": "assistant", "content": "第一轮回答"},
@@ -1047,7 +1041,7 @@ def test_recreated_runtime_uses_private_generation_and_bounded_public_context(
     )
 
     record = adapter._get("s-durable")
-    assert record.runtime_session_id.startswith("resume-")
+    assert record.runtime_session_id.startswith("session-")
     assert record.runtime_session_id != record.session_id
     adapter.submit_prompt("s-durable", "第二轮追问")
     wait_for_status(adapter, "s-durable", SessionStatus.IDLE)
@@ -1070,7 +1064,7 @@ def test_recovery_reaches_fresh_runtime_once(adapter: RuntimeAdapter) -> None:
         "unanswered_turn": {"message_id": "m-original", "content": subject},
         "failure": {"sequence": 9, "run_id": "run-original", "code": "runtime-subagent-timeout"},
     }
-    adapter.create_session("s-recovery", "t-recovery", initial_sequence=9, conversation_recovery=recovery)
+    adapter.create_session("s-recovery", "t-recovery", initial_sequence=0, conversation_recovery=recovery)
     adapter.submit_prompt("s-recovery", subject)
     wait_for_status(adapter, "s-recovery", SessionStatus.IDLE)
     assert FakeHarness.instances[0].last_content.count(subject) == 1
@@ -1085,7 +1079,7 @@ def test_ambiguous_recovery_does_not_start_run(adapter: RuntimeAdapter) -> None:
         "trace_id": "t-ambiguous", "status": "needs_confirmation", "unanswered_turn": None,
         "failure": {"sequence": 9, "run_id": None, "code": "unknown"},
     }
-    adapter.create_session("s-ambiguous", "t-ambiguous", initial_sequence=9, conversation_recovery=recovery)
+    adapter.create_session("s-ambiguous", "t-ambiguous", initial_sequence=0, conversation_recovery=recovery)
     with pytest.raises(ValueError, match="请明确"):
         adapter.submit_prompt("s-ambiguous", "继续")
     assert FakeHarness.instances[0].run_count == 0
@@ -1096,12 +1090,12 @@ def test_ambiguous_recovery_does_not_start_run(adapter: RuntimeAdapter) -> None:
 def test_conversation_context_rejects_private_or_unbounded_shapes(adapter: RuntimeAdapter) -> None:
     with pytest.raises(ValueError, match="field set"):
         adapter.create_session(
-            "s-private", "t-private", initial_sequence=1,
+            "s-private", "t-private", initial_sequence=0,
             conversation_context=[{"role": "user", "content": "问题", "raw_dsh": "no"}],
         )
     with pytest.raises(ValueError, match="character limit"):
         adapter.create_session(
-            "s-large", "t-large", initial_sequence=1,
+            "s-large", "t-large", initial_sequence=0,
             conversation_context=[{"role": "assistant", "content": "x" * 6_001}],
         )
 
@@ -1205,7 +1199,7 @@ def test_operations_snapshot_normalizes_and_deduplicates_dsh_usage(adapter: Runt
     notification = Notification(
         method="session.event",
         payload={
-            "sessionId": "s-1",
+            "sessionId": record.runtime_session_id,
             "event": {
                 "type": "assistant/message",
                 "data": {
@@ -1248,7 +1242,7 @@ def test_invalid_usage_is_dropped_atomically(adapter: RuntimeAdapter) -> None:
     adapter._on_notification(record, Notification(
         method="session.event",
         payload={
-            "sessionId": "s-1",
+            "sessionId": record.runtime_session_id,
             "event": {
                 "type": "assistant/message",
                 "data": {
@@ -1486,7 +1480,7 @@ def test_workflow_trace_sequence_and_publish_order_are_atomic(adapter: RuntimeAd
                 record,
                 Notification(
                     method="session.status",
-                    payload={"sessionId": "s-1", "status": "idle"},
+                    payload={"sessionId": record.runtime_session_id, "status": "idle"},
                 ),
             )
         else:

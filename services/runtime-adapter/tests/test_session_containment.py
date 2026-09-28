@@ -1,14 +1,7 @@
-"""ADR-0084 session failure containment at the Runtime Adapter boundary.
-
-These tests drive the real ``RuntimeAdapter`` state machine with its synthetic
-compatibility harness. Execution loss is simulated by dropping in-memory state
-and releasing the durable journal lock exactly as a SIGKILL/container recreation
-would (the kernel releases the flock, no graceful close event is emitted).
-"""
+"""Standalone containment contracts and the Adapter's no-disk projection."""
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
 
 import pytest
@@ -48,19 +41,14 @@ def test_lost_executor_run_is_interrupted_and_business_state_survives(
             restarted.create_session(
                 "loss-1", "loss-trace", "alice", "workspace_alice", durable_sequence, [],
             )
-        # The durable receipt proves that the run started, but the old runtime
-        # is gone. Preserve uncertainty without claiming the run completed or
-        # automatically admitting another turn.
+        # The old Adapter process is gone. Preserve uncertainty without
+        # claiming the run completed or automatically admitting another turn.
         digest = hashlib.sha256(content.encode()).hexdigest()
         assert restarted.reconcile_prompt("loss-1", "loss-original-key", digest) == {
             "schema_version": "prompt-receipt.v1", "state": "outcome_unknown",
         }
         assert FakeHarness.instances[0].run_count == 1
 
-        summary = restarted.containment_summary("loss-1")
-        assert summary["contained"] is False
-        assert summary["latest"] is None
-        assert "recovery_anchor" not in summary
         records = containment.read(restarted._session_root / "byq-lifecycle-evidence", "loss-1")
         assert records == []
         assert root
@@ -75,7 +63,7 @@ def test_containment_write_fails_closed_on_stale_executor_epoch(
 ) -> None:
     adapter.create_session("loss-2", "loss-2-trace", "alice", "workspace_alice")
     evidence_root = adapter._session_root / "byq-lifecycle-evidence"
-    current = adapter._get("loss-2").journal.executor
+    current = executor_identity.resolve(evidence_root)
     adapter.release_session("loss-2")
     # An explicit, audited takeover advances the authoritative volume epoch; the
     # previous epoch becomes a fenced writer.
@@ -101,7 +89,7 @@ def test_duplicate_or_reopened_containment_attempt_is_rejected(
 ) -> None:
     adapter.create_session("loss-3", "loss-3-trace", "alice", "workspace_alice")
     evidence_root = adapter._session_root / "byq-lifecycle-evidence"
-    executor = adapter._get("loss-3").journal.executor
+    executor = executor_identity.resolve(evidence_root)
     context = {"session_id": "loss-3", "trace_id": "loss-3-trace",
                "owner": "alice", "workspace_id": "workspace_alice"}
 
@@ -204,13 +192,8 @@ def test_containment_summary_http_boundary(
         })
         assert recreated.status_code == 409
         assert "interrupted" in recreated.json()["detail"]
-        body = client.get("/internal/runtime/sessions/loss-http/containment")
-        assert body.status_code == 200
-        assert body.json()["contained"] is False
-        assert "recovery_anchor" not in body.json()
-        # The projection carries no DSH private identity.
-        serialized = json.dumps(body.json())
-        assert "native_session" not in serialized and "dsh" not in serialized.lower()
+        # The old cross-process containment projection has no Product route.
+        assert client.get("/internal/runtime/sessions/loss-http/containment").status_code == 404
     finally:
         restarted.close()
         FakeHarness.allow_run.set()

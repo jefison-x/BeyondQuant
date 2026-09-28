@@ -10,6 +10,7 @@ import shutil
 import threading
 import time
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version as distribution_version
@@ -38,15 +39,18 @@ from .child_lease import ChildLease
 from .normalization import close_public_activities
 from .compat import RuntimeCompatibility, RuntimeObservation, compatibility_for_release
 from .identifiers import contained_session_path, validate_identifier
-from .lifecycle_journal import JournalIdentityMismatch, LifecycleJournal, JournalBusy
-from . import containment
-from .continuation_budget import (CONTINUATION_MAX_OUTPUT_TOKENS, persist_settlement,
-    recovered_settlement, validate_reservation, create_guard_patch, read_guard)
+from .continuation_budget import (
+    CONTINUATION_MAX_OUTPUT_TOKENS,
+    validate_reservation,
+    create_guard_patch,
+    read_guard,
+)
 from .normalization import NormalizationState, normalize_runtime_observation
 
 
 _PROCESS_BOOT_PID = os.getpid()
 _PROCESS_BOOT_ID = secrets.token_hex(16)
+_ACK_TOMBSTONE_LIMIT = 512
 
 
 def _process_boot_id() -> str:
@@ -73,17 +77,6 @@ class ModelCredentialUnavailable(RuntimeError):
 
 class RuntimeAuthorityUnavailable(RuntimeError):
     """Backend has not fenced this Adapter process for Agent traffic."""
-
-
-class StaleSessionLease(RuntimeError):
-    """Durable evidence exists but its lease was issued by a prior host boot.
-
-    The journal is intact, the session is known, yet it can never be claimed
-    again because ``boot_id`` changed. This is an operator-visible condition,
-    not an unknown session (404) and not a storage failure (503).
-    """
-
-    code: ClassVar[str] = "stale_session_lease"
 
 
 _OPENCODE_PROVIDERS = frozenset({
@@ -156,12 +149,11 @@ class GenerationState:
 
 @dataclass(slots=True)
 class RuntimeGeneration:
-    """Ephemeral DSH execution generation for one durable BYQ AgentSession.
+    """Ephemeral DSH execution generation for one live BYQ Adapter session.
 
     A generation is disposable execution capacity, never session identity.
-    Replacing it (rebind after a crash, adapter restart, resume or a new
-    root-scoped turn) is normal; the durable session, its sequence and its
-    lifecycle-journal evidence survive unchanged.
+    Replacing it within the current Adapter process creates a fresh private
+    DSH session and leaves cross-process recovery to the runtime owner.
     """
 
     generation_id: str
@@ -194,7 +186,7 @@ class RuntimeGeneration:
 
 @dataclass(slots=True)
 class RuntimeSession:
-    """Durable logical AgentSession identity, independent of any generation."""
+    """Live Adapter binding for one DSH session in this Adapter boot."""
 
     session_id: str
     trace_id: str
@@ -213,9 +205,8 @@ class RuntimeSession:
     # Advances only after Backend returns the exact receipt for each row.
     domain_call_drained_sequence: int = 0
     release_finalized: bool = False
-    journal: Any = field(default=None, repr=False)
-    # Continuation settlements outlive an individual generation, so this ledger
-    # stays on the durable session rather than on ephemeral execution state.
+    # Continuation settlement facts outlive an execution generation, but only
+    # for this live Adapter session; missing sessions reconcile as unknown.
     budget_receipts: dict[str, dict] = field(default_factory=dict, repr=False)
     interrupted_run_id: str | None = None
     sequence: int = 0
@@ -356,6 +347,12 @@ class RuntimeAdapter:
             os.environ.get("BYQ_DSH_COMPATIBILITY_RELEASE", "dsh-0.1.2rc1")
         )
         self._sessions: dict[str, RuntimeSession] = {}
+        # Lost ACK responses can be retried after a released session is reaped,
+        # but this receipt cache never crosses an Adapter boot.
+        self._ack_tombstones: OrderedDict[tuple[str, str, str, str, int], dict[str, Any]] = OrderedDict()
+        # Retain no event rows after reap; the marker permits only the exact
+        # final private evidence cursor to receive an empty idle page.
+        self._released_domain_sessions: OrderedDict[tuple[str, str], dict[str, Any]] = OrderedDict()
         self._lock = threading.RLock()
         self._runtime_root = Path(os.environ.get("BYQ_DSH_RUNTIME_ROOT", "/opt/dsh-runtime"))
         self._composition = Path(
@@ -618,21 +615,12 @@ class RuntimeAdapter:
             "status": "matched" if matches else "mismatch",
         }
 
-    def _evidence_root(self) -> Path:
-        return self._session_root / "byq-lifecycle-evidence"
-
-    @staticmethod
-    def _executor_epoch(journal: Any) -> int:
-        epoch = getattr(getattr(journal, "executor", None), "executor_epoch", 0)
-        return epoch if isinstance(epoch, int) and epoch > 0 else 0
-
     @staticmethod
     def _terminal_fenced(record: RuntimeSession, generation_id: str, executor_epoch: int) -> bool:
-        """ADR-0084: a run may only settle state for its own live generation.
+        """A run may only settle state for its own live generation.
 
-        A late terminal from a replaced generation (adapter restart, executor
-        takeover, new generation) fails closed instead of overwriting the newer
-        generation's state.
+        A late terminal from a replaced in-process generation fails closed
+        instead of overwriting the newer generation's state.
         """
 
         current = record.current_generation
@@ -659,7 +647,7 @@ class RuntimeAdapter:
             current.state = state
 
     def _retire_generation(self, record: RuntimeSession, state: str) -> RuntimeGeneration | None:
-        """Retire the active generation without touching durable session state."""
+        """Retire the active generation without changing its live session record."""
 
         generation = record.current_generation
         if generation is None:
@@ -673,7 +661,7 @@ class RuntimeAdapter:
         process_root_id: str = "",
         retired_state: str = GenerationState.CLOSED, generation_id: str | None = None,
     ) -> RuntimeGeneration:
-        """Replace any active generation with a NEW one; identity is unchanged."""
+        """Replace the live DSH generation with a new private native session."""
 
         self._retire_generation(record, retired_state)
         generation = RuntimeGeneration(
@@ -696,25 +684,16 @@ class RuntimeAdapter:
     ) -> dict[str, Any]:
         validate_identifier(session_id, field="session_id")
         validate_identifier(trace_id, field="trace_id")
-        if isinstance(initial_sequence, bool) or not isinstance(initial_sequence, int) or initial_sequence < 0:
-            raise ValueError("initial_sequence must be a non-negative integer")
-        requested_sequence = initial_sequence
+        if type(initial_sequence) is not int or initial_sequence != 0:
+            raise SessionConflict(SESSION_LOST_DETAIL)
         with self._lock:
             if session_id in self._sessions:
                 raise SessionConflict(f"BYQ session already exists: {session_id}")
         context = normalize_conversation_context([] if conversation_context is None else conversation_context)
         recovery = normalize_recovery(conversation_recovery, session_id, trace_id)
-        # A journal proves that this stable identity already belonged to a
-        # prior runtime. DSH process state is not recoverable here; callers must
-        # start a new Agent session and use durable BYQ business IDs to continue.
-        durable_evidence = self._session_root / "byq-lifecycle-evidence" / f"{session_id}.json"
-        if initial_sequence or durable_evidence.is_file():
-            raise SessionConflict(SESSION_LOST_DETAIL)
-        # The official rc.1 JSON-RPC carrier creates sessions but exposes no
-        # persisted-session resume operation. Never recreate a released DSH
-        # session over its append-only identity; use a fresh private generation
-        # while keeping the stable BYQ session and trace identities public.
-        runtime_session_id = session_id if initial_sequence == 0 else f"resume-{uuid.uuid4().hex}"
+        # DSH session files are private execution state. Give every fresh BYQ
+        # session a new native identity; the Adapter never reopens old state.
+        runtime_session_id = f"session-{uuid.uuid4().hex}"
         session_root = contained_session_path(self._session_root, runtime_session_id)
         model_resolution = self._resolve_model(
             owner_principal=owner_principal,
@@ -725,20 +704,6 @@ class RuntimeAdapter:
         with self._lock:
             if session_id in self._sessions:
                 raise SessionConflict(f"BYQ session already exists: {session_id}")
-            journal = None
-            if workspace_id:
-                try:
-                    journal = LifecycleJournal.claim(self._session_root / "byq-lifecycle-evidence",
-                        {"session_id": session_id, "trace_id": trace_id, "owner": owner_principal,
-                         "workspace_id": workspace_id}, create=True)
-                except JournalBusy as exc:
-                    raise SessionConflict("runtime evidence is owned by another executor") from exc
-                except JournalIdentityMismatch as exc:
-                    raise StaleSessionLease(f"stale session lease: {session_id}") from exc
-                initial_sequence = max(initial_sequence, journal.state["sequence"])
-                if journal.state["sequence"]:
-                    runtime_session_id = f"resume-{uuid.uuid4().hex}"
-                    session_root = contained_session_path(self._session_root, runtime_session_id)
             runtime_generation = f"generation-{uuid.uuid4().hex}"
             process_root_id = uuid.uuid4().hex if self._root_scoped else ""
             try:
@@ -747,8 +712,6 @@ class RuntimeAdapter:
                     workspace_id=workspace_id, model_resolution=model_resolution,
                     runtime_generation=runtime_generation, root_run_id=process_root_id)
             except BaseException:
-                if journal:
-                    journal.close()
                 raise
             record = RuntimeSession(
                 session_id=session_id,
@@ -759,27 +722,16 @@ class RuntimeAdapter:
                 model_resolution=model_resolution,
                 pending_conversation_context=context,
                 pending_conversation_recovery=recovery,
-                sequence=initial_sequence,
-                journal=journal,
-                history=[] if journal is None else list(journal.state["events"]),
+                sequence=0,
+                history=[],
             )
             self._install_generation(
                 record, native_session_id=runtime_session_id,
-                executor_epoch=self._executor_epoch(journal),
+                executor_epoch=record.executor_epoch,
                 process_root_id=process_root_id, generation_id=runtime_generation,
             )
             record.harness = harness
-            record.continuity = (
-                continuity.REHYDRATED
-                if requested_sequence or (journal is not None and journal.state["sequence"])
-                else continuity.FRESH
-            )
-            for event in record.history:
-                terminal = project_lifecycle_event(event, session_id, trace_id)
-                if terminal and terminal["outcome"] != "active":
-                    record.terminal_receipts.setdefault(terminal["root_run_id"], lifecycle_receipt(terminal))
-                    if journal and terminal["root_run_id"] not in journal.state["terminal_acks"]:
-                        record.pending_terminal_receipts.add(terminal["root_run_id"])
+            record.continuity = continuity.FRESH
             self._sessions[session_id] = record
 
         try:
@@ -796,11 +748,7 @@ class RuntimeAdapter:
             with self._lock:
                 if self._sessions.get(session_id) is record:
                     del self._sessions[session_id]
-            try:
-                self._compatibility.close(harness)
-            finally:
-                if journal:
-                    journal.close()
+            self._compatibility.close(harness)
             raise
 
     def submit_prompt(
@@ -825,13 +773,6 @@ class RuntimeAdapter:
             if idempotency_key is not None:
                 if not 8 <= len(idempotency_key) <= 128:
                     raise ValueError("prompt idempotency key has invalid length")
-                if record.journal is not None:
-                    try:
-                        durable = record.journal.receipt(idempotency_key, hashlib.sha256(identity_content.encode()).hexdigest())
-                    except ValueError as exc:
-                        raise SessionConflict("prompt receipt identity conflicts") from exc
-                    if durable["state"] == "accepted":
-                        return durable["run_id"]
                 existing = record.prompt_idempotency.get(idempotency_key)
                 if existing is not None:
                     existing_content, existing_run_id = existing
@@ -967,65 +908,15 @@ class RuntimeAdapter:
             record = self._get(session_id)
         except KeyError:
             validate_identifier(session_id, field="session_id")
-            try:
-                state = LifecycleJournal.read(self._session_root / "byq-lifecycle-evidence" / f"{session_id}.json")
-            except FileNotFoundError:
-                return {"schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
-            if state["context"]["session_id"] != session_id:
-                raise SessionConflict("durable prompt session identity conflicts")
-            try:
-                receipt = LifecycleJournal.lookup(state, idempotency_key, content_sha256)
-            except ValueError as exc:
-                raise SessionConflict("prompt receipt identity conflicts") from exc
-            return self._reconcile_lost_receipt(session_id, receipt, durable_state=state)
+            return {"schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
         with record.lock:
-            if record.journal:
-                try:
-                    receipt = record.journal.receipt(idempotency_key, content_sha256)
-                except ValueError as exc:
-                    raise SessionConflict("prompt receipt identity conflicts") from exc
-            else:
-                existing = record.prompt_idempotency.get(idempotency_key)
-                if existing is None:
-                    return {"schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
-                content, run_id = existing
-                if hashlib.sha256(content.encode("utf-8")).hexdigest() != content_sha256:
-                    raise SessionConflict("prompt receipt identity conflicts with original content")
-                receipt = {"schema_version": "prompt-receipt.v1", "state": "accepted", "run_id": run_id}
-            return self._reconcile_lost_receipt(session_id, receipt)
-
-    def _reconcile_lost_receipt(
-        self, session_id: str, receipt: object, *, durable_state: dict | None = None,
-    ) -> dict[str, object]:
-        """Never report a durably lost run's original prompt as ``accepted``.
-
-        ADR-0084: the Gateway reconciles the original prompt before deciding on
-        recovery. A prompt receipt alone proves only that the run *started*; when
-        the fenced containment ledger proves that exact run was lost, the original
-        prompt is NOT a live/complete accepted result, so this returns
-        ``outcome_unknown`` and the Gateway reaches the existing recovery seam
-        (Backend-minted carrier + Adapter admission) instead of short-circuiting.
-        A normal completion has no containment record and is unchanged. When the
-        containment evidence cannot be read or is conflicting, the authority that
-        would prove the run is alive is unavailable, so this fails closed with
-        ``outcome_unknown`` rather than reporting a possibly-lost run as ``accepted``.
-        """
-
-        if not isinstance(receipt, dict) or receipt.get("state") != "accepted":
-            return receipt
-        run_id = receipt.get("run_id")
-        if not isinstance(run_id, str):
-            return receipt
-        open_root = durable_state.get("open_root") if isinstance(durable_state, dict) else None
-        if isinstance(open_root, dict) and open_root.get("root_run_id") == run_id:
-            return {"schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
-        try:
-            records = containment.read(self._session_root / "byq-lifecycle-evidence", session_id)
-        except (OSError, ValueError, containment.ContainmentConflict):
-            return {"schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
-        if any(record.get("interrupted_run_id") == run_id for record in records):
-            return {"schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
-        return receipt
+            existing = record.prompt_idempotency.get(idempotency_key)
+            if existing is None:
+                return {"schema_version": "prompt-receipt.v1", "state": "outcome_unknown"}
+            content, run_id = existing
+            if hashlib.sha256(content.encode("utf-8")).hexdigest() != content_sha256:
+                raise SessionConflict("prompt receipt identity conflicts with original content")
+            return {"schema_version": "prompt-receipt.v1", "state": "accepted", "run_id": run_id}
 
     def _run_prompt(
         self, record: RuntimeSession, run: ActiveRun, content: str,
@@ -1188,57 +1079,32 @@ class RuntimeAdapter:
                 record.process_closed = True
         return self.describe_session(record)
 
-    def recover_evidence(self, context: dict, after_sequence: int = 0) -> dict:
-        """Replays BYQ evidence only. Never constructs a harness or runs a model."""
-        LifecycleJournal._context(context)
-        if type(after_sequence) is not int or after_sequence < 0:
-            raise ValueError("invalid recovery cursor")
-        with self._lock:
-            if context["session_id"] in self._sessions:
-                record = self._sessions[context["session_id"]]
-                if (record.trace_id, record.owner_principal, record.workspace_id) != (
-                        context["trace_id"], context["owner"], context["workspace_id"]):
-                    raise ValueError("recovery identity mismatch")
-                return {"state": "owned", "events": [], "more": False}
-            try:
-                journal = LifecycleJournal.claim(self._session_root / "byq-lifecycle-evidence", context)
-            except JournalBusy:
-                return {"state": "owned", "events": [], "more": False}
-            except FileNotFoundError:
-                return {"state": "unknown", "events": [], "more": False}
-            try:
-                events = [e for e in journal.state["events"] if e["sequence"] > after_sequence]
-                return {"state": "recovered", "events": events[:256], "more": len(events) > 256}
-            finally:
-                journal.close()
-
     def domain_call_evidence(self, context: dict, after_sequence: int = 0) -> dict:
         """Private bounded control evidence, never a public trace/replay source."""
-        LifecycleJournal._context(context)
+        self._validate_evidence_context(context)
         if type(after_sequence) is not int or not 0 <= after_sequence < 2**63:
             raise ValueError("invalid private evidence cursor")
-
-        def page(state):
-            if state["context"] != context:
-                raise ValueError("private evidence context mismatch")
-            rows = state["calls"][after_sequence:after_sequence + 256]
-            return {"schema_version": "domain-call-page.v1", "events": [dict(row) for row in rows],
-                    "more": len(state["calls"]) > after_sequence + len(rows), "idle": state["open_root"] is None}
-
         try:
             record = self._get(context["session_id"])
-        except KeyError:
-            journal = LifecycleJournal.claim(self._session_root / "byq-lifecycle-evidence", context)
-            try:
-                return page(journal.state)
-            finally:
-                journal.close()
-        with record.lock:
-            if (record.trace_id, record.owner_principal, record.workspace_id) != (
-                    context["trace_id"], context["owner"], context["workspace_id"]):
+        except KeyError as exc:
+            key = (context["session_id"], self.boot_id)
+            with self._lock:
+                released = self._released_domain_sessions.get(key)
+                if released is not None:
+                    self._released_domain_sessions.move_to_end(key)
+            if released is None or released["boot_id"] != self.boot_id:
+                raise ValueError("private evidence session is not live") from exc
+            expected_context = (
+                context["session_id"], context["trace_id"], context["owner"], context["workspace_id"])
+            if released["context"] != expected_context:
                 raise ValueError("private evidence context mismatch")
-            if record.journal is None:
-                raise ValueError("private evidence requires durable owned context")
+            if after_sequence != released["drained_sequence"]:
+                raise ValueError("private evidence cursor is not the final drained sequence")
+            return {"schema_version": "domain-call-page.v1", "events": [], "more": False, "idle": True}
+        with record.lock:
+            if self._ack_context(record) != (context["session_id"], context["trace_id"],
+                                             context["owner"], context["workspace_id"]):
+                raise ValueError("private evidence context mismatch")
             rows = record.domain_call_evidence[after_sequence:after_sequence + 256]
             more = len(record.domain_call_evidence) > after_sequence + len(rows)
             idle = record.active_run is None
@@ -1248,37 +1114,17 @@ class RuntimeAdapter:
 
     def acknowledge_domain_call_evidence(self, context: dict, receipt: object) -> dict:
         """Acknowledge one exact private domain-call row after Backend acceptance."""
-        LifecycleJournal._context(context)
+        self._validate_evidence_context(context)
         if not isinstance(receipt, dict) or set(receipt) != {
                 "schema_version", "sequence", "root_run_id", "event_sha256"}:
             raise SessionConflict("private evidence receipt shape mismatch")
+        ack_context = (context["session_id"], context["trace_id"], context["owner"], context["workspace_id"])
         try:
             record = self._get(context["session_id"])
         except KeyError:
-            # A successful ACK may have reaped a released session before its
-            # response reached Backend. The immutable journal row is enough to
-            # validate that exact retry without reacquiring or changing the
-            # recovery lease.
-            try:
-                state = LifecycleJournal.read(
-                    self._session_root / "byq-lifecycle-evidence" / f"{context['session_id']}.json")
-            except FileNotFoundError as exc:
-                raise SessionConflict("private evidence acknowledgement has no durable row") from exc
-            if state["context"] != context:
-                raise SessionConflict("private evidence acknowledgement context mismatch")
-            sequence = receipt.get("sequence")
-            if type(sequence) is not int or not 1 <= sequence <= len(state["calls"]):
-                raise SessionConflict("private evidence receipt sequence is unknown")
-            try:
-                expected = call_evidence_receipt(state["calls"][sequence - 1])
-            except (TypeError, ValueError) as exc:
-                raise SessionConflict("private evidence row is invalid") from exc
-            if expected != receipt:
-                raise SessionConflict("private evidence receipt does not match the observed row")
-            return {"receipt": dict(expected)}
+            return self._retry_ack("domain-call", context["session_id"], receipt, ack_context)
         with record.lock:
-            if (record.trace_id, record.owner_principal, record.workspace_id) != (
-                    context["trace_id"], context["owner"], context["workspace_id"]):
+            if self._ack_context(record) != ack_context:
                 raise SessionConflict("private evidence acknowledgement context mismatch")
             sequence = receipt.get("sequence")
             if type(sequence) is not int or not 1 <= sequence <= record.domain_call_sequence:
@@ -1297,6 +1143,7 @@ class RuntimeAdapter:
             if sequence != record.domain_call_drained_sequence + 1:
                 raise SessionConflict("private evidence receipts must be acknowledged in sequence")
             record.domain_call_drained_sequence = sequence
+            self._remember_ack("domain-call", record, expected)
             acknowledged = {"receipt": dict(expected)}
         self._maybe_reap_released(record)
         return acknowledged
@@ -1305,38 +1152,22 @@ class RuntimeAdapter:
         """Private Gateway acknowledgement of an exact Backend terminal receipt.
 
         This opens no domain capability: it permits the next root only after
-        the previous BYQ root has been durably closed, including across restart.
+        the previous BYQ root has been closed by Backend. Its retry receipt is
+        bounded to the same Adapter boot.
         """
         try:
             record = self._get(session_id)
         except KeyError:
             validate_identifier(session_id, field="session_id")
-            root_path = self._session_root / "byq-lifecycle-evidence"
-            try:
-                state = LifecycleJournal.read(root_path / f"{session_id}.json")
-            except FileNotFoundError as exc:
-                raise KeyError(f"no durable terminal evidence for {session_id}") from exc
-            if state["context"]["session_id"] != session_id:
-                raise SessionConflict("terminal evidence session identity conflicts")
-            try:
-                journal = LifecycleJournal.claim(root_path, state["context"])
-            except JournalBusy as exc:
-                raise SessionConflict("terminal evidence is still owned by another executor") from exc
-            try:
-                journal.acknowledge_terminal(receipt)
-            except ValueError as exc:
-                raise SessionConflict("terminal receipt does not match durable evidence") from exc
-            finally:
-                journal.close()
-            return {"receipt": dict(receipt)}
+            return self._retry_ack("terminal", session_id, receipt)
         with record.lock:
             root = receipt.get("root_run_id") if isinstance(receipt, dict) else None
             if (not isinstance(root, str) or type(receipt.get("sequence")) is not int
                     or record.terminal_receipts.get(root) != receipt):
                 raise SessionConflict("terminal receipt does not match this runtime turn")
-            if record.journal is not None:
-                record.journal.acknowledge_terminal(receipt)
+            evidence = self._terminal_evidence_for(record, root)
             record.pending_terminal_receipts.discard(root)
+            self._remember_ack("terminal", record, receipt, terminal_evidence=evidence)
             acknowledged = {"receipt": dict(receipt)}
         self._maybe_reap_released(record)
         return acknowledged
@@ -1353,6 +1184,7 @@ class RuntimeAdapter:
         with self._lock:
             record = self._sessions.get(session_id)
             records = list(self._sessions.items())
+            tombstones = list(self._ack_tombstones.items())
         for other_session_id, other in records:
             if other_session_id == session_id:
                 continue
@@ -1361,31 +1193,57 @@ class RuntimeAdapter:
                 if root_run_id in other.terminal_receipts or active_root == root_run_id:
                     raise SessionConflict("terminal root belongs to another session")
         if record is None:
+            matching: dict[str, Any] | None = None
+            matching_key: tuple[str, str, str, str, int] | None = None
+            for key, entry in tombstones:
+                kind, candidate_session, candidate_boot, candidate_root, _sequence = key
+                if (kind != "terminal" or candidate_boot != boot_id or candidate_root != root_run_id
+                        or entry.get("terminal_evidence") is None):
+                    continue
+                if candidate_session != session_id:
+                    raise SessionConflict("terminal root belongs to another session")
+                matching, matching_key = entry, key
+            if matching is not None and matching_key is not None:
+                evidence = matching["terminal_evidence"]
+                receipt = matching["receipt"]
+                if (matching["boot_id"] != boot_id or evidence["session_id"] != session_id
+                        or evidence["boot_id"] != boot_id or evidence["root_run_id"] != root_run_id
+                        or evidence["receipt"] != receipt or receipt.get("root_run_id") != root_run_id
+                        or receipt.get("sequence") != evidence["sequence"]
+                        or matching_key[-1] != evidence["sequence"]):
+                    raise SessionConflict("stored terminal evidence identity mismatch")
+                with self._lock:
+                    self._ack_tombstones.move_to_end(matching_key)
+                return {**evidence, "receipt": dict(receipt)}
             raise KeyError(f"terminal evidence unavailable for {session_id}")
         with record.lock:
             if record.boot_id != boot_id:
                 raise SessionConflict("terminal evidence belongs to another Adapter boot")
-            receipt = record.terminal_receipts.get(root_run_id)
-            if receipt is None:
-                raise KeyError(f"terminal evidence unavailable for {root_run_id}")
-            terminal = None
-            for event in reversed(record.history):
-                projected = project_lifecycle_event(event, record.session_id, record.trace_id)
-                if (projected is not None and projected["root_run_id"] == root_run_id
-                        and projected["outcome"] != "active"):
-                    terminal = projected
-                    break
-            if terminal is None:
-                raise SessionConflict("stored terminal receipt has no matching terminal event")
-            return {
-                "schema_version": "byq-runtime-terminal-evidence.v1",
-                "session_id": record.session_id,
-                "boot_id": record.boot_id,
-                "root_run_id": root_run_id,
-                "sequence": terminal["sequence"],
-                "outcome": terminal["outcome"],
-                "receipt": dict(receipt),
-            }
+            return self._terminal_evidence_for(record, root_run_id)
+
+    @staticmethod
+    def _terminal_evidence_for(record: RuntimeSession, root_run_id: str) -> dict[str, Any]:
+        receipt = record.terminal_receipts.get(root_run_id)
+        if receipt is None:
+            raise KeyError(root_run_id)
+        terminal = None
+        for event in reversed(record.history):
+            projected = project_lifecycle_event(event, record.session_id, record.trace_id)
+            if (projected is not None and projected["root_run_id"] == root_run_id
+                    and projected["outcome"] != "active"):
+                terminal = projected
+                break
+        if terminal is None or lifecycle_receipt(terminal) != receipt:
+            raise SessionConflict("stored terminal receipt has no matching terminal event")
+        return {
+            "schema_version": "byq-runtime-terminal-evidence.v1",
+            "session_id": record.session_id,
+            "boot_id": record.boot_id,
+            "root_run_id": root_run_id,
+            "sequence": terminal["sequence"],
+            "outcome": terminal["outcome"],
+            "receipt": dict(receipt),
+        }
 
     def resume_session(
         self, session_id: str, *, conversation_context: object = None,
@@ -1529,9 +1387,16 @@ class RuntimeAdapter:
         with self._lock:
             if self._sessions.get(record.session_id) is not record:
                 return False
+            key = (record.session_id, record.boot_id)
+            self._released_domain_sessions[key] = {
+                "boot_id": record.boot_id,
+                "context": self._ack_context(record),
+                "drained_sequence": record.domain_call_drained_sequence,
+            }
+            self._released_domain_sessions.move_to_end(key)
+            while len(self._released_domain_sessions) > _ACK_TOMBSTONE_LIMIT:
+                self._released_domain_sessions.popitem(last=False)
             del self._sessions[record.session_id]
-        if record.journal is not None:
-            record.journal.close()
         return True
 
     def subscribe(self, session_id: str, *, replay: bool = False) -> queue.Queue[WorkflowTraceEvent | None]:
@@ -1612,8 +1477,6 @@ class RuntimeAdapter:
                 except Exception as exc:
                     failure = exc
                 finally:
-                    if record.journal:
-                        record.journal.close()
                     with record.lock:
                         for subscriber in record.subscribers:
                             subscriber.put(None)
@@ -1627,36 +1490,65 @@ class RuntimeAdapter:
             return record
         raise KeyError(f"unknown BYQ session: {session_id}")
 
-    def containment_summary(self, session_id: str) -> dict[str, Any]:
-        """Bounded, framework-neutral containment projection for the Gateway.
+    @staticmethod
+    def _ack_key(kind: str, session_id: str, boot_id: str, receipt: dict) -> tuple[str, str, str, str, int]:
+        root = receipt.get("root_run_id")
+        sequence = receipt.get("sequence")
+        if not isinstance(root, str) or type(sequence) is not int:
+            raise SessionConflict("acknowledgement receipt identity is invalid")
+        return kind, session_id, boot_id, root, sequence
 
-        The projection exposes only the durable loss identity and cause needed
-        for Gateway containment classification. It does not authorize a new
-        prompt or a replacement Agent run.
-        """
+    @staticmethod
+    def _ack_context(record: RuntimeSession) -> tuple[str, str, str | None, str | None]:
+        return record.session_id, record.trace_id, record.owner_principal, record.workspace_id
 
-        validate_identifier(session_id, field="session_id")
-        evidence_root = self._session_root / "byq-lifecycle-evidence"
-        records = containment.read(evidence_root, session_id)
-        summary: dict[str, Any] = {
-            "schema_version": "session-containment-summary.v1",
-            "session_id": session_id, "contained": bool(records),
-            "attempts": len(records), "latest": None,
+    @staticmethod
+    def _validate_evidence_context(context: object) -> dict[str, str]:
+        if not isinstance(context, dict) or set(context) != {"session_id", "trace_id", "owner", "workspace_id"}:
+            raise ValueError("invalid private evidence context")
+        for name in ("session_id", "trace_id"):
+            validate_identifier(context[name], field=name)
+        for name in ("owner", "workspace_id"):
+            value = context[name]
+            if not isinstance(value, str) or not value or value != value.strip() or len(value) > 128:
+                raise ValueError("invalid private evidence context")
+        return context
+
+    def _remember_ack(
+        self, kind: str, record: RuntimeSession, receipt: dict,
+        *, terminal_evidence: dict[str, Any] | None = None,
+    ) -> None:
+        key = self._ack_key(kind, record.session_id, record.boot_id, receipt)
+        entry = {
+            "boot_id": record.boot_id,
+            "context": self._ack_context(record),
+            "receipt": dict(receipt),
         }
-        if records:
-            latest = records[-1]
-            summary["latest"] = {
-                # Framework-neutral trace/run binding: the Gateway may only
-                # project `interrupted` when this matches the exact session/trace
-                # and terminal run. No DSH private identity is exposed.
-                "trace_id": latest["trace_id"],
-                "loss_cause": latest["loss_cause"],
-                "interrupted_run_id": latest["interrupted_run_id"],
-                "interrupted_generation": latest["interrupted_generation"],
-                "executor_epoch": latest["executor_epoch"],
-                "attempt": latest["attempt"],
+        if terminal_evidence is not None:
+            entry["terminal_evidence"] = {
+                **terminal_evidence,
+                "receipt": dict(terminal_evidence["receipt"]),
             }
-        return summary
+        with self._lock:
+            self._ack_tombstones[key] = entry
+            self._ack_tombstones.move_to_end(key)
+            while len(self._ack_tombstones) > _ACK_TOMBSTONE_LIMIT:
+                self._ack_tombstones.popitem(last=False)
+
+    def _retry_ack(self, kind: str, session_id: str, receipt: object,
+                   context: tuple[str, str, str | None, str | None] | None = None) -> dict:
+        if not isinstance(receipt, dict):
+            raise SessionConflict("acknowledgement receipt is invalid")
+        key = self._ack_key(kind, session_id, self.boot_id, receipt)
+        with self._lock:
+            entry = self._ack_tombstones.get(key)
+            if entry is None:
+                raise SessionConflict("acknowledgement is not owned by this Adapter boot")
+            if (entry["boot_id"] != self.boot_id or entry["receipt"] != receipt
+                    or (context is not None and entry["context"] != context)):
+                raise SessionConflict("acknowledgement receipt context mismatch")
+            self._ack_tombstones.move_to_end(key)
+            return {"receipt": dict(entry["receipt"])}
 
     def continuation_qualified(self, record: RuntimeSession) -> bool:
         try:
@@ -1685,64 +1577,21 @@ class RuntimeAdapter:
                 and event['payload'].get('run_id') == record.budget_run_id for event in record.history)
             receipt = {**receipt, 'run_id': record.budget_run_id,
                 'outcome': 'completed' if completed else 'needs_attention'}
-            if record.journal:
-                persist_settlement(self._session_root, record.journal.state['context'], receipt)
             return receipt
         except (OSError, ValueError, TypeError, KeyError):
             return unknown
 
-    def _recover_guard_charge(self, reservation_id: str) -> dict | None:
-        """Exact durable guard charge for a lost reservation, or ``None``.
-
-        A lost run never wrote a terminal settlement, but the Adapter's own
-        per-call guard journal survives on disk. Reading it is authoritative BYQ
-        evidence; an unreadable/ambiguous journal returns ``None`` so the caller
-        keeps the liability unknown (paused) rather than treating it as zero.
-        """
-
-        if re.fullmatch(r'continuation_[0-9a-f]{32}', reservation_id) is None:
-            return None
-        try:
-            candidates = sorted(self._session_root.glob('*/continuation-budget.jsonl'))[:256]
-        except OSError:
-            return None
-        for journal in candidates:
-            try:
-                with journal.open('r', encoding='utf-8') as stream:
-                    first = json.loads(stream.readline())
-            except (OSError, ValueError, json.JSONDecodeError):
-                continue
-            if (not isinstance(first, dict) or first.get('reservation_id') != reservation_id
-                    or type(first.get('token_limit')) is not int):
-                continue
-            try:
-                receipt = read_guard(journal, {'reservation_id': reservation_id,
-                    'token_limit': first['token_limit']}, terminal=False)
-            except (OSError, ValueError, TypeError, KeyError):
-                return None
-            return {'reservation_id': reservation_id, 'status': 'accepted',
-                    'charged_tokens': receipt['charged_tokens'], 'call_count': receipt['call_count']}
-        return None
-
     def continuation_receipt(self, session_id: str, reservation_id: str) -> dict:
         validate_identifier(session_id, field='session_id')
-        def recover():
-            try:
-                state = LifecycleJournal.read(self._session_root / 'byq-lifecycle-evidence' / f'{session_id}.json')
-                return recovered_settlement(self._session_root, session_id, reservation_id, state)
-            except (OSError, ValueError, TypeError, KeyError):
-                guard = self._recover_guard_charge(reservation_id)
-                if guard is not None:
-                    return guard
-                return {'reservation_id': reservation_id, 'status': 'outcome_unknown'}
         try:
             record = self._get(session_id)
         except KeyError:
-            return recover()
+            return {'reservation_id': reservation_id, 'status': 'outcome_unknown'}
         with record.lock:
             if record.continuation_budget and record.continuation_budget['reservation_id'] == reservation_id:
                 return self._budget_receipt(record)
-            return record.budget_receipts.get(reservation_id) or recover()
+            return record.budget_receipts.get(reservation_id) or {
+                'reservation_id': reservation_id, 'status': 'outcome_unknown'}
 
     def _build_harness(
         self,
@@ -1945,8 +1794,6 @@ class RuntimeAdapter:
                             "root_run_id": run.run_id, "generation": record.runtime_generation,
                             "call_id": observation.call_id, **evidence}
                         validate_call_evidence(observed_call)
-                        if record.journal is not None:
-                            record.journal.observe_call(observed_call)
                         record.domain_call_evidence.append(observed_call)
                         record.domain_call_sequence = observed_call["sequence"]
                 if (runtime_activity and observation.registration_key and record.owner_principal
@@ -2171,14 +2018,6 @@ class RuntimeAdapter:
 
         record.sequence += 1
         ordered_event = {**event, "sequence": record.sequence}
-        if record.journal:
-            prompt = None
-            if event["kind"] == "session.started":
-                for key, (content, root) in record.prompt_idempotency.items():
-                    if root == event["payload"]["run_id"]:
-                        prompt = (key, hashlib.sha256(content.encode()).hexdigest())
-                        break
-            record.journal.observe(ordered_event, generation=record.runtime_generation, prompt=prompt)
         if record.workspace_id:
             terminal = project_lifecycle_event(ordered_event, record.session_id, record.trace_id)
             if terminal and terminal["outcome"] != "active":

@@ -237,15 +237,9 @@ def _continuation_adapter_get(path: str, params=None) -> dict:
 
 
 def _adapter_containment(runtime_session_id: str) -> dict | None:
-    """Fetch the bounded adapter containment summary; unavailable is not fatal."""
+    """Adapter process loss has no durable containment evidence to fetch."""
 
-    if not runtime_session_id:
-        return None
-    try:
-        return _continuation_adapter_get(
-            f"/internal/runtime/sessions/{runtime_session_id}/containment")
-    except (httpx.HTTPError, ValueError):
-        return None
+    return None
 
 
 def _session_containment_projection(
@@ -1652,6 +1646,41 @@ def create_product_session(request: Request) -> dict[str, object]:
     }
 
 
+def _verified_public_runtime_boot() -> str | None:
+    """Read current process and Backend authority before claiming Agent liveness."""
+    cached = _runtime_authority_snapshot()
+    if cached.get("ready") is not True or not _valid_runtime_boot_id(cached.get("boot_id")):
+        return None
+    try:
+        adapter_boot = _adapter_authority()["boot_id"]
+        backend = _backend_runtime_authority_request("GET", "/internal/runtime-authority/current")
+        _validate_runtime_authority_current(backend, adapter_boot, cached.get("authority_epoch"))
+    except (RuntimeError, KeyError, TypeError, ValueError):
+        return None
+    return adapter_boot if adapter_boot == cached["boot_id"] else None
+
+
+def _public_conversation_status(conversation: dict, principal: Principal,
+                                verified_boot: str | None) -> str:
+    """Only a verified current Adapter binding can support an active claim."""
+    stored = conversation.get("status")
+    if stored != "active":
+        return str(stored or "unknown")
+    live = product_sessions.find_owned(str(conversation.get("conversation_id") or ""), principal)
+    if (live is not None and not live.released
+            and live.session_id == conversation.get("runtime_session_id")
+            and live.trace_id == conversation.get("trace_id")
+            and _valid_runtime_boot_id(live.boot_id)
+            and verified_boot is not None):
+        if live.boot_id == verified_boot:
+            return "active"
+        # The verified Backend boot rotation atomically revoked every active
+        # root from the old boot. This classifies the Agent session only; any
+        # in-flight external action retains its own unknown business outcome.
+        return "interrupted"
+    return "unknown"
+
+
 @app.get("/v1/agent/sessions")
 def list_product_sessions(
     request: Request,
@@ -1666,12 +1695,13 @@ def list_product_sessions(
         params={"status": status, "search": search, "limit": limit, "offset": offset},
     )
     conversations = catalog.get("conversations", [])
+    verified_boot = _verified_public_runtime_boot()
     return {"sessions": [
         {
             "session_id": item["conversation_id"],
             "trace_id": item["trace_id"],
             "title": item["title"],
-            "status": item["status"],
+            "status": _public_conversation_status(item, principal, verified_boot),
             "pinned": item["pinned"],
             "message_count": item["message_count"],
             "last_message_preview": item["last_message_preview"],
@@ -1689,6 +1719,7 @@ def get_product_session(session_id: str, request: Request) -> dict[str, object]:
     conversation = body.get("conversation")
     if not isinstance(conversation, dict):
         raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
+    verified_boot = _verified_public_runtime_boot() if conversation.get("status") == "active" else None
     runtime_session_id = str(conversation.get("runtime_session_id", ""))
     messages = body.get("messages", [])
     persisted_answer_sequences = {
@@ -1705,7 +1736,7 @@ def get_product_session(session_id: str, request: Request) -> dict[str, object]:
         "session_id": session_id,
         "trace_id": conversation.get("trace_id"),
         "title": conversation.get("title"),
-        "status": conversation.get("status"),
+        "status": _public_conversation_status(conversation, principal, verified_boot),
         "pinned": conversation.get("pinned"),
         "message_count": conversation.get("message_count"),
         "last_message_preview": conversation.get("last_message_preview"),
@@ -1722,6 +1753,10 @@ def get_product_session(session_id: str, request: Request) -> dict[str, object]:
         conversation=conversation,
         events=trace_store.read(runtime_session_id),
     )
+    if public["status"] == "unknown" and containment["status"] == "active":
+        containment = {**containment, "status": "unknown"}
+    elif public["status"] == "interrupted" and containment["status"] == "active":
+        containment = {**containment, "status": "interrupted", "loss_cause": "runtime-loss"}
     return {"conversation": public, "messages": messages, "events": events,
             "containment": containment}
 
