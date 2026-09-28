@@ -1,0 +1,149 @@
+# Disposable, pinned-image Phase 10 qualification. The runner supplies every
+# credential and a unique Compose project. No service has a host port.
+services:
+  postgres:
+    image: postgres:16-alpine
+    pull_policy: never
+    restart: "no"
+    environment:
+      POSTGRES_DB: byq_domain
+      POSTGRES_USER: byq_app
+      POSTGRES_PASSWORD: ${BYQ_P10_POSTGRES_PASSWORD:?runner required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../../infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    networks: [byq_product]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  backend:
+    image: ${BYQ_P10_BACKEND_IMAGE:?runner required}
+    pull_policy: never
+    restart: "no"
+    environment:
+      BYQ_DATABASE_URL: postgresql+psycopg://byq_app:${BYQ_P10_POSTGRES_PASSWORD:?runner required}@postgres:5432/byq_domain
+      BYQ_RUNTIME_AUTHORITY_TOKEN: ${BYQ_P10_RUNTIME_AUTHORITY_TOKEN:?runner required}
+      BYQ_BOOTSTRAP_ADMIN_USERNAME: ${BYQ_P10_ADMIN_USERNAME:?runner required}
+      BYQ_BOOTSTRAP_ADMIN_PASSWORD: ${BYQ_P10_ADMIN_PASSWORD:?runner required}
+      BYQ_CREDENTIAL_RESOLVER_TOKEN: ${BYQ_P10_CREDENTIAL_RESOLVER_TOKEN:?runner required}
+      BYQ_PLUGIN_DEPLOYMENT_TOKEN: ${BYQ_P10_PLUGIN_DEPLOYMENT_TOKEN:?runner required}
+    volumes:
+      - domain_state:/var/lib/byq/domain
+    networks: [byq_product]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=2).read()
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  mcp:
+    image: ${BYQ_P10_MCP_IMAGE:?runner required}
+    pull_policy: never
+    restart: "no"
+    environment:
+      BYQ_BACKEND_URL: http://backend:8000
+      BYQ_MCP_TOKEN: ${BYQ_P10_MCP_TOKEN:?runner required}
+    networks: [byq_product]
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8300/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  runtime-adapter:
+    image: ${BYQ_P10_ADAPTER_IMAGE:?runner required}
+    pull_policy: never
+    restart: "no"
+    command: [python3, /probe/phase10_two_turn_probe.py]
+    environment:
+      BYQ_MCP_TOKEN: ${BYQ_P10_MCP_TOKEN:?runner required}
+      BYQ_MCP_URL: http://mcp:8300/mcp/v1
+      BYQ_BACKEND_URL: http://backend:8000
+      BYQ_CREDENTIAL_RESOLVER_TOKEN: ${BYQ_P10_CREDENTIAL_RESOLVER_TOKEN:?runner required}
+      BYQ_DSH_PROVIDER: deepseek-official
+      BYQ_DSH_MODEL: deepseek-v4-flash
+      BYQ_DSH_COMPATIBILITY_RELEASE: dsh-0.1.5rc1
+      BYQ_DSH_RUN_TIMEOUT_SECONDS: "120"
+      BYQ_DSH_PROGRESS_CHECK_INTERVAL_SECONDS: "600"
+      BYQ_DSH_NO_PROGRESS_TIMEOUT_SECONDS: "90"
+      BYQ_DSH_SUBAGENT_TIMEOUT_SECONDS: "90"
+      BYQ_DSH_COMPOSITION: /opt/byq/profiles/byq-product.patch.yml
+      DSH_SESSION_ROOT: /var/lib/byq/dsh-sessions/dsh-0.1.5rc1
+      BYQ_PHASE10_TWO_TURN_PROBE: "1"
+      BYQ_PHASE10_NONCE: ${BYQ_P10_NONCE:?runner required}
+      BYQ_PHASE10_OBSERVER_TOKEN: ${BYQ_P10_OBSERVER_TOKEN:?runner required}
+    volumes:
+      - dsh_sessions:/var/lib/byq/dsh-sessions
+      - ../../services/runtime-adapter/app:/app/app:ro
+      - ../../packages/contracts:/app/packages/contracts:ro
+      - ../../packages/operations:/app/packages/operations:ro
+      - ../../services/runtime-adapter/tests/phase10_two_turn_probe.py:/probe/phase10_two_turn_probe.py:ro
+    networks: [byq_product]
+    depends_on:
+      mcp:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8400/readyz', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  gateway:
+    image: ${BYQ_P10_GATEWAY_IMAGE:?runner required}
+    pull_policy: never
+    restart: "no"
+    environment:
+      BYQ_PRODUCT_TOKEN: ${BYQ_P10_PRODUCT_TOKEN:?runner required}
+      BYQ_PRODUCT_PRINCIPAL: phase10-bootstrap-only
+      BYQ_BACKEND_URL: http://backend:8000
+      BYQ_RUNTIME_ADAPTER_URL: http://runtime-adapter:8400
+      BYQ_RUNTIME_AUTHORITY_TOKEN: ${BYQ_P10_RUNTIME_AUTHORITY_TOKEN:?runner required}
+      BYQ_WORKFLOW_TRACE_ROOT: /var/lib/byq/workflow-traces
+    volumes:
+      - workflow_traces:/var/lib/byq/workflow-traces
+      - ../../services/gateway/app:/app/app:ro
+      - ../../packages/contracts:/app/packages/contracts:ro
+      - ../../packages/operations:/app/packages/operations:ro
+    networks: [byq_product]
+    depends_on:
+      runtime-adapter:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+      mcp:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/readyz', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+networks:
+  byq_product:
+    driver: bridge
+    internal: true
+
+volumes:
+  postgres_data:
+  domain_state:
+  dsh_sessions:
+  workflow_traces:

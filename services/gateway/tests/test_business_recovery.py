@@ -67,7 +67,7 @@ def _fixture(monkeypatch, *, receipt_status='accepted', settled_status='outcome_
     monkeypatch.setattr(main.product_sessions, 'idle_release_generation', lambda session: None)
     monkeypatch.setattr(main.product_sessions, 'hold_continuation', lambda *args: True)
     monkeypatch.setattr(main.product_sessions, 'finish_continuation', lambda *args: None)
-    monkeypatch.setattr(main, '_runtime_recovery_payload', lambda session: {'conversation_context': []})
+    monkeypatch.setattr(main, '_runtime_conversation_payload', lambda session: {'conversation_context': []})
     monkeypatch.setattr(main, '_adapter_post', lambda path, payload, timeout: prompts.append(payload) or {
         'accepted': True, 'run_id': 'e' * 32})
     return context, intent, writes, prompts, adapter_reads

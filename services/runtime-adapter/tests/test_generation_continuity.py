@@ -9,7 +9,7 @@ from packages.contracts.runtime_continuity import (
     FRESH, INTERRUPTED, REATTACHED, REHYDRATED, STATUSES, valid_continuity,
 )
 
-from app.runtime import RuntimeAdapter, SessionConflict, SessionStatus
+from app.runtime import RuntimeAdapter, SESSION_LOST_DETAIL, SessionConflict, SessionStatus
 from .test_process_cleanup import FakeHarness, adapter, wait_for_status  # noqa: F401
 from .test_session_rehydration import _simulate_process_death
 
@@ -85,22 +85,58 @@ def test_adapter_restart_has_no_old_session_or_prompt_receipt(adapter: RuntimeAd
         adapter.close()
 
 
-def test_resume_after_hard_cancel_reports_interrupted_with_new_generation(
+def test_resume_after_hard_cancel_reports_lost_without_new_generation(
     adapter: RuntimeAdapter,
 ) -> None:
-    adapter.create_session("r2-cancel", "r2-cancel-trace", "alice", "workspace_alice")
+    created = adapter.create_session("r2-cancel", "r2-cancel-trace", "alice", "workspace_alice")
     first_generation = _generation_id(adapter, "r2-cancel")
     adapter.submit_prompt("r2-cancel", "running synthetic turn")
     assert FakeHarness.run_started.wait(1.0)
     adapter.cancel_session("r2-cancel", "hard")
+    record = adapter._get("r2-cancel")
+    history_after_cancel = list(record.history)
 
-    resumed = adapter.resume_session("r2-cancel")
+    with pytest.raises(SessionConflict) as exc:
+        adapter.resume_session("r2-cancel")
 
-    assert resumed["continuity"] == INTERRUPTED
-    assert resumed["resumed_from_run_id"]
-    assert _generation_id(adapter, "r2-cancel") != first_generation
-    assert adapter._get("r2-cancel").session_id == "r2-cancel"
+    assert str(exc.value) == SESSION_LOST_DETAIL
+    assert record.status == SessionStatus.INTERRUPTED
+    assert record.continuity == created["continuity"] == FRESH
+    assert record.history == history_after_cancel
+    assert _generation_id(adapter, "r2-cancel") == first_generation
+    assert len(FakeHarness.instances) == 1
     adapter.close()
+
+
+def test_lost_resume_http_conflicts_without_starting_harness(
+    adapter: RuntimeAdapter, monkeypatch: pytest.MonkeyPatch, allow_current_runtime_authority,
+) -> None:
+    from fastapi.testclient import TestClient
+    from app import main
+
+    monkeypatch.setattr(main, "adapter", adapter)
+    allow_current_runtime_authority(adapter)
+    client = TestClient(main.app)
+    try:
+        adapter.create_session("r2-http-lost", "r2-http-lost-trace", "alice", "workspace_alice")
+        adapter.submit_prompt("r2-http-lost", "synthetic request", idempotency_key="lost-resume-key")
+        assert FakeHarness.run_started.wait(1.0)
+        adapter.cancel_session("r2-http-lost", "hard")
+        record = adapter._get("r2-http-lost")
+        history_after_cancel = list(record.history)
+        generation = record.current_generation
+
+        response = client.post("/internal/runtime/sessions/r2-http-lost/resume", json={})
+
+        assert response.status_code == 409
+        assert response.json() == {"detail": SESSION_LOST_DETAIL}
+        assert len(FakeHarness.instances) == 1
+        assert FakeHarness.instances[0].run_count == 1
+        assert record.status == SessionStatus.INTERRUPTED
+        assert record.history == history_after_cancel
+        assert record.current_generation is generation
+    finally:
+        adapter.close()
 
 
 def test_continuity_status_crosses_runtime_http_boundary(

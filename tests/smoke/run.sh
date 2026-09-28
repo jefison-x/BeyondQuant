@@ -254,10 +254,8 @@ cancel_status, cancelled = post(f"/sessions/{session_id}/cancel?mode=hard")
 assert cancel_status in (200, 409)
 if cancel_status == 200:
     assert cancelled["status"] == "interrupted"
-    resume_status, resumed = post(f"/sessions/{session_id}/resume")
-    assert resume_status == 200
-    assert resumed["status"] == "ready"
-    assert resumed["resumed_from_run_id"]
+    resume_status, _ = post(f"/sessions/{session_id}/resume")
+    assert resume_status == 409  # Lost process cannot be reconstructed under the old session.
 
 release_status, released = post(f"/sessions/{session_id}/release")
 assert release_status == 200

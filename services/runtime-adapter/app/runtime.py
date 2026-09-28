@@ -23,7 +23,6 @@ from packages.contracts.conversation_rehydration import (
     normalize_conversation_context,
     rehydrated_prompt,
 )
-from packages.contracts.conversation_recovery import normalize_recovery
 from packages.contracts.agent_run_lifecycle import registration_fingerprint, lifecycle_receipt, project_lifecycle_event
 from packages.contracts.domain_call_admission import (
     ACTIONS as DOMAIN_CALL_ACTIONS,
@@ -69,6 +68,7 @@ class SessionConflict(RuntimeError):
 
 
 SESSION_LOST_DETAIL = "BYQ runtime session was interrupted; start a new Agent session"
+SESSION_FAILED_DETAIL = "BYQ runtime session failed; start a new Agent session"
 
 
 class ModelCredentialUnavailable(RuntimeError):
@@ -195,7 +195,6 @@ class RuntimeSession:
     workspace_id: str | None = None
     model_resolution: dict[str, object] = field(default_factory=dict, repr=False)
     pending_conversation_context: list[ConversationContextMessage] = field(default_factory=list, repr=False)
-    pending_conversation_recovery: dict | None = field(default=None, repr=False)
     status: str = SessionStatus.STARTING
     prompt_idempotency: dict[str, tuple[str, str]] = field(default_factory=dict, repr=False)
     terminal_receipts: dict[str, dict] = field(default_factory=dict, repr=False)
@@ -680,7 +679,6 @@ class RuntimeAdapter:
         self, session_id: str, trace_id: str, owner_principal: str | None = None,
         workspace_id: str | None = None, initial_sequence: int = 0,
         conversation_context: object = None,
-        conversation_recovery: object = None,
     ) -> dict[str, Any]:
         validate_identifier(session_id, field="session_id")
         validate_identifier(trace_id, field="trace_id")
@@ -690,7 +688,6 @@ class RuntimeAdapter:
             if session_id in self._sessions:
                 raise SessionConflict(f"BYQ session already exists: {session_id}")
         context = normalize_conversation_context([] if conversation_context is None else conversation_context)
-        recovery = normalize_recovery(conversation_recovery, session_id, trace_id)
         # DSH session files are private execution state. Give every fresh BYQ
         # session a new native identity; the Adapter never reopens old state.
         runtime_session_id = f"session-{uuid.uuid4().hex}"
@@ -721,7 +718,6 @@ class RuntimeAdapter:
                 workspace_id=workspace_id,
                 model_resolution=model_resolution,
                 pending_conversation_context=context,
-                pending_conversation_recovery=recovery,
                 sequence=0,
                 history=[],
             )
@@ -755,7 +751,6 @@ class RuntimeAdapter:
         self, session_id: str, content: str, *, require_model_key: bool = False,
         idempotency_key: str | None = None,
         conversation_context: object = None,
-        conversation_recovery: object = None,
         continuation_budget: object = None,
     ) -> str:
         record = self._get(session_id)
@@ -803,13 +798,9 @@ class RuntimeAdapter:
             # separate resume race. Omission retains the prepared create/resume
             # context; an explicit empty list intentionally clears it.
             context = record.pending_conversation_context
-            recovery = record.pending_conversation_recovery
             if conversation_context is not None:
                 context = normalize_conversation_context(conversation_context)
-                recovery = normalize_recovery(conversation_recovery, record.session_id, record.trace_id)
-            elif conversation_recovery is not None:
-                raise ValueError("conversation recovery requires an explicit context projection")
-            effective_content = rehydrated_prompt(context, content, recovery)
+            effective_content = rehydrated_prompt(context, content)
             if budget is not None and not record.process_used:
                 self._compatibility.close(record.harness)
                 record.process_closed = True
@@ -854,7 +845,6 @@ class RuntimeAdapter:
                 run.continuation_deadline = now + max(0, (datetime.fromisoformat(budget['expires_at']) - datetime.now(timezone.utc)).total_seconds())
             record.process_used = True
             record.pending_conversation_context = []
-            record.pending_conversation_recovery = None
             record.active_run = run
             if record.current_generation is not None:
                 record.current_generation.state = GenerationState.RUNNING
@@ -1063,12 +1053,12 @@ class RuntimeAdapter:
                 record.active_run = None
                 record.process_closing = True
                 cancelled_harness = record.harness
-            self._emit(
-                record,
-                "session.cancelled",
-                "runtime-adapter",
-                {"mode": mode, "persistence": "dsh-owned", "resume": "new-run-after-interrupted", "run_id": run.run_id},
-            )
+            cancellation = {"mode": mode, "persistence": "dsh-owned", "run_id": run.run_id}
+            if mode == "hard":
+                cancellation["resume"] = "new-agent-session-after-interrupted"
+            else:
+                cancellation["resume"] = "same-session-after-soft-cancel"
+            self._emit(record, "session.cancelled", "runtime-adapter", cancellation)
             if mode == "hard":
                 # ADR-0085 P0: an interrupted terminal closes the generation.
                 self._close_generation(record, record.runtime_generation, "interrupted")
@@ -1247,11 +1237,9 @@ class RuntimeAdapter:
 
     def resume_session(
         self, session_id: str, *, conversation_context: object = None,
-        conversation_recovery: object = None,
     ) -> dict[str, Any]:
         record = self._get(session_id)
         context = normalize_conversation_context([] if conversation_context is None else conversation_context)
-        recovery = normalize_recovery(conversation_recovery, record.session_id, record.trace_id)
         with record.lock:
             if record.process_closing:
                 raise SessionConflict("previous runtime process cleanup is not complete")
@@ -1261,92 +1249,18 @@ class RuntimeAdapter:
                 # alive and is reused. Never manufacture a reattach when the
                 # harness is gone.
                 record.pending_conversation_context = context
-                record.pending_conversation_recovery = recovery
                 record.continuity = continuity.REATTACHED
                 return {**self.describe_session(record), "resumed_from_run_id": None}
-            if (record.status not in {SessionStatus.READY, SessionStatus.INTERRUPTED,
-                                      SessionStatus.FAILED} or record.active_run is not None):
-                raise SessionConflict(f"session {session_id} cannot be resumed")
-            previous_status = record.status
-            resumed_from_run_id = record.interrupted_run_id
-            previous_harness = record.harness
-            # The public BYQ identifier may already use the full 64-character
-            # contract allowance, so the private generation ID must not append
-            # to it. The stable public identity remains on RuntimeSession.
-            runtime_session_id = f"resume-{uuid.uuid4().hex}"
-            record.status = SessionStatus.STARTING
-            self._emit(
-                record,
-                "session.resuming",
-                "runtime-adapter",
-                {"resumed_from_run_id": resumed_from_run_id},
-            )
-
-        runtime_generation = f"generation-{uuid.uuid4().hex}"
-        process_root_id = uuid.uuid4().hex if self._root_scoped else ""
-        harness = None
-        try:
-            if previous_status == SessionStatus.FAILED:
-                self._compatibility.close(previous_harness)
-            harness = self._build_harness(
-                record.session_id,
-                contained_session_path(self._session_root, runtime_session_id),
-                trace_id=record.trace_id,
-                owner_principal=record.owner_principal,
-                workspace_id=record.workspace_id,
-                model_resolution=record.model_resolution,
-                runtime_generation=runtime_generation,
-                root_run_id=process_root_id,
-            )
-            self._compatibility.start(harness)
-        except Exception:
-            try:
-                if harness is not None:
-                    self._compatibility.close(harness)
-            finally:
-                with record.lock:
-                    if record.status == SessionStatus.STARTING:
-                        record.status = SessionStatus.FAILED
-                        self._emit(record, "session.failed", "runtime-adapter", {"error": "resume-initialize"})
-            raise
-
-        with record.lock:
-            if record.status != SessionStatus.STARTING:
-                self._compatibility.close(harness)
-                raise SessionConflict("session closed during resume initialization")
-            # Path B: the previous generation is gone. Create a NEW generation
-            # and truthfully report whether it replaces an interrupted run or a
-            # simply absent process. Durable identity/evidence is untouched.
-            record.continuity = (
-                continuity.INTERRUPTED if resumed_from_run_id is not None
-                else continuity.REHYDRATED
-            )
-            self._install_generation(
-                record, native_session_id=runtime_session_id,
-                executor_epoch=record.executor_epoch, process_root_id=process_root_id,
-                generation_id=runtime_generation,
-                retired_state=(GenerationState.INTERRUPTED if previous_status == SessionStatus.INTERRUPTED
-                               or resumed_from_run_id is not None else GenerationState.CLOSED),
-            )
-            record.harness = harness
-            record.process_used = False
-            record.process_closed = False
-            # ADR-0067: closing a process is not evidence that its domain
-            # operations were settled. Only the exact Backend terminal receipt
-            # may release the previous root's admission barrier.
-            record.pending_conversation_context = context
-            record.pending_conversation_recovery = recovery
-            record.interrupted_run_id = None
-            if record.current_generation is not None:
-                record.current_generation.state = GenerationState.READY
-            record.status = SessionStatus.READY
-            self._emit(
-                record,
-                "session.resumed",
-                "runtime-adapter",
-                {"resumed_from_run_id": resumed_from_run_id},
-            )
-        return {**self.describe_session(record), "resumed_from_run_id": resumed_from_run_id}
+            if record.status == SessionStatus.INTERRUPTED or (
+                record.status == SessionStatus.FAILED and record.interrupted_run_id is not None
+            ):
+                raise SessionConflict(SESSION_LOST_DETAIL)
+            if record.status == SessionStatus.FAILED:
+                raise SessionConflict(SESSION_FAILED_DETAIL)
+            if (record.status == SessionStatus.READY
+                    and (record.current_generation is None or record.harness is None)):
+                raise SessionConflict(SESSION_LOST_DETAIL)
+            raise SessionConflict(f"session {session_id} cannot be resumed")
 
     def release_session(self, session_id: str) -> dict[str, Any]:
         record = self._get(session_id)
