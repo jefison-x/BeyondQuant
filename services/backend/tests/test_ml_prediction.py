@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+import time
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app import main as backend_main
-from app.backtest import LocalObjectStore, snapshot_bars
+from app.backtest import BacktestJobStore, BacktestWorker, LocalObjectStore, snapshot_bars
 from app.ml_prediction import (
     MLPredictionCoordinator,
     MLPredictionRunStore,
@@ -248,9 +249,14 @@ def test_signal_skips_unfunded_lot_and_keeps_affordable_selection() -> None:
     assert signal["source"]["selection_constraints"] == {"unfunded_lots_skipped": 1}
 
 
-def test_prediction_run_creates_immutable_prediction_and_standard_signal(tmp_path) -> None:
+def test_prediction_run_creates_immutable_prediction_and_standard_signal(monkeypatch, tmp_path) -> None:
     context = trusted_agent_context("ml-prediction-owner")
     research, runs, pools = ResearchStore(), MLPredictionRunStore(), PaperTradingStore()
+    backtests = BacktestJobStore()
+    backtest_objects = LocalObjectStore(tmp_path / "backtest-objects")
+    monkeypatch.setattr(backend_main, "research_store", research)
+    monkeypatch.setattr(backend_main, "backtest_store", backtests)
+    monkeypatch.setattr(backend_main, "backtest_objects", backtest_objects)
     try:
         pool = pools.create_pool(
             {"name": "ML prediction pool", "symbols": ["000001.SZ", "000002.SZ"]},
@@ -324,8 +330,43 @@ def test_prediction_run_creates_immutable_prediction_and_standard_signal(tmp_pat
         assert hidden.status_code == 404
         response = client.post(f"/v1/research/backtest-tasks/{backtest_task_id}/execute", headers=context)
         assert response.status_code == 200, response.text
-        assert response.json()["task"]["phase"] == "completed"
-        assert response.json()["task"]["references"]["backtest_job_id"]
+        queued_task = response.json()["task"]
+        assert queued_task["phase"] == "queued"
+        backtest_job_id = queued_task["references"]["backtest_job_id"]
+        assert isinstance(backtest_job_id, str)
+        queued_job = backtests.get(backtest_job_id)
+        assert queued_job["status"] == "queued"
+        assert queued_job["result_artifact_id"] is None
+
+        # Backtest execution belongs to the independent Worker. The facade
+        # becomes completed only after the durable Job and validated Artifact
+        # have committed, which a fresh API read must observe.
+        worker_store = BacktestJobStore()
+        try:
+            worker_result = BacktestWorker(
+                worker_store, research, backtest_objects,
+            ).run_once(backtest_job_id)
+        finally:
+            worker_store.close()
+        assert worker_result["status"] == "completed", worker_result
+        deadline = time.monotonic() + 10
+        durable_job = backtests.get(backtest_job_id)
+        while durable_job["status"] in {"queued", "running"} and time.monotonic() < deadline:
+            time.sleep(0.05)
+            durable_job = backtests.get(backtest_job_id)
+        assert durable_job["status"] == "completed", durable_job
+        assert durable_job["result_artifact_id"]
+        result_artifact = research.get_artifact(durable_job["result_artifact_id"])
+        assert result_artifact["kind"] == "backtest_result"
+        assert result_artifact["status"] == "validated"
+        assert result_artifact["content"]["job_id"] == backtest_job_id
+        completed_task_response = client.get(
+            f"/v1/research/backtest-tasks/{backtest_task_id}", headers=context,
+        )
+        assert completed_task_response.status_code == 200, completed_task_response.text
+        completed_task = completed_task_response.json()["task"]
+        assert completed_task["phase"] == "completed"
+        assert completed_task["references"]["result_artifact_id"] == durable_job["result_artifact_id"]
         assert runs.create(workspace_id=context["x-byq-workspace-id"], owner_principal="ml-prediction-owner",
             task_id=task["task_id"], experiment_id=None, ml_strategy_artifact_id=strategy_artifact["artifact_id"],
             approval_artifact_id=approval["artifact_id"], model_artifact_id=model_artifact["artifact_id"],
@@ -375,6 +416,7 @@ def test_prediction_run_creates_immutable_prediction_and_standard_signal(tmp_pat
         finally:
             restarted.close()
     finally:
+        backtests.close()
         pools.close()
         runs.close()
         research.close()

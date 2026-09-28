@@ -136,37 +136,64 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
         f"/v1/research/backtests/{job['job_id']}/cancel",
         headers=_owner_headers("other-user"),
     ).status_code == 404
+    # `/run` is a read/acknowledge command. It must leave the durable Job
+    # queued; only the separately started Worker may claim and complete it.
+    monkeypatch.setattr(main, "BacktestWorker", lambda *args: pytest.fail("Backend request must not execute backtest"), raising=False)
+    run_response = client.post(
+        f"/v1/research/backtests/{job['job_id']}/run",
+        params={"projection": "summary"},
+    )
+    assert run_response.status_code == 200, run_response.text
+    assert run_response.json()["job"]["status"] == "queued"
+    assert "input_manifest" not in run_response.json()["job"]
+    assert jobs.get(job["job_id"])["status"] == "queued"
+
     worker_environment = {
         **os.environ,
         "BYQ_BACKTEST_OBJECT_ROOT": str(tmp_path / "objects"),
         "BYQ_BACKTEST_POLL_SECONDS": "0.1",
     }
     worker_environment.pop("BYQ_BACKTEST_JOB_ID", None)
-    worker_script = Path(__file__).resolve().parents[3] / "workers" / "backtest" / "worker.py"
+    backend_root = Path(__file__).resolve().parents[1]
+    worker_environment["PYTHONPATH"] = os.pathsep.join(filter(None, [
+        str(backend_root), worker_environment.get("PYTHONPATH"),
+    ]))
+    worker_relative_path = Path("workers/backtest/worker.py")
+    worker_script = next(
+        (
+            parent / worker_relative_path
+            for parent in Path(__file__).resolve().parents
+            if (parent / worker_relative_path).is_file()
+        ),
+        Path("/app") / worker_relative_path,
+    )
+    assert worker_script.is_file(), f"backtest worker entrypoint not found: {worker_script}"
     worker_process = subprocess.Popen(
         [sys.executable, str(worker_script)], env=worker_environment,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
     try:
         deadline = time.monotonic() + 30
-        while time.monotonic() < deadline and jobs.get(job["job_id"])["status"] == "queued":
+        durable_job = jobs.get(job["job_id"])
+        while time.monotonic() < deadline and durable_job["status"] in {"queued", "running"}:
             assert worker_process.poll() is None, "polling backtest worker exited before claiming the job"
             time.sleep(0.1)
-        while time.monotonic() < deadline and jobs.get(job["job_id"])["status"] == "running":
-            assert worker_process.poll() is None, "polling backtest worker exited before completing the job"
-            time.sleep(0.1)
-        assert jobs.get(job["job_id"])["status"] == "completed"
+            durable_job = jobs.get(job["job_id"])
+        assert durable_job["status"] == "completed", durable_job
+        assert durable_job["result_artifact_id"]
+        result_artifact = store.get_artifact(durable_job["result_artifact_id"])
+        assert result_artifact["status"] == "validated"
+        assert result_artifact["content"]["job_id"] == job["job_id"]
     finally:
         worker_process.terminate()
         _, worker_stderr = worker_process.communicate(timeout=10)
     assert worker_process.returncode == 0, worker_stderr
-    monkeypatch.setattr(main, "BacktestWorker", lambda *args: pytest.fail("Backend request must not execute backtest"), raising=False)
-    run_response = client.post(
+    completed_run_response = client.post(
         f"/v1/research/backtests/{job['job_id']}/run",
         params={"projection": "summary"},
     )
-    assert run_response.json()["job"]["status"] == "completed"
-    assert "input_manifest" not in run_response.json()["job"]
+    assert completed_run_response.json()["job"]["status"] == "completed"
+    assert "input_manifest" not in completed_run_response.json()["job"]
     fetched = client.get(f"/v1/research/backtests/{job['job_id']}")
     assert fetched.status_code == 200
     assert fetched.json()["job"]["result_artifact_id"].startswith("artifact_")

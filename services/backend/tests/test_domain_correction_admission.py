@@ -69,7 +69,7 @@ def test_cancel_waits_for_inflight_atomic_domain_commit(observed, monkeypatch, a
     import time
     from fastapi.testclient import TestClient
     from app import main
-    from test_strategy_artifact import strategy_payload
+    from tests.test_strategy_artifact import strategy_payload
     from tests.test_ml_strategy import valid_strategy
     from tests.test_agent_run_lifecycle import start
 
@@ -82,7 +82,7 @@ def test_cancel_waits_for_inflight_atomic_domain_commit(observed, monkeypatch, a
         "idempotency_key": "inflight-commit", "trace_id": "trace-test",
         "strategy": strategy_payload() if action == "byq_strategy_validate" else valid_strategy()}
     if action == "byq_factor_compute":
-        from test_factor_research import factor_payload
+        from tests.test_factor_research import factor_payload
         payload.pop("strategy")
         payload = factor_payload(**payload)
     baseline_artifacts = 0
@@ -244,7 +244,7 @@ def test_terminal_between_claim_and_execution_prevents_write_but_not_receipt_rep
 def test_real_domain_api_requires_proof_and_replays_atomic_success(observed, action, path):
     from fastapi.testclient import TestClient
     from app import main
-    from test_strategy_artifact import strategy_payload
+    from tests.test_strategy_artifact import strategy_payload
     from tests.test_ml_strategy import valid_strategy
     store, evidence, scope, ctx = observed
     headers = {**ctx, "x-byq-root-run-id": evidence["root_run_id"]}
@@ -345,7 +345,7 @@ def test_agent_ml_correction_keeps_safe_field_problem_in_durable_receipt(observe
 def test_agent_strategy_static_rejection_has_value_free_diagnostic(observed):
     from fastapi.testclient import TestClient
     from app import main
-    from test_strategy_artifact import strategy_payload
+    from tests.test_strategy_artifact import strategy_payload
     store, evidence, scope, ctx = observed
     payload = {"task_id": evidence["task_id"], "agent_run_id": evidence["agent_run_id"],
         "idempotency_key": "static-problem", "strategy": strategy_payload(script="import synthetic_private_module")}
@@ -369,7 +369,7 @@ def test_valid_write_response_loss_and_terminal_replay(observed, action, path, c
     """Backend ASGI fault boundary, not a real MCP/socket-loss qualification."""
     from fastapi.testclient import TestClient
     from app import main
-    from test_strategy_artifact import strategy_payload
+    from tests.test_strategy_artifact import strategy_payload
     from tests.test_ml_strategy import valid_strategy
     from tests.test_agent_run_lifecycle import start
 

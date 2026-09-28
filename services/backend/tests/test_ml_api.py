@@ -199,7 +199,10 @@ def test_ml_training_reconcile_route_uses_trusted_workspace_and_owner(monkeypatc
         )
         return {
             "training_run_id": "mlrun_" + "a" * 32,
+            "workspace_id": trusted_workspace,
             "status": "waiting_for_data",
+            "submission_ref": "submission-ref-1",
+            "model_artifact_id": None,
         }
 
     monkeypatch.setattr(backend_main.ml_training_store, "get_by_idempotency", reconcile)
@@ -209,6 +212,9 @@ def test_ml_training_reconcile_route_uses_trusted_workspace_and_owner(monkeypatc
     )
     assert response.status_code == 200
     assert response.json()["training_run"]["training_run_id"] == "mlrun_" + "a" * 32
+    assert response.json()["business_job"]["workspace_id"] == headers["x-byq-workspace-id"]
+    assert response.json()["business_job"]["status"] == "QUEUED"
+    assert response.json()["business_job"]["input_ref"] == "submission-ref-1"
     assert captured == {
         "key": "training-reconcile-1",
         "workspace": headers["x-byq-workspace-id"],

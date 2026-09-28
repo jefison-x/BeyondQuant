@@ -217,6 +217,26 @@ while collecting only Backend tests. A fresh-image, disposable-PostgreSQL
 collection check found **983 tests with zero collection errors**. This check
 does not substitute for the full hosted CI rerun.
 
+The next Draft CI exposed two integration harness assumptions: the isolated
+Compose build list omitted the new Business Job Worker images, and F6 still
+expected `/run` to finish a backtest synchronously. The CI build list now
+includes the Backtest, Factor and Optimization Workers. F6 waits for the
+BacktestJob through Product API with a bounded deadline, then checks its
+result and exact validated Artifact through existing Product endpoints. The
+revised integration path still requires an exact-head hosted CI run.
+
+The following Draft Backend run reached execution but exposed stale in-test
+imports, old synchronous backtest assumptions, and three contract fixtures
+for Job projection, TrainingRun reconciliation and role-version selection.
+Tests now import through the `tests` package, drive an independent
+BacktestWorker, and check persisted Job/Artifact results. The Store-level
+recovery fixture uses a real workspace and task lineage so the strict
+Artifact ownership fence stays enabled. A fresh-image, disposable-PostgreSQL
+focused run passed all 4 asynchronous backtest cases; a separate combined
+focused run passed 52/52 affected contract and import cases. All named test
+containers, networks and temporary images were removed. Exact-head hosted
+CI remains required.
+
 ## Handoffs after Phase 11
 
 | Type | Current state | Remaining boundary work |

@@ -163,7 +163,7 @@ def test_strategy_draft_version_export_and_approval_flow(monkeypatch) -> None:
         "lineage":[], "trace_id":"byq-trace-strategy-api", "idempotency_key":"strategy-version-retry",
     })
     assert hijack.status_code == 409
-    from test_factor_research import factor_payload
+    from tests.test_factor_research import factor_payload
     with monkeypatch.context() as patch:
         def no_factor(_):
             raise AssertionError("reserved strategy key must fail before factor computation")

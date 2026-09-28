@@ -33,11 +33,31 @@ def test_training_waiting_for_data_is_queued_without_fabricated_progress() -> No
     assert "worker_id" not in result
 
 
+def test_optimization_projection_keeps_job_and_artifact_references() -> None:
+    result = project_business_job("OPTIMIZATION", {
+        "job_id": "optim_1", "workspace_id": "workspace_1", "status": "queued",
+        "input_ref": "optimization-input-1", "result_artifact_id": None,
+    })
+    assert result["job_id"] == "optim_1"
+    assert result["workspace_id"] == "workspace_1"
+    assert result["type"] == "OPTIMIZATION"
+    assert result["status"] == "QUEUED"
+    assert result["input_ref"] == "optimization-input-1"
+    assert result["result_ref"] is None
+
+
 @pytest.mark.parametrize("kind,row", [
     ("BACKTEST", {"job_id": "backtest_1", "workspace_id": "w", "status": "unrecognized"}),
     ("TRAINING", {"training_run_id": "mlrun_1", "status": "queued"}),
-    ("OPTIMIZATION", {"job_id": "optim_1", "workspace_id": "w", "status": "queued"}),
+    ("OPTIMIZATION", {"job_id": "optim_1", "status": "queued"}),
 ])
 def test_projection_rejects_unsupported_or_unowned_state(kind: str, row: dict[str, object]) -> None:
     with pytest.raises(ValueError):
         project_business_job(kind, row)
+
+
+def test_projection_rejects_unsupported_job_type() -> None:
+    with pytest.raises(ValueError):
+        project_business_job("UNSUPPORTED", {
+            "job_id": "job_1", "workspace_id": "workspace_1", "status": "queued",
+        })

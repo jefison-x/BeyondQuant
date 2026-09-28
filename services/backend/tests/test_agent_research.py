@@ -409,7 +409,7 @@ def test_authorization_approval_and_audit_keep_execution_separate(tmp_path) -> N
 
 
 def test_backtest_task_prepare_surfaces_partitioned_readiness(monkeypatch, tmp_path) -> None:
-    from test_signal_producer import (
+    from tests.test_signal_producer import (
         _create_symbol_pool,
         _seed_ready_signal_fixture,
         _signal_request,

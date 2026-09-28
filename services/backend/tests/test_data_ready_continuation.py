@@ -22,7 +22,7 @@ TRACE = 'byq-trace-task-receipt'
 
 
 def setup_ready(monkeypatch, tmp_path, *, outcome='completed'):
-    import test_backtest_api
+    from tests import test_backtest_api
     monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
     headers = trusted_agent_context('product-user', trace_id=TRACE, session_id=SESSION)
     monkeypatch.setattr(test_backtest_api, '_owner_headers', lambda principal: headers)

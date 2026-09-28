@@ -99,7 +99,7 @@ def test_foreground_activity_defers_dispatch_without_spending_attempts(monkeypat
 
 
 def test_new_domain_approval_hands_off_once_and_later_rejection_does_not(monkeypatch, tmp_path):
-    import test_backtest_api
+    from tests import test_backtest_api
     from app.conversation_catalog import ConversationCatalogStore
     from tests.workspace_helpers import trusted_agent_context
     from tests.test_backtest_task_reconciliation import setup_creation
