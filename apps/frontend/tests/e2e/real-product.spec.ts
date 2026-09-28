@@ -694,6 +694,7 @@ for (const viewport of ['desktop','mobile'] as const) {
       const path=new URL(response.url()).pathname;
       const family=path.startsWith('/api/auth/')?'auth':path.startsWith('/api/product/research/')?'research':
         path.startsWith('/api/product/')?'product':path.startsWith('/v1/agent/sessions')?'agent-sessions':
+        path.startsWith('/v1/workflows/')?'workflow-stream':
         path.startsWith('/v1/product/conversations/')?'conversations':path.startsWith('/v1/product/')?'v1-product':
         path.startsWith('/api/agent/')?'api-agent':path.startsWith('/agent')?'agent-page':
         path.startsWith('/assets/')?'asset':path.startsWith('/v1/')?'v1-other':
