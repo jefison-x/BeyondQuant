@@ -178,9 +178,12 @@ def test_runtime_roots_endpoint_is_bearer_protected_and_exactly_scoped(monkeypat
         store.close_runtime_root(terminal_root, boot_id=boot_id, sequence=9,
                                  outcome="completed", event_sha256="c" * 64)
         open_root(matching, active_root)
-        open_root(another_owner, uuid4().hex)
-        open_root(other_session, uuid4().hex)
-        open_root(other_trace, uuid4().hex)
+        another_owner_root = uuid4().hex
+        other_session_root = uuid4().hex
+        other_trace_root = uuid4().hex
+        open_root(another_owner, another_owner_root)
+        open_root(other_session, other_session_root)
+        open_root(other_trace, other_trace_root)
 
         # Equal timestamps exercise the documented root_run_id tie break.
         store._execute("UPDATE agent_runtime_turns SET created_at=TIMESTAMPTZ '2026-01-01 00:00:00+00' "
@@ -213,10 +216,11 @@ def test_runtime_roots_endpoint_is_bearer_protected_and_exactly_scoped(monkeypat
             "x-byq-owner-principal": another_owner["x-byq-owner-principal"],
             "x-byq-workspace-id": another_owner["x-byq-workspace-id"],
         }
-        assert client.get(path, headers=wrong_trace).json()["roots"] == []
+        assert [root["root_run_id"] for root in client.get(path, headers=wrong_trace).json()["roots"]] == [other_trace_root]
         assert client.get(path, headers=wrong_workspace).json()["roots"] == []
-        assert client.get(path, headers=wrong_owner).json()["roots"] == []
-        assert client.get("/internal/runtime-authority/sessions/other-roots-session/roots",
-                          headers=headers).json()["roots"] == []
+        assert [root["root_run_id"] for root in client.get(path, headers=wrong_owner).json()["roots"]] == [another_owner_root]
+        assert [root["root_run_id"] for root in client.get(
+            "/internal/runtime-authority/sessions/other-roots-session/roots",
+            headers=headers).json()["roots"]] == [other_session_root]
     finally:
         store.close()
