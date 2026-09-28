@@ -1,6 +1,6 @@
 # Phase 9 — isolated developer environment
 
-Status: implementation and qualification in progress. This document describes the
+Status: Phase 9 local PASS; hosted CI and human PR/merge gates remain separate. This document describes the
 Phase 9 command contract; the fresh 0.10 schema, Workspace reset, minimal domain
 seed and Golden rebuild belong to Phases 13–16.
 
