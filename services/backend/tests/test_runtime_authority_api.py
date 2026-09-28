@@ -178,7 +178,7 @@ def test_runtime_roots_endpoint_is_bearer_protected_and_exactly_scoped(monkeypat
         store.close_runtime_root(terminal_root, boot_id=boot_id, sequence=9,
                                  outcome="completed", event_sha256="c" * 64)
         open_root(matching, active_root)
-        open_root(other_owner, uuid4().hex)
+        open_root(another_owner, uuid4().hex)
         open_root(other_session, uuid4().hex)
         open_root(other_trace, uuid4().hex)
 

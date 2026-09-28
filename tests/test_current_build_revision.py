@@ -171,6 +171,10 @@ FROZEN_ARTIFACTS = {
         "services/runtime-adapter/Dockerfile.post-u8-252-candidate",
         "75d9ed7d73410d1d5c47c331fbc75f1f4149ec91ce4859e21f9e7d5e38791588",
         "22f07d07fb9e62eda5a2347fcf28cd4fbe0f6c79f0d76cdcdbeb5c25b5ee9ef2"),
+    "dsh-0.1.5rc1-post-u8.253": (
+        "services/runtime-adapter/Dockerfile.post-u8-253-candidate",
+        "b15c33a83be96ce8128ff70cd6a9ae28c7945108dfd806eec104da68044f9be9",
+        "c5fc1bcca29119befe12e385a314a0818e4a0009f49cfe5d18f7193cfd49d5a2"),
 }
 
 
@@ -194,9 +198,9 @@ class CurrentBuildRevisionTests(unittest.TestCase):
         self.assertIn(
             f"COPY config/dsh/builds/{selected}.json /opt/byq/builds/build.identity.json",
             dockerfile)
-        previous = ROOT / "services/runtime-adapter/Dockerfile.post-u8-252-candidate"
+        previous = ROOT / "services/runtime-adapter/Dockerfile.post-u8-253-candidate"
         expected = previous.read_text().replace(
-            "dsh-0.1.5rc1-post-u8.252.json", f"{selected}.json")
+            "dsh-0.1.5rc1-post-u8.253.json", f"{selected}.json")
         self.assertEqual(dockerfile, expected)
 
     def test_frozen_build_manifests_and_dockerfiles_are_not_rewritten(self) -> None:
