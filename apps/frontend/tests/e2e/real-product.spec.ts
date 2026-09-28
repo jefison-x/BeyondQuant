@@ -689,7 +689,13 @@ for (const viewport of ['desktop','mobile'] as const) {
       if (['http:','https:'].includes(url.protocol) && url.origin!==origin) errors.push('foreign origin');
       if (/^\/(internal|mcp)\//.test(url.pathname)) errors.push('internal request');
     });
-    page.on('response',response=>{if(response.status()>=500)errors.push(String(response.status()));});
+    page.on('response',response=>{
+      if(response.status()<500)return;
+      const path=new URL(response.url()).pathname;
+      const family=path.startsWith('/api/auth/')?'auth':path.startsWith('/api/product/research/')?'research':
+        path.startsWith('/api/product/')?'product':path.startsWith('/v1/agent/sessions')?'agent-sessions':'other';
+      errors.push(`${response.status()} ${response.request().method()} ${family}`);
+    });
     await page.goto('/login');
     await page.getByLabel('用户名').fill('f2-browser-'+viewport);
     await page.getByLabel('密码').fill('test-password-123');

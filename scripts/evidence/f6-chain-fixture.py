@@ -56,8 +56,11 @@ elif action == 'diagnose':
     allowed = {'reserved', 'accepted', 'outcome_unknown', 'settled', 'rejected'}
     statuses = {status: sum(row.get('status') == status for row in budget) for status in sorted(allowed)}
     statuses['other'] = len(budget) - sum(statuses.values())
+    pending = [row for row in budget if row.get('status') != 'settled']
     print(json.dumps({'task_complete': task['status'] == 'completed',
         'budget_status_counts': statuses,
+        'pending_dispatch_started': any((row.get('dispatch_attempts') or 0) > 0 for row in pending),
+        'pending_reconcile_started': any((row.get('reconcile_attempts') or 0) > 0 for row in pending),
         'prediction_completed': bool(store._execute(
             "SELECT 1 FROM ml_prediction_runs WHERE task_id=:task AND status='completed' LIMIT 1",
             {'task': task['task_id']}))}))

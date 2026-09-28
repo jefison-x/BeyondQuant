@@ -934,8 +934,9 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             if root and authority is not None:
                 if root["authority_status"] == "authority_revoked_unconfirmed" or root["authority_boot_id"] != authority["boot_id"]:
                     raise AgentConflict("runtime root belongs to a superseded boot")
-                if root["authority_status"] == "closed" and not (outcome == "active" and fingerprint):
-                    raise AgentConflict("runtime root is already closed")
+                # An exact same-boot terminal replay is checked against its
+                # original receipt below. Closing business authority must not
+                # make that idempotent acknowledgement impossible.
             if root is None:
                 if not active_identity:
                     raise AgentUnauthorized("disabled identity cannot create a runtime root")

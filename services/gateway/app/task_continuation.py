@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import fcntl
 import os
 import threading
@@ -14,6 +15,7 @@ from pathlib import Path
 CONTEXT_SCHEMA = 'task-continuation-context.v1'
 MAX_CONTEXT_BYTES = 4096
 _CONTEXT_FIELDS = {'session_id', 'trace_id', 'conversation_id', 'workspace_id', 'owner'}
+logger = logging.getLogger(__name__)
 
 
 class TaskContinuationDelivery:
@@ -24,6 +26,7 @@ class TaskContinuationDelivery:
         self.stop = threading.Event()
         self.thread = None
         self.cursor = ''
+        self._reported_failures: set[tuple[str, str, str]] = set()
 
     @staticmethod
     def _validate_context(context):
@@ -99,15 +102,23 @@ class TaskContinuationDelivery:
             if self.stop.is_set():
                 break
             self.cursor = path.name
+            stage = 'context'
             try:
                 context = self._read_context(path)
                 if self.reconcile is not None:
+                    stage = 'reconcile'
                     self._reconcile_with_backoff(path, context)
                 if enabled:
+                    stage = 'consume'
                     self.consume(context)
-            except Exception:
+            except Exception as exc:
                 # The Backend owns every intent/uncertain liability. A transport
                 # failure never fabricates a receipt or retries a model write.
+                status = getattr(exc, 'status_code', None)
+                category = (stage, type(exc).__name__, str(status) if type(status) is int else 'unknown')
+                if category not in self._reported_failures:
+                    logger.warning('task continuation delivery paused: stage=%s error=%s status=%s', *category)
+                    self._reported_failures.add(category)
                 continue
 
     def _reconcile_with_backoff(self, path, context):

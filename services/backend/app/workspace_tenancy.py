@@ -338,9 +338,10 @@ class WorkspaceTenancyStore(PgStoreMixin):
               IF resolved IS NULL AND TG_TABLE_NAME = 'agent_runs' AND TG_OP = 'UPDATE' THEN
                 IF OLD.status IN ('active', 'pending_binding')
                     AND NEW.status IN ('completed', 'failed', 'cancelled', 'interrupted')
+                    AND OLD.authority_status = 'active' AND NEW.authority_status = 'closed'
                     AND NEW.version = OLD.version + 1
-                    AND (to_jsonb(NEW) - ARRAY['status','updated_at','version']) =
-                        (to_jsonb(OLD) - ARRAY['status','updated_at','version']) THEN
+                    AND (to_jsonb(NEW) - ARRAY['status','authority_status','updated_at','version']) =
+                        (to_jsonb(OLD) - ARRAY['status','authority_status','updated_at','version']) THEN
                   SELECT w.workspace_id INTO resolved FROM users u
                     JOIN workspaces w ON w.owner_user_id = u.user_id
                     JOIN workspace_memberships m ON m.workspace_id = w.workspace_id AND m.user_id = u.user_id
@@ -349,7 +350,8 @@ class WorkspaceTenancyStore(PgStoreMixin):
                       AND w.workspace_id = OLD.workspace_id
                       AND r.owner_principal = OLD.owner_principal AND r.workspace_id = OLD.workspace_id
                       AND r.session_id = OLD.session_id AND r.trace_id = OLD.trace_id
-                      AND r.status = NEW.status AND r.terminal_sequence IS NOT NULL;
+                      AND r.status = NEW.status AND r.authority_status = 'closed'
+                      AND r.terminal_sequence IS NOT NULL;
                 END IF;
               END IF;
               IF resolved IS NULL THEN RAISE EXCEPTION 'trusted workspace owner is unresolved'; END IF;

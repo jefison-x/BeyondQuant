@@ -123,7 +123,7 @@ class DefectFixTests(unittest.TestCase):
         import subprocess
 
         runtime = subprocess.check_output(
-            ["git", "show", "6fd6285d:services/runtime-adapter/app/runtime.py"],
+            ["git", "show", "4671c3e9:services/runtime-adapter/app/runtime.py"],
             cwd=ROOT, text=True,
         )
         self.assertIn("_reconcile_lost_receipt", runtime)
