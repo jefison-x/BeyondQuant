@@ -59,7 +59,7 @@ def fixture(monkeypatch):
     monkeypatch.setattr(main.product_sessions, 'idle_release_generation', lambda session: None)
     monkeypatch.setattr(main.product_sessions, 'hold_continuation', lambda *args: True)
     monkeypatch.setattr(main.product_sessions, 'finish_continuation', lambda *args: None)
-    monkeypatch.setattr(main, '_runtime_recovery_payload', lambda session: {'conversation_context': []})
+    monkeypatch.setattr(main, '_runtime_conversation_payload', lambda session: {'conversation_context': []})
     monkeypatch.setattr(main, '_adapter_post', lambda path, payload, timeout: prompts.append(payload) or
         {'accepted': True, 'run_id': 'c'*32})
     return context, intent, writes, reads, prompts, original, settlement
@@ -249,7 +249,7 @@ def test_restarted_gateway_attaches_to_original_runtime_without_prompting(monkey
         assert adapter_posts == [('/internal/runtime/sessions', {
             'session_id': context['session_id'], 'trace_id': context['trace_id'],
             'workspace_id': context['workspace_id'], 'owner_principal': 'alice',
-            'initial_sequence': 0, 'attach_live_only': True, 'conversation_context': [],
+            'initial_sequence': 0, 'attach_live_only': True,
         })]
         assert not any(path.endswith('/prompt') for path, _ in adapter_posts)
         assert main._attach_continuation_observer(context) is session

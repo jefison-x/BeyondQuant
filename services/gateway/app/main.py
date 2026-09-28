@@ -35,7 +35,6 @@ from .product_api import (
 from .pooled_http import pooled_http as httpx
 from .user_session import ProductAuthError, resolve_principal, resolve_user
 from .trace_store import TraceConflict, TraceStore
-from .conversation_recovery import project_recovery
 from .session_containment import (
     containment_match,
     preservation_projection,
@@ -435,7 +434,7 @@ def _consume_admitted_task_continuation(context):
         if generation is not None:
             _schedule_idle_release(observer, generation)
     payload = {'content': instruction, 'require_model_key': True, 'idempotency_key': identity,
-        'continuation_budget': reservation, **_runtime_recovery_payload(session)}
+        'continuation_budget': reservation, **_runtime_conversation_payload(session)}
     if backend('dispatch', {'reservation_id': identity}, task=task).get('dispatch') is not True:
         return
     require_runtime_authority()
@@ -1321,8 +1320,6 @@ def _restore_product_session(conversation_id: str, principal: Principal, workspa
     )
     persisted_events = trace_store.read(session.session_id)
     initial_sequence = max((event["sequence"] for event in persisted_events), default=0)
-    public_messages, recovery = project_recovery(body.get("messages"), persisted_events, session.session_id, session.trace_id)
-    conversation_context = _conversation_context(public_messages)
     try:
         attached = _adapter_post(
             "/internal/runtime/sessions",
@@ -1333,8 +1330,6 @@ def _restore_product_session(conversation_id: str, principal: Principal, workspa
                 "owner_principal": session.principal.subject,
                 "initial_sequence": initial_sequence,
                 "attach_live_only": True,
-                "conversation_context": conversation_context,
-                **({"conversation_recovery": recovery} if recovery is not None else {}),
             },
         )
         session.boot_id = _adopt_runtime_session_boot(attached)
@@ -1352,7 +1347,7 @@ def _restore_product_session(conversation_id: str, principal: Principal, workspa
 
 
 def _conversation_context(value: object) -> list[ConversationContextMessage]:
-    """Project only completed, public Product turns into a bounded recent transcript."""
+    """Bound a transcript that already contains only completed public turns."""
 
     if not isinstance(value, list):
         return []
@@ -1367,17 +1362,11 @@ def _conversation_context(value: object) -> list[ConversationContextMessage]:
         bounded = content[:MAX_REHYDRATION_MESSAGE_CHARS]
         public.append({"role": role, "content": bounded})
 
-    # This v1 section contains completed history only. Unanswered demands and
-    # failure evidence travel separately in the versioned recovery section.
-    last_assistant = max(
-        (index for index, item in enumerate(public) if item["role"] == "assistant"),
-        default=-1,
-    )
-    if last_assistant < 0:
+    if not public:
         return []
     selected: list[ConversationContextMessage] = []
     total = 0
-    for item in reversed(public[:last_assistant + 1]):
+    for item in reversed(public):
         if len(selected) >= MAX_REHYDRATION_MESSAGES:
             break
         if total + len(item["content"]) > MAX_REHYDRATION_TOTAL_CHARS:
@@ -1385,6 +1374,131 @@ def _conversation_context(value: object) -> list[ConversationContextMessage]:
         selected.append(item)
         total += len(item["content"])
     return list(reversed(selected))
+
+
+_FAILED_OR_CANCELLED_TERMINALS = {
+    "session.failed", "session.cancelled", "session.result.discarded",
+}
+_SHORT_CONTINUATIONS = frozenset({
+    "继续", "继续吧", "请继续", "继续处理", "接着做", "接着研究", "重试", "再试一次",
+    "continue", "continue please", "please continue", "go on", "retry", "try again",
+})
+_CONTINUATION_PUNCTUATION = "。！!？?.,，；;"
+
+
+def _event_time(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
+def _runtime_events(events: object, session_id: str, trace_id: str) -> list[dict[str, object]]:
+    if not isinstance(events, list):
+        return []
+    return sorted((event for event in events if isinstance(event, dict)
+                   and event.get("session_id") == session_id
+                   and event.get("trace_id") == trace_id
+                   and event.get("source") == "runtime-adapter"
+                   and type(event.get("sequence")) is int),
+                  key=lambda event: event["sequence"])
+
+
+def _successful_public_answers(
+    events: list[dict[str, object]], session_id: str, trace_id: str,
+) -> list[tuple[dict[str, object], dict[str, object]]]:
+    """Pair public answer events with their completed root start events."""
+    context = {"session_id": session_id, "trace_id": trace_id}
+    successful: list[tuple[dict[str, object], dict[str, object]]] = []
+    current_start: dict[str, object] | None = None
+    current_answers: list[dict[str, object]] = []
+    for event in events:
+        kind = event.get("kind")
+        if kind == "session.started":
+            current_start = event
+            current_answers = []
+        elif kind == "agent.output.delta":
+            answer = answer_delivery._project(event, context)
+            if answer is not None and current_start is not None:
+                current_answers.append(answer)
+        elif kind in {
+            "session.result", "session.failed", "session.cancelled", "session.result.discarded",
+        }:
+            start_payload = current_start.get("payload") if current_start is not None else None
+            terminal_payload = event.get("payload")
+            run_id = start_payload.get("run_id") if isinstance(start_payload, dict) else None
+            if (kind == "session.result" and isinstance(start_payload, dict)
+                    and isinstance(terminal_payload, dict)
+                    and isinstance(run_id, str) and run_id
+                    and run_id == terminal_payload.get("run_id")):
+                successful.extend((current_start, answer) for answer in current_answers)
+            current_start = None
+            current_answers = []
+    return successful
+
+
+def _completed_public_messages(
+    messages: object, events: object, session_id: str, trace_id: str,
+) -> list[dict[str, object]]:
+    """Keep only durable user/assistant rows belonging to completed answers."""
+    if not isinstance(messages, list):
+        return []
+    owned = _runtime_events(events, session_id, trace_id)
+    completed_answers = _successful_public_answers(owned, session_id, trace_id)
+    by_workflow_sequence = {
+        answer.get("sequence"): (start, answer)
+        for start, answer in completed_answers
+    }
+    public = [message for message in messages if isinstance(message, dict)
+              and message.get("role") in {"user", "assistant"}
+              and isinstance(message.get("content"), str)
+              and type(message.get("sequence")) is int]
+    selected: dict[int, dict[str, object]] = {}
+    for message in public:
+        if message.get("role") != "assistant":
+            continue
+        workflow_sequence = message.get("workflow_sequence")
+        if type(workflow_sequence) is not int:
+            continue
+        run = by_workflow_sequence.get(workflow_sequence)
+        if run is None:
+            continue
+        start, answer = run
+        if message.get("content", "").strip() != answer.get("content"):
+            continue
+        start_time = _event_time(start.get("timestamp"))
+        if start_time is None:
+            continue
+        user_messages = [candidate for candidate in public if candidate.get("role") == "user"
+                         and candidate["sequence"] < message["sequence"]
+                         and (created := _event_time(candidate.get("created_at"))) is not None
+                         and created <= start_time]
+        if not user_messages:
+            continue
+        user = max(user_messages, key=lambda candidate: candidate["sequence"])
+        selected[user["sequence"]] = user
+        selected[message["sequence"]] = message
+    return [selected[sequence] for sequence in sorted(selected)]
+
+
+def _reject_ambiguous_continuation_after_failure(
+    events: list[dict[str, object]], session_id: str, trace_id: str, content: str,
+) -> None:
+    normalized = content.strip().rstrip(_CONTINUATION_PUNCTUATION).casefold()
+    if normalized not in _SHORT_CONTINUATIONS:
+        return
+    terminals = [event for event in _runtime_events(events, session_id, trace_id) if event.get("kind") in {
+        "session.result", *_FAILED_OR_CANCELLED_TERMINALS,
+    }]
+    if terminals and terminals[-1].get("kind") in _FAILED_OR_CANCELLED_TERMINALS:
+        raise ProductError(
+            409,
+            "agent_instruction_required",
+            "请明确重述本次要执行的具体指令；上一次 Agent 回合失败或已取消，系统没有自动重试。",
+        )
 
 
 def _product_session(request: Request, session_id: str) -> ProductSession:
@@ -1408,6 +1522,7 @@ def _adopt_runtime_session_boot(reply: object) -> str:
 
 
 _LOST_RUNTIME_SESSION_MARKER = "BYQ runtime session was interrupted"
+_FAILED_RUNTIME_SESSION_MARKER = "BYQ runtime session failed; start a new Agent session"
 
 
 def _is_lost_runtime_session(error: HTTPException) -> bool:
@@ -1426,40 +1541,40 @@ def _raise_agent_session_interrupted() -> None:
     )
 
 
-def _runtime_recovery_payload(session: ProductSession) -> dict[str, object]:
-    """Fresh, bounded public history for one newly admitted root, never DSH state."""
+def _raise_agent_session_failed() -> None:
+    raise ProductError(
+        409,
+        "agent_session_failed",
+        "This Agent session failed. Start a new Agent session and query durable BYQ Jobs by job_id to continue.",
+    )
+
+
+def _runtime_conversation_payload(
+    session: ProductSession, *, current_message: str | None = None,
+) -> dict[str, object]:
+    """Fresh, bounded completed Product transcript for one newly admitted root."""
     catalog = _catalog_request("GET", f"/v1/product/conversations/{session.conversation_id}",
                                session.principal, session.workspace_id)
     if not isinstance(catalog.get("messages"), list):
         raise HTTPException(status_code=502, detail="conversation history projection is unavailable")
     events = trace_store.read(session.session_id)
-    owned = [event for event in events if event.get("session_id") == session.session_id
-             and event.get("trace_id") == session.trace_id and event.get("source") == "runtime-adapter"]
-    terminals = [event for event in owned if event["kind"] in {
-        "session.result", "session.failed", "session.cancelled", "session.result.discarded"}]
-    if terminals and terminals[-1]["kind"] == "session.result":
-        terminal = terminals[-1]
-        starts = [event for event in owned if event["kind"] == "session.started"
-                  and event["sequence"] < terminal["sequence"]
-                  and event.get("payload", {}).get("run_id") == terminal.get("payload", {}).get("run_id")]
-        if starts:
-            context = {"session_id": session.session_id, "trace_id": session.trace_id}
-            for event in owned:
-                if not starts[-1]["sequence"] < event["sequence"] < terminal["sequence"]:
-                    continue
-                answer = answer_delivery._project(event, context)
-                if answer and not any(message.get("role") == "assistant"
-                        and message.get("workflow_sequence") == answer["sequence"]
-                        and isinstance(message.get("content"), str)
-                        and message["content"].strip() == answer["content"]
-                        for message in catalog["messages"] if isinstance(message, dict)):
-                    raise HTTPException(status_code=503, detail="previous public answer persistence is pending")
-    public_messages, recovery = project_recovery(
-        catalog["messages"], events, session.session_id, session.trace_id)
-    payload: dict[str, object] = {"conversation_context": _conversation_context(public_messages)}
-    if recovery is not None:
-        payload["conversation_recovery"] = recovery
-    return payload
+    owned = _runtime_events(events, session.session_id, session.trace_id)
+    if current_message is not None:
+        _reject_ambiguous_continuation_after_failure(
+            owned, session.session_id, session.trace_id, current_message,
+        )
+    messages = catalog["messages"]
+    for _start, answer in _successful_public_answers(owned, session.session_id, session.trace_id):
+        if not any(isinstance(message, dict) and message.get("role") == "assistant"
+                   and message.get("workflow_sequence") == answer.get("sequence")
+                   and isinstance(message.get("content"), str)
+                   and message["content"].strip() == answer.get("content")
+                   for message in messages):
+            raise HTTPException(status_code=503, detail="previous public answer persistence is pending")
+    public_messages = _completed_public_messages(
+        messages, owned, session.session_id, session.trace_id,
+    )
+    return {"conversation_context": _conversation_context(public_messages)}
 
 
 TRANSIENT_ROOT_CONFLICTS = (
@@ -1555,7 +1670,7 @@ def _continue_approval_conversation(
         def continuation_payload() -> dict[str, object]:
             return {"content": instruction, "require_model_key": True,
                     "idempotency_key": f"approval-continuation-{approval_id}",
-                    **_runtime_recovery_payload(session)}
+                    **_runtime_conversation_payload(session)}
 
         payload = continuation_payload()
         receipt = None
@@ -1809,14 +1924,12 @@ def submit_product_turn(
 ) -> dict[str, object]:
     session = _product_session(http_request, session_id)
     _require_session_runtime_authority(session)
-    # Snapshot before saving the new demand, so a short "continue" cannot
-    # replace the previous unanswered research subject in recovery context.
-    recovery_payload = _runtime_recovery_payload(session)
+    transcript_payload = _runtime_conversation_payload(session, current_message=request.content)
     persisted = _catalog_request(
         "POST", f"/v1/product/conversations/{session.conversation_id}/messages",
         session.principal, session.workspace_id, payload={"content": request.content},
     )
-    prompt_payload = {"content": request.content, "require_model_key": True, **recovery_payload}
+    prompt_payload = {"content": request.content, "require_model_key": True, **transcript_payload}
     persisted_message = persisted.get("message")
     message_id = persisted_message.get("message_id") if isinstance(persisted_message, dict) else None
     if not isinstance(message_id, str) or not 8 <= len(message_id) <= 128 or message_id.strip() != message_id:
@@ -1854,7 +1967,7 @@ def submit_product_turn(
 def resume_product_session(session_id: str, request: Request) -> dict[str, object]:
     session = _product_session(request, session_id)
     _require_session_runtime_authority(session)
-    resume_payload = _runtime_recovery_payload(session)
+    resume_payload = _runtime_conversation_payload(session)
     try:
         body = _adapter_post(
             f"/internal/runtime/sessions/{session.session_id}/resume",
@@ -1863,6 +1976,9 @@ def resume_product_session(session_id: str, request: Request) -> dict[str, objec
     except HTTPException as exc:
         if _is_lost_runtime_session(exc):
             _raise_agent_session_interrupted()
+        if (exc.status_code == 409
+                and getattr(exc, "adapter_conflict_detail", None) == _FAILED_RUNTIME_SESSION_MARKER):
+            _raise_agent_session_failed()
         raise
     return {
         "session_id": session.conversation_id,

@@ -37,7 +37,7 @@ class CleanBreakGovernanceTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text()
         plan = (ROOT / "docs/roadmap/IMPLEMENTATION_PLAN.md").read_text()
         architecture = (ROOT / "ARCHITECTURE.md").read_text()
-        expected = "<!-- byq:clean-break-current-phase=10 -->"
+        expected = "<!-- byq:clean-break-current-phase=11 -->"
         self.assertIn(expected, status)
         self.assertIn(expected, readme)
         self.assertEqual(re.findall(r"<!-- byq:current-completed-phase=(\d+) -->", status), ["97"])

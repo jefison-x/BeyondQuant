@@ -70,35 +70,105 @@ def authorize_runtime_session(monkeypatch, session):
     })
 
 
-def test_new_turn_projects_failed_subject_before_persisting_continue(monkeypatch, tmp_path):
+@pytest.mark.parametrize("terminal_kind", ["session.failed", "session.cancelled"])
+def test_ambiguous_continue_after_failed_or_cancelled_turn_requires_explicit_instruction(
+    monkeypatch, tmp_path, terminal_kind,
+):
     session = main.ProductSession("conversation", "runtime", "trace", main.Principal(subject="alice"))
     authorize_runtime_session(monkeypatch, session)
     monkeypatch.setattr(main, "_product_session", lambda *_: session)
     store = TraceStore(tmp_path)
     monkeypatch.setattr(main, "trace_store", store)
+    terminal_payload = {"run_id": "a" * 32}
+    if terminal_kind == "session.failed":
+        terminal_payload["code"] = "runtime-subagent-timeout"
     for sequence, kind, payload in [(1, "session.started", {"run_id": "a" * 32}),
-                                    (2, "session.failed", {"run_id": "a" * 32, "code": "runtime-subagent-timeout"})]:
+                                    (2, terminal_kind, terminal_payload)]:
         store.append({"session_id": "runtime", "trace_id": "trace", "sequence": sequence,
             "timestamp": "2026-09-08T01:01:00Z", "source": "runtime-adapter", "kind": kind, "payload": payload})
     calls = []
     def catalog(method, *args, **kwargs):
         calls.append(method)
-        if method == "GET":
-            return {"messages": [{"message_id": "original-subject", "role": "user",
-                "content": "沪深300近三年每周调仓，先研究凯利仓位", "created_at": "2026-09-08T01:00:00Z"}]}
-        return {"message": {"message_id": "continue-message"}}
-    def prompt(path, **kwargs):
-        calls.append("prompt")
-        payload = kwargs["payload"]
-        assert payload["content"] == "继续"
-        assert payload["conversation_context"] == []
-        assert payload["conversation_recovery"]["unanswered_turn"]["message_id"] == "original-subject"
-        assert payload["conversation_recovery"]["failure"]["code"] == "runtime-subagent-timeout"
-        return {"accepted": True, "run_id": "new-root"}
+        return {"messages": [{"sequence": 1, "role": "user",
+            "content": "沪深300近三年每周调仓，先研究凯利仓位",
+            "created_at": "2026-09-08T01:00:00Z"}]}
     monkeypatch.setattr(main, "_catalog_request", catalog)
-    monkeypatch.setattr(main, "_adapter_post", prompt)
-    main.submit_product_turn("conversation", main.ProductPromptRequest(content="继续"), Request({"type": "http"}))
-    assert calls == ["GET", "POST", "prompt"]
+    monkeypatch.setattr(main, "_adapter_post", lambda *args, **kwargs: pytest.fail("ambiguous continuation was dispatched"))
+    with pytest.raises(main.ProductError) as raised:
+        main.submit_product_turn("conversation", main.ProductPromptRequest(content="继续"), Request({"type": "http"}))
+    assert raised.value.status_code == 409
+    assert raised.value.code == "agent_instruction_required"
+    assert "明确重述" in raised.value.message
+    assert calls == ["GET"]
+
+
+def test_explicit_instruction_after_failure_uses_completed_public_transcript_only(monkeypatch, tmp_path):
+    session = main.ProductSession("conversation", "runtime", "trace", main.Principal(subject="alice"))
+    authorize_runtime_session(monkeypatch, session)
+    monkeypatch.setattr(main, "_product_session", lambda *_: session)
+    store = TraceStore(tmp_path)
+    monkeypatch.setattr(main, "trace_store", store)
+    trace = [
+        (1, "session.started", {"run_id": "completed-run"}, "2026-09-08T00:00:01Z"),
+        (2, "agent.output.delta", {"schema_version": "workflow-answer.v1", "channel": "answer",
+            "delta": "第一轮回答", "truncated": False}, "2026-09-08T00:00:02Z"),
+        (3, "session.result", {"run_id": "completed-run"}, "2026-09-08T00:00:03Z"),
+        (4, "session.started", {"run_id": "failed-run"}, "2026-09-08T01:00:01Z"),
+        (5, "tool.completed", {"private_result": "不要暴露的工具输出"}, "2026-09-08T01:00:02Z"),
+        (6, "agent.output.delta", {"schema_version": "workflow-answer.v1", "channel": "answer",
+            "delta": "不应进入上下文的部分答案", "truncated": False}, "2026-09-08T01:00:03Z"),
+        (7, "session.failed", {"run_id": "failed-run", "code": "runtime-subagent-timeout"},
+            "2026-09-08T01:00:03Z"),
+    ]
+    for sequence, kind, payload, timestamp in trace:
+        store.append({"session_id": "runtime", "trace_id": "trace", "sequence": sequence,
+            "timestamp": timestamp, "source": "runtime-adapter", "kind": kind, "payload": payload})
+    catalog_calls = []
+    messages = [
+        {"message_id": "user-1", "sequence": 1, "role": "user", "content": "第一轮问题",
+         "created_at": "2026-09-08T00:00:00Z"},
+        {"message_id": "assistant-1", "sequence": 2, "role": "assistant", "content": "第一轮回答",
+         "workflow_sequence": 2, "created_at": "2026-09-08T00:00:04Z"},
+        {"message_id": "user-failed", "sequence": 3, "role": "user", "content": "失败的旧需求",
+         "created_at": "2026-09-08T01:00:00Z"},
+        {"message_id": "assistant-partial", "sequence": 4, "role": "assistant",
+         "content": "不应进入上下文的部分答案", "workflow_sequence": 6,
+         "created_at": "2026-09-08T01:00:02Z"},
+    ]
+
+    def catalog(method, *args, **kwargs):
+        catalog_calls.append(method)
+        if method == "GET":
+            return {"messages": messages}
+        return {"message": {"message_id": "new-message"}}
+
+    submitted = []
+    def adapter(path, **kwargs):
+        payload = kwargs["payload"]
+        submitted.append(payload)
+        return {"accepted": True, "run_id": "new-run"}
+
+    monkeypatch.setattr(main, "_catalog_request", catalog)
+    monkeypatch.setattr(main, "_adapter_post", adapter)
+    main.submit_product_turn(
+        "conversation",
+        main.ProductPromptRequest(content="请研究上证50近两年月频动量策略"),
+        Request({"type": "http"}),
+    )
+
+    assert catalog_calls == ["GET", "POST"]
+    assert len(submitted) == 1
+    payload = submitted[0]
+    assert payload["content"] == "请研究上证50近两年月频动量策略"
+    assert payload["conversation_context"] == [
+        {"role": "user", "content": "第一轮问题"},
+        {"role": "assistant", "content": "第一轮回答"},
+    ]
+    assert "conversation_recovery" not in payload
+    assert "runtime-subagent-timeout" not in str(payload)
+    assert "不要暴露的工具输出" not in str(payload)
+    assert "失败的旧需求" not in str(payload)
+    assert "部分答案" not in str(payload)
 
 
 def test_new_root_waits_for_previous_public_answer_to_be_durable(monkeypatch, tmp_path):
@@ -111,13 +181,20 @@ def test_new_root_waits_for_previous_public_answer_to_be_durable(monkeypatch, tm
         (3, "session.result", {"run_id": "a" * 32})]:
         store.append({"session_id": "runtime", "trace_id": "trace", "sequence": sequence,
             "timestamp": "2026-09-08T01:01:00Z", "source": "runtime-adapter", "kind": kind, "payload": payload})
-    messages = [{"role": "user", "content": "研究凯利仓位"}]
+    messages = [{"sequence": 1, "role": "user", "content": "研究凯利仓位",
+                 "created_at": "2026-09-08T01:00:00Z"}]
     monkeypatch.setattr(main, "_catalog_request", lambda *a, **k: {"messages": messages})
     with pytest.raises(main.HTTPException) as raised:
-        main._runtime_recovery_payload(session)
+        main._runtime_conversation_payload(session)
     assert raised.value.status_code == 503
-    messages.append({"role": "assistant", "content": "凯利仓位研究方案", "workflow_sequence": 2})
-    assert main._runtime_recovery_payload(session)["conversation_context"][-1]["content"] == "凯利仓位研究方案"
+    messages.append({"sequence": 2, "role": "assistant", "content": "凯利仓位研究方案",
+                     "workflow_sequence": 2, "created_at": "2026-09-08T01:02:00Z"})
+    transcript = main._runtime_conversation_payload(session)
+    assert transcript == {"conversation_context": [
+        {"role": "user", "content": "研究凯利仓位"},
+        {"role": "assistant", "content": "凯利仓位研究方案"},
+    ]}
+    assert "conversation_recovery" not in transcript
 
 
 @pytest.mark.parametrize("mutation", [None, {"session_id": "other-session"},
@@ -632,6 +709,9 @@ def test_answer_receipt_must_match_exact_durable_fragment(monkeypatch, change):
 
 def test_restore_attaches_surviving_runtime_and_continues_sequence(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    monkeypatch.setattr(main, "_runtime_authority_snapshot", lambda: {
+        "ready": True, "boot_id": "a" * 32,
+    })
     store = TraceStore(tmp_path)
     monkeypatch.setattr(main, "trace_store", store)
     # Completed history requires evidence from its original turn, not merely
@@ -640,23 +720,26 @@ def test_restore_attaches_surviving_runtime_and_continues_sequence(monkeypatch, 
         (4, "session.started", {"run_id": "old-run"}),
         (5, "agent.output.delta", {"schema_version": "workflow-answer.v1", "channel": "answer",
                                     "delta": "第一轮回答", "truncated": False}),
-        (6, "session.result", {}),
+        (6, "session.result", {"run_id": "old-run"}),
+        (7, "session.started", {"run_id": "failed-run"}),
+        (8, "session.failed", {"run_id": "failed-run", "code": "model-run-failed", "retryable": True}),
     ]:
+        timestamp = ("2026-08-24T00:00:00+00:00" if sequence == 7 else
+                     "2026-08-24T00:00:01+00:00" if sequence == 8 else
+                     f"2026-08-23T00:00:0{sequence}+00:00")
         store.append({"trace_id": "trace-1", "session_id": "runtime-private", "sequence": sequence,
-                      "timestamp": f"2026-08-23T00:00:0{sequence}+00:00", "kind": kind,
+                      "timestamp": timestamp, "kind": kind,
                       "source": "runtime-adapter", "payload": payload})
-    store.append({
-        "trace_id": "trace-1", "session_id": "runtime-private", "sequence": 7,
-        "timestamp": "2026-08-24T00:00:00+00:00", "kind": "session.failed",
-        "source": "runtime-adapter", "payload": {"code": "model-run-failed", "retryable": True},
-    })
     monkeypatch.setattr(main, "_catalog_request", lambda *_args, **_kwargs: {"conversation": {
         "conversation_id": "conversation_1", "runtime_session_id": "runtime-private",
         "trace_id": "trace-1", "status": "active",
     }, "messages": [
-        {"role": "user", "content": "第一轮问题", "created_at": "2026-08-23T00:00:00+00:00"},
-        {"role": "assistant", "content": "第一轮回答", "workflow_sequence": 5},
-        {"role": "user", "content": "失败后待重试的问题"},
+        {"message_id": "user-old", "sequence": 1, "role": "user", "content": "第一轮问题",
+         "created_at": "2026-08-23T00:00:00+00:00"},
+        {"message_id": "answer-old", "sequence": 2, "role": "assistant", "content": "第一轮回答",
+         "workflow_sequence": 5, "created_at": "2026-08-23T00:00:07+00:00"},
+        {"message_id": "user-failed", "sequence": 3, "role": "user", "content": "失败后待重试的问题",
+         "created_at": "2026-08-24T00:00:00+00:00"},
     ]})
     adapter_calls: list[tuple[str, dict[str, object] | None]] = []
     monkeypatch.setattr(
@@ -676,27 +759,16 @@ def test_restore_attaches_surviving_runtime_and_continues_sequence(monkeypatch, 
     assert adapter_calls == [("/internal/runtime/sessions", {
         "session_id": "runtime-private", "trace_id": "trace-1",
         "workspace_id": "workspace_bootstrap_unresolved", "owner_principal": main.PRODUCT_PRINCIPAL,
-        "initial_sequence": 7, "attach_live_only": True,
-        "conversation_recovery": {
-            "schema_version": "conversation-recovery.v2",
-            "session_id": "runtime-private", "trace_id": "trace-1",
-            "status": "needs_confirmation", "unanswered_turn": None,
-            "failure": {"sequence": 7, "run_id": None, "code": "model-run-failed"},
-        },
-        "conversation_context": [
-            {"role": "user", "content": "第一轮问题"},
-            {"role": "assistant", "content": "第一轮回答"},
-        ],
+        "initial_sequence": 8, "attach_live_only": True,
     })]
     assert collectors == ["runtime-private"]
     assert "runtime-private" not in store._closed
 
 
-def test_conversation_context_keeps_recent_completed_public_turns_only() -> None:
+def test_conversation_context_keeps_only_supported_public_roles() -> None:
     messages = [
         {"role": "user", "content": "old"},
         {"role": "assistant", "content": "answer"},
-        {"role": "user", "content": "failed prompt"},
         {"role": "internal", "content": "must not pass"},
     ]
 
@@ -807,6 +879,66 @@ def test_resume_reports_interruption_when_runtime_adapter_lost_the_session(monke
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "agent_session_interrupted"
     assert calls == ["/internal/runtime/sessions/runtime-private/resume"]
+
+
+def test_resume_interrupted_adapter_generation_requires_a_new_agent_session(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    monkeypatch.setattr(main, "trace_store", TraceStore(tmp_path))
+    principal = main.Principal(subject=main.PRODUCT_PRINCIPAL)
+    main.product_sessions.add(main.ProductSession(
+        conversation_id="conversation_1", session_id="runtime-private", trace_id="trace-1",
+        principal=principal, workspace_id="workspace_bootstrap_unresolved", boot_id="a" * 32,
+    ))
+    monkeypatch.setattr(main, "_catalog_request", lambda *_a, **_k: {
+        "conversation": {"conversation_id": "conversation_1", "runtime_session_id": "runtime-private",
+                         "trace_id": "trace-1", "status": "active"}, "messages": [],
+    })
+    calls = []
+
+    def interrupted(path, **_kwargs):
+        calls.append(path)
+        error = main.HTTPException(status_code=409, detail="runtime session unavailable")
+        error.adapter_conflict_detail = "BYQ runtime session was interrupted; start a new Agent session"
+        raise error
+
+    monkeypatch.setattr(main, "_adapter_post", interrupted)
+    response = TestClient(main.app).post(
+        "/v1/agent/sessions/conversation_1/resume",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "agent_session_interrupted"
+    assert "job_id" in response.json()["error"]["message"]
+    assert calls == ["/internal/runtime/sessions/runtime-private/resume"]
+
+
+def test_resume_failed_adapter_generation_reports_failure_without_claiming_interruption(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    monkeypatch.setattr(main, "trace_store", TraceStore(tmp_path))
+    principal = main.Principal(subject=main.PRODUCT_PRINCIPAL)
+    main.product_sessions.add(main.ProductSession(
+        conversation_id="conversation_1", session_id="runtime-private", trace_id="trace-1",
+        principal=principal, workspace_id="workspace_bootstrap_unresolved", boot_id="a" * 32,
+    ))
+    monkeypatch.setattr(main, "_catalog_request", lambda *_a, **_k: {
+        "conversation": {"conversation_id": "conversation_1", "runtime_session_id": "runtime-private",
+                         "trace_id": "trace-1", "status": "active"}, "messages": [],
+    })
+
+    def failed(_path, **_kwargs):
+        error = main.HTTPException(status_code=409, detail="runtime session unavailable")
+        error.adapter_conflict_detail = "BYQ runtime session failed; start a new Agent session"
+        raise error
+
+    monkeypatch.setattr(main, "_adapter_post", failed)
+    response = TestClient(main.app).post(
+        "/v1/agent/sessions/conversation_1/resume",
+        headers={"Authorization": f"Bearer {TOKEN}"},
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "agent_session_failed"
 
 
 def test_create_product_session_projects_fresh_continuity(monkeypatch, tmp_path: Path) -> None:

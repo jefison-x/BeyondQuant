@@ -31,12 +31,10 @@ class CreateSessionRequest(BaseModel):
     initial_sequence: int = 0
     attach_live_only: bool = False
     conversation_context: list[ConversationContextMessage] = Field(default_factory=list)
-    conversation_recovery: dict[str, object] | None = None
 
 
 class ResumeSessionRequest(BaseModel):
     conversation_context: list[ConversationContextMessage] = Field(default_factory=list)
-    conversation_recovery: dict[str, object] | None = None
 
 
 class PromptRequest(BaseModel):
@@ -44,7 +42,6 @@ class PromptRequest(BaseModel):
     require_model_key: bool = False
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=128)
     conversation_context: list[ConversationContextMessage] | None = None
-    conversation_recovery: dict[str, object] | None = None
     continuation_budget: dict[str, object] | None = None
 
 
@@ -134,7 +131,6 @@ def create_session(request: CreateSessionRequest) -> dict[str, object]:
         return adapter.create_session(
             request.session_id, request.trace_id, request.owner_principal, request.workspace_id,
             request.initial_sequence, request.conversation_context,
-            request.conversation_recovery,
         )
     except SessionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -153,7 +149,6 @@ def submit_prompt(session_id: str, request: PromptRequest) -> dict[str, object]:
             require_model_key=request.require_model_key,
             idempotency_key=request.idempotency_key,
             conversation_context=request.conversation_context,
-            conversation_recovery=request.conversation_recovery,
             continuation_budget=request.continuation_budget,
         )
     except KeyError as exc:
@@ -180,7 +175,6 @@ def resume_session(session_id: str, request: ResumeSessionRequest | None = None)
         return adapter.resume_session(
             session_id,
             conversation_context=[] if request is None else request.conversation_context,
-            conversation_recovery=None if request is None else request.conversation_recovery,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

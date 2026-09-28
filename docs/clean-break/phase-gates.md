@@ -1,5 +1,47 @@
 # Phase 0–6 gate record
 
+## Phase 10 thin DSH Adapter — bounded resume-removal slice (2026-09-28)
+
+The [transport contract](phase10-dsh-contract.md) and
+[execution evidence](phase10-evidence.md) record removal of Adapter-owned
+same-session process reconstruction after a failed or interrupted Agent turn.
+Live READY reattach, normal healthy next-root admission, exact Backend terminal
+acknowledgement, and unknown-outcome protections remain. Failed and interrupted
+Product errors are distinct.
+
+**Tester:** affected Adapter 102/102, Gateway Product Agent 50/50, governance
+2/2 and diff check PASS; Root additionally observed pinned DSH real-process
+hard cancel 1/1. **Independent Sol Reviewer:** Functional PASS / Tests PASS /
+Clean Break Architecture PASS for this bounded slice after actual diff and
+ADR review. **Root acceptance:** **PASS for this slice only**.
+
+The second bounded slice removed generic failed-turn recovery inference and
+retained only bounded, completed public Product transcript input for a new
+explicit DSH root. [ADR-002](adr/ADR-002-dsh-boundary.md) distinguishes that
+Product data from DSH-private Agent context. **Tester:** Gateway 85/85,
+Adapter 104/104, governance 2/2 and diff check PASS. **Independent Sol
+Reviewer:** Functional PASS / Tests PASS / Clean Break Architecture PASS for
+this slice after actual diff, deleted-code and ADR review. **Root acceptance:**
+**PASS for the second slice only**. The
+[field audit](phase10-adapter-ownership.md) classifies the remaining in-memory
+Adapter handles as live transport correlation and exact BYQ business authority
+evidence; Reviewer found that classification architecturally sound in
+principle.
+
+The [joined real Product/DSH flow](phase10-evidence.md#joined-real-productdsh-flow)
+passed through Gateway/Product API with a fresh isolated PostgreSQL database,
+the pinned DSH release and a scripted loopback provider. The second root
+received the first persisted public answer only after exact Backend root
+close/terminal acknowledgement; native DSH processes and Backend roots were
+distinct. The temporary stack and data volumes were removed. Independent
+Tester confirmed the runner preflight, source syntax, scope checks and empty
+post-run resource inventory. Independent Sol Reviewer inspected the full diff,
+ADR, interfaces and real evidence and returned **Functional PASS / Tests PASS /
+Clean Break Architecture PASS** for Phase 10 overall. **Root acceptance:**
+**Phase 10 local PASS.** Phase 11 Business Job may begin in a new isolated
+worktree. Hosted CI and human PR/merge gates remain separate; no push, merge
+or deployment occurred.
+
 ## Phase 9 rebuildable developer environment — local Root gate (2026-09-28)
 
 [Implementation contract](phase9-dev-environment.md) and [execution evidence](phase9-evidence.md)

@@ -2,7 +2,7 @@
 
 ## Current authority — BYQ 0.10 Clean Break (2026-09-25)
 
-<!-- byq:clean-break-current-phase=10 -->
+<!-- byq:clean-break-current-phase=11 -->
 
 The maintainer's explicit Clean Break direction supersedes the 0.9/P4 and Phase 100
 implementation routing below. The current architecture is [ADR-0088](../architecture/adr/ADR-0088-clean-break-baseline-activation.md)
@@ -11,11 +11,15 @@ freeze, inventory, proposed baseline and ownership/deletion review are complete;
 the baseline is now accepted in the Clean Break branch. Phase 7 bounded
 legacy-runtime removal passed its [limited gate](../clean-break/phase-gates.md),
 with remaining Agent lifecycle ownership explicitly assigned to Phase 10/14/17.
-**Next phase: Clean Break Phase 10 — thin DSH adapter.**
+**Next phase: Clean Break Phase 11 — Business Job.**
 Phase 8 classified cleanup and Phase 9 rebuildable developer environment passed
 their [local Root gates](../clean-break/phase-gates.md). Phase 9 supplies a
 worktree-scoped dev stack and cleanup; Workspace reset, fresh-schema seed and
-Golden rebuild remain Phases 13–16. Phase 10 has not begun. Hosted CI and
+Golden rebuild remain Phases 13–16. Phase 10 passed its
+[local Root gate](../clean-break/phase-gates.md) in an isolated worktree: the
+Adapter no longer reconstructs failed/interrupted Agent sessions, generic
+failed-turn recovery was removed, and a pinned-DSH Product API two-turn flow
+passed with exact Backend terminal acknowledgement. Hosted CI and
 human PR/merge gates remain separate.
 No production deployment or release is authorized.
 

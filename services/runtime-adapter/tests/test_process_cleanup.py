@@ -13,7 +13,10 @@ from deepseek_harness import Notification
 
 import app.runtime as runtime_module
 from app.identifiers import MAX_IDENTIFIER_LENGTH
-from app.runtime import ModelCredentialUnavailable, RuntimeAdapter, SessionConflict, SessionStatus
+from app.runtime import (
+    ModelCredentialUnavailable, RuntimeAdapter, SESSION_FAILED_DETAIL,
+    SESSION_LOST_DETAIL, SessionConflict, SessionStatus,
+)
 
 
 class FakeHarness:
@@ -57,13 +60,9 @@ class FakeHarness:
         self.__class__.allow_run.set()
 
 
-@pytest.mark.parametrize("operation", ["create", "resume"])
-def test_release_rejects_inflight_process_initialization(adapter, monkeypatch, operation):
+def test_release_rejects_inflight_process_initialization(adapter, monkeypatch):
     entered, proceed = threading.Event(), threading.Event()
     errors = []
-    if operation == "resume":
-        adapter.create_session("starting-race", "race-trace")
-        adapter._get("starting-race").status = SessionStatus.FAILED
     original = FakeHarness.start
 
     def blocked_start(harness):
@@ -73,10 +72,7 @@ def test_release_rejects_inflight_process_initialization(adapter, monkeypatch, o
 
     def initialize():
         try:
-            if operation == "create":
-                adapter.create_session("starting-race", "race-trace")
-            else:
-                adapter.resume_session("starting-race")
+            adapter.create_session("starting-race", "race-trace")
         except BaseException as exc:
             errors.append(exc)
 
@@ -100,13 +96,9 @@ def test_release_rejects_inflight_process_initialization(adapter, monkeypatch, o
             harness.close()
 
 
-@pytest.mark.parametrize("operation", ["create", "resume"])
-def test_shutdown_cannot_publish_a_late_initialized_process(adapter, monkeypatch, operation):
+def test_shutdown_cannot_publish_a_late_initialized_process(adapter, monkeypatch):
     entered, proceed = threading.Event(), threading.Event()
     errors = []
-    if operation == "resume":
-        adapter.create_session("shutdown-race", "race-trace")
-        adapter._get("shutdown-race").status = SessionStatus.FAILED
     original = FakeHarness.start
 
     def blocked_start(harness):
@@ -116,10 +108,7 @@ def test_shutdown_cannot_publish_a_late_initialized_process(adapter, monkeypatch
 
     def initialize():
         try:
-            if operation == "create":
-                adapter.create_session("shutdown-race", "race-trace")
-            else:
-                adapter.resume_session("shutdown-race")
+            adapter.create_session("shutdown-race", "race-trace")
         except BaseException as exc:
             errors.append(exc)
 
@@ -144,27 +133,44 @@ def test_shutdown_cannot_publish_a_late_initialized_process(adapter, monkeypatch
             harness.close()
 
 
-@pytest.mark.parametrize("stage", ["build", "start"])
-def test_failed_resume_initialization_does_not_leave_starting(adapter, monkeypatch, stage):
+@pytest.mark.parametrize("lost_state", ["failed", "interrupted", "absent-harness"])
+def test_lost_resume_does_not_start_or_mutate_session(adapter, lost_state):
     adapter.create_session("failed-init", "failed-init-trace")
     record = adapter._get("failed-init")
-    record.status = SessionStatus.FAILED
-
-    def fail(*args, **kwargs):
-        raise RuntimeError("synthetic initialize failure")
-
-    if stage == "build":
-        monkeypatch.setattr(adapter, "_build_harness", fail)
+    original_harness = record.harness
+    if lost_state == "failed":
+        record.status = SessionStatus.FAILED
+        expected_detail = SESSION_FAILED_DETAIL
+    elif lost_state == "interrupted":
+        adapter.submit_prompt("failed-init", "synthetic request")
+        assert FakeHarness.run_started.wait(1)
+        adapter.cancel_session("failed-init", "hard")
+        expected_detail = SESSION_LOST_DETAIL
     else:
-        monkeypatch.setattr(FakeHarness, "start", fail)
+        assert record.current_generation is not None
+        record.current_generation.harness = None
+        expected_detail = SESSION_LOST_DETAIL
+
+    state_before = (
+        record.status, list(record.history), record.sequence, record.continuity,
+        record.current_generation, record.interrupted_run_id,
+    )
     try:
-        with pytest.raises(RuntimeError, match="synthetic initialize"):
+        with pytest.raises(SessionConflict) as exc:
             adapter.resume_session("failed-init")
-        assert record.status == SessionStatus.FAILED
-        assert all(harness.closed for harness in FakeHarness.instances)
-        adapter.release_session("failed-init")
+        assert str(exc.value) == expected_detail
+        assert len(FakeHarness.instances) == 1
+        assert (
+            record.status, list(record.history), record.sequence, record.continuity,
+            record.current_generation, record.interrupted_run_id,
+        ) == state_before
+        if lost_state == "absent-harness":
+            assert record.harness is None
+            assert original_harness is not None
     finally:
         adapter.close()
+        for harness in FakeHarness.instances:
+            harness.close()
 
 
 def release_compatibility(tmp_path: Path) -> object:
@@ -379,7 +385,7 @@ def test_terminal_ack_lost_response_retries_after_reap_only_in_same_adapter_boot
         adapter.close()
 
 
-def test_new_process_generation_preserves_old_ack_barrier(adapter):
+def test_hard_cancel_resume_rejection_preserves_old_ack_barrier(adapter):
     try:
         adapter.create_session("new-generation", "generation-trace", "alice", "workspace_alice")
         adapter.submit_prompt("new-generation", "first")
@@ -388,20 +394,28 @@ def test_new_process_generation_preserves_old_ack_barrier(adapter):
         previous = record.runtime_generation
         adapter.cancel_session("new-generation", "hard")
         assert record.pending_terminal_receipts
-        adapter.resume_session("new-generation")
-        assert record.runtime_generation != previous
+        history_after_cancel = list(record.history)
+        with pytest.raises(SessionConflict) as exc:
+            adapter.resume_session("new-generation")
+        assert str(exc.value) == SESSION_LOST_DETAIL
+        assert record.runtime_generation == previous
+        assert record.history == history_after_cancel
         assert record.pending_terminal_receipts
+        assert len(FakeHarness.instances) == 1
         with pytest.raises(SessionConflict, match="cleanup"):
             adapter.submit_prompt("new-generation", "new generation")
         receipt = next(iter(record.terminal_receipts.values()))
         adapter.acknowledge_terminal("new-generation", receipt)
-        adapter.submit_prompt("new-generation", "new generation")
+        assert not record.pending_terminal_receipts
+        assert record.status == SessionStatus.INTERRUPTED
+        with pytest.raises(SessionConflict):
+            adapter.submit_prompt("new-generation", "new generation")
     finally:
         adapter.close()
 
 
 @pytest.mark.parametrize("cleanup", ["cancel", "watchdog"])
-def test_resume_waits_for_old_process_cleanup(adapter, monkeypatch, cleanup):
+def test_lost_resume_waits_for_old_process_cleanup(adapter, monkeypatch, cleanup):
     entered, release = threading.Event(), threading.Event()
     original_close = FakeHarness.close
     errors = []
@@ -438,9 +452,12 @@ def test_resume_waits_for_old_process_cleanup(adapter, monkeypatch, cleanup):
         thread.join(2)
         assert not thread.is_alive()
         assert not errors
-        adapter.resume_session("closing-root")
+        with pytest.raises(SessionConflict) as exc:
+            adapter.resume_session("closing-root")
+        assert str(exc.value) == SESSION_LOST_DETAIL
+        assert adapter._get("closing-root").interrupted_run_id is not None
         assert FakeHarness.instances[0].closed
-        assert not FakeHarness.instances[1].closed
+        assert len(FakeHarness.instances) == 1
     finally:
         release.set()
         if thread:
@@ -448,7 +465,7 @@ def test_resume_waits_for_old_process_cleanup(adapter, monkeypatch, cleanup):
         adapter.close()
 
 
-def test_delayed_prompt_worker_cannot_execute_on_resumed_process(adapter, monkeypatch):
+def test_delayed_prompt_worker_cannot_succeed_after_lost_resume(adapter, monkeypatch):
     workers = []
 
     class DeferredThread:
@@ -465,13 +482,17 @@ def test_delayed_prompt_worker_cannot_execute_on_resumed_process(adapter, monkey
         adapter.submit_prompt("delayed-worker", "old synthetic request")
         old_harness = FakeHarness.instances[0]
         adapter.cancel_session("delayed-worker", "hard")
-        adapter.resume_session("delayed-worker")
-        new_harness = FakeHarness.instances[1]
+        record = adapter._get("delayed-worker")
+        history_after_cancel = list(record.history)
+        with pytest.raises(SessionConflict) as exc:
+            adapter.resume_session("delayed-worker")
+        assert str(exc.value) == SESSION_LOST_DETAIL
         target, args = workers[0]
         target(*args)
         assert old_harness.run_count == 0
-        assert new_harness.run_count == 0
-        assert adapter._get("delayed-worker").status == SessionStatus.READY
+        assert len(FakeHarness.instances) == 1
+        assert record.status == SessionStatus.INTERRUPTED
+        assert record.history == history_after_cancel
     finally:
         adapter.close()
 
@@ -624,6 +645,11 @@ def test_terminal_events_identify_the_exact_submitted_root_run(adapter: RuntimeA
             wait_for_status(adapter, "s-terminal", SessionStatus.IDLE if outcome == "completed" else SessionStatus.FAILED)
         elif outcome in {"hard_cancel", "soft_cancel"}:
             adapter.cancel_session("s-terminal", "hard" if outcome == "hard_cancel" else "soft")
+            cancelled = next(event for event in record.history if event["kind"] == "session.cancelled")
+            assert cancelled["payload"]["resume"] == (
+                "new-agent-session-after-interrupted" if outcome == "hard_cancel"
+                else "same-session-after-soft-cancel"
+            )
             if outcome == "soft_cancel":
                 FakeHarness.allow_run.set()
                 wait_for_status(adapter, "s-terminal", SessionStatus.IDLE)
@@ -1051,40 +1077,29 @@ def test_fresh_runtime_uses_private_dsh_session_and_bounded_public_context(
     assert '"role":"user","content":"第一轮问题"' in harness.last_content
     assert '"role":"assistant","content":"第一轮回答"' in harness.last_content
     assert "[CURRENT_USER_MESSAGE]\n第二轮追问" in harness.last_content
+    assert "[BYQ_TASK_RECOVERY]" not in harness.last_content
+    assert "conversation_recovery" not in harness.last_content
     assert record.pending_conversation_context == []
     adapter.release_session("s-durable")
 
 
-def test_recovery_reaches_fresh_runtime_once(adapter: RuntimeAdapter) -> None:
+def test_public_transcript_reaches_fresh_runtime_without_failure_evidence(adapter: RuntimeAdapter) -> None:
     FakeHarness.allow_run.set()
-    subject = "沪深300近三年周频双均线，凯利仓位"
-    recovery = {
-        "schema_version": "conversation-recovery.v2", "session_id": "s-recovery",
-        "trace_id": "t-recovery", "status": "resolved",
-        "unanswered_turn": {"message_id": "m-original", "content": subject},
-        "failure": {"sequence": 9, "run_id": "run-original", "code": "runtime-subagent-timeout"},
-    }
-    adapter.create_session("s-recovery", "t-recovery", initial_sequence=0, conversation_recovery=recovery)
-    adapter.submit_prompt("s-recovery", subject)
-    wait_for_status(adapter, "s-recovery", SessionStatus.IDLE)
-    assert FakeHarness.instances[0].last_content.count(subject) == 1
-    assert "runtime-subagent-timeout" in FakeHarness.instances[0].last_content
-    assert adapter._get("s-recovery").pending_conversation_recovery is None
-    adapter.release_session("s-recovery")
-
-
-def test_ambiguous_recovery_does_not_start_run(adapter: RuntimeAdapter) -> None:
-    recovery = {
-        "schema_version": "conversation-recovery.v2", "session_id": "s-ambiguous",
-        "trace_id": "t-ambiguous", "status": "needs_confirmation", "unanswered_turn": None,
-        "failure": {"sequence": 9, "run_id": None, "code": "unknown"},
-    }
-    adapter.create_session("s-ambiguous", "t-ambiguous", initial_sequence=0, conversation_recovery=recovery)
-    with pytest.raises(ValueError, match="请明确"):
-        adapter.submit_prompt("s-ambiguous", "继续")
-    assert FakeHarness.instances[0].run_count == 0
-    assert adapter._get("s-ambiguous").pending_conversation_recovery == recovery
-    adapter.release_session("s-ambiguous")
+    adapter.create_session("s-transcript", "t-transcript", initial_sequence=0,
+        conversation_context=[
+            {"role": "user", "content": "沪深300周频动量研究"},
+            {"role": "assistant", "content": "上一轮公开回答"},
+        ])
+    adapter.submit_prompt("s-transcript", "请补充风险分析")
+    wait_for_status(adapter, "s-transcript", SessionStatus.IDLE)
+    prompt = FakeHarness.instances[0].last_content
+    assert '"role":"user","content":"沪深300周频动量研究"' in prompt
+    assert '"role":"assistant","content":"上一轮公开回答"' in prompt
+    assert "[CURRENT_USER_MESSAGE]\n请补充风险分析" in prompt
+    assert "conversation_recovery" not in prompt
+    assert "runtime-subagent-timeout" not in prompt
+    assert adapter._get("s-transcript").pending_conversation_context == []
+    adapter.release_session("s-transcript")
 
 
 def test_conversation_context_rejects_private_or_unbounded_shapes(adapter: RuntimeAdapter) -> None:
@@ -1111,44 +1126,47 @@ def test_resume_is_idempotent_for_a_live_adapter_session(adapter: RuntimeAdapter
     adapter.release_session("s-ready")
 
 
-def test_hard_cancel_resume_uses_a_new_owned_runtime(adapter: RuntimeAdapter) -> None:
+def test_hard_cancel_resume_reports_lost_session_without_rebuilding(adapter: RuntimeAdapter) -> None:
     adapter.create_session("s-1", "t-1")
     adapter.submit_prompt("s-1", "running")
     assert FakeHarness.run_started.wait(timeout=1.0)
 
     adapter.cancel_session("s-1", "hard")
-    resumed = adapter.resume_session("s-1")
-
-    assert resumed["status"] == SessionStatus.READY
-    assert resumed["resumed_from_run_id"]
-    assert len(FakeHarness.instances) == 2
-    assert FakeHarness.instances[0].closed is True
     record = adapter._get("s-1")
+    history_after_cancel = list(record.history)
+    with pytest.raises(SessionConflict) as exc:
+        adapter.resume_session("s-1")
+
+    assert str(exc.value) == SESSION_LOST_DETAIL
+    assert record.status == SessionStatus.INTERRUPTED
+    assert record.history == history_after_cancel
+    assert record.history[-1]["kind"] == "session.cancelled"
+    assert record.history[-1]["payload"]["resume"] == "new-agent-session-after-interrupted"
+    assert len(FakeHarness.instances) == 1
+    assert FakeHarness.instances[0].closed is True
     assert record.runtime_session_id != "s-1"
-    old_generation = FakeHarness.instances[0].config.env["BYQ_DSH_RUN_ID"]
-    new_generation = FakeHarness.instances[1].config.env["BYQ_DSH_RUN_ID"]
-    assert old_generation != new_generation
-    assert new_generation != record.runtime_session_id
     adapter.release_session("s-1")
 
 
-def test_resume_private_id_remains_valid_for_maximum_public_id(adapter: RuntimeAdapter) -> None:
+def test_maximum_public_id_still_reports_lost_resume(adapter: RuntimeAdapter) -> None:
     public_session_id = "s" * MAX_IDENTIFIER_LENGTH
     adapter.create_session(public_session_id, "t-1")
     adapter.submit_prompt(public_session_id, "running")
     assert FakeHarness.run_started.wait(timeout=1.0)
 
     adapter.cancel_session(public_session_id, "hard")
-    resumed = adapter.resume_session(public_session_id)
-
     record = adapter._get(public_session_id)
-    assert resumed["status"] == SessionStatus.READY
+    with pytest.raises(SessionConflict) as exc:
+        adapter.resume_session(public_session_id)
+    assert str(exc.value) == SESSION_LOST_DETAIL
+    assert record.status == SessionStatus.INTERRUPTED
+    assert len(FakeHarness.instances) == 1
     assert len(record.runtime_session_id) <= MAX_IDENTIFIER_LENGTH
     assert record.runtime_session_id != public_session_id
     adapter.release_session(public_session_id)
 
 
-def test_error_finish_reason_is_failed_and_can_resume_with_fresh_runtime(adapter: RuntimeAdapter) -> None:
+def test_error_finish_reason_stays_failed_and_cannot_rebuild_runtime(adapter: RuntimeAdapter) -> None:
     FakeHarness.finish_reason = "error"
     FakeHarness.allow_run.set()
     adapter.create_session("s-1", "t-1")
@@ -1165,10 +1183,14 @@ def test_error_finish_reason_is_failed_and_can_resume_with_fresh_runtime(adapter
     assert "error" not in str(record.history[-1]["payload"]).lower()
 
     previous_runtime_session_id = record.runtime_session_id
-    resumed = adapter.resume_session("s-1")
-    assert resumed["status"] == SessionStatus.READY
-    assert record.runtime_session_id != previous_runtime_session_id
-    assert FakeHarness.instances[0].closed is True
+    history_after_failure = list(record.history)
+    with pytest.raises(SessionConflict) as exc:
+        adapter.resume_session("s-1")
+    assert str(exc.value) == SESSION_FAILED_DETAIL
+    assert record.status == SessionStatus.FAILED
+    assert record.history == history_after_failure
+    assert record.runtime_session_id == previous_runtime_session_id
+    assert len(FakeHarness.instances) == 1
     adapter.release_session("s-1")
 
 
