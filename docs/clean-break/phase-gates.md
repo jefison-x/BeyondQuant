@@ -1,5 +1,69 @@
 # Phase 0–6 gate record
 
+## Phase 8 classified old-environment cleanup (2026-09-28)
+
+Following the maintainer's broader deletion approval, the [exact manifest](phase8-final-targets.json)
+and [execution evidence](phase8-final-cleanup-evidence.md) record final-archive
+verification, independent scope review, removal of 10 named old BYQ volumes
+(including the archived old Product DB source) and 68 unused old BYQ
+GHCR digest-only images. All removals succeeded. Five unlabeled volumes and
+unrelated/unknown or retained resources were excluded.
+
+**Tester:** PASS — live Docker inspection found all 10 target volumes and
+68 target images absent, all five excluded named volumes and 28 anonymous
+volumes present, backup checksum intact, retained images present, and the
+unrelated container and built-in networks unchanged. Governance 2/2 and diff
+check PASS. **Independent Sol Reviewer:** Functional PASS / Tests PASS /
+Clean Break Architecture PASS after reviewing the actual manifest, execution
+results, backup checksum, documentation and Tester evidence. **Root acceptance:**
+**Phase 8 overall PASS** for classified old-environment cleanup. The excluded
+resources remain out of scope; Phase 9 may begin in a separate gate, but has
+not begun.
+
+## Phase 8 first-pass resource cleanup (2026-09-28)
+
+The maintainer expressly authorized only the five targets in the
+[preview](phase8-cleanup-preview.md). [Execution evidence](phase8-first-pass-evidence.md)
+records exact revalidation, removal and post-action absence for two old test
+DB volumes, their two empty networks and the old recovery-MCP test image.
+The old Product DB source volume and final archive remain present. **Phase 8
+overall remains OPEN** while other obsolete resources are classified and
+separately authorized; no Phase 9 work follows from this slice alone.
+
+**Tester:** Functional PASS / Tests PASS for these five targets: exact absence,
+43 remaining volumes and three built-in networks, retained old Product DB and
+five named BYQ state volumes, archive size/mode/checksum, governance 2/2,
+36 local links and diff PASS. **Independent Sol Reviewer:** Functional PASS /
+Tests PASS / Clean Break Architecture PASS for the bounded operation after
+actual documentation/evidence review and independent archive checksum check;
+its Docker socket was unavailable, so it used the independent Tester's exact
+post-action Docker verification. **Root acceptance:** **PASS for this five-target
+Phase 8 slice only**. No other resource deletion, Phase 8 overall PASS or
+Phase 9 entry is accepted.
+
+## Phase 8 read-only inventory and cleanup preview (2026-09-28)
+
+The [current inventory](environment-inventory-20260928.md) and
+[first-pass preview](phase8-cleanup-preview.md) list only two detached old test
+DB volume/network pairs and one old recovery-MCP image as review candidates.
+The final old Product database archive's 2,102,827,616-byte file and SHA-256
+match its manifest; the source volume remains present and unmounted.
+
+**Tester:** Functional PASS / Tests PASS for planning only: exact Docker
+metadata/attachments and archive checksum checked read-only, governance 2/2,
+four local links and diff PASS. **Independent Sol Reviewer:** Functional PASS /
+Tests PASS / Clean Break Architecture PASS for the read-only proposal, after
+inspecting the documents and independently verifying archive metadata/checksum;
+its Docker access was unavailable, so Root and Tester performed exact Docker
+metadata checks. **Root acceptance:** **PASS for Phase 8 preflight planning
+only.** Resource deletion, Phase 8 implementation and Phase 8 overall gate are
+**NOT_RUN / OPEN**. Test DB contents and reclaim sizes are unverified; the P0
+volume lacks an owner label, the old DB application schema revision is unknown,
+and no current TOC/restore run was done. Before any cleanup, recheck exact
+resource identities/attachments and obtain authorization covering the named
+test data, networks and image. Existing Product DB, backup and unclassified
+resources remain outside this proposal.
+
 ## Phase 7 bounded legacy-runtime removal — Root acceptance (2026-09-28)
 
 [Exit evidence](phase7-exit-evidence.md) and [live-state classification](phase7-exit-classification.md)

@@ -1,6 +1,15 @@
 # Phase 3 archive and Phase 8–9 environment plan
 
-Status: plan only. No backup, stop, remove, restore or reset has been executed.
+Status: historical Phase 3 plan. The final old-DB archive was subsequently
+created and checksum-verified; see the [current Phase 8 inventory](environment-inventory-20260928.md).
+An [authorized Phase 8 first pass](phase8-first-pass-evidence.md) removed two
+old test DB volumes, their empty networks and one old recovery-MCP image.
+A [classified cleanup](phase8-final-cleanup-evidence.md) then removed 10
+additional old BYQ volumes, including the archived old Product DB source, and
+68 unused old BYQ images. The final backup, unrelated and unverified resources,
+retained images, and running services were preserved. The remaining steps below
+are the historical preflight plan, not a current claim that the source volume
+still exists.
 
 ## Final archive preflight
 
