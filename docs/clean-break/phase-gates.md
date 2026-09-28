@@ -1,5 +1,25 @@
 # Phase 0–6 gate record
 
+## Phase 8 classified old-environment cleanup (2026-09-28)
+
+Following the maintainer's broader deletion approval, the [exact manifest](phase8-final-targets.json)
+and [execution evidence](phase8-final-cleanup-evidence.md) record final-archive
+verification, independent scope review, removal of 10 named old BYQ volumes
+(including the archived old Product DB source) and 68 unused old BYQ
+GHCR digest-only images. All removals succeeded. Five unlabeled volumes and
+unrelated/unknown or retained resources were excluded.
+
+**Tester:** PASS — live Docker inspection found all 10 target volumes and
+68 target images absent, all five excluded named volumes and 28 anonymous
+volumes present, backup checksum intact, retained images present, and the
+unrelated container and built-in networks unchanged. Governance 2/2 and diff
+check PASS. **Independent Sol Reviewer:** Functional PASS / Tests PASS /
+Clean Break Architecture PASS after reviewing the actual manifest, execution
+results, backup checksum, documentation and Tester evidence. **Root acceptance:**
+**Phase 8 overall PASS** for classified old-environment cleanup. The excluded
+resources remain out of scope; Phase 9 may begin in a separate gate, but has
+not begun.
+
 ## Phase 8 first-pass resource cleanup (2026-09-28)
 
 The maintainer expressly authorized only the five targets in the

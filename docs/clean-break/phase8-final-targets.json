@@ -1,0 +1,591 @@
+{
+  "archive": {
+    "path": "/home/jefison/backups/byq-clean-break-final-20260927T234310Z/byq-domain.dump",
+    "sha256": "0d62af957f545da40fc13083914c1d4cc614f04414fe6806d36bc772a4d06183",
+    "size": 2102827616
+  },
+  "excluded": "28 anonymous and 5 unlabeled BYQ-named volumes with unverified ownership; built-in networks; unrelated exited container; retained/rollback/base/current tags and unknown dangling IDs",
+  "images": [
+    {
+      "created": "2026-09-18T20:02:19.33731548Z",
+      "id": "sha256:015e5fbe5531227e716a09549644007b733a39031338553136a5cf46681dd256",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/runtime-adapter@sha256:015e5fbe5531227e716a09549644007b733a39031338553136a5cf46681dd256"
+      ]
+    },
+    {
+      "created": "2026-09-19T03:24:21.447545245Z",
+      "id": "sha256:0c6f81896a5634fdb42a576f61389baf28334e389dd91c90c323f7057e594bad",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/backend@sha256:0c6f81896a5634fdb42a576f61389baf28334e389dd91c90c323f7057e594bad"
+      ]
+    },
+    {
+      "created": "2026-09-18T12:10:16.949516375Z",
+      "id": "sha256:14cccfb90e4c89623b63b45f2b76466b1cb5d323f3ba564c15754418191d37c3",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/gateway@sha256:14cccfb90e4c89623b63b45f2b76466b1cb5d323f3ba564c15754418191d37c3"
+      ]
+    },
+    {
+      "created": "2026-09-18T08:33:44.270516497Z",
+      "id": "sha256:16d809c98f8c7fecb890b5a86af5c14fc7287afd1c313bce93775b7770b124f3",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/runtime-adapter@sha256:16d809c98f8c7fecb890b5a86af5c14fc7287afd1c313bce93775b7770b124f3"
+      ]
+    },
+    {
+      "created": "2026-09-17T15:00:09.676195821Z",
+      "id": "sha256:16ec14835ed25cb2e7e7f90f18fbd3fd4ef3d96b13b538140df3fd03a09f16e7",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/frontend@sha256:16ec14835ed25cb2e7e7f90f18fbd3fd4ef3d96b13b538140df3fd03a09f16e7"
+      ]
+    },
+    {
+      "created": "2026-09-17T15:00:09.778313531Z",
+      "id": "sha256:1b59c57a62badee3f63b4cfc4eed7be9c54bb458c0bb2010842d0d6274dd07f1",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/gateway@sha256:1b59c57a62badee3f63b4cfc4eed7be9c54bb458c0bb2010842d0d6274dd07f1"
+      ]
+    },
+    {
+      "created": "2026-09-18T18:42:26.38337909Z",
+      "id": "sha256:209a1ce5def5771968e1319ce33a5c1d68b1e84bd144e7db36a2b717ead5b71d",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/gateway@sha256:209a1ce5def5771968e1319ce33a5c1d68b1e84bd144e7db36a2b717ead5b71d"
+      ]
+    },
+    {
+      "created": "2026-09-18T23:33:44.375638469Z",
+      "id": "sha256:257f8c544760e683323dd92d7644f4e60bd902dee83d4d9fb657b7fdfda39f08",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/backend@sha256:257f8c544760e683323dd92d7644f4e60bd902dee83d4d9fb657b7fdfda39f08"
+      ]
+    },
+    {
+      "created": "2026-09-17T23:19:46.101500941Z",
+      "id": "sha256:279d75f563bbc322f5440c75f9ec5594321268a84c618e5aad9f88b4d4bf1f5d",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/backend@sha256:279d75f563bbc322f5440c75f9ec5594321268a84c618e5aad9f88b4d4bf1f5d"
+      ]
+    },
+    {
+      "created": "2026-09-18T14:56:12.072707591Z",
+      "id": "sha256:2fb4fd492992b269d50e1d8d3fe0529cf46063f5ebbc62e0af64567f8ce6df62",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/signal-worker@sha256:2fb4fd492992b269d50e1d8d3fe0529cf46063f5ebbc62e0af64567f8ce6df62"
+      ]
+    },
+    {
+      "created": "2026-09-18T10:14:18.27892282Z",
+      "id": "sha256:360a83fae659aa106e55a58bf611db696c6d7b250d8d3fb0fdfa2d8fb83bf241",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/runtime-adapter@sha256:360a83fae659aa106e55a58bf611db696c6d7b250d8d3fb0fdfa2d8fb83bf241"
+      ]
+    },
+    {
+      "created": "2026-09-11T00:07:22.802624324Z",
+      "id": "sha256:3710795efe160cbf0d3adc7eb06ad9bc8a55972edc59789c61098e101fdf03ed",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/runtime-adapter@sha256:3710795efe160cbf0d3adc7eb06ad9bc8a55972edc59789c61098e101fdf03ed"
+      ]
+    },
+    {
+      "created": "2026-09-18T23:33:42.117827447Z",
+      "id": "sha256:37e737d1cbddab8f01f95a7c1fde321ca832c499875cb3c9a434873158b95b35",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/runtime-adapter@sha256:37e737d1cbddab8f01f95a7c1fde321ca832c499875cb3c9a434873158b95b35"
+      ]
+    },
+    {
+      "created": "2026-09-17T15:00:10.19571629Z",
+      "id": "sha256:4222c50491e06e77cce6f6aba2b5e89798724bdd8b8c57ab1cee5ffafe81afe6",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/runtime-adapter@sha256:4222c50491e06e77cce6f6aba2b5e89798724bdd8b8c57ab1cee5ffafe81afe6"
+      ]
+    },
+    {
+      "created": "2026-09-16T22:03:36.193382496Z",
+      "id": "sha256:42f218719a13cd95d1d038d474db4b63ece55fe80daf0da16d88fb6fb89f9767",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/mcp@sha256:42f218719a13cd95d1d038d474db4b63ece55fe80daf0da16d88fb6fb89f9767"
+      ]
+    },
+    {
+      "created": "2026-09-19T03:24:11.56869815Z",
+      "id": "sha256:4361da41acd39c4d0bd665e2f4b6ce39ad447117d74127bf6186984050340f1e",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/gateway@sha256:4361da41acd39c4d0bd665e2f4b6ce39ad447117d74127bf6186984050340f1e"
+      ]
+    },
+    {
+      "created": "2026-09-18T14:56:32.230570126Z",
+      "id": "sha256:46719f5f49b709880b6a90f61db9c921b6246f1ba3918657e835b461667a61db",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/runtime-adapter@sha256:46719f5f49b709880b6a90f61db9c921b6246f1ba3918657e835b461667a61db"
+      ]
+    },
+    {
+      "created": "2026-09-18T08:33:40.826155389Z",
+      "id": "sha256:49803ebffead08549e2a49c71253e6db06e354bef310c1f23ed1e1c51175cc82",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/gateway@sha256:49803ebffead08549e2a49c71253e6db06e354bef310c1f23ed1e1c51175cc82"
+      ]
+    },
+    {
+      "created": "2026-09-18T10:14:11.400413523Z",
+      "id": "sha256:4b6e9f34dfee4b822e5cc4de12f576e706eee63676c52ef677da739d131a7ac8",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/gateway@sha256:4b6e9f34dfee4b822e5cc4de12f576e706eee63676c52ef677da739d131a7ac8"
+      ]
+    },
+    {
+      "created": "2026-09-17T09:06:21.028606554Z",
+      "id": "sha256:4e356925cf645d1cd5ce08ba38ef813bebefbba811c70c686b079e6f621c68af",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/backend@sha256:4e356925cf645d1cd5ce08ba38ef813bebefbba811c70c686b079e6f621c68af"
+      ]
+    },
+    {
+      "created": "2026-09-18T04:39:01.232160088Z",
+      "id": "sha256:4fd69f39f6612f640aad21fc6d73951806c13977ef52e5a580886b61c2b6ef6e",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/backend@sha256:4fd69f39f6612f640aad21fc6d73951806c13977ef52e5a580886b61c2b6ef6e"
+      ]
+    },
+    {
+      "created": "2026-09-19T03:24:22.290555293Z",
+      "id": "sha256:54681b561f376355dc074af97a6c3034259106af8eb3572aab274b1382b4de1f",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/runtime-adapter@sha256:54681b561f376355dc074af97a6c3034259106af8eb3572aab274b1382b4de1f"
+      ]
+    },
+    {
+      "created": "2026-09-18T04:38:53.32605116Z",
+      "id": "sha256:5627e1be130e3e9340d45c684b6a349c5394fdbbee32bbdf2d1fa9deb5bcd3ec",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/runtime-adapter@sha256:5627e1be130e3e9340d45c684b6a349c5394fdbbee32bbdf2d1fa9deb5bcd3ec"
+      ]
+    },
+    {
+      "created": "2026-09-11T00:07:30.233527891Z",
+      "id": "sha256:56619795a36be8a70ef2550076975857e3291376025e4054f970c490bee69fdd",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/backend@sha256:56619795a36be8a70ef2550076975857e3291376025e4054f970c490bee69fdd"
+      ]
+    },
+    {
+      "created": "2026-09-19T10:22:22.86392957Z",
+      "id": "sha256:57f199699e62a3631bf40f66b79b12e2c3e187cf3252456fbca240e7ef1a5cc2",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/gateway@sha256:57f199699e62a3631bf40f66b79b12e2c3e187cf3252456fbca240e7ef1a5cc2"
+      ]
+    },
+    {
+      "created": "2026-09-18T01:32:58.85145938Z",
+      "id": "sha256:5d4007b5ebc99ab3e428d540ff6ec5b8ce63ff1c1f3a0851db6287b91581b4bb",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/backend@sha256:5d4007b5ebc99ab3e428d540ff6ec5b8ce63ff1c1f3a0851db6287b91581b4bb"
+      ]
+    },
+    {
+      "created": "2026-09-19T05:51:11.894288667Z",
+      "id": "sha256:6216d7e1957b0826b7f957265e1bc8111ac92af6ba37ce00fc89ee39cd0fa4f7",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/runtime-adapter@sha256:6216d7e1957b0826b7f957265e1bc8111ac92af6ba37ce00fc89ee39cd0fa4f7"
+      ]
+    },
+    {
+      "created": "2026-09-12T21:09:00.682134873Z",
+      "id": "sha256:631b290478c8210aa4312ad31b5efdf246ee3bf9f315f9d8f2ea66731f8c255f",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/runtime-adapter@sha256:631b290478c8210aa4312ad31b5efdf246ee3bf9f315f9d8f2ea66731f8c255f"
+      ]
+    },
+    {
+      "created": "2026-09-11T00:07:19.260196249Z",
+      "id": "sha256:6e4d0ee8915e6589e7213a9fd6a2390966c78a994e8ec71d748ccf89eadfa714",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/gateway@sha256:6e4d0ee8915e6589e7213a9fd6a2390966c78a994e8ec71d748ccf89eadfa714"
+      ]
+    },
+    {
+      "created": "2026-09-12T21:07:50.645874282Z",
+      "id": "sha256:72408edfe25a193f59f22dd553ec234f6218dff8e8c3292884afbae624398c41",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/backend@sha256:72408edfe25a193f59f22dd553ec234f6218dff8e8c3292884afbae624398c41"
+      ]
+    },
+    {
+      "created": "2026-09-18T18:42:19.022893168Z",
+      "id": "sha256:79538d287a336aeb7ad77a63f2c5b07817a0e731e481c38f5fae593ab8a42a7b",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/signal-worker@sha256:79538d287a336aeb7ad77a63f2c5b07817a0e731e481c38f5fae593ab8a42a7b"
+      ]
+    },
+    {
+      "created": "2026-09-18T01:32:50.51041995Z",
+      "id": "sha256:847c5270738cb03ac8a6d1b32c0f75b7f5d9a5c37b2e6dd2854fa1a820a98cb6",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/mcp@sha256:847c5270738cb03ac8a6d1b32c0f75b7f5d9a5c37b2e6dd2854fa1a820a98cb6"
+      ]
+    },
+    {
+      "created": "2026-09-22T04:45:16.013002113Z",
+      "id": "sha256:86ae5dbd65b2e2de8e5c2c53fd790587f0ffd70512e5037321adbd7a832e1513",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/runtime-adapter@sha256:86ae5dbd65b2e2de8e5c2c53fd790587f0ffd70512e5037321adbd7a832e1513"
+      ]
+    },
+    {
+      "created": "2026-09-18T01:32:51.008354115Z",
+      "id": "sha256:88190f04a23dc088a80b40c854dfed198b919e40badcfe708cdcaabc87035c22",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/runtime-adapter@sha256:88190f04a23dc088a80b40c854dfed198b919e40badcfe708cdcaabc87035c22"
+      ]
+    },
+    {
+      "created": "2026-09-17T23:19:39.286723557Z",
+      "id": "sha256:8b61c657de94118aaa45764ef025f4c0e43061c72ea8b87afe326544befda759",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/runtime-adapter@sha256:8b61c657de94118aaa45764ef025f4c0e43061c72ea8b87afe326544befda759"
+      ]
+    },
+    {
+      "created": "2026-09-19T01:33:02.419055274Z",
+      "id": "sha256:9075f3361cbe0216d64d56122f05a091d4498e3182e49c821b55bc3362154728",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/runtime-adapter@sha256:9075f3361cbe0216d64d56122f05a091d4498e3182e49c821b55bc3362154728"
+      ]
+    },
+    {
+      "created": "2026-09-18T18:42:26.942401961Z",
+      "id": "sha256:926762ff053a3719929c19d8c5abded136829e7126ba756a9b03306a32a60afd",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/runtime-adapter@sha256:926762ff053a3719929c19d8c5abded136829e7126ba756a9b03306a32a60afd"
+      ]
+    },
+    {
+      "created": "2026-09-16T22:03:37.077707634Z",
+      "id": "sha256:94b916a9d3d60ea8da8c60ba4abf1779eff450e3d257eaa7a6591b050be6ba5b",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/runtime-adapter@sha256:94b916a9d3d60ea8da8c60ba4abf1779eff450e3d257eaa7a6591b050be6ba5b"
+      ]
+    },
+    {
+      "created": "2026-09-11T00:07:21.685595667Z",
+      "id": "sha256:96aa84013e52eec96953d2c1ef7ddda6bc8119c0ba25fad32396088ef0b6bc6d",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/mcp@sha256:96aa84013e52eec96953d2c1ef7ddda6bc8119c0ba25fad32396088ef0b6bc6d"
+      ]
+    },
+    {
+      "created": "2026-09-12T21:09:01.373962255Z",
+      "id": "sha256:9d579ab05f3d67590d9128443bff1af2a03e7476245acafdd1130a8c1bc48397",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/frontend@sha256:9d579ab05f3d67590d9128443bff1af2a03e7476245acafdd1130a8c1bc48397"
+      ]
+    },
+    {
+      "created": "2026-09-12T21:07:48.373759226Z",
+      "id": "sha256:9d7ab5f9354bf5d8ad3386dcdda1a17bbd31cd55010e897f7c2c6810a0a552e7",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/mcp@sha256:9d7ab5f9354bf5d8ad3386dcdda1a17bbd31cd55010e897f7c2c6810a0a552e7"
+      ]
+    },
+    {
+      "created": "2026-09-19T10:22:16.07276489Z",
+      "id": "sha256:a02211557a34f551d8290eaf4e20f2fe58747d19964838a7391dfe2ba130b886",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/signal-worker@sha256:a02211557a34f551d8290eaf4e20f2fe58747d19964838a7391dfe2ba130b886"
+      ]
+    },
+    {
+      "created": "2026-09-19T05:51:11.066020106Z",
+      "id": "sha256:a163821cf516dd4f118de690509e12193cb95577d13fb830dcf56a72fdce04f0",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/backend@sha256:a163821cf516dd4f118de690509e12193cb95577d13fb830dcf56a72fdce04f0"
+      ]
+    },
+    {
+      "created": "2026-09-21T22:23:11.979186017Z",
+      "id": "sha256:a39c6ea52c1d64b64df9c2d185a9d4ba6bc51977b9536d3e0684928be4ab7d42",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/backend@sha256:a39c6ea52c1d64b64df9c2d185a9d4ba6bc51977b9536d3e0684928be4ab7d42"
+      ]
+    },
+    {
+      "created": "2026-09-16T22:03:43.29949862Z",
+      "id": "sha256:a49132c8d36762fbfe002e88314290a3462915cad74d41d710ba696a60be259f",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/backend@sha256:a49132c8d36762fbfe002e88314290a3462915cad74d41d710ba696a60be259f"
+      ]
+    },
+    {
+      "created": "2026-09-16T22:03:39.799645561Z",
+      "id": "sha256:a82f4b1bdccfddfe4dca252c4b7911a8aea7e6fea1ecf96c46b1652cd4cd83be",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/frontend@sha256:a82f4b1bdccfddfe4dca252c4b7911a8aea7e6fea1ecf96c46b1652cd4cd83be"
+      ]
+    },
+    {
+      "created": "2026-09-18T17:03:49.124451275Z",
+      "id": "sha256:a9a7ef2cde8dbc2d8799ddb78bf69831cbc3745921f3078cabaefa605d83ca3d",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/runtime-adapter@sha256:a9a7ef2cde8dbc2d8799ddb78bf69831cbc3745921f3078cabaefa605d83ca3d"
+      ]
+    },
+    {
+      "created": "2026-09-19T03:23:44.763997635Z",
+      "id": "sha256:ac16f2149c029957af3dd63d72430b1bf83020a59323d74f4790930ddaeeadaf",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/signal-worker@sha256:ac16f2149c029957af3dd63d72430b1bf83020a59323d74f4790930ddaeeadaf"
+      ]
+    },
+    {
+      "created": "2026-09-18T14:56:38.935372531Z",
+      "id": "sha256:b34563f581236973d3dfe8e4fff465a25a5beb1e7900131060da1dd562cab5c2",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/backend@sha256:b34563f581236973d3dfe8e4fff465a25a5beb1e7900131060da1dd562cab5c2"
+      ]
+    },
+    {
+      "created": "2026-09-17T09:06:15.525961028Z",
+      "id": "sha256:b667847b3631e896c2a0286c1c7318ec9c370aa5f6f1876d7ef74fbf5419537a",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/runtime-adapter@sha256:b667847b3631e896c2a0286c1c7318ec9c370aa5f6f1876d7ef74fbf5419537a"
+      ]
+    },
+    {
+      "created": "2026-09-11T00:07:22.49160937Z",
+      "id": "sha256:b8a5192934977a2706ed04b48e69313f6bd94100b8c2b8b4b8cf3b8285cb9c3e",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/frontend@sha256:b8a5192934977a2706ed04b48e69313f6bd94100b8c2b8b4b8cf3b8285cb9c3e"
+      ]
+    },
+    {
+      "created": "2026-09-18T20:02:22.220226834Z",
+      "id": "sha256:babdddb09d0aca8d6fd6d4cea4c2ceb345ccc5746b1f47059e69ebfde0692721",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/backend@sha256:babdddb09d0aca8d6fd6d4cea4c2ceb345ccc5746b1f47059e69ebfde0692721"
+      ]
+    },
+    {
+      "created": "2026-09-12T21:07:47.808886618Z",
+      "id": "sha256:c271a81ab05ed76299a70ba5039cee95b311b57a131928373e9a79ef400949a3",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/gateway@sha256:c271a81ab05ed76299a70ba5039cee95b311b57a131928373e9a79ef400949a3"
+      ]
+    },
+    {
+      "created": "2026-09-19T05:51:01.450625369Z",
+      "id": "sha256:c46087b127c6109de9c277420406a86fc42952537a05f0dc27781329634a0f55",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/signal-worker@sha256:c46087b127c6109de9c277420406a86fc42952537a05f0dc27781329634a0f55"
+      ]
+    },
+    {
+      "created": "2026-09-16T22:03:33.151855909Z",
+      "id": "sha256:c65ca2f3899be192160b775b339d98950b4a7e0fe51b768d4a367bb04cdc0a91",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/gateway@sha256:c65ca2f3899be192160b775b339d98950b4a7e0fe51b768d4a367bb04cdc0a91"
+      ]
+    },
+    {
+      "created": "2026-09-19T10:22:28.581449713Z",
+      "id": "sha256:cb9aad461907044f1ffe7a002f2b16fe35c22da9505ee4639023a154b3fc044e",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/runtime-adapter@sha256:cb9aad461907044f1ffe7a002f2b16fe35c22da9505ee4639023a154b3fc044e"
+      ]
+    },
+    {
+      "created": "2026-09-18T10:14:18.37540571Z",
+      "id": "sha256:ceafe0c2ca2b19571640a4961b1045857dee2c6af800884ab52938ef1c59240d",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/backend@sha256:ceafe0c2ca2b19571640a4961b1045857dee2c6af800884ab52938ef1c59240d"
+      ]
+    },
+    {
+      "created": "2026-09-21T22:23:01.585820103Z",
+      "id": "sha256:d469499d1f02fb3991170bc5b5c68ca3b4312904ca32a1b7431cea5c1eaaf943",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/gateway@sha256:d469499d1f02fb3991170bc5b5c68ca3b4312904ca32a1b7431cea5c1eaaf943"
+      ]
+    },
+    {
+      "created": "2026-09-18T08:33:50.14074111Z",
+      "id": "sha256:d79432c50e12a41a1511123220f81d9514c398230da57192b7f64cfea399194d",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/backend@sha256:d79432c50e12a41a1511123220f81d9514c398230da57192b7f64cfea399194d"
+      ]
+    },
+    {
+      "created": "2026-09-19T10:22:28.063061087Z",
+      "id": "sha256:dcddb660152fe43622d66f912cb2c9791d057bf6ec01ed009a28492002db875c",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/backend@sha256:dcddb660152fe43622d66f912cb2c9791d057bf6ec01ed009a28492002db875c"
+      ]
+    },
+    {
+      "created": "2026-09-18T14:56:16.127428413Z",
+      "id": "sha256:df29ca66c742a7bfc622e14fecbe0fd16a74c4ec4a909cffee1782828968f7a8",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/signal-sandbox@sha256:df29ca66c742a7bfc622e14fecbe0fd16a74c4ec4a909cffee1782828968f7a8"
+      ]
+    },
+    {
+      "created": "2026-09-18T12:10:17.143627198Z",
+      "id": "sha256:e8f7819b836012e8a8ae5062a5cd178f36a294291d05a7da4a74f36a83557d12",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/runtime-adapter@sha256:e8f7819b836012e8a8ae5062a5cd178f36a294291d05a7da4a74f36a83557d12"
+      ]
+    },
+    {
+      "created": "2026-09-17T09:06:15.012939742Z",
+      "id": "sha256:efbd5648b3bf3d94cebb84c0c196059775777624b68e8d97d42c11e144e4fa0c",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/gateway@sha256:efbd5648b3bf3d94cebb84c0c196059775777624b68e8d97d42c11e144e4fa0c"
+      ]
+    },
+    {
+      "created": "2026-09-17T15:00:17.303170272Z",
+      "id": "sha256:f17a7888d0bf1379745d9b0a6c084fb513b57084bb347ed2a79f671f7e94080e",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/backend@sha256:f17a7888d0bf1379745d9b0a6c084fb513b57084bb347ed2a79f671f7e94080e"
+      ]
+    },
+    {
+      "created": "2026-09-19T03:24:14.178342634Z",
+      "id": "sha256:f77111ed6b0a13a0b51855cb7a16d8609bd3f32347b92b2a96c1057913b80121",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/mcp@sha256:f77111ed6b0a13a0b51855cb7a16d8609bd3f32347b92b2a96c1057913b80121"
+      ]
+    },
+    {
+      "created": "2026-09-17T09:06:14.755719473Z",
+      "id": "sha256:f9667d86d9d1b208df2103e016db302419427b077e82532c5a7bbdbb6668fd9a",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/frontend@sha256:f9667d86d9d1b208df2103e016db302419427b077e82532c5a7bbdbb6668fd9a"
+      ]
+    },
+    {
+      "created": "2026-09-18T18:42:33.565210285Z",
+      "id": "sha256:f9baa5726c383e1fe6d232634d84db228f4a70613c502485fabeef3f2186e4b4",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/backend@sha256:f9baa5726c383e1fe6d232634d84db228f4a70613c502485fabeef3f2186e4b4"
+      ]
+    },
+    {
+      "created": "2026-09-19T03:24:05.330471532Z",
+      "id": "sha256:fdfa1825ac2daa6d71d36e6b6ac426ea24e376dafe47660bebf3f63d03c4ddfc",
+      "repo_tags": [
+        "ghcr.io/jefison-x/beyondquant/signal-sandbox@sha256:fdfa1825ac2daa6d71d36e6b6ac426ea24e376dafe47660bebf3f63d03c4ddfc"
+      ]
+    }
+  ],
+  "scope": "exact user-approved old BYQ environment resources only; no global prune",
+  "volumes": [
+    {
+      "created": "2026-09-01T09:16:09+08:00",
+      "labels": {
+        "com.docker.compose.config-hash": "a95a225e761b8be07f935b340b5c845a6989393734dbd961f1fc2e5cb7ebd07a",
+        "com.docker.compose.project": "beyondquant",
+        "com.docker.compose.version": "2.40.3",
+        "com.docker.compose.volume": "byq_domain_state"
+      },
+      "name": "beyondquant-domain-state"
+    },
+    {
+      "created": "2026-08-30T06:54:07+08:00",
+      "labels": {
+        "com.docker.compose.config-hash": "a6a7e9b0c93e8ebb5a9dff44ed11cf31571c5f3451768b9c9e3102ea582185d9",
+        "com.docker.compose.project": "beyondquant",
+        "com.docker.compose.version": "2.40.3",
+        "com.docker.compose.volume": "byq_ml_model_state"
+      },
+      "name": "beyondquant-ml-model-state"
+    },
+    {
+      "created": "2026-09-04T10:55:13+08:00",
+      "labels": null,
+      "name": "byq-postgres-clean-20260904"
+    },
+    {
+      "created": "2026-08-22T11:22:40+08:00",
+      "labels": {
+        "com.docker.compose.config-hash": "abc898ee0ea87e86e59672648fbe4b4082f8dc2d8eae6bbd05065d2458711121",
+        "com.docker.compose.project": "byq-preview",
+        "com.docker.compose.version": "2.40.3",
+        "com.docker.compose.volume": "byq_domain_state"
+      },
+      "name": "byq-preview-domain"
+    },
+    {
+      "created": "2026-08-22T11:22:40+08:00",
+      "labels": {
+        "com.docker.compose.config-hash": "79397515a818d45af9efa9796bc631f2ea7b5350f0db7b706ad8cd50d4b09881",
+        "com.docker.compose.project": "byq-preview",
+        "com.docker.compose.version": "2.40.3",
+        "com.docker.compose.volume": "byq_postgres_data"
+      },
+      "name": "byq-preview-postgres"
+    },
+    {
+      "created": "2026-08-22T11:22:40+08:00",
+      "labels": {
+        "com.docker.compose.config-hash": "3945bb2fb2ce0a5751784b18aed3ba8955f98692a886bea5fee7219c063100a8",
+        "com.docker.compose.project": "byq-preview",
+        "com.docker.compose.version": "2.40.3",
+        "com.docker.compose.volume": "byq_workflow_traces"
+      },
+      "name": "byq-preview-traces"
+    },
+    {
+      "created": "2026-08-17T05:52:25+08:00",
+      "labels": {
+        "com.docker.compose.config-hash": "8525be2b975ec79932ba25e969a2397a1fe697625241540ce49a45fe8447fa71",
+        "com.docker.compose.project": "beyondquant",
+        "com.docker.compose.version": "2.40.3",
+        "com.docker.compose.volume": "byq_domain_state"
+      },
+      "name": "byq_domain_state"
+    },
+    {
+      "created": "2026-08-17T05:52:25+08:00",
+      "labels": {
+        "com.docker.compose.config-hash": "fd364f7605cae0f25e062091c3806ff70c338db7487f23aca07524b8d3b064da",
+        "com.docker.compose.project": "beyondquant",
+        "com.docker.compose.version": "2.40.3",
+        "com.docker.compose.volume": "byq_dsh_sessions"
+      },
+      "name": "byq_dsh_sessions"
+    },
+    {
+      "created": "2026-08-17T13:58:32+08:00",
+      "labels": {
+        "com.docker.compose.config-hash": "41ad2307d03b83a8c581a0f07fe2ca7d218ebb6c46183a4796c9025a25fbaa83",
+        "com.docker.compose.project": "phase-31-postgresql-stage4",
+        "com.docker.compose.version": "2.40.3",
+        "com.docker.compose.volume": "byq_postgres_data"
+      },
+      "name": "byq_postgres_data"
+    },
+    {
+      "created": "2026-08-17T05:52:25+08:00",
+      "labels": {
+        "com.docker.compose.config-hash": "2716c92acc3ca096e0bed2e3eb62302779d670294c84c4b24a98a6e6d539e2e3",
+        "com.docker.compose.project": "beyondquant",
+        "com.docker.compose.version": "2.40.3",
+        "com.docker.compose.volume": "byq_workflow_traces"
+      },
+      "name": "byq_workflow_traces"
+    }
+  ],
+  "excluded_volumes": [
+    "byq-20f-pgdata",
+    "byq-phase61-clean-restore-20260827",
+    "byq-phase68-test-data",
+    "byq-postgres-recovery-20260827",
+    "byq-v090-default-test-sessions"
+  ]
+}
