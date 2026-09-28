@@ -1,6 +1,9 @@
 # Phase 8 first-pass cleanup preview — 2026-09-28
 
-Status: **read-only proposal; nothing below has been stopped or deleted.**
+Status: **historical read-only proposal**. After the maintainer approved exactly
+these five targets, they were removed and verified; see the
+[execution evidence](phase8-first-pass-evidence.md). The remainder of this
+document records the pre-action identity and scope, not additional authority.
 The current [inventory](environment-inventory-20260928.md) and verified old
 database archive support a small first pass. The existing database, users,
 backup, running services, anonymous/Compose volumes, unrelated container and

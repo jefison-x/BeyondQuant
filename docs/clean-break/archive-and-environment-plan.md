@@ -2,7 +2,9 @@
 
 Status: historical Phase 3 plan. The final old-DB archive was subsequently
 created and checksum-verified; see the [current Phase 8 inventory](environment-inventory-20260928.md).
-No Phase 8 stop, remove or reset has been executed under this plan.
+One [authorized Phase 8 first pass](phase8-first-pass-evidence.md) removed two
+old test DB volumes, their empty networks and one old recovery-MCP image.
+No Product DB, backup, running service or other state was removed or reset.
 
 ## Final archive preflight
 

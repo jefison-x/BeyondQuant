@@ -1,5 +1,26 @@
 # Phase 0–6 gate record
 
+## Phase 8 first-pass resource cleanup (2026-09-28)
+
+The maintainer expressly authorized only the five targets in the
+[preview](phase8-cleanup-preview.md). [Execution evidence](phase8-first-pass-evidence.md)
+records exact revalidation, removal and post-action absence for two old test
+DB volumes, their two empty networks and the old recovery-MCP test image.
+The old Product DB source volume and final archive remain present. **Phase 8
+overall remains OPEN** while other obsolete resources are classified and
+separately authorized; no Phase 9 work follows from this slice alone.
+
+**Tester:** Functional PASS / Tests PASS for these five targets: exact absence,
+43 remaining volumes and three built-in networks, retained old Product DB and
+five named BYQ state volumes, archive size/mode/checksum, governance 2/2,
+36 local links and diff PASS. **Independent Sol Reviewer:** Functional PASS /
+Tests PASS / Clean Break Architecture PASS for the bounded operation after
+actual documentation/evidence review and independent archive checksum check;
+its Docker socket was unavailable, so it used the independent Tester's exact
+post-action Docker verification. **Root acceptance:** **PASS for this five-target
+Phase 8 slice only**. No other resource deletion, Phase 8 overall PASS or
+Phase 9 entry is accepted.
+
 ## Phase 8 read-only inventory and cleanup preview (2026-09-28)
 
 The [current inventory](environment-inventory-20260928.md) and
