@@ -1,5 +1,35 @@
 # Phase 0–6 gate record
 
+## Phase 11 Business Job — final local gate (2026-09-28)
+
+The five domain Job paths now have stable owner/workspace-scoped IDs, common
+state projection, independent Worker execution and Artifact results. Factor
+and task-bound DataImport cancellation complete ADR-003's authorized MCP
+start/query/cancel contract. A Job row lock serializes cancel with Worker
+completion; cancelled attempts cannot create successful Artifacts. New role
+versions grant the tools without widening pinned older roles. Independent
+Tester: disposable PostgreSQL focused Backend suite 34/34 PASS; MCP build and
+focused Factor/DataImport tests PASS; exact test resources removed, no volume.
+Full live MCP contract test NOT RUN because the Product stack/token is a later
+integration gate. Independent Sol Reviewer: Functional PASS / Tests PASS /
+Clean Break Architecture PASS. **Root acceptance: Phase 11 local PASS.**
+Hosted CI, human PR/merge and Phases 15–16 Golden scenarios remain separate.
+
+## Phase 11 Business Job — workspace DataImportJob bounded slice (2026-09-28)
+
+Task-bound data demands use the existing durable demand ID as a workspace
+`DATA_IMPORT` Job. The independent Data Worker persists status and commits a
+validated readiness Artifact atomically. A frozen stock-pool snapshot receives
+canonical Artifact lineage; unavailable references become terminal failed,
+while transient Artifact writes roll back for retry. Authorized new Agent
+sessions read the same Job ID and Artifact. Global admin sync remains separate.
+Independent Tester: disposable PostgreSQL Backend focused file 8/8 PASS; MCP
+TypeScript build and focused data-demand test PASS; exact containers/network
+removed, no volume. Independent Sol Reviewer: Functional PASS / Tests PASS /
+Clean Break Architecture PASS. **Root acceptance: bounded slice local PASS;
+Phase 11 overall gate under review.** Full Product Golden flows remain
+Phases 15–16.
+
 ## Phase 11 Business Job — Training process reclaim qualification (2026-09-28)
 
 On disposable PostgreSQL, the focused separate-process lifecycle test passed

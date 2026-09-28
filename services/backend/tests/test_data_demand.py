@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+from threading import Event
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,8 +12,10 @@ from app import main
 from app.data_demand import DataDemandConflict, DataDemandNotFound, DataDemandStore
 from app.market_plan import partition_market_requirements
 from app.paper_trading import PaperTradingStore
+from app.research import InvalidTransition, ResearchStore
 from app.user_auth import UserAuthStore
 from app.workspace_tenancy import WorkspaceTenancyStore
+from workers.data.worker import process_one_data_import_job
 
 
 pytestmark = pytest.mark.skipif(
@@ -62,6 +66,12 @@ class FakeDemandReadiness:
 
     def assess(self, requirement: dict[str, object]) -> dict[str, object]:
         return {"state": "ready", "required_cell_count": 1, "missing_count": 0, "missing_trade_dates": []}
+
+
+class FakePendingDemandReadiness(FakeDemandReadiness):
+    def assess(self, requirement: dict[str, object]) -> dict[str, object]:
+        return {"state": "missing", "required_cell_count": 1, "missing_count": 1,
+                "missing_trade_dates": ["20260105"]}
 
 
 class FakeSecurityMaster:
@@ -239,3 +249,324 @@ def test_agent_data_demand_route_freezes_scope_is_idempotent_and_notifies(monkey
     assert notifications.json()["notifications"][0]["notification"] == "数据已准备妥当，可以继续研究"
     demands.close()
     paper.close()
+
+
+def test_task_bound_data_import_is_worker_owned_atomic_and_readable_by_new_session(monkeypatch) -> None:
+    context = _context()
+    research = ResearchStore()
+    task = research.create_task({
+        "owner_principal": context["owner_principal"], "title": "Data import task",
+        "objective": "Prepare verified market data.", "trace_id": context["trace_id"],
+        "idempotency_key": "data-import-task-1",
+    }, trusted_context=context)
+    paper = PaperTradingStore()
+    pool = paper.create_pool(
+        {"name": "Data import pool", "symbols": ["000001.SZ", "600000.SH"]},
+        trusted_owner=context["owner_principal"],
+    )
+    demands = DataDemandStore()
+    automation = FakeDemandAutomation()
+    readiness = FakeDemandReadiness()
+    monkeypatch.setattr(main, "paper_store", paper)
+    monkeypatch.setattr(main, "data_demand_store", demands)
+    monkeypatch.setattr(main, "market_automation_store", automation)
+    monkeypatch.setattr(main, "market_readiness_store", readiness)
+    monkeypatch.setattr(main, "security_master_store", FakeSecurityMaster())
+    client = TestClient(main.app)
+    headers = {
+        "x-byq-owner-principal": context["owner_principal"],
+        "x-byq-actor-principal": context["actor_principal"],
+        "x-byq-workspace-id": context["workspace_id"],
+        "x-byq-trace-id": context["trace_id"],
+        "x-byq-session-id": context["session_id"],
+        "x-byq-dsh-run-id": context["dsh_run_id"],
+    }
+    client.headers.update(headers)
+    payload = {
+        **_payload(), "task_id": task["task_id"],
+        "stock_pool_snapshot_id": pool["current_snapshot_id"],
+        "start_date": "2026-01-01", "end_date": "2026-01-31",
+    }
+
+    submitted = client.post("/v1/agent/data-demands", json=payload)
+    assert submitted.status_code == 202, submitted.text
+    demand = submitted.json()["demand"]
+    job_id = demand["job"]["job_id"]
+    assert demand["status"] == "queued"
+    assert demand["job"]["type"] == "DATA_IMPORT"
+    assert demand["job"]["status"] == "QUEUED"
+    assert demand["job"]["input_ref"]
+    assert submitted.json()["business_job"] == demand["job"]
+
+    # A routine Agent read cannot finalize readiness, even if it could observe
+    # ready market data. Only the Worker cycle below creates the Artifact.
+    observed = client.get(f"/v1/agent/data-demands/{job_id}")
+    assert observed.status_code == 200
+    assert observed.json()["demand"]["job"]["status"] == "QUEUED"
+    assert research._fetch_one("SELECT COUNT(*) AS n FROM artifacts")["n"] == 0
+
+    syncing = process_one_data_import_job(
+        demands, research, FakePendingDemandReadiness(), FakeAutomation(repair_status="running"),
+    )
+    assert syncing is not None
+    assert syncing["status"] == "syncing"
+    assert syncing["job"]["status"] == "RUNNING"
+
+    report = research.create_artifact({
+        "task_id": task["task_id"], "kind": "research_report", "content": {"summary": "ready"},
+        "lineage": [], "trace_id": context["trace_id"], "idempotency_key": "data-import-guard-proof",
+    }, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"])
+    research.transition("artifact", report["artifact_id"], "validated", "data-import-guard-proof-valid")
+    research.transition("research_task", task["task_id"], "running", "data-import-task-start")
+    completion = {
+        "schema_version": "research-progress.v1", "stage": "completed",
+        "next_action": None, "blocked_reason": None, "linked_objects": [],
+        "completion_evidence": [report["artifact_id"]],
+    }
+    with pytest.raises(InvalidTransition, match="unfinished domain work"):
+        research.transition("research_task", task["task_id"], "completed", "data-import-guard-active",
+            progress=completion, require_completion_evidence=True)
+
+    original_create_artifact = research.create_artifact
+    def fail_artifact(*args, **kwargs):
+        raise RuntimeError("synthetic Artifact write interruption")
+    research.create_artifact = fail_artifact
+    with pytest.raises(RuntimeError, match="interruption"):
+        process_one_data_import_job(demands, research, readiness, automation)
+    research.create_artifact = original_create_artifact
+    rolled_back = demands.get(job_id, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"])
+    assert rolled_back["job"]["status"] == "RUNNING"
+    assert rolled_back.get("result_artifact_id") is None
+    assert research._fetch_one("SELECT COUNT(*) AS n FROM artifacts WHERE kind='data_readiness'")["n"] == 0
+
+    finalized = process_one_data_import_job(demands, research, readiness, automation)
+    assert finalized is not None
+    assert finalized["job"]["job_id"] == job_id
+    assert finalized["job"]["status"] == "SUCCEEDED"
+    artifact_id = finalized["job"]["result_ref"]
+    artifact = research.get_artifact(artifact_id)
+    assert artifact["status"] == "validated"
+    assert artifact["kind"] == "data_readiness"
+    assert artifact["task_id"] == task["task_id"]
+    assert artifact["owner_principal"] == context["owner_principal"]
+    assert artifact["workspace_id"] == context["workspace_id"]
+    assert artifact["content"]["demand_id"] == job_id
+    assert artifact["content"]["coverage"][0]["ready_identity"] is None
+    assert artifact["content"]["provenance"]["store"] == "BYQ Data Plane"
+    assert {"kind": "stock_pool_snapshot", "id": pool["current_snapshot_id"]} in artifact["lineage"]
+
+    # The same ID is readable from a fresh Agent session and submission replay
+    # resolves to the same Job/Artifact without creating another repair.
+    client.headers.update({
+        "x-byq-session-id": "session-demand-new-agent",
+        "x-byq-dsh-run-id": "dsh-demand-new-agent",
+    })
+    new_session = client.get(f"/v1/agent/data-demands/{job_id}")
+    assert new_session.status_code == 200
+    assert new_session.json()["demand"]["job"]["job_id"] == job_id
+    assert new_session.json()["demand"]["job"]["result_ref"] == artifact_id
+    assert new_session.json()["business_job"] == new_session.json()["demand"]["job"]
+    replay = client.post("/v1/agent/data-demands", json=payload)
+    assert replay.status_code == 202, replay.text
+    assert replay.json()["created"] is False
+    assert replay.json()["demand"]["job"]["job_id"] == job_id
+    assert replay.json()["demand"]["job"]["result_ref"] == artifact_id
+    assert replay.json()["business_job"] == replay.json()["demand"]["job"]
+    assert len(automation.requests) == 1
+    with pytest.raises(DataDemandNotFound):
+        demands.get(job_id, trusted_owner=context["owner_principal"], trusted_workspace="workspace_other")
+    with pytest.raises(DataDemandNotFound):
+        demands.get(job_id, trusted_owner=context["owner_principal"])
+    foreign_context = {**context, "workspace_id": "workspace_other"}
+    with pytest.raises(DataDemandNotFound):
+        demands.submit(
+            {**payload, "idempotency_key": "foreign-workspace-demand"},
+            context=foreign_context,
+            planner=lambda *_args: (_ for _ in ()).throw(AssertionError("foreign task reached planner")),
+            automation_store=automation,
+        )
+    assert len(automation.requests) == 1
+
+    completed = research.transition("research_task", task["task_id"], "completed", "data-import-guard-active",
+        progress=completion, require_completion_evidence=True)
+    assert completed["status"] == "completed"
+    demands.close()
+    paper.close()
+    research.close()
+
+
+def test_task_bound_data_import_partial_and_failed_states_have_no_success_artifact() -> None:
+    context = _context()
+    research = ResearchStore()
+    task = research.create_task({
+        "owner_principal": context["owner_principal"], "title": "Partial data task",
+        "objective": "Exercise bounded data failure.", "trace_id": context["trace_id"],
+        "idempotency_key": "data-import-failure-task-1",
+    }, trusted_context=context)
+    demands = DataDemandStore()
+    scope = {"stock_pool_snapshot_id": "snapshot-test", "symbol_count": 1}
+    for key, status, readiness in (
+        ("data-import-partial", "partial", FakeReadiness(["ready", "missing"])),
+        ("data-import-failed", "failed", FakeReadiness(["missing"])),
+    ):
+        payload = {**_payload(), "task_id": task["task_id"], "idempotency_key": key}
+        requirements = [{"partition": index} for index in range(len(readiness.states))]
+        demand, created = demands.create(
+            payload, context=context, scope=scope, requirements=requirements,
+            repair_request_ids=[f"repair-{key}-{index}" for index in range(len(requirements))],
+        )
+        assert created is True
+        result = demands.process_task_bound(
+            demand["demand_id"], readiness_store=readiness,
+            automation_store=FakeAutomation(repair_status="failed"), research_store=research,
+        )
+        assert result is not None
+        assert result["status"] == status
+        assert result["job"]["status"] == "FAILED"
+        assert result["job"]["result_ref"] is None
+        assert result["job"]["error"]["code"] == f"data_preparation_{status}"
+    assert research._fetch_one("SELECT COUNT(*) AS n FROM artifacts WHERE kind='data_readiness'")["n"] == 0
+    demands.close()
+    research.close()
+
+
+def test_task_bound_data_import_fails_when_frozen_pool_no_longer_accepts_reference() -> None:
+    context = _context()
+    research = ResearchStore()
+    paper = PaperTradingStore()
+    demands = DataDemandStore()
+    task = research.create_task({
+        "owner_principal": context["owner_principal"], "title": "Inactive source task",
+        "objective": "Check unavailable frozen input.", "trace_id": context["trace_id"],
+        "idempotency_key": "data-import-inactive-task",
+    }, trusted_context=context)
+    pool = paper.create_pool(
+        {"name": "Inactive source pool", "symbols": ["000001.SZ"]},
+        trusted_owner=context["owner_principal"],
+    )
+    snapshot_id = pool["current_snapshot_id"]
+    demand, _ = demands.create(
+        {**_payload(), "task_id": task["task_id"], "stock_pool_snapshot_id": snapshot_id,
+         "idempotency_key": "data-import-inactive-pool"},
+        context=context, scope={"stock_pool_snapshot_id": snapshot_id},
+        requirements=[{"partition": 0}], repair_request_ids=["repair-inactive-pool"],
+    )
+    paper.set_pool_lifecycle(
+        pool["pool_id"],
+        {"status": "inactive", "reason": "source removed after submission",
+         "idempotency_key": "data-import-inactive-pool-state"},
+        trusted_owner=context["owner_principal"],
+    )
+    result = demands.process_task_bound(
+        demand["demand_id"], readiness_store=FakeReadiness(["ready"]),
+        automation_store=FakeAutomation(), research_store=research,
+    )
+    assert result is not None
+    assert result["job"]["status"] == "FAILED"
+    assert result["job"]["error"]["code"] == "data_source_unavailable"
+    assert result["job"]["result_ref"] is None
+    assert demand["demand_id"] not in demands.list_pending_task_bound()
+    assert research._fetch_one("SELECT COUNT(*) AS n FROM artifacts WHERE kind='data_readiness'")["n"] == 0
+    demands.close()
+    paper.close()
+    research.close()
+
+
+def test_task_bound_data_import_cancel_is_scoped_idempotent_and_fences_worker(monkeypatch) -> None:
+    context = _context()
+    research = ResearchStore()
+    demands = DataDemandStore()
+    task = research.create_task({
+        "owner_principal": context["owner_principal"], "title": "Cancel data import",
+        "objective": "Cancel the waiting demand.", "trace_id": context["trace_id"],
+        "idempotency_key": "data-import-cancel-task",
+    }, trusted_context=context)
+    demand, _ = demands.create(
+        {**_payload(), "task_id": task["task_id"], "idempotency_key": "data-import-cancel"},
+        context=context, scope={"stock_pool_snapshot_id": "snapshot-test"},
+        requirements=[{"partition": 0}], repair_request_ids=["repair-cancel"],
+    )
+    job_id = demand["demand_id"]
+    with pytest.raises(DataDemandNotFound):
+        demands.cancel(job_id, trusted_owner=context["owner_principal"], trusted_workspace="other-workspace")
+    monkeypatch.setattr(main, "data_demand_store", demands)
+    client = TestClient(main.app)
+    client.headers.update({
+        "x-byq-owner-principal": context["owner_principal"],
+        "x-byq-actor-principal": context["actor_principal"],
+        "x-byq-workspace-id": context["workspace_id"],
+        "x-byq-trace-id": context["trace_id"],
+        "x-byq-session-id": context["session_id"],
+        "x-byq-dsh-run-id": context["dsh_run_id"],
+    })
+    response = client.post(f"/v1/agent/data-demands/{job_id}/cancel")
+    assert response.status_code == 200, response.text
+    cancelled = response.json()["demand"]
+    assert response.json()["business_job"] == cancelled["job"]
+    assert cancelled["job"]["status"] == "CANCELLED"
+    assert cancelled["job"]["result_ref"] is None
+    assert demands.cancel(
+        job_id, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+    )["job"] == cancelled["job"]
+    assert job_id not in demands.list_pending_task_bound()
+    assert demands.process_task_bound(
+        job_id, readiness_store=FakeReadiness(["ready"]),
+        automation_store=FakeAutomation(), research_store=research,
+    )["job"]["status"] == "CANCELLED"
+    assert research._fetch_one("SELECT COUNT(*) AS n FROM artifacts WHERE kind='data_readiness'")["n"] == 0
+    demands.close()
+    research.close()
+
+
+def test_data_import_worker_completion_wins_over_concurrent_cancel() -> None:
+    context = _context()
+    research = ResearchStore()
+    paper = PaperTradingStore()
+    demands = DataDemandStore()
+    task = research.create_task({
+        "owner_principal": context["owner_principal"], "title": "Data import race",
+        "objective": "Confirm one terminal result.", "trace_id": context["trace_id"],
+        "idempotency_key": "data-import-race-task",
+    }, trusted_context=context)
+    pool = paper.create_pool(
+        {"name": "Data import race pool", "symbols": ["000001.SZ"]},
+        trusted_owner=context["owner_principal"],
+    )
+    snapshot_id = pool["current_snapshot_id"]
+    demand, _ = demands.create(
+        {**_payload(), "task_id": task["task_id"], "stock_pool_snapshot_id": snapshot_id,
+         "idempotency_key": "data-import-race"},
+        context=context, scope={"stock_pool_snapshot_id": snapshot_id},
+        requirements=[{"partition": 0}], repair_request_ids=["repair-race"],
+    )
+    started, release = Event(), Event()
+
+    class BlockingReady(FakeReadiness):
+        def assess(self, requirement):
+            started.set()
+            assert release.wait(5)
+            return super().assess(requirement)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        worker = executor.submit(
+            demands.process_task_bound, demand["demand_id"], readiness_store=BlockingReady(["ready"]),
+            automation_store=FakeAutomation(), research_store=research,
+        )
+        try:
+            assert started.wait(5)
+            cancellation = executor.submit(
+                demands.cancel, demand["demand_id"], trusted_owner=context["owner_principal"],
+                trusted_workspace=context["workspace_id"],
+            )
+            assert not cancellation.done()
+        finally:
+            release.set()
+        completed = worker.result(timeout=10)
+        after_cancel = cancellation.result(timeout=10)
+    assert completed["job"]["status"] == "SUCCEEDED"
+    assert after_cancel["job"]["status"] == "SUCCEEDED"
+    assert completed["job"]["result_ref"] == after_cancel["job"]["result_ref"]
+    assert research._fetch_one("SELECT COUNT(*) AS n FROM artifacts WHERE kind='data_readiness'")["n"] == 1
+    demands.close()
+    paper.close()
+    research.close()

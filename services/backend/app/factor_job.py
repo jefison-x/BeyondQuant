@@ -217,6 +217,32 @@ class FactorJobStore(PgStoreMixin):
             )
         return None if row is None else self._public_row(row)
 
+    def cancel(
+        self, job_id: str, *, trusted_owner: str, trusted_workspace: str,
+    ) -> dict[str, object] | None:
+        """Cancel active work under its row lock; terminal outcomes are immutable."""
+        identity = _text(job_id, field="job_id", max_length=64)
+        if _JOB_ID.fullmatch(identity) is None:
+            raise ValueError("job_id is invalid")
+        owner = _text(trusted_owner, field="trusted_owner", max_length=128)
+        workspace = _text(trusted_workspace, field="trusted_workspace", max_length=128)
+        now = _now()
+        with self._transaction() as connection:
+            row = fetch_one(connection, """SELECT * FROM factor_jobs WHERE job_id=:job
+                AND owner_principal=:owner AND workspace_id=:workspace FOR UPDATE""",
+                {"job": identity, "owner": owner, "workspace": workspace})
+            if row is None:
+                return None
+            if row["status"] in {"queued", "running"}:
+                row = fetch_one(connection, """UPDATE factor_jobs SET status='cancelled',
+                    error_code='cancelled',error_message='cancelled by owner',worker_id=NULL,
+                    claimed_at=NULL,finished_at=:now,updated_at=:now
+                    WHERE job_id=:job RETURNING *""",
+                    {"job": identity, "now": now})
+                if row is None:
+                    raise RuntimeError("locked factor job disappeared during cancellation")
+            return self._public_row(row)
+
     def claim_next(self, worker_id: str = "factor-worker") -> dict[str, object] | None:
         """Atomically claim queued or expired work and advance its attempt fence."""
         worker = _text(worker_id, field="worker_id", max_length=128)

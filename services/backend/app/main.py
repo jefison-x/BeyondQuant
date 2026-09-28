@@ -1655,6 +1655,14 @@ def _require_data_demand_admin(context: dict[str, str]) -> None:
         raise HTTPException(status_code=403, detail="administrator-owned workspace required")
 
 
+def _data_demand_response(demand: dict[str, object]) -> dict[str, object]:
+    response: dict[str, object] = {"demand": demand}
+    business_job = demand.get("job")
+    if isinstance(business_job, dict):
+        response["business_job"] = business_job
+    return response
+
+
 @app.post("/v1/agent/data-demands", status_code=202)
 def create_agent_data_demand(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
@@ -1663,10 +1671,12 @@ def create_agent_data_demand(payload: dict[str, Any], request: Request) -> dict[
     def operation() -> dict[str, object]:
         demand, created = data_demand_store.submit(payload, context=context,
             planner=_data_demand_requirements, automation_store=market_automation_store)
-        return {"demand": data_demand_store.refresh(
+        current = data_demand_store.refresh(
             demand["demand_id"], trusted_owner=context["owner_principal"],
             readiness_store=market_readiness_store, automation_store=market_automation_store,
-        ), "created": created}
+            trusted_workspace=context["workspace_id"],
+        )
+        return {**_data_demand_response(current), "created": created}
 
     return _data_demand_call(operation)
 
@@ -1674,17 +1684,34 @@ def create_agent_data_demand(payload: dict[str, Any], request: Request) -> dict[
 @app.get("/v1/agent/data-demands/by-key/{idempotency_key}")
 def reconcile_agent_data_demand(idempotency_key: str, request: Request):
     context = _required_agent_context(request, include_workspace=True)
-    return _data_demand_call(lambda: data_demand_store.reconcile_submission(idempotency_key,
-        trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"]))
+    def operation():
+        result = data_demand_store.reconcile_submission(idempotency_key,
+            trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"])
+        demand = result.get("demand")
+        if isinstance(demand, dict) and isinstance(demand.get("job"), dict):
+            result["business_job"] = demand["job"]
+        return result
+    return _data_demand_call(operation)
 
 
 @app.get("/v1/agent/data-demands/{demand_id}")
 def get_agent_data_demand(demand_id: str, request: Request) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
-    return _data_demand_call(lambda: {"demand": data_demand_store.refresh(
+    return _data_demand_call(lambda: _data_demand_response(data_demand_store.refresh(
         demand_id, trusted_owner=context["owner_principal"],
         readiness_store=market_readiness_store, automation_store=market_automation_store,
-    )})
+        trusted_workspace=context["workspace_id"],
+    )))
+
+
+@app.post("/v1/agent/data-demands/{demand_id}/cancel")
+def cancel_agent_data_demand(demand_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    _require_data_demand_admin(context)
+    return _data_demand_call(lambda: _data_demand_response(data_demand_store.cancel(
+        demand_id, trusted_owner=context["owner_principal"],
+        trusted_workspace=context["workspace_id"],
+    )))
 
 
 @app.get("/v1/agent/data-demand-notifications")
@@ -1694,10 +1721,12 @@ def get_agent_data_demand_notifications(request: Request) -> dict[str, object]:
     def operation() -> dict[str, object]:
         demands = data_demand_store.list_for_session(
             trusted_owner=context["owner_principal"], session_id=context["session_id"],
+            trusted_workspace=context["workspace_id"],
         )
         refreshed = [data_demand_store.refresh(
             item["demand_id"], trusted_owner=context["owner_principal"],
             readiness_store=market_readiness_store, automation_store=market_automation_store,
+            trusted_workspace=context["workspace_id"],
         ) for item in demands]
         data_notifications = [
             {**item, "kind": "data_demand_progress"}
@@ -2446,6 +2475,22 @@ def find_research_factor_job(task_id: str, idempotency_key: str, request: Reques
         if job is None:
             raise ResearchNotFound("factor job not found")
         return {"job": job}
+    return _research_call(operation)
+
+
+@app.post("/v1/research/factor-jobs/{job_id}/cancel")
+def cancel_research_factor_job(job_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        job = factor_job_store.cancel(
+            job_id, trusted_owner=context["owner_principal"],
+            trusted_workspace=context["workspace_id"],
+        )
+        if job is None:
+            raise ResearchNotFound("factor job not found")
+        return {"job": job}
+
     return _research_call(operation)
 
 

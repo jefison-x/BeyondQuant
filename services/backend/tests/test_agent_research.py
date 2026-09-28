@@ -48,7 +48,7 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
     assert "byq_strategy_approve" not in strategy_tools
     assert "byq_backtest_run" not in strategy_tools
     orchestrator = ROLE_BY_ID["quant_orchestrator"]
-    assert orchestrator.version == "2.2.0"
+    assert orchestrator.version == "2.3.0"
     assert "byq_feedback_preview" in orchestrator.allowed_tools
     assert "byq_feedback_submit" in orchestrator.allowed_tools
     assert "byq_feedback_submit" in orchestrator.approval_required_actions
@@ -62,7 +62,7 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
             assert not index_tools.intersection(role.allowed_tools)
     assert {"byq_market_valuation", "byq_market_fundamentals"} <= orchestrator_tools
     assert "byq_market_session_context" in orchestrator_tools
-    assert {"byq_data_demand_create", "byq_data_demand_get"} <= orchestrator_tools
+    assert {"byq_data_demand_create", "byq_data_demand_get", "byq_data_demand_cancel"} <= orchestrator_tools
     task_tools = {
         "byq_backtest_task_prepare", "byq_backtest_task_create", "byq_backtest_task_get",
         "byq_backtest_task_execute", "byq_backtest_task_cancel",
@@ -70,6 +70,7 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
     assert task_tools <= orchestrator_tools
     optimization_tools = {"byq_optimization_submit", "byq_optimization_get", "byq_optimization_cancel"}
     assert optimization_tools <= orchestrator_tools
+    assert "byq_factor_job_cancel" in orchestrator_tools
     assert not {"byq_backtest_submit", "byq_backtest_run", "byq_backtest_cancel"} & orchestrator_tools
     assert not {
         "byq_pool_snapshot_create",
@@ -95,6 +96,9 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
     assert all(not optimization_tools.intersection(ROLE_BY_ID[role].allowed_tools)
                for role in ("market_researcher", "factor_researcher", "strategy_researcher", "ml_researcher"))
     assert "byq_backtest_analysis_get" in backtest_tools
+    factor_tools = set(ROLE_BY_ID["factor_researcher"].allowed_tools)
+    assert {"byq_factor_compute", "byq_factor_job_get", "byq_factor_job_cancel"} <= factor_tools
+    assert ROLE_BY_ID["factor_researcher"].version == "1.1.0"
     assert "byq_research_task_create" in strategy_tools
     assert "byq_research_transition" not in strategy_tools
     assert "byq_pool_create" not in strategy_tools
@@ -132,11 +136,45 @@ def test_old_run_does_not_gain_versioned_tools_after_role_upgrade() -> None:
         store._execute("UPDATE agent_runs SET role_version='2.0.0' WHERE run_id=:id", {"id": run["run_id"]})
         with pytest.raises(AgentForbidden):
             store.authorize({"run_id": run["run_id"], "action": "byq_index_pool_create"})
+        with pytest.raises(AgentForbidden):
+            store.authorize({"run_id": run["run_id"], "action": "byq_factor_job_cancel"})
+        with pytest.raises(AgentForbidden):
+            store.authorize({"run_id": run["run_id"], "action": "byq_data_demand_cancel"})
         analyst = start(store, role_id="backtest_analyst", idempotency_key="agent-run-analyst")
         assert store.authorize({"run_id": analyst["run_id"], "action": "byq_optimization_get"})["authorized"]
         store._execute("UPDATE agent_runs SET role_version='1.2.0' WHERE run_id=:id", {"id": analyst["run_id"]})
         with pytest.raises(AgentForbidden):
             store.authorize({"run_id": analyst["run_id"], "action": "byq_optimization_get"})
+    finally:
+        store.close()
+
+
+def test_factor_job_cancel_is_available_only_to_current_factor_role_versions() -> None:
+    store = AgentResearchStore()
+    try:
+        orchestrator = start(store, idempotency_key="factor-cancel-orchestrator")
+        assert store.authorize({"run_id": orchestrator["run_id"],
+            "action": "byq_factor_job_cancel"})["authorized"]
+        assert store.authorize({"run_id": orchestrator["run_id"],
+            "action": "byq_data_demand_cancel"})["authorized"]
+        store._execute("UPDATE agent_runs SET role_version='2.2.0' WHERE run_id=:id",
+            {"id": orchestrator["run_id"]})
+        with pytest.raises(AgentForbidden):
+            store.authorize({"run_id": orchestrator["run_id"],
+                "action": "byq_factor_job_cancel"})
+        with pytest.raises(AgentForbidden):
+            store.authorize({"run_id": orchestrator["run_id"],
+                "action": "byq_data_demand_cancel"})
+
+        factor = start(store, role_id="factor_researcher", parent_run_id=orchestrator["run_id"],
+            idempotency_key="factor-cancel-specialist")
+        assert store.authorize({"run_id": factor["run_id"],
+            "action": "byq_factor_job_cancel"})["authorized"]
+        store._execute("UPDATE agent_runs SET role_version='1.0.0' WHERE run_id=:id",
+            {"id": factor["run_id"]})
+        with pytest.raises(AgentForbidden):
+            store.authorize({"run_id": factor["run_id"],
+                "action": "byq_factor_job_cancel"})
     finally:
         store.close()
 

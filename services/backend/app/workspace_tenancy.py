@@ -176,6 +176,7 @@ RELATION_CHECKS = {
     "conversation_message": "SELECT COUNT(*) AS count FROM product_conversation_messages c JOIN product_conversations p ON p.conversation_id=c.conversation_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
     "experiment_task": "SELECT COUNT(*) AS count FROM experiments c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
     "artifact_task": "SELECT COUNT(*) AS count FROM artifacts c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
+    "data_demand_task": "SELECT COUNT(*) AS count FROM data_demands c LEFT JOIN research_tasks p ON p.task_id=c.task_id WHERE c.task_id IS NOT NULL AND (p.task_id IS NULL OR c.workspace_id IS DISTINCT FROM p.workspace_id OR c.owner_principal IS DISTINCT FROM p.owner_principal)",
     "execution_plan_task": "SELECT COUNT(*) AS count FROM research_execution_plans c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
     "execution_plan_receipt_task": "SELECT COUNT(*) AS count FROM research_execution_plan_receipts c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
     "research_task_action_task": "SELECT COUNT(*) AS count FROM research_task_actions c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",

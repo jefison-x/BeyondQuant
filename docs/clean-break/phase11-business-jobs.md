@@ -1,6 +1,7 @@
 # Phase 11 — Business Job execution boundary
 
-Status: backtest, admin import, and factor bounded slices local PASS; Phase 11 overall remains open. Base:
+Status: **Phase 11 local PASS**. Backtest, training, factor, optimization and
+workspace data-import Job boundaries passed their bounded gates. Base:
 Phase 10 local PASS commit `ecc5bf74`. This is not a claim that full functional
 fidelity has passed.
 
@@ -46,9 +47,8 @@ checkpoint share one PostgreSQL transaction under the locked Job row. Each poll
 also retires one expired Job whose attempts are exhausted, even while fresh
 work remains queued. The public response does not expose worker or lease data.
 
-This is a **global admin market-data sync**, not yet the workspace-scoped
-`DataImportJob` and result Artifact described by ADR-003. That remaining
-contract must be resolved before Phase 11 overall PASS.
+This is a **global admin market-data sync**, separate from the workspace-scoped
+`DataImportJob` and result Artifact described below.
 
 Fresh disposable PostgreSQL evidence: `tests/test_data_sync.py` 23 passed,
 including concurrent claims, expired provider calls, import/checkpoint
@@ -146,7 +146,54 @@ fixes. Root accepts this bounded slice as **local PASS**; Phase 11 overall
 remains OPEN. Full Agent/Product and multi-round Golden qualification remains
 Phase 15–16 work.
 
-## Remaining Phase 11 work
+## Workspace data-import bounded slice and gate
+
+An authorized task-bound data demand now provides the stable `DATA_IMPORT` Job
+projection using its existing `demand_id`. Submission binds the ResearchTask,
+owner and workspace in one transaction; exact-key replay and a later Agent
+session resolve the same ID. The Data Worker polls pending task-bound demands
+and alone advances their persisted Job state. On verified readiness it commits
+the validated `data_readiness` Artifact and successful Job state atomically.
+The Artifact contains frozen scope, coverage and source provenance, and records
+the canonical stock-pool snapshot lineage when applicable. Partial/failed
+readiness produces a terminal error without a success Artifact. An inactive or
+missing source reference also becomes terminal failed; transient Artifact
+write failures roll back for retry. A ResearchTask cannot complete while its
+data-import Job remains active. Existing admin demand permissions and no-task
+behavior are retained. Global admin sync remains a separate system operation.
+
+Independent Tester ran the final focused Backend file on disposable PostgreSQL:
+8 passed, 0 failed, including owner/workspace isolation, atomic rollback,
+lineage, inactive source failure, idempotency and new-session read. MCP
+TypeScript build and focused data-demand translation tests passed. Exact test
+containers/network were removed; no volume was created. Independent Sol
+Reviewer: Functional PASS / Tests PASS / Clean Break Architecture PASS after
+re-review of both lineage and terminal-failure fixes. Root accepts this slice
+as **local PASS**. Live Product/DSH Golden flows remain Phases 15–16.
+
+## Authorized cancellation and Phase 11 final gate
+
+Factor and task-bound DataImport Jobs now expose owner/workspace-scoped cancel
+commands through Product MCP. A Job row lock serializes cancellation with
+Worker completion. Repeated cancellation preserves the first terminal result;
+cancelled Jobs cannot produce a success Artifact. DataImport cancellation ends
+only that workspace demand; shared market-data repairs can continue. Uncertain
+MCP responses reconcile by the exact Job ID. New role versions authorize the
+tools, while pinned older versions remain denied.
+
+The final independent Tester ran 34 focused Backend tests on disposable
+PostgreSQL (factor, data demand and role authorization), all passing. MCP
+TypeScript build and focused factor/data-demand tests passed. The temporary
+containers and network were removed, and no volume remained. The full live
+MCP contract test was **not run** because it requires a Product stack and
+token; this belongs to the later integration gate. Independent Sol Reviewer:
+Functional PASS / Tests PASS / Clean Break Architecture PASS. Root inspected
+the Job stores, cancel routes, MCP reconciliation, role version fence and
+affected tests and accepts **Phase 11 local PASS**. Hosted CI and human PR/
+merge gates remain separate; full Product/Golden qualification remains
+Phases 15–16.
+
+## Handoffs after Phase 11
 
 | Type | Current state | Remaining boundary work |
 |---|---|---|
@@ -154,17 +201,9 @@ Phase 15–16 work.
 | Training | Durable `ml_training_runs`, independent ML Worker and model Artifact; common projection and separate-process reclaim/new-session read locally accepted | Real ML Worker/GPU checkpoint and restart Golden evidence remains Phase 16. |
 | Factor compute | Durable workspace-scoped Job, independent Worker and validated Artifact; bounded slice locally accepted | Full Product/Golden qualification remains in Phases 15–16. |
 | Optimization | Completed-candidate parameter search Job, polling Worker, validated comparison Artifact and MCP tools; bounded slice locally accepted | Full Product/Golden flow remains Phase 15–16. |
-| Data import | Scheduled market-session sync and admin range sync are worker-backed; admin slice locally accepted | Define the workspace-scoped DataImportJob and Artifact boundary from ADR-003; keep global admin sync clearly separate. |
+| Data import | Workspace-scoped task-bound Job, independent Data Worker and validated readiness Artifact locally accepted; global admin sync stays separate | Full Product/Golden flow remains Phase 15–16. |
 
-For the workspace data-import slice, reuse the persisted `data_demands`
-identity and the existing Data Worker's market repair work. A task-bound
-request needs a stable common Job projection and a validated data-readiness
-Artifact. The Data Worker must finalize it; routine Agent reads should observe
-the persisted result without becoming the owner of completion. The global
-admin range sync remains a separate system operation. This is the intended
-boundary for the next slice, not acceptance evidence yet.
-
-These are domain Jobs, not Agent continuation state. They must remain queryable
-by stable business ID after an Agent session disappears. Full new-schema Golden
-Scenarios remain Phase 15–16 gates; the next Phase 11 slices use affected
-Job/Worker contracts and disposable test state.
+These are domain Jobs, not Agent continuation state. They remain queryable by
+stable business ID after an Agent session disappears. Phase 12 owns Artifact,
+Approval and Audit normalization; full new-schema Golden Scenarios remain
+Phase 15–16 gates.

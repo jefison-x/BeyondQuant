@@ -40,6 +40,13 @@ function unknownFactorJobWrite(init: RequestInit): ByqFactorResult {
   return result(value, false);
 }
 
+function unknownFactorJobCancel(init: RequestInit, jobId: string): ByqFactorResult {
+  const response = unknownWriteResult(init);
+  const value = JSON.parse(response.content[0].text);
+  value.reconciliation = { tool: "byq_factor_job_get", arguments: { job_id: jobId } };
+  return result(value, false);
+}
+
 function validJob(value: Record<string, any>, taskId?: unknown, jobId?: unknown): boolean {
   const job = value.job;
   return job && /^factorjob_[0-9a-f]{32}$/.test(job.job_id ?? "")
@@ -121,6 +128,44 @@ export async function fetchByqFactorJobGet(
     return result({ service: "beyondquant-mcp", status: "ok", ...payload }, false);
   } catch {
     return result({ service: "beyondquant-mcp", status: "error", backend: { status: "unreachable" } }, true);
+  }
+}
+
+export async function fetchByqFactorJobCancel(
+  backendUrl: string, jobId: string, fetcher: Fetcher = fetch,
+): Promise<ByqFactorResult> {
+  if (!/^factorjob_[0-9a-f]{32}$/.test(jobId)) {
+    return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_request" } }, true);
+  }
+  const init = { method: "POST", body: "{}" };
+  const unknown = () => unknownFactorJobCancel(init, jobId);
+  try {
+    const response = await fetcher(`${backendUrl}/v1/research/factor-jobs/${encodeURIComponent(jobId)}/cancel`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+      signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
+    });
+    if (response.status >= 500) return unknown();
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      if (response.ok) return unknown();
+      return result({ service: "beyondquant-mcp", status: "error", backend: {
+        status: errorStatus(response.status), http_status: response.status,
+      } }, true);
+    }
+    if (!response.ok) {
+      return result({ service: "beyondquant-mcp", status: "error", backend: {
+        status: errorStatus(response.status), http_status: response.status,
+      } }, true);
+    }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)
+        || !validJob(payload as Record<string, any>, undefined, jobId)) return unknown();
+    return result({ service: "beyondquant-mcp", status: "ok", ...payload }, false);
+  } catch {
+    return unknown();
   }
 }
 

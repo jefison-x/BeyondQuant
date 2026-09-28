@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { fetchByqFactorCompute, fetchByqFactorJobGet } from "../src/factor-research.js";
+import { fetchByqFactorCompute, fetchByqFactorJobGet, fetchByqFactorJobCancel } from "../src/factor-research.js";
 
 const request = {
   task_id: "task_0123456789abcdef0123456789abcdef",
@@ -66,6 +66,35 @@ const read = await fetchByqFactorJobGet('http://backend', {job_id:'factorjob_' +
       status:'SUCCEEDED',result_ref:'artifact_' + 'b'.repeat(32)}});
   });
 assert.equal(read.isError, false);
+
+const jobId = 'factorjob_' + 'a'.repeat(32);
+const cancelled = await fetchByqFactorJobCancel('http://backend', jobId, async (url, init) => {
+  assert.equal(url, `http://backend/v1/research/factor-jobs/${jobId}/cancel`);
+  assert.equal(init?.method, 'POST');
+  assert.equal(init?.headers && (init.headers as Record<string, string>)['content-type'], 'application/json');
+  return Response.json({job:{job_id:jobId, task_id:request.task_id, status:'CANCELLED', result_ref:null}});
+});
+assert.equal(cancelled.isError, false);
+assert.match(cancelled.content[0].text, /CANCELLED/);
+
+const cancelUnknown = await fetchByqFactorJobCancel('http://backend', jobId, async () => {
+  throw new Error('private cancel transport');
+});
+const cancelUnknownBody = JSON.parse(cancelUnknown.content[0].text);
+assert.equal(cancelUnknownBody.status, 'outcome_unknown');
+assert.equal(cancelUnknownBody.retryable, false);
+assert.deepEqual(cancelUnknownBody.reconciliation, {
+  tool:'byq_factor_job_get', arguments:{job_id:jobId},
+});
+assert.doesNotMatch(cancelUnknown.content[0].text, /private cancel transport/);
+
+let invalidCancelFetched = false;
+const invalidCancel = await fetchByqFactorJobCancel('http://backend', 'factorjob_invalid', async () => {
+  invalidCancelFetched = true;
+  throw new Error('invalid identity must not reach Backend');
+});
+assert.equal(invalidCancel.isError, true);
+assert.equal(invalidCancelFetched, false);
 
 for (const reason of ["domain_validation_failed", "unchanged_failed_input", "correction_budget_exhausted"]) {
   const translated = await fetchByqFactorCompute("http://backend", request, async () => Response.json({ detail: {

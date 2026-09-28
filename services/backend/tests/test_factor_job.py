@@ -166,6 +166,103 @@ def test_factor_job_claim_is_single_and_failure_retries_stop_at_three(factor_job
     assert row is not None and row["attempts"] == 3
 
 
+def test_factor_job_cancel_is_idempotent_and_only_changes_active_jobs(factor_job_case):
+    jobs, research, context, payload = factor_job_case
+    queued = _create(jobs, context, payload)
+    assert jobs.cancel(queued["job_id"], trusted_owner="someone-else",
+        trusted_workspace=context["workspace_id"]) is None
+    assert jobs.cancel(queued["job_id"], trusted_owner=context["owner_principal"],
+        trusted_workspace="workspace_not_owned") is None
+    first = jobs.cancel(queued["job_id"], trusted_owner=context["owner_principal"],
+        trusted_workspace=context["workspace_id"])
+    assert first is not None and first["status"] == "CANCELLED"
+    assert first["error"]["code"] == "cancelled"
+    assert jobs.cancel(queued["job_id"], trusted_owner=context["owner_principal"],
+        trusted_workspace=context["workspace_id"]) == first
+    assert jobs.claim_next("after-cancel") is None
+
+    completed = _create(jobs, context, {**payload, "idempotency_key": f"completed-{uuid4().hex}"})
+    assert FactorWorker(jobs, research, worker_id="factor-completion-test").run_once()
+    before_completed_cancel = jobs.get(job_id=completed["job_id"],
+        trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"])
+    assert before_completed_cancel is not None and before_completed_cancel["status"] == "SUCCEEDED"
+    assert jobs.cancel(completed["job_id"], trusted_owner=context["owner_principal"],
+        trusted_workspace=context["workspace_id"]) == before_completed_cancel
+
+    failed = _create(jobs, context, {**payload, "idempotency_key": f"failed-{uuid4().hex}"})
+    claim = jobs.claim_next("factor-failure-test")
+    assert claim is not None and claim["job_id"] == failed["job_id"]
+    assert jobs.fail(failed["job_id"], claim["attempt"], "factor_execution_failed",
+        "factor computation failed", retryable=False)
+    before_failed_cancel = jobs.get(job_id=failed["job_id"],
+        trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"])
+    assert before_failed_cancel is not None and before_failed_cancel["status"] == "FAILED"
+    assert jobs.cancel(failed["job_id"], trusted_owner=context["owner_principal"],
+        trusted_workspace=context["workspace_id"]) == before_failed_cancel
+
+
+def test_factor_cancel_route_is_owner_scoped_and_replayable(factor_job_case, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app import main
+
+    jobs, _research, context, payload = factor_job_case
+    public = _create(jobs, context, payload)
+    monkeypatch.setattr(main, "factor_job_store", jobs)
+    client = TestClient(main.app)
+    path = f"/v1/research/factor-jobs/{public['job_id']}/cancel"
+    owner_headers = {f"x-byq-{key.replace('_', '-')}": value for key, value in context.items()}
+
+    foreign = trusted_agent_context(f"factor-foreign-{uuid4().hex[:8]}")
+    denied = client.post(path, headers=foreign, json={})
+    assert denied.status_code == 404
+    still_queued = jobs.get(job_id=public["job_id"], trusted_owner=context["owner_principal"],
+        trusted_workspace=context["workspace_id"])
+    assert still_queued is not None and still_queued["status"] == "QUEUED"
+
+    cancelled = client.post(path, headers=owner_headers, json={})
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["job"]["status"] == "CANCELLED"
+    replay = client.post(path, headers=owner_headers, json={})
+    assert replay.status_code == 200 and replay.json() == cancelled.json()
+
+
+def test_factor_cancel_fences_claimed_worker_before_artifact_commit(factor_job_case, monkeypatch):
+    jobs, research, context, payload = factor_job_case
+    public = _create(jobs, context, payload)
+    entered, release = Event(), Event()
+    require_claim = jobs.require_execution_claim
+
+    def pause_before_execution_lock(connection, job_id, attempt):
+        entered.set()
+        assert release.wait(5)
+        return require_claim(connection, job_id, attempt)
+
+    monkeypatch.setattr(jobs, "require_execution_claim", pause_before_execution_lock)
+    worker = FactorWorker(jobs, research, compute=lambda _value: pytest.fail("cancelled worker must not compute"),
+        worker_id="cancelled-factor-worker")
+    canceller = FactorJobStore()
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(worker.run_once)
+            assert entered.wait(5)
+            cancelled = canceller.cancel(public["job_id"], trusted_owner=context["owner_principal"],
+                trusted_workspace=context["workspace_id"])
+            assert cancelled is not None and cancelled["status"] == "CANCELLED"
+            release.set()
+            assert future.result(timeout=10)
+    finally:
+        release.set()
+        canceller.close()
+
+    assert not jobs.complete(public["job_id"], 1, "artifact_" + "0" * 32)
+    current = jobs.get(job_id=public["job_id"], trusted_owner=context["owner_principal"],
+        trusted_workspace=context["workspace_id"])
+    assert current is not None and current["status"] == "CANCELLED"
+    assert research._fetch_one("SELECT COUNT(*) AS n FROM artifacts WHERE task_id=:task AND kind='factor_result'",
+        {"task": payload["task_id"]})["n"] == 0
+
+
 def test_expired_attempt_loses_completion_fence(factor_job_case):
     jobs, research, context, payload = factor_job_case
     public = _create(jobs, context, payload)
