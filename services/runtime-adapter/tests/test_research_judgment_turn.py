@@ -1,7 +1,8 @@
-"""ADR-0085 P4 real Runtime Adapter turn_runner (no carrier, no provider).
+"""Historical ADR-0085 P4 Runtime Adapter turn_runner unit coverage.
 
-The pure prompt/parse/env logic is exercised here; the real carrier path is
-proven separately by scripts/v091/continuation_p4/carrier_turn_runner_probe.py.
+The real carrier probe's source is preserved at Git commit 2f8aca4a877d01481be556236c8f56d6ad7fa290 as
+scripts/v091/continuation_p4/carrier_turn_runner_probe.py. The archived harness
+is not a current acceptance gate.
 """
 from __future__ import annotations
 

@@ -86,7 +86,6 @@ def test_mismatched_backend_receipts_exhaust_without_new_domain_execution(tmp_pa
 
 
 def test_idle_private_source_stops_http_polling_until_public_root_changes(tmp_path):
-    from tests.test_agent_lifecycle_delivery import event
     now, reads = [1000.], []
     def source(ctx, cursor):
         reads.append(cursor)
@@ -97,7 +96,9 @@ def test_idle_private_source_stops_http_polling_until_public_root_changes(tmp_pa
     delivery.run_once()
     assert reads == [0]
     # Root publication is only a wake signal, never private evidence itself.
-    TraceStore(tmp_path).append(event(kind="session.started", payload={"run_id": "b" * 32}))
+    TraceStore(tmp_path).append({"trace_id": "trace-one", "session_id": "session-one", "sequence": 1,
+        "timestamp": "2026-09-07T00:00:00+00:00", "kind": "session.started",
+        "source": "runtime-adapter", "payload": {"run_id": "b" * 32}})
     delivery.run_once()
     assert reads == [0, 0]
 

@@ -7,9 +7,6 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from packages.contracts import business_recovery as recovery_contract
-
-
 # ADR-0077 conservative per-call ceilings. The Backend reserves a bounded
 # multi-call turn in
 # DATA_READY_TOKEN_LIMIT = DATA_READY_MAX_CALLS * (1048576 + 8192) and the
@@ -25,16 +22,10 @@ CONTINUATION_MAX_OUTPUT_TOKENS = 8192
 
 def validate_reservation(value: object, *, owner: str, workspace: str) -> dict:
     fields = {'schema_version', 'reservation_id', 'task_id', 'owner', 'workspace_id', 'token_limit', 'expires_at'}
-    if (not isinstance(value, dict) or not fields <= set(value)
-            or set(value) - fields - {'recovery_attempt'}):
+    if not isinstance(value, dict) or not fields <= set(value) or set(value) - fields:
         raise ValueError('invalid continuation reservation')
     if value['schema_version'] != 'task-continuation-reservation.v1':
         raise ValueError('invalid continuation reservation')
-    if 'recovery_attempt' in value:
-        # The closed carrier is Backend-minted only; the Adapter re-verifies its
-        # shape and identity later under the admission lock. A malformed carrier
-        # is rejected here before any resource is touched.
-        recovery_contract.validate_recovery_carrier(value['recovery_attempt'])
     if value['owner'] != owner or value['workspace_id'] != workspace:
         raise ValueError('continuation reservation ownership mismatch')
     if not isinstance(value['reservation_id'], str) or re.fullmatch(r'continuation_[0-9a-f]{32}', value['reservation_id']) is None:
@@ -109,69 +100,4 @@ def read_guard(journal: Path, reservation: dict, *, terminal: bool = False) -> d
     receipt = {'reservation_id': reservation['reservation_id'], 'charged_tokens': charged,
         'call_count': len(rows) - 1, 'status': 'settled' if terminal else 'accepted', 'blocked_reason': blocked}
     receipt['settlement_sha256'] = hashlib.sha256(json.dumps(receipt, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
-    return receipt
-
-
-def persist_settlement(root: Path, context: dict, receipt: dict) -> None:
-    """A closed-process receipt, never an execution queue or a spend reset."""
-    import os
-    import tempfile
-    directory = root / 'byq-continuation-receipts' / context['session_id']
-    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    path = directory / (receipt['reservation_id'] + '.json')
-    value = {'schema_version': 'continuation-settlement.v1', 'context': context, 'receipt': receipt}
-    data = json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
-    envelope = json.dumps({'value': value, 'sha256': hashlib.sha256(data).hexdigest()}, sort_keys=True, separators=(',', ':')).encode()
-    if path.exists():
-        if path.read_bytes() != envelope:
-            raise ValueError('original continuation settlement cannot change')
-        return
-    if sum(1 for _ in directory.glob('*.json')) >= 256:
-        raise ValueError('continuation settlement retention bound reached')
-    fd, name = tempfile.mkstemp(prefix='.settlement-', dir=directory)
-    try:
-        with os.fdopen(fd, 'wb') as stream:
-            stream.write(envelope)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(name, path)
-        for target in (directory, directory.parent, root):
-            descriptor = os.open(target, os.O_RDONLY | os.O_DIRECTORY)
-            try:
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
-    finally:
-        if os.path.exists(name):
-            os.unlink(name)
-
-
-def recovered_settlement(root: Path, session_id: str, reservation_id: str, state: dict) -> dict:
-    import os
-    if re.fullmatch(r'continuation_[0-9a-f]{32}', reservation_id) is None:
-        raise ValueError('invalid settlement identity')
-    path = root / 'byq-continuation-receipts' / session_id / (reservation_id + '.json')
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-    with os.fdopen(fd, 'rb') as stream:
-        data = stream.read(4097)
-    if len(data) > 4096:
-        raise ValueError('settlement receipt exceeds bound')
-    envelope = json.loads(data)
-    if set(envelope) != {'value', 'sha256'}:
-        raise ValueError('invalid settlement envelope')
-    value = envelope['value']
-    if hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest() != envelope['sha256']:
-        raise ValueError('settlement integrity mismatch')
-    if (set(value) != {'schema_version', 'context', 'receipt'} or value['schema_version'] != 'continuation-settlement.v1'
-            or value['context'] != state['context'] or value['context']['session_id'] != session_id):
-        raise ValueError('settlement context mismatch')
-    receipt = value['receipt']
-    from packages.contracts.agent_run_lifecycle import project_lifecycle_event
-    original = state['prompts'].get(reservation_id)
-    if (receipt.get('reservation_id') != reservation_id or receipt.get('status') != 'settled'
-            or original is None or original['root_run_id'] != receipt.get('run_id')
-            or not any(e['payload'].get('run_id') == receipt['run_id']
-                and (projection := project_lifecycle_event(e, session_id, state['context']['trace_id']))
-                and projection['outcome'] != 'active' for e in state['events'])):
-        raise ValueError('settlement original terminal identity is missing')
     return receipt

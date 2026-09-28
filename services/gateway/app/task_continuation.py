@@ -2,11 +2,20 @@
 from __future__ import annotations
 
 import json
+import logging
+import fcntl
 import os
 import threading
 import time
 import math
+import tempfile
 from pathlib import Path
+
+
+CONTEXT_SCHEMA = 'task-continuation-context.v1'
+MAX_CONTEXT_BYTES = 4096
+_CONTEXT_FIELDS = {'session_id', 'trace_id', 'conversation_id', 'workspace_id', 'owner'}
+logger = logging.getLogger('uvicorn.error')
 
 
 class TaskContinuationDelivery:
@@ -17,12 +26,74 @@ class TaskContinuationDelivery:
         self.stop = threading.Event()
         self.thread = None
         self.cursor = ''
+        self._reported_failures: set[tuple[str, str, str]] = set()
+
+    @staticmethod
+    def _validate_context(context):
+        if not isinstance(context, dict) or set(context) != _CONTEXT_FIELDS:
+            raise ValueError('invalid task continuation context')
+        for key, value in context.items():
+            if not isinstance(value, str) or not value or len(value) > 256:
+                raise ValueError('invalid task continuation context')
+            if key == 'session_id':
+                allowed = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-'
+                if any(character not in allowed for character in value):
+                    raise ValueError('invalid task continuation session identity')
+        return dict(context)
+
+    def register(self, session):
+        context = self._validate_context({
+            'session_id': session.session_id, 'trace_id': session.trace_id,
+            'conversation_id': session.conversation_id, 'workspace_id': session.workspace_id,
+            'owner': session.principal.subject,
+        })
+        self.root.mkdir(parents=True, exist_ok=True)
+        path = self.root / f"{context['session_id']}.continuation.json"
+        lock_path = self.root / f"{context['session_id']}.continuation.lock"
+        with lock_path.open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            if path.exists():
+                registered = self._read_context(path)
+                if registered != context:
+                    raise ValueError('task continuation context cannot change')
+                return
+            self._save_context(path, context)
+
+    def _read_context(self, path):
+        if path.stat().st_size > MAX_CONTEXT_BYTES:
+            raise ValueError('task continuation context exceeds its size limit')
+        value = json.loads(path.read_text())
+        if (not isinstance(value, dict) or set(value) != {'schema_version', 'context'}
+                or value.get('schema_version') != CONTEXT_SCHEMA):
+            raise ValueError('invalid task continuation context record')
+        context = self._validate_context(value['context'])
+        if path.name != f"{context['session_id']}.continuation.json":
+            raise ValueError('task continuation context filename mismatch')
+        return context
+
+    def _save_context(self, path, context):
+        fd, name = tempfile.mkstemp(prefix='.continuation-', dir=self.root)
+        try:
+            with os.fdopen(fd, 'w') as stream:
+                json.dump({'schema_version': CONTEXT_SCHEMA, 'context': context}, stream,
+                          sort_keys=True, separators=(',', ':'))
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(name, path)
+            directory = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        finally:
+            if os.path.exists(name):
+                os.unlink(name)
 
     def tick(self):
         enabled = os.environ.get('BYQ_F6_EXECUTOR_ENABLED') == '1'
         if not enabled and self.reconcile is None:
             return
-        paths = sorted(self.root.glob('*.lifecycle.json'))
+        paths = sorted(self.root.glob('*.continuation.json'))
         candidates = [p for p in paths if p.name > self.cursor]
         if not candidates:
             self.cursor = ''
@@ -31,19 +102,23 @@ class TaskContinuationDelivery:
             if self.stop.is_set():
                 break
             self.cursor = path.name
+            stage = 'context'
             try:
-                if path.stat().st_size > 2 * 1024 * 1024:
-                    continue
-                context = json.loads(path.read_text())['context']
-                if set(context) != {'session_id', 'trace_id', 'conversation_id', 'workspace_id', 'owner'}:
-                    continue
+                context = self._read_context(path)
                 if self.reconcile is not None:
+                    stage = 'reconcile'
                     self._reconcile_with_backoff(path, context)
                 if enabled:
+                    stage = 'consume'
                     self.consume(context)
-            except Exception:
+            except Exception as exc:
                 # The Backend owns every intent/uncertain liability. A transport
                 # failure never fabricates a receipt or retries a model write.
+                status = getattr(exc, 'status_code', None)
+                category = (stage, type(exc).__name__, str(status) if type(status) is int else 'unknown')
+                if category not in self._reported_failures:
+                    logger.warning('task continuation delivery paused: stage=%s error=%s status=%s', *category)
+                    self._reported_failures.add(category)
                 continue
 
     def _reconcile_with_backoff(self, path, context):

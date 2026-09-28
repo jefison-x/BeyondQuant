@@ -13,6 +13,7 @@ const context = {
   trace_id: "trace-agent-mcp-1",
   session_id: "session-agent-mcp-1",
   dsh_run_id: "dsh-run-agent-mcp-1",
+  runtime_boot_id: "c".repeat(32),
 };
 
 const start = await fetchByqAgentRunStart(
@@ -24,6 +25,7 @@ const start = await fetchByqAgentRunStart(
     assert.equal(init?.headers && (init.headers as Record<string, string>)["x-byq-owner-principal"], "alice");
     assert.equal((init?.headers as Record<string, string>)["x-byq-workspace-id"], "workspace_alice");
     assert.equal((init?.headers as Record<string, string>)["x-byq-session-id"], "session-agent-mcp-1");
+    assert.equal((init?.headers as Record<string, string>)["x-byq-runtime-boot-id"], "c".repeat(32));
     assert.doesNotMatch(String(init?.body), /password|secret|token/i);
     return new Response(JSON.stringify({ run: { run_id: "agent_run_0123456789abcdef0123456789abcdef" } }), { status: 201 });
   },
@@ -65,6 +67,7 @@ const authorized = await fetchByqAgentAuthorize(
   context,
   async (_url, init) => {
     assert.equal((init?.headers as Record<string, string>)["x-byq-actor-principal"], "alice");
+    assert.equal((init?.headers as Record<string, string>)["x-byq-runtime-boot-id"], "c".repeat(32));
     return new Response(JSON.stringify({ authorization: { decision: "allowed" } }), { status: 200 });
   },
 );

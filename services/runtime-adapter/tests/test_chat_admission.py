@@ -6,9 +6,10 @@ from fastapi.testclient import TestClient
 from app import main
 
 
-def test_missing_credentials_return_an_exact_pre_admission_rejection(monkeypatch):
+def test_missing_credentials_return_an_exact_pre_admission_rejection(monkeypatch, allow_current_runtime_authority):
     import hashlib
     monkeypatch.delenv("BYQ_CHAT_ADMISSION_FILE", raising=False)
+    allow_current_runtime_authority(main.adapter)
     def reject(*args, **kwargs):
         raise main.ModelCredentialUnavailable("synthetic secret must not be exposed")
     monkeypatch.setattr(main.adapter, "submit_prompt", reject)

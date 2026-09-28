@@ -302,6 +302,9 @@ def test_authorization_approval_and_audit_keep_execution_separate(tmp_path) -> N
     assert approved["execution_outcome"] == "authorized"
     assert approved["continuation_status"] == "queued"
     assert approved["source_session_id"] == "session-agent-1"
+    fetched = store.get_approval(pending["approval_id"], trusted_owner="alice")
+    assert fetched["status"] == "approved"
+    assert fetched["business_action"] is None
     listed = store.list_approvals(trusted_owner="alice", status="approved", limit=10)
     assert listed["total"] == 1
     assert listed["pending_count"] == 0

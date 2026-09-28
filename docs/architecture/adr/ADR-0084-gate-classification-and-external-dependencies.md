@@ -1,5 +1,11 @@
 # ADR-0084：门禁分级、外部依赖与可降级交付
 
+> **Historical-only under BYQ 0.10 Clean Break.** This ADR records a pre-Clean-Break
+> decision and evidence. Its former Accepted status is historical, not current
+> architecture authority. See [ADR-0088](ADR-0088-clean-break-baseline-activation.md)
+> and the [current baseline](../../clean-break/adr/README.md).
+
+
 - Status: Accepted
 - Date: 2026-09-21
 - Accepted: 2026-09-21（维护者明确接受本文完整决定，并授权同步修订相关 ADR、STATUS 与专项计划）

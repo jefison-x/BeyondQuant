@@ -40,3 +40,21 @@ def trusted_agent_context(
         "x-byq-session-id": session_id,
         "x-byq-dsh-run-id": dsh_run_id,
     }
+
+
+def trusted_product_agent_context(owner: str, **kwargs: str) -> dict[str, str]:
+    """Create a test Agent context bound to the current Backend boot."""
+    from app.agent_research import AgentResearchStore
+
+    headers = trusted_agent_context(owner, **kwargs)
+    if not headers["x-byq-actor-principal"].startswith("byq-product-agent-"):
+        raise ValueError("Product Agent test actor required")
+    store = AgentResearchStore()
+    try:
+        current = store.current_runtime_authority()
+        if current is None:
+            current = store.rotate_runtime_authority("f" * 32)
+        headers["x-byq-runtime-boot-id"] = current["boot_id"]
+    finally:
+        store.close()
+    return headers

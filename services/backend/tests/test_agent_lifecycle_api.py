@@ -8,13 +8,13 @@ from sqlalchemy.exc import DBAPIError
 from app import main
 from app.agent_research import AgentResearchStore
 from packages.contracts.agent_run_lifecycle import registration_fingerprint, lifecycle_receipt
-from tests.workspace_helpers import trusted_agent_context
+from tests.workspace_helpers import trusted_agent_context, trusted_product_agent_context
 
 pytestmark = pytest.mark.skipif(not os.environ.get("BYQ_DATABASE_URL"), reason="requires isolated PostgreSQL")
 
 
 def setup():
-    ctx = trusted_agent_context("alice", actor="byq-product-agent-session-lifecycle",
+    ctx = trusted_product_agent_context("alice", actor="byq-product-agent-session-lifecycle",
                                 session_id="session-lifecycle", trace_id="trace-lifecycle", dsh_run_id="generation-lifecycle")
     client = TestClient(main.app)
     consumer = {**ctx, "x-byq-actor-principal": "alice"}

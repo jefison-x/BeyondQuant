@@ -5,7 +5,7 @@ import pytest
 
 from app.conversation_catalog import ConversationCatalogStore
 from app.research import IdempotencyConflict, ResearchStore
-from tests.workspace_helpers import trusted_agent_context
+from tests.workspace_helpers import trusted_agent_context, trusted_product_agent_context
 
 pytestmark = pytest.mark.skipif(not os.environ.get("BYQ_DATABASE_URL"), reason="isolated PostgreSQL required")
 
@@ -125,7 +125,10 @@ def test_permission_backend_api_exact_identity_and_closed_fields(monkeypatch):
     path = f"/v1/research/tasks/{task}/continuation-permission"
     try:
         assert client.post(path, json=payload).status_code == 401
-        assert client.post(path, headers={**headers, "x-byq-actor-principal": "byq-product-agent-budget-session"},
+        agent_headers = trusted_product_agent_context(
+            "budget-user", actor="byq-product-agent-budget-session",
+            session_id="budget-session", trace_id="budget-trace")
+        assert client.post(path, headers=agent_headers,
                            json=payload).status_code == 422
         response = client.post(path, headers=headers, json=payload)
         assert response.status_code == 201

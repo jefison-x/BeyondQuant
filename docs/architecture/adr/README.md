@@ -1,5 +1,19 @@
 # Architecture Decision Records
 
+## Current BYQ 0.10 authority
+
+[ADR-0088](ADR-0088-clean-break-baseline-activation.md) activates the six
+[Clean Break ADRs](../../clean-break/adr/README.md) as the sole current product
+architecture baseline. Old product ADRs remain at their original paths as
+**historical-only architecture** records so citations and old evidence tests
+remain readable. Their former `Accepted` labels do not impose current runtime,
+migration or phase constraints. ADR-0015, ADR-0059, ADR-0068, ADR-0070 and
+ADR-0080 retain only their non-product governance/security scope, as ADR-0088
+specifies. The text below this section is pre-Clean-Break historical index
+content, not a current Product Core ADR roster.
+
+## Historical ADR index (non-normative)
+
 Architecture Decision Record（ADR）记录改变或澄清持久系统边界的决策。以下边界的
 变更必须取得 ADR：
 

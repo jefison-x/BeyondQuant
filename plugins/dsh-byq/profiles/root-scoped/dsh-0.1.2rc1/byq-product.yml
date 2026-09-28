@@ -358,4 +358,5 @@
           X-BYQ-Session-ID: !!js process.env.BYQ_SESSION_ID
           X-BYQ-DSH-Run-ID: !!js process.env.BYQ_DSH_RUN_ID
           X-BYQ-Root-Run-ID: !!js process.env.BYQ_ROOT_RUN_ID
+          X-BYQ-Runtime-Boot-ID: !!js process.env.BYQ_RUNTIME_BOOT_ID
         failOnStartupError: true

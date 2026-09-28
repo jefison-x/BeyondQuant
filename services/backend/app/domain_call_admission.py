@@ -64,6 +64,7 @@ class DomainCallEvidenceMixin:
     def _domain_identity(self, connection, evidence, context, *, active):
         from .agent_research import AgentConflict, AgentUnauthorized, ROLE_BY_ID
 
+        self._lifecycle_lock(connection, "runtime-authority:current")
         self._require_lifecycle_workspace(connection, context["owner"], context["workspace"])
         self._lifecycle_lock(connection, "root:" + context["root"])
         root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root", context)
@@ -91,81 +92,42 @@ class DomainCallEvidenceMixin:
                     context["owner"], context["workspace"], context["trace"])):
             raise AgentUnauthorized("private call does not match the original conversation task")
         if active and (root["status"] != "active" or run["status"] != "active"
+                       or root.get("authority_status", "active") != "active"
+                       or run.get("authority_status", "active") != "active"
                        or task["status"] in {"cancelled", "failed", "completed"} or conversation["status"] != "active"):
             raise AgentConflict("domain call execution authority is no longer active")
+        if active:
+            authority = self._require_current_runtime_boot(connection, context.get("boot_id"))
+            if authority is not None and (
+                    root.get("authority_boot_id") != authority["boot_id"]
+                    or run.get("authority_boot_id") != authority["boot_id"]):
+                raise AgentConflict("domain call belongs to a superseded runtime boot")
         return conversation["conversation_id"]
 
-    @staticmethod
-    def _recovery_claim_gate(connection, *, owner, workspace, session, root, action, task_id,
-                             idempotency_key, request_sha256, input_sha256):
-        """Runtime recovery-mode invariant for a domain-call claim.
-
-        Returns ``None`` to allow, or a closed reason to reject. A root that is a
-        Backend-bound recovery target run may claim ONLY the exact original
-        five-tuple recorded in its in-row attempt envelope. While a recovery
-        attempt is pending (allocated, not yet bound), no side-effecting claim is
-        allowed, which closes the admission-to-writeback window. A different task,
-        action, key or hash — including ``may_produce_new_key`` actions — is
-        rejected. Non-recovery roots are unaffected.
-        """
-
-        if not isinstance(root, str) or not root:
-            return None
-        rows = execute(connection, """SELECT t.task_id, t.continuation_budget FROM research_tasks t
-            JOIN product_conversations c ON c.conversation_id = t.conversation_id
-            WHERE c.runtime_session_id=:session AND t.owner_principal=:owner
-              AND t.workspace_id=:workspace""",
-            {'session': session, 'owner': owner, 'workspace': workspace})
-        attempts = [(row['task_id'], attempt) for row in rows
-                    for reservation in (row.get('continuation_budget') or [])
-                    for attempt in (reservation.get('recovery_attempts') or [])]
-        if not attempts:
-            return None
-        bound = next(((attempt_task, attempt) for attempt_task, attempt in attempts
-                      if attempt.get('run_id') == root), None)
-        if bound is not None:
-            attempt_task, attempt = bound
-            if attempt.get('status') not in {'accepted', 'settled'}:
-                return 'recovery_envelope_violation'
-            if attempt_task != task_id or attempt.get('envelope_mode') != 'exact_reuse':
-                return 'recovery_envelope_violation'
-            identity = [action, task_id, idempotency_key, request_sha256, input_sha256]
-            allowed = [list(call) for call in (attempt.get('allowed_calls') or [])]
-            if identity not in allowed:
-                return 'recovery_envelope_violation'
-            return None
-        if any(attempt.get('status') == 'reserved' and attempt.get('run_id') is None
-               for _, attempt in attempts):
-            # A recovery admission is in flight; until its target run is
-            # authoritatively bound, no side-effecting claim may be admitted.
-            return 'recovery_envelope_violation'
-        return None
-
     def claim_domain_call(self, action, payload, *, trusted_owner, trusted_workspace,
-                          trusted_session_id, trusted_trace_id, trusted_generation, trusted_root):
+                          trusted_session_id, trusted_trace_id, trusted_generation, trusted_root,
+                          trusted_boot_id=None):
         """Commit the debit before domain validation; proof arrival never executes."""
         from .agent_research import AgentConflict, _principal, _trace
         value = request_evidence(action, payload, trace_id=trusted_trace_id)
         # Reuse the closed proof identity validator, not a model-provided root.
         validate_call_evidence({**value, "schema_version": "domain-call-observed.v1", "sequence": 1,
             "root_run_id": trusted_root, "generation": trusted_generation, "call_id": "request"})
+        if trusted_boot_id is not None:
+            from .agent_research import _runtime_boot_id
+            trusted_boot_id = _runtime_boot_id(trusted_boot_id)
         context = {"owner": _principal(trusted_owner, field="owner_principal"),
             "workspace": _trace(trusted_workspace, field="workspace_id"),
-            "session": _trace(trusted_session_id, field="session_id"), "trace": trusted_trace_id, "root": trusted_root}
+            "session": _trace(trusted_session_id, field="session_id"), "trace": trusted_trace_id,
+            "root": trusted_root, "boot_id": trusted_boot_id}
         scope = {**value, **context}
         with self._transaction() as connection:
             # No proof means no claim and no execution, including when the
             # root/registration delivery itself is still pending. Do not turn
             # that ordering window into an ambiguous domain-write conflict.
+            self._lifecycle_lock(connection, "runtime-authority:current")
             self._require_lifecycle_workspace(connection, context["owner"], context["workspace"])
             self._lifecycle_lock(connection, "root:" + context["root"])
-            recovery_violation = self._recovery_claim_gate(connection,
-                owner=context["owner"], workspace=context["workspace"], session=context["session"],
-                root=context["root"], action=action, task_id=value["task_id"],
-                idempotency_key=value["idempotency_key"], request_sha256=value["request_sha256"],
-                input_sha256=value["input_sha256"])
-            if recovery_violation is not None:
-                return {"state": "blocked", "reason": recovery_violation}
             proof = fetch_one(connection, """SELECT * FROM agent_domain_call_evidence
                 WHERE owner_principal=:owner AND workspace_id=:workspace AND session_id=:session AND trace_id=:trace
                 AND root_run_id=:root AND task_id=:task_id AND action=:action AND idempotency_key=:idempotency_key
@@ -242,7 +204,18 @@ class DomainCallEvidenceMixin:
             # The failed artifact transaction has rolled back. Persist only a
             # closed error; raw Python/schema diagnostics never enter the ledger.
             with self._transaction() as connection:
+                self._lifecycle_lock(connection, "runtime-authority:current")
                 self._lifecycle_lock(connection, "root:" + context["root"])
+                authority = self._current_authority_row(connection)
+                root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root",
+                                 {"root": context["root"]})
+                if authority is not None and (
+                        context.get("boot_id") != authority["boot_id"] or root is None
+                        or root.get("authority_status") != "active"
+                        or root.get("authority_boot_id") != authority["boot_id"]):
+                    # If rotation won after the failed artifact transaction
+                    # rolled back, retain the in-flight claim as unknown.
+                    return {"state": "unknown"}
                 row = fetch_one(connection, "SELECT * FROM agent_domain_call_claims WHERE claim_id=:id FOR UPDATE", {"id": claim["claim_id"]})
                 if row is None or row["status"] != "executing":
                     raise AgentConflict("domain call claim cannot be completed twice")
@@ -261,16 +234,21 @@ class DomainCallEvidenceMixin:
             return result
 
     def consume_domain_call_evidence(self, value, *, trusted_owner, trusted_workspace,
-                                    trusted_session_id, trusted_trace_id, conversation_id):
+                                    trusted_session_id, trusted_trace_id, conversation_id,
+                                    trusted_boot_id=None):
         from .agent_research import AgentConflict, AgentUnauthorized, ROLE_BY_ID, _principal, _trace
 
         evidence = validate_call_evidence(value)
         receipt = call_evidence_receipt(evidence)
+        if trusted_boot_id is not None:
+            from .agent_research import _runtime_boot_id
+            trusted_boot_id = _runtime_boot_id(trusted_boot_id)
         context = {"owner": _principal(trusted_owner, field="owner_principal"),
                    "workspace": _trace(trusted_workspace, field="workspace_id"),
                    "session": _trace(trusted_session_id, field="session_id"),
                    "trace": _trace(trusted_trace_id, field="trace_id"),
-                   "sequence": evidence["sequence"], "root": evidence["root_run_id"]}
+                   "sequence": evidence["sequence"], "root": evidence["root_run_id"],
+                   "boot_id": trusted_boot_id}
         with self._transaction() as connection:
             # Preserve all original ingestion checks below. Replays also
             # require the same catalog binding; an existing sequence is not
@@ -286,6 +264,9 @@ class DomainCallEvidenceMixin:
                 if existing["trace_id"] != context["trace"] or existing["evidence_json"] != evidence:
                     raise AgentConflict("private call sequence conflicts with its durable evidence")
                 return existing["receipt_json"]
+            # Evidence is an inert observation. A late exact proof may establish
+            # an existing claim's receipt after terminal/revocation; new claims
+            # and execution still require active authority below.
             root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root", context)
             if root is None:
                 raise AgentConflict("runtime root binding is not yet confirmed")

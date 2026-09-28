@@ -103,23 +103,45 @@ fields are rejected `422`, a non-`none` durable-evidence identity is rejected
 - `--selfcheck` rejects all 55 defect-targeting controls while a legacy
   label-trusting gate accepts every one.
 
-## Reproduce
+## Reproduce historical evidence
+
+The original P4-C1 replay source is preserved at Git commit `2f8aca4a877d01481be556236c8f56d6ad7fa290`. The old
+harness is archived from the current tree and is **not a current acceptance
+gate**. Each pointer below is a Git blob at that commit. These commands use a
+temporary detached checkout so the replay runs against the recorded source.
+
+Source pointers:
+- `scripts/v091/continuation_p4c1/observer.py`
+- `scripts/v091/continuation_p4c1/run_faults.py`
+- `tests/test_v091_continuation_p4c1.py`
 
 ```bash
+set -euo pipefail
+REPLAY_REPO="$(git rev-parse --show-toplevel)"
+REPLAY_ROOT="$(mktemp -d)"
+git worktree add --detach "$REPLAY_ROOT/source" 2f8aca4a877d01481be556236c8f56d6ad7fa290
+cleanup() {
+  cd "$REPLAY_REPO"
+  git worktree remove --force "$REPLAY_ROOT/source"
+  rm -rf -- "$REPLAY_ROOT"
+}
+trap cleanup EXIT
+cd "$REPLAY_ROOT/source"
+
 # Observer self-check (fail-able; 55 defect-targeting controls all rejected).
 python3 scripts/v091/continuation_p4c1/observer.py --selfcheck
 
-# Governance/contract/matrix tests (architecture lane, no DB, no Docker).
+# Historical governance/contract/matrix tests (no DB, no Docker).
 python3 -m unittest tests.test_v091_continuation_p4c1
 
 # Re-derive the committed verdict (exit 0: P4-C1 scoped all_pass=true).
 python3 scripts/v091/continuation_p4c1/observer.py \
   --observations docs/evidence/adr-0085-p4c1-adapter-fault-safe/observations.v1.json \
-  --out docs/evidence/adr-0085-p4c1-adapter-fault-safe/verdict.v1.json
+  --out "$REPLAY_ROOT/p4-c1-verdict.json"
 
 # Real isolated stack fault injection (opt-in; requires Docker; no paid API,
-# no production). Builds the current worktree's services/mcp dist first.
-PYTHONPATH=services/runtime-adapter:. BYQ_P4_ROOT=<worktree> \
+# no production). Builds the pinned source tree's services/mcp dist first.
+PYTHONPATH=services/runtime-adapter:. BYQ_P4_ROOT="$PWD" \
   python3 scripts/v091/continuation_p4c1/run_faults.py
 ```
 

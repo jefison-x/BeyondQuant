@@ -9,7 +9,7 @@ from app import main as main_module
 from app.agent_research import AgentResearchStore
 from app.main import app
 from app.product_feedback import ProductFeedbackStore
-from tests.workspace_helpers import trusted_agent_context
+from tests.workspace_helpers import trusted_agent_context, trusted_product_agent_context
 
 
 pytestmark = pytest.mark.skipif(not os.environ.get("BYQ_DATABASE_URL"), reason="BYQ_DATABASE_URL is not set")
@@ -124,7 +124,7 @@ def test_agent_feedback_submit_requires_exact_global_approval(monkeypatch) -> No
     agents = AgentResearchStore()
     monkeypatch.setattr(main_module, "feedback_store", feedback)
     monkeypatch.setattr(main_module, "agent_store", agents)
-    agent_headers = trusted_agent_context(
+    agent_headers = trusted_product_agent_context(
         "feedback-agent-owner", actor="byq-product-agent-feedback",
         trace_id="feedback-agent-trace", session_id="feedback-agent-session", dsh_run_id="feedback-agent-run",
     )

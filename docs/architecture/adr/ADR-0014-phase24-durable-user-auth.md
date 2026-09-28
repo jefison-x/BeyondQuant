@@ -1,5 +1,11 @@
 # ADR-0014：Phase 24 Durable User Identity 与 Session Authentication
 
+> **Historical-only under BYQ 0.10 Clean Break.** This ADR records a pre-Clean-Break
+> decision and evidence. Its former Accepted status is historical, not current
+> architecture authority. See [ADR-0088](ADR-0088-clean-break-baseline-activation.md)
+> and the [current baseline](../../clean-break/adr/README.md).
+
+
 - Status: Accepted
 - Date: 2026-08-16
 - Decision scope: Phase 24 Product user identity 与 browser session boundary

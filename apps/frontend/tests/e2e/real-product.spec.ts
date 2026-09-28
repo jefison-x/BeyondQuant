@@ -682,6 +682,7 @@ for (const viewport of ['desktop','mobile'] as const) {
   test(`F2 real original receipt visibility and owner isolation (${viewport})`,async ({page,browser,baseURL},testInfo) => {
     await page.setViewportSize(viewport==='desktop'?{width:1440,height:1000}:{width:390,height:844});
     const errors:string[]=[];
+    let historicalConversation='';
     const origin=new URL(baseURL!).origin;
     page.on('pageerror',error=>errors.push(error.message));
     page.on('request',request=>{
@@ -689,7 +690,22 @@ for (const viewport of ['desktop','mobile'] as const) {
       if (['http:','https:'].includes(url.protocol) && url.origin!==origin) errors.push('foreign origin');
       if (/^\/(internal|mcp)\//.test(url.pathname)) errors.push('internal request');
     });
-    page.on('response',response=>{if(response.status()>=500)errors.push(String(response.status()));});
+    page.on('response',response=>{
+      if(response.status()<500)return;
+      const path=new URL(response.url()).pathname;
+      const family=path.startsWith('/api/auth/')?'auth':path.startsWith('/api/product/research/')?'research':
+        path.startsWith('/api/product/')?'product':path.startsWith('/v1/agent/sessions')?'agent-sessions':
+        path.startsWith('/v1/workflows/')?'workflow-stream':
+        path.startsWith('/v1/product/conversations/')?'conversations':path.startsWith('/v1/product/')?'v1-product':
+        path.startsWith('/api/agent/')?'api-agent':path.startsWith('/agent')?'agent-page':
+        path.startsWith('/assets/')?'asset':path.startsWith('/v1/')?'v1-other':
+        path.startsWith('/api/')?'api-other':'other';
+      // The F2 fixture has a durable catalog receipt and no live Adapter
+      // session. Its historical view cannot attach a real-time event stream.
+      if(response.status()===503 && historicalConversation &&
+        path===`/v1/workflows/${encodeURIComponent(historicalConversation)}/events`)return;
+      errors.push(`${response.status()} ${response.request().method()} ${response.request().resourceType()} ${family}`);
+    });
     await page.goto('/login');
     await page.getByLabel('用户名').fill('f2-browser-'+viewport);
     await page.getByLabel('密码').fill('test-password-123');
@@ -699,6 +715,7 @@ for (const viewport of ['desktop','mobile'] as const) {
     expect(sessions.ok()).toBeTruthy();
     const body=await sessions.json();
     const conversation=body.sessions[0].session_id;
+    historicalConversation=conversation;
     await page.goto('/agent?session='+encodeURIComponent(conversation));
     const panel=page.getByRole('region',{name:'研究提交核对'});
     await expect(panel).toContainText('已确认创建');

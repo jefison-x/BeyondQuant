@@ -1,5 +1,11 @@
 # ADR-0060：个人研究源码公开、权属与一次性 CI 发布过渡
 
+> **Historical-only under BYQ 0.10 Clean Break.** This ADR records a pre-Clean-Break
+> decision and evidence. Its former Accepted status is historical, not current
+> architecture authority. See [ADR-0088](ADR-0088-clean-break-baseline-activation.md)
+> and the [current baseline](../../clean-break/adr/README.md).
+
+
 - Status: Accepted
 - Date: 2026-09-05
 - Decision scope: 源码许可、贡献/第三方授权、源码仓库公开和 CI runner 迁移；不改变 Product/DSH runtime、金融领域或业务部署权限

@@ -31,6 +31,8 @@ TASK = "task_" + "a" * 32
 
 def _client(monkeypatch) -> TestClient:
     monkeypatch.setenv("BYQ_RUNTIME_JUDGMENT_TOKEN", TOKEN)
+    from app import main
+    monkeypatch.setattr(main.adapter, "require_current_backend_authority", lambda: None)
     app = FastAPI()
     app.include_router(api.router)
     return TestClient(app)
@@ -107,6 +109,7 @@ def test_missing_attempt_binding_never_reaches_admission(monkeypatch):
 def test_run_derives_non_forgeable_identity_and_ignores_the_body(monkeypatch):
     client = _client(monkeypatch)
     calls = _spy(monkeypatch)
+    from app import main
     response = client.post(
         f"/internal/runtime/research-judgment/{TASK}/run", headers=HEADERS,
         json={"model_result": "must be ignored", "next_action": "execute",
@@ -123,6 +126,7 @@ def test_run_derives_non_forgeable_identity_and_ignores_the_body(monkeypatch):
     assert invocation["id"] != HEADERS["x-byq-dsh-run-id"]
     assert calls[0]["identity"]["dsh_run_id"] == invocation["id"]
     assert calls[0]["trusted_headers"]["x-byq-workspace-id"] == "workspace"
+    assert calls[0]["environment"]["BYQ_RUNTIME_BOOT_ID"] == main.adapter.boot_id
     # Honest: no real runtime-generation mapping is claimed.
     assert response.json()["dsh_generation"]["status"] == "not_available"
 

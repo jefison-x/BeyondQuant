@@ -224,6 +224,10 @@ def test_terminal_between_claim_and_execution_prevents_write_but_not_receipt_rep
         store.execute_domain_call(first, lambda conn: calls.append(True))
     assert calls == []
     assert claim(observed, sequence=3) == {"state": "unknown"}
+    # Inert late evidence can reconcile the exact old claim, but a new key
+    # still cannot create a domain call after root authority is closed.
+    with pytest.raises(AgentConflict):
+        claim(observed, key="new-after-terminal", sequence=4)
 
 
 @pytest.mark.parametrize("action,path", [

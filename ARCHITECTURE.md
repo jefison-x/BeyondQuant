@@ -1,5 +1,53 @@
 # BeyondQuant 架构
 
+## Current architecture: BYQ 0.10 Clean Break
+
+Effective under [ADR-0088](docs/architecture/adr/ADR-0088-clean-break-baseline-activation.md),
+the six [Clean Break ADRs](docs/clean-break/adr/README.md) are the sole current product
+architecture baseline. The pre-Clean-Break sections below are retained as historical
+implementation context only: their `MUST`/`MUST NOT` statements do not override the
+current baseline. Independent security, tenancy, authorization, Community read-only,
+human merge and deployment boundaries remain in force where the new baseline retains them.
+
+```text
+Browser → BYQ Gateway/Product API → BYQ Workspace/ResearchTask/Strategy
+                                   ↘ thin DSH adapter → DSH sole Agent harness
+DSH → BYQ Product MCP → BYQ domain commands → durable Job → Worker → Artifact
+Engineering Codex/Dev MCP → isolated worktree/tests/PR (separate plane)
+```
+
+- DSH owns Agent loop, session, context, compaction, subagents, continuation and
+  generic Agent recovery. BYQ MUST NOT recreate those capabilities or fork DSH.
+- BYQ owns quant domain invariants, Workspace, ResearchTask, Strategy, Experiment,
+  Job identity, Artifact, Approval, business audit facts and workspace authorization.
+  Long deterministic compute belongs to Job/Worker, independent of Agent sessions.
+- Product Agent-to-Domain calls MUST use BYQ MCP. DSH MUST NOT read BYQ business
+  PostgreSQL or receive application-source write/Engineering privileges. Browser
+  calls MUST use Product API and normalized projections, never raw DSH/MCP/DB APIs.
+- Workspace ownership and RBAC MUST be checked on every business read/write.
+  Business commands MUST bind actor, workspace, exact resource/action/parameters
+  and idempotency. Unknown external or financial outcomes MUST fail closed and
+  require reconciliation before retry. Product DSH cannot self-approve actions.
+- Credentials MUST stay outside Git and model/browser responses, remain encrypted
+  at rest where persisted, and be resolved only by trusted BYQ services. Logs,
+  build/release artifacts and backups MUST NOT contain plaintext secrets.
+  The repository license's prohibition on live trading remains in force.
+- Persistent results use Artifact IDs. DB state is current truth; events notify;
+  structured audit observes. Business financial/authorization records remain
+  authoritative domain facts. Approval levels are AUTO, DECISION and ACTION.
+- Old runtime/session/run/child/checkpoint/recovery/trace data have zero migration
+  priority. The final old DB is a verified read-only archive, not a 0.10 migration
+  input. New storage starts from a fresh schema. Workspace reset is scoped and
+  preserves accounts, RBAC, global credentials and shared system configuration.
+- New capabilities use Tool, Job, Artifact or thin Adapter. No generic WorkflowEngine,
+  compatibility harness or development-tool dependency belongs in Product Core.
+
+The [Clean Break phase plan](docs/clean-break/fidelity-and-execution-plan.md) controls
+bounded implementation and testing. Data/container deletion additionally requires
+the [verified final archive gate](docs/clean-break/archive-and-environment-plan.md).
+
+## Historical pre-Clean-Break architecture (non-normative)
+
 本文档是 BeyondQuant（BYQ）的规范性架构边界。标为 MUST 或 MUST NOT 的规则属于
 架构约束。任何例外都必须在实现前取得 ADR。
 

@@ -60,6 +60,18 @@ def run_judgment(task_id: str, request: Request) -> dict:
         raise HTTPException(status_code=error.status_code, detail=error.detail) from error
     if not valid_task_identity(task_id):
         raise HTTPException(status_code=422, detail="exact research task identity required")
+    # This route launches its own DSH process outside RuntimeAdapter's session
+    # methods, so it shares the same startup authority gate explicitly.
+    from .main import adapter
+    from .runtime import RuntimeAuthorityUnavailable
+
+    try:
+        adapter.require_current_backend_authority()
+    except RuntimeAuthorityUnavailable as error:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "runtime_authority_unavailable"},
+        ) from error
     from .compat import compatibility_for_release
 
     release = os.environ.get("BYQ_DSH_COMPATIBILITY_RELEASE", "dsh-0.1.5rc1")
@@ -78,6 +90,10 @@ def run_judgment(task_id: str, request: Request) -> dict:
     adapter_invocation_id = "byq-adapter-" + uuid.uuid4().hex
     identity["dsh_run_id"] = adapter_invocation_id
     trusted_headers["x-byq-dsh-run-id"] = adapter_invocation_id
+    # This bounded judgment runner launches its own read-only DSH harness rather
+    # than using _build_harness; carry the same Adapter process identity into it.
+    dsh_environment = dict(os.environ)
+    dsh_environment["BYQ_RUNTIME_BOOT_ID"] = adapter.boot_id
     try:
         receipt = run_stage_judgment(
             task_id=task_id, call_identity=call_identity, attempt=attempt,
@@ -87,7 +103,7 @@ def run_judgment(task_id: str, request: Request) -> dict:
             model=os.environ.get("BYQ_DSH_MODEL", "deepseek-v4-flash"),
             session_root=str(session_root),
             compatibility=compatibility_for_release(release),
-            environment=dict(os.environ))
+            environment=dsh_environment)
     except HTTPException:
         raise
     except ResearchJudgmentInProgress as exc:

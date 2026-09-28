@@ -104,4 +104,5 @@ while time.monotonic() < deadline:
         pass
     time.sleep(2)
 else:
+    print(json.dumps({'f6_status_counts': fixture('diagnose', {'task_id': task})}), flush=True)
     raise AssertionError('F6 chain did not finish; no completion will be fabricated')

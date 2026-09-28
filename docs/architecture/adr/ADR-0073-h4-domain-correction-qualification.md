@@ -1,5 +1,11 @@
 # ADR-0073：H4 领域工具纠错的逐项资格扩展
 
+> **Historical-only under BYQ 0.10 Clean Break.** This ADR records a pre-Clean-Break
+> decision and evidence. Its former Accepted status is historical, not current
+> architecture authority. See [ADR-0088](ADR-0088-clean-break-baseline-activation.md)
+> and the [current baseline](../../clean-break/adr/README.md).
+
+
 - Status: Accepted
 - Date: 2026-09-13
 - Related: ADR-0066、ADR-0067、RESEARCH_HANDOFF_PLAN H4

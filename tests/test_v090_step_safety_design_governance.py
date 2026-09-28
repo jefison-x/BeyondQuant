@@ -26,11 +26,12 @@ SESSION_CONTAINMENT = ROOT / "services/gateway/app/session_containment.py"
 CONTINUATION = ROOT / "services/backend/app/research_continuation.py"
 RECEIPTS = ROOT / "services/backend/app/research_receipts.py"
 CALL_EVIDENCE = ROOT / "services/backend/app/domain_call_admission.py"
-LIFECYCLE = ROOT / "services/runtime-adapter/app/lifecycle_journal.py"
-ADAPTER_RUNTIME = ROOT / "services/runtime-adapter/app/runtime.py"
-ADAPTER_BUDGET = ROOT / "services/runtime-adapter/app/continuation_budget.py"
-ADAPTER_CONTAINMENT = ROOT / "services/runtime-adapter/app/containment.py"
-CONTAINMENT_TEST = ROOT / "services/runtime-adapter/tests/test_session_containment.py"
+PRE_CLEAN_BREAK_COMMIT = "d4c6a9e34f531d27dd0e94804be6ed0aa6f9fde3"
+LIFECYCLE = "services/runtime-adapter/app/lifecycle_journal.py"
+ADAPTER_RUNTIME = "services/runtime-adapter/app/runtime.py"
+ADAPTER_BUDGET = "services/runtime-adapter/app/continuation_budget.py"
+ADAPTER_CONTAINMENT = "services/runtime-adapter/app/containment.py"
+CONTAINMENT_TEST = "services/runtime-adapter/tests/test_session_containment.py"
 ADR_DIR = ROOT / "docs/architecture/adr"
 CURRENT_BUILD_REVISION = "dsh-0.1.5rc1-post-u8.210"
 
@@ -39,6 +40,12 @@ CARRIER_FIELDS = {
     "interrupted_generation", "containment_attempt", "interrupted_executor_epoch",
     "snapshot_tail_sequence", "snapshot_digest",
 }
+
+
+def _historical_source(relative: str) -> str:
+    from scripts.dsh.historical_inputs import read_blob
+
+    return read_blob(PRE_CLEAN_BREAK_COMMIT, relative).decode("utf-8")
 
 
 def _load(path: Path) -> dict:
@@ -274,44 +281,44 @@ class RealCodeFactTests(unittest.TestCase):
     """The design's claims must track the actual committed mechanisms."""
 
     def test_containment_records_failing_epoch_and_takeover_fences_old(self):
-        containment = ADAPTER_CONTAINMENT.read_text(encoding="utf-8")
+        containment = _historical_source(ADAPTER_CONTAINMENT)
         self.assertIn("executor_epoch", containment)
         self.assertIn("assert_write_allowed_locked", containment)
-        test = CONTAINMENT_TEST.read_text(encoding="utf-8")
+        test = _historical_source(CONTAINMENT_TEST)
         self.assertIn("def test_containment_write_fails_closed_on_stale_executor_epoch", test)
         self.assertIn("takeover", test)
 
     def test_no_cross_request_lock_is_claimed(self):
-        source = ADAPTER_RUNTIME.read_text(encoding="utf-8")
+        source = _historical_source(ADAPTER_RUNTIME)
         self.assertIn("with record.lock:", source)
         readme = README.read_text(encoding="utf-8")
         self.assertIn("does **NOT** assume", readme)
         self.assertIs(_load(DESIGN)["authoritative_source"]["no_cross_request_lock"], True)
 
     def test_adapter_returns_old_run_and_forces_reservation_key(self):
-        source = ADAPTER_RUNTIME.read_text(encoding="utf-8")
+        source = _historical_source(ADAPTER_RUNTIME)
         self.assertIn('if durable["state"] == "accepted":', source)
         self.assertIn('return durable["run_id"]', source)
         self.assertIn("if idempotency_key != budget['reservation_id']:", source)
         self.assertIn("continuation requires its original reservation key", source)
 
     def test_adapter_page_exposes_more_and_idle(self):
-        source = ADAPTER_RUNTIME.read_text(encoding="utf-8")
+        source = _historical_source(ADAPTER_RUNTIME)
         self.assertIn('"more": len(state["calls"]) > after_sequence + len(rows)', source)
         self.assertIn('"idle": state["open_root"] is None', source)
 
     def test_settlement_is_one_immutable_slot_per_reservation(self):
-        source = ADAPTER_BUDGET.read_text(encoding="utf-8")
+        source = _historical_source(ADAPTER_BUDGET)
         self.assertIn("receipt['reservation_id'] + '.json'", source)
         self.assertIn("original continuation settlement cannot change", source)
 
     def test_prompt_receipt_key_cannot_be_replaced(self):
-        source = LIFECYCLE.read_text(encoding="utf-8")
+        source = _historical_source(LIFECYCLE)
         self.assertIn("prompt receipt cannot be replaced", source)
         self.assertIn('state["prompts"][key]', source)
 
     def test_call_sequence_is_session_global(self):
-        source = LIFECYCLE.read_text(encoding="utf-8")
+        source = _historical_source(LIFECYCLE)
         self.assertIn('evidence["sequence"] != len(self.state["calls"]) + 1', source)
         call_evidence = CALL_EVIDENCE.read_text(encoding="utf-8")
         self.assertIn("PRIMARY KEY (owner_principal, workspace_id, session_id, sequence)", call_evidence)
@@ -333,8 +340,12 @@ class RealCodeFactTests(unittest.TestCase):
 
 
 class NoRuntimeImplementationTests(unittest.TestCase):
-    def test_recovery_endpoint_still_never_submits(self):
-        source = GATEWAY_MAIN.read_text(encoding="utf-8")
+    def test_historical_recovery_endpoint_still_never_submits(self):
+        from scripts.dsh.historical_inputs import read_blob
+
+        source = read_blob(
+            "d4c6a9e34f531d27dd0e94804be6ed0aa6f9fde3",
+            "services/gateway/app/main.py").decode("utf-8")
         start = source.index("def get_recovery_classification(")
         end = source.index("@app.", start)
         body = source[start:end]

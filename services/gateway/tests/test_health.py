@@ -32,31 +32,19 @@ def test_readyz_reports_runtime_adapter_integration() -> None:
     }
 
 
-def test_workflow_stream_is_byq_event_transport(monkeypatch) -> None:
-    class FakeResponse:
-        status_code = 200
+def test_legacy_gateway_runtime_proxy_routes_are_absent() -> None:
+    missing_routes = (
+        ("GET", "/internal/runtime/health", None),
+        ("POST", "/internal/runtime/sessions", {"session_id": "synthetic", "trace_id": "synthetic"}),
+        ("POST", "/internal/runtime/sessions/synthetic/prompt", {"content": "synthetic"}),
+        ("POST", "/internal/runtime/sessions/synthetic/cancel", None),
+        ("POST", "/internal/runtime/sessions/synthetic/release", None),
+        ("GET", "/internal/workflows/synthetic/events", None),
+    )
 
-        def raise_for_status(self) -> None:
-            return None
-
-        def iter_bytes(self):
-            yield b'event: workflow-trace\ndata: {"kind":"session.status","source":"dsh"}\n\n'
-
-    class FakeStream:
-        def __enter__(self):
-            return FakeResponse()
-
-        def __exit__(self, *_args) -> None:
-            return None
-
-    monkeypatch.setattr(main.httpx, "stream", lambda *_args, **_kwargs: FakeStream())
-
-    response = client.get("/internal/workflows/session-1/events")
-
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
-    assert "event: workflow-trace" in response.text
-    assert ("session." + "event") not in response.text
+    for method, path, payload in missing_routes:
+        response = client.request(method, path, json=payload)
+        assert response.status_code == 404, (method, path, response.text)
 
 
 def test_browser_session_exposes_only_bounded_personal_workspace(monkeypatch) -> None:

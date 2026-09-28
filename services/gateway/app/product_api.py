@@ -1289,6 +1289,10 @@ def product_approval_continue(approval_id: str, request: Request) -> dict[str, o
     approval = _product_approval_projection(request, body.get("approval"))
     if approval.get("status") not in {"approved", "rejected"}:
         raise ProductError(409, "approval_not_decided", "approval has not been decided")
+    if approval.get("business_action") is not None:
+        # Plan-bound approvals are represented by an exact ResearchTask action.
+        # DSH continuation is not a second settlement authority for that action.
+        return {"approval": approval}
     if isinstance(approval.get("conversation_id"), str):
         from .main import continue_approval_conversation
 
@@ -1313,6 +1317,15 @@ def _product_approval_projection(
             "created_at", "updated_at",
         )
     }
+    business_action = value.get("business_action")
+    if isinstance(business_action, dict) and set(business_action) >= {"task_id", "action_id", "status"}:
+        projected["business_action"] = {
+            "task_id": business_action["task_id"],
+            "action_id": business_action["action_id"],
+            "status": business_action["status"],
+        }
+    else:
+        projected["business_action"] = None
     source_session_id = value.get("source_session_id")
     if isinstance(source_session_id, str) and source_session_id:
         conversation = conversation_cache.get(source_session_id) if conversation_cache is not None else None

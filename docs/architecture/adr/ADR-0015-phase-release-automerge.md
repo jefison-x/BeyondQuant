@@ -1,5 +1,11 @@
 # ADR-0015：预发布阶段对单维护者门禁的 CI Auto-Merge 例外
 
+> **Current non-product governance/security policy; historical as Product Core architecture.**
+> Its exact process or security scope remains effective under
+> [ADR-0088](ADR-0088-clean-break-baseline-activation.md), while the
+> [Clean Break baseline](../../clean-break/adr/README.md) controls BYQ 0.10 Product Core.
+
+
 - Status: Accepted
 - Date: 2026-08-17
 - Decision scope: BeyondQuant Next 预发布 Product-depth 工作期间的 Engineering Plane

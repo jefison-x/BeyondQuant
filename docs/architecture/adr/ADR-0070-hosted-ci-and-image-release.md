@@ -1,5 +1,11 @@
 # ADR-0070：本地轻检查、云端并行 CI 与镜像发布
 
+> **Current non-product governance/security policy; historical as Product Core architecture.**
+> Its exact process or security scope remains effective under
+> [ADR-0088](ADR-0088-clean-break-baseline-activation.md), while the
+> [Clean Break baseline](../../clean-break/adr/README.md) controls BYQ 0.10 Product Core.
+
+
 - Status: Accepted
 - Date: 2026-09-11
 - Acceptance: 维护者要求低本地资源、高开发速度、低 Codex token 消耗且便于 release 的 CI 方案，并回复“好的将你的建议实施落地”。

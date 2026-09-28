@@ -1,5 +1,13 @@
 # BeyondQuant
 
+> **Current development direction:** BYQ 0.10 Clean Break is governed by
+> [ADR-0088](docs/architecture/adr/ADR-0088-clean-break-baseline-activation.md),
+> the [new ADR baseline](docs/clean-break/adr/README.md), and the
+> [current STATUS entry](docs/roadmap/STATUS.md). Earlier 0.9/P4 architecture
+> descriptions below are historical unless the new baseline retains them.
+
+<!-- byq:clean-break-current-phase=8 -->
+
 > **个人非商业研究源码公开项目，不是 OSI 开源项目。**
 > 仅允许自然人为本人进行非商业学习、研究和模拟测试；**禁止机构使用、商业使用和任何
 > 实盘交易，包括个人自有资金实盘及将软件输出用于真实交易。**

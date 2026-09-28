@@ -1,5 +1,11 @@
 # ADR-0085：确定性研究编排与有界模型接续
 
+> **Historical-only under BYQ 0.10 Clean Break.** This ADR records a pre-Clean-Break
+> decision and evidence. Its former Accepted status is historical, not current
+> architecture authority. See [ADR-0088](ADR-0088-clean-break-baseline-activation.md)
+> and the [current baseline](../../clean-break/adr/README.md).
+
+
 - Status: Accepted
 - Date: 2026-09-22
 - Accepted: 2026-09-22（维护者明确“接受 ADR-0085 的完整决定”，并授权标为 Accepted、

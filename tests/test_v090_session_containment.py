@@ -1,7 +1,7 @@
 """ADR-0084 BYQ session failure containment and business recovery acceptance.
 
 Runs under ``unittest`` (architecture lane). Asserts the fail-ability of the
-observer, the truthfulness of the committed evidence, the source binding, and
+observer, the truthfulness of the committed evidence, its historical source digests, and
 that the ADR-0084 boundary changes did not silently rewrite historical D15
 verdicts, downgrade B1/B2, unfreeze R3, or claim a superseding assessment.
 """
@@ -101,32 +101,6 @@ class ObserverFailAbilityTests(unittest.TestCase):
                          "endpoint-source-mismatch", "success-receipt-replayed"):
             self.assertIn(expected, names)
 
-    def test_committed_evidence_is_breakable_by_a_mutation(self):
-        observer = _load(OBSERVER, "v090_session_containment_observer_mut")
-        contract = _contract()
-        observations = json.loads(OBSERVATIONS.read_text(encoding="utf-8"))
-        self.assertTrue(observer.compute_verdict(contract, observations)["all_pass"])
-        for mutate in (
-            lambda value: value["scenarios"]["executor-loss-interrupted"]["observed"].update(status="completed"),
-            lambda value: value["scenarios"]["ordinary-failed-not-interrupted"]["observed"].update(
-                adapter_containment={"schema_version": "s", "session_id": "runtime-1", "contained": True,
-                    "latest": {"trace_id": "trace-1", "loss_cause": "executor-loss",
-                               "interrupted_run_id": "a" * 32, "interrupted_generation": "g",
-                               "executor_epoch": 1}}),
-            lambda value: value["scenarios"]["preservation-not-constant"]["observed"].update(
-                after={"session_started": 0, "prompt_receipts": 0, "run_events": 0}),
-            lambda value: value["scenarios"]["missing-summary-session-not-interrupted"]["observed"][
-                "adapter_containment"].update(session_id="runtime-1"),
-            lambda value: value["scenarios"]["missing-terminal-run-not-interrupted"]["observed"][
-                "events"][1].update(payload={"run_id": "a" * 32}),
-            lambda value: value["scenarios"]["invalid-terminal-run-not-interrupted"]["observed"][
-                "events"][1].update(payload={"run_id": "a" * 32}),
-        ):
-            broken = json.loads(OBSERVATIONS.read_text(encoding="utf-8"))
-            mutate(broken)
-            verdict = observer.compute_verdict(contract, broken)
-            self.assertFalse(verdict["all_pass"])
-            self.assertEqual(verdict["exit_code"], 1)
 
 
 class CommittedEvidenceTests(unittest.TestCase):
@@ -145,11 +119,21 @@ class CommittedEvidenceTests(unittest.TestCase):
         self.assertTrue(controls["defect_targeting_pre_fix_passed"])
         self.assertGreater(controls["control_count"], 0)
 
-    def test_observations_are_bound_to_the_current_sources(self):
+    def test_observations_record_historical_source_digests(self):
         observations = json.loads(OBSERVATIONS.read_text(encoding="utf-8"))
         digests = observations["provenance"]["source_sha256"]
+        observer = _load(OBSERVER, "v090_session_containment_historical_sources")
+        self.assertEqual(observer.HISTORICAL_PROVENANCE_SOURCES, {
+            "services/gateway/app/main.py",
+            "services/runtime-adapter/app/runtime.py",
+            "services/runtime-adapter/app/containment.py",
+        })
         for relative, expected in digests.items():
-            self.assertEqual(expected, _sha256(ROOT / relative), relative)
+            self.assertRegex(expected, r"^sha256:[0-9a-f]{64}$", relative)
+            if relative in observer.HISTORICAL_PROVENANCE_SOURCES:
+                self.assertEqual(expected, observer._historical_source_digest(relative), relative)
+            else:
+                self.assertEqual(expected, observer._digest(ROOT / relative), relative)
         for relative in ("services/runtime-adapter/app/containment.py",
                          "services/gateway/app/session_containment.py",
                          "services/gateway/app/main.py"):
@@ -177,11 +161,11 @@ class CommittedEvidenceTests(unittest.TestCase):
 
 
 class BoundaryTests(unittest.TestCase):
-    def test_recovery_endpoint_cannot_submit(self):
-        source = (ROOT / "services/gateway/app/main.py").read_text(encoding="utf-8")
-        start = source.index("def get_recovery_classification(")
-        end = source.index("@app.", start)
-        body = source[start:end]
+    def test_historical_recovery_endpoint_cannot_submit(self):
+        observer = _load(OBSERVER, "v090_session_containment_historical_endpoint")
+        body = observer._recovery_endpoint_body()
+        self.assertIn('@app.get("/v1/agent/sessions/{session_id}/recovery")',
+                      observer._historical_source_bytes("services/gateway/app/main.py").decode())
         self.assertNotIn("_adapter_post", body)
         self.assertNotIn("/prompt", body)
         self.assertNotIn("_runtime_recovery_payload", body)
@@ -234,8 +218,7 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(verdict["verdict"], "NO_GO")
 
     def test_no_second_harness_session_store_or_dsh_business_db_access(self):
-        for path in (ROOT / "services/runtime-adapter/app/containment.py",
-                     ROOT / "services/gateway/app/session_containment.py",
+        for path in (ROOT / "services/gateway/app/session_containment.py",
                      ROOT / "packages/contracts/session_failure_containment.py"):
             text = path.read_text(encoding="utf-8")
             self.assertNotIn("psycopg", text, str(path))

@@ -1470,7 +1470,10 @@ def test_product_approval_decision_forwards_owner_headers(monkeypatch) -> None:
             }})
         return FakeResponse({"approval": {
             "approval_id": "agent_approval_1", "status": "approved",
-            "action": "byq_strategy_approve", "continuation_status": "queued",
+            "action": "byq_strategy_approve", "continuation_status": "blocked",
+            "business_action": {
+                "task_id": "task_1", "action_id": "research_action_1", "status": "pending",
+            },
             "source_session_id": "byq-session-source",
         }})
 
@@ -1494,12 +1497,53 @@ def test_product_approval_decision_forwards_owner_headers(monkeypatch) -> None:
     assert captured[0]["headers"]["x-byq-owner-principal"] == "product-user"
     assert captured[0]["payload"] == {"decision": "approved", "rationale": "ok"}
     assert response.json()["approval"]["conversation_id"] == "conversation_1"
-    assert response.json()["approval"]["continuation_status"] == "submitted"
-    assert "source_session_id" not in response.text
-    assert continued == {
-        "conversation_id": "conversation_1", "approval_id": "agent_approval_1",
-        "decision": "approved", "action": "byq_strategy_approve",
+    assert response.json()["approval"]["continuation_status"] == "blocked"
+    assert response.json()["approval"]["business_action"] == {
+        "task_id": "task_1", "action_id": "research_action_1", "status": "pending",
     }
+    assert "source_session_id" not in response.text
+    assert continued == {}
+
+    readback = client.get(
+        "/api/product/approvals/agent_approval_1",
+        headers={"Authorization": "Bearer product-test-token"},
+    )
+    assert readback.status_code == 200
+    assert readback.json()["approval"]["business_action"]["status"] == "pending"
+    continued_response = client.post(
+        "/api/product/approvals/agent_approval_1/continue",
+        headers={"Authorization": "Bearer product-test-token"},
+    )
+    assert continued_response.status_code == 200
+    assert continued_response.json()["approval"]["business_action"]["status"] == "pending"
+    assert continued == {}
+
+
+def test_product_approval_continue_propagates_missing_action_conflict_without_dsh(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    continued: list[tuple] = []
+
+    def backend(method: str, url: str, **kwargs):
+        assert method == "GET"
+        assert url.endswith("/v1/agents/approvals/agent_approval_missing-action")
+        return httpx.Response(409, json={
+            "detail": "decided plan approval has no exact business action",
+        }, request=httpx.Request(method, url))
+
+    def continue_conversation(*args, **kwargs):
+        continued.append(args)
+        return {"status": "submitted"}
+
+    monkeypatch.setattr(product_api.httpx, "request", backend)
+    monkeypatch.setattr(main, "continue_approval_conversation", continue_conversation)
+    response = TestClient(main.app).post(
+        "/api/product/approvals/agent_approval_missing-action/continue",
+        headers={"Authorization": "Bearer product-test-token"},
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "product_domain_rejected"
+    assert continued == []
 
 
 def test_product_agent_policy_get_and_update(monkeypatch) -> None:

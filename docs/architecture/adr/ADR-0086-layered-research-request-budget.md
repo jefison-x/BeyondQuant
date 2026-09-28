@@ -1,5 +1,11 @@
 # ADR-0086：单次研究请求的分层预算（修订 ADR-0085 §6/§8）
 
+> **Historical-only under BYQ 0.10 Clean Break.** This ADR records a pre-Clean-Break
+> decision and evidence. Its former Accepted status is historical, not current
+> architecture authority. See [ADR-0088](ADR-0088-clean-break-baseline-activation.md)
+> and the [current baseline](../../clean-break/adr/README.md).
+
+
 - Status: **Accepted**（维护者 2026-09-24 明确取消 ADR-0085 §6 固定“最多 2 次”模型调用上限，并授权按本决定修改现行门禁）
 - Date: 2026-09-24
 - Maintainer scope correction: 2026-09-24，明确取消“后台研究跨进程恢复后仍须沿用同一份持久业务预算”的拟议要求。

@@ -1,5 +1,10 @@
 # AgentRun 单轮持久收尾（ADR-0062）
 
+> 历史合同，仅供理解 0.10 以前的实现；不作为 Clean Break 当前架构或 Product API 约束。
+> 当前边界见 [ADR-002](../clean-break/adr/ADR-002-dsh-boundary.md) 和
+> [Product API OpenAPI](product-api.openapi.yaml)。其中所述 Gateway 生命周期投递账本及
+> `/v1/agent/sessions/{conversation_id}/lifecycle-delivery` 路由已在 Phase 7 移除。
+
 本合同只关联 BYQ AgentRun，不复制 DSH workflow，也不转换 ResearchTask、Approval 或业务 Job 状态。
 
 ## 可信关联来源

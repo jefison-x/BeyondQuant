@@ -1,0 +1,63 @@
+# Test-only overlay for a unique disposable Phase 7 project. The caller supplies
+# isolated project, network, volume, and credential names through its env file.
+services:
+  postgres:
+    restart: "no"
+  backend:
+    restart: "no"
+  mcp:
+    restart: "no"
+  runtime-adapter:
+    restart: "no"
+    command: ["python3", "/probe/phase7_compose_terminal_probe.py"]
+    environment:
+      BYQ_PHASE7_TERMINAL_FIXTURE: "1"
+      BYQ_DSH_PROVIDER: deepseek-official
+      BYQ_DSH_MODEL: deepseek-v4-flash
+      BYQ_DSH_RUN_TIMEOUT_SECONDS: "0"
+      BYQ_DSH_PROGRESS_CHECK_INTERVAL_SECONDS: "600"
+      BYQ_DSH_NO_PROGRESS_TIMEOUT_SECONDS: "600"
+      BYQ_DSH_SUBAGENT_TIMEOUT_SECONDS: "600"
+    volumes:
+      - type: bind
+        source: ./services/runtime-adapter/tests/phase7_compose_terminal_probe.py
+        target: /probe/phase7_compose_terminal_probe.py
+        read_only: true
+  backend-close-proxy:
+    image: python:3.13-slim-bookworm@sha256:ed86c82274b3c69b52fb5820f358f0bd7df0b603332063cb5c6e32bd220c3e6e
+    command: ["python3", "/probe/phase7_backend_close_proxy.py"]
+    restart: "no"
+    environment:
+      BYQ_PHASE7_TERMINAL_CLOSE_PROXY: "1"
+      BYQ_PHASE7_BACKEND_URL: http://backend:8000
+    volumes:
+      - type: bind
+        source: ./services/runtime-adapter/tests/phase7_backend_close_proxy.py
+        target: /probe/phase7_backend_close_proxy.py
+        read_only: true
+    networks:
+      - byq_product
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - >-
+          import urllib.request;
+          response = urllib.request.urlopen('http://127.0.0.1:8351/_phase7/observed', timeout=2);
+          raise SystemExit(0 if response.status == 200 else 1)
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+  gateway:
+    restart: "no"
+    ports: !reset []
+    environment:
+      BYQ_BACKEND_URL: http://backend-close-proxy:8351
+    depends_on:
+      backend-close-proxy:
+        condition: service_healthy

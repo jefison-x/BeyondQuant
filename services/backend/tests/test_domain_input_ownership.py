@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from app import main
 from test_backtest_api import _create_strategy_chain, _fresh_harness, _snapshot_input
 from test_factor_research import factor_payload
-from tests.workspace_helpers import trusted_agent_context
+from tests.workspace_helpers import trusted_agent_context, trusted_product_agent_context
 
 pytestmark = pytest.mark.skipif(not os.environ.get("BYQ_DATABASE_URL"), reason="isolated PostgreSQL required")
 
@@ -87,7 +87,8 @@ def test_signal_snapshot_read_is_owned_and_typed(monkeypatch, tmp_path, identity
 def test_product_agent_cannot_import_raw_signals(monkeypatch, tmp_path):
     store, jobs, _, owner = _fresh_harness(monkeypatch, tmp_path)
     chain = _create_strategy_chain(owner, key="signal-import-actor")
-    headers = {**dict(owner.headers), "x-byq-actor-principal": "byq-product-agent-byq-session-product-user"}
+    headers = {**dict(owner.headers), **trusted_product_agent_context(
+        "product-user", actor="byq-product-agent-byq-session-product-user")}
     before = store.list_artifacts(owner_principal="product-user")
     response = owner.post("/v1/research/signal-snapshots", headers=headers, json={
         **_snapshot_input(), "task_id": chain["task"]["task_id"],

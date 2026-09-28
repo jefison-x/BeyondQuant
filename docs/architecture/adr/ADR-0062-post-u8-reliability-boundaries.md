@@ -1,5 +1,11 @@
 # ADR-0062：Post-U8 任务恢复、提交回执和受限续接
 
+> **Historical-only under BYQ 0.10 Clean Break.** This ADR records a pre-Clean-Break
+> decision and evidence. Its former Accepted status is historical, not current
+> architecture authority. See [ADR-0088](ADR-0088-clean-break-baseline-activation.md)
+> and the [current baseline](../../clean-break/adr/README.md).
+
+
 - Status: Accepted
 - Date: 2026-09-07
 - Scope: R1–R5、S1–S3、F1–F10 的 BYQ 边界变更；当前 DSH 保持不变。

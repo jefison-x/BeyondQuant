@@ -11,6 +11,19 @@ if (!token) {
   throw new Error("BYQ_MCP_TOKEN is required for the MCP contract test");
 }
 
+const adapterUrl = process.env.BYQ_RUNTIME_ADAPTER_URL ?? "http://runtime-adapter:8400";
+const adapterAuthorityResponse = await fetch(adapterUrl + "/internal/runtime/authority");
+if (!adapterAuthorityResponse.ok) {
+  throw new Error("Runtime Adapter authority identity is required for the MCP contract test");
+}
+const adapterAuthority = await adapterAuthorityResponse.json() as Record<string, unknown>;
+const runtimeBootId = adapterAuthority.boot_id;
+if (adapterAuthority.schema_version !== "byq-runtime-adapter-authority.v1"
+    || adapterAuthority.status !== "ready"
+    || typeof runtimeBootId !== "string" || !/^[0-9a-f]{32}$/.test(runtimeBootId)) {
+  throw new Error("Runtime Adapter authority identity is invalid for the MCP contract test");
+}
+
 const client = new Client({ name: "byq-mcp-contract-test", version: "0.1.0" });
 const transport = new StreamableHTTPClientTransport(new URL(endpoint), {
   authProvider: { token: async () => token },
@@ -18,10 +31,11 @@ const transport = new StreamableHTTPClientTransport(new URL(endpoint), {
     headers: {
       "x-byq-workspace-id": process.env.BYQ_MCP_CONTRACT_WORKSPACE ?? "workspace_mcp_contract",
       "x-byq-owner-principal": process.env.BYQ_MCP_CONTRACT_OWNER ?? "user:mcp-contract",
-      "x-byq-actor-principal": "agent:mcp-contract",
+      "x-byq-actor-principal": "byq-product-agent-session_mcp_contract",
       "x-byq-trace-id": "trace_mcp_contract",
       "x-byq-session-id": "session_mcp_contract",
       "x-byq-dsh-run-id": "dsh_mcp_contract",
+      "x-byq-runtime-boot-id": runtimeBootId,
     },
   },
 });

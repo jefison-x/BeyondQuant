@@ -13,6 +13,7 @@ const context: PoolContext = {
   workspace_id: "workspace_alice",
   owner_principal: "alice", actor_principal: "agent-1", trace_id: "trace-1",
   session_id: "session-1", dsh_run_id: "run-1",
+  runtime_boot_id: "c".repeat(32),
 };
 
 const calls: Array<{ input: string; init?: RequestInit }> = [];
@@ -39,6 +40,7 @@ const headers = calls[0].init?.headers as Record<string, string>;
 assert.equal(headers["x-byq-owner-principal"], "alice");
 assert.equal(headers["x-byq-actor-principal"], "agent-1");
 assert.equal(headers["x-byq-dsh-run-id"], "run-1");
+assert.equal(headers["x-byq-runtime-boot-id"], "c".repeat(32));
 
 console.log("Stock Pool MCP translation PASS: trusted context, snapshot, history, lifecycle");
 

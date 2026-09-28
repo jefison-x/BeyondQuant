@@ -1,5 +1,11 @@
 # ADR-0076：模型档案生命周期与运行时模型白名单
 
+> **Historical-only under BYQ 0.10 Clean Break.** This ADR records a pre-Clean-Break
+> decision and evidence. Its former Accepted status is historical, not current
+> architecture authority. See [ADR-0088](ADR-0088-clean-break-baseline-activation.md)
+> and the [current baseline](../../clean-break/adr/README.md).
+
+
 - Status: Accepted
 - Date: 2026-09-17
 - Relates: ADR-0019（加密凭据）、ADR-0075（凭据驱动动态模型目录）

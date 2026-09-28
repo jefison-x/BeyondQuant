@@ -166,67 +166,36 @@ else:
 print(json.dumps({"session_id": session_id, "first_event": first_event}, sort_keys=True))
 PY
 
-echo "== Gateway receives BYQ normalized streaming event =="
+echo "== Legacy Gateway runtime proxy routes are absent =="
 python3 - <<'PY'
 import json
 import os
-import threading
-import time
-import uuid
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-session_id = f"phase6-stream-{uuid.uuid4().hex}"
 gateway_root = os.environ.get("BYQ_SMOKE_GATEWAY_URL", "http://127.0.0.1:8100")
-gateway = gateway_root + "/internal/runtime"
-
-def post(path, payload=None):
+routes = (
+    ("GET", "/internal/runtime/health", None),
+    ("POST", "/internal/runtime/sessions", {"session_id": "smoke", "trace_id": "smoke"}),
+    ("POST", "/internal/runtime/sessions/smoke/prompt", {"content": "smoke"}),
+    ("POST", "/internal/runtime/sessions/smoke/cancel", None),
+    ("POST", "/internal/runtime/sessions/smoke/release", None),
+    ("GET", "/internal/workflows/smoke/events", None),
+)
+for method, path, payload in routes:
     body = None if payload is None else json.dumps(payload).encode()
     request = Request(
-        gateway + path,
+        gateway_root + path,
         data=body,
         headers={"content-type": "application/json"} if body else {},
-        method="POST",
+        method=method,
     )
-    with urlopen(request, timeout=20) as response:
-        assert response.status in (200, 201, 202)
-        return json.load(response)
-
-post("/sessions", {"session_id": session_id, "trace_id": "phase6-stream-trace"})
-events = []
-
-def read_one_event():
-    with urlopen(f"{gateway_root}/internal/workflows/{session_id}/events", timeout=20) as response:
-        for line in response:
-            if line.startswith(b"data: "):
-                events.append(json.loads(line[6:]))
-                return
-
-reader = threading.Thread(target=read_one_event, daemon=True)
-reader.start()
-time.sleep(0.2)
-post(f"/sessions/{session_id}/prompt", {"content": "stream smoke"})
-try:
-    post(f"/sessions/{session_id}/cancel?mode=hard")
-except Exception as exc:
-    # A keyless runtime may settle before the cancel request reaches it. That
-    # is a valid 409 lifecycle result; release below waits for idle/failed.
-    if getattr(exc, "code", None) != 409:
-        raise
-reader.join(timeout=10)
-assert events and events[0]["kind"] == "session.started"
-assert events[0]["source"] == "runtime-adapter"
-assert "session.event" not in json.dumps(events[0])
-for _ in range(20):
     try:
-        post(f"/sessions/{session_id}/release")
-        break
-    except Exception as exc:
-        if getattr(exc, "code", None) != 409:
-            raise
-        time.sleep(0.1)
-else:
-    raise AssertionError("stream session did not become releasable")
-print(json.dumps(events[0], sort_keys=True))
+        with urlopen(request, timeout=10) as response:
+            raise AssertionError(f"legacy Gateway route remains: {method} {path} ({response.status})")
+    except HTTPError as exc:
+        assert exc.code == 404, (method, path, exc.code)
+print("legacy Gateway runtime proxies return 404")
 PY
 
 echo "== Runtime Adapter keyless initialize, lifecycle and release =="
@@ -265,13 +234,15 @@ def post(path, payload=None, expected=(200, 201, 202)):
     except HTTPError as exc:
         return exc.code, json.loads(exc.read())
 
-status, created = post("/sessions", {"session_id": session_id, "trace_id": "phase6-smoke-trace"})
-assert status == 201
+status, created = post("/sessions", {"session_id": session_id, "trace_id": "phase6-smoke-trace",
+                                     "owner_principal": "phase6-smoke-user", "workspace_id": "phase6-smoke-workspace"})
+assert status == 201, (status, created)
 assert created["status"] == "ready"
 assert created["process_ownership"] == "dedicated"
 assert created["persistence"] == "dsh-owned"
 
-duplicate_status, _ = post("/sessions", {"session_id": session_id, "trace_id": "duplicate"})
+duplicate_status, _ = post("/sessions", {"session_id": session_id, "trace_id": "duplicate",
+                                         "owner_principal": "phase6-smoke-user", "workspace_id": "phase6-smoke-workspace"})
 assert duplicate_status == 409
 
 # The enqueue is keyless. If the provider fails immediately, the lifecycle
@@ -306,4 +277,4 @@ marker="/var/lib/byq/dsh-sessions/phase6-volume-marker"
 "${compose[@]}" restart runtime-adapter
 "${compose[@]}" exec -T runtime-adapter sh -c "test \"\$(cat '$marker')\" = phase6"
 
-echo "Phase 5 + Phase 6 + Phase 7 keyless smoke PASS"
+echo "Product API + direct Runtime Adapter keyless smoke PASS"

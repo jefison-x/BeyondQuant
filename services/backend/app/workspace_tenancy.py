@@ -78,7 +78,7 @@ WORKSPACE_TABLES = (
     "product_conversations", "product_conversation_messages",
     "research_tasks", "experiments", "artifacts", "research_transitions",
     "research_execution_plans", "research_execution_plan_receipts",
-    "research_continuation_events", "research_continuation_triggers",
+    "research_task_actions",
     "agent_runs", "agent_audit", "agent_approvals",
     "data_demands",
     "signal_producer_jobs", "ml_training_runs", "backtest_jobs",
@@ -128,12 +128,8 @@ INHERITED_TABLES: dict[str, tuple[tuple[str, ...], str, str]] = {
         ("task_id", "idempotency_key"), "LEFT JOIN research_tasks p ON p.task_id = c.task_id",
         "p.workspace_id",
     ),
-    "research_continuation_events": (
-        ("task_id", "event_id"), "LEFT JOIN research_tasks p ON p.task_id = c.task_id",
-        "p.workspace_id",
-    ),
-    "research_continuation_triggers": (
-        ("task_id", "trigger_id"), "LEFT JOIN research_tasks p ON p.task_id = c.task_id",
+    "research_task_actions": (
+        ("task_id", "action_id"), "LEFT JOIN research_tasks p ON p.task_id = c.task_id",
         "p.workspace_id",
     ),
     "stock_pool_snapshots": (("snapshot_id",), "LEFT JOIN stock_pools p ON p.pool_id = c.pool_id", "p.workspace_id"),
@@ -182,8 +178,7 @@ RELATION_CHECKS = {
     "artifact_task": "SELECT COUNT(*) AS count FROM artifacts c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
     "execution_plan_task": "SELECT COUNT(*) AS count FROM research_execution_plans c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
     "execution_plan_receipt_task": "SELECT COUNT(*) AS count FROM research_execution_plan_receipts c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "continuation_event_task": "SELECT COUNT(*) AS count FROM research_continuation_events c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "continuation_trigger_task": "SELECT COUNT(*) AS count FROM research_continuation_triggers c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
+    "research_task_action_task": "SELECT COUNT(*) AS count FROM research_task_actions c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
     "agent_audit_run": "SELECT COUNT(*) AS count FROM agent_audit c JOIN agent_runs p ON p.run_id=c.run_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
     "agent_approval_run": "SELECT COUNT(*) AS count FROM agent_approvals c JOIN agent_runs p ON p.run_id=c.run_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
     "signal_task": "SELECT COUNT(*) AS count FROM signal_producer_jobs c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
@@ -343,9 +338,10 @@ class WorkspaceTenancyStore(PgStoreMixin):
               IF resolved IS NULL AND TG_TABLE_NAME = 'agent_runs' AND TG_OP = 'UPDATE' THEN
                 IF OLD.status IN ('active', 'pending_binding')
                     AND NEW.status IN ('completed', 'failed', 'cancelled', 'interrupted')
+                    AND OLD.authority_status = 'active' AND NEW.authority_status = 'closed'
                     AND NEW.version = OLD.version + 1
-                    AND (to_jsonb(NEW) - ARRAY['status','updated_at','version']) =
-                        (to_jsonb(OLD) - ARRAY['status','updated_at','version']) THEN
+                    AND (to_jsonb(NEW) - ARRAY['status','authority_status','updated_at','version']) =
+                        (to_jsonb(OLD) - ARRAY['status','authority_status','updated_at','version']) THEN
                   SELECT w.workspace_id INTO resolved FROM users u
                     JOIN workspaces w ON w.owner_user_id = u.user_id
                     JOIN workspace_memberships m ON m.workspace_id = w.workspace_id AND m.user_id = u.user_id
@@ -354,7 +350,8 @@ class WorkspaceTenancyStore(PgStoreMixin):
                       AND w.workspace_id = OLD.workspace_id
                       AND r.owner_principal = OLD.owner_principal AND r.workspace_id = OLD.workspace_id
                       AND r.session_id = OLD.session_id AND r.trace_id = OLD.trace_id
-                      AND r.status = NEW.status AND r.terminal_sequence IS NOT NULL;
+                      AND r.status = NEW.status AND r.authority_status = 'closed'
+                      AND r.terminal_sequence IS NOT NULL;
                 END IF;
               END IF;
               IF resolved IS NULL THEN RAISE EXCEPTION 'trusted workspace owner is unresolved'; END IF;

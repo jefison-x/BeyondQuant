@@ -1,0 +1,4 @@
+name	image	status	ports	mounts	network	service
+sleepy_leavitt	byq-v090-recovery-mcp:latest	running	8300/tcp:None	bind:/home/jefison/projects/.byq-worktrees/v091-continuation-p4/services/mcp/src->/src,bind:/home/jefison/projects/.byq-worktrees/v091-continuation-p4/services/mcp/tests->/tests	bridge	mcp
+byq-ci-postgres-p2local	postgres:16-alpine	running	5432/tcp:None	volume:byq-ci-postgres-data-p2local->/var/lib/postgresql/data,bind:/home/jefison/projects/.byq-worktrees/v091-continuation-p2/infra/postgres/init->/docker-entrypoint-initdb.d	byq-ci-network-p2local	-
+byq-p0-pg-p0-1208572	postgres:16-alpine	running	5432/tcp:None	volume:byq-p0-pgdata-p0-1208572->/var/lib/postgresql/data,bind:/home/jefison/projects/.byq-worktrees/v091-continuation-p0/infra/postgres/init->/docker-entrypoint-initdb.d	byq-p0-net-p0-1208572	-

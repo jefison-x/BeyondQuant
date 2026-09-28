@@ -203,9 +203,32 @@ high-entropy key is never persisted in evidence).
 - `--selfcheck` rejects all 35 defect-targeting controls while a legacy
   label-trusting gate accepts every one.
 
-## Reproduce
+## Reproduce historical evidence
+
+The original P4-B replay source is preserved at Git commit `2f8aca4a877d01481be556236c8f56d6ad7fa290`. The old
+harness is archived from the current tree and is **not a current acceptance
+gate**. Each pointer below is a Git blob at that commit. These commands use a
+temporary detached checkout so the replay runs against the recorded source.
+
+Source pointers:
+- `scripts/v091/continuation_p4b/observer.py`
+- `scripts/v091/continuation_p4b/request_gate_negative_control.py`
+- `scripts/v091/continuation_p4b/run_journey.py`
+- `tests/test_v091_continuation_p4b.py`
 
 ```bash
+set -euo pipefail
+REPLAY_REPO="$(git rev-parse --show-toplevel)"
+REPLAY_ROOT="$(mktemp -d)"
+git worktree add --detach "$REPLAY_ROOT/source" 2f8aca4a877d01481be556236c8f56d6ad7fa290
+cleanup() {
+  cd "$REPLAY_REPO"
+  git worktree remove --force "$REPLAY_ROOT/source"
+  rm -rf -- "$REPLAY_ROOT"
+}
+trap cleanup EXIT
+cd "$REPLAY_ROOT/source"
+
 # Observer self-check (fail-able; 35 defect-targeting controls all rejected).
 python3 scripts/v091/continuation_p4b/observer.py --selfcheck
 
@@ -213,16 +236,16 @@ python3 scripts/v091/continuation_p4b/observer.py --selfcheck
 PYTHONPATH=services/runtime-adapter:. \
   python3 scripts/v091/continuation_p4b/request_gate_negative_control.py
 
-# Governance/contract/matrix tests (architecture lane, no DB, no Docker).
+# Historical governance/contract/matrix tests (no DB, no Docker).
 python3 -m unittest tests.test_v091_continuation_p4b
 
 # Re-derive the committed verdict (exit 0: P4-B scoped all_pass=true).
 python3 scripts/v091/continuation_p4b/observer.py \
   --observations docs/evidence/adr-0085-p4b-normal-journey/observations.v1.json \
-  --out docs/evidence/adr-0085-p4b-normal-journey/verdict.v1.json
+  --out "$REPLAY_ROOT/p4-b-verdict.json"
 
 # Real isolated stack journey (opt-in; requires Docker; no paid API, no production).
-PYTHONPATH=services/runtime-adapter:. BYQ_P4_ROOT=<worktree> \
+PYTHONPATH=services/runtime-adapter:. BYQ_P4_ROOT="$PWD" \
   python3 scripts/v091/continuation_p4b/run_journey.py
 ```
 

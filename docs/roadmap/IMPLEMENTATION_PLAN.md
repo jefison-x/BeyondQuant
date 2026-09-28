@@ -1,5 +1,20 @@
 # BeyondQuant Implementation Plan
 
+## Current BYQ 0.10 Clean Break route
+
+The maintainer's Clean Break instruction and [ADR-0088](../architecture/adr/ADR-0088-clean-break-baseline-activation.md)
+supersede the historical 0.9/P4 route below. Execute the [Phase 7–17 sequence](../clean-break/fidelity-and-execution-plan.md)
+one bounded phase at a time, with investigation/implementation → Tester →
+independent Sol Reviewer → Root PASS. Phase 7 starts with dead/unreferenced
+legacy runtime paths; every live public path needs a same-slice direct cutover
+to a version-qualified DSH translation or existing BYQ Job/Worker and passing
+contract tests. No compatibility bridge. Phase 8 resource/data deletion requires
+the verified final old-DB archive and exact inventory classification. Product
+functionality must later pass real Product API/browser and Golden Scenarios from
+fresh schema/workspace; old data is not migrated.
+
+## Historical implementation plan (non-normative)
+
 ## ADR-0084 current execution override（2026-09-21）
 
 ADR-0084 is Accepted and supersedes historical text that made every D15 atomic item a global

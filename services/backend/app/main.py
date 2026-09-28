@@ -5,8 +5,11 @@ import secrets
 import time
 from datetime import datetime, timedelta, timezone
 
+import anyio
 from fastapi import BackgroundTasks, FastAPI
 from fastapi import HTTPException, Request
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from collections.abc import Callable
 from typing import Any
 from .domain_call_admission import DomainValidationRejected
@@ -234,11 +237,138 @@ VERSION = "0.1.0"
 logger = logging.getLogger("byq.backend")
 
 app = FastAPI(title="BeyondQuant Backend", version=VERSION)
+
+
+class _RuntimeAuthorityRejected(Exception):
+    def __init__(self, status_code: int, detail: str) -> None:
+        super().__init__(detail)
+        self.status_code = status_code
+        self.detail = detail
+
+
+class ProductAgentAuthorityGuard:
+    """Serialize Product Agent requests with runtime boot rotation.
+
+    A dedicated, small pool keeps these long-lived session locks away from the
+    domain stores' pools. The session lock remains held through the complete
+    ASGI response, so rotation cannot revoke a boot while its business request
+    is still in flight.
+    """
+
+    _LOCK_KEY = "runtime-authority:agent-writers"
+    _LOCK_TIMEOUT = "500ms"
+
+    def __init__(self, app, *, engine) -> None:
+        self.app = app
+        self.engine = engine
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers: dict[str, str] = {}
+        protected = {"x-byq-actor-principal", "x-byq-runtime-boot-id"}
+        duplicate_protected_header = False
+        for raw_key, raw_value in scope.get("headers", ()):
+            key = raw_key.decode("latin1").lower()
+            if key in protected and key in headers:
+                duplicate_protected_header = True
+            headers.setdefault(key, raw_value.decode("latin1"))
+        if duplicate_protected_header:
+            await self._respond(send, 401, "duplicate Product Agent authority headers are not allowed")
+            return
+        actor = headers.get("x-byq-actor-principal")
+        if not isinstance(actor, str) or not actor.startswith("byq-product-agent-"):
+            await self.app(scope, receive, send)
+            return
+
+        boot_id = headers.get("x-byq-runtime-boot-id")
+        if not isinstance(boot_id, str) or re.fullmatch(r"[0-9a-f]{32}", boot_id) is None:
+            await self._respond(send, 401, "current Product Agent runtime boot is required")
+            return
+
+        try:
+            connection = await anyio.to_thread.run_sync(self._acquire_current_boot, self.engine, boot_id)
+        except _RuntimeAuthorityRejected as error:
+            await self._respond(send, error.status_code, error.detail)
+            return
+        except (SQLAlchemyError, TimeoutError) as error:
+            logger.warning("Product Agent runtime authority guard unavailable: %s", error)
+            await self._respond(send, 503, "runtime authority is unavailable")
+            return
+
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            # Cancellation must not strand a session lock or return its
+            # physical PostgreSQL session to the pool while still locked.
+            with anyio.CancelScope(shield=True):
+                await anyio.to_thread.run_sync(self._release_connection, connection)
+
+    @classmethod
+    def _acquire_current_boot(cls, engine, boot_id: str):
+        connection = engine.connect()
+        lock_held = False
+        try:
+            with connection.begin():
+                connection.execute(text(f"SET LOCAL lock_timeout = '{cls._LOCK_TIMEOUT}'"))
+                # Invalidate on any error from this call: the server might
+                # have granted the lock before the client observed a failure.
+                lock_held = True
+                connection.execute(
+                    text("SELECT pg_advisory_lock_shared(hashtextextended(:key, 0))"),
+                    {"key": cls._LOCK_KEY},
+                )
+                row = connection.execute(text("""SELECT boot_id FROM agent_runtime_authority_current
+                    WHERE authority_key='current'""")).mappings().first()
+            if row is None:
+                raise _RuntimeAuthorityRejected(503, "runtime authority is not initialized")
+            if row["boot_id"] != boot_id:
+                raise _RuntimeAuthorityRejected(401, "Product Agent runtime boot is no longer current")
+            return connection
+        except BaseException:
+            cls._release_connection(connection, lock_held=lock_held)
+            raise
+
+    @classmethod
+    def _release_connection(cls, connection, *, lock_held: bool = True) -> None:
+        if lock_held:
+            try:
+                released = connection.execute(
+                    text("SELECT pg_advisory_unlock_shared(hashtextextended(:key, 0))"),
+                    {"key": cls._LOCK_KEY},
+                ).scalar_one()
+                if released is not True:
+                    raise RuntimeError("runtime authority session lock was not held")
+                connection.commit()
+            except BaseException:
+                # Closing a pooled connection with a session lock would leak
+                # the lock to its next borrower. Invalidate closes that
+                # physical session and PostgreSQL releases its advisory lock.
+                try:
+                    connection.invalidate()
+                finally:
+                    connection.close()
+                return
+        connection.close()
+
+    @staticmethod
+    async def _respond(send, status_code: int, detail: str) -> None:
+        body = (f'{{"detail":"{detail}"}}').encode("utf-8")
+        await send({"type": "http.response.start", "status": status_code,
+                    "headers": [(b"content-type", b"application/json"),
+                                (b"content-length", str(len(body)).encode("ascii"))]})
+        await send({"type": "http.response.body", "body": body})
+
+
 # Tests may install an explicit provider at this seam. Production resolves the
 # active database credential at call time so rotation takes effect immediately.
 data_provider: TushareProvider | None = None
 research_store = ResearchStore.from_env()
 agent_store = AgentResearchStore.from_env()
+app.state.runtime_authority_guard_engine = agent_store.runtime_authority_guard_engine
+app.add_middleware(ProductAgentAuthorityGuard, engine=agent_store.runtime_authority_guard_engine)
 learning_store = LearningLoopStore.from_env(research_store)
 engineering_store = EngineeringTaskStore.from_env()
 paper_store = PaperTradingStore.from_env()
@@ -264,6 +394,7 @@ workspace_tenancy_store = WorkspaceTenancyStore.from_env()
 CREDENTIAL_RESOLVER_TOKEN = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
 FEEDBACK_PUBLISHER_TOKEN = os.environ.get("BYQ_FEEDBACK_PUBLISHER_TOKEN")
 FEEDBACK_HUB_RELAY_TOKEN = os.environ.get("BYQ_FEEDBACK_HUB_RELAY_TOKEN")
+RUNTIME_AUTHORITY_TOKEN = os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN")
 if os.environ.get("BYQ_BOOTSTRAP_ADMIN_USERNAME") and os.environ.get("BYQ_BOOTSTRAP_ADMIN_PASSWORD"):
     user_store.ensure_bootstrap_admin(
         os.environ["BYQ_BOOTSTRAP_ADMIN_USERNAME"],
@@ -455,7 +586,45 @@ def consume_agent_lifecycle(conversation_id: str, payload: dict[str, Any], reque
         raise HTTPException(status_code=422, detail="lifecycle conversation identity mismatch")
     return _agent_call(lambda: {"receipt": agent_store.consume_runtime_lifecycle_event(
         payload["event"], trusted_owner=owner, trusted_workspace=conversation["workspace_id"],
-        trusted_session_id=conversation["runtime_session_id"], trusted_trace_id=conversation["trace_id"])})
+        trusted_session_id=conversation["runtime_session_id"], trusted_trace_id=conversation["trace_id"],
+        trusted_boot_id=request.headers.get("x-byq-runtime-boot-id"))})
+
+
+@app.get("/internal/runtime-authority/current")
+def get_current_runtime_authority() -> dict[str, object]:
+    """Read the current public boot identity; never returns a service secret."""
+    current = agent_store.current_runtime_authority()
+    if current is None:
+        raise HTTPException(status_code=503, detail="runtime authority is not initialized")
+    return current
+
+
+def _require_runtime_authority_bearer(request: Request) -> None:
+    if not RUNTIME_AUTHORITY_TOKEN:
+        raise HTTPException(status_code=503, detail="runtime authority service credential is unavailable")
+    supplied = request.headers.get("authorization", "")
+    expected = f"Bearer {RUNTIME_AUTHORITY_TOKEN}"
+    if not secrets.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8")):
+        raise HTTPException(status_code=401, detail="runtime authority service credential required")
+
+
+@app.post("/internal/runtime-authority/boot")
+def rotate_runtime_authority(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_runtime_authority_bearer(request)
+    if set(payload) != {"schema_version", "boot_id"} or payload.get("schema_version") != "byq-runtime-authority-boot.v1":
+        raise HTTPException(status_code=422, detail="exact runtime authority boot request required")
+    return _agent_call(lambda: {"receipt": agent_store.rotate_runtime_authority(payload["boot_id"])})
+
+
+@app.post("/internal/runtime-authority/roots/{root_run_id}/close")
+def close_runtime_authority_root(root_run_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_runtime_authority_bearer(request)
+    if (set(payload) != {"schema_version", "boot_id", "sequence", "outcome", "event_sha256"}
+            or payload.get("schema_version") != "byq-runtime-root-close.v1"):
+        raise HTTPException(status_code=422, detail="exact runtime root close request required")
+    return _agent_call(lambda: {"receipt": agent_store.close_runtime_root(
+        root_run_id, boot_id=payload["boot_id"], sequence=payload["sequence"],
+        outcome=payload["outcome"], event_sha256=payload["event_sha256"])})
 
 
 def _continuation_consumer_context(request: Request) -> dict:
@@ -492,17 +661,10 @@ def peek_task_continuation(conversation_id: str, request: Request) -> dict:
 @app.post('/internal/task-continuation/{task_id}/dispatch')
 def dispatch_task_continuation(task_id: str, payload: dict[str, Any], request: Request) -> dict:
     context = _continuation_consumer_context(request)
-    allowed = {'reservation_id', 'recovery'}
-    if not {'reservation_id'} <= set(payload) or set(payload) - allowed:
+    if set(payload) != {'reservation_id'}:
         raise HTTPException(status_code=422, detail='exact continuation reservation required')
-    recovery = payload.get('recovery')
-    if recovery is not None:
-        required = {'interrupted_run_id', 'interrupted_generation', 'containment_attempt',
-                    'interrupted_executor_epoch', 'snapshot_tail_sequence', 'snapshot_digest'}
-        if not isinstance(recovery, dict) or set(recovery) != required:
-            raise HTTPException(status_code=422, detail='exact recovery loss evidence required')
     return _research_call(lambda: research_store.claim_continuation_dispatch(
-        task_id, payload['reservation_id'], trusted_context=context, recovery=recovery))
+        task_id, payload['reservation_id'], trusted_context=context))
 
 
 @app.post('/internal/task-continuation/{task_id}/block')
@@ -516,8 +678,7 @@ def block_task_continuation(task_id: str, payload: dict[str, Any], request: Requ
 @app.post('/internal/task-continuation/{task_id}/receipt')
 def record_task_continuation_receipt(task_id: str, payload: dict[str, Any], request: Request) -> dict:
     context = _continuation_consumer_context(request)
-    allowed = {'reservation_id', 'status', 'run_id', 'charged_tokens', 'settlement_sha256', 'outcome',
-               'attempt_key', 'target_executor_epoch', 'target_generation'}
+    allowed = {'reservation_id', 'status', 'run_id', 'charged_tokens', 'settlement_sha256', 'outcome'}
     if set(payload) - allowed:
         raise HTTPException(status_code=422, detail='invalid continuation receipt fields')
     if not {'reservation_id', 'status'} <= set(payload):
@@ -566,7 +727,7 @@ def consume_domain_call_evidence(conversation_id: str, payload: dict[str, Any], 
     return _agent_call(lambda: {"receipt": agent_store.consume_domain_call_evidence(
         payload["event"], trusted_owner=owner, trusted_workspace=conversation["workspace_id"],
         trusted_session_id=conversation["runtime_session_id"], trusted_trace_id=conversation["trace_id"],
-        conversation_id=conversation_id)})
+        conversation_id=conversation_id, trusted_boot_id=request.headers.get("x-byq-runtime-boot-id"))})
 
 
 @app.patch("/v1/product/conversations/{conversation_id}")
@@ -1887,6 +2048,11 @@ def _agent_context(request: Request, payload: dict[str, Any]) -> dict[str, str |
         "session_id": request.headers.get("x-byq-session-id"),
         "dsh_run_id": request.headers.get("x-byq-dsh-run-id"),
     }
+    body_actor = payload.get("actor_principal")
+    if body_actor is not None and header_values["actor_principal"] is None:
+        raise HTTPException(status_code=401, detail="actor principal must come from trusted runtime headers")
+    if body_actor is not None and body_actor != header_values["actor_principal"]:
+        raise HTTPException(status_code=401, detail="actor principal does not match trusted runtime context")
     for field, header_value in header_values.items():
         body_value = payload.get(field)
         if header_value and body_value not in {None, header_value}:
@@ -2234,7 +2400,8 @@ def _domain_validation_operation(request, payload, context, action, operation):
     claim = _agent_call(lambda: agent_store.claim_domain_call(action, payload,
         trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
         trusted_session_id=context["session_id"], trusted_trace_id=context["trace_id"],
-        trusted_generation=context["dsh_run_id"], trusted_root=request.headers.get("x-byq-root-run-id")))
+        trusted_generation=context["dsh_run_id"], trusted_root=request.headers.get("x-byq-root-run-id"),
+        trusted_boot_id=request.headers.get("x-byq-runtime-boot-id")))
     data = {key: value for key, value in payload.items() if key != "agent_run_id"}
     data["trace_id"] = context["trace_id"]
     result = _agent_call(lambda: agent_store.execute_domain_call(claim, lambda connection: operation(data, connection)))
@@ -4439,6 +4606,7 @@ def start_agent_run(payload: dict[str, Any], request: Request) -> dict[str, obje
         trusted_owner=context["owner_principal"],
         trusted_actor=context["actor_principal"],
         trusted_workspace=request.headers.get("x-byq-workspace-id"),
+        trusted_boot_id=request.headers.get("x-byq-runtime-boot-id"),
         require_runtime_binding=context["actor_principal"] == f"byq-product-agent-{context['session_id']}",
     )})
 
@@ -4464,6 +4632,7 @@ def authorize_agent_action(payload: dict[str, Any], request: Request) -> dict[st
             trusted_actor=context["actor_principal"],
             trusted_session_id=context["session_id"],
             trusted_dsh_run_id=context["dsh_run_id"],
+            trusted_boot_id=request.headers.get("x-byq-runtime-boot-id"),
         )
         effective = user_policy_store.evaluate_authorization(context["owner_principal"], base)
         if effective.get("decision") == "policy_denied":
@@ -4512,6 +4681,7 @@ def create_agent_approval(payload: dict[str, Any], request: Request) -> dict[str
         trusted_actor=context["actor_principal"],
         trusted_session_id=context["session_id"],
         trusted_dsh_run_id=context["dsh_run_id"],
+        trusted_boot_id=request.headers.get("x-byq-runtime-boot-id"),
     )})
 
 
@@ -4536,41 +4706,37 @@ def list_agent_approvals(
 
 @app.post("/v1/agents/approvals/{approval_id}/decision")
 def decide_agent_approval(approval_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
-    context = _required_agent_context(request, payload)
+    context = _required_agent_context(request, payload, include_workspace=True)
     request_payload = dict(payload)
     request_payload["approval_id"] = approval_id
     result = _agent_call(lambda: {"approval": agent_store.decide_approval(
         request_payload,
         trusted_owner=context["owner_principal"],
         trusted_actor=context["actor_principal"],
+        trusted_workspace=context["workspace_id"],
     )})
-    # ADR-0085 P4: a real human decision on a PLAN-BOUND approval advances the
-    # plan through the durable deterministic ledger with zero model calls. The
-    # compat free-text path stays blocked for the same approval.
-    _advance_plan_after_approval(approval_id, context)
+    # Approval and the exact pending ResearchTask action have already committed
+    # atomically. This POST may reconcile only that action ID. A crash here
+    # leaves a visible pending status on the read-only approval projection, and
+    # an identical POST can safely retry the same reconciliation.
+    approval = result["approval"]
+    action = approval.get("business_action")
+    if isinstance(action, dict) and action.get("status") == "pending":
+        trusted_context = {
+            "owner_principal": context["owner_principal"],
+            "workspace_id": context["workspace_id"],
+        }
+        try:
+            research_store.reconcile_research_task_action(
+                action["task_id"], action["action_id"], trusted_context=trusted_context)
+        except Exception:  # noqa: BLE001 - the durable pending action remains visible for exact replay
+            logger.warning("ResearchTask action remains pending after approval decision",
+                           extra={"approval_id": approval_id,
+                                  "action_id": action.get("action_id"),
+                                  "task_id": action.get("task_id")})
+        result["approval"] = _agent_call(lambda: agent_store.get_approval(
+            approval_id, trusted_owner=context["owner_principal"]))
     return result
-
-
-def _advance_plan_after_approval(approval_id: str, context: dict[str, Any]) -> None:
-    """Record the deterministic plan approval event for a decided plan gate.
-
-    The decision is already durable; the ledger adapter is idempotent, so a
-    transient failure here never rewrites the decision and the trusted consumer
-    can always re-drive it by the exact approval id.
-    """
-
-    target = agent_store.plan_bound_approval_target(
-        approval_id, trusted_owner=context["owner_principal"])
-    if target is None or target.get("decision") not in {"approved", "rejected"}:
-        return
-    try:
-        research_store.record_plan_approval_event(
-            target["task_id"], approval_id,
-            trusted_context={"owner_principal": target["owner_principal"],
-                             "workspace_id": target["workspace_id"]})
-    except Exception:  # noqa: BLE001 - decision durable; consumer re-drives
-        logger.warning("plan approval event not recorded yet",
-                       extra={"approval_id": approval_id, "task_id": target["task_id"]})
 
 
 @app.post("/v1/agents/approvals/{approval_id}/continuation")

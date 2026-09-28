@@ -1,0 +1,428 @@
+services:
+  postgres:
+    restart: unless-stopped
+    image: postgres:16-alpine
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${BYQ_POSTGRES_SHARED_BUFFERS:-1GB}
+      - -c
+      - effective_cache_size=${BYQ_POSTGRES_EFFECTIVE_CACHE_SIZE:-4GB}
+      - -c
+      - maintenance_work_mem=${BYQ_POSTGRES_MAINTENANCE_WORK_MEM:-256MB}
+      - -c
+      - work_mem=${BYQ_POSTGRES_WORK_MEM:-4MB}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-byq_domain}
+      POSTGRES_USER: ${POSTGRES_USER:-byq_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-byq-app-dev}
+    volumes:
+      - byq_postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - byq_product
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  frontend:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    ports:
+      - "${BYQ_FRONTEND_BIND:-80}:80"
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+      - byq_product
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -T 2 -q -O - http://127.0.0.1/ >/dev/null && wget -T 2 -q -O - http://gateway:8100/readyz >/dev/null || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    ports:
+      - "${BYQ_GATEWAY_BIND:-127.0.0.1:8100}:8100"
+    environment:
+      BYQ_F6_EXECUTOR_ENABLED: ${BYQ_F6_EXECUTOR_ENABLED:-0}
+      BYQ_PRODUCT_TOKEN: ${BYQ_PRODUCT_TOKEN:?BYQ_PRODUCT_TOKEN must be set}
+      BYQ_PRODUCT_PRINCIPAL: ${BYQ_PRODUCT_PRINCIPAL:-product-user}
+      BYQ_WORKFLOW_TRACE_ROOT: /var/lib/byq/workflow-traces
+      BYQ_BACKEND_URL: http://backend:8000
+    restart: unless-stopped
+    volumes:
+      - byq_workflow_traces:/var/lib/byq/workflow-traces
+    networks:
+      - byq_product
+    depends_on:
+      runtime-adapter:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - |-
+          import json, sys, urllib.request
+          try:
+              for url in ('http://127.0.0.1:8100/readyz', 'http://backend:8000/readyz', 'http://mcp:8300/healthz'):
+                  with urllib.request.urlopen(url, timeout=1) as response:
+                      assert response.status == 200
+              with urllib.request.urlopen('http://runtime-adapter:8400/readyz', timeout=1) as response:
+                  assert response.status == 200
+                  assert json.load(response)['runtime_adapter'] == 'ready'
+          except Exception:
+              sys.exit(1)
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  runtime-adapter:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: ${BYQ_DSH_RUNTIME_DOCKERFILE:-services/runtime-adapter/Dockerfile.post-u8-candidate}
+    environment:
+      BYQ_F6_EXECUTOR_ENABLED: ${BYQ_F6_EXECUTOR_ENABLED:-0}
+      BYQ_MCP_TOKEN: ${BYQ_MCP_TOKEN:?BYQ_MCP_TOKEN must be set}
+      BYQ_MCP_URL: http://mcp:8300/mcp/v1
+      BYQ_BACKEND_URL: http://backend:8000
+      BYQ_CREDENTIAL_RESOLVER_TOKEN: ${BYQ_CREDENTIAL_RESOLVER_TOKEN:-dev-credential-resolver-change-me}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      BYQ_DSH_RUNTIME_ROOT: /opt/dsh-runtime
+      BYQ_DSH_COMPOSITION: ${BYQ_DSH_COMPOSITION:-/opt/byq/profiles/byq-product.patch.yml}
+      BYQ_DSH_COMPATIBILITY_RELEASE: ${BYQ_DSH_COMPATIBILITY_RELEASE:-dsh-0.1.5rc1}
+      BYQ_DSH_RUN_TIMEOUT_SECONDS: ${BYQ_DSH_RUN_TIMEOUT_SECONDS:-0}
+      BYQ_DSH_PROGRESS_CHECK_INTERVAL_SECONDS: ${BYQ_DSH_PROGRESS_CHECK_INTERVAL_SECONDS:-900}
+      BYQ_DSH_SUBAGENT_HARD_CAP_SECONDS: ${BYQ_DSH_SUBAGENT_HARD_CAP_SECONDS:-0}
+      BYQ_DSH_SUBAGENT_TIMEOUT_SECONDS: ${BYQ_DSH_SUBAGENT_TIMEOUT_SECONDS:-180}
+      BYQ_DSH_NO_PROGRESS_TIMEOUT_SECONDS: ${BYQ_DSH_NO_PROGRESS_TIMEOUT_SECONDS:-120}
+      DSH_SESSION_ROOT: ${BYQ_DSH_SESSION_ROOT:-/var/lib/byq/dsh-sessions/dsh-0.1.5rc1}
+    volumes:
+      - byq_dsh_sessions:/var/lib/byq/dsh-sessions
+    networks:
+      - byq_product
+    depends_on:
+      mcp:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - >-
+          import urllib.request;
+          response = urllib.request.urlopen('http://127.0.0.1:8400/readyz', timeout=3);
+          raise SystemExit(0 if response.status == 200 else 1)
+      interval: 5s
+      timeout: 5s
+      retries: 18
+      start_period: 10s
+
+  mcp:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: services/mcp/Dockerfile
+    environment:
+      BYQ_BACKEND_URL: http://backend:8000
+      BYQ_MCP_TOKEN: ${BYQ_MCP_TOKEN:?BYQ_MCP_TOKEN must be set}
+      BYQ_WEB_EVIDENCE_PROVENANCE_POLICY: ${BYQ_WEB_EVIDENCE_PROVENANCE_POLICY:-/app/qualified-web-evidence-provenance.json}
+      BYQ_BACKTEST_ANALYSIS_PAGE_CALL_LIMIT: ${BYQ_BACKTEST_ANALYSIS_PAGE_CALL_LIMIT:-6}
+      BYQ_BACKTEST_ANALYSIS_PAGE_WINDOW_MS: ${BYQ_BACKTEST_ANALYSIS_PAGE_WINDOW_MS:-300000}
+    networks:
+      - byq_product
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:8300/healthz').then(response =>
+          process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  backend:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: services/backend/Dockerfile
+    networks:
+      - byq_product
+    environment:
+      BYQ_F6_EXECUTOR_ENABLED: ${BYQ_F6_EXECUTOR_ENABLED:-0}
+      BYQ_DATABASE_URL: ${BYQ_DATABASE_URL:-postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain}
+      BYQ_BACKTEST_OBJECT_ROOT: /var/lib/byq/domain/backtest-objects
+      BYQ_ENGINEERING_WORKTREE_ROOT: ${BYQ_ENGINEERING_WORKTREE_ROOT:-/home/jefison/projects/.byq-worktrees}
+      BYQ_BOOTSTRAP_ADMIN_USERNAME: ${BYQ_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      BYQ_BOOTSTRAP_ADMIN_PASSWORD: ${BYQ_BOOTSTRAP_ADMIN_PASSWORD:-password}
+      BYQ_CREDENTIAL_KEYRING: ${BYQ_CREDENTIAL_KEYRING:-}
+      BYQ_CREDENTIAL_ACTIVE_KEY_ID: ${BYQ_CREDENTIAL_ACTIVE_KEY_ID:-}
+      BYQ_CREDENTIAL_RESOLVER_TOKEN: ${BYQ_CREDENTIAL_RESOLVER_TOKEN:-dev-credential-resolver-change-me}
+      BYQ_PLUGIN_DEPLOYMENT_TOKEN: ${BYQ_PLUGIN_DEPLOYMENT_TOKEN:-dev-plugin-deployment-change-me}
+      BYQ_FEEDBACK_PUBLISHER_TOKEN: ${BYQ_FEEDBACK_PUBLISHER_TOKEN:-dev-feedback-publisher-change-me}
+      BYQ_FEEDBACK_HUB_RELAY_TOKEN: ${BYQ_FEEDBACK_HUB_RELAY_TOKEN:-dev-feedback-hub-relay-change-me}
+      BYQ_FEEDBACK_HUB_ALLOW_HTTP: ${BYQ_FEEDBACK_HUB_ALLOW_HTTP:-0}
+      TUSHARE_TOKEN: ${TUSHARE_TOKEN:-}
+      TUSHARE_API_URL: ${TUSHARE_API_URL:-http://api.tushare.pro}
+      BYQ_WEB_EVIDENCE_PROVENANCE_POLICY: ${BYQ_WEB_EVIDENCE_PROVENANCE_POLICY:-/app/qualified-web-evidence-provenance.json}
+      BYQ_PLUGIN_REGISTRY_PATH: ${BYQ_PLUGIN_REGISTRY_PATH:-/app/plugin-registry/product-plugins.json}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - byq_domain_state:/var/lib/byq/domain
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - |-
+          import os, sys, urllib.request
+          from sqlalchemy import create_engine, text
+          try:
+              with urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=1) as response:
+                  assert response.status == 200
+              engine = create_engine(os.environ['BYQ_DATABASE_URL'], connect_args={'connect_timeout': 2, 'options': '-c statement_timeout=1000'})
+              with engine.connect() as connection:
+                  assert connection.execute(text('SELECT 1')).scalar() == 1
+              engine.dispose()
+          except Exception:
+              sys.exit(1)
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  data-worker:
+    build:
+      context: .
+      dockerfile: workers/data/Dockerfile
+    environment:
+      BYQ_DATABASE_URL: ${BYQ_DATABASE_URL:-postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain}
+      BYQ_CREDENTIAL_KEYRING: ${BYQ_CREDENTIAL_KEYRING:-}
+      BYQ_CREDENTIAL_ACTIVE_KEY_ID: ${BYQ_CREDENTIAL_ACTIVE_KEY_ID:-}
+      TUSHARE_TOKEN: ${TUSHARE_TOKEN:-}
+      TUSHARE_API_URL: ${TUSHARE_API_URL:-http://api.tushare.pro}
+      BYQ_DATA_POLL_SECONDS: ${BYQ_DATA_POLL_SECONDS:-10}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    networks:
+      - byq_product
+    security_opt:
+      - no-new-privileges:true
+
+  signal-worker:
+    build:
+      context: .
+      dockerfile: workers/signal/Dockerfile
+    environment:
+      BYQ_DATABASE_URL: ${BYQ_DATABASE_URL:-postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain}
+      BYQ_SIGNAL_SANDBOX_URL: http://signal-sandbox:8500
+      BYQ_SIGNAL_POLL_SECONDS: 1
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+      signal-sandbox:
+        condition: service_healthy
+    networks:
+      - byq_product
+      - byq_signal_sandbox
+    security_opt:
+      - no-new-privileges:true
+
+  ml-worker:
+    build:
+      context: .
+      dockerfile: workers/ml/Dockerfile
+    environment:
+      BYQ_DATABASE_URL: ${BYQ_DATABASE_URL:-postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain}
+      BYQ_ML_OBJECT_ROOT: /var/lib/byq/ml-objects
+      BYQ_ML_POLL_SECONDS: 2
+      BYQ_ML_WORKER_ID: ml-worker-1
+      BYQ_ML_IMAGE_IDENTITY: ${BYQ_ML_IMAGE_IDENTITY:-byq-ml-worker-v1-local-build}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    networks:
+      - byq_product
+    volumes:
+      - byq_ml_model_state:/var/lib/byq/ml-objects
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 64
+    mem_limit: 1536m
+    cpus: 2.0
+
+  signal-sandbox:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: services/signal-sandbox/Dockerfile
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 32
+    mem_limit: 896m
+    cpus: 1.0
+    networks:
+      - byq_signal_sandbox
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          response = urllib.request.urlopen('http://127.0.0.1:8500/healthz', timeout=3);
+          raise SystemExit(0 if response.status == 200 else 1)
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  feedback-publisher:
+    profiles:
+      - feedback-publisher
+    build:
+      context: .
+      dockerfile: workers/feedback-publisher/Dockerfile
+    environment:
+      BYQ_FEEDBACK_BACKEND_URL: http://backend:8000
+      BYQ_FEEDBACK_PUBLISHER_TOKEN: ${BYQ_FEEDBACK_PUBLISHER_TOKEN:-dev-feedback-publisher-change-me}
+      BYQ_FEEDBACK_GITHUB_REPOSITORY: ${BYQ_FEEDBACK_GITHUB_REPOSITORY:-}
+      BYQ_FEEDBACK_GITHUB_TOKEN: ${BYQ_FEEDBACK_GITHUB_TOKEN:-}
+      BYQ_FEEDBACK_GITHUB_APP_ID: ${BYQ_FEEDBACK_GITHUB_APP_ID:-}
+      BYQ_FEEDBACK_GITHUB_INSTALLATION_ID: ${BYQ_FEEDBACK_GITHUB_INSTALLATION_ID:-}
+      BYQ_FEEDBACK_GITHUB_APP_PRIVATE_KEY_FILE: ${BYQ_FEEDBACK_GITHUB_APP_PRIVATE_KEY_FILE:-}
+      BYQ_FEEDBACK_POLL_SECONDS: ${BYQ_FEEDBACK_POLL_SECONDS:-10}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 32
+    mem_limit: 128m
+    cpus: 0.5
+    networks:
+      - byq_product
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          response = urllib.request.urlopen('http://127.0.0.1:8700/healthz', timeout=3);
+          raise SystemExit(0 if response.status == 200 else 1)
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  feedback-hub-relay:
+    build:
+      context: .
+      dockerfile: workers/feedback-hub-relay/Dockerfile
+    environment:
+      BYQ_FEEDBACK_BACKEND_URL: http://backend:8000
+      BYQ_FEEDBACK_HUB_RELAY_TOKEN: ${BYQ_FEEDBACK_HUB_RELAY_TOKEN:-dev-feedback-hub-relay-change-me}
+      BYQ_FEEDBACK_HUB_URL: ${BYQ_FEEDBACK_HUB_URL:-}
+      BYQ_FEEDBACK_HUB_ALLOW_HTTP: ${BYQ_FEEDBACK_HUB_ALLOW_HTTP:-0}
+      BYQ_FEEDBACK_HUB_POLL_SECONDS: ${BYQ_FEEDBACK_HUB_POLL_SECONDS:-15}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=8m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 24
+    mem_limit: 64m
+    cpus: 0.25
+    networks:
+      - byq_product
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          response = urllib.request.urlopen('http://127.0.0.1:8750/healthz', timeout=3);
+          raise SystemExit(0 if response.status == 200 else 1)
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+networks:
+  byq_product:
+    name: ${BYQ_PRODUCT_NETWORK_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-product}
+    driver: bridge
+  byq_signal_sandbox:
+    name: ${BYQ_SIGNAL_SANDBOX_NETWORK_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-signal-sandbox}
+    driver: bridge
+    internal: true
+
+volumes:
+  byq_postgres_data:
+    name: ${BYQ_POSTGRES_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-postgres-data}
+    external: ${BYQ_POSTGRES_VOLUME_EXTERNAL:-false}
+  byq_domain_state:
+    name: ${BYQ_DOMAIN_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-domain-state}
+  byq_ml_model_state:
+    name: ${BYQ_ML_MODEL_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-ml-model-state}
+  byq_dsh_sessions:
+    name: ${BYQ_DSH_SESSIONS_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-dsh-sessions}
+  byq_workflow_traces:
+    name: ${BYQ_WORKFLOW_TRACES_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-workflow-traces}

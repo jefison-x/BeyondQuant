@@ -190,21 +190,28 @@ def _client(monkeypatch, tmp_path, *, cookie_user=None, conversation_owner="prod
     main.product_sessions.add(main.ProductSession(
         conversation_id="conversation_1", session_id="runtime-1", trace_id="trace-1",
         principal=principal, workspace_id="workspace_1"))
-    monkeypatch.setattr(main, "_catalog_request", lambda *_a, **_k: {
-        "conversation": {"conversation_id": "conversation_1", "runtime_session_id": "runtime-1",
-                         "trace_id": "trace-1", "status": "active",
-                         "owner_principal": conversation_owner},
-        "messages": []})
-    calls = {"post": 0, "containment": 0}
+    calls = {"post": 0, "containment": 0, "catalog": []}
 
-    def adapter_post(*_a, **_k):
+    def catalog_request(method, path, owner, workspace, **_kwargs):
+        calls["catalog"].append((method, path, owner.subject, workspace))
+        if owner.subject != conversation_owner:
+            raise main.HTTPException(status_code=404, detail="conversation not found")
+        return {
+            "conversation": {"conversation_id": "conversation_1", "runtime_session_id": "runtime-1",
+                             "trace_id": "trace-1", "status": "active",
+                             "owner_principal": conversation_owner},
+            "messages": [],
+        }
+
+    def adapter_post(*_args, **_kwargs):
         calls["post"] += 1
         return {}
 
-    def adapter_containment(*_a, **_k):
+    def adapter_containment(*_args, **_kwargs):
         calls["containment"] += 1
         return _containment()
 
+    monkeypatch.setattr(main, "_catalog_request", catalog_request)
     monkeypatch.setattr(main, "_adapter_post", adapter_post)
     monkeypatch.setattr(main, "_adapter_containment", adapter_containment)
     if cookie_user is not None:
@@ -212,53 +219,19 @@ def _client(monkeypatch, tmp_path, *, cookie_user=None, conversation_owner="prod
     return TestClient(main.app), store, calls, main
 
 
-def _headers(cookie=False):
-    headers = {"Authorization": f"Bearer {TOKEN}"}
-    return headers
+def _headers():
+    return {"Authorization": f"Bearer {TOKEN}"}
 
 
-def test_recovery_endpoint_is_read_only_and_never_submits(monkeypatch, tmp_path: Path) -> None:
-    client, store, calls, _main = _client(monkeypatch, tmp_path)
-    for event in _interrupted_events():
-        store.append(event)
-    response = client.get("/v1/agent/sessions/conversation_1/recovery",
-                          headers=_headers())
-    assert response.status_code == 200
-    body = response.json()
-    assert body["submitted"] is False
-    assert body["containment"]["submission"] == "not_performed"
-    # Unverified bootstrap authority pauses; no adapter call at all.
-    assert body["containment"]["recovery"]["status"] == "paused"
-    assert body["containment"]["recovery"]["reason"] == "authority_unavailable"
-    assert calls["post"] == 0
+def test_removed_standalone_routes_return_404_without_side_effects(monkeypatch, tmp_path: Path) -> None:
+    client, _store, calls, _main = _client(monkeypatch, tmp_path)
+    for suffix in ("containment", "recovery"):
+        response = client.get(f"/v1/agent/sessions/conversation_1/{suffix}", headers=_headers())
+        assert response.status_code == 404
+    assert calls == {"post": 0, "containment": 0, "catalog": []}
 
 
-def test_malicious_step_declaration_has_no_effect(monkeypatch, tmp_path: Path) -> None:
-    client, store, calls, _main = _client(monkeypatch, tmp_path)
-    for event in _interrupted_events():
-        store.append(event)
-    # A client attempting to declare the step safe must not change anything: the
-    # request has no safety field and no adapter prompt is ever sent.
-    response = client.request(
-        "GET", "/v1/agent/sessions/conversation_1/recovery", headers=_headers(),
-        json={"step": {"idempotent": True, "result_verifiable": True},
-              "idempotency_key": "original-key-1"})
-    assert response.status_code == 200
-    assert response.json()["submitted"] is False
-    assert calls["post"] == 0
-
-
-def test_cancel_blocks_with_zero_adapter_calls(monkeypatch, tmp_path: Path) -> None:
-    client, store, calls, _main = _client(monkeypatch, tmp_path)
-    for event in _interrupted_events(terminal="session.cancelled"):
-        store.append(event)
-    response = client.get("/v1/agent/sessions/conversation_1/recovery", headers=_headers())
-    assert response.json()["containment"]["recovery"]["status"] == "blocked"
-    assert response.json()["containment"]["recovery"]["reason"] == "cancelled"
-    assert calls == {"post": 0, "containment": 0}
-
-
-def test_verified_authority_but_no_budget_metadata_pauses_with_zero_adapter_calls(
+def test_session_replay_is_owner_scoped_and_includes_neutral_containment(
     monkeypatch, tmp_path: Path,
 ) -> None:
     client, store, calls, _main = _client(
@@ -267,10 +240,91 @@ def test_verified_authority_but_no_budget_metadata_pauses_with_zero_adapter_call
                      "_workspace": {"workspace_id": "workspace_1"}})
     for event in _interrupted_events():
         store.append(event)
-    response = client.get("/v1/agent/sessions/conversation_1/recovery",
-                          headers=_headers(), cookies={"byq_session": "s"})
+
+    response = client.get("/v1/agent/sessions/conversation_1", headers=_headers(),
+                          cookies={"byq_session": "s"})
+    assert response.status_code == 200
+    assert calls["catalog"] == [(
+        "GET", "/v1/product/conversations/conversation_1", "product-user", "workspace_1")]
+    assert calls["containment"] == 1
+    assert calls["post"] == 0
+
+    body = response.json()
+    projection = body["containment"]
+    assert projection["status"] == "interrupted"
+    assert projection["loss_cause"] == "executor-loss"
+    assert projection["interrupted_run_id"] == RUN_A
+    assert projection["trace_id"] == "trace-1"
+    assert projection["preservation"]["states"]["conversation"] == "preserved"
+    assert projection["preservation"]["states"]["workflow_trace"] == "preserved"
+    assert projection["submission"] == "not_performed"
+    assert projection["recovery"]["status"] == "paused"
+    assert projection["recovery"]["reason"] == "authority_unavailable"
+    serialized = json.dumps(body)
+    assert "runtime-1" not in serialized
+    assert '"dsh"' not in serialized.lower()
+
+
+def test_session_replay_does_not_apply_containment_from_another_run_or_trace(
+    monkeypatch, tmp_path: Path,
+) -> None:
+    client, store, _calls, main = _client(monkeypatch, tmp_path)
+    for event in _interrupted_events():
+        store.append(event)
+    monkeypatch.setattr(main, "_adapter_containment",
+                        lambda _session_id: _containment(run_id=RUN_B))
+    response = client.get("/v1/agent/sessions/conversation_1", headers=_headers())
+    assert response.status_code == 200
+    assert response.json()["containment"]["status"] == "failed"
+    assert response.json()["containment"]["interrupted_run_id"] is None
+
+    client, store, _calls, main = _client(monkeypatch, tmp_path / "other-trace")
+    for event in _interrupted_events():
+        store.append(event)
+    monkeypatch.setattr(main, "_adapter_containment",
+                        lambda _session_id: _containment(trace_id="trace-other"))
+    response = client.get("/v1/agent/sessions/conversation_1", headers=_headers())
+    assert response.status_code == 200
+    assert response.json()["containment"]["status"] == "failed"
+    assert response.json()["containment"]["interrupted_run_id"] is None
+
+
+def test_session_replay_returns_404_for_another_owner(monkeypatch, tmp_path: Path) -> None:
+    client, _store, calls, _main = _client(
+        monkeypatch, tmp_path, conversation_owner="another-user",
+        cookie_user={"username": "product-user", "status": "active",
+                     "_workspace": {"workspace_id": "workspace_1"}})
+    response = client.get("/v1/agent/sessions/conversation_1", headers=_headers(),
+                          cookies={"byq_session": "s"})
+    assert response.status_code == 404
+    assert calls["catalog"] == [(
+        "GET", "/v1/product/conversations/conversation_1", "product-user", "workspace_1")]
+    assert calls["containment"] == 0
+    assert calls["post"] == 0
+
+
+def test_session_replay_of_cancelled_run_blocks_without_submission(monkeypatch, tmp_path: Path) -> None:
+    client, store, calls, _main = _client(monkeypatch, tmp_path)
+    for event in _interrupted_events(terminal="session.cancelled"):
+        store.append(event)
+    response = client.get("/v1/agent/sessions/conversation_1", headers=_headers())
+    projection = response.json()["containment"]
+    assert projection["recovery"]["status"] == "blocked"
+    assert projection["recovery"]["reason"] == "cancelled"
+    assert projection["submission"] == "not_performed"
+    assert calls["post"] == 0
+
+
+def test_session_replay_with_unknown_budget_pauses(monkeypatch, tmp_path: Path) -> None:
+    client, store, calls, _main = _client(
+        monkeypatch, tmp_path,
+        cookie_user={"username": "product-user", "status": "active",
+                     "_workspace": {"workspace_id": "workspace_1"}})
+    for event in _interrupted_events():
+        store.append(event)
+    response = client.get("/v1/agent/sessions/conversation_1", headers=_headers(),
+                          cookies={"byq_session": "s"})
     decision = response.json()["containment"]["recovery"]
-    # Owner/workspace/authorization verified; budget is unknown -> paused.
     assert decision["status"] == "paused"
     assert decision["reason"] == "authority_unavailable"
     assert calls["post"] == 0
@@ -282,7 +336,7 @@ def test_verified_authority_but_no_budget_metadata_pauses_with_zero_adapter_call
     ({"owner_matches": False}, "owner_workspace_mismatch"),
     ({"workspace_matches": False}, "owner_workspace_mismatch"),
 ])
-def test_authoritative_denial_blocks_with_zero_adapter_calls(
+def test_session_replay_fails_closed_on_authoritative_denial(
     monkeypatch, tmp_path: Path, authority, reason,
 ) -> None:
     client, store, calls, main = _client(
@@ -290,55 +344,27 @@ def test_authoritative_denial_blocks_with_zero_adapter_calls(
         cookie_user={"username": "product-user", "status": "active",
                      "_workspace": {"workspace_id": "workspace_1"}})
     base = _authority(**authority)
-    monkeypatch.setattr(main, "_recovery_authority", lambda *_a, **_k: base)
+    monkeypatch.setattr(main, "_recovery_authority", lambda *_args, **_kwargs: base)
     for event in _interrupted_events():
         store.append(event)
-    response = client.get("/v1/agent/sessions/conversation_1/recovery",
-                          headers=_headers(), cookies={"byq_session": "s"})
+    response = client.get("/v1/agent/sessions/conversation_1", headers=_headers(),
+                          cookies={"byq_session": "s"})
     decision = response.json()["containment"]["recovery"]
     assert decision["status"] == "blocked"
     assert decision["reason"] == reason
     assert calls["post"] == 0
 
 
-def test_revoked_user_status_blocks_workspace_and_authorization(monkeypatch, tmp_path: Path) -> None:
+def test_disabled_user_status_blocks_replay_recovery(monkeypatch, tmp_path: Path) -> None:
     client, store, calls, _main = _client(
         monkeypatch, tmp_path,
         cookie_user={"username": "product-user", "status": "disabled",
-                     "_workspace": {"workspace_id": "workspace_other"}})
+                     "_workspace": {"workspace_id": "workspace_1"}})
     for event in _interrupted_events():
         store.append(event)
-    decision = client.get("/v1/agent/sessions/conversation_1/recovery",
-                          headers=_headers(), cookies={"byq_session": "s"}).json()["containment"]["recovery"]
+    response = client.get("/v1/agent/sessions/conversation_1", headers=_headers(),
+                          cookies={"byq_session": "s"})
+    decision = response.json()["containment"]["recovery"]
     assert decision["status"] == "blocked"
-    assert decision["reason"] == "owner_workspace_mismatch"
+    assert decision["reason"] == "authorization_revoked"
     assert calls["post"] == 0
-
-
-def test_containment_endpoint_reports_interrupted_and_real_preservation(
-    monkeypatch, tmp_path: Path,
-) -> None:
-    client, store, calls, _main = _client(monkeypatch, tmp_path)
-    for event in _interrupted_events():
-        store.append(event)
-    body = client.get("/v1/agent/sessions/conversation_1/containment", headers=_headers()).json()
-    containment = body["containment"]
-    assert containment["status"] == "interrupted"
-    assert containment["loss_cause"] == "executor-loss"
-    assert containment["preservation"]["states"]["conversation"] == "preserved"
-    assert containment["preservation"]["states"]["workflow_trace"] == "preserved"
-    assert "runtime-1" not in json.dumps(containment)
-    assert "dsh" not in json.dumps(containment).lower()
-
-
-def test_get_product_session_includes_framework_neutral_containment(
-    monkeypatch, tmp_path: Path,
-) -> None:
-    client, store, _calls, _main = _client(monkeypatch, tmp_path)
-    for event in _interrupted_events():
-        store.append(event)
-    response = client.get("/v1/agent/sessions/conversation_1", headers=_headers())
-    assert response.status_code == 200
-    containment = response.json()["containment"]
-    assert containment["status"] == "interrupted"
-    assert "runtime-1" not in json.dumps(containment)

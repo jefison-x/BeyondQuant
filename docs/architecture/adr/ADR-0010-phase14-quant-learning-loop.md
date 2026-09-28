@@ -1,5 +1,11 @@
 # ADR-0010：Phase 14 Quant Learning Loop
 
+> **Historical-only under BYQ 0.10 Clean Break.** This ADR records a pre-Clean-Break
+> decision and evidence. Its former Accepted status is historical, not current
+> architecture authority. See [ADR-0088](ADR-0088-clean-break-baseline-activation.md)
+> and the [current baseline](../../clean-break/adr/README.md).
+
+
 - Status: Accepted
 - Date: 2026-08-16
 - Decision scope: Phase 14 Quant Domain learning 与 evidence promotion

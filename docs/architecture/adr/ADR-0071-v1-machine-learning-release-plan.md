@@ -1,5 +1,11 @@
 # ADR-0071：1.0 主流机器学习支持与稳定性发布规划
 
+> **Historical-only under BYQ 0.10 Clean Break.** This ADR records a pre-Clean-Break
+> decision and evidence. Its former Accepted status is historical, not current
+> architecture authority. See [ADR-0088](ADR-0088-clean-break-baseline-activation.md)
+> and the [current baseline](../../clean-break/adr/README.md).
+
+
 - Status: Accepted
 - Date: 2026-09-11
 - Acceptance: 维护者要求“1.0版本应该在支持当前市面上常用智能机器学习模块开发运行稳定以后再发布。”，

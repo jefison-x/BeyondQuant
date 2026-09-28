@@ -320,6 +320,7 @@ prepare_ci_compose_env() {
   export POSTGRES_DB=byq_domain POSTGRES_USER=byq_app POSTGRES_PASSWORD=byq-app-dev
   export BYQ_DATABASE_URL=postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain
   export BYQ_MCP_TOKEN=ci-mcp-test-only BYQ_PRODUCT_TOKEN=ci-product-test-only
+  export BYQ_RUNTIME_AUTHORITY_TOKEN=ci-runtime-authority-test-only
   export BYQ_CREDENTIAL_KEYRING='{"ci-v1":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}'
   export BYQ_CREDENTIAL_ACTIVE_KEY_ID=ci-v1
   export BYQ_CREDENTIAL_RESOLVER_TOKEN=ci-credential-resolver-test-only
@@ -331,7 +332,7 @@ prepare_ci_compose_env() {
   export BYQ_FEEDBACK_HUB_URL=""
   # ADR-0069: daily suites use the supported bundled runtime only.
   # Archived rollback images are never rebuilt or executed by routine CI.
-  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-candidate
+  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-248-candidate
   export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1
   export BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml
   export BYQ_DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-0.1.5rc1
@@ -548,7 +549,7 @@ check_runtime() {
 }
 
 check_dsh_candidate() {
-  step "runtime-adapter: real 0.1.2rc1 candidate qualification"
+  step "runtime-adapter: real 0.1.5rc1 candidate qualification"
   local benchmark_dir="$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE"
   mkdir -p "$benchmark_dir"
   ensure_ci_mcp || { bad "candidate live MCP dependency"; return; }
@@ -592,7 +593,9 @@ check_dsh_candidate() {
       -e BYQ_DSH_REAL_PROCESS_TEST=1 -v "$CI_CANDIDATE_VOL:/var/lib/byq/dsh-sessions" \
       -v "$REPO_ROOT/tests/dsh_upgrade:/qualification:ro" "$candidate_image" \
       python3 -m pytest -q -p no:cacheprovider \
-      /app/tests/test_dsh_012_real_process.py /qualification/test_candidate_journeys.py; then
+      /app/tests/test_dsh_012_real_process.py \
+      /app/tests/test_dsh015_foreground_child_process.py \
+      /qualification/test_candidate_journeys.py; then
     bad "candidate real-process/delegate journeys"; return
   fi
   if ! run_interruptible docker run --name "$CI_CANDIDATE_TEST" "${common[@]}" \
@@ -607,7 +610,7 @@ check_dsh_candidate() {
 }
 
 check_mcp() {
-  step "mcp: npm test (tsc build + in-container server + contract tests)"
+  step "mcp: component tests (tsc build + in-container server)"
   ensure_clean_postgres || { bad "clean postgres for MCP"; return; }
   ensure_ci_backend || { bad "live backend for MCP"; return; }
   # A successful domain write needs a real isolated user/workspace, not the
@@ -631,7 +634,7 @@ check_mcp() {
       -v "$REPO_ROOT/services/mcp/package.json:/app/package.json" \
       -v "$REPO_ROOT/services/mcp/tsconfig.json:/app/tsconfig.json" \
       -w /app "$(ci_image mcp)" \
-      sh -ec 'npm run build; node dist/src/server.js >/tmp/byq-mcp-server.log 2>&1 & server_pid=$!; trap "kill $server_pid >/dev/null 2>&1 || true" EXIT; sleep 3; npm test'; then
+      sh -ec 'npm run build; node dist/src/server.js >/tmp/byq-mcp-server.log 2>&1 & server_pid=$!; trap "kill $server_pid >/dev/null 2>&1 || true" EXIT; sleep 3; npm run test:component'; then
     ok "mcp tests"; else bad "mcp tests"; fi
 }
 
@@ -768,6 +771,10 @@ PYCODE
     && BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" run_interruptible python3 scripts/evidence/f6-chain-verification.py; then
     ok "F6 real-domain chain and Gateway restart"
   else
+    # Summarize the new continuation warnings using fixed categories only.
+    # The existing bounded Compose tail below retains its own log policy.
+    docker compose logs --no-color gateway 2>/dev/null | \
+      grep -E 'task continuation (prompt rejected: category=|delivery paused: stage=)' | tail -12 || true
     docker compose logs --no-color --tail 40 runtime-adapter gateway backend || true
     bad "F6 real-domain chain and Gateway restart"; export COMPOSE_FILE="$original_compose"; return
   fi

@@ -869,23 +869,32 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("execution-plan/advance", openapi)
         self.assertNotIn("execution-plan/legacy", openapi)
 
-    def test_adr0085_p2_continuation_events_have_no_generic_write_route(self) -> None:
-        # ADR-0085 P2: continuation events enter ONLY through named server-side
-        # adapters that load authoritative records. There is no generic
-        # event-write HTTP/MCP/Browser route and no raw public
-        # ``record_continuation_event`` seam a caller could forge.
+    def test_phase7_slice4_uses_task_actions_without_the_event_state_ledger(self) -> None:
+        # Phase 7 slice 4 replaces event-as-state with one exact task-owned
+        # business-action record. Approval/action insertion is atomic, and the
+        # Product projection reports state without reconciling it.
         backend = (ROOT / "services/backend/app/main.py").read_text()
         product_api = (ROOT / "services/gateway/app/product_api.py").read_text()
         self.assertNotIn("continuation-events", backend)
         self.assertNotIn("continuation-events", product_api)
-        ledger = (ROOT / "services/backend/app/research_continuation_ledger.py").read_text()
-        self.assertNotIn("def record_continuation_event(", ledger)
-        for adapter in (
-            "record_plan_approval_event", "record_data_ready_event",
-            "record_backtest_completed_event", "record_user_resume_event",
-            "record_recovery_event",
-        ):
-            self.assertIn(f"def {adapter}(", ledger)
+        self.assertFalse((ROOT / "services/backend/app/research_continuation_ledger.py").exists())
+        action = (ROOT / "services/backend/app/research_task_actions.py").read_text()
+        self.assertIn("CREATE TABLE IF NOT EXISTS research_task_actions", action)
+        self.assertIn("PRIMARY KEY (task_id, action_id)", action)
+        self.assertIn("UNIQUE (source_approval_id)", action)
+        self.assertIn("UNIQUE (task_id, idempotency_key)", action)
+        self.assertIn("research_task_actions_one_open", action)
+        self.assertIn("def reconcile_research_task_action(", action)
+        self.assertNotIn("def claim_research_task_action(", action)
+        self.assertNotIn("def settle_research_task_action(", action)
+        self.assertNotIn("research_continuation_event", action)
+        approval = (ROOT / "services/backend/app/agent_research.py").read_text()
+        self.assertIn("insert_pending_approval_action(", approval)
+        self.assertIn("trusted_workspace=context[\"workspace_id\"]", backend)
+        self.assertIn("business_action", product_api)
+        tenancy = (ROOT / "services/backend/app/workspace_tenancy.py").read_text()
+        self.assertIn('"research_task_actions"', tenancy)
+        self.assertIn('"research_task_action_task"', tenancy)
 
     def test_adr0085_p3_research_judgment_is_bounded_and_read_only(self) -> None:
         # ADR-0085 P3: a genuine research-judgment stage gets a READ-ONLY bounded
@@ -976,12 +985,14 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             self.assertNotIn(forbidden, seam)
         for raw in ("bars_frame", "date_index", "symbol_index", "corporate_actions"):
             self.assertNotIn(raw, seam)
-        # Grant creation creates the plan; the approval route advances it.
+        # Grant creation creates the plan; an identical approval POST retries
+        # only its already-committed exact action.
         continuation = (ROOT / "services/backend/app/research_continuation.py").read_text()
         self.assertIn("self.ensure_execution_plan(task_id, trusted_context=trusted_context)",
                       continuation)
-        self.assertIn("_advance_plan_after_approval(approval_id, context)", backend)
-        self.assertIn("record_plan_approval_event", backend)
+        self.assertIn("reconcile_research_task_action(", backend)
+        self.assertIn("agent_store.decide_approval(", backend)
+        self.assertNotIn("record_plan_approval_event", backend)
 
     def test_adr0085_p3_default_stage_call_bound_agrees_across_contract_and_guard(self) -> None:
         from packages.contracts.research_judgment import DEFAULT_MAX_MODEL_CALLS_PER_STAGE
@@ -1125,7 +1136,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             local_ci,
         )
         self.assertIn("BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml", local_ci)
-        self.assertIn("Dockerfile.post-u8-candidate", local_ci)
+        self.assertIn("Dockerfile.post-u8-248-candidate", local_ci)
         self.assertNotIn("CI_PG_NET=byq_product", local_ci)
         self.assertNotIn("npm run build >/tmp/byq-mcp-build.log 2>&1", local_ci)
 

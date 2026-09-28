@@ -8,6 +8,16 @@ harness/session store/PTY runtime, a production selector change, deployment,
 release/tag, or Phase 100 resume, and it does **not** create or claim a D15
 superseding assessment.
 
+## Historical route evidence
+
+The standalone Product API routes documented below are v0.9 historical evidence. Their
+Gateway source is pinned to exact pre-Clean-Break commit
+`d4c6a9e34f531d27dd0e94804be6ed0aa6f9fde3` (the recorded `main.py` digest is
+`sha256:1814fb1e1afb2f0bea79fff8b84698f77e55d33611d2ff223555455cf73b433a`). Phase 7
+slice 3 removes the standalone URLs; current containment and fail-closed recovery
+classification are projected by `GET /v1/agent/sessions/{id}` and verified by current
+Gateway contract tests.
+
 ## Implemented scope
 
 - `packages/contracts/session_failure_containment.py` — framework-neutral closed

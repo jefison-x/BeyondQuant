@@ -1,5 +1,30 @@
 # BeyondQuant 状态
 
+## Current authority — BYQ 0.10 Clean Break (2026-09-25)
+
+<!-- byq:clean-break-current-phase=8 -->
+
+The maintainer's explicit Clean Break direction supersedes the 0.9/P4 and Phase 100
+implementation routing below. The current architecture is [ADR-0088](../architecture/adr/ADR-0088-clean-break-baseline-activation.md)
+and [Clean Break ADR-001–006](../clean-break/adr/README.md). Phase 0–6 planning,
+freeze, inventory, proposed baseline and ownership/deletion review are complete;
+the baseline is now accepted in the Clean Break branch. Phase 7 bounded
+legacy-runtime removal passed its [limited gate](../clean-break/phase-gates.md),
+with remaining Agent lifecycle ownership explicitly assigned to Phase 10/14/17.
+**Next phase: Clean Break Phase 8 — classified old-environment cleanup.**
+Resource deletion requires exact inventory, verified final old-DB archive and
+separate operation authorization; the current source/test authorization does
+not authorize touching existing databases, user data, backups or services.
+No production deployment or release is authorized.
+
+P4-C1 code is in `main`; the P4-C2 local branch/worktree remains unreviewed
+historical reference, and P4-D is not claimed complete. The previous 0.9/P4
+"current" statements and markers below are **historical records only**, not
+authorization to continue P4 or a competing Next phase. Do not rewrite their
+original evidence or treat old runtime safety tests as DSH native continuity.
+
+## Historical 0.9/P4 status (non-normative)
+
 0.9.0 **开发收口**（development closeout）已完成。维护者已将本轮会话/长研究整改确定为
 **0.9.1 稳定性版本**；真实复合研究接续事故审计已完成，维护者于 2026-09-22 接受 ADR-0085；
 **ADR-0085 P0 止损与事实一致性已合并**（已并入 `main`），**ADR-0085 P1 执行计划合同已合并**
@@ -74,7 +99,7 @@ P4-C2/P4-D 尚未开始。P0→P4 必须逐项、逐独立 PR 推进，前项合
 <!-- byq:v090-final-closeout=complete -->
 <!-- byq:v090-development-closeout=complete -->
 <!-- byq:v090-next=maintainer-testing-and-0.9x-window -->
-<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.215 -->
+<!-- byq:build-revision=dsh-0.1.5rc1-post-u8.220 -->
 
 | 轨道 | 当前步骤 | 下一步 | 授权来源 | 停止条件 |
 |---|---|---|---|---|

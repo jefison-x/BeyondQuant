@@ -6,14 +6,14 @@ from fastapi.testclient import TestClient
 from app import main
 from app.conversation_catalog import ConversationCatalogStore
 from app.research import ResearchStore
-from tests.workspace_helpers import trusted_agent_context
+from tests.workspace_helpers import trusted_agent_context, trusted_product_agent_context
 
 pytestmark = pytest.mark.skipif(not os.environ.get("BYQ_DATABASE_URL"), reason="isolated PostgreSQL required")
 
 
 def test_product_task_binding_is_atomic_exact_and_restart_safe(monkeypatch):
     session, trace = "binding-session", "binding-trace"
-    headers = trusted_agent_context("binding-user", actor=f"byq-product-agent-{session}", session_id=session, trace_id=trace)
+    headers = trusted_product_agent_context("binding-user", actor=f"byq-product-agent-{session}", session_id=session, trace_id=trace)
     catalog = ConversationCatalogStore()
     conversation = catalog.create("binding-user", session, trace)
     store = ResearchStore()
@@ -39,7 +39,7 @@ def test_product_task_binding_is_atomic_exact_and_restart_safe(monkeypatch):
 @pytest.mark.parametrize("case", ["missing", "foreign_owner", "wrong_trace", "archived", "payload_trace"])
 def test_unproven_product_binding_creates_no_task(case):
     session, trace = "unproven-session", "unproven-trace"
-    headers = trusted_agent_context("binding-user", actor=f"byq-product-agent-{session}", session_id=session, trace_id=trace)
+    headers = trusted_product_agent_context("binding-user", actor=f"byq-product-agent-{session}", session_id=session, trace_id=trace)
     if case != "missing":
         owner = "other-user" if case == "foreign_owner" else "binding-user"
         trusted_agent_context(owner)
@@ -56,7 +56,7 @@ def test_unproven_product_binding_creates_no_task(case):
 
 def test_old_unbound_task_is_not_retrospectively_assigned():
     session, trace = "old-session", "old-trace"
-    headers = trusted_agent_context("binding-user", actor=f"byq-product-agent-{session}", session_id=session, trace_id=trace)
+    headers = trusted_product_agent_context("binding-user", actor=f"byq-product-agent-{session}", session_id=session, trace_id=trace)
     payload = {"owner_principal": "binding-user", "title": "Old unbound", "objective": "No execution",
                "trace_id": trace, "idempotency_key": "old-binding-key"}
     store = ResearchStore()

@@ -11,7 +11,7 @@ from app.backtest import BacktestJobStore, LocalObjectStore, membership_fingerpr
 from app.db import execute
 from app.research import ResearchStore
 from test_strategy_artifact import strategy_payload
-from tests.workspace_helpers import trusted_agent_context
+from tests.workspace_helpers import trusted_agent_context, trusted_product_agent_context
 
 
 
@@ -282,7 +282,7 @@ def test_agent_strategy_approval_is_bound_to_exact_resource_and_human_decision(m
     agents = AgentResearchStore()
     monkeypatch.setattr(main, "research_store", research)
     monkeypatch.setattr(main, "agent_store", agents)
-    agent_headers = trusted_agent_context(
+    agent_headers = trusted_product_agent_context(
         "approval-owner", actor="byq-product-agent-approval-session",
         trace_id="approval-trace", session_id="approval-session", dsh_run_id="approval-run",
     )
@@ -322,7 +322,8 @@ def test_agent_strategy_approval_is_bound_to_exact_resource_and_human_decision(m
                 "owner-principal", "workspace-id", "actor-principal", "trace-id", "session-id", "dsh-run-id")
         ], "approval-binding-run"),
     }, trusted_owner="approval-owner", trusted_workspace=agent_headers["x-byq-workspace-id"],
-        trusted_session_id="approval-session", trusted_trace_id="approval-trace")
+        trusted_session_id="approval-session", trusted_trace_id="approval-trace",
+        trusted_boot_id=agent_headers["x-byq-runtime-boot-id"])
     pending = client.post("/v1/agents/approvals", json={
         "run_id": run["run_id"], "action": "byq_strategy_approve",
         "reason": "Approve this exact immutable strategy version.",

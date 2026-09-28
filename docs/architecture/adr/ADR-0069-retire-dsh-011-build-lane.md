@@ -1,5 +1,11 @@
 # ADR-0069：退役 DSH 0.1.1rc1 日常维护
 
+> **Historical-only under BYQ 0.10 Clean Break.** This ADR records a pre-Clean-Break
+> decision and evidence. Its former Accepted status is historical, not current
+> architecture authority. See [ADR-0088](ADR-0088-clean-break-baseline-activation.md)
+> and the [current baseline](../../clean-break/adr/README.md).
+
+
 - Status: Accepted
 - Date: 2026-09-10
 - Scope: 旧版日常构建、CI、依赖扫描与兼容入口退役；当前 MCP Hono 更新。

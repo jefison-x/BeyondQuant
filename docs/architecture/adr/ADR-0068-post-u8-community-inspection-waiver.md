@@ -1,5 +1,11 @@
 # ADR-0068：后续开发免除 Community 原实现检查
 
+> **Current non-product governance/security policy; historical as Product Core architecture.**
+> Its exact process or security scope remains effective under
+> [ADR-0088](ADR-0088-clean-break-baseline-activation.md), while the
+> [Clean Break baseline](../../clean-break/adr/README.md) controls BYQ 0.10 Product Core.
+
+
 - Status: Accepted
 - Date: 2026-09-09
 - Scope: 当前及之后所有开发步骤，包括 Product Phase、维护、领域与前端整改。

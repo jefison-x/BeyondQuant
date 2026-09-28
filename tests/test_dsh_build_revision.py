@@ -17,16 +17,47 @@ class BuildRevisionTests(unittest.TestCase):
             descriptor = builds.ROOT / "config/dsh/releases" / f"{release}.json"
             historical = json.loads(descriptor.read_text())
             self.assertEqual(value["release_descriptor_hash"], builds.digest(descriptor))
-            self.assertEqual(value["dockerfile"], "services/runtime-adapter/Dockerfile.post-u8-candidate")
-            self.assertIn(value["dockerfile"], historical["build_inputs"])
+            self.assertEqual(value["dockerfile"], builds.identity(value["build_id"])[1])
+            self.assertIn("services/runtime-adapter/Dockerfile.post-u8-candidate", historical["build_inputs"])
+            self.assertNotIn(value["dockerfile"], historical["build_inputs"])
             self.assertIn("packages/operations/admission.py", value["inputs"])
             self.assertIn("services/runtime-adapter/app/main.py", value["inputs"])
             self.assertIn("services/gateway/app/main.py", value["inputs"])
             for path in ("workers/data/worker.py", "workers/ml/worker.py",
                          "services/signal-sandbox/runner.py", "infra/postgres/init/10-byq-databases.sql",
                          "scripts/ci/cleanup-resources.sh", "tests/test_dsh_build_revision.py",
-                         "apps/frontend/vitest.config.ts", ".github/workflows/ci-selfhosted.yml"):
+                         "services/runtime-adapter/tests/test_dsh015_foreground_child_process.py",
+                         "apps/frontend/vitest.config.ts", ".github/workflows/ci-selfhosted.yml",
+                         "docs/contracts/product-api.openapi.yaml"):
                 self.assertIn(path, value["inputs"])
+
+    def test_previous_and_current_post_u8_builds_keep_distinct_dockerfiles(self):
+        frozen = "dsh-0.1.5rc1-post-u8.215"
+        newest_frozen = "dsh-0.1.5rc1-post-u8.238"
+        previous = "dsh-0.1.5rc1-post-u8.235"
+        older = "dsh-0.1.5rc1-post-u8.225"
+        older_224 = "dsh-0.1.5rc1-post-u8.224"
+        older_223 = "dsh-0.1.5rc1-post-u8.223"
+        oldest = "dsh-0.1.5rc1-post-u8.222"
+        current = builds.selected_build_id("dsh-0.1.5rc1")
+        self.assertEqual(builds.identity(frozen)[1],
+                         "services/runtime-adapter/Dockerfile.post-u8-candidate")
+        self.assertEqual(builds.identity(oldest)[1],
+                         "services/runtime-adapter/Dockerfile.post-u8-222-candidate")
+        self.assertEqual(builds.identity(previous)[1],
+                         "services/runtime-adapter/Dockerfile.post-u8-235-candidate")
+        self.assertEqual(builds.identity(older)[1],
+                         "services/runtime-adapter/Dockerfile.post-u8-225-candidate")
+        self.assertEqual(builds.identity(older_224)[1],
+                         "services/runtime-adapter/Dockerfile.post-u8-224-candidate")
+        self.assertEqual(builds.identity(older_223)[1],
+                         "services/runtime-adapter/Dockerfile.post-u8-223-candidate")
+        self.assertEqual(builds.check(previous)["build_id"], previous)
+        self.assertEqual(builds.check(newest_frozen)["build_id"], newest_frozen)
+        self.assertEqual(builds.check(older)["build_id"], older)
+        self.assertEqual(current, "dsh-0.1.5rc1-post-u8.248")
+        self.assertEqual(builds.identity(current)[1],
+                         "services/runtime-adapter/Dockerfile.post-u8-248-candidate")
 
     def test_forged_revision_missing_input_drift_and_cross_release_fail(self):
         original = builds.render(builds.selected_build_id("dsh-0.1.5rc1"))

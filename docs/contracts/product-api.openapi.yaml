@@ -358,16 +358,16 @@ paths:
     get: {summary: 返回 owner-scoped strategy backtest counts., responses: *okResponses}
 
   /api/product/approvals:
-    get: {summary: 列出 owner-scoped approvals., responses: *okResponses}
+    get: {summary: 列出 owner-scoped approvals，并只读投影独立的 ResearchTask business_action 状态。, responses: *okResponses}
   /api/product/approvals/{approval_id}:
     parameters: [{$ref: "#/components/parameters/ApprovalId"}]
-    get: {summary: 获取 one owner-scoped approval., responses: *okResponses}
+    get: {summary: 获取 owner-scoped approval 与只读 business_action 状态；不触发 reconciliation。, responses: *okResponses}
   /api/product/approvals/{approval_id}/decision:
     parameters: [{$ref: "#/components/parameters/ApprovalId"}]
-    post: {summary: 记录 an owner-scoped approval decision., responses: *okResponses}
+    post: {summary: 记录 owner-scoped 决策，并按原审批 ID 重试其原子提交的 pending ResearchTask action。, responses: *okResponses}
   /api/product/approvals/{approval_id}/continue:
     parameters: [{$ref: "#/components/parameters/ApprovalId"}]
-    post: {summary: 幂等续接 the approval's original durable conversation., responses: *okResponses}
+    post: {summary: 读取 plan-bound approval 的 business_action 状态；不把 DSH conversation 当作 action settlement authority。, responses: *okResponses}
 
   /api/product/profile:
     get: {summary: 返回 the authenticated user profile., responses: *okResponses}
@@ -601,7 +601,7 @@ paths:
     post: {summary: 创建 an owner-scoped durable conversation with private runtime correlation., responses: *createdResponses}
   /v1/agent/sessions/{session_id}:
     parameters: [{$ref: "#/components/parameters/SessionId"}]
-    get: {summary: 重放 owner-scoped user messages and normalized WorkflowTrace events., responses: *okResponses}
+    get: {summary: 重放 owner-scoped user messages、normalized WorkflowTrace events 和框架中立 containment 投影；恢复资格分类 fail closed 且不提交 prompt., responses: *okResponses}
     patch: {summary: 重命名、置顶、归档或恢复 an owner-scoped conversation., responses: *okResponses}
     delete: {summary: 归档并释放 an owner-scoped Product Agent session., responses: *noContentResponses}
   /v1/agent/sessions/{session_id}/answer-delivery:
@@ -609,27 +609,6 @@ paths:
     get:
       summary: 只读查询当前用户会话的公开回答投递状态；不重置重试预算或启动模型。
       responses: *okResponses
-  /v1/agent/sessions/{session_id}/lifecycle-delivery:
-    parameters: [{$ref: '#/components/parameters/SessionId'}]
-    get:
-      summary: 只读查询当前用户会话的 AgentRun 终态投递状态，不启动模型或重置预算。
-      responses:
-        '200':
-          description: 投递进度不是研究目标完成证明；超限或无效事件需要人工核查。
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: false
-                required: [schema_version, state, pending_events, exhausted_events, rejected_events, max_attempts, deadline_seconds]
-                properties:
-                  schema_version: {type: string, enum: [agent-run-delivery-status.v1]}
-                  state: {type: string, enum: [not_registered, pending, up_to_date, attention_required, unavailable]}
-                  pending_events: {type: integer, minimum: 0}
-                  exhausted_events: {type: integer, minimum: 0}
-                  rejected_events: {type: integer, minimum: 0}
-                  max_attempts: {type: integer, enum: [8]}
-                  deadline_seconds: {type: integer, enum: [86400]}
   /v1/agent/sessions/{session_id}/turns:
     parameters: [{$ref: "#/components/parameters/SessionId"}]
     post: {summary: 提交 a turn to an owner-scoped Product Agent session., responses: *acceptedResponses}
@@ -639,12 +618,6 @@ paths:
   /v1/agent/sessions/{session_id}/cancel:
     parameters: [{$ref: "#/components/parameters/SessionId"}]
     post: {summary: 取消 an owner-scoped Product Agent turn., responses: *okResponses}
-  /v1/agent/sessions/{session_id}/containment:
-    parameters: [{$ref: "#/components/parameters/SessionId"}]
-    get: {summary: 只读暴露框架中立的 interruption/恢复资格/暂停原因/尝试 lineage；不读取 DSH 私有事件。, responses: *okResponses}
-  /v1/agent/sessions/{session_id}/recovery:
-    parameters: [{$ref: "#/components/parameters/SessionId"}]
-    get: {summary: 只读恢复分类；无权威步骤/预算元数据时 fail closed 为 paused，绝不提交新 prompt。, responses: *okResponses}
   /v1/workflows/{session_id}/events:
     parameters:
       - $ref: "#/components/parameters/SessionId"

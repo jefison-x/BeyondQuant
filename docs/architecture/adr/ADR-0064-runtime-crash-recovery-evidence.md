@@ -1,5 +1,11 @@
 # ADR-0064：Runtime 崩溃恢复的受限持久证据
 
+> **Historical-only under BYQ 0.10 Clean Break.** This ADR records a pre-Clean-Break
+> decision and evidence. Its former Accepted status is historical, not current
+> architecture authority. See [ADR-0088](ADR-0088-clean-break-baseline-activation.md)
+> and the [current baseline](../../clean-break/adr/README.md).
+
+
 - Status: Accepted
 - Date: 2026-09-07
 - Scope: 没有规范终态事件的 Adapter 崩溃；新增 BYQ-owned 持久执行身份与可信恢复证据来源。

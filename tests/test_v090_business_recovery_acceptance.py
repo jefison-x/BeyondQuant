@@ -118,9 +118,18 @@ class CommittedEvidenceTests(unittest.TestCase):
 
 class DefectFixTests(unittest.TestCase):
     def test_lost_original_prompt_is_not_reconciled_as_accepted(self):
-        runtime = (ROOT / "services/runtime-adapter/app/runtime.py").read_text(encoding="utf-8")
+        # This 0.9 acceptance records the implementation that produced the
+        # captured observations; Clean Break intentionally removed that path.
+        import subprocess
+
+        runtime = subprocess.check_output(
+            ["git", "show", "4671c3e9:services/runtime-adapter/app/runtime.py"],
+            cwd=ROOT, text=True,
+        )
         self.assertIn("_reconcile_lost_receipt", runtime)
         self.assertIn("interrupted_run_id", runtime)
+        current = (ROOT / "services/runtime-adapter/app/runtime.py").read_text(encoding="utf-8")
+        self.assertNotIn("def _reconcile_lost_receipt", current)
 
 
 class BoundaryTests(unittest.TestCase):

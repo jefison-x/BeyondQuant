@@ -71,38 +71,15 @@ def _sha256(path: Path) -> str:
 
 
 class ContractTests(unittest.TestCase):
-    def test_contract_declares_every_required_scenario(self):
+    def test_historical_contract_declares_every_recorded_scenario(self):
         contract = _contract()
         self.assertEqual(contract["schema_version"], "byq-v090-business-recovery-contract.v1")
         declared = {scenario["id"] for scenario in contract["scenarios"]}
         self.assertEqual(declared, REQUIRED_SCENARIOS)
         self.assertTrue(all(scenario["required"] for scenario in contract["scenarios"]))
 
-    def test_closed_carrier_and_step_registry(self):
-        from packages.contracts import business_recovery as c
-        from packages.contracts.domain_call_admission import ACTIONS
-        self.assertEqual(set(c.STEP_SAFETY), set(ACTIONS))
-        self.assertEqual(c.RECOVERY_ATTEMPT_MAX, 3)
-        self.assertFalse(c.STEP_SAFETY["byq_ml_strategy_create"]["may_produce_new_key"] is False)
-        self.assertTrue(c.STEP_SAFETY["byq_strategy_validate"]["may_produce_new_key"] is False)
-
 
 class ObserverFailAbilityTests(unittest.TestCase):
-    def test_selfcheck_rejects_every_control_and_pre_fix_defects_are_evidenced(self):
-        observer = _load(OBSERVER, "v090_business_recovery_observer")
-        result = observer.run_selfcheck(_contract())
-        self.assertTrue(result["baseline_all_pass"])
-        self.assertTrue(result["all_controls_pass"])
-        self.assertFalse([item for item in result["controls"] if item["observed_all_pass"]])
-        self.assertGreaterEqual(result["defect_targeting_count"], 20)
-        self.assertTrue(result["defect_targeting_pre_fix_passed"])
-        names = {item["name"] for item in result["controls"]}
-        for expected in ("same-trigger-creates-a-second-attempt", "snapshot-change-consumes-an-ordinal",
-                         "double-deducted-budget", "model-floor-bypassed", "unknown-cost-treated-as-zero",
-                         "new-key-action-eligible", "snapshot-idle-flip-accepted",
-                         "gateway-invents-authority", "real-journal-digest-mismatch"):
-            self.assertIn(expected, names)
-
     def test_committed_evidence_is_breakable_by_a_mutation(self):
         observer = _load(OBSERVER, "v090_business_recovery_observer_mut")
         contract = _contract()
@@ -155,24 +132,10 @@ class CommittedEvidenceTests(unittest.TestCase):
                          "services/backend/app/research_continuation.py"):
             self.assertIn(relative, digests)
 
-    def test_real_adapter_scenario_is_the_real_journal_closure(self):
-        observed = json.loads(OBSERVATIONS.read_text(encoding="utf-8"))[
-            "scenarios"]["real-adapter-journal-snapshot-closure"]["observed"]
-        from packages.contracts import business_recovery as c
-        digest = c.canonical_snapshot_digest(session_id=observed["session_id"],
-            trace_id=observed["trace_id"], tail_sequence=len(observed["calls"]), calls=observed["calls"])
-        self.assertEqual(observed["digest"], digest)
-        self.assertEqual(observed["carrier_digest"], digest)
-        self.assertEqual(observed["carrier_tail"], len(observed["calls"]))
-        self.assertTrue(observed["idle"])
-        self.assertRegex(observed["run_id"], r"^[0-9a-f]{32}$")
-
-
 class BoundaryTests(unittest.TestCase):
     def test_no_new_store_migration_cross_plane_authority_or_trust_subject(self):
-        for relative in ("packages/contracts/business_recovery.py",
-                         "services/runtime-adapter/app/business_recovery.py",
-                         "services/gateway/app/recovery_carrier.py"):
+        self.assertFalse((ROOT / "services/gateway/app/recovery_carrier.py").exists())
+        for relative in ("packages/contracts/business_recovery.py",):
             text = (ROOT / relative).read_text(encoding="utf-8")
             self.assertNotIn("psycopg", text, relative)
             self.assertNotIn("asyncpg", text, relative)
@@ -182,20 +145,13 @@ class BoundaryTests(unittest.TestCase):
         # The attempt aggregate is an in-row JSONB addition, not a new table.
         self.assertNotIn("recovery_attempt", (ROOT / "services/backend/app/db.py").read_text(encoding="utf-8"))
 
-    def test_gateway_carrier_is_closed_and_pure(self):
-        module = _load(ROOT / "services/gateway/app/recovery_carrier.py", "v090_recovery_carrier")
-        from packages.contracts import business_recovery as c
-        reservation_id = "continuation_" + "a" * 32
-        trigger = c.trigger_key(reservation_id, "b" * 32, "generation-1", 1, 1)
-        carrier = {"attempt_key": c.attempt_key(trigger, 1), "ordinal": 1, "trigger_key": trigger,
-                   "interrupted_run_id": "b" * 32, "interrupted_generation": "generation-1",
-                   "containment_attempt": 1, "interrupted_executor_epoch": 1,
-                   "snapshot_tail_sequence": 0, "snapshot_digest": "a" * 64}
-        reservation = {"reservation_id": reservation_id, "recovery_attempt": carrier}
-        self.assertEqual(module.closed_recovery_carrier(reservation)["recovery_attempt"], carrier)
-        with self.assertRaises(Exception):
-            module.closed_recovery_carrier({"recovery_attempt": {**carrier, "live_epoch": 2}})
-        self.assertEqual(module.closed_recovery_carrier({"reservation_id": "x"}), {"reservation_id": "x"})
+    def test_runtime_adapter_has_no_recovery_attempt_admission(self):
+        runtime = (ROOT / "services/runtime-adapter/app/runtime.py").read_text(encoding="utf-8")
+        self.assertNotIn("business_recovery", runtime)
+        self.assertNotIn("recovery_receipts", runtime)
+        self.assertNotIn("_recovery_anchor", runtime)
+        adapter_contract = (ROOT / "services/runtime-adapter/app/continuation_budget.py").read_text(encoding="utf-8")
+        self.assertNotIn("recovery_attempt", adapter_contract)
 
     def test_status_records_recovery_acceptance_and_b1_b2_unchanged(self):
         status = (ROOT / "docs/roadmap/STATUS.md").read_text(encoding="utf-8")

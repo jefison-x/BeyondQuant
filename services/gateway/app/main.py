@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import hashlib
+import logging
 import os
 import asyncio
 import threading
 import time
 import uuid
+import re
 from datetime import datetime, timezone
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
@@ -36,23 +38,30 @@ from .trace_store import TraceConflict, TraceStore
 from .conversation_recovery import project_recovery
 from .session_containment import (
     containment_match,
-    loss_from_evidence,
     preservation_projection,
     project_containment,
 )
 from .workflow_projection import project_workflow_event
 from .agent_lifecycle_delivery import LifecycleDelivery
 from .task_continuation import TaskContinuationDelivery
-from .recovery_carrier import closed_recovery_carrier
 from packages.contracts.agent_run_lifecycle import lifecycle_receipt, project_lifecycle_event
-from packages.contracts.workflow_trace import validate_workflow_trace_event
+from packages.contracts.domain_call_admission import call_evidence_receipt
 
 
 SERVICE = "byq-gateway"
 VERSION = "0.1.0"
+logger = logging.getLogger('uvicorn.error')
+TRACE_LIFECYCLE_SEND_ATTEMPTS = 3
+TRACE_RETRY_DELAY_SECONDS = 0.05
+TRACE_RETRY_MAX_DELAY_SECONDS = 5.0
+
+
 @asynccontextmanager
 async def lifespan(app):
-    lifecycle_delivery.start()
+    try:
+        _sync_runtime_authority()
+    except Exception:
+        _set_runtime_authority_state(ready=False)
     answer_delivery.start()
     domain_call_delivery.start()
     task_continuation_delivery.start()
@@ -60,7 +69,6 @@ async def lifespan(app):
         yield
     finally:
         task_continuation_delivery.close()
-        lifecycle_delivery.close()
         answer_delivery.close()
         domain_call_delivery.close()
 
@@ -75,6 +83,151 @@ PRODUCT_TOKEN = os.environ.get("BYQ_PRODUCT_TOKEN")
 PRODUCT_PRINCIPAL = os.environ.get("BYQ_PRODUCT_PRINCIPAL", "product-user")
 trace_store = TraceStore(os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"))
 
+RUNTIME_ADAPTER_AUTHORITY_PATH = "/internal/runtime/authority"
+RUNTIME_AUTHORITY_BOOT_SCHEMA = "byq-runtime-authority-boot.v1"
+RUNTIME_AUTHORITY_RECEIPT_SCHEMA = "byq-runtime-authority-receipt.v1"
+RUNTIME_AUTHORITY_CURRENT_SCHEMA = "byq-runtime-authority-current.v1"
+RUNTIME_TERMINAL_EVIDENCE_SCHEMA = "byq-runtime-terminal-evidence.v1"
+RUNTIME_ROOT_CLOSE_SCHEMA = "byq-runtime-root-close.v1"
+_runtime_authority_lock = threading.RLock()
+_runtime_authority_sync_lock = threading.Lock()
+_runtime_authority_state: dict[str, object] = {
+    "ready": False,
+    "boot_id": None,
+    "authority_epoch": None,
+}
+
+
+def _valid_runtime_boot_id(value: object) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{32}", value) is not None
+
+
+def _set_runtime_authority_state(*, ready: bool, boot_id: str | None = None,
+                                 authority_epoch: int | None = None) -> None:
+    with _runtime_authority_lock:
+        _runtime_authority_state.update({
+            "ready": ready,
+            "boot_id": boot_id if ready else None,
+            "authority_epoch": authority_epoch if ready else None,
+        })
+
+
+def _runtime_authority_snapshot() -> dict[str, object]:
+    with _runtime_authority_lock:
+        return dict(_runtime_authority_state)
+
+
+def require_runtime_authority() -> None:
+    try:
+        _sync_runtime_authority()
+        if _runtime_authority_snapshot().get("ready") is not True:
+            raise RuntimeError("runtime authority was not established")
+    except Exception as exc:
+        _set_runtime_authority_state(ready=False)
+        raise HTTPException(status_code=503, detail="Agent runtime authority is not ready") from exc
+
+
+def _adapter_authority() -> dict[str, object]:
+    try:
+        response = httpx.get(f"{RUNTIME_ADAPTER_URL}{RUNTIME_ADAPTER_AUTHORITY_PATH}", timeout=3.0)
+        response.raise_for_status()
+        body = response.json()
+    except httpx.HTTPError as exc:
+        raise RuntimeError("runtime adapter authority is unavailable") from exc
+    except ValueError as exc:
+        raise RuntimeError("runtime adapter authority returned invalid JSON") from exc
+    if (not isinstance(body, dict) or set(body) != {"schema_version", "boot_id", "status"}
+            or body.get("schema_version") != "byq-runtime-adapter-authority.v1"
+            or not _valid_runtime_boot_id(body.get("boot_id")) or body.get("status") != "ready"):
+        raise RuntimeError("runtime adapter authority receipt is invalid")
+    return body
+
+
+def _backend_runtime_authority_request(method: str, path: str,
+                                      payload: dict[str, object] | None = None) -> dict[str, object]:
+    headers: dict[str, str] = {}
+    if path != "/internal/runtime-authority/current":
+        token = os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN", "")
+        if not token:
+            raise RuntimeError("Gateway runtime authority credential is missing")
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        response = httpx.request(
+            method,
+            f"{BACKEND_URL}{path}",
+            json=payload,
+            headers=headers,
+            timeout=5.0,
+        )
+        response.raise_for_status()
+        body = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise RuntimeError("Backend runtime authority request failed") from exc
+    if not isinstance(body, dict):
+        raise RuntimeError("Backend runtime authority response is invalid")
+    return body
+
+
+def _validate_runtime_authority_receipt(body: object, boot_id: str) -> int:
+    if not isinstance(body, dict) or set(body) != {"receipt"}:
+        raise RuntimeError("Backend runtime authority receipt is invalid")
+    receipt = body["receipt"]
+    if (not isinstance(receipt, dict)
+            or set(receipt) != {"schema_version", "boot_id", "authority_epoch", "revoked_root_count",
+                               "revoked_agent_run_count", "status"}
+            or receipt.get("schema_version") != RUNTIME_AUTHORITY_RECEIPT_SCHEMA
+            or receipt.get("boot_id") != boot_id or receipt.get("status") != "current"
+            or type(receipt.get("authority_epoch")) is not int or receipt["authority_epoch"] < 1
+            or type(receipt.get("revoked_root_count")) is not int or receipt["revoked_root_count"] < 0
+            or type(receipt.get("revoked_agent_run_count")) is not int
+            or receipt["revoked_agent_run_count"] < 0):
+        raise RuntimeError("Backend runtime authority receipt is invalid")
+    return receipt["authority_epoch"]
+
+
+def _validate_runtime_authority_current(body: object, boot_id: str, authority_epoch: int) -> None:
+    if (not isinstance(body, dict)
+            or set(body) != {"schema_version", "boot_id", "authority_epoch", "status"}
+            or body.get("schema_version") != RUNTIME_AUTHORITY_CURRENT_SCHEMA
+            or body.get("boot_id") != boot_id or body.get("authority_epoch") != authority_epoch
+            or body.get("status") != "current"):
+        raise RuntimeError("Backend runtime authority does not match the Adapter boot")
+
+
+def _sync_runtime_authority() -> dict[str, object]:
+    """Fence the Adapter process boot in Backend before Agent mutations are admitted."""
+    with _runtime_authority_sync_lock:
+        try:
+            adapter = _adapter_authority()
+            boot_id = adapter["boot_id"]
+            previous = _runtime_authority_snapshot()
+            if previous.get("ready") is True and previous.get("boot_id") == boot_id:
+                current = _backend_runtime_authority_request("GET", "/internal/runtime-authority/current")
+                _validate_runtime_authority_current(
+                    current, boot_id, previous["authority_epoch"],
+                )
+                return {"boot_id": boot_id, "authority_epoch": previous["authority_epoch"]}
+            response = _backend_runtime_authority_request("POST", "/internal/runtime-authority/boot", {
+                "schema_version": RUNTIME_AUTHORITY_BOOT_SCHEMA,
+                "boot_id": boot_id,
+            })
+            authority_epoch = _validate_runtime_authority_receipt(response, boot_id)
+            current = _backend_runtime_authority_request("GET", "/internal/runtime-authority/current")
+            _validate_runtime_authority_current(current, boot_id, authority_epoch)
+        except Exception:
+            _set_runtime_authority_state(ready=False)
+            raise
+        _set_runtime_authority_state(ready=True, boot_id=boot_id, authority_epoch=authority_epoch)
+        return {"boot_id": boot_id, "authority_epoch": authority_epoch}
+
+
+def _require_session_runtime_authority(session: ProductSession) -> str:
+    snapshot = _runtime_authority_snapshot()
+    if (snapshot.get("ready") is not True or not _valid_runtime_boot_id(session.boot_id)
+            or session.boot_id != snapshot.get("boot_id")):
+        raise HTTPException(status_code=503, detail="Agent session authority is not current")
+    return session.boot_id
+
 
 def _continuation_adapter_get(path: str, params=None) -> dict:
     response = httpx.get(f'{RUNTIME_ADAPTER_URL}{path}', params=params, timeout=5.0)
@@ -86,15 +239,9 @@ def _continuation_adapter_get(path: str, params=None) -> dict:
 
 
 def _adapter_containment(runtime_session_id: str) -> dict | None:
-    """Fetch the bounded adapter containment summary; unavailable is not fatal."""
+    """Adapter process loss has no durable containment evidence to fetch."""
 
-    if not runtime_session_id:
-        return None
-    try:
-        return _continuation_adapter_get(
-            f"/internal/runtime/sessions/{runtime_session_id}/containment")
-    except (httpx.HTTPError, ValueError):
-        return None
+    return None
 
 
 def _session_containment_projection(
@@ -170,6 +317,10 @@ def _recovery_authority(
 
 
 def _consume_task_continuation(context):
+    try:
+        require_runtime_authority()
+    except HTTPException:
+        return
     with chat_admission():
         _consume_admitted_task_continuation(context)
 
@@ -187,15 +338,7 @@ def _attach_continuation_observer(context):
     if state.get('reason') == 'session_missing':
         return None
     product_sessions.remove_owned(context['conversation_id'], principal)
-    session = ProductSession(conversation_id=context['conversation_id'], session_id=context['session_id'],
-        trace_id=context['trace_id'], principal=principal, workspace_id=context['workspace_id'])
-    try:
-        product_sessions.add(session)
-    except RuntimeError:
-        return product_sessions.get_owned(context['conversation_id'], principal)
-    trace_store.reopen(session.session_id)
-    _start_trace_collector(session)
-    return session
+    return _restore_product_session(context['conversation_id'], principal, context['workspace_id'])
 
 
 def _consume_admitted_task_continuation(context):
@@ -229,7 +372,11 @@ def _consume_admitted_task_continuation(context):
             conversation, context['session_id'], context['trace_id']):
         raise ValueError('continuation conversation identity changed')
     observer = _attach_continuation_observer(context)
-    reservation, receipt = closed_recovery_carrier(intent['reservation']), intent['receipt']
+    if observer is not None:
+        _require_session_runtime_authority(observer)
+    reservation, receipt = intent['reservation'], intent['receipt']
+    if not isinstance(reservation, dict):
+        raise ValueError('invalid continuation reservation')
     identity = reservation['reservation_id']
     task = intent['task_id']
     if receipt.get('reservation_id') != identity or reservation.get('task_id') != task:
@@ -268,15 +415,9 @@ def _consume_admitted_task_continuation(context):
     if original.get('state') == 'accepted':
         mark('accepted', run_id=original['run_id'])
         return
-    # ADR-0084: when the Adapter's fenced containment proves this reservation's
-    # accepted run was lost, recovery is folded into the SAME reservation state
-    # machine: the Backend re-derives step-safety/budget from its own evidence
-    # and mints the closed carrier, then the Adapter admits it atomically.
-    if _resume_lost_reservation(
-            backend=backend, mark=mark, task=task, identity=identity, reservation=reservation,
-            receipt=receipt, session_id=intent['session_id'], trace_id=intent['trace_id'],
-            instruction=instruction, conversation=conversation, principal=principal,
-            workspace=workspace):
+    # Interrupted accepted turns stay unresolved after exact reconciliation.
+    # A stale carrier from an earlier Gateway recovery path is not prompt authority.
+    if 'recovery_attempt' in reservation:
         return
     if receipt['status'] != 'reserved' or intent.get('may_dispatch') is not True:
         return
@@ -285,6 +426,7 @@ def _consume_admitted_task_continuation(context):
     except HTTPException:
         product_sessions.remove_owned(conversation, principal)
         session = _restore_product_session(conversation, principal, workspace)
+    _require_session_runtime_authority(session)
     if observer is not session:
         if not product_sessions.hold_continuation(session, identity, reservation['expires_at']):
             return
@@ -292,14 +434,12 @@ def _consume_admitted_task_continuation(context):
         generation = product_sessions.idle_release_generation(observer)
         if generation is not None:
             _schedule_idle_release(observer, generation)
-    carrier = reservation.get('recovery_attempt') if isinstance(
-        reservation.get('recovery_attempt'), dict) else None
-    prompt_key = carrier['attempt_key'] if carrier is not None else identity
-    payload = {'content': instruction, 'require_model_key': True, 'idempotency_key': prompt_key,
+    payload = {'content': instruction, 'require_model_key': True, 'idempotency_key': identity,
         'continuation_budget': reservation, **_runtime_recovery_payload(session)}
-    if carrier is None and backend('dispatch', {'reservation_id': identity}, task=task).get('dispatch') is not True:
-        # A durable already-allocated recovery rearm does not re-claim dispatch.
+    if backend('dispatch', {'reservation_id': identity}, task=task).get('dispatch') is not True:
         return
+    require_runtime_authority()
+    _require_session_runtime_authority(session)
     try:
         accepted = _adapter_post(f'/internal/runtime/sessions/{session.session_id}/prompt', payload=payload, timeout=5.0)
     except HTTPException as exc:
@@ -307,7 +447,13 @@ def _consume_admitted_task_continuation(context):
         # A definite conflict may be retried under the same charged intent.
         # Ambiguous transport failures remain unknown and are only reconciled.
         if exc.status_code == 409:
-            mark('rejected', **({'attempt_key': carrier['attempt_key']} if carrier is not None else {}))
+            detail = getattr(exc, 'adapter_conflict_detail', '')
+            category = ('domain_cleanup' if detail == 'previous turn domain cleanup is not yet acknowledged'
+                else 'process_cleanup' if detail == 'previous runtime process cleanup is not complete'
+                else 'running' if isinstance(detail, str) and 'cannot accept a prompt in state running' in detail
+                else 'other')
+            logger.warning('task continuation prompt rejected: category=%s', category)
+            mark('rejected')
             if observer is not None:
                 product_sessions.finish_continuation(observer, identity)
                 generation = product_sessions.idle_release_generation(observer)
@@ -316,141 +462,117 @@ def _consume_admitted_task_continuation(context):
         return
     if accepted.get('accepted') is not True or not _valid_prompt_run_id(accepted.get('run_id')):
         return
-    if carrier is None:
-        mark('accepted', run_id=accepted['run_id'])
-        return
-    target = accepted.get('recovery') if isinstance(accepted.get('recovery'), dict) else {}
-    if (target.get('attempt_key') != carrier['attempt_key']
-            or not isinstance(target.get('target_executor_epoch'), int)
-            or not isinstance(target.get('target_generation'), str)):
-        return
-    mark('accepted', run_id=accepted['run_id'], attempt_key=carrier['attempt_key'],
-         target_executor_epoch=target['target_executor_epoch'], target_generation=target['target_generation'])
+    mark('accepted', run_id=accepted['run_id'])
 
 
-def _resume_lost_reservation(*, backend, mark, task, identity, reservation, receipt, session_id,
-        trace_id, instruction, conversation, principal, workspace):
-    """Recover a lost accepted reservation inside the existing state machine.
+def _send_agent_lifecycle(context, event, *, expected_boot_id=None):
+    require_runtime_authority()
+    snapshot = _runtime_authority_snapshot()
+    if (expected_boot_id is not None
+            and (not _valid_runtime_boot_id(expected_boot_id)
+                 or snapshot.get("boot_id") != expected_boot_id)):
+        raise RuntimeError("lifecycle event belongs to a superseded Adapter boot")
+    if event["outcome"] == "active":
+        # Active registration still uses the existing Backend business path;
+        # it opens the exact root for domain-call admission. A durable old
+        # event has no authority to re-open a root after its Adapter boot was
+        # fenced, so require the original in-process session boot binding.
+        session = product_sessions.find_owned(
+            context["conversation_id"], Principal(subject=context["owner"]),
+        )
+        if (session is None or not _valid_runtime_boot_id(session.boot_id)
+                or session.boot_id != snapshot.get("boot_id")):
+            raise RuntimeError("active lifecycle event has no current Adapter boot binding")
+        reply = _catalog_request("POST", f"/internal/agent-lifecycle/{context['conversation_id']}",
+            Principal(subject=context["owner"]), context["workspace_id"], payload={
+                "session_id": context["session_id"], "trace_id": context["trace_id"],
+                "event": event}, runtime_boot_id=session.boot_id)
+        if reply != {"receipt": lifecycle_receipt(event)}:
+            raise ValueError("lifecycle receipt mismatch")
+        return reply
 
-    The Adapter's fenced containment + read-only recovery anchor are the
-    authoritative loss evidence; the Backend alone decides whether a bounded
-    recovery attempt is admissible and mints the closed carrier. Recovery that is
-    paused/blocked is never resubmitted.
-    """
+    session = product_sessions.find_owned(
+        context["conversation_id"], Principal(subject=context["owner"]),
+    )
+    boot_id = expected_boot_id or (session.boot_id if session is not None else snapshot.get("boot_id"))
+    if snapshot.get("ready") is not True or not _valid_runtime_boot_id(boot_id):
+        raise RuntimeError("runtime authority is unavailable for terminal close")
+    if session is not None and session.boot_id != snapshot.get("boot_id"):
+        raise RuntimeError("terminal belongs to a superseded Adapter boot")
 
-    if receipt.get('status') not in {'accepted', 'outcome_unknown'}:
-        return False
-    containment = _adapter_containment(session_id)
-    match = containment_match(containment, session_id, trace_id)
-    if match is None:
-        return False
-    anchor = containment.get('recovery_anchor') if isinstance(containment, dict) else None
-    if (not isinstance(anchor, dict) or anchor.get('idle') is not True
-            or not isinstance(anchor.get('snapshot_tail_sequence'), int)
-            or not isinstance(anchor.get('snapshot_digest'), str)):
-        return False
-    recovery = {
-        'interrupted_run_id': match['interrupted_run_id'],
-        'interrupted_generation': match['interrupted_generation'],
-        'containment_attempt': match['attempt'],
-        'interrupted_executor_epoch': match['executor_epoch'],
-        'snapshot_tail_sequence': anchor['snapshot_tail_sequence'],
-        'snapshot_digest': anchor['snapshot_digest'],
-    }
-    dispatched = backend('dispatch', {'reservation_id': identity, 'recovery': recovery}, task=task)
-    if dispatched.get('dispatch') is not True:
-        return True
-    carrier = dispatched.get('recovery_attempt')
-    if not isinstance(carrier, dict):
-        return True
-    try:
-        session = product_sessions.get_owned(conversation, principal)
-    except HTTPException:
-        product_sessions.remove_owned(conversation, principal)
-        session = _restore_product_session(conversation, principal, workspace)
-    if session is None:
-        return True
-    if not product_sessions.hold_continuation(session, identity, reservation['expires_at']):
-        return True
-    recovered = closed_recovery_carrier({**reservation, 'recovery_attempt': carrier})
-    payload = {'content': instruction, 'require_model_key': True, 'idempotency_key': carrier['attempt_key'],
-        'continuation_budget': recovered, **_runtime_recovery_payload(session)}
-    try:
-        accepted = _adapter_post(f'/internal/runtime/sessions/{session_id}/prompt', payload=payload, timeout=5.0)
-    except HTTPException as exc:
-        if exc.status_code == 409:
-            mark('rejected', attempt_key=carrier['attempt_key'])
-        return True
-    if accepted.get('accepted') is not True or not _valid_prompt_run_id(accepted.get('run_id')):
-        return True
-    target = accepted.get('recovery') if isinstance(accepted.get('recovery'), dict) else {}
-    if (target.get('attempt_key') != carrier['attempt_key']
-            or not isinstance(target.get('target_executor_epoch'), int)
-            or not isinstance(target.get('target_generation'), str)):
-        return True
-    mark('accepted', run_id=accepted['run_id'], attempt_key=carrier['attempt_key'],
-         target_executor_epoch=target['target_executor_epoch'], target_generation=target['target_generation'])
-    return True
+    evidence = _adapter_get(
+        f"/internal/runtime/sessions/{context['session_id']}/terminal-evidence",
+        params={"root_run_id": event["root_run_id"], "boot_id": boot_id},
+        timeout=5.0,
+    )
+    receipt = evidence.get("receipt") if isinstance(evidence, dict) else None
+    if (not isinstance(evidence, dict)
+            or set(evidence) != {"schema_version", "session_id", "boot_id", "root_run_id", "sequence",
+                                 "outcome", "receipt"}
+            or evidence.get("schema_version") != RUNTIME_TERMINAL_EVIDENCE_SCHEMA
+            or evidence.get("session_id") != context["session_id"]
+            or evidence.get("boot_id") != boot_id
+            or evidence.get("root_run_id") != event["root_run_id"]
+            or evidence.get("sequence") != event["sequence"]
+            or evidence.get("outcome") != event["outcome"]
+            or receipt != lifecycle_receipt(event)):
+        raise ValueError("Adapter terminal evidence does not match the exact lifecycle event")
 
+    closed = _backend_runtime_authority_request(
+        "POST",
+        f"/internal/runtime-authority/roots/{event['root_run_id']}/close",
+        {
+            "schema_version": RUNTIME_ROOT_CLOSE_SCHEMA,
+            "boot_id": boot_id,
+            "sequence": event["sequence"],
+            "outcome": event["outcome"],
+            "event_sha256": receipt["event_sha256"],
+        },
+    )
+    if closed != {"receipt": receipt}:
+        raise ValueError("Backend root close receipt does not match Adapter terminal evidence")
 
-def _send_agent_lifecycle(context, event):
-    reply = _catalog_request("POST", f"/internal/agent-lifecycle/{context['conversation_id']}",
-        Principal(subject=context["owner"]), context["workspace_id"], payload={
-            "session_id": context["session_id"], "trace_id": context["trace_id"], "event": event})
-    if reply != {"receipt": lifecycle_receipt(event)}:
-        raise ValueError("lifecycle receipt mismatch")
-    if event["outcome"] != "active":
-        # ADR-0067: a missing process is not a durable acknowledgement. The
-        # Adapter can now persist this receipt using its journal alone. Any
-        # missing evidence remains a bounded pending delivery, including 404.
-        acknowledged = _adapter_post(
-            f"/internal/runtime/sessions/{context['session_id']}/terminal-receipt",
-            payload=reply, timeout=5.0)
-        if acknowledged != reply:
-            raise ValueError("runtime terminal acknowledgement mismatch")
-    return reply
-
-
-def _recover_agent_lifecycle(context):
-    cursor = max((e["sequence"] for e in trace_store.read(context["session_id"])), default=0)
-    reply = _adapter_post(f"/internal/runtime/sessions/{context['session_id']}/recover-evidence", payload={
-        "trace_id": context["trace_id"], "owner": context["owner"], "workspace_id": context["workspace_id"],
-        "after_sequence": cursor}, timeout=5.0)
-    if (set(reply) != {"state", "events", "more"} or reply["state"] not in {"owned", "unknown", "recovered"}
-            or not isinstance(reply["events"], list) or len(reply["events"]) > 256 or type(reply["more"]) is not bool):
-        raise ValueError("invalid recovery receipt")
-    previous = cursor
-    if reply["state"] != "recovered" and (reply["events"] or reply["more"]):
-        raise ValueError("unproven recovery cannot carry events")
-    if reply["state"] == "unknown":
-        raise ValueError("no durable recovery evidence; retain unknown state")
-    for event in reply["events"]:
-        validate_workflow_trace_event(event)
-        if (event["session_id"], event["trace_id"], event["source"]) != (
-                context["session_id"], context["trace_id"], "runtime-adapter") or event["sequence"] <= previous:
-            raise ValueError("foreign or unordered recovery event")
-        if event["kind"] == "session.started":
-            if set(event["payload"]) != {"run_id"}:
-                raise ValueError("invalid recovered root")
-        elif project_lifecycle_event(event, context["session_id"], context["trace_id"]) is None:
-            raise ValueError("non-lifecycle recovery event")
-        previous = event["sequence"]
-    for event in reply["events"]:
-        trace_store.append(event)
-    return reply["state"] == "recovered" and not reply["more"]
+    # The Adapter barrier is released only after Backend has confirmed the
+    # exact event digest. Retry this exact receipt in place: replaying the
+    # whole close after a lost ACK response may outlive Adapter's live record.
+    for attempt in range(TRACE_LIFECYCLE_SEND_ATTEMPTS):
+        try:
+            authority = _adapter_authority()
+        except RuntimeError:
+            if attempt + 1 >= TRACE_LIFECYCLE_SEND_ATTEMPTS:
+                raise
+        else:
+            if authority["boot_id"] != boot_id:
+                raise RuntimeError("terminal belongs to a superseded Adapter boot")
+            try:
+                acknowledged = _adapter_post(
+                    f"/internal/runtime/sessions/{context['session_id']}/terminal-receipt",
+                    payload=closed, timeout=5.0)
+            except HTTPException as exc:
+                retryable = exc.status_code in {408, 429} or exc.status_code >= 500
+                if not retryable or attempt + 1 >= TRACE_LIFECYCLE_SEND_ATTEMPTS:
+                    raise
+            except httpx.HTTPError:
+                if attempt + 1 >= TRACE_LIFECYCLE_SEND_ATTEMPTS:
+                    raise
+            else:
+                if acknowledged != closed:
+                    raise ValueError("runtime terminal acknowledgement mismatch")
+                return closed
+        if attempt + 1 < TRACE_LIFECYCLE_SEND_ATTEMPTS:
+            time.sleep(TRACE_RETRY_DELAY_SECONDS * (attempt + 1))
+    raise RuntimeError("runtime terminal acknowledgement remains unconfirmed")
 
 
-lifecycle_delivery = LifecycleDelivery(
-    os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"), trace_store, _send_agent_lifecycle,
-    recover=_recover_agent_lifecycle)
 def _reconcile_research_receipts(context):
     return _catalog_request('POST', f"/internal/research-receipts/{context['conversation_id']}/reconcile",
         Principal(subject=context['owner']), context['workspace_id'],
         payload={'session_id':context['session_id'],'trace_id':context['trace_id']})
 
 
-task_continuation_delivery = TaskContinuationDelivery(lifecycle_delivery.root, _consume_task_continuation,
-                                                      reconcile=_reconcile_research_receipts)
+task_continuation_delivery = TaskContinuationDelivery(
+    os.environ.get("BYQ_WORKFLOW_TRACE_ROOT", "/tmp/byq-workflow-traces"), _consume_task_continuation,
+    reconcile=_reconcile_research_receipts)
 
 
 def _send_owned_answer(context, event):
@@ -473,9 +595,28 @@ def _read_domain_calls(context, cursor):
 
 
 def _send_domain_call(context, event):
-    return _catalog_request("POST", f"/internal/domain-call-evidence/{context['conversation_id']}",
+    require_runtime_authority()
+    session = product_sessions.find_owned(
+        context["conversation_id"], Principal(subject=context["owner"]),
+    )
+    if session is None:
+        raise RuntimeError("domain call evidence has no current Adapter session")
+    boot_id = _require_session_runtime_authority(session)
+    reply = _catalog_request("POST", f"/internal/domain-call-evidence/{context['conversation_id']}",
         Principal(subject=context["owner"]), context["workspace_id"], payload={
-            "session_id": context["session_id"], "trace_id": context["trace_id"], "event": event})
+            "session_id": context["session_id"], "trace_id": context["trace_id"], "event": event},
+        runtime_boot_id=boot_id)
+    expected = {"receipt": call_evidence_receipt(event)}
+    if reply != expected:
+        raise ValueError("Backend private evidence receipt mismatch")
+    acknowledged = _adapter_post(
+        f"/internal/runtime/sessions/{context['session_id']}/domain-call-receipt",
+        payload={"trace_id": context["trace_id"], "owner": context["owner"],
+                 "workspace_id": context["workspace_id"], "receipt": reply["receipt"]},
+        timeout=5.0)
+    if acknowledged != expected:
+        raise ValueError("Adapter private evidence acknowledgement mismatch")
+    return reply
 
 
 domain_call_delivery = LifecycleDelivery(
@@ -524,15 +665,6 @@ async def product_auth_error_handler(request: Request, exc: ProductAuthError) ->
     )
 
 
-class RuntimeSessionRequest(BaseModel):
-    session_id: str
-    trace_id: str
-
-
-class PromptRequest(BaseModel):
-    content: str
-
-
 class ProductPromptRequest(BaseModel):
     content: str = Field(min_length=1, max_length=12_000)
 
@@ -554,6 +686,7 @@ class ProductSession:
     trace_id: str
     principal: Principal
     workspace_id: str = "workspace_bootstrap_unresolved"
+    boot_id: str | None = None
     released: bool = False
     public_streams: int = 0
     release_generation: int = 0
@@ -792,6 +925,12 @@ def readyz() -> dict[str, str]:
     }
 
 
+@app.get("/agent-readyz")
+def agent_readyz() -> dict[str, str]:
+    require_runtime_authority()
+    return {"service": SERVICE, "status": "ready"}
+
+
 def _authenticate(authorization: str | None) -> Principal:
     try:
         return authenticate_bearer(
@@ -887,6 +1026,25 @@ def _adapter_post(path: str, *, payload: dict[str, object] | None = None, timeou
     return body
 
 
+def _adapter_get(path: str, *, params: dict[str, object] | None = None,
+                 timeout: float = 20.0) -> dict[str, object]:
+    try:
+        response = httpx.get(f"{RUNTIME_ADAPTER_URL}{path}", params=params, timeout=timeout)
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code,
+                            detail="runtime adapter evidence is unavailable") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="runtime adapter unavailable") from exc
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail="runtime adapter returned an invalid response") from exc
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=502, detail="runtime adapter returned an invalid response")
+    return body
+
+
 def _valid_prompt_run_id(value: object) -> bool:
     return isinstance(value, str) and 1 <= len(value) <= 128 and value.strip() == value and bool(value.strip())
 
@@ -908,7 +1066,7 @@ def _adapter_prompt_receipt(session_id: str, key: str, content: str) -> dict[str
 
 
 def _start_trace_collector(session: ProductSession) -> None:
-    lifecycle_delivery.register(session)
+    task_continuation_delivery.register(session)
     domain_call_delivery.register(session)
     _register_answer_delivery(session)
     thread = threading.Thread(
@@ -925,6 +1083,11 @@ def _collect_trace(session: ProductSession) -> None:
 
     persisted = trace_store.read(session.session_id)
     cursor = max((event["sequence"] for event in persisted), default=0)
+    lifecycle_context = {
+        "session_id": session.session_id, "trace_id": session.trace_id,
+        "conversation_id": session.conversation_id,
+        "workspace_id": session.workspace_id, "owner": session.principal.subject,
+    }
     # A rebind after an idle release or restart must be able to append the
     # Runtime's continuation at exactly persisted+1. Reopen the durable trace
     # so a prior close cannot suppress the rehydrated stream.
@@ -934,54 +1097,103 @@ def _collect_trace(session: ProductSession) -> None:
     # or no longer replays its old events. Backend deduplicates workflow_sequence.
     _register_answer_delivery(session)
     try:
-        with httpx.stream(
-            "GET",
-            f"{RUNTIME_ADAPTER_URL}/internal/runtime/sessions/{session.session_id}/events",
-            params={"replay": "true"},
-            timeout=None,
-        ) as response:
-            if response.status_code != 200:
-                return
-            for line in response.iter_lines():
-                if isinstance(line, bytes):
-                    line = line.decode("utf-8")
-                if not line.startswith("data: "):
-                    continue
-                try:
-                    event = json.loads(line[6:])
-                    if (not isinstance(event, dict) or event.get("session_id") != session.session_id
-                            or event.get("trace_id") != session.trace_id):
-                        continue
-                    sequence = event.get("sequence")
-                    if type(sequence) is not int or sequence <= cursor:
-                        # Existing BYQ projections remain authoritative. Do not
-                        # rehydrate old cards or append an older replay again.
-                        continue
-                    projected = project_workflow_event(
-                        event,
-                        backend_get=lambda path: _domain_get(path, session),
-                        revision_for=lambda card_id: trace_store.next_card_revision(
-                            session.session_id,
-                            card_id,
-                        ),
-                    )
-                    try:
-                        trace_store.append(projected)
-                    except TraceConflict:
-                        # A real sequence violation is never masked. Stop this
-                        # projection and leave the durable trace intact for an
-                        # explicit rebind/recovery rather than crashing.
-                        return
-                    cursor = sequence
-                except (ValueError, TypeError, json.JSONDecodeError):
-                    # The adapter is the only producer. Invalid data is not
-                    # persisted or reflected to the product client.
-                    continue
-    except httpx.HTTPError:
-        return
+        _collect_trace_events(session, lifecycle_context, cursor)
     finally:
         if session.released:
             trace_store.close(session.session_id)
+
+
+def _collect_trace_events(session: ProductSession, lifecycle_context: dict[str, str], cursor: int) -> None:
+    endpoint = f"{RUNTIME_ADAPTER_URL}/internal/runtime/sessions/{session.session_id}/events"
+    reconnect = 0
+    last_sent_lifecycle_sequence = 0
+    while not session.released:
+        reconnect_required = False
+        try:
+            if session.released:
+                return
+            authority = _adapter_authority()
+            if (not _valid_runtime_boot_id(session.boot_id)
+                    or authority["boot_id"] != session.boot_id):
+                return
+            with httpx.stream(
+                "GET", endpoint, params={"replay": "true"}, timeout=None,
+            ) as response:
+                if response.status_code != 200:
+                    if response.status_code in {408, 429} or response.status_code >= 500:
+                        reconnect_required = True
+                    else:
+                        return
+                else:
+                    for line in response.iter_lines():
+                        if isinstance(line, bytes):
+                            line = line.decode("utf-8")
+                        if not line.startswith("data: "):
+                            continue
+                        try:
+                            event = json.loads(line[6:])
+                            if (not isinstance(event, dict) or event.get("session_id") != session.session_id
+                                    or event.get("trace_id") != session.trace_id):
+                                continue
+                            sequence = event.get("sequence")
+                            if type(sequence) is not int:
+                                continue
+                            if sequence > cursor:
+                                projected = project_workflow_event(
+                                    event,
+                                    backend_get=lambda path: _domain_get(path, session),
+                                    revision_for=lambda card_id: trace_store.next_card_revision(
+                                        session.session_id,
+                                        card_id,
+                                    ),
+                                )
+                                try:
+                                    trace_store.append(projected)
+                                except TraceConflict:
+                                    return
+                                cursor = sequence
+                            # Lifecycle send is tied to this live Adapter stream,
+                            # even when a Gateway restart already persisted the trace.
+                            lifecycle = project_lifecycle_event(event, session.session_id, session.trace_id)
+                        except (ValueError, TypeError, json.JSONDecodeError):
+                            # Invalid Adapter data is neither persisted nor reflected to clients.
+                            continue
+                        if lifecycle is None:
+                            continue
+                        if sequence <= last_sent_lifecycle_sequence:
+                            continue
+                        sent = False
+                        for attempt in range(TRACE_LIFECYCLE_SEND_ATTEMPTS):
+                            try:
+                                _send_agent_lifecycle(
+                                    lifecycle_context, lifecycle, expected_boot_id=session.boot_id,
+                                )
+                                sent = True
+                                last_sent_lifecycle_sequence = sequence
+                                break
+                            except (HTTPException, ValueError, RuntimeError, httpx.HTTPError):
+                                if session.released:
+                                    return
+                                if attempt + 1 < TRACE_LIFECYCLE_SEND_ATTEMPTS:
+                                    time.sleep(TRACE_RETRY_DELAY_SECONDS * (attempt + 1))
+                        if not sent:
+                            # Replay only from the still-live Adapter stream. The
+                            # authority check in the sender fences a replaced boot.
+                            reconnect_required = True
+                            break
+                    if not session.released:
+                        # A live event stream should remain open for the next
+                        # root. Reopen a prematurely ended subscription within
+                        # this same Adapter boot.
+                        reconnect_required = True
+        except (HTTPException, RuntimeError, httpx.HTTPError, OSError):
+            reconnect_required = True
+        if session.released or not reconnect_required:
+            return
+        delay = min(TRACE_RETRY_MAX_DELAY_SECONDS,
+                    TRACE_RETRY_DELAY_SECONDS * (2 ** min(reconnect, 16)))
+        time.sleep(delay)
+        reconnect += 1
 
 
 def _register_answer_delivery(session: ProductSession) -> None:
@@ -1043,9 +1255,16 @@ def _domain_get(path: str, session: ProductSession) -> dict[str, object]:
     try:
         response = httpx.get(f"{BACKEND_URL}{path}", headers=headers, timeout=5.0)
         response.raise_for_status()
-        body = response.json()
-    except (httpx.HTTPError, json.JSONDecodeError) as exc:
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in {408, 429} or exc.response.status_code >= 500:
+            raise HTTPException(status_code=503, detail="owner-scoped card hydration is unavailable") from exc
         raise RuntimeError("owner-scoped card hydration failed") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="owner-scoped card hydration is unavailable") from exc
+    try:
+        body = response.json()
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("owner-scoped card hydration returned invalid JSON") from exc
     if not isinstance(body, dict):
         raise RuntimeError("owner-scoped card hydration returned an invalid response")
     return body
@@ -1059,12 +1278,17 @@ def _catalog_request(
     *,
     payload: dict[str, object] | None = None,
     params: dict[str, object] | None = None,
+    runtime_boot_id: str | None = None,
 ) -> dict[str, object]:
     headers = {
         "x-byq-workspace-id": workspace_id,
         "x-byq-owner-principal": principal.subject,
         "x-byq-actor-principal": principal.subject,
     }
+    if runtime_boot_id is not None:
+        if not _valid_runtime_boot_id(runtime_boot_id):
+            raise HTTPException(status_code=503, detail="runtime boot identity is invalid")
+        headers["x-byq-runtime-boot-id"] = runtime_boot_id
     try:
         response = httpx.request(
             method, f"{BACKEND_URL}{path}", json=payload, params=params, headers=headers, timeout=8.0
@@ -1100,7 +1324,7 @@ def _restore_product_session(conversation_id: str, principal: Principal, workspa
     public_messages, recovery = project_recovery(body.get("messages"), persisted_events, session.session_id, session.trace_id)
     conversation_context = _conversation_context(public_messages)
     try:
-        _adapter_post(
+        attached = _adapter_post(
             "/internal/runtime/sessions",
             payload={
                 "session_id": session.session_id,
@@ -1108,14 +1332,16 @@ def _restore_product_session(conversation_id: str, principal: Principal, workspa
                 "workspace_id": session.workspace_id,
                 "owner_principal": session.principal.subject,
                 "initial_sequence": initial_sequence,
+                "attach_live_only": True,
                 "conversation_context": conversation_context,
                 **({"conversation_recovery": recovery} if recovery is not None else {}),
             },
         )
+        session.boot_id = _adopt_runtime_session_boot(attached)
     except HTTPException as exc:
-        # A 409 means Gateway restarted while this adapter session survived.
-        if exc.status_code != 409:
-            raise
+        if _is_lost_runtime_session(exc):
+            _raise_agent_session_interrupted()
+        raise
     try:
         product_sessions.add(session)
     except RuntimeError:
@@ -1171,6 +1397,35 @@ def _product_session(request: Request, session_id: str) -> ProductSession:
         return _restore_product_session(session_id, principal, workspace_id)
 
 
+def _adopt_runtime_session_boot(reply: object) -> str:
+    boot_id = reply.get("boot_id") if isinstance(reply, dict) else None
+    snapshot = _runtime_authority_snapshot()
+    if (not _valid_runtime_boot_id(boot_id) or snapshot.get("ready") is not True
+            or boot_id != snapshot.get("boot_id")):
+        _set_runtime_authority_state(ready=False)
+        raise HTTPException(status_code=503, detail="runtime session boot does not match Backend authority")
+    return boot_id
+
+
+_LOST_RUNTIME_SESSION_MARKER = "BYQ runtime session was interrupted"
+
+
+def _is_lost_runtime_session(error: HTTPException) -> bool:
+    detail = getattr(error, "adapter_conflict_detail", "")
+    return error.status_code == 404 or (
+        error.status_code == 409 and isinstance(detail, str)
+        and _LOST_RUNTIME_SESSION_MARKER in detail
+    )
+
+
+def _raise_agent_session_interrupted() -> None:
+    raise ProductError(
+        409,
+        "agent_session_interrupted",
+        "This Agent session was interrupted when its runtime process ended. Start a new Agent session and query durable BYQ Jobs by job_id to continue.",
+    )
+
+
 def _runtime_recovery_payload(session: ProductSession) -> dict[str, object]:
     """Fresh, bounded public history for one newly admitted root, never DSH state."""
     catalog = _catalog_request("GET", f"/v1/product/conversations/{session.conversation_id}",
@@ -1207,16 +1462,6 @@ def _runtime_recovery_payload(session: ProductSession) -> dict[str, object]:
     return payload
 
 
-def _replace_lost_runtime_session(session: ProductSession) -> ProductSession:
-    """Rehydrate durable context after the Adapter lost only its private state."""
-
-    product_sessions.remove_owned(session.conversation_id, session.principal)
-    trace_store.close(session.session_id)
-    return _restore_product_session(
-        session.conversation_id, session.principal, session.workspace_id
-    )
-
-
 TRANSIENT_ROOT_CONFLICTS = (
     "previous runtime process cleanup is not complete",
     "new root requires a fresh public conversation projection",
@@ -1236,6 +1481,10 @@ def continue_approval_conversation(
 ) -> dict[str, str]:
     try:
         with chat_admission():
+            try:
+                require_runtime_authority()
+            except HTTPException:
+                return {"status": "queued"}
             return _continue_approval_conversation(request, conversation_id, approval_id, decision, action)
     except AdmissionClosed:
         # The decision endpoint already durably queued the continuation. Do not
@@ -1299,6 +1548,9 @@ def _continue_approval_conversation(
     prompt_attempted = False
     try:
         session = _product_session(request, conversation_id)
+        _require_session_runtime_authority(session)
+        require_runtime_authority()
+        _require_session_runtime_authority(session)
 
         def continuation_payload() -> dict[str, object]:
             return {"content": instruction, "require_model_key": True,
@@ -1320,10 +1572,9 @@ def _continue_approval_conversation(
                     f"/internal/runtime/sessions/{session.session_id}/prompt", payload=payload, timeout=5.0)
                 break
             except HTTPException as exc:
-                if exc.status_code == 404:
-                    session = _replace_lost_runtime_session(session)
-                    payload = continuation_payload()
-                    continue
+                if _is_lost_runtime_session(exc):
+                    mark("failed")
+                    return {"status": "failed"}
                 if exc.status_code == 409 and _transient_root_conflict(exc):
                     conflict = exc
                     continue
@@ -1348,7 +1599,8 @@ def _continue_approval_conversation(
     }
 
 
-@app.post("/v1/agent/sessions", status_code=201, dependencies=[Depends(require_chat_admission)])
+@app.post("/v1/agent/sessions", status_code=201,
+          dependencies=[Depends(require_chat_admission), Depends(require_runtime_authority)])
 def create_product_session(request: Request) -> dict[str, object]:
     principal, workspace_id = _trusted_request_identity(request)
     session_id = f"byq-session-{uuid.uuid4().hex}"
@@ -1358,6 +1610,14 @@ def create_product_session(request: Request) -> dict[str, object]:
         payload={"session_id": session_id, "trace_id": trace_id,
                  "workspace_id": workspace_id, "owner_principal": principal.subject},
     )
+    try:
+        boot_id = _adopt_runtime_session_boot(body)
+    except HTTPException:
+        try:
+            _adapter_post(f"/internal/runtime/sessions/{session_id}/release", timeout=5.0)
+        except HTTPException:
+            pass
+        raise
     try:
         catalog = _catalog_request(
             "POST", "/v1/product/conversations", principal, workspace_id,
@@ -1380,6 +1640,7 @@ def create_product_session(request: Request) -> dict[str, object]:
         trace_id=trace_id,
         principal=principal,
         workspace_id=workspace_id,
+        boot_id=boot_id,
     )
     product_sessions.add(session)
     _start_trace_collector(session)
@@ -1391,6 +1652,41 @@ def create_product_session(request: Request) -> dict[str, object]:
         # ADR-0079 R2: framework-neutral continuity, never a DSH/process schema.
         "continuity": body.get("continuity"),
     }
+
+
+def _verified_public_runtime_boot() -> str | None:
+    """Read current process and Backend authority before claiming Agent liveness."""
+    cached = _runtime_authority_snapshot()
+    if cached.get("ready") is not True or not _valid_runtime_boot_id(cached.get("boot_id")):
+        return None
+    try:
+        adapter_boot = _adapter_authority()["boot_id"]
+        backend = _backend_runtime_authority_request("GET", "/internal/runtime-authority/current")
+        _validate_runtime_authority_current(backend, adapter_boot, cached.get("authority_epoch"))
+    except (RuntimeError, KeyError, TypeError, ValueError):
+        return None
+    return adapter_boot if adapter_boot == cached["boot_id"] else None
+
+
+def _public_conversation_status(conversation: dict, principal: Principal,
+                                verified_boot: str | None) -> str:
+    """Only a verified current Adapter binding can support an active claim."""
+    stored = conversation.get("status")
+    if stored != "active":
+        return str(stored or "unknown")
+    live = product_sessions.find_owned(str(conversation.get("conversation_id") or ""), principal)
+    if (live is not None and not live.released
+            and live.session_id == conversation.get("runtime_session_id")
+            and live.trace_id == conversation.get("trace_id")
+            and _valid_runtime_boot_id(live.boot_id)
+            and verified_boot is not None):
+        if live.boot_id == verified_boot:
+            return "active"
+        # The verified Backend boot rotation atomically revoked every active
+        # root from the old boot. This classifies the Agent session only; any
+        # in-flight external action retains its own unknown business outcome.
+        return "interrupted"
+    return "unknown"
 
 
 @app.get("/v1/agent/sessions")
@@ -1407,12 +1703,13 @@ def list_product_sessions(
         params={"status": status, "search": search, "limit": limit, "offset": offset},
     )
     conversations = catalog.get("conversations", [])
+    verified_boot = _verified_public_runtime_boot()
     return {"sessions": [
         {
             "session_id": item["conversation_id"],
             "trace_id": item["trace_id"],
             "title": item["title"],
-            "status": item["status"],
+            "status": _public_conversation_status(item, principal, verified_boot),
             "pinned": item["pinned"],
             "message_count": item["message_count"],
             "last_message_preview": item["last_message_preview"],
@@ -1430,6 +1727,7 @@ def get_product_session(session_id: str, request: Request) -> dict[str, object]:
     conversation = body.get("conversation")
     if not isinstance(conversation, dict):
         raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
+    verified_boot = _verified_public_runtime_boot() if conversation.get("status") == "active" else None
     runtime_session_id = str(conversation.get("runtime_session_id", ""))
     messages = body.get("messages", [])
     persisted_answer_sequences = {
@@ -1446,7 +1744,7 @@ def get_product_session(session_id: str, request: Request) -> dict[str, object]:
         "session_id": session_id,
         "trace_id": conversation.get("trace_id"),
         "title": conversation.get("title"),
-        "status": conversation.get("status"),
+        "status": _public_conversation_status(conversation, principal, verified_boot),
         "pinned": conversation.get("pinned"),
         "message_count": conversation.get("message_count"),
         "last_message_preview": conversation.get("last_message_preview"),
@@ -1463,76 +1761,12 @@ def get_product_session(session_id: str, request: Request) -> dict[str, object]:
         conversation=conversation,
         events=trace_store.read(runtime_session_id),
     )
+    if public["status"] == "unknown" and containment["status"] == "active":
+        containment = {**containment, "status": "unknown"}
+    elif public["status"] == "interrupted" and containment["status"] == "active":
+        containment = {**containment, "status": "interrupted", "loss_cause": "runtime-loss"}
     return {"conversation": public, "messages": messages, "events": events,
             "containment": containment}
-
-
-@app.get("/v1/agent/sessions/{session_id}/containment")
-def get_product_containment(session_id: str, request: Request) -> dict[str, object]:
-    session = _product_session(request, session_id)
-    body = _catalog_request(
-        "GET", f"/v1/product/conversations/{session_id}", session.principal, session.workspace_id)
-    conversation = body.get("conversation")
-    if not isinstance(conversation, dict):
-        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
-    return {"containment": _session_containment_projection(
-        request,
-        conversation_id=session.conversation_id,
-        runtime_session_id=session.session_id,
-        trace_id=session.trace_id,
-        principal_subject=session.principal.subject,
-        workspace_id=session.workspace_id,
-        conversation=conversation,
-        events=trace_store.read(session.session_id),
-    )}
-
-
-@app.get("/v1/agent/sessions/{session_id}/recovery")
-def get_recovery_classification(session_id: str, request: Request) -> dict[str, object]:
-    """Read-only recovery classification. Never submits a prompt or an attempt.
-
-    Automatic rescheduling requires authoritative server-side step-safety and
-    budget metadata. That metadata is absent, so the classification fails closed
-    to ``paused``/``needs_confirmation`` and no adapter prompt is ever sent. A
-    cancel or an unverified authority is resolved without any adapter call.
-    """
-
-    session = _product_session(request, session_id)
-    body = _catalog_request(
-        "GET", f"/v1/product/conversations/{session_id}", session.principal, session.workspace_id)
-    conversation = body.get("conversation")
-    if not isinstance(conversation, dict):
-        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
-    events = trace_store.read(session.session_id)
-    authority = _recovery_authority(
-        request, principal_subject=session.principal.subject,
-        workspace_id=session.workspace_id, conversation=conversation)
-    # A cancel is resolved from the trace alone; every other case reads the
-    # read-only adapter containment summary (never a prompt/submit).
-    trace_only_loss = loss_from_evidence(events, session.session_id, session.trace_id)
-    projection = _session_containment_projection(
-        request,
-        conversation_id=session.conversation_id,
-        runtime_session_id=session.session_id,
-        trace_id=session.trace_id,
-        principal_subject=session.principal.subject,
-        workspace_id=session.workspace_id,
-        conversation=conversation,
-        events=events,
-        fetch_adapter=not trace_only_loss["cancelled"],
-    )
-    return {"containment": projection, "submitted": False}
-
-
-@app.get("/v1/agent/sessions/{session_id}/lifecycle-delivery")
-def get_agent_lifecycle_delivery(session_id: str, request: Request) -> dict:
-    principal, workspace_id = _trusted_request_identity(request)
-    body = _catalog_request("GET", f"/v1/product/conversations/{session_id}", principal, workspace_id)
-    conversation = body.get("conversation")
-    if not isinstance(conversation, dict):
-        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
-    return lifecycle_delivery.status({"conversation_id": session_id, "session_id": conversation["runtime_session_id"],
-        "trace_id": conversation["trace_id"], "workspace_id": workspace_id, "owner": principal.subject})
 
 
 @app.get("/v1/agent/sessions/{session_id}/answer-delivery")
@@ -1566,13 +1800,15 @@ def update_product_session(
     }}
 
 
-@app.post("/v1/agent/sessions/{session_id}/turns", status_code=202, dependencies=[Depends(require_chat_admission)])
+@app.post("/v1/agent/sessions/{session_id}/turns", status_code=202,
+          dependencies=[Depends(require_chat_admission), Depends(require_runtime_authority)])
 def submit_product_turn(
     session_id: str,
     request: ProductPromptRequest,
     http_request: Request,
 ) -> dict[str, object]:
     session = _product_session(http_request, session_id)
+    _require_session_runtime_authority(session)
     # Snapshot before saving the new demand, so a short "continue" cannot
     # replace the previous unanswered research subject in recovery context.
     recovery_payload = _runtime_recovery_payload(session)
@@ -1588,22 +1824,15 @@ def submit_product_turn(
                            "原消息的保存回执尚未确认，本次未启动模型；请先核对原会话。")
     prompt_payload["idempotency_key"] = message_id
     try:
-        try:
-            body = _adapter_post(
-                f"/internal/runtime/sessions/{session.session_id}/prompt",
-                payload=prompt_payload, timeout=5.0,
-            )
-        except HTTPException as exc:
-            if exc.status_code != 404:
-                raise
-            session = _replace_lost_runtime_session(session)
-            body = _adapter_post(
-                f"/internal/runtime/sessions/{session.session_id}/prompt",
-                payload=prompt_payload, timeout=5.0,
-            )
+        body = _adapter_post(
+            f"/internal/runtime/sessions/{session.session_id}/prompt",
+            payload=prompt_payload, timeout=5.0,
+        )
         if not isinstance(body, dict) or body.get("accepted") is not True or not _valid_prompt_run_id(body.get("run_id")):
             raise HTTPException(status_code=502, detail="prompt receipt is unconfirmed")
     except HTTPException as exc:
+        if _is_lost_runtime_session(exc):
+            _raise_agent_session_interrupted()
         key = prompt_payload.get("idempotency_key")
         if isinstance(exc, PromptAdmissionRejected) or exc.status_code < 500 or not isinstance(key, str):
             raise
@@ -1620,9 +1849,11 @@ def submit_product_turn(
     }
 
 
-@app.post("/v1/agent/sessions/{session_id}/resume", dependencies=[Depends(require_chat_admission)])
+@app.post("/v1/agent/sessions/{session_id}/resume",
+          dependencies=[Depends(require_chat_admission), Depends(require_runtime_authority)])
 def resume_product_session(session_id: str, request: Request) -> dict[str, object]:
     session = _product_session(request, session_id)
+    _require_session_runtime_authority(session)
     resume_payload = _runtime_recovery_payload(session)
     try:
         body = _adapter_post(
@@ -1630,13 +1861,9 @@ def resume_product_session(session_id: str, request: Request) -> dict[str, objec
             payload=resume_payload,
         )
     except HTTPException as exc:
-        if exc.status_code != 404:
-            raise
-        session = _replace_lost_runtime_session(session)
-        body = _adapter_post(
-            f"/internal/runtime/sessions/{session.session_id}/resume",
-            payload=resume_payload,
-        )
+        if _is_lost_runtime_session(exc):
+            _raise_agent_session_interrupted()
+        raise
     return {
         "session_id": session.conversation_id,
         "trace_id": session.trace_id,
@@ -1648,21 +1875,23 @@ def resume_product_session(session_id: str, request: Request) -> dict[str, objec
     }
 
 
-@app.post("/v1/agent/sessions/{session_id}/cancel")
+@app.post("/v1/agent/sessions/{session_id}/cancel", dependencies=[Depends(require_runtime_authority)])
 def cancel_product_session(
     session_id: str,
     request: ProductCancelRequest,
     http_request: Request,
 ) -> dict[str, object]:
     session = _product_session(http_request, session_id)
+    _require_session_runtime_authority(session)
     path = f"/internal/runtime/sessions/{session.session_id}/cancel"
     if request.mode != "hard":
         path += f"?mode={request.mode}"
-    body = _adapter_post(
-        path,
-        payload=None,
-        timeout=5.0,
-    )
+    try:
+        body = _adapter_post(path, payload=None, timeout=5.0)
+    except HTTPException as exc:
+        if _is_lost_runtime_session(exc):
+            _raise_agent_session_interrupted()
+        raise
     return {
         "session_id": session.conversation_id,
         "trace_id": session.trace_id,
@@ -1744,71 +1973,3 @@ def product_workflow_events(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache, no-store", "X-Accel-Buffering": "no"},
     )
-
-
-@app.get("/internal/runtime/health")
-def runtime_health() -> dict[str, object]:
-    """Internal adapter health seam; no DSH event or session schema crosses it."""
-
-    try:
-        response = httpx.get(f"{RUNTIME_ADAPTER_URL}/readyz", timeout=2.0)
-        response.raise_for_status()
-    except httpx.HTTPError as exc:
-        return {"service": SERVICE, "status": "degraded", "runtime_adapter": str(exc)}
-    return {"service": SERVICE, "status": "ok", "runtime_adapter": response.json()}
-
-
-@app.post("/internal/runtime/sessions", status_code=201, dependencies=[Depends(require_chat_admission)])
-def create_runtime_session(request: RuntimeSessionRequest) -> dict[str, object]:
-    """Private Phase 6 compatibility seam; product traffic uses /v1/agent."""
-
-    return _adapter_post(
-        "/internal/runtime/sessions",
-        payload=request.model_dump(),
-    )
-
-
-@app.post("/internal/runtime/sessions/{session_id}/prompt", status_code=202, dependencies=[Depends(require_chat_admission)])
-def submit_runtime_prompt(session_id: str, request: PromptRequest) -> dict[str, object]:
-    return _adapter_post(
-        f"/internal/runtime/sessions/{session_id}/prompt",
-        payload=request.model_dump(),
-        timeout=5.0,
-    )
-
-
-@app.post("/internal/runtime/sessions/{session_id}/cancel")
-def cancel_runtime_session(session_id: str, mode: str = "hard") -> dict[str, object]:
-    return _adapter_post(
-        f"/internal/runtime/sessions/{session_id}/cancel?mode={mode}",
-        timeout=5.0,
-    )
-
-
-@app.post("/internal/runtime/sessions/{session_id}/release")
-def release_runtime_session(session_id: str) -> dict[str, object]:
-    return _adapter_post(
-        f"/internal/runtime/sessions/{session_id}/release",
-        timeout=5.0,
-    )
-
-
-@app.get("/internal/workflows/{session_id}/events")
-def workflow_events(session_id: str) -> StreamingResponse:
-    """Private Phase 6 SSE bridge carrying BYQ envelopes only."""
-
-    def stream() -> Iterator[bytes]:
-        try:
-            with httpx.stream(
-                "GET",
-                f"{RUNTIME_ADAPTER_URL}/internal/runtime/sessions/{session_id}/events",
-                timeout=None,
-            ) as response:
-                if response.status_code == 404:
-                    return
-                response.raise_for_status()
-                yield from response.iter_bytes()
-        except httpx.HTTPError:
-            return
-
-    return StreamingResponse(stream(), media_type="text/event-stream")
