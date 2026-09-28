@@ -693,8 +693,12 @@ for (const viewport of ['desktop','mobile'] as const) {
       if(response.status()<500)return;
       const path=new URL(response.url()).pathname;
       const family=path.startsWith('/api/auth/')?'auth':path.startsWith('/api/product/research/')?'research':
-        path.startsWith('/api/product/')?'product':path.startsWith('/v1/agent/sessions')?'agent-sessions':'other';
-      errors.push(`${response.status()} ${response.request().method()} ${family}`);
+        path.startsWith('/api/product/')?'product':path.startsWith('/v1/agent/sessions')?'agent-sessions':
+        path.startsWith('/v1/product/conversations/')?'conversations':path.startsWith('/v1/product/')?'v1-product':
+        path.startsWith('/api/agent/')?'api-agent':path.startsWith('/agent')?'agent-page':
+        path.startsWith('/assets/')?'asset':path.startsWith('/v1/')?'v1-other':
+        path.startsWith('/api/')?'api-other':'other';
+      errors.push(`${response.status()} ${response.request().method()} ${response.request().resourceType()} ${family}`);
     });
     await page.goto('/login');
     await page.getByLabel('用户名').fill('f2-browser-'+viewport);

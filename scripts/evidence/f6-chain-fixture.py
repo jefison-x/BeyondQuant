@@ -61,6 +61,8 @@ elif action == 'diagnose':
         'budget_status_counts': statuses,
         'pending_dispatch_started': any((row.get('dispatch_attempts') or 0) > 0 for row in pending),
         'pending_reconcile_started': any((row.get('reconcile_attempts') or 0) > 0 for row in pending),
+        'pending_dispatch_attempts': max((row.get('dispatch_attempts') or 0 for row in pending), default=0),
+        'pending_reconcile_attempts': max((row.get('reconcile_attempts') or 0 for row in pending), default=0),
         'prediction_completed': bool(store._execute(
             "SELECT 1 FROM ml_prediction_runs WHERE task_id=:task AND status='completed' LIMIT 1",
             {'task': task['task_id']}))}))

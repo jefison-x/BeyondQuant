@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import logging
 import os
 import asyncio
 import threading
@@ -49,6 +50,7 @@ from packages.contracts.domain_call_admission import call_evidence_receipt
 
 SERVICE = "byq-gateway"
 VERSION = "0.1.0"
+logger = logging.getLogger(__name__)
 TRACE_LIFECYCLE_SEND_ATTEMPTS = 3
 TRACE_RETRY_DELAY_SECONDS = 0.05
 TRACE_RETRY_MAX_DELAY_SECONDS = 5.0
@@ -445,6 +447,12 @@ def _consume_admitted_task_continuation(context):
         # A definite conflict may be retried under the same charged intent.
         # Ambiguous transport failures remain unknown and are only reconciled.
         if exc.status_code == 409:
+            detail = getattr(exc, 'adapter_conflict_detail', '')
+            category = ('domain_cleanup' if detail == 'previous turn domain cleanup is not yet acknowledged'
+                else 'process_cleanup' if detail == 'previous runtime process cleanup is not complete'
+                else 'running' if isinstance(detail, str) and 'cannot accept a prompt in state running' in detail
+                else 'other')
+            logger.warning('task continuation prompt rejected: category=%s', category)
             mark('rejected')
             if observer is not None:
                 product_sessions.finish_continuation(observer, identity)
