@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from app import main
 from app.signal_producer import SignalJobStore, promote_waiting_signal_jobs
-from test_backtest_task_reconciliation import setup_creation
+from tests.test_backtest_task_reconciliation import setup_creation
 
 pytestmark = pytest.mark.skipif(not os.environ.get("BYQ_DATABASE_URL"), reason="isolated PostgreSQL required")
 PATHS = ["/v1/research/backtest-tasks", "/v1/research/signal-producer/jobs"]

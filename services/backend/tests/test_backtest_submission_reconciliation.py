@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.backtest import BacktestJobStore, BacktestNotFound, BacktestStorageError
-from test_backtest_api import _create_strategy_chain, _fresh_harness, _snapshot_input
+from tests.test_backtest_api import _create_strategy_chain, _fresh_harness, _snapshot_input
 from tests.workspace_helpers import trusted_agent_context
 
 pytestmark = pytest.mark.skipif(not os.environ.get("BYQ_DATABASE_URL"), reason="isolated PostgreSQL required")

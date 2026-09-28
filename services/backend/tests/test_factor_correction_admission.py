@@ -5,7 +5,7 @@ from app import main
 from app.agent_research import AgentResearchStore
 from packages.contracts.domain_call_admission import request_evidence
 from tests.test_domain_call_evidence import observed, pytestmark
-from test_factor_research import factor_payload
+from tests.test_factor_research import factor_payload
 
 
 def test_factor_requires_proof_and_persists_one_correction(observed, monkeypatch):

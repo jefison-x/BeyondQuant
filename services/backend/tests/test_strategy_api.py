@@ -10,7 +10,7 @@ from app.agent_research import AgentResearchStore
 from app.backtest import BacktestJobStore, BacktestWorker, LocalObjectStore, membership_fingerprint
 from app.db import execute
 from app.research import ResearchStore
-from test_strategy_artifact import strategy_payload
+from tests.test_strategy_artifact import strategy_payload
 from tests.workspace_helpers import trusted_agent_context, trusted_product_agent_context
 
 

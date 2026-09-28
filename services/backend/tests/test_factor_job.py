@@ -14,7 +14,7 @@ from app import factor_job as factor_job_module
 from app.factor_research import compute_factor
 from app.factor_submission import submit_factor
 from app.research import IdempotencyConflict, InvalidTransition, ResearchStore
-from test_factor_research import factor_payload
+from tests.test_factor_research import factor_payload
 from tests.workspace_helpers import trusted_agent_context
 from workers.factor.worker import FactorWorker
 

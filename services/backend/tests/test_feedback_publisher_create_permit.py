@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 from app.product_feedback import ProductFeedbackStore,FeedbackConflict
-from test_product_feedback import provision,create,submit,pytestmark
+from tests.test_product_feedback import provision,create,submit,pytestmark
 
 
 def seed():

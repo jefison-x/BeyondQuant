@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.research import ResearchStore
-from test_factor_research import factor_payload
+from tests.test_factor_research import factor_payload
 from tests.workspace_helpers import trusted_agent_context
 
 

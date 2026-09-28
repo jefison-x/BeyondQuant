@@ -209,6 +209,14 @@ Backend file on a second disposable PostgreSQL 16 database (8 passed in
 12.21 seconds), including the concurrency regression, and removed the exact
 test resources. Hosted CI remains a separate gate.
 
+The first Draft PR CI found a Backend test collection mismatch after this
+phase made `tests` a package: old bare test-module imports and the CI
+container's missing read-only Worker source mount. Test imports now use the
+`tests` package, and the Backend test container mounts Worker source read-only
+while collecting only Backend tests. A fresh-image, disposable-PostgreSQL
+collection check found **983 tests with zero collection errors**. This check
+does not substitute for the full hosted CI rerun.
+
 ## Handoffs after Phase 11
 
 | Type | Current state | Remaining boundary work |

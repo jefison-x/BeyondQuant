@@ -24,7 +24,7 @@ from app.optimization_job import (
 )
 from app.business_job import project_business_job
 from app.research import ResearchStore
-from test_backtest_api import _create_strategy_chain, _owner_headers, _snapshot_input, _strategy
+from tests.test_backtest_api import _create_strategy_chain, _owner_headers, _snapshot_input, _strategy
 
 
 TASK_ID = "task_" + "a" * 32
