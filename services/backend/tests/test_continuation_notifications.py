@@ -12,7 +12,7 @@ pytestmark = pytest.mark.skipif(not os.environ.get('BYQ_DATABASE_URL'), reason='
 
 
 def test_terminal_notification_claim_and_dispatch_are_durable_and_once(monkeypatch, tmp_path):
-    import test_backtest_api
+    from tests import test_backtest_api
     monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
     headers = trusted_agent_context('product-user', trace_id='byq-trace-task-receipt', session_id='byq-session-product-user')
     monkeypatch.setattr(test_backtest_api, '_owner_headers', lambda principal: headers)

@@ -95,6 +95,14 @@ def test_training_receipt_precedes_coverage_scan_and_repair_and_retries_stay_sta
     run = response.json()["training_run"]
     assert run["status"] == "waiting_for_data"
     assert run["readiness"]["state"] == "pending"
+    assert response.json()["business_job"]["input_ref"] == run["submission_ref"]
+    fetched = client.get(f"/v1/research/ml/training-runs/{run['training_run_id']}", headers=headers)
+    assert fetched.status_code == 200
+    assert fetched.json()["business_job"]["job_id"] == run["training_run_id"]
+    assert fetched.json()["business_job"]["workspace_id"] == headers["x-byq-workspace-id"]
+    assert fetched.json()["business_job"]["type"] == "TRAINING"
+    assert fetched.json()["business_job"]["status"] == "QUEUED"
+    assert fetched.json()["business_job"]["input_ref"] == run["submission_ref"]
     confirmed_watch = client.get("/v1/research/ml/training-submissions/reconcile", headers=headers,
                                  params={"idempotency_key": "receipt-1"}).json()["receipt_watch"]
     assert confirmed_watch["state"] == "confirmed"
@@ -113,6 +121,7 @@ def test_training_receipt_precedes_coverage_scan_and_repair_and_retries_stay_sta
                             params={"idempotency_key": "receipt-2"})
     assert reconciled.status_code == 200
     assert reconciled.json()["training_run"]["training_run_id"] == run["training_run_id"]
+    assert reconciled.json()["business_job"]["job_id"] == run["training_run_id"]
     other_pool = backend_main.paper_store.create_pool(
         {"name": "Other receipt pool", "symbols": ["600000.SH"]}, trusted_owner=owner,
     )
@@ -134,6 +143,9 @@ def test_training_receipt_precedes_coverage_scan_and_repair_and_retries_stay_sta
     deadline = client.get("/v1/research/ml/training-submissions/reconcile", headers=headers,
                           params={"idempotency_key": "deadline-submission"}).json()["receipt_watch"]
     assert deadline["state"] == "needs_attention" and deadline["check_count"] == 0
+    cancelled = client.post(f"/v1/research/ml/training-runs/{run['training_run_id']}/cancel", headers=headers)
+    assert cancelled.status_code == 200
+    assert cancelled.json()["business_job"]["status"] == "CANCELLED"
 
 
 def test_index_ml_pool_freezes_same_index_as_universe_and_benchmark() -> None:
@@ -187,7 +199,10 @@ def test_ml_training_reconcile_route_uses_trusted_workspace_and_owner(monkeypatc
         )
         return {
             "training_run_id": "mlrun_" + "a" * 32,
+            "workspace_id": trusted_workspace,
             "status": "waiting_for_data",
+            "submission_ref": "submission-ref-1",
+            "model_artifact_id": None,
         }
 
     monkeypatch.setattr(backend_main.ml_training_store, "get_by_idempotency", reconcile)
@@ -197,6 +212,9 @@ def test_ml_training_reconcile_route_uses_trusted_workspace_and_owner(monkeypatc
     )
     assert response.status_code == 200
     assert response.json()["training_run"]["training_run_id"] == "mlrun_" + "a" * 32
+    assert response.json()["business_job"]["workspace_id"] == headers["x-byq-workspace-id"]
+    assert response.json()["business_job"]["status"] == "QUEUED"
+    assert response.json()["business_job"]["input_ref"] == "submission-ref-1"
     assert captured == {
         "key": "training-reconcile-1",
         "workspace": headers["x-byq-workspace-id"],

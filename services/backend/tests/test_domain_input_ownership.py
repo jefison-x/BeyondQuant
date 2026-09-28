@@ -5,8 +5,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main
-from test_backtest_api import _create_strategy_chain, _fresh_harness, _snapshot_input
-from test_factor_research import factor_payload
+from tests.test_backtest_api import _create_strategy_chain, _fresh_harness, _snapshot_input
+from tests.test_factor_research import factor_payload
 from tests.workspace_helpers import trusted_agent_context, trusted_product_agent_context
 
 pytestmark = pytest.mark.skipif(not os.environ.get("BYQ_DATABASE_URL"), reason="isolated PostgreSQL required")
@@ -49,11 +49,16 @@ def test_domain_import_rejects_untrusted_owner_before_computation(monkeypatch, t
         return original(*args, **kwargs)
     monkeypatch.setattr(main, computation_name, observed)
     before = store.list_artifacts(owner_principal="product-user")
+    before_factor_jobs = (main.factor_job_store._fetch_one(
+        "SELECT COUNT(*) AS n FROM factor_jobs"
+    )["n"] if kind == "factor" else None)
     with TestClient(main.app) as client:
         response = client.post(path, json=body, headers=invalid_context(identity, dict(owner.headers)))
     assert response.status_code == (404 if identity == "foreign" else 401), response.text
     assert calls == [], "unauthorized requests must not start computation"
     assert store.list_artifacts(owner_principal="product-user") == before
+    if kind == "factor":
+        assert main.factor_job_store._fetch_one("SELECT COUNT(*) AS n FROM factor_jobs")["n"] == before_factor_jobs
     store.close()
     jobs.close()
 

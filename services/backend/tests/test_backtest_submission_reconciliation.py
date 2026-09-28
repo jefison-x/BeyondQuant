@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.backtest import BacktestJobStore, BacktestNotFound, BacktestStorageError
-from test_backtest_api import _create_strategy_chain, _fresh_harness, _snapshot_input
+from tests.test_backtest_api import _create_strategy_chain, _fresh_harness, _snapshot_input
 from tests.workspace_helpers import trusted_agent_context
 
 pytestmark = pytest.mark.skipif(not os.environ.get("BYQ_DATABASE_URL"), reason="isolated PostgreSQL required")
@@ -41,7 +41,6 @@ def test_original_receipt_late_commit_reconnect_and_process_read(monkeypatch, tm
     for name in ("create", "get", "list_backtests", "list_backtest_summaries", "get_input_manifest"):
         monkeypatch.setattr(replacement, name, forbidden)
     monkeypatch.setattr(main, "_validated_backtest_request", forbidden)
-    monkeypatch.setattr(main, "BacktestWorker", forbidden)
     for _ in range(2):
         response = client.get(PATH, params=params)
         assert response.status_code == 200, response.text

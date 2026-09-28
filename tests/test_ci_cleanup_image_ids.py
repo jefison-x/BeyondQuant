@@ -32,6 +32,7 @@ FAKE_DOCKER = ROOT / "tests/ci/fake_docker.py"
 
 ID_A = "sha256:" + "a" * 64
 ID_B = "sha256:" + "b" * 64
+ID_C = "sha256:" + "c" * 64
 
 
 def _parse_state(path: Path) -> dict[str, list[str]]:
@@ -116,6 +117,39 @@ class CleanupImageIdTests(unittest.TestCase):
         self.assertIn(f"image rm {tag}", log)
         self.assertIn(f"image rm {ID_A}", log)
         self.assertFalse(self.manifest.exists())
+
+    def test_phase11_worker_services_are_allowed_and_foreign_tag_is_preserved(self) -> None:
+        backtest_tag = f"byq-ci-stack-{self.scope}-backtest-worker"
+        factor_tag = f"byq-ci-stack-{self.scope}-factor-worker"
+        optimization_tag = f"byq-ci-stack-{self.scope}-optimization-worker"
+        foreign_factor_tag = "byq-ci-stack-otherscope-factor-worker"
+        self.state.write_text(
+            f"{ID_A}\t{backtest_tag}\n"
+            f"{ID_B}\t{factor_tag},{foreign_factor_tag}\n"
+            f"{ID_C}\t{optimization_tag}\n",
+            encoding="utf-8",
+        )
+        self._write_manifest(
+            f"backtest-worker={ID_A}\n"
+            f"factor-worker={ID_B}\n"
+            f"optimization-worker={ID_C}\n"
+        )
+
+        result = self._run()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn(ID_A, self._images())
+        self.assertEqual(self._images().get(ID_B), [foreign_factor_tag])
+        self.assertNotIn(ID_C, self._images())
+        log = self._log()
+        for tag in (backtest_tag, factor_tag, optimization_tag):
+            self.assertIn(f"image rm {tag}", log)
+        self.assertIn(f"image rm {ID_A}", log)
+        self.assertNotIn(f"image rm {ID_B}", log)
+        self.assertIn(f"image rm {ID_C}", log)
+        self.assertIn("retained shared image id", result.stdout)
+        self.assertFalse(self.manifest.exists())
+        self._assert_no_global_prune()
 
     def test_missing_manifest_is_backward_compatible(self) -> None:
         self.state.write_text(f"{ID_A}\t\n", encoding="utf-8")

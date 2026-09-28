@@ -55,6 +55,11 @@ try {
     assert.ok(listed.tools.some((tool) => tool.name === name), `${name} is missing`);
   }
   assert.ok(listed.tools.some((tool) => tool.name === "byq_factor_compute"));
+  assert.ok(listed.tools.some((tool) => tool.name === "byq_factor_job_get"));
+  assert.ok(listed.tools.some((tool) => tool.name === "byq_factor_job_cancel"));
+  assert.ok(listed.tools.some((tool) => tool.name === "byq_optimization_submit"));
+  assert.ok(listed.tools.some((tool) => tool.name === "byq_optimization_get"));
+  assert.ok(listed.tools.some((tool) => tool.name === "byq_optimization_cancel"));
   assert.ok(listed.tools.some((tool) => tool.name === "byq_workflow_card_propose"));
   for (const name of [
     "byq_strategy_validate",

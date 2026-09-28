@@ -15,17 +15,17 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-CURRENT_DSH_DOCKERFILE = "services/runtime-adapter/Dockerfile.post-u8-255-candidate"
+CURRENT_DSH_DOCKERFILE = "services/runtime-adapter/Dockerfile.post-u8-259-candidate"
 ENV_FILE = ROOT / ".env.dev"
 TEMPLATE = ROOT / ".env.example"
 VOLUME_SUFFIXES = ("postgres-data", "domain-state", "ml-model-state", "dsh-sessions", "workflow-traces")
 NETWORK_SUFFIXES = ("product", "signal-sandbox")
 SERVICES = {
     "core": ("postgres", "backend", "mcp", "runtime-adapter", "gateway"),
-    "research": ("postgres", "backend", "mcp", "runtime-adapter", "gateway", "data-worker"),
-    "backtest": ("postgres", "backend", "mcp", "runtime-adapter", "gateway", "signal-sandbox", "signal-worker"),
+    "research": ("postgres", "backend", "mcp", "runtime-adapter", "gateway", "data-worker", "factor-worker"),
+    "backtest": ("postgres", "backend", "mcp", "runtime-adapter", "gateway", "signal-sandbox", "signal-worker", "backtest-worker", "factor-worker"),
     "ml": ("postgres", "backend", "mcp", "runtime-adapter", "gateway", "ml-worker"),
-    "full": ("postgres", "backend", "mcp", "runtime-adapter", "gateway", "data-worker", "signal-sandbox", "signal-worker", "ml-worker", "frontend"),
+    "full": ("postgres", "backend", "mcp", "runtime-adapter", "gateway", "data-worker", "signal-sandbox", "signal-worker", "backtest-worker", "factor-worker", "ml-worker", "frontend"),
 }
 FORBIDDEN_OVERRIDES = (
     "BYQ_POSTGRES_VOLUME_NAME", "BYQ_DOMAIN_VOLUME_NAME", "BYQ_ML_MODEL_VOLUME_NAME",

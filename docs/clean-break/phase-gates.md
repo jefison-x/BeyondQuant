@@ -1,5 +1,117 @@
 # Phase 0–6 gate record
 
+## Phase 11 Business Job — final local gate (2026-09-28)
+
+The five domain Job paths now have stable owner/workspace-scoped IDs, common
+state projection, independent Worker execution and Artifact results. Factor
+and task-bound DataImport cancellation complete ADR-003's authorized MCP
+start/query/cancel contract. A Job row lock serializes cancel with Worker
+completion; cancelled attempts cannot create successful Artifacts. New role
+versions grant the tools without widening pinned older roles. Independent
+Tester: disposable PostgreSQL focused Backend suite 34/34 PASS; MCP build and
+focused Factor/DataImport tests PASS; exact test resources removed, no volume.
+Full live MCP contract test NOT RUN because the Product stack/token is a later
+integration gate. Independent Sol Reviewer: Functional PASS / Tests PASS /
+Clean Break Architecture PASS. **Root acceptance: Phase 11 local PASS.**
+Hosted CI, human PR/merge and Phases 15–16 Golden scenarios remain separate.
+
+## Phase 11 Business Job — workspace DataImportJob bounded slice (2026-09-28)
+
+Task-bound data demands use the existing durable demand ID as a workspace
+`DATA_IMPORT` Job. The independent Data Worker persists status and commits a
+validated readiness Artifact atomically. A frozen stock-pool snapshot receives
+canonical Artifact lineage; unavailable references become terminal failed,
+while transient Artifact writes roll back for retry. Authorized new Agent
+sessions read the same Job ID and Artifact. Global admin sync remains separate.
+Independent Tester: disposable PostgreSQL Backend focused file 8/8 PASS; MCP
+TypeScript build and focused data-demand test PASS; exact containers/network
+removed, no volume. Independent Sol Reviewer: Functional PASS / Tests PASS /
+Clean Break Architecture PASS. **Root acceptance: bounded slice local PASS;
+Phase 11 overall gate under review.** Full Product Golden flows remain
+Phases 15–16.
+
+## Phase 11 Business Job — Training process reclaim qualification (2026-09-28)
+
+On disposable PostgreSQL, the focused separate-process lifecycle test passed
+(1 passed; Docker test container exit 0). It killed a Coordinator process
+after claim, expired the persisted lease, completed the same TrainingRun on
+attempt two in another process, and read the stable Job and validated model
+Artifact from a new trusted Agent session. Test containers/network were
+removed with no volume created. The outer wrapper returned 1 after pytest and
+cleanup for an undetermined reason; this is recorded separately from the
+passing test. Independent Tester: PASS. Independent Sol Reviewer: Functional
+PASS / Tests PASS / Clean Break Architecture PASS. **Root acceptance: bounded
+qualification local PASS; Phase 11 overall OPEN.** Synthetic training proves
+process reclaim, not real GPU checkpoint/restart; that remains Phase 16.
+
+## Phase 11 Business Job — optimization bounded slice and Training projection (2026-09-28)
+
+[Execution record](phase11-business-jobs.md): completed-candidate parameter
+search now runs as a durable workspace-scoped OptimizationJob in an independent
+Worker and yields one validated comparison Artifact. Source BacktestJobs remain
+available for the comparison's lineage; cancellation and stale attempts cannot
+commit an Artifact. MCP submit/get/cancel uses exact-key reconciliation and
+current Agent role authority. Training create/get/cancel/reconcile now expose
+the common Job projection with a stable pending input reference. Fresh
+disposable PostgreSQL rerun: 22 passed; final source and role regressions:
+3 passed plus the latest role gate 1 passed. MCP build and focused tests,
+Compose config and diff check passed; temporary resources were removed.
+Independent Tester: PASS. Independent Sol Reviewer after fixes: Functional
+PASS / Tests PASS / Clean Break Architecture PASS. **Root acceptance: bounded
+Optimization and Training projection slice local PASS; Phase 11 overall OPEN.**
+Actual independent ML Worker interruption/new-session evidence and workspace
+DataImportJob/Artifact remain Phase 11 work. GPU checkpoint/restart remains a
+Phase 16 Golden gate.
+
+## Phase 11 Business Job — training boundary qualification (2026-09-28)
+
+[Execution record](phase11-business-jobs.md): existing persisted TrainingRun,
+independent ML Worker and validated model Artifact qualify the specialized
+Job ownership boundary. Two focused tests passed on a fresh disposable
+PostgreSQL database; temporary resources were removed. Independent Tester:
+PASS. Independent Sol Reviewer: Functional PASS / Tests PASS / Clean Break
+Architecture PASS for the bounded qualification. **Root acceptance: training
+boundary qualification local PASS; Phase 11 overall OPEN.** Common Job
+projection on create/cancel/reconcile, a waiting input reference, actual
+Worker process interruption and new-session read still require Phase 11
+evidence. GPU checkpoint/restart remains a Phase 16 Golden gate.
+
+## Phase 11 Business Job — factor bounded slice (2026-09-28)
+
+[Execution record](phase11-business-jobs.md): factor submission now queues a
+durable, workspace-scoped Job; an independent Worker commits its validated
+Artifact and Job status in one transaction. Fresh disposable PostgreSQL tests:
+39 core and four ownership cases passed. MCP build and focused translation
+tests, Compose config, syntax, diff and slice dev-check passed; test resources
+were removed. Independent Tester: PASS. Independent Sol Reviewer: Functional
+PASS / Tests PASS / Clean Break Architecture PASS. **Root acceptance: factor
+slice local PASS; Phase 11 overall OPEN.** Optimization, workspace data import,
+and remaining ML boundary qualification are not claimed complete.
+
+## Phase 11 Business Job — admin data import bounded slice (2026-09-28)
+
+[Execution record](phase11-business-jobs.md): admin range sync now runs in the
+independent Data Worker. Fresh disposable PostgreSQL tests: 23 passed, covering
+claim competition, interrupted work, stale import rollback, checkpoint
+atomicity and exhausted attempts under a continuing queue. Syntax, diff and
+slice dev-check passed; test resources were removed. Independent Tester: PASS.
+Independent Sol Reviewer: Functional PASS / Tests PASS / Clean Break
+Architecture PASS after two defects were fixed and re-reviewed. **Root
+acceptance: this slice local PASS; Phase 11 overall OPEN.** The global admin
+sync is not represented as the workspace DataImportJob required by ADR-003.
+
+## Phase 11 Business Job — first bounded slice (2026-09-28)
+
+[Execution record](phase11-business-jobs.md): the common backtest/training Job
+read projection and independent polling backtest Worker passed focused tests on
+a disposable PostgreSQL database, including concurrent claim, stale attempt
+fencing, cancellation, attempt exhaustion, workspace isolation and retrieval
+from a new Agent session. Compose config and diff checks passed; exact test
+resources were removed. Independent Tester: PASS. Independent Sol Reviewer:
+Functional PASS / Tests PASS / Clean Break Architecture PASS. **Root acceptance:
+first slice local PASS; Phase 11 overall OPEN.** Factor, optimization, admin
+data import and remaining training boundary work are not claimed complete.
+
 ## Phase 10 thin DSH Adapter — bounded resume-removal slice (2026-09-28)
 
 The [transport contract](phase10-dsh-contract.md) and

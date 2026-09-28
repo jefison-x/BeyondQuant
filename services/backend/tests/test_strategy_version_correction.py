@@ -6,7 +6,7 @@ from app import main
 from app.agent_research import AgentResearchStore
 from packages.contracts.domain_call_admission import request_evidence
 from tests.test_domain_call_evidence import observed, pytestmark
-from test_strategy_artifact import strategy_payload
+from tests.test_strategy_artifact import strategy_payload
 
 
 @pytest.mark.parametrize("crash_before_transition", [False, True])

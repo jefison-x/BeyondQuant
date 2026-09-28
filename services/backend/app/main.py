@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from collections.abc import Callable
 from typing import Any
 from .domain_call_admission import DomainValidationRejected
+from .business_job import project_business_job
 
 from .data_provider import (
     DAILY_BASIC_FIELDS,
@@ -82,6 +83,12 @@ from .credentials import (
 )
 from .factor_research import FactorValidationError, compute_factor
 from .factor_submission import submit_factor
+from .factor_job import FactorJobStore
+from .optimization_job import (
+    OptimizationConflict,
+    OptimizationJobStore,
+    OptimizationValidationError,
+)
 from .backtest import (
     BacktestConflict,
     BacktestError,
@@ -89,7 +96,6 @@ from .backtest import (
     BacktestNotFound,
     ObjectIntegrityError,
     BacktestStorageError,
-    BacktestWorker,
     LocalObjectStore,
     build_backtest_analysis,
     load_result,
@@ -390,6 +396,8 @@ market_automation_store = MarketAutomationStore.from_env()
 security_master_store = SecurityMasterStore.from_env()
 conversation_store = ConversationCatalogStore.from_env()
 backtest_store = BacktestJobStore.from_env()
+factor_job_store = FactorJobStore.from_env()
+optimization_job_store = OptimizationJobStore.from_env()
 workspace_tenancy_store = WorkspaceTenancyStore.from_env()
 CREDENTIAL_RESOLVER_TOKEN = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
 FEEDBACK_PUBLISHER_TOKEN = os.environ.get("BYQ_FEEDBACK_PUBLISHER_TOKEN")
@@ -1554,20 +1562,12 @@ def test_tushare_connection(payload: dict[str, Any], request: Request) -> dict[s
 def create_data_sync_job(
     payload: dict[str, Any],
     request: Request,
-    background_tasks: BackgroundTasks,
 ) -> dict[str, object]:
     actor, _role = _require_data_admin(request)
 
     def operation() -> dict[str, object]:
         resolved_payload = _resolved_daily_sync_payload(payload, request)
         job, created = data_sync_store.create_job(resolved_payload, actor=actor)
-        if created or job["status"] == "queued":
-            background_tasks.add_task(
-                data_sync_store.run_job,
-                job["job_id"],
-                provider_factory=lambda: _resolved_tushare_provider()[0],
-                market_store=market_data_store,
-            )
         return {"job": job, "created": created}
 
     return _data_sync_call(operation)
@@ -1655,6 +1655,14 @@ def _require_data_demand_admin(context: dict[str, str]) -> None:
         raise HTTPException(status_code=403, detail="administrator-owned workspace required")
 
 
+def _data_demand_response(demand: dict[str, object]) -> dict[str, object]:
+    response: dict[str, object] = {"demand": demand}
+    business_job = demand.get("job")
+    if isinstance(business_job, dict):
+        response["business_job"] = business_job
+    return response
+
+
 @app.post("/v1/agent/data-demands", status_code=202)
 def create_agent_data_demand(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
@@ -1663,10 +1671,12 @@ def create_agent_data_demand(payload: dict[str, Any], request: Request) -> dict[
     def operation() -> dict[str, object]:
         demand, created = data_demand_store.submit(payload, context=context,
             planner=_data_demand_requirements, automation_store=market_automation_store)
-        return {"demand": data_demand_store.refresh(
+        current = data_demand_store.refresh(
             demand["demand_id"], trusted_owner=context["owner_principal"],
             readiness_store=market_readiness_store, automation_store=market_automation_store,
-        ), "created": created}
+            trusted_workspace=context["workspace_id"],
+        )
+        return {**_data_demand_response(current), "created": created}
 
     return _data_demand_call(operation)
 
@@ -1674,17 +1684,34 @@ def create_agent_data_demand(payload: dict[str, Any], request: Request) -> dict[
 @app.get("/v1/agent/data-demands/by-key/{idempotency_key}")
 def reconcile_agent_data_demand(idempotency_key: str, request: Request):
     context = _required_agent_context(request, include_workspace=True)
-    return _data_demand_call(lambda: data_demand_store.reconcile_submission(idempotency_key,
-        trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"]))
+    def operation():
+        result = data_demand_store.reconcile_submission(idempotency_key,
+            trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"])
+        demand = result.get("demand")
+        if isinstance(demand, dict) and isinstance(demand.get("job"), dict):
+            result["business_job"] = demand["job"]
+        return result
+    return _data_demand_call(operation)
 
 
 @app.get("/v1/agent/data-demands/{demand_id}")
 def get_agent_data_demand(demand_id: str, request: Request) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
-    return _data_demand_call(lambda: {"demand": data_demand_store.refresh(
+    return _data_demand_call(lambda: _data_demand_response(data_demand_store.refresh(
         demand_id, trusted_owner=context["owner_principal"],
         readiness_store=market_readiness_store, automation_store=market_automation_store,
-    )})
+        trusted_workspace=context["workspace_id"],
+    )))
+
+
+@app.post("/v1/agent/data-demands/{demand_id}/cancel")
+def cancel_agent_data_demand(demand_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    _require_data_demand_admin(context)
+    return _data_demand_call(lambda: _data_demand_response(data_demand_store.cancel(
+        demand_id, trusted_owner=context["owner_principal"],
+        trusted_workspace=context["workspace_id"],
+    )))
 
 
 @app.get("/v1/agent/data-demand-notifications")
@@ -1694,10 +1721,12 @@ def get_agent_data_demand_notifications(request: Request) -> dict[str, object]:
     def operation() -> dict[str, object]:
         demands = data_demand_store.list_for_session(
             trusted_owner=context["owner_principal"], session_id=context["session_id"],
+            trusted_workspace=context["workspace_id"],
         )
         refreshed = [data_demand_store.refresh(
             item["demand_id"], trusted_owner=context["owner_principal"],
             readiness_store=market_readiness_store, automation_store=market_automation_store,
+            trusted_workspace=context["workspace_id"],
         ) for item in demands]
         data_notifications = [
             {**item, "kind": "data_demand_progress"}
@@ -1882,7 +1911,7 @@ def list_security_master(
 def _research_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
     try:
         return operation()
-    except (MLValidationError, FactorValidationError) as error:
+    except (MLValidationError, FactorValidationError, OptimizationValidationError) as error:
         raise HTTPException(status_code=422, detail=error.public_problem()) from error
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
@@ -1892,6 +1921,21 @@ def _research_call(operation: Callable[[], dict[str, object]]) -> dict[str, obje
         raise HTTPException(status_code=409, detail=str(error)) from error
     except ResearchPersistenceError as error:
         raise HTTPException(status_code=503, detail="research storage is unavailable") from error
+
+
+def _optimization_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return operation()
+    except OptimizationValidationError as error:
+        raise HTTPException(status_code=422, detail=error.public_problem()) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except ResearchNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except OptimizationConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except SQLAlchemyError as error:
+        raise HTTPException(status_code=503, detail="optimization job storage is unavailable") from error
 
 
 def _backtest_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
@@ -2392,7 +2436,11 @@ def compute_research_factor(payload: dict[str, Any], request: Request) -> dict[s
 
     def operation(data, connection) -> dict[str, object]:
         try:
-            return submit_factor(research_store, data, context, compute_factor, _connection=connection)
+            job = factor_job_store.create(
+                data, trusted_owner=context["owner_principal"],
+                trusted_workspace=context["workspace_id"], _connection=connection,
+            )
+            return {"job": job}
         except FactorValidationError as error:
             if connection is not None:
                 raise DomainValidationRejected("factor validation failed", validation_error=error) from error
@@ -2400,6 +2448,117 @@ def compute_research_factor(payload: dict[str, Any], request: Request) -> dict[s
 
     return _research_call(lambda: _domain_validation_operation(request, payload, context,
         "byq_factor_compute", operation))
+
+
+@app.get("/v1/research/factor-jobs/{job_id}")
+def get_research_factor_job(job_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    def operation() -> dict[str, object]:
+        job = factor_job_store.get(
+            job_id=job_id, trusted_owner=context["owner_principal"],
+            trusted_workspace=context["workspace_id"],
+        )
+        if job is None:
+            raise ResearchNotFound("factor job not found")
+        return {"job": job}
+    return _research_call(operation)
+
+
+@app.get("/v1/research/factor-jobs")
+def find_research_factor_job(task_id: str, idempotency_key: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    def operation() -> dict[str, object]:
+        job = factor_job_store.get(
+            task_id=task_id, idempotency_key=idempotency_key,
+            trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+        )
+        if job is None:
+            raise ResearchNotFound("factor job not found")
+        return {"job": job}
+    return _research_call(operation)
+
+
+@app.post("/v1/research/factor-jobs/{job_id}/cancel")
+def cancel_research_factor_job(job_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        job = factor_job_store.cancel(
+            job_id, trusted_owner=context["owner_principal"],
+            trusted_workspace=context["workspace_id"],
+        )
+        if job is None:
+            raise ResearchNotFound("factor job not found")
+        return {"job": job}
+
+    return _research_call(operation)
+
+
+@app.post("/v1/research/optimization-jobs", status_code=202)
+def create_research_optimization_job(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    """Queue a comparison of completed backtests with explicit parameter records."""
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        supplied_trace = payload.get("trace_id")
+        if supplied_trace is not None and supplied_trace != context["trace_id"]:
+            raise HTTPException(status_code=401, detail="trace_id does not match trusted runtime context")
+        normalized = {**payload, "trace_id": context["trace_id"]}
+        job = optimization_job_store.create(
+            normalized, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+        )
+        return {"job": job, "business_job": project_business_job("OPTIMIZATION", job)}
+
+    return _optimization_call(operation)
+
+
+@app.get("/v1/research/optimization-jobs/{job_id}")
+def get_research_optimization_job(job_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        job = optimization_job_store.get(
+            job_id=job_id, trusted_owner=context["owner_principal"],
+            trusted_workspace=context["workspace_id"],
+        )
+        if job is None:
+            raise ResearchNotFound("optimization job not found")
+        return {"job": job, "business_job": project_business_job("OPTIMIZATION", job)}
+
+    return _optimization_call(operation)
+
+
+@app.get("/v1/research/optimization-jobs")
+def find_research_optimization_job(
+    request: Request, task_id: str, idempotency_key: str,
+) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        job = optimization_job_store.get(
+            task_id=task_id, idempotency_key=idempotency_key,
+            trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+        )
+        if job is None:
+            raise ResearchNotFound("optimization job not found")
+        return {"job": job, "business_job": project_business_job("OPTIMIZATION", job)}
+
+    return _optimization_call(operation)
+
+
+@app.post("/v1/research/optimization-jobs/{job_id}/cancel")
+def cancel_research_optimization_job(job_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        job = optimization_job_store.cancel(
+            job_id, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+        )
+        if job is None:
+            raise ResearchNotFound("optimization job not found")
+        return {"job": job, "business_job": project_business_job("OPTIMIZATION", job)}
+
+    return _optimization_call(operation)
 
 
 def _domain_validation_operation(request, payload, context, action, operation):
@@ -3075,7 +3234,7 @@ def create_ml_training_run(payload: dict[str, Any], request: Request) -> dict[st
             requirement=requirements[0], readiness=readiness, trace_id=data.get("trace_id"),
             idempotency_key=data.get("idempotency_key"),
         )
-        return {"training_run": run}
+        return {"training_run": run, "business_job": project_business_job("TRAINING", run)}
 
     try:
         return _ml_call(operation)
@@ -3128,28 +3287,40 @@ def get_ml_training_run_by_idempotency(
 ) -> dict[str, object]:
     """Reconcile an outcome-unknown create without exposing cross-workspace state."""
     context = _required_agent_context(request, include_workspace=True)
-    return _ml_call(lambda: {"training_run": ml_training_store.get_by_idempotency(
-        idempotency_key, trusted_workspace=context["workspace_id"],
-        trusted_owner=context["owner_principal"],
-    )})
+    def operation() -> dict[str, object]:
+        run = ml_training_store.get_by_idempotency(
+            idempotency_key, trusted_workspace=context["workspace_id"],
+            trusted_owner=context["owner_principal"],
+        )
+        return {"training_run": run, "business_job": project_business_job("TRAINING", run)}
+
+    return _ml_call(operation)
 
 
 @app.get("/v1/research/ml/training-runs/{training_run_id}")
 def get_ml_training_run(training_run_id: str, request: Request) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
-    return _ml_call(lambda: {"training_run": ml_training_store.get(
-        training_run_id, trusted_workspace=context["workspace_id"],
-        trusted_owner=context["owner_principal"],
-    )})
+    def operation() -> dict[str, object]:
+        run = ml_training_store.get(
+            training_run_id, trusted_workspace=context["workspace_id"],
+            trusted_owner=context["owner_principal"],
+        )
+        return {"training_run": run, "business_job": project_business_job("TRAINING", run)}
+
+    return _ml_call(operation)
 
 
 @app.post("/v1/research/ml/training-runs/{training_run_id}/cancel")
 def cancel_ml_training_run(training_run_id: str, request: Request) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
-    return _ml_call(lambda: {"training_run": ml_training_store.cancel(
-        training_run_id, trusted_workspace=context["workspace_id"],
-        trusted_owner=context["owner_principal"],
-    )})
+    def operation() -> dict[str, object]:
+        run = ml_training_store.cancel(
+            training_run_id, trusted_workspace=context["workspace_id"],
+            trusted_owner=context["owner_principal"],
+        )
+        return {"training_run": run, "business_job": project_business_job("TRAINING", run)}
+
+    return _ml_call(operation)
 
 
 @app.post("/v1/research/ml/prediction-runs", status_code=202)
@@ -4262,14 +4433,14 @@ def cancel_backtest_task(backtest_task_id: str, request: Request) -> dict[str, o
 def create_backtest_job(
     payload: dict[str, Any], request: Request, projection: str = "full",
 ) -> dict[str, object]:
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         validation_payload = dict(payload)
         stock_pool_snapshot_id = validation_payload.pop("stock_pool_snapshot_id", None)
         backtest_request = _validated_backtest_request(validation_payload)
         task = research_store.get_task(backtest_request["task_id"])
-        if task["owner_principal"] != context["owner_principal"]:
+        if task["owner_principal"] != context["owner_principal"] or task["workspace_id"] != context["workspace_id"]:
             raise ResearchNotFound("research task not found")
         if stock_pool_snapshot_id is not None:
             snapshot = paper_store.get_pool_snapshot(
@@ -4323,13 +4494,14 @@ def backtest_options(request: Request) -> dict[str, object]:
     strategy_approval for the caller, with the task/approval identities the
     wizard needs to submit a backtest referencing a signal_snapshot.
     """
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
     versions_list = research_store.list_validated_strategy_versions(
         owner_principal=context["owner_principal"]
     )
     artifacts = versions_list + research_store.list_strategy_approvals(
         owner_principal=context["owner_principal"]
     )
+    artifacts = [item for item in artifacts if item.get("workspace_id") == context["workspace_id"]]
     versions = {
         item["artifact_id"]: item
         for item in artifacts
@@ -4401,24 +4573,24 @@ def reconcile_backtest_submission(request: Request, task_id: str, idempotency_ke
 
 @app.get("/v1/research/backtests/{job_id}")
 def get_backtest_job(job_id: str, request: Request) -> dict[str, object]:
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         job = backtest_store.get(job_id)
-        if job["owner_principal"] != context["owner_principal"]:
+        if job["owner_principal"] != context["owner_principal"] or job["workspace_id"] != context["workspace_id"]:
             raise BacktestNotFound("backtest job not found")
-        return {"job": job}
+        return {"job": job, "business_job": project_business_job("BACKTEST", job)}
 
     return _backtest_call(operation)
 
 
 @app.get("/v1/research/backtests/{job_id}/summary")
 def get_backtest_job_summary(job_id: str, request: Request) -> dict[str, object]:
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         job = backtest_store.get_backtest_summary(job_id)
-        if job["owner_principal"] != context["owner_principal"]:
+        if job["owner_principal"] != context["owner_principal"] or job["workspace_id"] != context["workspace_id"]:
             raise BacktestNotFound("backtest job not found")
         return {"job": job}
 
@@ -4427,11 +4599,11 @@ def get_backtest_job_summary(job_id: str, request: Request) -> dict[str, object]
 
 @app.get("/v1/research/backtests/{job_id}/manifest")
 def get_backtest_job_manifest(job_id: str, request: Request) -> dict[str, object]:
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         job = backtest_store.get_backtest_summary(job_id)
-        if job["owner_principal"] != context["owner_principal"]:
+        if job["owner_principal"] != context["owner_principal"] or job["workspace_id"] != context["workspace_id"]:
             raise BacktestNotFound("backtest job not found")
         return {"job_id": job_id, "input_manifest": backtest_store.get_input_manifest(job_id)}
 
@@ -4440,9 +4612,9 @@ def get_backtest_job_manifest(job_id: str, request: Request) -> dict[str, object
 
 @app.get("/v1/research/backtests/{job_id}/result")
 def get_backtest_result(job_id: str, request: Request) -> dict[str, object]:
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
     job = _backtest_call(lambda: backtest_store.get(job_id))
-    if job["owner_principal"] != context["owner_principal"]:
+    if job["owner_principal"] != context["owner_principal"] or job["workspace_id"] != context["workspace_id"]:
         raise HTTPException(status_code=404, detail="backtest result not found")
     reference = job.get("result_reference")
     if not isinstance(reference, dict):
@@ -4455,7 +4627,7 @@ def get_backtest_result(job_id: str, request: Request) -> dict[str, object]:
 
 
 def _backtest_feature_diagnostics(
-    *, owner_principal: str, signal_snapshot_artifact_id: object,
+    *, owner_principal: str, workspace_id: str, signal_snapshot_artifact_id: object,
 ) -> dict[str, object] | None:
     if not isinstance(signal_snapshot_artifact_id, str):
         return None
@@ -4463,7 +4635,9 @@ def _backtest_feature_diagnostics(
         snapshot = research_store.get_artifact(signal_snapshot_artifact_id)
     except ResearchNotFound:
         return None
-    if snapshot.get("owner_principal") != owner_principal or snapshot.get("kind") != "signal_snapshot":
+    if (snapshot.get("owner_principal") != owner_principal
+            or snapshot.get("workspace_id") != workspace_id
+            or snapshot.get("kind") != "signal_snapshot"):
         return None
     content = snapshot.get("content")
     source = content.get("source") if isinstance(content, dict) else None
@@ -4475,7 +4649,9 @@ def _backtest_feature_diagnostics(
         feature = research_store.get_artifact(feature_id)
     except ResearchNotFound:
         return None
-    if feature.get("owner_principal") != owner_principal or feature.get("kind") != "ml_feature_snapshot":
+    if (feature.get("owner_principal") != owner_principal
+            or feature.get("workspace_id") != workspace_id
+            or feature.get("kind") != "ml_feature_snapshot"):
         return None
     feature_content = feature.get("content")
     if not isinstance(feature_content, dict):
@@ -4498,11 +4674,11 @@ def get_backtest_analysis(
     job_id: str, request: Request, section: str = "summary", limit: int = 50,
     offset: int = 0, query: str = "",
 ) -> dict[str, object]:
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         job = backtest_store.analysis_context(job_id)
-        if job["owner_principal"] != context["owner_principal"]:
+        if job["owner_principal"] != context["owner_principal"] or job["workspace_id"] != context["workspace_id"]:
             raise BacktestNotFound("backtest analysis not found")
         reference = job.get("result_reference_json")
         if not isinstance(reference, dict):
@@ -4513,6 +4689,7 @@ def get_backtest_analysis(
             raise BacktestStorageError("backtest result object is unavailable") from error
         diagnostics = _backtest_feature_diagnostics(
             owner_principal=context["owner_principal"],
+            workspace_id=context["workspace_id"],
             signal_snapshot_artifact_id=job.get("signal_snapshot_artifact_id"),
         )
         analysis = build_backtest_analysis(
@@ -4527,23 +4704,24 @@ def get_backtest_analysis(
 
 @app.get("/v1/research/backtests")
 def list_backtest_jobs(request: Request) -> dict[str, object]:
-    context = _required_agent_context(request)
-    return _backtest_call(lambda: backtest_store.list_backtests(owner_principal=context["owner_principal"]))
+    context = _required_agent_context(request, include_workspace=True)
+    return _backtest_call(lambda: backtest_store.list_backtests(
+        owner_principal=context["owner_principal"], workspace_id=context["workspace_id"]
+    ))
 
 
 @app.post("/v1/research/backtests/{job_id}/run")
 def run_backtest_job(
     job_id: str, request: Request, projection: str = "full",
 ) -> dict[str, object]:
-    context = _required_agent_context(request)
+    """Acknowledge a queued Job; the independent worker owns computation."""
+    context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         job = backtest_store.get(job_id)
-        if job["owner_principal"] != context["owner_principal"]:
+        if job["owner_principal"] != context["owner_principal"] or job["workspace_id"] != context["workspace_id"]:
             raise BacktestNotFound("backtest job not found")
-        worker = BacktestWorker(backtest_store, research_store, backtest_objects)
-        updated = worker.run_once(job_id)
-        return {"job": project_backtest_summary(updated) if projection == "summary" else updated}
+        return {"job": project_backtest_summary(job) if projection == "summary" else job}
 
     return _backtest_call(operation)
 
@@ -4552,11 +4730,11 @@ def run_backtest_job(
 def cancel_backtest_job(
     job_id: str, request: Request, projection: str = "full",
 ) -> dict[str, object]:
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         job = backtest_store.get(job_id)
-        if job["owner_principal"] != context["owner_principal"]:
+        if job["owner_principal"] != context["owner_principal"] or job["workspace_id"] != context["workspace_id"]:
             raise BacktestNotFound("backtest job not found")
         updated = backtest_store.cancel(job_id)
         return {"job": project_backtest_summary(updated) if projection == "summary" else updated}
@@ -4567,8 +4745,11 @@ def cancel_backtest_job(
 def delete_backtest_job(
     job_id: str, request: Request, projection: str = "full",
 ) -> dict[str, object]:
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
     def operation() -> dict[str, object]:
+        job = backtest_store.get(job_id)
+        if job["owner_principal"] != context["owner_principal"] or job["workspace_id"] != context["workspace_id"]:
+            raise BacktestNotFound("backtest job not found")
         deleted = backtest_store.delete(job_id, owner_principal=context["owner_principal"])
         _gc_deleted_backtest_objects(deleted, owner_principal=context["owner_principal"])
         return {"job": project_backtest_summary(deleted) if projection == "summary" else deleted}

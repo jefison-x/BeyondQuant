@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+import subprocess
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from threading import Event
 
 import os
 
@@ -9,8 +15,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main
+from app import backtest as backtest_module
 from app.backtest import (
     BacktestJobStore,
+    BacktestWorker,
     LocalObjectStore,
     ObjectIntegrityError,
     membership_fingerprint,
@@ -96,6 +104,26 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
     job = submit.json()["job"]
     assert job["status"] == "queued"
     assert job["name"] == "沪深300动量验证"
+    assert jobs.list_backtests(owner_principal="product-user", workspace_id="workspace_foreign")["backtests"] == []
+    original_get = jobs.get
+    original_summary = jobs.get_backtest_summary
+    original_analysis = jobs.analysis_context
+    with monkeypatch.context() as foreign_workspace:
+        foreign_workspace.setattr(jobs, "get", lambda identity: {
+            **original_get(identity), "workspace_id": "workspace_foreign",
+        })
+        foreign_workspace.setattr(jobs, "get_backtest_summary", lambda identity: {
+            **original_summary(identity), "workspace_id": "workspace_foreign",
+        })
+        foreign_workspace.setattr(jobs, "analysis_context", lambda identity: {
+            **original_analysis(identity), "workspace_id": "workspace_foreign",
+        })
+        for suffix in ("", "/summary", "/manifest", "/result", "/analysis"):
+            assert client.get(f"/v1/research/backtests/{job['job_id']}{suffix}").status_code == 404
+        for method in ("run", "cancel"):
+            assert client.post(f"/v1/research/backtests/{job['job_id']}/{method}").status_code == 404
+        assert client.delete(f"/v1/research/backtests/{job['job_id']}").status_code == 404
+    assert original_get(job["job_id"])["status"] == "queued"
     assert client.get(
         f"/v1/research/backtests/{job['job_id']}",
         headers=_owner_headers("other-user"),
@@ -108,15 +136,82 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
         f"/v1/research/backtests/{job['job_id']}/cancel",
         headers=_owner_headers("other-user"),
     ).status_code == 404
+    # `/run` is a read/acknowledge command. It must leave the durable Job
+    # queued; only the separately started Worker may claim and complete it.
+    monkeypatch.setattr(main, "BacktestWorker", lambda *args: pytest.fail("Backend request must not execute backtest"), raising=False)
     run_response = client.post(
         f"/v1/research/backtests/{job['job_id']}/run",
         params={"projection": "summary"},
     )
-    assert run_response.json()["job"]["status"] == "completed"
+    assert run_response.status_code == 200, run_response.text
+    assert run_response.json()["job"]["status"] == "queued"
     assert "input_manifest" not in run_response.json()["job"]
+    assert jobs.get(job["job_id"])["status"] == "queued"
+
+    worker_environment = {
+        **os.environ,
+        "BYQ_BACKTEST_OBJECT_ROOT": str(tmp_path / "objects"),
+        "BYQ_BACKTEST_POLL_SECONDS": "0.1",
+    }
+    worker_environment.pop("BYQ_BACKTEST_JOB_ID", None)
+    backend_root = Path(__file__).resolve().parents[1]
+    worker_environment["PYTHONPATH"] = os.pathsep.join(filter(None, [
+        str(backend_root), worker_environment.get("PYTHONPATH"),
+    ]))
+    worker_relative_path = Path("workers/backtest/worker.py")
+    worker_script = next(
+        (
+            parent / worker_relative_path
+            for parent in Path(__file__).resolve().parents
+            if (parent / worker_relative_path).is_file()
+        ),
+        Path("/app") / worker_relative_path,
+    )
+    assert worker_script.is_file(), f"backtest worker entrypoint not found: {worker_script}"
+    worker_process = subprocess.Popen(
+        [sys.executable, str(worker_script)], env=worker_environment,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    try:
+        deadline = time.monotonic() + 30
+        durable_job = jobs.get(job["job_id"])
+        while time.monotonic() < deadline and durable_job["status"] in {"queued", "running"}:
+            assert worker_process.poll() is None, "polling backtest worker exited before claiming the job"
+            time.sleep(0.1)
+            durable_job = jobs.get(job["job_id"])
+        assert durable_job["status"] == "completed", durable_job
+        assert durable_job["result_artifact_id"]
+        result_artifact = store.get_artifact(durable_job["result_artifact_id"])
+        assert result_artifact["status"] == "validated"
+        assert result_artifact["content"]["job_id"] == job["job_id"]
+    finally:
+        worker_process.terminate()
+        _, worker_stderr = worker_process.communicate(timeout=10)
+    assert worker_process.returncode == 0, worker_stderr
+    completed_run_response = client.post(
+        f"/v1/research/backtests/{job['job_id']}/run",
+        params={"projection": "summary"},
+    )
+    assert completed_run_response.json()["job"]["status"] == "completed"
+    assert "input_manifest" not in completed_run_response.json()["job"]
     fetched = client.get(f"/v1/research/backtests/{job['job_id']}")
     assert fetched.status_code == 200
     assert fetched.json()["job"]["result_artifact_id"].startswith("artifact_")
+    new_agent_session = trusted_agent_context(
+        "product-user", session_id="new-agent-session", dsh_run_id="new-agent-root",
+    )
+    relinked = client.get(f"/v1/research/backtests/{job['job_id']}", headers=new_agent_session)
+    assert relinked.status_code == 200
+    assert relinked.json()["business_job"]["job_id"] == job["job_id"]
+    assert relinked.json()["business_job"]["result_ref"] == fetched.json()["job"]["result_artifact_id"]
+    assert fetched.json()["business_job"] == {
+        "job_id": job["job_id"], "workspace_id": task["workspace_id"],
+        "type": "BACKTEST", "status": "SUCCEEDED", "progress": 100,
+        "input_ref": job["input_manifest_id"],
+        "result_ref": fetched.json()["job"]["result_artifact_id"],
+        "error": None, "created_at": fetched.json()["job"]["created_at"],
+        "started_at": None, "finished_at": fetched.json()["job"]["finished_at"],
+    }
     result = client.get(
         f"/v1/research/backtests/{job['job_id']}/result",
         headers=_owner_headers("product-user"),
@@ -237,7 +332,7 @@ def test_backtest_submit_worker_and_get_flow(monkeypatch, tmp_path) -> None:
         f"/v1/research/backtests/{job['job_id']}",
         headers=_owner_headers("other-user"),
     )
-    assert denied_delete.status_code == 409
+    assert denied_delete.status_code == 404
     deleted = client.delete(
         f"/v1/research/backtests/{job['job_id']}",
         params={"projection": "summary"},
@@ -261,13 +356,13 @@ def _owner_headers(principal: str) -> dict[str, str]:
 def test_backtest_feature_diagnostics_follow_safe_ml_lineage(monkeypatch) -> None:
     artifacts = {
         "artifact_signal": {
-            "owner_principal": "product-user", "kind": "signal_snapshot",
+            "owner_principal": "product-user", "workspace_id": "workspace-test", "kind": "signal_snapshot",
             "content": {"source": {"ml_lineage": {
                 "feature_snapshot_artifact_id": "artifact_feature",
             }}},
         },
         "artifact_feature": {
-            "owner_principal": "product-user", "kind": "ml_feature_snapshot",
+            "owner_principal": "product-user", "workspace_id": "workspace-test", "kind": "ml_feature_snapshot",
             "content": {
                 "coverage": {"usable_rows": 80, "candidate_rows": 100, "usable_ratio": 0.8},
                 "excluded": {"warmup_or_missing": 18, "label_outside_split": 2, "non_finite": 0},
@@ -282,14 +377,14 @@ def test_backtest_feature_diagnostics_follow_safe_ml_lineage(monkeypatch) -> Non
 
     monkeypatch.setattr(main, "research_store", Research())
     diagnostics = main._backtest_feature_diagnostics(
-        owner_principal="product-user", signal_snapshot_artifact_id="artifact_signal",
+        owner_principal="product-user", workspace_id="workspace-test", signal_snapshot_artifact_id="artifact_signal",
     )
     assert diagnostics is not None
     assert diagnostics["coverage"]["usable_ratio"] == 0.8
     assert diagnostics["excluded"]["label_outside_split"] == 2
     assert "object_reference" not in str(diagnostics)
     assert main._backtest_feature_diagnostics(
-        owner_principal="other-user", signal_snapshot_artifact_id="artifact_signal",
+        owner_principal="other-user", workspace_id="workspace-test", signal_snapshot_artifact_id="artifact_signal",
     ) is None
 
 
@@ -344,7 +439,8 @@ def _create_completed_backtest(client: TestClient, *, key: str) -> dict[str, obj
     )
     assert submit.status_code == 202, submit.text
     job = submit.json()["job"]
-    assert client.post(f"/v1/research/backtests/{job['job_id']}/run").json()["job"]["status"] == "completed"
+    assert client.post(f"/v1/research/backtests/{job['job_id']}/run").json()["job"]["status"] == "queued"
+    assert BacktestWorker(main.backtest_store, main.research_store, main.backtest_objects).run_once(job["job_id"])["status"] == "completed"
     return client.get(f"/v1/research/backtests/{job['job_id']}").json()["job"]
 
 
@@ -481,6 +577,125 @@ def _fresh_harness(monkeypatch, tmp_path) -> tuple[ResearchStore, BacktestJobSto
     return store, jobs, objects, client
 
 
+def _submit_fixture_backtest(client: TestClient, chain: dict[str, object], *, key: str) -> dict[str, object]:
+    task = chain["task"]
+    version = chain["version"]
+    approval = chain["approval"]
+    assert isinstance(task, dict) and isinstance(version, dict) and isinstance(approval, dict)
+    response = client.post("/v1/research/backtests", json={
+        "task_id": task["task_id"],
+        "strategy_version_artifact_id": version["artifact"]["artifact_id"],
+        "approval_artifact_id": approval["artifact"]["artifact_id"],
+        "trace_id": "byq-trace-backtest-atomic",
+        "idempotency_key": f"backtest-{key}",
+        **_snapshot_input(),
+    })
+    assert response.status_code == 202, response.text
+    return response.json()["job"]
+
+
+def test_backtest_finalization_fences_cancel_and_expired_claim(monkeypatch, tmp_path) -> None:
+    store, jobs, objects, client = _fresh_harness(monkeypatch, tmp_path)
+    chain = _create_strategy_chain(client, key="atomic-finalization")
+    worker = BacktestWorker(jobs, store, objects)
+    task_id = chain["task"]["task_id"]
+
+    # Cancellation that commits before finalization wins and creates no result Artifact.
+    cancelled_job = _submit_fixture_backtest(client, chain, key="cancel-first")
+    original_run = backtest_module.run_native_backtest
+    execution_finished, release_execution = Event(), Event()
+
+    def pause_after_execution(manifest):
+        result = original_run(manifest)
+        execution_finished.set()
+        assert release_execution.wait(5)
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(backtest_module, "run_native_backtest", pause_after_execution)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pending = pool.submit(worker.run_once, cancelled_job["job_id"])
+            try:
+                assert execution_finished.wait(5)
+                assert jobs.cancel(cancelled_job["job_id"])["status"] == "cancelled"
+            finally:
+                release_execution.set()
+            assert pending.result(timeout=10)["status"] == "cancelled"
+    cancelled_artifacts = store._fetch_one(
+        "SELECT COUNT(*) AS n FROM artifacts WHERE task_id=:task AND idempotency_key=:key",
+        {"task": task_id, "key": f"backtest-result-{cancelled_job['job_id']}"},
+    )
+    assert cancelled_artifacts["n"] == 0
+    assert jobs.get(cancelled_job["job_id"])["result_artifact_id"] is None
+
+    # If finalization locks the Job first, owner cancellation waits and then sees
+    # the committed success. The Artifact and Job cannot split across outcomes.
+    completing_job = _submit_fixture_backtest(client, chain, key="complete-first")
+    artifact_started, release_artifact = Event(), Event()
+    create_artifact = store.create_artifact
+
+    def pause_result_artifact(payload, *args, **kwargs):
+        if payload.get("kind") == "backtest_result":
+            artifact_started.set()
+            assert release_artifact.wait(5)
+        return create_artifact(payload, *args, **kwargs)
+
+    canceller = BacktestJobStore()
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(store, "create_artifact", pause_result_artifact)
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                pending = pool.submit(worker.run_once, completing_job["job_id"])
+                assert artifact_started.wait(5)
+                cancellation_started = Event()
+
+                def cancel_from_separate_store():
+                    cancellation_started.set()
+                    return canceller.cancel(completing_job["job_id"])
+
+                cancellation = pool.submit(cancel_from_separate_store)
+                try:
+                    assert cancellation_started.wait(5)
+                    with pytest.raises(FutureTimeoutError):
+                        cancellation.result(timeout=0.2)
+                finally:
+                    release_artifact.set()
+                completed = pending.result(timeout=10)
+                after_cancel = cancellation.result(timeout=10)
+        assert completed["status"] == after_cancel["status"] == "completed"
+        artifact = store.get_artifact(completed["result_artifact_id"])
+        assert artifact["status"] == "validated"
+        assert artifact["content"]["job_id"] == completing_job["job_id"]
+        assert artifact["content"]["input_manifest_id"] == completing_job["input_manifest_id"]
+        assert artifact["content"]["result_reference"] == completed["result_reference"]
+    finally:
+        release_artifact.set()
+        canceller.close()
+
+    # A claim past the worker's recovery lease also fails before Artifact writes.
+    expired_job = _submit_fixture_backtest(client, chain, key="expired-claim")
+
+    def expire_claim_after_execution(manifest):
+        result = original_run(manifest)
+        jobs._execute(
+            "UPDATE backtest_jobs SET updated_at=now() - interval '1 hour' WHERE job_id=:job_id",
+            {"job_id": expired_job["job_id"]},
+        )
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(backtest_module, "run_native_backtest", expire_claim_after_execution)
+        assert worker.run_once(expired_job["job_id"])["status"] == "queued"
+    expired_artifacts = store._fetch_one(
+        "SELECT COUNT(*) AS n FROM artifacts WHERE task_id=:task AND idempotency_key=:key",
+        {"task": task_id, "key": f"backtest-result-{expired_job['job_id']}"},
+    )
+    assert expired_artifacts["n"] == 0
+    assert jobs.get(expired_job["job_id"])["result_artifact_id"] is None
+    store.close()
+    jobs.close()
+
+
 def test_signal_snapshot_create_and_backtest_submit(monkeypatch, tmp_path) -> None:
     store, jobs, objects, client = _fresh_harness(monkeypatch, tmp_path)
     chain = _create_strategy_chain(client, key="snapshot-e2e")
@@ -526,7 +741,8 @@ def test_signal_snapshot_create_and_backtest_submit(monkeypatch, tmp_path) -> No
     )
     assert submit.status_code == 202, submit.text
     job = submit.json()["job"]
-    assert client.post(f"/v1/research/backtests/{job['job_id']}/run").json()["job"]["status"] == "completed"
+    assert client.post(f"/v1/research/backtests/{job['job_id']}/run").json()["job"]["status"] == "queued"
+    assert BacktestWorker(main.backtest_store, main.research_store, main.backtest_objects).run_once(job["job_id"])["status"] == "completed"
     result = client.get(
         f"/v1/research/backtests/{job['job_id']}/result", headers=_owner_headers("product-user")
     ).json()["result"]

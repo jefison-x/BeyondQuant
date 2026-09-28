@@ -4,6 +4,7 @@ import os
 
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -33,6 +34,7 @@ from app.db import run_ddl
 from app.research import ResearchStore
 from app.strategy_artifact import prepare_strategy, strategy_version_content
 from packages.contracts.bars_frame import encode_snapshot_bars
+from tests.workspace_helpers import trusted_agent_context
 
 
 SYMBOL = "000001.SZ"
@@ -432,11 +434,16 @@ def test_snapshot_prev_close_inconsistency_without_factor_evidence_fails_closed(
     reason="BYQ_DATABASE_URL is not set",
 )
 def test_job_worker_is_idempotent_bounded_and_stores_result_by_reference(tmp_path) -> None:
+    # The worker and Artifact completion contract require the same persisted
+    # workspace identity on the task, Job, and result Artifact. Provision the
+    # real tenancy trigger before creating domain rows, as Backend startup does.
+    workspace = trusted_agent_context("product-user")["x-byq-workspace-id"]
     research = ResearchStore()
     task = research.create_task({
         "owner_principal": "product-user", "title": "Backtest", "objective": "Native fixture",
         "trace_id": "byq-trace-backtest-test", "idempotency_key": "task-backtest-1",
     })
+    assert task["workspace_id"] == workspace
     prepared = prepare_strategy({
         "strategy_id": "MomentumStrategy", "name": "Momentum", "category": "momentum",
         "source_type": "python_script",
@@ -467,6 +474,7 @@ def test_job_worker_is_idempotent_bounded_and_stores_result_by_reference(tmp_pat
     )
     jobs = BacktestJobStore()
     job = jobs.create(job_request, owner_principal="product-user")
+    assert job["workspace_id"] == task["workspace_id"]
     assert jobs.create(job_request, owner_principal="product-user")["job_id"] == job["job_id"]
     with pytest.raises(BacktestConflict):
         jobs.create({**job_request, "idempotency_key": job_request["idempotency_key"], "manifest": {**job_request["manifest"], "signals": []}}, owner_principal="product-user")
@@ -482,10 +490,24 @@ def test_job_worker_is_idempotent_bounded_and_stores_result_by_reference(tmp_pat
     assert artifact["content"]["result_reference"]["sha256"] == completed["result_reference"]["sha256"]
     assert jobs.claim(job["job_id"]) is None
 
+    def persisted_request(key: str) -> dict[str, object]:
+        return normalized(
+            task_id=task["task_id"],
+            strategy_version_artifact_id=version["artifact_id"],
+            approval_artifact_id=approval["artifact_id"],
+            idempotency_key=key,
+        )
+
     # A worker process that disappears leaves a recoverable queued job.
-    recovery_job_request = normalized(idempotency_key="backtest-recovery-1")
+    recovery_job_request = persisted_request("backtest-recovery-1")
     recovery_job = jobs.create(recovery_job_request, owner_principal="product-user")
-    assert jobs.claim(recovery_job["job_id"])["status"] == "running"
+    assert jobs.next_queued_id() == recovery_job["job_id"]
+    second_worker_store = BacktestJobStore()
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        claims = list(executor.map(lambda store: store.claim(recovery_job["job_id"]), (jobs, second_worker_store)))
+    assert sum(claim is not None for claim in claims) == 1
+    assert jobs.get(recovery_job["job_id"])["attempts"] == 1
+    second_worker_store.close()
     stale = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
     jobs._execute(
         "UPDATE backtest_jobs SET updated_at = :updated_at WHERE job_id = :job_id",
@@ -493,6 +515,29 @@ def test_job_worker_is_idempotent_bounded_and_stores_result_by_reference(tmp_pat
     )
     assert jobs.requeue_stale(older_than_seconds=60) == 1
     assert jobs.get(recovery_job["job_id"])["status"] == "queued"
+    restarted_claim = jobs.claim(recovery_job["job_id"])
+    assert restarted_claim is not None and restarted_claim["attempts"] == 2
+    assert jobs.requeue_stale(older_than_seconds=60) == 0
+    with pytest.raises(BacktestConflict, match="claim or result artifact is no longer current"):
+        jobs.complete(recovery_job["job_id"], expected_attempt=1,
+                      result_reference={"namespace": "backtest-results", "object_id": "stale"},
+                      result_artifact_id="artifact_stale", summary={})
+    assert jobs.cancel(recovery_job["job_id"])["status"] == "cancelled"
+    with pytest.raises(BacktestConflict, match="claim or result artifact is no longer current"):
+        jobs.complete(recovery_job["job_id"], expected_attempt=2,
+                      result_reference={"namespace": "backtest-results", "object_id": "late"},
+                      result_artifact_id="artifact_late", summary={})
+    assert jobs.get(recovery_job["job_id"])["result_artifact_id"] is None
+
+    exhausted_job = jobs.create(persisted_request("backtest-exhausted-1"), owner_principal="product-user")
+    jobs._execute("UPDATE backtest_jobs SET max_attempts=1 WHERE job_id=:job_id", {"job_id": exhausted_job["job_id"]})
+    assert jobs.claim(exhausted_job["job_id"])["attempts"] == 1
+    jobs._execute("UPDATE backtest_jobs SET updated_at=:stale WHERE job_id=:job_id",
+                  {"stale": stale, "job_id": exhausted_job["job_id"]})
+    assert jobs.requeue_stale(older_than_seconds=60) == 0
+    assert jobs.get(exhausted_job["job_id"])["status"] == "failed"
+    assert jobs.claim(exhausted_job["job_id"]) is None
+    assert jobs.next_queued_id() is None
 
     object_reference = objects.put("backtest-results", b"immutable", media_type="application/json")
     assert objects.get(object_reference) == b"immutable"

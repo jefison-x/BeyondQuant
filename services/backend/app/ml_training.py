@@ -1098,6 +1098,14 @@ class MLTrainingRunStore(PgStoreMixin):
     @staticmethod
     def _public(row: dict[str, Any]) -> dict[str, object]:
         value = dict(row)
+        # The frozen submission has an identity before the feature input is
+        # materialized. Keep the common Job input reference stable while data
+        # preparation is pending, without exposing the internal request row.
+        request_hash = value.get("request_hash")
+        value["submission_ref"] = (
+            f"ml-submission-sha256:{request_hash}"
+            if isinstance(request_hash, str) and len(request_hash) == 64 else None
+        )
         for field in ("preparation_json", "requirement_json", "input_json", "request_hash",
                       "preparation_claim", "preparation_lease_expires_at", "preparation_recovery_count"):
             value.pop(field, None)

@@ -1,11 +1,12 @@
 import { safeDomainAdmission } from "./domain-admission.js";
-import { unknownArtifactWriteResult } from "./write-outcome.js";
+import { unknownWriteResult } from "./write-outcome.js";
 
 const BACKEND_TIMEOUT_MS = 8000;
 
 type Fetcher = (input: string, init?: RequestInit) => Promise<Response>;
 
 export type FactorComputeRequest = Record<string, unknown>;
+export type FactorJobLookup = { job_id?: string; task_id?: string; idempotency_key?: string };
 
 export type ByqFactorResult = {
   content: Array<{ type: "text"; text: string }>;
@@ -25,13 +26,43 @@ function errorStatus(status: number): string {
   return "research_unavailable";
 }
 
+function unknownFactorJobWrite(init: RequestInit): ByqFactorResult {
+  const response = unknownWriteResult(init);
+  const value = JSON.parse(response.content[0].text);
+  let request: Record<string, unknown> = {};
+  try { request = JSON.parse(String(init.body ?? "{}")); } catch { /* retain unknown */ }
+  if (typeof request.task_id === "string" && /^task_[0-9a-f]{32}$/.test(request.task_id)
+      && typeof value.idempotency_key === "string") {
+    value.reconciliation = { tool: "byq_factor_job_get", arguments: {
+      task_id: request.task_id, idempotency_key: value.idempotency_key,
+    } };
+  }
+  return result(value, false);
+}
+
+function unknownFactorJobCancel(init: RequestInit, jobId: string): ByqFactorResult {
+  const response = unknownWriteResult(init);
+  const value = JSON.parse(response.content[0].text);
+  value.reconciliation = { tool: "byq_factor_job_get", arguments: { job_id: jobId } };
+  return result(value, false);
+}
+
+function validJob(value: Record<string, any>, taskId?: unknown, jobId?: unknown): boolean {
+  const job = value.job;
+  return job && /^factorjob_[0-9a-f]{32}$/.test(job.job_id ?? "")
+    && (taskId === undefined || job.task_id === taskId)
+    && (jobId === undefined || job.job_id === jobId)
+    && ["QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "CANCELLED"].includes(job.status)
+    && (job.result_ref == null || /^artifact_[0-9a-f]{32}$/.test(job.result_ref));
+}
+
 export async function fetchByqFactorCompute(
   backendUrl: string,
   request: FactorComputeRequest,
   fetcher: Fetcher = fetch,
 ): Promise<ByqFactorResult> {
   const init = { method: "POST", body: JSON.stringify(request) };
-  const unknown = () => unknownArtifactWriteResult(init);
+  const unknown = () => unknownFactorJobWrite(init);
   try {
     const response = await fetcher(`${backendUrl}/v1/research/factors/compute`, {
       method: "POST",
@@ -64,13 +95,74 @@ export async function fetchByqFactorCompute(
       );
     }
     const value = payload as Record<string, any>;
-    if (!value.artifact || value.artifact.kind !== 'factor_result'
-        || value.artifact.task_id !== request.task_id
-        || typeof value.artifact.artifact_id !== 'string'
-        || !/^artifact_[0-9a-f]{32}$/.test(value.artifact.artifact_id)
-        || typeof value.input_manifest?.id !== 'string'
-        || value.factor?.input_manifest_id !== value.input_manifest.id
-        || value.artifact.content?.input_manifest_id !== value.input_manifest.id) return unknown();
+    if (!validJob(value, request.task_id)) return unknown();
+    return result({ service: "beyondquant-mcp", status: "ok", ...payload }, false);
+  } catch {
+    return unknown();
+  }
+}
+
+export async function fetchByqFactorJobGet(
+  backendUrl: string, lookup: FactorJobLookup, fetcher: Fetcher = fetch,
+): Promise<ByqFactorResult> {
+  const byId = typeof lookup.job_id === "string" && /^factorjob_[0-9a-f]{32}$/.test(lookup.job_id);
+  const byKey = typeof lookup.task_id === "string" && /^task_[0-9a-f]{32}$/.test(lookup.task_id)
+    && typeof lookup.idempotency_key === "string" && /^[A-Za-z0-9_.:-]{1,128}$/.test(lookup.idempotency_key);
+  if (byId === byKey || (!byId && lookup.job_id !== undefined)
+      || (byId && (lookup.task_id !== undefined || lookup.idempotency_key !== undefined))) {
+    return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_request" } }, true);
+  }
+  const path = byId ? `/v1/research/factor-jobs/${lookup.job_id}`
+    : `/v1/research/factor-jobs?task_id=${encodeURIComponent(lookup.task_id!)}&idempotency_key=${encodeURIComponent(lookup.idempotency_key!)}`;
+  try {
+    const response = await fetcher(`${backendUrl}${path}`, { method: "GET", signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS) });
+    const payload: unknown = await response.json();
+    if (!response.ok) return result({ service: "beyondquant-mcp", status: "error", backend: {
+      status: errorStatus(response.status), http_status: response.status,
+    } }, true);
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)
+        || !validJob(payload as Record<string, any>, byKey ? lookup.task_id : undefined,
+          byId ? lookup.job_id : undefined)) {
+      return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
+    }
+    return result({ service: "beyondquant-mcp", status: "ok", ...payload }, false);
+  } catch {
+    return result({ service: "beyondquant-mcp", status: "error", backend: { status: "unreachable" } }, true);
+  }
+}
+
+export async function fetchByqFactorJobCancel(
+  backendUrl: string, jobId: string, fetcher: Fetcher = fetch,
+): Promise<ByqFactorResult> {
+  if (!/^factorjob_[0-9a-f]{32}$/.test(jobId)) {
+    return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_request" } }, true);
+  }
+  const init = { method: "POST", body: "{}" };
+  const unknown = () => unknownFactorJobCancel(init, jobId);
+  try {
+    const response = await fetcher(`${backendUrl}/v1/research/factor-jobs/${encodeURIComponent(jobId)}/cancel`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+      signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
+    });
+    if (response.status >= 500) return unknown();
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      if (response.ok) return unknown();
+      return result({ service: "beyondquant-mcp", status: "error", backend: {
+        status: errorStatus(response.status), http_status: response.status,
+      } }, true);
+    }
+    if (!response.ok) {
+      return result({ service: "beyondquant-mcp", status: "error", backend: {
+        status: errorStatus(response.status), http_status: response.status,
+      } }, true);
+    }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)
+        || !validJob(payload as Record<string, any>, undefined, jobId)) return unknown();
     return result({ service: "beyondquant-mcp", status: "ok", ...payload }, false);
   } catch {
     return unknown();

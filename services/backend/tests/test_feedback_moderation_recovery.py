@@ -1,7 +1,7 @@
 from __future__ import annotations
 import pytest
 from app.product_feedback import ProductFeedbackStore,FeedbackForbidden
-from test_product_feedback import provision,create,submit,pytestmark
+from tests.test_product_feedback import provision,create,submit,pytestmark
 
 
 def test_moderation_receipt_survives_later_transition_restart_and_actor_isolation():

@@ -77,7 +77,8 @@ export BYQ_ML_MODEL_VOLUME_NAME="byq-ci-ml-model-$SCOPE"
 export BYQ_DSH_SESSIONS_VOLUME_NAME="byq-ci-dsh-sessions-$SCOPE"
 export BYQ_WORKFLOW_TRACES_VOLUME_NAME="byq-ci-workflow-traces-$SCOPE"
 
-image_resources=(backend gateway runtime-adapter mcp frontend data-worker signal-worker ml-worker \
+image_resources=(backend gateway runtime-adapter mcp frontend data-worker backtest-worker factor-worker optimization-worker \
+  signal-worker ml-worker \
   signal-sandbox feedback-publisher feedback-hub-relay dsh runtime-candidate)
 network_resources=("$BYQ_PRODUCT_NETWORK_NAME" "$BYQ_SIGNAL_SANDBOX_NETWORK_NAME")
 [ "$KEEP_POSTGRES" -eq 1 ] || network_resources+=("$PG_NET")

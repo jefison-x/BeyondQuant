@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from datetime import date, timedelta
 from types import SimpleNamespace
 
@@ -11,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.backtest import (
-    BacktestJobStore, LocalObjectStore, membership_fingerprint, normalize_signal_snapshot,
+    BacktestJobStore, BacktestWorker, LocalObjectStore, membership_fingerprint, normalize_signal_snapshot,
     signal_snapshot_content_sha256, snapshot_bars,
 )
 from app.backtest_task import task_id_from_signal_job
@@ -242,8 +243,39 @@ def test_product_request_freezes_inputs_and_coordinator_materializes_snapshot(mo
     ).status_code == 404
     executed = client.post(f"/v1/research/backtest-tasks/{facade_id}/execute")
     assert executed.status_code == 200, executed.text
-    assert executed.json()["task"]["phase"] == "completed"
-    assert executed.json()["task"]["references"]["result_artifact_id"]
+    queued_task = executed.json()["task"]
+    assert queued_task["phase"] == "queued"
+    backtest_job_id = queued_task["references"]["backtest_job_id"]
+    assert isinstance(backtest_job_id, str)
+    queued_backtest = backtests.get(backtest_job_id)
+    assert queued_backtest["status"] == "queued"
+    assert queued_backtest["result_artifact_id"] is None
+
+    # Backtest-task execution queues domain work. A separate Worker claims it;
+    # the facade reads completion from the durable Job and Artifact afterward.
+    worker_store = BacktestJobStore()
+    try:
+        worker_result = BacktestWorker(
+            worker_store, research, main.backtest_objects,
+        ).run_once(backtest_job_id)
+    finally:
+        worker_store.close()
+    assert worker_result["status"] == "completed", worker_result
+    deadline = time.monotonic() + 10
+    durable_backtest = backtests.get(backtest_job_id)
+    while durable_backtest["status"] in {"queued", "running"} and time.monotonic() < deadline:
+        time.sleep(0.05)
+        durable_backtest = backtests.get(backtest_job_id)
+    assert durable_backtest["status"] == "completed", durable_backtest
+    assert durable_backtest["result_artifact_id"]
+    result_artifact = research.get_artifact(durable_backtest["result_artifact_id"])
+    assert result_artifact["kind"] == "backtest_result"
+    assert result_artifact["status"] == "validated"
+    assert result_artifact["content"]["job_id"] == backtest_job_id
+    completed_facade = client.get(f"/v1/research/backtest-tasks/{facade_id}")
+    assert completed_facade.status_code == 200, completed_facade.text
+    assert completed_facade.json()["task"]["phase"] == "completed"
+    assert completed_facade.json()["task"]["references"]["result_artifact_id"] == durable_backtest["result_artifact_id"]
 
     jobs.close()
     market.close()

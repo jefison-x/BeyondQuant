@@ -21,12 +21,35 @@ def fixture(action, payload=None):
 
 
 client = build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar()))
-def call(method, path, payload=None, *, expected=200, headers=None):
+def call(method, path, payload=None, *, expected=200, headers=None, timeout=45):
     request = Request(origin + path, data=json.dumps(payload).encode() if payload is not None else None,
         headers={'content-type': 'application/json', **(headers or {})}, method=method)
-    with client.open(request, timeout=45) as response:
+    with client.open(request, timeout=timeout) as response:
         assert response.status == expected, (path, response.status)
         return json.load(response)
+
+
+def wait_for_backtest(job_id, *, timeout=180):
+    deadline = time.monotonic() + timeout
+    last_status = None
+    while time.monotonic() < deadline:
+        try:
+            job = call('GET', f'/api/product/backtests/{job_id}', timeout=10)['job']
+        except OSError:
+            time.sleep(min(2, max(0, deadline - time.monotonic())))
+            continue
+        assert job.get('job_id') == job_id, 'Product API returned a different backtest Job'
+        status = job.get('status')
+        if status != last_status:
+            print(json.dumps({'backtest_status': status}), flush=True)
+            last_status = status
+        if status == 'completed':
+            return job
+        if status in {'failed', 'cancelled'}:
+            raise AssertionError(f'baseline backtest Job ended with status {status!r}: {job.get("error_code")}')
+        assert status in {'queued', 'running'}, f'unexpected baseline backtest Job status: {status!r}'
+        time.sleep(min(2, max(0, deadline - time.monotonic())))
+    raise AssertionError(f'baseline backtest Job did not finish within {timeout}s; last status={last_status!r}')
 
 
 fixture('user')
@@ -50,8 +73,42 @@ baseline = call('POST', '/api/product/backtests', {'task_id': task,
     'universe': {'universe_id': 'f6-fixture', 'version_id': 'f6-baseline-v1',
         'membership_fingerprint': seed['membership_fingerprint'], 'symbols': ['000001.SZ', '600000.SH']},
     'bars': seed['bars'], 'signals': [], 'execution': {'initial_capital': 1000000, 'lot_size': 100}}, expected=202)
-baseline = call('POST', f"/api/product/backtests/{baseline['job']['job_id']}/run", {})['job']
-assert baseline['status'] == 'completed'
+baseline_job_id = baseline['job']['job_id']
+acknowledged = call('POST', f'/api/product/backtests/{baseline_job_id}/run', {})['job']
+assert acknowledged['job_id'] == baseline_job_id
+baseline = wait_for_backtest(baseline_job_id)
+baseline_artifact_id = baseline.get('result_artifact_id')
+assert isinstance(baseline_artifact_id, str) and baseline_artifact_id.startswith('artifact_'), (
+    'completed baseline backtest Job did not reference its result Artifact')
+baseline_result_response = call('GET', f'/api/product/backtests/{baseline_job_id}/result')
+assert baseline_result_response.get('job_id') == baseline_job_id
+baseline_result = baseline_result_response.get('result')
+assert isinstance(baseline_result, dict), 'Product API did not return the baseline backtest result'
+assert baseline_result.get('strategy_version_artifact_id') == version['artifact']['artifact_id']
+assert baseline_result.get('approval_artifact_id') == approval['artifact']['artifact_id']
+artifact_list = call('GET', '/api/product/research/artifacts')
+artifacts = artifact_list.get('artifacts')
+assert isinstance(artifacts, list), 'Product API did not return the owner Artifact list'
+matching_artifacts = [artifact for artifact in artifacts
+    if isinstance(artifact, dict) and artifact.get('artifact_id') == baseline_artifact_id]
+assert len(matching_artifacts) == 1, 'baseline result Artifact ID must match exactly one Product Artifact'
+baseline_artifact = matching_artifacts[0]
+assert baseline_artifact.get('artifact_id') == baseline_artifact_id
+assert baseline_artifact.get('task_id') == task
+assert baseline_artifact.get('kind') == 'backtest_result' and baseline_artifact.get('status') == 'validated'
+baseline_artifact_content = baseline_artifact.get('content')
+assert isinstance(baseline_artifact_content, dict)
+assert baseline_artifact_content.get('job_id') == baseline_job_id
+assert baseline_artifact_content.get('input_manifest_id') == baseline.get('input_manifest_id')
+assert baseline_artifact_content.get('strategy_version_artifact_id') == version['artifact']['artifact_id']
+assert baseline_artifact_content.get('approval_artifact_id') == approval['artifact']['artifact_id']
+assert baseline_artifact_content.get('execution_outcome') == 'completed'
+assert baseline_artifact_content.get('summary') == {
+    key: baseline_result[key] for key in (
+        'final_value', 'total_return', 'max_drawdown', 'trade_count', 'blocked_trade_count',
+        'reproducibility', 'benchmark_symbol', 'benchmark_return', 'excess_return',
+    )
+}
 pool = call('POST', '/api/product/paper/pools', {'name': 'F6 frozen fixture pool', 'pool_type': 'custom', 'idempotency_key': 'f6-frozen-fixture-pool',
     'description': 'Explicit synthetic integration inputs', 'symbols': ['000001.SZ', '600000.SH']}, expected=201)['pool']
 ml = {'schema_version': 'ml-strategy-version.v2', 'name': 'F6 LightGBM task continuation',
@@ -68,7 +125,7 @@ ml_approval = call('POST', '/api/product/ml/strategies/approvals', {'task_id': t
     'ml_strategy_artifact_id': ml_version['artifact_id'], 'decision': 'approved',
     'rationale': 'Explicit isolated fixture permission for this exact strategy'}, expected=201)['artifact']
 fixture('checkpoint', {'task_id': task, 'approval_artifact_id': ml_approval['artifact_id'],
-    'baseline_artifact_id': baseline['result_artifact_id']})
+    'baseline_artifact_id': baseline_artifact_id})
 permission = call('POST', f'/api/product/research/tasks/{task}/continuation-permission', {
     'idempotency_key': 'f6-explicit-background-permission', 'token_limit': 64000000,
     'confirmed_artifact_ids': [ml_version['artifact_id'], version['artifact']['artifact_id']]}, expected=201,

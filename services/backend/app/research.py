@@ -42,6 +42,7 @@ PRODUCER_OWNED_ARTIFACT_KINDS = frozenset({
     "strategy_draft", "strategy_version", "strategy_approval", "factor_result", "web_research_evidence",
     "ml_strategy_version", "ml_strategy_approval", "ml_feature_snapshot", "ml_model", "ml_model_bundle",
     "ml_regime_snapshot", "ml_prediction_snapshot", "signal_snapshot", "backtest_result",
+    "optimization_comparison", "data_readiness",
 })
 _ID_PATTERN = re.compile(r"^(?:task|experiment|artifact)_[0-9a-f]{32}$")
 _TRACE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
@@ -1532,7 +1533,7 @@ class ResearchStore(
                         raise ResearchNotFound("research checkpoint reference not found")
                     if reference["id"] in checkpoint["completion_evidence"] and (
                         linked["status"] != "validated" or linked.get("kind") not in
-                        (PRODUCER_OWNED_ARTIFACT_KINDS - {"strategy_draft", "strategy_approval", "ml_strategy_approval"}
+                        (PRODUCER_OWNED_ARTIFACT_KINDS - {"strategy_draft", "strategy_approval", "ml_strategy_approval", "data_readiness"}
                          | {"research_report", "evidence"})
                     ):
                         raise InvalidTransition("research completion evidence is not validated")
@@ -1543,11 +1544,18 @@ class ResearchStore(
                 if (not proof or proof["stage"] != "completed" or not proof["completion_evidence"]
                         or proof["next_action"] is not None or proof["blocked_reason"] is not None):
                     raise InvalidTransition("research completion requires an explicit validated evidence checkpoint")
-                for job_table in ("experiments", "ml_training_runs", "ml_prediction_runs", "backtest_jobs"):
+                for job_table in ("experiments", "ml_training_runs", "ml_prediction_runs", "backtest_jobs", "factor_jobs", "optimization_jobs"):
                     active = fetch_one(connection,
                         f"SELECT COUNT(*) AS count FROM {job_table} WHERE task_id=:task AND status NOT IN ('completed','failed','cancelled')",
                         {"task": entity_id})
                     if active and active["count"]:
+                        raise InvalidTransition("research still has unfinished domain work")
+                demand_table = fetch_one(connection, "SELECT to_regclass('data_demands') AS relation")
+                if demand_table is not None and demand_table.get("relation") is not None:
+                    active_demand = fetch_one(connection, """SELECT COUNT(*) AS count FROM data_demands
+                        WHERE task_id=:task AND status NOT IN ('ready','partial','failed','cancelled')""",
+                        {"task": entity_id})
+                    if active_demand and active_demand["count"]:
                         raise InvalidTransition("research still has unfinished domain work")
             if target_status not in transitions[current]:
                 raise InvalidTransition(

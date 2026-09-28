@@ -51,6 +51,7 @@ MAX_SIGNALS = AGGREGATE_ROW_LIMIT
 MAX_ACTIONS = 10_000
 MAX_BENCHMARK_BARS = 5_000
 MAX_RESULT_BYTES = 32 * 1024 * 1024
+BACKTEST_CLAIM_LEASE_SECONDS = 900
 SIGNAL_SNAPSHOT_SCHEMA_VERSION = "signal-snapshot-v2"
 MAX_SNAPSHOT_BYTES = MAX_RESULT_BYTES
 MAX_LOG_ENTRIES = 500
@@ -1649,8 +1650,14 @@ class BacktestJobStore(PgStoreMixin):
             raise BacktestNotFound("backtest job not found")
         return self._public(row)
 
-    def list_backtests(self, *, owner_principal: str | None = None) -> dict[str, object]:
-        if owner_principal:
+    def list_backtests(self, *, owner_principal: str | None = None, workspace_id: str | None = None) -> dict[str, object]:
+        if owner_principal and workspace_id:
+            rows = self._execute(
+                """SELECT * FROM backtest_jobs WHERE owner_principal = :owner_principal
+                   AND workspace_id = :workspace_id ORDER BY created_at DESC, job_id DESC LIMIT 200""",
+                {"owner_principal": owner_principal, "workspace_id": workspace_id},
+            )
+        elif owner_principal:
             rows = self._execute(
                 "SELECT * FROM backtest_jobs WHERE owner_principal = :owner_principal ORDER BY created_at DESC, job_id DESC LIMIT 200",
                 {"owner_principal": owner_principal},
@@ -1694,7 +1701,7 @@ class BacktestJobStore(PgStoreMixin):
             params["status"] = status
         where = " AND ".join(clauses)
         rows = self._execute(
-            f"""SELECT job_id,name,task_id,experiment_id,owner_principal,status,input_manifest_id,
+            f"""SELECT job_id,name,task_id,experiment_id,workspace_id,owner_principal,status,input_manifest_id,
                        strategy_version_artifact_id,approval_artifact_id,attempts,max_attempts,
                        result_artifact_id,error_code,error_message,created_at,updated_at,finished_at,
                        summary_json,input_manifest_json->'execution' AS execution,
@@ -1719,7 +1726,7 @@ class BacktestJobStore(PgStoreMixin):
         if JOB_ID_PATTERN.fullmatch(identity) is None:
             raise ValueError("job_id is not a valid backtest identifier")
         row = self._fetch_one(
-            """SELECT job_id,name,task_id,experiment_id,owner_principal,status,input_manifest_id,
+            """SELECT job_id,name,task_id,experiment_id,workspace_id,owner_principal,status,input_manifest_id,
                       strategy_version_artifact_id,approval_artifact_id,attempts,max_attempts,
                       result_artifact_id,error_code,error_message,created_at,updated_at,finished_at,
                       summary_json,input_manifest_json->'execution' AS execution,
@@ -1825,7 +1832,7 @@ class BacktestJobStore(PgStoreMixin):
         if JOB_ID_PATTERN.fullmatch(identity) is None:
             raise ValueError("job_id is not a valid backtest identifier")
         row = self._fetch_one(
-            """SELECT job_id,owner_principal,status,result_reference_json,
+            """SELECT job_id,workspace_id,owner_principal,status,result_reference_json,
                       input_manifest_json->'execution' AS execution,
                       request_json->>'signal_snapshot_artifact_id' AS signal_snapshot_artifact_id
                FROM backtest_jobs WHERE job_id=:job_id""",
@@ -1839,88 +1846,187 @@ class BacktestJobStore(PgStoreMixin):
         job_id = _text(job_id, field="job_id", max_length=64)
         now = _now()
         with self._transaction() as connection:
-            row = fetch_one(connection, "SELECT status FROM backtest_jobs WHERE job_id = :job_id", {"job_id": job_id})
-            if row is None:
-                raise BacktestNotFound("backtest job not found")
-            if row["status"] != "queued":
-                return None
-            execute(
+            claimed = fetch_one(
                 connection,
-                "UPDATE backtest_jobs SET status = 'running', attempts = attempts + 1, updated_at = :updated_at, error_code = NULL, error_message = NULL WHERE job_id = :job_id",
+                """UPDATE backtest_jobs SET status = 'running', attempts = attempts + 1,
+                   updated_at = :updated_at, error_code = NULL, error_message = NULL
+                   WHERE job_id = :job_id AND status = 'queued'
+                     AND attempts < max_attempts RETURNING job_id""",
                 {"updated_at": now, "job_id": job_id},
             )
+            if claimed is None:
+                row = fetch_one(connection, "SELECT status FROM backtest_jobs WHERE job_id = :job_id", {"job_id": job_id})
+                if row is None:
+                    raise BacktestNotFound("backtest job not found")
+                return None
         return self.get(job_id)
 
-    def complete(self, job_id: object, *, result_reference: dict[str, object], result_artifact_id: str, summary: dict[str, object]) -> dict[str, object]:
-        job_id = _text(job_id, field="job_id", max_length=64)
-        with self._transaction() as connection:
-            row = fetch_one(connection, "SELECT status FROM backtest_jobs WHERE job_id = :job_id", {"job_id": job_id})
-            if row is None:
-                raise BacktestNotFound("backtest job not found")
-            if row["status"] != "running":
-                raise BacktestConflict("backtest job is not running")
-            now = _now()
-            execute(
-                connection,
-                """UPDATE backtest_jobs SET status = 'completed', result_reference_json = :result_reference,
+    def next_queued_id(self) -> str | None:
+        """Choose one ready job; claim() remains the atomic execution gate."""
+        row = self._fetch_one(
+            """SELECT job_id FROM backtest_jobs WHERE status='queued'
+               AND attempts < max_attempts ORDER BY created_at, job_id LIMIT 1"""
+        )
+        return None if row is None else str(row["job_id"])
+
+    @staticmethod
+    def _validate_completion_attempt(expected_attempt: object) -> int:
+        if isinstance(expected_attempt, bool) or not isinstance(expected_attempt, int) or expected_attempt < 1:
+            raise ValueError("expected_attempt must be a positive integer")
+        return expected_attempt
+
+    def _require_current_attempt(self, connection, job_id: str, expected_attempt: int) -> dict[str, object]:
+        row = fetch_one(
+            connection,
+            """SELECT *, updated_at > clock_timestamp() -
+                      make_interval(secs => CAST(:lease_seconds AS double precision)) AS claim_is_live
+               FROM backtest_jobs WHERE job_id=:job_id FOR UPDATE""",
+            {"job_id": job_id, "lease_seconds": BACKTEST_CLAIM_LEASE_SECONDS},
+        )
+        if row is None:
+            raise BacktestNotFound("backtest job not found")
+        if (row["status"] != "running" or int(row["attempts"]) != expected_attempt
+                or not row["claim_is_live"]):
+            raise BacktestConflict("backtest claim is no longer current")
+        return row
+
+    @staticmethod
+    def _complete_in_transaction(
+        connection, *, job_id: str, expected_attempt: int, result_reference: dict[str, object],
+        result_artifact_id: str, summary: dict[str, object],
+    ) -> None:
+        now = _now()
+        updated = fetch_one(
+            connection,
+            """UPDATE backtest_jobs AS job SET status = 'completed', result_reference_json = :result_reference,
                 result_artifact_id = :result_artifact_id, summary_json = :summary,
-                updated_at = :updated_at, finished_at = :finished_at
-                WHERE job_id = :job_id""",
-                {"result_reference": result_reference, "result_artifact_id": result_artifact_id, "summary": summary, "updated_at": now, "finished_at": now, "job_id": job_id},
-            )
-        return self.get(job_id)
+                error_code = NULL, error_message = NULL, updated_at = :updated_at, finished_at = :finished_at
+                WHERE job.job_id = :job_id AND job.status = 'running' AND job.attempts = :attempt
+                  AND job.updated_at > clock_timestamp() -
+                      make_interval(secs => CAST(:lease_seconds AS double precision))
+                  AND EXISTS (
+                    SELECT 1 FROM artifacts AS artifact
+                    WHERE artifact.artifact_id = :result_artifact_id
+                      AND artifact.task_id = job.task_id
+                      AND artifact.owner_principal = job.owner_principal
+                      AND artifact.workspace_id = job.workspace_id
+                      AND artifact.experiment_id IS NOT DISTINCT FROM job.experiment_id
+                      AND artifact.kind = 'backtest_result' AND artifact.status = 'validated'
+                      AND artifact.idempotency_key = 'backtest-result-' || job.job_id
+                      AND artifact.trace_id = job.request_json->>'trace_id'
+                      AND artifact.content->>'execution_outcome' = 'completed'
+                      AND artifact.content->>'job_id' = job.job_id
+                      AND artifact.content->>'input_manifest_id' = job.input_manifest_id
+                      AND artifact.content->>'strategy_version_artifact_id' = job.strategy_version_artifact_id
+                      AND artifact.content->>'approval_artifact_id' = job.approval_artifact_id
+                      AND artifact.content->'result_reference' = CAST(:result_reference AS jsonb)
+                  )
+                RETURNING job.job_id""",
+            {"result_reference": result_reference, "result_artifact_id": result_artifact_id,
+             "summary": summary, "updated_at": now, "finished_at": now, "job_id": job_id,
+             "attempt": expected_attempt, "lease_seconds": BACKTEST_CLAIM_LEASE_SECONDS},
+        )
+        if updated is None:
+            raise BacktestConflict("backtest claim or result artifact is no longer current")
 
-    def retry_or_fail(self, job_id: object, *, error_code: str, error_message: str) -> dict[str, object]:
+    def complete(
+        self, job_id: object, *, expected_attempt: int, result_reference: dict[str, object],
+        result_artifact_id: str, summary: dict[str, object],
+    ) -> dict[str, object]:
+        """Complete only a live attempt with its exact validated result Artifact."""
+        identity = _text(job_id, field="job_id", max_length=64)
+        attempt = self._validate_completion_attempt(expected_attempt)
+        with self._transaction() as connection:
+            self._complete_in_transaction(
+                connection, job_id=identity, expected_attempt=attempt, result_reference=result_reference,
+                result_artifact_id=result_artifact_id, summary=summary,
+            )
+        return self.get(identity)
+
+    def complete_with_artifact(
+        self, job_id: object, *, expected_attempt: int, result_reference: dict[str, object],
+        summary: dict[str, object], research_store: Any, artifact_payload: dict[str, object],
+    ) -> dict[str, object]:
+        """Atomically validate the result Artifact and complete its live Job."""
+        identity = _text(job_id, field="job_id", max_length=64)
+        attempt = self._validate_completion_attempt(expected_attempt)
+        # Computation and object storage have already finished. Only short
+        # relational writes run while the Job row is locked, fencing cancel and
+        # stale-attempt recovery until Artifact + Job commit together.
+        with self._transaction() as connection:
+            execute(connection, "SET LOCAL lock_timeout = '2s'")
+            execute(connection, "SET LOCAL statement_timeout = '5s'")
+            self._require_current_attempt(connection, identity, attempt)
+            artifact = research_store.create_artifact(artifact_payload, _connection=connection)
+            if artifact["status"] == "draft":
+                artifact = research_store.transition(
+                    "artifact", artifact["artifact_id"], "validated",
+                    f"backtest-result-validate-{identity}", _connection=connection,
+                )
+            if artifact["status"] != "validated":
+                raise BacktestConflict("backtest result Artifact is not validated")
+            self._complete_in_transaction(
+                connection, job_id=identity, expected_attempt=attempt,
+                result_reference=result_reference, result_artifact_id=str(artifact["artifact_id"]),
+                summary=summary,
+            )
+        return self.get(identity)
+
+    def retry_or_fail(self, job_id: object, *, expected_attempt: int, error_code: str, error_message: str) -> dict[str, object]:
         job_id = _text(job_id, field="job_id", max_length=64)
         safe_message = _text(error_message, field="error_message", max_length=512)
         with self._transaction() as connection:
-            row = fetch_one(connection, "SELECT status, attempts, max_attempts FROM backtest_jobs WHERE job_id = :job_id", {"job_id": job_id})
+            row = fetch_one(connection, "SELECT status, attempts, max_attempts FROM backtest_jobs WHERE job_id = :job_id FOR UPDATE", {"job_id": job_id})
             if row is None:
                 raise BacktestNotFound("backtest job not found")
-            if row["status"] != "running":
+            if row["status"] != "running" or int(row["attempts"]) != expected_attempt:
                 return self.get(job_id)
             terminal = int(row["attempts"]) >= int(row["max_attempts"])
             status = "failed" if terminal else "queued"
             now = _now()
             execute(
                 connection,
-                "UPDATE backtest_jobs SET status = :status, error_code = :error_code, error_message = :error_message, updated_at = :updated_at, finished_at = :finished_at WHERE job_id = :job_id",
-                {"status": status, "error_code": _text(error_code, field="error_code", max_length=64), "error_message": safe_message, "updated_at": now, "finished_at": now if terminal else None, "job_id": job_id},
+                """UPDATE backtest_jobs SET status = :status, error_code = :error_code,
+                   error_message = :error_message, updated_at = :updated_at, finished_at = :finished_at
+                   WHERE job_id = :job_id AND status = 'running' AND attempts = :attempt""",
+                {"status": status, "error_code": _text(error_code, field="error_code", max_length=64),
+                 "error_message": safe_message, "updated_at": now,
+                 "finished_at": now if terminal else None, "job_id": job_id, "attempt": expected_attempt},
             )
         return self.get(job_id)
 
     def requeue_stale(self, *, older_than_seconds: int = 300) -> int:
-        cutoff = datetime.now(timezone.utc).timestamp() - max(1, int(older_than_seconds))
-        changed = 0
+        cutoff = datetime.fromtimestamp(
+            datetime.now(timezone.utc).timestamp() - max(1, int(older_than_seconds)), timezone.utc
+        ).isoformat()
         with self._transaction() as connection:
-            rows = execute(connection, "SELECT job_id, updated_at FROM backtest_jobs WHERE status = 'running'")
-            for row in rows:
-                try:
-                    updated = datetime.fromisoformat(row["updated_at"]).timestamp()
-                except ValueError:
-                    updated = 0
-                if updated < cutoff:
-                    execute(
-                        connection,
-                        "UPDATE backtest_jobs SET status = 'queued', error_code = 'worker_restart', error_message = 'stale running job requeued', updated_at = :updated_at WHERE job_id = :job_id",
-                        {"updated_at": _now(), "job_id": row["job_id"]},
-                    )
-                    changed += 1
-        return changed
+            execute(connection,
+                """UPDATE backtest_jobs SET status = 'failed', error_code = 'worker_restart_exhausted',
+                   error_message = 'backtest attempt limit exhausted', updated_at = :updated_at,
+                   finished_at = :updated_at WHERE attempts >= max_attempts
+                   AND (status = 'queued' OR (status = 'running' AND updated_at < :cutoff))""",
+                {"updated_at": _now(), "cutoff": cutoff})
+            rows = execute(connection,
+                """UPDATE backtest_jobs SET status = 'queued', error_code = 'worker_restart',
+                   error_message = 'stale running job requeued', updated_at = :updated_at
+                   WHERE status = 'running' AND updated_at < :cutoff
+                     AND attempts < max_attempts RETURNING job_id""",
+                {"updated_at": _now(), "cutoff": cutoff})
+        return len(rows)
 
     def cancel(self, job_id: object) -> dict[str, object]:
         job_id = _text(job_id, field="job_id", max_length=64)
         with self._transaction() as connection:
-            row = fetch_one(connection, "SELECT status FROM backtest_jobs WHERE job_id = :job_id", {"job_id": job_id})
-            if row is None:
+            now = _now()
+            changed = fetch_one(connection,
+                """UPDATE backtest_jobs SET status = 'cancelled', error_code = 'cancelled',
+                   error_message = 'cancelled by owner', updated_at = :updated_at,
+                   finished_at = :finished_at WHERE job_id = :job_id
+                   AND status IN ('queued','running') RETURNING job_id""",
+                {"updated_at": now, "finished_at": now, "job_id": job_id})
+            if changed is None and fetch_one(connection,
+                "SELECT job_id FROM backtest_jobs WHERE job_id = :job_id", {"job_id": job_id}) is None:
                 raise BacktestNotFound("backtest job not found")
-            if row["status"] in {"queued", "running"}:
-                now = _now()
-                execute(
-                    connection,
-                    "UPDATE backtest_jobs SET status = 'cancelled', error_code = 'cancelled', error_message = 'cancelled by owner', updated_at = :updated_at, finished_at = :finished_at WHERE job_id = :job_id",
-                    {"updated_at": now, "finished_at": now, "job_id": job_id},
-                )
         return self.get(job_id)
 
     def delete(self, job_id: object, *, owner_principal: str) -> dict[str, object]:
@@ -1930,13 +2036,26 @@ class BacktestJobStore(PgStoreMixin):
         if not owner_principal:
             raise BacktestConflict("backtest deletion requires an owner principal")
         with self._transaction() as connection:
-            row = fetch_one(connection, "SELECT * FROM backtest_jobs WHERE job_id = :job_id", {"job_id": job_id})
+            row = fetch_one(connection, "SELECT * FROM backtest_jobs WHERE job_id = :job_id FOR UPDATE", {"job_id": job_id})
             if row is None:
                 raise BacktestNotFound("backtest job not found")
             if row["owner_principal"] != owner_principal:
                 raise BacktestConflict("backtest deletion requires matching owner scope")
             if row["status"] in {"queued", "running"}:
                 raise BacktestConflict("cannot delete an active backtest; cancel it first")
+            # Optimization submission holds this row FOR SHARE until its Job
+            # exists. Preserve the source ID for every recorded comparison,
+            # including completed Artifacts and failed/cancelled requests.
+            referenced = fetch_one(connection, """SELECT job_id FROM optimization_jobs
+                WHERE task_id=:task AND workspace_id=:workspace AND owner_principal=:owner
+                  AND (request_json->'candidates') @> CAST(:candidate AS jsonb)
+                LIMIT 1""", {
+                    "task": row["task_id"], "workspace": row["workspace_id"],
+                    "owner": row["owner_principal"],
+                    "candidate": json.dumps([{"backtest_job_id": job_id}]),
+                })
+            if referenced is not None:
+                raise BacktestConflict("backtest is referenced by an optimization job")
             deleted = self._public(row)
             execute(connection, "DELETE FROM backtest_jobs WHERE job_id = :job_id", {"job_id": job_id})
         return deleted
@@ -1945,7 +2064,7 @@ class BacktestJobStore(PgStoreMixin):
     def _public(row: dict[str, Any]) -> dict[str, object]:
         result: dict[str, object] = {
             "job_id": row["job_id"], "name": row["name"], "task_id": row["task_id"], "experiment_id": row["experiment_id"],
-            "owner_principal": row["owner_principal"], "status": row["status"],
+            "workspace_id": row.get("workspace_id"), "owner_principal": row["owner_principal"], "status": row["status"],
             "input_manifest_id": row["input_manifest_id"], "strategy_version_artifact_id": row["strategy_version_artifact_id"],
             "approval_artifact_id": row["approval_artifact_id"], "attempts": row["attempts"], "max_attempts": row["max_attempts"],
             "result_artifact_id": row["result_artifact_id"], "error_code": row["error_code"], "error_message": row["error_message"],
@@ -1964,7 +2083,7 @@ class BacktestJobStore(PgStoreMixin):
         result: dict[str, object] = {
             key: row.get(key)
             for key in (
-                "job_id", "name", "task_id", "experiment_id", "owner_principal", "status",
+                "job_id", "name", "task_id", "experiment_id", "workspace_id", "owner_principal", "status",
                 "input_manifest_id", "strategy_version_artifact_id", "approval_artifact_id",
                 "attempts", "max_attempts", "result_artifact_id", "error_code", "error_message",
                 "created_at", "updated_at", "finished_at", "stock_pool_snapshot_id",
@@ -2089,6 +2208,7 @@ class BacktestWorker:
         claimed = self.jobs.claim(job_id)
         if claimed is None:
             return self.jobs.get(job_id)
+        attempt = int(claimed["attempts"])
         job = self.jobs.get(job_id)
         try:
             request = self.jobs.request(job_id)
@@ -2120,7 +2240,7 @@ class BacktestWorker:
                 "summary": summary,
                 "execution_outcome": "completed",
             }
-            artifact = self.research_store.create_artifact({
+            artifact_payload = {
                 "task_id": job["task_id"],
                 "experiment_id": job["experiment_id"],
                 "kind": "backtest_result",
@@ -2132,23 +2252,21 @@ class BacktestWorker:
                 ],
                 "trace_id": request["trace_id"],
                 "idempotency_key": f"backtest-result-{job['job_id']}",
-            })
-            if artifact["status"] == "draft":
-                artifact = self.research_store.transition(
-                    "artifact", artifact["artifact_id"], "validated", f"backtest-result-validate-{job['job_id']}"
-                )
-            return self.jobs.complete(
+            }
+            return self.jobs.complete_with_artifact(
                 job_id,
+                expected_attempt=attempt,
                 result_reference=reference,
-                result_artifact_id=str(artifact["artifact_id"]),
                 summary=summary,
+                research_store=self.research_store,
+                artifact_payload=artifact_payload,
             )
         except BacktestResourceExceeded as error:
-            return self.jobs.retry_or_fail(job_id, error_code="resource_limit", error_message=str(error))
+            return self.jobs.retry_or_fail(job_id, expected_attempt=attempt, error_code="resource_limit", error_message=str(error))
         except (ValueError, BacktestError) as error:
-            return self.jobs.retry_or_fail(job_id, error_code="execution_error", error_message=str(error))
+            return self.jobs.retry_or_fail(job_id, expected_attempt=attempt, error_code="execution_error", error_message=str(error))
         except Exception as error:  # pragma: no cover - defensive worker boundary
-            return self.jobs.retry_or_fail(job_id, error_code="worker_error", error_message="backtest worker failed")
+            return self.jobs.retry_or_fail(job_id, expected_attempt=attempt, error_code="worker_error", error_message="backtest worker failed")
 
 
 def load_result(objects: LocalObjectStore, reference: dict[str, object]) -> dict[str, object]:

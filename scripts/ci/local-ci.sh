@@ -332,7 +332,7 @@ prepare_ci_compose_env() {
   export BYQ_FEEDBACK_HUB_URL=""
   # ADR-0069: daily suites use the supported bundled runtime only.
   # Archived rollback images are never rebuilt or executed by routine CI.
-  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-255-candidate
+  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-259-candidate
   export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1
   export BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml
   export BYQ_DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-0.1.5rc1
@@ -381,7 +381,7 @@ build_test_images() {
   python3 -c 'from scripts.dsh import build_revision as b; [b.check(b.selected_build_id(r)) for r in sorted(b.RELEASES)]' || return 1
   prepare_ci_compose_env
   if [ "$WITH_SMOKE" -eq 1 ] || [ "$WITH_DSH_WEB" -eq 1 ]; then
-    services=(backend gateway runtime-adapter mcp frontend data-worker signal-worker ml-worker signal-sandbox feedback-publisher feedback-hub-relay)
+    services=(backend gateway runtime-adapter mcp frontend data-worker backtest-worker factor-worker optimization-worker signal-worker ml-worker signal-sandbox feedback-publisher feedback-hub-relay)
   else
     if want backend || want mcp || want runtime; then services+=(backend); fi
     if want gateway; then services+=(gateway); fi
@@ -466,12 +466,13 @@ check_backend() {
       -e BYQ_DATABASE_URL="postgresql+psycopg://byq_test:byq-test-dev@$CI_PG:5432/byq_domain_test" \
       -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/backend:/app" -w /app \
+      -v "$REPO_ROOT/workers:/app/workers:ro" \
       -v "$REPO_ROOT/plugins/dsh-byq/registry:/app/plugin-registry:ro" \
       -e BYQ_WEB_EVIDENCE_PROVENANCE_POLICY=/opt/byq-evidence/web-evidence-provenance.json \
       -v "$REPO_ROOT/config/dsh/generated/web-evidence-provenance.json:/opt/byq-evidence/web-evidence-provenance.json:ro" \
       -v "$REPO_ROOT/config/dsh/generated/dsh-0.1.2rc1.web-evidence-provenance.json:/opt/byq-evidence/dsh-0.1.2rc1.web-evidence-provenance.json:ro" \
       "$(ci_image_ref backend)" python -m pytest -q -p no:cacheprovider \
-      --durations=20 --durations-min=1.0; then
+      tests --durations=20 --durations-min=1.0; then
     ok "backend tests"; else bad "backend tests"; fi
   # Deferred-reset isolation regression: the same schema-isolation tests run in
   # a fixed-seed shuffled order, proving per-test cleanup is order-independent.
@@ -479,6 +480,7 @@ check_backend() {
       -e BYQ_DATABASE_URL="postgresql+psycopg://byq_test:byq-test-dev@$CI_PG:5432/byq_domain_test" \
       -e BYQ_TEST_SHUFFLE_SEED=1 -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/backend:/app" -w /app \
+      -v "$REPO_ROOT/workers:/app/workers:ro" \
       -v "$REPO_ROOT/plugins/dsh-byq/registry:/app/plugin-registry:ro" \
       "$(ci_image_ref backend)" python -m pytest -q -p no:cacheprovider \
       tests/test_schema_isolation.py; then

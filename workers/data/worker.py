@@ -9,6 +9,8 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from app.credentials import CredentialStore
+from app.data_demand import DataDemandStore
+from app.data_sync import DataSyncLeaseLost, DataSyncStore
 from app.market_automation import (
     MarketAutomationStore,
     run_scheduler_cycle,
@@ -18,14 +20,29 @@ from app.market_automation import (
 from app.market_data import MarketDataStore
 from app.market_readiness import MarketReadinessStore
 from app.provider_runtime import resolved_tushare_provider
+from app.research import ResearchStore
 from app.security_master import SecurityMasterStore
 from app.stock_pool_producer import StockPoolProducerStore
+
+
+def process_one_data_import_job(data_demands, research, readiness, automation):
+    """Run one persisted workspace DataImportJob cycle from the trusted Worker."""
+    pending = data_demands.list_pending_task_bound(limit=1)
+    if not pending:
+        return None
+    return data_demands.process_task_bound(
+        pending[0], readiness_store=readiness,
+        automation_store=automation, research_store=research,
+    )
 
 
 def main() -> int:
     worker_id = os.environ.get("BYQ_DATA_WORKER_ID", "data-worker-1").strip() or "data-worker-1"
     poll_seconds = max(1.0, float(os.environ.get("BYQ_DATA_POLL_SECONDS", "10")))
     credentials = CredentialStore.from_env()
+    data_sync = DataSyncStore.from_env()
+    data_demands = DataDemandStore.from_env()
+    research = ResearchStore.from_env()
     automation = MarketAutomationStore.from_env()
     market = MarketDataStore.from_env()
     readiness = MarketReadinessStore.from_env()
@@ -58,6 +75,12 @@ def main() -> int:
                     automation.heartbeat(worker_id, last_error=type(error).__name__)
                 finally:
                     next_repair_reconcile_at = time.monotonic() + poll_seconds
+            try:
+                process_one_data_import_job(data_demands, research, readiness, automation)
+            except Exception as error:
+                # A failed terminal write rolls back both Job and Artifact; the
+                # next bounded Worker pass can safely retry the same demand ID.
+                automation.heartbeat(worker_id, last_error=type(error).__name__)
             if time.monotonic() >= next_pool_scheduler_at:
                 try:
                     pool_producers.enqueue_validated_index_refreshes()
@@ -167,10 +190,37 @@ def main() -> int:
                     last_error=None if result["status"] == "completed" else str(result.get("error_code")),
                 )
                 continue
+            try:
+                sync_job = data_sync.run_next_job(
+                    worker_id=worker_id,
+                    provider_factory=provider_factory,
+                    market_store=market,
+                )
+            except DataSyncLeaseLost:
+                # A slow provider call may finish after its lease expired;
+                # its market import and progress checkpoint are both rejected.
+                automation.heartbeat(worker_id, last_error="sync_claim_expired")
+                time.sleep(poll_seconds)
+                continue
+            except Exception as error:
+                automation.heartbeat(worker_id, last_error=type(error).__name__)
+                time.sleep(poll_seconds)
+                continue
+            if sync_job is not None:
+                automation.heartbeat(
+                    worker_id,
+                    last_job_id=str(sync_job["job_id"]),
+                    last_error=None if sync_job["status"] == "completed"
+                    else str(sync_job.get("error_code")),
+                )
+                continue
             automation.heartbeat(worker_id)
             time.sleep(poll_seconds)
     finally:
         pool_producers.close()
+        data_sync.close()
+        data_demands.close()
+        research.close()
         readiness.close()
         securities.close()
         market.close()

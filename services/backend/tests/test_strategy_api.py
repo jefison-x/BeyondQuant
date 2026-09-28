@@ -7,10 +7,10 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.agent_research import AgentResearchStore
-from app.backtest import BacktestJobStore, LocalObjectStore, membership_fingerprint
+from app.backtest import BacktestJobStore, BacktestWorker, LocalObjectStore, membership_fingerprint
 from app.db import execute
 from app.research import ResearchStore
-from test_strategy_artifact import strategy_payload
+from tests.test_strategy_artifact import strategy_payload
 from tests.workspace_helpers import trusted_agent_context, trusted_product_agent_context
 
 
@@ -163,7 +163,7 @@ def test_strategy_draft_version_export_and_approval_flow(monkeypatch) -> None:
         "lineage":[], "trace_id":"byq-trace-strategy-api", "idempotency_key":"strategy-version-retry",
     })
     assert hijack.status_code == 409
-    from test_factor_research import factor_payload
+    from tests.test_factor_research import factor_payload
     with monkeypatch.context() as patch:
         def no_factor(_):
             raise AssertionError("reserved strategy key must fail before factor computation")
@@ -482,7 +482,8 @@ def test_strategy_version_history_and_backtest_count(monkeypatch, tmp_path) -> N
     )
     assert submit.status_code == 202, submit.text
     job = submit.json()["job"]
-    assert client.post(f"/v1/research/backtests/{job['job_id']}/run").json()["job"]["status"] == "completed"
+    assert client.post(f"/v1/research/backtests/{job['job_id']}/run").json()["job"]["status"] == "queued"
+    assert BacktestWorker(main.backtest_store, main.research_store, main.backtest_objects).run_once(job["job_id"])["status"] == "completed"
 
     # Place the actual completed job's version beyond the first 1000 versions.
     with store._transaction() as connection:

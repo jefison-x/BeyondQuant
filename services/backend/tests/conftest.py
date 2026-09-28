@@ -29,6 +29,7 @@ from app.backtest import BacktestJobStore
 from app.db import run_ddl
 from app.credentials import CredentialStore
 from app.conversation_catalog import ConversationCatalogStore
+from app.factor_job import FactorJobStore
 from app.data_sync import DataSyncStore
 from app.data_demand import DataDemandStore
 from app.engineering import EngineeringTaskStore
@@ -39,6 +40,7 @@ from app.market_automation import MarketAutomationStore
 from app.market_readiness import MarketReadinessStore
 from app.ml_training import MLTrainingRunStore
 from app.ml_prediction import MLPredictionRunStore
+from app.optimization_job import OptimizationJobStore
 from app.operations import OperationsStore
 from app.paper_trading import PaperTradingStore
 from app.product_feedback import ProductFeedbackStore
@@ -79,6 +81,8 @@ REGISTERED_SCHEMA_DDL: list[str] = [
     *MLPredictionRunStore.SCHEMA_DDL,
     *OperationsStore.SCHEMA_DDL,
     *WorkspaceTenancyStore.SCHEMA_DDL,
+    *FactorJobStore.SCHEMA_DDL,
+    *OptimizationJobStore.SCHEMA_DDL,
 ]
 
 

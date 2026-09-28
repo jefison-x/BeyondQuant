@@ -14,6 +14,8 @@ import uuid
 
 
 ORIGIN = os.environ.get("BYQ_GOLDEN_ORIGIN", "http://127.0.0.1:8710").rstrip("/")
+BACKTEST_COMPLETION_TIMEOUT_SECONDS = 120.0
+PRODUCT_REQUEST_TIMEOUT_SECONDS = 30.0
 
 
 class ProductClient:
@@ -41,13 +43,14 @@ class ProductClient:
         payload: dict[str, object] | None = None,
         expected_status: int | None = None,
         extra_headers: dict[str, str] | None = None,
+        timeout_seconds: float = PRODUCT_REQUEST_TIMEOUT_SECONDS,
     ) -> dict[str, object]:
         data = None if payload is None else json.dumps(payload).encode("utf-8")
         headers = {} if data is None else {"content-type": "application/json"}
         headers.update(extra_headers or {})
         request = urllib.request.Request(ORIGIN + path, data=data, headers=headers, method=method)
         try:
-            with self.opener.open(request, timeout=30) as response:
+            with self.opener.open(request, timeout=timeout_seconds) as response:
                 status = response.status
                 body = json.loads(response.read().decode("utf-8") or "{}")
         except urllib.error.HTTPError as error:
@@ -66,8 +69,12 @@ class ProductClient:
         payload: dict[str, object] | None = None,
         expected_status: int | None = None,
         extra_headers: dict[str, str] | None = None,
+        timeout_seconds: float = PRODUCT_REQUEST_TIMEOUT_SECONDS,
     ) -> dict[str, object]:
-        return self.request(method, f"/api/product{path}", payload, expected_status, extra_headers)
+        return self.request(
+            method, f"/api/product{path}", payload, expected_status,
+            extra_headers, timeout_seconds,
+        )
 
 
 def identity(prefix: str) -> str:
@@ -77,6 +84,40 @@ def identity(prefix: str) -> str:
 def require(condition: object, message: str) -> None:
     if not condition:
         raise AssertionError(message)
+
+
+def wait_for_completed_backtest(
+    owner: ProductClient, job_id: str, initial_job: dict[str, object],
+) -> dict[str, object]:
+    """Poll Product API until the independent Worker commits Job and Artifact state."""
+    job = initial_job
+    deadline = time.monotonic() + BACKTEST_COMPLETION_TIMEOUT_SECONDS
+    while job.get("status") in {"queued", "running"}:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise AssertionError(
+                f"backtest job timed out before completion (status={job.get('status')!r})"
+            )
+        time.sleep(min(1.0, remaining))
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise AssertionError(
+                f"backtest job timed out before completion (status={job.get('status')!r})"
+            )
+        job = owner.product(
+            "GET", f"/backtests/{job_id}",
+            timeout_seconds=min(PRODUCT_REQUEST_TIMEOUT_SECONDS, remaining),
+        )["job"]
+    require(
+        job.get("status") == "completed",
+        f"backtest did not complete (status={job.get('status')!r})",
+    )
+    require(
+        isinstance(job.get("result_artifact_id"), str)
+        and str(job["result_artifact_id"]).startswith("artifact_"),
+        "completed backtest Job has no result Artifact ID",
+    )
+    return job
 
 
 def main() -> None:
@@ -295,9 +336,55 @@ def main() -> None:
         },
     )
     backtest_job_id = str(backtest["job"]["job_id"])
-    completed = owner.product("POST", f"/backtests/{backtest_job_id}/run")["job"]
-    require(completed.get("status") == "completed", f"backtest did not complete: {completed}")
-    result = owner.product("GET", f"/backtests/{backtest_job_id}/result")["result"]
+    run_acknowledgement = owner.product("POST", f"/backtests/{backtest_job_id}/run")["job"]
+    completed = wait_for_completed_backtest(owner, backtest_job_id, run_acknowledgement)
+    result_response = owner.product("GET", f"/backtests/{backtest_job_id}/result")
+    require(result_response.get("job_id") == backtest_job_id, "backtest result belongs to a different Job")
+    result = result_response.get("result")
+    require(isinstance(result, dict), "Product API did not return the completed backtest result")
+    result_artifact_id = str(completed["result_artifact_id"])
+    artifact_response = owner.product("GET", "/research/artifacts")
+    artifacts = artifact_response.get("artifacts")
+    require(isinstance(artifacts, list), "Product API did not return the owner Artifact list")
+    matching_artifacts = [
+        artifact for artifact in artifacts
+        if isinstance(artifact, dict) and artifact.get("artifact_id") == result_artifact_id
+    ]
+    require(len(matching_artifacts) == 1, "backtest result Artifact ID must match exactly one Product Artifact")
+    result_artifact = matching_artifacts[0]
+    require(result_artifact.get("task_id") == task_id, "backtest result Artifact belongs to a different task")
+    require(
+        result_artifact.get("kind") == "backtest_result"
+        and result_artifact.get("status") == "validated",
+        "backtest result Artifact is not validated",
+    )
+    artifact_content = result_artifact.get("content")
+    require(isinstance(artifact_content, dict), "validated backtest Artifact has no content")
+    require(artifact_content.get("job_id") == backtest_job_id, "backtest Artifact belongs to a different Job")
+    require(
+        artifact_content.get("input_manifest_id") == completed.get("input_manifest_id"),
+        "backtest Artifact input manifest does not match the completed Job",
+    )
+    require(
+        artifact_content.get("strategy_version_artifact_id") == version_id,
+        "backtest Artifact references a different strategy version",
+    )
+    require(
+        artifact_content.get("approval_artifact_id") == approval_id,
+        "backtest Artifact references a different approval",
+    )
+    require(
+        artifact_content.get("execution_outcome") == "completed",
+        "backtest Artifact does not record a completed execution",
+    )
+    summary_fields = (
+        "final_value", "total_return", "max_drawdown", "trade_count", "blocked_trade_count",
+        "reproducibility", "benchmark_symbol", "benchmark_return", "excess_return",
+    )
+    require(
+        artifact_content.get("summary") == {key: result[key] for key in summary_fields},
+        "backtest Artifact summary does not match the Product result",
+    )
 
     assets = owner.product("GET", "/settings/assets")
     require(assets["summary"]["strategies"] >= 1 and assets["summary"]["backtests"] >= 1 and assets["summary"]["pools"] >= 1, "asset summary omitted golden resources")
@@ -346,6 +433,8 @@ def main() -> None:
                     "signal_snapshot_artifact_id": signal_artifact_id,
                     "backtest_job_id": backtest_job_id,
                     "backtest_status": completed["status"],
+                    "result_artifact_id": result_artifact_id,
+                    "result_artifact_status": result_artifact["status"],
                     "trade_count": result.get("trade_count"),
                 },
                 "personalization": {"profile": True, "appearance": appearance["accent_theme"], "model_binding": True},

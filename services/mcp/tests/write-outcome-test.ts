@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { fetchByqStrategyVersionCreate, fetchByqStrategyExport } from "../src/strategy.js";
 import { fetchByqBacktestSubmit, fetchByqBacktestGet } from "../src/backtest.js";
 import { fetchByqResearchTaskCreate, fetchByqResearchGet } from "../src/research.js";
-import { fetchByqFactorCompute } from "../src/factor-research.js";
+import { fetchByqFactorCompute, fetchByqFactorJobGet } from "../src/factor-research.js";
 import { fetchByqDataDemandCreate, fetchByqDataDemandGet } from "../src/data-demand.js";
 import { fetchByqFeedbackCreate, fetchByqFeedbackGet } from "../src/feedback.js";
 import { fetchByqAgentRunStart, fetchByqAgentRoles } from "../src/agent.js";
@@ -51,6 +51,7 @@ for (const write of writes) {
 const reads = [
   (fetcher: Fetcher) => fetchByqStrategyExport(url, "artifact-test", fetcher),
   (fetcher: Fetcher) => fetchByqBacktestGet(url, "job-test", fetcher),
+  (fetcher: Fetcher) => fetchByqFactorJobGet(url, {job_id:"factorjob_" + "a".repeat(32)}, fetcher),
   (fetcher: Fetcher) => fetchByqResearchGet(url, "research_task", "task-test", fetcher),
   (fetcher: Fetcher) => fetchByqDataDemandGet(url, "demand-test", fetcher),
   (fetcher: Fetcher) => fetchByqFeedbackGet(url, "feedback-test", fetcher),
@@ -63,4 +64,4 @@ for (const read of reads) {
   assert.equal(result.isError, true);
   assert.equal(JSON.parse(result.content[0].text).backend.status, "unreachable");
 }
-console.log("Write outcome matrix PASS: 9 write families, 5 unknown modes, 6 explicit rejections, 8 read families");
+console.log("Write outcome matrix PASS: 9 write families, 5 unknown modes, 6 explicit rejections, 9 read families");
