@@ -18,13 +18,17 @@ pytestmark = pytest.mark.skipif(
     reason="BYQ_DATABASE_URL is not set",
 )
 
-def test_factor_endpoint_persists_factor_result_artifact(monkeypatch) -> None:
+def test_factor_endpoint_queues_worker_and_persists_result_artifact(monkeypatch) -> None:
+    from app.factor_job import FactorJobStore
+    from workers.factor.worker import FactorWorker
     context = trusted_agent_context(
         "product-user", trace_id="byq-trace-factor-api", session_id="byq-session-factor-api",
         dsh_run_id="byq-run-factor-api",
     )
     store = ResearchStore()
+    jobs = FactorJobStore()
     monkeypatch.setattr(main, "research_store", store)
+    monkeypatch.setattr(main, "factor_job_store", jobs)
     client = TestClient(main.app)
     client.headers.update(context)
     task = client.post(
@@ -42,17 +46,32 @@ def test_factor_endpoint_persists_factor_result_artifact(monkeypatch) -> None:
     response = client.post("/v1/research/factors/compute", json=request)
     assert response.status_code == 201, response.text
     body = response.json()
-    assert body["factor"]["reproducibility"] == "reproducible"
+    assert body["job"]["status"] == "QUEUED"
     assert store._fetch_one("SELECT count(*) AS n FROM agent_domain_call_claims")["n"] == 0
-    assert body["artifact"]["kind"] == "factor_result"
-    assert body["artifact"]["lineage"][-1]["kind"] == "factor_input"
+    assert store._fetch_one("SELECT count(*) AS n FROM artifacts")["n"] == 0
 
-    def no_recompute(*args, **kwargs):
-        raise AssertionError("same-key retry must not recompute the factor")
-    monkeypatch.setattr(main, "compute_factor", no_recompute)
     retry = client.post("/v1/research/factors/compute", json=request)
     assert retry.status_code == 201
-    assert retry.json()["artifact"]["artifact_id"] == body["artifact"]["artifact_id"]
+    assert retry.json()["job"]["job_id"] == body["job"]["job_id"]
+    assert FactorWorker(jobs, store, worker_id="factor-test").run_once()
+    completed = client.get(f"/v1/research/factor-jobs/{body['job']['job_id']}")
+    assert completed.status_code == 200
+    assert completed.json()["job"]["status"] == "SUCCEEDED"
+    artifact = store.get_artifact(completed.json()["job"]["result_ref"])
+    assert artifact["kind"] == "factor_result"
+    assert artifact["lineage"][-1]["kind"] == "factor_input"
+    assert artifact["content"]["reproducibility"] == "reproducible"
+    exact = client.get("/v1/research/factor-jobs", params={
+        "task_id": task["task_id"], "idempotency_key": request["idempotency_key"],
+    })
+    assert exact.status_code == 200 and exact.json()["job"]["job_id"] == body["job"]["job_id"]
+    new_session = trusted_agent_context("product-user", trace_id="fresh-factor-trace",
+        session_id="fresh-factor-session", dsh_run_id="fresh-factor-run")
+    resumed = client.get(f"/v1/research/factor-jobs/{body['job']['job_id']}", headers=new_session)
+    assert resumed.status_code == 200 and resumed.json()["job"]["result_ref"] == artifact["artifact_id"]
+    foreign = trusted_agent_context("factor-foreign-user")
+    assert client.get(f"/v1/research/factor-jobs/{body['job']['job_id']}", headers=foreign).status_code == 404
+    jobs.close()
     store.close()
 
 

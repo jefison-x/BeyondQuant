@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { fetchByqFactorCompute } from "../src/factor-research.js";
+import { fetchByqFactorCompute, fetchByqFactorJobGet } from "../src/factor-research.js";
 
 const request = {
   task_id: "task_0123456789abcdef0123456789abcdef",
@@ -17,11 +17,12 @@ const success = await fetchByqFactorCompute(
     assert.equal(url, "http://backend:8000/v1/research/factors/compute");
     assert.equal(init?.method, "POST");
     assert.doesNotMatch(String(init?.body), /password|secret|token/i);
-    return new Response(JSON.stringify({ input_manifest: { id: "fixture" }, factor: { reproducibility: "reproducible", input_manifest_id: "fixture" }, artifact: { artifact_id: "artifact_" + "a".repeat(32), task_id: request.task_id, kind: "factor_result", content: { input_manifest_id: "fixture" } } }), { status: 201 });
+    return new Response(JSON.stringify({ job: { job_id: "factorjob_" + "a".repeat(32),
+      task_id: request.task_id, status: "QUEUED", result_ref: null } }), { status: 201 });
   },
 );
 assert.equal(success.isError, false);
-assert.match(success.content[0].text, /reproducible/);
+assert.match(success.content[0].text, /factorjob_/);
 
 const invalid = await fetchByqFactorCompute(
   "http://backend:8000",
@@ -31,19 +32,18 @@ const invalid = await fetchByqFactorCompute(
 assert.equal(invalid.isError, true);
 assert.match(invalid.content[0].text, /factor_request_invalid/);
 
-console.log("Factor MCP translation PASS: deterministic factor request and safe validation error");
+console.log("Factor MCP translation PASS: queued factor job and safe validation error");
 
-for (const failure of ['transport', 'missing-artifact', 'wrong-task', 'wrong-manifest']) {
+for (const failure of ['transport', 'missing-job', 'wrong-task', 'wrong-result']) {
   let calls = 0;
   const response = await fetchByqFactorCompute('http://backend', request, async () => {
     calls++;
     if (failure === 'transport') throw new Error('private transport');
     return new Response(JSON.stringify({
-      input_manifest: { id: 'fixture' }, factor: { input_manifest_id: 'fixture' },
-      ...(failure === 'missing-artifact' ? {} : { artifact: {
-        artifact_id: 'artifact_' + 'a'.repeat(32), kind: 'factor_result',
+      ...(failure === 'missing-job' ? {} : { job: {
+        job_id: 'factorjob_' + 'a'.repeat(32), status: 'SUCCEEDED',
         task_id: failure === 'wrong-task' ? 'task_other' : request.task_id,
-        content: { input_manifest_id: failure === 'wrong-manifest' ? 'other' : 'fixture' },
+        result_ref: failure === 'wrong-result' ? 'private' : 'artifact_' + 'a'.repeat(32),
       } }),
     }), { status: 201 });
   });
@@ -51,12 +51,21 @@ for (const failure of ['transport', 'missing-artifact', 'wrong-task', 'wrong-man
   const body = JSON.parse(response.content[0].text);
   assert.equal(body.status, 'outcome_unknown');
   assert.equal(body.retryable, false);
-  assert.deepEqual(body.reconciliation, { tool:'byq_research_get', arguments:{
-    entity_type:'artifact', task_id:request.task_id, idempotency_key:request.idempotency_key,
+  assert.deepEqual(body.reconciliation, { tool:'byq_factor_job_get', arguments:{
+    task_id:request.task_id, idempotency_key:request.idempotency_key,
   } });
   assert.doesNotMatch(response.content[0].text, /private transport|task_other/);
 }
-console.log('Factor recovery PASS: exact original artifact lookup and no automatic write replay');
+console.log('Factor recovery PASS: exact original Job lookup and no automatic write replay');
+
+const read = await fetchByqFactorJobGet('http://backend', {job_id:'factorjob_' + 'a'.repeat(32)},
+  async (url, init) => {
+    assert.equal(url, 'http://backend/v1/research/factor-jobs/factorjob_' + 'a'.repeat(32));
+    assert.equal(init?.method, 'GET');
+    return Response.json({job:{job_id:'factorjob_' + 'a'.repeat(32), task_id:request.task_id,
+      status:'SUCCEEDED',result_ref:'artifact_' + 'b'.repeat(32)}});
+  });
+assert.equal(read.isError, false);
 
 for (const reason of ["domain_validation_failed", "unchanged_failed_input", "correction_budget_exhausted"]) {
   const translated = await fetchByqFactorCompute("http://backend", request, async () => Response.json({ detail: {

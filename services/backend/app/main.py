@@ -83,6 +83,7 @@ from .credentials import (
 )
 from .factor_research import FactorValidationError, compute_factor
 from .factor_submission import submit_factor
+from .factor_job import FactorJobStore
 from .backtest import (
     BacktestConflict,
     BacktestError,
@@ -390,6 +391,7 @@ market_automation_store = MarketAutomationStore.from_env()
 security_master_store = SecurityMasterStore.from_env()
 conversation_store = ConversationCatalogStore.from_env()
 backtest_store = BacktestJobStore.from_env()
+factor_job_store = FactorJobStore.from_env()
 workspace_tenancy_store = WorkspaceTenancyStore.from_env()
 CREDENTIAL_RESOLVER_TOKEN = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
 FEEDBACK_PUBLISHER_TOKEN = os.environ.get("BYQ_FEEDBACK_PUBLISHER_TOKEN")
@@ -2384,7 +2386,11 @@ def compute_research_factor(payload: dict[str, Any], request: Request) -> dict[s
 
     def operation(data, connection) -> dict[str, object]:
         try:
-            return submit_factor(research_store, data, context, compute_factor, _connection=connection)
+            job = factor_job_store.create(
+                data, trusted_owner=context["owner_principal"],
+                trusted_workspace=context["workspace_id"], _connection=connection,
+            )
+            return {"job": job}
         except FactorValidationError as error:
             if connection is not None:
                 raise DomainValidationRejected("factor validation failed", validation_error=error) from error
@@ -2392,6 +2398,34 @@ def compute_research_factor(payload: dict[str, Any], request: Request) -> dict[s
 
     return _research_call(lambda: _domain_validation_operation(request, payload, context,
         "byq_factor_compute", operation))
+
+
+@app.get("/v1/research/factor-jobs/{job_id}")
+def get_research_factor_job(job_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    def operation() -> dict[str, object]:
+        job = factor_job_store.get(
+            job_id=job_id, trusted_owner=context["owner_principal"],
+            trusted_workspace=context["workspace_id"],
+        )
+        if job is None:
+            raise ResearchNotFound("factor job not found")
+        return {"job": job}
+    return _research_call(operation)
+
+
+@app.get("/v1/research/factor-jobs")
+def find_research_factor_job(task_id: str, idempotency_key: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+    def operation() -> dict[str, object]:
+        job = factor_job_store.get(
+            task_id=task_id, idempotency_key=idempotency_key,
+            trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+        )
+        if job is None:
+            raise ResearchNotFound("factor job not found")
+        return {"job": job}
+    return _research_call(operation)
 
 
 def _domain_validation_operation(request, payload, context, action, operation):

@@ -16,7 +16,7 @@ TOOLS = frozenset({
     'byq_ml_capabilities', 'byq_ml_training_get', 'byq_ml_prediction_create', 'byq_ml_prediction_get',
     'byq_backtest_task_prepare', 'byq_backtest_task_create', 'byq_backtest_task_get',
     'byq_backtest_task_execute', 'byq_backtest_get', 'byq_backtest_analysis_get',
-    'byq_signal_snapshot_get', 'byq_experiment_compare', 'byq_workflow_card_propose',
+    'byq_signal_snapshot_get', 'byq_factor_job_get', 'byq_experiment_compare', 'byq_workflow_card_propose',
     'byq_evaluation_signal_create', 'byq_evaluation_signal_get',
 })
 

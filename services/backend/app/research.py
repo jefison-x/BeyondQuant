@@ -1543,7 +1543,7 @@ class ResearchStore(
                 if (not proof or proof["stage"] != "completed" or not proof["completion_evidence"]
                         or proof["next_action"] is not None or proof["blocked_reason"] is not None):
                     raise InvalidTransition("research completion requires an explicit validated evidence checkpoint")
-                for job_table in ("experiments", "ml_training_runs", "ml_prediction_runs", "backtest_jobs"):
+                for job_table in ("experiments", "ml_training_runs", "ml_prediction_runs", "backtest_jobs", "factor_jobs"):
                     active = fetch_one(connection,
                         f"SELECT COUNT(*) AS count FROM {job_table} WHERE task_id=:task AND status NOT IN ('completed','failed','cancelled')",
                         {"task": entity_id})

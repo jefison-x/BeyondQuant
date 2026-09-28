@@ -1,5 +1,17 @@
 # Phase 0–6 gate record
 
+## Phase 11 Business Job — factor bounded slice (2026-09-28)
+
+[Execution record](phase11-business-jobs.md): factor submission now queues a
+durable, workspace-scoped Job; an independent Worker commits its validated
+Artifact and Job status in one transaction. Fresh disposable PostgreSQL tests:
+39 core and four ownership cases passed. MCP build and focused translation
+tests, Compose config, syntax, diff and slice dev-check passed; test resources
+were removed. Independent Tester: PASS. Independent Sol Reviewer: Functional
+PASS / Tests PASS / Clean Break Architecture PASS. **Root acceptance: factor
+slice local PASS; Phase 11 overall OPEN.** Optimization, workspace data import,
+and remaining ML boundary qualification are not claimed complete.
+
 ## Phase 11 Business Job — admin data import bounded slice (2026-09-28)
 
 [Execution record](phase11-business-jobs.md): admin range sync now runs in the

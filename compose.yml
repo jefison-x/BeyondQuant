@@ -267,6 +267,29 @@ services:
     mem_limit: 1536m
     cpus: 2.0
 
+  factor-worker:
+    build:
+      context: .
+      dockerfile: workers/factor/Dockerfile
+    environment:
+      BYQ_DATABASE_URL: ${BYQ_DATABASE_URL:-postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain}
+      BYQ_FACTOR_POLL_SECONDS: ${BYQ_FACTOR_POLL_SECONDS:-1}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    networks:
+      - byq_product
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 64
+    mem_limit: 768m
+    cpus: 1.0
+
   signal-worker:
     build:
       context: .

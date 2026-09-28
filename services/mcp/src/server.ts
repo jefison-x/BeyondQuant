@@ -25,7 +25,7 @@ import {
   fetchByqSignalSnapshotGet,
   type BacktestRequest,
 } from "./backtest.js";
-import { fetchByqFactorCompute, type FactorComputeRequest } from "./factor-research.js";
+import { fetchByqFactorCompute, fetchByqFactorJobGet, type FactorComputeRequest, type FactorJobLookup } from "./factor-research.js";
 import {
   fetchByqAgentApprovalDecide,
   fetchByqAgentApprovalGet,
@@ -639,6 +639,11 @@ async function byqFactorCompute(args: FactorComputeRequest, extra: unknown) {
   const context = completeAgentContext(extra);
   return context ? fetchByqFactorCompute(BACKEND_URL, { ...args, trace_id: context.trace_id },
     evidenceBoundedFetcher(trustedBackendFetcher(context), rootHeader(extra))) : agentContextUnavailable();
+}
+
+async function byqFactorJobGet(args: FactorJobLookup, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqFactorJobGet(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
 async function byqStrategyDraftSave(args: StrategyRequest, extra: unknown) {
@@ -1292,10 +1297,20 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
   registerTool(
     "byq_factor_compute",
     {
-      description: "Validate and compute a deterministic BYQ factor from point-in-time snapshots.",
+      description: "Validate point-in-time factor input and queue an independent BYQ Factor Job. Read its status with byq_factor_job_get and fetch the result Artifact by ID when complete.",
       inputSchema: domainValidationSchemas.byq_factor_compute,
     },
     (args) => byqFactorCompute(args, trustedContext),
+  );
+  registerTool(
+    "byq_factor_job_get",
+    {
+      description: "Read one Factor Job by job_id, or reconcile a lost submission response using the exact original task_id and idempotency_key. A missing receipt does not authorize changing the key.",
+      inputSchema: { job_id: z.string().regex(/^factorjob_[0-9a-f]{32}$/).optional(),
+        task_id: z.string().regex(/^task_[0-9a-f]{32}$/).optional(),
+        idempotency_key: z.string().trim().min(1).max(128).optional() },
+    },
+    (args) => byqFactorJobGet(args, trustedContext),
   );
   registerTool(
     "byq_strategy_draft_save",
