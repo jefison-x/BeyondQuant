@@ -1,5 +1,28 @@
 # Phase 0–6 gate record
 
+## Phase 8 read-only inventory and cleanup preview (2026-09-28)
+
+The [current inventory](environment-inventory-20260928.md) and
+[first-pass preview](phase8-cleanup-preview.md) list only two detached old test
+DB volume/network pairs and one old recovery-MCP image as review candidates.
+The final old Product database archive's 2,102,827,616-byte file and SHA-256
+match its manifest; the source volume remains present and unmounted.
+
+**Tester:** Functional PASS / Tests PASS for planning only: exact Docker
+metadata/attachments and archive checksum checked read-only, governance 2/2,
+four local links and diff PASS. **Independent Sol Reviewer:** Functional PASS /
+Tests PASS / Clean Break Architecture PASS for the read-only proposal, after
+inspecting the documents and independently verifying archive metadata/checksum;
+its Docker access was unavailable, so Root and Tester performed exact Docker
+metadata checks. **Root acceptance:** **PASS for Phase 8 preflight planning
+only.** Resource deletion, Phase 8 implementation and Phase 8 overall gate are
+**NOT_RUN / OPEN**. Test DB contents and reclaim sizes are unverified; the P0
+volume lacks an owner label, the old DB application schema revision is unknown,
+and no current TOC/restore run was done. Before any cleanup, recheck exact
+resource identities/attachments and obtain authorization covering the named
+test data, networks and image. Existing Product DB, backup and unclassified
+resources remain outside this proposal.
+
 ## Phase 7 bounded legacy-runtime removal — Root acceptance (2026-09-28)
 
 [Exit evidence](phase7-exit-evidence.md) and [live-state classification](phase7-exit-classification.md)

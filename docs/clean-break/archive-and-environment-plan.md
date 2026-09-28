@@ -1,6 +1,8 @@
 # Phase 3 archive and Phase 8–9 environment plan
 
-Status: plan only. No backup, stop, remove, restore or reset has been executed.
+Status: historical Phase 3 plan. The final old-DB archive was subsequently
+created and checksum-verified; see the [current Phase 8 inventory](environment-inventory-20260928.md).
+No Phase 8 stop, remove or reset has been executed under this plan.
 
 ## Final archive preflight
 
