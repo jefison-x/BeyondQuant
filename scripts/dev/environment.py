@@ -15,6 +15,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
+CURRENT_DSH_DOCKERFILE = "services/runtime-adapter/Dockerfile.post-u8-251-candidate"
 ENV_FILE = ROOT / ".env.dev"
 TEMPLATE = ROOT / ".env.example"
 VOLUME_SUFFIXES = ("postgres-data", "domain-state", "ml-model-state", "dsh-sessions", "workflow-traces")
@@ -100,9 +101,16 @@ def call(args: list[str], values: dict[str, str], *, capture: bool = False) -> s
 
 
 def validated_config(values: dict[str, str]) -> None:
-    result = call(compose_args("config", "--quiet"), values, capture=True)
+    result = call(compose_args("config", "--format", "json"), values, capture=True)
     if result.returncode:
         raise DevError("Compose configuration failed; check .env.dev and templates without printing secrets")
+    try:
+        config = json.loads(result.stdout)
+        dockerfile = config["services"]["runtime-adapter"]["build"]["dockerfile"]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise DevError("Compose configuration lacks the Runtime Adapter build") from exc
+    if dockerfile != CURRENT_DSH_DOCKERFILE:
+        raise DevError("Compose selected a stale Runtime Adapter build")
 
 
 def init() -> None:

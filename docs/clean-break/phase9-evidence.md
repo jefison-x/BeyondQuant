@@ -1,6 +1,6 @@
 # Phase 9 developer environment qualification — 2026-09-28
 
-Base: `495d1e7b` (Phase 8 PASS). Branch/worktree: `clean-break/dev-environment` under `/home/jefison/projects/.byq-worktrees/clean-break-dev-environment`.
+Original implementation base: `495d1e7b` (Phase 8 local PASS). PR base after Phase 8 merge: `e2edc9f2`. Branch/worktree: `clean-break/dev-environment` under `/home/jefison/projects/.byq-worktrees/clean-break-dev-environment`.
 
 ## Implemented
 
@@ -14,6 +14,7 @@ Base: `495d1e7b` (Phase 8 PASS). Branch/worktree: `clean-break/dev-environment` 
 |---|---|
 | Isolated worktree verification | PASS |
 | Compose config with generated `.env.dev` and two explicit files | PASS |
+| Effective Compose Runtime Adapter Dockerfile after Phase 8 merge | PASS; `make dev-init` validates the selected `.251` build, rejecting a stale Dockerfile |
 | `make dev-init` fresh and repeated | PASS; local config created/verified, mode `0600` |
 | `make dev-test` | PASS; Clean Break governance 2/2 and lifecycle safety 6/6 |
 | `make dev-clean` before startup | PASS; empty exact preview |

@@ -55,9 +55,9 @@ class BuildRevisionTests(unittest.TestCase):
         self.assertEqual(builds.check(previous)["build_id"], previous)
         self.assertEqual(builds.check(newest_frozen)["build_id"], newest_frozen)
         self.assertEqual(builds.check(older)["build_id"], older)
-        self.assertEqual(current, "dsh-0.1.5rc1-post-u8.250")
+        self.assertEqual(current, "dsh-0.1.5rc1-post-u8.251")
         self.assertEqual(builds.identity(current)[1],
-                         "services/runtime-adapter/Dockerfile.post-u8-250-candidate")
+                         "services/runtime-adapter/Dockerfile.post-u8-251-candidate")
 
     def test_forged_revision_missing_input_drift_and_cross_release_fail(self):
         original = builds.render(builds.selected_build_id("dsh-0.1.5rc1"))

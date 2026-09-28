@@ -1,7 +1,9 @@
 """Focused safety tests for the isolated developer lifecycle."""
 import importlib.util
+import json
 from pathlib import Path
 import stat
+from subprocess import CompletedProcess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -13,6 +15,15 @@ spec.loader.exec_module(env)
 
 
 class DevEnvironmentTests(unittest.TestCase):
+    def test_compose_config_requires_current_adapter_build(self):
+        payload = {"services": {"runtime-adapter": {"build": {"dockerfile": env.CURRENT_DSH_DOCKERFILE}}}}
+        with patch.object(env, "call", return_value=CompletedProcess([], 0, json.dumps(payload), "")):
+            env.validated_config({})
+        payload["services"]["runtime-adapter"]["build"]["dockerfile"] = "services/runtime-adapter/Dockerfile.post-u8-candidate"
+        with patch.object(env, "call", return_value=CompletedProcess([], 0, json.dumps(payload), "")):
+            with self.assertRaisesRegex(env.DevError, "stale Runtime Adapter"):
+                env.validated_config({})
+
     def test_worktree_scope_is_deterministic_and_distinct(self):
         with patch.object(env, "ROOT", Path("/tmp/worktree-a")):
             first = env.scope()
