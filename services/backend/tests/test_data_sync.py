@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from threading import Barrier
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -24,7 +26,7 @@ from app.data_provider import (
     TradingCalendarResult,
     TradingSession,
 )
-from app.data_sync import DataSyncConflict, DataSyncStore
+from app.data_sync import DataSyncConflict, DataSyncLeaseLost, DataSyncStore
 from app.market_automation import (
     MarketAutomationConflict,
     MarketAutomationStore,
@@ -245,6 +247,156 @@ def test_incremental_sync_starts_after_latest_persisted_bar() -> None:
     market.close()
 
 
+def test_worker_restart_skips_symbols_with_durable_results() -> None:
+    jobs = DataSyncStore()
+    market = MarketDataStore()
+    provider = FakeProvider()
+    created, _ = jobs.create_job(_payload(
+        symbols=["000001.SZ", "600000.SH"],
+        idempotency_key="sync-restart-checkpoint",
+    ), actor="admin")
+    market.import_bars([{
+        "symbol": "000001.SZ", "trade_date": "20240102", "open": 10.0,
+        "high": 11.0, "low": 9.5, "close": 10.5, "volume": 1000.0,
+        "amount": 10500.0, "adjust": "none", "asset_type": "stock",
+        "data_source": "tushare", "volume_unit": "lots",
+        "amount_unit": "thousand_cny", "provenance": {"fixture": True},
+    }])
+    jobs._execute(
+        """UPDATE data_sync_jobs SET status = 'running', progress = 50,
+           rows_received = 1, rows_inserted = 1,
+           symbol_results_json = :results, attempts = 1, worker_id = 'dead-worker',
+           lease_token = 'expired-claim', lease_expires_at = NOW() - INTERVAL '1 second'
+           WHERE job_id = :job_id""",
+        {
+            "job_id": created["job_id"],
+            "results": [{
+                "symbol": "000001.SZ", "status": "completed", "rows_received": 1,
+                "rows_inserted": 1, "rows_kept": 0,
+                "date_min": "20240102", "date_max": "20240102",
+            }],
+        },
+    )
+
+    claim = jobs.claim_job(created["job_id"], worker_id="replacement-worker")
+    assert claim is not None
+    completed = jobs.run_claimed_job(claim, provider_factory=lambda: provider, market_store=market)
+
+    assert completed is not None
+    assert completed["job_id"] == created["job_id"]
+    assert completed["status"] == "completed"
+    assert [request.ts_code for request in provider.requests] == ["600000.SH"]
+    assert [item["symbol"] for item in completed["symbol_results"]] == ["000001.SZ", "600000.SH"]
+    assert "lease_token" not in completed and "worker_id" not in completed
+    jobs.close()
+    market.close()
+
+
+def test_concurrent_workers_receive_only_one_sync_job_claim() -> None:
+    first_store = DataSyncStore()
+    second_store = DataSyncStore()
+    created, _ = first_store.create_job(_payload(idempotency_key="sync-concurrent-claim"), actor="admin")
+    barrier = Barrier(2)
+
+    def try_claim(store: DataSyncStore, worker_id: str):
+        barrier.wait(timeout=5)
+        try:
+            return store.claim_job(created["job_id"], worker_id=worker_id)
+        except DataSyncConflict:
+            return None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        claims = list(pool.map(
+            lambda args: try_claim(*args),
+            [(first_store, "worker-one"), (second_store, "worker-two")],
+        ))
+
+    acquired = [claim for claim in claims if claim is not None]
+    assert len(acquired) == 1
+    assert acquired[0]["lease_token"]
+    assert first_store._fetch_one(
+        "SELECT attempts FROM data_sync_jobs WHERE job_id = :job_id",
+        {"job_id": created["job_id"]},
+    )["attempts"] == 1
+    first_store.close()
+    second_store.close()
+
+
+def test_expired_provider_call_cannot_checkpoint_and_recovery_is_bounded() -> None:
+    jobs = DataSyncStore()
+    market = MarketDataStore()
+    created, _ = jobs.create_job(_payload(idempotency_key="sync-expired-provider"), actor="admin")
+
+    class ExpiringProvider(FakeProvider):
+        def fetch_daily(self, request):
+            jobs._execute(
+                "UPDATE data_sync_jobs SET lease_expires_at = NOW() - INTERVAL '1 second' WHERE job_id = :job_id",
+                {"job_id": created["job_id"]},
+            )
+            return super().fetch_daily(request)
+
+    claim = jobs.claim_job(created["job_id"], worker_id="slow-worker")
+    assert claim is not None
+    with pytest.raises(DataSyncLeaseLost, match="expired"):
+        jobs.run_claimed_job(claim, provider_factory=ExpiringProvider, market_store=market)
+    assert market.get_bar("000001.SZ", "20240102") is None
+    assert jobs.get_job(created["job_id"])["status"] == "running"
+
+    recovery_claim = jobs.claim_job(created["job_id"], worker_id="recovery-worker")
+    assert recovery_claim is not None
+    completed = jobs.run_claimed_job(recovery_claim, provider_factory=FakeProvider, market_store=market)
+    assert completed is not None and completed["status"] == "completed"
+    assert market.get_bar("000001.SZ", "20240102") is not None
+    assert jobs._fetch_one(
+        "SELECT attempts FROM data_sync_jobs WHERE job_id = :job_id", {"job_id": created["job_id"]},
+    )["attempts"] == 2
+
+    exhausted, _ = jobs.create_job(_payload(idempotency_key="sync-attempts-exhausted"), actor="admin")
+    jobs._execute(
+        """UPDATE data_sync_jobs SET status = 'running', attempts = 3,
+           lease_token = 'expired-claim', lease_expires_at = NOW() - INTERVAL '1 second'
+           WHERE job_id = :job_id""",
+        {"job_id": exhausted["job_id"]},
+    )
+    assert jobs.claim_job(exhausted["job_id"], worker_id="recovery-worker") is None
+    failed = jobs.get_job(exhausted["job_id"])
+    assert failed["status"] == "failed"
+    assert failed["error_code"] == "worker_attempts_exhausted"
+
+    queued, _ = jobs.create_job(_payload(idempotency_key="sync-queue-ahead-of-exhausted"), actor="admin")
+    exhausted_poll, _ = jobs.create_job(_payload(idempotency_key="sync-poll-exhausted"), actor="admin")
+    jobs._execute(
+        """UPDATE data_sync_jobs SET status = 'running', attempts = 3,
+           lease_token = 'expired-poll-claim', lease_expires_at = NOW() - INTERVAL '1 second'
+           WHERE job_id = :job_id""",
+        {"job_id": exhausted_poll["job_id"]},
+    )
+    next_claim = jobs.claim_next_job(worker_id="poll-worker")
+    assert next_claim is not None and next_claim["job_id"] == queued["job_id"]
+    assert jobs.get_job(exhausted_poll["job_id"])["status"] == "failed"
+    jobs.close()
+    market.close()
+
+
+def test_market_import_rolls_back_when_checkpoint_cannot_commit(monkeypatch) -> None:
+    jobs = DataSyncStore()
+    market = MarketDataStore()
+    created, _ = jobs.create_job(_payload(idempotency_key="sync-checkpoint-rollback"), actor="admin")
+    claim = jobs.claim_job(created["job_id"], worker_id="rollback-worker")
+    assert claim is not None
+
+    def reject_checkpoint(*_args, **_kwargs):
+        raise DataSyncLeaseLost("checkpoint rejected")
+
+    monkeypatch.setattr(jobs, "_set_progress", reject_checkpoint)
+    with pytest.raises(DataSyncLeaseLost, match="checkpoint rejected"):
+        jobs.run_claimed_job(claim, provider_factory=FakeProvider, market_store=market)
+    assert market.get_bar("000001.SZ", "20240102") is None
+    assert jobs.get_job(created["job_id"])["status"] == "running"
+    jobs.close()
+    market.close()
+
+
 def test_orchestrated_job_public_projection_is_bounded() -> None:
     jobs = DataSyncStore()
     symbols = [f"{index:06d}.SZ" for index in range(501)]
@@ -355,10 +507,21 @@ def test_backend_data_center_routes_are_admin_scoped_and_secret_free(monkeypatch
     assert orchestrated.status_code == 201
     assert orchestrated.json()["job"]["symbol_count"] == 1
     assert orchestrated.json()["job"]["selection"]["snapshot_id"] == master_job.json()["job"]["snapshot_id"]
+    orchestrated_job = jobs.run_job(
+        orchestrated.json()["job"]["job_id"],
+        provider_factory=lambda: provider, market_store=market,
+    )
+    assert orchestrated_job is not None and orchestrated_job["status"] == "completed"
 
     synced = client.post("/v1/data-sync/jobs", headers=admin, json=_payload(idempotency_key="source-http-sync-1"))
     assert synced.status_code == 201
     assert synced.json()["job"]["status"] == "queued"
+    synced_by_worker = jobs.run_job(
+        synced.json()["job"]["job_id"],
+        provider_factory=lambda: provider, market_store=market,
+    )
+    assert synced_by_worker is not None
+    assert synced_by_worker["job_id"] == synced.json()["job"]["job_id"]
     completed = client.get(f"/v1/data-sync/jobs/{synced.json()['job']['job_id']}", headers=admin)
     assert completed.status_code == 200
     assert completed.json()["job"]["status"] == "completed"

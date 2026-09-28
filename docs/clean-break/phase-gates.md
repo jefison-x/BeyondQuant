@@ -1,5 +1,17 @@
 # Phase 0–6 gate record
 
+## Phase 11 Business Job — admin data import bounded slice (2026-09-28)
+
+[Execution record](phase11-business-jobs.md): admin range sync now runs in the
+independent Data Worker. Fresh disposable PostgreSQL tests: 23 passed, covering
+claim competition, interrupted work, stale import rollback, checkpoint
+atomicity and exhausted attempts under a continuing queue. Syntax, diff and
+slice dev-check passed; test resources were removed. Independent Tester: PASS.
+Independent Sol Reviewer: Functional PASS / Tests PASS / Clean Break
+Architecture PASS after two defects were fixed and re-reviewed. **Root
+acceptance: this slice local PASS; Phase 11 overall OPEN.** The global admin
+sync is not represented as the workspace DataImportJob required by ADR-003.
+
 ## Phase 11 Business Job — first bounded slice (2026-09-28)
 
 [Execution record](phase11-business-jobs.md): the common backtest/training Job

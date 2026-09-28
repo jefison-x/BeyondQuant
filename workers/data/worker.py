@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from app.credentials import CredentialStore
+from app.data_sync import DataSyncLeaseLost, DataSyncStore
 from app.market_automation import (
     MarketAutomationStore,
     run_scheduler_cycle,
@@ -26,6 +27,7 @@ def main() -> int:
     worker_id = os.environ.get("BYQ_DATA_WORKER_ID", "data-worker-1").strip() or "data-worker-1"
     poll_seconds = max(1.0, float(os.environ.get("BYQ_DATA_POLL_SECONDS", "10")))
     credentials = CredentialStore.from_env()
+    data_sync = DataSyncStore.from_env()
     automation = MarketAutomationStore.from_env()
     market = MarketDataStore.from_env()
     readiness = MarketReadinessStore.from_env()
@@ -167,10 +169,35 @@ def main() -> int:
                     last_error=None if result["status"] == "completed" else str(result.get("error_code")),
                 )
                 continue
+            try:
+                sync_job = data_sync.run_next_job(
+                    worker_id=worker_id,
+                    provider_factory=provider_factory,
+                    market_store=market,
+                )
+            except DataSyncLeaseLost:
+                # A slow provider call may finish after its lease expired;
+                # its market import and progress checkpoint are both rejected.
+                automation.heartbeat(worker_id, last_error="sync_claim_expired")
+                time.sleep(poll_seconds)
+                continue
+            except Exception as error:
+                automation.heartbeat(worker_id, last_error=type(error).__name__)
+                time.sleep(poll_seconds)
+                continue
+            if sync_job is not None:
+                automation.heartbeat(
+                    worker_id,
+                    last_job_id=str(sync_job["job_id"]),
+                    last_error=None if sync_job["status"] == "completed"
+                    else str(sync_job.get("error_code")),
+                )
+                continue
             automation.heartbeat(worker_id)
             time.sleep(poll_seconds)
     finally:
         pool_producers.close()
+        data_sync.close()
         readiness.close()
         securities.close()
         market.close()

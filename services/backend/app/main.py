@@ -1554,20 +1554,12 @@ def test_tushare_connection(payload: dict[str, Any], request: Request) -> dict[s
 def create_data_sync_job(
     payload: dict[str, Any],
     request: Request,
-    background_tasks: BackgroundTasks,
 ) -> dict[str, object]:
     actor, _role = _require_data_admin(request)
 
     def operation() -> dict[str, object]:
         resolved_payload = _resolved_daily_sync_payload(payload, request)
         job, created = data_sync_store.create_job(resolved_payload, actor=actor)
-        if created or job["status"] == "queued":
-            background_tasks.add_task(
-                data_sync_store.run_job,
-                job["job_id"],
-                provider_factory=lambda: _resolved_tushare_provider()[0],
-                market_store=market_data_store,
-            )
         return {"job": job, "created": created}
 
     return _data_sync_call(operation)

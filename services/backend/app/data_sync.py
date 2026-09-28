@@ -13,6 +13,7 @@ import math
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
+from contextlib import nullcontext
 from typing import Callable
 
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -44,6 +45,10 @@ class DataSyncConflict(DataSyncError):
     pass
 
 
+class DataSyncLeaseLost(DataSyncConflict):
+    """Raised when a worker tries to write after its claim has expired."""
+
+
 class DataSyncPersistenceError(DataSyncError):
     pass
 
@@ -57,6 +62,9 @@ MAX_ORCHESTRATED_SYMBOLS = 6_000
 MAX_RANGE_DAYS = 366
 MAX_PUBLIC_SYMBOLS = 100
 MAX_PUBLIC_RESULTS = 200
+DEFAULT_JOB_LEASE_SECONDS = 300
+MAX_JOB_LEASE_SECONDS = 3600
+MAX_JOB_ATTEMPTS = 3
 
 
 def _now() -> str:
@@ -110,6 +118,10 @@ class DataSyncStore(PgStoreMixin):
             rows_inserted BIGINT NOT NULL DEFAULT 0,
             rows_kept BIGINT NOT NULL DEFAULT 0,
             symbol_results_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            worker_id TEXT,
+            lease_token TEXT,
+            lease_expires_at TIMESTAMPTZ,
             error_code TEXT,
             error_message TEXT,
             requested_by TEXT NOT NULL,
@@ -126,8 +138,28 @@ class DataSyncStore(PgStoreMixin):
             ADD COLUMN IF NOT EXISTS selection_json JSONB NOT NULL DEFAULT '{"type":"explicit"}'::jsonb
         """,
         """
+        ALTER TABLE data_sync_jobs
+            ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0
+        """,
+        """
+        ALTER TABLE data_sync_jobs
+            ADD COLUMN IF NOT EXISTS worker_id TEXT
+        """,
+        """
+        ALTER TABLE data_sync_jobs
+            ADD COLUMN IF NOT EXISTS lease_token TEXT
+        """,
+        """
+        ALTER TABLE data_sync_jobs
+            ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ
+        """,
+        """
         CREATE INDEX IF NOT EXISTS data_sync_jobs_created_idx
             ON data_sync_jobs(created_at DESC, job_id DESC)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS data_sync_jobs_claim_idx
+            ON data_sync_jobs(status, lease_expires_at, created_at)
         """,
         """
         CREATE TABLE IF NOT EXISTS data_sync_audit (
@@ -240,51 +272,140 @@ class DataSyncStore(PgStoreMixin):
             raise DataSyncConflict("sync job conflicts with existing state") from error
         return self.get_job(job_id), True
 
-    def run_job(
+    def claim_next_job(
+        self,
+        *,
+        worker_id: object,
+        lease_seconds: int = DEFAULT_JOB_LEASE_SECONDS,
+        max_attempts: int = MAX_JOB_ATTEMPTS,
+    ) -> dict[str, object] | None:
+        """Claim one queued or expired sync job for a bounded worker attempt."""
+        worker = self._worker_id(worker_id)
+        lease_seconds = self._lease_seconds(lease_seconds)
+        max_attempts = self._max_attempts(max_attempts)
+        now = datetime.now(timezone.utc)
+        token = uuid.uuid4().hex
+        with self._transaction() as connection:
+            # Retire one exhausted job on every poll, even while new work keeps arriving.
+            self._fail_one_exhausted_job(connection, now=now, max_attempts=max_attempts)
+            candidate = fetch_one(
+                connection,
+                """SELECT * FROM data_sync_jobs
+                   WHERE attempts < :max_attempts
+                     AND (status = 'queued'
+                          OR (status = 'running' AND (lease_expires_at IS NULL OR lease_expires_at <= :now)))
+                   ORDER BY created_at, job_id
+                   LIMIT 1 FOR UPDATE SKIP LOCKED""",
+                {"max_attempts": max_attempts, "now": now},
+            )
+            if candidate is None:
+                return None
+            return self._claim_locked(
+                connection, candidate, worker_id=worker, lease_token=token,
+                lease_seconds=lease_seconds, now=now,
+            )
+
+    def claim_job(
         self,
         job_id: object,
         *,
-        provider_factory: Callable[[], TushareProvider],
-        market_store: MarketDataStore,
-    ) -> dict[str, object]:
+        worker_id: object,
+        lease_seconds: int = DEFAULT_JOB_LEASE_SECONDS,
+        max_attempts: int = MAX_JOB_ATTEMPTS,
+    ) -> dict[str, object] | None:
+        """Claim a specific queued or expired job; used by the direct test helper."""
         job_id = str(job_id)
+        worker = self._worker_id(worker_id)
+        lease_seconds = self._lease_seconds(lease_seconds)
+        max_attempts = self._max_attempts(max_attempts)
+        now = datetime.now(timezone.utc)
+        token = uuid.uuid4().hex
         with self._transaction() as connection:
-            row = fetch_one(
+            candidate = fetch_one(
                 connection,
                 "SELECT * FROM data_sync_jobs WHERE job_id = :job_id FOR UPDATE",
                 {"job_id": job_id},
             )
-            if row is None:
+            if candidate is None:
                 raise DataSyncNotFound("sync job not found")
-            if row["status"] in _TERMINAL:
-                return self._public_job(row)
-            if row["status"] != "queued":
-                raise DataSyncConflict("sync job is already running")
-            execute(
-                connection,
-                """UPDATE data_sync_jobs SET status = 'running', started_at = :now,
-                   updated_at = :now WHERE job_id = :job_id""",
-                {"job_id": job_id, "now": _now()},
+            if candidate["status"] in _TERMINAL:
+                return None
+            if candidate["attempts"] >= max_attempts:
+                if candidate["status"] == "queued" or (
+                    candidate["status"] == "running"
+                    and self._claim_expired(candidate, now)
+                ):
+                    self._fail_exhausted_row(connection, candidate, now=now, max_attempts=max_attempts)
+                    return None
+                raise DataSyncConflict("sync job has exhausted worker attempts")
+            if candidate["status"] == "running" and not self._claim_expired(candidate, now):
+                raise DataSyncConflict("sync job is already claimed")
+            if candidate["status"] not in {"queued", "running"}:
+                raise DataSyncConflict("sync job cannot be claimed in its current state")
+            return self._claim_locked(
+                connection, candidate, worker_id=worker, lease_token=token,
+                lease_seconds=lease_seconds, now=now,
             )
 
-        results: list[dict[str, object]] = []
-        received = inserted = kept = 0
-        try:
-            provider = provider_factory()
-        except (ProviderError, ValueError) as error:
-            code, message = _safe_provider_error(error)
-            return self._finish(job_id, [], 0, 0, 0, "failed", code, message)
+    def run_next_job(
+        self,
+        *,
+        worker_id: object,
+        provider_factory: Callable[[], TushareProvider],
+        market_store: MarketDataStore,
+        lease_seconds: int = DEFAULT_JOB_LEASE_SECONDS,
+        max_attempts: int = MAX_JOB_ATTEMPTS,
+    ) -> dict[str, object] | None:
+        claim = self.claim_next_job(
+            worker_id=worker_id, lease_seconds=lease_seconds, max_attempts=max_attempts,
+        )
+        if claim is None:
+            return None
+        return self.run_claimed_job(
+            claim, provider_factory=provider_factory, market_store=market_store,
+            lease_seconds=lease_seconds,
+        )
 
-        symbols = list(row["symbols_json"])
-        for index, symbol in enumerate(symbols, start=1):
+    def run_claimed_job(
+        self,
+        claim: dict[str, object],
+        *,
+        provider_factory: Callable[[], TushareProvider],
+        market_store: MarketDataStore,
+        lease_seconds: int = DEFAULT_JOB_LEASE_SECONDS,
+    ) -> dict[str, object]:
+        job_id = str(claim["job_id"])
+        lease_token = str(claim["lease_token"])
+        lease_seconds = self._lease_seconds(lease_seconds)
+        results = [dict(item) for item in list(claim["symbol_results_json"])]
+        completed_symbols = {str(item.get("symbol")) for item in results}
+        received = int(claim["rows_received"])
+        inserted = int(claim["rows_inserted"])
+        kept = int(claim["rows_kept"])
+        symbols = list(claim["symbols_json"])
+        pending_symbols = [symbol for symbol in symbols if symbol not in completed_symbols]
+
+        if pending_symbols:
             try:
-                effective_start = str(row["start_date"])
-                if row["mode"] == "incremental":
+                provider = provider_factory()
+            except (ProviderError, ValueError) as error:
+                code, message = _safe_provider_error(error)
+                return self._finish(
+                    job_id, lease_token, results, received, inserted, kept,
+                    "failed", code, message,
+                )
+        else:
+            provider = None
+
+        for symbol in pending_symbols:
+            try:
+                effective_start = str(claim["start_date"])
+                if claim["mode"] == "incremental":
                     latest = market_store.latest_trade_date(symbol)
                     if latest is not None:
                         next_date = (datetime.strptime(latest, "%Y%m%d") + timedelta(days=1)).strftime("%Y%m%d")
                         effective_start = max(effective_start, next_date)
-                    if effective_start > str(row["end_date"]):
+                    if effective_start > str(claim["end_date"]):
                         results.append({
                             "symbol": symbol,
                             "status": "completed",
@@ -295,43 +416,203 @@ class DataSyncStore(PgStoreMixin):
                             "date_max": None,
                             "message": "already_current",
                         })
-                        self._set_progress(job_id, round(index * 100 / len(symbols)), results, received, inserted, kept)
+                        completed_symbols.add(str(symbol))
+                        self._set_progress(
+                            job_id, lease_token, round(len(completed_symbols) * 100 / len(symbols)),
+                            results, received, inserted, kept, lease_seconds=lease_seconds,
+                        )
                         continue
                 request = DailyRequest(
                     ts_code=symbol,
                     start_date=effective_start,
-                    end_date=str(row["end_date"]),
+                    end_date=str(claim["end_date"]),
                 )
                 result = provider.fetch_daily(request)
                 normalized = self._normalize_bars(
                     symbol,
                     result,
                     start_date=effective_start,
-                    end_date=str(row["end_date"]),
+                    end_date=str(claim["end_date"]),
                 )
-                report = market_store.import_bars(normalized, conflict_policy=KEEP_NEW)
-                received += len(normalized)
-                inserted += int(report["inserted"])
-                kept += int(report["kept"])
-                results.append({
-                    "symbol": symbol,
-                    "status": "completed",
-                    "rows_received": len(normalized),
-                    "rows_inserted": int(report["inserted"]),
-                    "rows_kept": int(report["kept"]),
-                    "date_min": min((item["trade_date"] for item in normalized), default=None),
-                    "date_max": max((item["trade_date"] for item in normalized), default=None),
-                })
+                # Market rows and the job checkpoint commit together. The locked
+                # claim prevents a replacement worker from importing this symbol;
+                # an expired claim rolls back the market import as well.
+                with self._transaction() as connection:
+                    self._require_live_claim(connection, job_id, lease_token)
+                    report = market_store.import_bars(
+                        normalized, conflict_policy=KEEP_NEW, _connection=connection,
+                    )
+                    next_received = received + len(normalized)
+                    next_inserted = inserted + int(report["inserted"])
+                    next_kept = kept + int(report["kept"])
+                    next_results = results + [{
+                        "symbol": symbol,
+                        "status": "completed",
+                        "rows_received": len(normalized),
+                        "rows_inserted": int(report["inserted"]),
+                        "rows_kept": int(report["kept"]),
+                        "date_min": min((item["trade_date"] for item in normalized), default=None),
+                        "date_max": max((item["trade_date"] for item in normalized), default=None),
+                    }]
+                    self._set_progress(
+                        job_id, lease_token, round(len(completed_symbols | {str(symbol)}) * 100 / len(symbols)),
+                        next_results, next_received, next_inserted, next_kept,
+                        lease_seconds=lease_seconds, _connection=connection,
+                    )
+                received, inserted, kept, results = next_received, next_inserted, next_kept, next_results
+                completed_symbols.add(str(symbol))
+                continue
+            except DataSyncLeaseLost:
+                raise
             except (ProviderError, ValueError, SQLAlchemyError) as error:
                 code, message = _safe_provider_error(error)
                 results.append({"symbol": symbol, "status": "failed", "error_code": code, "message": message})
-            self._set_progress(job_id, round(index * 100 / len(symbols)), results, received, inserted, kept)
+            completed_symbols.add(str(symbol))
+            self._set_progress(
+                job_id, lease_token, round(len(completed_symbols) * 100 / len(symbols)),
+                results, received, inserted, kept, lease_seconds=lease_seconds,
+            )
 
         failures = sum(item["status"] == "failed" for item in results)
-        status = "failed" if failures == len(results) else "partial" if failures else "completed"
+        status = "failed" if failures == len(symbols) else "partial" if failures else "completed"
         error_code = "symbol_failures" if failures else None
         error_message = f"{failures} symbol(s) failed" if failures else None
-        return self._finish(job_id, results, received, inserted, kept, status, error_code, error_message)
+        return self._finish(
+            job_id, lease_token, results, received, inserted, kept,
+            status, error_code, error_message,
+        )
+
+    def run_job(
+        self,
+        job_id: object,
+        *,
+        provider_factory: Callable[[], TushareProvider],
+        market_store: MarketDataStore,
+    ) -> dict[str, object]:
+        claim = self.claim_job(job_id, worker_id="data-sync-direct-test")
+        if claim is None:
+            return self.get_job(job_id)
+        return self.run_claimed_job(
+            claim, provider_factory=provider_factory, market_store=market_store,
+        )
+
+    @staticmethod
+    def _worker_id(value: object) -> str:
+        worker_id = str(value).strip()
+        if not worker_id or len(worker_id) > 128:
+            raise ValueError("worker_id must contain 1 to 128 characters")
+        return worker_id
+
+    @staticmethod
+    def _lease_seconds(value: object) -> int:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError("lease_seconds must be an integer")
+        if not 30 <= value <= MAX_JOB_LEASE_SECONDS:
+            raise ValueError(f"lease_seconds must be between 30 and {MAX_JOB_LEASE_SECONDS}")
+        return value
+
+    @staticmethod
+    def _max_attempts(value: object) -> int:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError("max_attempts must be an integer")
+        if not 1 <= value <= MAX_JOB_ATTEMPTS:
+            raise ValueError(f"max_attempts must be between 1 and {MAX_JOB_ATTEMPTS}")
+        return value
+
+    @staticmethod
+    def _claim_expired(row: dict[str, object], now: datetime) -> bool:
+        value = row.get("lease_expires_at")
+        if value is None:
+            return True
+        expires_at = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        return expires_at <= now
+
+    def _claim_locked(
+        self,
+        connection,
+        candidate: dict[str, object],
+        *,
+        worker_id: str,
+        lease_token: str,
+        lease_seconds: int,
+        now: datetime,
+    ) -> dict[str, object]:
+        expires_at = now + timedelta(seconds=lease_seconds)
+        claimed = fetch_one(
+            connection,
+            """UPDATE data_sync_jobs SET status = 'running',
+                   attempts = attempts + 1, worker_id = :worker_id,
+                   lease_token = :lease_token, lease_expires_at = :lease_expires_at,
+                   started_at = COALESCE(started_at, :now), updated_at = :now
+               WHERE job_id = :job_id AND status = :expected_status
+                 AND attempts = :expected_attempts
+                 AND lease_token IS NOT DISTINCT FROM :expected_lease_token
+               RETURNING *""",
+            {
+                "job_id": candidate["job_id"],
+                "expected_status": candidate["status"],
+                "expected_attempts": candidate["attempts"],
+                "expected_lease_token": candidate.get("lease_token"),
+                "worker_id": worker_id,
+                "lease_token": lease_token,
+                "lease_expires_at": expires_at,
+                "now": now,
+            },
+        )
+        if claimed is None:
+            raise DataSyncConflict("sync job claim changed concurrently")
+        self._audit(connection, str(candidate["job_id"]), str(candidate["requested_by"]), "claimed", "running", {
+            "attempt": claimed["attempts"],
+        })
+        return claimed
+
+    def _fail_one_exhausted_job(self, connection, *, now: datetime, max_attempts: int) -> None:
+        candidate = fetch_one(
+            connection,
+            """SELECT * FROM data_sync_jobs
+               WHERE attempts >= :max_attempts
+                 AND (status = 'queued'
+                      OR (status = 'running' AND (lease_expires_at IS NULL OR lease_expires_at <= :now)))
+               ORDER BY created_at, job_id
+               LIMIT 1 FOR UPDATE SKIP LOCKED""",
+            {"max_attempts": max_attempts, "now": now},
+        )
+        if candidate is not None:
+            self._fail_exhausted_row(connection, candidate, now=now, max_attempts=max_attempts)
+
+    def _fail_exhausted_row(
+        self,
+        connection,
+        candidate: dict[str, object],
+        *,
+        now: datetime,
+        max_attempts: int,
+    ) -> None:
+        failed = fetch_one(
+            connection,
+            """UPDATE data_sync_jobs SET status = 'failed',
+                   error_code = 'worker_attempts_exhausted',
+                   error_message = 'worker did not complete after bounded retries',
+                   completed_at = :now, updated_at = :now,
+                   worker_id = NULL, lease_token = NULL, lease_expires_at = NULL
+               WHERE job_id = :job_id AND status = :expected_status
+                 AND attempts = :expected_attempts AND attempts >= :max_attempts
+               RETURNING requested_by""",
+            {
+                "job_id": candidate["job_id"],
+                "expected_status": candidate["status"],
+                "expected_attempts": candidate["attempts"],
+                "max_attempts": max_attempts,
+                "now": now,
+            },
+        )
+        if failed is not None:
+            self._audit(
+                connection, str(candidate["job_id"]), str(failed["requested_by"]),
+                "worker_attempts_exhausted", "failed", {"attempts": candidate["attempts"]},
+            )
 
     def list_jobs(self, *, limit: int = 50) -> list[dict[str, object]]:
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
@@ -456,31 +737,58 @@ class DataSyncStore(PgStoreMixin):
     def _set_progress(
         self,
         job_id: str,
+        lease_token: str,
         progress: int,
         results: list[dict[str, object]],
         received: int,
         inserted: int,
         kept: int,
+        *,
+        lease_seconds: int,
+        _connection=None,
     ) -> None:
-        self._execute(
+        now = datetime.now(timezone.utc)
+        query = (
             """UPDATE data_sync_jobs SET progress = :progress,
                symbol_results_json = :results, rows_received = :received,
-               rows_inserted = :inserted, rows_kept = :kept, updated_at = :now
-               WHERE job_id = :job_id""",
-            {
+               rows_inserted = :inserted, rows_kept = :kept,
+               lease_expires_at = :lease_expires_at, updated_at = :now
+               WHERE job_id = :job_id AND status = 'running'
+                 AND lease_token = :lease_token AND lease_expires_at > :now
+               RETURNING job_id"""
+        )
+        params = {
                 "job_id": job_id,
+                "lease_token": lease_token,
                 "progress": progress,
                 "results": results,
                 "received": received,
                 "inserted": inserted,
                 "kept": kept,
-                "now": _now(),
-            },
+                "lease_expires_at": now + timedelta(seconds=lease_seconds),
+                "now": now,
+            }
+        with (self._transaction() if _connection is None else nullcontext(_connection)) as connection:
+            updated = execute(connection, query, params)
+            if not updated:
+                raise DataSyncLeaseLost("sync job claim expired before progress was committed")
+
+    @staticmethod
+    def _require_live_claim(connection, job_id: str, lease_token: str) -> None:
+        live = fetch_one(
+            connection,
+            """SELECT job_id FROM data_sync_jobs WHERE job_id = :job_id
+               AND status = 'running' AND lease_token = :lease_token
+               AND lease_expires_at > :now FOR UPDATE""",
+            {"job_id": job_id, "lease_token": lease_token, "now": datetime.now(timezone.utc)},
         )
+        if live is None:
+            raise DataSyncLeaseLost("sync job claim expired before market import")
 
     def _finish(
         self,
         job_id: str,
+        lease_token: str,
         results: list[dict[str, object]],
         received: int,
         inserted: int,
@@ -489,20 +797,22 @@ class DataSyncStore(PgStoreMixin):
         error_code: str | None,
         error_message: str | None,
     ) -> dict[str, object]:
-        now = _now()
+        now = datetime.now(timezone.utc)
         with self._transaction() as connection:
-            row = fetch_one(connection, "SELECT * FROM data_sync_jobs WHERE job_id = :job_id", {"job_id": job_id})
-            if row is None:
-                raise DataSyncNotFound("sync job not found")
-            execute(
+            row = fetch_one(
                 connection,
                 """UPDATE data_sync_jobs SET status = :status, progress = 100,
                    rows_received = :received, rows_inserted = :inserted,
                    rows_kept = :kept, symbol_results_json = :results,
                    error_code = :error_code, error_message = :error_message,
-                   completed_at = :now, updated_at = :now WHERE job_id = :job_id""",
+                   completed_at = :now, updated_at = :now,
+                   worker_id = NULL, lease_token = NULL, lease_expires_at = NULL
+                   WHERE job_id = :job_id AND status = 'running'
+                     AND lease_token = :lease_token AND lease_expires_at > :now
+                   RETURNING requested_by""",
                 {
                     "job_id": job_id,
+                    "lease_token": lease_token,
                     "status": status,
                     "received": received,
                     "inserted": inserted,
@@ -513,6 +823,8 @@ class DataSyncStore(PgStoreMixin):
                     "now": now,
                 },
             )
+            if row is None:
+                raise DataSyncLeaseLost("sync job claim expired before completion was committed")
             self._audit(connection, job_id, str(row["requested_by"]), "finished", status, {
                 "rows_received": received,
                 "rows_inserted": inserted,

@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from contextlib import nullcontext
 from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -221,6 +222,7 @@ class MarketDataStore(PgStoreMixin):
         *,
         conflict_policy: str = KEEP_NEW,
         replace_non_authoritative: bool = False,
+        _connection=None,
     ) -> dict[str, Any]:
         """Idempotent import of validated daily-bar rows (never last-write-wins)."""
         if conflict_policy not in CONFLICT_POLICIES:
@@ -229,7 +231,7 @@ class MarketDataStore(PgStoreMixin):
         kept = 0
         replaced = 0
         mismatches: list[dict[str, Any]] = []
-        with self._transaction() as connection:
+        with (self._transaction() if _connection is None else nullcontext(_connection)) as connection:
             for row in rows:
                 symbol = row["symbol"]
                 trade_date = row["trade_date"]

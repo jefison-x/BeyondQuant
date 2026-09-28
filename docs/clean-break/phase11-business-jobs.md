@@ -1,6 +1,6 @@
 # Phase 11 — Business Job execution boundary
 
-Status: first bounded slice local PASS; Phase 11 overall remains open. Base:
+Status: backtest and admin import bounded slices local PASS; Phase 11 overall remains open. Base:
 Phase 10 local PASS commit `ecc5bf74`. This is not a claim that full functional
 fidelity has passed.
 
@@ -35,6 +35,31 @@ network were removed. Independent Tester: PASS. Independent Sol Reviewer:
 Functional PASS / Tests PASS / Clean Break Architecture PASS. Root accepts this
 slice as **local PASS**; Phase 11 overall remains OPEN.
 
+## Admin data import slice and gate
+
+`POST /v1/data-sync/jobs` now persists a queued admin sync Job only. The
+existing Data Worker independently polls and claims it; the Backend request
+does not perform the import. Claims are atomic, have bounded attempts and a
+lease token, and resume from persisted per-symbol results. A worker with an
+expired claim cannot write market rows or progress: each symbol import and its
+checkpoint share one PostgreSQL transaction under the locked Job row. Each poll
+also retires one expired Job whose attempts are exhausted, even while fresh
+work remains queued. The public response does not expose worker or lease data.
+
+This is a **global admin market-data sync**, not yet the workspace-scoped
+`DataImportJob` and result Artifact described by ADR-003. That remaining
+contract must be resolved before Phase 11 overall PASS.
+
+Fresh disposable PostgreSQL evidence: `tests/test_data_sync.py` 23 passed,
+including concurrent claims, expired provider calls, import/checkpoint
+rollback, restart from saved symbols, exhausted polling, and queued API
+submission. Syntax, `git diff --check`, and slice `dev-check` passed. The test
+container/network were removed. Independent Tester: PASS. Independent Sol
+Reviewer found and re-reviewed fixes for stale market import and exhausted
+Job starvation; final Functional PASS / Tests PASS / Clean Break Architecture
+PASS. Root accepts this bounded slice as **local PASS**. Hosted PR CI remains
+pending; Phase 11 overall remains OPEN.
+
 ## Remaining Phase 11 work
 
 | Type | Current state | Remaining boundary work |
@@ -43,7 +68,7 @@ slice as **local PASS**; Phase 11 overall remains OPEN.
 | Training | Durable `ml_training_runs`, independent ML Worker and model Artifact | Complete common public projection exposure and verify worker restart/attempt behavior at this boundary. |
 | Factor compute | Synchronous Backend compute with idempotent result Artifact | Move long compute to a durable factor Job and Worker; preserve point-in-time input validation. |
 | Optimization | Proposal card only; no executable domain Job | Define a bounded deterministic optimization request/Job/Worker and result Artifact. Do not treat a proposal as completed work. |
-| Data import | Scheduled market-session sync is worker-backed; admin range sync uses Backend BackgroundTasks | Move admin range import to the Data Worker or a specialized import Worker, keeping its idempotency/progress and provider protections. |
+| Data import | Scheduled market-session sync and admin range sync are worker-backed; admin slice locally accepted | Define the workspace-scoped DataImportJob and Artifact boundary from ADR-003; keep global admin sync clearly separate. |
 
 These are domain Jobs, not Agent continuation state. They must remain queryable
 by stable business ID after an Agent session disappears. Full new-schema Golden
