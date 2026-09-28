@@ -202,7 +202,11 @@ def test_adapter_requires_guard_startup_and_projects_closed_process_receipt(tmp_
         assert runtime.continuation_receipt('budget-adapter', reservation['reservation_id']) == settled
         restarted = RuntimeAdapter()
         try:
-            assert restarted.continuation_receipt('budget-adapter', reservation['reservation_id']) == settled
+            # Adapter receipts are process-local under the Clean Break
+            # boundary. A new process must report uncertainty, not reuse the
+            # previous process's settled receipt or replay its work.
+            assert restarted.continuation_receipt('budget-adapter', reservation['reservation_id']) == {
+                'reservation_id': reservation['reservation_id'], 'status': 'outcome_unknown'}
             assert requests == [8192] * (2 if delegates == 2 else 1)
         finally:
             restarted.close()

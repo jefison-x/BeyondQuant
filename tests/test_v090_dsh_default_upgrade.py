@@ -15,6 +15,7 @@ CANDIDATE = "dsh-0.1.5rc1"
 ROLLBACK = "dsh-0.1.2rc1"
 
 SNAPSHOT_FILES = {
+    "compose.yml": "promotion-snapshot.compose.yml",
     "config/dsh/releases/dsh-0.1.5rc1.json": "promotion-snapshot.release.json",
     "config/dsh/generated/deployment.identity.json": "promotion-snapshot.identity.json",
     "services/runtime-adapter/Dockerfile.post-u8-candidate": "promotion-snapshot.Dockerfile",

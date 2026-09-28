@@ -234,13 +234,15 @@ def post(path, payload=None, expected=(200, 201, 202)):
     except HTTPError as exc:
         return exc.code, json.loads(exc.read())
 
-status, created = post("/sessions", {"session_id": session_id, "trace_id": "phase6-smoke-trace"})
-assert status == 201
+status, created = post("/sessions", {"session_id": session_id, "trace_id": "phase6-smoke-trace",
+                                     "owner_principal": "phase6-smoke-user", "workspace_id": "phase6-smoke-workspace"})
+assert status == 201, (status, created)
 assert created["status"] == "ready"
 assert created["process_ownership"] == "dedicated"
 assert created["persistence"] == "dsh-owned"
 
-duplicate_status, _ = post("/sessions", {"session_id": session_id, "trace_id": "duplicate"})
+duplicate_status, _ = post("/sessions", {"session_id": session_id, "trace_id": "duplicate",
+                                         "owner_principal": "phase6-smoke-user", "workspace_id": "phase6-smoke-workspace"})
 assert duplicate_status == 409
 
 # The enqueue is keyless. If the provider fails immediately, the lifecycle

@@ -46,6 +46,22 @@ elif action == 'checkpoint':
             {'kind': 'artifact', 'id': payload['approval_artifact_id']},
             {'kind': 'artifact', 'id': payload['baseline_artifact_id']}], 'completion_evidence': []})
     store.close(); print(json.dumps({'checkpoint': 'saved'}))
+elif action == 'diagnose':
+    # CI diagnostics contain only fixed status categories and counts. Never
+    # print identities, task content, progress text, prompts or receipts.
+    store = ResearchStore()
+    task = store._fetch_one('SELECT * FROM research_tasks WHERE task_id=:task AND owner_principal=:owner',
+        {'task': payload['task_id'], 'owner': owner})
+    budget = task.get('continuation_budget') or []
+    allowed = {'reserved', 'accepted', 'outcome_unknown', 'settled', 'rejected'}
+    statuses = {status: sum(row.get('status') == status for row in budget) for status in sorted(allowed)}
+    statuses['other'] = len(budget) - sum(statuses.values())
+    print(json.dumps({'task_complete': task['status'] == 'completed',
+        'budget_status_counts': statuses,
+        'prediction_completed': bool(store._execute(
+            "SELECT 1 FROM ml_prediction_runs WHERE task_id=:task AND status='completed' LIMIT 1",
+            {'task': task['task_id']}))}))
+    store.close()
 elif action == 'verify':
     store = ResearchStore()
     task = store._fetch_one('SELECT * FROM research_tasks WHERE task_id=:task AND owner_principal=:owner',

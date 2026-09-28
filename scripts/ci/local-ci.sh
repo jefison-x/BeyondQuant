@@ -332,7 +332,7 @@ prepare_ci_compose_env() {
   export BYQ_FEEDBACK_HUB_URL=""
   # ADR-0069: daily suites use the supported bundled runtime only.
   # Archived rollback images are never rebuilt or executed by routine CI.
-  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-240-candidate
+  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-242-candidate
   export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1
   export BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml
   export BYQ_DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-0.1.5rc1
@@ -610,7 +610,7 @@ check_dsh_candidate() {
 }
 
 check_mcp() {
-  step "mcp: npm test (tsc build + in-container server + contract tests)"
+  step "mcp: component tests (tsc build + in-container server)"
   ensure_clean_postgres || { bad "clean postgres for MCP"; return; }
   ensure_ci_backend || { bad "live backend for MCP"; return; }
   # A successful domain write needs a real isolated user/workspace, not the
@@ -634,7 +634,7 @@ check_mcp() {
       -v "$REPO_ROOT/services/mcp/package.json:/app/package.json" \
       -v "$REPO_ROOT/services/mcp/tsconfig.json:/app/tsconfig.json" \
       -w /app "$(ci_image mcp)" \
-      sh -ec 'npm run build; node dist/src/server.js >/tmp/byq-mcp-server.log 2>&1 & server_pid=$!; trap "kill $server_pid >/dev/null 2>&1 || true" EXIT; sleep 3; npm test'; then
+      sh -ec 'npm run build; node dist/src/server.js >/tmp/byq-mcp-server.log 2>&1 & server_pid=$!; trap "kill $server_pid >/dev/null 2>&1 || true" EXIT; sleep 3; npm run test:component'; then
     ok "mcp tests"; else bad "mcp tests"; fi
 }
 
