@@ -33,6 +33,7 @@ class BuildRevisionTests(unittest.TestCase):
 
     def test_previous_and_current_post_u8_builds_keep_distinct_dockerfiles(self):
         frozen = "dsh-0.1.5rc1-post-u8.215"
+        newest_frozen = "dsh-0.1.5rc1-post-u8.237"
         previous = "dsh-0.1.5rc1-post-u8.235"
         older = "dsh-0.1.5rc1-post-u8.225"
         older_224 = "dsh-0.1.5rc1-post-u8.224"
@@ -52,10 +53,11 @@ class BuildRevisionTests(unittest.TestCase):
         self.assertEqual(builds.identity(older_223)[1],
                          "services/runtime-adapter/Dockerfile.post-u8-223-candidate")
         self.assertEqual(builds.check(previous)["build_id"], previous)
+        self.assertEqual(builds.check(newest_frozen)["build_id"], newest_frozen)
         self.assertEqual(builds.check(older)["build_id"], older)
-        self.assertEqual(current, "dsh-0.1.5rc1-post-u8.237")
+        self.assertEqual(current, "dsh-0.1.5rc1-post-u8.238")
         self.assertEqual(builds.identity(current)[1],
-                         "services/runtime-adapter/Dockerfile.post-u8-237-candidate")
+                         "services/runtime-adapter/Dockerfile.post-u8-238-candidate")
 
     def test_forged_revision_missing_input_drift_and_cross_release_fail(self):
         original = builds.render(builds.selected_build_id("dsh-0.1.5rc1"))

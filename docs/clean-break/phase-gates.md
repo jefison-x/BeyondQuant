@@ -1,5 +1,22 @@
 # Phase 0–6 gate record
 
+## Phase 7 dead persistence deletion gate (2026-09-28)
+
+[Bounded evidence](phase7-dead-persistence-evidence.md) records deletion of
+disconnected Adapter containment/epoch disk stores and the old takeover tool,
+retention of live in-process fencing and budget guards, pinned historical
+provenance, selected `.238` build qualification and scoped image cleanup.
+
+**Tester:** PASS — 131 focused historical, architecture and build tests,
+selected `.238` and frozen `.237` checks, and diff check. Root's disposable
+`.238` image passed embedded-identity and removed-module checks; affected
+Adapter tests passed 95 with 10 skips, and the image was removed.
+**Independent Sol Reviewer:** Functional PASS / Tests PASS /
+Clean Break Architecture PASS after direct staged and unstaged diff,
+interface, provenance, build and evidence inspection. **Root acceptance:**
+PASS for this bounded dead-persistence deletion only. Phase 7 overall remains
+OPEN and Phase 8 CLOSED.
+
 ## Phase 7 Adapter journal cutover gate (2026-09-28)
 
 The maintainer explicitly accepted deleting Adapter persistence safeguards and

@@ -1,120 +1,12 @@
-"""Standalone containment contracts and the Adapter's no-disk projection."""
+"""In-process Adapter generation and late-terminal fencing tests."""
 from __future__ import annotations
-
-import hashlib
-from pathlib import Path
 
 import pytest
 
 from packages.contracts import session_failure_containment as containment_contract
 from packages.contracts.session_failure_containment import FencedWrite
-from app import containment
-from app import executor_identity
-from app.executor_identity import ExecutorFenced, ExecutorIdentity
-from app.runtime import RuntimeAdapter, SessionConflict, SessionStatus
+from app.runtime import RuntimeAdapter, SessionStatus
 from .test_process_cleanup import FakeHarness, adapter, wait_for_status  # noqa: F401
-from .test_session_rehydration import _simulate_process_death
-
-
-def _restart(adapter: RuntimeAdapter) -> RuntimeAdapter:
-    return RuntimeAdapter(adapter._compatibility)
-
-
-def test_lost_executor_run_is_interrupted_and_business_state_survives(
-    adapter: RuntimeAdapter,
-) -> None:
-    FakeHarness.allow_run.clear()
-    adapter.create_session("loss-1", "loss-trace", "alice", "workspace_alice")
-    content = "synthetic long research"
-    root = adapter.submit_prompt("loss-1", content, idempotency_key="loss-original-key")
-    assert FakeHarness.run_started.wait(1.0)
-    record = adapter._get("loss-1")
-    durable_sequence = record.sequence
-    assert record.status == SessionStatus.RUNNING
-
-    _simulate_process_death(adapter)
-    restarted = _restart(adapter)
-    try:
-        with pytest.raises(KeyError):
-            restarted.submit_prompt("loss-1", "must not be replayed")
-        with pytest.raises(SessionConflict, match="interrupted"):
-            restarted.create_session(
-                "loss-1", "loss-trace", "alice", "workspace_alice", durable_sequence, [],
-            )
-        # The old Adapter process is gone. Preserve uncertainty without
-        # claiming the run completed or automatically admitting another turn.
-        digest = hashlib.sha256(content.encode()).hexdigest()
-        assert restarted.reconcile_prompt("loss-1", "loss-original-key", digest) == {
-            "schema_version": "prompt-receipt.v1", "state": "outcome_unknown",
-        }
-        assert FakeHarness.instances[0].run_count == 1
-
-        records = containment.read(restarted._session_root / "byq-lifecycle-evidence", "loss-1")
-        assert records == []
-        assert root
-    finally:
-        restarted.close()
-        FakeHarness.allow_run.set()
-        adapter.close()
-
-
-def test_containment_write_fails_closed_on_stale_executor_epoch(
-    adapter: RuntimeAdapter,
-) -> None:
-    adapter.create_session("loss-2", "loss-2-trace", "alice", "workspace_alice")
-    evidence_root = adapter._session_root / "byq-lifecycle-evidence"
-    current = executor_identity.resolve(evidence_root)
-    adapter.release_session("loss-2")
-    # An explicit, audited takeover advances the authoritative volume epoch; the
-    # previous epoch becomes a fenced writer.
-    executor_identity.takeover(evidence_root, reason="synthetic containment takeover", operator="test")
-    stale = ExecutorIdentity(
-        deployment_id=current.deployment_id, runtime_release=current.runtime_release,
-        volume_identity=current.volume_identity, executor_epoch=current.executor_epoch,
-        state_path=current.state_path, reason="test-stale",
-    )
-    context = {"session_id": "loss-2", "trace_id": "loss-2-trace",
-               "owner": "alice", "workspace_id": "workspace_alice"}
-    with pytest.raises(ExecutorFenced):
-        containment.record_loss(
-            evidence_root, context=context, executor=stale, loss_cause="executor-loss",
-            interrupted_run_id="a" * 32, interrupted_generation="generation-dead",
-            attempt=1, recorded_at=1.0)
-    assert containment.read(evidence_root, "loss-2") == []
-    adapter.close()
-
-
-def test_duplicate_or_reopened_containment_attempt_is_rejected(
-    adapter: RuntimeAdapter,
-) -> None:
-    adapter.create_session("loss-3", "loss-3-trace", "alice", "workspace_alice")
-    evidence_root = adapter._session_root / "byq-lifecycle-evidence"
-    executor = executor_identity.resolve(evidence_root)
-    context = {"session_id": "loss-3", "trace_id": "loss-3-trace",
-               "owner": "alice", "workspace_id": "workspace_alice"}
-
-    def write(*, loss_cause="executor-loss", generation="generation-old", attempt=1, at=1.0):
-        return containment.record_loss(
-            evidence_root, context=context, executor=executor, loss_cause=loss_cause,
-            interrupted_run_id="b" * 32, interrupted_generation=generation,
-            attempt=attempt, recorded_at=at)
-
-    first = write()
-    assert len(first) == 1
-    # An exact re-observation is idempotent, not a second fact.
-    assert write(at=99.0) == first
-    # A different terminal for the same attempt is a reopen: fail closed.
-    with pytest.raises(FencedWrite):
-        write(loss_cause="runtime-loss")
-    with pytest.raises(FencedWrite):
-        write(generation="generation-other")
-    # A genuine later loss is a new, allowed attempt.
-    second = write(generation="generation-new", attempt=2, at=2.0)
-    assert [row["attempt"] for row in second] == [1, 2]
-    # A late settlement of the superseded attempt cannot reopen it.
-    with pytest.raises(FencedWrite):
-        write(loss_cause="runtime-loss", at=3.0)
-    adapter.close()
 
 
 def test_stale_generation_terminal_settlement_is_fenced(adapter: RuntimeAdapter) -> None:
@@ -130,7 +22,6 @@ def test_stale_generation_terminal_settlement_is_fenced(adapter: RuntimeAdapter)
     resumed = adapter.resume_session("loss-4")
     assert resumed["continuity"] == "interrupted"
     assert record.runtime_generation != old_generation
-    # A terminal for the replaced generation can no longer settle state.
     assert adapter._terminal_fenced(record, old_generation, record.executor_epoch) is True
     adapter.close()
     FakeHarness.allow_run.set()
@@ -147,8 +38,6 @@ def test_late_success_cannot_overwrite_a_newer_generation(adapter: RuntimeAdapte
     adapter.cancel_session("loss-5", "hard")
     adapter.resume_session("loss-5")
     history_before = list(record.history)
-    # Release the old, blocked worker: its late success must not reopen or
-    # overwrite the new generation's state.
     FakeHarness.allow_run.set()
     wait_for_status(adapter, "loss-5", SessionStatus.READY)
     assert record.history == history_before
@@ -159,42 +48,18 @@ def test_late_success_cannot_overwrite_a_newer_generation(adapter: RuntimeAdapte
 
 def test_terminal_settlement_guard_rejects_duplicate_and_late(adapter: RuntimeAdapter) -> None:
     contract = containment_contract
-    contract.assert_terminal_settlement(settled={1: "interrupted"}, write_attempt=2, write_terminal="interrupted")
+    contract.assert_terminal_settlement(
+        settled={1: "interrupted"}, write_attempt=2, write_terminal="interrupted",
+    )
     with pytest.raises(FencedWrite):
-        contract.assert_terminal_settlement(settled={1: "interrupted"}, write_attempt=1, write_terminal="interrupted")
+        contract.assert_terminal_settlement(
+            settled={1: "interrupted"}, write_attempt=1, write_terminal="interrupted",
+        )
     with pytest.raises(FencedWrite):
-        contract.assert_terminal_settlement(settled={1: "interrupted"}, write_attempt=1, write_terminal="completed")
+        contract.assert_terminal_settlement(
+            settled={1: "interrupted"}, write_attempt=1, write_terminal="completed",
+        )
     with pytest.raises(FencedWrite):
-        contract.assert_terminal_settlement(settled={2: "completed"}, write_attempt=1, write_terminal="interrupted")
-
-
-def test_containment_summary_http_boundary(
-    adapter: RuntimeAdapter, monkeypatch, allow_current_runtime_authority,
-) -> None:
-    from fastapi.testclient import TestClient
-    from app import main
-
-    FakeHarness.allow_run.clear()
-    adapter.create_session("loss-http", "loss-http-trace", "alice", "workspace_alice")
-    adapter.submit_prompt("loss-http", "running")
-    assert FakeHarness.run_started.wait(1.0)
-    _simulate_process_death(adapter)
-    restarted = _restart(adapter)
-    monkeypatch.setattr(main, "adapter", restarted)
-    allow_current_runtime_authority(restarted)
-    client = TestClient(main.app)
-    try:
-        prompt = client.post("/internal/runtime/sessions/loss-http/prompt", json={"content": "must not replay"})
-        assert prompt.status_code == 404
-        recreated = client.post("/internal/runtime/sessions", json={
-            "session_id": "loss-http", "trace_id": "loss-http-trace",
-            "owner_principal": "alice", "workspace_id": "workspace_alice", "initial_sequence": 1,
-        })
-        assert recreated.status_code == 409
-        assert "interrupted" in recreated.json()["detail"]
-        # The old cross-process containment projection has no Product route.
-        assert client.get("/internal/runtime/sessions/loss-http/containment").status_code == 404
-    finally:
-        restarted.close()
-        FakeHarness.allow_run.set()
-        adapter.close()
+        contract.assert_terminal_settlement(
+            settled={2: "completed"}, write_attempt=1, write_terminal="interrupted",
+        )

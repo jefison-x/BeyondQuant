@@ -39,6 +39,7 @@ PRE_CLEAN_BREAK_COMMIT = "d4c6a9e34f531d27dd0e94804be6ed0aa6f9fde3"
 HISTORICAL_PROVENANCE_SOURCES = frozenset({
     "services/gateway/app/main.py",
     "services/runtime-adapter/app/runtime.py",
+    "services/runtime-adapter/app/containment.py",
 })
 NEGATIVE_SCHEMA = "byq-v090-session-containment-negative-controls.v2"
 
@@ -302,9 +303,9 @@ def _source_digests() -> dict:
         "packages/contracts/session_failure_containment.py":
             _digest(ROOT / "packages/contracts/session_failure_containment.py"),
         "services/runtime-adapter/app/containment.py":
-            _digest(ROOT / "services/runtime-adapter/app/containment.py"),
+            _historical_source_digest("services/runtime-adapter/app/containment.py"),
         "services/runtime-adapter/app/runtime.py":
-            _digest(ROOT / "services/runtime-adapter/app/runtime.py"),
+            _historical_source_digest("services/runtime-adapter/app/runtime.py"),
         "services/gateway/app/session_containment.py":
             _digest(ROOT / "services/gateway/app/session_containment.py"),
         # The endpoint observation is historical evidence. Bind this one source
@@ -324,17 +325,15 @@ def _verify_provenance_digests(observations: dict, failures: list[str]) -> None:
     if not digests:
         failures.append("observations: empty source digest binding")
     for relative, expected in digests.items():
+        if relative in HISTORICAL_PROVENANCE_SOURCES:
+            if expected != _historical_source_digest(relative):
+                failures.append(f"provenance: source digest mismatch for {relative}")
+            continue
         path = ROOT / relative
         if not path.is_file():
             failures.append(f"provenance: missing source {relative}")
             continue
-        accepted = {_digest(path)}
-        # These two paths changed in Clean Break slices 2 and 3. Their committed
-        # v0.9 digests may match only the exact pinned pre-Clean-Break Git tree;
-        # every other provenance source stays current-bound.
-        if relative in HISTORICAL_PROVENANCE_SOURCES:
-            accepted.add(_historical_source_digest(relative))
-        if expected not in accepted:
+        if expected != _digest(path):
             failures.append(f"provenance: source digest mismatch for {relative}")
 
 

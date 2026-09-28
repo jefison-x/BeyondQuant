@@ -126,6 +126,7 @@ class CommittedEvidenceTests(unittest.TestCase):
         self.assertEqual(observer.HISTORICAL_PROVENANCE_SOURCES, {
             "services/gateway/app/main.py",
             "services/runtime-adapter/app/runtime.py",
+            "services/runtime-adapter/app/containment.py",
         })
         for relative, expected in digests.items():
             self.assertRegex(expected, r"^sha256:[0-9a-f]{64}$", relative)
@@ -217,8 +218,7 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(verdict["verdict"], "NO_GO")
 
     def test_no_second_harness_session_store_or_dsh_business_db_access(self):
-        for path in (ROOT / "services/runtime-adapter/app/containment.py",
-                     ROOT / "services/gateway/app/session_containment.py",
+        for path in (ROOT / "services/gateway/app/session_containment.py",
                      ROOT / "packages/contracts/session_failure_containment.py"):
             text = path.read_text(encoding="utf-8")
             self.assertNotIn("psycopg", text, str(path))
