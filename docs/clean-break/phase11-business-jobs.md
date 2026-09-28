@@ -86,15 +86,77 @@ accepts this bounded slice as **local PASS**. The live MCP contract that needs
 the full Adapter stack remains a later Product integration gate. Phase 11
 overall remains OPEN.
 
+## Training boundary qualification
+
+The existing `ml_training_runs` store, independently started ML Worker, and
+validated feature/model Artifacts satisfy the specialized TrainingJob ownership
+boundary. On a fresh disposable PostgreSQL database, the focused training and
+API tests passed (2/2): they covered durable store reopen, retry and stale
+attempt fencing, Artifact creation, and a stable workspace-scoped common Job
+read projection. The temporary database and network were removed. Independent
+Tester: PASS. Independent Sol Reviewer: Functional PASS / Tests PASS / Clean
+Break Architecture PASS **for this bounded qualification**. Root accepts that
+qualification as local PASS; Phase 11 overall remains OPEN.
+
+The common Job contract is now returned on submission, cancellation and
+reconciliation. While data preparation is pending, `submission_ref` identifies
+the frozen request; once available, the feature snapshot hash becomes the
+input reference. The two focused Training tests passed again in the combined
+fresh PostgreSQL rerun. One independent Worker process lifecycle test must
+still cover interruption, expired claim and a new authorized session reading
+the same ID before the complete Phase 11 TrainingJob gate. These tests use a
+fake trainer and do not establish actual Worker restart or GPU checkpoint
+recovery. Real GPU and partial training checkpoint/restart remain Phase 16
+Golden evidence.
+
+## Optimization bounded slice and gate
+
+`POST /v1/research/optimization-jobs` now queues a workspace-scoped Job that
+ranks 2–20 completed BacktestJobs against one objective. Each caller-supplied
+parameter set must match its validated strategy version; the candidates must
+share frozen comparable inputs. The independent Optimization Worker reads the
+immutable backtest results, computes the ranking, and commits a validated
+comparison Artifact and successful Job state in one transaction. It does not
+generate parameter sets or rerun backtests. MCP offers submit, exact-key/ID
+get, and cancel. An existing Agent session is not required for Worker progress
+or later Job lookup.
+
+Submission and final Worker commit lock source BacktestJob rows; ordinary
+backtest deletion rejects any Job referenced by an OptimizationJob, including
+a completed comparison. This preserves stable source lineage. Cancellation
+and expired attempts cannot leave a comparison Artifact. The role catalog
+grants the new tools only to the current quant orchestrator and backtest
+analyst roles; pinned older role versions do not gain them.
+
+Fresh disposable PostgreSQL evidence: the optimization and two focused ML
+tests plus two role tests passed (22 total). The final source-lock and
+role-version regressions then passed 3/3, and the latest role-version test
+passed again 1/1. The MCP TypeScript build, optimization helper test,
+read-only-subset test, Compose config and diff check passed. Temporary
+PostgreSQL and MCP containers and network were removed. Independent Tester:
+PASS. Independent Sol Reviewer: Functional PASS / Tests PASS / Clean Break
+Architecture PASS after re-review of the source deletion and role-version
+fixes. Root accepts this bounded slice as **local PASS**; Phase 11 overall
+remains OPEN. Full Agent/Product and multi-round Golden qualification remains
+Phase 15–16 work.
+
 ## Remaining Phase 11 work
 
 | Type | Current state | Remaining boundary work |
 |---|---|---|
 | Backtest | Durable store, Artifact and independent polling Worker; first slice locally accepted | Full Product/Golden qualification remains in Phases 15–16. |
-| Training | Durable `ml_training_runs`, independent ML Worker and model Artifact | Complete common public projection exposure and verify worker restart/attempt behavior at this boundary. |
+| Training | Durable `ml_training_runs`, independent ML Worker and model Artifact; create/get/cancel/reconcile common projection and waiting input ref implemented | Qualify real Worker process interruption and new-session read. GPU checkpoint/restart remains Phase 16. |
 | Factor compute | Durable workspace-scoped Job, independent Worker and validated Artifact; bounded slice locally accepted | Full Product/Golden qualification remains in Phases 15–16. |
-| Optimization | Proposal card only; no executable domain Job | Define a bounded deterministic optimization request/Job/Worker and result Artifact. Do not treat a proposal as completed work. |
+| Optimization | Completed-candidate parameter search Job, polling Worker, validated comparison Artifact and MCP tools; bounded slice locally accepted | Full Product/Golden flow remains Phase 15–16. |
 | Data import | Scheduled market-session sync and admin range sync are worker-backed; admin slice locally accepted | Define the workspace-scoped DataImportJob and Artifact boundary from ADR-003; keep global admin sync clearly separate. |
+
+For the workspace data-import slice, reuse the persisted `data_demands`
+identity and the existing Data Worker's market repair work. A task-bound
+request needs a stable common Job projection and a validated data-readiness
+Artifact. The Data Worker must finalize it; routine Agent reads should observe
+the persisted result without becoming the owner of completion. The global
+admin range sync remains a separate system operation. This is the intended
+boundary for the next slice, not acceptance evidence yet.
 
 These are domain Jobs, not Agent continuation state. They must remain queryable
 by stable business ID after an Agent session disappears. Full new-schema Golden

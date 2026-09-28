@@ -27,6 +27,13 @@ import {
 } from "./backtest.js";
 import { fetchByqFactorCompute, fetchByqFactorJobGet, type FactorComputeRequest, type FactorJobLookup } from "./factor-research.js";
 import {
+  fetchByqOptimizationCancel,
+  fetchByqOptimizationGet,
+  fetchByqOptimizationSubmit,
+  type OptimizationLookup,
+  type OptimizationRequest,
+} from "./optimization-research.js";
+import {
   fetchByqAgentApprovalDecide,
   fetchByqAgentApprovalGet,
   fetchByqAgentApprovalRequest,
@@ -644,6 +651,22 @@ async function byqFactorCompute(args: FactorComputeRequest, extra: unknown) {
 async function byqFactorJobGet(args: FactorJobLookup, extra: unknown) {
   const context = completeAgentContext(extra);
   return context ? fetchByqFactorJobGet(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
+}
+
+async function byqOptimizationSubmit(args: OptimizationRequest, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqOptimizationSubmit(BACKEND_URL, { ...args, trace_id: context.trace_id },
+    trustedBackendFetcher(context)) : agentContextUnavailable();
+}
+
+async function byqOptimizationGet(args: OptimizationLookup, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqOptimizationGet(BACKEND_URL, args, trustedBackendFetcher(context)) : agentContextUnavailable();
+}
+
+async function byqOptimizationCancel(args: { job_id: string }, extra: unknown) {
+  const context = completeAgentContext(extra);
+  return context ? fetchByqOptimizationCancel(BACKEND_URL, args.job_id, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
 async function byqStrategyDraftSave(args: StrategyRequest, extra: unknown) {
@@ -1311,6 +1334,43 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
         idempotency_key: z.string().trim().min(1).max(128).optional() },
     },
     (args) => byqFactorJobGet(args, trustedContext),
+  );
+  registerTool(
+    "byq_optimization_submit",
+    {
+      description: "Rank 2 to 20 already completed, comparable BacktestJobs using explicit parameter sets that must match their validated strategy versions. This queues a deterministic completed-candidate comparison; it never reruns backtests. Read or reconcile it with byq_optimization_get, and cancel with byq_optimization_cancel.",
+      inputSchema: {
+        task_id: z.string().regex(/^task_[0-9a-f]{32}$/),
+        experiment_id: z.string().regex(/^experiment_[0-9a-f]{32}$/).optional(),
+        idempotency_key: z.string().trim().min(1).max(128),
+        objective: z.enum(["total_return", "sharpe_ratio", "max_drawdown"]),
+        candidates: z.array(z.object({
+          backtest_job_id: z.string().regex(/^backtest_[0-9a-f]{32}$/),
+          parameters: z.record(z.string(), z.unknown()),
+        }).strict()).min(2).max(20),
+      },
+    },
+    (args) => byqOptimizationSubmit(args, trustedContext),
+  );
+  registerTool(
+    "byq_optimization_get",
+    {
+      description: "Read one OptimizationJob by job_id, or reconcile a lost submission response using the exact original task_id and idempotency_key. Supply one identity form only; a missing receipt does not authorize a new key.",
+      inputSchema: {
+        job_id: z.string().regex(/^optimizationjob_[0-9a-f]{32}$/).optional(),
+        task_id: z.string().regex(/^task_[0-9a-f]{32}$/).optional(),
+        idempotency_key: z.string().trim().min(1).max(128).optional(),
+      },
+    },
+    (args) => byqOptimizationGet(args, trustedContext),
+  );
+  registerTool(
+    "byq_optimization_cancel",
+    {
+      description: "Cancel an active completed-candidate parameter search by its OptimizationJob ID.",
+      inputSchema: { job_id: z.string().regex(/^optimizationjob_[0-9a-f]{32}$/) },
+    },
+    (args) => byqOptimizationCancel(args, trustedContext),
   );
   registerTool(
     "byq_strategy_draft_save",

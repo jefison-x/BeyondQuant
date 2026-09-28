@@ -290,6 +290,32 @@ services:
     mem_limit: 768m
     cpus: 1.0
 
+  optimization-worker:
+    build:
+      context: .
+      dockerfile: workers/optimization/Dockerfile
+    environment:
+      BYQ_DATABASE_URL: ${BYQ_DATABASE_URL:-postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain}
+      BYQ_BACKTEST_OBJECT_ROOT: /var/lib/byq/domain/backtest-objects
+      BYQ_OPTIMIZATION_POLL_SECONDS: ${BYQ_OPTIMIZATION_POLL_SECONDS:-1}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    volumes:
+      - byq_domain_state:/var/lib/byq/domain:ro
+    networks:
+      - byq_product
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 64
+    mem_limit: 768m
+    cpus: 1.0
+
   signal-worker:
     build:
       context: .

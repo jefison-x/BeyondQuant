@@ -84,6 +84,11 @@ from .credentials import (
 from .factor_research import FactorValidationError, compute_factor
 from .factor_submission import submit_factor
 from .factor_job import FactorJobStore
+from .optimization_job import (
+    OptimizationConflict,
+    OptimizationJobStore,
+    OptimizationValidationError,
+)
 from .backtest import (
     BacktestConflict,
     BacktestError,
@@ -392,6 +397,7 @@ security_master_store = SecurityMasterStore.from_env()
 conversation_store = ConversationCatalogStore.from_env()
 backtest_store = BacktestJobStore.from_env()
 factor_job_store = FactorJobStore.from_env()
+optimization_job_store = OptimizationJobStore.from_env()
 workspace_tenancy_store = WorkspaceTenancyStore.from_env()
 CREDENTIAL_RESOLVER_TOKEN = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
 FEEDBACK_PUBLISHER_TOKEN = os.environ.get("BYQ_FEEDBACK_PUBLISHER_TOKEN")
@@ -1876,7 +1882,7 @@ def list_security_master(
 def _research_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
     try:
         return operation()
-    except (MLValidationError, FactorValidationError) as error:
+    except (MLValidationError, FactorValidationError, OptimizationValidationError) as error:
         raise HTTPException(status_code=422, detail=error.public_problem()) from error
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
@@ -1886,6 +1892,21 @@ def _research_call(operation: Callable[[], dict[str, object]]) -> dict[str, obje
         raise HTTPException(status_code=409, detail=str(error)) from error
     except ResearchPersistenceError as error:
         raise HTTPException(status_code=503, detail="research storage is unavailable") from error
+
+
+def _optimization_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return operation()
+    except OptimizationValidationError as error:
+        raise HTTPException(status_code=422, detail=error.public_problem()) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except ResearchNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except OptimizationConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except SQLAlchemyError as error:
+        raise HTTPException(status_code=503, detail="optimization job storage is unavailable") from error
 
 
 def _backtest_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
@@ -2426,6 +2447,73 @@ def find_research_factor_job(task_id: str, idempotency_key: str, request: Reques
             raise ResearchNotFound("factor job not found")
         return {"job": job}
     return _research_call(operation)
+
+
+@app.post("/v1/research/optimization-jobs", status_code=202)
+def create_research_optimization_job(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    """Queue a comparison of completed backtests with explicit parameter records."""
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        supplied_trace = payload.get("trace_id")
+        if supplied_trace is not None and supplied_trace != context["trace_id"]:
+            raise HTTPException(status_code=401, detail="trace_id does not match trusted runtime context")
+        normalized = {**payload, "trace_id": context["trace_id"]}
+        job = optimization_job_store.create(
+            normalized, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+        )
+        return {"job": job, "business_job": project_business_job("OPTIMIZATION", job)}
+
+    return _optimization_call(operation)
+
+
+@app.get("/v1/research/optimization-jobs/{job_id}")
+def get_research_optimization_job(job_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        job = optimization_job_store.get(
+            job_id=job_id, trusted_owner=context["owner_principal"],
+            trusted_workspace=context["workspace_id"],
+        )
+        if job is None:
+            raise ResearchNotFound("optimization job not found")
+        return {"job": job, "business_job": project_business_job("OPTIMIZATION", job)}
+
+    return _optimization_call(operation)
+
+
+@app.get("/v1/research/optimization-jobs")
+def find_research_optimization_job(
+    request: Request, task_id: str, idempotency_key: str,
+) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        job = optimization_job_store.get(
+            task_id=task_id, idempotency_key=idempotency_key,
+            trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+        )
+        if job is None:
+            raise ResearchNotFound("optimization job not found")
+        return {"job": job, "business_job": project_business_job("OPTIMIZATION", job)}
+
+    return _optimization_call(operation)
+
+
+@app.post("/v1/research/optimization-jobs/{job_id}/cancel")
+def cancel_research_optimization_job(job_id: str, request: Request) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        job = optimization_job_store.cancel(
+            job_id, trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
+        )
+        if job is None:
+            raise ResearchNotFound("optimization job not found")
+        return {"job": job, "business_job": project_business_job("OPTIMIZATION", job)}
+
+    return _optimization_call(operation)
 
 
 def _domain_validation_operation(request, payload, context, action, operation):
@@ -3101,7 +3189,7 @@ def create_ml_training_run(payload: dict[str, Any], request: Request) -> dict[st
             requirement=requirements[0], readiness=readiness, trace_id=data.get("trace_id"),
             idempotency_key=data.get("idempotency_key"),
         )
-        return {"training_run": run}
+        return {"training_run": run, "business_job": project_business_job("TRAINING", run)}
 
     try:
         return _ml_call(operation)
@@ -3154,10 +3242,14 @@ def get_ml_training_run_by_idempotency(
 ) -> dict[str, object]:
     """Reconcile an outcome-unknown create without exposing cross-workspace state."""
     context = _required_agent_context(request, include_workspace=True)
-    return _ml_call(lambda: {"training_run": ml_training_store.get_by_idempotency(
-        idempotency_key, trusted_workspace=context["workspace_id"],
-        trusted_owner=context["owner_principal"],
-    )})
+    def operation() -> dict[str, object]:
+        run = ml_training_store.get_by_idempotency(
+            idempotency_key, trusted_workspace=context["workspace_id"],
+            trusted_owner=context["owner_principal"],
+        )
+        return {"training_run": run, "business_job": project_business_job("TRAINING", run)}
+
+    return _ml_call(operation)
 
 
 @app.get("/v1/research/ml/training-runs/{training_run_id}")
@@ -3176,10 +3268,14 @@ def get_ml_training_run(training_run_id: str, request: Request) -> dict[str, obj
 @app.post("/v1/research/ml/training-runs/{training_run_id}/cancel")
 def cancel_ml_training_run(training_run_id: str, request: Request) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
-    return _ml_call(lambda: {"training_run": ml_training_store.cancel(
-        training_run_id, trusted_workspace=context["workspace_id"],
-        trusted_owner=context["owner_principal"],
-    )})
+    def operation() -> dict[str, object]:
+        run = ml_training_store.cancel(
+            training_run_id, trusted_workspace=context["workspace_id"],
+            trusted_owner=context["owner_principal"],
+        )
+        return {"training_run": run, "business_job": project_business_job("TRAINING", run)}
+
+    return _ml_call(operation)
 
 
 @app.post("/v1/research/ml/prediction-runs", status_code=202)

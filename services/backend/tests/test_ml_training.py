@@ -498,11 +498,13 @@ def test_training_run_creates_immutable_feature_and_model_artifacts(tmp_path) ->
             requirement={"requirement_sha256": "c" * 64}, readiness={"state": "ready"},
             trace_id="trace-ml", idempotency_key="train-1",
         )
+        assert run["submission_ref"].startswith("ml-submission-sha256:")
         reconciled = runs.get_by_idempotency(
             "train-1", trusted_workspace=context["x-byq-workspace-id"],
             trusted_owner="ml-owner",
         )
         assert reconciled["training_run_id"] == run["training_run_id"]
+        assert reconciled["submission_ref"] == run["submission_ref"]
         duplicate = runs.create_waiting(
             workspace_id=context["x-byq-workspace-id"], owner_principal="ml-owner",
             task_id=task["task_id"], experiment_id=None,

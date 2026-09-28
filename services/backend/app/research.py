@@ -42,6 +42,7 @@ PRODUCER_OWNED_ARTIFACT_KINDS = frozenset({
     "strategy_draft", "strategy_version", "strategy_approval", "factor_result", "web_research_evidence",
     "ml_strategy_version", "ml_strategy_approval", "ml_feature_snapshot", "ml_model", "ml_model_bundle",
     "ml_regime_snapshot", "ml_prediction_snapshot", "signal_snapshot", "backtest_result",
+    "optimization_comparison",
 })
 _ID_PATTERN = re.compile(r"^(?:task|experiment|artifact)_[0-9a-f]{32}$")
 _TRACE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
@@ -1543,7 +1544,7 @@ class ResearchStore(
                 if (not proof or proof["stage"] != "completed" or not proof["completion_evidence"]
                         or proof["next_action"] is not None or proof["blocked_reason"] is not None):
                     raise InvalidTransition("research completion requires an explicit validated evidence checkpoint")
-                for job_table in ("experiments", "ml_training_runs", "ml_prediction_runs", "backtest_jobs", "factor_jobs"):
+                for job_table in ("experiments", "ml_training_runs", "ml_prediction_runs", "backtest_jobs", "factor_jobs", "optimization_jobs"):
                     active = fetch_one(connection,
                         f"SELECT COUNT(*) AS count FROM {job_table} WHERE task_id=:task AND status NOT IN ('completed','failed','cancelled')",
                         {"task": entity_id})

@@ -48,7 +48,7 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
     assert "byq_strategy_approve" not in strategy_tools
     assert "byq_backtest_run" not in strategy_tools
     orchestrator = ROLE_BY_ID["quant_orchestrator"]
-    assert orchestrator.version == "2.1.0"
+    assert orchestrator.version == "2.2.0"
     assert "byq_feedback_preview" in orchestrator.allowed_tools
     assert "byq_feedback_submit" in orchestrator.allowed_tools
     assert "byq_feedback_submit" in orchestrator.approval_required_actions
@@ -68,6 +68,8 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
         "byq_backtest_task_execute", "byq_backtest_task_cancel",
     }
     assert task_tools <= orchestrator_tools
+    optimization_tools = {"byq_optimization_submit", "byq_optimization_get", "byq_optimization_cancel"}
+    assert optimization_tools <= orchestrator_tools
     assert not {"byq_backtest_submit", "byq_backtest_run", "byq_backtest_cancel"} & orchestrator_tools
     assert not {
         "byq_pool_snapshot_create",
@@ -86,9 +88,12 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
         for role in ("factor_researcher", "strategy_researcher", "backtest_analyst", "ml_researcher")
     )
     assert ROLE_BY_ID["strategy_researcher"].version == "1.2.0"
-    assert ROLE_BY_ID["backtest_analyst"].version == "1.2.0"
+    assert ROLE_BY_ID["backtest_analyst"].version == "1.3.0"
     backtest_tools = set(ROLE_BY_ID["backtest_analyst"].allowed_tools)
     assert task_tools <= backtest_tools
+    assert optimization_tools <= backtest_tools
+    assert all(not optimization_tools.intersection(ROLE_BY_ID[role].allowed_tools)
+               for role in ("market_researcher", "factor_researcher", "strategy_researcher", "ml_researcher"))
     assert "byq_backtest_analysis_get" in backtest_tools
     assert "byq_research_task_create" in strategy_tools
     assert "byq_research_transition" not in strategy_tools
@@ -114,14 +119,24 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
     } <= ml_tools
 
 
-def test_old_run_does_not_gain_index_tools_after_role_upgrade() -> None:
+def test_old_run_does_not_gain_versioned_tools_after_role_upgrade() -> None:
     store = AgentResearchStore()
     try:
         run = start(store)
         assert store.authorize({"run_id": run["run_id"], "action": "byq_index_pool_create"})["authorized"]
+        store._execute("UPDATE agent_runs SET role_version='2.1.0' WHERE run_id=:id", {"id": run["run_id"]})
+        assert store.authorize({"run_id": run["run_id"], "action": "byq_index_pool_create"})["authorized"]
+        for tool in ("byq_optimization_submit", "byq_optimization_get", "byq_optimization_cancel"):
+            with pytest.raises(AgentForbidden):
+                store.authorize({"run_id": run["run_id"], "action": tool})
         store._execute("UPDATE agent_runs SET role_version='2.0.0' WHERE run_id=:id", {"id": run["run_id"]})
         with pytest.raises(AgentForbidden):
             store.authorize({"run_id": run["run_id"], "action": "byq_index_pool_create"})
+        analyst = start(store, role_id="backtest_analyst", idempotency_key="agent-run-analyst")
+        assert store.authorize({"run_id": analyst["run_id"], "action": "byq_optimization_get"})["authorized"]
+        store._execute("UPDATE agent_runs SET role_version='1.2.0' WHERE run_id=:id", {"id": analyst["run_id"]})
+        with pytest.raises(AgentForbidden):
+            store.authorize({"run_id": analyst["run_id"], "action": "byq_optimization_get"})
     finally:
         store.close()
 
@@ -272,6 +287,9 @@ def test_authorization_approval_and_audit_keep_execution_separate(tmp_path) -> N
 
     allowed = store.authorize({"run_id": run["run_id"], "action": "byq_factor_compute"})
     assert allowed["decision"] == "allowed"
+    for tool in ("byq_optimization_submit", "byq_optimization_get", "byq_optimization_cancel"):
+        assert store.authorize({"run_id": run["run_id"], "action": tool})["decision"] == "allowed"
+    assert store.authorize({"run_id": run["run_id"], "action": "byq_index_pool_catalog"})["decision"] == "allowed"
     pending = store.create_approval(
         {
             "run_id": run["run_id"],

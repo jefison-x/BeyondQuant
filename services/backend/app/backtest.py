@@ -1951,13 +1951,26 @@ class BacktestJobStore(PgStoreMixin):
         if not owner_principal:
             raise BacktestConflict("backtest deletion requires an owner principal")
         with self._transaction() as connection:
-            row = fetch_one(connection, "SELECT * FROM backtest_jobs WHERE job_id = :job_id", {"job_id": job_id})
+            row = fetch_one(connection, "SELECT * FROM backtest_jobs WHERE job_id = :job_id FOR UPDATE", {"job_id": job_id})
             if row is None:
                 raise BacktestNotFound("backtest job not found")
             if row["owner_principal"] != owner_principal:
                 raise BacktestConflict("backtest deletion requires matching owner scope")
             if row["status"] in {"queued", "running"}:
                 raise BacktestConflict("cannot delete an active backtest; cancel it first")
+            # Optimization submission holds this row FOR SHARE until its Job
+            # exists. Preserve the source ID for every recorded comparison,
+            # including completed Artifacts and failed/cancelled requests.
+            referenced = fetch_one(connection, """SELECT job_id FROM optimization_jobs
+                WHERE task_id=:task AND workspace_id=:workspace AND owner_principal=:owner
+                  AND (request_json->'candidates') @> CAST(:candidate AS jsonb)
+                LIMIT 1""", {
+                    "task": row["task_id"], "workspace": row["workspace_id"],
+                    "owner": row["owner_principal"],
+                    "candidate": json.dumps([{"backtest_job_id": job_id}]),
+                })
+            if referenced is not None:
+                raise BacktestConflict("backtest is referenced by an optimization job")
             deleted = self._public(row)
             execute(connection, "DELETE FROM backtest_jobs WHERE job_id = :job_id", {"job_id": job_id})
         return deleted

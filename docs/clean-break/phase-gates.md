@@ -1,5 +1,37 @@
 # Phase 0–6 gate record
 
+## Phase 11 Business Job — optimization bounded slice and Training projection (2026-09-28)
+
+[Execution record](phase11-business-jobs.md): completed-candidate parameter
+search now runs as a durable workspace-scoped OptimizationJob in an independent
+Worker and yields one validated comparison Artifact. Source BacktestJobs remain
+available for the comparison's lineage; cancellation and stale attempts cannot
+commit an Artifact. MCP submit/get/cancel uses exact-key reconciliation and
+current Agent role authority. Training create/get/cancel/reconcile now expose
+the common Job projection with a stable pending input reference. Fresh
+disposable PostgreSQL rerun: 22 passed; final source and role regressions:
+3 passed plus the latest role gate 1 passed. MCP build and focused tests,
+Compose config and diff check passed; temporary resources were removed.
+Independent Tester: PASS. Independent Sol Reviewer after fixes: Functional
+PASS / Tests PASS / Clean Break Architecture PASS. **Root acceptance: bounded
+Optimization and Training projection slice local PASS; Phase 11 overall OPEN.**
+Actual independent ML Worker interruption/new-session evidence and workspace
+DataImportJob/Artifact remain Phase 11 work. GPU checkpoint/restart remains a
+Phase 16 Golden gate.
+
+## Phase 11 Business Job — training boundary qualification (2026-09-28)
+
+[Execution record](phase11-business-jobs.md): existing persisted TrainingRun,
+independent ML Worker and validated model Artifact qualify the specialized
+Job ownership boundary. Two focused tests passed on a fresh disposable
+PostgreSQL database; temporary resources were removed. Independent Tester:
+PASS. Independent Sol Reviewer: Functional PASS / Tests PASS / Clean Break
+Architecture PASS for the bounded qualification. **Root acceptance: training
+boundary qualification local PASS; Phase 11 overall OPEN.** Common Job
+projection on create/cancel/reconcile, a waiting input reference, actual
+Worker process interruption and new-session read still require Phase 11
+evidence. GPU checkpoint/restart remains a Phase 16 Golden gate.
+
 ## Phase 11 Business Job — factor bounded slice (2026-09-28)
 
 [Execution record](phase11-business-jobs.md): factor submission now queues a

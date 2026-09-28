@@ -117,7 +117,7 @@ class AgentRole:
 ROLE_CATALOG: tuple[AgentRole, ...] = (
     AgentRole(
         role_id="quant_orchestrator",
-        version="2.1.0",
+        version="2.2.0",
         description="Coordinates bounded research hand-offs and explicit owner-scoped domain actions.",
         allowed_tools=(
             "byq_product_help_query",
@@ -150,6 +150,9 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
             "byq_index_pool_status",
             "byq_factor_compute",
             "byq_factor_job_get",
+            "byq_optimization_submit",
+            "byq_optimization_get",
+            "byq_optimization_cancel",
             "byq_research_task_create",
             "byq_research_get",
             "byq_research_transition",
@@ -264,7 +267,7 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
     ),
     AgentRole(
         role_id="backtest_analyst",
-        version="1.2.0",
+        version="1.3.0",
         description="Reviews authorized deterministic backtest jobs and result artifacts.",
         allowed_tools=(
             "byq_agent_context",
@@ -279,6 +282,9 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
             "byq_backtest_analysis_get",
             "byq_backtest_task_execute",
             "byq_backtest_task_cancel",
+            "byq_optimization_submit",
+            "byq_optimization_get",
+            "byq_optimization_cancel",
             "byq_evaluation_signal_create",
             "byq_experiment_compare",
         ),
@@ -1075,8 +1081,15 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             self._check_agent_run_authority(connection, row, authority, trusted_boot_id)
             self._check_runtime_context(row, trusted_session_id, trusted_dsh_run_id)
             role = ROLE_BY_ID[row["role_id"]]
-            index_action = action in {"byq_index_pool_catalog", "byq_index_pool_create", "byq_index_pool_status"}
-            if action not in role.allowed_tools or (index_action and row["role_version"] != "2.1.0"):
+            index_action = action in {
+                "byq_index_pool_catalog", "byq_index_pool_create", "byq_index_pool_status",
+            }
+            optimization_action = action in {
+                "byq_optimization_submit", "byq_optimization_get", "byq_optimization_cancel",
+            }
+            if (action not in role.allowed_tools
+                    or (index_action and row["role_version"] not in {"2.1.0", "2.2.0"})
+                    or (optimization_action and row["role_version"] != role.version)):
                 self._record_audit_row(row, action=action, outcome="denied", resource_type=resource_type,
                     resource_id=resource_id, detail={"reason": "role_tool_not_allowed"}, connection=connection)
                 raise AgentForbidden("agent role is not authorized for this domain action")

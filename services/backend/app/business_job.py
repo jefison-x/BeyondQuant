@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 
-_IDS = {"BACKTEST": "job_id", "TRAINING": "training_run_id"}
+_IDS = {"BACKTEST": "job_id", "TRAINING": "training_run_id", "OPTIMIZATION": "job_id"}
 _STATUS = {
     "queued": "QUEUED",
     "waiting_for_data": "QUEUED",
@@ -18,6 +18,11 @@ _STATUS = {
     "succeeded": "SUCCEEDED",
     "failed": "FAILED",
     "cancelled": "CANCELLED",
+    "QUEUED": "QUEUED",
+    "RUNNING": "RUNNING",
+    "SUCCEEDED": "SUCCEEDED",
+    "FAILED": "FAILED",
+    "CANCELLED": "CANCELLED",
 }
 
 
@@ -33,8 +38,11 @@ def project_business_job(kind: str, row: Mapping[str, object]) -> dict[str, obje
     if not isinstance(raw_status, str) or raw_status not in _STATUS:
         raise ValueError("business job status is unknown")
     status = _STATUS[raw_status]
-    input_ref = row.get("input_manifest_id" if kind == "BACKTEST" else "input_sha256")
-    result_ref = row.get("result_artifact_id" if kind == "BACKTEST" else "model_artifact_id")
+    input_ref = (
+        row.get("input_sha256") or row.get("submission_ref")
+        if kind == "TRAINING" else row.get("input_manifest_id" if kind == "BACKTEST" else "input_ref")
+    )
+    result_ref = row.get("result_artifact_id" if kind in {"BACKTEST", "OPTIMIZATION"} else "model_artifact_id")
     if input_ref is not None and not isinstance(input_ref, str):
         raise ValueError("business job input reference is invalid")
     if result_ref is not None and not isinstance(result_ref, str):
@@ -47,10 +55,13 @@ def project_business_job(kind: str, row: Mapping[str, object]) -> dict[str, obje
         "progress": 100 if status == "SUCCEEDED" else None,
         "input_ref": input_ref,
         "result_ref": result_ref,
-        "error": None if row.get("error_code") is None else {
-            "code": row["error_code"],
-            "message": row.get("error_message" if kind == "BACKTEST" else "error_detail"),
-        },
+        "error": (
+            row.get("error") if isinstance(row.get("error"), dict)
+            else None if row.get("error_code") is None else {
+                "code": row["error_code"],
+                "message": row.get("error_message" if kind in {"BACKTEST", "OPTIMIZATION"} else "error_detail"),
+            }
+        ),
         "created_at": row.get("created_at"),
         "started_at": row.get("started_at"),
         "finished_at": row.get("finished_at"),

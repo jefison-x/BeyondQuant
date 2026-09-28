@@ -40,6 +40,7 @@ from app.market_automation import MarketAutomationStore
 from app.market_readiness import MarketReadinessStore
 from app.ml_training import MLTrainingRunStore
 from app.ml_prediction import MLPredictionRunStore
+from app.optimization_job import OptimizationJobStore
 from app.operations import OperationsStore
 from app.paper_trading import PaperTradingStore
 from app.product_feedback import ProductFeedbackStore
@@ -81,6 +82,7 @@ REGISTERED_SCHEMA_DDL: list[str] = [
     *OperationsStore.SCHEMA_DDL,
     *WorkspaceTenancyStore.SCHEMA_DDL,
     *FactorJobStore.SCHEMA_DDL,
+    *OptimizationJobStore.SCHEMA_DDL,
 ]
 
 
