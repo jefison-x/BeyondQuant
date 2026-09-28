@@ -102,12 +102,18 @@ The common Job contract is now returned on submission, cancellation and
 reconciliation. While data preparation is pending, `submission_ref` identifies
 the frozen request; once available, the feature snapshot hash becomes the
 input reference. The two focused Training tests passed again in the combined
-fresh PostgreSQL rerun. One independent Worker process lifecycle test must
-still cover interruption, expired claim and a new authorized session reading
-the same ID before the complete Phase 11 TrainingJob gate. These tests use a
-fake trainer and do not establish actual Worker restart or GPU checkpoint
-recovery. Real GPU and partial training checkpoint/restart remain Phase 16
-Golden evidence.
+fresh PostgreSQL rerun. A separate-process lifecycle test then killed a
+Coordinator process after it claimed the Job, expired its persisted lease, and
+completed the same TrainingRun on attempt two in a new process. A new trusted
+Agent session read the stable Job ID, validated model Artifact, and object
+bytes through the Backend API. The focused test passed on disposable PostgreSQL
+(1 passed; Docker test container exit 0); the outer test wrapper returned 1
+for an undetermined reason after pytest and cleanup had succeeded. Independent
+Tester: PASS. Independent Sol Reviewer: Functional PASS / Tests PASS / Clean
+Break Architecture PASS. Root accepts this bounded process-reclaim and
+new-session qualification as **local PASS**. The test uses a synthetic trainer;
+the real ML Worker entrypoint, GPU training and partial checkpoint/restart
+remain Phase 16 Golden evidence.
 
 ## Optimization bounded slice and gate
 
@@ -145,7 +151,7 @@ Phase 15–16 work.
 | Type | Current state | Remaining boundary work |
 |---|---|---|
 | Backtest | Durable store, Artifact and independent polling Worker; first slice locally accepted | Full Product/Golden qualification remains in Phases 15–16. |
-| Training | Durable `ml_training_runs`, independent ML Worker and model Artifact; create/get/cancel/reconcile common projection and waiting input ref implemented | Qualify real Worker process interruption and new-session read. GPU checkpoint/restart remains Phase 16. |
+| Training | Durable `ml_training_runs`, independent ML Worker and model Artifact; common projection and separate-process reclaim/new-session read locally accepted | Real ML Worker/GPU checkpoint and restart Golden evidence remains Phase 16. |
 | Factor compute | Durable workspace-scoped Job, independent Worker and validated Artifact; bounded slice locally accepted | Full Product/Golden qualification remains in Phases 15–16. |
 | Optimization | Completed-candidate parameter search Job, polling Worker, validated comparison Artifact and MCP tools; bounded slice locally accepted | Full Product/Golden flow remains Phase 15–16. |
 | Data import | Scheduled market-session sync and admin range sync are worker-backed; admin slice locally accepted | Define the workspace-scoped DataImportJob and Artifact boundary from ADR-003; keep global admin sync clearly separate. |

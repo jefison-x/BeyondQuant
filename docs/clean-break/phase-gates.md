@@ -1,5 +1,19 @@
 # Phase 0–6 gate record
 
+## Phase 11 Business Job — Training process reclaim qualification (2026-09-28)
+
+On disposable PostgreSQL, the focused separate-process lifecycle test passed
+(1 passed; Docker test container exit 0). It killed a Coordinator process
+after claim, expired the persisted lease, completed the same TrainingRun on
+attempt two in another process, and read the stable Job and validated model
+Artifact from a new trusted Agent session. Test containers/network were
+removed with no volume created. The outer wrapper returned 1 after pytest and
+cleanup for an undetermined reason; this is recorded separately from the
+passing test. Independent Tester: PASS. Independent Sol Reviewer: Functional
+PASS / Tests PASS / Clean Break Architecture PASS. **Root acceptance: bounded
+qualification local PASS; Phase 11 overall OPEN.** Synthetic training proves
+process reclaim, not real GPU checkpoint/restart; that remains Phase 16.
+
 ## Phase 11 Business Job — optimization bounded slice and Training projection (2026-09-28)
 
 [Execution record](phase11-business-jobs.md): completed-candidate parameter
