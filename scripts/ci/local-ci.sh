@@ -320,6 +320,7 @@ prepare_ci_compose_env() {
   export POSTGRES_DB=byq_domain POSTGRES_USER=byq_app POSTGRES_PASSWORD=byq-app-dev
   export BYQ_DATABASE_URL=postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain
   export BYQ_MCP_TOKEN=ci-mcp-test-only BYQ_PRODUCT_TOKEN=ci-product-test-only
+  export BYQ_RUNTIME_AUTHORITY_TOKEN=ci-runtime-authority-test-only
   export BYQ_CREDENTIAL_KEYRING='{"ci-v1":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}'
   export BYQ_CREDENTIAL_ACTIVE_KEY_ID=ci-v1
   export BYQ_CREDENTIAL_RESOLVER_TOKEN=ci-credential-resolver-test-only
