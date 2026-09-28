@@ -246,8 +246,12 @@ def test_collector_reconnect_preserves_history_and_accepts_only_its_session(monk
     main._collect_trace(session)
     assert store.read("session-reconnect") == [first, second, third]
     assert store.read("another-session") == []
-    assert lifecycle == [{"schema_version": "agent-run-lifecycle.v1", "root_run_id": "a" * 32,
-                          "sequence": 3, "outcome": "completed"}]
+    assert lifecycle == [
+        {"schema_version": "agent-run-lifecycle.v1", "root_run_id": "a" * 32,
+         "sequence": 2, "outcome": "active"},
+        {"schema_version": "agent-run-lifecycle.v1", "root_run_id": "a" * 32,
+         "sequence": 3, "outcome": "completed"},
+    ]
 
 
 def test_collector_stops_when_exact_terminal_close_is_unconfirmed(monkeypatch, tmp_path):

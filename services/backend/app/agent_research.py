@@ -949,6 +949,12 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                      "now": _now()})
                 root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:id", {"id": root_id})
             assert root is not None
+            if outcome == "active" and fingerprint is None:
+                # A plain Agent turn opens its exact root before any domain
+                # AgentRun registration. It grants no AgentRun business call.
+                if root["status"] != "active" or root["authority_status"] != "active":
+                    raise AgentConflict("runtime root is no longer active")
+                return dict(root)
             if fingerprint:
                 self._lifecycle_lock(connection, "registration:" + fingerprint)
                 previous = fetch_one(connection, "SELECT * FROM agent_runtime_registrations WHERE registration_fingerprint=:fp", {"fp": fingerprint})

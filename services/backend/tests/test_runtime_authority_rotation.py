@@ -202,8 +202,8 @@ def test_terminal_close_persists_exact_adapter_digest_and_is_idempotent_after_ro
 
 
 def test_plain_agent_turn_without_domain_registration_closes_exact_root():
-    boot = "e" * 32
-    root = "4" * 32
+    boot = uuid4().hex
+    root = uuid4().hex
     ctx = trusted_agent_context("authority-plain-turn-user", actor="byq-product-agent-plain",
         session_id="session-plain", trace_id="trace-plain", dsh_run_id="generation-plain")
     store = AgentResearchStore()
@@ -217,6 +217,10 @@ def test_plain_agent_turn_without_domain_registration_closes_exact_root():
             trusted_session_id=ctx["x-byq-session-id"],
             trusted_trace_id=ctx["x-byq-trace-id"], trusted_boot_id=boot)
         assert receipt == lifecycle_receipt(event)
+        assert store._fetch_one("SELECT status,authority_status,terminal_sequence FROM agent_runtime_turns "
+                                "WHERE root_run_id=:id", {"id": root}) == {
+            "status": "active", "authority_status": "active", "terminal_sequence": None,
+        }
         assert store.close_runtime_root(root, boot_id=boot, sequence=2,
             outcome="completed", event_sha256="5" * 64)["root_run_id"] == root
     finally:
