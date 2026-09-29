@@ -2,7 +2,7 @@
 
 ## Current authority — BYQ 0.10 Clean Break (2026-09-25)
 
-<!-- byq:clean-break-current-phase=14 -->
+<!-- byq:clean-break-current-phase=15 -->
 
 The maintainer's explicit Clean Break direction supersedes the 0.9/P4 and Phase 100
 implementation routing below. The current architecture is [ADR-0088](../architecture/adr/ADR-0088-clean-break-baseline-activation.md)
@@ -16,10 +16,12 @@ Phase 12 — Artifact / Approval / Audit: local PASS and repository PR #375 merg
 Phase 13 — Reset Runtime / Reset Workspace: local Tester → independent Sol
 Reviewer → Root gate PASS, hosted CI PASS and PR #376 merged at
 `2592f7255ef94746548b4c72fb9fa74f6f9897d1`.
-Current phase: Clean Break Phase 14 — fresh database schema baseline and
-minimal seed. Its isolated branch begins from that merged commit; local Tester,
-independent Sol Reviewer and Root gate PASS. Repository PR/CI/merge gate is
-pending. Phase 15 remains closed.**
+Phase 14 — fresh database schema baseline and minimal seed: local gate PASS,
+hosted CI PASS, PR #377 merged at
+`e9c944951465fbdeae4d05cd7bb0358b32f8a041`.
+Current phase: Clean Break Phase 15 — functional fidelity from an empty schema
+and Workspace. It starts in a new isolated branch from that merge; its
+functional gate is open. Phase 16 remains closed.**
 Phase 8 classified cleanup and Phase 9 rebuildable developer environment passed
 their [local Root gates](../clean-break/phase-gates.md). Phase 9 supplies a
 worktree-scoped dev stack and cleanup; Workspace reset, fresh-schema seed and

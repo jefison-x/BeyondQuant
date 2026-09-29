@@ -1,5 +1,14 @@
 # Phase 0–6 gate record
 
+## Phase 14 repository gate and Phase 15 entry (2026-09-29)
+
+PR #377 passed all required hosted checks, including Backend and integration,
+on exact head `960235a12883e82fe710b3d252ecb216a6666146`.
+The ADR-0059 read-only merge preflight passed and squash auto-merge produced
+`e9c944951465fbdeae4d05cd7bb0358b32f8a041` on `main`. The Phase 14
+repository gate is **PASS**. Phase 15 starts from that commit in a separate
+worktree. Its full functional fidelity gate remains **OPEN**; Phase 16 is closed.
+
 ## Phase 14 fresh database baseline — bounded local gate (2026-09-29)
 
 [Execution record](phase14-database-baseline.md): startup migrations for old
