@@ -662,7 +662,7 @@ def agent_b_run(client: Product, path: Path, data: dict[str, object]) -> dict[st
         need(registered, "Agent B backtest turn must register exactly one fresh AgentRun")
         need(len(task_ids) == 1, "Agent B answer contains ambiguous BacktestTask IDs")
         task_id = task_ids[0]
-        check_turn_activities(events, {"准备回测任务", "创建回测任务", "跟踪回测任务", "执行回测任务"},
+        check_turn_activities(events, {"导出策略", "准备回测任务", "创建回测任务", "跟踪回测任务", "执行回测任务"},
                               {"准备回测任务", "创建回测任务", "执行回测任务"},
                               {"创建回测任务", "执行回测任务"})
         jobs = client.api("GET", "/backtests?limit=100&offset=0").get("backtests")
