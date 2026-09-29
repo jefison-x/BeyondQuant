@@ -14,8 +14,10 @@ with remaining Agent lifecycle ownership explicitly assigned to Phase 10/14/17.
 **Clean Break Phase 11 — Business Job: local PASS and repository PR #373 merged.
 Phase 12 — Artifact / Approval / Audit: local PASS and repository PR #375 merged.
 Current phase: Clean Break Phase 13 — Reset Runtime / Reset Workspace. Its
-isolated implementation and local Tester → Sol Reviewer → Root gate passed;
-the repository PR/CI/merge gate remains open. Phase 14 remains closed.**
+Backend/development reset slice passed its local Tester → Sol Reviewer → Root
+gate. The frontend reset menu and user-facing Reset Workspace API remain
+unimplemented, so Phase 13 overall and its repository PR/CI/merge gate remain
+open. Phase 14 remains closed.**
 Phase 8 classified cleanup and Phase 9 rebuildable developer environment passed
 their [local Root gates](../clean-break/phase-gates.md). Phase 9 supplies a
 worktree-scoped dev stack and cleanup; Workspace reset, fresh-schema seed and

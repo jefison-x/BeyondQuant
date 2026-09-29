@@ -1,7 +1,8 @@
 # Phase 13 — Runtime and Workspace reset
 
 Base: `8d6929a140d4ebddc55091b43f9c8a3c9d465e4b` (Phase 12 merged `origin/main`).
-Status: local gate PASS; repository gate open. Phase 14 schema baseline remains closed.
+Status: Backend/development reset slice local PASS; Phase 13 overall gate OPEN.
+Phase 14 schema baseline remains closed.
 
 ## Ownership and reset semantics
 
@@ -86,7 +87,11 @@ persistent volume. The final `.266` build manifest check, 83 selected build and
 architecture tests, and diff check passed.
 
 **Independent Tester: PASS. Independent Sol Reviewer: Functional PASS / Tests
-PASS / Clean Break Architecture PASS. Root acceptance: Phase 13 local PASS.**
-The repository PR/CI/merge gate is still open. No existing Product database,
+PASS / Clean Break Architecture PASS for the tested Backend/development slice.
+Root acceptance: bounded slice local PASS; Phase 13 overall OPEN.** The frontend
+has no reset menu, and Reset Workspace currently has only the isolated
+development command and domain store, not a user-facing Product API. These
+user flows must be implemented and reviewed before overall Phase 13 PASS.
+The repository PR/CI/merge gate is also open. No existing Product database,
 deployment, push or merge was touched or authorized in this Phase 13 turn.
 Fresh schema and Golden scenarios remain Phases 14–16.

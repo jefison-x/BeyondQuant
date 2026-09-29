@@ -1,6 +1,6 @@
 # Phase 0–6 gate record
 
-## Phase 13 Reset Runtime / Reset Workspace — final local gate (2026-09-29)
+## Phase 13 Reset Runtime / Reset Workspace — bounded local gate (2026-09-29)
 
 [Execution record](phase13-workspace-reset.md): Product runtime reset durably
 fences one Workspace's Agent business calls before exact Gateway/Adapter
@@ -16,11 +16,14 @@ omitted the plugin registry; the corrected read-only mount passed and both
 attempts' exact containers and networks were removed, with no persistent
 volume. Current `.266` build manifest check, 83 selected build/retirement/
 architecture tests and diff check PASS. **Independent Sol Reviewer:**
-Functional PASS / Tests PASS / Clean Break Architecture PASS on actual diff,
-SQL trigger scope, Gateway retries and build identity. **Root acceptance:
-Phase 13 local PASS.** Repository PR/CI/merge gate remains open; Phase 14 and
-Golden scenarios remain closed. No existing Product database, deployment,
-push or merge was performed in this turn.
+Functional PASS / Tests PASS / Clean Break Architecture PASS for this tested
+Backend/development slice on actual diff, SQL trigger scope, Gateway retries
+and build identity. **Root acceptance: bounded slice local PASS; Phase 13
+overall OPEN.** The frontend has no reset menu and Reset Workspace lacks a
+user-facing Product API. Those flows require their own implementation and
+review before overall Phase 13 PASS. Repository PR/CI/merge gate remains open;
+Phase 14 and Golden scenarios remain closed. No existing Product database,
+deployment, push or merge was performed in this turn.
 
 ## Phase 12 repository gate (2026-09-29)
 
