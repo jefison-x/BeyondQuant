@@ -405,21 +405,22 @@ class WorkspaceTenancyStore(PgStoreMixin):
                   END IF;
                 END IF;
               END IF;
-              IF resolved IS NULL AND TG_TABLE_NAME = 'product_conversations'
-                  AND TG_OP = 'UPDATE' AND OLD.status = 'active' AND NEW.status = 'archived'
-                  AND (to_jsonb(NEW) - ARRAY['status','updated_at']) =
-                      (to_jsonb(OLD) - ARRAY['status','updated_at']) THEN
-                SELECT w.workspace_id INTO resolved FROM users u
-                  JOIN workspaces w ON w.owner_user_id = u.user_id
-                  JOIN workspace_memberships m ON m.workspace_id = w.workspace_id AND m.user_id = u.user_id
-                  WHERE u.username = OLD.owner_principal AND u.status = 'active'
-                    AND m.status = 'active' AND m.role = 'owner'
-                    AND w.kind = 'personal' AND w.workspace_id = OLD.workspace_id
-                    AND w.status = 'disabled' AND w.reset_id IS NOT NULL
-                    AND EXISTS (SELECT 1 FROM jsonb_array_elements(w.reset_sessions_json) reset_session
-                      WHERE reset_session->>'conversation_id'=OLD.conversation_id
-                        AND reset_session->>'session_id'=OLD.runtime_session_id
-                        AND reset_session->>'trace_id'=OLD.trace_id);
+              IF resolved IS NULL AND TG_TABLE_NAME = 'product_conversations' AND TG_OP = 'UPDATE' THEN
+                IF OLD.status = 'active' AND NEW.status = 'archived'
+                    AND (to_jsonb(NEW) - ARRAY['status','updated_at']) =
+                        (to_jsonb(OLD) - ARRAY['status','updated_at']) THEN
+                  SELECT w.workspace_id INTO resolved FROM users u
+                    JOIN workspaces w ON w.owner_user_id = u.user_id
+                    JOIN workspace_memberships m ON m.workspace_id = w.workspace_id AND m.user_id = u.user_id
+                    WHERE u.username = OLD.owner_principal AND u.status = 'active'
+                      AND m.status = 'active' AND m.role = 'owner'
+                      AND w.kind = 'personal' AND w.workspace_id = OLD.workspace_id
+                      AND w.status = 'disabled' AND w.reset_id IS NOT NULL
+                      AND EXISTS (SELECT 1 FROM jsonb_array_elements(w.reset_sessions_json) reset_session
+                        WHERE reset_session->>'conversation_id'=OLD.conversation_id
+                          AND reset_session->>'session_id'=OLD.runtime_session_id
+                          AND reset_session->>'trace_id'=OLD.trace_id);
+                END IF;
               END IF;
               IF resolved IS NULL THEN RAISE EXCEPTION 'trusted workspace owner is unresolved'; END IF;
               IF NEW.workspace_id IS NOT NULL AND NEW.workspace_id <> resolved THEN

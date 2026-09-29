@@ -149,6 +149,21 @@ def test_new_domain_writes_are_stamped_and_mismatched_workspace_is_rejected() ->
     users.close()
 
 
+def test_owner_trigger_does_not_read_conversation_fields_on_stock_pool_writes() -> None:
+    users = UserAuthStore()
+    alice = _create_user(users, "alice")
+    tenancy = WorkspaceTenancyStore()
+    workspace_id = tenancy.public_workspace(str(alice["user_id"]))["workspace_id"]
+    with tenancy.engine.begin() as connection:
+        connection.execute(text("""INSERT INTO stock_pool_write_idempotency
+            (owner_principal, idempotency_key, action, request_hash, result_id, created_at)
+            VALUES ('alice', 'stock-pool-create', 'create', 'hash', 'pool-1', now())"""))
+        assert connection.execute(text("""SELECT workspace_id FROM stock_pool_write_idempotency
+            WHERE owner_principal = 'alice'""")).scalar_one() == workspace_id
+    tenancy.close()
+    users.close()
+
+
 def test_verified_contract_makes_workspace_keys_mandatory() -> None:
     users = UserAuthStore()
     _create_user(users, "alice")
