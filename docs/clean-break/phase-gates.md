@@ -2,6 +2,18 @@
 
 ## Phase 15 fresh-state Research and Backtest slices (2026-09-29)
 
+An additional isolated ML Worker image check trained a real LightGBM CPU model
+from 30/10 honestly synthetic in-memory rows, reloaded the model and checked
+finite metrics. It made no Product, DB or provider call. This is a trainer
+dependency smoke only; Product TrainingJob, Artifacts, Worker reclaim, GPU and
+model checkpoint/restart remain **OPEN/NOT_RUN** as applicable. The Product
+readiness path requires real TuShare rows and can fan out to whole-market
+daily repair, so no broad provider sync was triggered for this check.
+**Tester:** focused static evidence review and diff check PASS.
+**Independent Sol Reviewer:** Functional PASS / Tests PASS / Clean Break
+Architecture PASS for this bounded record. **Root acceptance: PASS for the
+trainer smoke only; Golden C remains OPEN.**
+
 The later Agent-audited Workspace reset blocker is resolved in a bounded
 Phase 15 change. Reset retains successful Web evidence `agent_audit` facts and
 their stable Artifact IDs while removing disposable Web Artifacts; other

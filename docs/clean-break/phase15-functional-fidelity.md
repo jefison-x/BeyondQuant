@@ -27,7 +27,7 @@ foundation, not a market-research or Agent journey.
 |---|---|---|
 | A: Research, TuShare, Web Search, delegated Agent, interaction, Artifact | A fresh isolated Workspace completed a real TuShare import, two-turn DSH Product conversation with delegated research, Web Search, a saved evidence Artifact, normalized trace, and real browser replay/Artifact listing. See bounded evidence below. | The separate DSH Interaction plugin remains unqualified; ordinary Product follow-up passed. |
 | B: two Backtests, optimization, comparison | A new Workspace Product API journey completed two independent BacktestJobs, one OptimizationJob and a persisted comparison Artifact. Real browser comparison of the exact two completed Backtest IDs and Artifact listing passed. See bounded evidence below. | DSH Agent-led strategy change and the OptimizationJob ranking's browser detail remain open. |
-| C: TrainingJob, GPU, checkpoint/restart | Durable TrainingJob and independent ML Worker; process-reclaim tests use a fake trainer. Current host has no NVIDIA device, `nvidia-smi`, or Docker NVIDIA runtime; the current ML image installs CPU LightGBM. | Qualify CPU Worker/real checkpoint separately; GPU execution is `NOT_RUN` here and needs a GPU-capable Worker/image and host. CPU execution and simulated lease reclaim do not satisfy the GPU claim. |
+| C: TrainingJob, GPU, checkpoint/restart | Durable TrainingJob and independent ML Worker; process-reclaim tests use a fake trainer. The isolated ML Worker image now passed one real LightGBM CPU trainer smoke on honestly synthetic in-memory rows. Current host has no NVIDIA device, `nvidia-smi`, or Docker NVIDIA runtime. | Product TrainingJob with real provider data and Worker-produced Artifacts remains open; GPU execution and model checkpoint/restart are `NOT_RUN`. The CPU trainer smoke alone does not satisfy Golden C. |
 | D: Agent interruption with Job continuing | In this fresh isolated stack, a separate Product API BacktestJob stayed queued after a contemporaneous Product Agent conversation was deleted; restarting its independent Worker completed the same Job in one attempt with an Artifact. After explicit authorization, a new DSH Agent used BYQ MCP read tools to find that exact Job and Artifact. | The Job was submitted through Product API, not initiated by the old Agent. Full Golden D and DSH process restart remain out of scope for this bounded check. |
 | E: Runtime and Workspace reset | The populated browser reset, reseed and two-turn delegated Agent/Web research passed. A separate Workspace confirmed protected identity/config and exact deletion IDs. A subsequent Product reset of the Agent-audited Workspace now also passes while retaining the exact two Web evidence audit facts and deleting their disposable Artifacts. | Golden E's specified `reset → seed → rerun A` sequence and the bounded repeated-reset fix are local PASS; this does not complete the other Phase 15 journeys. |
 | F: full rebuild | Exact-scope `dev-clean` apply removed only this isolated project's 12 containers, 4 volumes and 2 networks; `dev-init`/core start/seed/test and real login passed on a fresh schema. | The connected Golden journeys have not been rerun after rebuild. F environment lifecycle is bounded PASS; full Golden F remains OPEN. |
@@ -359,6 +359,26 @@ Product API and scoped DB checks, without a new browser run.
 **Root acceptance: PASS for this bounded repeated-reset fix. Phase 15 overall
 remains OPEN** for the other journeys and repository CI. No existing Product
 database, backup, deployment, push or merge was touched.
+
+## Bounded real CPU trainer check (2026-09-29)
+
+The isolated `byq-dev-ea551690f4` Compose project built and started only its
+optional `ml-worker` service. Inside that actual image, `LightGBMTrainer.fit_rows`
+trained once on 30 training and 10 validation rows generated solely in memory,
+with explicit synthetic values and no claim of TuShare provenance. The returned
+LightGBM text model reloaded successfully with five expected features. The
+runtime identified `lightgbm-4.7.0-python-3.13-linux-cpu-single-thread`, both
+validation metrics were finite, and the model SHA-256 was
+`d3b00975a8611dbf330af65b37fca34122010a0893d709d13641341a3d520e0c`.
+No database, market provider, Product API or Agent call was made by this smoke.
+
+This verifies the real CPU trainer dependency and model serialization only.
+It does **not** establish a durable TrainingJob, Feature/Model Artifact,
+prepared-input checkpoint, Worker reclaim, model checkpoint/restart or GPU run.
+The Product ML readiness contract accepts only TuShare market bars. A one-symbol
+real TuShare sync is available, but missing-session repair can import daily
+data for the whole market over the training window. That broader provider work
+was not started in this bounded check. Golden C remains **OPEN**.
 
 ## Bounded F rebuild and simple reset (2026-09-29)
 
