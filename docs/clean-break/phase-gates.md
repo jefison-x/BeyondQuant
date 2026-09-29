@@ -1,5 +1,20 @@
 # Phase 0–6 gate record
 
+## Current Phase 15 GPU gate scope (2026-09-30)
+
+[ADR-0089](../architecture/adr/ADR-0089-clean-break-gpu-acceptance-scope.md)
+excludes GPU execution and GPU checkpoint/restart from the BYQ 0.10 gate as
+`N/A`. The real-provider CPU TrainingJob/Worker/Artifact slice passed locally;
+Agent-initiated training and real CPU Worker restart/reclaim remain open.
+Earlier `NOT_RUN` GPU records below describe what was observed at the time and
+are not rewritten as test passes. Phase 15 overall remains OPEN.
+
+Focused governance Tester: **PASS**, 3/3 checks; changed-document links and
+`git diff --check`: **PASS**. Independent Sol Reviewer inspected the actual
+decision, plan, gate and test diff: **Functional PASS / Tests PASS / Clean Break
+Architecture PASS**. Root accepts this GPU-scope decision only: **PASS**.
+Golden C and the Phase 15 overall gate remain **OPEN**.
+
 ## Phase 15 fresh-state Research and Backtest slices (2026-09-29)
 
 **Golden D gate: PASS.** On the rebuilt isolated stack, an old Product Agent

@@ -22,7 +22,7 @@ class CleanBreakGovernanceTests(unittest.TestCase):
         old_adrs = list((ROOT / "docs/architecture/adr").glob("ADR-*.md"))
         historical = [p for p in old_adrs if p.name != "ADR-0088-clean-break-baseline-activation.md"]
         self.assertTrue(historical)
-        governance = {15, 59, 68, 70, 80}
+        governance = {15, 59, 68, 70, 80, 89}
         for path in historical:
             number = int(path.name[4:8])
             if number in governance:
@@ -31,6 +31,16 @@ class CleanBreakGovernanceTests(unittest.TestCase):
                 self.assertIn("Historical-only under BYQ 0.10 Clean Break", path.read_text(), path.name)
         for name in ("ADR-0059", "ADR-0068", "ADR-0080"):
             self.assertIn(name, activation)
+
+    def test_gpu_exclusion_does_not_claim_an_unrun_test_passed(self):
+        decision = (ROOT / "docs/architecture/adr/ADR-0089-clean-break-gpu-acceptance-scope.md").read_text()
+        plan = (ROOT / "docs/clean-break/fidelity-and-execution-plan.md").read_text()
+        gate = (ROOT / "docs/clean-break/verification-gates.md").read_text()
+        self.assertIn("Status: Accepted", decision)
+        self.assertIn("out of scope (`N/A`)", decision)
+        self.assertIn("They are not marked as tests that passed", decision)
+        self.assertIn("Agent starts TrainingJob → independent CPU ML Worker", plan)
+        self.assertIn("GPU execution and GPU checkpoint/restart are excluded", gate)
 
     def test_current_route_is_distinct_from_legacy_product_marker(self):
         status = (ROOT / "docs/roadmap/STATUS.md").read_text()

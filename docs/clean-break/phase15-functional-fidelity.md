@@ -4,6 +4,11 @@ Status: **OPEN** on `codex/clean-break-phase15`, based on Phase 14 merge
 `e9c944951465fbdeae4d05cd7bb0358b32f8a041`. This is an initial evidence
 inventory, not the Phase 15 acceptance record. Phase 16 stays closed.
 
+Current GPU gate scope: [ADR-0089](../architecture/adr/ADR-0089-clean-break-gpu-acceptance-scope.md)
+excludes GPU execution and GPU checkpoint/restart from BYQ 0.10 acceptance
+(`N/A`). Earlier `NOT_RUN` observations below remain historical facts; no GPU
+test result is represented as a pass.
+
 ## Fresh-state foundation (2026-09-29)
 
 - `make dev-init` created scoped project `byq-dev-ea551690f4` in this isolated
@@ -27,7 +32,7 @@ foundation, not a market-research or Agent journey.
 |---|---|---|
 | A: Research, TuShare, Web Search, delegated Agent, interaction, Artifact | A fresh isolated Workspace completed a real TuShare import, two-turn DSH Product conversation with delegated research, Web Search, a saved evidence Artifact, normalized trace, and real browser replay/Artifact listing. See bounded evidence below. | The separate DSH Interaction plugin remains unqualified; ordinary Product follow-up passed. |
 | B: two Backtests, optimization, comparison | A new Workspace Product API journey completed two independent BacktestJobs, one OptimizationJob and a persisted comparison Artifact. Real browser comparison of the exact two completed Backtest IDs and Artifact listing passed. A later four-turn Product Agent journey read A's completed analysis, revised B, completed both Worker-backed Jobs and persisted an exact two-Job comparison Artifact. The exact Artifact ranking was also reopened through the real browser's Product entity view. See bounded evidence below. | A formatted ranking view is not present; the existing entity view displays its JSON detail. |
-| C: TrainingJob, GPU, checkpoint/restart | A real-provider CPU TrainingJob completed in the isolated Workspace after 98 TuShare trading sessions were repaired; the independent ML Worker produced validated Feature and LightGBM Model Artifacts. Earlier synthetic CPU trainer and fake process-reclaim tests remain separate evidence. | Current host has no NVIDIA device or Docker NVIDIA runtime. GPU execution and model checkpoint/restart remain `NOT_RUN`, so full Golden C is OPEN. |
+| C: TrainingJob, Worker restart/reclaim | A real-provider CPU TrainingJob completed in the isolated Workspace after 98 TuShare trading sessions were repaired; the independent ML Worker produced validated Feature and LightGBM Model Artifacts. Earlier synthetic CPU trainer and fake process-reclaim tests remain separate evidence. | Agent-initiated training and real Worker termination/restart or reclaim with the same Job ID remain open. GPU execution and GPU checkpoint/restart are `N/A` under ADR-0089. |
 | D: Agent interruption with Job continuing | A fresh isolated Agent conversation created and executed an approved BacktestTask. The exact Job remained queued after that conversation was deleted, completed once in the independent Worker, and was read with its Artifact by a new Agent. Focused Tester, independent Reviewer and Root accepted Golden D with the trace argument visibility limit recorded below. | Golden D PASS. DSH process restart is outside this scenario's defined scope. |
 | E: Runtime and Workspace reset | The populated browser reset, reseed and two-turn delegated Agent/Web research passed. A separate Workspace confirmed protected identity/config and exact deletion IDs. A subsequent Product reset of the Agent-audited Workspace now also passes while retaining the exact two Web evidence audit facts and deleting their disposable Artifacts. | Golden E's specified `reset → seed → rerun A` sequence and the bounded repeated-reset fix are local PASS; this does not complete the other Phase 15 journeys. |
 | F: full rebuild | Exact-scope `dev-clean` apply removed only this isolated project's 12 containers, 4 volumes and 2 networks; `dev-init`/core start/seed/test and real login passed on a fresh schema. | The connected Golden journeys have not been rerun after rebuild. F environment lifecycle is bounded PASS; full Golden F remains OPEN. |
@@ -65,9 +70,9 @@ call had been made at the time of this review. The draft staged evidence script
 approved one-day repair and reviewed before execution. The live result is
 recorded below.
 
-1. Preserve the completed real-provider CPU TrainingJob evidence below; keep GPU
-   execution and checkpoint/restart explicitly `NOT_RUN` until a qualified GPU
-   environment is available.
+1. Preserve the completed real-provider CPU TrainingJob evidence below; verify
+   Agent initiation and real CPU Worker restart/reclaim for Golden C. GPU is
+   `N/A` for this gate under ADR-0089.
 2. Rerun connected journeys from a fresh schema after the now-proven scoped
    rebuild. Never substitute mocks or old database evidence for real Product
    functionality.
@@ -526,8 +531,9 @@ persisted object reference, and validated Model Artifact
 object, validation metrics, exact TrainingJob lineage, and runtime
 `lightgbm-4.7.0-python-3.13-linux-cpu-single-thread`. The evidence script's
 exact-ID Product assertions pass. **Real-provider CPU TrainingJob/Worker/Artifact:
-local PASS.** GPU execution and checkpoint/restart remain **NOT_RUN** on this
-host, so full Golden C remains **OPEN**.
+local PASS.** GPU execution and GPU checkpoint/restart were **NOT_RUN** on this
+host and are now `N/A` for the BYQ 0.10 gate under ADR-0089. Golden C remains
+**OPEN** for Agent initiation and real CPU Worker restart/reclaim.
 
 ## Bounded F rebuild and simple reset (2026-09-29)
 

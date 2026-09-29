@@ -63,7 +63,7 @@ and checksum-verified; it is never an input to the new schema.
 | Live Product API, MCP or DSH adapter | Public contract and error/authorization tests for the affected path; relevant component integration. Real Product journey when the user-visible flow changes. |
 | Shared contract, schema, Job/Worker, approval or financial side effect | Affected component suites, fresh-schema or worker integration, and exact invariant tests. Unknown external/financial outcomes remain fail-closed. |
 | Compose, dev lifecycle or resource deletion | Scoped dry run, exact resource identity and archive gate where data is deleted; verify changed Compose services or commands. Complete fresh rebuild follows the Phase 14 schema baseline. |
-| Release candidate or Phase 15–16 completion | Required Full CI, full functional fidelity and Golden Scenarios A–F with qualified real dependencies. |
+| Release candidate or Phase 15–16 completion | Required Full CI, full functional fidelity and Golden Scenarios A–F with qualified real dependencies; Golden C uses the independent CPU ML Worker under ADR-0089. |
 
 Do not rerun repository-wide unittest, H4, historical frozen build revisions,
 release-input audits, full Compose or Golden scenarios for every slice merely
@@ -96,3 +96,9 @@ the resulting gate limit; it is never silently counted as PASS. A failing
 selected test must be fixed or the slice remains open. External DSH contract
 gaps remain explicit NO-GO for dependent live-path deletion, without blocking
 independent slices.
+
+Under [ADR-0089](../architecture/adr/ADR-0089-clean-break-gpu-acceptance-scope.md),
+GPU execution and GPU checkpoint/restart are excluded from BYQ 0.10 required
+tests and recorded as `N/A`. Historical `NOT_RUN` observations remain unchanged.
+The CPU TrainingJob, Agent initiation, real Worker restart/reclaim and Artifact
+requirements remain required; GPU exclusion alone does not pass Golden C.
