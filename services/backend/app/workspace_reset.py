@@ -189,28 +189,31 @@ class WorkspaceResetStore(PgStoreMixin):
         row = connection.execute(text(sql), params).mappings().first()
         return None if row is None else dict(row)
 
-    def _preflight(self, connection, *, owner: str, workspace: str) -> None:
+    @staticmethod
+    def _preflight(connection, *, owner: str, workspace: str,
+                   allow_active_agent_roots: bool = False) -> None:
         params = {"owner": owner, "workspace": workspace}
 
-        root = self._first_row(connection, """
-            SELECT root_run_id FROM agent_runtime_turns
-             WHERE owner_principal=:owner AND workspace_id=:workspace
-               AND (status='active' OR authority_status <> 'closed')
-             ORDER BY root_run_id LIMIT 1
-        """, params)
-        if root is not None:
-            raise WorkspaceResetBlocked("active or unconfirmed Agent root prevents workspace reset")
+        if not allow_active_agent_roots:
+            root = WorkspaceResetStore._first_row(connection, """
+                SELECT root_run_id FROM agent_runtime_turns
+                 WHERE owner_principal=:owner AND workspace_id=:workspace
+                   AND (status='active' OR authority_status <> 'closed')
+                 ORDER BY root_run_id LIMIT 1
+            """, params)
+            if root is not None:
+                raise WorkspaceResetBlocked("active or unconfirmed Agent root prevents workspace reset")
 
-        run = self._first_row(connection, """
-            SELECT run_id FROM agent_runs
-             WHERE owner_principal=:owner AND workspace_id=:workspace
-               AND (status IN ('active','pending_binding') OR authority_status <> 'closed')
-             ORDER BY run_id LIMIT 1
-        """, params)
-        if run is not None:
-            raise WorkspaceResetBlocked("active or unconfirmed Agent run prevents workspace reset")
+            run = WorkspaceResetStore._first_row(connection, """
+                SELECT run_id FROM agent_runs
+                 WHERE owner_principal=:owner AND workspace_id=:workspace
+                   AND (status IN ('active','pending_binding') OR authority_status <> 'closed')
+                 ORDER BY run_id LIMIT 1
+            """, params)
+            if run is not None:
+                raise WorkspaceResetBlocked("active or unconfirmed Agent run prevents workspace reset")
 
-        claim = self._first_row(connection, """
+        claim = WorkspaceResetStore._first_row(connection, """
             SELECT c.claim_id FROM agent_domain_call_claims c
               JOIN agent_domain_correction_buckets b
                 ON b.root_run_id=c.root_run_id AND b.task_id=c.task_id AND b.action=c.action
@@ -221,7 +224,7 @@ class WorkspaceResetStore(PgStoreMixin):
         if claim is not None:
             raise WorkspaceResetBlocked("unresolved external domain action prevents workspace reset")
 
-        unknown_approval = self._first_row(connection, """
+        unknown_approval = WorkspaceResetStore._first_row(connection, """
             SELECT approval_id FROM agent_approvals
              WHERE owner_principal=:owner AND workspace_id=:workspace
                AND (continuation_status='outcome_unknown'
@@ -234,7 +237,7 @@ class WorkspaceResetStore(PgStoreMixin):
         for table, (identity_column, terminal) in _JOB_TERMINAL_STATES.items():
             placeholders = ", ".join(f":terminal_{index}" for index in range(len(terminal)))
             job_params = params | {f"terminal_{index}": state for index, state in enumerate(terminal)}
-            row = self._first_row(connection, f"""
+            row = WorkspaceResetStore._first_row(connection, f"""
                 SELECT {identity_column} AS identity FROM {table}
                  WHERE owner_principal=:owner AND workspace_id=:workspace
                    AND status NOT IN ({placeholders})
@@ -243,7 +246,7 @@ class WorkspaceResetStore(PgStoreMixin):
             if row is not None:
                 raise WorkspaceResetBlocked(f"active or unclassified {table} row prevents workspace reset")
 
-        admitted = self._first_row(connection, """
+        admitted = WorkspaceResetStore._first_row(connection, """
             SELECT c.call_identity FROM research_judgment_stage_calls c
               JOIN research_tasks t ON t.task_id=c.task_id
              WHERE t.owner_principal=:owner AND t.workspace_id=:workspace AND c.status='admitted'
@@ -252,7 +255,7 @@ class WorkspaceResetStore(PgStoreMixin):
         if admitted is not None:
             raise WorkspaceResetBlocked("admitted research judgment call prevents workspace reset")
 
-        receipt = self._first_row(connection, """
+        receipt = WorkspaceResetStore._first_row(connection, """
             SELECT watch_id FROM research_receipt_watches
              WHERE owner_principal=:owner AND workspace_id=:workspace
                AND state NOT IN ('confirmed','conflict')
@@ -261,7 +264,7 @@ class WorkspaceResetStore(PgStoreMixin):
         if receipt is not None:
             raise WorkspaceResetBlocked("unresolved research submission receipt prevents workspace reset")
 
-        action = self._first_row(connection, """
+        action = WorkspaceResetStore._first_row(connection, """
             SELECT action_id FROM research_task_actions
              WHERE owner_principal=:owner AND workspace_id=:workspace
              ORDER BY action_id LIMIT 1
@@ -271,7 +274,7 @@ class WorkspaceResetStore(PgStoreMixin):
                 "retained approval decision references a ResearchTask; reset would remove an authoritative fact"
             )
 
-        approval_artifact = self._first_row(connection, """
+        approval_artifact = WorkspaceResetStore._first_row(connection, """
             SELECT artifact_id FROM artifacts
              WHERE owner_principal=:owner AND workspace_id=:workspace
                AND kind IN ('strategy_approval','ml_strategy_approval')
@@ -282,7 +285,7 @@ class WorkspaceResetStore(PgStoreMixin):
                 "retained strategy approval Artifact references a ResearchTask; reset would remove an authoritative fact"
             )
 
-        retained_approval = self._first_row(connection, """
+        retained_approval = WorkspaceResetStore._first_row(connection, """
             SELECT a.approval_id FROM agent_approvals a
               JOIN agent_runs r ON r.run_id=a.run_id
               JOIN artifacts target ON target.artifact_id=a.resource_id
@@ -295,7 +298,7 @@ class WorkspaceResetStore(PgStoreMixin):
                 "Agent approval references a workspace Artifact; reset would remove an authoritative fact"
             )
 
-        retained_audit = self._first_row(connection, """
+        retained_audit = WorkspaceResetStore._first_row(connection, """
             SELECT a.audit_id FROM agent_audit a
               JOIN agent_runs r ON r.run_id=a.run_id
               JOIN artifacts target ON target.artifact_id=a.resource_id
@@ -308,7 +311,7 @@ class WorkspaceResetStore(PgStoreMixin):
                 "Agent audit references a workspace Artifact; reset would remove an authoritative fact"
             )
 
-        retained_task_approval = self._first_row(connection, """
+        retained_task_approval = WorkspaceResetStore._first_row(connection, """
             SELECT a.approval_id FROM agent_approvals a
               JOIN agent_runs r ON r.run_id=a.run_id
               JOIN research_tasks t ON t.task_id=a.plan_task_id
@@ -321,7 +324,7 @@ class WorkspaceResetStore(PgStoreMixin):
                 "Agent approval references a ResearchTask; reset would remove an authoritative fact"
             )
 
-        retained_task_audit = self._first_row(connection, """
+        retained_task_audit = WorkspaceResetStore._first_row(connection, """
             SELECT a.audit_id FROM agent_audit a
               JOIN agent_runs r ON r.run_id=a.run_id
               JOIN research_tasks t ON t.task_id=a.resource_id
@@ -342,7 +345,7 @@ class WorkspaceResetStore(PgStoreMixin):
             ("lessons", "lesson_id"),
             ("learning_history", "history_id"),
         ):
-            learning_row = self._first_row(connection, f"""
+            learning_row = WorkspaceResetStore._first_row(connection, f"""
                 SELECT {identity_column} FROM {table}
                  WHERE workspace_id=:workspace ORDER BY {identity_column} LIMIT 1
             """, params)
@@ -350,6 +353,60 @@ class WorkspaceResetStore(PgStoreMixin):
                 raise WorkspaceResetBlocked(
                     f"workspace contains unclassified {table} records; reset was not started"
                 )
+
+    @staticmethod
+    def preflight_in_connection(
+        connection,
+        *,
+        owner_principal: str,
+        workspace_id: str,
+        expected_status: str = "active",
+        allow_active_agent_roots: bool = False,
+    ) -> None:
+        """Run the complete scoped reset preflight on a caller-owned transaction.
+
+        Product reset uses this at begin (while allowing roots that this explicit
+        operation will revoke) and again during finalize after those roots have
+        been closed. The offline reset keeps the default active Workspace check.
+        """
+        owner = WorkspaceResetStore._identity(owner_principal, "owner_principal")
+        workspace = WorkspaceResetStore._identity(workspace_id, "workspace_id")
+        if expected_status not in {"active", "disabled"}:
+            raise ValueError("expected_status must be active or disabled")
+        WorkspaceResetStore._required_schema(connection)
+        params = {"owner": owner, "workspace": workspace, "status": expected_status}
+        workspace_row = connection.execute(text("""
+            SELECT w.workspace_id FROM workspaces w
+              JOIN users u ON u.user_id=w.owner_user_id
+              JOIN workspace_memberships m ON m.workspace_id=w.workspace_id AND m.user_id=u.user_id
+             WHERE w.workspace_id=:workspace AND u.username=:owner
+               AND w.kind='personal' AND w.status=:status AND u.status='active'
+               AND m.role='owner' AND m.status='active'
+             FOR UPDATE OF w
+        """), params).first()
+        if workspace_row is None:
+            raise WorkspaceNotFound("active personal workspace ownership is required")
+        WorkspaceResetStore._check_unknown_foreign_keys(connection, owner=owner, workspace=workspace)
+        WorkspaceResetStore._preflight(connection, owner=owner, workspace=workspace,
+                                       allow_active_agent_roots=allow_active_agent_roots)
+
+    @staticmethod
+    def reset_in_connection(connection, *, owner_principal: str, workspace_id: str) -> dict[str, int]:
+        """Delete the bounded Workspace graph on a caller-owned transaction.
+
+        Callers must hold the Workspace reset advisory lock and complete
+        ``preflight_in_connection`` in the same transaction first. This only
+        removes database references; CAS objects are left for offline global
+        reference collection and are never unlinked by the Product API.
+        """
+        owner = WorkspaceResetStore._identity(owner_principal, "owner_principal")
+        workspace = WorkspaceResetStore._identity(workspace_id, "workspace_id")
+        params = {"owner": owner, "workspace": workspace}
+        deleted: dict[str, int] = {}
+        for table, sql in _DELETE_PLAN:
+            result = connection.execute(text(sql), params)
+            deleted[table] = max(0, int(result.rowcount or 0))
+        return deleted
 
     @staticmethod
     def _object_reference(value: object) -> dict[str, object] | None:
@@ -422,21 +479,9 @@ class WorkspaceResetStore(PgStoreMixin):
                 connection.execute(text("SET LOCAL statement_timeout = '120s'"))
                 connection.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
                                    {"scope": f"workspace-reset|{workspace}"})
-                self._required_schema(connection)
-                workspace_row = connection.execute(text("""
-                    SELECT w.workspace_id FROM workspaces w
-                      JOIN users u ON u.user_id=w.owner_user_id
-                      JOIN workspace_memberships m ON m.workspace_id=w.workspace_id AND m.user_id=u.user_id
-                     WHERE w.workspace_id=:workspace AND u.username=:owner
-                       AND w.kind='personal' AND w.status='active' AND u.status='active'
-                       AND m.role='owner' AND m.status='active'
-                     FOR UPDATE OF w
-                """), params).first()
-                if workspace_row is None:
-                    raise WorkspaceNotFound("active personal workspace ownership is required")
-
-                self._check_unknown_foreign_keys(connection, owner=owner, workspace=workspace)
-                self._preflight(connection, owner=owner, workspace=workspace)
+                self.preflight_in_connection(
+                    connection, owner_principal=owner, workspace_id=workspace,
+                )
                 candidate_refs = self._object_candidates(connection, owner=owner, workspace=workspace)
 
                 if preview:
@@ -444,9 +489,9 @@ class WorkspaceResetStore(PgStoreMixin):
                             "workspace_id": workspace, "ready": True,
                             "candidate_object_references": candidate_refs}
 
-                for table, sql in _DELETE_PLAN:
-                    result = connection.execute(text(sql), params)
-                    deleted[table] = max(0, int(result.rowcount or 0))
+                deleted = self.reset_in_connection(
+                    connection, owner_principal=owner, workspace_id=workspace,
+                )
 
                 # Identify CAS objects which have no remaining database row
                 # reference. The caller still performs the filesystem check and

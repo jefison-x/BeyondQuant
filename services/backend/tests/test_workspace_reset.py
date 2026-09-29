@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
+from uuid import uuid4
 
 import pytest
 
@@ -11,6 +12,7 @@ from app.agent_research import AgentResearchStore
 from app.conversation_catalog import ConversationCatalogStore
 from app.research import ResearchStore
 from app.workspace_reset import WorkspaceResetBlocked, WorkspaceResetStore
+from app.workspace_runtime_reset import WorkspaceRuntimeResetConflict, WorkspaceRuntimeResetStore
 from tests.workspace_helpers import trusted_agent_context
 from tests.test_research import snapshot
 
@@ -171,3 +173,182 @@ def test_unknown_approval_outcome_blocks_reset_without_deleting_research() -> No
         assert store._fetch_one("SELECT task_id FROM research_tasks WHERE task_id=:id", {"id": task_id}) is not None
     finally:
         store.close()
+
+
+def test_product_workspace_reset_requires_release_proof_is_scoped_and_idempotent() -> None:
+    suffix = uuid4().hex[:12]
+    owner_a = f"product-reset-a-{suffix}"
+    owner_b = f"product-reset-b-{suffix}"
+    context_a, conversation_a, task_a, _experiment_a, artifact_a = _research_graph(owner_a, suffix=suffix + "a")
+    context_b, conversation_b, task_b, _experiment_b, _artifact_b = _research_graph(owner_b, suffix=suffix + "b")
+    agents = AgentResearchStore()
+    reset = WorkspaceRuntimeResetStore()
+    store = WorkspaceResetStore()
+    conversations = ConversationCatalogStore()
+    try:
+        completed_job_id = f"factor_reset_completed_{suffix}"
+        now = datetime.now(timezone.utc).isoformat()
+        store._execute("""INSERT INTO factor_jobs
+            (job_id,task_id,workspace_id,owner_principal,experiment_id,trace_id,idempotency_key,
+             request_hash,input_manifest_id,request_json,status,attempts,max_attempts,result_artifact_id,
+             created_at,updated_at,finished_at)
+            VALUES (:job,:task,:workspace,:owner,NULL,:trace,:key,'hash','manifest','{}'::jsonb,
+                    'completed',1,3,:artifact,:now,:now,:now)""",
+            {"job": completed_job_id, "task": task_a, "workspace": context_a["workspace_id"],
+             "owner": owner_a, "trace": context_a["trace_id"], "key": f"reset-completed-{suffix}",
+             "artifact": artifact_a, "now": now})
+        authority = agents.current_runtime_authority()
+        if authority is None:
+            authority = agents.rotate_runtime_authority(uuid4().hex)
+        root_id = uuid4().hex
+        agents.apply_runtime_lifecycle_event(
+            {"schema_version": "agent-run-lifecycle.v1", "root_run_id": root_id,
+             "sequence": 1, "outcome": "active"},
+            trusted_owner=owner_a, trusted_workspace=context_a["workspace_id"],
+            trusted_session_id=context_a["session_id"], trusted_trace_id=context_a["trace_id"],
+            trusted_boot_id=str(authority["boot_id"]),
+        )
+        request_key = str(uuid4())
+        begin = reset.begin_workspace_reset(
+            owner_principal=owner_a, workspace_id=context_a["workspace_id"],
+            idempotency_key=request_key,
+        )
+        assert begin == {
+            "schema_version": "workspace-reset-begin.v1",
+            "workspace_id": context_a["workspace_id"],
+            "reset_id": begin["reset_id"], "status": "pending",
+            "sessions": [{"conversation_id": conversation_a,
+                          "session_id": context_a["session_id"], "trace_id": context_a["trace_id"]}],
+        }
+        assert store._fetch_one("SELECT status FROM workspaces WHERE workspace_id=:id",
+                                {"id": context_a["workspace_id"]})["status"] == "disabled"
+        assert agents._fetch_one(
+            "SELECT authority_status FROM agent_runtime_turns WHERE root_run_id=:id",
+            {"id": root_id})["authority_status"] == "authority_revoked_unconfirmed"
+
+        with pytest.raises(WorkspaceRuntimeResetConflict, match="release proof"):
+            reset.finalize_workspace_reset(
+                owner_principal=owner_a, workspace_id=context_a["workspace_id"],
+                reset_id=begin["reset_id"], idempotency_key=request_key, released_sessions=[],
+            )
+        assert store._fetch_one("SELECT task_id FROM research_tasks WHERE task_id=:id", {"id": task_a})
+        assert store._fetch_one("SELECT status FROM workspaces WHERE workspace_id=:id",
+                                {"id": context_a["workspace_id"]})["status"] == "disabled"
+
+        finalized = reset.finalize_workspace_reset(
+            owner_principal=owner_a, workspace_id=context_a["workspace_id"],
+            reset_id=begin["reset_id"], idempotency_key=request_key,
+            released_sessions=[context_a["session_id"]],
+        )
+        assert finalized["schema_version"] == "workspace-reset-finalize.v1"
+        assert finalized["reset_id"] == begin["reset_id"]
+        assert finalized["status"] == "reset"
+        assert finalized["workspace_id"] == context_a["workspace_id"]
+        assert finalized["already_empty"] is False
+        assert finalized["deleted"]["research_tasks"] == 1
+        assert finalized["deleted"]["factor_jobs"] == 1
+        assert store._fetch_one("SELECT status FROM workspaces WHERE workspace_id=:id",
+                                {"id": context_a["workspace_id"]})["status"] == "active"
+        assert agents._fetch_one(
+            "SELECT status,authority_status FROM agent_runtime_turns WHERE root_run_id=:id",
+            {"id": root_id}) == {"status": "interrupted", "authority_status": "closed"}
+        assert store._fetch_one("SELECT task_id FROM research_tasks WHERE task_id=:id", {"id": task_a}) is None
+        assert store._fetch_one("SELECT job_id FROM factor_jobs WHERE job_id=:id",
+                                {"id": completed_job_id}) is None
+        assert store._fetch_one("SELECT task_id FROM research_tasks WHERE task_id=:id", {"id": task_b}) is not None
+        assert conversations._fetch_one(
+            "SELECT conversation_id FROM product_conversations WHERE conversation_id=:id",
+            {"id": conversation_b}) is not None
+
+        replay = reset.begin_workspace_reset(
+            owner_principal=owner_a, workspace_id=context_a["workspace_id"],
+            idempotency_key=request_key,
+        )
+        assert replay == {
+            "schema_version": "workspace-reset-begin.v1",
+            "workspace_id": context_a["workspace_id"],
+            "status": "completed",
+            "receipt": {key: finalized[key] for key in
+                         ("status", "workspace_id", "deleted", "already_empty")},
+        }
+        new_conversation = conversations.create(owner_a, f"new-session-{suffix}", f"new-trace-{suffix}")
+        replay_after_new_data = reset.begin_workspace_reset(
+            owner_principal=owner_a, workspace_id=context_a["workspace_id"],
+            idempotency_key=request_key,
+        )
+        assert replay_after_new_data == replay
+        assert conversations._fetch_one(
+            "SELECT conversation_id FROM product_conversations WHERE conversation_id=:id",
+            {"id": new_conversation["conversation_id"]}) is not None
+    finally:
+        conversations.close()
+        store.close()
+        reset.close()
+        agents.close()
+
+
+def test_product_workspace_reset_active_job_blocks_before_fencing() -> None:
+    suffix = uuid4().hex[:12]
+    owner = f"product-reset-job-{suffix}"
+    context, _conversation, task_id, _experiment, _artifact = _research_graph(owner, suffix=suffix)
+    agents = AgentResearchStore()
+    reset = WorkspaceRuntimeResetStore()
+    store = WorkspaceResetStore()
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        store._execute("""INSERT INTO factor_jobs
+            (job_id,task_id,workspace_id,owner_principal,experiment_id,trace_id,idempotency_key,
+             request_hash,input_manifest_id,request_json,status,attempts,max_attempts,created_at,updated_at)
+            VALUES (:job,:task,:workspace,:owner,NULL,:trace,:key,'hash','manifest','{}'::jsonb,
+                    'queued',0,3,:now,:now)""",
+            {"job": f"active-reset-{suffix}", "task": task_id,
+             "workspace": context["workspace_id"], "owner": owner,
+             "trace": context["trace_id"], "key": f"active-reset-{suffix}", "now": now})
+        with pytest.raises(WorkspaceRuntimeResetConflict, match="factor_jobs"):
+            reset.begin_workspace_reset(owner_principal=owner,
+                                        workspace_id=context["workspace_id"],
+                                        idempotency_key=str(uuid4()))
+        assert store._fetch_one("SELECT status FROM workspaces WHERE workspace_id=:id",
+                                {"id": context["workspace_id"]})["status"] == "active"
+        assert store._fetch_one("SELECT task_id FROM research_tasks WHERE task_id=:id", {"id": task_id})
+    finally:
+        store.close()
+        reset.close()
+        agents.close()
+
+
+def test_product_workspace_reset_unknown_approval_blocks_before_fencing() -> None:
+    suffix = uuid4().hex[:12]
+    owner = f"product-reset-unknown-{suffix}"
+    context, _conversation, task_id, _experiment, _artifact = _research_graph(owner, suffix=suffix)
+    agents = AgentResearchStore()
+    reset = WorkspaceRuntimeResetStore()
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        run_id = f"unknown-reset-{suffix}"
+        agents._execute("""INSERT INTO agent_runs
+            (run_id,owner_principal,actor_principal,role_id,role_version,trace_id,session_id,
+             dsh_run_id,status,authority_status,idempotency_key,request_hash,created_at,updated_at,version,workspace_id)
+            VALUES (:run,:owner,:owner,'quant_research','1',:trace,:session,'dsh-reset',
+                    'completed','closed',:key,'hash',:now,:now,1,:workspace)""",
+            {"run": run_id, "owner": owner, "trace": context["trace_id"],
+             "session": context["session_id"], "key": run_id, "now": now,
+             "workspace": context["workspace_id"]})
+        agents._execute("""INSERT INTO agent_approvals
+            (approval_id,run_id,owner_principal,actor_principal,action,reason,status,
+             execution_outcome,continuation_status,idempotency_key,request_hash,created_at,updated_at,workspace_id)
+            VALUES (:approval,:run,:owner,:owner,'external_action','test','approved',
+                    'outcome_unknown','outcome_unknown',:key,'hash',:now,:now,:workspace)""",
+            {"approval": f"approval-{suffix}", "run": run_id, "owner": owner,
+             "key": run_id, "now": now, "workspace": context["workspace_id"]})
+        with pytest.raises(WorkspaceRuntimeResetConflict, match="unknown approval"):
+            reset.begin_workspace_reset(owner_principal=owner,
+                                        workspace_id=context["workspace_id"],
+                                        idempotency_key=str(uuid4()))
+        row = agents._fetch_one("SELECT status,reset_id FROM workspaces WHERE workspace_id=:id",
+                                {"id": context["workspace_id"]})
+        assert row == {"status": "active", "reset_id": None}
+        assert agents._fetch_one("SELECT task_id FROM research_tasks WHERE task_id=:id", {"id": task_id})
+    finally:
+        reset.close()
+        agents.close()

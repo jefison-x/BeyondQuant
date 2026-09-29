@@ -237,3 +237,62 @@ def test_private_reset_routes_keep_cookie_identity_and_deny_agent_admission(monk
         conversations.close()
         tenancy.close()
         users.close()
+
+
+def test_private_workspace_reset_routes_require_service_authority_and_exact_contract(monkeypatch) -> None:
+    from fastapi.testclient import TestClient
+
+    from app import main
+
+    workspace_id = "workspace-route-reset"
+    reset_id = "b" * 32
+    request_key = str(uuid4())
+
+    class ResetStub:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def begin_workspace_reset(self, **kwargs):
+            self.calls.append(("begin", kwargs))
+            return {"schema_version": "workspace-reset-begin.v1", "workspace_id": workspace_id,
+                    "reset_id": reset_id, "status": "pending", "sessions": []}
+
+        def finalize_workspace_reset(self, **kwargs):
+            self.calls.append(("finalize", kwargs))
+            return {"schema_version": "workspace-reset-finalize.v1", "workspace_id": workspace_id,
+                    "reset_id": reset_id, "status": "reset", "deleted": {}, "already_empty": True}
+
+    resets = ResetStub()
+    monkeypatch.setattr(main, "workspace_runtime_reset_store", resets)
+    monkeypatch.setattr(main, "RUNTIME_AUTHORITY_TOKEN", "workspace-reset-service-token")
+    client = TestClient(main.app)
+    identity_headers = {
+        "x-byq-owner-principal": "alice",
+        "x-byq-workspace-id": workspace_id,
+    }
+    service_headers = {**identity_headers, "Authorization": "Bearer workspace-reset-service-token"}
+    begin_path = "/internal/workspace-reset/begin"
+    begin_body = {"schema_version": "workspace-reset-begin.v1", "request_key": request_key}
+    assert client.post(begin_path, json=begin_body, headers=identity_headers).status_code == 401
+    assert client.post(begin_path, json={**begin_body, "extra": True},
+                       headers=service_headers).status_code == 422
+    begun = client.post(begin_path, json=begin_body, headers=service_headers)
+    assert begun.status_code == 200, begun.text
+    assert begun.json()["status"] == "pending"
+
+    finalize_path = "/internal/workspace-reset/finalize"
+    finalize_body = {"schema_version": "workspace-reset-finalize.v1", "reset_id": reset_id,
+                     "request_key": request_key, "released_sessions": []}
+    assert client.post(finalize_path, json=finalize_body, headers=identity_headers).status_code == 401
+    assert client.post(finalize_path, json={**finalize_body, "extra": True},
+                       headers=service_headers).status_code == 422
+    finalized = client.post(finalize_path, json=finalize_body, headers=service_headers)
+    assert finalized.status_code == 200, finalized.text
+    assert finalized.json()["status"] == "reset"
+    assert resets.calls == [
+        ("begin", {"owner_principal": "alice", "workspace_id": workspace_id,
+                    "idempotency_key": request_key}),
+        ("finalize", {"owner_principal": "alice", "workspace_id": workspace_id,
+                       "reset_id": reset_id, "idempotency_key": request_key,
+                       "released_sessions": []}),
+    ]

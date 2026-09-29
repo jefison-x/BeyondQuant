@@ -90,6 +90,8 @@ RUNTIME_TERMINAL_EVIDENCE_SCHEMA = "byq-runtime-terminal-evidence.v1"
 RUNTIME_ROOT_CLOSE_SCHEMA = "byq-runtime-root-close.v1"
 WORKSPACE_RUNTIME_RESET_BEGIN_SCHEMA = "workspace-runtime-reset-begin.v1"
 WORKSPACE_RUNTIME_RESET_FINALIZE_SCHEMA = "workspace-runtime-reset-finalize.v1"
+WORKSPACE_RESET_BEGIN_SCHEMA = "workspace-reset-begin.v1"
+WORKSPACE_RESET_FINALIZE_SCHEMA = "workspace-reset-finalize.v1"
 _runtime_authority_lock = threading.RLock()
 _runtime_authority_sync_lock = threading.Lock()
 _runtime_authority_state: dict[str, object] = {
@@ -271,6 +273,60 @@ def _validate_workspace_runtime_reset_finalize(
             or body.get("status") != "finalized"
             or body.get("archived_conversation_ids") != expected_conversation_ids):
         raise HTTPException(status_code=502, detail="Backend workspace reset receipt is invalid")
+
+
+def _validate_workspace_reset_receipt(
+    body: object, *, workspace_id: str, allow_blocked: bool = False,
+) -> dict[str, object]:
+    if (allow_blocked and isinstance(body, dict) and set(body) == {"status", "workspace_id", "reason"}
+            and body.get("status") == "blocked" and body.get("workspace_id") == workspace_id
+            and isinstance(body.get("reason"), str) and body["reason"]):
+        return body
+    if (not isinstance(body, dict) or set(body) != {
+        "status", "workspace_id", "deleted", "already_empty",
+    } or body.get("status") != "reset" or body.get("workspace_id") != workspace_id
+            or type(body.get("already_empty")) is not bool or not isinstance(body.get("deleted"), dict)
+            or any(not isinstance(table, str) or type(count) is not int or count < 0
+                   for table, count in body["deleted"].items())):
+        raise HTTPException(status_code=502, detail="Backend workspace reset receipt is invalid")
+    return body
+
+
+def _validate_workspace_reset_begin(
+    body: object, *, workspace_id: str,
+) -> tuple[str | None, list[dict[str, str]], dict[str, object] | None]:
+    if (not isinstance(body, dict) or body.get("schema_version") != WORKSPACE_RESET_BEGIN_SCHEMA
+            or body.get("workspace_id") != workspace_id):
+        raise HTTPException(status_code=502, detail="Backend workspace reset receipt is invalid")
+    if body.get("status") == "completed" and set(body) == {
+        "schema_version", "workspace_id", "status", "receipt",
+    }:
+        return None, [], _validate_workspace_reset_receipt(body["receipt"], workspace_id=workspace_id,
+                                                          allow_blocked=True)
+    if body.get("status") != "pending" or set(body) != {
+        "schema_version", "workspace_id", "reset_id", "status", "sessions",
+    }:
+        raise HTTPException(status_code=502, detail="Backend workspace reset receipt is invalid")
+    runtime_shape = {
+        "schema_version": WORKSPACE_RUNTIME_RESET_BEGIN_SCHEMA,
+        "workspace_id": workspace_id,
+        "reset_id": body["reset_id"],
+        "sessions": body["sessions"],
+    }
+    reset_id, sessions = _validate_workspace_runtime_reset_begin(runtime_shape, workspace_id=workspace_id)
+    return reset_id, sessions, None
+
+
+def _validate_workspace_reset_finalize(
+    body: object, *, workspace_id: str, reset_id: str,
+) -> dict[str, object]:
+    if (not isinstance(body, dict) or body.get("schema_version") != WORKSPACE_RESET_FINALIZE_SCHEMA
+            or body.get("workspace_id") != workspace_id or body.get("reset_id") != reset_id):
+        raise HTTPException(status_code=502, detail="Backend workspace reset receipt is invalid")
+    return _validate_workspace_reset_receipt(
+        {key: value for key, value in body.items() if key not in {"schema_version", "reset_id"}},
+        workspace_id=workspace_id, allow_blocked=True,
+    )
 
 
 def _workspace_runtime_reset_adapter_session(session_id: str, trace_id: str) -> None:
@@ -2315,6 +2371,52 @@ def reset_current_workspace_runtime(request: Request) -> dict[str, object]:
         "workspace_id": workspace_id,
         "archived_conversation_count": len(conversation_ids),
     }
+
+
+@app.post("/v1/workspaces/current/reset", response_model=None)
+def reset_current_workspace(request: Request, idempotency_key: str | None = Header(
+    default=None, alias="Idempotency-Key",
+)) -> dict[str, object] | JSONResponse:
+    # Browser-only, durable owner identity. A Product Token cannot authorize deletion.
+    if SESSION_COOKIE not in request.cookies:
+        raise HTTPException(status_code=401, detail="product authentication required")
+    principal, workspace_id = _trusted_request_identity(request)
+    try:
+        key = uuid.UUID(idempotency_key or "")
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=422, detail="Idempotency-Key must be an RFC 4122 UUID") from None
+    if key.variant != uuid.RFC_4122 or str(key) != idempotency_key:
+        raise HTTPException(status_code=422, detail="Idempotency-Key must be an RFC 4122 UUID")
+
+    begin = _workspace_runtime_reset_backend_request(
+        "POST", "/internal/workspace-reset/begin",
+        {"schema_version": WORKSPACE_RESET_BEGIN_SCHEMA, "request_key": idempotency_key},
+        principal, workspace_id,
+    )
+    reset_id, sessions, completed = _validate_workspace_reset_begin(begin, workspace_id=workspace_id)
+    if completed is not None:
+        if completed["status"] == "blocked":
+            return JSONResponse(status_code=409, content={
+                "detail": completed["reason"], "reset_terminal": True,
+            })
+        return completed
+    assert reset_id is not None
+    _reset_workspace_runtime_sessions(sessions, principal, workspace_id)
+    finalized = _workspace_runtime_reset_backend_request(
+        "POST", "/internal/workspace-reset/finalize",
+        {"schema_version": WORKSPACE_RESET_FINALIZE_SCHEMA, "reset_id": reset_id,
+         "request_key": idempotency_key,
+         "released_sessions": [item["session_id"] for item in sessions]},
+        principal, workspace_id,
+    )
+    receipt = _validate_workspace_reset_finalize(
+        finalized, workspace_id=workspace_id, reset_id=reset_id,
+    )
+    if receipt["status"] == "blocked":
+        return JSONResponse(status_code=409, content={
+            "detail": receipt["reason"], "reset_terminal": True,
+        })
+    return receipt
 
 
 @app.get("/v1/workflows/{session_id}/events")

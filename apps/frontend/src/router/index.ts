@@ -132,6 +132,7 @@ const router = createRouter({
             { path: "models", name: "user-models", component: () => import("@/views/ModelsView.vue"), meta: { title: "模型配置", kicker: "用户中心", subtitle: "写入保密凭据、模型档案和 Agent 绑定" } },
             { path: "agent-policy", name: "user-agent-policy", component: () => import("@/views/AgentPolicyView.vue"), meta: { title: "智能助手偏好", kicker: "用户中心", subtitle: "个人审批偏好和操作边界" } },
             { path: "research", name: "user-research", component: () => import("@/views/ResearchCenterView.vue"), meta: { title: "研究与审批", kicker: "用户中心", subtitle: "研究记录、策略版本与审批记录" } },
+            { path: "reset", name: "user-workspace-reset", component: () => import("@/views/WorkspaceResetView.vue"), meta: { title: "重置工作区", kicker: "用户中心", subtitle: "重置运行时或清理当前工作区数据" } },
           ],
         },
         { path: "profile", redirect: "/user/profile" },

@@ -844,7 +844,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 r'(?m)^@app\.(get|post|put|delete)\("([^"]+)"',
                 main_source,
             )
-            if path.startswith(("/v1/agent", "/v1/workflows"))
+            if path.startswith(("/v1/agent", "/v1/workflows", "/v1/workspaces/current/"))
         )
         self.assertEqual(documented, implemented)
 
@@ -1136,7 +1136,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             local_ci,
         )
         self.assertIn("BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml", local_ci)
-        self.assertIn("Dockerfile.post-u8-266-candidate", local_ci)
+        self.assertIn("Dockerfile.post-u8-267-candidate", local_ci)
         self.assertNotIn("CI_PG_NET=byq_product", local_ci)
         self.assertNotIn("npm run build >/tmp/byq-mcp-build.log 2>&1", local_ci)
 

@@ -26,6 +26,8 @@ IDENTITY_SCHEMA_DDL = [
         display_name TEXT NOT NULL,
         status TEXT NOT NULL CHECK (status IN ('active', 'disabled')),
         reset_id TEXT,
+        reset_kind TEXT,
+        reset_request_key TEXT,
         reset_sessions_json JSONB,
         last_reset_id TEXT,
         last_reset_receipt_json JSONB,
@@ -49,6 +51,17 @@ IDENTITY_SCHEMA_DDL = [
     """
     CREATE UNIQUE INDEX IF NOT EXISTS workspace_personal_owner_membership
         ON workspace_memberships(user_id) WHERE role = 'owner' AND status = 'active'
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS workspace_reset_receipts (
+        workspace_id TEXT NOT NULL REFERENCES workspaces(workspace_id),
+        request_key TEXT NOT NULL,
+        reset_id TEXT NOT NULL,
+        receipt_json JSONB NOT NULL,
+        released_sessions_json JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        PRIMARY KEY (workspace_id, request_key)
+    )
     """,
 ]
 
@@ -263,6 +276,8 @@ class WorkspaceTenancyStore(PgStoreMixin):
         with self.engine.begin() as connection:
             schema_bootstrap_lock(connection)
             ensure_column(connection, "workspaces", "reset_id", "TEXT")
+            ensure_column(connection, "workspaces", "reset_kind", "TEXT")
+            ensure_column(connection, "workspaces", "reset_request_key", "TEXT")
             ensure_column(connection, "workspaces", "reset_sessions_json", "JSONB")
             ensure_column(connection, "workspaces", "last_reset_id", "TEXT")
             ensure_column(connection, "workspaces", "last_reset_receipt_json", "JSONB")
@@ -346,7 +361,8 @@ class WorkspaceTenancyStore(PgStoreMixin):
                 ON w.owner_user_id = u.user_id JOIN workspace_memberships m
                 ON m.workspace_id = w.workspace_id AND m.user_id = u.user_id
                 WHERE u.username = NEW.owner_principal AND u.status = 'active'
-                  AND w.status = 'active' AND m.status = 'active';
+                  AND w.status = 'active' AND m.status = 'active'
+                FOR SHARE OF w;
               -- ADR-0063: no generic bypass. Only an immutable, already-bound
               -- run may follow its trusted persisted root into a terminal state.
               IF resolved IS NULL AND TG_TABLE_NAME = 'agent_runs' AND TG_OP = 'UPDATE' THEN
@@ -431,7 +447,8 @@ class WorkspaceTenancyStore(PgStoreMixin):
                   ON w.owner_user_id = u.user_id JOIN workspace_memberships m
                   ON m.workspace_id = w.workspace_id AND m.user_id = u.user_id
                   WHERE u.username = to_jsonb(NEW) ->> 'owner_principal'
-                    AND u.status = 'active' AND w.status = 'active' AND m.status = 'active';
+                    AND u.status = 'active' AND w.status = 'active' AND m.status = 'active'
+                  FOR SHARE OF w;
                 IF owner_resolved IS NULL AND TG_TABLE_NAME = 'agent_audit' AND TG_OP = 'INSERT' THEN
                   SELECT w.workspace_id INTO owner_resolved FROM users u
                     JOIN workspaces w ON w.owner_user_id = u.user_id

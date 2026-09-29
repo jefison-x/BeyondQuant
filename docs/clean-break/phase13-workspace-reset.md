@@ -1,7 +1,7 @@
 # Phase 13 — Runtime and Workspace reset
 
 Base: `8d6929a140d4ebddc55091b43f9c8a3c9d465e4b` (Phase 12 merged `origin/main`).
-Status: Backend/development reset slice local PASS; Phase 13 overall gate OPEN.
+Status: Phase 13 local gate PASS; repository PR/CI/merge gate OPEN.
 Phase 14 schema baseline remains closed.
 
 ## Ownership and reset semantics
@@ -70,6 +70,8 @@ namespace, Docker volume or DSH state shared by other Workspaces. Development
 
 ## Evidence
 
+The UI acceptance items are tracked in the [Phase 13 feature checklist](phase13-feature-checklist.md).
+
 Local focused checks: development reset command tests 12 passed; Workspace
 SQL reset tests 4 passed against a fresh disposable PostgreSQL 16; object
 cleanup tests 4 passed; Gateway runtime-reset contract tests 7 passed in an
@@ -88,10 +90,31 @@ architecture tests, and diff check passed.
 
 **Independent Tester: PASS. Independent Sol Reviewer: Functional PASS / Tests
 PASS / Clean Break Architecture PASS for the tested Backend/development slice.
-Root acceptance: bounded slice local PASS; Phase 13 overall OPEN.** The frontend
-has no reset menu, and Reset Workspace currently has only the isolated
-development command and domain store, not a user-facing Product API. These
-user flows must be implemented and reviewed before overall Phase 13 PASS.
+Root acceptance: bounded slice local PASS; Phase 13 overall OPEN.** The later
+Product Workspace reset candidate adds an authenticated Gateway Product API,
+private Backend begin/finalize contract, persistent idempotency receipts, and a
+frontend reset menu. Focused candidate checks passed: disposable PostgreSQL 16
+Backend reset tests 10/10, Gateway reset tests 11/11, frontend focused tests
+10/10 and frontend build. After the Reviewer identified two precise evidence
+gaps, the affected Backend Product reset node passed 1/1 with a completed
+FactorJob and Artifact in the deleted graph. The sole real-browser case passed
+1/1 against a fresh PostgreSQL 16 and isolated six-service project: signed-in
+user created a ResearchTask, confirmed Runtime reset and saw the task retained,
+then confirmed Workspace reset and saw it removed; the protected page still
+loaded after refresh and browser requests stayed same-origin. The exact test
+project's containers, network and volumes were removed. One earlier browser
+attempt stopped before any reset request because its locator matched two buttons;
+the locator was made exact and only that case was rerun. Independent Sol Reviewer
+inspected the actual diff and returned **Functional PASS / Tests PASS / Clean
+Break Architecture PASS for the local Phase 13 code**. Root accepts this local
+code gate as PASS. The maintainer explicitly authorized the `.267` build metadata
+update; the immutable `.267` manifest and Dockerfile are current, `.267` and
+frozen `.266` checks pass, and the focused build/retirement/architecture set
+passes 86/86. Independent Sol Reviewer reconfirmed **Functional PASS / Tests
+PASS / Clean Break Architecture PASS** on the final diff. Root accepts Phase 13
+local gate PASS. The Product route removes Artifact database
+references; physical object cleanup is a separate global-reference-safe GC
+pass and is not claimed as immediate Product request behavior.
 The repository PR/CI/merge gate is also open. No existing Product database,
 deployment, push or merge was touched or authorized in this Phase 13 turn.
 Fresh schema and Golden scenarios remain Phases 14–16.

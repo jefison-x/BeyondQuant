@@ -13,6 +13,7 @@ from app.trace_store import TraceStore
 WORKSPACE_ID = "workspace-alice"
 RESET_ID = "a" * 32
 COOKIE = {"byq_session": "durable-auth-session"}
+REQUEST_KEY = "66aebeb6-247d-48e5-bb0f-137a2befa5f2"
 
 
 def session_row(conversation_id: str, session_id: str, trace_id: str) -> dict[str, str]:
@@ -36,6 +37,17 @@ def finalize_receipt(workspace_id: str, conversations: list[str]) -> dict[str, o
         "status": "finalized",
         "archived_conversation_ids": conversations,
     }
+
+
+def workspace_begin_receipt(sessions=None) -> dict[str, object]:
+    return {"schema_version": main.WORKSPACE_RESET_BEGIN_SCHEMA, "workspace_id": WORKSPACE_ID,
+            "reset_id": RESET_ID, "status": "pending", "sessions": list(sessions or [])}
+
+
+def workspace_finalize_receipt() -> dict[str, object]:
+    return {"schema_version": main.WORKSPACE_RESET_FINALIZE_SCHEMA,
+            "workspace_id": WORKSPACE_ID, "reset_id": RESET_ID,
+            "status": "reset", "deleted": {"research_tasks": 2}, "already_empty": False}
 
 
 @pytest.fixture
@@ -312,3 +324,69 @@ def test_backend_reset_request_uses_runtime_authority_and_exact_workspace_header
         },
         "timeout": 8.0,
     }
+
+
+def test_product_workspace_reset_releases_sessions_and_returns_scoped_receipt(monkeypatch, gateway):
+    client, _sidecars = gateway
+    session = session_row("conversation-a", "runtime-a", "trace-a")
+    add_live_session(**session)
+    calls = []
+
+    def backend(_method, path, payload, _principal, _workspace):
+        calls.append((path, payload))
+        return workspace_begin_receipt([session]) if path.endswith("/begin") else workspace_finalize_receipt()
+
+    def adapter(path, *, payload=None, timeout=20.0):
+        return {"session_id": "runtime-a", "trace_id": "trace-a", "active_prompt": False,
+                "status": "interrupted" if path.endswith("cancel?mode=hard") else "closed"}
+
+    monkeypatch.setattr(main, "_workspace_runtime_reset_backend_request", backend)
+    monkeypatch.setattr(main, "_adapter_post", adapter)
+    response = client.post("/v1/workspaces/current/reset", cookies=COOKIE,
+                           headers={"Idempotency-Key": REQUEST_KEY})
+    assert response.status_code == 200
+    assert response.json() == {"status": "reset", "workspace_id": WORKSPACE_ID,
+                               "deleted": {"research_tasks": 2}, "already_empty": False}
+    assert calls == [
+        ("/internal/workspace-reset/begin", {"schema_version": main.WORKSPACE_RESET_BEGIN_SCHEMA,
+                                             "request_key": REQUEST_KEY}),
+        ("/internal/workspace-reset/finalize", {"schema_version": main.WORKSPACE_RESET_FINALIZE_SCHEMA,
+                                                "reset_id": RESET_ID, "request_key": REQUEST_KEY,
+                                                "released_sessions": ["runtime-a"]}),
+    ]
+
+
+def test_product_workspace_reset_completed_retry_skips_adapter(monkeypatch, gateway):
+    client, _sidecars = gateway
+    monkeypatch.setattr(main, "_workspace_runtime_reset_backend_request", lambda *_args: {
+        "schema_version": main.WORKSPACE_RESET_BEGIN_SCHEMA, "workspace_id": WORKSPACE_ID,
+        "status": "completed", "receipt": {"status": "reset", "workspace_id": WORKSPACE_ID,
+                                         "deleted": {}, "already_empty": True},
+    })
+    monkeypatch.setattr(main, "_adapter_post", lambda *_args, **_kwargs: pytest.fail("no adapter retry"))
+    response = client.post("/v1/workspaces/current/reset", cookies=COOKIE,
+                           headers={"Idempotency-Key": REQUEST_KEY})
+    assert response.status_code == 200
+    assert response.json()["already_empty"] is True
+
+
+def test_product_workspace_reset_blocked_receipt_is_terminal(monkeypatch, gateway):
+    client, _sidecars = gateway
+    monkeypatch.setattr(main, "_workspace_runtime_reset_backend_request", lambda *_args: {
+        "schema_version": main.WORKSPACE_RESET_BEGIN_SCHEMA, "workspace_id": WORKSPACE_ID,
+        "status": "completed", "receipt": {"status": "blocked", "workspace_id": WORKSPACE_ID,
+                                         "reason": "active Job prevents reset"},
+    })
+    response = client.post("/v1/workspaces/current/reset", cookies=COOKIE,
+                           headers={"Idempotency-Key": REQUEST_KEY})
+    assert response.status_code == 409
+    assert response.json() == {"detail": "active Job prevents reset", "reset_terminal": True}
+
+
+def test_product_workspace_reset_requires_login_and_uuid(monkeypatch, gateway):
+    client, _sidecars = gateway
+    monkeypatch.setattr(main, "_workspace_runtime_reset_backend_request",
+                        lambda *_args: pytest.fail("invalid request reached Backend"))
+    assert client.post("/v1/workspaces/current/reset", headers={"Idempotency-Key": REQUEST_KEY}).status_code == 401
+    assert client.post("/v1/workspaces/current/reset", cookies=COOKIE,
+                       headers={"Idempotency-Key": "not-a-uuid"}).status_code == 422

@@ -667,6 +667,29 @@ def finalize_workspace_runtime_reset(payload: dict[str, Any], request: Request) 
         reset_id=payload.get("reset_id"), released_sessions=payload.get("released_sessions")))
 
 
+@app.post("/internal/workspace-reset/begin")
+def begin_workspace_reset(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_runtime_authority_bearer(request)
+    if (set(payload) != {"schema_version", "request_key"}
+            or payload.get("schema_version") != "workspace-reset-begin.v1"):
+        raise HTTPException(status_code=422, detail="exact Workspace reset begin request required")
+    owner, workspace = _runtime_reset_identity_headers(request)
+    return _workspace_runtime_reset_call(lambda: workspace_runtime_reset_store.begin_workspace_reset(
+        owner_principal=owner, workspace_id=workspace, idempotency_key=payload.get("request_key")))
+
+
+@app.post("/internal/workspace-reset/finalize")
+def finalize_workspace_reset(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_runtime_authority_bearer(request)
+    if (set(payload) != {"schema_version", "reset_id", "request_key", "released_sessions"}
+            or payload.get("schema_version") != "workspace-reset-finalize.v1"):
+        raise HTTPException(status_code=422, detail="exact Workspace reset finalize request required")
+    owner, workspace = _runtime_reset_identity_headers(request)
+    return _workspace_runtime_reset_call(lambda: workspace_runtime_reset_store.finalize_workspace_reset(
+        owner_principal=owner, workspace_id=workspace, reset_id=payload.get("reset_id"),
+        idempotency_key=payload.get("request_key"), released_sessions=payload.get("released_sessions")))
+
+
 @app.post("/internal/runtime-authority/boot")
 def rotate_runtime_authority(payload: dict[str, Any], request: Request) -> dict[str, object]:
     _require_runtime_authority_bearer(request)

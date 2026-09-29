@@ -7,6 +7,68 @@ async function openUserDestination(page: Page, label: string) {
 
 test("Phase 90 real feedback preview, submission, moderation and unconfigured publication", phase90FeedbackJourney);
 
+test("Phase 13 real Workspace reset through Gateway Product API", async ({ page, baseURL }) => {
+  const username = process.env.BYQ_E2E_ADMIN_USERNAME;
+  const password = process.env.BYQ_E2E_ADMIN_PASSWORD;
+  if (!username || !password) throw new Error("BYQ_E2E admin credentials are required");
+  const origin = new URL(baseURL ?? "http://127.0.0.1:18080").origin;
+  const unexpectedOrigins = new Set<string>();
+  page.on("request", request => {
+    const url = new URL(request.url());
+    if (["http:", "https:"].includes(url.protocol) && url.origin !== origin) unexpectedOrigins.add(url.origin);
+  });
+
+  await page.goto("/login");
+  await page.getByLabel("用户名").fill(username);
+  await page.getByLabel("密码").fill(password);
+  await page.getByRole("button", { name: "进入" }).click();
+  await expect(page).toHaveURL(`${origin}/agent`);
+
+  const taskTitle = `Phase13重置验收-${Date.now()}`;
+  const created = await page.evaluate(async title => {
+    const response = await fetch("/api/product/research/tasks", {
+      method: "POST", credentials: "include", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title, objective: "验证工作区重置经 Product API 完成" }),
+    });
+    if (response.status !== 201) throw new Error(`research create failed: ${response.status}`);
+    return response.json();
+  }, taskTitle) as { task_id: string };
+  expect(created.task_id).toBeTruthy();
+
+  await page.goto("/user/reset");
+  await expect(page.getByRole("heading", { name: "重置整个工作区" })).toBeVisible();
+  const runtimeResponse = page.waitForResponse(response =>
+    response.url().endsWith("/v1/workspaces/current/runtime-reset") && response.request().method() === "POST");
+  await page.getByRole("button", { name: "重置运行时" }).click();
+  await page.getByRole("button", { name: "确认重置", exact: true }).click();
+  expect((await runtimeResponse).status()).toBe(200);
+  await expect(page.getByRole("status")).toContainText("运行时已重置");
+  const retained = await page.evaluate(async () => {
+    const response = await fetch("/api/product/research/tasks", { credentials: "include" });
+    if (!response.ok) throw new Error(`research query after runtime reset failed: ${response.status}`);
+    return response.json();
+  }) as { tasks: Array<{ task_id: string }> };
+  expect(retained.tasks.some(task => task.task_id === created.task_id)).toBe(true);
+
+  await page.getByLabel(/输入“重置工作区”以确认/).fill("重置工作区");
+  const responsePromise = page.waitForResponse(response =>
+    response.url().endsWith("/v1/workspaces/current/reset") && response.request().method() === "POST");
+  await page.getByRole("button", { name: "确认重置整个工作区" }).click();
+  const response = await responsePromise;
+  expect(response.status()).toBe(200);
+  await expect(page.getByRole("status").last()).toContainText("工作区重置已完成");
+
+  const after = await page.evaluate(async () => {
+    const response = await fetch("/api/product/research/tasks", { credentials: "include" });
+    if (!response.ok) throw new Error(`research query failed: ${response.status}`);
+    return response.json();
+  }) as { tasks: Array<{ task_id: string }> };
+  expect(after.tasks.some(task => task.task_id === created.task_id)).toBe(false);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "重置整个工作区" })).toBeVisible();
+  expect([...unexpectedOrigins]).toEqual([]);
+});
+
 test("real Product API login and Stock Pool create flow", async ({ page, baseURL }) => {
   const adminUsername = process.env.BYQ_E2E_ADMIN_USERNAME;
   const adminPassword = process.env.BYQ_E2E_ADMIN_PASSWORD;
