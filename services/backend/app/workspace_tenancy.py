@@ -1,9 +1,7 @@
-"""Personal-workspace identity and additive ownership migration (ADR-0025)."""
+"""Personal-workspace identity and tenant-write enforcement."""
 
 from __future__ import annotations
 
-import hashlib
-import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -65,33 +63,8 @@ IDENTITY_SCHEMA_DDL = [
     """,
 ]
 
-MIGRATION_SCHEMA_DDL = [
-    """
-    CREATE TABLE IF NOT EXISTS workspace_migration_runs (
-        run_id TEXT PRIMARY KEY,
-        contract_version TEXT NOT NULL,
-        status TEXT NOT NULL,
-        manifest_sha256 TEXT NOT NULL,
-        report_json JSONB NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL,
-        finished_at TIMESTAMPTZ NOT NULL
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS workspace_migration_quarantine (
-        quarantine_id TEXT PRIMARY KEY,
-        run_id TEXT NOT NULL REFERENCES workspace_migration_runs(run_id),
-        table_name TEXT NOT NULL,
-        record_key_json JSONB NOT NULL,
-        owner_principal TEXT,
-        reason TEXT NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL
-    )
-    """,
-]
-
 # User credentials/preferences/policy, platform data/operations, and Engineering
-# Plane resources are deliberately absent (ADR-0025 resource matrix).
+# Plane resources remain outside Workspace tenancy.
 WORKSPACE_TABLES = (
     "product_conversations", "product_conversation_messages",
     "research_tasks", "experiments", "artifacts", "research_transitions",
@@ -131,102 +104,6 @@ DIRECT_OWNER_TABLES: dict[str, tuple[str, ...]] = {
     "product_feedback": ("feedback_id",),
 }
 
-INHERITED_TABLES: dict[str, tuple[tuple[str, ...], str, str]] = {
-    "research_transitions": (
-        ("entity_type", "entity_id", "idempotency_key"),
-        "LEFT JOIN research_tasks rt ON c.entity_type = 'research_task' AND rt.task_id = c.entity_id "
-        "LEFT JOIN experiments ex ON c.entity_type = 'experiment' AND ex.experiment_id = c.entity_id "
-        "LEFT JOIN artifacts ar ON c.entity_type = 'artifact' AND ar.artifact_id = c.entity_id",
-        "COALESCE(rt.workspace_id, ex.workspace_id, ar.workspace_id)",
-    ),
-    "research_execution_plans": (
-        ("task_id",), "LEFT JOIN research_tasks p ON p.task_id = c.task_id", "p.workspace_id",
-    ),
-    "research_execution_plan_receipts": (
-        ("task_id", "idempotency_key"), "LEFT JOIN research_tasks p ON p.task_id = c.task_id",
-        "p.workspace_id",
-    ),
-    "research_task_actions": (
-        ("task_id", "action_id"), "LEFT JOIN research_tasks p ON p.task_id = c.task_id",
-        "p.workspace_id",
-    ),
-    "stock_pool_snapshots": (("snapshot_id",), "LEFT JOIN stock_pools p ON p.pool_id = c.pool_id", "p.workspace_id"),
-    "stock_pool_snapshot_members": (("snapshot_id", "symbol"), "LEFT JOIN stock_pool_snapshots p ON p.snapshot_id = c.snapshot_id", "p.workspace_id"),
-    "stock_pool_producer_definitions": (("definition_id",), "LEFT JOIN stock_pools p ON p.pool_id = c.pool_id", "p.workspace_id"),
-    "stock_pool_materialization_runs": (("run_id",), "LEFT JOIN stock_pools p ON p.pool_id = c.pool_id", "p.workspace_id"),
-    "stock_pool_producer_idempotency": (("owner_principal", "idempotency_key"), "LEFT JOIN stock_pools p ON p.pool_id = c.pool_id", "p.workspace_id"),
-    "paper_positions": (("account_id", "symbol"), "LEFT JOIN paper_accounts p ON p.account_id = c.account_id", "p.workspace_id"),
-    "paper_orders": (("order_id",), "LEFT JOIN paper_accounts p ON p.account_id = c.account_id", "p.workspace_id"),
-    "paper_fills": (("fill_id",), "LEFT JOIN paper_accounts p ON p.account_id = c.account_id", "p.workspace_id"),
-    "paper_account_controls": (("account_id",), "LEFT JOIN paper_accounts p ON p.account_id = c.account_id", "p.workspace_id"),
-    "paper_ledger_entries": (("entry_id",), "LEFT JOIN paper_accounts p ON p.account_id = c.account_id", "p.workspace_id"),
-    "paper_account_snapshots": (("snapshot_id",), "LEFT JOIN paper_accounts p ON p.account_id = c.account_id", "p.workspace_id"),
-    "learning_iterations": (("iteration_id",), "LEFT JOIN learning_runs p ON p.learning_run_id = c.learning_run_id", "p.workspace_id"),
-    "evaluation_signals": (("signal_id",), "LEFT JOIN research_tasks p ON p.task_id = c.task_id", "p.workspace_id"),
-    "learning_history": (
-        ("history_id",),
-        "LEFT JOIN learning_runs lr ON c.entity_type = 'learning_run' AND lr.learning_run_id = c.entity_id "
-        "LEFT JOIN lessons le ON c.entity_type = 'lesson' AND le.lesson_id = c.entity_id",
-        "COALESCE(lr.workspace_id, le.workspace_id)",
-    ),
-    "product_feedback_revisions": (
-        ("revision_id",), "LEFT JOIN product_feedback p ON p.feedback_id = c.feedback_id", "p.workspace_id",
-    ),
-    "product_feedback_audit": (
-        ("audit_id",), "LEFT JOIN product_feedback p ON p.feedback_id = c.feedback_id", "p.workspace_id",
-    ),
-}
-
-WORKSPACE_UNIQUE_INDEXES = {
-    "research_tasks_workspace_idempotency": ("research_tasks", "workspace_id, idempotency_key"),
-    "agent_runs_workspace_idempotency": ("agent_runs", "workspace_id, idempotency_key"),
-    "data_demands_workspace_idempotency": ("data_demands", "workspace_id, idempotency_key"),
-    "signal_jobs_workspace_idempotency": ("signal_producer_jobs", "workspace_id, idempotency_key"),
-    "ml_training_workspace_idempotency": ("ml_training_runs", "workspace_id, idempotency_key"),
-    "learning_runs_workspace_idempotency": ("learning_runs", "workspace_id, idempotency_key"),
-    "paper_accounts_workspace_name": ("paper_accounts", "workspace_id, name"),
-    "stock_pool_writes_workspace_idempotency": (
-        "stock_pool_write_idempotency", "workspace_id, idempotency_key"
-    ),
-}
-
-RELATION_CHECKS = {
-    "conversation_message": "SELECT COUNT(*) AS count FROM product_conversation_messages c JOIN product_conversations p ON p.conversation_id=c.conversation_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "experiment_task": "SELECT COUNT(*) AS count FROM experiments c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "artifact_task": "SELECT COUNT(*) AS count FROM artifacts c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "data_demand_task": "SELECT COUNT(*) AS count FROM data_demands c LEFT JOIN research_tasks p ON p.task_id=c.task_id WHERE c.task_id IS NOT NULL AND (p.task_id IS NULL OR c.workspace_id IS DISTINCT FROM p.workspace_id OR c.owner_principal IS DISTINCT FROM p.owner_principal)",
-    "execution_plan_task": "SELECT COUNT(*) AS count FROM research_execution_plans c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "execution_plan_receipt_task": "SELECT COUNT(*) AS count FROM research_execution_plan_receipts c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "research_task_action_task": "SELECT COUNT(*) AS count FROM research_task_actions c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "agent_audit_run": "SELECT COUNT(*) AS count FROM agent_audit c JOIN agent_runs p ON p.run_id=c.run_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "agent_approval_run": "SELECT COUNT(*) AS count FROM agent_approvals c JOIN agent_runs p ON p.run_id=c.run_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "signal_task": "SELECT COUNT(*) AS count FROM signal_producer_jobs c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "ml_training_task": "SELECT COUNT(*) AS count FROM ml_training_runs c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "ml_training_pool": "SELECT COUNT(*) AS count FROM ml_training_runs c JOIN stock_pool_snapshots p ON p.snapshot_id=c.stock_pool_snapshot_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "backtest_task": "SELECT COUNT(*) AS count FROM backtest_jobs c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "optimization_task": "SELECT COUNT(*) AS count FROM optimization_jobs c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "pool_snapshot": "SELECT COUNT(*) AS count FROM stock_pool_snapshots c JOIN stock_pools p ON p.pool_id=c.pool_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "pool_member": "SELECT COUNT(*) AS count FROM stock_pool_snapshot_members c JOIN stock_pool_snapshots p ON p.snapshot_id=c.snapshot_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "pool_producer_definition": "SELECT COUNT(*) AS count FROM stock_pool_producer_definitions c JOIN stock_pools p ON p.pool_id=c.pool_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "pool_materialization_run": "SELECT COUNT(*) AS count FROM stock_pool_materialization_runs c JOIN stock_pools p ON p.pool_id=c.pool_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "pool_producer_idempotency": "SELECT COUNT(*) AS count FROM stock_pool_producer_idempotency c JOIN stock_pools p ON p.pool_id=c.pool_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "paper_position": "SELECT COUNT(*) AS count FROM paper_positions c JOIN paper_accounts p ON p.account_id=c.account_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "paper_order": "SELECT COUNT(*) AS count FROM paper_orders c JOIN paper_accounts p ON p.account_id=c.account_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "paper_fill": "SELECT COUNT(*) AS count FROM paper_fills c JOIN paper_accounts p ON p.account_id=c.account_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "paper_ledger": "SELECT COUNT(*) AS count FROM paper_ledger_entries c JOIN paper_accounts p ON p.account_id=c.account_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "learning_iteration": "SELECT COUNT(*) AS count FROM learning_iterations c JOIN learning_runs p ON p.learning_run_id=c.learning_run_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "evaluation_task": "SELECT COUNT(*) AS count FROM evaluation_signals c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "pool_lifecycle": "SELECT COUNT(*) AS count FROM stock_pool_lifecycle_audit c JOIN stock_pools p ON p.pool_id=c.pool_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "pool_domain_reference": "SELECT COUNT(*) AS count FROM stock_pool_domain_references c JOIN stock_pools p ON p.pool_id=c.pool_id JOIN stock_pool_snapshots s ON s.snapshot_id=c.snapshot_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id OR c.workspace_id IS DISTINCT FROM s.workspace_id",
-    "paper_audit": "SELECT COUNT(*) AS count FROM paper_account_audit c JOIN paper_accounts p ON p.account_id=c.account_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "paper_transfer": "SELECT COUNT(*) AS count FROM paper_transfer_audit c JOIN paper_accounts p ON p.account_id=c.account_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "lesson_task": "SELECT COUNT(*) AS count FROM lessons c JOIN research_tasks p ON p.task_id=c.task_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "learning_history_run": "SELECT COUNT(*) AS count FROM learning_history c JOIN learning_runs p ON c.entity_type='learning_run' AND p.learning_run_id=c.entity_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "learning_history_lesson": "SELECT COUNT(*) AS count FROM learning_history c JOIN lessons p ON c.entity_type='lesson' AND p.lesson_id=c.entity_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "feedback_revision": "SELECT COUNT(*) AS count FROM product_feedback_revisions c JOIN product_feedback p ON p.feedback_id=c.feedback_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-    "feedback_audit": "SELECT COUNT(*) AS count FROM product_feedback_audit c JOIN product_feedback p ON p.feedback_id=c.feedback_id WHERE c.workspace_id IS DISTINCT FROM p.workspace_id",
-}
-
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -261,7 +138,7 @@ def provision_personal_workspace(connection: Connection, user: dict[str, Any]) -
 
 
 class WorkspaceTenancyStore(PgStoreMixin):
-    SCHEMA_DDL = [*IDENTITY_SCHEMA_DDL, *MIGRATION_SCHEMA_DDL]
+    SCHEMA_DDL = IDENTITY_SCHEMA_DDL
 
     def __init__(self, database_url: str | None = None) -> None:
         try:
@@ -555,136 +432,3 @@ class WorkspaceTenancyStore(PgStoreMixin):
         connection.execute(text("DROP TRIGGER IF EXISTS learning_history_workspace_write ON learning_history"))
         connection.execute(text("""CREATE TRIGGER learning_history_workspace_write BEFORE INSERT OR UPDATE
             ON learning_history FOR EACH ROW EXECUTE FUNCTION byq_workspace_from_learning_entity()"""))
-
-    def backfill(self, *, dry_run: bool = False) -> dict[str, Any]:
-        """Map exact username owners to workspaces; never guess unmatched rows."""
-        run_id = f"workspace_migration_{uuid.uuid4().hex}"
-        report: dict[str, Any] = {"contract": CONTRACT_VERSION, "dry_run": dry_run, "tables": {}, "quarantine": []}
-        with self._lock, self.engine.connect() as connection:
-            transaction = connection.begin()
-            self._backfill_direct(connection, report, dry_run=False)
-            self._backfill_inherited(connection, report, dry_run=False)
-            report["relation_checks"] = {
-                name: int(fetch_one(connection, sql)["count"]) for name, sql in RELATION_CHECKS.items()
-            }
-            manifest_body = {"contract": CONTRACT_VERSION, "tables": report["tables"], "quarantine": report["quarantine"]}
-            manifest = hashlib.sha256(json.dumps(manifest_body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-            report["manifest_sha256"] = manifest
-            report["verified"] = (
-                all(item["pending"] == 0 and item["mismatched"] == 0 for item in report["tables"].values())
-                and not report["quarantine"]
-                and all(count == 0 for count in report["relation_checks"].values())
-            )
-            if not dry_run:
-                now = _now()
-                execute(connection, """INSERT INTO workspace_migration_runs
-                    (run_id, contract_version, status, manifest_sha256, report_json, created_at, finished_at)
-                    VALUES (:run_id, :contract, :status, :manifest, :report, :now, :now)""",
-                    {"run_id": run_id, "contract": CONTRACT_VERSION,
-                     "status": "verified" if report["verified"] else "quarantined",
-                     "manifest": manifest, "report": report, "now": now})
-                for item in report["quarantine"]:
-                    execute(connection, """INSERT INTO workspace_migration_quarantine
-                        (quarantine_id, run_id, table_name, record_key_json, owner_principal, reason, created_at)
-                        VALUES (:id, :run_id, :table, :key, :owner, :reason, :now)""",
-                        {"id": f"quarantine_{uuid.uuid4().hex}", "run_id": run_id,
-                         "table": item["table"], "key": item["key"], "owner": item["owner_principal"],
-                         "reason": item["reason"], "now": now})
-                transaction.commit()
-            else:
-                transaction.rollback()
-        report["run_id"] = None if dry_run else run_id
-        return report
-
-    def enforce_contract(self) -> dict[str, Any]:
-        """Verify, then make every classified workspace key mandatory."""
-
-        verification = self.backfill(dry_run=True)
-        if not verification["verified"]:
-            raise ValueError("workspace contract verification failed")
-        with self._transaction() as connection:
-            for table_name in WORKSPACE_TABLES:
-                if connection.execute(text("SELECT to_regclass(:table)"), {"table": table_name}).scalar() is None:
-                    continue
-                pending = int(connection.execute(text(
-                    f"SELECT COUNT(*) FROM {table_name} WHERE workspace_id IS NULL"
-                )).scalar_one())
-                if pending:
-                    raise ValueError(f"{table_name} still has unassigned workspace rows")
-                connection.execute(text(
-                    f"ALTER TABLE {table_name} ALTER COLUMN workspace_id SET NOT NULL"
-                ))
-            for index_name, (table_name, columns) in WORKSPACE_UNIQUE_INDEXES.items():
-                if connection.execute(text("SELECT to_regclass(:table)"), {"table": table_name}).scalar() is None:
-                    continue
-                connection.execute(text(
-                    f"CREATE UNIQUE INDEX IF NOT EXISTS {index_name} ON {table_name}({columns})"
-                ))
-        return {
-            "contract": CONTRACT_VERSION,
-            "status": "enforced",
-            "tables": len(verification["tables"]),
-            "manifest_sha256": verification["manifest_sha256"],
-            "relation_checks": verification["relation_checks"],
-        }
-
-    def _backfill_direct(self, connection: Connection, report: dict[str, Any], *, dry_run: bool) -> None:
-        for table_name, keys in DIRECT_OWNER_TABLES.items():
-            if connection.execute(text("SELECT to_regclass(:table)"), {"table": table_name}).scalar() is None:
-                continue
-            rows = execute(connection, f"""SELECT t.*, w.workspace_id AS resolved_workspace_id
-                FROM {table_name} t LEFT JOIN users u ON u.username = t.owner_principal
-                LEFT JOIN workspaces w ON w.owner_user_id = u.user_id""")
-            counts = {"scanned": len(rows), "mapped": 0, "already_mapped": 0, "pending": 0, "mismatched": 0}
-            for row in rows:
-                key = {column: row[column] for column in keys}
-                resolved = row.get("resolved_workspace_id")
-                current = row.get("workspace_id")
-                if resolved is None:
-                    counts["pending"] += 1
-                    report["quarantine"].append({"table": table_name, "key": key,
-                        "owner_principal": row.get("owner_principal"), "reason": "owner_has_no_exact_durable_user_workspace"})
-                elif current not in {None, resolved}:
-                    counts["mismatched"] += 1
-                    report["quarantine"].append({"table": table_name, "key": key,
-                        "owner_principal": row.get("owner_principal"), "reason": "existing_workspace_mismatch"})
-                elif current == resolved:
-                    counts["already_mapped"] += 1
-                else:
-                    counts["mapped"] += 1
-                    if not dry_run:
-                        where = " AND ".join(f"{column} = :key_{index}" for index, column in enumerate(keys))
-                        params = {f"key_{index}": row[column] for index, column in enumerate(keys)}
-                        params["workspace_id"] = resolved
-                        execute(connection, f"UPDATE {table_name} SET workspace_id = :workspace_id WHERE {where}", params)
-            report["tables"][table_name] = counts
-
-    def _backfill_inherited(self, connection: Connection, report: dict[str, Any], *, dry_run: bool) -> None:
-        for table_name, (keys, joins, resolved_expression) in INHERITED_TABLES.items():
-            if connection.execute(text("SELECT to_regclass(:table)"), {"table": table_name}).scalar() is None:
-                continue
-            rows = execute(connection, f"""SELECT c.*, {resolved_expression} AS resolved_workspace_id
-                FROM {table_name} c {joins}""")
-            counts = {"scanned": len(rows), "mapped": 0, "already_mapped": 0, "pending": 0, "mismatched": 0}
-            for row in rows:
-                key = {column: row[column] for column in keys}
-                resolved = row.get("resolved_workspace_id")
-                current = row.get("workspace_id")
-                if resolved is None:
-                    counts["pending"] += 1
-                    report["quarantine"].append({"table": table_name, "key": key,
-                        "owner_principal": None, "reason": "parent_workspace_unresolved"})
-                elif current not in {None, resolved}:
-                    counts["mismatched"] += 1
-                    report["quarantine"].append({"table": table_name, "key": key,
-                        "owner_principal": None, "reason": "parent_workspace_mismatch"})
-                elif current == resolved:
-                    counts["already_mapped"] += 1
-                else:
-                    counts["mapped"] += 1
-                    if not dry_run:
-                        where = " AND ".join(f"{column} = :key_{index}" for index, column in enumerate(keys))
-                        params = {f"key_{index}": row[column] for index, column in enumerate(keys)}
-                        params["workspace_id"] = resolved
-                        execute(connection, f"UPDATE {table_name} SET workspace_id = :workspace_id WHERE {where}", params)
-            report["tables"][table_name] = counts

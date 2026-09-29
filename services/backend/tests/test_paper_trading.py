@@ -239,20 +239,87 @@ def test_paper_controls_order_detail_and_bundle_round_trip() -> None:
     store.close()
 
 
-def test_paper_v2_migration_manifest_is_repeatable() -> None:
+def test_fresh_paper_schema_has_current_facts_without_legacy_migration_tables() -> None:
     store = PaperTradingStore()
-    account = store.create_account({"name": "migration-current", "cash": 50000}, trusted_owner="alice")
-    store.bootstrap_schema()
-    store.bootstrap_schema()
+    columns = {
+        (row["table_name"], row["column_name"])
+        for row in store._execute(
+            """SELECT table_name, column_name FROM information_schema.columns
+               WHERE table_schema = current_schema()"""
+        )
+    }
+    assert {
+        ("paper_accounts", column)
+        for column in {
+            "workspace_id", "initial_cash", "equity", "realized_pnl", "currency",
+            "last_settlement_date", "bound_pool_id", "bound_snapshot_id", "deleted_at",
+        }
+    } <= columns
+    assert {
+        ("paper_positions", column)
+        for column in {
+            "sellable_quantity", "locked_quantity", "average_cost", "market_price",
+            "mark_provenance_json",
+        }
+    } <= columns
+    assert {
+        ("paper_orders", column)
+        for column in {
+            "pool_id", "stock_pool_snapshot_id", "fill_id", "risk_evaluation_json",
+            "decision_provenance_json", "events_json", "execution_contract_version",
+        }
+    } <= columns
+    assert {
+        ("stock_pools", column)
+        for column in {
+            "workspace_id", "status", "current_snapshot_id", "updated_at",
+            "metadata_version", "deleted_at",
+        }
+    } <= columns
+    required_columns = {
+        (row["table_name"], row["column_name"])
+        for row in store._execute(
+            """SELECT table_name, column_name FROM information_schema.columns
+               WHERE table_schema = current_schema() AND is_nullable = 'NO'"""
+        )
+    }
+    assert {
+        ("paper_accounts", "initial_cash"), ("paper_accounts", "equity"),
+        ("paper_accounts", "currency"), ("stock_pools", "updated_at"),
+    } <= required_columns
+    indexes = {
+        row["indexname"]
+        for row in store._execute("SELECT indexname FROM pg_indexes WHERE schemaname = current_schema()")
+    }
+    assert {"paper_accounts_owner_name", "paper_orders_idempotency"} <= indexes
+
+    tables = {
+        row["tablename"]
+        for row in store._execute("SELECT tablename FROM pg_tables WHERE schemaname = current_schema()")
+    }
+    assert {
+        "paper_accounts", "paper_account_controls", "paper_positions", "paper_orders",
+        "paper_fills", "paper_ledger_entries", "paper_account_snapshots",
+        "paper_account_audit", "paper_transfer_audit", "stock_pools",
+        "stock_pool_snapshots", "stock_pool_snapshot_members", "stock_pool_lifecycle_audit",
+        "stock_pool_domain_references",
+    } <= tables
+    assert not {
+        "paper_domain_migration_quarantine", "paper_domain_migration_runs",
+        "stock_pool_migration_quarantine", "stock_pool_migration_runs",
+    } & tables
+
+    account = store.create_account({"name": "fresh-schema", "cash": 50000}, trusted_owner="alice")
     entries = store.list_ledger(account["account_id"], trusted_owner="alice")["ledger"]
-    assert [item["entry_type"] for item in entries] == ["initial_funding"]
-    run = store._fetch_one(
-        "SELECT * FROM paper_domain_migration_runs WHERE migration_id = 'paper-execution-v2'"
+    assert [(item["entry_type"], item["cash_delta"]) for item in entries] == [("initial_funding", 50000.0)]
+    assert entries[0]["details_json"] == {"currency": "CNY"}
+
+    pool = store.create_pool(
+        {"name": "fresh-schema-pool", "symbols": ["000001.SZ"]}, trusted_owner="alice"
     )
-    assert run is not None
-    assert run["source_count"] >= 1
-    assert run["migrated_count"] >= 1
-    assert len(run["manifest_sha256"]) == 64
+    snapshot = store.get_pool_snapshot(pool["current_snapshot_id"], trusted_owner="alice")
+    assert snapshot["snapshot_id"] == pool["current_snapshot_id"]
+    assert snapshot["member_count"] == 1
     store.close()
 
 

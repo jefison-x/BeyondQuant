@@ -1,5 +1,11 @@
 # PostgreSQL Single Domain Store — SQLite Migration Runbook（ADR-0016）
 
+> **Archived procedure; do not execute for BYQ 0.10+.** The SQLite import CLI
+> was retired in Clean Break Phase 14. Current development starts from a fresh
+> schema and the [Phase 14 baseline](../clean-break/phase14-database-baseline.md);
+> the old BYQ database is a read-only archive, never a migration input. The
+> commands below record historical behavior and are no longer available.
+
 本 runbook 将现有 SQLite domain database（`BYQ_DOMAIN_DB_PATH`，默认
 `/tmp/byq-domain.sqlite3`，production `/var/lib/byq/domain/byq.sqlite3`）
 迁移到 PostgreSQL domain store（`BYQ_DATABASE_URL`）。Migration 是

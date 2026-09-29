@@ -2,7 +2,7 @@
 
 ## Current authority — BYQ 0.10 Clean Break (2026-09-25)
 
-<!-- byq:clean-break-current-phase=13 -->
+<!-- byq:clean-break-current-phase=14 -->
 
 The maintainer's explicit Clean Break direction supersedes the 0.9/P4 and Phase 100
 implementation routing below. The current architecture is [ADR-0088](../architecture/adr/ADR-0088-clean-break-baseline-activation.md)
@@ -13,13 +13,13 @@ legacy-runtime removal passed its [limited gate](../clean-break/phase-gates.md),
 with remaining Agent lifecycle ownership explicitly assigned to Phase 10/14/17.
 **Clean Break Phase 11 — Business Job: local PASS and repository PR #373 merged.
 Phase 12 — Artifact / Approval / Audit: local PASS and repository PR #375 merged.
-Current phase: Clean Break Phase 13 — Reset Runtime / Reset Workspace. Its
-Backend/development reset slice passed its local Tester → Sol Reviewer → Root
-gate. The frontend reset menu and user-facing Reset Workspace API are implemented
-as an unmerged candidate with focused tests and a disposable-stack real-browser
-Gateway/Product API flow passing. Immutable `.267` build identity and focused
-checks pass; Independent Sol Reviewer and Root accepted the Phase 13 local gate.
-The repository PR/CI/merge gate remains open. Phase 14 remains closed.**
+Phase 13 — Reset Runtime / Reset Workspace: local Tester → independent Sol
+Reviewer → Root gate PASS, hosted CI PASS and PR #376 merged at
+`2592f7255ef94746548b4c72fb9fa74f6f9897d1`.
+Current phase: Clean Break Phase 14 — fresh database schema baseline and
+minimal seed. Its isolated branch begins from that merged commit; local Tester,
+independent Sol Reviewer and Root gate PASS. Repository PR/CI/merge gate is
+pending. Phase 15 remains closed.**
 Phase 8 classified cleanup and Phase 9 rebuildable developer environment passed
 their [local Root gates](../clean-break/phase-gates.md). Phase 9 supplies a
 worktree-scoped dev stack and cleanup; Workspace reset, fresh-schema seed and

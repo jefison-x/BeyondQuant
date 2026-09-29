@@ -1491,30 +1491,6 @@ class BacktestJobStore(PgStoreMixin):
             finished_at TIMESTAMPTZ
         )
         """,
-        """ALTER TABLE backtest_jobs ADD COLUMN IF NOT EXISTS name TEXT""",
-        """
-        DO $byq$
-        BEGIN
-            IF EXISTS (
-                SELECT 1 FROM information_schema.columns
-                 WHERE table_schema = current_schema()
-                   AND table_name = 'backtest_jobs'
-                   AND column_name = 'name'
-                   AND is_nullable = 'YES'
-            ) THEN
-                UPDATE backtest_jobs
-                   SET name = CONCAT(
-                       '历史回测 · ',
-                       TO_CHAR(created_at AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM-DD HH24:MI'),
-                       ' · ', RIGHT(job_id, 6)
-                   )
-                 WHERE name IS NULL OR BTRIM(name) = '';
-                ALTER TABLE backtest_jobs ALTER COLUMN name SET NOT NULL;
-            END IF;
-        END
-        $byq$
-        """,
-        """ALTER TABLE backtest_jobs ALTER COLUMN name SET DEFAULT '回测任务'""",
         """
         CREATE UNIQUE INDEX IF NOT EXISTS backtest_jobs_idempotency
             ON backtest_jobs(task_id, idempotency_key)

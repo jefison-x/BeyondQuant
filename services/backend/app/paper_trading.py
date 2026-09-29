@@ -14,7 +14,7 @@ from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from .db import PgStoreMixin, ensure_column, execute, fetch_one
+from .db import PgStoreMixin, execute, fetch_one
 
 
 SYMBOL_PATTERN = re.compile(r"^\d{6}\.(SH|SZ|BJ)$")
@@ -244,12 +244,21 @@ class PaperTradingStore(PgStoreMixin):
         CREATE TABLE IF NOT EXISTS paper_accounts (
             account_id TEXT PRIMARY KEY,
             owner_principal TEXT NOT NULL,
+            workspace_id TEXT,
             name TEXT NOT NULL,
             cash NUMERIC(18,4) NOT NULL,
+            initial_cash NUMERIC(18,4) NOT NULL,
+            equity NUMERIC(18,4) NOT NULL,
+            realized_pnl NUMERIC(18,4) NOT NULL DEFAULT 0,
+            currency TEXT NOT NULL DEFAULT 'CNY',
             status TEXT NOT NULL,
+            last_settlement_date TEXT,
+            bound_pool_id TEXT,
+            bound_snapshot_id TEXT,
             created_at TIMESTAMPTZ NOT NULL,
             updated_at TIMESTAMPTZ NOT NULL,
-            version INTEGER NOT NULL
+            version INTEGER NOT NULL,
+            deleted_at TIMESTAMPTZ
         )
         """,
         """
@@ -259,6 +268,7 @@ class PaperTradingStore(PgStoreMixin):
         """
         CREATE TABLE IF NOT EXISTS stock_pools (
             pool_id TEXT PRIMARY KEY,
+            workspace_id TEXT,
             owner_principal TEXT NOT NULL,
             name TEXT NOT NULL,
             pool_type TEXT NOT NULL,
@@ -270,7 +280,7 @@ class PaperTradingStore(PgStoreMixin):
             created_at TIMESTAMPTZ NOT NULL,
             status TEXT NOT NULL DEFAULT 'active',
             current_snapshot_id TEXT,
-            updated_at TIMESTAMPTZ,
+            updated_at TIMESTAMPTZ NOT NULL,
             metadata_version INTEGER NOT NULL DEFAULT 1,
             deleted_at TIMESTAMPTZ
         )
@@ -333,24 +343,6 @@ class PaperTradingStore(PgStoreMixin):
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS stock_pool_migration_quarantine (
-            pool_id TEXT PRIMARY KEY,
-            reason TEXT NOT NULL,
-            payload_json JSONB NOT NULL,
-            quarantined_at TIMESTAMPTZ NOT NULL
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS stock_pool_migration_runs (
-            migration_id TEXT PRIMARY KEY,
-            source_count INTEGER NOT NULL,
-            migrated_count INTEGER NOT NULL,
-            quarantined_count INTEGER NOT NULL,
-            manifest_sha256 TEXT NOT NULL,
-            completed_at TIMESTAMPTZ NOT NULL
-        )
-        """,
-        """
         CREATE TABLE IF NOT EXISTS stock_pool_domain_references (
             domain TEXT NOT NULL,
             reference_id TEXT NOT NULL,
@@ -366,6 +358,11 @@ class PaperTradingStore(PgStoreMixin):
             account_id TEXT NOT NULL,
             symbol TEXT NOT NULL,
             quantity INTEGER NOT NULL,
+            sellable_quantity INTEGER NOT NULL DEFAULT 0,
+            locked_quantity INTEGER NOT NULL DEFAULT 0,
+            average_cost NUMERIC(18,4) NOT NULL DEFAULT 0,
+            market_price NUMERIC(18,4),
+            mark_provenance_json JSONB NOT NULL DEFAULT '{}'::jsonb,
             last_buy_date TEXT,
             PRIMARY KEY(account_id, symbol)
         )
@@ -374,6 +371,8 @@ class PaperTradingStore(PgStoreMixin):
         CREATE TABLE IF NOT EXISTS paper_orders (
             order_id TEXT PRIMARY KEY,
             account_id TEXT NOT NULL,
+            pool_id TEXT,
+            stock_pool_snapshot_id TEXT,
             symbol TEXT NOT NULL,
             side TEXT NOT NULL,
             quantity INTEGER NOT NULL,
@@ -386,7 +385,12 @@ class PaperTradingStore(PgStoreMixin):
             trade_date TEXT NOT NULL,
             idempotency_key TEXT NOT NULL,
             request_hash TEXT NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL
+            created_at TIMESTAMPTZ NOT NULL,
+            fill_id TEXT,
+            risk_evaluation_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            decision_provenance_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            events_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            execution_contract_version TEXT NOT NULL DEFAULT 'paper-execution-v2'
         )
         """,
         """
@@ -495,24 +499,6 @@ class PaperTradingStore(PgStoreMixin):
             created_at TIMESTAMPTZ NOT NULL
         )
         """,
-        """
-        CREATE TABLE IF NOT EXISTS paper_domain_migration_quarantine (
-            account_id TEXT PRIMARY KEY,
-            reason TEXT NOT NULL,
-            details_json JSONB NOT NULL,
-            quarantined_at TIMESTAMPTZ NOT NULL
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS paper_domain_migration_runs (
-            migration_id TEXT PRIMARY KEY,
-            source_count INTEGER NOT NULL,
-            migrated_count INTEGER NOT NULL,
-            quarantined_count INTEGER NOT NULL,
-            manifest_sha256 TEXT NOT NULL,
-            completed_at TIMESTAMPTZ NOT NULL
-        )
-        """,
     ]
 
     def __init__(self, database_url: str | None = None) -> None:
@@ -520,146 +506,6 @@ class PaperTradingStore(PgStoreMixin):
             super().__init__(database_url)
         except SQLAlchemyError as exc:
             raise PaperTradingPersistenceError("paper trading storage is unavailable") from exc
-
-    def bootstrap_schema(self) -> None:
-        from .db import schema_bootstrap_lock
-        super().bootstrap_schema()
-        # Column back-migration parity with the former SQLite schema.
-        with self.engine.begin() as connection:
-            schema_bootstrap_lock(connection)
-            ensure_column(connection, "stock_pools", "workspace_id", "TEXT")
-            ensure_column(connection, "stock_pools", "pool_type", "TEXT")
-            ensure_column(connection, "stock_pools", "description", "TEXT")
-            ensure_column(connection, "stock_pools", "weights_json", "JSONB")
-            ensure_column(connection, "stock_pools", "status", "TEXT NOT NULL DEFAULT 'active'")
-            ensure_column(connection, "stock_pools", "current_snapshot_id", "TEXT")
-            ensure_column(connection, "stock_pools", "updated_at", "TIMESTAMPTZ")
-            ensure_column(connection, "stock_pools", "metadata_version", "INTEGER NOT NULL DEFAULT 1")
-            ensure_column(connection, "stock_pools", "deleted_at", "TIMESTAMPTZ")
-            ensure_column(connection, "paper_orders", "pool_id", "TEXT")
-            ensure_column(connection, "paper_orders", "stock_pool_snapshot_id", "TEXT")
-            ensure_column(connection, "paper_accounts", "workspace_id", "TEXT")
-            ensure_column(connection, "paper_accounts", "initial_cash", "NUMERIC(18,4)")
-            ensure_column(connection, "paper_accounts", "equity", "NUMERIC(18,4)")
-            ensure_column(connection, "paper_accounts", "realized_pnl", "NUMERIC(18,4) NOT NULL DEFAULT 0")
-            ensure_column(connection, "paper_accounts", "currency", "TEXT NOT NULL DEFAULT 'CNY'")
-            ensure_column(connection, "paper_accounts", "last_settlement_date", "TEXT")
-            ensure_column(connection, "paper_accounts", "bound_pool_id", "TEXT")
-            ensure_column(connection, "paper_accounts", "bound_snapshot_id", "TEXT")
-            ensure_column(connection, "paper_accounts", "deleted_at", "TIMESTAMPTZ")
-            ensure_column(connection, "paper_positions", "sellable_quantity", "INTEGER NOT NULL DEFAULT 0")
-            ensure_column(connection, "paper_positions", "locked_quantity", "INTEGER NOT NULL DEFAULT 0")
-            ensure_column(connection, "paper_positions", "average_cost", "NUMERIC(18,4) NOT NULL DEFAULT 0")
-            ensure_column(connection, "paper_positions", "market_price", "NUMERIC(18,4)")
-            ensure_column(connection, "paper_positions", "mark_provenance_json", "JSONB NOT NULL DEFAULT '{}'::jsonb")
-            ensure_column(connection, "paper_orders", "fill_id", "TEXT")
-            ensure_column(connection, "paper_orders", "risk_evaluation_json", "JSONB NOT NULL DEFAULT '{}'::jsonb")
-            ensure_column(connection, "paper_orders", "decision_provenance_json", "JSONB NOT NULL DEFAULT '{}'::jsonb")
-            ensure_column(connection, "paper_orders", "events_json", "JSONB NOT NULL DEFAULT '[]'::jsonb")
-            ensure_column(connection, "paper_orders", "execution_contract_version", "TEXT NOT NULL DEFAULT 'paper-execution-v1'")
-            execute(connection, "UPDATE stock_pools SET updated_at = created_at WHERE updated_at IS NULL")
-            self._migrate_paper_execution_v2(connection)
-            self._backfill_pool_snapshots(connection)
-
-    def _migrate_paper_execution_v2(self, connection: Any) -> None:
-        rows = execute(connection, "SELECT * FROM paper_accounts ORDER BY account_id")
-        migrated = 0
-        quarantined = 0
-        for account in rows:
-            account_id = account["account_id"]
-            if account.get("initial_cash") is not None:
-                migrated += 1
-                execute(connection, """INSERT INTO paper_account_controls
-                        (account_id, kill_switch_engaged, version, updated_by, updated_at)
-                        VALUES (:account_id, FALSE, 1, :owner, :at)
-                        ON CONFLICT(account_id) DO NOTHING""",
-                        {"account_id": account_id, "owner": account["owner_principal"], "at": _now()})
-                continue
-            orders = execute(connection, """SELECT * FROM paper_orders
-                    WHERE account_id = :account_id AND status = 'filled'
-                    ORDER BY created_at, order_id""", {"account_id": account_id})
-            raw_delta = sum((Decimal(str(row.get("cash_delta") or 0)) for row in orders), Decimal("0"))
-            initial_cash = Decimal(str(account["cash"])) - raw_delta
-            normalized_delta = Decimal("0")
-            for order in orders:
-                amount = Decimal(str(order["price"])) * int(order["quantity"])
-                fees = Decimal(str(order.get("fees") or 0))
-                tax = Decimal(str(order.get("tax") or 0))
-                normalized_delta += -(amount + fees + tax) if order["side"] == "buy" else amount - fees - tax
-            corrected_cash = initial_cash + normalized_delta
-            if initial_cash <= 0 or corrected_cash < 0:
-                quarantined += 1
-                execute(connection, """INSERT INTO paper_domain_migration_quarantine
-                        (account_id, reason, details_json, quarantined_at)
-                        VALUES (:account_id, 'unprovable_cash_state', :details, :at)
-                        ON CONFLICT(account_id) DO UPDATE SET reason = excluded.reason,
-                        details_json = excluded.details_json, quarantined_at = excluded.quarantined_at""",
-                        {"account_id": account_id,
-                         "details": {"stored_cash": _money_text(account["cash"]),
-                                     "legacy_delta": _money_text(raw_delta)}, "at": _now()})
-                execute(connection, "UPDATE paper_accounts SET status = 'inactive' WHERE account_id = :account_id",
-                        {"account_id": account_id})
-                continue
-            migrated += 1
-            execute(connection, """UPDATE paper_accounts SET initial_cash = :initial_cash,
-                    cash = :cash, equity = :cash, currency = 'CNY', realized_pnl = 0
-                    WHERE account_id = :account_id""",
-                    {"initial_cash": initial_cash, "cash": corrected_cash, "account_id": account_id})
-            execute(connection, """UPDATE paper_positions SET
-                    sellable_quantity = CASE WHEN last_buy_date IS NULL THEN quantity ELSE 0 END,
-                    locked_quantity = CASE WHEN last_buy_date IS NULL THEN 0 ELSE quantity END
-                    WHERE account_id = :account_id""", {"account_id": account_id})
-            execute(connection, """INSERT INTO paper_account_controls
-                    (account_id, kill_switch_engaged, version, updated_by, updated_at)
-                    VALUES (:account_id, FALSE, 1, :owner, :at)
-                    ON CONFLICT(account_id) DO NOTHING""",
-                    {"account_id": account_id, "owner": account["owner_principal"], "at": _now()})
-            funding_id = f"paper_ledger_{_hash({'migration': 'paper-execution-v2', 'account_id': account_id, 'type': 'funding'})[:32]}"
-            execute(connection, """INSERT INTO paper_ledger_entries
-                    (entry_id, account_id, entry_type, amount, cash_delta, details_json, created_at)
-                    VALUES (:entry_id, :account_id, 'initial_funding', :amount, :amount,
-                            :details, :at) ON CONFLICT(entry_id) DO NOTHING""",
-                    {"entry_id": funding_id, "account_id": account_id, "amount": initial_cash,
-                     "details": {"migration": "paper-execution-v2"}, "at": account["created_at"]})
-            for order in orders:
-                fill = fetch_one(connection, "SELECT * FROM paper_fills WHERE order_id = :order_id", {"order_id": order["order_id"]})
-                if fill is None:
-                    continue
-                amount = Decimal(str(fill["price"])) * int(fill["quantity"])
-                fees = Decimal(str(fill["fees"])) + Decimal(str(fill["tax"]))
-                cash_delta = -(amount + fees) if fill["side"] == "buy" else amount - fees
-                entry_id = f"paper_ledger_{_hash({'migration': 'paper-execution-v2', 'fill_id': fill['fill_id']})[:32]}"
-                execute(connection, """INSERT INTO paper_ledger_entries
-                        (entry_id, account_id, entry_type, trade_date, order_id, fill_id,
-                         symbol, side, quantity, price, amount, fees, cash_delta,
-                         details_json, created_at)
-                        VALUES (:entry_id, :account_id, 'fill', :trade_date, :order_id,
-                                :fill_id, :symbol, :side, :quantity, :price, :amount,
-                                :fees, :cash_delta, :details, :at)
-                        ON CONFLICT(entry_id) DO NOTHING""",
-                        {"entry_id": entry_id, "account_id": account_id,
-                         "trade_date": fill["trade_date"], "order_id": order["order_id"],
-                         "fill_id": fill["fill_id"], "symbol": fill["symbol"], "side": fill["side"],
-                         "quantity": fill["quantity"], "price": fill["price"], "amount": amount,
-                         "fees": fees, "cash_delta": cash_delta,
-                         "details": {"migration": "paper-execution-v2"}, "at": fill["created_at"]})
-                execute(connection, """UPDATE paper_orders SET cash_delta = :cash_delta,
-                        fill_id = :fill_id, execution_contract_version = 'paper-execution-v2'
-                        WHERE order_id = :order_id""",
-                        {"cash_delta": cash_delta, "fill_id": fill["fill_id"], "order_id": order["order_id"]})
-        identities = execute(connection, """SELECT account_id, owner_principal, status,
-                initial_cash, cash FROM paper_accounts ORDER BY account_id""")
-        execute(connection, """INSERT INTO paper_domain_migration_runs
-                (migration_id, source_count, migrated_count, quarantined_count,
-                 manifest_sha256, completed_at)
-                VALUES ('paper-execution-v2', :source, :migrated, :quarantined, :sha, :at)
-                ON CONFLICT(migration_id) DO UPDATE SET source_count = excluded.source_count,
-                migrated_count = excluded.migrated_count,
-                quarantined_count = excluded.quarantined_count,
-                manifest_sha256 = excluded.manifest_sha256,
-                completed_at = excluded.completed_at""",
-                {"source": len(rows), "migrated": migrated, "quarantined": quarantined,
-                 "sha": _hash(identities), "at": _now()})
 
     @classmethod
     def from_env(cls) -> "PaperTradingStore":
@@ -829,50 +675,6 @@ class PaperTradingStore(PgStoreMixin):
                              "previous_status": account["status"], "version": expected + 1}, "at": now},
             )
         return {"account_id": account_id, "deleted": True}
-
-    def _backfill_pool_snapshots(self, connection: Any) -> None:
-        rows = execute(connection, "SELECT * FROM stock_pools WHERE current_snapshot_id IS NULL ORDER BY pool_id")
-        for row in rows:
-            payload = {
-                "symbols": row.get("symbols_json") or [],
-                "weights": row.get("weights_json") or {},
-                "definition": {},
-            }
-            try:
-                pool_type = row.get("pool_type") or "custom"
-                if pool_type != "custom":
-                    raise ValueError("legacy non-custom pool lacks trusted provenance")
-                provenance = {"source": "custom", "migration": "legacy-stock-pool-v1"}
-                snapshot_id = self._insert_snapshot(connection, row["pool_id"], pool_type, payload, provenance)
-                execute(
-                    connection,
-                    """UPDATE stock_pools SET current_snapshot_id = :snapshot_id,
-                       provenance_json = :provenance, status = 'active', updated_at = COALESCE(updated_at, created_at)
-                       WHERE pool_id = :pool_id""",
-                    {"snapshot_id": snapshot_id, "provenance": provenance, "pool_id": row["pool_id"]},
-                )
-            except ValueError as exc:
-                execute(
-                    connection,
-                    """INSERT INTO stock_pool_migration_quarantine
-                       (pool_id, reason, payload_json, quarantined_at)
-                       VALUES (:pool_id, :reason, :payload, :at)
-                       ON CONFLICT(pool_id) DO UPDATE SET reason = excluded.reason,
-                       payload_json = excluded.payload_json, quarantined_at = excluded.quarantined_at""",
-                    {"pool_id": row["pool_id"], "reason": str(exc), "payload": payload, "at": _now()},
-                )
-        source = fetch_one(connection, "SELECT COUNT(*) AS count FROM stock_pools")
-        migrated = fetch_one(connection, "SELECT COUNT(*) AS count FROM stock_pools WHERE current_snapshot_id IS NOT NULL")
-        quarantined = fetch_one(connection, "SELECT COUNT(*) AS count FROM stock_pool_migration_quarantine")
-        identities = execute(connection, """SELECT pool_id, owner_principal, current_snapshot_id
-                FROM stock_pools ORDER BY pool_id""")
-        manifest_sha256 = _hash(identities)
-        execute(connection, """INSERT INTO stock_pool_migration_runs
-                (migration_id, source_count, migrated_count, quarantined_count, manifest_sha256, completed_at)
-                VALUES ('legacy-stock-pool-v1', :source, :migrated, :quarantined, :sha, :at)
-                ON CONFLICT(migration_id) DO NOTHING""",
-                {"source": int(source["count"] if source else 0), "migrated": int(migrated["count"] if migrated else 0),
-                 "quarantined": int(quarantined["count"] if quarantined else 0), "sha": manifest_sha256, "at": _now()})
 
     def _insert_snapshot(
         self,
