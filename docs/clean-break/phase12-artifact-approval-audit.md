@@ -51,3 +51,15 @@ Root accepts **Phase 12 local PASS**. Hosted PR CI and the repository merge
 gate are separate and still required before Phase 13. A live MCP contract stack,
 full backend suite, fresh full rebuild and Golden Scenarios were not run in this
 local slice; the risk-selected hosted CI and later phases own those checks.
+
+## PR CI follow-up
+
+PR #375's first Backend CI run found one existing training-receipt test that
+cancelled through an Agent-shaped context without an approval grant. The test's
+receipt behavior is unchanged; its final cancellation now uses the owning
+Product user's browser context. The exact previously failing test passed in a
+fresh disposable PostgreSQL container (1/1), and the container/network were
+removed. Because the test is an immutable build input, the current build moved
+to `dsh-0.1.5rc1-post-u8.265`; `.264` remains frozen. The `.265` manifest,
+revision/retirement tests (9/9), affected architecture check and diff/syntax
+checks passed locally. Required CI must pass on the new PR head before merge.

@@ -144,7 +144,13 @@ def test_training_receipt_precedes_coverage_scan_and_repair_and_retries_stay_sta
     deadline = client.get("/v1/research/ml/training-submissions/reconcile", headers=headers,
                           params={"idempotency_key": "deadline-submission"}).json()["receipt_watch"]
     assert deadline["state"] == "needs_attention" and deadline["check_count"] == 0
-    cancelled = client.post(f"/v1/research/ml/training-runs/{run['training_run_id']}/cancel", headers=headers)
+    # This receipt test cancels as the owning Product user. Agent cancellation
+    # has a separate exact-approval contract.
+    browser_headers = {**headers, "x-byq-dsh-run-id": "browser"}
+    cancelled = client.post(
+        f"/v1/research/ml/training-runs/{run['training_run_id']}/cancel",
+        headers=browser_headers,
+    )
     assert cancelled.status_code == 200
     assert cancelled.json()["business_job"]["status"] == "CANCELLED"
 
