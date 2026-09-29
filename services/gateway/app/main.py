@@ -1944,6 +1944,14 @@ def _continue_approval_conversation(
     prompt_attempted = False
     try:
         session = _product_session(request, conversation_id)
+    except (ProductError, HTTPException):
+        # The runtime session may have disappeared while this approval waited
+        # for a human decision. No prompt was attempted, so close this claimed
+        # continuation attempt without trying to recreate the Product session.
+        mark("failed")
+        return {"status": "failed"}
+
+    try:
         _require_session_runtime_authority(session)
         require_runtime_authority()
         _require_session_runtime_authority(session)

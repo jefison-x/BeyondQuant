@@ -1,8 +1,9 @@
 # Phase 15 — Functional fidelity on fresh state
 
 Status: **OPEN** on `codex/clean-break-phase15`, based on Phase 14 merge
-`e9c944951465fbdeae4d05cd7bb0358b32f8a041`. This is an initial evidence
-inventory, not the Phase 15 acceptance record. Phase 16 stays closed.
+`e9c944951465fbdeae4d05cd7bb0358b32f8a041`. The current local functional
+closeout is **PASS** below; required Full CI and repository gates remain open.
+Phase 16 stays closed.
 
 Current GPU gate scope: [ADR-0089](../architecture/adr/ADR-0089-clean-break-gpu-acceptance-scope.md)
 excludes GPU execution and GPU checkpoint/restart from BYQ 0.10 acceptance
@@ -32,10 +33,106 @@ foundation, not a market-research or Agent journey.
 |---|---|---|
 | A: Research, TuShare, Web Search, delegated Agent, interaction, Artifact | A fresh isolated Workspace completed a real TuShare import, two-turn DSH Product conversation with delegated research, Web Search, a saved evidence Artifact, normalized trace, and real browser replay/Artifact listing. See bounded evidence below. | The separate DSH Interaction plugin remains unqualified; ordinary Product follow-up passed. |
 | B: two Backtests, optimization, comparison | A new Workspace Product API journey completed two independent BacktestJobs, one OptimizationJob and a persisted comparison Artifact. Real browser comparison of the exact two completed Backtest IDs and Artifact listing passed. A later four-turn Product Agent journey read A's completed analysis, revised B, completed both Worker-backed Jobs and persisted an exact two-Job comparison Artifact. The exact Artifact ranking was also reopened through the real browser's Product entity view. See bounded evidence below. | A formatted ranking view is not present; the existing entity view displays its JSON detail. |
-| C: TrainingJob, Worker restart/reclaim | A real-provider CPU TrainingJob completed in the isolated Workspace after 98 TuShare trading sessions were repaired; the independent ML Worker produced validated Feature and LightGBM Model Artifacts. An exact Agent training approval source slice passed focused Tester, independent Reviewer and Root gates; it has not yet run through the live Product Agent and browser. Earlier synthetic CPU trainer and fake process-reclaim tests remain separate evidence. | Agent-initiated training and real Worker termination/restart or reclaim with the same Job ID remain open. GPU execution and GPU checkpoint/restart are `N/A` under ADR-0089. |
+| C: TrainingJob, Worker restart/reclaim | The Product Agent submitted one exactly approved CPU TrainingJob using the cached 98-session window. Its real Worker was killed during attempt 1; a normal restarted Worker reclaimed the same Job after natural lease expiry and completed attempt 2 with a unique validated Model and the reused validated Feature Artifact. See the current live C evidence below. | Golden C local PASS through Tester → independent Reviewer → Root. GPU execution and GPU checkpoint/restart are `N/A` under ADR-0089. |
 | D: Agent interruption with Job continuing | A fresh isolated Agent conversation created and executed an approved BacktestTask. The exact Job remained queued after that conversation was deleted, completed once in the independent Worker, and was read with its Artifact by a new Agent. Focused Tester, independent Reviewer and Root accepted Golden D with the trace argument visibility limit recorded below. | Golden D PASS. DSH process restart is outside this scenario's defined scope. |
 | E: Runtime and Workspace reset | The populated browser reset, reseed and two-turn delegated Agent/Web research passed. A separate Workspace confirmed protected identity/config and exact deletion IDs. A subsequent Product reset of the Agent-audited Workspace now also passes while retaining the exact two Web evidence audit facts and deleting their disposable Artifacts. | Golden E's specified `reset → seed → rerun A` sequence and the bounded repeated-reset fix are local PASS; this does not complete the other Phase 15 journeys. |
-| F: full rebuild | Exact-scope `dev-clean` apply removed only this isolated project's 12 containers, 4 volumes and 2 networks; `dev-init`/core start/seed/test and real login passed on a fresh schema. | The connected Golden journeys have not been rerun after rebuild. F environment lifecycle is bounded PASS; full Golden F remains OPEN. |
+| F: full rebuild | Exact-scope `dev-clean` apply removed only this isolated project's 12 containers, 4 volumes and 2 networks; `dev-init`/core start/seed/test and real login passed on a fresh schema. Post-rebuild evidence covers E/A, D, B with browser comparison, and the current real CPU C. | F local evidence PASS after chronology review. The earlier claim that connected journeys were not rerun is superseded below. No repeat rebuild or A/B/D/E run is needed; required Full CI/repository gates remain open. |
+
+## Current live Golden C and closeout evidence (2026-09-30)
+
+The maintainer authorized two Product Agent turns and one new CPU TrainingJob,
+then explicitly expanded the model budget to **three actual turns** after the
+first session disappeared before its approval continuation was submitted.
+All three actual turns were used; exactly one new TrainingJob was created.
+The existing isolated Workspace, approved strategy, one-symbol pool and cached
+`2024-01-02`–`2024-05-31` window were retained. The Data Worker stayed stopped;
+no market download or existing database/backup operation was performed.
+
+| Evidence | Stable ID |
+|---|---|
+| Scope / Workspace | `byq-dev-ea551690f4` / `workspace_9f180f427ac14bb7b5ccb35c4c59d1c8` |
+| Current Product conversation | `conversation_3a58869e9d514aadbf9d7e196bd192d1` |
+| Trace | `byq-trace-6bffcffd2aff48c78e19a1237d5dc0c9` |
+| Exact frozen watch | `mlwatch_f611ed05631f4c66874be47d986a3b7a` |
+| Original submission key | `mltrain-361c6049-cpuv1-20240102-20240531-000001sz-p01` |
+| Current action approval | `agent_approval_f2e77aa5ae9948318cf7e34bc4aad98d` |
+| Agent-submitted TrainingJob | `mlrun_bcd447d93afd46f48db7dcaf881c19ab` |
+| Submitted audit / ML AgentRun | `agent_audit_5ee850f2213d48d298c11dc3e52094da` / `agent_run_71e97525767c4a4089689c866c0e92a6` |
+| Reused Feature Artifact | `artifact_4ca1c68fa5614668b61ee226528bea36` |
+| New Model Artifact | `artifact_9552a32103e848ce9c41502cd7e39380` |
+
+The approval preview freezes Task `task_be0d95aa5f8040fd82bb503693cc2106`,
+Strategy `artifact_361c604902cf45f48a2ed9cdec5fcbd7` and pool snapshot
+`stock_pool_snapshot_f4c8c95f57d539a1ca9844bc8a1bc72ee37038963d03debbb7f38a4e2266fe66`.
+The human Strategy approval remains `artifact_a71875f84d5349b4bc19a92f9270a2b2`.
+The current browser opened the authenticated exact-conversation workflow SSE,
+verified all five frozen fields and an enabled approval button, and clicked
+once. Gateway logs record SSE HTTP 200 and decision HTTP 200; persisted
+approval is `approved / authorized / continuation submitted`. The ML Agent's
+durable audit records one `byq_ml_training_create / submitted` with these
+exact references, the original key and the new Job. Product replay includes
+the Agent's exact Job answer. Public activity 37/38 is `started/waiting` and
+does not expose arguments/results; submission is corroborated by trusted
+preview, durable audit and Product Job state, rather than inferred from that
+activity alone.
+
+Two observation failures remain recorded. The first browser preview was
+view-only; closing it released the old ephemeral session before the later
+decision continuation. That decision committed but no model continuation or
+Job was submitted. Its old grant `agent_approval_9fedeb8f627f4d5d8d91f35a29917112`
+was never reused across sessions. Gateway now marks a pre-prompt session
+restoration `ProductError` or `HTTPException` as failed without resubmitting. The current browser
+decision succeeded, but its original receipt poll returned 404 because the
+Product ML nonce endpoint prefixes a caller-supplied key and cannot look up
+the Agent's original key. The observer now reads the exact approval preview
+and study/run details. Its **read-only recovery passed** with 45 browser
+requests, zero off-origin requests and no second decision/model/Job write.
+This does not retroactively claim the first observer held SSE through receipt.
+Later read-only browser navigation also recorded an automatic SSE reconnect
+409 after the ephemeral session had been released; durable Job reads passed.
+
+`scripts/evidence/phase15-golden-c-worker.py` started only the scoped real ML
+Worker with a temporary 0.1 CPU quota to observe the small real workload. Before
+hard stop, Product returned the exact Job `running / attempt_count=1`, Worker
+`ml-worker-1`, lease expiry `2026-09-29T23:44:31.296391+00:00`. Container
+`9fb9de28fcf0…` exited 137 while that same Job remained running, attempt 1,
+with the unchanged lease. Normal Compose restart restored 2 CPU in new
+container `35bb3ee25688…`, with the same image
+`sha256:1fb9871b6a1da803114e17961e3e3c72d77a14b247800ca4476d85b11f14f810`.
+Without editing Job state or leases, the Worker waited for the real five-minute
+lease expiry, reclaimed that same Job and completed **attempt 2**.
+
+Product assertions verify completed/ready/no error, exact frozen inputs,
+validated Feature/Model and persisted object references, metrics and exact
+Model-to-Job lineage. The owner-scoped Artifact list is below its 200-row cap;
+it has one Model for the exact Job and one Feature with the terminal reference's
+content hash. Identical cached input legitimately reused the baseline Feature;
+no new Feature creation is claimed. The study has exactly the baseline and
+this new Job. ML Worker stopped after completion; Data Worker remains stopped.
+This proves durable CPU Job reclaim/re-execution, not mid-epoch checkpoint
+recovery. GPU remains `N/A` under ADR-0089.
+
+Source gates: focused Gateway regression **2 passed**; Python AST, browser Node
+syntax, diff and `make dev-check` (27 syntax files) PASS. Independent source
+Tester, Sol Reviewer and Root PASS cover the narrow continuation failure,
+browser observer and real Worker driver. Live Tester → independent Sol Reviewer
+→ Root closeout is **PASS** for Golden C and the Phase 15 local functional
+fidelity gate. The independent Reviewer accepted the existing A/B/D/E evidence
+and corrected F chronology; Root accepts that bounded local closeout.
+Required Full CI is **NOT_RUN** for this branch;
+push, PR, merge and deployment are outside this continuation's authorization.
+Phase 15 overall remains **OPEN** and Phase 16 is not started.
+
+### Post-rebuild evidence reconciliation
+
+Rebuild commit `2987d3c1` (2026-09-29 17:05 +08) precedes connected E and
+post-reset A (`80662e2`, 18:56), Agent D (`a3114ab`, 21:00), Agent B
+(`476e823`, 2026-09-30 05:23), browser comparison (`2b41763`, 05:30), and
+baseline real CPU C (`3f2ec78`, 06:01). The current Agent/Worker C uses that
+same rebuilt Workspace and cached data. The pre-rebuild A matrix evidence
+alone is not the post-rebuild proof; the connected E section's TuShare/Web
+rerun provides it. The earlier simple-reset record below retains its original
+bounded claim. Existing A/B/D/E evidence is sufficient and was not repeated.
 
 ### Golden B Agent journey: first live attempt and corrected test contract
 
@@ -70,14 +167,10 @@ call had been made at the time of this review. The draft staged evidence script
 approved one-day repair and reviewed before execution. The live result is
 recorded below.
 
-1. Preserve the completed real-provider CPU TrainingJob evidence below; verify
-   Agent initiation and real CPU Worker restart/reclaim for Golden C. GPU is
-   `N/A` for this gate under ADR-0089.
-2. Rerun connected journeys from a fresh schema after the now-proven scoped
-   rebuild. Never substitute mocks or old database evidence for real Product
-   functionality.
-3. Finish Tester → independent Sol Reviewer → Root review, then PR/CI/merge
-   before Phase 16.
+This historical remaining-work list is superseded by the current closeout
+above: real Agent CPU C and post-rebuild connected journeys are now observed;
+their final local gate review is PASS; obtain separate authorization for
+the required Full CI and repository PR/merge gate before Phase 16.
 
 ## Bounded B Product API and Worker evidence (2026-09-29)
 

@@ -13,12 +13,13 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 import time
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from scripts.dev.environment import local_env
+from scripts.dev.environment import local_env, compose_args, call as compose_call
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -145,6 +146,14 @@ def request(call) -> None:
         "不得请求扩大日期或标的、拉取新行情、使用 GPU、发起预测或回测。"
         "请报告精确审批 ID；获批并提交后报告新 TrainingJob ID。"
     )
+    failed = data.get("failed_attempt")
+    if isinstance(failed, dict):
+        prompt += (
+            f"此前会话已失效，仍未提交训练；现有冻结回执 {failed['watch_id']} "
+            f"和原幂等键 {failed['submission_key']} 必须保留。先以该原键只读核对回执，"
+            "不要替换提交身份；为当前会话请求该同一回执的精确审批。"
+            "原会话的批准不能跨会话复用。"
+        )
     data["prompt"] = prompt
     save(data)
     accepted = call("POST", f"/v1/agent/sessions/{conversation_id}/turns", {"content": prompt}, 202)
@@ -184,6 +193,11 @@ def pending(call) -> None:
                  and isinstance(preview.get("idempotency_key"), str)
                  and preview["idempotency_key"] != prior.get("idempotency_key"),
                  "training approval preview differs from the exact intended submission")
+            failed = data.get("failed_attempt")
+            if isinstance(failed, dict):
+                need(preview["watch_id"] == failed["watch_id"]
+                     and preview["idempotency_key"] == failed["submission_key"],
+                     "replacement conversation changed the original frozen submission")
             data["approval_id"] = approval["approval_id"]
             data["watch_id"] = approval["resource_id"]
             data["submission_key"] = preview["idempotency_key"]
@@ -199,23 +213,50 @@ def pending(call) -> None:
     raise EvidenceError("no exact training approval after 900 seconds")
 
 
-def approve(call) -> None:
-    need(os.environ.get("BYQ_PHASE15_GOLDEN_C_MODEL_AUTHORIZED") == "1",
+def approve(call, *, receipt_only: bool = False) -> None:
+    need(receipt_only or os.environ.get("BYQ_PHASE15_GOLDEN_C_MODEL_AUTHORIZED") == "1",
          "approval continuation requires explicit external-model authorization")
     data = load()
-    need(data["stage"] == "ready_for_decision", "exact approval already decided or unknown")
-    data["stage"] = "decision_attempted"
-    save(data)
-    result = call("POST", f"/api/product/approvals/{data['approval_id']}/decision", {
-        "decision": "approved", "rationale": "Authorized isolated Phase 15 CPU TrainingJob evidence",
-    })
-    approval = result.get("approval", {})
-    need(approval.get("approval_id") == data["approval_id"] and approval.get("status") == "approved",
-         "exact Product training approval did not succeed")
+    need(data["stage"] == ("decision_attempted" if receipt_only else "ready_for_decision"),
+         "exact approval already decided or unknown")
+    if receipt_only:
+        approval = call("GET", f"/api/product/approvals/{data['approval_id']}")["approval"]
+        need(approval.get("status") == "approved" and approval.get("continuation_status") == "submitted",
+             "decision not committed; do not retry")
+    values = local_env()
+    port = compose_call(compose_args("port", "frontend", "80"), values, capture=True)
+    need(port.returncode == 0, "isolated Frontend origin unavailable")
+    environment = {**os.environ, "BYQ_REAL_BASE_URL": "http://" + port.stdout.strip(),
+                   "BYQ_E2E_ADMIN_USERNAME": values.get("BYQ_BOOTSTRAP_ADMIN_USERNAME", "admin"),
+                   "BYQ_E2E_ADMIN_PASSWORD": values["BYQ_BOOTSTRAP_ADMIN_PASSWORD"]}
+    for key, value in {"WATCH_ID": data["watch_id"], "APPROVAL_ID": data["approval_id"],
+                       "CONVERSATION_ID": data["conversation_id"],
+                       "TASK_ID": data["prior"]["task_id"],
+                       "STRATEGY_ID": data["prior"]["strategy_artifact_id"],
+                       "POOL_SNAPSHOT_ID": data["prior"]["pool_snapshot_id"],
+                       "SUBMISSION_KEY": data["submission_key"]}.items():
+        environment["BYQ_PHASE15_" + key] = str(value)
+    if not receipt_only:
+        data["stage"] = "decision_attempted"
+        save(data)
+    browser = subprocess.run(
+        ["node", "apps/frontend/tests/e2e/phase15-training-approval.mjs",
+         "--receipt-only" if receipt_only else "--approve"],
+        cwd=ROOT, env=environment, text=True, capture_output=True,
+    )
+    need(browser.returncode == 0, "browser approval/receipt unconfirmed; inspect Product state without retry")
+    evidence = json.loads(browser.stdout.strip().splitlines()[-1])
+    need(evidence.get("result") == "PASS" and evidence.get("approval_id") == data["approval_id"]
+         and evidence.get("continuation_status") == "submitted"
+         and RUN_ID.fullmatch(str(evidence.get("training_run_id", ""))),
+         "browser did not confirm the exact decision and TrainingJob")
     data["stage"] = "approved"
+    data["new_run_id"] = evidence["training_run_id"]
+    data["browser_evidence"] = evidence
+    if receipt_only:
+        data["browser_approval_observer"] = "failed_after_committed_decision_agent_key_reconcile_404"
     save(data)
-    print(json.dumps({"stage": "approved", "approval_id": data["approval_id"],
-                      "continuation_status": approval.get("continuation_status")}))
+    print(json.dumps(evidence))
 
 
 def status(call) -> None:
@@ -264,13 +305,34 @@ def status(call) -> None:
                       "model_artifact_id": exact.get("model_artifact_id")}))
 
 
+def replace_session(call) -> None:
+    """Preserve the failed observer attempt; never retry its unknown mutation."""
+    data = load()
+    need(data["stage"] == "decision_attempted", "not the failed decision observer stage")
+    approval = call("GET", f"/api/product/approvals/{data['approval_id']}")["approval"]
+    need(approval.get("status") == "approved"
+         and approval.get("resource_preview", {}).get("state") == "prepared",
+         "old exact submission is no longer prepared")
+    need(len(study(call, data["prior"])) == 1, "a new TrainingJob exists; reconcile it instead")
+    failed_file = ROOT / ".phase15-golden-c.failed.json"
+    need(not failed_file.exists(), "failed-attempt evidence already archived")
+    os.rename(MANIFEST, failed_file)
+    save({"scope": SCOPE, "workspace_id": WORKSPACE, "prior": data["prior"],
+          "baseline_run_ids": data["baseline_run_ids"], "stage": "prepared",
+          "failed_attempt": {key: data[key] for key in (
+              "conversation_id", "approval_id", "watch_id", "submission_key")}})
+    print(json.dumps({"stage": "prepared", "preserved_failed_attempt": True,
+                      "training_submit_attempted": False}))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("stage", choices=("preflight", "request", "pending", "approve", "status"))
+    parser.add_argument("stage", choices=("preflight", "request", "pending", "approve", "status", "replace-session", "receipt-only"))
     stage = parser.parse_args().stage
     call = client()
     {"preflight": preflight, "request": request, "pending": pending,
-     "approve": approve, "status": status}[stage](call)
+     "approve": approve, "status": status, "replace-session": replace_session,
+     "receipt-only": lambda call: approve(call, receipt_only=True)}[stage](call)
 
 
 if __name__ == "__main__":

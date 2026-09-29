@@ -1,5 +1,41 @@
 # Phase 0–6 gate record
 
+## Phase 15 live Golden C and local fidelity closeout (2026-09-30)
+
+[Current evidence](phase15-functional-fidelity.md#current-live-golden-c-and-closeout-evidence-2026-09-30)
+records three authorized actual Product Agent turns and exactly one new CPU
+TrainingJob. Exact browser approval, original watch/key, trusted preview,
+ML Agent submitted audit and Product Job state corroborate Agent initiation.
+The real CPU Worker exited 137 during attempt 1 while the Job remained
+nonterminal; a normal 2 CPU Worker with the same image reclaimed the same Job
+after natural lease expiry and completed attempt 2. One validated Model with
+metrics and exact Job lineage, the reused validated Feature, persisted object
+references and the two-run study passed the observer assertions. Data and ML
+Workers are stopped; no new market download occurred.
+
+The view-only old session loss and the later post-decision receipt GET 404 are
+retained as failures. Neither decision nor model prompt was retried. Read-only
+browser receipt recovery passed with 45 requests and zero off-origin requests.
+Public training activity reports started/waiting without argument/result
+visibility; the exact submission proof uses durable audit/preview/Job state.
+The CPU evidence establishes durable reclaim/re-execution, not mid-epoch
+checkpoint recovery; GPU remains `N/A` under ADR-0089.
+
+Post-rebuild E/A, D, B/browser and CPU C evidence follows scoped rebuild
+`2987d3c1`; the former F summary saying journeys had not been rerun was stale.
+Those passed journeys were not repeated. Independent live Tester: **PASS**
+after read-only Product, Artifact and stopped-Worker checks. Final focused
+Gateway regression: **2 passed**, covering pre-prompt `ProductError` and
+`HTTPException`; syntax, diff and evidence links PASS. Independent Sol
+Reviewer: **Functional PASS / Tests and Evidence PASS / Clean Break
+Architecture PASS**, including source, live C and the sufficiency of existing
+A/B/D/E plus corrected F evidence. **Root: Golden C PASS and Phase 15 local
+functional fidelity PASS.**
+
+**Phase 15 overall remains OPEN:** required Full CI is NOT_RUN for this branch,
+and push/PR/human merge are outside the current authorization. Phase 16 stays
+closed. The local observations do not claim hosted CI or deployment completion.
+
 ## Phase 15 Golden C exact training approval source gate (2026-09-30)
 
 The Agent training submission now freezes its task, strategy, pool snapshot,

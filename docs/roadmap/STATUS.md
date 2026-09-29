@@ -21,10 +21,13 @@ hosted CI PASS, PR #377 merged at
 `e9c944951465fbdeae4d05cd7bb0358b32f8a041`.
 Current phase: Clean Break Phase 15 — functional fidelity from an empty schema
 and Workspace. It starts in a new isolated branch from that merge; its
-functional gate is open. Phase 16 remains closed.**
+local functional fidelity gate now has Tester → independent Sol Reviewer →
+Root PASS, including real Agent-initiated CPU training and same-Job Worker
+restart/reclaim. Phase 15 overall remains OPEN for required Full CI and
+repository/human merge gates. Phase 16 remains closed.**
 Under [ADR-0089](../architecture/adr/ADR-0089-clean-break-gpu-acceptance-scope.md),
 GPU execution and GPU checkpoint/restart are `N/A` for BYQ 0.10 acceptance;
-real CPU Worker and remaining Golden C conditions are still required.
+real CPU Golden C passed locally; no GPU pass is inferred.
 Phase 8 classified cleanup and Phase 9 rebuildable developer environment passed
 their [local Root gates](../clean-break/phase-gates.md). Phase 9 supplies a
 worktree-scoped dev stack and cleanup; Workspace reset, fresh-schema seed and
