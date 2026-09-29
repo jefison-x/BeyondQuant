@@ -28,8 +28,8 @@ foundation, not a market-research or Agent journey.
 | A: Research, TuShare, Web Search, delegated Agent, interaction, Artifact | A fresh isolated Workspace completed a real TuShare import, two-turn DSH Product conversation with delegated research, Web Search, a saved evidence Artifact, normalized trace, and real browser replay/Artifact listing. See bounded evidence below. | The separate DSH Interaction plugin remains unqualified; ordinary Product follow-up passed. |
 | B: two Backtests, optimization, comparison | A new Workspace Product API journey completed two independent BacktestJobs, one OptimizationJob and a persisted comparison Artifact. Real browser comparison of the exact two completed Backtest IDs and Artifact listing passed. See bounded evidence below. | DSH Agent-led strategy change and the OptimizationJob ranking's browser detail remain open. |
 | C: TrainingJob, GPU, checkpoint/restart | Durable TrainingJob and independent ML Worker; process-reclaim tests use a fake trainer. Current host has no NVIDIA device, `nvidia-smi`, or Docker NVIDIA runtime; the current ML image installs CPU LightGBM. | Qualify CPU Worker/real checkpoint separately; GPU execution is `NOT_RUN` here and needs a GPU-capable Worker/image and host. CPU execution and simulated lease reclaim do not satisfy the GPU claim. |
-| D: Agent interruption with Job continuing | Stable Job IDs and owner-scoped reads exist; Backend process recovery test | End a real DSH session while a Job runs, then query the same Job from a new authorized session without duplicate execution. DSH process restart is out of scope. |
-| E: Runtime and Workspace reset | Phase 13 disposable-DB tests and one recorded real browser reset flow | On this fresh state, generate domain data, reset, verify protected global state and rerun A after seeding. |
+| D: Agent interruption with Job continuing | In this fresh isolated stack, a separate Product API BacktestJob stayed queued after a contemporaneous Product Agent conversation was deleted; restarting its independent Worker completed the same Job in one attempt with an Artifact. After explicit authorization, a new DSH Agent used BYQ MCP read tools to find that exact Job and Artifact. | The Job was submitted through Product API, not initiated by the old Agent. Full Golden D and DSH process restart remain out of scope for this bounded check. |
+| E: Runtime and Workspace reset | On the fresh Phase 15 Workspace, real browser Runtime reset returned 200 and archived two conversations while preserving data. Workspace reset then returned 409; read-only preflight found a strategy-approval Artifact tied to a ResearchTask. | Classify the approval fact without losing it, then rerun Workspace reset on this populated Workspace, verify retained global state and reseed. Golden E is `FAIL` for this attempt. |
 | F: full rebuild | Core init/start/seed/test and dry-run cleanup succeeded here | Run scoped `dev-clean` apply, then init/start/seed/test and the connected Golden journeys. The current `dev-test` alone is offline. |
 
 ## Next bounded execution
@@ -153,3 +153,58 @@ Sol Reviewer Functional PASS / Tests and Evidence PASS / Clean Break
 Architecture PASS. The separate DSH Interaction plugin and full Phase 15 gate
 remain open. Browser evidence is a subsequent addition and needs its own
 focused Tester / Reviewer check before a larger gate claim.
+
+## Bounded D session-loss evidence (2026-09-29)
+
+Only the isolated `backtest-worker` service was stopped. An authenticated
+Product conversation `conversation_f0e7bac100814ca79afdbac6d1ea447b` was
+created, then the same Workspace submitted and queued BacktestJob
+`backtest_de673c799c54426d9a1fdec7f920a94b` with its Product trace.
+The conversation was deleted while the Worker was stopped; Product API still
+returned that separate Job as `queued`. Restarting the same isolated Worker led
+to `completed` on attempt one, with result Artifact
+`artifact_4c54364dd96046578a82d77a76f65651`. The deletion did not cancel
+this Product API Job, and the independent Worker completed it.
+
+The first new-Agent lookup was rejected by automatic approval review because
+existing authorization did not explicitly cover sending the private Job ID
+and result context to DSH/model; it was not attempted by an alternate route.
+The maintainer then explicitly authorized this one isolated query. New Product
+conversation `conversation_b51a8f2509df497ea72b4da36c6ce33f` used a new
+trace and produced `读取回测状态` and `读取回测分析证据` BYQ MCP activity, both completed.
+Its answer identified the exact same completed Job and result Artifact. The
+Product API still returned that Job as `completed` on attempt one; a read-only
+count found exactly one BacktestJob with this submission's name. No duplicate
+of this named submission was observed.
+
+This remains **short of full Golden D** because the Agent did not initiate the
+BacktestJob: a browser-authenticated Product API call did. It does prove that
+this separately submitted Job survived the contemporaneous conversation's
+deletion, the Worker finished independently, and a new Agent found its result
+by stable ID.
+
+Bounded D gate: focused Tester **PASS** for documentation and local contracts;
+independent Sol Reviewer **Functional PASS / Tests and Evidence PASS / Clean
+Break Architecture PASS** for this scoped observation. Root accepts only that
+bounded result. The full Golden D remains **OPEN**.
+
+## Golden E first attempt and blocker (2026-09-29)
+
+The existing real-browser Reset flow was run against the populated, fresh
+Phase 15 isolated Workspace. Product Runtime reset returned HTTP 200, archived
+two conversations, and left the generated ResearchTask available. The
+subsequent Product Workspace reset returned HTTP 409. A read-only Backend
+preflight on this exact isolated Workspace reported: `retained strategy
+approval Artifact references a ResearchTask; reset would remove an
+authoritative fact`. The B journey had created strategy approvals before
+Backtest submission. No Workspace deletion occurred on this 409 path, and no
+global or pre-existing database was involved.
+
+This is a genuine populated-Workspace contract conflict: the current reset
+deletes the ResearchTask/Artifact graph but retains authoritative approval
+facts, so it refuses to remove that graph when it contains a strategy approval
+Artifact. The fail-closed response is correct for the present contract. Golden
+E remains **FAIL/OPEN** until the approval fact is retained independently of
+the disposable graph and a real reset/rerun succeeds. The earlier Phase 13
+browser test passed because its fixture created a plain ResearchTask without
+strategy approval.

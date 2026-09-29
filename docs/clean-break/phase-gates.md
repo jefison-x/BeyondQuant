@@ -2,6 +2,18 @@
 
 ## Phase 15 fresh-state Research and Backtest slices (2026-09-29)
 
+The later bounded session-loss observation also passed focused Tester review
+and independent Sol Review (**Functional PASS / Tests and Evidence PASS / Clean
+Break Architecture PASS**). A separately submitted Product API BacktestJob
+remained queued when a contemporaneous conversation was deleted; its Worker
+later completed it in one attempt, and a new authorized DSH Agent read the
+same Job and Artifact through BYQ MCP. Root accepts this bounded D result.
+The Agent did not submit that Job, so full Golden D remains open. A subsequent
+real-browser Runtime reset passed on the populated Phase 15 Workspace, but
+Workspace reset returned 409 because a retained strategy-approval Artifact
+references a ResearchTask slated for deletion. Golden E remains **FAIL/OPEN**;
+the fail-closed 409 did not delete Workspace data. See the execution record.
+
 [Execution record](phase15-functional-fidelity.md): in the worktree-scoped
 disposable stack, one real TuShare daily row was imported through Data Worker;
 the Product DSH Agent read it through BYQ MCP in a two-turn delegated research
