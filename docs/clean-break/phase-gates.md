@@ -32,8 +32,34 @@ authenticated Product reset returned 200, deleted two Tasks, 11 Artifacts,
 two BacktestJobs and one OptimizationJob, while a read-only check found two
 complete archive facts and no remaining research rows. Idempotent replay,
 login/Workspace identity and fresh seed passed. The connected browser and
-research rerun remain open; **Phase 15 overall remains OPEN**. No existing
+research rerun were pending at that bounded gate; see the later Golden E record below.
+**Phase 15 overall remains OPEN**. No existing
 database, backup, deployment, push or merge was touched.
+
+The next isolated fixture completed two new BacktestJobs and an OptimizationJob.
+Playwright Chromium then used the real Frontend and Product API to reset Runtime
+and Workspace, proving the Task survived the first reset and the exact Task,
+Job and Artifact graph was removed by the second. The same account/Workspace
+stayed active, a new ResearchTask persisted, and browser requests stayed on
+Frontend/Gateway origin. A one-row real TuShare import and a new two-turn
+delegated Product Agent market/Web research produced a new research-only
+Artifact after reset; exact-trace business audit confirmed market-read and Web
+evidence-save calls. A separate read-only Chromium pass rendered that exact
+post-reset conversation and Web Artifact. Another new disposable Workspace
+passed the strengthened browser reset with exact Task/Job/Artifact IDs and
+unchanged subject, account role, Workspace role and shared market-automation
+configuration. A further reset of the original, Agent-audited Workspace
+correctly returned 409 because two retained audit facts referenced new Web
+Artifacts; that second reset is outside E's required order and is not claimed
+to succeed. [Execution evidence](phase15-functional-fidelity.md)
+records the separate runs, IDs and counts. **Tester:** focused static review of
+both browser scripts and changed documentation PASS; the destructive live runs
+were executed by Root, not independently repeated by Tester. **Independent Sol
+Reviewer:** Functional PASS / Tests and Evidence PASS / Clean Break Architecture
+PASS on the scripts, exact Product trace and separate-run evidence. **Root
+acceptance: Golden E's specified `reset → seed → rerun A` sequence local PASS.**
+The later Agent-audit 409 still needs classification before Phase 15 completion;
+this gate does not claim arbitrary repeated reset. Phase 15 overall remains OPEN.
 
 [Execution record](phase15-functional-fidelity.md): in the worktree-scoped
 disposable stack, one real TuShare daily row was imported through Data Worker;

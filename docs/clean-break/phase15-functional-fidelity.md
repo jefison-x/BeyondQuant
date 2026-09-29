@@ -29,13 +29,13 @@ foundation, not a market-research or Agent journey.
 | B: two Backtests, optimization, comparison | A new Workspace Product API journey completed two independent BacktestJobs, one OptimizationJob and a persisted comparison Artifact. Real browser comparison of the exact two completed Backtest IDs and Artifact listing passed. See bounded evidence below. | DSH Agent-led strategy change and the OptimizationJob ranking's browser detail remain open. |
 | C: TrainingJob, GPU, checkpoint/restart | Durable TrainingJob and independent ML Worker; process-reclaim tests use a fake trainer. Current host has no NVIDIA device, `nvidia-smi`, or Docker NVIDIA runtime; the current ML image installs CPU LightGBM. | Qualify CPU Worker/real checkpoint separately; GPU execution is `NOT_RUN` here and needs a GPU-capable Worker/image and host. CPU execution and simulated lease reclaim do not satisfy the GPU claim. |
 | D: Agent interruption with Job continuing | In this fresh isolated stack, a separate Product API BacktestJob stayed queued after a contemporaneous Product Agent conversation was deleted; restarting its independent Worker completed the same Job in one attempt with an Artifact. After explicit authorization, a new DSH Agent used BYQ MCP read tools to find that exact Job and Artifact. | The Job was submitted through Product API, not initiated by the old Agent. Full Golden D and DSH process restart remain out of scope for this bounded check. |
-| E: Runtime and Workspace reset | The first populated reset was blocked by retained strategy approvals. A bounded archive change now preserves each approval and its exact validated strategy version. On the rebuilt isolated stack, Product reset of a populated Workspace returned 200, archived two approvals, removed the ResearchTask/Artifact/Job graph, preserved identity, supported idempotent replay and reseeding. | The connected real-browser reset and research rerun after reseeding remain open. Golden E is not yet fully accepted. |
+| E: Runtime and Workspace reset | The first populated reset was blocked by retained strategy approvals. A bounded archive change preserves each approval and its exact validated version. Product reset of a populated Workspace returned 200 with idempotent replay. A second populated fixture then passed a connected real-browser Runtime and Workspace reset, followed by a new Product ResearchTask, one-row TuShare import, and two-turn delegated Agent/Web research with a new Artifact. A separate clean Workspace confirmed protected identity/config and exact deletion IDs. | Golden E's specified `reset → seed → rerun A` sequence is local PASS. A later reset of new Agent-audited research remains fail-closed 409 and must be classified before overall Phase 15 completion. |
 | F: full rebuild | Exact-scope `dev-clean` apply removed only this isolated project's 12 containers, 4 volumes and 2 networks; `dev-init`/core start/seed/test and real login passed on a fresh schema. | The connected Golden journeys have not been rerun after rebuild. F environment lifecycle is bounded PASS; full Golden F remains OPEN. |
 
 ## Next bounded execution
 
-1. Complete the connected real-browser Workspace reset and research rerun after
-   the now-passing populated Product reset/reseed path.
+1. Classify the retained Agent-audit/Artifact references that block a later
+   Workspace reset of new research; preserve authoritative audit facts.
 2. Complete the Agent-initiated Job/interruption path and Agent-led strategy
    change. Qualify the existing CPU TrainingJob/Worker on new data; keep GPU
    execution and checkpoint/restart explicitly `NOT_RUN` until a qualified GPU
@@ -206,7 +206,8 @@ deletes the ResearchTask/Artifact graph but retains authoritative approval
 facts, so it refuses to remove that graph when it contains a strategy approval
 Artifact. The fail-closed response is correct for the present contract. Golden
 E was **FAIL/OPEN at this first attempt**. The bounded Product rerun below
-resolves this approval blocker; full Golden E remains open. The earlier Phase 13
+resolves this approval blocker, and the later Golden E record closes its
+specified sequence. The earlier Phase 13
 browser test passed because its fixture created a plain ResearchTask without
 strategy approval.
 
@@ -243,8 +244,90 @@ found exactly two distinct archive rows with matching approval/version content
 hashes and zero ResearchTasks or Artifacts in the Workspace. `dev-seed`
 subsequently created a fresh ResearchTask and two Artifacts in that same
 Workspace. The former 409 blocker is resolved in this populated Product path.
-The connected browser reset/research journey remains to be rerun before
-declaring full Golden E PASS.
+At this bounded Product check, the connected browser/research journey had not
+yet run; the later Golden E record below supplies that separate evidence.
+
+## Connected Golden E — browser reset and research rerun (2026-09-29)
+
+The same isolated Workspace received a new synthetic Product fixture through
+`phase15-backtest-optimization.py`: ResearchTask
+`task_be5201adebbe4dc0bda1bc61fd58e36f`, BacktestJobs
+`backtest_dc7ac1b9385e454991de9596f984115e` and
+`backtest_52b7b986e2f9460f83089966886d3079`, and OptimizationJob
+`optimizationjob_e1ff5eda8025420eb40bd62d3aae2ef1`. Both Backtests and
+the OptimizationJob completed before reset. The repeatable Playwright journey
+`apps/frontend/tests/e2e/phase15-reset-research.mjs` used the actual Frontend,
+Gateway and Product API on dynamic loopback ports. It verified that those exact
+Job IDs and Task existed, clicked Runtime reset and confirmed the Task still
+existed, then clicked Workspace reset. Product returned HTTP 200 and reported
+two BacktestJobs, one OptimizationJob, two ResearchTasks and 11 Artifacts
+deleted. The browser saw the completion state, the same login and Workspace
+identity, no old Job/Task/Artifact in Product lists, zero off-origin requests,
+and created a fresh persisted ResearchTask
+`task_07fd47b23d3742f0a644bf6fd1f279d3` through Product API.
+
+After reset, the isolated Data Worker imported exactly one new, real TuShare
+daily row for `000001.SZ` on `20240102`. Read-only PostgreSQL evidence recorded
+`data_source=tushare`, `close=9.21`; no old database was mounted or used. A
+new Product Agent conversation
+`conversation_e5caa88750754edba4b3473355e26982` completed two turns on
+trace `byq-trace-f1780ef62b87449ab6cc50a72fbdd6c4`: delegated market
+research reported the same 9.21 value, then Web Search yielded official
+source URLs and saved `web_research_evidence` Artifact
+`artifact_b7e03959f1f442e487977612d12b199f` with research-only policy.
+Product replay showed `user, assistant, user, assistant`, 16 normalized
+`agent.activity` events and three Agent-run registration events. The activities
+include completed market research/data read, Web Search and Web evidence save;
+one evidence-save attempt failed before a later successful save. Read-only
+business audit for this exact trace recorded three `byq_market_daily`
+authorized/success pairs and one `byq_web_evidence_create` authorized/saved
+pair. The Artifact exists in the same Workspace. An independent one-turn Web
+Research smoke also succeeded after reset. The strategy approval archive now
+contains four distinct exact source/version fact rows across the two resets;
+the Workspace has no old approval Artifacts and two new Web Research Artifacts.
+
+A second, read-only Playwright check reopened that exact post-reset Product
+conversation. It displayed both the 9.21 market answer and information
+disclosure follow-up, checked the four-message Product replay, and found the
+exact new Web Artifact in the research asset UI, with zero off-origin requests.
+
+The original Workspace later received another synthetic Backtest fixture.
+A *second* Workspace reset returned fail-closed HTTP 409 because two retained
+Agent-audit facts referenced its new Web Artifacts. A read-only scoped query
+confirmed those two audit/Artifact references. This second reset is outside
+Golden E's required order (`reset → seed → rerun A`); no Agent-audit facts were
+deleted and the first reset/research chain remains valid. It also means this
+evidence does **not** claim that an Agent-audited Workspace can be reset again.
+
+To check protected state and exact identities without those retained facts,
+the isolated database provisioned a separate disposable admin Workspace
+`workspace_d77e695aa6ed41c5b5d059e2bc17a5f3`. New worker-backed
+BacktestJobs, an OptimizationJob and comparison Artifact completed there.
+The strengthened real-browser reset compared the account subject, account
+role, Workspace role and the shared market-automation configuration before
+and after; each was unchanged. It asserted exact Task, two BacktestJob,
+OptimizationJob and comparison Artifact IDs before reset and their absence
+afterward. Runtime reset retained the Task. Workspace reset returned 200,
+removed one Task, nine Artifacts, two BacktestJobs and one OptimizationJob,
+and a fresh Task persisted. No browser request crossed the Frontend/Gateway
+origin. This checks a representative shared global configuration, not every
+possible SystemConfig key. It is a separate protected-state run on the same
+code, rather than an assertion made by the earlier connected research run.
+
+**Golden E's specified sequence: local PASS.** Focused Tester reviewed both
+browser scripts for syntax, bounded assertions and documentation; its static
+review passed without rerunning the destructive flow. Root executed the two
+real Chromium journeys and the Agent/Worker calls above. Independent Sol
+Reviewer inspected the actual scripts and evidence and returned **Functional
+PASS / Tests and Evidence PASS / Clean Break Architecture PASS**. Root accepts
+Golden E's `reset → seed → rerun A` sequence only. The browser wrapper
+validated this worktree's `BYQ_DEV_SCOPE` against its ignored local config;
+the scripts themselves check format and loopback origin. Their network-origin
+assertion covers HTTP(S), while Product API and trace evidence establish the
+business calls. The retained Agent-audit 409 remains a separate unresolved
+Workspace reset limitation for Phase 15. This gate does not qualify Golden B's
+Agent-led Job journey, Golden C's GPU path, Golden D's Agent-initiated Job, or
+full Golden F; Phase 15 overall remains **OPEN**.
 
 ## Bounded F rebuild and simple reset (2026-09-29)
 
