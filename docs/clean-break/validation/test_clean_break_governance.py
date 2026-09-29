@@ -37,11 +37,11 @@ class CleanBreakGovernanceTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text()
         plan = (ROOT / "docs/roadmap/IMPLEMENTATION_PLAN.md").read_text()
         architecture = (ROOT / "ARCHITECTURE.md").read_text()
-        expected = "<!-- byq:clean-break-current-phase=11 -->"
+        expected = "<!-- byq:clean-break-current-phase=14 -->"
         self.assertIn(expected, status)
         self.assertIn(expected, readme)
         self.assertEqual(re.findall(r"<!-- byq:current-completed-phase=(\d+) -->", status), ["97"])
-        self.assertIn("Next phase: Clean Break", status.split("## Historical 0.9/P4 status")[0])
+        self.assertIn("Current phase: Clean Break Phase 14", status.split("## Historical 0.9/P4 status")[0])
         self.assertIn("Phase 7–17 sequence", plan.split("## Historical implementation plan")[0])
         current_architecture = architecture.split("## Historical pre-Clean-Break architecture")[0]
         for required in ("DSH owns Agent loop", "BYQ owns quant domain", "Product Agent-to-Domain calls MUST use BYQ MCP", "Long deterministic compute"):

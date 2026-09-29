@@ -15,7 +15,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-CURRENT_DSH_DOCKERFILE = "services/runtime-adapter/Dockerfile.post-u8-269-candidate"
+CURRENT_DSH_DOCKERFILE = "services/runtime-adapter/Dockerfile.post-u8-270-candidate"
 ENV_FILE = ROOT / ".env.dev"
 TEMPLATE = ROOT / ".env.example"
 VOLUME_SUFFIXES = ("postgres-data", "domain-state", "ml-model-state", "dsh-sessions", "workflow-traces")
@@ -321,8 +321,15 @@ def main() -> int:
         elif args.command in ("reset", "reset-runtime"):
             reset(values, runtime_only=args.command == "reset-runtime")
         elif args.command == "seed":
-            print("NOT_RUN: dev-seed awaits Phase 14 domain contract", file=sys.stderr)
-            return 2
+            inventory(values)
+            seed_source = ROOT / "scripts/dev/seed_backend.py"
+            result = call(compose_args("run", "--rm", "--no-deps",
+                                       "--env", "BYQ_DEV_SCOPE", "--env", "COMPOSE_PROJECT_NAME",
+                                       "--volume", f"{seed_source}:/tmp/byq-dev-seed.py:ro",
+                                       "backend", "python", "/tmp/byq-dev-seed.py"), values)
+            if result.returncode:
+                raise DevError("isolated development seed failed")
+            print(f"Seeded isolated development Workspace: {scope()}")
         elif args.command == "test":
             result = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "docs/clean-break/validation", "-p", "test_*.py"], cwd=ROOT, env=child_env(values), check=False)
             if result.returncode:

@@ -748,14 +748,13 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             self.assertNotIn("BYQ_DATABASE_URL", block)
             self.assertNotIn("byq_domain_state", block)
 
-        # ADR-0016 Stage 6: SQLite is removed from runtime store code paths; the
-        # only remaining sqlite3 import is the read-only migration export tool.
+        # The fresh database baseline has no SQLite runtime or old import tool.
         sqlite_importers = sorted(
             path.relative_to(ROOT).as_posix()
             for path in (ROOT / "services/backend/app").rglob("*.py")
             if "import sqlite3" in path.read_text()
         )
-        self.assertEqual(sqlite_importers, ["services/backend/app/sqlite_export.py"])
+        self.assertEqual(sqlite_importers, [])
 
         mcp = "\n".join(
             path.read_text() for path in (ROOT / "services/mcp/src").rglob("*.ts")
@@ -894,7 +893,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("business_action", product_api)
         tenancy = (ROOT / "services/backend/app/workspace_tenancy.py").read_text()
         self.assertIn('"research_task_actions"', tenancy)
-        self.assertIn('"research_task_action_task"', tenancy)
+        self.assertIn("workspace_id TEXT NOT NULL", action)
 
     def test_adr0085_p3_research_judgment_is_bounded_and_read_only(self) -> None:
         # ADR-0085 P3: a genuine research-judgment stage gets a READ-ONLY bounded
@@ -1044,8 +1043,26 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         workspace_source = (
             ROOT / "services/backend/app/workspace_tenancy.py"
         ).read_text()
-        self.assertIn("workspace_migration_quarantine", workspace_source)
-        self.assertIn("owner_has_no_exact_durable_user_workspace", workspace_source)
+        for retired in (
+            "workspace_migration_runs",
+            "workspace_migration_quarantine",
+            "def backfill(",
+            "def enforce_contract(",
+        ):
+            self.assertNotIn(retired, workspace_source)
+        self.assertFalse(
+            (ROOT / "services/backend/app/migrate_personal_workspaces.py").exists()
+        )
+        for active_invariant in (
+            "CREATE TABLE IF NOT EXISTS workspaces",
+            "CREATE TABLE IF NOT EXISTS workspace_memberships",
+            "workspace_reset_receipts",
+            "byq_workspace_from_owner",
+            "trusted workspace owner is unresolved",
+            "workspace owner mismatch",
+            "NEW.workspace_id := resolved",
+        ):
+            self.assertIn(active_invariant, workspace_source)
         workspace_table_block = workspace_source.split("WORKSPACE_TABLES", 1)[1].split(")", 1)[0]
         self.assertNotIn('"credentials"', workspace_table_block)
 
@@ -1136,7 +1153,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             local_ci,
         )
         self.assertIn("BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml", local_ci)
-        self.assertIn("Dockerfile.post-u8-269-candidate", local_ci)
+        self.assertIn("Dockerfile.post-u8-270-candidate", local_ci)
         self.assertNotIn("CI_PG_NET=byq_product", local_ci)
         self.assertNotIn("npm run build >/tmp/byq-mcp-build.log 2>&1", local_ci)
 

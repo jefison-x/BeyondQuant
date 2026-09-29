@@ -1,5 +1,19 @@
 # Phase 0–6 gate record
 
+## Phase 14 fresh database baseline — bounded local gate (2026-09-29)
+
+[Execution record](phase14-database-baseline.md): startup migrations for old
+personal Workspaces, paper execution, stock-pool snapshots and backtest names
+were removed; current business and financial facts stay in fresh Store DDL.
+The old SQLite application import path was retired. `dev-seed` creates a small
+synthetic Workspace fixture in a scoped Compose database. Disposable PostgreSQL
+16 focused tests passed 36/36; repeated seed returned identical IDs. Development
+command tests passed 12/12, governance 2/2 and selected build/architecture
+86/86. Frozen `.269` and current `.270` build checks passed. **Independent Sol
+Reviewer: Functional PASS / Tests PASS / Clean Break Architecture PASS. Root:
+local Phase 14 PASS.** Repository PR/CI/merge gate remains open; Phase 15 stays
+closed. Existing Product data, archives and deployments were not touched.
+
 ## Phase 13 Reset Runtime / Reset Workspace — bounded local gate (2026-09-29)
 
 [Execution record](phase13-workspace-reset.md): Product runtime reset durably
@@ -38,6 +52,17 @@ physical deletion is not claimed at Product request completion. Repository
 PR/CI/merge gate remains open;
 Phase 14 and Golden scenarios remain closed. No existing Product database,
 deployment, push or merge was performed in this turn.
+
+## Phase 13 repository gate and Phase 14 entry (2026-09-29)
+
+PR #376 passed all required hosted checks, including Backend and integration,
+after the Workspace trigger field guard and conversation test fixture corrections.
+The exact-head GitHub merge preflight passed for
+`90ca69b82330c00550488261a55b2ab398106216`, and squash auto-merge produced
+`2592f7255ef94746548b4c72fb9fa74f6f9897d1` on `main`. The Phase 13
+repository gate is **PASS**. Phase 14 begins from this merged commit in a new
+isolated worktree; its fresh-schema/seed gate is still **OPEN**. Phase 15 remains
+closed.
 
 ## Phase 12 repository gate (2026-09-29)
 

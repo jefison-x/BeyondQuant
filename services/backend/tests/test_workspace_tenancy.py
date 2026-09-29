@@ -8,7 +8,7 @@ from sqlalchemy.exc import DBAPIError
 
 from app.research import ResearchStore
 from app.user_auth import UserAuthStore
-from app.workspace_tenancy import CONTRACT_VERSION, WorkspaceTenancyStore
+from app.workspace_tenancy import WorkspaceTenancyStore
 
 
 pytestmark = pytest.mark.skipif(
@@ -42,60 +42,37 @@ def test_user_creation_atomically_provisions_one_personal_workspace() -> None:
     users.close()
 
 
-def test_backfill_maps_only_exact_durable_owner_and_reports_orphan() -> None:
+def test_fresh_schema_omits_backfill_tables_and_keeps_workspace_tenancy() -> None:
     users = UserAuthStore()
     alice = _create_user(users, "alice")
-    research = ResearchStore()
-    mapped_task = research.create_task({
-        "owner_principal": "alice", "title": "mapped", "objective": "test",
-        "trace_id": "trace_mapped", "idempotency_key": "mapped-key",
-    })
-    research.transition("research_task", mapped_task["task_id"], "running", "transition-key")
-    research.create_task({
-        "owner_principal": "service:legacy", "title": "orphan", "objective": "test",
-        "trace_id": "trace_orphan", "idempotency_key": "orphan-key",
-    })
     tenancy = WorkspaceTenancyStore()
-    dry_run = tenancy.backfill(dry_run=True)
-    assert dry_run["run_id"] is None
-    assert dry_run["tables"]["research_transitions"]["mapped"] == 1
-    with tenancy.engine.begin() as connection:
-        assert connection.execute(text(
-            "SELECT workspace_id FROM research_tasks WHERE owner_principal = 'alice'"
-        )).scalar_one_or_none() is None
-        assert connection.execute(text("SELECT COUNT(*) FROM workspace_migration_runs")).scalar_one() == 0
-
-    report = tenancy.backfill()
-
-    assert report["contract"] == CONTRACT_VERSION
-    assert report["verified"] is False
-    assert report["tables"]["research_tasks"]["mapped"] == 1
-    assert report["tables"]["research_transitions"]["mapped"] == 1
-    assert report["tables"]["research_tasks"]["pending"] == 1
-    assert any(item["owner_principal"] == "service:legacy" for item in report["quarantine"])
 
     workspace = tenancy.get_personal_workspace(str(alice["user_id"]))
-    with tenancy.engine.begin() as connection:
-        mapped = connection.execute(text(
-            "SELECT workspace_id FROM research_tasks WHERE owner_principal = 'alice'"
-        )).scalar_one()
-        orphan = connection.execute(text(
-            "SELECT workspace_id FROM research_tasks WHERE owner_principal = 'service:legacy'"
-        )).scalar_one_or_none()
-        transition_workspace = connection.execute(text(
-            "SELECT workspace_id FROM research_transitions WHERE entity_id = :task_id"
-        ), {"task_id": mapped_task["task_id"]}).scalar_one()
-        run_count = connection.execute(text("SELECT COUNT(*) FROM workspace_migration_runs")).scalar_one()
-    assert mapped == workspace["workspace_id"]
-    assert transition_workspace == workspace["workspace_id"]
-    assert orphan is None
-    assert run_count == 1
+    assert workspace is not None
+    assert workspace["kind"] == "personal"
+    assert workspace["membership_role"] == "owner"
+    assert workspace["membership_status"] == "active"
 
-    repeated = tenancy.backfill()
-    assert repeated["tables"]["research_tasks"]["mapped"] == 0
-    assert repeated["tables"]["research_tasks"]["already_mapped"] == 1
+    with tenancy.engine.begin() as connection:
+        relations = {
+            name: connection.execute(
+                text("SELECT to_regclass(:name)"), {"name": name}
+            ).scalar_one()
+            for name in (
+                "workspaces",
+                "workspace_memberships",
+                "workspace_reset_receipts",
+                "workspace_migration_runs",
+                "workspace_migration_quarantine",
+            )
+        }
+    assert relations["workspaces"] is not None
+    assert relations["workspace_memberships"] is not None
+    assert relations["workspace_reset_receipts"] is not None
+    assert relations["workspace_migration_runs"] is None
+    assert relations["workspace_migration_quarantine"] is None
+
     tenancy.close()
-    research.close()
     users.close()
 
 
@@ -160,21 +137,5 @@ def test_owner_trigger_does_not_read_conversation_fields_on_stock_pool_writes() 
             VALUES ('alice', 'stock-pool-create', 'create', 'hash', 'pool-1', now())"""))
         assert connection.execute(text("""SELECT workspace_id FROM stock_pool_write_idempotency
             WHERE owner_principal = 'alice'""")).scalar_one() == workspace_id
-    tenancy.close()
-    users.close()
-
-
-def test_verified_contract_makes_workspace_keys_mandatory() -> None:
-    users = UserAuthStore()
-    _create_user(users, "alice")
-    tenancy = WorkspaceTenancyStore()
-    report = tenancy.enforce_contract()
-    assert report["status"] == "enforced"
-    assert all(value == 0 for value in report["relation_checks"].values())
-    with tenancy.engine.begin() as connection:
-        nullable = connection.execute(text("""SELECT is_nullable
-            FROM information_schema.columns
-            WHERE table_name = 'research_tasks' AND column_name = 'workspace_id'""")).scalar_one()
-    assert nullable == "NO"
     tenancy.close()
     users.close()

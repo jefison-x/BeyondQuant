@@ -30,7 +30,6 @@ from app.backtest import (
     signal_snapshot_content_sha256,
     snapshot_bars,
 )
-from app.db import run_ddl
 from app.research import ResearchStore
 from app.strategy_artifact import prepare_strategy, strategy_version_content
 from packages.contracts.bars_frame import encode_snapshot_bars
@@ -104,12 +103,15 @@ def test_backtest_name_is_bounded_catalogue_metadata_not_request_identity() -> N
     assert BacktestJobStore._request_hash(first) == BacktestJobStore._request_hash(renamed)
 
 
-def test_schema_forward_repairs_legacy_backtest_name_without_changing_identity(
+def test_fresh_schema_requires_backtest_name_and_supplies_default(
     byq_test_engine,
 ) -> None:
     job_id = "backtest_00000000000000000000000000000001"
     with byq_test_engine.begin() as connection:
-        connection.execute(text("ALTER TABLE backtest_jobs DROP COLUMN name"))
+        column = connection.execute(text("""SELECT is_nullable, column_default
+            FROM information_schema.columns WHERE table_name='backtest_jobs' AND column_name='name'""")).mappings().one()
+        assert column["is_nullable"] == "NO"
+        assert "回测任务" in column["column_default"]
         connection.execute(text("""
             INSERT INTO backtest_jobs (
                 job_id, task_id, owner_principal, status, request_json, request_hash,
@@ -117,23 +119,22 @@ def test_schema_forward_repairs_legacy_backtest_name_without_changing_identity(
                 approval_artifact_id, idempotency_key, attempts, max_attempts,
                 result_artifact_id, created_at, updated_at
             ) VALUES (
-                :job_id, 'task_legacy', 'owner:legacy', 'completed', '{}'::jsonb,
-                'request-hash-legacy', 'manifest_legacy', '{}'::jsonb,
-                'artifact_strategy', 'artifact_approval', 'legacy-key', 1, 2,
-                'artifact_result_legacy', '2026-01-05T12:34:00+00:00',
+                :job_id, 'task_new', 'owner:new', 'completed', '{}'::jsonb,
+                'request-hash-new', 'manifest_new', '{}'::jsonb,
+                'artifact_strategy', 'artifact_approval', 'fresh-key', 1, 2,
+                'artifact_result_new', '2026-01-05T12:34:00+00:00',
                 '2026-01-05T12:35:00+00:00'
             )
         """), {"job_id": job_id})
-        run_ddl(connection, BacktestJobStore.SCHEMA_DDL)
         row = connection.execute(
             text("SELECT name, job_id, request_hash, result_artifact_id FROM backtest_jobs WHERE job_id=:job_id"),
             {"job_id": job_id},
         ).mappings().one()
 
-    assert row["name"] == "历史回测 · 2026-01-05 20:34 · 000001"
+    assert row["name"] == "回测任务"
     assert row["job_id"] == job_id
-    assert row["request_hash"] == "request-hash-legacy"
-    assert row["result_artifact_id"] == "artifact_result_legacy"
+    assert row["request_hash"] == "request-hash-new"
+    assert row["result_artifact_id"] == "artifact_result_new"
 
 
 def test_manifest_is_content_addressed_and_rejects_duplicate_or_bad_bars() -> None:

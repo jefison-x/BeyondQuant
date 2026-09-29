@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Historical evidence only. The personal-workspace migration CLI was retired
+# with the BYQ 0.10 fresh-schema baseline; this workflow must not run now.
+echo "Phase 52 recovery evidence is archived; use the Phase 14 fresh database baseline" >&2
+exit 2
+
 RECOVERY_NETWORK="byq-phase52-recovery"
 SOURCE_DB="byq-phase52-source-db"
 RESTORED_DB="byq-phase52-restored-db"
