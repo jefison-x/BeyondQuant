@@ -149,11 +149,12 @@ class Product:
              "authenticated Product identity is outside the exact disposable Workspace")
 
 
-def configure() -> tuple[dict[str, str], Product, Path]:
+def configure(stage: str) -> tuple[dict[str, str], Product, Path]:
     need(os.environ.get("BYQ_PHASE15_EXTERNAL_CALLS_AUTHORIZED") == "1",
          "set BYQ_PHASE15_EXTERNAL_CALLS_AUTHORIZED=1 only for the explicitly authorized Agent turns")
-    need(os.environ.get("BYQ_PHASE15_GOLDEN_B_FOUR_TURN_AUTHORIZED") == "1",
-         "the four-turn Golden B expansion is not yet explicitly authorized")
+    if stage == "agent-b-run":
+        need(os.environ.get("BYQ_PHASE15_GOLDEN_B_FOUR_TURN_AUTHORIZED") == "1",
+             "the fourth Golden B Agent turn requires explicit authorization")
     sys.path.insert(0, str(ROOT))
     try:
         from scripts.dev.environment import local_env
@@ -210,6 +211,16 @@ def strategy(strategy_id: str, threshold: float) -> dict[str, object]:
             "        return result\n"
         ),
     }
+
+
+def same_strategy_snapshot(actual: object, expected: dict[str, object]) -> bool:
+    if not isinstance(actual, dict) or not isinstance(actual.get("script"), str):
+        return False
+    normalized = dict(actual)
+    normalized["script"] = normalized["script"].rstrip("\n")
+    reference = dict(expected)
+    reference["script"] = str(reference["script"]).rstrip("\n")
+    return normalized == reference
 
 
 def artifacts(client: Product) -> list[dict[str, object]]:
@@ -488,7 +499,7 @@ def agent_a_version(client: Product, path: Path, data: dict[str, object]) -> dic
                 and item.get("kind") == "strategy_version" and item.get("status") == "validated"
                 and item.get("task_id") == task_id and isinstance(item.get("content"), dict)
                 and item["content"].get("strategy_id") == data["strategy_id"]
-                and item["content"].get("snapshot") == expected]
+                and same_strategy_snapshot(item["content"].get("snapshot"), expected)]
     need(len(versions) == 1, "Agent turn 1 did not report exactly one matching threshold A StrategyVersion")
     version_id = str(versions[0]["artifact_id"])
     need(version_id in answer, "Agent turn 1 omitted its exact StrategyVersion Artifact ID")
@@ -555,7 +566,7 @@ def agent_b_version(client: Product, path: Path, data: dict[str, object]) -> dic
     prompt = (
         "Use only BeyondQuant MCP; do not delegate. Register a fresh quant_orchestrator AgentRun with "
         "idempotency_key=" + str(data["run_key"]) + "-agent-b-version. Read the exact completed A Job "
-        "with byq_backtest_get and export its StrategyVersion. Then create one revised StrategyDraft and "
+        "with byq_backtest_analysis_get(section=summary,limit=20,offset=0) and export its StrategyVersion. Then create one revised StrategyDraft and "
         "StrategyVersion using byq_strategy_validate and byq_strategy_version_create, authorizing and "
         "auditing each write. Preserve the same strategy_id, script/source, schema, name, category and "
         "all snapshot fields; change only parameters.threshold from 9.20 to 9.22. Do not approve it, "
@@ -570,8 +581,8 @@ def agent_b_version(client: Product, path: Path, data: dict[str, object]) -> dic
     save(path, data)
     reported_artifact_ids, answer, _, events, registered = turn(client, path, data, 3, prompt, ARTIFACT_RE)
     need(registered, "Agent strategy revision turn must register exactly one fresh AgentRun")
-    check_turn_activities(events, {"读取回测状态", "导出策略", "校验策略", "创建策略版本"},
-                          {"读取回测状态", "导出策略", "校验策略", "创建策略版本"})
+    check_turn_activities(events, {"读取回测分析证据", "导出策略", "校验策略", "创建策略版本", "整理工作台建议"},
+                          {"读取回测分析证据", "导出策略", "校验策略", "创建策略版本"})
     a = exact_artifact(client, str(data["version_a_artifact_id"]), "strategy_version")
     versions = [item for item in artifacts(client) if item.get("artifact_id") in reported_artifact_ids
                 and item.get("kind") == "strategy_version" and item.get("task_id") == data["task_id"]
@@ -717,7 +728,7 @@ def main() -> None:
     parser.add_argument("stage", choices=("prepare", "agent-a-version", "agent-a-run",
                                            "agent-b-version", "agent-b-run"))
     args = parser.parse_args()
-    _, client, path = configure()
+    _, client, path = configure(args.stage)
     if args.stage == "prepare":
         data = prepare(client, path)
     else:
@@ -743,7 +754,7 @@ def main() -> None:
                       "comparison_artifact": data.get("comparison_artifact_id"),
                       "signal_counts": data.get("signal_counts"),
                       "next_operator_step": {
-                          "prepared": "run agent-a-version after four-turn authorization",
+                          "prepared": "run agent-a-version under the approved three-turn limit",
                           "awaiting_approval_a": "approve exact A version through Product API, then run agent-a-run",
                           "a_completed": "run agent-b-version",
                           "awaiting_approval_b": "approve exact B version through Product API, then run agent-b-run",

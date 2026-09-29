@@ -48,7 +48,7 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
     assert "byq_strategy_approve" not in strategy_tools
     assert "byq_backtest_run" not in strategy_tools
     orchestrator = ROLE_BY_ID["quant_orchestrator"]
-    assert orchestrator.version == "2.4.0"
+    assert orchestrator.version == "2.5.0"
     assert "byq_feedback_preview" in orchestrator.allowed_tools
     assert "byq_feedback_submit" in orchestrator.allowed_tools
     assert "byq_feedback_submit" in orchestrator.approval_required_actions
@@ -70,6 +70,7 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
         "byq_backtest_task_execute", "byq_backtest_task_cancel",
     }
     assert task_tools <= orchestrator_tools
+    assert "byq_backtest_analysis_get" in orchestrator_tools
     optimization_tools = {"byq_optimization_submit", "byq_optimization_get", "byq_optimization_cancel"}
     assert optimization_tools <= orchestrator_tools
     assert "byq_factor_job_cancel" in orchestrator_tools
@@ -129,6 +130,10 @@ def test_old_run_does_not_gain_versioned_tools_after_role_upgrade() -> None:
     store = AgentResearchStore()
     try:
         run = start(store)
+        assert store.authorize({"run_id": run["run_id"], "action": "byq_backtest_analysis_get"})["authorized"]
+        store._execute("UPDATE agent_runs SET role_version='2.4.0' WHERE run_id=:id", {"id": run["run_id"]})
+        with pytest.raises(AgentForbidden):
+            store.authorize({"run_id": run["run_id"], "action": "byq_backtest_analysis_get"})
         assert store.authorize({"run_id": run["run_id"], "action": "byq_index_pool_create"})["authorized"]
         store._execute("UPDATE agent_runs SET role_version='2.1.0' WHERE run_id=:id", {"id": run["run_id"]})
         assert store.authorize({"run_id": run["run_id"], "action": "byq_index_pool_create"})["authorized"]

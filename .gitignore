@@ -32,3 +32,4 @@ build/
 .byq-worktrees/
 .ci-artifacts/
 coverage/
+.phase15-golden-b-bound*.json

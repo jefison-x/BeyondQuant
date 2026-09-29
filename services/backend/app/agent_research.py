@@ -120,7 +120,7 @@ class AgentRole:
 ROLE_CATALOG: tuple[AgentRole, ...] = (
     AgentRole(
         role_id="quant_orchestrator",
-        version="2.4.0",
+        version="2.5.0",
         description="Coordinates bounded research hand-offs and explicit owner-scoped domain actions.",
         allowed_tools=(
             "byq_product_help_query",
@@ -171,6 +171,7 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
             "byq_backtest_task_prepare",
             "byq_backtest_task_create",
             "byq_backtest_task_get",
+            "byq_backtest_analysis_get",
             "byq_backtest_task_execute",
             "byq_backtest_task_cancel",
             "byq_learning_run_start",
@@ -1094,12 +1095,17 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             backtest_auto_action = action in {
                 "byq_backtest_task_create", "byq_backtest_task_execute",
             }
+            orchestrator_analysis_action = (
+                row["role_id"] == "quant_orchestrator"
+                and action == "byq_backtest_analysis_get"
+            )
             if (action not in role.allowed_tools
-                    or (index_action and row["role_version"] not in {"2.1.0", "2.2.0", "2.3.0", "2.4.0"})
+                    or (index_action and row["role_version"] not in {"2.1.0", "2.2.0", "2.3.0", "2.4.0", "2.5.0"})
                     or (factor_job_action and row["role_version"] != role.version)
                     or (data_demand_action and row["role_version"] != role.version)
                     or (optimization_action and row["role_version"] != role.version)
-                    or (backtest_auto_action and row["role_version"] != role.version)):
+                    or (backtest_auto_action and row["role_version"] != role.version)
+                    or (orchestrator_analysis_action and row["role_version"] != role.version)):
                 self._record_audit_row(row, action=action, outcome="denied", resource_type=resource_type,
                     resource_id=resource_id, detail={"reason": "role_tool_not_allowed"}, connection=connection)
                 raise AgentForbidden("agent role is not authorized for this domain action")
