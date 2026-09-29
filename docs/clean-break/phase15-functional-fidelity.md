@@ -27,7 +27,7 @@ foundation, not a market-research or Agent journey.
 |---|---|---|
 | A: Research, TuShare, Web Search, delegated Agent, interaction, Artifact | A fresh isolated Workspace completed a real TuShare import, two-turn DSH Product conversation with delegated research, Web Search, a saved evidence Artifact, normalized trace, and real browser replay/Artifact listing. See bounded evidence below. | The separate DSH Interaction plugin remains unqualified; ordinary Product follow-up passed. |
 | B: two Backtests, optimization, comparison | A new Workspace Product API journey completed two independent BacktestJobs, one OptimizationJob and a persisted comparison Artifact. Real browser comparison of the exact two completed Backtest IDs and Artifact listing passed. A later four-turn Product Agent journey read A's completed analysis, revised B, completed both Worker-backed Jobs and persisted an exact two-Job comparison Artifact. The exact Artifact ranking was also reopened through the real browser's Product entity view. See bounded evidence below. | A formatted ranking view is not present; the existing entity view displays its JSON detail. |
-| C: TrainingJob, GPU, checkpoint/restart | Durable TrainingJob and independent ML Worker; process-reclaim tests use a fake trainer. The isolated ML Worker image now passed one real LightGBM CPU trainer smoke on honestly synthetic in-memory rows. Current host has no NVIDIA device, `nvidia-smi`, or Docker NVIDIA runtime. | Product TrainingJob with real provider data and Worker-produced Artifacts remains open; GPU execution and model checkpoint/restart are `NOT_RUN`. The CPU trainer smoke alone does not satisfy Golden C. |
+| C: TrainingJob, GPU, checkpoint/restart | A real-provider CPU TrainingJob completed in the isolated Workspace after 98 TuShare trading sessions were repaired; the independent ML Worker produced validated Feature and LightGBM Model Artifacts. Earlier synthetic CPU trainer and fake process-reclaim tests remain separate evidence. | Current host has no NVIDIA device or Docker NVIDIA runtime. GPU execution and model checkpoint/restart remain `NOT_RUN`, so full Golden C is OPEN. |
 | D: Agent interruption with Job continuing | A fresh isolated Agent conversation created and executed an approved BacktestTask. The exact Job remained queued after that conversation was deleted, completed once in the independent Worker, and was read with its Artifact by a new Agent. Focused Tester, independent Reviewer and Root accepted Golden D with the trace argument visibility limit recorded below. | Golden D PASS. DSH process restart is outside this scenario's defined scope. |
 | E: Runtime and Workspace reset | The populated browser reset, reseed and two-turn delegated Agent/Web research passed. A separate Workspace confirmed protected identity/config and exact deletion IDs. A subsequent Product reset of the Agent-audited Workspace now also passes while retaining the exact two Web evidence audit facts and deleting their disposable Artifacts. | Golden E's specified `reset → seed → rerun A` sequence and the bounded repeated-reset fix are local PASS; this does not complete the other Phase 15 journeys. |
 | F: full rebuild | Exact-scope `dev-clean` apply removed only this isolated project's 12 containers, 4 volumes and 2 networks; `dev-init`/core start/seed/test and real login passed on a fresh schema. | The connected Golden journeys have not been rerun after rebuild. F environment lifecycle is bounded PASS; full Golden F remains OPEN. |
@@ -50,9 +50,9 @@ Turn 4 initially stopped at a script allowlist check because the Agent read the 
 
 The existing isolated Frontend image was started without rebuilding the stack. `apps/frontend/tests/e2e/phase15-optimization-detail.mjs` used Playwright Chromium to log in through Frontend/Gateway, open the Product `实体查询` view, and display comparison Artifact `artifact_59a9fe87714245c3a7025cbf0bb06c54`. The page rendered a validated `optimization_comparison` with exactly two ranked Job IDs, `backtest_a0dda018f9bc4e44b1442fcad54b5e34` and `backtest_a2d9739696bf4c6c902949b125b00c0a`; `candidate_count=2` and `reran_backtests=false`. The browser made 81 requests, zero off-origin. **Browser Artifact detail: PASS** via the existing JSON entity view; this does not claim a formatted ranking component.
 
-## Next bounded execution
+## Historical D preparation and remaining gate
 
-Golden D preparation remains **BLOCKED before external execution**. A static
+Golden D preparation was initially **BLOCKED before external execution**. A static
 contract review on 2026-09-29 found that the one-symbol daily synchronization
 fills only price bars. Agent BacktestTask readiness also requires a complete
 trading calendar, trading status, price limits, adjustment factors and corporate
@@ -65,9 +65,9 @@ call had been made at the time of this review. The draft staged evidence script
 approved one-day repair and reviewed before execution. The live result is
 recorded below.
 
-1. Qualify the existing CPU TrainingJob/Worker on new data; keep GPU
+1. Preserve the completed real-provider CPU TrainingJob evidence below; keep GPU
    execution and checkpoint/restart explicitly `NOT_RUN` until a qualified GPU
-   environment is available for Phase 16.
+   environment is available.
 2. Rerun connected journeys from a fresh schema after the now-proven scoped
    rebuild. Never substitute mocks or old database evidence for real Product
    functionality.
@@ -491,6 +491,43 @@ or provider repair was submitted under the one-day TuShare authorization.
 `nvidia-smi` is unavailable and Docker lists only `runc` runtimes, so GPU and
 GPU checkpoint/restart remain **NOT_RUN** on this host. The CPU trainer smoke
 above remains the only ML execution evidence, and Golden C is not claimed.
+
+## Real-provider CPU TrainingJob and Artifact (2026-09-30)
+
+The maintainer explicitly authorized one isolated TuShare window,
+`2024-01-02` through `2024-05-31`, for a real CPU TrainingJob. The existing
+`byq-dev-ea551690f4` project had its automatic market scheduler disabled, one
+completed market day (`2024-01-02`), a synchronized security master, and no
+pending training runs. Through authenticated Gateway/Product API,
+`scripts/evidence/phase15-ml-cpu.py` created one ResearchTask, a one-symbol
+stock-pool snapshot, a qualified LightGBM CPU StrategyVersion and its explicit
+owner approval Artifact, then submitted TrainingJob
+`mlrun_625652441fda459a8b4ae917d9a82cfe` in Workspace
+`workspace_9f180f427ac14bb7b5ccb35c4c59d1c8`.
+Two earlier script attempts were rejected at the Product ML request-shape gate
+before any TrainingJob or provider call; they left disposable Task/pool fixtures
+in this isolated Workspace. The script now supplies ML idempotency through the
+required header.
+
+With the Data Worker stopped, the ML Worker recorded repair request
+`datarepair_5579db1d2120452aa0938f8e27b34b4f`, whose exact bounds were
+`20240102`–`20240531`. Only then was the isolated Data Worker started. It
+completed all 98 open trading sessions in that window; the isolated market
+store then held 523,891 daily bar rows. It scheduled **zero** sessions outside
+the authorized dates. The repair request closed `completed` without error.
+The exact TrainingJob reached
+`completed` with readiness `ready` and no missing cells. Both Workers were
+stopped after completion to prevent further provider activity.
+
+Product API independently returned validated Feature Artifact
+`artifact_4ca1c68fa5614668b61ee226528bea36` with 77 frozen rows and a
+persisted object reference, and validated Model Artifact
+`artifact_2b03d0b908db4de7866cd3cdb2e5456d` with its own persisted model
+object, validation metrics, exact TrainingJob lineage, and runtime
+`lightgbm-4.7.0-python-3.13-linux-cpu-single-thread`. The evidence script's
+exact-ID Product assertions pass. **Real-provider CPU TrainingJob/Worker/Artifact:
+local PASS.** GPU execution and checkpoint/restart remain **NOT_RUN** on this
+host, so full Golden C remains **OPEN**.
 
 ## Bounded F rebuild and simple reset (2026-09-29)
 
