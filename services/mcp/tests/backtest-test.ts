@@ -19,6 +19,7 @@ import {
 const jobId = "backtest_0123456789abcdef0123456789abcdef";
 const request = { task_id: "task_0123456789abcdef0123456789abcdef", idempotency_key: "backtest-mcp-1" };
 const taskId = "backtesttask_0123456789abcdef0123456789abcdef";
+const taskApprovalId = "agent_approval_0123456789abcdef0123456789abcdef";
 const taskRequest = {
   task_id: request.task_id,
   strategy_version_artifact_id: "artifact_version",
@@ -51,7 +52,6 @@ assert.equal(taskCreated.isError, false);
 for (const [call, suffix, method] of [
   [fetchByqBacktestTaskGet, "", "GET"],
   [fetchByqBacktestTaskExecute, "/execute", "POST"],
-  [fetchByqBacktestTaskCancel, "/cancel", "POST"],
 ] as const) {
   const response = await call("http://backend:8000", taskId, async (url, init) => {
     assert.equal(url, `http://backend:8000/v1/research/backtest-tasks/${taskId}${suffix}`);
@@ -60,6 +60,16 @@ for (const [call, suffix, method] of [
   });
   assert.equal(response.isError, false);
 }
+
+const taskCancelled = await fetchByqBacktestTaskCancel(
+  "http://backend:8000", taskId, taskApprovalId, async (url, init) => {
+    assert.equal(url, `http://backend:8000/v1/research/backtest-tasks/${taskId}/cancel`);
+    assert.equal(init?.method, "POST");
+    assert.deepEqual(JSON.parse(String(init?.body)), { agent_approval_id: taskApprovalId });
+    return new Response(JSON.stringify({ task: { backtest_task_id: taskId, phase: "cancelled" } }), { status: 200 });
+  },
+);
+assert.equal(taskCancelled.isError, false);
 
 const submitted = await fetchByqBacktestSubmit(
   "http://backend:8000",

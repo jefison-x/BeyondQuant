@@ -545,9 +545,11 @@ async function byqBacktestTaskExecute(args: { backtest_task_id: string }, extra:
   return context ? fetchByqBacktestTaskExecute(BACKEND_URL, args.backtest_task_id, trustedBackendFetcher(context)) : agentContextUnavailable();
 }
 
-async function byqBacktestTaskCancel(args: { backtest_task_id: string }, extra: unknown) {
+async function byqBacktestTaskCancel(args: { backtest_task_id: string; agent_approval_id: string }, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqBacktestTaskCancel(BACKEND_URL, args.backtest_task_id, trustedBackendFetcher(context)) : agentContextUnavailable();
+  return context ? fetchByqBacktestTaskCancel(
+    BACKEND_URL, args.backtest_task_id, args.agent_approval_id, trustedBackendFetcher(context),
+  ) : agentContextUnavailable();
 }
 
 async function byqMlCapabilities(_args: Record<string, never>, extra: unknown) {
@@ -607,10 +609,10 @@ async function byqMlTrainingGet(args: { training_run_id?: string; idempotency_ke
   ) : agentContextUnavailable();
 }
 
-async function byqMlTrainingCancel(args: { training_run_id: string }, extra: unknown) {
+async function byqMlTrainingCancel(args: { training_run_id: string; agent_approval_id: string }, extra: unknown) {
   const context = completeAgentContext(extra);
   return context ? fetchByqMlTrainingCancel(
-    BACKEND_URL, args.training_run_id, trustedBackendFetcher(context),
+    BACKEND_URL, args.training_run_id, args.agent_approval_id, trustedBackendFetcher(context),
   ) : agentContextUnavailable();
 }
 
@@ -1218,8 +1220,11 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
   registerTool(
     "byq_backtest_task_cancel",
     {
-      description: "Cancel the active signal-preparation or backtest component when its BYQ state transition permits cancellation.",
-      inputSchema: { backtest_task_id: z.string().regex(/^backtesttask_(?:ml_)?[0-9a-f]{32}$/) },
+      description: "Cancel the exact signal-preparation or backtest task only with its approved durable Agent grant.",
+      inputSchema: {
+        backtest_task_id: z.string().regex(/^backtesttask_(?:ml_)?[0-9a-f]{32}$/),
+        agent_approval_id: z.string().regex(/^agent_approval_[0-9a-f]{32}$/),
+      },
     },
     (args) => byqBacktestTaskCancel(args, trustedContext),
   );
@@ -1306,8 +1311,9 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
   );
   registerTool(
     "byq_ml_training_cancel",
-    { description: "Cancel an eligible approval-gated ML training run without accessing the model object.", inputSchema: {
+    { description: "Cancel the exact ML training run only with its approved durable Agent grant.", inputSchema: {
       training_run_id: z.string().regex(/^mlrun_[0-9a-f]{32}$/),
+      agent_approval_id: z.string().regex(/^agent_approval_[0-9a-f]{32}$/),
     } },
     (args) => byqMlTrainingCancel(args, trustedContext),
   );
@@ -1445,13 +1451,13 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
   registerTool(
     "byq_strategy_approve",
     {
-      description: "Record an auditable approval decision separate from future execution outcome.",
+      description: "Record an auditable approval decision using the exact approved durable agent grant.",
       inputSchema: {
         task_id: z.string(),
         experiment_id: z.string().optional(),
         strategy_version_artifact_id: z.string(),
         reviewer_principal: z.string().optional(),
-        agent_approval_id: z.string().regex(/^agent_approval_[0-9a-f]{32}$/).optional(),
+        agent_approval_id: z.string().regex(/^agent_approval_[0-9a-f]{32}$/),
         decision: z.enum(["approved", "rejected"]),
         rationale: z.string().optional(),
         trace_id: z.string(),

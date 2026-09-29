@@ -17,6 +17,56 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def test_artifact_reference_is_workspace_scoped_and_excludes_storage_content(monkeypatch) -> None:
+    context = trusted_agent_context("artifact-reference-owner", trace_id="trace-artifact-reference")
+    store = ResearchStore()
+    monkeypatch.setattr(main, "research_store", store)
+    task = store.create_task({
+        "owner_principal": "artifact-reference-owner", "title": "Artifact reference",
+        "objective": "Read a stable reference", "trace_id": "trace-artifact-reference",
+        "idempotency_key": "artifact-reference-task",
+    })
+    artifact = store.create_artifact({
+        "task_id": task["task_id"], "kind": "Report with spaces",
+        "content": {"metadata": {"title": "A report", "private_field": "hidden"},
+                    "result_reference": {"object_key": "private/storage/key"}},
+        "lineage": [], "trace_id": "trace-artifact-reference",
+        "idempotency_key": "artifact-reference-result",
+    })
+    client = TestClient(main.app)
+    try:
+        response = client.get(
+            f"/v1/research/artifacts/{artifact['artifact_id']}/reference", headers=context,
+        )
+        assert response.status_code == 200, response.text
+        reference = response.json()
+        assert reference["ref"] == {"kind": "artifact", "id": artifact["artifact_id"]}
+        assert reference["workspace_id"] == context["x-byq-workspace-id"]
+        assert reference["type"] == "Report with spaces"
+        assert reference["metadata"] == {"title": "A report"}
+        assert "content" not in reference
+        assert "private/storage/key" not in response.text
+        assert client.get(
+            f"/v1/research/artifacts/{artifact['artifact_id']}/reference",
+            headers=trusted_agent_context("artifact-reference-other"),
+        ).status_code == 404
+        # Simulate a second valid workspace for the same owner. The Artifact
+        # read boundary must still reject a known ID from another workspace.
+        monkeypatch.setattr(main.workspace_tenancy_store, "resolve_context", lambda *_args: None)
+        other_workspace = {**context, "x-byq-workspace-id": "workspace_" + "f" * 32}
+        assert client.get(
+            f"/v1/research/artifacts/{artifact['artifact_id']}", headers=other_workspace,
+        ).status_code == 404
+        assert client.get(
+            f"/v1/research/artifacts/{artifact['artifact_id']}/reference", headers=other_workspace,
+        ).status_code == 404
+        listed = client.get("/v1/research/artifacts", headers=other_workspace)
+        assert listed.status_code == 200, listed.text
+        assert listed.json()["artifacts"] == []
+    finally:
+        store.close()
+
+
 def test_web_evidence_promotion_is_owner_scoped_and_trace_bound(monkeypatch) -> None:
     context = trusted_agent_context("alice", trace_id="trace-web-api-1")
     store = ResearchStore()

@@ -67,6 +67,46 @@ def test_product_api_uses_error_envelope_and_auth_boundary(monkeypatch) -> None:
     assert healthy.json()["status"] == "ok"
 
 
+def test_product_artifact_reference_passes_the_bounded_backend_projection(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    artifact_id = "artifact_0123456789abcdef0123456789abcdef"
+    projection = {
+        "artifact_id": artifact_id,
+        "workspace_id": "workspace_0123456789abcdef0123456789abcdef",
+        "type": "backtest_result",
+        "ref": {"kind": "artifact", "id": artifact_id},
+        "metadata": {"title": "Backtest result"},
+        "owner_principal": "product-user",
+        "validation": {"status": "validated", "content_sha256": "a" * 64},
+        "lineage": [{"kind": "research_task", "id": "task_0123456789abcdef0123456789abcdef"}],
+        "created_at": "2026-09-29T01:02:03+00:00",
+    }
+    calls: list[dict[str, object]] = []
+
+    def backend(method, path, payload=None, *, headers=None, params=None):
+        calls.append({"method": method, "path": path, "headers": headers})
+        return projection
+
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    client = TestClient(main.app)
+    response = client.get(
+        f"/api/product/research/artifacts/{artifact_id}/reference",
+        headers={"Authorization": "Bearer product-test-token"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == projection
+    assert "content" not in response.json()
+    assert "result_reference" not in response.json()
+    assert len(calls) == 1
+    assert calls[0]["method"] == "GET"
+    assert calls[0]["path"] == f"/v1/research/artifacts/{artifact_id}/reference"
+    forwarded_headers = calls[0]["headers"]
+    assert isinstance(forwarded_headers, dict)
+    assert forwarded_headers["x-byq-owner-principal"] == "product-user"
+
+
 def test_feedback_product_api_is_same_origin_paged_and_forwards_only_coarse_client_context(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     calls: list[dict[str, object]] = []
@@ -1894,3 +1934,33 @@ def test_historical_demand_product_route_preserves_admin_gate_and_original_key(m
     count = len(captured)
     assert client.post("/api/product/data-center/demands", json={}).status_code == 403
     assert len(captured) == count
+
+
+def test_ml_training_cancel_forwards_trusted_browser_context_without_agent_grant(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "phase12-browser-owner")
+    run_id = "mlrun_" + "a" * 32
+    calls: list[dict[str, object]] = []
+
+    def backend(method, path, payload=None, *, headers=None, params=None):
+        calls.append({"method": method, "path": path, "payload": payload, "headers": headers})
+        return {"training_run": {"training_run_id": run_id, "status": "cancelled"}}
+
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    response = TestClient(main.app).post(
+        f"/api/product/ml/training-runs/{run_id}/cancel",
+        headers={"Authorization": "Bearer product-test-token"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["training_run"]["training_run_id"] == run_id
+    assert len(calls) == 1
+    assert calls[0]["method"] == "POST"
+    assert calls[0]["path"] == f"/v1/research/ml/training-runs/{run_id}/cancel"
+    assert calls[0]["payload"] is None
+    forwarded = calls[0]["headers"]
+    assert isinstance(forwarded, dict)
+    assert forwarded["x-byq-owner-principal"] == "phase12-browser-owner"
+    assert forwarded["x-byq-actor-principal"] == "phase12-browser-owner"
+    assert forwarded["x-byq-session-id"] == "browser"
+    assert forwarded["x-byq-dsh-run-id"] == "browser"

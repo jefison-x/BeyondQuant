@@ -582,6 +582,17 @@ def product_research_entity(entity_type: str, entity_id: str, request: Request) 
     )
 
 
+@router.get("/research/artifacts/{artifact_id}/reference")
+def product_artifact_reference(artifact_id: str, request: Request) -> dict[str, object]:
+    """Fetch the bounded Artifact identity through the Product API boundary."""
+    _product_principal(request)
+    return _backend_request(
+        "GET",
+        f"/v1/research/artifacts/{quote(artifact_id, safe='')}/reference",
+        headers=_trusted_agent_headers(request),
+    )
+
+
 @router.get("/research/artifacts")
 def product_artifacts(request: Request) -> dict[str, object]:
     _product_principal(request)

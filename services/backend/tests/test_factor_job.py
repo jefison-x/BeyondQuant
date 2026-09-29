@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.audit_event import AuditEmitter
 from app.factor_job import FactorJobStore
 from app import factor_job as factor_job_module
 from app.factor_research import compute_factor
@@ -265,6 +266,21 @@ def test_factor_cancel_fences_claimed_worker_before_artifact_commit(factor_job_c
 
 def test_expired_attempt_loses_completion_fence(factor_job_case):
     jobs, research, context, payload = factor_job_case
+    events = []
+    committed = []
+
+    def collect_after_commit(event):
+        events.append(event)
+        current = jobs._fetch_one(
+            "SELECT status FROM factor_jobs WHERE job_id=:job", {"job": event["job_id"]}
+        )
+        artifact = research._fetch_one(
+            "SELECT status FROM artifacts WHERE artifact_id=:artifact",
+            {"artifact": event["metadata"]["artifact_id"]},
+        )
+        committed.append((current["status"], artifact["status"]))
+
+    jobs.audit_emitter = AuditEmitter(collect_after_commit)
     public = _create(jobs, context, payload)
     old_claim = jobs.claim_next("worker-old")
     assert old_claim is not None and old_claim["attempt"] == 1
@@ -287,10 +303,12 @@ def test_expired_attempt_loses_completion_fence(factor_job_case):
         {"expired": datetime.now(timezone.utc) - timedelta(minutes=10), "job": public["job_id"]},
     )
     assert not jobs.complete(public["job_id"], 1, artifact["artifact_id"])
+    assert events == []
     current_claim = jobs.claim_next("worker-current")
     assert current_claim is not None and current_claim["attempt"] == 2
     assert not jobs.complete(public["job_id"], 1, artifact["artifact_id"])
     assert not jobs.complete(public["job_id"], 2, unrelated["artifact_id"])
+    assert events == []
     assert jobs.complete(public["job_id"], 2, artifact["artifact_id"])
 
     completed = jobs.get(
@@ -301,10 +319,131 @@ def test_expired_attempt_loses_completion_fence(factor_job_case):
     assert completed is not None
     assert completed["status"] == "SUCCEEDED"
     assert completed["result_ref"] == artifact["artifact_id"]
+    assert committed == [("completed", "validated")]
+    assert len(events) == 1
+    assert events[0] == {
+        "schema_version": "audit-event.v1",
+        "event_id": events[0]["event_id"],
+        "occurred_at": events[0]["occurred_at"],
+        "workspace_id": context["workspace_id"],
+        "owner_principal": context["owner_principal"],
+        "actor_principal": "byq.factor_worker",
+        "action": "job.completed",
+        "resource_type": "job",
+        "resource_id": public["job_id"],
+        "result": "success",
+        "request_id": None,
+        "job_id": public["job_id"],
+        "metadata": {"artifact_id": artifact["artifact_id"], "trace_id": payload["trace_id"]},
+    }
+
+
+def test_failed_factor_attempt_does_not_emit_completion_observation(factor_job_case):
+    jobs, research, context, payload = factor_job_case
+    events = []
+    jobs.audit_emitter = AuditEmitter(events.append)
+    public = _create(jobs, context, payload)
+    claim = jobs.claim_next("failed-factor-worker")
+    assert claim is not None
+
+    assert jobs.fail(public["job_id"], claim["attempt"], "factor_execution_failed", "failed", retryable=False)
+    assert events == []
+
+
+def test_external_job_transaction_defers_completion_event_until_commit(factor_job_case):
+    jobs, research, context, payload = factor_job_case
+    events = []
+    jobs.audit_emitter = AuditEmitter(events.append)
+    public = _create(jobs, context, payload)
+    claim = jobs.claim_next("external-transaction-worker")
+    assert claim is not None
+    artifact = submit_factor(
+        research,
+        {**payload, "idempotency_key": f"factor-result-{public['job_id']}"},
+        context,
+        compute_factor,
+    )["artifact"]
+    artifact = research.transition(
+        "artifact", artifact["artifact_id"], "validated", f"factor-validation-{public['job_id']}"
+    )
+
+    with jobs._transaction() as connection:
+        assert jobs.complete(public["job_id"], claim["attempt"], artifact["artifact_id"], _connection=connection)
+        assert events == []
+
+    assert len(events) == 1
+    assert jobs.get(
+        job_id=public["job_id"], trusted_owner=context["owner_principal"],
+        trusted_workspace=context["workspace_id"],
+    )["status"] == "SUCCEEDED"
+
+
+def test_transaction_rollback_discards_deferred_completion_event(factor_job_case):
+    jobs, research, context, payload = factor_job_case
+    events = []
+    jobs.audit_emitter = AuditEmitter(events.append)
+    public = _create(jobs, context, payload)
+    claim = jobs.claim_next("rollback-transaction-worker")
+    assert claim is not None
+    artifact = submit_factor(
+        research,
+        {**payload, "idempotency_key": f"factor-result-{public['job_id']}"},
+        context,
+        compute_factor,
+    )["artifact"]
+    artifact = research.transition(
+        "artifact", artifact["artifact_id"], "validated", f"factor-validation-{public['job_id']}"
+    )
+
+    with pytest.raises(RuntimeError, match="rollback completion"):
+        with jobs._transaction() as connection:
+            assert jobs.complete(public["job_id"], claim["attempt"], artifact["artifact_id"], _connection=connection)
+            assert events == []
+            raise RuntimeError("rollback completion")
+
+    assert events == []
+    current = jobs.get(
+        job_id=public["job_id"], trusted_owner=context["owner_principal"],
+        trusted_workspace=context["workspace_id"],
+    )
+    assert current is not None and current["status"] == "RUNNING" and current["result_ref"] is None
+
+
+def test_audit_sink_failure_cannot_change_successful_factor_job(factor_job_case, caplog):
+    jobs, research, context, payload = factor_job_case
+
+    def broken_sink(_event):
+        raise RuntimeError("api_key=must-not-be-logged")
+
+    jobs.audit_emitter = AuditEmitter(broken_sink)
+    public = _create(jobs, context, payload)
+    worker = FactorWorker(jobs, research, worker_id="audit-sink-failure-worker")
+
+    assert worker.run_once()
+    completed = jobs.get(
+        job_id=public["job_id"],
+        trusted_owner=context["owner_principal"],
+        trusted_workspace=context["workspace_id"],
+    )
+    assert completed is not None and completed["status"] == "SUCCEEDED"
+    assert completed["result_ref"]
+    assert "audit event sink failed" in caplog.text
+    assert "must-not-be-logged" not in caplog.text
 
 
 def test_expired_final_attempt_recovers_validated_artifact(factor_job_case):
     jobs, research, context, payload = factor_job_case
+    events = []
+    observed_statuses = []
+
+    def collect_after_commit(event):
+        events.append(event)
+        current = jobs._fetch_one(
+            "SELECT status FROM factor_jobs WHERE job_id=:job", {"job": event["job_id"]}
+        )
+        observed_statuses.append(current["status"])
+
+    jobs.audit_emitter = AuditEmitter(collect_after_commit)
     public = _create(jobs, context, payload)
     for attempt in (1, 2):
         claim = jobs.claim_next(f"worker-{attempt}")
@@ -324,6 +463,12 @@ def test_expired_final_attempt_recovers_validated_artifact(factor_job_case):
         trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"])
     assert recovered is not None and recovered["status"] == "SUCCEEDED"
     assert recovered["result_ref"] == artifact["artifact_id"]
+    assert observed_statuses == ["completed"]
+    assert len(events) == 1
+    assert events[0]["job_id"] == public["job_id"]
+    assert events[0]["metadata"] == {
+        "artifact_id": artifact["artifact_id"], "trace_id": payload["trace_id"]
+    }
 
 
 def test_live_final_attempt_cannot_publish_after_lease_expires(factor_job_case, monkeypatch):

@@ -336,6 +336,20 @@ def test_agent_strategy_approval_is_bound_to_exact_resource_and_human_decision(m
     )
     assert decided.status_code == 200, decided.text
 
+    before_agent_approvals = research._execute(
+        "SELECT COUNT(*) AS count FROM artifacts WHERE kind='strategy_approval'"
+    )[0]["count"]
+    missing_agent_grant = client.post("/v1/research/strategies/approvals", headers=agent_headers, json={
+        "task_id": task["task_id"], "strategy_version_artifact_id": artifact_id,
+        "decision": "approved", "trace_id": "approval-trace",
+        "idempotency_key": "approval-binding-domain-without-grant",
+    })
+    assert missing_agent_grant.status_code == 403, missing_agent_grant.text
+    after_agent_approvals = research._execute(
+        "SELECT COUNT(*) AS count FROM artifacts WHERE kind='strategy_approval'"
+    )[0]["count"]
+    assert after_agent_approvals == before_agent_approvals
+
     materialized = client.post("/v1/research/strategies/approvals", headers=agent_headers, json={
         "task_id": task["task_id"], "strategy_version_artifact_id": artifact_id,
         "agent_approval_id": pending["approval_id"], "decision": "approved",

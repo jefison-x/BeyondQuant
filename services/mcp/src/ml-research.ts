@@ -212,8 +212,11 @@ export async function fetchByqMlTrainingGet(backendUrl: string, runId: string | 
   return requestMl(backendUrl, `/v1/research/ml/training-runs/${encodeURIComponent(runId)}`, { method: "GET" }, fetcher);
 }
 
-export function fetchByqMlTrainingCancel(backendUrl: string, runId: string, fetcher: Fetcher = fetch) {
-  return requestMl(backendUrl, `/v1/research/ml/training-runs/${encodeURIComponent(runId)}/cancel`, { method: "POST", body: "{}" }, fetcher);
+export function fetchByqMlTrainingCancel(
+  backendUrl: string, runId: string, agentApprovalId: string, fetcher: Fetcher = fetch,
+) {
+  return requestMl(backendUrl, `/v1/research/ml/training-runs/${encodeURIComponent(runId)}/cancel`,
+    { method: "POST", body: JSON.stringify({ agent_approval_id: agentApprovalId }) }, fetcher);
 }
 
 export function fetchByqMlPredictionCreate(backendUrl: string, request: MlRequest, fetcher: Fetcher = fetch) {

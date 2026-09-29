@@ -235,6 +235,9 @@ paths:
     get: {summary: 列出 owner-scoped experiments., responses: *okResponses}
   /api/product/research/artifacts:
     get: {summary: 列出 owner-scoped artifacts., responses: *okResponses}
+  /api/product/research/artifacts/{artifact_id}/reference:
+    parameters: [{name: artifact_id, in: path, required: true, schema: {type: string}}]
+    get: {summary: 返回当前 workspace 的稳定 Artifact ID、验证状态与有界元数据，不包含原始内容或存储路径。, responses: *okResponses}
   /api/product/ml/workspace:
     get: {summary: 返回兼容的 owner-scoped ML 工作区安全投影；新页面使用分页目录与懒加载详情。, responses: *okResponses}
   /api/product/ml/capabilities:

@@ -14,6 +14,7 @@ from collections.abc import Callable
 from typing import Any
 from .domain_call_admission import DomainValidationRejected
 from .business_job import project_business_job
+from .artifact_contract import project_artifact
 
 from .data_provider import (
     DAILY_BASIC_FIELDS,
@@ -866,6 +867,9 @@ def feedback_submit(feedback_id: str, payload: dict[str, Any], request: Request)
     context = _feedback_context(request)
     submit_payload = dict(payload)
     approval_id = submit_payload.pop("agent_approval_id", None)
+    is_product_agent = context["actor_principal"].startswith("byq-product-agent-")
+    if is_product_agent and approval_id is None:
+        raise HTTPException(status_code=403, detail="Agent feedback submission requires an exact approved agent_approval_id")
     if approval_id is not None:
         try:
             _approved_agent_domain_request(
@@ -873,8 +877,13 @@ def feedback_submit(feedback_id: str, payload: dict[str, Any], request: Request)
                 expected_resource_type="product_feedback", expected_resource_id=feedback_id,
                 context=context,
             )
-        except ValueError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except AgentPersistenceError as exc:
+            raise HTTPException(status_code=503, detail="agent approval storage is unavailable") from exc
+        except (AgentConflict, AgentForbidden, AgentNotFound, AgentUnauthorized, ValueError) as exc:
+            raise HTTPException(
+                status_code=403,
+                detail="agent approval does not authorize this exact feedback submission",
+            ) from exc
     browser, operating_system = _feedback_client_context(request)
     return _feedback_call(lambda: feedback_store.submit(
         feedback_id, submit_payload, trusted_workspace=context["workspace_id"],
@@ -2149,7 +2158,7 @@ def _approved_agent_domain_request(
     approval_id: object, *, expected_action: str, expected_resource_type: str,
     expected_resource_id: str, context: dict[str, str],
 ) -> dict[str, object]:
-    """Bind an Agent-origin domain approval to one exact owner-scoped resource."""
+    """Bind an Agent-origin domain approval to one exact owner/workspace resource."""
     approval = agent_store.get_approval(
         approval_id, trusted_owner=context["owner_principal"],
     )
@@ -2161,10 +2170,38 @@ def _approved_agent_domain_request(
         or approval.get("resource_id") != expected_resource_id
         or approval.get("actor_principal") != context["actor_principal"]
         or approval.get("source_session_id") != context["session_id"]
+        or (
+            context.get("workspace_id") is not None
+            and approval.get("run_workspace") != context["workspace_id"]
+        )
         or not isinstance(approval.get("decision_by"), str)
     ):
         raise ValueError("agent approval does not authorize this exact domain action")
     return approval
+
+
+def _require_agent_cancellation_approval(
+    payload: object, *, expected_action: str, expected_resource_type: str,
+    expected_resource_id: str, context: dict[str, str],
+) -> dict[str, object]:
+    """Require one durable grant before an Agent cancellation can mutate state."""
+    if not isinstance(payload, dict) or set(payload) != {"agent_approval_id"}:
+        raise HTTPException(status_code=422, detail="cancellation requires exactly agent_approval_id")
+    try:
+        return _approved_agent_domain_request(
+            payload["agent_approval_id"],
+            expected_action=expected_action,
+            expected_resource_type=expected_resource_type,
+            expected_resource_id=expected_resource_id,
+            context=context,
+        )
+    except AgentPersistenceError as exc:
+        raise HTTPException(status_code=503, detail="agent approval storage is unavailable") from exc
+    except (AgentConflict, AgentForbidden, AgentNotFound, AgentUnauthorized, ValueError) as exc:
+        raise HTTPException(
+            status_code=403,
+            detail="agent approval does not authorize this exact cancellation",
+        ) from exc
 
 
 def _transition_args(payload: dict[str, Any]) -> tuple[object, object]:
@@ -2413,21 +2450,43 @@ def create_web_research_evidence_record(payload: dict[str, Any], request: Reques
 
 @app.get("/v1/research/artifacts/{artifact_id}")
 def get_artifact(artifact_id: str, request: Request) -> dict[str, object]:
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         artifact = research_store.get_artifact(artifact_id)
-        if artifact["owner_principal"] != context["owner_principal"]:
+        if (
+            artifact["owner_principal"] != context["owner_principal"]
+            or artifact["workspace_id"] != context["workspace_id"]
+        ):
             raise ResearchNotFound("artifact not found")
         return artifact
 
     return _research_call(operation)
 
 
+@app.get("/v1/research/artifacts/{artifact_id}/reference")
+def get_artifact_reference(artifact_id: str, request: Request) -> dict[str, object]:
+    """Return an owner/workspace-bound Artifact identity without stored content."""
+    context = _required_agent_context(request, include_workspace=True)
+
+    def operation() -> dict[str, object]:
+        artifact = research_store.get_artifact(artifact_id)
+        if (
+            artifact["owner_principal"] != context["owner_principal"]
+            or artifact["workspace_id"] != context["workspace_id"]
+        ):
+            raise ResearchNotFound("artifact not found")
+        return project_artifact(artifact)
+
+    return _research_call(operation)
+
+
 @app.get("/v1/research/artifacts")
 def list_artifacts(request: Request) -> dict[str, object]:
-    context = _required_agent_context(request)
-    return _research_call(lambda: research_store.list_artifacts(owner_principal=context["owner_principal"]))
+    context = _required_agent_context(request, include_workspace=True)
+    return _research_call(lambda: research_store.list_artifacts(
+        owner_principal=context["owner_principal"], workspace_id=context["workspace_id"],
+    ))
 
 
 @app.post("/v1/research/factors/compute", status_code=201)
@@ -2686,7 +2745,7 @@ def create_strategy_version(payload: dict[str, Any], http_request: Request) -> d
 
 @app.post("/v1/research/strategies/approvals", status_code=201)
 def create_strategy_approval(payload: dict[str, Any], http_request: Request) -> dict[str, object]:
-    context = _required_agent_context(http_request)
+    context = _required_agent_context(http_request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         request = _strategy_payload(
@@ -2697,7 +2756,10 @@ def create_strategy_approval(payload: dict[str, Any], http_request: Request) -> 
             },
         )
         version_artifact = research_store.get_artifact(request.get("strategy_version_artifact_id"))
-        if version_artifact["owner_principal"] != context["owner_principal"]:
+        if (
+            version_artifact["owner_principal"] != context["owner_principal"]
+            or version_artifact.get("workspace_id") != context["workspace_id"]
+        ):
             raise ResearchNotFound("strategy version not found")
         if version_artifact["kind"] != "strategy_version":
             raise ValueError("strategy_version_artifact_id must reference a strategy_version artifact")
@@ -2708,14 +2770,28 @@ def create_strategy_approval(payload: dict[str, Any], http_request: Request) -> 
         version_content = validate_version_content(version_artifact["content"])
         agent_approval_id = request.get("agent_approval_id")
         reviewer = request.get("reviewer_principal")
-        if agent_approval_id is not None:
-            linked = _approved_agent_domain_request(
-                agent_approval_id,
-                expected_action="byq_strategy_approve",
-                expected_resource_type="strategy_version",
-                expected_resource_id=str(version_artifact["artifact_id"]),
-                context=context,
+        is_product_agent = context["actor_principal"].startswith("byq-product-agent-")
+        if is_product_agent and agent_approval_id is None:
+            raise HTTPException(
+                status_code=403,
+                detail="Agent strategy approval requires an exact approved agent_approval_id",
             )
+        if agent_approval_id is not None:
+            try:
+                linked = _approved_agent_domain_request(
+                    agent_approval_id,
+                    expected_action="byq_strategy_approve",
+                    expected_resource_type="strategy_version",
+                    expected_resource_id=str(version_artifact["artifact_id"]),
+                    context=context,
+                )
+            except AgentPersistenceError as exc:
+                raise HTTPException(status_code=503, detail="agent approval storage is unavailable") from exc
+            except (AgentConflict, AgentForbidden, AgentNotFound, AgentUnauthorized, ValueError) as exc:
+                raise HTTPException(
+                    status_code=403,
+                    detail="agent approval does not authorize this exact strategy approval",
+                ) from exc
             reviewer = linked["decision_by"]
         elif reviewer != context["actor_principal"]:
             raise ValueError("reviewer_principal must match the trusted product actor")
@@ -3103,20 +3179,35 @@ def create_ml_strategy_approval(payload: dict[str, Any], request: Request) -> di
         decision = data.get("decision")
         if decision not in {"approved", "rejected"}:
             raise ValueError("decision must be approved or rejected")
-        if data.get("agent_approval_id") is not None and decision != "approved":
+        agent_approval_id = data.get("agent_approval_id")
+        is_product_agent = context["actor_principal"].startswith("byq-product-agent-")
+        if is_product_agent and agent_approval_id is None:
+            raise HTTPException(
+                status_code=403,
+                detail="Agent ML strategy approval requires an exact approved agent_approval_id",
+            )
+        if agent_approval_id is not None and decision != "approved":
             raise ValueError("approved Agent request cannot materialize a rejected ML strategy decision")
         rationale = data.get("rationale", "")
         if not isinstance(rationale, str) or len(rationale) > 4000:
             raise ValueError("rationale must be a string of at most 4000 characters")
         reviewer = context["actor_principal"]
-        if data.get("agent_approval_id") is not None:
-            linked = _approved_agent_domain_request(
-                data["agent_approval_id"],
-                expected_action="byq_ml_strategy_approve",
-                expected_resource_type="ml_strategy_version",
-                expected_resource_id=str(version["artifact_id"]),
-                context=context,
-            )
+        if agent_approval_id is not None:
+            try:
+                linked = _approved_agent_domain_request(
+                    agent_approval_id,
+                    expected_action="byq_ml_strategy_approve",
+                    expected_resource_type="ml_strategy_version",
+                    expected_resource_id=str(version["artifact_id"]),
+                    context=context,
+                )
+            except AgentPersistenceError as exc:
+                raise HTTPException(status_code=503, detail="agent approval storage is unavailable") from exc
+            except (AgentConflict, AgentForbidden, AgentNotFound, AgentUnauthorized, ValueError) as exc:
+                raise HTTPException(
+                    status_code=403,
+                    detail="agent approval does not authorize this exact ML strategy approval",
+                ) from exc
             reviewer = str(linked["decision_by"])
         content = {
             "schema_version": "ml-strategy-approval.v1",
@@ -3311,9 +3402,26 @@ def get_ml_training_run(training_run_id: str, request: Request) -> dict[str, obj
 
 
 @app.post("/v1/research/ml/training-runs/{training_run_id}/cancel")
-def cancel_ml_training_run(training_run_id: str, request: Request) -> dict[str, object]:
+def cancel_ml_training_run(
+    training_run_id: str, request: Request, payload: dict[str, Any] | None = None,
+) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
     def operation() -> dict[str, object]:
+        product_user_cancel = (
+            context["actor_principal"] == context["owner_principal"]
+            and context["dsh_run_id"] == "browser"
+        )
+        if product_user_cancel:
+            if payload is not None:
+                raise HTTPException(status_code=422, detail="Product user cancellation does not accept an approval payload")
+        else:
+            _require_agent_cancellation_approval(
+                payload,
+                expected_action="byq_ml_training_cancel",
+                expected_resource_type="training_run",
+                expected_resource_id=training_run_id,
+                context=context,
+            )
         run = ml_training_store.cancel(
             training_run_id, trusted_workspace=context["workspace_id"],
             trusted_owner=context["owner_principal"],
@@ -3916,8 +4024,10 @@ def get_signal_snapshot_summary(artifact_id: str, request: Request) -> dict[str,
 
 @app.get("/v1/research/signal-snapshots")
 def list_signal_snapshots(request: Request) -> dict[str, object]:
-    context = _required_agent_context(request)
-    artifacts = research_store.list_artifacts(owner_principal=context["owner_principal"])
+    context = _required_agent_context(request, include_workspace=True)
+    artifacts = research_store.list_artifacts(
+        owner_principal=context["owner_principal"], workspace_id=context["workspace_id"],
+    )
     snapshots = [item for item in artifacts["artifacts"] if item["kind"] == "signal_snapshot"]
     return {"snapshots": snapshots}
 
@@ -4384,12 +4494,21 @@ def execute_backtest_task(backtest_task_id: str, request: Request) -> dict[str, 
 
 
 @app.post("/v1/research/backtest-tasks/{backtest_task_id}/cancel")
-def cancel_backtest_task(backtest_task_id: str, request: Request) -> dict[str, object]:
-    context = _required_agent_context(request)
+def cancel_backtest_task(
+    backtest_task_id: str, payload: dict[str, Any], request: Request,
+) -> dict[str, object]:
+    context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
+        _require_agent_cancellation_approval(
+            payload,
+            expected_action="byq_backtest_task_cancel",
+            expected_resource_type="backtest_task",
+            expected_resource_id=backtest_task_id,
+            context=context,
+        )
         if is_ml_backtest_task(backtest_task_id):
-            ml_context = _required_agent_context(request, include_workspace=True)
+            ml_context = context
             prediction_run = ml_prediction_store.get(
                 ml_prediction_id_from_task(backtest_task_id),
                 trusted_workspace=ml_context["workspace_id"],

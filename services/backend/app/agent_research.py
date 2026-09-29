@@ -30,6 +30,7 @@ from packages.contracts.research_plan_approval import (
     plan_command_digest,
     plan_command_idempotency_key,
 )
+from packages.contracts.approval_policy import approval_level_for_tool
 
 from .db import PgStoreMixin, execute, fetch_one, transaction
 from .domain_call_admission import DomainCallEvidenceMixin, DOMAIN_CALL_DDL
@@ -45,6 +46,8 @@ APPROVAL_RESOURCE_TYPES = {
     "byq_strategy_approve": "strategy_version",
     "byq_ml_strategy_approve": "ml_strategy_version",
     "byq_feedback_submit": "product_feedback",
+    "byq_backtest_task_cancel": "backtest_task",
+    "byq_ml_training_cancel": "training_run",
 }
 
 MAX_DETAIL_BYTES = 16 * 1024
@@ -1100,10 +1103,12 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                 self._record_audit_row(row, action=action, outcome="denied", resource_type=resource_type,
                     resource_id=resource_id, detail={"reason": "role_tool_not_allowed"}, connection=connection)
                 raise AgentForbidden("agent role is not authorized for this domain action")
+            policy_level = approval_level_for_tool(action, known_tools=role.allowed_tools)
             requires_approval = action in role.approval_required_actions
             result = {
                 "authorized": not requires_approval,
                 "decision": "approval_required" if requires_approval else "allowed",
+                "approval_level": policy_level,
                 "run_id": run_id,
                 "role_id": row["role_id"],
                 "action": action,
