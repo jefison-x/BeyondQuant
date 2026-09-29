@@ -10,15 +10,30 @@ later completed it in one attempt, and a new authorized DSH Agent read the
 same Job and Artifact through BYQ MCP. Root accepts this bounded D result.
 The Agent did not submit that Job, so full Golden D remains open. A subsequent
 real-browser Runtime reset passed on the populated Phase 15 Workspace, but
-Workspace reset returned 409 because a retained strategy-approval Artifact
-references a ResearchTask slated for deletion. Golden E remains **FAIL/OPEN**;
-the fail-closed 409 did not delete Workspace data. See the execution record.
+Workspace reset initially returned 409 because a retained strategy-approval
+Artifact referenced a ResearchTask slated for deletion. That fail-closed 409
+did not delete Workspace data. See the execution record for the subsequent
+archive fix and populated reset rerun.
 Afterward, exact-scope `dev-clean` removed only this isolated project's 12
 containers, four volumes and two networks. Core init/start/seed/test, fresh
 database counts and real login passed. A simple approval-free Product reset
 also passed and reseeded. Root accepts this bounded environment lifecycle
-result; full Golden E/F remain **OPEN** for populated approval data and
-connected-journey reruns.
+result; full Golden E/F remain **OPEN** for connected-journey reruns.
+
+The maintainer then authorized only a Phase 15 isolated-branch archive change.
+The new internal immutable archive retains each validated strategy approval
+and its exact strategy version before the source ResearchTask/Artifacts are
+deleted in the same Product reset transaction. **Tester:** two focused tests
+PASS on a disposable database, plus syntax, diff and slice `dev-check` PASS.
+**Independent Sol Reviewer:** Functional PASS / Tests PASS / Clean Break
+Architecture PASS on the actual schema, reset path and tests. Root accepts
+this bounded source slice. On the isolated populated Backtest Workspace,
+authenticated Product reset returned 200, deleted two Tasks, 11 Artifacts,
+two BacktestJobs and one OptimizationJob, while a read-only check found two
+complete archive facts and no remaining research rows. Idempotent replay,
+login/Workspace identity and fresh seed passed. The connected browser and
+research rerun remain open; **Phase 15 overall remains OPEN**. No existing
+database, backup, deployment, push or merge was touched.
 
 [Execution record](phase15-functional-fidelity.md): in the worktree-scoped
 disposable stack, one real TuShare daily row was imported through Data Worker;

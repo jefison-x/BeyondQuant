@@ -345,6 +345,59 @@ class ResearchStore(
         """
         CREATE INDEX IF NOT EXISTS artifacts_kind ON artifacts(kind)
         """,
+        """
+        CREATE TABLE IF NOT EXISTS strategy_approval_fact_archive (
+            source_artifact_id TEXT PRIMARY KEY,
+            approval_kind TEXT NOT NULL CHECK (
+                approval_kind IN ('strategy_approval', 'ml_strategy_approval')
+            ),
+            owner_principal TEXT NOT NULL,
+            workspace_id TEXT NOT NULL,
+            research_task_id TEXT NOT NULL,
+            approval_created_at TIMESTAMPTZ NOT NULL,
+            approval_content_sha256 TEXT NOT NULL CHECK (approval_content_sha256 ~ '^[0-9a-f]{64}$'),
+            strategy_version_artifact_id TEXT NOT NULL,
+            strategy_version_created_at TIMESTAMPTZ NOT NULL,
+            strategy_version_content_sha256 TEXT NOT NULL CHECK (strategy_version_content_sha256 ~ '^[0-9a-f]{64}$'),
+            approval_snapshot JSONB NOT NULL CHECK (jsonb_typeof(approval_snapshot) = 'object'),
+            strategy_version_snapshot JSONB NOT NULL CHECK (jsonb_typeof(strategy_version_snapshot) = 'object'),
+            reset_at TIMESTAMPTZ NOT NULL,
+            CHECK (approval_snapshot->>'artifact_id' = source_artifact_id),
+            CHECK (approval_snapshot->>'kind' = approval_kind),
+            CHECK (approval_snapshot->>'owner_principal' = owner_principal),
+            CHECK (approval_snapshot->>'workspace_id' = workspace_id),
+            CHECK (approval_snapshot->>'task_id' = research_task_id),
+            CHECK (approval_snapshot->>'content_sha256' = approval_content_sha256),
+            CHECK ((approval_snapshot->>'created_at') IS NOT NULL
+                   AND (approval_snapshot->>'created_at')::timestamptz = approval_created_at),
+            CHECK (approval_snapshot->>'status' = 'validated'),
+            CHECK (strategy_version_snapshot->>'artifact_id' = strategy_version_artifact_id),
+            CHECK (strategy_version_snapshot->>'owner_principal' = owner_principal),
+            CHECK (strategy_version_snapshot->>'workspace_id' = workspace_id),
+            CHECK (strategy_version_snapshot->>'task_id' = research_task_id),
+            CHECK (strategy_version_snapshot->>'content_sha256' = strategy_version_content_sha256),
+            CHECK ((strategy_version_snapshot->>'created_at') IS NOT NULL
+                   AND (strategy_version_snapshot->>'created_at')::timestamptz = strategy_version_created_at),
+            CHECK (strategy_version_snapshot->>'status' = 'validated'),
+            CHECK ((approval_kind = 'strategy_approval' AND strategy_version_snapshot->>'kind' = 'strategy_version')
+                OR (approval_kind = 'ml_strategy_approval' AND strategy_version_snapshot->>'kind' = 'ml_strategy_version'))
+        )
+        """,
+        "COMMENT ON TABLE strategy_approval_fact_archive IS 'Internal immutable Workspace-reset archive for validated strategy approval facts; no Product API projection.'",
+        """
+        CREATE OR REPLACE FUNCTION byq_strategy_approval_fact_archive_immutable()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+            RAISE EXCEPTION 'strategy approval fact archive is immutable';
+        END $$
+        """,
+        "DROP TRIGGER IF EXISTS strategy_approval_fact_archive_immutable ON strategy_approval_fact_archive",
+        """
+        CREATE TRIGGER strategy_approval_fact_archive_immutable
+        BEFORE UPDATE OR DELETE OR TRUNCATE ON strategy_approval_fact_archive
+        FOR EACH STATEMENT EXECUTE FUNCTION byq_strategy_approval_fact_archive_immutable()
+        """,
+        "REVOKE ALL ON TABLE strategy_approval_fact_archive FROM PUBLIC",
         """CREATE TABLE IF NOT EXISTS artifact_submission_receipts (
             task_id TEXT NOT NULL REFERENCES research_tasks(task_id),
             idempotency_key TEXT NOT NULL,

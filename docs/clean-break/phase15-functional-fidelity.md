@@ -29,14 +29,13 @@ foundation, not a market-research or Agent journey.
 | B: two Backtests, optimization, comparison | A new Workspace Product API journey completed two independent BacktestJobs, one OptimizationJob and a persisted comparison Artifact. Real browser comparison of the exact two completed Backtest IDs and Artifact listing passed. See bounded evidence below. | DSH Agent-led strategy change and the OptimizationJob ranking's browser detail remain open. |
 | C: TrainingJob, GPU, checkpoint/restart | Durable TrainingJob and independent ML Worker; process-reclaim tests use a fake trainer. Current host has no NVIDIA device, `nvidia-smi`, or Docker NVIDIA runtime; the current ML image installs CPU LightGBM. | Qualify CPU Worker/real checkpoint separately; GPU execution is `NOT_RUN` here and needs a GPU-capable Worker/image and host. CPU execution and simulated lease reclaim do not satisfy the GPU claim. |
 | D: Agent interruption with Job continuing | In this fresh isolated stack, a separate Product API BacktestJob stayed queued after a contemporaneous Product Agent conversation was deleted; restarting its independent Worker completed the same Job in one attempt with an Artifact. After explicit authorization, a new DSH Agent used BYQ MCP read tools to find that exact Job and Artifact. | The Job was submitted through Product API, not initiated by the old Agent. Full Golden D and DSH process restart remain out of scope for this bounded check. |
-| E: Runtime and Workspace reset | On the populated Phase 15 Workspace, real browser Runtime reset returned 200 and archived two conversations while preserving data. Workspace reset then returned 409 due to a retained strategy-approval Artifact. After a full isolated rebuild, Product reset of a seeded Workspace without approvals passed, retained login/Workspace identity and supported reseeding. | Classify the approval fact without losing it, then rerun Workspace reset on a populated Backtest Workspace. Golden E is `FAIL/OPEN` for that case. |
+| E: Runtime and Workspace reset | The first populated reset was blocked by retained strategy approvals. A bounded archive change now preserves each approval and its exact validated strategy version. On the rebuilt isolated stack, Product reset of a populated Workspace returned 200, archived two approvals, removed the ResearchTask/Artifact/Job graph, preserved identity, supported idempotent replay and reseeding. | The connected real-browser reset and research rerun after reseeding remain open. Golden E is not yet fully accepted. |
 | F: full rebuild | Exact-scope `dev-clean` apply removed only this isolated project's 12 containers, 4 volumes and 2 networks; `dev-init`/core start/seed/test and real login passed on a fresh schema. | The connected Golden journeys have not been rerun after rebuild. F environment lifecycle is bounded PASS; full Golden F remains OPEN. |
 
 ## Next bounded execution
 
-1. Resolve the populated-Workspace reset contract: preserve authoritative
-   approval facts independently of disposable ResearchTask/Artifact records,
-   add one focused regression, and rerun the real Product reset/reseed path.
+1. Complete the connected real-browser Workspace reset and research rerun after
+   the now-passing populated Product reset/reseed path.
 2. Complete the Agent-initiated Job/interruption path and Agent-led strategy
    change. Qualify the existing CPU TrainingJob/Worker on new data; keep GPU
    execution and checkpoint/restart explicitly `NOT_RUN` until a qualified GPU
@@ -206,10 +205,46 @@ This is a genuine populated-Workspace contract conflict: the current reset
 deletes the ResearchTask/Artifact graph but retains authoritative approval
 facts, so it refuses to remove that graph when it contains a strategy approval
 Artifact. The fail-closed response is correct for the present contract. Golden
-E remains **FAIL/OPEN** until the approval fact is retained independently of
-the disposable graph and a real reset/rerun succeeds. The earlier Phase 13
+E was **FAIL/OPEN at this first attempt**. The bounded Product rerun below
+resolves this approval blocker; full Golden E remains open. The earlier Phase 13
 browser test passed because its fixture created a plain ResearchTask without
 strategy approval.
+
+## Bounded E approval archive and populated Product reset (2026-09-29)
+
+The authorized Phase 15 change adds an internal immutable archive for validated
+`strategy_approval` and `ml_strategy_approval` facts. Each row retains the
+complete source approval and exact validated strategy-version snapshots, both
+content hashes, original timestamps, owner, Workspace and ResearchTask IDs.
+The Product reset checks those relationships and versions, then archives them
+before deleting the original ResearchTask/Artifact graph in the same fenced
+transaction. Bad or cross-Workspace references block the reset; the archive is
+not a Product Artifact and is not included in the deleted count. The offline
+reset entry point assumes stopped writers; the Product path disables and fences
+the Workspace before finalizing.
+
+Two focused tests passed in disposable database `byq_domain_test_phase15_archive`
+under Compose project `byq-dev-ea551690f4`: standard strategy approval with
+Product release proof, and rejected ML strategy approval with a validated
+version. They checked exact snapshots, a draft version blocker, a cross-Workspace
+reference blocker, source removal, other-Workspace preservation, immutable
+archive rows, delete counts and idempotent replay. Tester: **2 passed**; the
+sole warning was a test-cache permission notice. `dev-check.py --base 2987d3c1`,
+Python AST parsing and `git diff --check` passed. Independent Sol Reviewer:
+**Functional PASS / Tests PASS / Clean Break Architecture PASS** for this
+bounded archive slice. Root accepts that slice; Phase 15 remains open.
+
+The isolated Backtest Workspace was then rerun through authenticated Gateway /
+Product API after the new Backend started. Workspace reset returned HTTP 200
+with two ResearchTasks, 11 Artifacts, two BacktestJobs and one OptimizationJob
+deleted. The same idempotency key returned the same receipt, while the same
+user and Workspace remained available. A read-only isolated PostgreSQL check
+found exactly two distinct archive rows with matching approval/version content
+hashes and zero ResearchTasks or Artifacts in the Workspace. `dev-seed`
+subsequently created a fresh ResearchTask and two Artifacts in that same
+Workspace. The former 409 blocker is resolved in this populated Product path.
+The connected browser reset/research journey remains to be rerun before
+declaring full Golden E PASS.
 
 ## Bounded F rebuild and simple reset (2026-09-29)
 
@@ -228,5 +263,6 @@ On this new **approval-free seed**, Product Runtime reset returned 200 and
 preserved the ResearchTask. Product Workspace reset then returned 200, removed
 the seed task and Artifacts, preserved the same login and Workspace ID, and
 `dev-seed` succeeded again. This verifies only the simple reset and rebuild
-foundation; it does not reverse the populated Backtest/approval reset failure
-above. It also does not count as rerunning A–D or the full Golden F journeys.
+foundation. This simple reset alone did not resolve the populated approval
+blocker; the separate populated Product rerun above did. It also does not
+count as rerunning A–D or the full Golden F journeys.

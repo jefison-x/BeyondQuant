@@ -8,7 +8,10 @@ object files. Object references are returned for a caller-owned global GC pass.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import text
@@ -190,6 +193,143 @@ class WorkspaceResetStore(PgStoreMixin):
         return None if row is None else dict(row)
 
     @staticmethod
+    def _content_digest(content: object) -> str | None:
+        if not isinstance(content, dict):
+            return None
+        try:
+            body = json.dumps(content, ensure_ascii=False, allow_nan=False,
+                              sort_keys=True, separators=(",", ":")).encode("utf-8")
+        except (TypeError, ValueError):
+            return None
+        return hashlib.sha256(body).hexdigest()
+
+    @staticmethod
+    def _strategy_approval_archive_candidates(connection, *, owner: str, workspace: str) -> list[dict[str, Any]]:
+        params = {"owner": owner, "workspace": workspace}
+        count = int(connection.execute(text("""
+            SELECT COUNT(*) FROM artifacts WHERE owner_principal=:owner AND workspace_id=:workspace
+              AND kind IN ('strategy_approval','ml_strategy_approval')
+        """), params).scalar_one())
+        if count == 0:
+            return []
+        if connection.execute(text("SELECT to_regclass('strategy_approval_fact_archive')")).scalar_one() is None:
+            raise WorkspaceResetBlocked("strategy approval archive schema is missing; reset was not started")
+        rows = connection.execute(text("""
+            SELECT a.artifact_id, a.task_id, a.experiment_id, a.owner_principal, a.workspace_id, a.kind, a.status,
+                   a.content, a.content_sha256, a.lineage, a.created_at, to_jsonb(a) AS snapshot,
+                   t.owner_principal AS task_owner, t.workspace_id AS task_workspace,
+                   v.artifact_id AS version_artifact_id, v.task_id AS version_task,
+                   v.owner_principal AS version_owner, v.workspace_id AS version_workspace,
+                   v.kind AS version_kind, v.status AS version_status, v.content AS version_content,
+                   v.content_sha256 AS version_hash, v.created_at AS version_created,
+                   to_jsonb(v) AS version_snapshot
+              FROM artifacts a JOIN research_tasks t ON t.task_id=a.task_id
+              LEFT JOIN artifacts v ON v.artifact_id=CASE a.kind
+                   WHEN 'strategy_approval' THEN a.content->>'strategy_version_artifact_id'
+                   WHEN 'ml_strategy_approval' THEN a.content->>'ml_strategy_artifact_id' END
+             WHERE a.owner_principal=:owner AND a.workspace_id=:workspace
+               AND a.kind IN ('strategy_approval','ml_strategy_approval')
+             ORDER BY a.artifact_id
+        """), params).mappings().all()
+        if len(rows) != count:
+            raise WorkspaceResetBlocked("strategy approval archive source count is incomplete; reset was not started")
+
+        candidates = []
+        for source in rows:
+            row = dict(source)
+            if row["kind"] == "strategy_approval":
+                target_field, version_field, version_kind, schema = (
+                    "strategy_version_artifact_id", "strategy_version_id", "strategy_version", "strategy-approval-v1")
+            elif row["kind"] == "ml_strategy_approval":
+                target_field, version_field, version_kind, schema = (
+                    "ml_strategy_artifact_id", "ml_strategy_version_id", "ml_strategy_version", "ml-strategy-approval.v1")
+            else:
+                raise WorkspaceResetBlocked("unknown strategy approval kind prevents workspace reset")
+            content, version = row["content"], row["version_content"]
+            fields = {"schema_version", target_field, version_field, "decision", "reviewer_principal",
+                      "rationale", "execution_authorized", "execution_outcome"}
+            target_id = content.get(target_field) if isinstance(content, dict) else None
+            digest = WorkspaceResetStore._content_digest(content)
+            version_digest = WorkspaceResetStore._content_digest(version)
+            expected_lineage = [{"kind": "research_task", "id": row["task_id"]}]
+            if row["experiment_id"] is not None:
+                expected_lineage.append({"kind": "experiment", "id": row["experiment_id"]})
+            expected_lineage.append({"kind": "artifact", "id": target_id})
+            if (row["status"] != "validated" or not isinstance(content, dict) or set(content) != fields
+                    or content.get("schema_version") != schema or content.get("decision") not in {"approved", "rejected"}
+                    or type(content.get("execution_authorized")) is not bool
+                    or content["execution_authorized"] != (content["decision"] == "approved")
+                    or content.get("execution_outcome") != "not_started"
+                    or not isinstance(content.get("reviewer_principal"), str) or not content["reviewer_principal"].strip()
+                    or len(content["reviewer_principal"]) > 128
+                    or not isinstance(content.get("rationale"), str) or len(content["rationale"]) > 4000
+                    or digest is None or row["content_sha256"] != digest
+                    or not isinstance(target_id, str) or row["version_artifact_id"] != target_id
+                    or row["version_kind"] != version_kind or row["version_status"] != "validated"
+                    or row["task_id"] != row["version_task"]
+                    or row["owner_principal"] != owner or row["workspace_id"] != workspace
+                    or row["version_owner"] != owner or row["version_workspace"] != workspace
+                    or row["task_owner"] != owner or row["task_workspace"] != workspace
+                    or row["created_at"] is None or row["version_created"] is None
+                    or version_digest is None or row["version_hash"] != version_digest
+                    or not isinstance(row["snapshot"], dict) or not isinstance(row["version_snapshot"], dict)
+                    or row["lineage"] != expected_lineage):
+                raise WorkspaceResetBlocked("strategy approval fact is incomplete or has a bad/cross-Workspace version reference; reset was not started")
+            try:
+                if row["kind"] == "strategy_approval":
+                    from .strategy_artifact import validate_version_content
+                    validated_version = validate_version_content(version)
+                else:
+                    from .ml_strategy import validate_ml_strategy_version
+                    validated_version = validate_ml_strategy_version(version)
+            except Exception as error:
+                raise WorkspaceResetBlocked("strategy approval version failed validation; reset was not started") from error
+            if (not isinstance(validated_version, dict)
+                    or validated_version.get("version_id") != content.get(version_field)):
+                raise WorkspaceResetBlocked("strategy approval version identity is inconsistent; reset was not started")
+            row["target_id"] = target_id
+            candidates.append(row)
+        return candidates
+
+    @staticmethod
+    def _archive_strategy_approval_facts(connection, *, owner: str, workspace: str,
+                                         reset_at: datetime) -> int:
+        candidates = WorkspaceResetStore._strategy_approval_archive_candidates(
+            connection, owner=owner, workspace=workspace)
+        for row in candidates:
+            target_sql = "a.content->>'strategy_version_artifact_id'" if row["kind"] == "strategy_approval" else "a.content->>'ml_strategy_artifact_id'"
+            connection.execute(text(f"""
+                INSERT INTO strategy_approval_fact_archive
+                    (source_artifact_id, approval_kind, owner_principal, workspace_id, research_task_id,
+                     approval_created_at, approval_content_sha256, strategy_version_artifact_id,
+                     strategy_version_created_at, strategy_version_content_sha256,
+                     approval_snapshot, strategy_version_snapshot, reset_at)
+                SELECT a.artifact_id, a.kind, a.owner_principal, a.workspace_id, a.task_id,
+                       a.created_at, a.content_sha256, v.artifact_id, v.created_at, v.content_sha256,
+                       to_jsonb(a), to_jsonb(v), :reset_at
+                  FROM artifacts a JOIN artifacts v ON v.artifact_id={target_sql}
+                 WHERE a.artifact_id=:source_id
+                ON CONFLICT (source_artifact_id) DO NOTHING
+            """), {"source_id": row["artifact_id"], "reset_at": reset_at})
+            fact = WorkspaceResetStore._first_row(connection,
+                "SELECT * FROM strategy_approval_fact_archive WHERE source_artifact_id=:id",
+                {"id": row["artifact_id"]})
+            if (fact is None or fact["approval_kind"] != row["kind"]
+                    or fact["owner_principal"] != owner or fact["workspace_id"] != workspace
+                    or fact["research_task_id"] != row["task_id"]
+                    or fact["approval_created_at"] != row["created_at"]
+                    or fact["approval_content_sha256"] != row["content_sha256"]
+                    or fact["strategy_version_artifact_id"] != row["target_id"]
+                    or fact["strategy_version_created_at"] != row["version_created"]
+                    or fact["strategy_version_content_sha256"] != row["version_hash"]
+                    or fact["approval_snapshot"] != row["snapshot"]
+                    or fact["strategy_version_snapshot"] != row["version_snapshot"]):
+                raise WorkspaceResetBlocked("strategy approval archive count or snapshot conflicts with source; reset was not started")
+        if len(candidates) != len({row["artifact_id"] for row in candidates}):
+            raise WorkspaceResetBlocked("strategy approval archive source IDs are not unique; reset was not started")
+        return len(candidates)
+
+    @staticmethod
     def _preflight(connection, *, owner: str, workspace: str,
                    allow_active_agent_roots: bool = False) -> None:
         params = {"owner": owner, "workspace": workspace}
@@ -274,16 +414,13 @@ class WorkspaceResetStore(PgStoreMixin):
                 "retained approval decision references a ResearchTask; reset would remove an authoritative fact"
             )
 
-        approval_artifact = WorkspaceResetStore._first_row(connection, """
-            SELECT artifact_id FROM artifacts
-             WHERE owner_principal=:owner AND workspace_id=:workspace
-               AND kind IN ('strategy_approval','ml_strategy_approval')
-             ORDER BY artifact_id LIMIT 1
-        """, params)
-        if approval_artifact is not None:
-            raise WorkspaceResetBlocked(
-                "retained strategy approval Artifact references a ResearchTask; reset would remove an authoritative fact"
-            )
+        # Approval artifacts are eligible for removal only after the reset path
+        # proves that each complete fact and its exact validated version can be
+        # retained in the internal archive. This check is read-only; archival
+        # happens only in reset_in_connection after release proof is accepted.
+        WorkspaceResetStore._strategy_approval_archive_candidates(
+            connection, owner=owner, workspace=workspace,
+        )
 
         retained_approval = WorkspaceResetStore._first_row(connection, """
             SELECT a.approval_id FROM agent_approvals a
@@ -402,6 +539,9 @@ class WorkspaceResetStore(PgStoreMixin):
         owner = WorkspaceResetStore._identity(owner_principal, "owner_principal")
         workspace = WorkspaceResetStore._identity(workspace_id, "workspace_id")
         params = {"owner": owner, "workspace": workspace}
+        WorkspaceResetStore._archive_strategy_approval_facts(
+            connection, owner=owner, workspace=workspace, reset_at=datetime.now(timezone.utc),
+        )
         deleted: dict[str, int] = {}
         for table, sql in _DELETE_PLAN:
             result = connection.execute(text(sql), params)
