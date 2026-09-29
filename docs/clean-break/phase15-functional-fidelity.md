@@ -28,14 +28,27 @@ foundation, not a market-research or Agent journey.
 | A: Research, TuShare, Web Search, delegated Agent, interaction, Artifact | A fresh isolated Workspace completed a real TuShare import, two-turn DSH Product conversation with delegated research, Web Search, a saved evidence Artifact, normalized trace, and real browser replay/Artifact listing. See bounded evidence below. | The separate DSH Interaction plugin remains unqualified; ordinary Product follow-up passed. |
 | B: two Backtests, optimization, comparison | A new Workspace Product API journey completed two independent BacktestJobs, one OptimizationJob and a persisted comparison Artifact. Real browser comparison of the exact two completed Backtest IDs and Artifact listing passed. See bounded evidence below. | DSH Agent-led strategy change and the OptimizationJob ranking's browser detail remain open. |
 | C: TrainingJob, GPU, checkpoint/restart | Durable TrainingJob and independent ML Worker; process-reclaim tests use a fake trainer. The isolated ML Worker image now passed one real LightGBM CPU trainer smoke on honestly synthetic in-memory rows. Current host has no NVIDIA device, `nvidia-smi`, or Docker NVIDIA runtime. | Product TrainingJob with real provider data and Worker-produced Artifacts remains open; GPU execution and model checkpoint/restart are `NOT_RUN`. The CPU trainer smoke alone does not satisfy Golden C. |
-| D: Agent interruption with Job continuing | In this fresh isolated stack, a separate Product API BacktestJob stayed queued after a contemporaneous Product Agent conversation was deleted; restarting its independent Worker completed the same Job in one attempt with an Artifact. After explicit authorization, a new DSH Agent used BYQ MCP read tools to find that exact Job and Artifact. | The Job was submitted through Product API, not initiated by the old Agent. Full Golden D and DSH process restart remain out of scope for this bounded check. |
+| D: Agent interruption with Job continuing | A fresh isolated Agent conversation created and executed an approved BacktestTask. The exact Job remained queued after that conversation was deleted, completed once in the independent Worker, and was read with its Artifact by a new Agent. Focused Tester, independent Reviewer and Root accepted Golden D with the trace argument visibility limit recorded below. | Golden D PASS. DSH process restart is outside this scenario's defined scope. |
 | E: Runtime and Workspace reset | The populated browser reset, reseed and two-turn delegated Agent/Web research passed. A separate Workspace confirmed protected identity/config and exact deletion IDs. A subsequent Product reset of the Agent-audited Workspace now also passes while retaining the exact two Web evidence audit facts and deleting their disposable Artifacts. | Golden E's specified `reset → seed → rerun A` sequence and the bounded repeated-reset fix are local PASS; this does not complete the other Phase 15 journeys. |
 | F: full rebuild | Exact-scope `dev-clean` apply removed only this isolated project's 12 containers, 4 volumes and 2 networks; `dev-init`/core start/seed/test and real login passed on a fresh schema. | The connected Golden journeys have not been rerun after rebuild. F environment lifecycle is bounded PASS; full Golden F remains OPEN. |
 
 ## Next bounded execution
 
-1. Complete the Agent-initiated Job/interruption path and Agent-led strategy
-   change. Qualify the existing CPU TrainingJob/Worker on new data; keep GPU
+Golden D preparation remains **BLOCKED before external execution**. A static
+contract review on 2026-09-29 found that the one-symbol daily synchronization
+fills only price bars. Agent BacktestTask readiness also requires a complete
+trading calendar, trading status, price limits, adjustment factors and corporate
+action completeness for the session, plus a security-master snapshot. The
+existing session repair fetches full-market data by date, which exceeded the
+initial single-symbol TuShare scope. The maintainer subsequently authorized
+that repair for `20240102` in the isolated stack. No Golden D provider or model
+call had been made at the time of this review. The draft staged evidence script
+`scripts/evidence/phase15-golden-d.py` was subsequently revised for the
+approved one-day repair and reviewed before execution. The live result is
+recorded below.
+
+1. Complete Agent-led strategy change and qualify the existing CPU
+   TrainingJob/Worker on new data; keep GPU
    execution and checkpoint/restart explicitly `NOT_RUN` until a qualified GPU
    environment is available for Phase 16.
 2. Rerun connected journeys from a fresh schema after the now-proven scoped
@@ -182,10 +195,53 @@ this separately submitted Job survived the contemporaneous conversation's
 deletion, the Worker finished independently, and a new Agent found its result
 by stable ID.
 
+## Agent-initiated Golden D execution (2026-09-29)
+
+The isolated project was rebuilt from empty volumes and minimally seeded as
+Workspace `workspace_9f180f427ac14bb7b5ccb35c4c59d1c8`. The authorized
+TuShare L/P/D security-master Job `securitysync_6c3c3895ed9f4feba81681d3db7c2b54`
+completed. Product readiness for only `000001.SZ` on `20240102` was unavailable.
+ResearchTask `task_d9e80a2512cb4da58af3c084961c96d0` received a custom
+one-symbol frozen pool, validated strategy version
+`artifact_fd093176236b4752ad9dbad97ca54324`, and its exact approved
+strategy Artifact `artifact_4a786843fad34ddbbc7f3bc0216b647c`.
+
+With the isolated Data Worker and Backtest Worker stopped, old Product Agent
+conversation `conversation_11dcaa622f1b49c2b325195ddba6a123` recorded
+normalized `准备回测任务` and `创建回测任务` activities and reported BacktestTask
+`backtesttask_77273a29ca384fc68eebeaf0bfe73b5c`. Before restoring the
+Data Worker, a read-only isolated DB check found exactly one queued repair:
+`000001.SZ`, start/end `20240102`, with no session sync, run-now, or ordinary
+data-sync Job pending. The Data Worker then completed exactly one session Job
+for `20240102`, receiving 5,329 daily rows, and the exact repair request
+became completed. The Product readiness verdict became usable.
+
+The same old Agent conversation then recorded `跟踪回测任务` and `执行回测任务`
+activities. Product returned one queued BacktestJob
+`backtest_ebe7f6dad7cf4caf9e3fff3661c62380` bound to the exact Task,
+Workspace, frozen pool, strategy version and approval. The old conversation
+was deleted; the Job still read `queued`, attempts `0`. Starting the isolated
+Backtest Worker completed that same Job on attempt one and produced validated
+Artifact `artifact_2169ba2cdfbc48058662c604798e8145`. New Product Agent
+conversation `conversation_37cf684f534749bd9f529e4732193765` recorded
+a completed `读取回测状态` activity and answered with the same Job and Artifact
+IDs. The Product catalog still contained exactly one Job for this Task.
+Both workers were stopped after the observation.
+
+The normalized Product trace omits MCP arguments and results. It proves the
+tool activity labels and ordering; Product Job ownership/provenance and Agent
+answers provide the cross-check, but the exact per-call tool argument binding
+is **not independently proven by that trace**. Focused script checks and
+read-only isolated DB inspection passed; the independent Sol Reviewer returned
+Functional PASS / Tests and Evidence PASS / Clean Break Architecture PASS.
+**Root acceptance: Golden D PASS with this evidence limit.** The scenario does
+not require DSH process restart or child rebind. Phase 15 overall remains OPEN.
+
 Bounded D gate: focused Tester **PASS** for documentation and local contracts;
 independent Sol Reviewer **Functional PASS / Tests and Evidence PASS / Clean
-Break Architecture PASS** for this scoped observation. Root accepts only that
-bounded result. The full Golden D remains **OPEN**.
+Break Architecture PASS** for this scoped observation. Root accepted only that
+bounded result at this earlier gate; the later Agent-initiated run above closed
+Golden D.
 
 ## Golden E first attempt and blocker (2026-09-29)
 
@@ -386,8 +442,8 @@ requests remained on the Frontend/Gateway origin.
 The new contract test asserts AUTO
 authorization for create/execute and rejects attempts to request redundant
 Agent approvals; existing continuation tests now exercise the still-gated
-cancel action. This change alone does not prove an Agent-started BacktestJob;
-Golden D remains OPEN pending the live Product/DSH journey.
+cancel action. This change alone did not prove an Agent-started BacktestJob;
+the later live Product/DSH journey above closed Golden D.
 
 ## Bounded real CPU trainer check (2026-09-29)
 

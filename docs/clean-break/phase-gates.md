@@ -2,6 +2,21 @@
 
 ## Phase 15 fresh-state Research and Backtest slices (2026-09-29)
 
+**Golden D gate: PASS.** On the rebuilt isolated stack, an old Product Agent
+created and executed one approved BacktestTask; its BacktestJob remained queued
+at attempts 0 after the old conversation was deleted. The independent Worker
+completed that same Job once with a validated Artifact, and a new Product Agent
+identified the exact Job and Artifact by stable ID. The sole authorized repair
+was for `20240102`; its one session job received 5,329 full-market daily rows.
+Focused staged script checks and read-only isolated DB inspection passed.
+Independent Sol Reviewer: Functional PASS / Tests and Evidence PASS / Clean Break
+Architecture PASS. Root: PASS for Golden D. Normalized MCP activity omits
+arguments and results, so exact execute/read arguments are corroborated by the
+unique Job, durable audit, Product state and Agent answer rather than directly
+shown in the public trace. This scenario excludes DSH process restart and child
+rebind. **Phase 15 overall remains OPEN.** No existing DB, backups, deployment,
+push or merge were touched.
+
 After explicit maintainer authorization following an automatic approval-review
 rejection, the isolated Agent role catalogue aligns BacktestTask create/execute
 with Clean Break `AUTO`. Exact strategy approval and task-cancel approval remain.
@@ -16,7 +31,8 @@ the changed preset rendered in isolated Chromium through Frontend/Gateway with
 zero off-origin requests. **Independent Sol Reviewer:** Functional PASS / Tests
 PASS / Clean Break Architecture PASS after the actual diff, MCP/Backend paths,
 role versions and documented adoption limit. **Root acceptance: PASS for this
-bounded policy-alignment slice.** Agent-started Golden D remains OPEN. No
+bounded policy-alignment slice.** The later Agent-started Golden D gate is
+recorded above. No
 Product DB, deployment, push or merge.
 
 An additional isolated ML Worker image check trained a real LightGBM CPU model
@@ -51,7 +67,8 @@ Break Architecture PASS**). A separately submitted Product API BacktestJob
 remained queued when a contemporaneous conversation was deleted; its Worker
 later completed it in one attempt, and a new authorized DSH Agent read the
 same Job and Artifact through BYQ MCP. Root accepts this bounded D result.
-The Agent did not submit that Job, so full Golden D remains open. A subsequent
+The Agent did not submit that earlier Job, so Golden D was still open at this
+gate; the later Agent-initiated gate above closed it. A subsequent
 real-browser Runtime reset passed on the populated Phase 15 Workspace, but
 Workspace reset initially returned 409 because a retained strategy-approval
 Artifact referenced a ResearchTask slated for deletion. That fail-closed 409
