@@ -29,21 +29,19 @@ foundation, not a market-research or Agent journey.
 | B: two Backtests, optimization, comparison | A new Workspace Product API journey completed two independent BacktestJobs, one OptimizationJob and a persisted comparison Artifact. Real browser comparison of the exact two completed Backtest IDs and Artifact listing passed. See bounded evidence below. | DSH Agent-led strategy change and the OptimizationJob ranking's browser detail remain open. |
 | C: TrainingJob, GPU, checkpoint/restart | Durable TrainingJob and independent ML Worker; process-reclaim tests use a fake trainer. Current host has no NVIDIA device, `nvidia-smi`, or Docker NVIDIA runtime; the current ML image installs CPU LightGBM. | Qualify CPU Worker/real checkpoint separately; GPU execution is `NOT_RUN` here and needs a GPU-capable Worker/image and host. CPU execution and simulated lease reclaim do not satisfy the GPU claim. |
 | D: Agent interruption with Job continuing | In this fresh isolated stack, a separate Product API BacktestJob stayed queued after a contemporaneous Product Agent conversation was deleted; restarting its independent Worker completed the same Job in one attempt with an Artifact. After explicit authorization, a new DSH Agent used BYQ MCP read tools to find that exact Job and Artifact. | The Job was submitted through Product API, not initiated by the old Agent. Full Golden D and DSH process restart remain out of scope for this bounded check. |
-| E: Runtime and Workspace reset | The first populated reset was blocked by retained strategy approvals. A bounded archive change preserves each approval and its exact validated version. Product reset of a populated Workspace returned 200 with idempotent replay. A second populated fixture then passed a connected real-browser Runtime and Workspace reset, followed by a new Product ResearchTask, one-row TuShare import, and two-turn delegated Agent/Web research with a new Artifact. A separate clean Workspace confirmed protected identity/config and exact deletion IDs. | Golden E's specified `reset → seed → rerun A` sequence is local PASS. A later reset of new Agent-audited research remains fail-closed 409 and must be classified before overall Phase 15 completion. |
+| E: Runtime and Workspace reset | The populated browser reset, reseed and two-turn delegated Agent/Web research passed. A separate Workspace confirmed protected identity/config and exact deletion IDs. A subsequent Product reset of the Agent-audited Workspace now also passes while retaining the exact two Web evidence audit facts and deleting their disposable Artifacts. | Golden E's specified `reset → seed → rerun A` sequence and the bounded repeated-reset fix are local PASS; this does not complete the other Phase 15 journeys. |
 | F: full rebuild | Exact-scope `dev-clean` apply removed only this isolated project's 12 containers, 4 volumes and 2 networks; `dev-init`/core start/seed/test and real login passed on a fresh schema. | The connected Golden journeys have not been rerun after rebuild. F environment lifecycle is bounded PASS; full Golden F remains OPEN. |
 
 ## Next bounded execution
 
-1. Classify the retained Agent-audit/Artifact references that block a later
-   Workspace reset of new research; preserve authoritative audit facts.
-2. Complete the Agent-initiated Job/interruption path and Agent-led strategy
+1. Complete the Agent-initiated Job/interruption path and Agent-led strategy
    change. Qualify the existing CPU TrainingJob/Worker on new data; keep GPU
    execution and checkpoint/restart explicitly `NOT_RUN` until a qualified GPU
    environment is available for Phase 16.
-3. Rerun connected journeys from a fresh schema after the now-proven scoped
+2. Rerun connected journeys from a fresh schema after the now-proven scoped
    rebuild. Never substitute mocks or old database evidence for real Product
    functionality.
-4. Finish Tester → independent Sol Reviewer → Root review, then PR/CI/merge
+3. Finish Tester → independent Sol Reviewer → Root review, then PR/CI/merge
    before Phase 16.
 
 ## Bounded B Product API and Worker evidence (2026-09-29)
@@ -328,6 +326,39 @@ business calls. The retained Agent-audit 409 remains a separate unresolved
 Workspace reset limitation for Phase 15. This gate does not qualify Golden B's
 Agent-led Job journey, Golden C's GPU path, Golden D's Agent-initiated Job, or
 full Golden F; Phase 15 overall remains **OPEN**.
+
+## Bounded repeated Workspace reset after Agent Web research (2026-09-29)
+
+The previous HTTP 409 was traced to exactly two retained `agent_audit` rows for
+successful `byq_web_evidence_create` calls. Audit is an observational fact; its
+`resource_id` records the historical Artifact ID, and it has no Artifact foreign
+key. The reset preflight now exempts only this action with `resource_type=artifact`,
+outcome `success` or `saved`, and an owned `web_research_evidence` target. It
+keeps the audit row and ID; ordinary Artifact audit, missing resource type,
+Agent approvals and unresolved business actions still block deletion.
+
+Tester ran the new Web audit reset contract and the existing approval archive
+Product reset contract in isolated PostgreSQL: **2 passed, 1 warning**. Syntax,
+`dev-check.py --base 80662e24` and `git diff --check` passed. Independent Sol
+Reviewer inspected the actual code and tests and returned **Functional PASS /
+Tests PASS / Clean Break Architecture PASS** for this bounded source change.
+
+Root rebuilt only Backend in isolated Compose project `byq-dev-ea551690f4`.
+Authenticated Product reset of the original Agent-audited Workspace
+`workspace_9d6b65154f1f438ba684875a80d3a9df` returned HTTP 200, removed
+four ResearchTasks, 11 Artifacts, two BacktestJobs, one OptimizationJob and
+the four-message Product conversation. The exact Web Artifact
+`artifact_b7e03959f1f442e487977612d12b199f` was absent afterward; the
+same account and Workspace remained usable, and a new ResearchTask
+`task_e43d266b3a58440080ea092822f8af6f` persisted. A scoped read-only DB
+check confirmed both original Agent audit rows remain present with their
+`success` and `saved` outcomes and original Artifact IDs. The browser reset
+flow had previously passed; this fix was reverified through authenticated
+Product API and scoped DB checks, without a new browser run.
+
+**Root acceptance: PASS for this bounded repeated-reset fix. Phase 15 overall
+remains OPEN** for the other journeys and repository CI. No existing Product
+database, backup, deployment, push or merge was touched.
 
 ## Bounded F rebuild and simple reset (2026-09-29)
 

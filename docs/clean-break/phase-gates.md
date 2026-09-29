@@ -2,6 +2,20 @@
 
 ## Phase 15 fresh-state Research and Backtest slices (2026-09-29)
 
+The later Agent-audited Workspace reset blocker is resolved in a bounded
+Phase 15 change. Reset retains successful Web evidence `agent_audit` facts and
+their stable Artifact IDs while removing disposable Web Artifacts; other
+Artifact audit and ambiguous rows still block. **Tester:** two focused isolated
+PostgreSQL reset contracts PASS; slice syntax and diff checks PASS.
+**Independent Sol Reviewer:** Functional PASS / Tests PASS / Clean Break
+Architecture PASS after direct code/test review. Root rebuilt only the isolated
+Backend and observed authenticated Product reset HTTP 200 on the previously
+blocked Workspace: four Tasks, 11 Artifacts, two Backtests, one OptimizationJob
+and the four-message conversation removed; both original Web audit facts still
+present, login/Workspace intact, new Task persisted. **Root acceptance: PASS
+for the repeated-reset slice only.** [Exact evidence](phase15-functional-fidelity.md)
+records the scope. Phase 15 overall remains OPEN; no push, merge or deployment.
+
 The later bounded session-loss observation also passed focused Tester review
 and independent Sol Review (**Functional PASS / Tests and Evidence PASS / Clean
 Break Architecture PASS**). A separately submitted Product API BacktestJob

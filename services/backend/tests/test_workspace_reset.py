@@ -19,6 +19,7 @@ from app.workspace_runtime_reset import WorkspaceRuntimeResetConflict, Workspace
 from tests.workspace_helpers import trusted_agent_context
 from tests.test_research import snapshot
 from tests.test_strategy_artifact import strategy_payload
+from tests.test_web_research import evidence_fixture
 from tests.test_ml_strategy import valid_strategy
 
 pytestmark = pytest.mark.skipif(
@@ -289,6 +290,80 @@ def test_unknown_approval_outcome_blocks_reset_without_deleting_research() -> No
         assert store._fetch_one("SELECT task_id FROM research_tasks WHERE task_id=:id", {"id": task_id}) is not None
     finally:
         store.close()
+
+
+def test_web_evidence_audit_survives_reset_without_pinning_disposable_artifact() -> None:
+    suffix = uuid4().hex[:12]
+    owner = f"web-audit-reset-{suffix}"
+    context, _conversation, task_id, _experiment, generic_artifact_id = _research_graph(
+        owner, suffix=suffix)
+    research, store = ResearchStore(), WorkspaceResetStore()
+    try:
+        web_artifact = research.create_artifact({
+            "task_id": task_id, "kind": "web_research_evidence",
+            "content": evidence_fixture(),
+            "lineage": [], "trace_id": context["trace_id"],
+            "idempotency_key": f"web-audit-artifact-{suffix}",
+        }, trusted_owner=owner, trusted_workspace=context["workspace_id"])
+        now = datetime.now(timezone.utc).isoformat()
+        run_id = f"run_web_audit_{suffix}"
+        store._execute("""INSERT INTO agent_runs
+            (run_id,owner_principal,actor_principal,role_id,role_version,trace_id,session_id,
+             dsh_run_id,status,authority_status,idempotency_key,request_hash,created_at,updated_at,version,workspace_id)
+            VALUES (:run,:owner,:owner,'quant_research','1',:trace,:session,
+                    'dsh-web-audit','completed','closed',:key,'hash',:now,:now,1,:workspace)""",
+            {"run": run_id, "owner": owner, "trace": context["trace_id"],
+             "session": context["session_id"], "key": f"web-audit-run-{suffix}",
+             "now": now, "workspace": context["workspace_id"]})
+        audit_id = f"agent_audit_web_reset_{suffix}"
+        store._execute("""INSERT INTO agent_audit
+            (audit_id,run_id,owner_principal,actor_principal,action,outcome,resource_type,
+             resource_id,detail_json,created_at)
+            VALUES (:audit,:run,:owner,:owner,'byq_web_evidence_create','saved','artifact',
+                    :artifact,'{}'::jsonb,:now)""",
+            {"audit": audit_id, "run": run_id, "owner": owner,
+             "artifact": web_artifact["artifact_id"], "now": now})
+
+        blocked_id = f"agent_audit_other_reset_{suffix}"
+        store._execute("""INSERT INTO agent_audit
+            (audit_id,run_id,owner_principal,actor_principal,action,outcome,resource_type,
+             resource_id,detail_json,created_at)
+            VALUES (:audit,:run,:owner,:owner,'other_artifact_action','success','artifact',
+                    :artifact,'{}'::jsonb,:now)""",
+            {"audit": blocked_id, "run": run_id, "owner": owner,
+             "artifact": generic_artifact_id, "now": now})
+        with pytest.raises(WorkspaceResetBlocked, match="Agent audit"):
+            store.reset_workspace(owner_principal=owner, workspace_id=context["workspace_id"])
+        assert store._fetch_one("SELECT artifact_id FROM artifacts WHERE artifact_id=:id",
+                                {"id": web_artifact["artifact_id"]}) is not None
+        store._execute("DELETE FROM agent_audit WHERE audit_id=:audit", {"audit": blocked_id})
+
+        missing_type_id = f"agent_audit_missing_type_{suffix}"
+        store._execute("""INSERT INTO agent_audit
+            (audit_id,run_id,owner_principal,actor_principal,action,outcome,resource_type,
+             resource_id,detail_json,created_at)
+            VALUES (:audit,:run,:owner,:owner,'byq_web_evidence_create','saved',NULL,
+                    :artifact,'{}'::jsonb,:now)""",
+            {"audit": missing_type_id, "run": run_id, "owner": owner,
+             "artifact": web_artifact["artifact_id"], "now": now})
+        with pytest.raises(WorkspaceResetBlocked, match="Agent audit"):
+            store.reset_workspace(owner_principal=owner, workspace_id=context["workspace_id"])
+        store._execute("DELETE FROM agent_audit WHERE audit_id=:audit", {"audit": missing_type_id})
+
+        result = store.reset_workspace(owner_principal=owner, workspace_id=context["workspace_id"])
+        assert result["deleted"]["research_tasks"] == 1
+        assert result["deleted"]["artifacts"] == 2
+        assert store._fetch_one("SELECT artifact_id FROM artifacts WHERE artifact_id=:id",
+                                {"id": web_artifact["artifact_id"]}) is None
+        retained = store._fetch_one("SELECT action,outcome,resource_type,resource_id FROM agent_audit WHERE audit_id=:audit",
+                                        {"audit": audit_id})
+        assert retained == {"action": "byq_web_evidence_create", "outcome": "saved",
+                            "resource_type": "artifact", "resource_id": web_artifact["artifact_id"]}
+        assert store.reset_workspace(owner_principal=owner,
+                                     workspace_id=context["workspace_id"])["already_empty"] is True
+    finally:
+        store.close()
+        research.close()
 
 
 def test_product_workspace_reset_requires_release_proof_is_scoped_and_idempotent() -> None:

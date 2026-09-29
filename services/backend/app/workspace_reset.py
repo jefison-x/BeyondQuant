@@ -441,6 +441,9 @@ class WorkspaceResetStore(PgStoreMixin):
               JOIN artifacts target ON target.artifact_id=a.resource_id
              WHERE r.owner_principal=:owner AND r.workspace_id=:workspace
                AND target.owner_principal=:owner AND target.workspace_id=:workspace
+               AND (a.action='byq_web_evidence_create' AND a.resource_type='artifact'
+                    AND a.outcome IN ('success','saved')
+                    AND target.kind='web_research_evidence') IS NOT TRUE
              ORDER BY a.audit_id LIMIT 1
         """, params)
         if retained_audit is not None:
