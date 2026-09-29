@@ -34,3 +34,4 @@ build/
 coverage/
 .phase15-golden-b-bound*.json
 .phase15-ml-cpu.json
+.phase15-golden-c.json

@@ -119,7 +119,7 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
         "byq_ml_strategy_approve", "byq_ml_training_create", "byq_ml_training_cancel", "byq_ml_prediction_create",
         "byq_backtest_task_cancel",
     )
-    assert ROLE_BY_ID["ml_researcher"].version == "1.3.0"
+    assert ROLE_BY_ID["ml_researcher"].version == "1.4.0"
     assert {
         "byq_ml_prediction_create", "byq_ml_prediction_get", "byq_backtest_task_get",
         "byq_backtest_task_execute", "byq_backtest_task_cancel",
@@ -152,6 +152,18 @@ def test_old_run_does_not_gain_versioned_tools_after_role_upgrade() -> None:
         store._execute("UPDATE agent_runs SET role_version='1.2.0' WHERE run_id=:id", {"id": analyst["run_id"]})
         with pytest.raises(AgentForbidden):
             store.authorize({"run_id": analyst["run_id"], "action": "byq_optimization_get"})
+        ml = start(store, role_id="ml_researcher", idempotency_key="agent-run-ml-training")
+        assert store.authorize({"run_id": ml["run_id"], "action": "byq_ml_training_create"})["decision"] == "approval_required"
+        store._execute("UPDATE agent_runs SET role_version='1.3.0' WHERE run_id=:id", {"id": ml["run_id"]})
+        with pytest.raises(AgentForbidden):
+            store.authorize({"run_id": ml["run_id"], "action": "byq_ml_training_create"})
+        with pytest.raises(AgentForbidden):
+            store.create_approval({
+                "run_id": ml["run_id"], "action": "byq_ml_training_create",
+                "reason": "old role must not request a new grant",
+                "resource_type": "ml_training_submission", "resource_id": "mlwatch_" + "a" * 32,
+                "idempotency_key": "old-ml-training-grant",
+            })
     finally:
         store.close()
 

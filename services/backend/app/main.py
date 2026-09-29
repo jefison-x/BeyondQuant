@@ -3316,7 +3316,7 @@ def create_ml_training_run(payload: dict[str, Any], request: Request) -> dict[st
         data = _strategy_payload(
             payload,
             {"task_id", "experiment_id", "ml_strategy_artifact_id", "stock_pool_snapshot_id",
-             "trace_id", "idempotency_key"},
+             "trace_id", "idempotency_key", "agent_approval_id"},
         )
         task = research_store.get_task(data.get("task_id"))
         version = research_store.get_artifact(data.get("ml_strategy_artifact_id"))
@@ -3337,6 +3337,32 @@ def create_ml_training_run(payload: dict[str, Any], request: Request) -> dict[st
             strategy_artifact_id=str(version["artifact_id"]),
         ) is None:
             raise ValueError("ML strategy requires explicit human approval before training")
+        agent_approval_id = data.get("agent_approval_id")
+        if context["actor_principal"].startswith("byq-product-agent-") and agent_approval_id is None:
+            raise HTTPException(
+                status_code=403,
+                detail="Agent ML training requires an exact approved agent_approval_id",
+            )
+        if agent_approval_id is not None:
+            watch = ml_training_store.matching_receipt_watch(
+                data, trusted_workspace=context["workspace_id"],
+                trusted_owner=context["owner_principal"],
+            )
+            try:
+                _approved_agent_domain_request(
+                    agent_approval_id,
+                    expected_action="byq_ml_training_create",
+                    expected_resource_type="ml_training_submission",
+                    expected_resource_id=str(watch["watch_id"]),
+                    context=context,
+                )
+            except AgentPersistenceError as exc:
+                raise HTTPException(status_code=503, detail="agent approval storage is unavailable") from exc
+            except (AgentConflict, AgentForbidden, AgentNotFound, AgentUnauthorized, ValueError) as exc:
+                raise HTTPException(
+                    status_code=403,
+                    detail="agent approval does not authorize this exact ML training action",
+                ) from exc
         experiment_id = data.get("experiment_id")
         if experiment_id is not None:
             experiment = research_store.get_experiment(experiment_id)
@@ -3417,10 +3443,14 @@ def register_ml_training_submission(payload: dict[str, Any], request: Request) -
     def operation() -> dict[str, object]:
         data = _strategy_payload(payload, {
             "task_id", "experiment_id", "ml_strategy_artifact_id", "stock_pool_snapshot_id",
-            "trace_id", "idempotency_key",
+            "trace_id", "idempotency_key", "prepare_only",
         })
+        prepare_only = data.pop("prepare_only", False)
+        if type(prepare_only) is not bool:
+            raise ValueError("prepare_only must be a boolean")
         return {"receipt_watch": ml_training_store.register_receipt_watch(
             data, trusted_workspace=context["workspace_id"], trusted_owner=context["owner_principal"],
+            prepare_only=prepare_only,
         )}
     return _ml_call(operation)
 
@@ -5072,10 +5102,23 @@ def create_agent_approval(payload: dict[str, Any], request: Request) -> dict[str
 @app.get("/v1/agents/approvals/{approval_id}")
 def get_agent_approval(approval_id: str, request: Request) -> dict[str, object]:
     context = _required_agent_context(request)
-    return _agent_call(lambda: {"approval": agent_store.get_approval(
-        approval_id,
+    return _agent_call(lambda: {"approval": _agent_approval_with_preview(
+        agent_store.get_approval(approval_id, trusted_owner=context["owner_principal"]),
         trusted_owner=context["owner_principal"],
     )})
+
+
+def _agent_approval_with_preview(approval: dict[str, object], *, trusted_owner: str) -> dict[str, object]:
+    if approval.get("action") != "byq_ml_training_create":
+        return approval
+    try:
+        preview = ml_training_store.receipt_watch_preview(
+            approval.get("resource_id"), trusted_workspace=str(approval.get("run_workspace")),
+            trusted_owner=trusted_owner,
+        )
+    except (MLTrainingNotFound, ValueError):
+        preview = None
+    return {**approval, "resource_preview": preview}
 
 
 @app.get("/v1/agents/approvals")
@@ -5083,9 +5126,15 @@ def list_agent_approvals(
     request: Request, status: str | None = None, limit: int = 50, offset: int = 0,
 ) -> dict[str, object]:
     context = _required_agent_context(request)
-    return _agent_call(lambda: agent_store.list_approvals(
-        trusted_owner=context["owner_principal"], status=status, limit=limit, offset=offset,
-    ))
+    def operation() -> dict[str, object]:
+        result = agent_store.list_approvals(
+            trusted_owner=context["owner_principal"], status=status, limit=limit, offset=offset,
+        )
+        return {**result, "approvals": [
+            _agent_approval_with_preview(item, trusted_owner=context["owner_principal"])
+            for item in result["approvals"]
+        ]}
+    return _agent_call(operation)
 
 
 @app.post("/v1/agents/approvals/{approval_id}/decision")

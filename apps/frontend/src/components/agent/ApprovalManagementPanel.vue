@@ -26,6 +26,18 @@ function resourceLabel(item: Record<string, unknown>) {
   const label = type === "product_feedback" ? "产品反馈" : type;
   return `${label} · ${id}`;
 }
+
+function trainingPreview(item: Record<string, unknown>): Record<string, string> | null {
+  if (item.action !== "byq_ml_training_create") return null;
+  const value = item.resource_preview;
+  if (!value || typeof value !== "object") return null;
+  const preview = value as Record<string, unknown>;
+  if (preview.schema_version !== "ml-training-submission-preview.v1"
+      || preview.watch_id !== item.resource_id || preview.state !== "prepared"
+      || !["task_id", "ml_strategy_artifact_id", "stock_pool_snapshot_id", "idempotency_key"]
+        .every((key) => typeof preview[key] === "string" && String(preview[key]).length > 0)) return null;
+  return preview as Record<string, string>;
+}
 </script>
 
 <template>
@@ -38,11 +50,19 @@ function resourceLabel(item: Record<string, unknown>) {
           <strong>{{ actionLabel(approval.action) }}</strong>
           <span v-if="approval.reason" class="reason">{{ approval.reason }}</span>
           <small :title="resourceLabel(approval)">{{ resourceLabel(approval) }}</small>
+          <div v-if="trainingPreview(approval)" class="training-preview" aria-label="冻结训练提交">
+            <span>研究任务：{{ trainingPreview(approval)?.task_id }}</span>
+            <span>机器学习策略：{{ trainingPreview(approval)?.ml_strategy_artifact_id }}</span>
+            <span>股票池快照：{{ trainingPreview(approval)?.stock_pool_snapshot_id }}</span>
+            <span v-if="trainingPreview(approval)?.experiment_id">实验：{{ trainingPreview(approval)?.experiment_id }}</span>
+            <span>提交键：{{ trainingPreview(approval)?.idempotency_key }}</span>
+          </div>
+          <small v-else-if="approval.action === 'byq_ml_training_create'">冻结提交详情不可用，暂不能批准</small>
           <small v-if="approval.conversation_title">来自会话：{{ approval.conversation_title }}</small>
         </div>
         <div class="approval-actions">
           <template v-if="approval.status === 'pending'">
-            <el-button size="small" type="primary" :loading="busyId === approval.approval_id" @click="emit('decide', approval, 'approved')">批准</el-button>
+            <el-button size="small" type="primary" :loading="busyId === approval.approval_id" :disabled="approval.action === 'byq_ml_training_create' && !trainingPreview(approval)" @click="emit('decide', approval, 'approved')">批准</el-button>
             <el-button size="small" type="danger" plain :loading="busyId === approval.approval_id" @click="emit('decide', approval, 'rejected')">拒绝</el-button>
           </template>
         </div>
@@ -55,5 +75,6 @@ function resourceLabel(item: Record<string, unknown>) {
 .approval-panel { display: grid; gap: .65rem; } ul { display: grid; gap: .45rem; list-style: none; margin: 0; padding: 0; }
 li { align-items: center; background: var(--byq-surface-subtle); border-radius: 8px; display: flex; gap: .6rem; justify-content: space-between; padding: .7rem; }
 .approval-summary { display: grid; gap: .15rem; min-width: 0; } strong { color: var(--byq-text); font-size: 13px; } .reason { color: var(--byq-text-muted); font-size: 12px; line-height: 1.45; } small { color: var(--byq-text-soft); font-size: 10px; overflow: hidden; text-overflow: ellipsis; }
+.training-preview { display: grid; gap: .1rem; font-size: 11px; color: var(--byq-text-muted); overflow-wrap: anywhere; }
 .approval-actions { align-items: center; display: flex; flex-wrap: wrap; gap: .3rem; justify-content: flex-end; }
 </style>

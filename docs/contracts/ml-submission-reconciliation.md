@@ -5,6 +5,14 @@ Status: implementation in progress under Accepted ADR-0062; not release acceptan
 - MCP and Product Gateway register a receipt watch before attempting a training POST.
   Registration binds trusted owner/workspace and the exact task, experiment, immutable
   strategy artifact, pool snapshot and original idempotency key. It never starts training.
+- An Agent can register that identity with `prepare_only=true` before requesting an
+  exact human action approval. Its `prepared` watch is excluded from receipt polling
+  while approval is pending. Execution must present a grant for that watch and the
+  unchanged frozen identity; successful receipt commit confirms the same watch.
+- The owner-scoped Product approval preview reads the frozen watch by its exact ID
+  and displays the task, strategy, pool snapshot, optional experiment and original
+  idempotency key. A missing or mismatched preview prevents approval in the Product UI;
+  Agent-written rationale does not substitute for these trusted fields.
 - A registration failure prevents the training POST. An existing unresolved watch is
   queried, not dispatched again automatically. Explicit 4xx rejection remains distinct
   from a missing or malformed receipt.
@@ -14,7 +22,7 @@ Status: implementation in progress under Accepted ADR-0062; not release acceptan
 - Maximum eight scheduled checks, with persistent deadlines and next-check timestamps;
   backoff delays are 5, 15, 60, 180, 600, 1800 and 3600 seconds after successive misses.
   Overall observation deadline is 24 hours. Restarts never reset either budget.
-- States: `awaiting_receipt`, `confirmed`, `rejected`, `needs_attention`. Only an
+- States: `prepared`, `awaiting_receipt`, `confirmed`, `rejected`, `needs_attention`. Only an
   explicit Backend 4xx submission rejection records `rejected`. Exhaustion is unknown,
   never proof of rejection or absence. A later exact committed receipt may still
   confirm the watch without initiating any downstream action.

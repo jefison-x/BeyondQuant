@@ -1,5 +1,24 @@
 # Phase 0–6 gate record
 
+## Phase 15 Golden C exact training approval source gate (2026-09-30)
+
+The Agent training submission now freezes its task, strategy, pool snapshot,
+optional experiment, owner/workspace and idempotency key in a `prepared` watch.
+The Agent approval binds that watch; Backend execution checks the persisted
+grant and identical submission. Product approval displays a trusted frozen
+preview and refuses a missing preview. The original key returns the same Job
+on terminal replay. The bounded Golden C observer also compares the approved
+key with the new Product TrainingJob.
+
+Focused independent Tester: **PASS** (Backend exact-grant and preview contract,
+Gateway projection and decision guard, MCP translation, frontend component and
+production build, diff/syntax checks). Independent Sol Reviewer: **Functional
+PASS / Tests PASS / Clean Break Architecture PASS** for this source slice.
+Root: **PASS for the source slice only**. Real Agent initiation, real-browser
+approval preview, nonterminal CPU Worker restart/reclaim and final same-Job
+Artifact evidence remain **OPEN**. No new model call, market download, existing
+business database or backup operation, push, PR, merge or deployment occurred.
+
 ## Current Phase 15 GPU gate scope (2026-09-30)
 
 [ADR-0089](../architecture/adr/ADR-0089-clean-break-gpu-acceptance-scope.md)

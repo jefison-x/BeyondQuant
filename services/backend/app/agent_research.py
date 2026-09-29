@@ -45,6 +45,7 @@ from .research_task_actions import (
 APPROVAL_RESOURCE_TYPES = {
     "byq_strategy_approve": "strategy_version",
     "byq_ml_strategy_approve": "ml_strategy_version",
+    "byq_ml_training_create": "ml_training_submission",
     "byq_feedback_submit": "product_feedback",
     "byq_backtest_task_cancel": "backtest_task",
     "byq_ml_training_cancel": "training_run",
@@ -301,7 +302,7 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
     ),
     AgentRole(
         role_id="ml_researcher",
-        version="1.3.0",
+        version="1.4.0",
         description="Creates closed-profile ML research, materializes exact human-authorized approvals, manages trusted training/prediction, and executes derived backtest tasks without accessing model objects.",
         allowed_tools=(
             "byq_agent_context",
@@ -1099,13 +1100,15 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                 row["role_id"] == "quant_orchestrator"
                 and action == "byq_backtest_analysis_get"
             )
+            ml_training_create_action = action == "byq_ml_training_create"
             if (action not in role.allowed_tools
                     or (index_action and row["role_version"] not in {"2.1.0", "2.2.0", "2.3.0", "2.4.0", "2.5.0"})
                     or (factor_job_action and row["role_version"] != role.version)
                     or (data_demand_action and row["role_version"] != role.version)
                     or (optimization_action and row["role_version"] != role.version)
                     or (backtest_auto_action and row["role_version"] != role.version)
-                    or (orchestrator_analysis_action and row["role_version"] != role.version)):
+                    or (orchestrator_analysis_action and row["role_version"] != role.version)
+                    or (ml_training_create_action and row["role_version"] != role.version)):
                 self._record_audit_row(row, action=action, outcome="denied", resource_type=resource_type,
                     resource_id=resource_id, detail={"reason": "role_tool_not_allowed"}, connection=connection)
                 raise AgentForbidden("agent role is not authorized for this domain action")
@@ -1196,6 +1199,8 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             role = ROLE_BY_ID[run["role_id"]]
             if action not in role.approval_required_actions:
                 raise AgentForbidden("agent action does not require or support this approval boundary")
+            if action == "byq_ml_training_create" and run["role_version"] != role.version:
+                raise AgentForbidden("old Agent role cannot request an ML training action grant")
             request = {
                 "run_id": run_id, "action": action, "reason": reason,
                 "resource_type": resource_type, "resource_id": resource_id,

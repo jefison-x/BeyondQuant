@@ -12,6 +12,42 @@ from app import product_api
 from app import user_session
 
 
+def test_training_approval_projection_preserves_only_matching_trusted_preview() -> None:
+    watch_id = "mlwatch_" + "a" * 32
+    preview = {
+        "schema_version": "ml-training-submission-preview.v1", "watch_id": watch_id,
+        "state": "prepared", "task_id": "task_exact", "experiment_id": None,
+        "ml_strategy_artifact_id": "artifact_exact", "stock_pool_snapshot_id": "snapshot_exact",
+        "idempotency_key": "exact-key", "private": "must-not-leak",
+    }
+    approval = {"approval_id": "agent_approval_" + "b" * 32,
+                "action": "byq_ml_training_create", "resource_id": watch_id,
+                "resource_preview": preview}
+    projected = product_api._product_approval_projection(None, approval)
+    assert projected["resource_preview"]["idempotency_key"] == "exact-key"
+    assert "private" not in projected["resource_preview"]
+    assert "resource_preview" not in product_api._product_approval_projection(
+        None, {**approval, "resource_id": "mlwatch_" + "c" * 32})
+
+
+def test_training_approval_decision_requires_trusted_prepared_preview(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "_product_principal", lambda request: object())
+    monkeypatch.setattr(product_api, "_trusted_agent_headers", lambda request: {})
+    calls: list[str] = []
+
+    def backend(method, path, *args, **kwargs):
+        calls.append(method)
+        return {"approval": {"action": "byq_ml_training_create", "status": "pending",
+                             "resource_id": "mlwatch_" + "a" * 32,
+                             "resource_preview": None}}
+
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    with pytest.raises(product_api.ProductError) as caught:
+        product_api.product_approval_decision("agent_approval_exact", None, {"decision": "approved"})
+    assert caught.value.status_code == 409
+    assert calls == ["GET"]
+
+
 @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
 @pytest.mark.parametrize("failure", ["timeout", "server", "json", "shape"])
 def test_mutation_transport_or_receipt_failure_remains_unknown(monkeypatch, method, failure):
@@ -1630,9 +1666,10 @@ def test_product_approval_decision_forwards_owner_headers(monkeypatch) -> None:
         json={"decision": "approved", "rationale": "ok"},
     )
     assert response.status_code == 200
-    assert captured[0]["url"].endswith("/v1/agents/approvals/agent_approval_1/decision")
-    assert captured[0]["headers"]["x-byq-owner-principal"] == "product-user"
-    assert captured[0]["payload"] == {"decision": "approved", "rationale": "ok"}
+    assert captured[0]["url"].endswith("/v1/agents/approvals/agent_approval_1")
+    assert captured[1]["url"].endswith("/v1/agents/approvals/agent_approval_1/decision")
+    assert captured[1]["headers"]["x-byq-owner-principal"] == "product-user"
+    assert captured[1]["payload"] == {"decision": "approved", "rationale": "ok"}
     assert response.json()["approval"]["conversation_id"] == "conversation_1"
     assert response.json()["approval"]["continuation_status"] == "blocked"
     assert response.json()["approval"]["business_action"] == {

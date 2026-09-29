@@ -87,22 +87,40 @@ const study = await fetchByqMlStudy(backend, "artifact_0123456789abcdef012345678
 assert.equal(study.isError, false);
 
 const watchRegistration = () => new Response(JSON.stringify({ receipt_watch: {
-  watch_id: "mlwatch_synthetic", state: "awaiting_receipt", registration_created: true,
+  watch_id: "mlwatch_synthetic", state: "prepared", registration_created: true,
 } }), { status: 202 });
+const prepared = await fetchByqMlTrainingCreate(backend, {
+  task_id: "task_1", ml_strategy_artifact_id: "artifact_1",
+  stock_pool_snapshot_id: "snapshot_1", idempotency_key: "training-prepared-1", prepare_only: true,
+}, async (url, init) => {
+  assert.equal(url, `${backend}/v1/research/ml/training-submissions`);
+  assert.match(String(init?.body), /"prepare_only":true/);
+  assert.doesNotMatch(String(init?.body), /agent_approval_id/);
+  return watchRegistration();
+});
+assert.equal(JSON.parse(prepared.content[0].text).receipt_watch.watch_id, "mlwatch_synthetic");
 const training = await fetchByqMlTrainingCreate(backend, {
   task_id: "task_1", ml_strategy_artifact_id: "artifact_1",
   stock_pool_snapshot_id: "snapshot_1", trace_id: "trace-1", idempotency_key: "training-1",
+  agent_approval_id: "agent_approval_0123456789abcdef0123456789abcdef",
 }, async (url, init) => {
-  if (url.endsWith("/training-submissions")) return watchRegistration();
+  if (url.endsWith("/training-submissions")) {
+    assert.doesNotMatch(String(init?.body), /agent_approval_id/);
+    return watchRegistration();
+  }
   assert.equal(url, `${backend}/v1/research/ml/training-runs`);
+  assert.match(String(init?.body), /agent_approval_0123456789abcdef0123456789abcdef/);
   assert.doesNotMatch(String(init?.body), /feature_rows|model_object|object_reference/i);
   return new Response(JSON.stringify({ training_run: { training_run_id: runId, status: "waiting_for_data" } }), { status: 202 });
 });
 assert.equal(training.isError, false);
 
-for (const mode of ["registration_lost", "awaiting_receipt", "needs_attention", "rejected"]) {
+for (const mode of ["registration_lost", "needs_attention", "rejected"]) {
   let calls = 0;
-  const guarded = await fetchByqMlTrainingCreate(backend, { idempotency_key: "original-watch-key" }, async (url) => {
+  const guarded = await fetchByqMlTrainingCreate(backend, {
+    idempotency_key: "original-watch-key",
+    agent_approval_id: "agent_approval_0123456789abcdef0123456789abcdef",
+  }, async (url) => {
     calls++;
     assert.equal(url, `${backend}/v1/research/ml/training-submissions`);
     if (mode === "registration_lost") throw new Error("registration receipt lost");
@@ -114,10 +132,27 @@ for (const mode of ["registration_lost", "awaiting_receipt", "needs_attention", 
   assert.equal(JSON.parse(guarded.content[0].text).status, mode === "rejected" ? "error" : "outcome_unknown");
 }
 
+let preparedCreateCalls = 0;
+const fromPrepared = await fetchByqMlTrainingCreate(backend, {
+  task_id: "task_1", ml_strategy_artifact_id: "artifact_1",
+  stock_pool_snapshot_id: "snapshot_1", idempotency_key: "training-prepared-1",
+  agent_approval_id: "agent_approval_0123456789abcdef0123456789abcdef",
+}, async (url) => {
+  preparedCreateCalls++;
+  if (url.endsWith("/training-submissions")) return new Response(JSON.stringify({ receipt_watch: {
+    watch_id: "mlwatch_synthetic", state: "prepared", registration_created: false,
+  } }), { status: 202 });
+  assert.equal(url, `${backend}/v1/research/ml/training-runs`);
+  return new Response(JSON.stringify({ training_run: { training_run_id: runId } }), { status: 202 });
+});
+assert.equal(preparedCreateCalls, 2);
+assert.equal(fromPrepared.isError, false);
+
 let timedOutCalls = 0;
 const reconciledTraining = await fetchByqMlTrainingCreate(backend, {
   task_id: "task_1", ml_strategy_artifact_id: "artifact_1",
   stock_pool_snapshot_id: "snapshot_1", trace_id: "trace-1", idempotency_key: "training-timeout-1",
+  agent_approval_id: "agent_approval_0123456789abcdef0123456789abcdef",
 }, async (url, init) => {
   timedOutCalls += 1;
   if (url.endsWith("/training-submissions")) return watchRegistration();
@@ -139,6 +174,7 @@ assert.equal(reconciledPayload.reconciliation.status, "confirmed");
 const unknownTraining = await fetchByqMlTrainingCreate(backend, {
   task_id: "task_1", ml_strategy_artifact_id: "artifact_1",
   stock_pool_snapshot_id: "snapshot_1", trace_id: "trace-1", idempotency_key: "training-unknown-1",
+  agent_approval_id: "agent_approval_0123456789abcdef0123456789abcdef",
 }, async (_url, init) => {
   if (_url.endsWith("/training-submissions")) return watchRegistration();
   if (init?.method === "POST") throw new Error("response timed out");
@@ -153,6 +189,7 @@ assert.match(unknownPayload.reconciliation.next_action, /byq_ml_training_get.*id
 const invalidReceipt = await fetchByqMlTrainingCreate(backend, {
   task_id: "task_1", ml_strategy_artifact_id: "artifact_1", stock_pool_snapshot_id: "snapshot_1",
   trace_id: "trace-1", idempotency_key: "training-invalid-receipt",
+  agent_approval_id: "agent_approval_0123456789abcdef0123456789abcdef",
 }, async (_url, init) => _url.endsWith("/training-submissions") ? watchRegistration() : init?.method === "POST"
   ? new Response("truncated receipt", { status: 202 })
   : new Response(JSON.stringify({ training_run: { training_run_id: runId } }), { status: 200 }));
