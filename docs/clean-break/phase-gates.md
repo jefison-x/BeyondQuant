@@ -13,6 +13,12 @@ real-browser Runtime reset passed on the populated Phase 15 Workspace, but
 Workspace reset returned 409 because a retained strategy-approval Artifact
 references a ResearchTask slated for deletion. Golden E remains **FAIL/OPEN**;
 the fail-closed 409 did not delete Workspace data. See the execution record.
+Afterward, exact-scope `dev-clean` removed only this isolated project's 12
+containers, four volumes and two networks. Core init/start/seed/test, fresh
+database counts and real login passed. A simple approval-free Product reset
+also passed and reseeded. Root accepts this bounded environment lifecycle
+result; full Golden E/F remain **OPEN** for populated approval data and
+connected-journey reruns.
 
 [Execution record](phase15-functional-fidelity.md): in the worktree-scoped
 disposable stack, one real TuShare daily row was imported through Data Worker;

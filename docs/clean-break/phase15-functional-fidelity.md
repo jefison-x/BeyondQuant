@@ -29,19 +29,21 @@ foundation, not a market-research or Agent journey.
 | B: two Backtests, optimization, comparison | A new Workspace Product API journey completed two independent BacktestJobs, one OptimizationJob and a persisted comparison Artifact. Real browser comparison of the exact two completed Backtest IDs and Artifact listing passed. See bounded evidence below. | DSH Agent-led strategy change and the OptimizationJob ranking's browser detail remain open. |
 | C: TrainingJob, GPU, checkpoint/restart | Durable TrainingJob and independent ML Worker; process-reclaim tests use a fake trainer. Current host has no NVIDIA device, `nvidia-smi`, or Docker NVIDIA runtime; the current ML image installs CPU LightGBM. | Qualify CPU Worker/real checkpoint separately; GPU execution is `NOT_RUN` here and needs a GPU-capable Worker/image and host. CPU execution and simulated lease reclaim do not satisfy the GPU claim. |
 | D: Agent interruption with Job continuing | In this fresh isolated stack, a separate Product API BacktestJob stayed queued after a contemporaneous Product Agent conversation was deleted; restarting its independent Worker completed the same Job in one attempt with an Artifact. After explicit authorization, a new DSH Agent used BYQ MCP read tools to find that exact Job and Artifact. | The Job was submitted through Product API, not initiated by the old Agent. Full Golden D and DSH process restart remain out of scope for this bounded check. |
-| E: Runtime and Workspace reset | On the fresh Phase 15 Workspace, real browser Runtime reset returned 200 and archived two conversations while preserving data. Workspace reset then returned 409; read-only preflight found a strategy-approval Artifact tied to a ResearchTask. | Classify the approval fact without losing it, then rerun Workspace reset on this populated Workspace, verify retained global state and reseed. Golden E is `FAIL` for this attempt. |
-| F: full rebuild | Core init/start/seed/test and dry-run cleanup succeeded here | Run scoped `dev-clean` apply, then init/start/seed/test and the connected Golden journeys. The current `dev-test` alone is offline. |
+| E: Runtime and Workspace reset | On the populated Phase 15 Workspace, real browser Runtime reset returned 200 and archived two conversations while preserving data. Workspace reset then returned 409 due to a retained strategy-approval Artifact. After a full isolated rebuild, Product reset of a seeded Workspace without approvals passed, retained login/Workspace identity and supported reseeding. | Classify the approval fact without losing it, then rerun Workspace reset on a populated Backtest Workspace. Golden E is `FAIL/OPEN` for that case. |
+| F: full rebuild | Exact-scope `dev-clean` apply removed only this isolated project's 12 containers, 4 volumes and 2 networks; `dev-init`/core start/seed/test and real login passed on a fresh schema. | The connected Golden journeys have not been rerun after rebuild. F environment lifecycle is bounded PASS; full Golden F remains OPEN. |
 
 ## Next bounded execution
 
-1. Qualify available GPU hardware for the ML journey without exposing secrets.
-   Complete Agent-led strategy change and any remaining Product detail view
-   needed for the Backtest/Optimization result.
-2. Fix only concrete failing Product boundaries found by those journeys; keep
-   DSH as sole harness and long computation in Workers.
-3. Exercise TrainingJob, session interruption, reset and scoped rebuild. Mark
-   unavailable qualified dependencies `NOT_RUN` with an exact reason, never
-   `PASS` by substitution with mocks or old database evidence.
+1. Resolve the populated-Workspace reset contract: preserve authoritative
+   approval facts independently of disposable ResearchTask/Artifact records,
+   add one focused regression, and rerun the real Product reset/reseed path.
+2. Complete the Agent-initiated Job/interruption path and Agent-led strategy
+   change. Qualify the existing CPU TrainingJob/Worker on new data; keep GPU
+   execution and checkpoint/restart explicitly `NOT_RUN` until a qualified GPU
+   environment is available for Phase 16.
+3. Rerun connected journeys from a fresh schema after the now-proven scoped
+   rebuild. Never substitute mocks or old database evidence for real Product
+   functionality.
 4. Finish Tester → independent Sol Reviewer → Root review, then PR/CI/merge
    before Phase 16.
 
@@ -208,3 +210,23 @@ E remains **FAIL/OPEN** until the approval fact is retained independently of
 the disposable graph and a real reset/rerun succeeds. The earlier Phase 13
 browser test passed because its fixture created a plain ResearchTask without
 strategy approval.
+
+## Bounded F rebuild and simple reset (2026-09-29)
+
+The scoped `dev-clean` dry run identified exactly 12 containers, four volumes
+and two networks under Compose project `byq-dev-ea551690f4`. Applying that
+exact plan removed those resources and verified none remained; the ignored
+`.env.dev` and reusable images were retained. `dev-init` verified that isolated
+configuration, `dev-start` rebuilt the five-service core with all services
+healthy, and `dev-seed` generated a new Workspace. `dev-test` passed two
+governance and 13 development lifecycle tests. Read-only counts in the new
+isolated PostgreSQL showed one user, one Workspace, one ResearchTask, two
+Artifacts, zero Backtest/Optimization Jobs and zero market bars. Gateway login
+and `/api/product/auth/me` returned HTTP 200 for the new Workspace.
+
+On this new **approval-free seed**, Product Runtime reset returned 200 and
+preserved the ResearchTask. Product Workspace reset then returned 200, removed
+the seed task and Artifacts, preserved the same login and Workspace ID, and
+`dev-seed` succeeded again. This verifies only the simple reset and rebuild
+foundation; it does not reverse the populated Backtest/approval reset failure
+above. It also does not count as rerunning A–D or the full Golden F journeys.
