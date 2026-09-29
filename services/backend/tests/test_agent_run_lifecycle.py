@@ -62,7 +62,7 @@ def test_exact_turn_closes_bound_runs_but_not_next_turn_or_business_approval(out
     try:
         apply(store, ctx, "a" * 32, key="first")
         first = start(store, ctx, "first")
-        approval = store.create_approval({"run_id": first["run_id"], "action": "byq_backtest_task_execute",
+        approval = store.create_approval({"run_id": first["run_id"], "action": "byq_backtest_task_cancel",
             "reason": "Synthetic", "resource_type": "backtest_task", "resource_id": "backtesttask_synthetic",
             "idempotency_key": "synthetic-approval"}, trusted_boot_id=ctx["x-byq-runtime-boot-id"])
         apply(store, ctx, "b" * 32, key="second", sequence=3)

@@ -33,13 +33,12 @@ def test_policy_is_closed_over_current_agent_tools_and_preserves_stronger_gates(
     assert {
         "byq_backtest_task_cancel",
         "byq_ml_training_cancel",
-        "byq_backtest_task_create",
-        "byq_backtest_task_execute",
         "byq_ml_training_create",
         "byq_ml_prediction_create",
     } <= existing_approval_gates
-    # Compute remains AUTO by policy level; the existing contextual grant still
-    # blocks it until its exact domain approval is present.
+    assert {"byq_backtest_task_create", "byq_backtest_task_execute"}.isdisjoint(existing_approval_gates)
+    # Backtest compute is AUTO after exact strategy approval; ML training and
+    # prediction keep their separate contextual approval gates.
     assert levels["byq_backtest_task_create"] == "AUTO"
     assert levels["byq_backtest_task_execute"] == "AUTO"
     assert levels["byq_ml_training_create"] == "AUTO"
@@ -191,8 +190,9 @@ def test_agent_cancellation_requires_approved_exact_grant(
         json={"run_id": run_id, "action": compute_action},
     )
     assert compute_authorization.status_code == 200, compute_authorization.text
-    assert compute_authorization.json()["authorization"]["authorized"] is False
-    assert compute_authorization.json()["authorization"]["decision"] == "approval_required"
+    assert compute_authorization.json()["authorization"]["authorized"] is (kind == "backtest")
+    assert compute_authorization.json()["authorization"]["decision"] == (
+        "allowed" if kind == "backtest" else "approval_required")
     assert compute_authorization.json()["authorization"]["approval_level"] == "AUTO"
 
     approved_id = _decided_approval(

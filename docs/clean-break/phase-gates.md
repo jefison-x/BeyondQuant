@@ -2,6 +2,23 @@
 
 ## Phase 15 fresh-state Research and Backtest slices (2026-09-29)
 
+After explicit maintainer authorization following an automatic approval-review
+rejection, the isolated Agent role catalogue aligns BacktestTask create/execute
+with Clean Break `AUTO`. Exact strategy approval and task-cancel approval remain.
+The three changed role versions are bumped; `/v1/agents/authorize` denies old
+versions for these actions, but direct BacktestTask endpoints have no per-run
+version fence. Discard active old sessions before adopting the policy; this
+development Clean Break carries no old-session migration. The personal
+`manual_safe` preset now describes sensitive-action approval without promising
+that authorized deterministic backtests need human confirmation. **Tester:**
+five focused Backend modules on isolated PostgreSQL, 37 passed / 2 warnings;
+the changed preset rendered in isolated Chromium through Frontend/Gateway with
+zero off-origin requests. **Independent Sol Reviewer:** Functional PASS / Tests
+PASS / Clean Break Architecture PASS after the actual diff, MCP/Backend paths,
+role versions and documented adoption limit. **Root acceptance: PASS for this
+bounded policy-alignment slice.** Agent-started Golden D remains OPEN. No
+Product DB, deployment, push or merge.
+
 An additional isolated ML Worker image check trained a real LightGBM CPU model
 from 30/10 honestly synthetic in-memory rows, reloaded the model and checked
 finite metrics. It made no Product, DB or provider call. This is a trainer

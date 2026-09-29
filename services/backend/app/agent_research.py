@@ -120,7 +120,7 @@ class AgentRole:
 ROLE_CATALOG: tuple[AgentRole, ...] = (
     AgentRole(
         role_id="quant_orchestrator",
-        version="2.3.0",
+        version="2.4.0",
         description="Coordinates bounded research hand-offs and explicit owner-scoped domain actions.",
         allowed_tools=(
             "byq_product_help_query",
@@ -195,8 +195,6 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
         approval_required_actions=(
             "byq_feedback_submit",
             "byq_strategy_approve",
-            "byq_backtest_task_create",
-            "byq_backtest_task_execute",
             "byq_backtest_task_cancel",
         ),
         evidence_kinds=("research_evidence", "web_research_evidence", "stock_pool", "factor_result", "strategy_version", "backtest_result"),
@@ -273,7 +271,7 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
     ),
     AgentRole(
         role_id="backtest_analyst",
-        version="1.3.0",
+        version="1.4.0",
         description="Reviews authorized deterministic backtest jobs and result artifacts.",
         allowed_tools=(
             "byq_agent_context",
@@ -296,15 +294,13 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
         ),
         delegate_to=(),
         approval_required_actions=(
-            "byq_backtest_task_create",
-            "byq_backtest_task_execute",
             "byq_backtest_task_cancel",
         ),
         evidence_kinds=("backtest_result",),
     ),
     AgentRole(
         role_id="ml_researcher",
-        version="1.2.0",
+        version="1.3.0",
         description="Creates closed-profile ML research, materializes exact human-authorized approvals, manages trusted training/prediction, and executes derived backtest tasks without accessing model objects.",
         allowed_tools=(
             "byq_agent_context",
@@ -330,7 +326,7 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
         delegate_to=(),
         approval_required_actions=(
             "byq_ml_strategy_approve", "byq_ml_training_create", "byq_ml_training_cancel",
-            "byq_ml_prediction_create", "byq_backtest_task_execute", "byq_backtest_task_cancel",
+            "byq_ml_prediction_create", "byq_backtest_task_cancel",
         ),
         evidence_kinds=(
             "ml_strategy_version", "ml_training_run", "ml_model_metadata",
@@ -1095,11 +1091,15 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             optimization_action = action in {
                 "byq_optimization_submit", "byq_optimization_get", "byq_optimization_cancel",
             }
+            backtest_auto_action = action in {
+                "byq_backtest_task_create", "byq_backtest_task_execute",
+            }
             if (action not in role.allowed_tools
-                    or (index_action and row["role_version"] not in {"2.1.0", "2.2.0", "2.3.0"})
+                    or (index_action and row["role_version"] not in {"2.1.0", "2.2.0", "2.3.0", "2.4.0"})
                     or (factor_job_action and row["role_version"] != role.version)
                     or (data_demand_action and row["role_version"] != role.version)
-                    or (optimization_action and row["role_version"] != role.version)):
+                    or (optimization_action and row["role_version"] != role.version)
+                    or (backtest_auto_action and row["role_version"] != role.version)):
                 self._record_audit_row(row, action=action, outcome="denied", resource_type=resource_type,
                     resource_id=resource_id, detail={"reason": "role_tool_not_allowed"}, connection=connection)
                 raise AgentForbidden("agent role is not authorized for this domain action")

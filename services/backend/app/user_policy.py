@@ -30,8 +30,8 @@ _RISK_LEVELS = {"low", "medium", "high", "critical"}
 _PRESETS: tuple[dict[str, object], ...] = (
     {
         "preset_id": "manual_safe",
-        "name": "全部人工确认",
-        "description": "所有支持的执行动作保持人工审批，适合首次使用。",
+        "name": "敏感操作人工确认",
+        "description": "策略批准和任务取消等敏感操作需人工审批；已批准策略的研究回测可自动执行。",
         "settings": {
             "automation_enabled": False,
             "paused": False,

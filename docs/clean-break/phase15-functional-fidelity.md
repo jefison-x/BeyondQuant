@@ -360,6 +360,35 @@ Product API and scoped DB checks, without a new browser run.
 remains OPEN** for the other journeys and repository CI. No existing Product
 database, backup, deployment, push or merge was touched.
 
+## BacktestTask AUTO role-policy alignment (2026-09-29)
+
+The Clean Break approval baseline classifies authorized deterministic Backtest
+compute as `AUTO`. Existing role metadata still returned `approval_required`
+for `byq_backtest_task_create` and `byq_backtest_task_execute`, although these
+MCP tools accept no Agent approval ID. The maintainer explicitly authorized a
+bounded Phase 15 change after automatic approval review initially rejected
+removal of those existing gates as a security-sensitive change.
+
+The role catalogue now treats BacktestTask create/execute as AUTO for roles
+that already possess those tools. It retains human approval for the exact
+strategy version and exact BacktestTask cancellation. BYQ's strategy approval
+Artifact, frozen pool, market readiness, tenant binding, idempotency and audit
+checks remain on the domain path. The three affected role versions advance.
+The Agent authorization endpoint denies create/execute for older role versions;
+the direct BacktestTask endpoints do not perform that per-run version check, so
+active old sessions must be discarded before adopting this policy. No old
+session migration is part of this Clean Break. The `manual_safe` preset now
+describes the remaining sensitive human approvals accurately. Its pause switch
+pauses personal automatic approval rules, not platform AUTO research compute.
+An isolated Chromium login opened the real Product policy page and rendered
+`敏感操作人工确认` with the approved-strategy backtest AUTO wording; browser
+requests remained on the Frontend/Gateway origin.
+The new contract test asserts AUTO
+authorization for create/execute and rejects attempts to request redundant
+Agent approvals; existing continuation tests now exercise the still-gated
+cancel action. This change alone does not prove an Agent-started BacktestJob;
+Golden D remains OPEN pending the live Product/DSH journey.
+
 ## Bounded real CPU trainer check (2026-09-29)
 
 The isolated `byq-dev-ea551690f4` Compose project built and started only its
