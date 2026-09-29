@@ -18,12 +18,17 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@pytest.fixture
+def alice_workspace() -> None:
+    trusted_agent_context("alice")
+
+
 def test_deterministic_title_is_stable_and_bounded() -> None:
     assert deterministic_title("  分析   贵州茅台  ") == "分析 贵州茅台"
     assert deterministic_title("研" * 60) == "研" * 47 + "…"
 
 
-def test_catalog_is_owner_scoped_and_replays_messages() -> None:
+def test_catalog_is_owner_scoped_and_replays_messages(alice_workspace: None) -> None:
     store = ConversationCatalogStore.from_env()
     conversation = store.create("alice", "session-a", "trace-a")
     message = store.append_user_message("alice", conversation["conversation_id"], "比较两种动量策略")
@@ -40,7 +45,7 @@ def test_catalog_is_owner_scoped_and_replays_messages() -> None:
         raise AssertionError("another owner must not see the conversation")
 
 
-def test_catalog_persists_projected_assistant_output_idempotently() -> None:
+def test_catalog_persists_projected_assistant_output_idempotently(alice_workspace: None) -> None:
     store = ConversationCatalogStore.from_env()
     conversation = store.create("alice", "session-answer", "trace-answer")
     store.append_user_message("alice", conversation["conversation_id"], "能否查询行情？")
@@ -64,7 +69,7 @@ def test_catalog_persists_projected_assistant_output_idempotently() -> None:
         )
 
 
-def test_catalog_survives_store_recreation() -> None:
+def test_catalog_survives_store_recreation(alice_workspace: None) -> None:
     first = ConversationCatalogStore.from_env()
     conversation = first.create("alice", "session-restart", "trace-restart")
     first.append_user_message("alice", conversation["conversation_id"], "重启后继续研究")
@@ -75,7 +80,7 @@ def test_catalog_survives_store_recreation() -> None:
     assert reopened.messages("alice", conversation["conversation_id"])[0]["content"] == "重启后继续研究"
 
 
-def test_catalog_supports_pin_archive_search_and_pagination() -> None:
+def test_catalog_supports_pin_archive_search_and_pagination(alice_workspace: None) -> None:
     store = ConversationCatalogStore.from_env()
     first = store.create("alice", "session-a", "trace-a")
     second = store.create("alice", "session-b", "trace-b")
@@ -90,7 +95,7 @@ def test_catalog_supports_pin_archive_search_and_pagination() -> None:
     assert store.list("alice", status="archived")["total"] == 1
 
 
-def test_catalog_delete_removes_messages_and_remains_owner_scoped() -> None:
+def test_catalog_delete_removes_messages_and_remains_owner_scoped(alice_workspace: None) -> None:
     store = ConversationCatalogStore.from_env()
     conversation = store.create("alice", "session-delete", "trace-delete")
     store.append_user_message("alice", conversation["conversation_id"], "删除这段历史")
