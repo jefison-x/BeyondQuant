@@ -128,20 +128,81 @@ class ConversationCatalogStore(PgStoreMixin):
         conversation_id = f"conversation_{uuid.uuid4().hex}"
         now = _now()
         try:
-            row = self._fetch_one(
-                """INSERT INTO product_conversations
-                (conversation_id, owner_principal, runtime_session_id, trace_id, title, status,
-                 pinned, message_count, last_message_preview, created_at, updated_at)
-                VALUES (:conversation_id, :owner, :runtime_session_id, :trace_id, '新投研对话',
-                        'active', FALSE, 0, '', :now, :now)
-                RETURNING *""",
-                {"conversation_id": conversation_id, "owner": owner,
-                 "runtime_session_id": runtime_session_id, "trace_id": trace_id, "now": now},
-            )
+            with self._lock, self.engine.begin() as connection:
+                binding = connection.execute(text("""SELECT w.workspace_id
+                    FROM users u JOIN workspaces w ON w.owner_user_id=u.user_id
+                    JOIN workspace_memberships m ON m.workspace_id=w.workspace_id AND m.user_id=u.user_id
+                    WHERE u.username=:owner AND w.kind='personal' AND m.role='owner'
+                    ORDER BY w.workspace_id LIMIT 1"""), {"owner": owner}).mappings().first()
+                if binding is None:
+                    raise ConversationConflict("active personal Workspace is required")
+                workspace_id = str(binding["workspace_id"])
+                # Serialize conversation admission with Workspace reset begin.
+                connection.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
+                                   {"scope": f"workspace-reset|{workspace_id}"})
+                available = connection.execute(text("""SELECT w.workspace_id
+                    FROM workspaces w JOIN users u ON u.user_id=w.owner_user_id
+                    JOIN workspace_memberships m ON m.workspace_id=w.workspace_id AND m.user_id=u.user_id
+                    WHERE w.workspace_id=:workspace AND u.username=:owner AND u.status='active'
+                      AND w.status='active' AND m.status='active' AND m.role='owner'
+                    FOR SHARE OF w"""),
+                    {"workspace": workspace_id, "owner": owner}).first()
+                if available is None:
+                    raise ConversationConflict("personal Workspace is currently unavailable")
+                row = connection.execute(text("""INSERT INTO product_conversations
+                    (conversation_id, owner_principal, runtime_session_id, trace_id, title, status,
+                     pinned, message_count, last_message_preview, created_at, updated_at)
+                    VALUES (:conversation_id, :owner, :runtime_session_id, :trace_id, '新投研对话',
+                            'active', FALSE, 0, '', :now, :now)
+                    RETURNING *"""),
+                    {"conversation_id": conversation_id, "owner": owner,
+                     "runtime_session_id": runtime_session_id, "trace_id": trace_id,
+                     "now": now}).mappings().first()
+                row = None if row is None else dict(row)
         except SQLAlchemyError as exc:
             raise ConversationPersistenceError("conversation could not be created") from exc
         assert row is not None
         return self._public(row)
+
+    @staticmethod
+    def workspace_reset_sessions(connection, *, owner: str, workspace: str,
+                                  limit: int) -> list[dict[str, str]]:
+        """Return every durable conversation session in one exact Workspace."""
+        rows = connection.execute(text("""SELECT conversation_id, runtime_session_id AS session_id,
+                trace_id FROM product_conversations
+            WHERE owner_principal=:owner AND workspace_id=:workspace
+            ORDER BY conversation_id LIMIT :limit"""),
+            {"owner": owner, "workspace": workspace, "limit": limit}).mappings().all()
+        return [{"conversation_id": str(row["conversation_id"]),
+                 "session_id": str(row["session_id"]), "trace_id": str(row["trace_id"])}
+                for row in rows]
+
+    @staticmethod
+    def archive_workspace_reset_sessions(connection, *, owner: str, workspace: str,
+                                         sessions: list[dict[str, str]], now) -> list[str]:
+        """Archive exactly the conversations whose runtime sessions were released."""
+        conversation_ids = [row["conversation_id"] for row in sessions]
+        if not conversation_ids:
+            return []
+        params: dict[str, object] = {"owner": owner, "workspace": workspace, "now": now}
+        names: list[str] = []
+        for index, conversation_id in enumerate(conversation_ids):
+            name = f"conversation_{index}"
+            names.append(f":{name}")
+            params[name] = conversation_id
+        id_list = ", ".join(names)
+        connection.execute(text(f"""UPDATE product_conversations
+            SET status='archived', updated_at=:now
+            WHERE owner_principal=:owner AND workspace_id=:workspace
+              AND status='active' AND conversation_id IN ({id_list})"""), params)
+        rows = connection.execute(text(f"""SELECT conversation_id, status
+            FROM product_conversations
+            WHERE owner_principal=:owner AND workspace_id=:workspace
+              AND conversation_id IN ({id_list})
+            ORDER BY conversation_id"""), params).mappings().all()
+        if len(rows) != len(conversation_ids) or any(row["status"] != "archived" for row in rows):
+            return []
+        return [str(row["conversation_id"]) for row in rows]
 
     def get(self, owner: object, conversation_id: object) -> dict[str, object]:
         owner = _owner(owner)

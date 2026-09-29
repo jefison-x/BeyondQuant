@@ -40,7 +40,7 @@ dev-check:
 	python3 scripts/ci/dev-check.py
 
 # Isolated Clean Break developer stack. Phase 9 owns the lifecycle wrapper.
-.PHONY: dev-init dev-start dev-stop dev-reset dev-clean dev-seed dev-test
+.PHONY: dev-init dev-start dev-stop dev-reset dev-reset-runtime dev-clean dev-seed dev-test
 DEV_PROFILE ?= core
 DEV_CLEAN_APPLY ?= 0
 
@@ -55,6 +55,9 @@ dev-stop:
 
 dev-reset:
 	python3 scripts/dev/environment.py reset
+
+dev-reset-runtime:
+	python3 scripts/dev/environment.py reset-runtime
 
 dev-clean:
 	python3 scripts/dev/environment.py clean $(if $(filter 1,$(DEV_CLEAN_APPLY)),--apply,--dry-run)

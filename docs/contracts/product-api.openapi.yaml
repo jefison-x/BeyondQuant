@@ -599,6 +599,24 @@ paths:
   /api/product/paper/accounts/import:
     post: {summary: 验证 and import a paper-account bundle under a new owner-scoped ID., responses: *createdResponses}
 
+  /v1/workspaces/current/runtime-reset:
+    post:
+      summary: 已登录用户重置当前个人 Workspace 的 Agent 运行时并归档对应对话；保留业务数据。
+      security: [{sessionCookie: []}]
+      responses: *okResponses
+  /v1/workspaces/current/reset:
+    post:
+      summary: 已登录用户按幂等键重置当前个人 Workspace 的可再生研究数据；保留账户和共享事实。
+      security: [{sessionCookie: []}]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200": {description: Workspace scoped reset receipt.}
+        "409": {description: Reset blocked; business data retained.}
+
   /v1/agent/sessions:
     get: {summary: 搜索并分页返回 the owner-scoped durable conversation catalog., responses: *okResponses}
     post: {summary: 创建 an owner-scoped durable conversation with private runtime correlation., responses: *createdResponses}

@@ -33,7 +33,7 @@ from .product_api import (
     ProductError, _backend_request, _trusted_agent_headers, router as product_router,
 )
 from .pooled_http import pooled_http as httpx
-from .user_session import ProductAuthError, resolve_principal, resolve_user
+from .user_session import SESSION_COOKIE, ProductAuthError, resolve_principal, resolve_user
 from .trace_store import TraceConflict, TraceStore
 from .session_containment import (
     containment_match,
@@ -88,6 +88,10 @@ RUNTIME_AUTHORITY_RECEIPT_SCHEMA = "byq-runtime-authority-receipt.v1"
 RUNTIME_AUTHORITY_CURRENT_SCHEMA = "byq-runtime-authority-current.v1"
 RUNTIME_TERMINAL_EVIDENCE_SCHEMA = "byq-runtime-terminal-evidence.v1"
 RUNTIME_ROOT_CLOSE_SCHEMA = "byq-runtime-root-close.v1"
+WORKSPACE_RUNTIME_RESET_BEGIN_SCHEMA = "workspace-runtime-reset-begin.v1"
+WORKSPACE_RUNTIME_RESET_FINALIZE_SCHEMA = "workspace-runtime-reset-finalize.v1"
+WORKSPACE_RESET_BEGIN_SCHEMA = "workspace-reset-begin.v1"
+WORKSPACE_RESET_FINALIZE_SCHEMA = "workspace-reset-finalize.v1"
 _runtime_authority_lock = threading.RLock()
 _runtime_authority_sync_lock = threading.Lock()
 _runtime_authority_state: dict[str, object] = {
@@ -170,6 +174,234 @@ def _backend_runtime_authority_request(method: str, path: str,
     if not isinstance(body, dict):
         raise RuntimeError("Backend runtime authority response is invalid")
     return body
+
+
+def _workspace_runtime_reset_backend_request(
+    method: str,
+    path: str,
+    payload: dict[str, object],
+    principal: Principal,
+    workspace_id: str,
+) -> dict[str, object]:
+    """Call the private, owner-scoped Backend workspace runtime-reset contract."""
+    token = os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN", "")
+    if not token:
+        raise HTTPException(status_code=503, detail="Workspace runtime reset is unavailable")
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "x-byq-owner-principal": principal.subject,
+        "x-byq-workspace-id": workspace_id,
+    }
+    try:
+        response = httpx.request(
+            method,
+            f"{BACKEND_URL}{path}",
+            json=payload,
+            headers=headers,
+            timeout=8.0,
+        )
+        response.raise_for_status()
+        body = response.json()
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        if 400 <= status < 500:
+            raise HTTPException(status_code=status, detail="Workspace runtime reset was rejected") from exc
+        raise HTTPException(status_code=503, detail="Workspace runtime reset is unavailable") from exc
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail="Workspace runtime reset is unavailable") from exc
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=502, detail="Backend workspace reset receipt is invalid")
+    return body
+
+
+def _workspace_reset_identifier(value: object) -> bool:
+    return (isinstance(value, str) and 1 <= len(value) <= 256 and value.strip() == value
+            and re.fullmatch(r"[A-Za-z0-9_-]+", value) is not None)
+
+
+def _validate_workspace_runtime_reset_begin(
+    body: object, *, workspace_id: str,
+) -> tuple[str, list[dict[str, str]]]:
+    if (not isinstance(body, dict)
+            or set(body) != {"schema_version", "workspace_id", "reset_id", "sessions"}
+            or body.get("schema_version") != WORKSPACE_RUNTIME_RESET_BEGIN_SCHEMA
+            or body.get("workspace_id") != workspace_id
+            or not isinstance(body.get("reset_id"), str)
+            or re.fullmatch(r"[0-9a-f]{32}", body["reset_id"]) is None
+            or not isinstance(body.get("sessions"), list)
+            or len(body["sessions"]) > 1000):
+        raise HTTPException(status_code=502, detail="Backend workspace reset receipt is invalid")
+
+    sessions: list[dict[str, str]] = []
+    conversation_ids: list[str] = []
+    seen_session_ids: set[str] = set()
+    seen_trace_ids: set[str] = set()
+    for row in body["sessions"]:
+        if (not isinstance(row, dict)
+                or set(row) != {"conversation_id", "session_id", "trace_id"}
+                or any(not _workspace_reset_identifier(row.get(key))
+                       for key in ("conversation_id", "session_id", "trace_id"))):
+            raise HTTPException(status_code=502, detail="Backend workspace reset receipt is invalid")
+        conversation_id = row["conversation_id"]
+        session_id = row["session_id"]
+        trace_id = row["trace_id"]
+        try:
+            # Session IDs become local trace and delivery filenames below.
+            trace_store._path(session_id)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=502, detail="Backend workspace reset receipt is invalid") from None
+        if (conversation_id in conversation_ids or session_id in seen_session_ids
+                or trace_id in seen_trace_ids):
+            raise HTTPException(status_code=502, detail="Backend workspace reset receipt is invalid")
+        conversation_ids.append(conversation_id)
+        seen_session_ids.add(session_id)
+        seen_trace_ids.add(trace_id)
+        sessions.append({"conversation_id": conversation_id, "session_id": session_id, "trace_id": trace_id})
+    if conversation_ids != sorted(conversation_ids):
+        raise HTTPException(status_code=502, detail="Backend workspace reset receipt is invalid")
+    return body["reset_id"], sessions
+
+
+def _validate_workspace_runtime_reset_finalize(
+    body: object, *, workspace_id: str, reset_id: str, expected_conversation_ids: list[str],
+) -> None:
+    if (not isinstance(body, dict)
+            or set(body) != {"schema_version", "workspace_id", "reset_id", "status", "archived_conversation_ids"}
+            or body.get("schema_version") != WORKSPACE_RUNTIME_RESET_FINALIZE_SCHEMA
+            or body.get("workspace_id") != workspace_id
+            or body.get("reset_id") != reset_id
+            or body.get("status") != "finalized"
+            or body.get("archived_conversation_ids") != expected_conversation_ids):
+        raise HTTPException(status_code=502, detail="Backend workspace reset receipt is invalid")
+
+
+def _validate_workspace_reset_receipt(
+    body: object, *, workspace_id: str, allow_blocked: bool = False,
+) -> dict[str, object]:
+    if (allow_blocked and isinstance(body, dict) and set(body) == {"status", "workspace_id", "reason"}
+            and body.get("status") == "blocked" and body.get("workspace_id") == workspace_id
+            and isinstance(body.get("reason"), str) and body["reason"]):
+        return body
+    if (not isinstance(body, dict) or set(body) != {
+        "status", "workspace_id", "deleted", "already_empty",
+    } or body.get("status") != "reset" or body.get("workspace_id") != workspace_id
+            or type(body.get("already_empty")) is not bool or not isinstance(body.get("deleted"), dict)
+            or any(not isinstance(table, str) or type(count) is not int or count < 0
+                   for table, count in body["deleted"].items())):
+        raise HTTPException(status_code=502, detail="Backend workspace reset receipt is invalid")
+    return body
+
+
+def _validate_workspace_reset_begin(
+    body: object, *, workspace_id: str,
+) -> tuple[str | None, list[dict[str, str]], dict[str, object] | None]:
+    if (not isinstance(body, dict) or body.get("schema_version") != WORKSPACE_RESET_BEGIN_SCHEMA
+            or body.get("workspace_id") != workspace_id):
+        raise HTTPException(status_code=502, detail="Backend workspace reset receipt is invalid")
+    if body.get("status") == "completed" and set(body) == {
+        "schema_version", "workspace_id", "status", "receipt",
+    }:
+        return None, [], _validate_workspace_reset_receipt(body["receipt"], workspace_id=workspace_id,
+                                                          allow_blocked=True)
+    if body.get("status") != "pending" or set(body) != {
+        "schema_version", "workspace_id", "reset_id", "status", "sessions",
+    }:
+        raise HTTPException(status_code=502, detail="Backend workspace reset receipt is invalid")
+    runtime_shape = {
+        "schema_version": WORKSPACE_RUNTIME_RESET_BEGIN_SCHEMA,
+        "workspace_id": workspace_id,
+        "reset_id": body["reset_id"],
+        "sessions": body["sessions"],
+    }
+    reset_id, sessions = _validate_workspace_runtime_reset_begin(runtime_shape, workspace_id=workspace_id)
+    return reset_id, sessions, None
+
+
+def _validate_workspace_reset_finalize(
+    body: object, *, workspace_id: str, reset_id: str,
+) -> dict[str, object]:
+    if (not isinstance(body, dict) or body.get("schema_version") != WORKSPACE_RESET_FINALIZE_SCHEMA
+            or body.get("workspace_id") != workspace_id or body.get("reset_id") != reset_id):
+        raise HTTPException(status_code=502, detail="Backend workspace reset receipt is invalid")
+    return _validate_workspace_reset_receipt(
+        {key: value for key, value in body.items() if key not in {"schema_version", "reset_id"}},
+        workspace_id=workspace_id, allow_blocked=True,
+    )
+
+
+def _workspace_runtime_reset_adapter_session(session_id: str, trace_id: str) -> None:
+    """Cancel a live prompt, then release the exact Backend-fenced Adapter session."""
+    try:
+        cancelled = _adapter_post(
+            f"/internal/runtime/sessions/{session_id}/cancel?mode=hard", timeout=5.0,
+        )
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            # Backend begin already fenced the workspace; an absent ephemeral
+            # Adapter record cannot still have an active prompt.
+            pass
+        elif (exc.status_code == 409
+              and getattr(exc, "adapter_conflict_detail", None) == f"session {session_id} has no active prompt"):
+            pass
+        else:
+            raise
+    else:
+        if (cancelled.get("session_id") != session_id or cancelled.get("trace_id") != trace_id
+                or cancelled.get("active_prompt") is not False or cancelled.get("status") != "interrupted"):
+            raise HTTPException(status_code=503, detail="Runtime session cancellation is unconfirmed")
+
+    try:
+        released = _adapter_post(f"/internal/runtime/sessions/{session_id}/release", timeout=5.0)
+    except HTTPException as exc:
+        if exc.status_code != 404:
+            raise
+    else:
+        if (released.get("session_id") != session_id or released.get("trace_id") != trace_id
+                or released.get("active_prompt") is not False or released.get("status") != "closed"):
+            raise HTTPException(status_code=503, detail="Runtime session release is unconfirmed")
+
+
+def _delete_workspace_runtime_sidecars(session_id: str) -> None:
+    """Delete only files keyed by the exact, Backend-fenced runtime session."""
+    import fcntl
+    from pathlib import Path
+
+    trace_store.delete(session_id)
+    paths: list[tuple[Path, Path]] = []
+    for delivery in (answer_delivery, domain_call_delivery):
+        sidecar = Path(delivery.root) / f"{session_id}.{delivery.suffix}.json"
+        paths.append((sidecar, sidecar.with_suffix(".lock")))
+    continuation_root = Path(task_continuation_delivery.root)
+    continuation = continuation_root / f"{session_id}.continuation.json"
+    paths.append((continuation, continuation_root / f"{session_id}.continuation.lock"))
+    paths.append((continuation.with_suffix(".receipt-backoff.json"), continuation_root / f"{session_id}.continuation.lock"))
+
+    for sidecar, lock_path in paths:
+        if not sidecar.exists():
+            continue
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                sidecar.unlink(missing_ok=True)
+            finally:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+
+
+def _reset_workspace_runtime_sessions(
+    sessions: list[dict[str, str]], principal: Principal, workspace_id: str,
+) -> None:
+    for item in sessions:
+        live = product_sessions.find_owned(item["conversation_id"], principal)
+        if live is not None and (
+                live.workspace_id != workspace_id or live.session_id != item["session_id"]
+                or live.trace_id != item["trace_id"]):
+            raise HTTPException(status_code=502, detail="Gateway session binding does not match Backend reset receipt")
+        _workspace_runtime_reset_adapter_session(item["session_id"], item["trace_id"])
+        # Both registry eviction and local projection cleanup happen only after
+        # the Adapter confirms release (or confirms the already-fenced session is absent).
+        product_sessions.remove_owned(item["conversation_id"], principal)
+        _delete_workspace_runtime_sidecars(item["session_id"])
 
 
 def _validate_runtime_authority_receipt(body: object, boot_id: str) -> int:
@@ -2095,6 +2327,96 @@ def delete_product_session(session_id: str, request: Request) -> dict[str, objec
         "trace_id": trace_id,
         "status": "deleted",
     }
+
+
+@app.post("/v1/workspaces/current/runtime-reset")
+def reset_current_workspace_runtime(request: Request) -> dict[str, object]:
+    # Runtime reset is a destructive workspace operation. The deployment
+    # Product Token is only a bootstrap compatibility credential and cannot
+    # identify the durable owner/workspace required by the Backend fence.
+    if SESSION_COOKIE not in request.cookies:
+        raise HTTPException(status_code=401, detail="product authentication required")
+    principal, workspace_id = _trusted_request_identity(request)
+
+    begin = _workspace_runtime_reset_backend_request(
+        "POST",
+        "/internal/workspace-runtime-reset/begin",
+        {"schema_version": WORKSPACE_RUNTIME_RESET_BEGIN_SCHEMA},
+        principal,
+        workspace_id,
+    )
+    reset_id, sessions = _validate_workspace_runtime_reset_begin(begin, workspace_id=workspace_id)
+    _reset_workspace_runtime_sessions(sessions, principal, workspace_id)
+
+    conversation_ids = [item["conversation_id"] for item in sessions]
+    finalized = _workspace_runtime_reset_backend_request(
+        "POST",
+        "/internal/workspace-runtime-reset/finalize",
+        {
+            "schema_version": WORKSPACE_RUNTIME_RESET_FINALIZE_SCHEMA,
+            "reset_id": reset_id,
+            "released_sessions": [item["session_id"] for item in sessions],
+        },
+        principal,
+        workspace_id,
+    )
+    _validate_workspace_runtime_reset_finalize(
+        finalized,
+        workspace_id=workspace_id,
+        reset_id=reset_id,
+        expected_conversation_ids=conversation_ids,
+    )
+    return {
+        "status": "reset",
+        "workspace_id": workspace_id,
+        "archived_conversation_count": len(conversation_ids),
+    }
+
+
+@app.post("/v1/workspaces/current/reset", response_model=None)
+def reset_current_workspace(request: Request, idempotency_key: str | None = Header(
+    default=None, alias="Idempotency-Key",
+)) -> dict[str, object] | JSONResponse:
+    # Browser-only, durable owner identity. A Product Token cannot authorize deletion.
+    if SESSION_COOKIE not in request.cookies:
+        raise HTTPException(status_code=401, detail="product authentication required")
+    principal, workspace_id = _trusted_request_identity(request)
+    try:
+        key = uuid.UUID(idempotency_key or "")
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=422, detail="Idempotency-Key must be an RFC 4122 UUID") from None
+    if key.variant != uuid.RFC_4122 or str(key) != idempotency_key:
+        raise HTTPException(status_code=422, detail="Idempotency-Key must be an RFC 4122 UUID")
+
+    begin = _workspace_runtime_reset_backend_request(
+        "POST", "/internal/workspace-reset/begin",
+        {"schema_version": WORKSPACE_RESET_BEGIN_SCHEMA, "request_key": idempotency_key},
+        principal, workspace_id,
+    )
+    reset_id, sessions, completed = _validate_workspace_reset_begin(begin, workspace_id=workspace_id)
+    if completed is not None:
+        if completed["status"] == "blocked":
+            return JSONResponse(status_code=409, content={
+                "detail": completed["reason"], "reset_terminal": True,
+            })
+        return completed
+    assert reset_id is not None
+    _reset_workspace_runtime_sessions(sessions, principal, workspace_id)
+    finalized = _workspace_runtime_reset_backend_request(
+        "POST", "/internal/workspace-reset/finalize",
+        {"schema_version": WORKSPACE_RESET_FINALIZE_SCHEMA, "reset_id": reset_id,
+         "request_key": idempotency_key,
+         "released_sessions": [item["session_id"] for item in sessions]},
+        principal, workspace_id,
+    )
+    receipt = _validate_workspace_reset_finalize(
+        finalized, workspace_id=workspace_id, reset_id=reset_id,
+    )
+    if receipt["status"] == "blocked":
+        return JSONResponse(status_code=409, content={
+            "detail": receipt["reason"], "reset_terminal": True,
+        })
+    return receipt
 
 
 @app.get("/v1/workflows/{session_id}/events")

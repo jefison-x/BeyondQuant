@@ -1,5 +1,50 @@
 # Phase 0–6 gate record
 
+## Phase 13 Reset Runtime / Reset Workspace — bounded local gate (2026-09-29)
+
+[Execution record](phase13-workspace-reset.md): Product runtime reset durably
+fences one Workspace's Agent business calls before exact Gateway/Adapter
+session release; pending resets keep cookie identity for retry while denying
+Agent admission. Finalization requires exact release proof, closes the revoked
+runs as interrupted, archives only bound conversations, and retains transcripts,
+Jobs, Artifacts and unknown external outcomes. The isolated development reset
+uses an explicit Workspace SQL cleanup, verified scoped runtime volumes and a
+global-reference CAS object scan. **Independent Tester:** fresh disposable
+PostgreSQL 16 Backend reset files 6/6 PASS; Gateway contract 7/7, development
+command 12/12, object cleanup 4/4 PASS. One initial Backend container mount
+omitted the plugin registry; the corrected read-only mount passed and both
+attempts' exact containers and networks were removed, with no persistent
+volume. Current `.266` build manifest check, 83 selected build/retirement/
+architecture tests and diff check PASS. **Independent Sol Reviewer:**
+Functional PASS / Tests PASS / Clean Break Architecture PASS for this tested
+Backend/development slice on actual diff, SQL trigger scope, Gateway retries
+and build identity. **Root acceptance: bounded slice local PASS; Phase 13
+overall OPEN.** The frontend reset menu and user-facing Product Workspace
+reset API are now implemented as an unmerged candidate. Focused disposable-DB
+Backend tests 10/10, Gateway tests 11/11, frontend tests 10/10 and build PASS.
+Independent Sol review found Functional PASS and Clean Break Architecture PASS.
+Its two evidence gaps were closed with a frozen-code completed FactorJob graph
+test 1/1 and a single real-browser Gateway/Product API path 1/1 on a fresh
+isolated stack, exercising Runtime then Workspace reset. Independent Sol
+Reviewer re-verdict: **Functional PASS / Tests PASS / Clean Break Architecture
+PASS for local Phase 13 code**. The maintainer then explicitly authorized the
+`.267` build metadata update. The new immutable manifest and Dockerfile are
+current; `.267` and frozen `.266` checks PASS, and focused build/retirement/
+architecture tests pass 86/86. Independent Sol Reviewer reconfirmed **Functional
+PASS / Tests PASS / Clean Break Architecture PASS** on the final actual diff.
+**Root accepts Phase 13 local gate PASS.** Product reset removes
+Artifact database references; global-reference-safe object GC is separate and
+physical deletion is not claimed at Product request completion. Repository
+PR/CI/merge gate remains open;
+Phase 14 and Golden scenarios remain closed. No existing Product database,
+deployment, push or merge was performed in this turn.
+
+## Phase 12 repository gate (2026-09-29)
+
+PR #375 passed the required hosted CI after its focused Backend receipt-test
+correction and was merged at `8d6929a140d4ebddc55091b43f9c8a3c9d465e4b`.
+The Phase 13 isolated branch starts from that commit. Phase 14 remains closed.
+
 ## Phase 12 Artifact / Approval / Audit — final local gate (2026-09-29)
 
 [Execution record](phase12-artifact-approval-audit.md): owner/workspace-scoped

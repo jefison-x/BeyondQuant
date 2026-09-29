@@ -57,6 +57,12 @@ from .conversation_catalog import (
     ConversationNotFound,
     ConversationPersistenceError,
 )
+from .workspace_runtime_reset import (
+    WorkspaceRuntimeResetConflict,
+    WorkspaceRuntimeResetNotFound,
+    WorkspaceRuntimeResetPersistenceError,
+    WorkspaceRuntimeResetStore,
+)
 from .market_data import MarketDataPersistenceError, MarketDataStore
 from .market_readiness import MarketReadinessPersistenceError, MarketReadinessStore
 from .market_plan import (
@@ -400,6 +406,7 @@ backtest_store = BacktestJobStore.from_env()
 factor_job_store = FactorJobStore.from_env()
 optimization_job_store = OptimizationJobStore.from_env()
 workspace_tenancy_store = WorkspaceTenancyStore.from_env()
+workspace_runtime_reset_store = WorkspaceRuntimeResetStore.from_env()
 CREDENTIAL_RESOLVER_TOKEN = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
 FEEDBACK_PUBLISHER_TOKEN = os.environ.get("BYQ_FEEDBACK_PUBLISHER_TOKEN")
 FEEDBACK_HUB_RELAY_TOKEN = os.environ.get("BYQ_FEEDBACK_HUB_RELAY_TOKEN")
@@ -615,6 +622,72 @@ def _require_runtime_authority_bearer(request: Request) -> None:
     expected = f"Bearer {RUNTIME_AUTHORITY_TOKEN}"
     if not secrets.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8")):
         raise HTTPException(status_code=401, detail="runtime authority service credential required")
+
+
+def _workspace_runtime_reset_call(call: Callable[[], dict[str, object]]) -> dict[str, object]:
+    try:
+        return call()
+    except WorkspaceRuntimeResetNotFound as error:
+        raise HTTPException(status_code=404, detail="exact personal Workspace reset scope was not found") from error
+    except WorkspaceRuntimeResetConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except WorkspaceRuntimeResetPersistenceError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+def _runtime_reset_identity_headers(request: Request) -> tuple[str, str]:
+    owner = request.headers.get("x-byq-owner-principal")
+    workspace = request.headers.get("x-byq-workspace-id")
+    if not owner or not workspace:
+        raise HTTPException(status_code=401, detail="exact owner and Workspace headers are required")
+    return owner, workspace
+
+
+@app.post("/internal/workspace-runtime-reset/begin")
+def begin_workspace_runtime_reset(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_runtime_authority_bearer(request)
+    if set(payload) != {"schema_version"} or payload.get("schema_version") != "workspace-runtime-reset-begin.v1":
+        raise HTTPException(status_code=422, detail="exact Workspace runtime reset begin request required")
+    owner, workspace = _runtime_reset_identity_headers(request)
+    return _workspace_runtime_reset_call(lambda: workspace_runtime_reset_store.begin(
+        owner_principal=owner, workspace_id=workspace))
+
+
+@app.post("/internal/workspace-runtime-reset/finalize")
+def finalize_workspace_runtime_reset(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_runtime_authority_bearer(request)
+    if (set(payload) != {"schema_version", "reset_id", "released_sessions"}
+            or payload.get("schema_version") != "workspace-runtime-reset-finalize.v1"):
+        raise HTTPException(status_code=422, detail="exact Workspace runtime reset finalize request required")
+    owner, workspace = _runtime_reset_identity_headers(request)
+    return _workspace_runtime_reset_call(lambda: workspace_runtime_reset_store.finalize(
+        owner_principal=owner, workspace_id=workspace,
+        reset_id=payload.get("reset_id"), released_sessions=payload.get("released_sessions")))
+
+
+@app.post("/internal/workspace-reset/begin")
+def begin_workspace_reset(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_runtime_authority_bearer(request)
+    if (set(payload) != {"schema_version", "request_key"}
+            or payload.get("schema_version") != "workspace-reset-begin.v1"):
+        raise HTTPException(status_code=422, detail="exact Workspace reset begin request required")
+    owner, workspace = _runtime_reset_identity_headers(request)
+    return _workspace_runtime_reset_call(lambda: workspace_runtime_reset_store.begin_workspace_reset(
+        owner_principal=owner, workspace_id=workspace, idempotency_key=payload.get("request_key")))
+
+
+@app.post("/internal/workspace-reset/finalize")
+def finalize_workspace_reset(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_runtime_authority_bearer(request)
+    if (set(payload) != {"schema_version", "reset_id", "request_key", "released_sessions"}
+            or payload.get("schema_version") != "workspace-reset-finalize.v1"):
+        raise HTTPException(status_code=422, detail="exact Workspace reset finalize request required")
+    owner, workspace = _runtime_reset_identity_headers(request)
+    return _workspace_runtime_reset_call(lambda: workspace_runtime_reset_store.finalize_workspace_reset(
+        owner_principal=owner, workspace_id=workspace, reset_id=payload.get("reset_id"),
+        idempotency_key=payload.get("request_key"), released_sessions=payload.get("released_sessions")))
 
 
 @app.post("/internal/runtime-authority/boot")

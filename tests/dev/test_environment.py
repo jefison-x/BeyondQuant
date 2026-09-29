@@ -114,6 +114,66 @@ class DevEnvironmentTests(unittest.TestCase):
             with self.assertRaisesRegex(env.DevError, "unowned project volume"):
                 env.inventory({})
 
+    def test_reset_stops_writers_before_workspace_cleanup_and_only_removes_owned_runtime_volumes(self):
+        project = env.scope()
+        owned = {"Name": f"{project}-dsh-sessions",
+                 "Labels": {"com.docker.compose.project": project}}
+        with patch.object(env, "inventory", return_value={"containers": [], "volumes": [], "networks": []}), \
+             patch.object(env, "call", return_value=CompletedProcess([], 0, "", "")) as call, \
+             patch.object(env, "docker_json", side_effect=[[owned], None]), \
+             patch.object(env, "docker_lines", return_value=[]):
+            env.reset({"BYQ_DEV_SCOPE": project})
+        commands = [item.args[0] for item in call.call_args_list]
+        self.assertEqual(commands[0][-2:], ["down", "--remove-orphans"])
+        self.assertIn("postgres", commands[1])
+        self.assertIn("app.workspace_reset_cli", commands[3])
+        self.assertIn("workspace-reset-gc", commands[4])
+        self.assertEqual(commands[5][-2:], ["down", "--remove-orphans"])
+        self.assertEqual(commands[6], ["docker", "volume", "rm", f"{project}-dsh-sessions"])
+        self.assertIn("gateway", commands[7])
+        self.assertFalse(any("postgres-data" in " ".join(command) for command in commands))
+
+    def test_reset_rejects_unowned_runtime_volume_before_removal(self):
+        project = env.scope()
+        unowned = {"Name": f"{project}-dsh-sessions",
+                   "Labels": {"com.docker.compose.project": "another-project"}}
+        with patch.object(env, "inventory", return_value={"containers": [], "volumes": [], "networks": []}), \
+             patch.object(env, "call", return_value=CompletedProcess([], 0, "", "")), \
+             patch.object(env, "docker_json", return_value=[unowned]):
+            with self.assertRaisesRegex(env.DevError, "not owned"):
+                env.reset({"BYQ_DEV_SCOPE": project})
+
+    def test_runtime_only_reset_never_calls_workspace_cleanup(self):
+        with patch.object(env, "inventory", return_value={"containers": [], "volumes": [], "networks": []}), \
+             patch.object(env, "call", return_value=CompletedProcess([], 0, "", "")) as call, \
+             patch.object(env, "docker_json", return_value=None):
+            env.reset({"BYQ_DEV_SCOPE": env.scope()}, runtime_only=True)
+        commands = [item.args[0] for item in call.call_args_list]
+        self.assertEqual(len(commands), 4)
+        self.assertFalse(any("app.workspace_reset_cli" in command for command in commands))
+
+    def test_workspace_reset_failure_leaves_runtime_volumes_untouched(self):
+        calls = [CompletedProcess([], 0, "", "") for _ in range(3)]
+        calls.append(CompletedProcess([], 1, "", ""))
+        with patch.object(env, "inventory", return_value={"containers": [], "volumes": [], "networks": []}), \
+             patch.object(env, "call", side_effect=calls) as call, \
+             patch.object(env, "docker_json") as inspect:
+            with self.assertRaisesRegex(env.DevError, "workspace reset failed"):
+                env.reset({"BYQ_DEV_SCOPE": env.scope()})
+        inspect.assert_not_called()
+        self.assertEqual(len(call.call_args_list), 4)
+
+    def test_object_cleanup_failure_is_retryable_without_runtime_volume_removal(self):
+        calls = [CompletedProcess([], 0, "", "") for _ in range(4)]
+        calls.append(CompletedProcess([], 1, "", ""))
+        with patch.object(env, "inventory", return_value={"containers": [], "volumes": [], "networks": []}), \
+             patch.object(env, "call", side_effect=calls) as call, \
+             patch.object(env, "docker_json") as inspect:
+            with self.assertRaisesRegex(env.DevError, "object cleanup failed"):
+                env.reset({"BYQ_DEV_SCOPE": env.scope()})
+        inspect.assert_not_called()
+        self.assertEqual(len(call.call_args_list), 5)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -25,6 +25,13 @@ IDENTITY_SCHEMA_DDL = [
         owner_user_id TEXT NOT NULL UNIQUE REFERENCES users(user_id),
         display_name TEXT NOT NULL,
         status TEXT NOT NULL CHECK (status IN ('active', 'disabled')),
+        reset_id TEXT,
+        reset_kind TEXT,
+        reset_request_key TEXT,
+        reset_sessions_json JSONB,
+        last_reset_id TEXT,
+        last_reset_receipt_json JSONB,
+        last_reset_released_sessions_json JSONB,
         created_at TIMESTAMPTZ NOT NULL,
         updated_at TIMESTAMPTZ NOT NULL
     )
@@ -44,6 +51,17 @@ IDENTITY_SCHEMA_DDL = [
     """
     CREATE UNIQUE INDEX IF NOT EXISTS workspace_personal_owner_membership
         ON workspace_memberships(user_id) WHERE role = 'owner' AND status = 'active'
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS workspace_reset_receipts (
+        workspace_id TEXT NOT NULL REFERENCES workspaces(workspace_id),
+        request_key TEXT NOT NULL,
+        reset_id TEXT NOT NULL,
+        receipt_json JSONB NOT NULL,
+        released_sessions_json JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        PRIMARY KEY (workspace_id, request_key)
+    )
     """,
 ]
 
@@ -257,6 +275,13 @@ class WorkspaceTenancyStore(PgStoreMixin):
         super().bootstrap_schema()
         with self.engine.begin() as connection:
             schema_bootstrap_lock(connection)
+            ensure_column(connection, "workspaces", "reset_id", "TEXT")
+            ensure_column(connection, "workspaces", "reset_kind", "TEXT")
+            ensure_column(connection, "workspaces", "reset_request_key", "TEXT")
+            ensure_column(connection, "workspaces", "reset_sessions_json", "JSONB")
+            ensure_column(connection, "workspaces", "last_reset_id", "TEXT")
+            ensure_column(connection, "workspaces", "last_reset_receipt_json", "JSONB")
+            ensure_column(connection, "workspaces", "last_reset_released_sessions_json", "JSONB")
             for table_name in WORKSPACE_TABLES:
                 exists = connection.execute(text("SELECT to_regclass(:table)"), {"table": table_name}).scalar()
                 if exists is None:
@@ -285,7 +310,9 @@ class WorkspaceTenancyStore(PgStoreMixin):
 
     def public_workspace(self, user_id: str) -> dict[str, str]:
         row = self.get_personal_workspace(user_id)
-        if row is None or row["status"] != "active" or row["membership_status"] != "active":
+        reset_pending = row is not None and row["status"] == "disabled" and bool(row.get("reset_id"))
+        if (row is None or (row["status"] != "active" and not reset_pending)
+                or row["membership_status"] != "active"):
             raise ValueError("active personal workspace membership is required")
         return {
             "contract": CONTRACT_VERSION,
@@ -334,13 +361,15 @@ class WorkspaceTenancyStore(PgStoreMixin):
                 ON w.owner_user_id = u.user_id JOIN workspace_memberships m
                 ON m.workspace_id = w.workspace_id AND m.user_id = u.user_id
                 WHERE u.username = NEW.owner_principal AND u.status = 'active'
-                  AND w.status = 'active' AND m.status = 'active';
+                  AND w.status = 'active' AND m.status = 'active'
+                FOR SHARE OF w;
               -- ADR-0063: no generic bypass. Only an immutable, already-bound
               -- run may follow its trusted persisted root into a terminal state.
               IF resolved IS NULL AND TG_TABLE_NAME = 'agent_runs' AND TG_OP = 'UPDATE' THEN
                 IF OLD.status IN ('active', 'pending_binding')
                     AND NEW.status IN ('completed', 'failed', 'cancelled', 'interrupted')
-                    AND OLD.authority_status = 'active' AND NEW.authority_status = 'closed'
+                    AND OLD.authority_status IN ('active','authority_revoked_unconfirmed')
+                    AND NEW.authority_status = 'closed'
                     AND NEW.version = OLD.version + 1
                     AND (to_jsonb(NEW) - ARRAY['status','authority_status','updated_at','version']) =
                         (to_jsonb(OLD) - ARRAY['status','authority_status','updated_at','version']) THEN
@@ -353,7 +382,44 @@ class WorkspaceTenancyStore(PgStoreMixin):
                       AND r.owner_principal = OLD.owner_principal AND r.workspace_id = OLD.workspace_id
                       AND r.session_id = OLD.session_id AND r.trace_id = OLD.trace_id
                       AND r.status = NEW.status AND r.authority_status = 'closed'
-                      AND r.terminal_sequence IS NOT NULL;
+                      AND ((OLD.authority_status = 'active' AND r.terminal_sequence IS NOT NULL)
+                        OR (OLD.authority_status = 'authority_revoked_unconfirmed'
+                          AND NEW.status = 'interrupted' AND w.status = 'disabled'
+                          AND w.reset_id IS NOT NULL AND r.terminal_sequence IS NULL
+                          AND r.terminal_event_sha256 IS NULL
+                          AND EXISTS (SELECT 1 FROM jsonb_array_elements(w.reset_sessions_json) reset_session
+                            WHERE reset_session->>'session_id'=r.session_id
+                              AND reset_session->>'trace_id'=r.trace_id)));
+                  IF resolved IS NULL AND OLD.root_run_id IS NULL
+                      AND OLD.authority_status = 'authority_revoked_unconfirmed'
+                      AND NEW.status = 'interrupted' THEN
+                    SELECT w.workspace_id INTO resolved FROM users u
+                      JOIN workspaces w ON w.owner_user_id = u.user_id
+                      JOIN workspace_memberships m ON m.workspace_id = w.workspace_id AND m.user_id = u.user_id
+                      WHERE u.username = OLD.owner_principal AND w.kind = 'personal' AND m.role = 'owner'
+                        AND w.workspace_id = OLD.workspace_id AND w.status = 'disabled'
+                        AND w.reset_id IS NOT NULL
+                        AND EXISTS (SELECT 1 FROM jsonb_array_elements(w.reset_sessions_json) reset_session
+                          WHERE reset_session->>'session_id'=OLD.session_id
+                            AND reset_session->>'trace_id'=OLD.trace_id);
+                  END IF;
+                END IF;
+              END IF;
+              IF resolved IS NULL AND TG_TABLE_NAME = 'product_conversations' AND TG_OP = 'UPDATE' THEN
+                IF OLD.status = 'active' AND NEW.status = 'archived'
+                    AND (to_jsonb(NEW) - ARRAY['status','updated_at']) =
+                        (to_jsonb(OLD) - ARRAY['status','updated_at']) THEN
+                  SELECT w.workspace_id INTO resolved FROM users u
+                    JOIN workspaces w ON w.owner_user_id = u.user_id
+                    JOIN workspace_memberships m ON m.workspace_id = w.workspace_id AND m.user_id = u.user_id
+                    WHERE u.username = OLD.owner_principal AND u.status = 'active'
+                      AND m.status = 'active' AND m.role = 'owner'
+                      AND w.kind = 'personal' AND w.workspace_id = OLD.workspace_id
+                      AND w.status = 'disabled' AND w.reset_id IS NOT NULL
+                      AND EXISTS (SELECT 1 FROM jsonb_array_elements(w.reset_sessions_json) reset_session
+                        WHERE reset_session->>'conversation_id'=OLD.conversation_id
+                          AND reset_session->>'session_id'=OLD.runtime_session_id
+                          AND reset_session->>'trace_id'=OLD.trace_id);
                 END IF;
               END IF;
               IF resolved IS NULL THEN RAISE EXCEPTION 'trusted workspace owner is unresolved'; END IF;
@@ -382,7 +448,8 @@ class WorkspaceTenancyStore(PgStoreMixin):
                   ON w.owner_user_id = u.user_id JOIN workspace_memberships m
                   ON m.workspace_id = w.workspace_id AND m.user_id = u.user_id
                   WHERE u.username = to_jsonb(NEW) ->> 'owner_principal'
-                    AND u.status = 'active' AND w.status = 'active' AND m.status = 'active';
+                    AND u.status = 'active' AND w.status = 'active' AND m.status = 'active'
+                  FOR SHARE OF w;
                 IF owner_resolved IS NULL AND TG_TABLE_NAME = 'agent_audit' AND TG_OP = 'INSERT' THEN
                   SELECT w.workspace_id INTO owner_resolved FROM users u
                     JOIN workspaces w ON w.owner_user_id = u.user_id

@@ -17,3 +17,7 @@ df5e8990fb092e0f678ef5f0aa9d59cce5679904:scripts/evidence/h4-strategy-pagination
 # at the source, so current evidence carries only sha256:<digest> markers; this
 # exact pre-redaction historical finding is the sole suppression.
 561f9db69bf2b7661354be97990935ca1fa46ee7:docs/evidence/adr-0085-p4c1-adapter-fault-safe/observations.v1.json:generic-api-key:634
+
+# Phase 13 test-only RFC 4122 idempotency UUID, not an authentication key.
+# Suppress only the exact already-pushed finding; all other findings still fail.
+34fcd5103610f3151b55f831c8e8e6e11127775e:services/gateway/tests/test_workspace_runtime_reset.py:generic-api-key:16

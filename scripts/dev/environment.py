@@ -15,7 +15,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-CURRENT_DSH_DOCKERFILE = "services/runtime-adapter/Dockerfile.post-u8-265-candidate"
+CURRENT_DSH_DOCKERFILE = "services/runtime-adapter/Dockerfile.post-u8-269-candidate"
 ENV_FILE = ROOT / ".env.dev"
 TEMPLATE = ROOT / ".env.example"
 VOLUME_SUFFIXES = ("postgres-data", "domain-state", "ml-model-state", "dsh-sessions", "workflow-traces")
@@ -253,10 +253,47 @@ def clean(values: dict[str, str], apply: bool) -> None:
     print("Isolated development resources removed; .env.dev and images retained")
 
 
+def reset(values: dict[str, str], *, runtime_only: bool = False) -> None:
+    """Reset only this worktree's disposable runtime and Workspace data."""
+    inventory(values)  # Verify every existing resource belongs to this project.
+    if call(compose_args("down", "--remove-orphans"), values).returncode:
+        raise DevError("isolated services could not be stopped for reset")
+    if call(compose_args("up", "-d", "--wait", "postgres"), values).returncode:
+        raise DevError("isolated database could not start for reset")
+    if not runtime_only:
+        if call(compose_args("build", "backend"), values).returncode:
+            raise DevError("current backend image could not be built for reset")
+        result = call(compose_args("run", "--rm", "--no-deps", "--env", "BYQ_DEV_SCOPE",
+                                   "--env", "COMPOSE_PROJECT_NAME",
+                                   "backend", "python", "-m", "app.workspace_reset_cli",
+                                   "--all-workspaces"), values)
+        if result.returncode:
+            raise DevError("workspace reset failed; PostgreSQL remains available for diagnosis")
+        if call(compose_args("--profile", "maintenance", "run", "--rm", "--no-deps",
+                             "workspace-reset-gc"), values).returncode:
+            raise DevError("workspace object cleanup failed; rerun to recover orphaned objects")
+    if call(compose_args("down", "--remove-orphans"), values).returncode:
+        raise DevError("isolated services could not stop before runtime volume cleanup")
+    for suffix in ("dsh-sessions", "workflow-traces"):
+        name = f"{scope()}-{suffix}"
+        obj = docker_json(["volume", "inspect", name], values, absent_ok=True)
+        if obj is None:
+            continue
+        if obj[0].get("Name") != name or (obj[0].get("Labels") or {}).get("com.docker.compose.project") != scope():
+            raise DevError("runtime volume is not owned by this isolated worktree")
+        if docker_lines(["ps", "-aq", "--filter", f"volume={name}"], values):
+            raise DevError("runtime volume still has a container reference")
+        if call(["docker", "volume", "rm", name], values, capture=True).returncode:
+            raise DevError("isolated runtime volume removal failed")
+    if call(compose_args("up", "-d", "--wait", "--build", *SERVICES["core"]), values).returncode:
+        raise DevError("isolated core services could not restart after reset")
+    print(f"Reset isolated development {'runtime' if runtime_only else 'runtime and Workspaces'}: {scope()}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("init", "stop", "reset", "seed", "test"):
+    for name in ("init", "stop", "reset", "reset-runtime", "seed", "test"):
         sub.add_parser(name)
     start = sub.add_parser("start")
     start.add_argument("--profile", choices=tuple(SERVICES), default="core")
@@ -281,8 +318,10 @@ def main() -> int:
             print(f"Stopped {scope()} containers; volumes retained")
         elif args.command == "clean":
             clean(values, args.apply)
-        elif args.command in ("seed", "reset"):
-            print(f"NOT_RUN: dev-{args.command} awaits Phase {'14' if args.command == 'seed' else '13'} domain contract", file=sys.stderr)
+        elif args.command in ("reset", "reset-runtime"):
+            reset(values, runtime_only=args.command == "reset-runtime")
+        elif args.command == "seed":
+            print("NOT_RUN: dev-seed awaits Phase 14 domain contract", file=sys.stderr)
             return 2
         elif args.command == "test":
             result = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "docs/clean-break/validation", "-p", "test_*.py"], cwd=ROOT, env=child_env(values), check=False)

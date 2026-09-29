@@ -50,4 +50,20 @@ describe("UserSettingsMenu", () => {
     expect(wrapper.text()).not.toMatch(/邀请|成员管理|切换工作区|创建工作区/);
     expect(wrapper.html()).not.toContain("workspace_alice");
   });
+
+  it("exposes workspace reset from the mobile user menu", () => {
+    const wrapper = mount(UserSettingsMenu, {
+      props: { variant: "mobile" },
+      global: {
+        stubs: {
+          "el-dropdown": { template: "<div><slot /><slot name='dropdown' /></div>" },
+          "el-dropdown-menu": { template: "<ul><slot /></ul>" },
+          "el-dropdown-item": { props: ["command"], template: "<li :data-command='command'><slot /></li>" },
+          "el-icon": { template: "<i><slot /></i>" },
+        },
+      },
+    });
+
+    expect(wrapper.find('[data-command="/user/reset"]').text()).toContain("重置工作区");
+  });
 });
