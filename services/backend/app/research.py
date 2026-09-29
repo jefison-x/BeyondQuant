@@ -881,8 +881,19 @@ class ResearchStore(
         )
         return None if row is None else self._artifact_row(row)
 
-    def list_artifacts(self, *, owner_principal: str | None = None) -> dict[str, object]:
-        if owner_principal:
+    def list_artifacts(
+        self, *, owner_principal: str | None = None, workspace_id: str | None = None,
+    ) -> dict[str, object]:
+        if workspace_id is not None:
+            if owner_principal is None:
+                raise ValueError("workspace-scoped Artifact list requires owner_principal")
+            rows = self._execute(
+                """SELECT * FROM artifacts WHERE owner_principal = :owner_principal
+                   AND workspace_id = :workspace_id
+                   ORDER BY created_at DESC, artifact_id DESC LIMIT 200""",
+                {"owner_principal": owner_principal, "workspace_id": workspace_id},
+            )
+        elif owner_principal:
             rows = self._execute(
                 "SELECT * FROM artifacts WHERE owner_principal = :owner_principal ORDER BY created_at DESC, artifact_id DESC LIMIT 200",
                 {"owner_principal": owner_principal},

@@ -6,11 +6,13 @@ import hashlib
 import json
 import re
 import uuid
-from contextlib import nullcontext
+from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from .db import PgStoreMixin, execute, fetch_one
+from .audit_event import AuditEmitter, AuditEvent
+from .db import PgStoreMixin, execute, fetch_one, transaction
 from .factor_research import FactorValidationError, prepare_factor_input
 from .research import IdempotencyConflict, ResearchNotFound, _identifier, _idempotency_key, _text, _trace_id
 
@@ -20,6 +22,8 @@ MAX_INPUT_BYTES = 4 * 1024 * 1024
 CLAIM_LEASE_SECONDS = 5 * 60
 _JOB_ID = re.compile(r"^factorjob_[0-9a-f]{32}$")
 _ERROR_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_PENDING_AUDIT_EVENTS = "byq.factor_job.pending_audit_events.v1"
+_AUDIT_ACTOR = "byq.factor_worker"
 _PUBLIC_STATUS = {
     "queued": "QUEUED",
     "running": "RUNNING",
@@ -46,6 +50,63 @@ def _json_text(value: object) -> str:
 
 class FactorJobStore(PgStoreMixin):
     """Factor-specific durable queue and its bounded public Job projection."""
+
+    def __init__(self, database_url: str | None = None, *, audit_emitter: AuditEmitter | None = None) -> None:
+        self.audit_emitter = audit_emitter if audit_emitter is not None else AuditEmitter()
+        super().__init__(database_url)
+
+    @contextmanager
+    def _transaction(self) -> Iterator[Any]:
+        """Dispatch transaction-scoped completion observations only after commit."""
+        pending_events: list[dict[str, object]] = []
+        with self._lock, transaction(self.engine) as connection:
+            connection.info[_PENDING_AUDIT_EVENTS] = pending_events
+            try:
+                yield connection
+            finally:
+                connection.info.pop(_PENDING_AUDIT_EVENTS, None)
+        for event_data in pending_events:
+            self._emit_completion_observation(event_data)
+
+    def _defer_completion_observation(self, connection, row: dict[str, Any]) -> None:
+        """Attach an observation to this store transaction for post-commit delivery."""
+        pending_events = connection.info.get(_PENDING_AUDIT_EVENTS)
+        if not isinstance(pending_events, list):
+            # An externally managed transaction has no safe post-commit hook.
+            # Its caller must use this store's transaction context to opt in.
+            return
+        pending_events.append({
+            "job_id": row.get("job_id"),
+            "artifact_id": row.get("result_artifact_id"),
+            "owner_principal": row.get("owner_principal"),
+            "workspace_id": row.get("workspace_id"),
+            "trace_id": row.get("trace_id"),
+        })
+
+    def _emit_completion_observation(self, event_data: dict[str, object]) -> None:
+        """Best-effort post-commit delivery; never expose sink details or undo a Job."""
+        try:
+            job_id = str(event_data["job_id"])
+            artifact_id = str(event_data["artifact_id"])
+            event = AuditEvent(
+                workspace_id=str(event_data["workspace_id"]),
+                owner_principal=str(event_data["owner_principal"]),
+                actor_principal=_AUDIT_ACTOR,
+                action="job.completed",
+                resource_type="job",
+                resource_id=job_id,
+                result="success",
+                request_id=None,
+                job_id=job_id,
+                metadata={"artifact_id": artifact_id, "trace_id": str(event_data["trace_id"])},
+            )
+            self.audit_emitter.emit(event)
+        except Exception:
+            # Event construction is also observational. Keep exception text out
+            # of logs because a storage error can include query data or secrets.
+            import logging
+
+            logging.getLogger("byq.audit").warning("factor Job completion audit delivery failed")
 
     SCHEMA_DDL: list[str] = [
         """
@@ -276,11 +337,15 @@ class FactorJobStore(PgStoreMixin):
                      "manifest": exhausted["input_manifest_id"]},
                 )
                 if artifact is not None:
-                    execute(connection, """UPDATE factor_jobs SET status='completed',
+                    completed = fetch_one(connection, """UPDATE factor_jobs SET status='completed',
                         result_artifact_id=:artifact, error_code=NULL, error_message=NULL,
                         worker_id=NULL, claimed_at=NULL, finished_at=:now, updated_at=:now
-                        WHERE job_id=:job AND status='running'""",
+                        WHERE job_id=:job AND status='running'
+                        RETURNING job_id, task_id, workspace_id, owner_principal,
+                                  trace_id, result_artifact_id""",
                         {"artifact": artifact["artifact_id"], "job": exhausted["job_id"], "now": now})
+                    if completed is not None:
+                        self._defer_completion_observation(connection, completed)
                 else:
                     execute(connection, """UPDATE factor_jobs SET status='failed',
                         error_code='worker_attempts_exhausted',
@@ -349,10 +414,13 @@ class FactorJobStore(PgStoreMixin):
                            AND artifact.experiment_id IS NOT DISTINCT FROM job.experiment_id
                            AND artifact.content->>'input_manifest_id'=job.input_manifest_id
                      )
-                   RETURNING job.job_id""",
+                   RETURNING job.job_id, job.task_id, job.workspace_id,
+                             job.owner_principal, job.trace_id, job.result_artifact_id""",
                 {"artifact": artifact_id, "now": now, "job": identity, "attempt": attempt,
                  "lease_seconds": CLAIM_LEASE_SECONDS},
             )
+            if row is not None:
+                self._defer_completion_observation(connection, row)
             return row is not None
 
     def fail(

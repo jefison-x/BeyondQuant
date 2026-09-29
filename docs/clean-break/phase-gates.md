@@ -1,5 +1,20 @@
 # Phase 0–6 gate record
 
+## Phase 12 Artifact / Approval / Audit — final local gate (2026-09-29)
+
+[Execution record](phase12-artifact-approval-audit.md): owner/workspace-scoped
+Artifact reference, closed approval policy with exact Agent grants at the five
+ACTION write boundaries, and a best-effort after-commit FactorJob AuditEvent.
+Authenticated Product user review and cancellation paths remain available.
+Focused disposable-DB Backend tests passed after correcting two test-only
+expectations (54 initial passes; affected rerun 8/8). Gateway 4/4, MCP build
+and five focused suites, DSH revision/retirement 9/9, architecture 73/74 then
+the single documented-route correction 1/1, dev-check and final build revision
+check passed. Independent Tester: PASS. Independent Sol Reviewer: Functional
+PASS / Tests PASS / Clean Break Architecture PASS. **Root acceptance: Phase 12
+local PASS.** Required PR CI and merge gate remain open; Phase 13 must not
+begin until repository gate completion. Golden scenarios remain Phases 15–16.
+
 ## Phase 11 Business Job — final local gate (2026-09-28)
 
 The five domain Job paths now have stable owner/workspace-scoped IDs, common

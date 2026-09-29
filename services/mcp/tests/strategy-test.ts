@@ -101,10 +101,14 @@ assert.equal(version.isError, false);
 
 const approved = await fetchByqStrategyApprove(
   "http://backend:8000",
-  { ...request, strategy_version_artifact_id: artifactId, reviewer_principal: "human-owner", decision: "approved" },
+  {
+    ...request, strategy_version_artifact_id: artifactId, reviewer_principal: "human-owner",
+    agent_approval_id: "agent_approval_" + "a".repeat(32), decision: "approved",
+  },
   async (url, init) => {
     assert.equal(url, "http://backend:8000/v1/research/strategies/approvals");
     assert.equal(init?.method, "POST");
+    assert.match(String(init?.body), /agent_approval_id/);
     return new Response(JSON.stringify({ approval: { execution_authorized: true, execution_outcome: "not_started" } }), { status: 201 });
   },
 );

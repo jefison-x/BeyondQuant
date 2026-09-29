@@ -172,17 +172,20 @@ const lateReceipt = await fetchByqMlTrainingGet(backend, { idempotency_key: "unk
   new Response(JSON.stringify({ training_run: { training_run_id: runId } }), { status: 200 }));
 assert.equal(JSON.parse(lateReceipt.content[0].text).training_run.training_run_id, runId);
 
-for (const [call, suffix, method] of [
-  [fetchByqMlTrainingGet, "", "GET"],
-  [fetchByqMlTrainingCancel, "/cancel", "POST"],
-] as const) {
-  const response = await call(backend, runId, async (url, init) => {
-    assert.equal(url, `${backend}/v1/research/ml/training-runs/${runId}${suffix}`);
-    assert.equal(init?.method, method);
-    return new Response(JSON.stringify({ training_run: { training_run_id: runId, status: "cancelled" } }), { status: 200 });
-  });
-  assert.equal(response.isError, false);
-}
+const trainingRead = await fetchByqMlTrainingGet(backend, runId, async (url, init) => {
+  assert.equal(url, `${backend}/v1/research/ml/training-runs/${runId}`);
+  assert.equal(init?.method, "GET");
+  return new Response(JSON.stringify({ training_run: { training_run_id: runId, status: "waiting_for_data" } }), { status: 200 });
+});
+assert.equal(trainingRead.isError, false);
+const trainingApprovalId = "agent_approval_0123456789abcdef0123456789abcdef";
+const trainingCancelled = await fetchByqMlTrainingCancel(backend, runId, trainingApprovalId, async (url, init) => {
+  assert.equal(url, `${backend}/v1/research/ml/training-runs/${runId}/cancel`);
+  assert.equal(init?.method, "POST");
+  assert.deepEqual(JSON.parse(String(init?.body)), { agent_approval_id: trainingApprovalId });
+  return new Response(JSON.stringify({ training_run: { training_run_id: runId, status: "cancelled" } }), { status: 200 });
+});
+assert.equal(trainingCancelled.isError, false);
 
 console.log("ML MCP translation PASS: closed capabilities, safe workspace, strategy and training lifecycle");
 

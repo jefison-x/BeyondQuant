@@ -276,12 +276,13 @@ export function fetchByqBacktestTaskExecute(
 export function fetchByqBacktestTaskCancel(
   backendUrl: string,
   taskId: string,
+  agentApprovalId: string,
   fetcher: Fetcher = fetch,
 ): Promise<ByqBacktestResult> {
   return requestBacktest(
     backendUrl,
     `/v1/research/backtest-tasks/${encodeURIComponent(taskId)}/cancel`,
-    { method: "POST", body: "{}" },
+    { method: "POST", body: JSON.stringify({ agent_approval_id: agentApprovalId }) },
     fetcher,
   );
 }

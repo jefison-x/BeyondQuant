@@ -148,6 +148,20 @@ def test_agent_feedback_submit_requires_exact_global_approval(monkeypatch) -> No
     decided = agent.post(f"/v1/agents/approvals/{approval['approval_id']}/decision", headers=human_headers,
                          json={"decision":"approved","rationale":"已检查公开候选内容"})
     assert decided.status_code == 200
+    submit_payload = {
+        "expected_version": item["version"], "preview_hash": preview["preview_hash"],
+        "disclosure_confirmed": True, "idempotency_key": "agent-feedback-submit",
+    }
+    missing_grant = agent.post(
+        f"/v1/feedback/items/{item['feedback_id']}/submit", json=submit_payload,
+    )
+    assert missing_grant.status_code == 403, missing_grant.text
+    wrong_grant = agent.post(
+        f"/v1/feedback/items/{item['feedback_id']}/submit",
+        json={**submit_payload, "agent_approval_id": "agent_approval_" + "0" * 32},
+    )
+    assert wrong_grant.status_code == 403, wrong_grant.text
+    assert agent.get(f"/v1/feedback/items/{item['feedback_id']}").json()["feedback"]["status"] == "draft"
     submitted = agent.post(f"/v1/feedback/items/{item['feedback_id']}/submit", json={
         "expected_version":item["version"],"preview_hash":preview["preview_hash"],"disclosure_confirmed":True,
         "agent_approval_id":approval["approval_id"],"idempotency_key":"agent-feedback-submit",

@@ -4,9 +4,10 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app import main as backend_main
+from app.agent_research import AgentResearchStore
 from app.main import _ml_pool_market_scope, app
 from tests.test_ml_strategy import valid_strategy, valid_strategy_v2
-from tests.workspace_helpers import trusted_agent_context
+from tests.workspace_helpers import trusted_agent_context, trusted_product_agent_context
 
 
 client = TestClient(app)
@@ -307,6 +308,62 @@ def test_ml_strategy_version_and_human_approval_are_owner_scoped() -> None:
     assert approval.status_code == 201, approval.text
     assert approval.json()["approval"]["execution_authorized"] is True
     assert approval.json()["approval"]["reviewer_principal"] == "ml-api-owner"
+
+
+def test_agent_ml_strategy_approval_requires_exact_grant_and_preserves_human_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    owner = "ml-agent-approval-owner"
+    human_headers = trusted_agent_context(
+        owner, actor=owner, trace_id="ml-agent-approval-trace",
+        session_id="ml-agent-human-session", dsh_run_id="ml-agent-human-run",
+    )
+    agent_session = "ml-agent-approval-session"
+    agent_headers = trusted_product_agent_context(
+        owner, actor=f"byq-product-agent-{agent_session}",
+        trace_id="ml-agent-approval-trace", session_id=agent_session, dsh_run_id="ml-agent-approval-run",
+    )
+    agents = AgentResearchStore()
+    monkeypatch.setattr(backend_main, "agent_store", agents)
+    human = TestClient(app)
+    agent = TestClient(app)
+    task_response = human.post("/v1/research/tasks", headers=human_headers, json={
+        "owner_principal": owner, "title": "ML approval gate", "objective": "Check exact Agent grants",
+        "trace_id": "ml-agent-approval-trace", "idempotency_key": "ml-agent-approval-task",
+    })
+    assert task_response.status_code == 201, task_response.text
+    task_id = task_response.json()["task_id"]
+    version_response = human.post("/v1/research/ml/strategies/versions", headers=human_headers, json={
+        "task_id": task_id, "strategy": valid_strategy(), "trace_id": "ml-agent-approval-trace",
+        "idempotency_key": "ml-agent-approval-version",
+    })
+    assert version_response.status_code == 201, version_response.text
+    artifact_id = version_response.json()["artifact"]["artifact_id"]
+    payload = {
+        "task_id": task_id, "ml_strategy_artifact_id": artifact_id, "decision": "approved",
+        "rationale": "Reviewed", "trace_id": "ml-agent-approval-trace",
+        "idempotency_key": "ml-agent-approval-agent-write",
+    }
+    before = backend_main.research_store._execute(
+        "SELECT COUNT(*) AS count FROM artifacts WHERE owner_principal=:owner AND kind='ml_strategy_approval'",
+        {"owner": owner},
+    )[0]["count"]
+    missing = agent.post("/v1/research/ml/strategies/approvals", headers=agent_headers, json=payload)
+    assert missing.status_code == 403, missing.text
+    wrong = agent.post("/v1/research/ml/strategies/approvals", headers=agent_headers, json={
+        **payload, "agent_approval_id": "agent_approval_" + "0" * 32,
+    })
+    assert wrong.status_code == 403, wrong.text
+    after_agent_attempts = backend_main.research_store._execute(
+        "SELECT COUNT(*) AS count FROM artifacts WHERE owner_principal=:owner AND kind='ml_strategy_approval'",
+        {"owner": owner},
+    )[0]["count"]
+    assert after_agent_attempts == before
+
+    human_approval = human.post("/v1/research/ml/strategies/approvals", headers=human_headers, json={
+        **payload, "idempotency_key": "ml-agent-approval-human-write",
+    })
+    assert human_approval.status_code == 201, human_approval.text
+    assert human_approval.json()["approval"]["reviewer_principal"] == owner
+    agents.close()
 
 
 def test_ml_strategy_endpoint_rejects_open_python_contract() -> None:
