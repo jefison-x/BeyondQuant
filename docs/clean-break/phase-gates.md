@@ -1,5 +1,32 @@
 # Phase 0–6 gate record
 
+## Phase 15 fresh-state Research and Backtest slices (2026-09-29)
+
+[Execution record](phase15-functional-fidelity.md): in the worktree-scoped
+disposable stack, one real TuShare daily row was imported through Data Worker;
+the Product DSH Agent read it through BYQ MCP in a two-turn delegated research
+conversation, saved seven-source Web Search evidence, and produced normalized
+trace and business audit records. Separately, two worker BacktestJobs and one
+OptimizationJob produced exact result/comparison Artifacts. Playwright Chromium
+used real Product login to display both Agent answers, compare the exact two
+completed Backtest IDs with numeric metrics, and list the exact research and
+comparison Artifact IDs. The final browser run passed with 173 same-origin
+requests and zero off-origin requests. Focused contract tests for the new
+Optimization Product route, shared result access and developer profile passed.
+The Docker build context now excludes local `.env.*` credentials.
+
+**Tester:** focused Product/Backend/dev tests PASS for the B code slice;
+research documentation and final browser-script static checks PASS. **Independent
+Sol Reviewer:** Functional PASS / Tests and Evidence PASS / Clean Break
+Architecture PASS for the bounded live research and browser slices; the prior B
+code review also passed its bounded triad. **Root acceptance:** PASS for these
+bounded A/B Product API, Worker and browser observations only. The full Phase 15
+gate remains **OPEN** for Agent-led strategy change, Job/session interruption,
+reset/rebuild, and ML. GPU execution is `NOT_RUN` on this host, which has no
+NVIDIA device or Docker NVIDIA runtime; the present ML image is CPU LightGBM.
+Phase 16 remains closed. No existing Product database, backup or deployment was
+used.
+
 ## Phase 14 repository gate and Phase 15 entry (2026-09-29)
 
 PR #377 passed all required hosted checks, including Backend and integration,

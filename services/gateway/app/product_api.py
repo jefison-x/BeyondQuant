@@ -1060,6 +1060,54 @@ def product_backtest_delete(job_id: str, request: Request) -> dict[str, object]:
     )
 
 
+@router.post("/optimization-jobs", status_code=202)
+def product_optimization_job_submit(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    _product_principal(request)
+    headers = _trusted_agent_headers(request)
+    # The Backend accepts a trace only when it matches its trusted context.
+    # Bind the body to the same Gateway-generated trace and discard any
+    # caller-provided value.
+    return _backend_request(
+        "POST",
+        "/v1/research/optimization-jobs",
+        {**payload, "trace_id": headers["x-byq-trace-id"]},
+        headers=headers,
+    )
+
+
+@router.get("/optimization-jobs/{job_id}")
+def product_optimization_job_get(job_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "GET",
+        f"/v1/research/optimization-jobs/{quote(job_id, safe='')}",
+        headers=_trusted_agent_headers(request),
+    )
+
+
+@router.get("/optimization-jobs")
+def product_optimization_job_find(
+    request: Request, task_id: str, idempotency_key: str,
+) -> dict[str, object]:
+    _product_principal(request)
+    params = urlencode({"task_id": task_id, "idempotency_key": idempotency_key})
+    return _backend_request(
+        "GET",
+        f"/v1/research/optimization-jobs?{params}",
+        headers=_trusted_agent_headers(request),
+    )
+
+
+@router.post("/optimization-jobs/{job_id}/cancel")
+def product_optimization_job_cancel(job_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request(
+        "POST",
+        f"/v1/research/optimization-jobs/{quote(job_id, safe='')}/cancel",
+        headers=_trusted_agent_headers(request),
+    )
+
+
 @router.get("/strategies/versions/{artifact_id}/export")
 def product_strategy_export(artifact_id: str, request: Request) -> dict[str, object]:
     _product_principal(request)

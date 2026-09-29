@@ -1154,6 +1154,103 @@ def test_product_backtest_browser_reads_use_bounded_projections(monkeypatch) -> 
     assert any(url.endswith("/v1/research/backtests/backtest_1?projection=summary") for url in captured)
 
 
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        ("post", "/api/product/optimization-jobs", {}),
+        ("get", "/api/product/optimization-jobs/optimizationjob_1", None),
+        ("get", "/api/product/optimization-jobs?task_id=task_1&idempotency_key=optimization-key-1", None),
+        ("post", "/api/product/optimization-jobs/optimizationjob_1/cancel", None),
+    ],
+)
+def test_product_optimization_job_routes_require_authentication(
+    monkeypatch, method: str, path: str, payload: dict[str, object] | None,
+) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    calls: list[tuple[object, ...]] = []
+    monkeypatch.setattr(
+        product_api, "_backend_request",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or {},
+    )
+    client = TestClient(main.app)
+
+    response = client.request(method, path, json=payload)
+
+    assert response.status_code == 401
+    assert calls == []
+
+
+def test_product_optimization_job_routes_forward_trusted_context_and_idempotency(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    monkeypatch.setenv("BYQ_PRODUCT_WORKSPACE_ID", "workspace-product-test")
+    calls: list[dict[str, object]] = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"job": {"job_id": "optimizationjob_1"}}
+
+    def fake_request(method: str, url: str, **kwargs) -> FakeResponse:
+        calls.append({"method": method, "url": url, **kwargs})
+        return FakeResponse()
+
+    monkeypatch.setattr(product_api.httpx, "request", fake_request)
+    client = TestClient(main.app)
+    headers = {
+        "Authorization": "Bearer product-test-token",
+        "x-byq-owner-principal": "caller-owner",
+        "x-byq-workspace-id": "caller-workspace",
+        "x-byq-trace-id": "caller-trace",
+        "x-idempotency-key": "header-idempotency-key",
+    }
+    body = {
+        "task_id": "task_1",
+        "trace_id": "caller-body-trace",
+        "idempotency_key": "optimization-key-1",
+        "objective": "total_return",
+        "candidates": [
+            {"backtest_job_id": "backtest_1", "parameters": {"lookback": 10}},
+            {"backtest_job_id": "backtest_2", "parameters": {"lookback": 20}},
+        ],
+    }
+
+    created = client.post("/api/product/optimization-jobs", headers=headers, json=body)
+    fetched = client.get("/api/product/optimization-jobs/optimizationjob_1", headers=headers)
+    found = client.get(
+        "/api/product/optimization-jobs?task_id=task_1&idempotency_key=optimization-key-1",
+        headers=headers,
+    )
+    cancelled = client.post(
+        "/api/product/optimization-jobs/optimizationjob_1/cancel", headers=headers,
+    )
+
+    assert created.status_code == 202
+    assert fetched.status_code == found.status_code == cancelled.status_code == 200
+    assert [call["method"] for call in calls] == ["POST", "GET", "GET", "POST"]
+    assert [call["url"] for call in calls] == [
+        f"{product_api.BACKEND_URL}/v1/research/optimization-jobs",
+        f"{product_api.BACKEND_URL}/v1/research/optimization-jobs/optimizationjob_1",
+        f"{product_api.BACKEND_URL}/v1/research/optimization-jobs?task_id=task_1&idempotency_key=optimization-key-1",
+        f"{product_api.BACKEND_URL}/v1/research/optimization-jobs/optimizationjob_1/cancel",
+    ]
+    forwarded_body = calls[0]["json"]
+    forwarded_headers = calls[0]["headers"]
+    assert forwarded_body == {**body, "trace_id": forwarded_headers["x-byq-trace-id"]}
+    assert forwarded_body["idempotency_key"] == "optimization-key-1"
+    assert forwarded_headers["x-byq-owner-principal"] == "product-user"
+    assert forwarded_headers["x-byq-actor-principal"] == "product-user"
+    assert forwarded_headers["x-byq-workspace-id"] == "workspace-product-test"
+    assert forwarded_headers["x-byq-trace-id"].startswith("product-")
+    assert all(
+        call["headers"]["x-byq-owner-principal"] == "product-user"
+        and call["headers"]["x-byq-workspace-id"] == "workspace-product-test"
+        for call in calls
+    )
+
+
 def test_product_strategy_version_create_proxy(monkeypatch) -> None:
     monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")

@@ -11,7 +11,7 @@ Run commands from this isolated source worktree:
 | `make dev-init` | Create ignored, mode-0600 `.env.dev` from `.env.example` with a worktree-specific Compose project and random local secrets; validate the explicit Compose files. Existing project config is checked, never overwritten. |
 | `make dev-start DEV_PROFILE=core` | Start Postgres, Backend, Product MCP, Runtime Adapter and Gateway for this worktree. |
 | `make dev-start DEV_PROFILE=research` | Core plus data worker. |
-| `make dev-start DEV_PROFILE=backtest` | Core plus signal sandbox and signal worker; existing Backend backtest capability remains in Backend until the business Job phase. |
+| `make dev-start DEV_PROFILE=backtest` | Core plus signal sandbox, signal worker, Backtest Worker, Optimization Worker and Factor Worker. |
 | `make dev-start DEV_PROFILE=ml` | Core plus current ML worker; GPU qualification belongs to later phases. |
 | `make dev-start DEV_PROFILE=full` | Core, research, backtest, ML and frontend. Feedback publishing remains an opt-in production integration. |
 | `make dev-stop` | Stop this worktree's containers without deleting volumes or credentials. |
