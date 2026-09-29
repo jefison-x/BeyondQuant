@@ -32,6 +32,14 @@ foundation, not a market-research or Agent journey.
 | E: Runtime and Workspace reset | The populated browser reset, reseed and two-turn delegated Agent/Web research passed. A separate Workspace confirmed protected identity/config and exact deletion IDs. A subsequent Product reset of the Agent-audited Workspace now also passes while retaining the exact two Web evidence audit facts and deleting their disposable Artifacts. | Golden E's specified `reset → seed → rerun A` sequence and the bounded repeated-reset fix are local PASS; this does not complete the other Phase 15 journeys. |
 | F: full rebuild | Exact-scope `dev-clean` apply removed only this isolated project's 12 containers, 4 volumes and 2 networks; `dev-init`/core start/seed/test and real login passed on a fresh schema. | The connected Golden journeys have not been rerun after rebuild. F environment lifecycle is bounded PASS; full Golden F remains OPEN. |
 
+### Golden B Agent journey: first live attempt and corrected test contract
+
+On the isolated real-data Workspace `workspace_9f180f427ac14bb7b5ccb35c4c59d1c8`, a parameterized A StrategyVersion `artifact_be7d69ccfbe7410d98d8b8b769f7ce48` was approved as `artifact_94adbe9d99c546219caefd3da9e66cc3`. Product Agent conversation `conversation_bc6fbd4d70484285a6186e54d5971bca` created BacktestTask `backtesttask_8198caaba3994d1ba0dbc31ed5292827` and BacktestJob `backtest_f1bb382765a84fe08c7c6ee78a1d4cab`; the independent Worker completed it with result Artifact `artifact_194dcf854f2044e09b7d8009ad9e4471`. The next Agent turn could read A and export its strategy, but `byq_strategy_validate` failed. No B StrategyVersion was created, and this attempt is **FAIL**, not a Golden B pass.
+
+The root cause is the first attempt's ResearchTask `task_2483144d3e0d42a3b5d991e8f07a1eb7`: Product API created it before the Agent conversation, so its `conversation_id` is null. The domain-call contract correctly requires Agent strategy writes to use a Task bound to that same original conversation. The isolated Backend returned `425 call_evidence_pending`, and private evidence delivery rejected the conversation/Task mismatch with 401. Replaying the failed turn would not repair the binding.
+
+The revised staged script creates a fresh ResearchTask and A StrategyVersion through BYQ MCP in the same new Product Agent conversation, then holds at exact Product approval before running A. Its remaining turns create B after A's result, then run B; one Product OptimizationJob compares the two. It uses a separate manifest and remains **NOT_RUN** pending explicit authorization for the additional session and four model turns. Static syntax, Product/MCP contract review, and independent Clean Break review passed. The failed conversation and Task remain isolated test evidence; neither existing databases nor backups were touched.
+
 ## Next bounded execution
 
 Golden D preparation remains **BLOCKED before external execution**. A static
