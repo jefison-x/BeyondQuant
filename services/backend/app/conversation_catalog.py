@@ -143,6 +143,46 @@ class ConversationCatalogStore(PgStoreMixin):
         assert row is not None
         return self._public(row)
 
+    @staticmethod
+    def workspace_reset_sessions(connection, *, owner: str, workspace: str,
+                                  limit: int) -> list[dict[str, str]]:
+        """Return every durable conversation session in one exact Workspace."""
+        rows = connection.execute(text("""SELECT conversation_id, runtime_session_id AS session_id,
+                trace_id FROM product_conversations
+            WHERE owner_principal=:owner AND workspace_id=:workspace
+            ORDER BY conversation_id LIMIT :limit"""),
+            {"owner": owner, "workspace": workspace, "limit": limit}).mappings().all()
+        return [{"conversation_id": str(row["conversation_id"]),
+                 "session_id": str(row["session_id"]), "trace_id": str(row["trace_id"])}
+                for row in rows]
+
+    @staticmethod
+    def archive_workspace_reset_sessions(connection, *, owner: str, workspace: str,
+                                         sessions: list[dict[str, str]], now) -> list[str]:
+        """Archive exactly the conversations whose runtime sessions were released."""
+        conversation_ids = [row["conversation_id"] for row in sessions]
+        if not conversation_ids:
+            return []
+        params: dict[str, object] = {"owner": owner, "workspace": workspace, "now": now}
+        names: list[str] = []
+        for index, conversation_id in enumerate(conversation_ids):
+            name = f"conversation_{index}"
+            names.append(f":{name}")
+            params[name] = conversation_id
+        id_list = ", ".join(names)
+        connection.execute(text(f"""UPDATE product_conversations
+            SET status='archived', updated_at=:now
+            WHERE owner_principal=:owner AND workspace_id=:workspace
+              AND status='active' AND conversation_id IN ({id_list})"""), params)
+        rows = connection.execute(text(f"""SELECT conversation_id, status
+            FROM product_conversations
+            WHERE owner_principal=:owner AND workspace_id=:workspace
+              AND conversation_id IN ({id_list})
+            ORDER BY conversation_id"""), params).mappings().all()
+        if len(rows) != len(conversation_ids) or any(row["status"] != "archived" for row in rows):
+            return []
+        return [str(row["conversation_id"]) for row in rows]
+
     def get(self, owner: object, conversation_id: object) -> dict[str, object]:
         owner = _owner(owner)
         conversation_id = _identifier(conversation_id, "conversation_id")
