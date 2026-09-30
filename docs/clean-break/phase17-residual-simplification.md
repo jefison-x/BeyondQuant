@@ -340,6 +340,31 @@ source slice. Root: **PASS**.
 Final Golden, enabled F6 model execution and hosted CI remain **NOT_RUN**;
 Phase 17 overall remains **OPEN**.
 
+## Fresh final-Golden environment preparation
+
+Source checkpoint `a39849a2`, selected `.277`, new scope `byq-dev-dd33416d94`.
+Root completed the reviewed empty-scope cleanup/init and fresh full build/start,
+minimal seed and dev-test (3 governance and 13 lifecycle cases). Both external
+credentials remain empty; only the new-scope Data/ML Workers were stopped.
+Gateway and real-browser durable login passed, with 38 same-origin browser
+requests and zero foreign requests. Independent Tester verified all 13 image IDs,
+exact container/network/volume ownership, loopback ports, current health and
+stopped Workers. Private evidence pins are in
+`/tmp/byq-phase17-a39849a2/environment.json` and `browser-preflight.json`.
+
+The [final Golden runbook](phase17-final-golden-runbook.md) records exact prepared
+resources, fail-closed write stages and the finite source-read proposal. No full
+canonical market export file was found. The original existing-database ban means
+reading the Phase 15 isolated cache requires a new explicit exception; a prepared
+read-only exporter/wrapper has been reviewed but not executed. It never reads old
+Jobs, Artifacts, sessions, users or backups. Data quality and target import still
+need validation/review, and the model/provider budget is not requested yet.
+
+Tester **PREPARATION PASS** → independent Sol Reviewer **PREPARATION PASS /
+SOURCE-READ PLAN PASS** → Root **PASS**, limited to environment preparation and
+proposing the exact source-read exception. Final Golden, actual populated reset,
+actual F6, external calls and hosted CI remain **NOT_RUN**. Phase 17 stays **OPEN**.
+
 ## Final Golden execution plan
 
 [Verification policy](verification-gates.md) explicitly requires A–F after the
