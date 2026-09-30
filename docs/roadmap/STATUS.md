@@ -2,7 +2,7 @@
 
 ## Current authority — BYQ 0.10 Clean Break (2026-09-25)
 
-<!-- byq:clean-break-current-phase=15 -->
+<!-- byq:clean-break-current-phase=16 -->
 
 The maintainer's explicit Clean Break direction supersedes the 0.9/P4 and Phase 100
 implementation routing below. The current architecture is [ADR-0088](../architecture/adr/ADR-0088-clean-break-baseline-activation.md)
@@ -19,12 +19,18 @@ Reviewer → Root gate PASS, hosted CI PASS and PR #376 merged at
 Phase 14 — fresh database schema baseline and minimal seed: local gate PASS,
 hosted CI PASS, PR #377 merged at
 `e9c944951465fbdeae4d05cd7bb0358b32f8a041`.
-Current phase: Clean Break Phase 15 — functional fidelity from an empty schema
-and Workspace. It starts in a new isolated branch from that merge; its
-local functional fidelity gate now has Tester → independent Sol Reviewer →
-Root PASS, including real Agent-initiated CPU training and same-Job Worker
-restart/reclaim. Phase 15 overall remains OPEN for required Full CI and
-repository/human merge gates. Phase 16 remains closed.**
+Phase 15 — fresh-state functional fidelity: local Tester → independent Sol
+Reviewer → Root PASS, exact-head hosted Full CI and PR CI PASS, PR #378 merged.
+Its final CI and merge receipts are recorded in
+[Phase 16 Golden acceptance](../clean-break/phase16-golden-acceptance.md).
+Current phase: Clean Break Phase 16 — Golden Scenarios A–F acceptance.
+The maintainer instructed continuation after Phase 15 merged. The new isolated
+branch reconciles the accepted post-rebuild evidence and supplements only
+necessary gaps; it does not automatically repeat provider/model calls, market
+downloads or full rebuilds. Phase 16 local evidence reconciliation has Tester → independent Sol Reviewer
+→ Root PASS, with runtime-source and rebuild currency limits preserved. Phase
+16 overall remains OPEN for required exact-head Full CI and repository gates.
+Phase 17 remains closed.**
 Under [ADR-0089](../architecture/adr/ADR-0089-clean-break-gpu-acceptance-scope.md),
 GPU execution and GPU checkpoint/restart are `N/A` for BYQ 0.10 acceptance;
 real CPU Golden C passed locally; no GPU pass is inferred.
