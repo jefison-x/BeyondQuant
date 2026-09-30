@@ -2507,7 +2507,7 @@ def create_web_research_evidence(payload: dict[str, Any], request: Request) -> d
 def create_web_research_evidence_record(payload: dict[str, Any], request: Request) -> dict[str, object]:
     """Atomically create a ResearchTask and its bounded web-evidence Artifact."""
 
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         return research_store.create_web_evidence_record(
@@ -2515,7 +2515,7 @@ def create_web_research_evidence_record(payload: dict[str, Any], request: Reques
                 **payload,
                 "owner_principal": context["owner_principal"],
                 "trace_id": context["trace_id"],
-            }
+            }, trusted_context=context,
         )
 
     return _research_call(operation)

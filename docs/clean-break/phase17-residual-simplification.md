@@ -12,7 +12,9 @@ Observed clean base: `ff6756be3e7bf6cb6d3213c6dcd9bf016ecb9545` (Phase 16 PR
 passed. STATUS and README route Phase 17 while retaining historical markers.
 
 The Phase 15 model-call budget is exhausted. No Phase 17 Product model/provider
-call has been made. Ordinary business databases, backups and Community storage
+call had been made at entry. One separately authorized A1 has since executed;
+its conversation handoff is blocked. See [actual A1 evidence](phase17-a1-actual-evidence.md).
+Ordinary business databases, backups and Community storage
 remain outside scope. Phase 17 push/PR, merge, deployment and release require
 their own authorization; prior phase grants are not reused.
 
@@ -524,3 +526,27 @@ The runnable plan, accurate new model-turn/delegation/provider budget and exact
 resource identities require review and new bounded authorization before external
 calls. Final Golden tests remain **NOT_RUN**, not PASS. Phase 17 stays OPEN until
 that milestone, exact-head required CI and repository gates complete.
+
+## Actual A1 and bounded conversation-binding repair
+
+The separately granted one-shot `.278` A1 completed and persisted a fresh Task
+and Web evidence Artifact, using the imported 98-session cache and one actual
+Web query. Product/browser and native evidence are in
+[the actual A1 record](phase17-a1-actual-evidence.md). Its Task was unbound to the
+Product conversation, so the handoff gate is BLOCKED. The grant is spent; no
+second model input, source export, import, market download or manual binding ran.
+
+A bounded source repair makes the atomic Web-record Task factory use the same
+Backend-owned trusted-session conversation validation as ordinary Task creation.
+The operation still creates its Task and Artifact in one transaction and rejects
+replay that would rebind an existing Task, including a previous NULL binding.
+Non-Product stateless calls retain their explicit unbound behavior. This repair
+requires a new immutable `.280` source identity; the actual `.278` execution is
+preserved and never represented as repaired. Source gates and live qualification
+are distinct. Phase 17 remains OPEN; other Golden flows are pending.
+
+Focused binding regression: eight final new cases plus seven unaffected existing
+cases PASS on a fresh internal/tmpfs test DB; 13 selected `.280` identity cases
+PASS. Independent Reviewer Functional / Tests / Clean Break Architecture PASS;
+Root SOURCE SLICE PASS. Old `.278` and unexecuted `.279` manifest bytes are
+frozen. This does not close the actual A1 handoff or authorize another input.

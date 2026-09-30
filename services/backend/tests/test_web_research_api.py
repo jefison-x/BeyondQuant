@@ -6,15 +6,38 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main
+from app.conversation_catalog import ConversationCatalogStore
 from app.research import ResearchStore
 from tests.test_web_research import evidence_fixture
-from tests.workspace_helpers import trusted_agent_context
+from tests.workspace_helpers import trusted_agent_context, trusted_product_agent_context
 
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("BYQ_DATABASE_URL"),
     reason="BYQ_DATABASE_URL is not set",
 )
+
+
+def _web_record_request(key: str) -> dict[str, object]:
+    content = evidence_fixture()
+    for source in content["sources"]:
+        source.pop("source_id")
+    content["claims"][0]["source_indexes"] = [0]
+    content["claims"][0].pop("source_ids")
+    return {
+        "task": {"title": "Web evidence task", "objective": "Keep this research in its source conversation."},
+        "content": content,
+        "lineage": [],
+        "idempotency_key": key,
+    }
+
+
+def _trusted_context(headers: dict[str, str]) -> dict[str, str]:
+    return {
+        key.removeprefix("x-byq-").replace("-", "_"): value
+        for key, value in headers.items()
+        if key.lower().startswith("x-byq-") and key.lower() != "x-byq-runtime-boot-id"
+    }
 
 
 def test_artifact_reference_is_workspace_scoped_and_excludes_storage_content(monkeypatch) -> None:
@@ -143,6 +166,158 @@ def test_web_evidence_record_atomically_creates_task_and_system_source_ids(monke
     assert repeated.json()["task"]["task_id"] == body["task"]["task_id"]
     assert repeated.json()["artifact"]["artifact_id"] == body["artifact"]["artifact_id"]
     store.close()
+
+
+def test_product_web_record_binds_original_conversation_for_discovery_and_handoff(monkeypatch) -> None:
+    owner, session, trace = "web-bound-owner", "web-bound-session", "trace-web-bound"
+    headers = trusted_product_agent_context(
+        owner, actor=f"byq-product-agent-{session}", session_id=session, trace_id=trace,
+    )
+    catalog = ConversationCatalogStore()
+    conversation = catalog.create(owner, session, trace)
+    store = ResearchStore()
+    monkeypatch.setattr(main, "research_store", store)
+    client = TestClient(main.app)
+    request = _web_record_request("product-bound-web-record")
+    try:
+        created = client.post("/v1/research/web-evidence-records", headers=headers, json=request)
+        assert created.status_code == 201, created.text
+        body = created.json()
+        task_id = body["task"]["task_id"]
+        assert body["task"]["conversation_id"] == conversation["conversation_id"]
+        assert store.get_task(task_id)["conversation_id"] == conversation["conversation_id"]
+
+        discovered = client.get("/v1/agent/research-context", headers=headers)
+        assert discovered.status_code == 200, discovered.text
+        assert [task["task_id"] for task in discovered.json()["tasks"]] == [task_id]
+        handoff = client.get(f"/v1/research/tasks/{task_id}/handoff", headers=headers)
+        assert handoff.status_code == 200, handoff.text
+        assert handoff.json()["task_id"] == task_id
+        assert handoff.json()["reason"] != "conversation_binding_missing"
+
+        replay = client.post("/v1/research/web-evidence-records", headers=headers, json=request)
+        assert replay.status_code == 201, replay.text
+        assert replay.json()["task"]["task_id"] == task_id
+        assert replay.json()["artifact"]["artifact_id"] == body["artifact"]["artifact_id"]
+    finally:
+        store.close()
+        catalog.close()
+
+
+@pytest.mark.parametrize("case", ["missing", "owner", "trace", "inactive"])
+def test_product_web_record_rejects_unproven_conversation(case: str, monkeypatch) -> None:
+    owner, session, trace = "web-unproven-owner", f"web-unproven-{case}", "trace-web-unproven"
+    headers = trusted_product_agent_context(
+        owner, actor=f"byq-product-agent-{session}", session_id=session, trace_id=trace,
+    )
+    catalog = ConversationCatalogStore()
+    if case != "missing":
+        conversation_owner = "web-other-owner" if case == "owner" else owner
+        trusted_agent_context(conversation_owner)
+        conversation_trace = "foreign-trace" if case == "trace" else trace
+        conversation = catalog.create(conversation_owner, session, conversation_trace)
+        if case == "inactive":
+            catalog.update(conversation_owner, conversation["conversation_id"], {"status": "archived"})
+    store = ResearchStore()
+    monkeypatch.setattr(main, "research_store", store)
+    try:
+        response = TestClient(main.app).post(
+            "/v1/research/web-evidence-records", headers=headers,
+            json=_web_record_request(f"unproven-web-record-{case}"),
+        )
+        assert response.status_code == 422, response.text
+        expected_detail = (
+            "research requires its original conversation"
+            if case == "missing" else "research conversation identity is invalid"
+        )
+        assert response.json()["detail"] == expected_detail
+        assert store.list_tasks(owner_principal=owner)["tasks"] == []
+        assert store._fetch_one("SELECT COUNT(*) AS count FROM artifacts WHERE owner_principal=:owner",
+                                {"owner": owner}) == {"count": 0}
+    finally:
+        store.close()
+        catalog.close()
+
+
+@pytest.mark.parametrize("case", ["workspace", "payload_trace"])
+def test_product_web_record_store_rejects_context_mismatch(case: str) -> None:
+    owner, session, trace = "web-store-owner", f"web-store-{case}", "trace-web-store"
+    headers = trusted_product_agent_context(
+        owner, actor=f"byq-product-agent-{session}", session_id=session, trace_id=trace,
+    )
+    catalog = ConversationCatalogStore()
+    catalog.create(owner, session, trace)
+    store = ResearchStore()
+    context = _trusted_context(headers)
+    request = _web_record_request(f"store-mismatch-web-record-{case}")
+    request.update({"owner_principal": owner, "trace_id": "foreign-trace" if case == "payload_trace" else trace})
+    if case == "workspace":
+        context["workspace_id"] = "workspace_" + "f" * 32
+    try:
+        with pytest.raises(ValueError, match="conversation identity"):
+            store.create_web_evidence_record(request, trusted_context=context)
+        assert store.list_tasks(owner_principal=owner)["tasks"] == []
+        assert store._fetch_one("SELECT COUNT(*) AS count FROM artifacts WHERE owner_principal=:owner",
+                                {"owner": owner}) == {"count": 0}
+    finally:
+        store.close()
+        catalog.close()
+
+
+def test_web_record_replay_cannot_rebind_conversation_or_retrofit_null(monkeypatch) -> None:
+    owner, trace = "web-replay-owner", "trace-web-replay"
+    first_session = "web-replay-first"
+    first_headers = trusted_product_agent_context(
+        owner, actor=f"byq-product-agent-{first_session}", session_id=first_session, trace_id=trace,
+    )
+    second_session = "web-replay-second"
+    second_headers = trusted_product_agent_context(
+        owner, actor=f"byq-product-agent-{second_session}", session_id=second_session, trace_id=trace,
+    )
+    legacy_session = "web-replay-legacy"
+    legacy_headers = trusted_product_agent_context(
+        owner, actor=f"byq-product-agent-{legacy_session}", session_id=legacy_session, trace_id=trace,
+    )
+    catalog = ConversationCatalogStore()
+    first_conversation = catalog.create(owner, first_session, trace)
+    second_conversation = catalog.create(owner, second_session, trace)
+    catalog.create(owner, legacy_session, trace)
+    store = ResearchStore()
+    monkeypatch.setattr(main, "research_store", store)
+    client = TestClient(main.app)
+    request = _web_record_request("no-web-record-rebinding")
+    legacy_request = _web_record_request("no-null-web-record-retrofit")
+    try:
+        original = client.post("/v1/research/web-evidence-records", headers=first_headers, json=request)
+        assert original.status_code == 201, original.text
+        original_task = original.json()["task"]
+        assert original_task["conversation_id"] == first_conversation["conversation_id"]
+
+        cross_conversation = client.post(
+            "/v1/research/web-evidence-records", headers=second_headers, json=request,
+        )
+        assert cross_conversation.status_code == 409, cross_conversation.text
+        assert cross_conversation.json()["detail"] == "web evidence record conversation cannot be rebound"
+        assert store.get_task(original_task["task_id"])["conversation_id"] == first_conversation["conversation_id"]
+        assert store.get_task(original_task["task_id"])["conversation_id"] != second_conversation["conversation_id"]
+
+        unbound = store.create_web_evidence_record({
+            **legacy_request, "owner_principal": owner, "trace_id": trace,
+        })
+        assert unbound["task"]["conversation_id"] is None
+        retrofit = client.post(
+            "/v1/research/web-evidence-records", headers=legacy_headers, json=legacy_request,
+        )
+        assert retrofit.status_code == 409, retrofit.text
+        assert retrofit.json()["detail"] == "web evidence record conversation cannot be rebound"
+        assert store.get_task(unbound["task"]["task_id"])["conversation_id"] is None
+        assert store._fetch_one("SELECT COUNT(*) AS count FROM research_tasks WHERE owner_principal=:owner",
+                                {"owner": owner}) == {"count": 2}
+        assert store._fetch_one("SELECT COUNT(*) AS count FROM artifacts WHERE owner_principal=:owner",
+                                {"owner": owner}) == {"count": 2}
+    finally:
+        store.close()
+        catalog.close()
 
 
 def test_invalid_web_evidence_record_leaves_no_orphan_task(monkeypatch) -> None:

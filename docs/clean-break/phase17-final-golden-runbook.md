@@ -1,6 +1,8 @@
 # Phase 17 final Golden runbook
 
-Status: prepared execution plan; external calls are **NOT_AUTHORIZED / NOT_RUN**.
+Status: A1 was explicitly authorized and executed once; its conversation handoff
+is **BLOCKED**, so A1 is not an acceptance PASS. Further inputs and TuShare calls
+are **NOT_AUTHORIZED / NOT_RUN**. See the [actual A1 record](phase17-a1-actual-evidence.md).
 Phase 17 remains **OPEN**. This runbook complements the
 [residual audit](phase17-residual-simplification.md) and
 [verification gate](verification-gates.md).
@@ -31,7 +33,7 @@ mock reset/cleanup output is not a live populated reset. Gateway durable login
 and real browser durable login passed, with 38 browser requests and zero foreign
 origins. These are preparation evidence, not Golden A–F completion.
 
-## Current `.278` execution identity and cache preparation
+## Actual `.278` execution identity and cache preparation
 
 Execution source: `6a2a391fb6a6ccd2493944d9a19df27fa64b2b71`, isolated branch
 `codex/clean-break-phase17`; selected immutable `.278` manifest:
@@ -44,8 +46,8 @@ The exact disposable scope `byq-dev-dd33416d94` was rebuilt from committed
 source with `.278`, seeded and checked. Independent Tester verified all 13
 container/image/label pins, five volumes, two networks, actual Backend source
 inventory and the Runtime's embedded manifest. New Workspace:
-`workspace_af43ba7a82524108ba11d4695613aafc`. Both model/TuShare credentials remain
-empty; Data/ML Workers remain stopped. Private original environment pins:
+`workspace_af43ba7a82524108ba11d4695613aafc`. At this preparation boundary both
+model/TuShare credentials were empty; Data/ML Workers remain stopped. Private original environment pins:
 `/tmp/byq-phase17-278/environment.json`. Actual post-bootstrap origins are in
 `environment-after-bootstrap.json`; observe current ports before each journey.
 
@@ -78,8 +80,8 @@ validation and Product records are under `/tmp/byq-phase17-278`.
 
 Tester **PASS**, independent Reviewer **Functional / Tests / Clean Break
 Architecture PASS**, Root **CACHE PREPARATION PASS**, limited to this fresh
-target bootstrap and Product cache preflight. Golden A–F, enabled F6 and all
-new external calls remain **NOT_RUN / NOT_AUTHORIZED**.
+target bootstrap and Product cache preflight. At that preparation boundary Golden A–F, enabled F6 and all new external calls
+were **NOT_RUN / NOT_AUTHORIZED**. The separately authorized actual A1 is below.
 
 ## Common stages and exact-write discipline
 
@@ -362,7 +364,7 @@ one-call API permission. Later root turns may create new Runtime generations;
 this does not prove reuse of the same underlying DSH process or process reattach.
 Actual enabled F6 viability remains unverified.
 
-## Preparation acceptance and next permission
+## Historical preparation acceptance and A1-only plan
 
 The historical `.277` source-read preparation passed its limited gate. The
 maintainer's one-time source read was executed and is spent. `.278` source,
@@ -370,16 +372,20 @@ fresh environment, once-only target canonical import and independent readback
 have now passed Tester → independent Reviewer → Root. Cache preparation is
 complete; it does not close the final Golden milestone.
 
-External model/Web/TuShare authorization is absent. The saved exact first prompt
-is `/tmp/byq-phase17-278/golden-a1-input.json`; it has not been submitted and no
-A1 session exists. A staged A1 grant must specify one foreground DSH run, no
+At the historical preparation boundary external model/Web/TuShare authorization
+was absent. The saved exact first prompt
+is `/tmp/byq-phase17-278/golden-a1-input.json`; it had not been submitted and no
+A1 session existed. A staged A1 grant must specify one foreground DSH run, no
 delegation, no market-provider downloads, native Web limits and the lack of a
 raw model-call hard cap. Later ledger inputs require the recorded external
 scope; additional inputs or retries cannot be inferred from an A1-only grant.
 
 Prepared private one-shot A1 driver: `/tmp/byq-phase17-278/run-a1-once.mjs`,
-mode 0600, SHA-256
+mode 0600, original preparation SHA-256
 `c44ba0909998389eaefa80e27b87dd51a0d6aa4ce6c6a0440692e4c1fbc6786b`.
+The original is preserved as `run-a1-once.original-c44.mjs`. The executed driver
+only corrected two read-only session-list limits from 1000 to 100; its SHA-256 is
+`c841197de2b6233a5bc7b0d39f6bcc099536bc66731ceb503e9788bf9dd775c6`.
 It requires an explicit A1-only grant and a newly verified credential-enabled
 Runtime receipt bound to `.278`, source, Workspace, subject and exact input.
 The old empty-credential pin alone cannot admit a run. All Product writes have
@@ -407,13 +413,17 @@ credential-enabled run or the actual provider route.
 Independent Reviewer: **A1-only PLAN PASS / runbook docs PASS**, limited to the
 frozen driver and the proposed scope. Root: **PLAN PASS** for the same scope.
 These gates approve the prepared plan's reviewability, not external execution.
-Fresh credential-enabled preflight and actual A1 remain **NOT_RUN** pending the
-new explicit grant; no grant is inferred from the completed source-read exception.
+That plan gate did not authorize execution. The maintainer subsequently granted
+the exact A1-only scope; fresh admission passed Tester → Reviewer → Root and the
+one-shot wrapper executed it. That foreground grant is now spent. Actual objects,
+provider/tool observations, handoff failure and the source repair are recorded in
+[actual A1 evidence](phase17-a1-actual-evidence.md). No second model input was sent.
 
 ## Acceptance
 
 Independent Tester verifies actual per-flow evidence and limits; independent Sol
 Reviewer inspects it, followed by Root. Source-slice PASS, environment preparation
-and a proposed budget never imply final Golden PASS. Final A–F and enabled F6
-remain NOT_RUN until the authorized connected journeys actually finish. Hosted
+and a proposed budget never imply final Golden PASS. A1 is EXECUTED / HANDOFF
+BLOCKED; remaining A inputs, B–F and enabled F6 remain NOT_RUN until separately
+authorized connected journeys actually finish. Hosted
 CI and repository gates remain required before Phase 17 can close.

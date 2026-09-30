@@ -33,7 +33,10 @@ This phase uses a new isolated branch from fetched main, classifies residual
 state by actual ownership, and removes only tested unnecessary paths while
 preserving exact business authority, idempotency and unknown-result protection.
 Phase 17 is OPEN. Final A–F reruns after the last deletion, required hosted CI
-and repository gates remain pending. No later phase is authorized.**
+and repository gates remain pending. One explicitly authorized A1 executed, but
+its Task conversation handoff is blocked; the bounded source repair and actual
+evidence are recorded in [Phase 17 A1](../clean-break/phase17-a1-actual-evidence.md).
+Further model inputs require a new bounded grant. No later phase is authorized.**
 Under [ADR-0089](../architecture/adr/ADR-0089-clean-break-gpu-acceptance-scope.md),
 GPU execution and GPU checkpoint/restart are `N/A` for BYQ 0.10 acceptance;
 real CPU Golden C passed locally; no GPU pass is inferred.
