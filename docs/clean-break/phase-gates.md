@@ -1,5 +1,27 @@
 # Phase 0–6 gate record
 
+## Phase 17 exact-authorized legacy source slice (2026-09-30)
+
+After reviewed checkpoint `5260d3e6`, the maintainer explicitly authorized
+removal of the unreachable old-plan adoption/classification path and
+`legacy_reason` references in fresh DDL, source and tests. The previous automatic
+approval rejection is resolved for this exact scope. The [phase record](phase17-residual-simplification.md)
+records caller/reference closure, retained domain invariants and the new isolated
+synthetic `byq_domain_test` scope. No existing database/backup or provider/model
+operation follows from this source authorization. Worker pure contract 22/parse/diff
+checks PASS. Independent Tester PASS: 75 tests across six affected current
+contract/store/judgment/approval/continuation suites; 53 schema resets only in the
+new disposable tmpfs test PG, table existence/`legacy_reason=0` confirmed and
+exact resource cleanup verified. Identity/selection 12, architecture 74, syntax
+18 files, two Markdown and diff checks PASS. Independent Sol Reviewer:
+**Functional PASS / Tests PASS / Clean Break Architecture PASS**; Root: **PASS
+for this precise source slice**. Current factory, exact approval/CAS, scope and
+durable idempotency/unknown-outcome contracts remain. Hosted CI/real Golden and
+remaining residual qualification are not covered by this slice verdict.
+Current immutable `.274` is generated with hash
+`sha256:cf7f85fbf62219c58df2c9903164699891ec737f4b0c137d773c7adf26715b7b`;
+checkpoint `.273` is frozen unchanged. Phase 17 overall remains OPEN.
+
 ## Phase 17 entry and residual audit (2026-09-30)
 
 Phase 16 PR #379 and its exact-head Full/PR CI passed and merged. The maintainer

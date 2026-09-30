@@ -474,7 +474,7 @@ class ResearchPlanContinuationMixin:
                 plan_version = :plan_version, task_version = :task_version, stage = :stage,
                 iteration = :iteration, status = :status, next_action = :next_action,
                 plan = :plan, idempotency_key = :idempotency_key, request_hash = :request_hash,
-                legacy_reason = NULL, updated_at = :now
+                updated_at = :now
                 WHERE task_id = :task_id AND plan_version = :expected_plan_version
                 RETURNING task_id""",
                 {"plan_version": advanced["plan_version"], "task_version": advanced["task_version"],

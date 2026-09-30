@@ -742,30 +742,3 @@ def advance(
         "last_progress_identity": last_progress_identity,
     }
     return validate_plan(advanced)
-
-
-def classify_legacy_task(
-    *, task_terminal: bool, stage_hint: str | None, next_action_hint: str | None,
-    has_unique_plan_object: bool,
-) -> dict[str, object]:
-    """Decide whether an existing task can be migrated to a plan.
-
-    ADR-0085: a task that cannot be mapped UNIQUELY enters ``needs_attention``.
-    This never guesses a stage from free text.
-    """
-
-    if task_terminal:
-        return {"status": "needs_attention", "reason": "task_terminal_requires_review"}
-    if not has_unique_plan_object:
-        return {"status": "needs_attention", "reason": "no_unique_current_plan_object"}
-    if not isinstance(stage_hint, str) or stage_hint not in STAGES:
-        return {"status": "needs_attention", "reason": "stage_is_not_a_closed_plan_stage"}
-    if not isinstance(next_action_hint, str) or next_action_hint not in NEXT_ACTIONS:
-        return {"status": "needs_attention", "reason": "next_action_is_not_a_closed_plan_action"}
-    if stage_hint == CANCEL_STAGE:
-        return {"status": "needs_attention", "reason": "terminal_or_blocked_requires_review"}
-    if _STAGE_SPEC[stage_hint]["action"] != next_action_hint:
-        return {"status": "needs_attention", "reason": "stage_and_action_disagree"}
-    if stage_hint == "needs_attention":
-        return {"status": "needs_attention", "reason": "terminal_or_blocked_requires_review"}
-    return {"status": "migratable", "reason": "unique_closed_stage_and_action"}

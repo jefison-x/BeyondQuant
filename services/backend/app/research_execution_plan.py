@@ -11,9 +11,7 @@ stage/action transitions and approval/reference/postcondition shapes):
   bound ``research_tasks.version`` under one task-row lock, so a stale model
   turn, old event or old generation can never advance a newer plan;
 * a replayed exact command is served from a durable receipt instead of writing
-  a second object (at-most-once business idempotency);
-* a legacy task that cannot be mapped UNIQUELY enters ``needs_attention``; the
-  store never guesses a stage or a next action from free text.
+  a second object (at-most-once business idempotency).
 
 These methods are an INTERNAL Backend seam for the ADR-0085 deterministic
 reducer. They are deliberately NOT exposed as agent-facing HTTP/MCP write routes:
@@ -31,24 +29,11 @@ from datetime import datetime, timezone
 
 from .db import execute, fetch_one
 from packages.contracts.research_execution_plan import (
-    READY_STAGES,
     RESOURCE_KINDS,
-    STAGE_ACTION,
     advance,
-    classify_legacy_task,
     new_plan,
-    plan_at_stage,
     validate_plan,
 )
-
-# Legacy tasks are adopted only from authoritative persisted closed facts.
-# ADR-0085 P1 has NO proven, persisted, closed and complete plan fact that maps
-# a legacy ``research-progress.v1`` stage to a plan stage plus its exact
-# references (the legacy ``stage``/``next_action`` are coarse and free text).
-# The mapping is therefore EMPTY: every legacy task enters ``needs_attention``
-# until P2 persists the exact plan facts and proves a unique mapping. No request
-# hint and no rename can make a legacy task migratable.
-LEGACY_MIGRATABLE_STAGES: dict[str, str] = {}
 
 _KEY_MAX = 128
 
@@ -69,7 +54,6 @@ SCHEMA_DDL: list[str] = [
         plan JSONB NOT NULL,
         idempotency_key TEXT NOT NULL,
         request_hash TEXT NOT NULL,
-        legacy_reason TEXT,
         created_at TIMESTAMPTZ NOT NULL,
         updated_at TIMESTAMPTZ NOT NULL
     )
@@ -316,10 +300,10 @@ class ResearchExecutionPlanMixin:
             execute(connection, """INSERT INTO research_execution_plans
                 (task_id, owner_principal, workspace_id, conversation_id, plan_version,
                  task_version, stage, iteration, status, next_action, plan, idempotency_key,
-                 request_hash, legacy_reason, created_at, updated_at)
+                 request_hash, created_at, updated_at)
                 VALUES (:task_id, :owner, :workspace, :conversation, :plan_version,
                         :task_version, :stage, :iteration, :status, :next_action, :plan,
-                        :idempotency_key, :request_hash, NULL, :now, :now)""",
+                        :idempotency_key, :request_hash, :now, :now)""",
                 {"task_id": task["task_id"], "owner": task["owner_principal"],
                  "workspace": task["workspace_id"], "conversation": conversation_id,
                  "plan_version": plan["plan_version"], "task_version": plan["task_version"],
@@ -382,7 +366,7 @@ class ResearchExecutionPlanMixin:
                 plan_version = :plan_version, task_version = :task_version, stage = :stage,
                 iteration = :iteration, status = :status, next_action = :next_action,
                 plan = :plan, idempotency_key = :idempotency_key, request_hash = :request_hash,
-                legacy_reason = NULL, updated_at = :now
+                updated_at = :now
                 WHERE task_id = :task_id AND plan_version = :expected_plan_version
                 RETURNING task_id""",
                 {"plan_version": advanced["plan_version"], "task_version": advanced["task_version"],
@@ -400,74 +384,6 @@ class ResearchExecutionPlanMixin:
                  "request_hash": request_hash, "plan_version": advanced["plan_version"],
                  "result_json": advanced})
             return project_execution_plan(advanced)
-
-    @staticmethod
-    def _legacy_stage_hint(task: dict) -> str | None:
-        """Derive a plan stage from persisted authoritative closed facts only.
-
-        The legacy free-text ``next_action`` is never trusted. The persisted
-        ``research-progress.v1.stage`` is a closed BYQ fact, and it maps to a plan
-        stage only where that mapping is unique and cannot open an unapproved
-        write. Anything else (unknown schema, missing/ambiguous stage) returns
-        ``None`` and the task enters ``needs_attention``.
-        """
-
-        progress = task.get("progress")
-        if not isinstance(progress, dict) or progress.get("schema_version") != "research-progress.v1":
-            return None
-        stage = progress.get("stage")
-        if not isinstance(stage, str):
-            return None
-        return LEGACY_MIGRATABLE_STAGES.get(stage)
-
-    def adopt_legacy_execution_plan(self, task_id: str, *, trusted_context: dict) -> dict:
-        """Adopt a legacy task using only server-derived closed facts.
-
-        There is no caller-supplied stage/action hint: the model or a client can
-        never choose the workflow state. A task that cannot uniquely prove a
-        closed stage/action enters ``needs_attention``. Adoption is one-shot per
-        task, so a second call replays the existing plan.
-        """
-
-        with self._transaction() as connection:
-            task = self._plan_task(connection, task_id, trusted_context, lock=True)
-            conversation_id = self._require_conversation(task)
-            existing = self._load_current_plan(connection, task["task_id"], lock=True)
-            if existing is not None:
-                return project_execution_plan(existing["plan"])
-            stage_hint = self._legacy_stage_hint(task)
-            next_action_hint = STAGE_ACTION[stage_hint] if stage_hint else None
-            decision = classify_legacy_task(
-                task_terminal=task["status"] in {"completed", "failed", "cancelled"},
-                stage_hint=stage_hint, next_action_hint=next_action_hint,
-                has_unique_plan_object=True)
-            stage = stage_hint if decision["status"] == "migratable" else None
-            reason = str(decision["reason"])
-            if stage in READY_STAGES:
-                stage, reason = None, "write_ready_stage_requires_review"
-            idempotency_key = f"legacy-adopt-{task['task_id']}"
-            plan = plan_at_stage(
-                task_id=task["task_id"], owner_principal=task["owner_principal"],
-                workspace_id=task["workspace_id"], conversation_id=conversation_id,
-                task_version=task["version"], stage=stage or "needs_attention",
-                idempotency_key=idempotency_key)
-            execute(connection, """INSERT INTO research_execution_plans
-                (task_id, owner_principal, workspace_id, conversation_id, plan_version,
-                 task_version, stage, iteration, status, next_action, plan, idempotency_key,
-                 request_hash, legacy_reason, created_at, updated_at)
-                VALUES (:task_id, :owner, :workspace, :conversation, :plan_version,
-                        :task_version, :stage, :iteration, :status, :next_action, :plan,
-                        :idempotency_key, :request_hash, :legacy_reason, :now, :now)""",
-                {"task_id": task["task_id"], "owner": task["owner_principal"],
-                 "workspace": task["workspace_id"], "conversation": conversation_id,
-                 "plan_version": plan["plan_version"], "task_version": plan["task_version"],
-                 "stage": plan["stage"], "iteration": plan["iteration"], "status": plan["status"],
-                 "next_action": plan["next_action"], "plan": plan,
-                 "idempotency_key": idempotency_key,
-                 "request_hash": _request_hash(task["task_id"], {"legacy_adopt": True}),
-                 "legacy_reason": reason, "now": _now()})
-            return project_execution_plan(plan)
-
 
 def _now() -> str:
     from datetime import datetime, timezone

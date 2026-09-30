@@ -28,7 +28,7 @@ qualification. Dispositions use actual callers and behavior rather than names.
 | Adapter `RuntimeSession`, `ActiveRun`, generation and child watchdog | Current process/prompt correlation, idempotency, cleanup barrier and bounded child inactivity checks. DSH owns Agent reasoning/execution. | KEEP required transport/process safety while pinned DSH has no qualified equivalent; no cross-process session/child recovery claim. |
 | Adapter bounded history and Gateway `TraceStore` | Same-boot live SSE replay versus durable normalized user projection. Neither is an Agent recovery executor. | KEEP their distinct contracts; history and projection are not interchangeable. |
 | MCP Web evidence caller identity compatibility | Current plugin callers omit producer fields; MCP previously accepted optional caller claims matching deployment identity. Backend validates stored provenance. | DELETE model-input producer fields and reject any caller-supplied identity; inject the trusted deployment identity and KEEP Backend recognition policy. |
-| Legacy ResearchTask plan adoption | Repository search finds only two historical store-test callers. Classifier is used only by adoption and its pure test; `legacy_reason` has no readers. | Proposed DELETE of adoption/classification, empty migration mapping and fresh-DDL/writer/fixture references is approval-blocked; no Backend/schema edit or DB operation applied. |
+| Legacy ResearchTask plan adoption | Repository search finds only two historical store-test callers. Classifier is used only by adoption and its pure test; `legacy_reason` has no readers. | DELETE applied under the maintainer's precise source authorization: adoption/classification, empty migration mapping and fresh-DDL/writer/fixture references. Current domain factory/transitions remain; focused fresh-schema Tester → independent Reviewer → Root PASS for this slice. |
 | Current ResearchTask plan and action receipts | Current reducers and approvals use stage CAS, parameter digests, exact action binding and durable outcome reconciliation. `plan_at_stage` is used by current trusted domain fixtures. | KEEP domain transitions, factory and authoritative business receipts. |
 | Optional F6 Agent prompt dispatch | `TaskContinuationDelivery.tick` invokes Gateway consumption when the three service executor flags are enabled. Backend derives task-bound grants/intents and unknown-outcome settlement; Gateway submits a DSH prompt. | OPEN qualification/cutover candidate. Default-off is not dead-code evidence; this is not the pending business action executor accepted in Phase 7. Keep its business authority facts while qualifying the dispatch separately. |
 | Plugin Center desired policy and qualification | Live admin Product API records exact registry version, desired enable/assignment policy, qualification and admin audit; DSH owns actual runtime. Desired `awaiting_generation` is distinct from active composition. | KEEP minimal registry/policy/basic qualification/audit and truthful desired-versus-active projection under ADR-006. Deployment request/result endpoints require separate contract qualification before trimming extra governance. |
@@ -101,22 +101,59 @@ verify absent schema fields, matching/forged claims rejected before any Backend
 write, canonical injection and original idempotency key. Actual service/DB
 `contract-test.ts` integration is **NOT_RUN** locally. Independent slice review passed.
 
-## Approval-blocked source slice
+## Legacy adoption source slice
 
-Automatic approval review rejected the Backend legacy removal twice, citing
-possible compatibility break and lack of authorization for that exact scope.
-No workaround was used. The temporarily accepted contract-function deletion
-was restored so current Backend imports remain valid. Only a domain-factory
-comment clarification remains. The precise user request is pending: remove
-unreachable adoption/classification and `legacy_reason` references in source,
-fresh CREATE TABLE DDL and tests, with no ALTER/DROP or existing DB operation.
+Pre-slice rollback checkpoint: `5260d3e6`. Automatic approval review had rejected
+this removal twice under the previous general development grant. The maintainer
+then explicitly authorized: “移除不可达的旧计划采纳/分类路径，以及 legacy_reason
+在新建表 DDL、源码和测试中的引用。” The source patch was accepted with that
+precise grant; the earlier rejections remain historical, not a current blocker.
+
+Removed `adopt_legacy_execution_plan`, `_legacy_stage_hint`, empty
+`LEGACY_MIGRATABLE_STAGES`, `classify_legacy_task`, two adoption store tests,
+one classifier test and the adoption-only fixture helper. Removed
+`legacy_reason` from fresh `CREATE TABLE IF NOT EXISTS` source, the current
+plan INSERT/five NULL assignments and three judgment/continuation SQL fixtures.
+Repository search outside documentation/historical manifests finds no remaining
+runtime/source/test references to the removed names. No route called adoption.
+
+`plan_at_stage` remains for current domain fixtures. Current new-plan creation,
+stage/CAS transitions, task/workspace authorization, exact approval bindings,
+parameter digest, one-current-plan and durable idempotency/unknown-outcome
+contracts are unchanged. There is no source ALTER/DROP migration, existing-table
+inspection or archived-data input. Existing databases and backups are untouched.
+
+Worker checks: 22 pure contract tests PASS in the existing Backend image with
+network disabled, current source read-only and database URL empty; zero schema
+resets/store bootstraps. Ten changed files parse and diff checks PASS.
+Independent Tester **PASS**: six named suites (`test_research_execution_plan_contract`,
+`test_research_execution_plan_store`, `test_research_judgment`,
+`test_research_judgment_api`, `test_research_continuation_ledger`,
+`test_research_plan_continuation`) ran **75 passed** with one Starlette deprecation
+warning. This covers all changed current writers, exact approval/owner boundaries,
+CAS/concurrent creation, durable replay, rollback and action reconciliation.
+
+Only the newly created `byq_domain_test` PostgreSQL container on internal network
+`byq-phase17-legacy-5260d3e6` was used: tmpfs database, current source/tests/packages
+read-only, no existing volume, .env, host port or provider/model. Its standard
+fixture performed 53 disposable-schema resets. A read-only `information_schema`
+check confirmed the current plan table exists and `legacy_reason` count is zero.
+After cleanup, scoped containers, the exact network and labeled volumes were
+absent. No existing database or market resources were read or changed.
+
+The same independent Tester passed 12 current/frozen build/selection tests,
+74 normative architecture tests, `dev-check --base 5260d3e6` syntax (18 files),
+two Markdown checks and diff checks. Independent Sol Reviewer: **Functional PASS / Tests PASS / Clean Break
+Architecture PASS for this precise source slice**. Root: **PASS**. The actual
+15-column/15-value current INSERT, all five UPDATE sites, removed-reference
+closure and retained factory/CAS/approval/receipt contracts were inspected. This
+local gate does not imply hosted CI or real Golden PASS.
 
 ## Build identity and remaining gates
 
-Source changes require a new immutable `.273` selected manifest. Published
-`.272` manifest and Dockerfile remain byte-for-byte unchanged. SDK/runtime,
-release descriptor and dependency locks remain pinned. Selectors are prepared;
-manifest generated after source writers became ready:
+The initial source checkpoint selected immutable `.273`. Published `.272`
+manifest and Dockerfile remained byte-for-byte unchanged. SDK/runtime, release
+descriptor and dependency locks remained pinned. Its manifest hash is:
 `sha256:029eadcb55f4ed5a784d7eb3d5c87150d85e43e5abfd17240606db15ff2fe9a9`.
 This is the current source-slice identity, not a final Golden execution receipt.
 A later source deletion will require its own new immutable revision.
@@ -133,9 +170,20 @@ body ran. Actual opt-in integration and real MCP Backend/DB contract stay NOT_RU
 Independent Sol Reviewer: **Functional PASS / Tests PASS / Clean Break
 Architecture PASS for this interim source slice**. Root: **PASS for Gateway/MCP
 removal, corrected optional test source and immutable build selection only**.
-Remaining residual qualification, approval-blocked legacy removal, final live
+Remaining residual qualification, legacy slice gates, final live
 Golden and repository gates remain OPEN. This checkpoint does not start a later
 phase or authorize push/merge/deployment. Hosted CI remains a separate gate.
+
+### Current legacy-slice build
+
+The subsequent authorized deletion selects new immutable `.274`, generated
+only after source writers became ready:
+`sha256:cf7f85fbf62219c58df2c9903164699891ec737f4b0c137d773c7adf26715b7b`.
+Checkpoint `.273` manifest and Dockerfile remain frozen byte-for-byte. Current
+Compose/dev/CI and selection-test references point to `.274`; its Dockerfile
+changes only the embedded manifest path. No SDK/runtime/dependency update or
+live service restart is performed. Local selected/frozen identity and Tester → independent Sol Reviewer → Root
+gate passed for this exact legacy source slice. Phase 17 overall remains OPEN.
 
 ## Final Golden execution plan
 
