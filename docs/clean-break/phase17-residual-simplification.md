@@ -419,9 +419,75 @@ Independent identity gates PASS: current build 3/3, revision 4/4, retirement
 5/5 and the one changed architecture selector. Required local syntax (10
 changed files), docs (three files), isolated worktree and diff checks PASS. The
 temporary test Postgres/network were exactly removed; no scoped volume exists.
-Fresh target rebuild/import remain separate pending evidence.
+At this source checkpoint, fresh target rebuild/import still needed separate
+evidence; their subsequent actual acceptance is recorded below.
 The already passed broad suites are not rerun. Final Golden, actual enabled F6,
 external calls and hosted CI remain **NOT_RUN**; Phase 17 is **OPEN**.
+
+
+## Fresh `.278` target and actual canonical bootstrap
+
+Execution source `6a2a391fb6a6ccd2493944d9a19df27fa64b2b71`, scope
+`byq-dev-dd33416d94`, selected manifest `8c9eeb1569643054a67e71e31ecab10d843035050de944b638b1485cd83afe3e`.
+The exact `.277` disposable target alone was cleaned after source commit and
+identity review; the Phase 15 source cache, ordinary databases, backups, Git,
+private config and logical export were preserved. Fresh `.278` full build/start,
+minimal seed and developer preflight completed. Independent Tester verified all
+13 container/image/label identities, five named volumes, two networks, loopback
+ports, Backend's actual 67 Python files against the selected inventory and the
+exact embedded Runtime manifest. Data/ML Workers exited zero; their credentials
+are empty. Nonempty `TUSHARE_API_URL` is endpoint configuration, not a credential.
+
+New Workspace: `workspace_af43ba7a82524108ba11d4695613aafc`. Actual browser durable
+login passed (38 requests, zero foreign origins). Dev-test's 3 governance and 13
+lifecycle cases passed; their mock reset output is not an actual populated reset.
+
+Independent Reviewer approved the actual once-only target importer/wrapper plan.
+Wrapper SHA-256 `f79b9e50d2e592d1a3fa0ab4b3dd410a118eba252d0bd99e045c23dab01e3e85`;
+inner SHA-256 `bbfdace80be06944f05b988c060bf94f7a6f0bbb01bc3c72e44bc0a55fa18fae`.
+Root stopped all ten running target applications (Data/ML already stopped), then
+used one pinned Backend-image runner on the target network. Before Store DDL,
+the script read-only checked 24 market/security tables, sync Jobs and empty
+coverage projections. This does not claim all business Job tables were checked.
+
+The single actual import completed: 98 bars/status/factors, 151 calendar days,
+98 scoped proofs, zero selected-symbol actions, complete security snapshot
+5,909 members plus one quarantine. Global completeness remains unasserted. The
+runner was removed and the original ten target applications restored; Data/ML
+remain stopped. No additional source DB or provider/model call occurred.
+Private import report: `/tmp/byq-phase17-278/target-market-import.json`.
+
+Dynamic ports changed on target restart. The original preparation pin is retained;
+`environment-after-bootstrap.json` records actual post-restart origins. A browser
+navigation to the old port failed before any Product write; using the observed
+new ports, Product cache readiness passed: `000001.SZ` usable for all 98 sessions,
+`600000.SH` unavailable. A new exact-key custom pool was created and read back:
+`stock_pool_ba455d1da20c435a8b6ab3c233c5d8a4`, frozen snapshot
+`stock_pool_snapshot_48f5fdb0812f50ff82b66f1d5bd86ae8c7dc5b826d201426e95728fe649915de`.
+Browser requests 43, zero foreign origins. The pool is fresh; no old Product
+objects were restored.
+
+Independent Tester completed one target-only repeatable-read, read-only
+transaction with 20 bounded SELECTs: **31/31 checks PASS**, no writes, DDL,
+Store constructors, source queries or external calls. Exact source/target values
+and canonical hashes matched the imported market/calendar/scoped-proof/security
+rows above. Global supplement proof, market-session completeness and related
+sync Job counts are zero; this does not assert every business Job table is empty.
+Private report: `/tmp/byq-phase17-278/target-market-validation.json`. Its initial
+98-bar checker false positives remain as historical diagnostics: the checker
+omitted the import-time `provenance` alias for stored `provenance_json`. Corrected
+pure offline rehash passed all 98 bars without another DB query; all final checks
+are true and `failed_checks=[]`.
+The separate offline final report `final-target-market-validation.json` preserves
+those diagnostics as `initial_checker_false_positive`, records final
+`mismatches=[]`, and leaves the original report unchanged. Final SHA-256:
+`337b3c9d66a55f5d3851d97bbcdf31e9a31c82e50d8e132b878907d27b6f1c78`.
+
+Independent Reviewer: **Functional PASS / Tests PASS / Clean Break Architecture
+PASS** for actual target canonical bootstrap and Product cache preflight. Root:
+**CACHE PREPARATION PASS** for this same scope. Golden A–F, enabled F6, actual
+populated reset and new external calls remain **NOT_RUN**. Model/provider
+authorization is absent and Phase 17 remains **OPEN**.
 
 ## Final Golden execution plan
 
@@ -430,15 +496,17 @@ last Phase 17 deletion. Phase 16's accepted evidence reuse does not satisfy
 this new milestone. Pin the execution source commit, selected manifest hash,
 image IDs, scoped resources and per-flow manifests before execution.
 
-Prepare a fresh Phase 17 disposable stack from templates and committed source.
-Review exact `dev-clean --dry-run` resources before cleanup; perform
-`dev-clean → dev-init → dev-start → dev-seed → dev-test` and then connected
-Product/browser/Worker journeys. Existing Phase 15 resources and ordinary
-business/backup resources are not cleanup targets. Preserve the validated
-TuShare 98-session market window (2024-01-02–2024-05-31): qualify a bounded
-canonical market-data export/import through the Data Plane without old database,
-session, Job or Artifact restoration. Any provider refresh beyond required real
-TuShare qualification must be separately scoped; do not redownload the window.
+The fresh `.278` preparation and canonical bootstrap above are complete; do not
+repeat them. The qualified preparation procedure was to build from templates and
+committed source, review exact `dev-clean --dry-run` resources before cleanup, then
+perform `dev-clean → dev-init → dev-start → dev-seed → dev-test`. The remaining
+work is connected Product/browser/Worker journeys after the required external
+authorization. Existing Phase 15 resources and ordinary
+business/backup resources are not cleanup targets. Preserve the now-qualified
+and imported TuShare 98-session market window (2024-01-02–2024-05-31). Do not
+repeat the source export or target bootstrap, restore old databases, sessions,
+Jobs or Artifacts, or redownload this window. Any new provider qualification or
+refresh requires separately scoped authorization.
 
 - A/E: fresh Task, real TuShare/Web research, bounded multi-turn/delegated DSH
   research, source/Artifact/normalized browser projection; populated scoped

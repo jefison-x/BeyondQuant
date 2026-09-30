@@ -5,7 +5,7 @@ Phase 17 remains **OPEN**. This runbook complements the
 [residual audit](phase17-residual-simplification.md) and
 [verification gate](verification-gates.md).
 
-## Execution identity and prepared environment
+## Historical `.277` preparation
 
 - Source: `a39849a2a6795a63cf843fb9f8dea111da8bc3ab`, branch
   `codex/clean-break-phase17`, worktree
@@ -16,7 +16,7 @@ Phase 17 remains **OPEN**. This runbook complements the
   Markdown is outside the build inventory.
 - New disposable scope: `byq-dev-dd33416d94`, 13 services. Gateway and Frontend
   use dynamic loopback ports; observe current ports rather than assume them.
-- Current fresh Workspace: `workspace_3d969bf48cbe43f88262bd3d2745b723`.
+- Historical `.277` Workspace: `workspace_3d969bf48cbe43f88262bd3d2745b723`.
   Reset E must observe its post-reset identity and new object IDs.
 - Root completed the reviewed empty-scope clean/init, then
   `python3 scripts/dev/environment.py start --profile full`, `seed`, and `test`.
@@ -31,26 +31,55 @@ mock reset/cleanup output is not a live populated reset. Gateway durable login
 and real browser durable login passed, with 38 browser requests and zero foreign
 origins. These are preparation evidence, not Golden A–F completion.
 
-## Final source for rebuild
+## Current `.278` execution identity and cache preparation
 
-The scoped-import repair passed focused Tester and independent Reviewer source
-gates. Selected `.278` manifest:
+Execution source: `6a2a391fb6a6ccd2493944d9a19df27fa64b2b71`, isolated branch
+`codex/clean-break-phase17`; selected immutable `.278` manifest:
 `sha256:8c9eeb1569643054a67e71e31ecab10d843035050de944b638b1485cd83afe3e`.
-Its identity gate passed current/revision/retirement 3/4/5 tests and the changed
-architecture selector. Final execution requires a fresh committed-source
-rebuild of only `byq-dev-dd33416d94`; the `.277` image/resource pins above are
-historical preparation. Preserve the validated logical export outside target
-volumes. New execution/image/Workspace pins will be recorded privately under
-`/tmp/byq-phase17-278` after rebuild.
+The scoped-import repair passed focused Tester, independent Reviewer and Root
+source gates. Current/revision/retirement identity tests passed 3/4/5 plus the
+changed architecture selector; this evidence is reused without another rerun.
 
-Before actual cache bootstrap, stop the target application services/Workers and
-use a single reviewed Backend-image import runner on the exact target network.
-This exclusive bootstrap window prevents Product/scheduler writes between the
-read-only emptiness precheck and domain imports. Verify target identities and
-empty credentials, qualified export hash/status/counts, empty domain facts/Jobs
-and zero coverage projections before any Store constructor. Store methods use
-separate transactions; partial failure permits read-only reconciliation and
-never automatic re-execution. Source DB permission is spent.
+The exact disposable scope `byq-dev-dd33416d94` was rebuilt from committed
+source with `.278`, seeded and checked. Independent Tester verified all 13
+container/image/label pins, five volumes, two networks, actual Backend source
+inventory and the Runtime's embedded manifest. New Workspace:
+`workspace_af43ba7a82524108ba11d4695613aafc`. Both model/TuShare credentials remain
+empty; Data/ML Workers remain stopped. Private original environment pins:
+`/tmp/byq-phase17-278/environment.json`. Actual post-bootstrap origins are in
+`environment-after-bootstrap.json`; observe current ports before each journey.
+
+The reviewed once-only Engineering bootstrap completed while target apps were
+stopped. Its read-only precheck covered 24 market/security tables, sync Jobs and
+empty coverage projections before Store constructors. Store methods used separate
+transactions; the whole bundle is not claimed atomic. The original ten running
+apps were restored and the import runner removed. No source DB query was repeated;
+that permission is spent. No old Product objects were restored.
+
+Independent target verification used one repeatable-read, read-only transaction
+and passed all 31 checks: 98 bars/status/factors, 151 calendar days (98 open),
+98 symbol-scoped proofs, zero actions and zero global completeness, plus 5,909
+security members and one quarantine. Source/target values and canonical hashes
+match. The original `target-market-validation.json` retains initial local checker
+false positives caused by the import-time `provenance` versus stored
+`provenance_json` field alias; corrected offline rehash passes all 98 bars with
+no second DB query. This was a checker correction, not a product change.
+The separate offline final report `final-target-market-validation.json` preserves
+those diagnostics as `initial_checker_false_positive`, records final
+`mismatches=[]`, and leaves the original report unchanged. Final SHA-256:
+`337b3c9d66a55f5d3851d97bbcdf31e9a31c82e50d8e132b878907d27b6f1c78`.
+
+Real browser Product cache preflight passed: `000001.SZ` usable 98/98,
+`600000.SH` unavailable, 43 requests with zero foreign origins. The fresh pool
+is `stock_pool_ba455d1da20c435a8b6ab3c233c5d8a4`, frozen snapshot
+`stock_pool_snapshot_48f5fdb0812f50ff82b66f1d5bd86ae8c7dc5b826d201426e95728fe649915de`.
+Use these new identities for A1; do not recreate the pool. Private import,
+validation and Product records are under `/tmp/byq-phase17-278`.
+
+Tester **PASS**, independent Reviewer **Functional / Tests / Clean Break
+Architecture PASS**, Root **CACHE PREPARATION PASS**, limited to this fresh
+target bootstrap and Product cache preflight. Golden A–F, enabled F6 and all
+new external calls remain **NOT_RUN / NOT_AUTHORIZED**.
 
 ## Common stages and exact-write discipline
 
@@ -67,9 +96,10 @@ the pinned Workspace. Browser requests use only Frontend/Gateway Product routes.
 Agent domain actions use BYQ MCP. Root's explicit human decisions use Product
 API/browser; no Product DSH Engineering privileges are added.
 
-Create a fresh custom single-symbol pool through
-`POST /api/product/paper/pools` with one saved idempotency key and
-`symbols=["000001.SZ"]`; record its new frozen snapshot ID. No old pool, Task,
+The fresh custom single-symbol pool was created once through
+`POST /api/product/paper/pools` with a saved idempotency key and
+`symbols=["000001.SZ"]`; its frozen snapshot is recorded above. Read it back
+before A1; do not replay its creation. No old pool, Task,
 Job, strategy approval, Artifact, session or user history is restored.
 
 For a foreground turn, first save its exact prompt, create/verify the Product
@@ -256,14 +286,15 @@ Do not run old Golden C preflight: its completed prior TrainingJob and old
 Artifact IDs are not a prerequisite for a fresh Phase 17 run. The exact Worker
 interruption algorithm may be used with current identities only.
 
-## Actual enabled F6 and external-call budget — preparation pending
+## Actual enabled F6 and external-call budget — authorization pending
 
 The full A–F external-call plan is not approved or requested yet. F6 must use a
-separate new current Task and healthy original DSH session, with a validated
+separate new current Task and healthy original logical Product session, with a validated
 current-task strategy and explicit human grant **before** its first independently
 trusted terminal Job event. It cannot reuse C's deleted session or an already
 completed B/C event. The exact F6 preparation/Job sequence, grant timing and its
-foreground model inputs still require final review.
+foreground model inputs are accounted for in the reviewed ledger below; actual
+execution still requires authorization and per-input manifests.
 
 The proposed grant is `max_turns=1`, `token_limit=4000000`, `valid_seconds=900`,
 `turn_timeout_seconds=900`, exact confirmed strategy IDs and one saved Product
@@ -284,17 +315,61 @@ actual provider/model, requests and usage. No automatic failed-turn replay,
 changed provider route or unrelated call is authorized. Push/PR, merge and
 production deployment remain separate permissions.
 
+## Model input ledger draft — no external authorization yet
+
+The current source review yields this input ledger. It is a planned operation
+limit, not a shared cross-session SDK counter or a raw model-request limit.
+
+| Inputs | Purpose | Planned maximum |
+|---|---|---|
+| A1–A3 | Research, follow-up, delegation request | 3 foreground turns |
+| B1–B5 | Version A, run A, revised B, run B, Agent optimization | 5 foreground turns |
+| C1–C2 | ML version validation and exact training submission preparation | 2 foreground turns |
+| C-approval | Unique typed training approval resumption | 1 additional server-owned DSH run |
+| D1 | New session reads the same completed C Job and Artifacts | 1 foreground turn |
+| F6-1–F6-2 | New Task/validated version, then Agent initiates a new exact Job after grant | 2 foreground turns |
+| F6-event | Trusted new terminal event delivered to the healthy current session | 1 grant-bound background run |
+| E1–E2 | Real research/delegation after populated reset | 2 foreground turns |
+| A/E children | At most one requested delegated research run for each journey | 2 delegated runs |
+
+Totals: 15 foreground turns, at most two delegated runs, one C approval
+resumption and one F6 background run. Extra F6 generic approval resumption is
+not included; if required, stop before opening that additional model input.
+Foreground/delegation plans do not imply one raw model API request per run.
+
+The active profile has per-run Web `maxUses=5` and search `maxQueries=4`.
+These do not enforce a global six-search ceiling. F6 background disables Web.
+The remaining 18 planned non-background runs therefore have a conservative
+native-config upper bound of 90 search-tool uses / 360 queries if all use Web;
+no smaller global hard bound is currently established. A final scoped external
+proposal must disclose the executable limits and the exact ledger, rather than
+claim six globally guarded searches. Delegation/input counts still need
+per-input operation manifests and review of the runnable sequence.
+
+For F6, keep the appropriate signal Worker stopped while Agent initiates its new
+Job after the exact human grant. Start only that Worker so a new terminal event
+can be delivered; require the same original healthy logical Product session and matching
+validated Strategy Artifact/Task. Revoke the exact grant and disable the executor
+once the one background run settles. The 4M allowance admits at most three
+`llm/stream` budget checks with the current conservative guard; it is not a
+one-call API permission. Later root turns may create new Runtime generations;
+this does not prove reuse of the same underlying DSH process or process reattach.
+Actual enabled F6 viability remains unverified.
+
 ## Preparation acceptance and next permission
 
-Independent Tester: **PREPARATION PASS** for actual new-scope build/resource pins,
-empty model/TuShare credentials, stopped Data/ML Workers and recorded durable
-browser login. Independent Sol Reviewer: **PREPARATION PASS / SOURCE-READ PLAN
-PASS**, limited to proposing the exact read exception. Root: **PASS** for that
-preparation scope. The later maintainer exception authorized one source export,
-now completed and spent. Offline qualification is partial as documented above;
-target contract qualification/import/readback and all connected Golden/provider/
-model journeys remain open. The prepared `.277` environment is historical after
-the scoped-import source repair; final execution needs fresh `.278` images and pins.
+The historical `.277` source-read preparation passed its limited gate. The
+maintainer's one-time source read was executed and is spent. `.278` source,
+fresh environment, once-only target canonical import and independent readback
+have now passed Tester → independent Reviewer → Root. Cache preparation is
+complete; it does not close the final Golden milestone.
+
+External model/Web/TuShare authorization is absent. The saved exact first prompt
+is `/tmp/byq-phase17-278/golden-a1-input.json`; it has not been submitted and no
+A1 session exists. A staged A1 grant must specify one foreground DSH run, no
+delegation, no market-provider downloads, native Web limits and the lack of a
+raw model-call hard cap. Later ledger inputs require the recorded external
+scope; additional inputs or retries cannot be inferred from an A1-only grant.
 
 ## Acceptance
 
