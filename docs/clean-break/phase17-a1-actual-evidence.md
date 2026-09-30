@@ -132,8 +132,9 @@ NULL or other-conversation rows cannot be retroactively rebound. Non-Product
 stateless calls retain their explicit unbound contract. No existing A1 Task was
 modified to simulate an Agent success.
 
-The source repair has a new `.280` candidate identity. The running `.278` target
-and its execution evidence are preserved; `.280` has no live Agent acceptance.
+The source repair has a new `.280` candidate identity. The actual `.278` execution evidence
+is preserved; `.280` has no live Agent acceptance. The target was still `.278`
+at the source gate; its subsequent preparation update is recorded below.
 The unexecuted `.279` candidate was frozen after new tests exposed a fixture
 contract error: generated source IDs were supplied where candidate source
 indexes are required. The initial 11-passed/4-failed result included four early-rejection
@@ -164,3 +165,54 @@ Focused source tests and independent review are tracked separately below.
   restart, populated reset, exact-head hosted CI and repository gates remain
   pending. No later model/provider permission is inferred from this spent grant.
 - No Phase 17 push, PR, merge, deployment or release was performed or authorized.
+
+## `.280` target preparation after the source gate
+
+Root committed the qualified source at
+`afe529aa5ad264d5932ef14a7b354ca09cb37e2e`. The independently reviewed private
+`prepare-280-target.py` (SHA-256
+`0e368e5de7875e68c4f3fd23f9bcc6293223fd3197b6491c75a0c4218ebd469d`)
+was hash checked by the launcher and executed once in the exact existing fresh
+target scope. Only Backend and Runtime were built and recreated with
+`--no-deps`; no DB restore, manual Task binding, source export/import, download
+or model input ran. The unexecuted `.279` candidate was not built.
+
+New Backend container:
+`e7c4f718fe97fa7cc36c947357e7303df8c0443e5e0caa5105b61f06d3b17c49`,
+image `sha256:40303cf15b471d4e2260d73fb07e5adb76e43b1ed2a2bff8d8e57785a92994b5`.
+New Runtime container:
+`a7f7e72d8c2671a7cd3b4cba92be63173a5005f001e5279387038d82ddcc9b80`,
+image `sha256:4fca5f56734683f418a085bbfb815ce436232ec31e3069854f682d0a7e8ce545`.
+Actual Backend main/research/test file hashes match selected `.280` inputs;
+Runtime embeds the exact `.280` manifest. Other 11 service IDs/images/states and
+all mounts, five volume names and two network names match the pre-operation
+pins. Data/ML remain stopped, TuShare absent, F6 disabled and the existing model
+key configured. The prior Runtime had active/prompts 0 and cumulative usage 14;
+the new Runtime has active/prompts/usage 0. This is a process replacement and
+counter reset, not an Agent continuation claim or a measured A1 usage delta.
+
+Normal durable login and four read-only Gateway/Product GETs verified the same
+Workspace, original unbound A1 Task with `conversation_binding_missing`, identical
+Artifact hash/content/lineage and unchanged pool snapshot. These are preservation
+checks; they do not prove a new Agent used the repaired factory. No populated
+Workspace reset or reseed ran. Current Gateway/Frontend origins remain
+`http://127.0.0.1:32867` / `http://127.0.0.1:32866`; verify live pins at admission.
+
+Private fresh pins and results: `/tmp/byq-phase17-280/environment.json`,
+`target-prepare-attempt.json`, `build.log`, `recreate.log`,
+`product-preservation.json`. Independent Tester **TARGETPREPARATION PASS**
+verified exact live identities, source/manifest hashes, state and preservation.
+Independent Reviewer **Functional PASS / Tests PASS / Clean Break Architecture
+PASS**; Root **TARGET PREPARATION PASS**, limited to this two-service update and
+preservation. No `.280` foreground grant or input exists; actual A1 remains
+HANDOFF BLOCKED.
+
+The next proposed external operation is **one additional foreground A1 input**
+on this `.280` source/build, official Flash, a fresh Product conversation and new
+Task/Artifact/key. It must verify original-conversation discovery and handoff,
+using the existing exact pool/snapshot and 98-session cache. Intended Web use is
+one search/query; native five-use/four-query limits and no raw model-request hard
+cap remain disclosed. Delegation, market download, F6, provider fallback and
+automatic input replay remain excluded. Fresh route/subject/runtime preflight
+and a new exact one-shot grant are required before submission; the spent `.278`
+grant cannot admit it. This proposal does not authorize any later Golden input.

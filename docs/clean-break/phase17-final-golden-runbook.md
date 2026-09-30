@@ -427,3 +427,15 @@ and a proposed budget never imply final Golden PASS. A1 is EXECUTED / HANDOFF
 BLOCKED; remaining A inputs, B–F and enabled F6 remain NOT_RUN until separately
 authorized connected journeys actually finish. Hosted
 CI and repository gates remain required before Phase 17 can close.
+
+## Prepared repair candidate for the next input
+
+The actual `.278` A1 is HANDOFF BLOCKED and its one-shot grant is spent. The
+bounded repair passed source gates at `afe529aa5ad264d5932ef14a7b354ca09cb37e2e`;
+selected `.280` manifest is
+`sha256:828b58684ae05f50f5e74995352ef30bc16295ce0740c44020426ca2f1c0d947`.
+Only target Backend/Runtime were updated, preserving the cache and prior A1
+objects. Fresh target/preservation evidence is under `/tmp/byq-phase17-280`;
+[the actual record](phase17-a1-actual-evidence.md) describes the remaining
+qualification boundary and exact next one-foreground-input proposal. No model
+input is authorized by source or target preparation gates.
