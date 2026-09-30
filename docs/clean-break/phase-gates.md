@@ -65,6 +65,38 @@ identity, syntax and diff checks). Independent Sol Reviewer: **Functional PASS /
 Tests PASS / Clean Break Architecture PASS**. Root: **PASS for the bounded
 correction**; final exact-head Full CI and repository preflight remain required.
 
+## Phase 15 PR-history secret-scan correction (2026-09-30)
+
+Full CI run `36652051299` passed on `de30eac2`, including all seven components,
+integration/browser checks, scoped cleanup and aggregate gates. Independent
+Tester verified the exact head. Fresh repository preflight nevertheless blocked
+merge because PR run `36652026073` failed its whole-PR Git-history secret scan.
+The dispatch scan covers only the last commit and does not replace that gate.
+
+Pinned Gitleaks 8.30.1 reported four `generic-api-key` findings in commit
+`9357651`, all the same deterministic `optimization-key-1` idempotency fixture
+in `services/gateway/tests/test_product_api.py`. Independent Reviewer confirmed
+they are mocked request/query/forwarding assertions, not credentials. Automatic
+approval review initially rejected a persistent scanning exception as outside
+the existing settings authorization; no configuration change or merge occurred.
+The maintainer then explicitly authorized only that file and exact value.
+
+The correction inherits `generic-api-key` and adds an `AND` allowlist requiring
+both the anchored exact test path and anchored exact extracted value. Existing
+global exclusions, all other rules, files and values remain unchanged. This
+configuration is outside the `.272` fingerprint closure; no build revision or
+Product runtime change is needed. Final boundary tests, exact-head CI and fresh
+repository preflight remain required before the authorized merge.
+
+Independent focused Tester: **PASS** using pinned scanner 8.30.1. Whole-PR
+history scan reports zero findings. Temporary controls prove the exact allowed
+path/value passes, a different high-entropy synthetic value at the same path
+is detected, and the exact fixture value in another file is detected. Scanner
+output is redacted; no credential value is recorded. `.272` identity and
+`git diff --check` also pass. Independent Sol Reviewer: **Functional PASS /
+Tests PASS / Clean Break Architecture PASS**. Root: **PASS for this exact
+scanner correction**; hosted exact-head checks and live preflight remain open.
+
 ## Phase 15 live Golden C and local fidelity closeout (2026-09-30)
 
 [Current evidence](phase15-functional-fidelity.md#current-live-golden-c-and-closeout-evidence-2026-09-30)
