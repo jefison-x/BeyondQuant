@@ -1,9 +1,12 @@
 # Phase 15 — Functional fidelity on fresh state
 
-Status: **OPEN** on `codex/clean-break-phase15`, based on Phase 14 merge
-`e9c944951465fbdeae4d05cd7bb0358b32f8a041`. The current local functional
-closeout is **PASS** below; required Full CI and repository gates remain open.
-Phase 16 stays closed.
+Status: **PASS — local and repository gates complete.** PR #378 merged on
+2026-09-30 at `1a3b3c7016b913926563122aced1f8615391bc0a`; its exact final-head
+Full CI and automatic PR CI both passed. [Phase 16 acceptance](phase16-golden-acceptance.md)
+records the verified receipts and subsequent A–F evidence reconciliation.
+The OPEN/NOT_RUN/pending statements in dated observations below retain their
+original meaning at the time they were recorded; they are not current phase
+routing. Phase 16 is now authorized for development; Phase 17 is closed.
 
 Current GPU gate scope: [ADR-0089](../architecture/adr/ADR-0089-clean-break-gpu-acceptance-scope.md)
 excludes GPU execution and GPU checkpoint/restart from BYQ 0.10 acceptance

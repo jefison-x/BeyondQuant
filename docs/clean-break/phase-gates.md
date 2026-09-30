@@ -1,5 +1,24 @@
 # Phase 0–6 gate record
 
+## Phase 16 entry and Golden evidence reconciliation (2026-09-30)
+
+Phase 15 repository completion is verified: PR #378 merged, final-head Full CI
+`36655977569` and PR CI `36655977256` passed. The maintainer then instructed
+Phase 16 continuation. The clean main checkout was fast-forwarded to fetched
+`origin/main`; a new isolated `codex/clean-break-phase16` worktree was verified.
+The [Phase 16 acceptance record](phase16-golden-acceptance.md) maps A–F to the
+actual post-rebuild Product/Worker/browser evidence, preserving limits and failed
+attempts. README/STATUS route Phase 16; historical 0.9 phase markers are retained.
+No runtime/source contract or data operation is changed. Tester **PASS**:
+`dev-check` one Python file, five Markdown documents, three named governance
+tests, 198 architecture tests plus 92 subtests, selected `.272` unchanged and
+diff checks. Independent Sol Reviewer: **Functional PASS / Tests PASS / Clean
+Break Architecture PASS**. Root: **PASS for local evidence reconciliation**.
+Per-flow source SHA was not pinned; F remains the accepted Phase 15 rebuild
+baseline rather than a new-head rebuild. Required Phase 16 exact-head Full CI
+and repository gates remain OPEN; no new live execution is claimed.
+Phase 15 push/merge authorization is not extended to Phase 16. Phase 17 is closed.
+
 ## Phase 15 repository-gate authorization (2026-09-30)
 
 After local functional PASS, the maintainer explicitly instructed
