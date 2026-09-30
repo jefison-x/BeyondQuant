@@ -32,14 +32,23 @@ acceptance. The maintainer instructed the next step after Phase 16 merged.
 This phase uses a new isolated branch from fetched main, classifies residual
 state by actual ownership, and removes only tested unnecessary paths while
 preserving exact business authority, idempotency and unknown-result protection.
-Phase 17 is OPEN. Final A–F reruns after the last deletion, required hosted CI
-and repository gates remain pending. The original `.278` A1 remains unbound.
+Phase 17 is OPEN. Golden A local research/multi-turn/delegation/browser passed
+Tester → independent Reviewer → Root on the unchanged `.280` application source.
+Its connected journey reused the already qualified A1 Artifact and 98-session
+cache; the delegated child performed one new Web query. Observer failures and
+independent read-only browser qualification remain explicit in
+[actual connected A evidence](../clean-break/phase17-a2-a3-actual-evidence.md).
+B–F, enabled F6, required hosted CI and repository gates remain pending. The original `.278` A1 remains unbound.
 A separately authorized one-shot `.280` A1 completed with a new Task correctly
 bound and discoverable in its original conversation; handoff is `needs_permission`
 as no continuation grant was authorized. Tester → independent Reviewer → Root
 passed the bounded A1/binding result gate; see
 [Phase 17 A1](../clean-break/phase17-a1-actual-evidence.md).
-Both one-shot grants are spent. Further model inputs require a new bounded grant.
+Both historical one-shot grants are spent. On 2026-09-30 the maintainer explicitly
+authorized continuing external test model calls without another permission request.
+This supersedes the per-round grant requirement for the isolated Phase 17 tests;
+Product business approvals, unknown-outcome protection and the existing-database,
+backup, market-download and production boundaries remain in force.
 No later phase is authorized.**
 Under [ADR-0089](../architecture/adr/ADR-0089-clean-break-gpu-acceptance-scope.md),
 GPU execution and GPU checkpoint/restart are `N/A` for BYQ 0.10 acceptance;

@@ -246,6 +246,13 @@ Market canonical data may be re-imported from the separately validated logical
 export; old Product state is never restored. Offline mock reset tests do not
 qualify E.
 
+Actual Golden A local research/multi-turn/delegation/browser now passed
+Tester → independent Reviewer → Root on `.280`;
+[the actual connected record](phase17-a2-a3-actual-evidence.md) preserves
+observer errors, zero-input browser supplementation, existing A1 evidence reuse,
+one actual child/new Web query, draft-source limitations and exact gate scope.
+This does not qualify E, F6 or the remaining final Golden milestone.
+
 ## Golden B — Agent backtests, revision and optimization
 
 Use at most five foreground turns: Agent creates/validates StrategyVersion A;
@@ -296,15 +303,24 @@ Do not run old Golden C preflight: its completed prior TrainingJob and old
 Artifact IDs are not a prerequisite for a fresh Phase 17 run. The exact Worker
 interruption algorithm may be used with current identities only.
 
-## Actual enabled F6 and external-call budget — authorization pending
+## Current test-call authorization — 2026-09-30
 
-The full A–F external-call plan is not approved or requested yet. F6 must use a
+The maintainer explicitly instructed: “外部测试用模型调用无需授权，可以直接使用。继续测试吧”. This supersedes the earlier per-round bounded-grant requirement for external test model calls in this continuing isolated Phase 17 work. Subsequent test inputs, delegated test runs and test-owned approval resumptions can execute without another model permission request. Frozen input/receipt records and truthful actual provider, usage, Web and child evidence remain required. The old one-shot A1 grants and their execution limits remain historical facts.
+
+This instruction does not authorize market downloads, existing/Community database or backup operations, source/Engineering privileges to Product DSH, production deployment, or replay of an unknown input outcome. Explicit typed business approvals and continuation grants remain their own Product contracts; a test-model authorization does not bypass them.
+
+An Agent conversation released after an idle stream is not reconstructed. A new test conversation must use fresh domain keys and Tasks; existing Artifacts can be read as background without rebinding their old Tasks.
+
+## Historical external-call proposal and current Product F6 contract
+
+The earlier per-round external-call proposal below is historical under the
+current test-call authorization above. F6 must use a
 separate new current Task and healthy original logical Product session, with a validated
 current-task strategy and explicit human grant **before** its first independently
 trusted terminal Job event. It cannot reuse C's deleted session or an already
 completed B/C event. The exact F6 preparation/Job sequence, grant timing and its
 foreground model inputs are accounted for in the reviewed ledger below; actual
-execution still requires authorization and per-input manifests.
+execution still requires its exact Product continuation grant and per-input manifests.
 
 The proposed grant is `max_turns=1`, `token_limit=4000000`, `valid_seconds=900`,
 `turn_timeout_seconds=900`, exact confirmed strategy IDs and one saved Product
@@ -325,7 +341,7 @@ actual provider/model, requests and usage. No automatic failed-turn replay,
 changed provider route or unrelated call is authorized. Push/PR, merge and
 production deployment remain separate permissions.
 
-## Model input ledger draft — no external authorization yet
+## Planned model input ledger — current test-call authorization above
 
 The current source review yields this input ledger. It is a planned operation
 limit, not a shared cross-session SDK counter or a raw model-request limit.

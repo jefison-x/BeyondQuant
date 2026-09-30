@@ -19,6 +19,14 @@ Ordinary business databases, backups and Community storage
 remain outside scope. Phase 17 push/PR, merge, deployment and release require
 their own authorization; prior phase grants are not reused.
 
+## Current test-call authorization — 2026-09-30
+
+The maintainer explicitly instructed: “外部测试用模型调用无需授权，可以直接使用。继续测试吧”. This supersedes the earlier per-round bounded-grant requirement for external test model calls in this continuing isolated Phase 17 work. Subsequent test inputs, delegated test runs and test-owned approval resumptions can execute without another model permission request. Frozen input/receipt records and truthful actual provider, usage, Web and child evidence remain required. The old one-shot A1 grants and their execution limits remain historical facts.
+
+This instruction does not authorize market downloads, existing/Community database or backup operations, source/Engineering privileges to Product DSH, production deployment, or replay of an unknown input outcome. Explicit typed business approvals and continuation grants remain their own Product contracts; a test-model authorization does not bypass them.
+
+An Agent conversation released after an idle stream is not reconstructed. A new test conversation must use fresh domain keys and Tasks; existing Artifacts can be read as background without rebinding their old Tasks.
+
 ## Finite ownership audit
 
 The audit follows the Phase 7 exit classification and Phase 10 Adapter/Gateway
@@ -503,8 +511,8 @@ The fresh `.278` preparation and canonical bootstrap above are complete; do not
 repeat them. The qualified preparation procedure was to build from templates and
 committed source, review exact `dev-clean --dry-run` resources before cleanup, then
 perform `dev-clean → dev-init → dev-start → dev-seed → dev-test`. The remaining
-work is connected Product/browser/Worker journeys after the required external
-authorization. Existing Phase 15 resources and ordinary
+work is connected Product/browser/Worker journeys under the current external
+test-call authorization above. Existing Phase 15 resources and ordinary
 business/backup resources are not cleanup targets. Preserve the now-qualified
 and imported TuShare 98-session market window (2024-01-02–2024-05-31). Do not
 repeat the source export or target bootstrap, restore old databases, sessions,
@@ -523,10 +531,13 @@ refresh requires separately scoped authorization.
   reads the same Job/Artifact without duplicate execution. No DSH restart or
   child rebind claim.
 
-The runnable plan, accurate new model-turn/delegation/provider budget and exact
-resource identities require review and new bounded authorization before external
-calls. Final Golden tests remain **NOT_RUN**, not PASS. Phase 17 stays OPEN until
-that milestone, exact-head required CI and repository gates complete.
+The runnable plan, actual model-turn/delegation/provider accounting and exact
+resource identities require review. The current test-call authorization above
+supersedes the earlier per-input permission requirement. The final A–F milestone remains **OPEN**. Golden A local research/multi-turn/
+delegation/browser passed its independent actual gates; see
+[connected A evidence](phase17-a2-a3-actual-evidence.md). B–F and enabled F6
+remain pending. Phase 17 stays OPEN until the milestone, exact-head required CI
+and repository gates complete.
 
 ## Actual A1 and bounded conversation-binding repair
 
