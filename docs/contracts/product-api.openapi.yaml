@@ -334,6 +334,21 @@ paths:
     parameters: [{$ref: "#/components/parameters/JobId"}]
     post: {summary: 取消 one owner-scoped backtest job., responses: *okResponses}
 
+  /api/product/optimization-jobs:
+    post: {summary: 提交 owner-scoped OptimizationJob；Gateway 绑定可信 trace，比较现有回测结果。, responses: *acceptedResponses}
+    get:
+      summary: 按原 task 和幂等键查询 owner-scoped OptimizationJob 回执。
+      parameters:
+        - {name: task_id, in: query, required: true, schema: {type: string}}
+        - {name: idempotency_key, in: query, required: true, schema: {type: string}}
+      responses: *okResponses
+  /api/product/optimization-jobs/{job_id}:
+    parameters: [{$ref: "#/components/parameters/JobId"}]
+    get: {summary: 获取 owner-scoped OptimizationJob 状态和比较 Artifact 引用。, responses: *okResponses}
+  /api/product/optimization-jobs/{job_id}/cancel:
+    parameters: [{$ref: "#/components/parameters/JobId"}]
+    post: {summary: 取消 one owner-scoped OptimizationJob., responses: *okResponses}
+
   /api/product/strategies:
     get: {summary: 列出 owner-scoped strategy artifacts., responses: *okResponses}
   /api/product/strategies/drafts:

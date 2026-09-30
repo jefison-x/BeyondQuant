@@ -13,6 +13,32 @@ merge results are recorded by the PR/check runs; this authorization is not a
 claim that those gates already passed. Earlier local-only scope statements
 below retain their historical meaning.
 
+PR #378 was created as Draft. Initial exact-head hosted Full CI run
+`36648427194` and PR run `36648406040` failed the selected operational build
+identity gate before component tests: Phase 15 source inputs differed from
+the selected immutable manifest. This is a real gate failure, not a component
+test result. The correction must issue a new build revision and preserve the
+old manifest/inputs; disabling the identity gate or reusing old images is not
+permitted. Replacement exact-head CI and merge preflight remain required.
+
+The correction selects new immutable build `dsh-0.1.5rc1-post-u8.271`
+(`sha256:b16e18882b74431b25720b028a135ae1dd924382f8526cd2f87fa772c9dfecae`),
+freezes `.270` without changing its manifest or Dockerfile, and updates live
+Compose/CI/development references. The new Dockerfile changes only the embedded
+manifest path; release descriptor, SDK/runtime and dependency locks are
+unchanged. `compose.dev.yml` now belongs to the fingerprinted input closure.
+The four already implemented OptimizationJob Product methods are also added
+to the browser OpenAPI contract, preserving the route-coverage assertion.
+These changes do not alter Product execution behavior or require another
+paid model/Golden run. The old manifest mismatch remains recorded; only
+replacement exact-head hosted CI can satisfy the repository gate.
+
+Bounded correction Tester: **PASS** (13 build/current/frozen/selection checks,
+one exact OpenAPI coverage test, current `.271` and frozen `.270` manifest
+checks, YAML/AST/shell/diff). Independent Sol Reviewer: **Functional PASS /
+Tests PASS / Clean Break Architecture PASS**. Root: **PASS for the CI
+correction only**; this is not a hosted Full CI or merge pass.
+
 ## Phase 15 live Golden C and local fidelity closeout (2026-09-30)
 
 [Current evidence](phase15-functional-fidelity.md#current-live-golden-c-and-closeout-evidence-2026-09-30)

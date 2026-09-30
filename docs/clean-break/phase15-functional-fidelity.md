@@ -119,8 +119,11 @@ browser observer and real Worker driver. Live Tester → independent Sol Reviewe
 → Root closeout is **PASS** for Golden C and the Phase 15 local functional
 fidelity gate. The independent Reviewer accepted the existing A/B/D/E evidence
 and corrected F chronology; Root accepts that bounded local closeout.
-Required Full CI is **NOT_RUN** for this branch;
-push, PR, merge and deployment are outside this continuation's authorization.
+At that local closeout, required Full CI was **NOT_RUN**, and push/PR/merge
+were outside the initial authorization. The subsequent explicit repository
+authorization and initial CI identity-gate failure are recorded at the top of
+[phase-gates.md](phase-gates.md); replacement CI and merge remain pending.
+Deployment is not authorized.
 Phase 15 overall remains **OPEN** and Phase 16 is not started.
 
 ### Post-rebuild evidence reconciliation
