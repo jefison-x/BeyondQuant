@@ -140,26 +140,28 @@ const trustedSearch = (trustedBody?.content as Record<string, unknown>).search a
 assert.equal(trustedSearch.plugin_id, "web-search");
 assert.equal(trustedSearch.plugin_version, process.env.BYQ_EXPECTED_WEB_EVIDENCE_PRODUCER ?? "0.1.1-rc.1");
 
-let forgedRequestReachedBackend = false;
-const forgedProducer = await fetchByqWebEvidenceCreate(
-  "http://backend:8000",
-  {
-    task: { title: "producer", objective: "reject forged provenance" },
-    content: {
-      schema_version: "web-research-evidence.v1",
-      search: { plugin_id: "web-search", plugin_version: "9.9.9", queries: [], stopped_reason: "NO_RESULTS" },
+for (const [index, suppliedVersion] of [trustedSearch.plugin_version, "9.9.9"].entries()) {
+  let suppliedProducerReachedBackend = false;
+  const rejectedProducer = await fetchByqWebEvidenceCreate(
+    "http://backend:8000",
+    {
+      task: { title: "producer", objective: "reject caller-supplied provenance" },
+      content: {
+        schema_version: "web-research-evidence.v1",
+        search: { plugin_id: "web-search", plugin_version: suppliedVersion, queries: [], stopped_reason: "NO_RESULTS" },
+      },
+      lineage: [],
+      idempotency_key: `mcp-web-evidence-rejected-producer-${index}`,
     },
-    lineage: [],
-    idempotency_key: "mcp-web-evidence-forged-producer",
-  },
-  async () => {
-    forgedRequestReachedBackend = true;
-    return new Response("{}", { status: 201 });
-  },
-);
-assert.equal(forgedProducer.isError, true);
-assert.equal(forgedRequestReachedBackend, false);
-assert.match(forgedProducer.content[0].text, /PRODUCER_PROVENANCE/);
+    async () => {
+      suppliedProducerReachedBackend = true;
+      return new Response("{}", { status: 201 });
+    },
+  );
+  assert.equal(rejectedProducer.isError, true);
+  assert.equal(suppliedProducerReachedBackend, false);
+  assert.match(rejectedProducer.content[0].text, /PRODUCER_PROVENANCE/);
+}
 
 const invalidWebEvidence = await fetchByqWebEvidenceCreate(
   "http://backend:8000",
@@ -201,7 +203,10 @@ try {
   writeFileSync(policyFile, JSON.stringify(candidate));
   const bound = bindActiveWebEvidenceProducer({ search: { queries: [] } });
   assert.equal((bound.search as Record<string, unknown>).plugin_version, "0.1.2-rc.1");
-  // Even a recognized old version cannot impersonate this candidate instance.
+  assert.throws(() => bindActiveWebEvidenceProducer({
+    search: { plugin_id: "web-search", plugin_version: "0.1.2-rc.1" },
+  }), /trusted deployment/);
+  // Even a recognized old version cannot be supplied by the caller.
   assert.throws(() => bindActiveWebEvidenceProducer({
     search: { plugin_id: "web-search", plugin_version: "0.1.1-rc.1" },
   }), /trusted deployment/);

@@ -11,7 +11,6 @@ from pathlib import Path
 import pytest
 
 from app import main
-from app.agent_lifecycle_delivery import LifecycleDelivery
 from app.trace_store import TraceConflict, TraceStore
 
 
@@ -81,45 +80,3 @@ def test_restore_attaches_live_session_and_reopens_trace(monkeypatch, tmp_path: 
     # The trace was reopened for the surviving runtime's continuation.
     assert store.append(event("runtime-private", "trace-1", 5, "session.progress", {"step": 5})) is True
     assert collectors == ["runtime-private"]
-
-
-def test_rebound_lifecycle_registration_is_delivered_for_run_binding(tmp_path: Path) -> None:
-    fingerprint = "b" * 64
-    run_id = "c" * 32
-    sent: list[dict] = []
-    traces = TraceStore(tmp_path)
-    for sequence, kind, payload in [
-        (1, "session.ready", {"status": "ready"}),
-        (2, "session.started", {"run_id": "a" * 32}),
-        (3, "session.result", {"run_id": "a" * 32}),
-    ]:
-        traces.append(event("rehydrated-session", "rehydrated-trace", sequence, kind, payload))
-    traces.close("rehydrated-session")
-
-    session = main.ProductSession(
-        conversation_id="conversation_1", session_id="rehydrated-session",
-        trace_id="rehydrated-trace", principal=main.Principal(subject="admin"),
-        workspace_id="workspace_admin",
-    )
-
-    def send(context, projected):
-        sent.append(projected)
-        return {"receipt": delivery.receipt(projected)}
-
-    delivery = LifecycleDelivery(tmp_path, TraceStore(tmp_path), send, clock=lambda: 1000.0)
-    delivery.register(session)
-    # A rehydrated turn registers its newly opened root at persisted + 1.
-    traces.reopen("rehydrated-session")
-    traces.append(event("rehydrated-session", "rehydrated-trace", 4, "agent.run.registration", {
-        "schema_version": "agent-run-registration-observed.v1",
-        "run_id": run_id, "registration_fingerprint": fingerprint,
-    }))
-
-    delivery.run_once()
-
-    # The rehydrated registration is delivered last; the backend binds the
-    # still-``pending_binding`` agent run through its exact fingerprint.
-    assert sent[-1] == {
-        "schema_version": "agent-run-lifecycle.v1", "root_run_id": run_id,
-        "sequence": 4, "outcome": "active", "registration_fingerprint": fingerprint,
-    }

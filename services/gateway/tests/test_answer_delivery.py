@@ -79,7 +79,7 @@ def test_answer_retry_budget_survives_restart_and_blocks_overtaking(tmp_path, fa
     assert state["pending"]["2"]["attempts"] == 0
 
 
-def test_answer_scope_and_lifecycle_ledgers_are_independent(tmp_path):
+def test_answer_scope_ignores_lifecycle_events_without_generic_ledger(tmp_path):
     calls = []
     traces, session, now, delivery = setup(tmp_path, lambda ctx, event: calls.append(event))
     traces.append(answer(1, trace_id="foreign"))
@@ -87,12 +87,14 @@ def test_answer_scope_and_lifecycle_ledgers_are_independent(tmp_path):
     traces.append(answer(3, kind="session.failed", payload={"run_id": "a" * 32}))
     delivery.run_once()
     assert calls == []
-    lifecycle = LifecycleDelivery(tmp_path, traces, lambda ctx, event: {"receipt": lifecycle.receipt(event)})
-    lifecycle.register(session)
-    lifecycle.run_once()
-    assert (tmp_path / "answer-session.lifecycle.json").exists()
-    assert json.loads((tmp_path / "answer-session.lifecycle.json").read_text())["pending"] == {}
+    assert not (tmp_path / "answer-session.lifecycle.json").exists()
     assert json.loads((tmp_path / "answer-session.answers.json").read_text())["pending"] == {}
+
+
+@pytest.mark.parametrize("options", [{}, {"answers": True, "private_source": lambda *_: None}])
+def test_delivery_rejects_generic_lifecycle_and_mixed_modes(tmp_path, options):
+    with pytest.raises(ValueError, match="exactly one"):
+        LifecycleDelivery(tmp_path, TraceStore(tmp_path), lambda *_: None, **options)
 
 
 def test_answer_status_is_owner_scoped_without_resetting_budget(monkeypatch, tmp_path):

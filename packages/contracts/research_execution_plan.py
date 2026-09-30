@@ -370,7 +370,7 @@ STAGE_APPROVAL_REQUIREMENT = {
 }
 
 # The single non-cancelled status a stage defaults to when a plan is built
-# directly at that stage (legacy adoption). A stage whose legal set is only
+# directly at that stage. A stage whose legal set is only
 # ``{completed, cancelled}`` defaults to ``completed``; every other stage has
 # exactly one legal status.
 STAGE_STATUS = {
@@ -607,13 +607,12 @@ def plan_at_stage(
     approval: dict[str, object] | None = None,
     last_progress_identity: str | None = None,
 ) -> dict[str, object]:
-    """Build a validated version-1 plan at an explicit legal stage.
+    """Build a validated version-1 BYQ domain plan at an explicit legal stage.
 
-    This is only for adopting an already-existing legacy task whose stage maps
-    UNIQUELY (ADR-0085 §Migration). It never invents a next action: the stage's
-    single legal action, prerequisite set and expected postcondition are used.
-    A write-ready stage still requires its exact bound approval; without it the
-    caller must fall back to ``needs_attention`` rather than guess.
+    This constructor derives the stage's single legal action, prerequisite set,
+    and expected postcondition. A write-ready stage still requires its exact
+    bound approval. It is used by trusted domain fixtures and constructors; it
+    does not adopt or migrate pre-existing task state.
     """
 
     if stage not in STAGES:

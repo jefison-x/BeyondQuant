@@ -1,5 +1,31 @@
 # Phase 0–6 gate record
 
+## Phase 17 entry and residual audit (2026-09-30)
+
+Phase 16 PR #379 and its exact-head Full/PR CI passed and merged. The maintainer
+then instructed the next step. A new verified isolated worktree and branch
+`codex/clean-break-phase17` were created from fetched main at observed base
+`ff6756be3e7bf6cb6d3213c6dcd9bf016ecb9545`. STATUS/README now route Phase 17.
+The [residual audit](phase17-residual-simplification.md) records finite owners,
+Gateway/MCP deletions, focused Tester evidence, the Reviewer-found synthetic
+wire regression, and the exact approval-blocked legacy source proposal.
+Final A–F reruns after the last deletion and all repository gates remain OPEN.
+No new model/provider call, database/backup operation, push or deployment has
+occurred. Earlier Phase 16 pending/routing snapshots below are historical.
+
+Current source checkpoint: Tester **PASS**, Gateway 29 focused tests, MCP build
+and research/real MCP wire tests, governance three, normative architecture 74,
+identity/selection 12, syntax 14 files, six Markdown documents and diff checks.
+Independent Sol Reviewer: **Functional PASS / Tests PASS / Clean Break
+Architecture PASS**; Root: **PASS for the interim Gateway/MCP source slice**.
+New immutable `.273` hash is
+`sha256:029eadcb55f4ed5a784d7eb3d5c87150d85e43e5abfd17240606db15ff2fe9a9`;
+published `.272` manifest/Dockerfile remain unchanged. Corrected opt-in wire
+source preserves current terminal close/ACK and paid separation; actual wire
+and real MCP Backend/DB integration remain NOT_RUN. Optional F6 automatic Agent
+prompt dispatch and extra plugin deployment/Adapter alias contracts remain
+separate qualification candidates; they are not silently marked retired.
+
 ## Phase 16 entry and Golden evidence reconciliation (2026-09-30)
 
 Phase 15 repository completion is verified: PR #378 merged, final-head Full CI

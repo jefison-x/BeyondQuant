@@ -187,8 +187,6 @@ const webEvidenceContentSchema = z.object({
     calendar_verified: z.boolean(),
   }).strict(),
   search: z.object({
-    plugin_id: z.literal("web-search").optional().describe("Legacy compatibility only; omit because MCP supplies producer identity."),
-    plugin_version: z.string().optional().describe("Legacy compatibility only; if supplied, must match this MCP deployment."),
     queries: z.array(z.object({
       text: z.string(),
       language: z.enum(["zh", "en", "mixed"]),

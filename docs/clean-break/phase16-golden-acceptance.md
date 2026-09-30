@@ -1,7 +1,14 @@
 # Phase 16 — Golden Scenarios A–F acceptance
 
-Status: **local evidence reconciliation PASS; overall OPEN** for required
-exact-head Full CI and repository gates. This phase makes no Product runtime, schema, provider or Worker change.
+Status: **PASS — local and repository gates complete.** PR #379 merged on
+2026-09-30 at `ff6756be3e7bf6cb6d3213c6dcd9bf016ecb9545`. Final tested head
+`799b114f187f1f1c978a3b188b2d4ab9108b4724` passed Full CI `36662304103` and
+PR CI `36662299780`, followed by independent repository gates and immediate
+platform/contribution preflight. Remote main was verified to contain the merge.
+This phase changed no Product runtime/schema/provider/Worker behavior and did
+not claim new-head Golden executions. The pending/OPEN statements below are
+pre-repository-gate snapshots, not current routing. Phase 17 is now authorized
+for development; deployment and release remain unauthorized.
 
 ## Entry, baseline and authorization
 

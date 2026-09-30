@@ -2,7 +2,7 @@
 
 ## Current authority — BYQ 0.10 Clean Break (2026-09-25)
 
-<!-- byq:clean-break-current-phase=16 -->
+<!-- byq:clean-break-current-phase=17 -->
 
 The maintainer's explicit Clean Break direction supersedes the 0.9/P4 and Phase 100
 implementation routing below. The current architecture is [ADR-0088](../architecture/adr/ADR-0088-clean-break-baseline-activation.md)
@@ -23,14 +23,17 @@ Phase 15 — fresh-state functional fidelity: local Tester → independent Sol
 Reviewer → Root PASS, exact-head hosted Full CI and PR CI PASS, PR #378 merged.
 Its final CI and merge receipts are recorded in
 [Phase 16 Golden acceptance](../clean-break/phase16-golden-acceptance.md).
-Current phase: Clean Break Phase 16 — Golden Scenarios A–F acceptance.
-The maintainer instructed continuation after Phase 15 merged. The new isolated
-branch reconciles the accepted post-rebuild evidence and supplements only
-necessary gaps; it does not automatically repeat provider/model calls, market
-downloads or full rebuilds. Phase 16 local evidence reconciliation has Tester → independent Sol Reviewer
-→ Root PASS, with runtime-source and rebuild currency limits preserved. Phase
-16 overall remains OPEN for required exact-head Full CI and repository gates.
-Phase 17 remains closed.**
+Phase 16 — Golden A–F evidence reconciliation: local Tester → independent Sol
+Reviewer → Root PASS, exact-head Full CI and PR CI PASS, PR #379 merged.
+Its bounded baseline reuse and source/rebuild currency limits remain recorded
+in the Phase 16 acceptance document; no new-head live execution was claimed.
+Current phase: Clean Break Phase 17 — residual simplification and final Golden
+acceptance. The maintainer instructed the next step after Phase 16 merged.
+This phase uses a new isolated branch from fetched main, classifies residual
+state by actual ownership, and removes only tested unnecessary paths while
+preserving exact business authority, idempotency and unknown-result protection.
+Phase 17 is OPEN. Final A–F reruns after the last deletion, required hosted CI
+and repository gates remain pending. No later phase is authorized.**
 Under [ADR-0089](../architecture/adr/ADR-0089-clean-break-gpu-acceptance-scope.md),
 GPU execution and GPU checkpoint/restart are `N/A` for BYQ 0.10 acceptance;
 real CPU Golden C passed locally; no GPU pass is inferred.
