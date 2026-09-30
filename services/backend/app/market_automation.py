@@ -43,6 +43,7 @@ LEASE_SECONDS = 900
 CORE_BENCHMARK = "000300.SH"
 _TIME = re.compile(r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")
 _IDEMPOTENCY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 class MarketAutomationError(RuntimeError):
@@ -123,6 +124,19 @@ class MarketAutomationStore(PgStoreMixin):
             retrieved_at TIMESTAMPTZ NOT NULL,
             content_sha256 TEXT NOT NULL,
             updated_at TIMESTAMPTZ NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS market_trading_calendar_import_proofs (
+            source_bundle_sha256 TEXT PRIMARY KEY,
+            exchange TEXT NOT NULL,
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            row_count INTEGER NOT NULL,
+            content_sha256 TEXT NOT NULL,
+            request_fingerprint TEXT NOT NULL,
+            retrieved_at TIMESTAMPTZ NOT NULL,
+            imported_at TIMESTAMPTZ NOT NULL
         )
         """,
         """
@@ -353,12 +367,206 @@ class MarketAutomationStore(PgStoreMixin):
                         "now": now,
                     },
                 )
+            imported_dates = [str(item.trade_date) for item in result.sessions]
+            if imported_dates:
+                execute(connection, """DELETE FROM market_trading_calendar_import_proofs
+                    WHERE start_date <= :end_date AND end_date >= :start_date""",
+                    {"start_date": min(imported_dates), "end_date": max(imported_dates)})
         return {
             "start_date": start_date,
             "end_date": end_date,
             "row_count": len(result.sessions),
             "open_count": sum(item.is_open for item in result.sessions),
             "request_fingerprint": result.provenance.request_fingerprint,
+        }
+
+    def import_verified_logical_calendar(
+        self,
+        *,
+        sessions: list[dict[str, object]],
+        start_date: str,
+        end_date: str,
+        source_bundle_sha256: str,
+    ) -> dict[str, object]:
+        """Import a verified bounded calendar without invoking a market provider.
+
+        The source bundle digest is an import attestation. Individual source row
+        hashes and provenance are verified here; no provider request is made.
+        Existing calendar rows are immutable under this operation: exact replay
+        is kept and any content or provenance difference is a conflict.
+        """
+        def normalized_date(value: object, field: str) -> str:
+            if not isinstance(value, str):
+                raise ValueError(f"{field} must be YYYYMMDD")
+            compact = value.replace("-", "")
+            try:
+                parsed = datetime.strptime(compact, "%Y%m%d")
+            except ValueError as error:
+                raise ValueError(f"{field} must be a valid YYYYMMDD date") from error
+            if parsed.strftime("%Y%m%d") != compact:
+                raise ValueError(f"{field} must be a valid YYYYMMDD date")
+            return compact
+
+        first, last = normalized_date(start_date, "start_date"), normalized_date(end_date, "end_date")
+        if first > last:
+            raise ValueError("calendar start_date must not be after end_date")
+        calendar_days = (datetime.strptime(last, "%Y%m%d") - datetime.strptime(first, "%Y%m%d")).days + 1
+        if calendar_days > 401:
+            raise ValueError("logical calendar import exceeds 401 days")
+        if not isinstance(source_bundle_sha256, str) or not _SHA256.fullmatch(source_bundle_sha256):
+            raise ValueError("source bundle SHA-256 is invalid")
+        if not isinstance(sessions, list) or len(sessions) != calendar_days:
+            raise ValueError("logical calendar must contain the complete date range")
+
+        expected_dates = [
+            (datetime.strptime(first, "%Y%m%d") + timedelta(days=offset)).strftime("%Y%m%d")
+            for offset in range(calendar_days)
+        ]
+        rows: list[dict[str, object]] = []
+        latest_open: str | None = None
+        request_fingerprint: str | None = None
+        retrieved_at: str | None = None
+        allowed_fields = {
+            "trade_date", "exchange", "is_open", "previous_open_date", "data_source",
+            "request_fingerprint", "retrieved_at", "content_sha256", "updated_at",
+        }
+        for expected_date, raw in zip(expected_dates, sessions, strict=True):
+            if not isinstance(raw, dict) or set(raw) != allowed_fields:
+                raise ValueError("logical calendar row schema is invalid")
+            trade_date = normalized_date(raw.get("trade_date"), "trade_date")
+            if trade_date != expected_date:
+                raise ValueError("logical calendar must contain unique consecutive dates")
+            exchange = raw.get("exchange")
+            is_open = raw.get("is_open")
+            previous_raw = raw.get("previous_open_date")
+            previous_open = (
+                None if previous_raw is None else normalized_date(previous_raw, "previous_open_date")
+            )
+            if exchange != "SSE" or not isinstance(is_open, bool):
+                raise ValueError("logical calendar must contain typed SSE sessions")
+            if previous_open is not None and previous_open >= trade_date:
+                raise ValueError("logical calendar previous-open date is invalid")
+            if latest_open is not None and previous_open != latest_open:
+                raise ValueError("logical calendar previous-open linkage is invalid")
+            if latest_open is None and previous_open is not None and previous_open >= first:
+                raise ValueError("logical calendar previous-open linkage is invalid")
+            if raw.get("data_source") != "tushare":
+                raise ValueError("logical calendar source must be Tushare")
+            fingerprint = raw.get("request_fingerprint")
+            if not isinstance(fingerprint, str) or not _SHA256.fullmatch(fingerprint):
+                raise ValueError("logical calendar request fingerprint is invalid")
+            retrieved_value = raw.get("retrieved_at")
+            if not isinstance(retrieved_value, str) or not retrieved_value.strip():
+                raise ValueError("logical calendar retrieval timestamp is invalid")
+            try:
+                retrieved = datetime.fromisoformat(retrieved_value.replace("Z", "+00:00"))
+            except ValueError as error:
+                raise ValueError("logical calendar retrieval timestamp is invalid") from error
+            if retrieved.tzinfo is None:
+                raise ValueError("logical calendar retrieval timestamp must include a timezone")
+            retrieved_text = retrieved.isoformat()
+            if request_fingerprint is None:
+                request_fingerprint = fingerprint
+                retrieved_at = retrieved_text
+            elif fingerprint != request_fingerprint or retrieved_text != retrieved_at:
+                raise ValueError("logical calendar provenance must be one provider response")
+            canonical = {
+                "trade_date": trade_date,
+                "exchange": exchange,
+                "is_open": is_open,
+                "previous_open_date": previous_open,
+            }
+            content_sha256 = raw.get("content_sha256")
+            if not isinstance(content_sha256, str) or not _SHA256.fullmatch(content_sha256):
+                raise ValueError("logical calendar row hash is invalid")
+            if _hash(canonical) != content_sha256:
+                raise ValueError("logical calendar row hash does not match canonical fields")
+            updated_value = raw.get("updated_at")
+            if not isinstance(updated_value, str) or not updated_value.strip():
+                raise ValueError("logical calendar update timestamp is invalid")
+            try:
+                updated = datetime.fromisoformat(updated_value.replace("Z", "+00:00"))
+            except ValueError as error:
+                raise ValueError("logical calendar update timestamp is invalid") from error
+            if updated.tzinfo is None:
+                raise ValueError("logical calendar update timestamp must include a timezone")
+            rows.append({
+                **canonical,
+                "data_source": "tushare",
+                "request_fingerprint": fingerprint,
+                "retrieved_at": retrieved_text,
+                "content_sha256": content_sha256,
+            })
+            if is_open:
+                latest_open = trade_date
+
+        if not rows or request_fingerprint is None or retrieved_at is None:
+            raise ValueError("logical calendar must contain at least one row")
+        dataset_sha256 = _hash({
+            "exchange": "SSE", "start_date": first, "end_date": last,
+            "sessions": [row["content_sha256"] for row in rows],
+        })
+        inserted_count = 0
+        with self._transaction() as connection:
+            for row in rows:
+                existing = fetch_one(connection, """SELECT trade_date,exchange,is_open,previous_open_date,
+                        data_source,request_fingerprint,retrieved_at,content_sha256
+                    FROM market_trading_sessions WHERE trade_date=:trade_date FOR UPDATE""",
+                    {"trade_date": row["trade_date"]})
+                if existing is None:
+                    inserted = execute(connection, """INSERT INTO market_trading_sessions
+                        (trade_date,exchange,is_open,previous_open_date,data_source,request_fingerprint,
+                         retrieved_at,content_sha256,updated_at)
+                        VALUES (:trade_date,:exchange,:is_open,:previous_open_date,:data_source,
+                                :request_fingerprint,:retrieved_at,:content_sha256,now())
+                        ON CONFLICT (trade_date) DO NOTHING RETURNING trade_date""", row)
+                    inserted_count += int(bool(inserted))
+                    existing = fetch_one(connection, """SELECT trade_date,exchange,is_open,previous_open_date,
+                        data_source,request_fingerprint,retrieved_at,content_sha256
+                        FROM market_trading_sessions WHERE trade_date=:trade_date FOR UPDATE""",
+                        {"trade_date": row["trade_date"]})
+                if existing is None or any(
+                    str(existing[field]) != str(row[field])
+                    for field in ("trade_date", "exchange", "is_open", "data_source",
+                                  "request_fingerprint", "content_sha256")
+                ) or existing["previous_open_date"] != row["previous_open_date"] or (
+                    _iso_timestamp(existing["retrieved_at"]) != row["retrieved_at"]
+                ):
+                    raise MarketAutomationConflict("logical calendar conflicts with an existing session")
+
+            proof = fetch_one(connection, """SELECT exchange,start_date,end_date,row_count,
+                    content_sha256,request_fingerprint,retrieved_at
+                FROM market_trading_calendar_import_proofs
+                WHERE source_bundle_sha256=:source_bundle_sha256 FOR UPDATE""",
+                {"source_bundle_sha256": source_bundle_sha256})
+            proof_values = {
+                "exchange": "SSE", "start_date": first, "end_date": last,
+                "row_count": len(rows), "content_sha256": dataset_sha256,
+                "request_fingerprint": request_fingerprint, "retrieved_at": retrieved_at,
+            }
+            if proof is None:
+                execute(connection, """INSERT INTO market_trading_calendar_import_proofs
+                    (source_bundle_sha256,exchange,start_date,end_date,row_count,content_sha256,
+                     request_fingerprint,retrieved_at,imported_at)
+                    VALUES (:source_bundle_sha256,:exchange,:start_date,:end_date,:row_count,
+                            :content_sha256,:request_fingerprint,:retrieved_at,now())
+                    ON CONFLICT (source_bundle_sha256) DO NOTHING RETURNING source_bundle_sha256""",
+                    {"source_bundle_sha256": source_bundle_sha256, **proof_values})
+                proof = fetch_one(connection, """SELECT exchange,start_date,end_date,row_count,
+                        content_sha256,request_fingerprint,retrieved_at
+                    FROM market_trading_calendar_import_proofs
+                    WHERE source_bundle_sha256=:source_bundle_sha256 FOR UPDATE""",
+                    {"source_bundle_sha256": source_bundle_sha256})
+            if proof is None or any(
+                str(proof[field]) != str(value)
+                for field, value in proof_values.items() if field != "retrieved_at"
+            ) or _iso_timestamp(proof["retrieved_at"]) != retrieved_at:
+                raise MarketAutomationConflict("logical calendar source bundle conflicts with an existing import")
+
+        return {
+            "start_date": first, "end_date": last, "row_count": len(rows),
+            "inserted_count": inserted_count, "kept_count": len(rows) - inserted_count,
+            "content_sha256": dataset_sha256, "source_bundle_sha256": source_bundle_sha256,
         }
 
     def request_run_now(self, payload: object, *, actor: object) -> tuple[dict[str, object], bool]:

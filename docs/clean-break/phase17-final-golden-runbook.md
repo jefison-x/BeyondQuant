@@ -31,6 +31,27 @@ mock reset/cleanup output is not a live populated reset. Gateway durable login
 and real browser durable login passed, with 38 browser requests and zero foreign
 origins. These are preparation evidence, not Golden A–F completion.
 
+## Final source for rebuild
+
+The scoped-import repair passed focused Tester and independent Reviewer source
+gates. Selected `.278` manifest:
+`sha256:8c9eeb1569643054a67e71e31ecab10d843035050de944b638b1485cd83afe3e`.
+Its identity gate passed current/revision/retirement 3/4/5 tests and the changed
+architecture selector. Final execution requires a fresh committed-source
+rebuild of only `byq-dev-dd33416d94`; the `.277` image/resource pins above are
+historical preparation. Preserve the validated logical export outside target
+volumes. New execution/image/Workspace pins will be recorded privately under
+`/tmp/byq-phase17-278` after rebuild.
+
+Before actual cache bootstrap, stop the target application services/Workers and
+use a single reviewed Backend-image import runner on the exact target network.
+This exclusive bootstrap window prevents Product/scheduler writes between the
+read-only emptiness precheck and domain imports. Verify target identities and
+empty credentials, qualified export hash/status/counts, empty domain facts/Jobs
+and zero coverage projections before any Store constructor. Store methods use
+separate transactions; partial failure permits read-only reconciliation and
+never automatic re-execution. Source DB permission is spent.
+
 ## Common stages and exact-write discipline
 
 For each flow, create a private mode-0600 manifest under the pinned evidence
@@ -77,24 +98,24 @@ stopped so enabling a credential cannot run an unbounded scheduler. No download
 of the existing 98-session window is permitted. New model/provider credentials
 are never copied into Git or printed.
 
-## Required source-read authorization before market reuse
+## Authorized one-time source read and validation
 
-The original instruction forbids operations on existing databases. No source
-DB query has been made. The new-stack authorization does not authorize querying
-the Phase 15 database. No full canonical export file was found, so this is the
-next required permission, separately from external-call authorization.
+The maintainer explicitly authorized the reviewed one-time read exception. The
+export ran once against the exact Phase 15 source below; its permission is spent.
+No further source query is authorized by this grant. External model/provider
+authorization remains separate. The existing-database ban otherwise remains.
 
 Prepared exact source: project `byq-dev-ea551690f4`, Postgres container
 `byq-dev-ea551690f4-postgres-1`, ID
 `6f2b0297307bcb562071062aceff20cb6080c4a82c2b8c22ff02bc0b93e9fe41`,
-database `byq_domain`. Only container metadata was inspected. Before execution,
-reverify source Backend/Postgres project and service labels and the exact database.
+database `byq_domain`. The wrapper verified the exact source Backend/Postgres
+project and service labels, container identity and database before execution.
 
 Prepared private exporter:
 `/tmp/byq-phase17-a39849a2/export-phase15-market-readonly.py`, SHA-256
 `7b27bebd6f7db1aedf83c5bbe692cc84aefadd4035365f70a503629338d91a55`.
-It has been syntax checked but **not executed**. It requires a specific source
-read-authorization marker, checks the exact database URL/name, and uses one
+It was syntax checked and executed once with a specific source
+read-authorization marker. It checked the exact database URL/name and used one
 repeatable-read, read-only transaction with 10-second statements, 1-second lock
 waits and a 30-second idle limit; it ends with rollback. No Store constructor,
 DDL, source import/update, DB dump or backup access is used.
@@ -138,8 +159,30 @@ be presented as a complete stock-basic snapshot. There is no read of users,
 credentials, Workspace, Agent sessions, Jobs, Artifacts or audit history. The
 export checks bar units/source/adjustment and original bar hashes and snapshot
 counts, then writes a private logical bundle for further provenance, lifecycle,
-calendar and supplemental-hash validation. It does not yet establish readiness,
-prove 98 bars for this symbol, or authorize importing an invalid bundle.
+calendar and supplemental-hash validation.
+
+### Observed export and offline qualification
+
+Private bundle: `/tmp/byq-phase17-a39849a2/source-market-export.json`;
+payload SHA-256
+`b6208258fc9725d56e2fa78b7f1c31b460d5bce9b0fd26a32178549246237eab`.
+The authorization, attempt and full output are private mode-0600 files. Source
+execution completed with rollback; no source DDL/DML or provider call occurred.
+
+Independent offline validation is **QUALIFIED_PARTIAL**: 98 bars/status/factors,
+151 calendar days (98 open), 5,909 security members and one quarantine row all
+match their original canonical hashes; the full security dataset ID recomputes.
+Selected-symbol corporate actions are zero. The 98 source supplemental proofs
+attest to full-market factors/actions, whose rows are absent from this export.
+Their global aggregate hashes cannot be independently recomputed from the subset.
+They must not be copied into target global completeness or regenerated with
+one-symbol counts. No target import or Product readiness is established yet.
+
+A bounded domain repair adds symbol/date supplemental proofs plus providerless
+canonical calendar import. Scoped completeness must bind actual imported row
+hashes, the source bundle and the original source attestation. Native full-market
+replacement must invalidate scoped proofs in the same transaction. Engineering
+bootstrap remains separate from Product DSH; no new HTTP/MCP privilege is added.
 
 Target import remains limited to the fresh `byq-dev-dd33416d94` Data Plane, after
 validation and a reviewed import operation. Filtered supplemental rows must not
@@ -247,9 +290,11 @@ Independent Tester: **PREPARATION PASS** for actual new-scope build/resource pin
 empty model/TuShare credentials, stopped Data/ML Workers and recorded durable
 browser login. Independent Sol Reviewer: **PREPARATION PASS / SOURCE-READ PLAN
 PASS**, limited to proposing the exact read exception. Root: **PASS** for that
-preparation scope. These verdicts do not authorize executing the source query.
-No source DB has been connected. Target import qualification, actual data quality
-and all connected Golden/provider/model journeys remain open.
+preparation scope. The later maintainer exception authorized one source export,
+now completed and spent. Offline qualification is partial as documented above;
+target contract qualification/import/readback and all connected Golden/provider/
+model journeys remain open. The prepared `.277` environment is historical after
+the scoped-import source repair; final execution needs fresh `.278` images and pins.
 
 ## Acceptance
 

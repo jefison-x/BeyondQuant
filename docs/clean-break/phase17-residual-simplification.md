@@ -353,17 +353,75 @@ stopped Workers. Private evidence pins are in
 `/tmp/byq-phase17-a39849a2/environment.json` and `browser-preflight.json`.
 
 The [final Golden runbook](phase17-final-golden-runbook.md) records exact prepared
-resources, fail-closed write stages and the finite source-read proposal. No full
-canonical market export file was found. The original existing-database ban means
-reading the Phase 15 isolated cache requires a new explicit exception; a prepared
-read-only exporter/wrapper has been reviewed but not executed. It never reads old
-Jobs, Artifacts, sessions, users or backups. Data quality and target import still
-need validation/review, and the model/provider budget is not requested yet.
+resources, fail-closed write stages and the reviewed finite source-read proposal.
+After the maintainer's exact exception, the exporter ran once in a read-only
+repeatable-read transaction, ending with rollback. That one-time permission is
+spent. It read no old Jobs, Artifacts, sessions, users or backups.
+
+Independent offline qualification verified original hashes for 98 bars, status
+and factor rows, all 151 calendar days and the complete security snapshot
+(5,909 members plus one quarantine row). Payload hash:
+`b6208258fc9725d56e2fa78b7f1c31b460d5bce9b0fd26a32178549246237eab`.
+Result **QUALIFIED_PARTIAL**: original daily full-market supplemental aggregate
+hashes cannot be recomputed from a single-symbol subset. Existing date-wide
+supplement import would falsely mark that subset globally complete. A bounded
+symbol/date proof and providerless calendar repair is in progress, with direct
+RED evidence (three missing scoped-import API cases and one missing calendar API
+case). Target import and Product readiness remain NOT_RUN. Model/provider budget
+is not requested yet.
 
 Tester **PREPARATION PASS** → independent Sol Reviewer **PREPARATION PASS /
 SOURCE-READ PLAN PASS** → Root **PASS**, limited to environment preparation and
 proposing the exact source-read exception. Final Golden, actual populated reset,
 actual F6, external calls and hosted CI remain **NOT_RUN**. Phase 17 stays **OPEN**.
+
+
+## Scoped Data Plane import repair — qualified source slice
+
+Pre-slice Git checkpoint: `2d004f7f`. The once-exported single-symbol file cannot
+safely use the existing full-session supplement importer: that importer owns
+full-market replacement. The new
+[scoped canonical import contract](../contracts/market-scoped-canonical-import.md)
+keeps ownership in BYQ Data Plane and adds no Product/MCP/DSH privilege.
+
+Changed source: Backend `market_readiness.py`, `market_automation.py`, and one
+focused `test_market_scoped_data.py`. The symbol/date proof binds the original
+source attestation, bundle digest and actual target factor/action hashes. It
+never sets global completeness. Native full-session import invalidates that
+date's scoped proofs in its own transaction. Readiness rehashes scoped rows and
+includes selected proof identity in ready inputs. Calendar import verifies a
+complete contiguous SSE interval and original provenance without a Provider;
+existing differing rows abort rather than overwrite. Scoped import locks and
+rechecks the verified target calendar in the writing transaction.
+
+Tester evidence: direct missing-API RED for three scoped nodes and one separate
+calendar node; four new nodes GREEN and five relevant readiness/lifecycle/
+data-sync/provider regressions PASS. After the calendar transaction race control
+was added, only the three affected scoped nodes were rerun, all PASS. Negative
+controls cover unrepresented symbols, invalid hashes, conflicting rewrites,
+nonempty action mutation, native full replacement, exact calendar replay and
+calendar mutation between prevalidation and write.
+
+Actual private-export compatibility also PASS in the new tmpfs-only
+`byq-phase17-market-2d004f7f` test database: 98 accepted source attestations,
+151 calendar days / 98 open, 98 scoped proofs and factors, zero target actions
+and zero global completeness rows. Calendar dataset digest:
+`792f6cfb8753f0d06f4a7229cd253a07ec29a6aa85370dba3dfbee7d47a58b9f`.
+This test used read-only source-code/export mounts and no source DB or Provider.
+An initial runner could not read the private export mount; the same isolated
+compatibility check then passed with the proper container UID.
+
+Independent Reviewer: **Functional PASS / Tests PASS / Clean Break Architecture
+PASS**, limited to this frozen source slice. Root accepts that scope. `.277`
+manifest and Dockerfile are preserved; selected new `.278` manifest:
+`sha256:8c9eeb1569643054a67e71e31ecab10d843035050de944b638b1485cd83afe3e`.
+Independent identity gates PASS: current build 3/3, revision 4/4, retirement
+5/5 and the one changed architecture selector. Required local syntax (10
+changed files), docs (three files), isolated worktree and diff checks PASS. The
+temporary test Postgres/network were exactly removed; no scoped volume exists.
+Fresh target rebuild/import remain separate pending evidence.
+The already passed broad suites are not rerun. Final Golden, actual enabled F6,
+external calls and hosted CI remain **NOT_RUN**; Phase 17 is **OPEN**.
 
 ## Final Golden execution plan
 

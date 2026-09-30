@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from contextlib import nullcontext
 from datetime import datetime, timedelta
@@ -15,7 +16,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from packages.contracts.bars_frame import AGGREGATE_ROW_LIMIT
 
 from .data_provider import DAILY_BASIC_FIELDS, FINANCIAL_INDICATOR_FIELDS
-from .db import PgStoreMixin, execute
+from .db import PgStoreMixin, execute, fetch_one
 
 
 SCHEMA_VERSION = "market-data-requirement.v3"
@@ -32,6 +33,12 @@ MAX_REQUIRED_CELLS = 50_000
 MAX_AGENT_RESEARCH_SYMBOLS = 20
 _CANONICAL_A_SHARE = re.compile(r"^(?:[03]\d{5}\.SZ|6\d{5}\.SH)$")
 _CANONICAL_INDEX_MEMBER = re.compile(r"^(?:[03]\d{5}\.SZ|6\d{5}\.SH|[48]\d{5}\.BJ)$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_SCOPED_ACTION_COLUMNS = (
+    "symbol", "end_date", "ex_date", "announcement_date", "implementation_announcement_date",
+    "record_date", "pay_date", "share_listing_date", "cash_dividend_per_share",
+    "cash_dividend_gross", "share_ratio",
+)
 
 
 class MarketReadinessPersistenceError(RuntimeError):
@@ -77,6 +84,119 @@ def _hash(value: object) -> str:
     return hashlib.sha256(json.dumps(
         value, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":"),
     ).encode("utf-8")).hexdigest()
+
+
+def _source_timestamp(value: object, field: str) -> str:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            raise ValueError(f"{field} must include a timezone")
+        return value.isoformat()
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} is invalid")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError(f"{field} is invalid") from error
+    if parsed.tzinfo is None:
+        raise ValueError(f"{field} must include a timezone")
+    # These timestamps are embedded in JSON provenance covered by the source
+    # row hash; validate them, but retain their source representation verbatim.
+    return value
+
+
+def _source_provenance(value: object, *, endpoint: str) -> dict[str, object]:
+    if not isinstance(value, dict):
+        raise ValueError("scoped supplement provenance must be an object")
+    if value.get("provider") != "tushare" or value.get("endpoint") != endpoint:
+        raise ValueError("scoped supplement provider endpoint is invalid")
+    fingerprint = value.get("request_fingerprint")
+    if not isinstance(fingerprint, str) or not _SHA256.fullmatch(fingerprint):
+        raise ValueError("scoped supplement request fingerprint is invalid")
+    row_count = value.get("row_count")
+    if isinstance(row_count, bool) or not isinstance(row_count, int) or not 0 <= row_count <= 100_000:
+        raise ValueError("scoped supplement provider row count is invalid")
+    cache_hit = value.get("cache_hit")
+    if not isinstance(cache_hit, bool):
+        raise ValueError("scoped supplement cache provenance is invalid")
+    return {
+        "provider": "tushare", "endpoint": endpoint,
+        "request_fingerprint": fingerprint,
+        "retrieved_at": _source_timestamp(value.get("retrieved_at"), "provider retrieved_at"),
+        "cache_hit": cache_hit, "row_count": row_count,
+    }
+
+
+def _normalized_source_completeness(value: object, *, trade_date: str) -> dict[str, object]:
+    if not isinstance(value, dict) or str(value.get("trade_date", "")) != trade_date:
+        raise ValueError("scoped source completeness date is invalid")
+    if value.get("adjustment_complete") is not True or value.get("corporate_actions_complete") is not True:
+        raise ValueError("scoped source completeness proof is not complete")
+    factor_count = value.get("factor_row_count")
+    action_count = value.get("corporate_action_row_count")
+    if (isinstance(factor_count, bool) or not isinstance(factor_count, int) or factor_count < 0
+        or isinstance(action_count, bool) or not isinstance(action_count, int) or action_count < 0):
+        raise ValueError("scoped source completeness counts are invalid")
+    content_sha256 = value.get("content_sha256")
+    if not isinstance(content_sha256, str) or not _SHA256.fullmatch(content_sha256):
+        raise ValueError("scoped source completeness hash is invalid")
+    raw_provenance = value.get("provenance_json")
+    if not isinstance(raw_provenance, dict):
+        raise ValueError("scoped source completeness provenance is invalid")
+    provenance = {
+        "adjustment_factors": _source_provenance(
+            raw_provenance.get("adjustment_factors"), endpoint="adj_factor",
+        ),
+        "corporate_actions": _source_provenance(
+            raw_provenance.get("corporate_actions"), endpoint="dividend",
+        ),
+    }
+    return {
+        "trade_date": trade_date,
+        "adjustment_complete": True,
+        "corporate_actions_complete": True,
+        "factor_row_count": factor_count,
+        "corporate_action_row_count": action_count,
+        # This is the original full-market source attestation. It cannot be
+        # recomputed from a filtered one-symbol target import.
+        "content_sha256": content_sha256,
+        "provenance_json": provenance,
+        "verified_at": _source_timestamp(value.get("verified_at"), "source verified_at"),
+    }
+
+
+def _factor_document(row: dict[str, object]) -> dict[str, object]:
+    return {
+        "symbol": str(row["symbol"]), "trade_date": str(row["trade_date"]),
+        "adj_factor": float(row["adj_factor"]), "data_source": str(row["data_source"]),
+        "provenance": row["provenance_json"],
+    }
+
+
+def _action_document(row: dict[str, object]) -> dict[str, object]:
+    return {
+        **{key: row[key] for key in _SCOPED_ACTION_COLUMNS},
+        "cash_dividend_per_share": float(row["cash_dividend_per_share"]),
+        "cash_dividend_gross": float(row["cash_dividend_gross"]),
+        "share_ratio": float(row["share_ratio"]),
+        "data_source": str(row["data_source"]),
+        "provenance": row["provenance_json"],
+    }
+
+
+def _scoped_completeness_hash(
+    *, symbol: str, trade_date: str, source_bundle_sha256: str,
+    source_completeness: dict[str, object], factor_hashes: list[str], action_hashes: list[str],
+) -> str:
+    return _hash({
+        "schema_version": "market-symbol-supplement-completeness.v1",
+        "symbol": symbol, "trade_date": trade_date,
+        "source_bundle_sha256": source_bundle_sha256,
+        "source_completeness": source_completeness,
+        "target_factor_hashes": sorted(factor_hashes),
+        "target_action_hashes": sorted(action_hashes),
+        "target_factor_row_count": len(factor_hashes),
+        "target_action_row_count": len(action_hashes),
+    })
 
 
 class MarketReadinessStore(PgStoreMixin):
@@ -147,6 +267,21 @@ class MarketReadinessStore(PgStoreMixin):
             content_sha256 TEXT NOT NULL,
             provenance_json JSONB NOT NULL,
             verified_at TIMESTAMPTZ NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS market_symbol_supplement_completeness (
+            symbol TEXT NOT NULL,
+            trade_date TEXT NOT NULL,
+            adjustment_complete BOOLEAN NOT NULL,
+            corporate_actions_complete BOOLEAN NOT NULL,
+            factor_row_count INTEGER NOT NULL,
+            corporate_action_row_count INTEGER NOT NULL,
+            content_sha256 TEXT NOT NULL,
+            source_bundle_sha256 TEXT NOT NULL,
+            source_completeness_json JSONB NOT NULL,
+            verified_at TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY (symbol, trade_date)
         )
         """,
         """
@@ -497,8 +632,301 @@ class MarketReadinessStore(PgStoreMixin):
                     "trade_date": trade_date, "factor_count": len(factor_rows),
                     "action_count": len(action_rows), "identity": identity, "provenance": provenance,
                 })
+            # A native full-session replacement supersedes any narrower
+            # one-symbol attestation for this date. Keep the invalidation in
+            # the same transaction as the rows and global completeness proof.
+            execute(connection, """DELETE FROM market_symbol_supplement_completeness
+                WHERE trade_date=:trade_date""", {"trade_date": trade_date})
         return {"factor_count": len(factor_rows), "corporate_action_count": len(action_rows),
                 "content_sha256": identity}
+
+    def import_scoped_market_supplements(
+        self,
+        *,
+        symbol: str,
+        start_date: str,
+        end_date: str,
+        factors: list[dict[str, object]],
+        actions: list[dict[str, object]],
+        source_completeness: list[dict[str, object]],
+        source_bundle_sha256: str,
+    ) -> dict[str, object]:
+        """Import a validated single-symbol supplement slice without widening it.
+
+        ``source_completeness`` carries the original full-market proof rows as
+        provenance attestations. Its row counts and digest are never copied to
+        the target full-market table; target counts and hashes are recomputed
+        from the selected symbol's actual factors and actions.
+        """
+        normalized_symbol = str(symbol).strip().upper()
+        if not _CANONICAL_A_SHARE.fullmatch(normalized_symbol):
+            raise ValueError("scoped supplement symbol must be canonical")
+        first, last = _research_date(start_date, "start_date"), _research_date(end_date, "end_date")
+        if first > last:
+            raise ValueError("scoped supplement date range is invalid")
+        expected_days = (datetime.strptime(last, "%Y%m%d") - datetime.strptime(first, "%Y%m%d")).days + 1
+        if expected_days > 401:
+            raise ValueError("scoped supplement import exceeds 401 calendar days")
+        if not isinstance(source_bundle_sha256, str) or not _SHA256.fullmatch(source_bundle_sha256):
+            raise ValueError("source bundle SHA-256 is invalid")
+        if not isinstance(factors, list) or not isinstance(actions, list):
+            raise ValueError("scoped supplement rows must be lists")
+        if len(factors) > expected_days or len(actions) > 10_000:
+            raise ValueError("scoped supplement row count exceeds its bound")
+
+        calendar_rows = self._execute("""SELECT trade_date,exchange,is_open,data_source,
+                request_fingerprint,retrieved_at,content_sha256
+            FROM market_trading_sessions WHERE trade_date BETWEEN :start AND :end
+            ORDER BY trade_date""", {"start": first, "end": last})
+        expected_calendar = [
+            (datetime.strptime(first, "%Y%m%d") + timedelta(days=offset)).strftime("%Y%m%d")
+            for offset in range(expected_days)
+        ]
+        if [str(row["trade_date"]) for row in calendar_rows] != expected_calendar or any(
+            row["exchange"] != "SSE" or row["data_source"] != "tushare"
+            for row in calendar_rows
+        ):
+            raise ValueError("scoped supplement import requires a complete verified SSE calendar")
+        open_dates = {
+            str(row["trade_date"]) for row in calendar_rows if row["is_open"] is True
+        }
+        if not isinstance(source_completeness, list) or len(source_completeness) != len(open_dates):
+            raise ValueError("scoped source completeness must cover every open session")
+        normalized_proofs: dict[str, dict[str, object]] = {}
+        for raw_proof in source_completeness:
+            raw_date = raw_proof.get("trade_date") if isinstance(raw_proof, dict) else None
+            proof_date = _research_date(raw_date, "source completeness trade_date")
+            if proof_date not in open_dates or proof_date in normalized_proofs:
+                raise ValueError("scoped source completeness date scope is invalid")
+            normalized_proofs[proof_date] = _normalized_source_completeness(
+                raw_proof, trade_date=proof_date,
+            )
+        if set(normalized_proofs) != open_dates:
+            raise ValueError("scoped source completeness must cover every open session")
+
+        normalized_factors: list[dict[str, object]] = []
+        factor_keys: set[tuple[str, str]] = set()
+        for raw_factor in factors:
+            if not isinstance(raw_factor, dict):
+                raise ValueError("scoped adjustment factor row is invalid")
+            trade_date = _research_date(raw_factor.get("trade_date"), "factor trade_date")
+            row_symbol = str(raw_factor.get("symbol", "")).strip().upper()
+            if row_symbol != normalized_symbol or trade_date not in open_dates:
+                raise ValueError("scoped adjustment factor row is outside its symbol/date scope")
+            if (row_symbol, trade_date) in factor_keys:
+                raise ValueError("scoped adjustment factor rows contain a duplicate key")
+            factor_keys.add((row_symbol, trade_date))
+            if raw_factor.get("data_source") != "tushare":
+                raise ValueError("scoped adjustment factor source is invalid")
+            provenance = _source_provenance(raw_factor.get("provenance_json"), endpoint="adj_factor")
+            proof_provenance = normalized_proofs[trade_date]["provenance_json"]
+            assert isinstance(proof_provenance, dict)
+            if provenance != proof_provenance["adjustment_factors"]:
+                raise ValueError("scoped adjustment factor provenance does not match its source proof")
+            try:
+                value = float(raw_factor.get("adj_factor"))
+            except (TypeError, ValueError) as error:
+                raise ValueError("scoped adjustment factor value is invalid") from error
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError("scoped adjustment factor value is invalid")
+            row = {
+                "symbol": normalized_symbol, "trade_date": trade_date, "adj_factor": value,
+                "data_source": "tushare", "provenance_json": provenance,
+            }
+            original_hash = raw_factor.get("content_sha256")
+            if not isinstance(original_hash, str) or not _SHA256.fullmatch(original_hash):
+                raise ValueError("scoped adjustment factor source hash is invalid")
+            if _hash(_factor_document(row)) != original_hash:
+                raise ValueError("scoped adjustment factor hash does not match canonical fields")
+            row["content_sha256"] = original_hash
+            normalized_factors.append(row)
+
+        normalized_actions: list[dict[str, object]] = []
+        action_keys: set[tuple[str, str, str]] = set()
+        for raw_action in actions:
+            if not isinstance(raw_action, dict):
+                raise ValueError("scoped corporate action row is invalid")
+            row_symbol = str(raw_action.get("symbol", "")).strip().upper()
+            ex_date = _research_date(raw_action.get("ex_date"), "corporate action ex_date")
+            if row_symbol != normalized_symbol or ex_date not in open_dates:
+                raise ValueError("scoped corporate action row is outside its symbol/date scope")
+            end_date = _research_date(raw_action.get("end_date"), "corporate action end_date")
+            if end_date > ex_date:
+                raise ValueError("scoped corporate action end_date is invalid")
+            key = (row_symbol, end_date, ex_date)
+            if key in action_keys:
+                raise ValueError("scoped corporate action rows contain a duplicate key")
+            action_keys.add(key)
+            if raw_action.get("data_source") != "tushare":
+                raise ValueError("scoped corporate action source is invalid")
+            provenance = _source_provenance(raw_action.get("provenance_json"), endpoint="dividend")
+            proof_provenance = normalized_proofs[ex_date]["provenance_json"]
+            assert isinstance(proof_provenance, dict)
+            if provenance != proof_provenance["corporate_actions"]:
+                raise ValueError("scoped corporate action provenance does not match its source proof")
+            row: dict[str, object] = {
+                "symbol": normalized_symbol,
+                "end_date": end_date,
+                "ex_date": ex_date,
+                "data_source": "tushare",
+                "provenance_json": provenance,
+            }
+            for field in (
+                "announcement_date", "implementation_announcement_date", "record_date",
+                "pay_date", "share_listing_date",
+            ):
+                value = raw_action.get(field)
+                row[field] = None if value in {None, ""} else _research_date(value, field)
+            for field in ("cash_dividend_per_share", "cash_dividend_gross", "share_ratio"):
+                try:
+                    amount = float(raw_action.get(field))
+                except (TypeError, ValueError) as error:
+                    raise ValueError("scoped corporate action amount is invalid") from error
+                if not math.isfinite(amount) or amount < 0:
+                    raise ValueError("scoped corporate action amount is invalid")
+                row[field] = amount
+            original_hash = raw_action.get("content_sha256")
+            if not isinstance(original_hash, str) or not _SHA256.fullmatch(original_hash):
+                raise ValueError("scoped corporate action source hash is invalid")
+            if _hash(_action_document(row)) != original_hash:
+                raise ValueError("scoped corporate action hash does not match canonical fields")
+            row["content_sha256"] = original_hash
+            normalized_actions.append(row)
+
+        for proof_date, proof in normalized_proofs.items():
+            if int(proof["factor_row_count"]) < sum(
+                str(row["trade_date"]) == proof_date for row in normalized_factors
+            ) or int(proof["corporate_action_row_count"]) < sum(
+                str(row["ex_date"]) == proof_date for row in normalized_actions
+            ):
+                raise ValueError("scoped rows exceed source full-market completeness counts")
+
+        factors_by_date: dict[str, list[dict[str, object]]] = {date: [] for date in open_dates}
+        actions_by_date: dict[str, list[dict[str, object]]] = {date: [] for date in open_dates}
+        for row in normalized_factors:
+            factors_by_date[str(row["trade_date"])].append(row)
+        for row in normalized_actions:
+            actions_by_date[str(row["ex_date"])].append(row)
+        proof_documents = {
+            date: {
+                "symbol": normalized_symbol,
+                "trade_date": date,
+                "adjustment_complete": True,
+                "corporate_actions_complete": True,
+                "factor_row_count": len(factors_by_date[date]),
+                "corporate_action_row_count": len(actions_by_date[date]),
+                "source_bundle_sha256": source_bundle_sha256,
+                "source_completeness_json": normalized_proofs[date],
+                "content_sha256": _scoped_completeness_hash(
+                    symbol=normalized_symbol,
+                    trade_date=date,
+                    source_bundle_sha256=source_bundle_sha256,
+                    source_completeness=normalized_proofs[date],
+                    factor_hashes=[str(row["content_sha256"]) for row in factors_by_date[date]],
+                    action_hashes=[str(row["content_sha256"]) for row in actions_by_date[date]],
+                ),
+            }
+            for date in sorted(open_dates)
+        }
+
+        inserted_factors = inserted_actions = 0
+        with self._transaction() as connection:
+            locked_calendar = execute(connection, """SELECT trade_date,exchange,is_open,data_source,
+                    request_fingerprint,retrieved_at,content_sha256
+                FROM market_trading_sessions WHERE trade_date BETWEEN :start AND :end
+                ORDER BY trade_date FOR SHARE""", {"start": first, "end": last})
+            if locked_calendar != calendar_rows:
+                raise ValueError("calendar changed during scoped supplement import")
+            for row in normalized_factors:
+                key_params = {"symbol": row["symbol"], "trade_date": row["trade_date"]}
+                current = fetch_one(connection, """SELECT symbol,trade_date,adj_factor,data_source,
+                        provenance_json,content_sha256 FROM market_adjustment_factors
+                    WHERE symbol=:symbol AND trade_date=:trade_date FOR UPDATE""", key_params)
+                if current is None:
+                    inserted = fetch_one(connection, """INSERT INTO market_adjustment_factors
+                        (symbol,trade_date,adj_factor,data_source,provenance_json,content_sha256,updated_at)
+                        VALUES (:symbol,:trade_date,:adj_factor,:data_source,:provenance_json,:content_sha256,now())
+                        ON CONFLICT (symbol,trade_date) DO NOTHING RETURNING symbol""", row)
+                    inserted_factors += int(inserted is not None)
+                    current = fetch_one(connection, """SELECT symbol,trade_date,adj_factor,data_source,
+                            provenance_json,content_sha256 FROM market_adjustment_factors
+                        WHERE symbol=:symbol AND trade_date=:trade_date FOR UPDATE""", key_params)
+                if current is None or float(current["adj_factor"]) != float(row["adj_factor"]) or any(
+                    current[field] != row[field]
+                    for field in ("symbol", "trade_date", "data_source", "provenance_json", "content_sha256")
+                ):
+                    raise ValueError("scoped adjustment factor conflicts with existing target data")
+
+            for row in normalized_actions:
+                key_params = {field: row[field] for field in ("symbol", "end_date", "ex_date")}
+                current = fetch_one(connection, """SELECT symbol,end_date,ex_date,announcement_date,
+                        implementation_announcement_date,record_date,pay_date,share_listing_date,
+                        cash_dividend_per_share,cash_dividend_gross,share_ratio,data_source,
+                        provenance_json,content_sha256 FROM market_corporate_actions
+                    WHERE symbol=:symbol AND end_date=:end_date AND ex_date=:ex_date FOR UPDATE""",
+                    key_params)
+                if current is None:
+                    inserted = fetch_one(connection, """INSERT INTO market_corporate_actions
+                        (symbol,end_date,ex_date,announcement_date,implementation_announcement_date,
+                         record_date,pay_date,share_listing_date,cash_dividend_per_share,
+                         cash_dividend_gross,share_ratio,data_source,provenance_json,content_sha256,updated_at)
+                        VALUES (:symbol,:end_date,:ex_date,:announcement_date,:implementation_announcement_date,
+                                :record_date,:pay_date,:share_listing_date,:cash_dividend_per_share,
+                                :cash_dividend_gross,:share_ratio,:data_source,:provenance_json,:content_sha256,now())
+                        ON CONFLICT (symbol,end_date,ex_date) DO NOTHING RETURNING symbol""", row)
+                    inserted_actions += int(inserted is not None)
+                    current = fetch_one(connection, """SELECT symbol,end_date,ex_date,announcement_date,
+                            implementation_announcement_date,record_date,pay_date,share_listing_date,
+                            cash_dividend_per_share,cash_dividend_gross,share_ratio,data_source,
+                            provenance_json,content_sha256 FROM market_corporate_actions
+                        WHERE symbol=:symbol AND end_date=:end_date AND ex_date=:ex_date FOR UPDATE""",
+                        key_params)
+                if current is None or any(
+                    current[field] != row[field]
+                    for field in (
+                        *_SCOPED_ACTION_COLUMNS, "data_source", "provenance_json", "content_sha256",
+                    )
+                ):
+                    raise ValueError("scoped corporate action conflicts with existing target data")
+
+            for proof in proof_documents.values():
+                key_params = {"symbol": proof["symbol"], "trade_date": proof["trade_date"]}
+                current = fetch_one(connection, """SELECT symbol,trade_date,adjustment_complete,
+                        corporate_actions_complete,factor_row_count,corporate_action_row_count,
+                        content_sha256,source_bundle_sha256,source_completeness_json
+                    FROM market_symbol_supplement_completeness
+                    WHERE symbol=:symbol AND trade_date=:trade_date FOR UPDATE""", key_params)
+                values = {key: proof[key] for key in (
+                    "symbol", "trade_date", "adjustment_complete", "corporate_actions_complete",
+                    "factor_row_count", "corporate_action_row_count", "content_sha256",
+                    "source_bundle_sha256", "source_completeness_json",
+                )}
+                if current is None:
+                    fetch_one(connection, """INSERT INTO market_symbol_supplement_completeness
+                        (symbol,trade_date,adjustment_complete,corporate_actions_complete,
+                         factor_row_count,corporate_action_row_count,content_sha256,source_bundle_sha256,
+                         source_completeness_json,verified_at)
+                        VALUES (:symbol,:trade_date,:adjustment_complete,:corporate_actions_complete,
+                                :factor_row_count,:corporate_action_row_count,:content_sha256,
+                                :source_bundle_sha256,:source_completeness_json,now())
+                        ON CONFLICT (symbol,trade_date) DO NOTHING RETURNING symbol""", values)
+                    current = fetch_one(connection, """SELECT symbol,trade_date,adjustment_complete,
+                            corporate_actions_complete,factor_row_count,corporate_action_row_count,
+                            content_sha256,source_bundle_sha256,source_completeness_json
+                        FROM market_symbol_supplement_completeness
+                        WHERE symbol=:symbol AND trade_date=:trade_date FOR UPDATE""", key_params)
+                if current is None or any(current[key] != value for key, value in values.items()):
+                    raise ValueError("scoped supplement proof conflicts with existing target proof")
+
+        return {
+            "symbol": normalized_symbol,
+            "start_date": first,
+            "end_date": last,
+            "inserted_factor_count": inserted_factors,
+            "inserted_action_count": inserted_actions,
+            "proof_count": len(proof_documents),
+            "source_bundle_sha256": source_bundle_sha256,
+        }
 
     def import_index_daily(self, index_symbol: str, bars: list[object], provenance: dict[str, object]) -> int:
         with self._transaction() as connection:
@@ -919,7 +1347,7 @@ class MarketReadinessStore(PgStoreMixin):
         )
         status_map = {(str(row["symbol"]), str(row["trade_date"])): row for row in statuses}
         factors = self._execute(
-            """SELECT symbol, trade_date, adj_factor, content_sha256
+            """SELECT symbol, trade_date, adj_factor, data_source, provenance_json, content_sha256
                FROM market_adjustment_factors WHERE symbol IN
                  (SELECT jsonb_array_elements_text(:symbols))
                AND trade_date BETWEEN :start AND :end""",
@@ -934,12 +1362,80 @@ class MarketReadinessStore(PgStoreMixin):
         )
         supplements = {str(row["trade_date"]): row for row in supplement_rows}
         action_rows = self._execute(
-            """SELECT symbol, end_date, ex_date, content_sha256
+            """SELECT symbol, end_date, ex_date, announcement_date,
+                      implementation_announcement_date, record_date, pay_date, share_listing_date,
+                      cash_dividend_per_share, cash_dividend_gross, share_ratio, data_source,
+                      provenance_json, content_sha256
                FROM market_corporate_actions WHERE symbol IN
                  (SELECT jsonb_array_elements_text(:symbols))
                AND ex_date BETWEEN :start AND :end ORDER BY ex_date, symbol, end_date""",
             {"symbols": symbols, "start": requirement["start_date"], "end": requirement["end_date"]},
         )
+        scoped_rows = self._execute(
+            """SELECT symbol,trade_date,adjustment_complete,corporate_actions_complete,
+                      factor_row_count,corporate_action_row_count,content_sha256,
+                      source_bundle_sha256,source_completeness_json
+               FROM market_symbol_supplement_completeness
+               WHERE symbol IN (SELECT jsonb_array_elements_text(:symbols))
+                 AND trade_date BETWEEN :start AND :end""",
+            {"symbols": symbols, "start": requirement["start_date"], "end": requirement["end_date"]},
+        )
+        factor_rows_by_scope: dict[tuple[str, str], list[dict[str, object]]] = {}
+        factor_hash_valid: dict[tuple[str, str], bool] = {}
+        for row in factors:
+            key = (str(row["symbol"]), str(row["trade_date"]))
+            factor_rows_by_scope.setdefault(key, []).append(row)
+            try:
+                computed_hash = _hash(_factor_document(row))
+            except (KeyError, TypeError, ValueError):
+                computed_hash = ""
+            factor_hash_valid[key] = computed_hash == str(row["content_sha256"])
+        action_rows_by_scope: dict[tuple[str, str], list[dict[str, object]]] = {}
+        action_hash_valid: dict[tuple[str, str], bool] = {}
+        for row in action_rows:
+            key = (str(row["symbol"]), str(row["ex_date"]))
+            action_rows_by_scope.setdefault(key, []).append(row)
+            try:
+                computed_hash = _hash(_action_document(row))
+            except (KeyError, TypeError, ValueError):
+                computed_hash = ""
+            action_hash_valid[key] = action_hash_valid.get(key, True) and (
+                computed_hash == str(row["content_sha256"])
+            )
+
+        valid_scoped_supplements: dict[tuple[str, str], dict[str, object]] = {}
+        for row in scoped_rows:
+            key = (str(row["symbol"]), str(row["trade_date"]))
+            source_proof_raw = row.get("source_completeness_json")
+            try:
+                source_proof = _normalized_source_completeness(
+                    source_proof_raw, trade_date=key[1],
+                )
+            except (TypeError, ValueError):
+                continue
+            target_factors = factor_rows_by_scope.get(key, [])
+            target_actions = action_rows_by_scope.get(key, [])
+            if (
+                row["adjustment_complete"] is not True
+                or row["corporate_actions_complete"] is not True
+                or int(row["factor_row_count"]) != len(target_factors)
+                or int(row["corporate_action_row_count"]) != len(target_actions)
+                or not factor_hash_valid.get(key, True)
+                or not action_hash_valid.get(key, True)
+            ):
+                continue
+            source_bundle_sha256 = str(row["source_bundle_sha256"])
+            if not _SHA256.fullmatch(source_bundle_sha256):
+                continue
+            computed_scope_hash = _scoped_completeness_hash(
+                symbol=key[0], trade_date=key[1],
+                source_bundle_sha256=source_bundle_sha256,
+                source_completeness=source_proof,
+                factor_hashes=[str(item["content_sha256"]) for item in target_factors],
+                action_hashes=[str(item["content_sha256"]) for item in target_actions],
+            )
+            if computed_scope_hash == str(row["content_sha256"]):
+                valid_scoped_supplements[key] = row
         benchmark_symbol = declared.get("benchmark")
         benchmark_rows = self._execute(
             """SELECT trade_date,content_sha256 FROM market_index_daily
@@ -1011,14 +1507,53 @@ class MarketReadinessStore(PgStoreMixin):
         missing_dates: set[str] = set()
         missing: list[dict[str, str]] = []
         ready_cells: list[dict[str, object]] = []
-        incomplete_action_dates = {
-            trade_date for trade_date in dates
-            if supplements.get(trade_date) is None
-            or not supplements[trade_date]["corporate_actions_complete"]
-        } if requires_research_inputs else set()
-        for trade_date in sorted(incomplete_action_dates):
-            missing.append({"symbol": "*", "trade_date": trade_date, "dataset": "corporate_actions"})
-            missing_dates.add(trade_date)
+        effective_supplements: dict[tuple[str, str], dict[str, object]] = {}
+        incomplete_action_cells: set[tuple[str, str]] = set()
+        for symbol in symbols:
+            for trade_date in dates:
+                global_proof = supplements.get(trade_date)
+                scoped_proof = valid_scoped_supplements.get((str(symbol), trade_date))
+                adjustment_proof = (
+                    global_proof if global_proof is not None and global_proof["adjustment_complete"]
+                    else scoped_proof if scoped_proof is not None and scoped_proof["adjustment_complete"]
+                    else None
+                )
+                action_proof = (
+                    global_proof if global_proof is not None and global_proof["corporate_actions_complete"]
+                    else scoped_proof if scoped_proof is not None and scoped_proof["corporate_actions_complete"]
+                    else None
+                )
+                if adjustment_proof is not None and action_proof is not None:
+                    if adjustment_proof is action_proof:
+                        supplement_sha256 = str(adjustment_proof["content_sha256"])
+                    else:
+                        supplement_sha256 = _hash({
+                            "adjustment": str(adjustment_proof["content_sha256"]),
+                            "corporate_actions": str(action_proof["content_sha256"]),
+                        })
+                else:
+                    supplement_sha256 = None
+                effective_supplements[(str(symbol), trade_date)] = {
+                    "adjustment_complete": adjustment_proof is not None,
+                    "corporate_actions_complete": action_proof is not None,
+                    "content_sha256": supplement_sha256,
+                }
+                if requires_research_inputs and action_proof is None:
+                    incomplete_action_cells.add((str(symbol), trade_date))
+        if requires_research_inputs:
+            incomplete_action_dates = sorted({date for _, date in incomplete_action_cells})
+            for trade_date in incomplete_action_dates:
+                uncovered_symbols = sorted(
+                    symbol for symbol in symbols if (str(symbol), trade_date) in incomplete_action_cells
+                )
+                if len(uncovered_symbols) == len(symbols):
+                    missing.append({"symbol": "*", "trade_date": trade_date, "dataset": "corporate_actions"})
+                else:
+                    missing.extend(
+                        {"symbol": symbol, "trade_date": trade_date, "dataset": "corporate_actions"}
+                        for symbol in uncovered_symbols
+                    )
+                missing_dates.add(trade_date)
         if benchmark_symbol:
             for trade_date in dates:
                 if trade_date not in benchmark_map:
@@ -1058,8 +1593,8 @@ class MarketReadinessStore(PgStoreMixin):
                 ):
                     continue
                 status = status_map.get((symbol, trade_date))
-                supplement = supplements.get(trade_date)
-                if trade_date in incomplete_action_dates:
+                supplement = effective_supplements.get((str(symbol), trade_date))
+                if (str(symbol), trade_date) in incomplete_action_cells:
                     continue
                 if status is None:
                     missing.append({"symbol": symbol, "trade_date": trade_date, "dataset": "trading_status"})
