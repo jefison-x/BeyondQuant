@@ -81,17 +81,35 @@ def test_dispatch_then_lost_ack_only_reconciles_exact_original(monkeypatch):
     assert writes[-1][1]['run_id'] == 'c'*32
 
 
-def test_data_ready_intent_uses_the_existing_dispatch_path(monkeypatch):
-    context, intent, writes, _, prompts, _, _ = fixture(monkeypatch)
-    intent['receipt']['grant_kind'] = 'data_ready'
-    intent['receipt']['instruction'] = 'Data-ready original task continuation only.'
+@pytest.mark.parametrize('status', ['reserved', 'outcome_unknown', 'accepted'])
+def test_implicit_data_ready_receipt_cannot_submit_another_prompt(monkeypatch, status):
+    context, intent, writes, reads, prompts, _, _ = fixture(monkeypatch)
+    intent['receipt'].update(grant_kind='data_ready', status=status)
+    if status == 'accepted':
+        intent['receipt']['run_id'] = 'c' * 32
+    # Backend supplies the dispatch decision; historical receipt facts remain
+    # available for exact reconciliation without becoming a new permission.
+    intent['may_dispatch'] = False
     main._consume_admitted_task_continuation(context)
-    assert [kind for kind, _ in writes] == ['dispatch', 'receipt']
-    assert len(prompts) == 1
-    assert prompts[0]['content'] == 'Data-ready original task continuation only.'
-    assert prompts[0]['idempotency_key'] == intent['reservation']['reservation_id']
-    assert prompts[0]['continuation_budget'] == intent['reservation']
-    assert writes[0][1] == {'reservation_id': intent['reservation']['reservation_id']}
+    assert writes == prompts == []
+    assert len(reads) == 2
+
+
+def test_implicit_data_ready_receipt_keeps_exact_settlement(monkeypatch):
+    context, intent, writes, _, prompts, _, settlement = fixture(monkeypatch)
+    intent['receipt'].update(grant_kind='data_ready', status='outcome_unknown')
+    intent['may_dispatch'] = False
+    settlement.update(status='settled', run_id='c' * 32, charged_tokens=1056768,
+        settlement_sha256='d' * 64, outcome='completed')
+    main._consume_admitted_task_continuation(context)
+    assert prompts == []
+    assert writes == [
+        ('receipt', {'reservation_id': intent['reservation']['reservation_id'],
+            'status': 'accepted', 'run_id': 'c' * 32}),
+        ('receipt', {'reservation_id': intent['reservation']['reservation_id'],
+            'status': 'settled', 'charged_tokens': 1056768,
+            'settlement_sha256': 'd' * 64, 'outcome': 'completed'}),
+    ]
 
 
 def test_unknown_never_resubmits_or_refunds(monkeypatch):

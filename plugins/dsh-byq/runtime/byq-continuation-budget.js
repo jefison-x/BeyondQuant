@@ -6,25 +6,11 @@ import { dirname } from 'node:path';
 
 // Conservative per-call ceilings. Every admitted `llm/stream` call re-sends its
 // whole input, so the guard charges the input ceiling plus that call's output
-// bound. These values are the single source of truth mirrored by the Backend
-// reservation sizing (services/backend/app/research_continuation.py) and the
-// runtime-adapter output cap (services/runtime-adapter/app/continuation_budget.py);
-// tests/architecture/test_architecture.py fails CI on any divergence.
+// bound. The runtime-adapter uses the same input/output ceilings. A reservation
+// supplies its own explicitly granted total allowance; this guard never mints
+// a business permission or sizes an implicit data-ready grant.
 export const CONTINUATION_INPUT_CEILING = 1048576;
 export const CONTINUATION_OUTPUT_CEILING = 393216;
-
-// A data-ready auto-continuation is a bounded tool-calling turn, not a single
-// model call: the first call returns tool calls and the next call resumes after
-// the tools ran. One reservation therefore covers a bounded number of calls for
-// one event, each charged the conservative per-call ceiling, for a fixed total
-// token budget. `DATA_READY_MAX_CALLS` is the per-turn call bound and
-// `DATA_READY_TOKEN_LIMIT` is the total budget the Backend reserves for the
-// event. `createBudgetGate` also enforces the call bound derived from that
-// total, so an exhausted reservation fails closed on either bound.
-export const DATA_READY_MAX_OUTPUT_TOKENS = 8192;
-export const DATA_READY_MAX_CALLS = 8;
-export const DATA_READY_CALL_CEILING = CONTINUATION_INPUT_CEILING + DATA_READY_MAX_OUTPUT_TOKENS;
-export const DATA_READY_TOKEN_LIMIT = DATA_READY_MAX_CALLS * DATA_READY_CALL_CEILING;
 
 // ADR-0085 P3: a genuine research-judgment stage uses at most two model calls by
 // default. BYQ owns and enforces the durable-progress fence; this guard mirrors

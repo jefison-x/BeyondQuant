@@ -83,6 +83,46 @@ def test_durable_receipt_controls_queue_state_and_revocation(delivery_status, ex
         store.close()
 
 
+@pytest.mark.parametrize(('status', 'expected_reason'), [
+    ('reserved', 'unsupported_model_grant'),
+    ('outcome_unknown', 'continuation_result_unconfirmed'),
+])
+def test_legacy_data_ready_model_receipt_is_not_queued_after_human_grant(
+        status, expected_reason, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    store, task, context, payload = setup_permission()
+    now = datetime.now(timezone.utc)
+    receipt = {
+        'reservation_id': 'continuation_' + 'a' * 32,
+        'grant_kind': 'data_ready', 'grant_version': None,
+        'event_key': 'ready-v1:' + 'a' * 64, 'input_sha256': 'b' * 64,
+        'token_limit': 8000000, 'status': status, 'run_id': None,
+        'charged_tokens': None, 'settlement_sha256': None,
+        'created_at': (now - timedelta(minutes=1)).isoformat(),
+        'instruction': 'legacy data-ready model instruction',
+        'dispatch_attempts': 0, 'next_attempt_at': (now - timedelta(minutes=1)).isoformat(),
+        'expires_at': (now + timedelta(hours=1)).isoformat(),
+    }
+    try:
+        # Store the historical reservation first, then add a valid grant. The
+        # later grant must not confer dispatch eligibility on the old subtype.
+        store._execute('UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
+            {'task': task, 'budget': [receipt]})
+        store.create_continuation_permission(task, {**payload, 'token_limit': 4000000},
+            trusted_context=context)
+        monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
+
+        view = store.get_task_handoff(task, trusted_context=context)
+        assert view['state'] == 'needs_reconciliation'
+        assert view['reason'] == expected_reason
+        persisted = store._fetch_one('SELECT continuation_budget FROM research_tasks WHERE task_id=:task',
+            {'task': task})['continuation_budget']
+        assert persisted == [receipt]
+    finally:
+        store.close()
+
+
 def test_inactive_owner_cannot_read_handoff():
     store, task, context, _ = setup_permission()
     try:

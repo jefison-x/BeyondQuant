@@ -17,22 +17,11 @@ from packages.contracts.research_executable_action import derive_executable_acti
 
 logger = logging.getLogger("byq.research.continuation")
 
-# Data-ready continuations reuse the task-bound budget ledger, dispatch and
-# MCP-admission seam. One produced signal snapshot wakes one bounded
-# tool-calling turn: the first model call returns tool calls, and the next call
-# resumes after the tools ran, so the reservation must cover several model
-# calls. It never requires an inferred user token grant. The per-call input
-# ceiling, per-call output bound and max call count are the single source of
-# truth mirrored by the exported DATA_READY_* constants in
-# plugins/dsh-byq/runtime/byq-continuation-budget.js; the guard charges each call
-# `DATA_READY_INPUT_CEILING + options.maxTokens`, so the total budget is the max
-# call count times the conservative per-call ceiling. The cross-component drift
-# assertion lives in tests/architecture/test_architecture.py.
+# Grantless data-ready events only advance deterministic task progress and
+# create a zero-token notification. An explicit human grant uses the ordinary
+# task-bound reservation path. Legacy `data_ready` model reservations remain
+# settleable, but never regain dispatch eligibility.
 DATA_READY_EVENT_PREFIX = "ready-v1:"
-DATA_READY_INPUT_CEILING = 1048576
-DATA_READY_MAX_OUTPUT_TOKENS = 8192
-DATA_READY_MAX_CALLS = 8
-DATA_READY_TOKEN_LIMIT = DATA_READY_MAX_CALLS * (DATA_READY_INPUT_CEILING + DATA_READY_MAX_OUTPUT_TOKENS)
 DATA_READY_MAX_TURNS = 8
 # A deliberate task-wide needs_attention block (``block_continuation``) records
 # this sentinel. A concrete ``ready-v1:``/other key scopes the block to that one
@@ -286,14 +275,12 @@ class ResearchContinuationMixin:
 
     @staticmethod
     def _continuation_blocked_reason(task, conversation, receipt=None):
-        """Single admission gate for both budgeted and data-ready receipts."""
+        """Single admission gate for current grants and persisted receipts."""
         if receipt is not None and receipt.get('grant_kind') == 'data_ready':
-            reason = ResearchContinuationMixin._data_ready_blocked_reason(task, conversation)
-            if reason is not None:
-                return reason
-            if datetime.fromisoformat(receipt['expires_at']) <= datetime.now(timezone.utc):
-                return 'permission_expired'
-            return None
+            # This legacy subtype represented an inferred model grant. It is
+            # retained only so its exact liability can be reconciled; a later
+            # human grant must not make the old reservation dispatchable.
+            return 'unsupported_model_grant'
         return ResearchContinuationMixin._permission_blocked_reason(task, conversation)
 
     @staticmethod

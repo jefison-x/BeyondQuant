@@ -135,3 +135,41 @@ def test_distinct_concurrent_events_admit_only_one_and_turn_limit_does_not_refun
     finally:
         store.close()
         other.close()
+
+
+def test_legacy_unknown_data_ready_liability_can_be_exactly_settled_without_refund():
+    store, task, context, _ = setup_permission()
+    reservation = {
+        'reservation_id': 'continuation_' + 'f' * 32,
+        'grant_kind': 'data_ready', 'grant_version': None,
+        'event_key': 'ready-v1:' + 'f' * 64, 'input_sha256': 'a' * 64,
+        'token_limit': 1000, 'status': 'outcome_unknown', 'run_id': None,
+        'charged_tokens': None, 'settlement_sha256': None,
+        'created_at': '2026-01-01T00:00:00+00:00',
+        'instruction': 'legacy data-ready model instruction', 'dispatch_attempts': 1,
+        'next_attempt_at': '2026-01-01T00:00:00+00:00',
+        'expires_at': '2027-01-01T00:00:00+00:00',
+    }
+    try:
+        store._execute('UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
+            {'task': task, 'budget': [reservation]})
+        settled = store.record_continuation_receipt(task, trusted_context=context,
+            reservation_id=reservation['reservation_id'], status='settled',
+            charged_tokens=700, settlement_sha256='c' * 64)
+        assert settled['status'] == 'settled'
+        assert settled['token_limit'] == 1000
+        assert settled['charged_tokens'] == 700
+        assert store.record_continuation_receipt(task, trusted_context=context,
+            reservation_id=reservation['reservation_id'], status='settled',
+            charged_tokens=700, settlement_sha256='c' * 64) == settled
+        with pytest.raises(IdempotencyConflict):
+            store.record_continuation_receipt(task, trusted_context=context,
+                reservation_id=reservation['reservation_id'], status='settled',
+                charged_tokens=699, settlement_sha256='d' * 64)
+
+        ledger = store._fetch_one('SELECT continuation_budget FROM research_tasks WHERE task_id=:task',
+            {'task': task})['continuation_budget']
+        assert ledger == [settled]
+        assert ledger[0]['token_limit'] - ledger[0]['charged_tokens'] == 300
+    finally:
+        store.close()

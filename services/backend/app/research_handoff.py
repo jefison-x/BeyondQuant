@@ -106,14 +106,19 @@ class ResearchHandoffMixin:
             # run to this task without a task-scoped delivery receipt.
             state, reason = 'conversation_active', 'task_execution_unconfirmed'
         elif deliveries:
-            ready = [r for r in deliveries if r['status'] == 'reserved' and r.get('instruction')
-                     and r.get('dispatch_attempts', 0) < 8
-                     and datetime.fromisoformat(r['expires_at']) > now]
-            blocked = self._permission_blocked_reason(task, conversation or {'status': 'inactive'})
-            if ready and blocked is None and os.environ.get('BYQ_F6_EXECUTOR_ENABLED') == '1':
+            candidates = [r for r in deliveries if r['status'] == 'reserved' and r.get('instruction')
+                          and r.get('dispatch_attempts', 0) < 8
+                          and datetime.fromisoformat(r['expires_at']) > now]
+            admission = [(r, self._continuation_blocked_reason(
+                task, conversation or {'status': 'inactive'}, r)) for r in candidates]
+            ready = [r for r, blocked in admission if blocked is None]
+            blocked = next((reason for _, reason in admission if reason is not None), None)
+            if ready and os.environ.get('BYQ_F6_EXECUTOR_ENABLED') == '1':
                 state = 'continuation_queued'
             else:
-                state, reason = 'needs_reconciliation', blocked or 'continuation_result_unconfirmed'
+                state, reason = 'needs_reconciliation', (blocked
+                    or self._permission_blocked_reason(task, conversation or {'status': 'inactive'})
+                    or 'continuation_result_unconfirmed')
         elif conversation is None:
             state, reason = 'blocked', 'conversation_binding_missing'
         elif permission['blocked_reason'] in {'permission_missing', 'permission_revoked', 'permission_expired'}:

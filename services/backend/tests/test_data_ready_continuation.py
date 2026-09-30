@@ -7,6 +7,7 @@ normal budgeted F6 permission continues to work unchanged.
 import hashlib
 import os
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -65,6 +66,24 @@ def continuation_budget(store, task_id):
 def continuation_block(store, task_id):
     return store._fetch_one("""SELECT continuation_blocked_reason, continuation_blocked_event_key
         FROM research_tasks WHERE task_id=:task""", {'task': task_id})
+
+
+def legacy_model_reservation(suffix, *, status='reserved'):
+    """Persist a pre-cleanup data-ready model receipt in the disposable DB."""
+    now = datetime.now(timezone.utc)
+    created = (now - timedelta(minutes=1)).isoformat()
+    return {
+        'reservation_id': 'continuation_' + suffix * 32,
+        'grant_kind': 'data_ready', 'grant_version': None,
+        'event_key': 'ready-v1:' + suffix * 64,
+        'input_sha256': 'a' * 64, 'token_limit': 8000000,
+        'status': status, 'run_id': None, 'charged_tokens': None,
+        'settlement_sha256': None, 'created_at': created,
+        'instruction': 'legacy data-ready model instruction',
+        'dispatch_attempts': 0, 'next_attempt_at': created,
+        'reconcile_attempts': 0, 'next_reconcile_at': created,
+        'expires_at': (now + timedelta(hours=1)).isoformat(),
+    }
 
 
 def add_ready_event(fixture, *, key, content):
@@ -140,13 +159,7 @@ def test_ready_signal_job_enqueues_exactly_one_data_ready_continuation(monkeypat
         fixture['jobs'].close()
 
 
-def test_data_ready_budget_covers_a_bounded_multi_call_turn(monkeypatch, tmp_path):
-    """The grantless notification reserves no model budget at all."""
-    from app.research_continuation import (DATA_READY_INPUT_CEILING, DATA_READY_MAX_CALLS,
-        DATA_READY_MAX_OUTPUT_TOKENS, DATA_READY_TOKEN_LIMIT)
-    per_call = DATA_READY_INPUT_CEILING + DATA_READY_MAX_OUTPUT_TOKENS
-    assert DATA_READY_MAX_CALLS >= 2
-    assert DATA_READY_TOKEN_LIMIT == DATA_READY_MAX_CALLS * per_call
+def test_grantless_data_ready_notification_records_zero_model_liability(monkeypatch, tmp_path):
     fixture = setup_ready(monkeypatch, tmp_path)
     store, task, conversation, context = (fixture['store'], fixture['payload']['task_id'],
         fixture['conversation'], fixture['context'])
@@ -155,8 +168,10 @@ def test_data_ready_budget_covers_a_bounded_multi_call_turn(monkeypatch, tmp_pat
         assert intent['status'] == 'notified'
         receipt = intent['receipt']
         assert receipt['grant_kind'] == 'data_ready_notification'
-        # The notification is settled immediately with zero token liability, so
-        # it can never be reported as model usage.
+        assert receipt['event_key'].startswith('ready-v1:')
+        assert receipt['instruction'] is None
+        assert receipt['run_id'] is None
+        # Notifications are settled immediately and never enter model dispatch.
         assert receipt['token_limit'] == 0
         assert receipt['charged_tokens'] == 0
         assert receipt['status'] == 'settled'
@@ -291,6 +306,52 @@ def test_budgeted_permission_still_reserves_the_ready_event(monkeypatch, tmp_pat
         assert intent['receipt']['event_key'].startswith('ready-v1:')
         assert intent['receipt'].get('grant_kind') != 'data_ready'
         assert intent['receipt']['token_limit'] == 8000000
+    finally:
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+@pytest.mark.parametrize('later_grant', [False, True])
+def test_legacy_data_ready_model_receipt_never_dispatches_or_authorizes(
+        monkeypatch, tmp_path, later_grant):
+    from app.continuation_scope import authorize
+
+    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store, task, conversation, context = (fixture['store'], fixture['payload']['task_id'],
+        fixture['conversation'], fixture['context'])
+    reserved = legacy_model_reservation('c', status='reserved')
+    unknown = legacy_model_reservation('d', status='outcome_unknown')
+    try:
+        store._execute('UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
+            {'task': task, 'budget': [reserved, unknown]})
+        if later_grant:
+            # The historical reservation predates this explicit human grant.
+            grant_retry_permission(store, fixture, key='grant-after-legacy-reservation')
+
+        intent = store.claim_conversation_continuation(conversation, trusted_context=context)
+        dispatch = store.claim_continuation_dispatch(task, reserved['reservation_id'],
+            trusted_context=context)
+        call = {'tool': 'byq_research_get',
+            'arguments': {'entity_type': 'research_task', 'entity_id': task},
+            'root_run_id': 'e' * 32}
+        try:
+            authorization = authorize(store, unknown['reservation_id'], call, context)
+            authorization_denied = authorization.get('admitted') is not True
+        except ValueError as exc:
+            assert str(exc) == 'continuation action is no longer admitted'
+            authorization_denied = True
+
+        persisted = {row['reservation_id']: row for row in continuation_budget(store, task)}
+        assert intent['status'] == 'intent'
+        assert intent['may_dispatch'] is False
+        assert dispatch == {'dispatch': False}
+        assert authorization_denied is True
+        assert persisted[reserved['reservation_id']]['status'] == 'reserved'
+        assert persisted[reserved['reservation_id']]['dispatch_attempts'] == 0
+        assert persisted[unknown['reservation_id']]['status'] == 'outcome_unknown'
+        assert persisted[unknown['reservation_id']]['run_id'] is None
     finally:
         store.close()
         fixture['backtests'].close()

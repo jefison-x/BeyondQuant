@@ -288,10 +288,57 @@ Frozen `.275` manifest/Dockerfile remain
 This is not retirement of all historical data-ready model semantics. Independent
 follow-up found the legacy `grant_kind=data_ready` admission branch can still
 make a pre-existing reserved receipt dispatchable without an explicit grant.
-That is an execution exemption, not merely a receipt reader. It is **OPEN** for
-bounded removal; exact historical reconciliation/unknown liability must remain.
-Unused Backend model-budget parity constants also remain pending classification.
-Phase 17 final source freeze and final Golden cannot precede that closure.
+That was an execution exemption, not merely a receipt reader. The next bounded
+slice below closes it; exact historical reconciliation/unknown liability remains.
+
+## Legacy implicit model-grant admission closure
+
+Rollback checkpoint: `de4f4195`. A persisted `grant_kind=data_ready` receipt now
+always returns `unsupported_model_grant` at the shared Backend admission gate.
+Pending intents, dispatch claims and continuation tool authority all use that
+gate. A later explicit human grant cannot reactivate the old reservation. Handoff
+uses the same per-receipt gate and does not project a legacy reservation as queued;
+unknown-result liabilities retain priority. Exact receipt settlement is unchanged.
+
+Removed four unused Backend model-budget constants and four unused SDK guard
+exports. Synthetic multi-call fixture arithmetic is local to the guard test;
+actual SDK charging, journaling, pricing and granted allowance enforcement are
+unchanged. Adapter comments and the normative ceiling check now describe the
+actual guard/Adapter ceilings and 8192 per-call output cap. Current zero-token
+ready notifications and explicit human-granted reservations remain qualified.
+
+Independent Tester: the five new DB regression cases were **RED: 3 failed,
+2 passed**, then **GREEN** in a focused **34 passed** selection. That selection
+also covers the six receipt-ledger tests, continuation scope, notifications,
+current human permissions and handoff, exactly-once ready events and explicit
+budget reservations. Exact original settlement replay is accepted, conflicting
+settlement is rejected, and no unknown liability is refunded. The four new
+Gateway reconciliation/no-prompt cases **PASS**. Direct execution of the SDK guard
+file emitted **18/18 TAP PASS**; the Node test wrapper reported only its file-level
+subtest, so the direct result records the actual case count.
+
+The only DB fixture was new `byq-phase17-permission-de4f4195`, using the previously
+qualified Backend/Postgres images recorded above, `byq_domain_test`, an internal
+network and tmpfs PostgreSQL storage. It had no host ports, bind mounts or named
+volumes. Test hooks recorded 34 schema resets and 182 store bootstraps. Exact
+container/network cleanup was verified, with scope resources absent afterward.
+No existing database, backup, provider or Product model call was used.
+
+Selected immutable `.277` manifest:
+`sha256:36d14cca3d16f0eed89060630e84177fa8d9193bda3132cf66aa66320d2dfbd5`;
+Dockerfile:
+`sha256:ab9606267b1a056311bfb1e22f201d1a3e11da09380a2b9d6a722a151744aafd`.
+Frozen `.276` manifest/Dockerfile remain
+`sha256:e4f6a417095baca1eea5b3291329004d63c6a1639fef973fa2d9f3b4bb388400` /
+`sha256:b986cbf6d26b8cbb93507d8e344b367a12892fbba15c85a6d6d35006413414f3`.
+Independent selected/frozen identity checks **PASS** (3/4/5), both changed
+normative architecture nodes **PASS**, `dev-check --base de4f4195` **PASS**
+(15 syntax files), and diff **PASS**. Earlier 40/65/74 suites were not repeated.
+Changed Markdown and diff checks **PASS**. Independent Sol Reviewer:
+**Functional PASS / Tests PASS / Clean Break Architecture PASS** for this bounded
+source slice. Root: **PASS**.
+Final Golden, enabled F6 model execution and hosted CI remain **NOT_RUN**;
+Phase 17 overall remains **OPEN**.
 
 ## Final Golden execution plan
 

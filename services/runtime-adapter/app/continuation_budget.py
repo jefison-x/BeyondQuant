@@ -7,14 +7,13 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-# ADR-0077 conservative per-call ceilings. The Backend reserves a bounded
-# multi-call turn in
-# DATA_READY_TOKEN_LIMIT = DATA_READY_MAX_CALLS * (1048576 + 8192) and the
-# llm/stream guard charges 1,048,576 + options.maxTokens per call, so the runtime
-# must put this exact output cap on the request for every provider route. The
-# candidate overlay below caps the official deepseek adapter; the SDK-level cap
-# carries the same bound to the qualified opencode-* routes, whose pi-ai adapter
-# has no composition default.
+# Conservative per-call ceilings shared with the SDK budget guard. A trusted
+# reservation carries its explicitly granted total token_limit; the guard
+# charges 1,048,576 + options.maxTokens per call against that allowance. The
+# Adapter caps each continuation request at 8192 output tokens. The candidate
+# overlay caps the official deepseek adapter; the SDK-level cap carries the same
+# per-call bound to qualified opencode-* routes, whose pi-ai adapter has no
+# composition default. No implicit data-ready model grant is created here.
 CONTINUATION_INPUT_CEILING = 1048576
 CONTINUATION_OUTPUT_CEILING = 393216
 CONTINUATION_MAX_OUTPUT_TOKENS = 8192
