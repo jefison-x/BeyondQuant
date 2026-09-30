@@ -132,15 +132,26 @@ def test_completed_lifecycle_without_evidence_needs_reconciliation():
 
 def test_approval_wait_and_delivery_are_distinct_from_action_execution():
     from app.agent_research import AgentResearchStore
+    from app.strategy_artifact import prepare_strategy, strategy_version_content
     from tests.test_agent_research import start
-    store, task, context, payload = setup_permission()
+    from tests.test_strategy_artifact import strategy_payload
+    store, task, context, _ = setup_permission()
     agents = AgentResearchStore()
     try:
+        strategy = store.create_artifact({
+            'task_id': task, 'kind': 'strategy_version',
+            'content': strategy_version_content(prepare_strategy(strategy_payload())),
+            'lineage': [], 'trace_id': context['trace_id'], 'idempotency_key': 'handoff-strategy-version',
+        })
+        strategy = store.transition('artifact', strategy['artifact_id'], 'validated', 'handoff-strategy-validate')
         run = start(agents, owner_principal=context['owner_principal'], actor_principal=context['owner_principal'],
                     session_id='budget-session', trace_id='budget-trace')
-        approval = agents.create_approval({'run_id': run['run_id'], 'action': 'byq_backtest_task_execute',
-            'reason': 'Synthetic scope check', 'resource_type': 'artifact',
-            'resource_id': payload['confirmed_artifact_ids'][0], 'idempotency_key': 'handoff-approval'})
+        approval = agents.create_approval({'run_id': run['run_id'], 'action': 'byq_strategy_approve',
+            'reason': 'Synthetic strategy scope check', 'resource_type': 'strategy_version',
+            'resource_id': strategy['artifact_id'], 'idempotency_key': 'handoff-approval'})
+        assert approval['action'] == 'byq_strategy_approve'
+        assert approval['resource_type'] == 'strategy_version'
+        assert approval['resource_id'] == strategy['artifact_id']
         assert store.get_task_handoff(task, trusted_context=context)['state'] == 'waiting_approval'
         store._execute("UPDATE agent_approvals SET status='approved',continuation_status='queued' WHERE approval_id=:id", {'id': approval['approval_id']})
         assert store.get_task_handoff(task, trusted_context=context)['state'] == 'approval_continuation_queued'

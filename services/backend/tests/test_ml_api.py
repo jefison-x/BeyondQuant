@@ -5,6 +5,7 @@ import pytest
 
 from app import main as backend_main
 from app.agent_research import AgentResearchStore
+from app.ml_training import MLTrainingNotFound
 from app.main import _ml_pool_market_scope, app
 from tests.test_ml_strategy import valid_strategy, valid_strategy_v2
 from tests.workspace_helpers import trusted_agent_context, trusted_product_agent_context
@@ -369,6 +370,165 @@ def test_agent_ml_strategy_approval_requires_exact_grant_and_preserves_human_pat
     })
     assert human_approval.status_code == 201, human_approval.text
     assert human_approval.json()["approval"]["reviewer_principal"] == owner
+    agents.close()
+
+
+def test_agent_ml_training_requires_exact_action_grant_before_job_creation(monkeypatch: pytest.MonkeyPatch) -> None:
+    owner = "ml-training-grant-owner"
+    human_headers = trusted_agent_context(owner)
+    agent_headers = trusted_product_agent_context(
+        owner, actor="byq-product-agent-ml-training-grant-session",
+        session_id="ml-training-grant-session", dsh_run_id="ml-training-grant-run",
+    )
+    task = backend_main.research_store.create_task({
+        "owner_principal": owner, "title": "Training grant", "objective": "One bounded CPU run",
+        "trace_id": "ml-training-grant-trace", "idempotency_key": "ml-training-grant-task",
+    })
+    version = client.post("/v1/research/ml/strategies/versions", headers=human_headers, json={
+        "task_id": task["task_id"], "strategy": valid_strategy(),
+        "trace_id": "ml-training-grant-trace",
+        "idempotency_key": "ml-training-grant-version",
+    })
+    assert version.status_code == 201, version.text
+    strategy_id = version.json()["artifact"]["artifact_id"]
+    approval = client.post("/v1/research/ml/strategies/approvals", headers=human_headers, json={
+        "task_id": task["task_id"], "ml_strategy_artifact_id": strategy_id,
+        "decision": "approved", "trace_id": "ml-training-grant-trace",
+        "idempotency_key": "ml-training-grant-strategy-approval",
+    })
+    assert approval.status_code == 201, approval.text
+    pool = backend_main.paper_store.create_pool(
+        {"name": "Training grant pool", "symbols": ["000001.SZ"]}, trusted_owner=owner,
+    )
+    payload = {
+        "task_id": task["task_id"], "ml_strategy_artifact_id": strategy_id,
+        "stock_pool_snapshot_id": pool["current_snapshot_id"],
+        "trace_id": "ml-training-grant-trace",
+        "idempotency_key": "ml-training-grant-run",
+    }
+    before = backend_main.ml_training_store._fetch_one(
+        "SELECT COUNT(*) AS n FROM ml_training_runs WHERE owner_principal=:owner", {"owner": owner},
+    )["n"]
+    missing = client.post("/v1/research/ml/training-runs", headers=agent_headers, json=payload)
+    assert missing.status_code == 403, missing.text
+    assert backend_main.ml_training_store._fetch_one(
+        "SELECT COUNT(*) AS n FROM ml_training_runs WHERE owner_principal=:owner", {"owner": owner},
+    )["n"] == before
+
+    workspace_id = agent_headers["x-byq-workspace-id"]
+    preparation = client.post("/v1/research/ml/training-submissions", headers=agent_headers,
+                              json={**payload, "prepare_only": True})
+    assert preparation.status_code == 202, preparation.text
+    watch = preparation.json()["receipt_watch"]
+    assert watch["state"] == "prepared"
+    backend_main.ml_training_store._execute("""UPDATE ml_training_receipt_watches
+        SET deadline_at=now()-interval '1 second' WHERE watch_id=:id""", {"id": watch["watch_id"]})
+    assert backend_main.ml_training_store.reconcile_receipt_watches() == 0
+    assert backend_main.ml_training_store.get_receipt_watch(
+        payload["idempotency_key"], trusted_workspace=workspace_id,
+        trusted_owner=owner,
+    )["state"] == "prepared"
+    wrong = client.post("/v1/research/ml/training-runs", headers=agent_headers, json={
+        **payload, "agent_approval_id": "agent_approval_" + "0" * 32,
+    })
+    assert wrong.status_code == 403, wrong.text
+    agents = AgentResearchStore()
+    monkeypatch.setattr(backend_main, "agent_store", agents)
+    run = agents.start_run({
+        "owner_principal": owner, "actor_principal": agent_headers["x-byq-actor-principal"],
+        "role_id": "ml_researcher", "trace_id": agent_headers["x-byq-trace-id"],
+        "session_id": agent_headers["x-byq-session-id"],
+        "dsh_run_id": agent_headers["x-byq-dsh-run-id"],
+        "idempotency_key": "ml-training-grant-agent-run",
+    }, trusted_owner=owner, trusted_actor=agent_headers["x-byq-actor-principal"],
+        trusted_workspace=workspace_id, trusted_boot_id=agent_headers["x-byq-runtime-boot-id"])
+    grant = agents.create_approval({
+        "run_id": run["run_id"], "action": "byq_ml_training_create",
+        "reason": "One exact frozen CPU submission", "resource_type": "ml_training_submission",
+        "resource_id": watch["watch_id"], "idempotency_key": "ml-training-grant-decision",
+    }, trusted_owner=owner, trusted_actor=agent_headers["x-byq-actor-principal"],
+        trusted_session_id=agent_headers["x-byq-session-id"],
+        trusted_dsh_run_id=agent_headers["x-byq-dsh-run-id"],
+        trusted_boot_id=agent_headers["x-byq-runtime-boot-id"])
+    grant_id = grant["approval_id"]
+    pending = client.get("/v1/agents/approvals", headers=human_headers,
+                         params={"status": "pending"})
+    assert pending.status_code == 200, pending.text
+    shown = next(item for item in pending.json()["approvals"] if item["approval_id"] == grant_id)
+    preview = shown["resource_preview"]
+    assert preview == {
+        "schema_version": "ml-training-submission-preview.v1",
+        "watch_id": watch["watch_id"], "state": "prepared",
+        "task_id": task["task_id"], "experiment_id": None,
+        "ml_strategy_artifact_id": strategy_id,
+        "stock_pool_snapshot_id": pool["current_snapshot_id"],
+        "idempotency_key": payload["idempotency_key"],
+    }
+    with pytest.raises(MLTrainingNotFound):
+        backend_main.ml_training_store.receipt_watch_preview(
+            watch["watch_id"], trusted_workspace=workspace_id,
+            trusted_owner="another-owner",
+        )
+    with pytest.raises(MLTrainingNotFound):
+        backend_main.ml_training_store.receipt_watch_preview(
+            watch["watch_id"], trusted_workspace="another-workspace",
+            trusted_owner=owner,
+        )
+    agents.decide_approval({"approval_id": grant_id, "decision": "approved"},
+                           trusted_owner=owner, trusted_actor=owner,
+                           trusted_workspace=workspace_id)
+    monkeypatch.setattr(backend_main.security_master_store, "latest_snapshot", lambda: {"snapshot_id": "master_grant"})
+    monkeypatch.setattr(backend_main, "partition_market_requirements", lambda *args, **kwargs: [{"scope": "bounded"}])
+    created = client.post("/v1/research/ml/training-runs", headers=agent_headers, json={
+        **payload, "agent_approval_id": grant_id,
+    })
+    assert created.status_code == 202, created.text
+    assert created.json()["training_run"]["task_id"] == task["task_id"]
+    run_id = created.json()["training_run"]["training_run_id"]
+    swapped_pool = backend_main.paper_store.create_pool(
+        {"name": "Another training pool", "symbols": ["000002.SZ"]}, trusted_owner=owner,
+    )
+    swapped = {**payload, "stock_pool_snapshot_id": swapped_pool["current_snapshot_id"]}
+    denied = client.post("/v1/research/ml/training-runs", headers=agent_headers, json={
+        **swapped, "agent_approval_id": grant_id,
+    })
+    assert denied.status_code == 409, denied.text
+    changed_key = {**payload, "idempotency_key": "ml-training-grant-different-key"}
+    backend_main.ml_training_store.register_receipt_watch(
+        changed_key, trusted_workspace=workspace_id, trusted_owner=owner,
+    )
+    denied = client.post("/v1/research/ml/training-runs", headers=agent_headers, json={
+        **changed_key, "agent_approval_id": grant_id,
+    })
+    assert denied.status_code == 403, denied.text
+    other_actor = trusted_product_agent_context(
+        owner, actor="byq-product-agent-other-session", session_id="ml-training-grant-session",
+        dsh_run_id="ml-training-grant-run",
+    )
+    other_session = trusted_product_agent_context(
+        owner, actor=agent_headers["x-byq-actor-principal"], session_id="other-session",
+        dsh_run_id="ml-training-grant-run",
+    )
+    other_workspace = trusted_product_agent_context(
+        "ml-training-grant-other-owner", actor=agent_headers["x-byq-actor-principal"],
+        session_id="ml-training-grant-session", dsh_run_id="ml-training-grant-run",
+    )
+    for changed_headers in (other_actor, other_session, other_workspace):
+        denied = client.post("/v1/research/ml/training-runs", headers=changed_headers, json={
+            **payload, "agent_approval_id": grant_id,
+        })
+        assert denied.status_code in {403, 404}, denied.text
+    backend_main.ml_training_store._execute(
+        "UPDATE ml_training_runs SET status='completed' WHERE training_run_id=:id", {"id": run_id},
+    )
+    replay = client.post("/v1/research/ml/training-runs", headers=agent_headers, json={
+        **payload, "agent_approval_id": grant_id,
+    })
+    assert replay.status_code == 202, replay.text
+    assert replay.json()["training_run"]["training_run_id"] == run_id
+    assert backend_main.ml_training_store._fetch_one(
+        "SELECT COUNT(*) AS n FROM ml_training_runs WHERE owner_principal=:owner", {"owner": owner},
+    )["n"] == before + 1
     agents.close()
 
 

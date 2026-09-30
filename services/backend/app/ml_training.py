@@ -603,7 +603,8 @@ class MLTrainingRunStore(PgStoreMixin):
                  AND owner_principal=:owner AND idempotency_key=:key))""",
             {"workspace": workspace, "owner": owner, "key": key})
 
-    def register_receipt_watch(self, payload: dict[str, object], *, trusted_workspace: str, trusted_owner: str) -> dict[str, object]:
+    def register_receipt_watch(self, payload: dict[str, object], *, trusted_workspace: str, trusted_owner: str,
+                               prepare_only: bool = False) -> dict[str, object]:
         workspace = _identifier(trusted_workspace, "workspace_id")
         owner = _text(trusted_owner, "owner_principal")
         key = _text(payload.get("idempotency_key"), "idempotency_key")
@@ -645,7 +646,7 @@ class MLTrainingRunStore(PgStoreMixin):
                 (watch_id,workspace_id,owner_principal,idempotency_key,request_hash,identity_json,state,training_run_id)
                 VALUES (:id,:workspace,:owner,:key,:hash,:identity,:state,:run) RETURNING *""",
                 {**params, "id": f"mlwatch_{uuid.uuid4().hex}", "hash": digest, "identity": identity,
-                 "state": "confirmed" if receipt else "awaiting_receipt",
+                 "state": "confirmed" if receipt else "prepared" if prepare_only else "awaiting_receipt",
                  "run": receipt["training_run_id"] if receipt else None})
             return {**self._watch_public(rows[0]), "registration_created": True}
 
@@ -655,6 +656,45 @@ class MLTrainingRunStore(PgStoreMixin):
             {"workspace": trusted_workspace, "owner": trusted_owner, "key": _text(key, "idempotency_key")})
         if row is None:
             raise MLTrainingNotFound("ML receipt watch not found")
+        return self._watch_public(row)
+
+    def receipt_watch_preview(self, watch_id: object, *, trusted_workspace: str,
+                              trusted_owner: str) -> dict[str, object]:
+        row = self._fetch_one("""SELECT * FROM ml_training_receipt_watches
+            WHERE watch_id=:id AND workspace_id=:workspace AND owner_principal=:owner""",
+            {"id": _identifier(watch_id, "watch_id"),
+             "workspace": _identifier(trusted_workspace, "workspace_id"),
+             "owner": _text(trusted_owner, "owner_principal")})
+        if row is None:
+            raise MLTrainingNotFound("ML training submission preview not found")
+        identity = row["identity_json"]
+        return {"schema_version": "ml-training-submission-preview.v1",
+                "watch_id": row["watch_id"], "state": self._watch_public(row)["state"],
+                "task_id": identity["task_id"], "experiment_id": identity["experiment_id"],
+                "ml_strategy_artifact_id": identity["ml_strategy_artifact_id"],
+                "stock_pool_snapshot_id": identity["stock_pool_snapshot_id"],
+                "idempotency_key": row["idempotency_key"]}
+
+    def matching_receipt_watch(
+        self, payload: dict[str, object], *, trusted_workspace: str, trusted_owner: str,
+    ) -> dict[str, object]:
+        """Read the frozen submission identity before an Agent-approved create."""
+        workspace = _identifier(trusted_workspace, "workspace_id")
+        owner = _text(trusted_owner, "owner_principal")
+        key = _text(payload.get("idempotency_key"), "idempotency_key")
+        identity = {"workspace_id": workspace, "owner_principal": owner,
+                    **{field: _identifier(payload.get(field), field) for field in (
+                        "task_id", "ml_strategy_artifact_id", "stock_pool_snapshot_id")},
+                    "experiment_id": None if payload.get("experiment_id") is None
+                    else _identifier(payload["experiment_id"], "experiment_id")}
+        digest = hashlib.sha256(_canonical(identity)).hexdigest()
+        row = self._fetch_one("""SELECT * FROM ml_training_receipt_watches
+            WHERE workspace_id=:workspace AND owner_principal=:owner AND idempotency_key=:key""",
+            {"workspace": workspace, "owner": owner, "key": key})
+        if row is None:
+            raise MLTrainingNotFound("ML training submission was not prepared")
+        if row["request_hash"] != digest or row["state"] not in {"prepared", "awaiting_receipt", "confirmed"}:
+            raise MLTrainingConflict("ML training submission identity or state changed")
         return self._watch_public(row)
 
     def reject_receipt_watch(self, payload: dict[str, object], *, trusted_workspace: str, trusted_owner: str) -> None:

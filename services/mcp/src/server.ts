@@ -1295,9 +1295,12 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
   );
   registerTool(
     "byq_ml_training_create",
-    { description: "Create an approval-gated trusted ML training run from a human-approved closed strategy and frozen stock-pool snapshot. Call once per approved action; an outcome_unknown result requires read reconciliation and must not be blindly retried.", inputSchema: {
+    { description: "Set prepare_only=true to freeze one exact ML submission and receive its receipt watch ID for Agent approval; after approval, submit that same identity once with agent_approval_id. Unknown outcomes require read reconciliation.", inputSchema: {
       task_id: z.string(), experiment_id: z.string().optional(), ml_strategy_artifact_id: z.string(),
-      stock_pool_snapshot_id: z.string(), idempotency_key: z.string().min(1).max(128),
+      stock_pool_snapshot_id: z.string(),
+      prepare_only: z.boolean().optional(),
+      agent_approval_id: z.string().regex(/^agent_approval_[0-9a-f]{32}$/).optional(),
+      idempotency_key: z.string().min(1).max(128),
     } },
     (args) => byqMlTrainingCreate(args, trustedContext),
   );

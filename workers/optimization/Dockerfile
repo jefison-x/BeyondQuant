@@ -12,7 +12,8 @@ COPY workers/optimization/worker.py ./worker.py
 
 RUN pip install --no-cache-dir . \
     && groupadd --system --gid 10006 byq \
-    && useradd --system --uid 10006 --gid byq --no-create-home \
+    && groupadd --system --gid 10001 byq-backtest-results \
+    && useradd --system --uid 10006 --gid byq --groups byq-backtest-results --no-create-home \
        --shell /usr/sbin/nologin byq
 
 USER byq

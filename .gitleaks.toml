@@ -10,3 +10,14 @@ paths = [
   '''scripts/d15/runtime_continuity/compose\.runtime-qual\.yml''',
   '''docs/evidence/d15/d15-runtime/.*\.json''',
 ]
+
+# Exact mocked OptimizationJob idempotency key; every other value stays scanned.
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "Exact mocked OptimizationJob idempotency key in Gateway tests"
+condition = "AND"
+paths = ['''^services/gateway/tests/test_product_api\.py$''']
+regexTarget = "secret"
+regexes = ['''^optimization-key-1$''']

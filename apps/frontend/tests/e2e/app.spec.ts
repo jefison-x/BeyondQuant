@@ -675,7 +675,7 @@ test("my space pages render profile, models, assets, and agent policy", async ({
       body: JSON.stringify({
         platform_policy: { automation_enabled: false, paused: false, default_decision_mode: "manual", max_auto_executions_per_hour: 20, max_auto_failures_per_hour: 3 },
         personal_policy: { automation_enabled: false, paused: false, default_decision_mode: "manual", max_auto_executions_per_hour: 20, max_auto_failures_per_hour: 3 },
-        rules: [], presets: [{ preset_id: "manual_safe", name: "全部人工确认", description: "安全默认", rules: [] }], audit: [],
+        rules: [], presets: [{ preset_id: "manual_safe", name: "敏感操作人工确认", description: "安全默认", rules: [] }], audit: [],
         approval_inbox: { pending: 0 },
       }),
     }),

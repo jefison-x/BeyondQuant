@@ -4,6 +4,7 @@ import os
 
 import json
 import os
+import stat
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 
@@ -33,6 +34,14 @@ from app.backtest import (
 from app.research import ResearchStore
 from app.strategy_artifact import prepare_strategy, strategy_version_content
 from packages.contracts.bars_frame import encode_snapshot_bars
+
+
+def test_backtest_result_is_readable_by_only_its_owner_and_worker_group(tmp_path) -> None:
+    objects = LocalObjectStore(tmp_path / "objects")
+    reference = objects.put("backtest-results", b"group-readable-result", media_type="application/json")
+    path = objects._path(reference["namespace"], reference["object_id"])
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
+    assert objects.get(reference) == b"group-readable-result"
 from tests.workspace_helpers import trusted_agent_context
 
 

@@ -29,7 +29,7 @@ flowchart TD
 | Delegated research | actual DSH subagent and normalized BYQ projection | A |
 | Multi-round backtest; long BacktestJob | two real Job IDs, worker completion, persisted results | B |
 | Parameter optimization; result comparison | real optimization Job, comparison Artifact | B |
-| TrainingJob; GPU Worker; ML checkpoint/restart | worker execution and model Artifact, restart evidence | C |
+| TrainingJob; independent CPU ML Worker; Worker restart/reclaim | Agent initiation, same durable Job after Worker restart/reclaim, validated Feature and Model Artifacts | C |
 | Agent interruption; Job continuation/relink | old DSH session ends while Job completes; new authorized session queries the same Job ID without duplicate execution | D |
 | Approval AUTO/DECISION/ACTION | allowed read, user choice, exact action gate and audit | A/B/C |
 | Audit Event | structured event with request/workspace/resource/job identity | A/B/C |
@@ -40,7 +40,7 @@ flowchart TD
 
 - **A — Market Research:** new Workspace → ResearchTask → TuShare + Web Search → multi-turn interaction and DSH delegated research → Research Artifact; verify provenance, Product API and normalized trace.
 - **B — Multi-round Backtest:** Agent starts BacktestJob A → Artifact → strategy change → BacktestJob B → optimization/comparison → comparison Artifact; verify Job IDs and approval boundaries.
-- **C — ML:** Agent starts TrainingJob → GPU Worker → worker checkpoint/restart → model and metrics Artifacts; verify Agent does not own GPU process.
+- **C — ML:** Agent starts TrainingJob → independent CPU ML Worker → Worker termination/restart or reclaim with the same durable Job ID → validated Feature and Model Artifacts with metrics; verify Agent does not own the training process. GPU execution and GPU checkpoint/restart are `N/A` for BYQ 0.10 under [ADR-0089](../architecture/adr/ADR-0089-clean-break-gpu-acceptance-scope.md).
 - **D — Session interruption:** Agent starts Job → old DSH session ends → Job completes independently → new authorized DSH session uses the same `job_id` to fetch status and result Artifact; verify no duplicate Job, no automatic replay of unknown actions and no claim that the old Agent or child resumed. DSH process restart and in-flight child rebind are outside this 0.10 scenario.
 - **E — Workspace Reset:** create research/jobs/artifacts → Reset Runtime → Reset Workspace → verify scoped clean state and preserved account/RBAC/global config → seed → rerun A.
 - **F — Full rebuild:** `dev-clean --dry-run` scope review → `dev-clean` → `dev-init` → `dev-start` → `dev-seed` → Golden tests on fresh database.
@@ -56,7 +56,7 @@ flowchart TD
 | Event ledger currently carries durable commands | move pending command to business state/Job before event deletion |
 | Audit tables may contain authoritative financial facts | classify table by table; keep facts, move only observation to emitter |
 | Job table unification may become a new workflow abstraction | common contract and IDs first; keep specialized worker stores if simpler |
-| GPU/real Tushare/browser credentials and hardware unavailable in ordinary CI | separate keyless contract gate from qualified real Golden evidence; do not mark full fidelity PASS without real flow |
+| Real TuShare/browser credentials and hardware unavailable in ordinary CI | separate keyless contract gate from qualified real Golden evidence; do not mark full fidelity PASS without real flow. GPU hardware is outside the 0.10 gate under ADR-0089. |
 | 144 worktrees / four dirty and rollback images | exact ownership checks; never broad prune or touch P4 branch |
 
 ## Implementation sequence after planning gate
@@ -89,7 +89,7 @@ retain their assigned later phases.
 13. Implement scoped, idempotent Reset Runtime and Reset Workspace.
 14. Establish fresh schema baseline and seed; old DB remains archive only.
 15. Verify full functional fidelity from empty schema/workspace via real Product API and browser where UI applies.
-16. Run Golden Scenarios A–F, including GPU/credential-qualified paths and ML worker restart evidence; DSH process restart is outside the 0.10 acceptance scope.
+16. Run Golden Scenarios A–F, including credential-qualified paths and real CPU ML Worker restart/reclaim evidence; GPU execution and GPU checkpoint/restart are `N/A` under ADR-0089. DSH process restart is outside the 0.10 acceptance scope.
 17. Search and delete residual duplicate owner, unnecessary Gateway delivery indirection, compatibility, generic workflow, event-as-state, Agent-owned compute and dev-tool leakage; rerun contract and Golden gates.
 
 No Phase 7 destructive refactor begins before Phase 0–6 gate and accepted ADR. Full 0.10 completion requires the real functionality evidence above; this planning package makes no such claim.

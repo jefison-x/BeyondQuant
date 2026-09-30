@@ -144,15 +144,26 @@ def test_new_domain_approval_hands_off_once_and_later_rejection_does_not(monkeyp
 
 def test_pending_approval_and_unknown_submission_wait_without_admission(monkeypatch):
     from app.agent_research import AgentResearchStore
+    from app.strategy_artifact import prepare_strategy, strategy_version_content
     from tests.test_agent_research import start
+    from tests.test_strategy_artifact import strategy_payload
     store, task, context, payload, conversation = setup_handoff(monkeypatch)
     agents = AgentResearchStore()
     try:
+        strategy = store.create_artifact({
+            'task_id': task, 'kind': 'strategy_version',
+            'content': strategy_version_content(prepare_strategy(strategy_payload())),
+            'lineage': [], 'trace_id': context['trace_id'], 'idempotency_key': 'handoff-strategy-version',
+        })
+        strategy = store.transition('artifact', strategy['artifact_id'], 'validated', 'handoff-strategy-validate')
         run = start(agents, owner_principal=context['owner_principal'], actor_principal=context['owner_principal'],
                     session_id='budget-session', trace_id='budget-trace')
-        approval = agents.create_approval({'run_id': run['run_id'], 'action': 'byq_backtest_task_execute',
-            'reason': 'Synthetic approval', 'resource_type': 'artifact',
-            'resource_id': payload['confirmed_artifact_ids'][0], 'idempotency_key': 'handoff-pending'})
+        approval = agents.create_approval({'run_id': run['run_id'], 'action': 'byq_strategy_approve',
+            'reason': 'Synthetic strategy approval', 'resource_type': 'strategy_version',
+            'resource_id': strategy['artifact_id'], 'idempotency_key': 'handoff-pending'})
+        assert approval['action'] == 'byq_strategy_approve'
+        assert approval['resource_type'] == 'strategy_version'
+        assert approval['resource_id'] == strategy['artifact_id']
         assert store.claim_conversation_continuation(conversation, trusted_context=context)['status'] == 'waiting'
         store._execute("UPDATE agent_approvals SET status='rejected',continuation_status='submitted' WHERE approval_id=:id", {'id': approval['approval_id']})
         store._execute('''INSERT INTO research_receipt_watches

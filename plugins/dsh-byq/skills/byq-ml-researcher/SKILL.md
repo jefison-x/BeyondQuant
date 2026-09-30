@@ -88,13 +88,24 @@ Never select the newest workspace study, model, pool, or run as a replacement
 for an unresolved reference. If the approved object cannot be identified
 uniquely, ask for clarification and do not create anything.
 
-Call `byq_ml_training_create` at most once for one approved action. If it returns
-`outcome_unknown`, do not retry the mutation or claim that no task was created.
+For training, first call `byq_ml_training_create` with `prepare_only=true`,
+the exact task, strategy, pool snapshot and original idempotency key. This
+freezes a receipt watch without starting a Job. Then authorize
+`byq_ml_training_create` with `resource_type=ml_training_submission` and
+`resource_id` equal to that exact `receipt_watch.watch_id`; request the
+training-action approval for the same resource and end the turn. After approval, call
+`byq_ml_training_create` once with the same frozen fields and the approved
+`agent_approval_id`, omitting `prepare_only`. A changed pool, task, experiment
+or key needs a new preparation and human decision. If preparation returns
+`outcome_unknown`, reconcile the original key; do not prepare another identity.
+If execution returns `outcome_unknown`, do not retry the mutation or claim that
+no task was created.
 Call `byq_ml_training_get` with the exact original `idempotency_key` to reconcile
 the submission (do not also supply a run ID). Do not use a bounded workspace
 list to prove absence. Report the persisted run when found; otherwise say that submission
 could not yet be confirmed and preserve the same idempotency key for a later
 reconciliation. A transport timeout is not evidence that a write failed.
+A `prepared` watch is frozen for approval and does not enter receipt polling.
 An `awaiting_receipt` watch means bounded background lookup, not accepted
 training. `needs_attention` means the lookup budget ended with the outcome
 still unknown; stop further polling in this turn and request manual inspection.

@@ -15,6 +15,11 @@ spec.loader.exec_module(env)
 
 
 class DevEnvironmentTests(unittest.TestCase):
+    def test_backtest_profiles_include_the_optimization_worker(self):
+        for profile in ("backtest", "full"):
+            self.assertIn("backtest-worker", env.SERVICES[profile])
+            self.assertIn("optimization-worker", env.SERVICES[profile])
+
     def test_compose_config_requires_current_adapter_build(self):
         payload = {"services": {"runtime-adapter": {"build": {"dockerfile": env.CURRENT_DSH_DOCKERFILE}}}}
         with patch.object(env, "call", return_value=CompletedProcess([], 0, json.dumps(payload), "")):

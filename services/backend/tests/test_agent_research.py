@@ -48,10 +48,12 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
     assert "byq_strategy_approve" not in strategy_tools
     assert "byq_backtest_run" not in strategy_tools
     orchestrator = ROLE_BY_ID["quant_orchestrator"]
-    assert orchestrator.version == "2.3.0"
+    assert orchestrator.version == "2.5.0"
     assert "byq_feedback_preview" in orchestrator.allowed_tools
     assert "byq_feedback_submit" in orchestrator.allowed_tools
     assert "byq_feedback_submit" in orchestrator.approval_required_actions
+    assert "byq_strategy_approve" in orchestrator.approval_required_actions
+    assert "byq_backtest_task_cancel" in orchestrator.approval_required_actions
     assert "ml_researcher" in orchestrator.delegate_to
     orchestrator_tools = set(orchestrator.allowed_tools)
     assert {"byq_pool_list", "byq_pool_get", "byq_pool_create"} <= orchestrator_tools
@@ -68,6 +70,7 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
         "byq_backtest_task_execute", "byq_backtest_task_cancel",
     }
     assert task_tools <= orchestrator_tools
+    assert "byq_backtest_analysis_get" in orchestrator_tools
     optimization_tools = {"byq_optimization_submit", "byq_optimization_get", "byq_optimization_cancel"}
     assert optimization_tools <= orchestrator_tools
     assert "byq_factor_job_cancel" in orchestrator_tools
@@ -89,7 +92,7 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
         for role in ("factor_researcher", "strategy_researcher", "backtest_analyst", "ml_researcher")
     )
     assert ROLE_BY_ID["strategy_researcher"].version == "1.2.0"
-    assert ROLE_BY_ID["backtest_analyst"].version == "1.3.0"
+    assert ROLE_BY_ID["backtest_analyst"].version == "1.4.0"
     backtest_tools = set(ROLE_BY_ID["backtest_analyst"].allowed_tools)
     assert task_tools <= backtest_tools
     assert optimization_tools <= backtest_tools
@@ -114,9 +117,9 @@ def test_role_catalog_is_versioned_and_has_explicit_least_privilege() -> None:
     assert "byq_ml_strategy_approve" in ml_tools
     assert ROLE_BY_ID["ml_researcher"].approval_required_actions == (
         "byq_ml_strategy_approve", "byq_ml_training_create", "byq_ml_training_cancel", "byq_ml_prediction_create",
-        "byq_backtest_task_execute", "byq_backtest_task_cancel",
+        "byq_backtest_task_cancel",
     )
-    assert ROLE_BY_ID["ml_researcher"].version == "1.2.0"
+    assert ROLE_BY_ID["ml_researcher"].version == "1.4.0"
     assert {
         "byq_ml_prediction_create", "byq_ml_prediction_get", "byq_backtest_task_get",
         "byq_backtest_task_execute", "byq_backtest_task_cancel",
@@ -127,6 +130,10 @@ def test_old_run_does_not_gain_versioned_tools_after_role_upgrade() -> None:
     store = AgentResearchStore()
     try:
         run = start(store)
+        assert store.authorize({"run_id": run["run_id"], "action": "byq_backtest_analysis_get"})["authorized"]
+        store._execute("UPDATE agent_runs SET role_version='2.4.0' WHERE run_id=:id", {"id": run["run_id"]})
+        with pytest.raises(AgentForbidden):
+            store.authorize({"run_id": run["run_id"], "action": "byq_backtest_analysis_get"})
         assert store.authorize({"run_id": run["run_id"], "action": "byq_index_pool_create"})["authorized"]
         store._execute("UPDATE agent_runs SET role_version='2.1.0' WHERE run_id=:id", {"id": run["run_id"]})
         assert store.authorize({"run_id": run["run_id"], "action": "byq_index_pool_create"})["authorized"]
@@ -145,6 +152,41 @@ def test_old_run_does_not_gain_versioned_tools_after_role_upgrade() -> None:
         store._execute("UPDATE agent_runs SET role_version='1.2.0' WHERE run_id=:id", {"id": analyst["run_id"]})
         with pytest.raises(AgentForbidden):
             store.authorize({"run_id": analyst["run_id"], "action": "byq_optimization_get"})
+        ml = start(store, role_id="ml_researcher", idempotency_key="agent-run-ml-training")
+        assert store.authorize({"run_id": ml["run_id"], "action": "byq_ml_training_create"})["decision"] == "approval_required"
+        store._execute("UPDATE agent_runs SET role_version='1.3.0' WHERE run_id=:id", {"id": ml["run_id"]})
+        with pytest.raises(AgentForbidden):
+            store.authorize({"run_id": ml["run_id"], "action": "byq_ml_training_create"})
+        with pytest.raises(AgentForbidden):
+            store.create_approval({
+                "run_id": ml["run_id"], "action": "byq_ml_training_create",
+                "reason": "old role must not request a new grant",
+                "resource_type": "ml_training_submission", "resource_id": "mlwatch_" + "a" * 32,
+                "idempotency_key": "old-ml-training-grant",
+            })
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize(("role_id", "old_version", "actions"), [
+    ("quant_orchestrator", "2.3.0", ("byq_backtest_task_create", "byq_backtest_task_execute")),
+    ("backtest_analyst", "1.3.0", ("byq_backtest_task_create", "byq_backtest_task_execute")),
+    ("ml_researcher", "1.2.0", ("byq_backtest_task_execute",)),
+])
+def test_backtest_auto_requires_current_role_version(role_id, old_version, actions) -> None:
+    store = AgentResearchStore()
+    try:
+        run = start(store, role_id=role_id, idempotency_key=f"backtest-auto-{role_id}")
+        assert run["role_version"] == ROLE_BY_ID[role_id].version
+        for action in actions:
+            current = store.authorize({"run_id": run["run_id"], "action": action})
+            assert current["authorized"] is True
+            assert current["approval_level"] == "AUTO"
+        store._execute("UPDATE agent_runs SET role_version=:old WHERE run_id=:id",
+                       {"old": old_version, "id": run["run_id"]})
+        for action in actions:
+            with pytest.raises(AgentForbidden, match="not authorized"):
+                store.authorize({"run_id": run["run_id"], "action": action})
     finally:
         store.close()
 
@@ -270,7 +312,7 @@ def test_delegation_rejects_another_session_generation_actor_or_terminal_parent(
 def test_approval_continuation_claim_fences_late_ack_across_restart() -> None:
     store = AgentResearchStore()
     run = start(store)
-    approval = store.create_approval({"run_id": run["run_id"], "action": "byq_backtest_task_execute",
+    approval = store.create_approval({"run_id": run["run_id"], "action": "byq_backtest_task_cancel",
         "reason": "Synthetic", "resource_type": "backtest_task", "resource_id": "backtesttask_1", "idempotency_key": "fenced-approval"})
     store.decide_approval({"approval_id": approval["approval_id"], "decision": "approved"},
                           trusted_owner="alice", trusted_actor="human-reviewer")
@@ -302,7 +344,7 @@ def test_known_unaccepted_continuations_have_a_persistent_retry_limit() -> None:
     store = AgentResearchStore()
     try:
         run = start(store)
-        approval = store.create_approval({"run_id": run["run_id"], "action": "byq_backtest_task_execute",
+        approval = store.create_approval({"run_id": run["run_id"], "action": "byq_backtest_task_cancel",
             "reason": "Synthetic", "resource_type": "backtest_task", "resource_id": "backtesttask_1", "idempotency_key": "limited-approval"})
         store.decide_approval({"approval_id": approval["approval_id"], "decision": "approved"},
                               trusted_owner="alice", trusted_actor="human-reviewer")
@@ -328,11 +370,25 @@ def test_authorization_approval_and_audit_keep_execution_separate(tmp_path) -> N
     for tool in ("byq_optimization_submit", "byq_optimization_get", "byq_optimization_cancel"):
         assert store.authorize({"run_id": run["run_id"], "action": tool})["decision"] == "allowed"
     assert store.authorize({"run_id": run["run_id"], "action": "byq_index_pool_catalog"})["decision"] == "allowed"
+    for role in ("quant_orchestrator", "backtest_analyst", "ml_researcher"):
+        for action in ("byq_backtest_task_create", "byq_backtest_task_execute"):
+            if action not in ROLE_BY_ID[role].allowed_tools:
+                continue
+            assert action not in ROLE_BY_ID[role].approval_required_actions
+    for action in ("byq_backtest_task_create", "byq_backtest_task_execute"):
+        decision = store.authorize({"run_id": run["run_id"], "action": action})
+        assert decision["authorized"] is True
+        assert decision["decision"] == "allowed"
+        assert decision["approval_level"] == "AUTO"
+        with pytest.raises(AgentForbidden, match="does not require or support"):
+            store.create_approval({"run_id": run["run_id"], "action": action,
+                "reason": "No duplicate approval", "resource_type": "backtest_task",
+                "resource_id": "backtesttask_1", "idempotency_key": f"auto-{action}"})
     pending = store.create_approval(
         {
             "run_id": run["run_id"],
-            "action": "byq_backtest_task_execute",
-            "reason": "Run the reviewed deterministic job.",
+            "action": "byq_backtest_task_cancel",
+            "reason": "Cancel the exact backtest task.",
             "resource_type": "backtest_task",
             "resource_id": "backtesttask_1",
             "idempotency_key": "approval-1",

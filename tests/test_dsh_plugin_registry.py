@@ -115,7 +115,15 @@ class PluginRegistryTests(unittest.TestCase):
             ROOT / "plugins/dsh-byq/skills/byq-ml-researcher/SKILL.md"
         ).read_text()
         self.assertIn("Immediately after a training-action approval", skill)
-        self.assertIn("Call `byq_ml_training_create` at most once", skill)
+        self.assertIn("`prepare_only=true`", skill)
+        self.assertIn(
+            "After approval, call `byq_ml_training_create` once with the same frozen fields",
+            " ".join(skill.split()),
+        )
+        self.assertIn(
+            "If execution returns `outcome_unknown`, do not retry the mutation",
+            " ".join(skill.split()),
+        )
         self.assertIn("A transport timeout is not evidence that a write failed", skill)
 
     def test_registry_invalid_contracts_fail_closed(self) -> None:

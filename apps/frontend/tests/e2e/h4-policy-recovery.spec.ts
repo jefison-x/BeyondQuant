@@ -27,7 +27,7 @@ test('all five personal policy commands recover after refresh without repeating 
   await page.getByRole('row').filter({hasText:name+' changed'}).getByRole('button',{name:'删除',exact:true}).click();
   await page.locator('.el-message-box__btns button').last().click();
   expect((await recover('rule_delete')).result).toEqual({rule_id:id,deleted:true});
-  await page.locator('.preset-card').filter({hasText:'全部人工确认'}).getByRole('button',{name:'应用',exact:true}).click();
+  await page.locator('.preset-card').filter({hasText:'敏感操作人工确认'}).getByRole('button',{name:'应用',exact:true}).click();
   await page.locator('.el-message-box__btns button').last().click();
   const preset=await recover('preset');expect(preset.result.preset_id).toBe('manual_safe');expect(preset.result.rules).toEqual([]);
   const settings=page.locator('.el-card').filter({has:page.getByText('个人审批偏好',{exact:true})});

@@ -1,5 +1,327 @@
 # Phase 0–6 gate record
 
+## Phase 15 repository-gate authorization (2026-09-30)
+
+After local functional PASS, the maintainer explicitly instructed
+“授权推送合并”. This covers pushing `codex/clean-break-phase15`, creating its
+PR, executing required Full CI and, after exact-head platform preflight PASS,
+ADR-0015/0059 squash auto-merge. It grants no deployment, release/tag, existing
+database/backup operation or Phase 16 implementation. The repository remains
+pre-v1.0; live settings must still prove auto-merge/squash enabled and strict
+`local-ci` / `ci-gate` requirements before the merge action. Repository CI and
+merge results are recorded by the PR/check runs; this authorization is not a
+claim that those gates already passed. Earlier local-only scope statements
+below retain their historical meaning.
+
+PR #378 was created as Draft. Initial exact-head hosted Full CI run
+`36648427194` and PR run `36648406040` failed the selected operational build
+identity gate before component tests: Phase 15 source inputs differed from
+the selected immutable manifest. This is a real gate failure, not a component
+test result. The correction must issue a new build revision and preserve the
+old manifest/inputs; disabling the identity gate or reusing old images is not
+permitted. Replacement exact-head CI and merge preflight remain required.
+
+The correction selects new immutable build `dsh-0.1.5rc1-post-u8.271`
+(`sha256:b16e18882b74431b25720b028a135ae1dd924382f8526cd2f87fa772c9dfecae`),
+freezes `.270` without changing its manifest or Dockerfile, and updates live
+Compose/CI/development references. The new Dockerfile changes only the embedded
+manifest path; release descriptor, SDK/runtime and dependency locks are
+unchanged. `compose.dev.yml` now belongs to the fingerprinted input closure.
+The four already implemented OptimizationJob Product methods are also added
+to the browser OpenAPI contract, preserving the route-coverage assertion.
+These changes do not alter Product execution behavior or require another
+paid model/Golden run. The old manifest mismatch remains recorded; only
+replacement exact-head hosted CI can satisfy the repository gate.
+
+Bounded correction Tester: **PASS** (13 build/current/frozen/selection checks,
+one exact OpenAPI coverage test, current `.271` and frozen `.270` manifest
+checks, YAML/AST/shell/diff). Independent Sol Reviewer: **Functional PASS /
+Tests PASS / Clean Break Architecture PASS**. Root: **PASS for the CI
+correction only**; this is not a hosted Full CI or merge pass.
+
+Replacement Full CI run `36649851347` on `74f378c1` passed Docs, Gateway,
+Runtime, MCP, Frontend and Integration. Architecture failed only its obsolete
+global ML-create call-count text assertion; the accepted flow prepares a watch
+and executes one exactly approved submission. The assertion now distinguishes
+preparation from the single execution and explicitly retains unknown-outcome
+no-retry protection. Backend failed two handoff fixtures that requested approval
+for `byq_backtest_task_execute`, now `AUTO` under the already accepted Phase 15
+role policy. Fixture corrections must preserve waiting/delivery/permission and
+unknown-result assertions and use a still-required approval boundary. These
+failures are not reclassified as passes; final exact-head Full CI is required.
+The published `.271` build remains frozen, with a new `.272` for the changed
+test inputs; no Product/Skill behavior is changed by these corrections.
+
+The two repaired Backend fixtures bind `byq_strategy_approve` to a real
+validated `strategy_version` Artifact in the same task. Independent focused
+PostgreSQL validation used only the disposable `byq_domain_test` database,
+confirmed by read-only identity preflight: **2 passed**. The corrected ML Skill
+assertion also passed its one focused test. New `.272` manifest hash is
+`sha256:a4ea957ef6123d1b8c80882172c89b5b0857bdb4ab163028382d89b7291e3414`.
+
+Second bounded correction: independent Tester **PASS** (2 Backend cases,
+1 ML Skill case, 3 current-build cases and 1 selection case, selected/frozen
+identity, syntax and diff checks). Independent Sol Reviewer: **Functional PASS /
+Tests PASS / Clean Break Architecture PASS**. Root: **PASS for the bounded
+correction**; final exact-head Full CI and repository preflight remain required.
+
+## Phase 15 PR-history secret-scan correction (2026-09-30)
+
+Full CI run `36652051299` passed on `de30eac2`, including all seven components,
+integration/browser checks, scoped cleanup and aggregate gates. Independent
+Tester verified the exact head. Fresh repository preflight nevertheless blocked
+merge because PR run `36652026073` failed its whole-PR Git-history secret scan.
+The dispatch scan covers only the last commit and does not replace that gate.
+
+Pinned Gitleaks 8.30.1 reported four `generic-api-key` findings in commit
+`9357651`, all the same deterministic `optimization-key-1` idempotency fixture
+in `services/gateway/tests/test_product_api.py`. Independent Reviewer confirmed
+they are mocked request/query/forwarding assertions, not credentials. Automatic
+approval review initially rejected a persistent scanning exception as outside
+the existing settings authorization; no configuration change or merge occurred.
+The maintainer then explicitly authorized only that file and exact value.
+
+The correction inherits `generic-api-key` and adds an `AND` allowlist requiring
+both the anchored exact test path and anchored exact extracted value. Existing
+global exclusions, all other rules, files and values remain unchanged. This
+configuration is outside the `.272` fingerprint closure; no build revision or
+Product runtime change is needed. Final boundary tests, exact-head CI and fresh
+repository preflight remain required before the authorized merge.
+
+Independent focused Tester: **PASS** using pinned scanner 8.30.1. Whole-PR
+history scan reports zero findings. Temporary controls prove the exact allowed
+path/value passes, a different high-entropy synthetic value at the same path
+is detected, and the exact fixture value in another file is detected. Scanner
+output is redacted; no credential value is recorded. `.272` identity and
+`git diff --check` also pass. Independent Sol Reviewer: **Functional PASS /
+Tests PASS / Clean Break Architecture PASS**. Root: **PASS for this exact
+scanner correction**; hosted exact-head checks and live preflight remain open.
+
+## Phase 15 live Golden C and local fidelity closeout (2026-09-30)
+
+[Current evidence](phase15-functional-fidelity.md#current-live-golden-c-and-closeout-evidence-2026-09-30)
+records three authorized actual Product Agent turns and exactly one new CPU
+TrainingJob. Exact browser approval, original watch/key, trusted preview,
+ML Agent submitted audit and Product Job state corroborate Agent initiation.
+The real CPU Worker exited 137 during attempt 1 while the Job remained
+nonterminal; a normal 2 CPU Worker with the same image reclaimed the same Job
+after natural lease expiry and completed attempt 2. One validated Model with
+metrics and exact Job lineage, the reused validated Feature, persisted object
+references and the two-run study passed the observer assertions. Data and ML
+Workers are stopped; no new market download occurred.
+
+The view-only old session loss and the later post-decision receipt GET 404 are
+retained as failures. Neither decision nor model prompt was retried. Read-only
+browser receipt recovery passed with 45 requests and zero off-origin requests.
+Public training activity reports started/waiting without argument/result
+visibility; the exact submission proof uses durable audit/preview/Job state.
+The CPU evidence establishes durable reclaim/re-execution, not mid-epoch
+checkpoint recovery; GPU remains `N/A` under ADR-0089.
+
+Post-rebuild E/A, D, B/browser and CPU C evidence follows scoped rebuild
+`2987d3c1`; the former F summary saying journeys had not been rerun was stale.
+Those passed journeys were not repeated. Independent live Tester: **PASS**
+after read-only Product, Artifact and stopped-Worker checks. Final focused
+Gateway regression: **2 passed**, covering pre-prompt `ProductError` and
+`HTTPException`; syntax, diff and evidence links PASS. Independent Sol
+Reviewer: **Functional PASS / Tests and Evidence PASS / Clean Break
+Architecture PASS**, including source, live C and the sufficiency of existing
+A/B/D/E plus corrected F evidence. **Root: Golden C PASS and Phase 15 local
+functional fidelity PASS.**
+
+**Phase 15 overall remains OPEN:** required Full CI is NOT_RUN for this branch,
+and push/PR/human merge are outside the current authorization. Phase 16 stays
+closed. The local observations do not claim hosted CI or deployment completion.
+
+## Phase 15 Golden C exact training approval source gate (2026-09-30)
+
+The Agent training submission now freezes its task, strategy, pool snapshot,
+optional experiment, owner/workspace and idempotency key in a `prepared` watch.
+The Agent approval binds that watch; Backend execution checks the persisted
+grant and identical submission. Product approval displays a trusted frozen
+preview and refuses a missing preview. The original key returns the same Job
+on terminal replay. The bounded Golden C observer also compares the approved
+key with the new Product TrainingJob.
+
+Focused independent Tester: **PASS** (Backend exact-grant and preview contract,
+Gateway projection and decision guard, MCP translation, frontend component and
+production build, diff/syntax checks). Independent Sol Reviewer: **Functional
+PASS / Tests PASS / Clean Break Architecture PASS** for this source slice.
+Root: **PASS for the source slice only**. Real Agent initiation, real-browser
+approval preview, nonterminal CPU Worker restart/reclaim and final same-Job
+Artifact evidence remain **OPEN**. No new model call, market download, existing
+business database or backup operation, push, PR, merge or deployment occurred.
+
+## Current Phase 15 GPU gate scope (2026-09-30)
+
+[ADR-0089](../architecture/adr/ADR-0089-clean-break-gpu-acceptance-scope.md)
+excludes GPU execution and GPU checkpoint/restart from the BYQ 0.10 gate as
+`N/A`. The real-provider CPU TrainingJob/Worker/Artifact slice passed locally;
+Agent-initiated training and real CPU Worker restart/reclaim remain open.
+Earlier `NOT_RUN` GPU records below describe what was observed at the time and
+are not rewritten as test passes. Phase 15 overall remains OPEN.
+
+Focused governance Tester: **PASS**, 3/3 checks; changed-document links and
+`git diff --check`: **PASS**. Independent Sol Reviewer inspected the actual
+decision, plan, gate and test diff: **Functional PASS / Tests PASS / Clean Break
+Architecture PASS**. Root accepts this GPU-scope decision only: **PASS**.
+Golden C and the Phase 15 overall gate remain **OPEN**.
+
+## Phase 15 fresh-state Research and Backtest slices (2026-09-29)
+
+**Golden D gate: PASS.** On the rebuilt isolated stack, an old Product Agent
+created and executed one approved BacktestTask; its BacktestJob remained queued
+at attempts 0 after the old conversation was deleted. The independent Worker
+completed that same Job once with a validated Artifact, and a new Product Agent
+identified the exact Job and Artifact by stable ID. The sole authorized repair
+was for `20240102`; its one session job received 5,329 full-market daily rows.
+Focused staged script checks and read-only isolated DB inspection passed.
+Independent Sol Reviewer: Functional PASS / Tests and Evidence PASS / Clean Break
+Architecture PASS. Root: PASS for Golden D. Normalized MCP activity omits
+arguments and results, so exact execute/read arguments are corroborated by the
+unique Job, durable audit, Product state and Agent answer rather than directly
+shown in the public trace. This scenario excludes DSH process restart and child
+rebind. **Phase 15 overall remains OPEN.** No existing DB, backups, deployment,
+push or merge were touched.
+
+After explicit maintainer authorization following an automatic approval-review
+rejection, the isolated Agent role catalogue aligns BacktestTask create/execute
+with Clean Break `AUTO`. Exact strategy approval and task-cancel approval remain.
+The three changed role versions are bumped; `/v1/agents/authorize` denies old
+versions for these actions, but direct BacktestTask endpoints have no per-run
+version fence. Discard active old sessions before adopting the policy; this
+development Clean Break carries no old-session migration. The personal
+`manual_safe` preset now describes sensitive-action approval without promising
+that authorized deterministic backtests need human confirmation. **Tester:**
+five focused Backend modules on isolated PostgreSQL, 37 passed / 2 warnings;
+the changed preset rendered in isolated Chromium through Frontend/Gateway with
+zero off-origin requests. **Independent Sol Reviewer:** Functional PASS / Tests
+PASS / Clean Break Architecture PASS after the actual diff, MCP/Backend paths,
+role versions and documented adoption limit. **Root acceptance: PASS for this
+bounded policy-alignment slice.** The later Agent-started Golden D gate is
+recorded above. No
+Product DB, deployment, push or merge.
+
+An additional isolated ML Worker image check trained a real LightGBM CPU model
+from 30/10 honestly synthetic in-memory rows, reloaded the model and checked
+finite metrics. It made no Product, DB or provider call. This is a trainer
+dependency smoke only; Product TrainingJob, Artifacts, Worker reclaim, GPU and
+model checkpoint/restart remain **OPEN/NOT_RUN** as applicable. The Product
+readiness path requires real TuShare rows and can fan out to whole-market
+daily repair, so no broad provider sync was triggered for this check.
+**Tester:** focused static evidence review and diff check PASS.
+**Independent Sol Reviewer:** Functional PASS / Tests PASS / Clean Break
+Architecture PASS for this bounded record. **Root acceptance: PASS for the
+trainer smoke only; Golden C remains OPEN.**
+
+The later Agent-audited Workspace reset blocker is resolved in a bounded
+Phase 15 change. Reset retains successful Web evidence `agent_audit` facts and
+their stable Artifact IDs while removing disposable Web Artifacts; other
+Artifact audit and ambiguous rows still block. **Tester:** two focused isolated
+PostgreSQL reset contracts PASS; slice syntax and diff checks PASS.
+**Independent Sol Reviewer:** Functional PASS / Tests PASS / Clean Break
+Architecture PASS after direct code/test review. Root rebuilt only the isolated
+Backend and observed authenticated Product reset HTTP 200 on the previously
+blocked Workspace: four Tasks, 11 Artifacts, two Backtests, one OptimizationJob
+and the four-message conversation removed; both original Web audit facts still
+present, login/Workspace intact, new Task persisted. **Root acceptance: PASS
+for the repeated-reset slice only.** [Exact evidence](phase15-functional-fidelity.md)
+records the scope. Phase 15 overall remains OPEN; no push, merge or deployment.
+
+The later bounded session-loss observation also passed focused Tester review
+and independent Sol Review (**Functional PASS / Tests and Evidence PASS / Clean
+Break Architecture PASS**). A separately submitted Product API BacktestJob
+remained queued when a contemporaneous conversation was deleted; its Worker
+later completed it in one attempt, and a new authorized DSH Agent read the
+same Job and Artifact through BYQ MCP. Root accepts this bounded D result.
+The Agent did not submit that earlier Job, so Golden D was still open at this
+gate; the later Agent-initiated gate above closed it. A subsequent
+real-browser Runtime reset passed on the populated Phase 15 Workspace, but
+Workspace reset initially returned 409 because a retained strategy-approval
+Artifact referenced a ResearchTask slated for deletion. That fail-closed 409
+did not delete Workspace data. See the execution record for the subsequent
+archive fix and populated reset rerun.
+Afterward, exact-scope `dev-clean` removed only this isolated project's 12
+containers, four volumes and two networks. Core init/start/seed/test, fresh
+database counts and real login passed. A simple approval-free Product reset
+also passed and reseeded. Root accepts this bounded environment lifecycle
+result; full Golden E/F remain **OPEN** for connected-journey reruns.
+
+The maintainer then authorized only a Phase 15 isolated-branch archive change.
+The new internal immutable archive retains each validated strategy approval
+and its exact strategy version before the source ResearchTask/Artifacts are
+deleted in the same Product reset transaction. **Tester:** two focused tests
+PASS on a disposable database, plus syntax, diff and slice `dev-check` PASS.
+**Independent Sol Reviewer:** Functional PASS / Tests PASS / Clean Break
+Architecture PASS on the actual schema, reset path and tests. Root accepts
+this bounded source slice. On the isolated populated Backtest Workspace,
+authenticated Product reset returned 200, deleted two Tasks, 11 Artifacts,
+two BacktestJobs and one OptimizationJob, while a read-only check found two
+complete archive facts and no remaining research rows. Idempotent replay,
+login/Workspace identity and fresh seed passed. The connected browser and
+research rerun were pending at that bounded gate; see the later Golden E record below.
+**Phase 15 overall remains OPEN**. No existing
+database, backup, deployment, push or merge was touched.
+
+The next isolated fixture completed two new BacktestJobs and an OptimizationJob.
+Playwright Chromium then used the real Frontend and Product API to reset Runtime
+and Workspace, proving the Task survived the first reset and the exact Task,
+Job and Artifact graph was removed by the second. The same account/Workspace
+stayed active, a new ResearchTask persisted, and browser requests stayed on
+Frontend/Gateway origin. A one-row real TuShare import and a new two-turn
+delegated Product Agent market/Web research produced a new research-only
+Artifact after reset; exact-trace business audit confirmed market-read and Web
+evidence-save calls. A separate read-only Chromium pass rendered that exact
+post-reset conversation and Web Artifact. Another new disposable Workspace
+passed the strengthened browser reset with exact Task/Job/Artifact IDs and
+unchanged subject, account role, Workspace role and shared market-automation
+configuration. A further reset of the original, Agent-audited Workspace
+correctly returned 409 because two retained audit facts referenced new Web
+Artifacts; that second reset is outside E's required order and is not claimed
+to succeed. [Execution evidence](phase15-functional-fidelity.md)
+records the separate runs, IDs and counts. **Tester:** focused static review of
+both browser scripts and changed documentation PASS; the destructive live runs
+were executed by Root, not independently repeated by Tester. **Independent Sol
+Reviewer:** Functional PASS / Tests and Evidence PASS / Clean Break Architecture
+PASS on the scripts, exact Product trace and separate-run evidence. **Root
+acceptance: Golden E's specified `reset → seed → rerun A` sequence local PASS.**
+The later Agent-audit 409 still needs classification before Phase 15 completion;
+this gate does not claim arbitrary repeated reset. Phase 15 overall remains OPEN.
+
+[Execution record](phase15-functional-fidelity.md): in the worktree-scoped
+disposable stack, one real TuShare daily row was imported through Data Worker;
+the Product DSH Agent read it through BYQ MCP in a two-turn delegated research
+conversation, saved seven-source Web Search evidence, and produced normalized
+trace and business audit records. Separately, two worker BacktestJobs and one
+OptimizationJob produced exact result/comparison Artifacts. Playwright Chromium
+used real Product login to display both Agent answers, compare the exact two
+completed Backtest IDs with numeric metrics, and list the exact research and
+comparison Artifact IDs. The final browser run passed with 173 same-origin
+requests and zero off-origin requests. Focused contract tests for the new
+Optimization Product route, shared result access and developer profile passed.
+The Docker build context now excludes local `.env.*` credentials.
+
+**Tester:** focused Product/Backend/dev tests PASS for the B code slice;
+research documentation and final browser-script static checks PASS. **Independent
+Sol Reviewer:** Functional PASS / Tests and Evidence PASS / Clean Break
+Architecture PASS for the bounded live research and browser slices; the prior B
+code review also passed its bounded triad. **Root acceptance:** PASS for these
+bounded A/B Product API, Worker and browser observations only. The full Phase 15
+gate remains **OPEN** for Agent-led strategy change, Job/session interruption,
+reset/rebuild, and ML. GPU execution is `NOT_RUN` on this host, which has no
+NVIDIA device or Docker NVIDIA runtime; the present ML image is CPU LightGBM.
+Phase 16 remains closed. No existing Product database, backup or deployment was
+used.
+
+## Phase 14 repository gate and Phase 15 entry (2026-09-29)
+
+PR #377 passed all required hosted checks, including Backend and integration,
+on exact head `960235a12883e82fe710b3d252ecb216a6666146`.
+The ADR-0059 read-only merge preflight passed and squash auto-merge produced
+`e9c944951465fbdeae4d05cd7bb0358b32f8a041` on `main`. The Phase 14
+repository gate is **PASS**. Phase 15 starts from that commit in a separate
+worktree. Its full functional fidelity gate remains **OPEN**; Phase 16 is closed.
+
 ## Phase 14 fresh database baseline — bounded local gate (2026-09-29)
 
 [Execution record](phase14-database-baseline.md): startup migrations for old

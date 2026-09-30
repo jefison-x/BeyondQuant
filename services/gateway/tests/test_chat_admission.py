@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app import main
@@ -59,6 +60,46 @@ def test_approval_continuation_fails_without_reposting_after_adapter_restart(mon
     assert len(prompts) == 1
     assert prompts[0][0].endswith("old-runtime/prompt")
     assert prompts[0][1]["idempotency_key"] == "approval-continuation-approval"
+
+
+@pytest.mark.parametrize(
+    "error_factory",
+    [
+        pytest.param(
+            lambda: main.ProductError(409, "agent_session_interrupted", "runtime session was interrupted"),
+            id="product-error",
+        ),
+        pytest.param(
+            lambda: main.HTTPException(status_code=409, detail="runtime session was interrupted"),
+            id="http-exception",
+        ),
+    ],
+)
+def test_approval_continuation_marks_pre_prompt_session_failure(monkeypatch, error_factory):
+    monkeypatch.delenv("BYQ_CHAT_ADMISSION_FILE", raising=False)
+    monkeypatch.setattr(main, "_trusted_agent_headers", lambda _: {})
+    monkeypatch.setattr(
+        main,
+        "_product_session",
+        lambda *_: (_ for _ in ()).throw(error_factory()),
+    )
+    states, prompts = [], []
+
+    def backend(method, path, payload, **kwargs):
+        states.append(payload["status"])
+        if payload["status"] != "submitting":
+            assert payload["expected_attempt"] == 1
+        return {"approval": {"continuation_changed": True, "continuation_status": payload["status"],
+                             "continuation_attempt": 1}}
+
+    monkeypatch.setattr(main, "_backend_request", backend)
+    monkeypatch.setattr(main, "_adapter_post", lambda *args, **kwargs: prompts.append(args))
+
+    result = main.continue_approval_conversation(None, "conversation", "approval", "approved", "action")
+
+    assert result == {"status": "failed"}
+    assert states == ["submitting", "failed"]
+    assert prompts == []
 
 
 def test_approval_continuation_retries_transient_new_root_conflict(monkeypatch):

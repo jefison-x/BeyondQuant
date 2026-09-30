@@ -2122,6 +2122,9 @@ class LocalObjectStore:
         if not path.exists():
             fd, temporary = tempfile.mkstemp(prefix=".byq-", dir=str(path.parent))
             try:
+                # The read-only Optimization Worker belongs to the result
+                # reader group; keep files private from other container users.
+                os.fchmod(fd, 0o640)
                 with os.fdopen(fd, "wb") as handle:
                     handle.write(payload)
                 os.replace(temporary, path)
