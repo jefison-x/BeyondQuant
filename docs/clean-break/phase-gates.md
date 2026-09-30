@@ -1,5 +1,18 @@
 # Phase 0–6 gate record
 
+## Phase 15 repository-gate authorization (2026-09-30)
+
+After local functional PASS, the maintainer explicitly instructed
+“授权推送合并”. This covers pushing `codex/clean-break-phase15`, creating its
+PR, executing required Full CI and, after exact-head platform preflight PASS,
+ADR-0015/0059 squash auto-merge. It grants no deployment, release/tag, existing
+database/backup operation or Phase 16 implementation. The repository remains
+pre-v1.0; live settings must still prove auto-merge/squash enabled and strict
+`local-ci` / `ci-gate` requirements before the merge action. Repository CI and
+merge results are recorded by the PR/check runs; this authorization is not a
+claim that those gates already passed. Earlier local-only scope statements
+below retain their historical meaning.
+
 ## Phase 15 live Golden C and local fidelity closeout (2026-09-30)
 
 [Current evidence](phase15-functional-fidelity.md#current-live-golden-c-and-closeout-evidence-2026-09-30)
