@@ -17,7 +17,12 @@ Break Architecture PASS**. Root: **PASS for local evidence reconciliation**.
 Per-flow source SHA was not pinned; F remains the accepted Phase 15 rebuild
 baseline rather than a new-head rebuild. Required Phase 16 exact-head Full CI
 and repository gates remain OPEN; no new live execution is claimed.
-Phase 15 push/merge authorization is not extended to Phase 16. Phase 17 is closed.
+After reviewing local commit `80fcb185`, the maintainer explicitly instructed
+“推送合并” for Phase 16. This separately authorizes pushing its isolated branch,
+PR, exact-head required Full CI and ADR-0015/0059 squash auto-merge after all
+required checks and fresh platform/contribution preflight pass. It does not
+rely on the older Phase 15 grant. Deployment, release/tag, existing databases
+and backups, and Phase 17 implementation are not authorized. Phase 17 is closed.
 
 ## Phase 15 repository-gate authorization (2026-09-30)
 

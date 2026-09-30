@@ -6,9 +6,11 @@ exact-head Full CI and repository gates. This phase makes no Product runtime, sc
 ## Entry, baseline and authorization
 
 The maintainer instructed continuation of Phase 16 after reviewing its scope.
-Development and bounded evidence review are authorized. Phase 15's recorded
-push/merge authorization applied to that phase; Phase 16 push/PR, merge and
-required hosted Full CI await their own explicit authorization. Deployment,
+Development and bounded evidence review were authorized first. After reviewing
+local commit `80fcb185`, the maintainer explicitly instructed “推送合并”. This
+authorizes Phase 16 push/PR, required exact-head Full CI and ADR-0015/0059
+squash auto-merge only after all local, hosted and live repository gates pass.
+Phase 15's narrower authorization is not used as the Phase 16 grant. Deployment,
 release/tag, Phase 17 implementation, existing databases and backups are outside
 this task. No new external model/provider calls or destructive stack operations
 are proposed; the Phase 15 three-turn CPU-training budget was exhausted.
