@@ -72,6 +72,13 @@ the selected CI profile requires it, a failure calls for diagnosis, or the
 phase's milestone explicitly requires it. Keep historical evidence immutable;
 do not rewrite it to make current code pass.
 
+Async Job and Agent continuation observers follow the
+[general testing method](../DEVELOPMENT_WORKFLOW.md#异步与-agent-接续测试的方法):
+qualify deterministic assertions before real model calls, use authoritative
+readback and bounded persistence/settlement waits, and rerun only the affected
+scenario after classifying a failure. This does not waive required final Golden
+or Full CI evidence, security invariants, or scoped resource cleanup.
+
 ## Phase milestones
 
 - **Phase 7:** bounded live-path contract and ownership checks per slice. The
