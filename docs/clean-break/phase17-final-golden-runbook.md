@@ -1,7 +1,9 @@
 # Phase 17 final Golden runbook
 
-Status: A1 was explicitly authorized and executed once; its conversation handoff
-is **BLOCKED**, so A1 is not an acceptance PASS. Further inputs and TuShare calls
+Status: The original `.278` A1 is HANDOFF BLOCKED. A separately authorized
+`.280` A1 completed with a new bound/discoverable Task and `needs_permission`
+handoff. Tester → independent Reviewer → Root passed this bounded A1/binding
+result gate. Further inputs and TuShare calls
 are **NOT_AUTHORIZED / NOT_RUN**. See the [actual A1 record](phase17-a1-actual-evidence.md).
 Phase 17 remains **OPEN**. This runbook complements the
 [residual audit](phase17-residual-simplification.md) and
@@ -423,12 +425,13 @@ provider/tool observations, handoff failure and the source repair are recorded i
 
 Independent Tester verifies actual per-flow evidence and limits; independent Sol
 Reviewer inspects it, followed by Root. Source-slice PASS, environment preparation
-and a proposed budget never imply final Golden PASS. A1 is EXECUTED / HANDOFF
-BLOCKED; remaining A inputs, B–F and enabled F6 remain NOT_RUN until separately
+and a proposed budget never imply final Golden PASS. Original `.278` A1 remains
+HANDOFF BLOCKED; `.280` binding qualification is recorded separately. Remaining
+A inputs, B–F and enabled F6 remain NOT_RUN until separately
 authorized connected journeys actually finish. Hosted
 CI and repository gates remain required before Phase 17 can close.
 
-## Prepared repair candidate for the next input
+## Repair candidate and separately authorized qualification
 
 The actual `.278` A1 is HANDOFF BLOCKED and its one-shot grant is spent. The
 bounded repair passed source gates at `afe529aa5ad264d5932ef14a7b354ca09cb37e2e`;
@@ -437,5 +440,7 @@ selected `.280` manifest is
 Only target Backend/Runtime were updated, preserving the cache and prior A1
 objects. Fresh target/preservation evidence is under `/tmp/byq-phase17-280`;
 [the actual record](phase17-a1-actual-evidence.md) describes the remaining
-qualification boundary and exact next one-foreground-input proposal. No model
-input is authorized by source or target preparation gates.
+qualification boundary and the subsequent one-shot `.280` execution. Its new
+Task is bound and discoverable; no continuation grant was issued. Both foreground
+grants are spent. Source/target preparation and this A1 result authorize no later
+input or final Golden PASS.

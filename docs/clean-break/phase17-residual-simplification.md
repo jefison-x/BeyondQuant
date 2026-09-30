@@ -12,8 +12,9 @@ Observed clean base: `ff6756be3e7bf6cb6d3213c6dcd9bf016ecb9545` (Phase 16 PR
 passed. STATUS and README route Phase 17 while retaining historical markers.
 
 The Phase 15 model-call budget is exhausted. No Phase 17 Product model/provider
-call had been made at entry. One separately authorized A1 has since executed;
-its conversation handoff is blocked. See [actual A1 evidence](phase17-a1-actual-evidence.md).
+call had been made at entry. The first A1 was unbound; a separately authorized
+`.280` A1 now has a new, correctly bound Task and `needs_permission` handoff.
+See [actual A1 evidence](phase17-a1-actual-evidence.md).
 Ordinary business databases, backups and Community storage
 remain outside scope. Phase 17 push/PR, merge, deployment and release require
 their own authorization; prior phase grants are not reused.
@@ -550,3 +551,11 @@ cases PASS on a fresh internal/tmpfs test DB; 13 selected `.280` identity cases
 PASS. Independent Reviewer Functional / Tests / Clean Break Architecture PASS;
 Root SOURCE SLICE PASS. Old `.278` and unexecuted `.279` manifest bytes are
 frozen. This does not close the actual A1 handoff or authorize another input.
+
+
+A subsequent separately authorized `.280` one-shot A1 completed with a new Task
+bound/discoverable in its original conversation and a draft Web Artifact.
+Handoff is `needs_permission` because F6/continuation was excluded. The old Task
+remains unbound. Independent Tester / Reviewer / Root passed this bounded
+actual A1/binding gate. See the actual record for its exact limits; both grants
+are spent. No full suite, cache import or download was rerun.

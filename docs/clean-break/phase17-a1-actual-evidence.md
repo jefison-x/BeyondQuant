@@ -1,7 +1,7 @@
 # Phase 17 — Actual A1 and conversation-binding repair
 
-Status: **A1 EXECUTED / HANDOFF BLOCKED; Phase 17 OPEN**. This records one
-explicitly authorized foreground run, not final Golden acceptance. Source repair
+Status: **`.280` A1 COMPLETED / BINDING VERIFIED; Phase 17 OPEN**. This records
+two separately authorized one-shot foreground runs, not final Golden acceptance. Source repair
 and actual execution have separate identities and gates.
 
 ## Authorization and actual execution
@@ -133,7 +133,7 @@ stateless calls retain their explicit unbound contract. No existing A1 Task was
 modified to simulate an Agent success.
 
 The source repair has a new `.280` candidate identity. The actual `.278` execution evidence
-is preserved; `.280` has no live Agent acceptance. The target was still `.278`
+is preserved; `.280` had no live Agent acceptance at the source gate. The target was still `.278`
 at the source gate; its subsequent preparation update is recorded below.
 The unexecuted `.279` candidate was frozen after new tests exposed a fixture
 contract error: generated source IDs were supplied where candidate source
@@ -160,7 +160,7 @@ Focused source tests and independent review are tracked separately below.
   and the existing target still matched its 13 latest container/image pins.
   Independent Reviewer: **Functional PASS / Tests PASS / Clean Break Architecture
   PASS**. Root: **SOURCE SLICE PASS**, limited to this repair and identity.
-  `.280` live Agent qualification remains pending.
+  `.280` live Agent qualification was pending at that checkpoint.
 - Later A inputs, B–F, enabled F6, new TuShare qualification, actual CPU Worker
   restart, populated reset, exact-head hosted CI and repository gates remain
   pending. No later model/provider permission is inferred from this spent grant.
@@ -204,10 +204,10 @@ Private fresh pins and results: `/tmp/byq-phase17-280/environment.json`,
 verified exact live identities, source/manifest hashes, state and preservation.
 Independent Reviewer **Functional PASS / Tests PASS / Clean Break Architecture
 PASS**; Root **TARGET PREPARATION PASS**, limited to this two-service update and
-preservation. No `.280` foreground grant or input exists; actual A1 remains
-HANDOFF BLOCKED.
+preservation. At that checkpoint, no `.280` foreground grant or input existed;
+the original `.278` A1 remained HANDOFF BLOCKED.
 
-The next proposed external operation is **one additional foreground A1 input**
+The subsequent proposal was **one additional foreground A1 input**
 on this `.280` source/build, official Flash, a fresh Product conversation and new
 Task/Artifact/key. It must verify original-conversation discovery and handoff,
 using the existing exact pool/snapshot and 98-session cache. Intended Web use is
@@ -216,3 +216,97 @@ cap remain disclosed. Delegation, market download, F6, provider fallback and
 automatic input replay remain excluded. Fresh route/subject/runtime preflight
 and a new exact one-shot grant are required before submission; the spent `.278`
 grant cannot admit it. This proposal does not authorize any later Golden input.
+
+
+## Actual `.280` A1: new-conversation binding qualification
+
+The maintainer replied **“好的继续”** to the one-additional-input proposal.
+This authorized exactly one fresh foreground run on official Flash, the existing
+98-session cache/pool/snapshot and one intended Web query. It excluded delegation,
+market download, F6, provider fallback, input replay and source/ordinary/Community
+DB access. Native Web limits remained 5 uses × 4 queries; raw model HTTP calls
+had no hard cap. The old `.278` grant was not reused. The new grant is now spent.
+
+The selected app/source is `afe529aa5ad264d5932ef14a7b354ca09cb37e2e`, build
+`dsh-0.1.5rc1-post-u8.280`, manifest
+`sha256:828b58684ae05f50f5e74995352ef30bc16295ce0740c44020426ca2f1c0d947`.
+The pre-send branch head `d29ab6e80268ccbecd58ca88f883875fd104e347` had only docs
+changes after that source commit. No service was recreated during this run.
+Fresh admission passed Tester → independent Reviewer → Root before submission.
+Private preflight SHA `ff4fad3fad30db9dd8bc55a9321ab63449ce0ffd36fcd5ed1095020c2b9d2e1d`,
+grant SHA `7f9af32fcb8c554370e1e7845ff3fa800782c9049060ee96a4d92ca185fd50e0`,
+input-content SHA `490362c26259d5b83c31158de00c4fae678b27b62619760b45911098385535d7`,
+and runner SHA `b8b0595cb0e3ac5fb97af24f5c2e392ea50bb534f5aca7a5e3f0f1c48a155447`
+are linked in the new private grant. Exclusive attempt markers preceded the sole
+session/turn submission; API caller-key deduplication is still not claimed.
+
+| Actual `.280` identity | Value |
+|---|---|
+| Conversation | `conversation_b31ebeedbc814b9da09be44b2a28ae2b` |
+| Trace | `byq-trace-1f605d321d4a4db6a7099c1d7cdc9753` |
+| Foreground run | `a093e7e7fc744ec7ab21237993aa6d28` |
+| Native root session | `session-0f4bcdf7023a4cd79192f4a2f7d2d1fd` |
+| New Task | `task_a1f4260a30ba4ac79a062f4358ed390b` |
+| New Artifact | `artifact_78ca187f18ed4f0880e84201e3231c14` |
+| Web record key | `phase17-280-a1-web-20260930-01` |
+
+One `202 Accepted` arrived at **11:37:54.637 UTC** on 2026-09-30. The same run
+reached `session.result` / `completed` at **11:39:25.100402 UTC**, with 23 workflow
+events. The runner matched exactly one normalized user message. Its immediate
+terminal read preceded assistant persistence; later Product reads show one user
+and one nonempty assistant, delivery `up_to_date`, and zero pending/exhausted/
+rejected events. There was no second input or observation timeout.
+
+Product GETs returned 200 for this conversation, Task and Artifact. The Task's
+`conversation_id` equals the new conversation. Native `byq_agent_context` changed
+from `none_bound` before save to `available` with exactly this Task afterward.
+The handoff is **`needs_permission` / `permission_missing`**, rather than
+`conversation_binding_missing`. This is expected without a continuation grant;
+no F6 grant or automatic research dispatch was requested to turn it into ready.
+The old unbound `.278` Task was not modified or retrospectively qualified.
+
+The draft `web_research_evidence` Artifact has eight unique HTTPS sources,
+three `UNESTABLISHED` claims and unknown publication dates. Content SHA:
+`5cc9c48eb314a12209597f1783ec2a3234cde90305d7640962f8b82b9943c2aa`.
+Lineage identifies the new Task and the same existing pool/frozen snapshot.
+These are dated research notes, not independently established facts.
+
+The exact current Native file has compressed SHA
+`fdceb5709044a7ef577fd2ec358ac2b99327aeb72060e1e55054f655a8af6883`.
+Its 89 records show one root turn, official Flash context, one Web Search/one
+query, one successful Web-record tool call, two research GETs and two context
+calls. There are no delegate calls or child session files. The retained old root
+file is excluded from current-run counts. Cached market read is exactly
+`000001.SZ` / `20240102–20240531`, 98 rows, verified calendar, no missing sessions,
+`persisted_byq`, `live_provider_called=false`. Native authorization actions only
+cover session context, cached market read and Web-record creation. No market
+synchronization, jobs or continuation-permission writes occurred.
+Runtime active/prompts returned to zero. Its normalized `model_calls` changed
+**0 → 9**, matching nine usage-bearing Native assistant messages. This measured
+normalized delta is not raw model HTTP request count, which remains NOT_OBSERVED.
+Data/ML stayed stopped; TuShare absent and F6 disabled throughout.
+
+Real browser checks rendered this new answer in Agent and the new Task in
+Research Center through Frontend/Gateway Product routes. The final read-only
+browser collection made 130 requests, zero blocked foreign origins and zero
+model inputs. Two earlier read-only attempts timed out on the old “本轮结果”
+label and `networkidle` while SSE remained open. Their Product records are
+preserved; the final collector waited for the actual new Task in assistant and
+Research DOM. No model input was replayed in response to either checker timeout.
+
+Private evidence: `/tmp/byq-phase17-280/a1-run-evidence/`,
+`a1-native-{file-inventory,structural-inventory,safe-execution,binding-coverage}.json`,
+`a1-native-session.v3.jsonl.zstd`, `a1-runtime-after.json`,
+`v3-a1-product-persistence-readback.json`, `v3-a1-browser-{agent,research}-evidence.json`
+and `v3-a1-{agent,research}-browser.png`. Direct Product readback SHA:
+`5c3643696daf39028705686ffdf389a9c8d8b96667f93715a136928545aa2dbe`.
+
+Actual-result independent Tester **PASS**; independent Reviewer **Functional /
+Tests / Clean Break Architecture PASS**; Root **BOUNDED A1 / BINDING REPAIR PASS**.
+These gates cover the sole actual input, normalized receipt/delivery, source/model
+identity, cache/Web limits, new Task binding/discovery, Artifact lineage, browser
+and this four-document evidence update. Private metadata was tightened to 0600
+without changing bytes. This bounded run verifies A1 research persistence and the
+repaired conversation binding. It
+does not qualify F6, A2/A3, all Golden A, B–F, hosted CI or Phase 17 completion.
+No prior regression suites, source export/import or market download were repeated.
