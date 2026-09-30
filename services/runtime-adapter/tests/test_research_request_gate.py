@@ -378,3 +378,29 @@ def test_proxy_deadline_bounds_the_upstream_and_rejects_late_result():
         assert _post(proxy, _root_body()) == 504
     server.shutdown()
     server.server_close()
+
+
+@pytest.mark.parametrize("field,result_field", [
+    ("prompt_tokens", "actual_input_tokens"),
+    ("completion_tokens", "actual_output_tokens"),
+    ("cache_read_input_tokens", "actual_cache_read_tokens"),
+])
+@pytest.mark.parametrize("invalid", [True, False, -1])
+def test_invalid_provider_usage_stays_unknown(field, result_field, invalid):
+    usage = {"prompt_tokens": 7, "completion_tokens": 3, "cache_read_input_tokens": 0}
+    usage[field] = invalid
+    parsed = parse_response_usage(json.dumps({"usage": usage}).encode())
+    assert parsed[result_field] == "unknown"
+    if field == "completion_tokens":
+        gate = build_request_gate("strategy_draft", request_id="invalid-provider-usage")
+        receipt = gate.before_request(_root_body(max_tokens=8))
+        completed = gate.complete(receipt, status=200, body=json.dumps({"usage": usage}).encode())
+        assert completed["forward"] is False
+        assert completed["reason"] == "actual_usage_unknown"
+
+
+def test_nested_invalid_cache_usage_stays_unknown_and_zero_is_known():
+    parsed = parse_response_usage(json.dumps({"usage": {
+        "prompt_tokens": 0, "completion_tokens": 0, "prompt_tokens_details": {"cached_tokens": True}}}).encode())
+    assert parsed["actual_cache_read_tokens"] == "unknown"
+    assert parsed["actual_input_tokens"] == parsed["actual_output_tokens"] == 0

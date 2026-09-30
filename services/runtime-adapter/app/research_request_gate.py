@@ -193,9 +193,9 @@ def parse_response_usage(body: bytes) -> dict:
         if isinstance(details, dict):
             cache_read = details.get("cached_tokens")
     return {
-        "actual_input_tokens": input_tokens if isinstance(input_tokens, int) else UNKNOWN,
-        "actual_cache_read_tokens": cache_read if isinstance(cache_read, int) else UNKNOWN,
-        "actual_output_tokens": output_tokens if isinstance(output_tokens, int) else UNKNOWN,
+        "actual_input_tokens": input_tokens if type(input_tokens) is int and input_tokens >= 0 else UNKNOWN,
+        "actual_cache_read_tokens": cache_read if type(cache_read) is int and cache_read >= 0 else UNKNOWN,
+        "actual_output_tokens": output_tokens if type(output_tokens) is int and output_tokens >= 0 else UNKNOWN,
         "usage_source": "provider_response",
     }
 

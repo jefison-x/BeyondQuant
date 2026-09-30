@@ -15,6 +15,10 @@ content, not a current Product Core ADR roster.
 [ADR-0089](ADR-0089-clean-break-gpu-acceptance-scope.md) narrows the BYQ 0.10
 GPU verification gate; it does not alter the six Product Core ADRs.
 
+[ADR-0090](ADR-0090-continuation-request-limits.md) proposes separating background
+continuation authorization from one request's execution limits. It is **Proposed**,
+not current architecture authority, and requires the maintainer's explicit acceptance.
+
 ## Historical ADR index (non-normative)
 
 Architecture Decision Record（ADR）记录改变或澄清持久系统边界的决策。以下边界的
