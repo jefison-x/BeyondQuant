@@ -39,6 +39,32 @@ checks, YAML/AST/shell/diff). Independent Sol Reviewer: **Functional PASS /
 Tests PASS / Clean Break Architecture PASS**. Root: **PASS for the CI
 correction only**; this is not a hosted Full CI or merge pass.
 
+Replacement Full CI run `36649851347` on `74f378c1` passed Docs, Gateway,
+Runtime, MCP, Frontend and Integration. Architecture failed only its obsolete
+global ML-create call-count text assertion; the accepted flow prepares a watch
+and executes one exactly approved submission. The assertion now distinguishes
+preparation from the single execution and explicitly retains unknown-outcome
+no-retry protection. Backend failed two handoff fixtures that requested approval
+for `byq_backtest_task_execute`, now `AUTO` under the already accepted Phase 15
+role policy. Fixture corrections must preserve waiting/delivery/permission and
+unknown-result assertions and use a still-required approval boundary. These
+failures are not reclassified as passes; final exact-head Full CI is required.
+The published `.271` build remains frozen, with a new `.272` for the changed
+test inputs; no Product/Skill behavior is changed by these corrections.
+
+The two repaired Backend fixtures bind `byq_strategy_approve` to a real
+validated `strategy_version` Artifact in the same task. Independent focused
+PostgreSQL validation used only the disposable `byq_domain_test` database,
+confirmed by read-only identity preflight: **2 passed**. The corrected ML Skill
+assertion also passed its one focused test. New `.272` manifest hash is
+`sha256:a4ea957ef6123d1b8c80882172c89b5b0857bdb4ab163028382d89b7291e3414`.
+
+Second bounded correction: independent Tester **PASS** (2 Backend cases,
+1 ML Skill case, 3 current-build cases and 1 selection case, selected/frozen
+identity, syntax and diff checks). Independent Sol Reviewer: **Functional PASS /
+Tests PASS / Clean Break Architecture PASS**. Root: **PASS for the bounded
+correction**; final exact-head Full CI and repository preflight remain required.
+
 ## Phase 15 live Golden C and local fidelity closeout (2026-09-30)
 
 [Current evidence](phase15-functional-fidelity.md#current-live-golden-c-and-closeout-evidence-2026-09-30)
