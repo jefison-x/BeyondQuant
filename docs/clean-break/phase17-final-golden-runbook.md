@@ -91,6 +91,12 @@ read-only reconciliation of that exact operation; it never permits a replacement
 key, another model turn, duplicate Job or broader request. Stop on ambiguous
 receipt identity or unknown external outcome.
 
+Agent session creation and turn ingress have no caller-supplied idempotency-key
+contract. A private local operation ID and O_EXCL attempt file prevent this driver
+from sending twice; they do not provide server-side deduplication. Gateway uses
+the persisted user-message ID as its internal Adapter prompt key. Unknown
+session/turn outcomes permit only read-only reconciliation, never resubmission.
+
 Authenticate through Gateway `/api/auth/login` and verify `/api/auth/me` against
 the pinned Workspace. Browser requests use only Frontend/Gateway Product routes.
 Agent domain actions use BYQ MCP. Root's explicit human decisions use Product
@@ -370,6 +376,39 @@ A1 session exists. A staged A1 grant must specify one foreground DSH run, no
 delegation, no market-provider downloads, native Web limits and the lack of a
 raw model-call hard cap. Later ledger inputs require the recorded external
 scope; additional inputs or retries cannot be inferred from an A1-only grant.
+
+Prepared private one-shot A1 driver: `/tmp/byq-phase17-278/run-a1-once.mjs`,
+mode 0600, SHA-256
+`c44ba0909998389eaefa80e27b87dd51a0d6aa4ce6c6a0440692e4c1fbc6786b`.
+It requires an explicit A1-only grant and a newly verified credential-enabled
+Runtime receipt bound to `.278`, source, Workspace, subject and exact input.
+The old empty-credential pin alone cannot admit a run. All Product writes have
+private single-attempt records and fresh authorization checks; browser routing
+blocks non-Frontend origins before requests. Session/turn POSTs abort after 60s
+and permit only read-only reconciliation; the 300s workflow observer does not
+cancel a pending model run. No automatic input replay is supported.
+
+The proposed route is `deepseek-official` / `deepseek-v4-flash`, with official
+DeepSeek Web Search and no provider change. A1 intends one search/query; native
+limits are five search uses and four queries per use. No-child/no-TuShare and
+the intended search count are prompt/operation restrictions, not new SDK hard
+guards. A foreground run can make multiple raw model API requests, with no
+shared hard call-count cap. Enabling the existing key, any necessary target-only
+Runtime recreation and new live pins require the new scoped grant first.
+
+Independent Tester passed final-driver syntax and static admission/receipt
+boundaries. A requested syscall trace was blocked by sandbox ptrace permissions
+before Node started; it is not a successful network-trace test. Root separately
+ran the unchanged driver with no arguments: exit 1 with the expected early guard,
+empty stdout, and no grant/start marker/evidence directory. Private result:
+`/tmp/byq-phase17-278/a1-noargs-guard-check.json`. This does not qualify a real
+credential-enabled run or the actual provider route.
+
+Independent Reviewer: **A1-only PLAN PASS / runbook docs PASS**, limited to the
+frozen driver and the proposed scope. Root: **PLAN PASS** for the same scope.
+These gates approve the prepared plan's reviewability, not external execution.
+Fresh credential-enabled preflight and actual A1 remain **NOT_RUN** pending the
+new explicit grant; no grant is inferred from the completed source-read exception.
 
 ## Acceptance
 
