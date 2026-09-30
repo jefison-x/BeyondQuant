@@ -34,7 +34,6 @@ DATA_READY_MAX_OUTPUT_TOKENS = 8192
 DATA_READY_MAX_CALLS = 8
 DATA_READY_TOKEN_LIMIT = DATA_READY_MAX_CALLS * (DATA_READY_INPUT_CEILING + DATA_READY_MAX_OUTPUT_TOKENS)
 DATA_READY_MAX_TURNS = 8
-DATA_READY_TURN_TIMEOUT_SECONDS = 900
 # A deliberate task-wide needs_attention block (``block_continuation``) records
 # this sentinel. A concrete ``ready-v1:``/other key scopes the block to that one
 # event; a NULL key is a legacy pre-scoping row whose event is recovered from
@@ -465,56 +464,6 @@ class ResearchContinuationMixin:
                     event_key, receipt['reservation_id'])
             execute(connection, 'UPDATE research_tasks SET continuation_budget = :budget, continuation_blocked_reason=NULL, continuation_blocked_event_key=NULL WHERE task_id = :task',
                 {'budget': [*rows, receipt], 'task': task_id})
-            return receipt
-
-    def reserve_data_ready_budget(self, task_id: str, *, trusted_context: dict,
-            event_key: str, input_sha256: str, instruction: str | None = None,
-            _connection=None) -> dict:
-        """Reserve one bounded data-ready turn without an inferred token grant.
-
-        This is only reachable from the closed task-bound scan below, after a
-        validated signal snapshot exists. It authorizes no domain action; the
-        normal MCP admission and per-action approvals still apply.
-        """
-        from .research import IdempotencyConflict
-        if not isinstance(event_key, str) or not event_key.startswith(DATA_READY_EVENT_PREFIX):
-            raise ValueError('invalid data-ready event identity')
-        if not isinstance(input_sha256, str) or re.fullmatch(r'[0-9a-f]{64}', input_sha256) is None:
-            raise ValueError('invalid continuation input digest')
-        if instruction is not None and (not isinstance(instruction, str) or len(instruction) > 8000
-                or hashlib.sha256(instruction.encode()).hexdigest() != input_sha256):
-            raise ValueError('continuation instruction digest mismatch')
-        with self._transaction() if _connection is None else nullcontext(_connection) as connection:
-            task, conversation = self._continuation_task(connection, task_id, trusted_context, human=False)
-            rows = task.get('continuation_budget') or []
-            for row in rows:
-                if row['event_key'] == event_key:
-                    if (row['input_sha256'], row['token_limit'], row.get('grant_kind')) != (
-                            input_sha256, DATA_READY_TOKEN_LIMIT, 'data_ready'):
-                        raise IdempotencyConflict('continuation event input conflicts')
-                    return row
-            if self._data_ready_blocked_reason(task, conversation) is not None:
-                raise ValueError('data-ready continuation is inactive')
-            if any(row['status'] != 'settled' for row in rows):
-                raise ValueError('previous continuation result is unconfirmed')
-            if len(rows) >= DATA_READY_MAX_TURNS:
-                raise ValueError('continuation budget exhausted')
-            now = datetime.now(timezone.utc)
-            receipt = {'reservation_id': 'continuation_' + uuid.uuid4().hex,
-                'grant_kind': 'data_ready', 'grant_version': None, 'event_key': event_key,
-                'input_sha256': input_sha256, 'token_limit': DATA_READY_TOKEN_LIMIT,
-                'status': 'reserved', 'run_id': None, 'charged_tokens': None,
-                'settlement_sha256': None, 'created_at': now.isoformat(), 'instruction': instruction,
-                'dispatch_attempts': 0, 'next_attempt_at': now.isoformat(),
-                'expires_at': (now + timedelta(seconds=DATA_READY_TURN_TIMEOUT_SECONDS)).isoformat()}
-            if task.get('continuation_blocked_reason') is not None:
-                logger.info('continuation re-armed on reservation: task=%s reason=%s blocked_event=%s event=%s reservation=%s',
-                    task_id, task.get('continuation_blocked_reason'), task.get('continuation_blocked_event_key'),
-                    event_key, receipt['reservation_id'])
-            execute(connection, 'UPDATE research_tasks SET continuation_budget = :budget, continuation_blocked_reason=NULL, continuation_blocked_event_key=NULL WHERE task_id = :task',
-                {'budget': [*rows, receipt], 'task': task_id})
-            logger.info("data-ready continuation enqueued: task=%s event=%s reservation=%s",
-                task_id, event_key, receipt['reservation_id'])
             return receipt
 
     def claim_conversation_continuation(self, conversation_id: str, *, trusted_context: dict, admit: bool = True) -> dict:

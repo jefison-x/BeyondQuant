@@ -31,6 +31,6 @@ services:
       - byq_ml_model_state:/var/lib/byq/ml-objects
   runtime-adapter:
     build:
-      dockerfile: services/runtime-adapter/Dockerfile.post-u8-275-candidate
+      dockerfile: services/runtime-adapter/Dockerfile.post-u8-276-candidate
     ports:
       - "${BYQ_DEV_ADAPTER_BIND:-127.0.0.1:0}:8400"

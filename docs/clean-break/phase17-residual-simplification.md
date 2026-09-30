@@ -263,6 +263,36 @@ Agent harness or runtime deployment owner was introduced.
 Hosted CI, final Golden A–F, actual enabled F6 model execution and real Engineering
 deployment lane execution remain NOT_RUN. Phase 17 overall remains **OPEN**.
 
+## Unused data-ready producer slice
+
+Rollback checkpoint: `ff0a73fa`. Exact source search and route inspection found
+no production, test or dynamic caller of `reserve_data_ready_budget`. Removed
+only that 49-line method and its dedicated `DATA_READY_TURN_TIMEOUT_SECONDS`.
+Current grantless deterministic notification and explicit user-granted
+`reserve_continuation_budget` remain. No existing ledger or liability was changed.
+
+Independent Tester **PASS**: zero source/test references; AST comparison against
+the rollback checkpoint proves every other Backend function is identical.
+Current/revision/retirement identity checks (3/4/5), the one changed normative
+selector test, `dev-check --base ff0a73fa` (nine syntax files) and diff **PASS**.
+The earlier 40/65/74 suites were not repeated; no DB/Docker/provider/model ran.
+Independent Sol Reviewer: **Functional PASS / Tests PASS / Clean Break
+Architecture PASS** for this exact dead-code slice. Root: **PASS**.
+
+Selected immutable `.276` manifest:
+`sha256:e4f6a417095baca1eea5b3291329004d63c6a1639fef973fa2d9f3b4bb388400`.
+Frozen `.275` manifest/Dockerfile remain
+`sha256:c1ce46ac6ce876a0b2f4aeb1988d6381c8ab09bbf63b0458299eb847f4f5ff28` /
+`sha256:bfd143c08c54a0a1bfc12c6d96ecaffbe73a70dd90d19870b6cf60e379b20011`.
+
+This is not retirement of all historical data-ready model semantics. Independent
+follow-up found the legacy `grant_kind=data_ready` admission branch can still
+make a pre-existing reserved receipt dispatchable without an explicit grant.
+That is an execution exemption, not merely a receipt reader. It is **OPEN** for
+bounded removal; exact historical reconciliation/unknown liability must remain.
+Unused Backend model-budget parity constants also remain pending classification.
+Phase 17 final source freeze and final Golden cannot precede that closure.
+
 ## Final Golden execution plan
 
 [Verification policy](verification-gates.md) explicitly requires A–F after the
