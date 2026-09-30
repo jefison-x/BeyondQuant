@@ -607,16 +607,18 @@ def _consume_admitted_task_continuation(context):
     if (intent.get('conversation_id'), intent.get('session_id'), intent.get('trace_id')) != (
             conversation, context['session_id'], context['trace_id']):
         raise ValueError('continuation conversation identity changed')
-    observer = _attach_continuation_observer(context)
-    if observer is not None:
-        _require_session_runtime_authority(observer)
     reservation, receipt = intent['reservation'], intent['receipt']
     if not isinstance(reservation, dict):
         raise ValueError('invalid continuation reservation')
     identity = reservation['reservation_id']
     task = intent['task_id']
-    if receipt.get('reservation_id') != identity or reservation.get('task_id') != task:
+    if (receipt.get('reservation_id') != identity or reservation.get('task_id') != task
+            or reservation.get('owner') != context['owner']
+            or reservation.get('workspace_id') != workspace):
         raise ValueError('continuation reservation identity mismatch')
+    observer = _attach_continuation_observer(context)
+    if observer is not None:
+        _require_session_runtime_authority(observer)
     if observer is not None:
         if not product_sessions.hold_continuation(observer, identity, reservation['expires_at']):
             return

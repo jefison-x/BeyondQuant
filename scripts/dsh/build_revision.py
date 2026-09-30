@@ -80,6 +80,7 @@ FROZEN_BUILDS = {
     "dsh-0.1.5rc1-post-u8.271": "sha256:b16e18882b74431b25720b028a135ae1dd924382f8526cd2f87fa772c9dfecae",
     "dsh-0.1.5rc1-post-u8.272": "sha256:a4ea957ef6123d1b8c80882172c89b5b0857bdb4ab163028382d89b7291e3414",
     "dsh-0.1.5rc1-post-u8.273": "sha256:029eadcb55f4ed5a784d7eb3d5c87150d85e43e5abfd17240606db15ff2fe9a9",
+    "dsh-0.1.5rc1-post-u8.274": "sha256:cf7f85fbf62219c58df2c9903164699891ec737f4b0c137d773c7adf26715b7b",
 }
 KEYS = {"schema_version", "build_id", "release_id", "release_descriptor_hash", "dockerfile", "inputs"}
 SOURCE_ROOTS = (
@@ -136,7 +137,7 @@ def selected_build_id(release):
     if release == "dsh-0.1.1rc1":
         return RETIRED_BUILD  # Historical identity only; never a current build.
     if release in RELEASES:
-        return release + "-post-u8.274"
+        return release + "-post-u8.275"
     if release in HISTORICAL_BUILDS:
         return HISTORICAL_BUILDS[release]
     raise ValueError("unregistered release")

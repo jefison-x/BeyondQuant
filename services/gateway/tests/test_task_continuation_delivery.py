@@ -139,6 +139,141 @@ def test_identity_mismatch_stops_before_runtime_access(monkeypatch):
     assert writes == reads == prompts == []
 
 
+@pytest.mark.parametrize(('field', 'value'), [
+    ('owner', 'mallory'),
+    ('workspace_id', 'workspace-other'),
+    ('task_id', 'task_' + 'c' * 32),
+    ('reservation_id', 'continuation_' + 'd' * 32),
+])
+def test_misbound_reservation_fails_before_observer_or_runtime_io(monkeypatch, field, value):
+    context, intent, writes, reads, prompts, _, _ = fixture(monkeypatch)
+    intent['reservation'][field] = value
+    owned_reads = []
+    authority_checks = []
+    monkeypatch.setattr(main.product_sessions, 'get_owned',
+        lambda *args: owned_reads.append(args) or SimpleNamespace(session_id='session-a', boot_id='a' * 32))
+    monkeypatch.setattr(main, '_require_session_runtime_authority',
+        lambda session: authority_checks.append(session))
+
+    with pytest.raises(ValueError, match='identity'):
+        main._consume_admitted_task_continuation(context)
+
+    assert owned_reads == []
+    assert authority_checks == []
+    assert writes == reads == prompts == []
+
+
+def test_waiting_backend_intent_does_not_touch_runtime_or_prompt(monkeypatch):
+    context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
+        session_id='session-a', trace_id='trace-a')
+    calls = []
+
+    def backend(method, path, principal, workspace, payload=None):
+        calls.append((method, path, principal.subject, workspace, payload))
+        return {'status': 'waiting'}
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError('waiting continuation must not access Runtime')
+
+    monkeypatch.setattr(main, '_catalog_request', backend)
+    monkeypatch.setattr(main, '_continuation_adapter_get', unexpected)
+    monkeypatch.setattr(main, '_adapter_post', unexpected)
+    monkeypatch.setattr(main.product_sessions, 'get_owned', unexpected)
+
+    main._consume_admitted_task_continuation(context)
+
+    assert calls == [(
+        'POST', '/internal/task-continuation/conversation-a/peek', 'alice', 'workspace-a', None,
+    )]
+
+
+def test_unqualified_executor_blocks_before_claim_or_prompt(monkeypatch):
+    context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
+        session_id='session-a', trace_id='trace-a')
+    task_id = 'task_' + 'b' * 32
+    backend_calls = []
+    adapter_reads = []
+    prompts = []
+
+    def backend(method, path, principal, workspace, payload=None):
+        backend_calls.append((path, payload))
+        if path.endswith('/peek'):
+            return {'status': 'eligible', 'task_id': task_id}
+        if path.endswith('/block'):
+            return {'blocked_reason': payload['reason']}
+        raise AssertionError(f'unexpected Backend call: {path}')
+
+    monkeypatch.setattr(main, '_catalog_request', backend)
+    monkeypatch.setattr(main.product_sessions, 'get_owned',
+        lambda *args: SimpleNamespace(session_id='session-a', boot_id='a' * 32))
+    monkeypatch.setattr(main, '_continuation_adapter_get',
+        lambda path, params=None: adapter_reads.append((path, params)) or {
+            'qualified': False, 'reason': 'model_or_executor_unqualified'})
+    monkeypatch.setattr(main, '_adapter_post', lambda *args, **kwargs: prompts.append((args, kwargs)))
+
+    main._consume_admitted_task_continuation(context)
+
+    assert [path.rsplit('/', 1)[-1] for path, _ in backend_calls] == ['peek', 'block']
+    assert backend_calls[-1][1] == {'reason': 'model_or_executor_unqualified'}
+    assert adapter_reads == [(
+        '/internal/runtime/sessions/session-a/continuation-qualification', None,
+    )]
+    assert prompts == []
+
+
+def test_eligible_missing_runtime_uses_live_attach_only_and_never_prompts(monkeypatch):
+    context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
+        session_id='session-a', trace_id='trace-a')
+    task_id = 'task_' + 'b' * 32
+    backend_calls = []
+    catalog_reads = []
+    adapter_posts = []
+
+    def backend(method, path, principal, workspace, payload=None):
+        backend_calls.append((path, payload))
+        assert path.endswith('/peek')
+        return {'status': 'eligible', 'task_id': task_id}
+
+    def catalog(method, path, principal, workspace, payload=None):
+        catalog_reads.append((method, path, principal.subject, workspace))
+        return {'conversation': {
+            'conversation_id': context['conversation_id'],
+            'runtime_session_id': context['session_id'],
+            'trace_id': context['trace_id'],
+            'status': 'active',
+        }}
+
+    def lost_attach(path, *, payload=None, timeout=20.0):
+        adapter_posts.append((path, payload))
+        error = HTTPException(status_code=409, detail='runtime session is not available')
+        error.adapter_conflict_detail = 'BYQ runtime session was interrupted; start a new Agent session'
+        raise error
+
+    def missing_product_session(*args):
+        raise HTTPException(status_code=404, detail='product session missing from Gateway registry')
+
+    monkeypatch.setattr(main, 'product_sessions', main.ProductSessionRegistry())
+    monkeypatch.setattr(main.product_sessions, 'get_owned', missing_product_session)
+    monkeypatch.setattr(main, '_catalog_request', lambda method, path, principal, workspace, payload=None:
+        backend(method, path, principal, workspace, payload) if '/task-continuation/' in path else
+        catalog(method, path, principal, workspace, payload))
+    monkeypatch.setattr(main, 'trace_store', SimpleNamespace(read=lambda *_: []))
+    monkeypatch.setattr(main, '_adapter_post', lost_attach)
+
+    with pytest.raises(main.ProductError) as error:
+        main._consume_admitted_task_continuation(context)
+
+    assert error.value.code == 'agent_session_interrupted'
+    assert backend_calls == [('/internal/task-continuation/conversation-a/peek', None)]
+    assert catalog_reads == [(
+        'GET', '/v1/product/conversations/conversation-a', 'alice', 'workspace-a',
+    )]
+    assert adapter_posts == [('/internal/runtime/sessions', {
+        'session_id': 'session-a', 'trace_id': 'trace-a', 'workspace_id': 'workspace-a',
+        'owner_principal': 'alice', 'initial_sequence': 0, 'attach_live_only': True,
+    })]
+
+
 def test_registered_conversation_scan_is_bounded_fair_and_flagged(tmp_path, monkeypatch):
     called = []
     for i in range(10):

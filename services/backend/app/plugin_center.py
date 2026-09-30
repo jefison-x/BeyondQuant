@@ -426,6 +426,92 @@ class PluginCenterStore(PgStoreMixin):
         except SQLAlchemyError as exc:
             raise PluginCenterPersistenceError("qualification request failed") from exc
 
+    def _deployment_policy_snapshot(self, row: dict[str, Any]) -> dict[str, Any]:
+        """Return the exact persisted desired policy for a policy-change request.
+
+        The Engineering handoff must never reconstruct historical request state
+        from the current Product policy. Bound each persisted collection to the
+        registered plugin and Agent allowlists before hashing its canonical form.
+        """
+
+        invalid = PluginCenterPersistenceError("plugin deployment policy snapshot is missing or invalid")
+        request_json = row.get("request_json")
+        expected_request_fields = {
+            "action", "plugin_id", "allowed_agents", "expected_version", "reason", "desired_policy",
+        }
+        if not isinstance(request_json, dict) or set(request_json) != expected_request_fields:
+            raise invalid
+        request_kind = row.get("request_kind")
+        plugin_id = row.get("plugin_id")
+        if (request_kind not in _ACTIONS or request_json.get("action") != request_kind
+                or not isinstance(plugin_id, str) or self.plugins.get(plugin_id) is None
+                or request_json.get("plugin_id") != plugin_id):
+            raise invalid
+        old_version = row.get("old_policy_version")
+        new_version = row.get("new_policy_version")
+        expected_version = request_json.get("expected_version")
+        if (type(old_version) is not int or old_version < 1
+                or type(new_version) is not int or new_version != old_version + 1
+                or type(expected_version) is not int or expected_version != old_version):
+            raise invalid
+        reason = request_json.get("reason")
+        if not isinstance(reason, str) or not reason.strip() or len(reason) > 500:
+            raise invalid
+
+        requested_agents = request_json.get("allowed_agents")
+        registered_agents = (self.plugins[plugin_id].get("agents") or {}).get("allowed", [])
+        if not isinstance(registered_agents, list) or not all(
+                isinstance(agent, str) for agent in registered_agents):
+            raise invalid
+        if request_kind == "assign":
+            if (not isinstance(requested_agents, list)
+                    or len(requested_agents) > len(registered_agents)
+                    or any(not isinstance(agent, str) for agent in requested_agents)
+                    or len(requested_agents) != len(set(requested_agents))
+                    or not set(requested_agents) <= set(registered_agents)):
+                raise invalid
+        elif requested_agents is not None:
+            raise invalid
+
+        snapshot = request_json.get("desired_policy")
+        snapshot_fields = {
+            "schema_version", "policy_version", "enabled_plugin_ids", "agent_assignments",
+        }
+        if not isinstance(snapshot, dict) or set(snapshot) != snapshot_fields:
+            raise invalid
+        if (snapshot.get("schema_version") != "plugin-deployment-policy.v1"
+                or type(snapshot.get("policy_version")) is not int
+                or snapshot["policy_version"] != new_version):
+            raise invalid
+
+        enabled = snapshot.get("enabled_plugin_ids")
+        assignments = snapshot.get("agent_assignments")
+        if (not isinstance(enabled, list) or len(enabled) > len(self.plugins)
+                or any(not isinstance(item, str) or item not in self.plugins for item in enabled)
+                or enabled != sorted(set(enabled))):
+            raise invalid
+        if (not isinstance(assignments, dict) or len(assignments) > len(self.plugins)
+                or set(assignments) != set(enabled)):
+            raise invalid
+        for assigned_plugin, agents in assignments.items():
+            allowed = (self.plugins[assigned_plugin].get("agents") or {}).get("allowed", [])
+            if (not isinstance(allowed, list) or not all(isinstance(agent, str) for agent in allowed)
+                    or not isinstance(agents, list) or len(agents) > len(allowed)
+                    or any(not isinstance(agent, str) or agent not in allowed for agent in agents)
+                    or agents != sorted(set(agents))):
+                raise invalid
+
+        desired = {
+            "enabled_plugin_ids": enabled,
+            "agent_assignments": assignments,
+            "policy_version": snapshot["policy_version"],
+        }
+        desired_hash = row.get("desired_policy_hash")
+        if (not isinstance(desired_hash, str) or not _HASH.fullmatch(desired_hash)
+                or "sha256:" + hashlib.sha256(_canonical(desired).encode()).hexdigest() != desired_hash):
+            raise invalid
+        return snapshot
+
     def deployment_input(self, request_id: object, *, service_token: object) -> dict[str, object]:
         self._require_deployment_token(service_token)
         normalized = self._text(request_id, "request_id", 96)
@@ -434,18 +520,13 @@ class PluginCenterStore(PgStoreMixin):
                 row = fetch_one(connection, "SELECT * FROM plugin_change_requests WHERE request_id=:id", {"id": normalized})
                 if row is None:
                     raise PluginCenterNotFound("plugin governance request was not found")
-                policy = self._policy(connection)
-                request_json = row.get("request_json") if isinstance(row, dict) else None
-                policy_snapshot = request_json.get("desired_policy") if isinstance(request_json, dict) else None
-                if not isinstance(policy_snapshot, dict):
-                    # Backward-compatible fallback for requests created before
-                    # immutable desired-policy snapshots were introduced.
-                    policy_snapshot = {
-                        "schema_version": "plugin-deployment-policy.v1",
-                        "policy_version": policy["version"],
-                        "enabled_plugin_ids": policy["enabled_plugin_ids_json"],
-                        "agent_assignments": policy["agent_assignments_json"],
-                    }
+                request_kind = row.get("request_kind") if isinstance(row, dict) else None
+                if request_kind == "qualify":
+                    policy_snapshot = None
+                elif request_kind in _ACTIONS:
+                    policy_snapshot = self._deployment_policy_snapshot(row)
+                else:
+                    raise PluginCenterPersistenceError("plugin deployment request kind is invalid")
                 return {
                     "schema_version": "plugin-deployment-input.v1",
                     "request": self._public_request(row),

@@ -30,37 +30,46 @@ qualification. Dispositions use actual callers and behavior rather than names.
 | MCP Web evidence caller identity compatibility | Current plugin callers omit producer fields; MCP previously accepted optional caller claims matching deployment identity. Backend validates stored provenance. | DELETE model-input producer fields and reject any caller-supplied identity; inject the trusted deployment identity and KEEP Backend recognition policy. |
 | Legacy ResearchTask plan adoption | Repository search finds only two historical store-test callers. Classifier is used only by adoption and its pure test; `legacy_reason` has no readers. | DELETE applied under the maintainer's precise source authorization: adoption/classification, empty migration mapping and fresh-DDL/writer/fixture references. Current domain factory/transitions remain; focused fresh-schema Tester → independent Reviewer → Root PASS for this slice. |
 | Current ResearchTask plan and action receipts | Current reducers and approvals use stage CAS, parameter digests, exact action binding and durable outcome reconciliation. `plan_at_stage` is used by current trusted domain fixtures. | KEEP domain transitions, factory and authoritative business receipts. |
-| Optional F6 Agent prompt dispatch | `TaskContinuationDelivery.tick` invokes Gateway consumption when the three service executor flags are enabled. Backend derives task-bound grants/intents and unknown-outcome settlement; Gateway submits a DSH prompt. | OPEN qualification/cutover candidate. Default-off is not dead-code evidence; this is not the pending business action executor accepted in Phase 7. Keep its business authority facts while qualifying the dispatch separately. |
-| Plugin Center desired policy and qualification | Live admin Product API records exact registry version, desired enable/assignment policy, qualification and admin audit; DSH owns actual runtime. Desired `awaiting_generation` is distinct from active composition. | KEEP minimal registry/policy/basic qualification/audit and truthful desired-versus-active projection under ADR-006. Deployment request/result endpoints require separate contract qualification before trimming extra governance. |
+| Optional F6 Agent prompt dispatch | Trusted task events and a user grant produce an exact bounded input to an existing healthy DSH session. BYQ owns task authority/receipts; DSH owns reasoning. | Conditional KEEP under ADR-002/003/006, with focused contract qualification in this slice. No inferred failed-turn recovery, process recreation or unknown-outcome replay. Actual enabled Product/model execution remains OPEN. |
+| Plugin Center desired policy and qualification | Live admin Product API records exact registry version, desired enable/assignment policy, qualification and admin audit; DSH owns actual runtime. Desired `awaiting_generation` is distinct from active composition. | KEEP minimal registry/policy/basic qualification/audit and truthful desired-versus-active projection under ADR-006. Engineering input/result endpoints retain service-token gates. Remove the current-policy fallback for missing immutable snapshots; qualification input carries no mutable policy. Focused contract qualification is recorded below. |
 | Jobs, workers, Artifact lineage and domain facts | Independent Backtest/Data/CPU ML workers own compute; BYQ stores Job identity, approval, lineage and unknown outcomes. | KEEP; do not put compute in an Agent or delete authoritative financial/approval/audit facts. |
 | Product profiles and Engineering separation | Product MCP/domain catalog and pinned profiles retain separate privileges; dev tools remain disabled for Product DSH. | KEEP qualified separation. No application-source write or direct business DB access is added. |
 
 ### Remaining qualification boundaries
 
-The optional F6 path is live when explicitly enabled, despite Compose defaults
-of zero. It claims a task-bound reservation and writes `outcome_unknown` before
-submitting the DSH prompt; exact receipts reconcile execution and budget without
-refunding unknown outcomes. These are required safety facts, but they do not
-prove that Gateway-owned automatic Agent dispatch is an accepted pending-action
-executor. Phase 7's pending-action cutover explicitly excluded DSH continuation.
-Current receipt-only `research-receipts` reconciliation observes domain
-submissions; continuation budget reconciliation occurs inside the enabled
-consumer. They must not be conflated. Qualify or cut over this residual owner
-before overall Phase 17 close; no scope exception is inferred here.
+Independent Sol design review finds the F6 path compatible with ADR-002/003/006
+only as a trusted, task-bound new input to the same healthy DSH process. It must
+bind owner/workspace/task/conversation, deduplicate exact Job/Artifact events,
+respect grant/revocation/expiry/budget and individual action approval, persist
+unknown outcome before dispatch, and never reconstruct a lost Agent process or
+replay an interrupted turn. Phase 7's pending business action cutover did not
+qualify F6. Default-off does not prove dead code or acceptance.
 
-Plugin Center remains a current admin API over read-only image registry and BYQ
-desired policy/audit. It does not install code or write application source.
-Deployment input/result endpoints require an Engineering deployment token;
-bounded repository search finds definitions/tests but no deployment-lane caller,
-which does not prove absence of external callers. Historical ADR-0040 does not
-authorize expanding governance. Preserve the live Product policy interface and
-qualify any extra deployment-state simplification against ADR-006 first.
+`_restore_product_session` uses `attach_live_only=True`; a lost process becomes
+`agent_session_interrupted`, not a newly created runtime. The new eligible-path
+test exercises that real Gateway branch through mocked transport boundaries.
+Gateway now rejects a reservation with a different owner/workspace/task/ID before
+attaching an observer or accessing Adapter receipts. Receipt-only
+`research-receipts` reconciliation and enabled continuation budget reconciliation
+remain distinct. Focused offline contracts do not qualify actual enabled DSH
+model execution.
 
-The internal Adapter DELETE-session alias is an additional candidate, not a
-proven safe deletion: Gateway uses canonical POST `/release`, but compatibility
-callers and its test disposition require qualification before removal. It is
-not silently counted as retired. This audit does not authorize a table/volume
-DROP, historic data migration or generic runtime rewrite.
+Plugin Center remains a current admin API over read-only registry and BYQ desired
+policy/qualification/audit. Engineering-token input/result endpoints read exact
+request facts and record bounded results; they do not install code, mutate a
+running DSH or write application source. Input validation also checks the current
+pinned registry/Agent allowlists. A future registry change can therefore make an
+old handoff fail closed with 503; this is not historical-registry compatibility. Repository search found no deployment
+lane caller, which is not proof of external absence. Desired-versus-active state
+is retained; actual deployment lane execution is NOT_RUN here. The old missing
+snapshot fallback is removed, with qualification kept as an independent exact
+version request rather than inferred current policy.
+
+The internal Adapter DELETE-session alias was a forwarding wrapper with no
+repository production caller; Gateway uses canonical POST `/release`. It is
+removed with a regression detecting the old DELETE 200 response, while canonical
+release/error behavior remains covered. This audit does not authorize any
+existing table/volume deletion or historic data restoration.
 
 ## Gateway slice
 
@@ -184,6 +193,75 @@ Compose/dev/CI and selection-test references point to `.274`; its Dockerfile
 changes only the embedded manifest path. No SDK/runtime/dependency update or
 live service restart is performed. Local selected/frozen identity and Tester → independent Sol Reviewer → Root
 gate passed for this exact legacy source slice. Phase 17 overall remains OPEN.
+
+## Residual contract source slice
+
+Rollback checkpoint: `33ed9829`. Changes are limited to the unused Adapter
+DELETE alias, the Gateway reservation identity fence, and Plugin Center exact
+Engineering input. Canonical release, current Product permission/policy routes,
+request admission, Engineering token and result transitions remain authoritative.
+There is no schema migration, provider/model call or existing database access.
+
+Automatic approval review rejected trimming newly added request/registry checks
+twice. No rejected patch was applied. The independent Reviewer accepted retaining
+the stricter bounded reader checks as the safe alternative for this pinned
+registry. Original service-token, request admission and result transition guards
+remain unchanged; no approval exception or security relaxation is claimed.
+
+Runtime alias Worker RED: old DELETE returned 200 (`1 failed, 4 passed`);
+GREEN and independent Tester: **5 passed**, including exact POST session/response
+and KeyError 404 / SessionConflict 409. Three existing framework deprecations.
+Gateway new identity tests RED: four misbound reservations were not rejected
+before observer access; after the guard, independent Tester: **40 passed** in
+`test_task_continuation_delivery.py` and `test_business_recovery.py`. This includes
+waiting/no Runtime input, unqualified executor/no claim, lost process/live-only
+attachment, exact reconciliation and no unknown-outcome redispatch.
+
+Both runs used existing pinned images with `--pull=never --network none`, current
+source/tests/packages read-only and tmpfs `/tmp`, without secrets, provider calls
+or persistent volumes.
+
+Independent Backend Tester: **65 passed**, one Starlette deprecation. Selection:
+`test_research_continuation`, `test_continuation_budget_ledger`, three selected
+handoff cases (no registered executor; durable receipt/revocation; approval versus
+action execution), both `test_continuation_notifications` tests,
+`test_continuation_scope`, two selected data-ready cases (grantless deterministic
+notification; foreign owner/conversation), and `test_plugin_center_api`.
+The prior-passed `test_research_continuation_ledger` suite was not repeated.
+Tests prove current task/root/owner/workspace authority, grant/expiry/revocation,
+unknown liabilities, same-event once-only behavior, and background inability to
+approve or expand goals. They do not exercise an actual enabled DSH model turn.
+
+Plugin contracts cover current disable/enable/assign producer snapshots, a later
+Product policy change, missing/corrupt schema/version/types and a valid-format
+wrong hash, qualification `policy: null`, both internal HTTP token gates and
+invalid result transitions/replay. They record no actual build/deployment lane
+execution or online installation.
+
+Exactly one new tmpfs Postgres container/network was used:
+`byq-phase17-qualification-33ed9829`, database `byq_domain_test`, internal network,
+no host port, bind or persistent volume. Existing Backend/Postgres image IDs:
+`sha256:2bba02f59f032894143fd4894cbf4ed1a9c569faa1ae6815b71c993a05104806` /
+`sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73`.
+The test hook counted 65 disposable-schema resets and 256 store bootstraps.
+After exact cleanup, scope-labeled containers/networks/volumes were absent.
+No existing database, market data, backup or Community resource was touched.
+
+All writers finished before selecting immutable `.275`, manifest:
+`sha256:c1ce46ac6ce876a0b2f4aeb1988d6381c8ab09bbf63b0458299eb847f4f5ff28`.
+Frozen `.274` manifest and Dockerfile hashes remain
+`sha256:cf7f85fbf62219c58df2c9903164699891ec737f4b0c137d773c7adf26715b7b` and
+`sha256:5bab015079049079ea530cfbad27155311742486ade8eca99bf2c8cd64c78343`.
+Independent selected/frozen identity checks **PASS** (current build 3, revision 4,
+retirement 5), normative architecture **74 passed**, `dev-check --base 33ed9829`
+**PASS** (14 syntax files), changed Markdown (two files) and diff checks **PASS**.
+Independent Sol Reviewer: **Functional PASS / Tests PASS / Clean Break
+Architecture PASS** for this bounded source slice. Root: **PASS**. The stricter
+reader is accepted with its documented registry-evolution limitation. No generic
+Agent harness or runtime deployment owner was introduced.
+
+Hosted CI, final Golden A–F, actual enabled F6 model execution and real Engineering
+deployment lane execution remain NOT_RUN. Phase 17 overall remains **OPEN**.
 
 ## Final Golden execution plan
 

@@ -2,6 +2,7 @@ from pathlib import Path
 import queue
 
 from fastapi.testclient import TestClient
+import pytest
 
 from app import main
 
@@ -22,6 +23,36 @@ def test_missing_credentials_return_an_exact_pre_admission_rejection(monkeypatch
         "content_sha256": hashlib.sha256(b"synthetic original").hexdigest(),
     }}
 
+
+def test_legacy_delete_session_route_is_not_registered(monkeypatch):
+    calls = []
+    monkeypatch.setattr(main.adapter, "release_session",
+                        lambda session_id: calls.append(session_id) or {"status": "closed"})
+
+    response = TestClient(main.app).delete("/internal/runtime/sessions/legacy-session")
+
+    assert response.status_code == 404
+    assert calls == []
+
+
+@pytest.mark.parametrize(("error", "status"), [
+    pytest.param(KeyError("unknown BYQ session"), 404, id="missing-session"),
+    pytest.param(main.SessionConflict("session cleanup in progress"), 409, id="cleanup-conflict"),
+])
+def test_release_session_keeps_exact_session_and_error_status(monkeypatch, error, status):
+    calls = []
+
+    def reject_release(session_id):
+        calls.append(session_id)
+        raise error
+
+    monkeypatch.setattr(main.adapter, "release_session", reject_release)
+    response = TestClient(main.app).post("/internal/runtime/sessions/exact-runtime-session/release")
+
+    assert response.status_code == status
+    assert calls == ["exact-runtime-session"]
+
+
 def test_runtime_maintenance_blocks_admission_but_keeps_release_and_events(monkeypatch, tmp_path: Path):
     gate = tmp_path / "admission.state"
     gate.write_text("closed\n")
@@ -37,8 +68,15 @@ def test_runtime_maintenance_blocks_admission_but_keeps_release_and_events(monke
         response = client.post(path, json=payload)
         assert response.status_code == 503
         assert str(gate) not in response.text
-    monkeypatch.setattr(main.adapter, "release_session", lambda _: {"status": "closed"})
-    assert client.post("/internal/runtime/sessions/synthetic/release").status_code == 200
+    released_sessions = []
+    monkeypatch.setattr(main.adapter, "release_session",
+                        lambda session_id: released_sessions.append(session_id) or {
+                            "status": "closed", "session_id": session_id,
+                        })
+    response = client.post("/internal/runtime/sessions/synthetic/release")
+    assert response.status_code == 200
+    assert response.json() == {"status": "closed", "session_id": "synthetic"}
+    assert released_sessions == ["synthetic"]
     assert client.get("/healthz").status_code == 200
     subscriber = queue.Queue()
     subscriber.put({"type": "run.completed", "sequence": 1})
