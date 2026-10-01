@@ -20,7 +20,8 @@ RUN pip install --no-cache-dir . \
     && useradd --system --uid 10005 --gid byq --no-create-home \
        --shell /usr/sbin/nologin byq \
     && mkdir -p /var/lib/byq/ml-objects \
-    && chown -R byq:byq /var/lib/byq/ml-objects
+    && chown byq:byq /var/lib/byq/ml-objects \
+    && chmod 2770 /var/lib/byq/ml-objects
 
 USER byq
 

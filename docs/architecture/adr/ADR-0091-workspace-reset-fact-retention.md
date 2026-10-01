@@ -32,3 +32,12 @@ Backend 执行数据库事务，不能 drop schema、删除账号、使用 dev-s
 ## 验收
 
 先在单独可丢弃测试库验证全新 DDL、完整静态 ownership/FK、普通用户与跨租户拒绝、并发配置/Worker栅栏、原子归档/失败回滚、默认状态、旧键防重放、七天 UTC 边界、密文与 CAS 共享引用保护。Tester → 独立 Reviewer → Root 接受后，再在已授权专用隔离栈执行受影响 Golden E 和真实浏览器，复用仍有效的 A–D/F6。本 ADR 的接受不是这些测试 PASS，不推进 Phase18，不授权生产数据库、备份、部署、推送或合并。
+
+
+### ML CAS 文件权限
+
+Backend 保持非 root UID10001，只在 ML 挂载上加入 producer 的补充GID10005。
+ML producer 保持UID/GID10005，在自身拥有的 root、ml-features、ml-models 三个目录
+设置2770/setgid，拒绝符号链接和不同owner/group；对象沿用已有0640。没有递归chown、
+对象内容改写、root Backend 或新清理平台。既有专用测试卷只允许同producer身份执行
+精确目录初始化及一次唯一测试文件的写/读/删探针；生产/旧卷没有操作授权。

@@ -196,6 +196,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    group_add:
+      - "10005" # ML CAS producer group; Backend owns exact expired-object cleanup.
     volumes:
       - byq_domain_state:/var/lib/byq/domain
       - byq_ml_model_state:/var/lib/byq/ml-objects

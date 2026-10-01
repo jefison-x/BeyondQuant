@@ -23,7 +23,10 @@ RUN groupadd --system --gid 10001 byq \
     && useradd --system --uid 10001 --gid byq --no-create-home \
        --shell /usr/sbin/nologin byq \
     && mkdir -p /var/lib/byq/domain \
-    && chown -R byq:byq /var/lib/byq/domain
+    && chown -R byq:byq /var/lib/byq/domain \
+    && mkdir -p /var/lib/byq/ml-objects \
+    && chown 10005:10005 /var/lib/byq/ml-objects \
+    && chmod 2770 /var/lib/byq/ml-objects
 
 USER byq
 
