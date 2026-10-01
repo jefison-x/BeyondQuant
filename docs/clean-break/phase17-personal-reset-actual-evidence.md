@@ -95,7 +95,7 @@ PRIMARY。Backend validator 保持原强校验，加入未知时间正/反合同
 结构不改写；没有行情读、Job、Reset或seed。共享/归档保护只读通过。Artifact hash/
 lineage、成功回答投递及其真实浏览器验收尚缺，不能用离线候选替代，不能重放未知模型
 调用。最终失败及未知用量边界见下面实际记录。
-运行中 Runtime/MCP 未加载新 skill/schema，当前源码提示只能称离线资格；实测
+该失败实测时，Runtime/MCP 未加载新 skill/schema，源码提示当时只能称离线资格；实测
 后缀依靠显式校正用户输入，不能冒称原提示自动修复通过。
 
 Phase17 最终 Golden 汇总、受影响 source/build currency、必需 hosted CI 与仓库
@@ -147,6 +147,50 @@ Gateway合同允许空会话初始pending。最终候选只在精确session/trac
 最终失败原尝试及19件只读取证封存：
 `/tmp/byq-phase17-web-save-final-failure-seal-20261002.json`，SHA256
 `7f4fb65e8898295da12799e0b17492e38a96db20ba00a457e0dc5b2c0fd2a898`。
-精确候选归一化、8来源及发布时点合同仍只获得离线资格；运行中MCP/skill未更新。
+该失败实测时，精确候选归一化、8来源及发布时点合同只获得离线资格；MCP/skill未更新。
 本切片也不对通用lineage解析的任意跨租户输入作安全验收：本场景仅精确绑定已确认
 同owner/Workspace的原主Task。Golden E、最终Golden与Phase17仍OPEN。
+
+
+### 超时只读审计与提示源码加载（2026-10-02）
+
+**只读审计、两服务源码加载：限定 PASS；真实保存仍 FAIL，完整 Golden E / Phase17 OPEN。**
+
+先确认专用隔离栈没有遗留测试 runner、DSH 进程、活动 session/prompt。
+120秒无进展保护关闭本地 turn；native 空 stream 和 aborted/disposed、Adapter
+normalized计数14→14，均不能证明 provider 未收到请求、成功取消或实际消耗为0。
+固定SDK只提供本地JSON-RPC身份/通用通知，本次上游请求ID、返回、取消及用量仍UNKNOWN。
+一次只读GET `/models` 返回200仅证明当时连通/认证；没有新模型输入。
+旧模型名仍为官方暂时兼容别名，不能因不在模型列表中就归因于配置失效。
+[官方说明](https://api-docs.deepseek.com/updates/)。
+
+所核对的Runtime/MCP运行源码差异仅市场研究SKILL.md与MCP server.ts中的保存描述；Adapter代码、
+固定DSH SDK/bin 0.1.5rc1、profile/build/contract身份及120秒配置保持。
+使用原依赖缓存、network none/pull false构建两份候选；首次legacy builder不支持
+COPY --chmod的失败保留，v2只修正构建权限语法。精确镜像源码树及官方MCP
+tools/list88项/未知时间→UNESTABLISHED描述离线通过，领域工具与模型调用0。
+
+Tester→独立Reviewer→Root准入后，只以no-deps/no-build/pull never加载
+`byq-dev-dd33416d94`的Runtime/MCP两服务。首次后置观察器raw资源比较
+失败保留；当时原始快照未保存，不能证明具体字段或顺序原因，没有重复apply。
+随后一次只读对账保存完整raw/规范化快照，非目标11服务所有字段均与before相等；
+只证明对账时资源完整，不反推首次失败原因。v2对Mounts顺序的过强归因单独更正，
+原sealed文件保持，v3在`/tmp/byq-phase17-guidance-load-correction-20261002/`。
+其余11容器、5卷、2网络完全保持；实际skill/MCP源码与编译文件hash读回相符。
+账号、shared、七天归档及5CAS完整，原root failed/closed，Task1、Artifact/Job/claim0。
+新Runtime boot `b36a9049edefe7a6e1a1e07eda797ac5`的normalized计数0只属新进程，
+旧进程14及更早历史/未知外部结果仍保留。没有第二次Reset、seed、Web查询、行情下载、
+模型输入、旧DSH会话恢复或超时放宽。
+
+审计27文件seal：`/tmp/byq-phase17-reset-timeout-audit-20261002/seal.json`，
+SHA256 `1cf3adae52e67d30bfd94255dbdb6434bc921239358325f2683a7a589b1dcd32`。
+候选构建28文件seal：`/tmp/byq-phase17-guidance-build-v2-20261002/seal.json`，
+SHA256 `0333ce0dbbd55cbfbfebcb4e2f2c3646d86d9a3fd17bf67edad67341f3c1780f`。
+加载/只读对账12文件seal：`/tmp/byq-phase17-guidance-load-20261002/seal.json`，
+SHA256 `7c980d648be8d058b815ac055ea41700e10cee21d0adb3b48cba6752bfe19e72`。
+最终Root限定验收：`/tmp/byq-phase17-reset-timeout-final-root-acceptance-20261002.json`。
+
+这次加载只补运行镜像的提示源码差异，不修复或覆盖历史保存超时，不能冒称真实保存、
+模型可用性整链或当前源码空栈重建PASS。保留有效A–D/F6；剩余为受影响保存的独立
+实测、最终Golden/source-build汇总及必需hosted CI/仓库门禁。原未知调用不重放。
+无推送、合并、部署或Phase18授权。
