@@ -1,27 +1,37 @@
 # Phase 17 final Golden runbook
 
-Status: Phase 17 remains **OPEN**. Accepted ADR-0090 implementation passed
-scoped offline qualification. The complete v9 observer passed Tester → independent
-Reviewer → Root gates (41 source files, 16 helpers), with 21 new mocked closeout
-cases and 3 static check groups; prior component/observer evidence was reused.
-Success-only closeout now preserves the durable conversation; the current login
-button is `进入`. After fresh pins/freeze, one new real v9 attempt failed FG1:
-the model supplied 2457 of the required 2930 objective characters. Backend faithfully
-persisted its supplied value; this is a model tool-argument omission, not truncation.
-The original FAIL is preserved. Complete FG1 audit qualified, but FG2/background/
-success-only readonly UI remain **NOT_RUN**; no grant or Job was started.
-The original connection stayed open for 50 readonly samples over about 50 seconds,
-then closed after the exact Root stop signal. Dedicated failure session deletion
-and three-service same-image flag-off completed; no active test or prompt remains.
-Task/Artifacts retain references, but the deleted original conversation is not a
-usable continuation binding. Failure classification and cleanup have limited result
-acceptance; they do not qualify real F6 request limits/settlement or Phase17 closure.
-Do not replay another whole chain per assertion or combine sessions. First address
-exact tool-argument fidelity using focused checks. External test model calls remain
-authorized; valid A–D remain reused. E/F/final Golden and hosted CI are still required.
-No push, remote merge or deployment is authorized in this slice.
-See the [budget/observer audit](phase17-continuation-budget-audit.md),
-[residual audit](phase17-residual-simplification.md) and
+Status: Phase 17 remains **OPEN**. Accepted ADR-0090 implementation has scoped
+offline qualification. One freshly pinned/frozen v10 F6 reached exact FG1 and FG2
+in the same original conversation: full 2931-character objective persisted, both
+authoritative audit sequences passed, and one SignalJob was created waiting for
+data. Root's readonly readiness request used ISO dates where the endpoint requires
+YYYYMMDD; it returned 422 before any Worker-start attempt. A canonical readonly
+query returned usable 98/98 with zero missing items. The bounded Root pause ended
+with the original ROOT_SIGNAL_TIMEOUT failure preserved. No background request,
+settlement or success-only readonly UI ran; full F6 is **FAIL**.
+
+Exact readonly failure reconciliation, grant revocation, dedicated failed-session
+deletion and three-service same-image flag-off completed. There are no active
+Agent prompts or test runners, but **one known waiting SignalJob remains**. The
+original conversation is deleted, so its Task references do not permit original
+session continuation. The owner-visible catalog has three completed historical
+Jobs and this waiting Job; it does not prove the global Worker queue is exclusive.
+Automatic approval rejected a complete user-directory read as outside test/user
+data scope; it did not execute. A narrower isolated identifiers/status check is
+pending explicit maintainer authorization. Keep the Worker stopped meanwhile.
+
+The separate helper repair normalizes readiness dates, saves the response before
+asserting, and refuses other visible nonterminal Jobs. Actual-function mocked
+start_worker tests passed 12/12. Tester → independent Reviewer → Root acceptance
+covers failure facts, executed cleanup and this offline repair only. The repair is
+not frozen/admitted for live use, and owner-catalog guards do not establish global
+exclusion. Do not replay another whole chain per assertion. First qualify the
+Worker scope and reconcile the existing Job; before another model call, verify the
+exact canonical readiness contract and complete remaining-assertion admission.
+Valid A–D remain reused; E/F/final Golden and hosted CI are required. External test
+model calls remain authorized. No push, remote merge or deployment is authorized.
+See [current v10 evidence](phase17-continuation-budget-audit.md#11-f6-v10-前台通过root-观察器失败及离线修正2026-10-01),
+the [residual audit](phase17-residual-simplification.md), and
 [verification gate](verification-gates.md).
 
 ## Historical `.277` preparation

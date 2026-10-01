@@ -1,0 +1,34 @@
+--- a/root-control/root-control.py
++++ b/root-control/root-control.py
+@@ -589,6 +589,10 @@
+             and job_list.body.get("total", 100) < 100
+             and [x.get("job_id") for x in job_list.body["jobs"]].count(job_id) == 1,
+             "exact SignalJob catalog is paginated or does not contain this one job")
++    require(all(isinstance(row, dict) and (row.get("job_id") == job_id
++                or row.get("status") in {"completed", "failed", "cancelled"})
++                for row in job_list.body["jobs"]),
++            "another visible SignalJob is nonterminal; shared Worker must not start")
+     job_get = product.request("GET", f"/api/product/signal-producer/jobs/{urllib.parse.quote(job_id, safe='')}")
+     exact_job = job_get.body.get("job") if isinstance(job_get.body, dict) else None
+     require(job_get.status == 200 and job_get.same_origin and isinstance(exact_job, dict)
+@@ -607,12 +611,18 @@
+             and pool_projection.get("current_snapshot_id") == inputs["pool"]["snapshot_id"],
+             "exact persisted stock-pool snapshot is no longer current")
+     readiness_body = {
+-        "symbols": [inputs["pool"]["symbol"]], "start_date": inputs["pool"]["start_date"],
+-        "end_date": inputs["pool"]["end_date"], "use_case": "backtest",
++        "symbols": [inputs["pool"]["symbol"]], "start_date": inputs["pool"]["start_date"].replace("-", ""),
++        "end_date": inputs["pool"]["end_date"].replace("-", ""), "use_case": "backtest",
+         "data_requirements": inputs["strategy"].get("data_requirements", {}),
+     }
+     readiness = product.request("POST", "/api/product/data-center/readiness", readiness_body)
+     ready_body = readiness.body
++    write_new(CONTROL / "pre-worker-readiness-readback.json", {
++        "schema_version": "phase17-f6-pre-worker-readiness-readback.v1",
++        "observed_at_utc": now_utc(), "request_body": readiness_body,
++        "status": readiness.status, "same_origin": readiness.same_origin,
++        "response_body": ready_body, "readonly_query": True,
++    })
+     require(readiness.status == 200 and readiness.same_origin and isinstance(ready_body, dict)
+             and ready_body.get("schema_version") == "data-readiness-product.v1" and ready_body.get("verdict") == "usable"
+             and ready_body.get("checked_against") == "persisted_byq"

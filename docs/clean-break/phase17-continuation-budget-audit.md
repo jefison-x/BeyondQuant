@@ -1,6 +1,6 @@
 # Phase 17 — continuation 预算与 F6 观察器审计
 
-Status: **ADR-0090 已实施并通过限定离线门禁；F6 v8 在授权后观察器合同断言失败并已清理；F6-2/BG/UI NOT_RUN，Phase 17 OPEN**。
+Status: **ADR-0090 已实施；F6 v10 同会话 FG1/FG2 通过，Root 就绪请求合同错误导致整链失败；开关与会话已收尾，保留一个等待 Job；BG/结算/成功 UI NOT_RUN，Phase 17 OPEN**。
 本记录使用当前 Clean Break ADR-001–006/ADR-0088；历史 ADR-0086 不作为现行规范。
 [ADR-0090](../architecture/adr/ADR-0090-continuation-request-limits.md) 已于 2026-10-01 获维护者“明确接受”。以下第 1–6 节保留接受前限定验收的事实边界；当前实施及实测状态见第 9 节。
 
@@ -369,7 +369,7 @@ Tester 原报告的 model_inputs=0 指清理新增输入，澄清 sidecar 原样
 
 ## 10. F6 v9 完整观察器门禁、内容失败与有界收尾（2026-10-01）
 
-本节为当前状态。产品实现仍为 `cdeeb6dbdc497133d20a4bca87a36a98b511e677`；
+本节记录 v9 历史状态；最新 v10 见第 11 节。产品实现仍为 `cdeeb6dbdc497133d20a4bca87a36a98b511e677`；
 本次实际工程 HEAD 为 `29f6165087d697944cc4187ddba6e248e55eabaf`。
 没有新增产品源码、镜像构建、行情下载、A–D 重跑或推送/合并/部署。
 
@@ -451,3 +451,99 @@ Tester 原报告关于绑定的布尔字段以独立 scope-clarification 为准�
 下一步先定向改善原值表达/工具参数保真，保持完整 objective、权威审计和安全限额；
 不重放未知调用、不直接重跑整链。任何后续完整 F6 仍需新会话、全包门禁与新鲜 pins。
 适用 A–D 继续复用；真实 BG/只读 UI、最终 Golden、hosted CI 与仓库门禁仍必需。
+
+
+## 11. F6 v10 前台通过、Root 观察器失败及离线修正（2026-10-01）
+
+本节为当前状态。实际执行 HEAD 为 `80530544af6759db09a82fbd58e733415acb0ca4`，
+产品实现仍为 `cdeeb6dbdc497133d20a4bca87a36a98b511e677`。
+没有产品源码变更、镜像构建、行情下载、A–D 重跑或推送/合并/部署。
+
+### 原值表达修正与一次实测
+
+v10 将完整 Task 静态参数作为独立 JSON，要求从本次可信 context 补入 owner/trace；
+不接受自定义 turns 覆盖。除本轮后台幂等键更新外，完整 objective 不缩短、不改写。
+新增 26 个动态案例、4 组静态检查通过，既有组件、轮询和成功收尾证据按哈希复用。
+Tester → 独立 Reviewer → Root 离线门禁后，重新只读核对资源、按原镜像切换三服务
+F6 开关、绑定新鲜 preflight/freeze，只启动一次真实 F6。
+
+| v10 启动门禁（`/tmp/byq-phase17-adr0090-f6-v10/`） | SHA256 |
+| --- | --- |
+| `tester-offline-gate.json` | `b917bba65e3c1f1cbd8aff0c423339b81fd3ef578591ccfa88c270151e4bdd87` |
+| `reviewer-offline-gate.json` | `b63f4611374d2cbf5a9d8af06e759adbabb8be023ed66765adce7c9d3856126d` |
+| `root-offline-gate.json` | `ccb0deea34733f949d2063da0001c73adf8cf484beb5a0ac039daabf4b627a4d` |
+| `root-preflight.json` | `69fa7b041c5caee0a5a4b018479d885ee82511c6ac388b73d17f4496c3298fef` |
+| `frozen-plan.json` | `592b1adab3ac8492108c82b47e259b653e8c82828a4fa466235e356cb969df19` |
+
+原会话 `conversation_859dd3dc325042c7896badc256fe0a7f`，Task
+`task_e93f82e2092c442c9b37f0988dd3e8a9`。FG1 的 title 与完整 **2931 字符**
+objective 精确持久化，三项领域动作及完整七项权威审计通过。Root 阅读实际策略后
+精确批准 `artifact_7137368813ac468cb04c1d21fd29361b`，批准 Artifact 为
+`artifact_fef76c6c6b3649acbf0da0ea8c8dc8e6`；浏览器仅创建并读回一个 v2 grant。
+FG2 的 prepare/create 两项领域动作及完整五项权威审计通过，创建唯一
+`signaljob_23a2bd73b82d4df98103105f120d314a`，状态 `waiting_for_data`、attempt 0。
+该 Job 的 Task/StrategyVersion/Pool 及原会话/trace 精确匹配；没有执行回测。
+
+原 Runtime 的接续资格已核对、无活跃 prompt，但 Worker 尚未启动。Root readiness
+只读 POST 使用 ISO 日期，实际 Gateway 返回 **422 / `start_date must use YYYYMMDD`**。
+同范围规范日期的只读 POST 随后返回 **200 / usable / 98 sessions / missing 0**。
+这证明 Root 观察器请求格式错配；缓存没有本次所指缺口。Worker attempt marker 与
+PASS 信号均不存在，未绕过门禁或原地改动冻结 helper。
+
+### 有界等待、对账与遗留项
+
+原浏览器/SSE 在既有 Root 暂停中继续有界只读检查回答和会话，直到信号期限结束；
+原错误 `ROOT_SIGNAL_TIMEOUT` 与默认 `SAFETY_OR_UNKNOWN` 字段保留。
+独立因果 sidecar 将实际原因明确为 **Root 观察器 readiness 日期合同错误**，
+不把原失败改成 PASS。此次是 **2 次 foreground input、21 次 normalized model calls**；
+raw provider HTTP **NOT_OBSERVED**。后台 reservation 为 0、usage 为 null；
+不能把未发起请求解释成结算完成，也不以两轮前台计数证明后台请求限额。
+
+停止后 session、delivery、Task、permission、Job 的五项精确只读 GET 均200，
+无未决读结果或未知写结果。只撤销一个精确 grant 并 GET 确认；Worker 始终未启动。
+专用失败会话 DELETE 后 GET404；只以原镜像关闭 backend/gateway/runtime-adapter
+三项 F6 开关，其他十资源、五卷两网络保持。新 Runtime active/prompt/model counter
+均0；无遗留已知测试进程。Task 留有引用，但原 conversation 已删除，后续 permission
+GET 为原绑定不可用的422，不能声称旧会话可接续。
+
+**业务任务未全部清空**：owner 可见完整 SignalJob 目录有四项，本次 Job 等待，
+三项历史 Job 完成。没有取消、删除或重建本次 Job。普通 Signal Worker 全局扫描，
+且缺数据时可能创建 data repair；当前 owner 目录不是全局排他证明。
+不得据本节直接启动 Worker、创建替代 Job 或启动新的 F6。
+自动审批拒绝了全量用户目录读取，原因是超出测试授权、涉及用户数据；读取未执行。
+专用隔离栈的限定账号标识/状态只读检查已向维护者询问，尚未获新答复。
+
+### 一次集中离线修正与限定验收
+
+独立审查核对剩余 Worker、事件身份、后台持久化/结算、撤销与成功收尾合同，
+未发现第二个已确定字段错配；真实后续路径仍未运行。Root 在独立候选中完成三处修正：
+仅对 readiness 请求转换日期、断言前保存实际响应、存在其他可见非终态 Job 时拒绝
+启动 Worker。冻结 v10 原件保持不变。可审查差异见
+[Worker readiness 修正](evidence/phase17-f6-worker-readiness.patch)，SHA256
+`3178c2c661d4a00ebc5f59c4dc772a7fe3fe44eabd840eaac8e9935b63802de3`。
+候选 `/tmp/byq-phase17-f6-v10-observer-repair-20261001/root-control.py`，SHA256
+`e3974f9d812d20e7f4a568a1e8151165e232d91e8ec22809b6af196a5e621314`，仅离线验收。
+
+Tester 调用实际完整 `start_worker`，mock 外部依赖，**12/12 定向案例通过**：
+规范98日成功与写入顺序、其他可见 Job 非终态拒绝、422/错范围/缺数据/异源拒绝并先存证、
+pool/Job 漂移、授权余量不足300秒、Worker启动结果未知时保留单次 marker 且不重试。
+首轮一个 fixture 目录权限错误保留，修正 fixture 后通过；没有真实 Product、Docker、
+DB 或模型调用。这些案例不证明全局队列排他或真实 Worker/后台行为。
+
+| 限定结果证据 | SHA256 |
+| --- | --- |
+| `/tmp/byq-phase17-f6-v10-readiness-tester-20261001/readiness-start-worker-report-v2.json` | `4ec16d4f3814ce21f38925b9cf788f73eb0bd4091227251e88060fc3781134b9` |
+| `/tmp/byq-phase17-f6-v10-readiness-review-20261001/limited-result-and-repair-acceptance.json` | `06d40de147f732a21d9018e9b626639fadf954780913750f9f3cdf89c5aa1011` |
+| `/tmp/byq-phase17-f6-v10-root-result-acceptance-20261001.json` | `fc4ae9dedecf992a2be23a741214743be4f6a0818b6381107f27c01ac06bb9bf` |
+| `/tmp/byq-phase17-f6-v10-root-failure-classification-20261001.json` | `a60b01919bc62770019ba169d3e377c943b23d5e866799858a1ef0a7e40f0865` |
+| `/tmp/byq-phase17-f6-v10-post-closeout-readonly-state-20261001.json` | `820dd73cf5b7a5d71009075482b8eb4bd7995972e545a078845ffbbbb72c6c93` |
+| `/tmp/byq-phase17-adr0090-f6-v10/f6-off-final-environment.json` | `de17d4351abb8bf7352260c549f843674cf123ba19ad5fed512f776f8042721e` |
+| `/tmp/byq-phase17-adr0090-f6-native-v10/RUN-F6/native-safe-evidence.json` | `3dd1d6f03240951e48287d534f9329870590ebc3e7157f1dd9b3d65e637ec6e6` |
+| `/tmp/byq-phase17-adr0090-f6-v10-protected-after-closeout.json` | `05b0078775499d2ec539de62c1966fdc622b72097b916c24561d254d80fe981e` |
+
+v10 96份、v9 80份、v8 86份私有证据字节已保护。Tester → 独立 Reviewer → Root
+仅验收实际失败事实、已执行收尾和离线修正。**F6 v10 FAIL；FG1/FG2 同会话证据通过；
+Worker/BG/后台限额与结算/成功只读 UI NOT_RUN；一个已知等待 Job 保留；Phase17 OPEN。**
+下一步先确认全局 Worker 安全范围，处理同一遗留 Job，再完成新候选全包门禁与模型调用前
+的精确只读 readiness 检查。只有这些门禁满足后才运行受影响 F6；适用 A–D 继续复用，
+不拼接会话、不重放未知调用，最终 Golden/hosted CI 与仓库门禁仍必要。
