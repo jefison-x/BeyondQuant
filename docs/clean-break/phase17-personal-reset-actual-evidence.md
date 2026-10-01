@@ -194,3 +194,27 @@ SHA256 `7c980d648be8d058b815ac055ea41700e10cee21d0adb3b48cba6752bfe19e72`。
 模型可用性整链或当前源码空栈重建PASS。保留有效A–D/F6；剩余为受影响保存的独立
 实测、最终Golden/source-build汇总及必需hosted CI/仓库门禁。原未知调用不重放。
 无推送、合并、部署或Phase18授权。
+
+
+### 独立模型HTTP协议诊断（2026-10-02）
+
+为区分当前推理接口可用性与原DSH超时，先用10项离线样本检查缺失/非法usage、
+输出超限、错误终态、工具项及空回答，再发起一次全新Engineering协议请求。
+POST `https://api.deepseek.com/responses`，固定非业务短文本，188-byte body、
+max_output_tokens128（包含推理tokens）、reasoning none、tools空/tool_choice none、
+socket15秒/总体20秒，无redirect/retry。参数与用量字段按
+[官方合同](https://api-docs.deepseek.com/api/create-response/)核对。
+
+真实返回HTTP200、completed、1.509秒；请求`deepseek-v4-flash`，响应报告
+`deepseek-flash`，response ID `691fd5e5-63c6-4a5a-ba4f-fdcc63dc7554`。
+固定诊断回答匹配、没有工具项，接口报告input21/output13/total34，均在声明输出限额内。
+这条直接外部attempt1单独记录：Adapter新boot normalized仍0/active0，并不表示
+本次外部请求为0；原DSH请求的返回、取消和实际用量仍UNKNOWN。
+没有Product Agent输入、任务/Artifact/Job/Reset/Web/行情动作，也没有改SDK、
+provider/default profile、Harness、产品预算或领域授权。
+
+六文件seal：`/tmp/byq-phase17-model-http-diagnostic-20261002/seal.json`，SHA256
+`642e8549647f5d2c117de2059e2423e48f99d42051914aaeb554bb7fbfa9b902`。
+Root限定验收：`/tmp/byq-phase17-model-http-final-root-acceptance-20261002.json`。
+**仅当前这次独立HTTP协议诊断PASS**，不替代DSH/Agent、真实保存/浏览器或完整Golden E。
+原失败不重放，Golden E/Phase17 OPEN、有效A–D/F6复用及最终阶段门禁保持。

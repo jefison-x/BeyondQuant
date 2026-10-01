@@ -64,6 +64,10 @@ Accepted [ADR-0091](../architecture/adr/ADR-0091-workspace-reset-fact-retention.
 新boot计数0不抹掉旧14或历史未知用量，没有新模型/Reset/Job/Web/行情请求。
 原保存FAIL与完整Golden E/Phase17 OPEN保持，最终Golden/source-build和hosted CI/
 仓库门禁仍必要；[完整限定证据](../clean-break/phase17-personal-reset-actual-evidence.md#超时只读审计与提示源码加载2026-10-02)。
+一次独立Engineering模型HTTP诊断通过：非业务188-byte输入、128输出限额、无工具/
+重试；HTTP200/completed/1.509秒，接口报告input21/output13/total34，响应模型
+deepseek-flash接受旧alias。此次直接外部attempt1与Adapter新boot计数0分别记录，
+原DSH返回/取消/用量UNKNOWN保持；不替代Agent保存、浏览器或Golden E验收。
 No later phase is authorized.**
 Under [ADR-0089](../architecture/adr/ADR-0089-clean-break-gpu-acceptance-scope.md),
 GPU execution and GPU checkpoint/restart are `N/A` for BYQ 0.10 acceptance;
