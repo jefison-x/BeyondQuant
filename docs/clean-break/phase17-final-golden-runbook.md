@@ -1,5 +1,33 @@
 # Phase 17 final Golden runbook
 
+## Current v12 affected-observer result (2026-10-01)
+
+Phase17 remains **OPEN**. One fully admitted/frozen v12 attempt failed in FG1:
+the exact current ResearchTask authorization is valid, but both frozen audit
+observers required null resources. Root saved the authority response and kept
+the original healthy connection during bounded readonly persistence/catalog
+reconciliation; after confirming no pending/unknown side effects, an honest
+STOP_NOT_PASS termination notice caused the original Runner failure. FG1 wrote
+one Task and two validated Artifacts; normalized model calls were12, raw provider
+HTTP NOT_OBSERVED. No grant/new SignalJob/FG2/BG/UI followed. Exact failure
+cleanup preserved13 resources/5volumes/2networks, stopped Workers and restored
+flags0/new Runtime0. The68 original files and v10/v11 remain protected.
+
+Tester → independent Reviewer → Root accepted failure facts/cleanup only, then
+passed the separate offline minimal observer repair: exact current Task or null
+for this one optional authorization resource, and full wire preservation before
+audit assertions. Python/JS sample matrices, bad-scope rejection, write ordering
+and remaining FG2/BG BacktestTask contracts are covered without real calls.
+All other identity/resource/order checks remain strict. No Product or DSH
+boundary changed. [v12 evidence and scoped repair](phase17-continuation-budget-audit.md#15-f6-v12-合法-task-授权与冻结观察器失败2026-10-01).
+
+Next: finish complete candidate binding and fresh admission for the minimum
+affected healthy success-closeout/readonly UI qualification; do not resume the
+failed Task or replay prior calls/events. Reuse unchanged component/A–D evidence.
+Required final Golden/hosted CI remain open; no push/remote merge/deployment.
+
+## Historical v11 actual scope and qualified CLI control
+
 Status: Phase 17 remains **OPEN**. Accepted ADR-0090 has scoped source and
 offline gates. One corrected, freshly admitted v11 F6 reached exact FG1, FG2 and
 real automatic background continuation in the original healthy conversation.

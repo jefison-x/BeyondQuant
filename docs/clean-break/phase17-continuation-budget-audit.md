@@ -763,3 +763,85 @@ PASS**；它不是带 Job 的 Worker资格、后台接续、成功UI或完整F6�
 成功 UI/原健康收尾的最小实测方案和最终 Golden 条件；新请求仍需新鲜完整准入，
 旧调用/事件/会话不得重放或恢复。最终阶段与 hosted CI 门禁继续保留。
 没有推送、远程合并、部署或正式/原有数据库、用户数据、备份操作。
+
+## 15. F6 v12 合法 Task 授权与冻结观察器失败（2026-10-01）
+
+在 v11 成功收尾/UI 的限定补验方案上，先完成 Tester 的 21 项定向动态用例与
+1 项静态检查、独立 Reviewer、Root offline 门禁；45 个完整变更文件、16 个 helper
+与输入合同被精确绑定。成功 closeout 和 UI 的用例仅是 mock/VM，不代表真实通过。
+新鲜只读准入确认唯一专用 admin、原 98 交易日缓存、五个终态 SignalJob、无未决
+Runtime/测试，再仅用原镜像切换三项开关，冻结并启动一次 v12。未重跑 A–D/组件，
+未下载行情、重建镜像或重放旧调用。
+
+FG1 实际创建一个新 Task 和两个 task-bound validated Strategy Artifacts；完整目标
+2931 字符、策略源码和返回资源均已持久化。`byq_strategy_validate` 的授权记录为
+`research_task / 本轮精确 Task`。当前 Backend 允许该可选资源绑定；但冻结的 Root
+helper 与 Runner 均把此处写死为空，Root 审计门禁停止。三个成功动作与 run/owner/
+actor/workspace、结果资源仍精确；这是观察器假设偏差，不能将冻结的 v12 改判通过。
+
+Root 先另存完整权威审计；原健康 SSE 仍保持时，以最多 60 秒只读对账确认回答
+`up_to_date`、逐片段已持久化、两个 validated Artifacts、无 grant、新 SignalJob、
+未决 prompt 或未知写入。满足条件立即结束对账。然后写真实 `STOP_NOT_PASS` 的
+负向通知，绑定 candidate/失败证据；它不是 accepted audit proof，不伪造 PASS。
+原 Runner 按既有信号拒绝条件生成 `F6-1 / ASSERTION_FAILED / Root signal schema/status
+mismatch`，保存原 error/SSE；这是负向通知造成的 Runner 错误，根因保存在权威证据。
+
+本轮 normalized Runtime model-call delta **12**，raw provider HTTP **NOT_OBSERVED**。
+没有 FG2、grant、SignalJob、BG 或成功 UI。随后 exact failure reconciliation 无未决
+读，Worker 已停止、无 grant 可撤销；只清理本轮专用失败会话并同镜像归零三项开关。
+三项开关服务的 CID 随同镜像重建而更新；其余10项资源的 CID/状态不变，
+13 项镜像/挂载、5 卷、2 网络保持，新 Runtime sessions/prompts/model counter0；新计数不
+抹去前述12次调用。只读记录里的 mutations0 仅指后续对账/控制，不抹去 FG1 的
+Task/两个 Artifact 写入，也不抹去失败收尾专用会话 DELETE。
+
+Tester → independent Reviewer → Root **仅接受失败事实及安全收尾**；完整 v12 F6
+仍 **FAIL**，FG2/BG/UI **NOT_RUN**。原68件证据封存，旧 v10/v11 封存哈希保持。
+旧 Task、事件、会话、结果或用量不能移作新实测证据。
+
+| v12 原始/限定验收证据 | SHA256 |
+| --- | --- |
+| `/tmp/byq-phase17-adr0090-f6-v12/frozen-plan.json` | `d26966342045a069273fd75c482146dd323796dab2437f6494d9b4c7df893fb4` |
+| `/tmp/byq-phase17-adr0090-f6-v12/root-control/audit-f6-1-failure-readonly.json` | `231701d9d1aa2f0f48746c9061b080b23a10f5de2eb18563c141d91392bde93d` |
+| `/tmp/byq-phase17-adr0090-f6-v12/root-control/pre-rejection-readonly-reconciliation.json` | `bd39b97e9c7cf21a37342d347721621c5d22f6c7c8bf6e134b9cf4179fb07e2c` |
+| `/tmp/byq-phase17-adr0090-f6-v12/root-control/pre-rejection-durable-catalog-reconciliation.json` | `de917718baeae02c5b55264482ba56d64d9c663671144185e5ff1d0936fbb9a9` |
+| `/tmp/byq-phase17-adr0090-f6-v12/root-control/audit-proof-f6-1.json` | `cc3753720d9b43192048c35897bc398da40e098190f463749f7b9819449e9232` |
+| `/tmp/byq-phase17-adr0090-f6-v12/RUN-F6/error.json` | `1b411277253edfda782852989773af1e2b35e4447791487f056cf33fc7e8248c` |
+| `/tmp/byq-phase17-adr0090-f6-v12/f6-off-final-environment.json` | `d9b110c87a3d3179a2e509c47bdea9ce3d9eeb7efe4a31d9ce5504598cb336ca` |
+| `/tmp/byq-phase17-adr0090-f6-v12-protected-after-closeout.json` | `19e3f7747032f398893d2b1e12eeb16e5dd9935fcd58c63b748e4583453b9006` |
+| `/tmp/byq-phase17-v12-audit-resource-tester-20261001/assessment.json` | `7e429f2bac2de2ef091f79a2ced1d306d467586c1397a304073685d0cc397924` |
+| `/tmp/byq-phase17-v12-audit-resource-independent-review-20261001/actual-failure-cleanup-review.json` | `459ff729a20650f7bb17ca79902d32fb89b79aaabc5c197cdb438bbf72225b5a` |
+| `/tmp/byq-phase17-adr0090-f6-v12/root-actual-result-acceptance.json` | `c0d7e3410d87034b462a030451d9469ce96c20f891f9f9082d57d000fad7b30f` |
+
+## 16. 审计资源观察器的定向修正（2026-10-01）
+
+最小修正仅作用于 Root 审计和 Runner 两处：FG1 的 strategy_validate 授权资源允许
+`null/null` 或 `research_task / 本轮精确 Task`；任意其他 Task、半空资源或 Artifact
+绑定仍拒绝。所有其他 stage 的 action、结果资源、run/owner/actor/workspace、角色、
+完整动作序列与唯一审计 ID 检查保持严格。Root 在权威结构化读回后、run/resource
+断言前先 O_EXCL/fsync 保存 `OBSERVED_NOT_QUALIFIED` 完整响应；它不产生 PASS
+证明或信号。产品权限、Job、DSH 和 ADR-0090 的架构边界没有变化。
+
+Python/JS 各通过 5 个正例和16个反例（使用已有真实 v11/v12 审计样本）；另验证
+一次 stub main 先存响应再拒绝坏 run，未生成 proof/signal。剩余 FG2/BG 的精确
+BacktestTask 结构以3正例/5反例核对，未发现此范围内额外确定性合同阻塞。首轮
+Node harness argv 接线错误、未触发候选断言的事实另存说明；正确矩阵通过不覆盖
+原错误。没有模型、Product、Docker、SQL 或浏览器调用，没有重跑 A–D/完整套件。
+
+Tester → independent Reviewer → Root **限定 offline PASS**。可审查差异见
+[审计资源观察器 patch](evidence/phase17-f6-audit-resource-observer.patch)。零上下文
+附件从原冻结 helper 精确重建两个已验收 candidate 字节；没有修改原 v12 helper。
+新候选仍需完整剩余断言/合同一次性检查、全量源文件/helper绑定、新鲜只读准入和
+独立冻结，才能做受影响实测。旧 v12 F6 FAIL 不升级；成功健康收尾/真实许可 UI、
+最终 Golden/hosted CI仍需实际证据，Phase17 OPEN，Phase18未开启。
+
+| 离线修正门禁证据 | SHA256 |
+| --- | --- |
+| `/tmp/byq-phase17-v12-audit-resource-repair-20261001/manifest.json` | `3c84c13f66ac5b33dcf630a7f1a9855bd79f4d04e522589357e3d529b3ba56f2` |
+| `/tmp/byq-phase17-v12-audit-resource-repair-20261001/qualify-agent-audit.py` | `922b0285c001a9d31ae3be2894498f23eb9756a7cd2f6faa55a748c8cd7ad7c7` |
+| `/tmp/byq-phase17-v12-audit-resource-repair-20261001/run-f6-once.mjs` | `9950c29bedb517c3fd4ad004e882e9bb6462b963e5fa88262e905f0c8782c041` |
+| `/tmp/byq-phase17-v12-audit-resource-repair-20261001/audit-resource-observer.patch` | `e9f393b8d7bdbccfa57fb96351d05e29def83ae2a6a9b53a574d7759fa1f32d3` |
+| `/tmp/byq-phase17-v12-audit-resource-repair-20261001/patch-reconstruction-proof.json` | `d21bc6fbcc1a41dccd4de9ebe6c1b015938d3abe3f4fece278f130d6fff512fc` |
+| `/tmp/byq-phase17-v12-audit-resource-tester-20261001/report.json` | `ca6c936e3304b41f5413321ae6bcb1f634a660ff3f476eccc830f10fde5815ff` |
+| `/tmp/byq-phase17-v12-audit-resource-tester-20261001/testing-harness-correction-note.json` | `028984010bce5000f7c971c515ce1a26be0196e255efcb8bbd0a47801a110470` |
+| `/tmp/byq-phase17-v12-audit-resource-independent-review-20261001/candidate-review.json` | `02d1514a58fbfe6f5552618cbc16f64d263a3db82636bffcf2cdfe04231d5bd2` |
+| `/tmp/byq-phase17-v12-audit-resource-repair-20261001/root-offline-repair-acceptance.json` | `8b71d7cd45cacf551afa6e4ed7b858f7edfbacc8a2bad75c2a2796fd5d8c8fea` |

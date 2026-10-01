@@ -1,5 +1,22 @@
 # Phase 0–6 gate record
 
+## Phase17 v12 failed audit observation and scoped repair (2026-10-01)
+
+Complete v12 F6 **FAIL**; FG2/BG/UI **NOT_RUN**. FG1 created a new Task and two
+validated Artifacts, but frozen observers rejected a legal exact-Task validation
+authorization. Root saved evidence and bounded readonly reconciliation before
+a truthful negative STOP_NOT_PASS notification. Exact failed-session/flag0
+cleanup preserved resources and zeroed the new Runtime;12 prior normalized
+model calls remain recorded (raw HTTP NOT_OBSERVED). Tester → independent
+Reviewer → Root accepted these facts and containment only.
+
+The separate two-observer resource correction and authority-wire preservation
+passed scoped offline sample/stub gates; no architecture change or real F6 pass.
+The68 original evidence files remain sealed. New real admission/freeze, healthy
+success closeout and real UI are still necessary, alongside final Golden and
+hosted CI. Reuse valid A–D; no next phase/push/remote merge/deployment.
+See [v12 evidence](phase17-continuation-budget-audit.md#15-f6-v12-合法-task-授权与冻结观察器失败2026-10-01).
+
 ## Phase 17 ADR-0090 v11 actual scope and CLI observer correction (2026-10-01)
 
 Tester → independent Sol Reviewer → Root accepted actual FG1/FG2 and automatic

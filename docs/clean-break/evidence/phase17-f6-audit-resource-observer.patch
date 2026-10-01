@@ -1,0 +1,30 @@
+--- a/qualify-agent-audit.py
++++ b/qualify-agent-audit.py
+@@ -113,0 +114,6 @@
++        resource = (authorized.get('resource_type'), authorized.get('resource_id'))
++        resource_matches = resource == pre_resource
++        if candidate['stage'] == 'f6-1' and index == 1:
++            # Authorization may name this already-created Task. Preserve the
++            # exact Task identity; arbitrary resources are not admissible.
++            resource_matches = resource in ((None, None), ('research_task', candidate['task_id']))
+@@ -115 +121 @@
+-                and (authorized.get('resource_type'), authorized.get('resource_id')) == pre_resource
++                and resource_matches
+@@ -301,0 +308,7 @@
++    # Persist the authoritative wire before checking any run/resource assertion.
++    # This is evidence of observation, never an accepted audit proof or signal.
++    write_new(CONTROL / f'audit-readback-{stage}.json', {
++        'status': 'OBSERVED_NOT_QUALIFIED', 'stage': stage,
++        'candidate_path': str(candidate_path), 'candidate_sha256': candidate_sha,
++        'root_request_context': context, 'response': response,
++    })
+--- a/run-f6-once.mjs
++++ b/run-f6-once.mjs
+@@ -87,0 +88,4 @@
++    const resource = [auth.resource_type, auth.resource_id];
++    const resourceMatches = candidate.stage === 'f6-1' && index === 1
++      ? same(resource, [null, null]) || same(resource, ['research_task', candidate.task_id])
++      : same(resource, preResources[index]);
+@@ -89 +93 @@
+-      && same([auth.resource_type,auth.resource_id],preResources[index])
++      && resourceMatches
