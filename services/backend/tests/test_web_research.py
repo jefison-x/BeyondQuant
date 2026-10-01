@@ -205,6 +205,34 @@ class WebResearchEvidenceTests(unittest.TestCase):
             with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, "supported claim"):
                 validate_web_research_evidence(fixture)
 
+    def test_unknown_publication_can_be_saved_as_unestablished_without_inventing_support(self) -> None:
+        for claim_type in ("FACT", "CAUSAL", "CANDIDATE"):
+            fixture = evidence_fixture()
+            for source in fixture["sources"]:
+                source.pop("source_id")
+                source["published_at"] = None
+                source["temporal_status"] = "PUBLISHED_AT_UNKNOWN"
+            fixture["claims"] = [{
+                "statement": "Publication time is unknown; this is an unverified research lead.",
+                "claim_type": claim_type,
+                "state": "UNESTABLISHED",
+                "source_indexes": [0, 1],
+            }]
+            fixture["limitations"] = ["The sources do not establish time-safe support or causation."]
+            before = copy.deepcopy(fixture)
+            with self.subTest(claim_type=claim_type):
+                normalized = normalize_web_research_evidence(fixture)
+                self.assertEqual(fixture, before)
+                self.assertEqual(normalized["claims"][0]["state"], "UNESTABLISHED")
+                self.assertTrue(all(source["published_at"] is None for source in normalized["sources"]))
+                self.assertEqual(normalized["claims"][0]["source_ids"],
+                                 [source["source_id"] for source in normalized["sources"]])
+                validate_web_research_evidence(normalized)
+                invalid = copy.deepcopy(fixture)
+                invalid["claims"][0]["state"] = "SUPPORTED"
+                with self.assertRaisesRegex(ValueError, "supported claim requires"):
+                    normalize_web_research_evidence(invalid)
+
     def test_causal_claim_requires_primary_source(self) -> None:
         fixture = evidence_fixture()
         fixture["claims"] = [

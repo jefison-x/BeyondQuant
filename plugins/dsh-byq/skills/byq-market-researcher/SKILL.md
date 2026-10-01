@@ -37,6 +37,18 @@ for a web-evidence save. Audit the actual outcome. The content must declare
 Factor, Strategy, signal, or Backtest inputs, and never use the generic Artifact
 tool to evade the web-evidence validator.
 
+Before submitting evidence, classify every claim from its cited sources.
+`SUPPORTED` requires at least one cited PRIMARY or SECONDARY source with
+`WITHIN_AS_OF`; a SUPPORTED CAUSAL claim additionally requires PRIMARY.
+A title, publisher or academic repository does not prove publication time.
+If every cited source has `published_at=null` / `PUBLISHED_AT_UNKNOWN`, or
+otherwise lacks eligible time-safe support, set that claim to `UNESTABLISHED`.
+Keep the real source indexes, timestamps and tiers, explain the evidence gap in
+limitations, and say “现有证据无法建立原因” for unestablished causation.
+Such research leads may still be saved honestly. Never invent a publication date,
+upgrade a source tier, or leave all claims SUPPORTED just to make a save succeed.
+`CONFLICTED` requires at least two cited sources.
+
 Use this exact bounded content shape when promoting evidence; omit no field and
 do not add fields:
 
@@ -86,6 +98,10 @@ identifiers from validated URLs. Never invent or send a search plugin ID or
 version; the trusted MCP deployment attaches the actual producer provenance.
 On a normalized validation failure, repair the
 specific field once and retry once; if it still fails, stop instead of looping.
+For `SUPPORTED_SOURCE`, recheck all SUPPORTED claims against the rules above,
+including both time eligibility and the primary-source requirement for causation.
+Do not repeat a Web query to repair a known save validation rejection. An unknown
+save outcome requires reconciliation before any retry.
 
 Describe persistence in user language only. On success say that the research
 record was saved and report the source count. On failure say: “搜索结果已展示，但

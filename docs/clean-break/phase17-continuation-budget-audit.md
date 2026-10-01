@@ -988,3 +988,47 @@ implementation PASS**，允许开始受影响构建和 E观察器资格阶段。
 **实际 E、当前源码空栈重建及 hosted CI NOT_RUN；Phase17 OPEN。**
 只复验受影响 reset/schema/build；A–D及实际 F6/UI复用，不重放未知调用。
 未推送、合并、部署或启动Phase18。
+
+
+## 21. ADR-0091 完整个人重置：实际门禁与重置后研究失败（2026-10-02）
+
+[完整实际记录](phase17-personal-reset-actual-evidence.md) 更新当前结论；第19/20节的
+历史 NO-GO/NOT_RUN 保持原时点事实。完整个人 Reset 一次真实 POST，72类784行
+七天归档并归零，2闭合ledger和5 CAS完整，账号/RBAC/shared/system与注册默认通过
+Tester → 独立 Reviewer → Root scoped actual gate。Root gate SHA
+`2687dd5998bbfb55aa2834c1104e61950c8f4bb1550cccc583173f8224010225`；47件seal SHA
+`8fad24fb522b97ae262d7d8a880c682ffbdff659ad8a11726b39ea44426db89a`。
+
+标准 networkless fresh-build FAIL 保留；固定依赖镜像的当前源码 overlay资格不是
+空栈重建/hosted CI。真实经过七天的定时GC未运行，离线到期合同PASS。
+
+随后唯一新conversation/2前台/1child/1Webquery：E1新主Task及回答PASS，E2正确
+拒绝8个未知发表时间来源的SUPPORTED说法，2次422之前无写事务。原E2FAIL封存，
+3run closed、Job0、currentReset guard PASS及shared/account/archive/5CAS完整。
+新增14 normalized model calls不等于2用户回合；raw HTTP NOT_OBSERVED。
+先保存再有界只读对账、最终清理SSE/browser，没有未知调用重放。
+
+修复仅加强既有保存合同提示，用UNESTABLISHED如实保留线索；Backend强校验不改。
+只准备受影响的save-only新1前台/1child，复用原8sources，0新Web/行情/Job/Reset/seed。
+源skill/MCP描述离线资格与运行镜像未更新的边界明确。完整E/finalGolden/Phase17、
+当前source/build currency、hosted CI与仓库门禁仍OPEN；有效A–D/F6不重复。
+无推送、合并、部署、生产数据/备份操作或Phase18。
+
+
+## 22. Reset后保存观察器与最终Runtime失败（2026-10-02）
+
+[实际证据](phase17-personal-reset-actual-evidence.md#最终限定保存实测runtime超时fail)
+记录两次零输入停止：旧SSE已释放；正常新空会话pending/三计数0被误要求up_to_date。
+Gateway首次投递合同已一次性核对，最终精确startup allowlist/identity/空消息/零计数
+及严格post-input持久化经25项离线正反例、Tester→独立Reviewer→Root通过。
+
+受影响限定实测只1新会话/1输入，因runtime-no-progress-timeout120s FAIL，没有BYQ
+工具/委派/搜索/写Artifact。先保存、四次有界只读对账后清连接；root failed/closed，
+Job/claim0，原Task/账号/shared/归档/5CAS保持。normalized模型delta0不代表实际零
+用量；provider结果/费用UNKNOWN，rawHTTP NOT_OBSERVED，未知调用未重放。
+19件取证seal SHA `7f4fb65e8898295da12799e0b17492e38a96db20ba00a457e0dc5b2c0fd2a898`。
+
+原完整个人Reset actual PASS不受影响；保存后缀/原E2实际FAIL，E/Phase17 OPEN。
+既有A–D/F6有效证据保持，不重复整链或通过扩大timeout/重建Harness掩盖失败。
+清理仅精确tmpfs合同测试容器/唯一网络，Product13/5卷/2网络保持；首次Mounts数组
+排序比较失败在删除前停止，规范顺序后逐属性重验通过。无持久数据/生产/备份操作。

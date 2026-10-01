@@ -1,21 +1,26 @@
 # Phase 0–6 gate record
 
-## Current next gate — complete personal reset / Golden E (2026-10-01)
+## Current next gate — post-reset evidence save / final Golden (2026-10-02)
 
 [Accepted ADR-0091](../architecture/adr/ADR-0091-workspace-reset-fact-retention.md)
-defines complete personal Product reset to registration defaults with seven-day
-DB/CAS retention and minimal enduring idempotency proofs. Identity/RBAC, shared
-market data, system configuration and other users remain protected. Unknown or
-pending external outcomes require reconciliation before reset.
+complete personal reset has passed the scoped real Tester → independent Reviewer → Root gate:
+72 categories/784 personal rows archived for seven days and cleared to defaults; identity/RBAC,
+shared/system state and5 CAS objects remain. A single real Reset/browser flow ran with0 models/seed.
+Standard offline fresh-build FAIL is retained; exact-source affected overlay qualification is separate.
+Seven-day elapsed GC and a current-source whole empty-stack rebuild are NOT_RUN.
 
-The isolated implementation candidate has focused Backend PostgreSQL, Gateway
-and frontend test/build evidence. Tester → independent Reviewer → Root accepted
-the scoped offline implementation; affected schema/build qualification and actual
-populated E are still pending. [Layered evidence](phase17-continuation-budget-audit.md#20-adr-0091-完整个人重置实现离线门禁2026-10-01). **Golden E NOT_RUN; Phase17 OPEN.** Historical NO-GO findings remain in
-[the audit](phase17-continuation-budget-audit.md#19-golden-e-重置边界审查与尚未接受的方案2026-10-01).
-Reuse valid A–D/F6; qualify only affected reset/schema/build changes before E.
-Final Golden, hosted CI and repository gates remain OPEN; no push, merge,
-deployment or Phase18 is authorized.
+Post-reset E1 passed. E2 really delegated/searched once, then correctly failed on unknown-publication
+sources marked SUPPORTED; no child Task/Artifact was written. All3 runs are closed with Job0 and
+no unknown liability under the current guard. Original E2 FAIL remains immutable. Only the bounded
+save-only suffix passed scoped offline observation gates, then its sole submitted input failed on
+Runtime120s no-progress timeout before any BYQ tool/delegation/save. Native actual usage/response
+remain UNKNOWN; normalized delta0 does not mean zero cost. No input replay occurred and readonly
+account/shared/archive/CAS preservation passed; actual save remains FAIL. No new Web/market/Job/Reset/seed.
+[Current actual evidence and boundaries](phase17-personal-reset-actual-evidence.md).
+
+**Complete Golden E / Phase17 OPEN.** Reuse valid A–D/F6; preserve final Golden, affected source/build
+currency, hosted CI and repository gates. No push, merge, deployment or Phase18 is authorized.
+Historical NO-GO/proposed-plan findings below remain historical evidence.
 
 ## Current v13 affected F6 acceptance (2026-10-01)
 
@@ -29,8 +34,7 @@ The legal audit-resource and canonical Product catalog observer repairs were
 qualified offline before their affected real executions. Historical v11/v12,
 v13 UI1 FAIL and blocked UI candidate v1 remain immutable.
 
-**Affected F6 + readonly UI: scoped real PASS; Phase17: OPEN.** Current populated
-scope Golden E reset→seed→new real research/delegation remains required. Tester/Reviewer/Root accepted
+**Affected F6 + readonly UI: scoped real PASS; Phase17: OPEN.** The affected post-reset save and final Golden summary remain required; complete personal reset does not use Engineering seed. Tester/Reviewer/Root accepted
 Golden F scoped source/build reuse without a current-source empty-rebuild claim;
 reuse valid A–D and preserve final phase/hosted CI/repository gates. No push,
 remote merge, deployment or Phase18 is authorized. [Actual v13 evidence](phase17-continuation-budget-audit.md#17-f6-v13-实际接续及成功收尾2026-10-01).

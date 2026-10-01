@@ -211,7 +211,14 @@ const webEvidenceContentSchema = z.object({
   claims: z.array(z.object({
     statement: z.string(),
     claim_type: z.enum(["FACT", "CAUSAL", "CANDIDATE"]),
-    state: z.enum(["SUPPORTED", "CONFLICTED", "UNESTABLISHED"]),
+    state: z.enum(["SUPPORTED", "CONFLICTED", "UNESTABLISHED"]).describe(
+      "SUPPORTED requires a cited PRIMARY or SECONDARY source WITHIN_AS_OF; "
+      + "SUPPORTED CAUSAL additionally requires PRIMARY. Sources with "
+      + "PUBLISHED_AT_UNKNOWN or AFTER_AS_OF cannot establish support. "
+      + "When no eligible source supports a claim, use UNESTABLISHED, keep "
+      + "the actual citations and explain the evidence gap in limitations. "
+      + "CONFLICTED requires at least two cited sources.",
+    ),
     source_indexes: z.array(z.number().int().nonnegative()).max(32),
   }).strict()).max(32),
   limitations: z.array(z.string()).max(16),

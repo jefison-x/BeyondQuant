@@ -1,6 +1,6 @@
 # ADR-0091 — 完整个人工作区重置与七天归档
 
-- Status: **Accepted — 2026-10-01；实现和实测验收尚未完成**
+- Status: **Accepted — 2026-10-01；完整个人重置已实现并通过 scoped actual gate，完整 Golden E / Phase17 仍 OPEN**
 - Acceptance: 维护者明确要求“直接从数据库层面重置，完成后就像新增了一个用户一样；被重置的用户数据归档保存7天左右”，在只读可行性评估后明确指示“好的，按照这个完整语义修订并实施”。
 - Scope: 当前 Clean Break Phase17，登录用户对自己的个人工作区执行显式重置。
 - Supersedes: 本 ADR 原 Proposed 的研究图/永久审计目标归档方案；ADR-004 的研究数据范围；ADR-0090 §4 对已闭合个人历史的无期限保留表述。安全、租户、业务幂等、未知外部结果和 DSH 唯一 Harness 边界继续有效。
@@ -41,3 +41,14 @@ ML producer 保持UID/GID10005，在自身拥有的 root、ml-features、ml-mode
 设置2770/setgid，拒绝符号链接和不同owner/group；对象沿用已有0640。没有递归chown、
 对象内容改写、root Backend 或新清理平台。既有专用测试卷只允许同producer身份执行
 精确目录初始化及一次唯一测试文件的写/读/删探针；生产/旧卷没有操作授权。
+
+
+### 已落实与验收边界（2026-10-02）
+
+本地 `91fc0211`、`3006f031`、`1c1f730c` 实施完整语义、ML CAS group 权限与
+watch 栅栏；没有推进下一阶段或部署。隔离 populated Reset 一次归档/清理72类784行，
+保留账号/RBAC/shared/system与5 CAS，真实浏览器默认状态通过 Tester → 独立 Reviewer →
+Root。原失败、离线合同、构建限制及后续研究保存失败分别保留于
+[实际证据](../../clean-break/phase17-personal-reset-actual-evidence.md)。
+真实七天后删除尚未观测（离线到期合同通过）；当前源码空栈全重建与 hosted CI 未通过。
+不能把本 ADR 接受、合同测试或已通过的 Reset 冒称完整 Golden E / Phase17 PASS。
