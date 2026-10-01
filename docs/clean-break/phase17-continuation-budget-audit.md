@@ -1,8 +1,8 @@
 # Phase 17 — continuation 预算与 F6 观察器审计
 
-Status: **ADR-0090 已实施；v11 FG1/FG2/BG、独立请求限额及持久化结算真实通过；完整 F6 因 Root 收尾观察器超时保留 FAIL；失败清理完成，CLI 窄修正及独立空队列控制实测通过；成功 UI NOT_RUN，Phase17 OPEN**。
+Status: **ADR-0090 Accepted; affected v13 real F6/readonly UI scoped PASS; historical v11/v12 FAIL and UI1 FAIL preserved; Golden E NOT_RUN / NO-GO pending Proposed ADR-0091 acceptance; Phase17 OPEN**.
 本记录使用当前 Clean Break ADR-001–006/ADR-0088；历史 ADR-0086 不作为现行规范。
-[ADR-0090](../architecture/adr/ADR-0090-continuation-request-limits.md) 已于 2026-10-01 获维护者“明确接受”。以下第 1–6 节保留接受前限定验收的事实边界；当前实施及实测状态见第 13–14 节；旧节保留其记录时边界。
+[ADR-0090](../architecture/adr/ADR-0090-continuation-request-limits.md) 已于 2026-10-01 获维护者“明确接受”。以下第 1–6 节保留接受前限定验收的事实边界；当前实际 v13/重置门禁见第 17–19 节；第 13–16 节保留历史失败及修正资格；旧节保留其记录时边界。
 
 ## 1. 同步、停机状态与证据保护
 
@@ -845,3 +845,113 @@ Tester → independent Reviewer → Root **限定 offline PASS**。可审查差�
 | `/tmp/byq-phase17-v12-audit-resource-tester-20261001/testing-harness-correction-note.json` | `028984010bce5000f7c971c515ce1a26be0196e255efcb8bbd0a47801a110470` |
 | `/tmp/byq-phase17-v12-audit-resource-independent-review-20261001/candidate-review.json` | `02d1514a58fbfe6f5552618cbc16f64d263a3db82636bffcf2cdfe04231d5bd2` |
 | `/tmp/byq-phase17-v12-audit-resource-repair-20261001/root-offline-repair-acceptance.json` | `8b71d7cd45cacf551afa6e4ed7b858f7edfbacc8a2bad75c2a2796fd5d8c8fea` |
+
+## 17. F6 v13 实际接续及成功收尾（2026-10-01）
+
+完整离线断言/合同门禁、新鲜只读准入和冻结后，仅执行一次新 v13 链。源码为
+`92f60991`，应用镜像仍绑定 `cdeeb6db`；46 个源文件和16个 helper 已冻结。
+Agent 实际创建新 Task/validated version，再在精确人类审批/许可后创建一个新
+SignalJob。原健康会话收到该 Job 的新 terminal event 并自动后台接续；没有恢复
+旧 DSH 会话。FG1/FG2/BG 的 action、授权和结果资源、run/actor/workspace 均从
+权威结构化记录核对，公开回答中的能力描述不作为审计事实。
+
+Job `signaljob_088e1edcdbf645f895d243c1136fa1ed` attempt1 完成，保存 validated
+SignalSnapshot `artifact_49d82f1e77de451eabe58f1c510f6d76`。17次有界只读样本确认
+回答持久化与同一 request settlement，满足条件立即结束。后台 run
+`5e311a3242ff46dea8ef0321420fd171` 实际8次 provider attempts/calls、7次工具、
+21893ms；provider_response 已知 input79794/output4436/cache-read69888 tokens。
+输入327495 bytes、工具89778 bytes，limit violations 空。声明输出65536 tokens
+是安全准入量，不是假称真实输出；raw provider HTTP 仍 NOT_OBSERVED。
+
+Worker 单次 stop 保存 CLI 输出并精确 inspect；同一 grant 单次撤销后 Product
+读回已 revoked/settled，reserved1/remaining0/unconfirmed0。成功收尾保留原
+Product conversation 与结算责任，三服务同镜像 flags0、Workers 停止；其余10项
+CID/state 及全部13项镜像/挂载、5卷/2网络保持。Runtime 在关开关前已正常释放；
+新 Runtime counters0 不抹去此前30次 normalized model calls，也不证明 DSH 恢复。
+Tester → independent Reviewer → Root **限定真实 F6 核心和成功收尾 PASS**。
+
+## 18. 真实只读面板与观察器修正（2026-10-01）
+
+首次 UI1 已正确显示许可、11项上限、真实用量、撤销状态，刷新读回也一致；最后
+断言却把 Gateway 的只读 `GET /v1/agent/sessions` Product conversation catalog
+当成 Agent 动作。该真实 UI1 保留 FAIL；不将已发生的失败改写为通过。
+
+Root 仅修改私有 UI 观察器。v1 candidate 的无尾斜杠/编码 Agent 路径未拒绝，被
+离线门禁拦住，未真实执行。v2 仅允许 canonical GET catalog，并有界解码、重复
+斜杠规范化后拒绝其余 Agent 路径；所有其他写请求仅允许一次登录。实际 route
+callback 26/26 PASS，先经独立 Reviewer/Root offline gate，再执行一次 UI-only
+真实 Chromium。可审查差异见 [UI catalog observer patch](evidence/phase17-f6-ui-catalog-observer.patch)。
+权限 wire、截图、刷新在断言前保存；没有 F6/模型/Worker/A–D 重跑。
+
+UI2 实际 **PASS_REAL_READONLY_PERMISSION_PANEL_ONLY**：83请求，82 GET/1登录
+POST，blocked0；3次 canonical catalog GET，无其他 Agent action。五行显示的
+11项上限精确匹配 Product wire，900s grant watchdog 与180000ms request deadline
+分开，已知用量与准入量分开，已花费/撤销时无新授权或撤销按钮，刷新相同责任。
+前后13资源、Runtime authority、原 Product conversation、revoked/settled permission
+逐对象相同，Runtime sessions/prompts/model calls0。Tester → independent Reviewer
+→ Root **限定真实 UI PASS**；与原 v13 F6 核心组合为受影响 F6 验收 PASS。
+
+旧 v10/v11/v12 和原 v13 UI1 文件哈希保持；新162件证据另封存。Phase17仍 OPEN：
+当前 populated exact scope 的 Golden E reset→seed→真实研究/委派必需；Golden F
+源/镜像与旧 rebuild 的限定复用已获Tester/Reviewer/Root确认；
+不能声称当前源已在新空库重建或机械重建整栈。有效 A–D继续复用，
+最终阶段、hosted CI 和仓库门禁保留。没有推送、远端合并、部署或 Phase18授权。
+
+| v13 实际/限定验收证据 | SHA256 |
+| --- | --- |
+| `/tmp/byq-phase17-adr0090-f6-v13/frozen-plan.json` | `674334a886b9ec210e77d1aef439cb7dc55c6c8379e3415eec405b63479a575e` |
+| `/tmp/byq-phase17-adr0090-f6-v13/f6-off-final-environment.json` | `618d09fdab94d4a0a9f733e8cdd3d8ccb7583fe5f1a0190f82d3fb1031bd8e8b` |
+| `/tmp/byq-phase17-v13-independent-result-review-20261001/actual-f6-and-ui1-review.json` | `94c37b2fccc6542b23fe8ce2ecfec42275f02207bb5d2b5df4f72d05155bb301` |
+| `/tmp/byq-phase17-v13-ui-catalog-tester-20261001/v2-report.json` | `6770b5d4680f3b69f49f20cacdfd4ddff8bd9718ed9f583d6f0c4ac1f7e238c8` |
+| `/tmp/byq-phase17-v13-independent-result-review-20261001/ui-catalog-v2-offline-review.json` | `2d2b8a9400be0f43916a2377afdb2ca2d26dfe8771ca01ee497ee828cbd02ace` |
+| `/tmp/byq-phase17-v13-ui-catalog-tester-20261001/actual-ui2-result.json` | `27fbbce51cf68b50c03f920539e312379ec5a0c32f46e8aedded2eee3019519d` |
+| `/tmp/byq-phase17-v13-independent-result-review-20261001/actual-ui2-review.json` | `19e40b8c18fe8947047665f9ee26ca37ba4198c8bb17ca0b53da3ef204ba3132` |
+| `/tmp/byq-phase17-adr0090-f6-v13/root-actual-combined-acceptance.json` | `f234d1fad9fd69319de8e469dadde7969e4ec2e939498730af72e9a1a865e88b` |
+| `/tmp/byq-phase17-adr0090-f6-v13-protected-after-ui-acceptance.json` | `bf37a4976eda978e3d470af9c6ced65d5922f56ca19483ed4872f6daf12ed5b8` |
+
+## 19. Golden E 重置边界审查与尚未接受的方案（2026-10-01）
+
+已封存 v13 F6/UI 三方验收后，Root 仅对当前 Product 目录做只读发现：21Task、
+60Artifacts、12active conversations、6SignalJobs、3Backtests、1个从已接受比较
+Artifact精确读出的 OptimizationJob、2TrainingJobs，均未启动 reset/seed/model。
+一次错误的全局 Optimization catalog GET 返回422，合同实际要求 task/key；随后
+仅修正只读精确查询，原文件和说明保留，没有重放业务调用。完整性声明限于专用
+fresh schema、唯一账号、支持的已记录写历史和无并发 writer，不宣称生产全局 SQL证明。
+
+Tester 只读审查发现旧 E draft 的 conversation snapshot 没有 type，后续与null比较
+必误报；响应未在断言前保存，且未强制 owner/workspace/资源ID与接续责任核验。
+Root 已另存未冻结 candidate，尚未完成全部 offline gates，未实测。
+
+独立 Reviewer 进一步确认当前 Product reset **NO-GO**：
+`research_tasks` 删除会抹去其唯一 grant/reservation/settlement/unknown JSONB责任；
+现有 retained_task_audit/retained_audit 又会拒绝真实F6 Task和策略 Artifact 的审计
+引用删除。单补观察器或私有文件封存都不能修复持久 Product 边界。
+Functional/Tests/Architecture 在 **E reset 范围均未通过**，不是 v13 F6/UI回退失败。
+
+[Proposed ADR-0091](../architecture/adr/ADR-0091-workspace-reset-fact-retention.md)
+给出最小 KEEP/DELETE/REWRITE：Backend 同锁责任预检、不可变精确事实归档、
+原子核验后删除 disposable 图，并提供当前用户/Workspace 限定的 Product 只读对账。
+未知外部结果先对账；不复制余额、恢复 DSH 或创建通用预算平台。该新的 reset 后
+存储/读取边界需维护者明确接受；本轮未实现新DDL/archive/API，真实 E仍 NOT_RUN。
+
+Golden F 已有独立只读 source/build currency 复用审查：旧 lifecycle 与 Phase17
+实际 fresh bootstrap、当前 `.280`/cdeeb6镜像读回获Tester → Reviewer → Root限定复用接受；不称 cdeeb6在新空库
+整栈重建。后续若接受并实现ADR0091新schema/reset代码，须重新判断具体受影响资格。
+Phase17仍 OPEN，最终 Golden/hosted CI/仓库门禁保留，无推送/远端合并/部署授权。
+
+| 新的只读审查证据 | SHA256 |
+| --- | --- |
+| `/tmp/byq-phase17-v13-independent-result-review-20261001/f-currency-readonly-review.json` | `47743e23e351e0e9a46769ca2cf88feef61a0d2da5e8ee3be9e5de0052146ae4` |
+| `/tmp/byq-phase17-v13-independent-result-review-20261001/golden-e-reset-no-go-review.json` | `eebf2ecdeb2d5b3379276d7e1a1b2523a3eb53870c1ec40c82b809778baba073` |
+
+当前 F 限定复用 Root gate `/tmp/byq-phase17-f-reuse-root-20261001.json` SHA
+`86838df30b9e39534ca316521a046dfc7dd4d76aecf7e2dd7002c18dc53fc911`。
+E/提案正式只读 Tester `/tmp/byq-phase17-e-reset-v13-readonly-review-20261001/report.json`
+SHA `ffc6a611d64b5c552c98f8a06aedddcae9207282391127749a69fe26ea45b6c8`；
+独立 Reviewer `/tmp/byq-phase17-v13-independent-result-review-20261001/adr0091-proposal-and-f-tester-review.json`
+SHA `9ce3f423742b6c780a4431e31d3c632f6c4cbc521e484f2ab6499a0bd470310b`。
+最终专用栈只读状态 `/tmp/byq-phase17-e-no-go-final-state-20261001.json` SHA
+`f650c6f096df57bd30a54dca9022d8467849d8406b8c7134beb552fcf89c6d3f`：
+13资源保持，F6flags0、三Worker停止、Runtime sessions/prompts/model calls0，
+旧96/128/68/130及新162件证据逐哈希保持，无新model/reset/seed/业务输入。
+这些是 scoped事实/提案审查；不是 E 或 Phase17 PASS。

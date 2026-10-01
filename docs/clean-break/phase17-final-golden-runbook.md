@@ -1,6 +1,38 @@
 # Phase 17 final Golden runbook
 
-## Current v12 affected-observer result (2026-10-01)
+## Current next gate — Golden E reset retention (2026-10-01)
+
+Affected real F6/UI passed the scoped gate below. E remains **NOT_RUN / NO-GO**:
+reset would delete the only task-embedded continuation liability ledger and
+existing authority audit references also block the populated exact graph.
+Private evidence seals cannot replace durable BYQ facts. [Proposed ADR-0091](../architecture/adr/ADR-0091-workspace-reset-fact-retention.md)
+defines the minimum Backend atomic retention and owned readonly lookup. It is
+awaiting explicit maintainer acceptance; no archive/schema/API change or actual
+reset/seed/model input has run. [Exact audit](phase17-continuation-budget-audit.md#19-golden-e-重置边界审查与尚未接受的方案2026-10-01).
+Keep current source-qualified F reuse limited; reassess only affected schema/
+reset/build qualification after an accepted implementation. A–D/F6 are not
+replayed. Final Golden/hosted CI/repository gates and Phase17 remain OPEN.
+
+## Current v13 affected F6 acceptance (2026-10-01)
+
+Tester → independent Reviewer → Root accepted real FG1/FG2, the original healthy
+session's automatic background continuation, bounded answer persistence and
+settlement, exact Worker stop/revoke and successful flags0 closeout. The actual
+readonly Product permission panel and refresh then passed a separately gated
+UI-only Chromium check:83 requests,82 GET/one login POST, zero Agent/model or
+business inputs.11 limit fields and known actual usage match authority wire.
+The legal audit-resource and canonical Product catalog observer repairs were
+qualified offline before their affected real executions. Historical v11/v12,
+v13 UI1 FAIL and blocked UI candidate v1 remain immutable.
+
+**Affected F6 + readonly UI: scoped real PASS; Phase17: OPEN.** Current populated
+scope Golden E reset→seed→new real research/delegation remains required. Tester/Reviewer/Root accepted
+Golden F scoped source/build reuse without a current-source empty-rebuild claim;
+reuse valid A–D and preserve final phase/hosted CI/repository gates. No push,
+remote merge, deployment or Phase18 is authorized. [Actual v13 evidence](phase17-continuation-budget-audit.md#17-f6-v13-实际接续及成功收尾2026-10-01).
+
+
+## Historical v12 affected-observer result (2026-10-01)
 
 Phase17 remains **OPEN**. One fully admitted/frozen v12 attempt failed in FG1:
 the exact current ResearchTask authorization is valid, but both frozen audit

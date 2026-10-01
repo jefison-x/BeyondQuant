@@ -186,3 +186,9 @@ Proposed 只允许规划/验证，不授权越界实现。Accepted 必须记录�
 
 - ADR-0068 按维护者明确授权免除当前及之后所有开发步骤的 Community 原实现检查；
   保留只读保护、主动复用分类与真实数据迁移验证。
+
+[ADR-0091](ADR-0091-workspace-reset-fact-retention.md) is **Proposed**, awaiting
+explicit maintainer acceptance. It addresses the Phase17 populated Workspace
+reset gap: preserve continuation liability and exact authoritative target facts
+before deleting disposable objects. No archive/schema/API implementation or
+real E reset is authorized by this proposal.
