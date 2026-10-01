@@ -153,17 +153,11 @@ def test_ml_strategy_approval_archive_precedes_workspace_deletion() -> None:
         assert result["deleted"]["research_tasks"] == 1
         assert result["deleted"]["artifacts"] == 3
         assert "strategy_approval_fact_archive" not in result["deleted"]
-        archived = store._fetch_one("SELECT * FROM strategy_approval_fact_archive WHERE source_artifact_id=:id",
-                                    {"id": approval_a["artifact_id"]})
-        assert archived["approval_kind"] == "ml_strategy_approval"
-        assert archived["owner_principal"] == owner_a
-        assert archived["workspace_id"] == context_a["workspace_id"]
-        assert archived["research_task_id"] == task_a
-        assert archived["strategy_version_artifact_id"] == version_a["artifact_id"]
-        assert archived["approval_snapshot"] == approval_snapshot
-        assert archived["strategy_version_snapshot"] == version_snapshot
-        assert archived["approval_snapshot"]["content"]["decision"] == "rejected"
-        assert archived["approval_snapshot"]["content"]["execution_authorized"] is False
+        archived = store._fetch_one("SELECT payload_json FROM workspace_reset_archives WHERE reset_id=:id",
+                                    {"id":result['archive']['reset_id']})['payload_json']['tables']['artifacts']
+        assert approval_snapshot in archived
+        assert version_snapshot in archived
+        assert store._fetch_one("SELECT COUNT(*) AS count FROM strategy_approval_fact_archive")["count"] == 0
         assert store._fetch_one("SELECT artifact_id FROM artifacts WHERE artifact_id=:id",
                                 {"id": approval_a["artifact_id"]}) is None
         assert store._fetch_one("SELECT artifact_id FROM artifacts WHERE artifact_id=:id",
@@ -174,7 +168,7 @@ def test_ml_strategy_approval_archive_precedes_workspace_deletion() -> None:
         assert store._fetch_one("SELECT artifact_id FROM artifacts WHERE artifact_id=:id",
                                 {"id": version_b["artifact_id"]}) is not None
         assert store.reset_workspace(owner_principal=owner_a, workspace_id=context_a["workspace_id"])["already_empty"]
-        assert store._fetch_one("SELECT COUNT(*) AS count FROM strategy_approval_fact_archive")["count"] == 1
+        assert store._fetch_one("SELECT COUNT(*) AS count FROM strategy_approval_fact_archive")["count"] == 0
     finally:
         store.close()
         research.close()
@@ -332,35 +326,13 @@ def test_web_evidence_audit_survives_reset_without_pinning_disposable_artifact()
                     :artifact,'{}'::jsonb,:now)""",
             {"audit": blocked_id, "run": run_id, "owner": owner,
              "artifact": generic_artifact_id, "now": now})
-        with pytest.raises(WorkspaceResetBlocked, match="Agent audit"):
-            store.reset_workspace(owner_principal=owner, workspace_id=context["workspace_id"])
-        assert store._fetch_one("SELECT artifact_id FROM artifacts WHERE artifact_id=:id",
-                                {"id": web_artifact["artifact_id"]}) is not None
-        store._execute("DELETE FROM agent_audit WHERE audit_id=:audit", {"audit": blocked_id})
-
-        missing_type_id = f"agent_audit_missing_type_{suffix}"
-        store._execute("""INSERT INTO agent_audit
-            (audit_id,run_id,owner_principal,actor_principal,action,outcome,resource_type,
-             resource_id,detail_json,created_at)
-            VALUES (:audit,:run,:owner,:owner,'byq_web_evidence_create','saved',NULL,
-                    :artifact,'{}'::jsonb,:now)""",
-            {"audit": missing_type_id, "run": run_id, "owner": owner,
-             "artifact": web_artifact["artifact_id"], "now": now})
-        with pytest.raises(WorkspaceResetBlocked, match="Agent audit"):
-            store.reset_workspace(owner_principal=owner, workspace_id=context["workspace_id"])
-        store._execute("DELETE FROM agent_audit WHERE audit_id=:audit", {"audit": missing_type_id})
-
-        result = store.reset_workspace(owner_principal=owner, workspace_id=context["workspace_id"])
-        assert result["deleted"]["research_tasks"] == 1
-        assert result["deleted"]["artifacts"] == 2
-        assert store._fetch_one("SELECT artifact_id FROM artifacts WHERE artifact_id=:id",
-                                {"id": web_artifact["artifact_id"]}) is None
-        retained = store._fetch_one("SELECT action,outcome,resource_type,resource_id FROM agent_audit WHERE audit_id=:audit",
-                                        {"audit": audit_id})
-        assert retained == {"action": "byq_web_evidence_create", "outcome": "saved",
-                            "resource_type": "artifact", "resource_id": web_artifact["artifact_id"]}
-        assert store.reset_workspace(owner_principal=owner,
-                                     workspace_id=context["workspace_id"])["already_empty"] is True
+        result = store.reset_workspace(owner_principal=owner, workspace_id=context['workspace_id'])
+        archived = store._fetch_one('SELECT payload_json FROM workspace_reset_archives WHERE reset_id=:id',
+                                    {'id':result['archive']['reset_id']})['payload_json']['tables']
+        assert len(archived['agent_audit']) == 2
+        assert {row['resource_id'] for row in archived['agent_audit']} == {generic_artifact_id,web_artifact['artifact_id']}
+        assert store._fetch_one('SELECT audit_id FROM agent_audit WHERE audit_id=:id', {'id':audit_id}) is None
+        assert store._fetch_one('SELECT task_id FROM research_tasks WHERE task_id=:id', {'id':task_id}) is None
     finally:
         store.close()
         research.close()
@@ -482,30 +454,18 @@ def test_product_workspace_reset_requires_release_proof_is_scoped_and_idempotent
         assert finalized["deleted"]["factor_jobs"] == 1
         assert finalized["deleted"]["artifacts"] == 3
         assert "strategy_approval_fact_archive" not in finalized["deleted"]
-        archived = store._fetch_one("SELECT * FROM strategy_approval_fact_archive WHERE source_artifact_id=:id",
-                                    {"id": approval_a["artifact_id"]})
-        assert archived["approval_kind"] == "strategy_approval"
-        assert archived["owner_principal"] == owner_a
-        assert archived["workspace_id"] == context_a["workspace_id"]
-        assert archived["research_task_id"] == task_a
-        assert archived["strategy_version_artifact_id"] == version_a["artifact_id"]
-        assert archived["approval_content_sha256"] == approval_snapshot["content_sha256"]
-        assert archived["strategy_version_content_sha256"] == version_snapshot["content_sha256"]
-        assert archived["approval_created_at"] == approval_snapshot["created_at"]
-        assert archived["strategy_version_created_at"] == version_snapshot["created_at"]
-        assert archived["approval_snapshot"] == approval_snapshot
-        assert archived["strategy_version_snapshot"] == version_snapshot
-        assert datetime.fromisoformat(archived["reset_at"]) >= datetime.fromisoformat(archived["approval_created_at"])
-        assert datetime.fromisoformat(archived["reset_at"]) >= datetime.fromisoformat(archived["strategy_version_created_at"])
-        assert store._fetch_one("SELECT COUNT(*) AS count FROM strategy_approval_fact_archive")["count"] == 1
+        archived = store._fetch_one("SELECT * FROM workspace_reset_archives WHERE reset_id=:id",
+                                    {"id":finalized['archive']['reset_id']})
+        assert approval_snapshot in archived['payload_json']['tables']['artifacts']
+        assert version_snapshot in archived['payload_json']['tables']['artifacts']
         with pytest.raises(DBAPIError, match="immutable"):
-            store._execute("UPDATE strategy_approval_fact_archive SET reset_at=now() WHERE source_artifact_id=:id",
-                           {"id": approval_a["artifact_id"]})
+            store._execute("UPDATE workspace_reset_archives SET created_at=now() WHERE reset_id=:id",
+                           {"id":finalized['archive']['reset_id']})
         assert store._fetch_one("SELECT status FROM workspaces WHERE workspace_id=:id",
                                 {"id": context_a["workspace_id"]})["status"] == "active"
-        assert agents._fetch_one(
-            "SELECT status,authority_status FROM agent_runtime_turns WHERE root_run_id=:id",
-            {"id": root_id}) == {"status": "interrupted", "authority_status": "closed"}
+        assert agents._fetch_one("SELECT root_run_id FROM agent_runtime_turns WHERE root_run_id=:id", {"id":root_id}) is None
+        assert any(row['root_run_id']==root_id and row['authority_status']=='closed'
+                   for row in archived['payload_json']['tables']['agent_runtime_turns'])
         assert store._fetch_one("SELECT task_id FROM research_tasks WHERE task_id=:id", {"id": task_a}) is None
         assert store._fetch_one("SELECT job_id FROM factor_jobs WHERE job_id=:id",
                                 {"id": completed_job_id}) is None
@@ -523,7 +483,7 @@ def test_product_workspace_reset_requires_release_proof_is_scoped_and_idempotent
         assert conversations._fetch_one(
             "SELECT conversation_id FROM product_conversations WHERE conversation_id=:id",
             {"id": conversation_b}) is not None
-        assert store._fetch_one("SELECT COUNT(*) AS count FROM strategy_approval_fact_archive")["count"] == 1
+        assert store._fetch_one("SELECT COUNT(*) AS count FROM strategy_approval_fact_archive")["count"] == 0
 
         replay = reset.begin_workspace_reset(
             owner_principal=owner_a, workspace_id=context_a["workspace_id"],
@@ -534,7 +494,7 @@ def test_product_workspace_reset_requires_release_proof_is_scoped_and_idempotent
             "workspace_id": context_a["workspace_id"],
             "status": "completed",
             "receipt": {key: finalized[key] for key in
-                         ("status", "workspace_id", "deleted", "already_empty")},
+                         ("status", "workspace_id", "deleted", "already_empty", "archive")},
         }
         new_conversation = conversations.create(owner_a, f"new-session-{suffix}", f"new-trace-{suffix}")
         replay_after_new_data = reset.begin_workspace_reset(
@@ -545,7 +505,7 @@ def test_product_workspace_reset_requires_release_proof_is_scoped_and_idempotent
         assert conversations._fetch_one(
             "SELECT conversation_id FROM product_conversations WHERE conversation_id=:id",
             {"id": new_conversation["conversation_id"]}) is not None
-        assert store._fetch_one("SELECT COUNT(*) AS count FROM strategy_approval_fact_archive")["count"] == 1
+        assert store._fetch_one("SELECT COUNT(*) AS count FROM strategy_approval_fact_archive")["count"] == 0
     finally:
         conversations.close()
         store.close()

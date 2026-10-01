@@ -9,7 +9,7 @@ import threading
 import time
 import uuid
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from contextlib import asynccontextmanager
@@ -286,12 +286,25 @@ def _validate_workspace_reset_receipt(
             and isinstance(body.get("reason"), str) and body["reason"]):
         return body
     if (not isinstance(body, dict) or set(body) != {
-        "status", "workspace_id", "deleted", "already_empty",
+        "status", "workspace_id", "deleted", "already_empty", "archive",
     } or body.get("status") != "reset" or body.get("workspace_id") != workspace_id
             or type(body.get("already_empty")) is not bool or not isinstance(body.get("deleted"), dict)
             or any(not isinstance(table, str) or type(count) is not int or count < 0
                    for table, count in body["deleted"].items())):
         raise HTTPException(status_code=502, detail="Backend workspace reset receipt is invalid")
+    archive = body.get('archive')
+    if (not isinstance(archive,dict) or set(archive)!={'reset_id','created_at','expires_at','retention_days','row_count','payload_sha256'}
+        or not isinstance(archive.get('reset_id'),str) or re.fullmatch(r'[0-9a-f]{32}',archive['reset_id']) is None
+        or archive.get('retention_days')!=7
+        or type(archive.get('row_count')) is not int or archive['row_count']!=sum(body['deleted'].values())
+        or not isinstance(archive.get('payload_sha256'),str)
+        or re.fullmatch(r'[0-9a-f]{64}',archive['payload_sha256']) is None):
+        raise HTTPException(status_code=502,detail='Backend workspace reset archive receipt is invalid')
+    try:
+        created=datetime.fromisoformat(archive['created_at']); expires=datetime.fromisoformat(archive['expires_at'])
+        if created.tzinfo is None or expires.tzinfo is None or expires-created!=timedelta(days=7): raise ValueError()
+    except (ValueError,TypeError,KeyError):
+        raise HTTPException(status_code=502,detail='Backend workspace reset archive expiry is invalid') from None
     return body
 
 
@@ -326,10 +339,13 @@ def _validate_workspace_reset_finalize(
     if (not isinstance(body, dict) or body.get("schema_version") != WORKSPACE_RESET_FINALIZE_SCHEMA
             or body.get("workspace_id") != workspace_id or body.get("reset_id") != reset_id):
         raise HTTPException(status_code=502, detail="Backend workspace reset receipt is invalid")
-    return _validate_workspace_reset_receipt(
+    receipt = _validate_workspace_reset_receipt(
         {key: value for key, value in body.items() if key not in {"schema_version", "reset_id"}},
         workspace_id=workspace_id, allow_blocked=True,
     )
+    if receipt['status']=='reset' and receipt['archive']['reset_id']!=reset_id:
+        raise HTTPException(status_code=502,detail='Backend workspace reset archive identity is invalid')
+    return receipt
 
 
 def _workspace_runtime_reset_adapter_session(session_id: str, trace_id: str) -> None:

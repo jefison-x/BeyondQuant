@@ -1,17 +1,21 @@
 # Phase 0–6 gate record
 
-## Current next gate — Golden E reset retention (2026-10-01)
+## Current next gate — complete personal reset / Golden E (2026-10-01)
 
-Affected real F6/UI passed the scoped gate below. E remains **NOT_RUN / NO-GO**:
-reset would delete the only task-embedded continuation liability ledger and
-existing authority audit references also block the populated exact graph.
-Private evidence seals cannot replace durable BYQ facts. [Proposed ADR-0091](../architecture/adr/ADR-0091-workspace-reset-fact-retention.md)
-defines the minimum Backend atomic retention and owned readonly lookup. It is
-awaiting explicit maintainer acceptance; no archive/schema/API change or actual
-reset/seed/model input has run. [Exact audit](phase17-continuation-budget-audit.md#19-golden-e-重置边界审查与尚未接受的方案2026-10-01).
-Keep current source-qualified F reuse limited; reassess only affected schema/
-reset/build qualification after an accepted implementation. A–D/F6 are not
-replayed. Final Golden/hosted CI/repository gates and Phase17 remain OPEN.
+[Accepted ADR-0091](../architecture/adr/ADR-0091-workspace-reset-fact-retention.md)
+defines complete personal Product reset to registration defaults with seven-day
+DB/CAS retention and minimal enduring idempotency proofs. Identity/RBAC, shared
+market data, system configuration and other users remain protected. Unknown or
+pending external outcomes require reconciliation before reset.
+
+The isolated implementation candidate has focused Backend PostgreSQL, Gateway
+and frontend test/build evidence. Tester → independent Reviewer → Root accepted
+the scoped offline implementation; affected schema/build qualification and actual
+populated E are still pending. [Layered evidence](phase17-continuation-budget-audit.md#20-adr-0091-完整个人重置实现离线门禁2026-10-01). **Golden E NOT_RUN; Phase17 OPEN.** Historical NO-GO findings remain in
+[the audit](phase17-continuation-budget-audit.md#19-golden-e-重置边界审查与尚未接受的方案2026-10-01).
+Reuse valid A–D/F6; qualify only affected reset/schema/build changes before E.
+Final Golden, hosted CI and repository gates remain OPEN; no push, merge,
+deployment or Phase18 is authorized.
 
 ## Current v13 affected F6 acceptance (2026-10-01)
 

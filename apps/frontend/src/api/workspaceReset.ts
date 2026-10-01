@@ -9,6 +9,7 @@ export interface WorkspaceResetReceipt {
   workspace_id: string;
   deleted: Record<string, number>;
   already_empty: boolean;
+  archive: { reset_id: string; created_at: string; expires_at: string; retention_days: 7; row_count: number; payload_sha256: string };
 }
 
 export class WorkspaceResetRequestError extends Error {
@@ -73,8 +74,16 @@ export async function resetCurrentWorkspace(
   const receipt = await post<WorkspaceResetReceipt>(WORKSPACE_RESET_PATH, idempotencyKey);
   const deletedIsValid = isRecord(receipt.deleted)
     && Object.values(receipt.deleted).every((count) => Number.isSafeInteger(count) && Number(count) >= 0);
+  const archive = receipt.archive;
+  const archiveIsValid = isRecord(archive) && archive.retention_days === 7
+    && typeof archive.reset_id === "string" && /^[a-f0-9]{32}$/.test(archive.reset_id)
+    && typeof archive.payload_sha256 === "string" && /^[a-f0-9]{64}$/.test(archive.payload_sha256)
+    && Number.isSafeInteger(archive.row_count) && Number(archive.row_count) >= 0
+    && typeof archive.created_at === "string" && typeof archive.expires_at === "string"
+    && Number.isFinite(Date.parse(archive.created_at))
+    && Date.parse(archive.expires_at) - Date.parse(archive.created_at) === 7 * 86400000;
   if (receipt.status !== "reset" || receipt.workspace_id !== expectedWorkspaceId
-    || !deletedIsValid || typeof receipt.already_empty !== "boolean") {
+    || !archiveIsValid || !deletedIsValid || typeof receipt.already_empty !== "boolean") {
     throw new WorkspaceResetRequestError("工作区重置结果与当前工作区不一致，请重试核对。", 502);
   }
   return receipt;

@@ -388,15 +388,24 @@ class ResearchStore(
         CREATE OR REPLACE FUNCTION byq_strategy_approval_fact_archive_immutable()
         RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
-            RAISE EXCEPTION 'strategy approval fact archive is immutable';
+            IF TG_OP='DELETE' AND OLD.reset_at + interval '7 days' <= clock_timestamp() THEN
+                RETURN OLD;
+            END IF;
+            RAISE EXCEPTION 'strategy approval fact archive is immutable until seven-day expiry';
         END $$
         """,
         "DROP TRIGGER IF EXISTS strategy_approval_fact_archive_immutable ON strategy_approval_fact_archive",
         """
         CREATE TRIGGER strategy_approval_fact_archive_immutable
-        BEFORE UPDATE OR DELETE OR TRUNCATE ON strategy_approval_fact_archive
-        FOR EACH STATEMENT EXECUTE FUNCTION byq_strategy_approval_fact_archive_immutable()
+        BEFORE UPDATE OR DELETE ON strategy_approval_fact_archive
+        FOR EACH ROW EXECUTE FUNCTION byq_strategy_approval_fact_archive_immutable()
         """,
+        """CREATE OR REPLACE FUNCTION byq_strategy_archive_reject_truncate()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN RAISE EXCEPTION 'strategy archive truncation is forbidden'; END $$""",
+        "DROP TRIGGER IF EXISTS strategy_approval_archive_no_truncate ON strategy_approval_fact_archive",
+        """CREATE TRIGGER strategy_approval_archive_no_truncate BEFORE TRUNCATE ON strategy_approval_fact_archive
+           FOR EACH STATEMENT EXECUTE FUNCTION byq_strategy_archive_reject_truncate()""",
         "REVOKE ALL ON TABLE strategy_approval_fact_archive FROM PUBLIC",
         """CREATE TABLE IF NOT EXISTS artifact_submission_receipts (
             task_id TEXT NOT NULL REFERENCES research_tasks(task_id),

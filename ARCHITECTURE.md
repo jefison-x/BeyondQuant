@@ -37,8 +37,12 @@ Engineering Codex/Dev MCP → isolated worktree/tests/PR (separate plane)
   authoritative domain facts. Approval levels are AUTO, DECISION and ACTION.
 - Old runtime/session/run/child/checkpoint/recovery/trace data have zero migration
   priority. The final old DB is a verified read-only archive, not a 0.10 migration
-  input. New storage starts from a fresh schema. Workspace reset is scoped and
-  preserves accounts, RBAC, global credentials and shared system configuration.
+  input. New storage starts from a fresh schema. Under Accepted [ADR-0091](docs/architecture/adr/ADR-0091-workspace-reset-fact-retention.md),
+  personal Workspace reset atomically archives closed personal Product history for
+  seven days, clears personal data/settings to registration defaults and preserves
+  account identity/RBAC, shared market data and system configuration/credentials.
+  Pending or unknown external results require reconciliation before reset; minimal
+  reset and retired-command proofs survive payload expiry.
 - New capabilities use Tool, Job, Artifact or thin Adapter. No generic WorkflowEngine,
   compatibility harness or development-tool dependency belongs in Product Core.
 

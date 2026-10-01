@@ -44,12 +44,16 @@ def seed() -> dict[str, str]:
         if admin["username"] != owner or admin["role"] != "admin":
             raise RuntimeError("dev bootstrap admin does not match the isolated configuration")
         workspace = tenancy.public_workspace(str(admin["user_id"]))
+        reset_receipt = research._fetch_one("""SELECT reset_id FROM workspace_reset_receipts
+            WHERE workspace_id=:workspace ORDER BY created_at DESC,reset_id DESC LIMIT 1""",
+            {'workspace':workspace['workspace_id']})
+        seed_generation = '' if reset_receipt is None else ':'+reset_receipt['reset_id']
         task = research.create_task({
             "owner_principal": owner,
             "title": "Development research fixture",
             "objective": "Explore a synthetic momentum example using fresh BYQ data.",
             "trace_id": SEED_TRACE,
-            "idempotency_key": SEED_TASK_KEY,
+            "idempotency_key": SEED_TASK_KEY + seed_generation,
         })
         strategy = prepare_strategy_draft({
             "strategy_id": "DevMomentumSample",
@@ -67,7 +71,7 @@ def seed() -> dict[str, str]:
             "content": strategy_draft_content(strategy),
             "lineage": [],
             "trace_id": SEED_TRACE,
-            "idempotency_key": SEED_STRATEGY_KEY,
+            "idempotency_key": SEED_STRATEGY_KEY + seed_generation,
         }, trusted_owner=owner, trusted_workspace=workspace["workspace_id"])
         dataset_artifact = research.create_artifact({
             "task_id": task["task_id"],
@@ -84,7 +88,7 @@ def seed() -> dict[str, str]:
             },
             "lineage": [],
             "trace_id": SEED_TRACE,
-            "idempotency_key": SEED_DATASET_KEY,
+            "idempotency_key": SEED_DATASET_KEY + seed_generation,
         }, trusted_owner=owner, trusted_workspace=workspace["workspace_id"])
         return {"workspace_id": workspace["workspace_id"], "task_id": task["task_id"],
                 "strategy_artifact_id": strategy_artifact["artifact_id"],

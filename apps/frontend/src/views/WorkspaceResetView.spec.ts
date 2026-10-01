@@ -5,12 +5,17 @@ import { useAuthStore } from "@/stores/auth";
 import { WorkspaceResetRequestError } from "@/api/workspaceReset";
 import WorkspaceResetView from "./WorkspaceResetView.vue";
 
-const { confirmRuntime, resetRuntime, resetWorkspace } = vi.hoisted(() => ({
+const { confirmRuntime, resetRuntime, resetWorkspace, loadAppearance } = vi.hoisted(() => ({
   confirmRuntime: vi.fn(),
   resetRuntime: vi.fn(),
   resetWorkspace: vi.fn(),
+  loadAppearance: vi.fn(),
 }));
 
+vi.mock("@/stores/appearance", async () => ({
+  ...await vi.importActual<typeof import("@/stores/appearance")>("@/stores/appearance"),
+  useAppearanceStore: () => ({ load: loadAppearance, $reset: vi.fn() }),
+}));
 vi.mock("element-plus", () => ({ ElMessageBox: { confirm: confirmRuntime } }));
 vi.mock("@/api/workspaceReset", () => ({
   resetCurrentWorkspaceRuntime: resetRuntime,
@@ -30,6 +35,8 @@ describe("WorkspaceResetView", () => {
     confirmRuntime.mockResolvedValue(true);
     resetRuntime.mockReset();
     resetWorkspace.mockReset();
+    loadAppearance.mockReset();
+    loadAppearance.mockResolvedValue(undefined);
     useAuthStore().setUser({
       subject: "alice",
       display_name: "Alice",
@@ -82,7 +89,7 @@ describe("WorkspaceResetView", () => {
 
   it("requires the exact phrase and reports the confirmed workspace result", async () => {
     resetWorkspace.mockResolvedValue({
-      status: "reset", workspace_id: "workspace_alice", deleted: { research_tasks: 2, artifacts: 1 }, already_empty: false,
+      status: "reset", workspace_id: "workspace_alice", deleted: { research_tasks: 2, artifacts: 1 }, already_empty: false, archive: { reset_id: "a".repeat(32), created_at: "2026-10-01T00:00:00Z", expires_at: "2026-10-08T00:00:00Z", retention_days: 7, row_count: 3, payload_sha256: "b".repeat(64) },
     });
     const wrapper = mount(WorkspaceResetView);
     const confirmButton = wrapper.get("button.danger");
@@ -107,7 +114,7 @@ describe("WorkspaceResetView", () => {
     resetWorkspace
       .mockRejectedValueOnce(new Error("请求结果尚未确认，请重试。"))
       .mockResolvedValueOnce({
-        status: "reset", workspace_id: "workspace_alice", deleted: { experiments: 1 }, already_empty: false,
+        status: "reset", workspace_id: "workspace_alice", deleted: { experiments: 1 }, already_empty: false, archive: { reset_id: "a".repeat(32), created_at: "2026-10-01T00:00:00Z", expires_at: "2026-10-08T00:00:00Z", retention_days: 7, row_count: 3, payload_sha256: "b".repeat(64) },
       });
     const wrapper = mount(WorkspaceResetView);
     await wrapper.get("input").setValue("重置工作区");
@@ -144,4 +151,20 @@ describe("WorkspaceResetView", () => {
     await flushPromises();
     expect(resetWorkspace.mock.calls[1][1]).not.toBe(resetWorkspace.mock.calls[0][1]);
   });
+  it("clears old appearance cache after confirmed reset even if readonly refresh fails", async () => {
+    localStorage.setItem("byq-ui-preferences.v1", JSON.stringify({schema_version:"ui-preferences.v1",color_mode:"dark",accent_theme:"ocean"}));
+    loadAppearance.mockRejectedValue(new Error("network unavailable"));
+    resetWorkspace.mockResolvedValue({status:"reset",workspace_id:"workspace_alice",deleted:{},already_empty:true,
+      archive:{reset_id:"a".repeat(32),created_at:"2026-10-01T00:00:00Z",expires_at:"2026-10-08T00:00:00Z",retention_days:7,row_count:0,payload_sha256:"b".repeat(64)}});
+    const wrapper=mount(WorkspaceResetView);
+    await wrapper.get("input").setValue("重置工作区");
+    await wrapper.get("button.danger").trigger("click");
+    await flushPromises();
+    expect(resetWorkspace).toHaveBeenCalledTimes(1);
+    expect(document.documentElement.dataset.colorMode).toBe("system");
+    expect(JSON.parse(localStorage.getItem("byq-ui-preferences.v1")!)).toMatchObject({color_mode:"system",accent_theme:"emerald"});
+    expect(wrapper.get('[role="alert"]').text()).toContain("重置已完成；外观默认状态读取失败");
+    expect(wrapper.get('[role="status"]').text()).toContain("归档保留七天");
+  });
+
 });

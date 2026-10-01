@@ -28,6 +28,14 @@ _LIVE_REFERENCE_SQL = """
     SELECT result_reference_json AS reference
       FROM backtest_jobs
      WHERE result_reference_json IS NOT NULL
+    UNION ALL SELECT value AS reference FROM workspace_reset_archives,
+      jsonb_array_elements(object_references_json)
+    UNION ALL SELECT strategy_version_snapshot->'content'->'object_reference' AS reference
+      FROM strategy_approval_fact_archive
+      WHERE strategy_version_snapshot->'content' ? 'object_reference'
+    UNION ALL SELECT strategy_version_snapshot->'content'->'result_reference' AS reference
+      FROM strategy_approval_fact_archive
+      WHERE strategy_version_snapshot->'content' ? 'result_reference'
 """
 
 

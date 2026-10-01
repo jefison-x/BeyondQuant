@@ -20,7 +20,7 @@ describe("workspace reset Product API", () => {
 
   it("sends a bodyless workspace reset with a stable idempotency header", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      status: "reset", workspace_id: "workspace_alice", deleted: { research_tasks: 2, artifacts: 1 }, already_empty: false,
+      status: "reset", workspace_id: "workspace_alice", deleted: { research_tasks: 2, artifacts: 1 }, already_empty: false, archive: { reset_id: "a".repeat(32), created_at: "2026-10-01T00:00:00Z", expires_at: "2026-10-08T00:00:00Z", retention_days: 7, row_count: 3, payload_sha256: "b".repeat(64) },
     }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -34,7 +34,7 @@ describe("workspace reset Product API", () => {
 
   it("rejects a receipt scoped to another workspace", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      status: "reset", workspace_id: "workspace_bob", deleted: {}, already_empty: true,
+      status: "reset", workspace_id: "workspace_bob", deleted: {}, already_empty: true, archive: { reset_id: "a".repeat(32), created_at: "2026-10-01T00:00:00Z", expires_at: "2026-10-08T00:00:00Z", retention_days: 7, row_count: 0, payload_sha256: "b".repeat(64) },
     }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 

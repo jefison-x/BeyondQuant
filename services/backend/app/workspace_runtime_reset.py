@@ -399,6 +399,7 @@ class WorkspaceRuntimeResetStore(PgStoreMixin):
                     WorkspaceResetStore.preflight_in_connection(
                         connection, owner_principal=owner, workspace_id=workspace,
                         expected_status="active", allow_active_agent_roots=True)
+                    WorkspaceResetStore.revoke_continuation_in_connection(connection,owner=owner,workspace=workspace)
                     sessions = ConversationCatalogStore.workspace_reset_sessions(
                         connection, owner=owner, workspace=workspace,
                         limit=MAX_RESET_SESSIONS + 1)
@@ -556,10 +557,13 @@ class WorkspaceRuntimeResetStore(PgStoreMixin):
                             "reason": "Workspace state changed after reset began; business data was retained",
                         }
                     else:
-                        deleted = WorkspaceResetStore.reset_in_connection(
-                            connection, owner_principal=owner, workspace_id=workspace)
+                        result = WorkspaceResetStore.reset_in_connection(
+                            connection, owner_principal=owner, workspace_id=workspace,
+                            reset_id=requested_reset_id,now=now)
+                        deleted = result['deleted']
                         receipt = {"status": "reset", "workspace_id": workspace,
-                                   "deleted": deleted, "already_empty": not any(deleted.values())}
+                                   "deleted": deleted, "already_empty": not any(deleted.values()),
+                                   "archive":result['archive']}
 
                     result = connection.execute(text("""UPDATE workspaces
                         SET status='active',reset_id=NULL,reset_kind=NULL,reset_request_key=NULL,

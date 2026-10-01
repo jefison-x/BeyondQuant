@@ -84,6 +84,8 @@ Job/Artifact；没有原健康会话就停止该自动接续场景。另行获�
 
 ### 4. 数据与切换边界
 
+2026-10-01 Accepted [ADR-0091](ADR-0091-workspace-reset-fact-retention.md) 对显式个人重置细化：已闭合 grant/reservation/结算及用户审计先原子归档，七天到期；活许可撤销，未决/未知外部责任必须先对账，最小幂等防重放凭据独立保留。下文“不删除”约束禁止无归档、无分类地清空责任，不要求永久保留全部已闭合用户 payload。未知 actual usage 如实保存，不能恢复旧余额或重放外部调用。
+
 不删除整个 `continuation_budget`、旧 grant、未决 reservation、财务或审计事实。
 先按 schema version 区分责任记录与计数器语义，保留原记录可读、只用于对账且
 不可重新 dispatch；旧 `token_limit` 不得自动转换为新业务许可。

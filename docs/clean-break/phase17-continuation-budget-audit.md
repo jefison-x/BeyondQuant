@@ -1,6 +1,6 @@
 # Phase 17 — continuation 预算与 F6 观察器审计
 
-Status: **ADR-0090 Accepted; affected v13 real F6/readonly UI scoped PASS; historical v11/v12 FAIL and UI1 FAIL preserved; Golden E NOT_RUN / NO-GO pending Proposed ADR-0091 acceptance; Phase17 OPEN**.
+Status: **ADR-0090/0091 Accepted; v13 real F6/readonly UI scoped PASS; full personal reset candidate offline tests/build passed, implementation review and actual Golden E pending; historical failures preserved; Phase17 OPEN**.
 本记录使用当前 Clean Break ADR-001–006/ADR-0088；历史 ADR-0086 不作为现行规范。
 [ADR-0090](../architecture/adr/ADR-0090-continuation-request-limits.md) 已于 2026-10-01 获维护者“明确接受”。以下第 1–6 节保留接受前限定验收的事实边界；当前实际 v13/重置门禁见第 17–19 节；第 13–16 节保留历史失败及修正资格；旧节保留其记录时边界。
 
@@ -955,3 +955,36 @@ SHA `9ce3f423742b6c780a4431e31d3c632f6c4cbc521e484f2ab6499a0bd470310b`。
 13资源保持，F6flags0、三Worker停止、Runtime sessions/prompts/model calls0，
 旧96/128/68/130及新162件证据逐哈希保持，无新model/reset/seed/业务输入。
 这些是 scoped事实/提案审查；不是 E 或 Phase17 PASS。
+
+
+## 20. ADR-0091 完整个人重置实现：离线门禁（2026-10-01）
+
+维护者明确接受完整语义并授权实施：同一账号及个人 Workspace 保留，个人 Product
+数据/偏好/模型绑定及用户凭据清除到注册默认，已闭合 DB 历史及 CAS 引用归档七天。
+共享行情、system 凭据、其他用户及 Engineering 保持；未决或未知外部结果先对账。
+ADR-0091 已 Accepted，覆盖第19节原 Proposed 的窄归档方案；原 NO-GO 事实不改写。
+
+Root 为唯一源码 writer。Backend 静态个人类别范围、事务归档/count/hash校验、并发
+Workspace 锁及账户写入 fence、旧请求身份摘要拒绝、后台有界 TTL/CAS 重试已实现。
+新 archive 不解密用户凭据，Hub status token 仅保存摘要；到期只清 payload及无活引用
+的精确对象，缺挂载/命名空间、活 producer、超时或I/O失败保留重试记录。GC 是有界
+批次及协作检查，不宣称可强制中断内核 I/O。Gateway 校验七天回执；前端成功后清
+Agent/外观缓存，读取默认失败仍保留已完成结果，不重复 mutation。
+
+证据层分开：初版实际隔离 PostgreSQL 测试23 PASS/1 FAIL（旧 audit 计数期望1，
+完整归档实际2），原失败保留；修正合同后定向15 PASS，再只跑新增 Hub/CAS 5 PASS。
+Gateway16 PASS、前端11 PASS及离线 vue-tsc/Vite build PASS；没有依赖下载。
+Architecture72 PASS、dev-check13语法文件 PASS（其 component_tests NOT_RUN 不作
+组件测试证明）、diff-check PASS。所有pytest仅连独立 ephemeral byq_domain_test，
+不连 populated Product 栈。Tester → 独立 Reviewer → Root 接受 **scoped offline
+implementation PASS**，允许开始受影响构建和 E观察器资格阶段。
+
+| 独立证据 | SHA256 |
+|---|---|
+| `/tmp/byq-phase17-reset-layered-tester-20261001/final-tester-and-e-observer-review.json` | `ef5c4b5afa0900aeb32a8a3bb57a825e62c5fc8c39839af665ea2359594486a3` |
+| `/tmp/byq-phase17-v13-independent-result-review-20261001/personal-reset-final-offline-review.json` | `ff96deff11390465207a3a8d531b7cae40fa2b84eaf6d2bac8a4e8ce98de4f93` |
+| `/tmp/byq-phase17-personal-reset-implementation-20261001/root-offline-implementation-acceptance.json` | `aa2bd4adc1d49da7ead63f79edddd02ff0369a73df1a16738de19e7f3b57796e` |
+
+**实际 E、当前源码空栈重建及 hosted CI NOT_RUN；Phase17 OPEN。**
+只复验受影响 reset/schema/build；A–D及实际 F6/UI复用，不重放未知调用。
+未推送、合并、部署或启动Phase18。

@@ -249,7 +249,9 @@ VERSION = "0.1.0"
 
 logger = logging.getLogger("byq.backend")
 
-app = FastAPI(title="BeyondQuant Backend", version=VERSION)
+from .workspace_reset_retention import retention_lifespan
+
+app = FastAPI(title="BeyondQuant Backend", version=VERSION, lifespan=retention_lifespan)
 
 
 class _RuntimeAuthorityRejected(Exception):

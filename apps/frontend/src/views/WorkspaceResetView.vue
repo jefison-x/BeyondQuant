@@ -2,6 +2,8 @@
 import { computed, ref } from "vue";
 import { ElMessageBox } from "element-plus";
 import { resetCurrentWorkspace, resetCurrentWorkspaceRuntime, WorkspaceResetRequestError, type WorkspaceResetReceipt } from "@/api/workspaceReset";
+import { applyUiPreferences, DEFAULT_UI_PREFERENCES, useAppearanceStore } from "@/stores/appearance";
+import { useAgentStore } from "@/stores/agent";
 import { useAuthStore } from "@/stores/auth";
 import { createRequestId } from "@/utils/requestId";
 
@@ -117,6 +119,15 @@ async function resetWorkspace() {
     workspaceResult.value = receipt;
     confirmation.value = "";
     clearWorkspaceRequestKey();
+    useAgentStore().$reset();
+    applyUiPreferences(DEFAULT_UI_PREFERENCES, true);
+    const appearance = useAppearanceStore();
+    appearance.$reset();
+    try {
+      await appearance.load();
+    } catch {
+      workspaceError.value = "重置已完成；外观默认状态读取失败，请刷新页面。";
+    }
   } catch (error) {
     workspaceError.value = messageFor(error, "结果尚未确认。重试会使用同一请求编号继续核对。");
     if (error instanceof WorkspaceResetRequestError && error.terminal) {
@@ -166,7 +177,7 @@ async function resetWorkspace() {
         <div>
           <span class="scope-label danger-label">范围较大</span>
           <h3 id="workspace-reset-title">重置整个工作区</h3>
-          <p>清理 {{ workspaceName }} 中可重新生成的研究数据。此操作完成后无法从产品界面撤销。</p>
+          <p>将 {{ workspaceName }} 的个人数据和设置重置为新用户默认状态。原数据只读归档保留七天，到期清理；归档不会自动恢复或继续旧任务。</p>
         </div>
       </div>
 
@@ -175,7 +186,8 @@ async function resetWorkspace() {
           <h4>将清理</h4>
           <ul>
             <li>研究任务、对话和临时实验</li>
-            <li>生成的工作区成果与已完成任务历史</li>
+            <li>生成的成果、任务历史、股票池和模拟账户</li>
+            <li>学习、反馈、个人偏好、Agent 配置和用户模型凭据</li>
           </ul>
         </div>
         <div>
@@ -183,13 +195,13 @@ async function resetWorkspace() {
           <ul>
             <li>工作区、账户、登录身份与权限</li>
             <li>全局设置、凭据和共享数据源</li>
-            <li>金融事实与审计记录</li>
+            <li>必要的重置凭据；已结束的个人审计和模拟账本归档七天</li>
           </ul>
         </div>
       </div>
 
       <p class="blocker-note">
-        运行中的任务需要先结束；存在未确认的外部操作时，系统会停止重置并保留数据。
+        运行中的任务需要先结束；存在未确认的外部操作时，系统会停止重置并保留数据。已发布到外部的反馈不会被撤回。
       </p>
 
       <div class="confirmation-row">
@@ -218,7 +230,7 @@ async function resetWorkspace() {
         {{ workspaceError }}
       </p>
       <p v-if="workspaceResult" class="operation-message success" role="status" aria-live="polite">
-        工作区重置已完成。{{ workspaceResult.already_empty ? "工作区原本已为空。" : `已清理 ${deletedRecordCount} 条记录。` }}账户和工作区身份已保留。
+        工作区重置已完成。{{ workspaceResult.already_empty ? "工作区原本已为空。" : `已清理 ${deletedRecordCount} 条记录。` }}账户和工作区身份已保留，个人设置已恢复默认；原数据归档保留七天。
       </p>
     </section>
   </main>
