@@ -378,9 +378,51 @@ class WorkspaceResetStore(PgStoreMixin):
         if receipt is not None:
             raise WorkspaceResetBlocked("unresolved research submission receipt prevents workspace reset")
 
+        # A prepared preview has no submission. A rejection is closed only if
+        # the frozen key has no receipt; a confirmation must name the exact
+        # terminal Job. Unknown or contradictory watch states remain blocked.
+        ml_watch = WorkspaceResetStore._first_row(connection, """
+            SELECT w.watch_id FROM ml_training_receipt_watches w
+             WHERE w.workspace_id=:workspace AND w.owner_principal=:owner
+               AND (CASE
+                 WHEN w.state IN ('prepared','rejected') THEN
+                   w.training_run_id IS NULL
+                   AND (w.state='rejected' OR w.check_count=0)
+                   AND NOT EXISTS (SELECT 1 FROM ml_training_submission_keys k
+                     WHERE k.workspace_id=w.workspace_id AND k.owner_principal=w.owner_principal
+                       AND k.idempotency_key=w.idempotency_key)
+                   AND NOT EXISTS (SELECT 1 FROM ml_training_runs r
+                     WHERE r.workspace_id=w.workspace_id AND r.owner_principal=w.owner_principal
+                       AND r.idempotency_key=w.idempotency_key)
+                 WHEN w.state='confirmed' THEN
+                   EXISTS (SELECT 1 FROM ml_training_runs r
+                     WHERE r.training_run_id=w.training_run_id
+                       AND r.workspace_id=w.workspace_id AND r.owner_principal=w.owner_principal
+                       AND r.status IN ('completed','failed','cancelled')
+                       AND jsonb_build_object('workspace_id',r.workspace_id,
+                         'owner_principal',r.owner_principal,'task_id',r.task_id,
+                         'experiment_id',r.experiment_id,
+                         'ml_strategy_artifact_id',r.ml_strategy_artifact_id,
+                         'stock_pool_snapshot_id',r.stock_pool_snapshot_id)=w.identity_json
+                       AND (r.idempotency_key=w.idempotency_key OR EXISTS
+                         (SELECT 1 FROM ml_training_submission_keys k
+                          WHERE k.workspace_id=w.workspace_id AND k.owner_principal=w.owner_principal
+                            AND k.idempotency_key=w.idempotency_key
+                            AND k.training_run_id=r.training_run_id)))
+                   AND NOT EXISTS (SELECT 1 FROM ml_training_submission_keys k
+                     WHERE k.workspace_id=w.workspace_id AND k.owner_principal=w.owner_principal
+                       AND k.idempotency_key=w.idempotency_key AND k.training_run_id<>w.training_run_id)
+                   AND NOT EXISTS (SELECT 1 FROM ml_training_runs r
+                     WHERE r.workspace_id=w.workspace_id AND r.owner_principal=w.owner_principal
+                       AND r.idempotency_key=w.idempotency_key AND r.training_run_id<>w.training_run_id)
+                 ELSE false END) IS NOT TRUE
+             ORDER BY w.watch_id LIMIT 1
+        """, params)
+        if ml_watch is not None:
+            raise WorkspaceResetBlocked("unresolved ml_training_receipt_watches prevents workspace reset")
+
         WorkspaceResetStore._strategy_approval_archive_candidates(connection, owner=owner, workspace=workspace)
         for table, predicate in (
-            ("ml_training_receipt_watches", "state NOT IN ('confirmed','conflict')"),
             ("learning_runs", "status NOT IN ('completed','failed','cancelled')"),
             ("stock_pool_materialization_runs", "status NOT IN ('succeeded','failed','cancelled')"),
             ("research_task_actions", "status IN ('pending','waiting_for_agent','needs_attention')"),

@@ -275,3 +275,64 @@ def test_missing_object_mount_or_namespace_keeps_expiry_queue(tmp_path,root_kind
             assert collect_expired_objects(con,backtest_root=root,ml_root=root)['deleted_objects']==0
         assert store._fetch_one('SELECT count(*) AS n FROM workspace_reset_expired_objects')['n']==1
     finally:store.close()
+
+
+@pytest.mark.parametrize('state,checks,has_receipt,mismatch,allowed', [
+    ('prepared',0,False,None,True),
+    ('prepared',1,False,None,False),
+    ('prepared',0,False,'watch_run',False),
+    ('rejected',0,False,None,True),
+    ('rejected',2,False,None,True),
+    ('awaiting_receipt',0,False,None,False),
+    ('needs_attention',8,False,None,False),
+    ('conflict',0,False,None,False),
+    ('unknown_future_state',0,False,None,False),
+    ('confirmed',0,False,None,False),
+    ('prepared',0,True,None,False),
+    ('rejected',0,True,None,False),
+    ('confirmed',0,True,None,True),
+    ('confirmed',0,True,'identity',False),
+    ('confirmed',0,True,'watch_run',False),
+    ('confirmed',0,True,'active_job',False),
+    ('confirmed',0,True,'alias_only',True),
+])
+def test_ml_watch_reset_requires_closed_frozen_receipt(state,checks,has_receipt,mismatch,allowed):
+    """Synthetic DB rows exercise reset guards; no model/Worker execution."""
+    suffix=uuid4().hex[:12];owner='reset-watch-'+suffix
+    ctx,_,task,experiment,artifact=_research_graph(owner,suffix=suffix)
+    store=WorkspaceResetStore();paper=PaperTradingStore()
+    try:
+        pool=paper.create_pool({'name':'Receipt guard','symbols':['000001.SZ']},
+            trusted_owner=owner,trusted_workspace=ctx['workspace_id'])
+        run='mlrun_'+uuid4().hex;key='reset-watch-'+suffix
+        identity={'workspace_id':ctx['workspace_id'],'owner_principal':owner,'task_id':task,
+                  'experiment_id':experiment,'ml_strategy_artifact_id':artifact,
+                  'stock_pool_snapshot_id':pool['current_snapshot_id']}
+        if has_receipt:
+            store._execute("""INSERT INTO ml_training_runs(training_run_id,workspace_id,owner_principal,
+                task_id,experiment_id,ml_strategy_artifact_id,stock_pool_snapshot_id,status,
+                preparation_json,requirement_json,readiness_json,trace_id,idempotency_key,request_hash,
+                created_at,updated_at) VALUES(:run,:workspace_id,:owner_principal,:task_id,:experiment_id,
+                :ml_strategy_artifact_id,:stock_pool_snapshot_id,:status,'{}','{}','{}','guard-trace',:key,
+                :hash,now(),now())""",{**identity,'run':run,'key':key+'original' if mismatch=='alias_only' else key,
+                'hash':'a'*64,'status':'running' if mismatch=='active_job' else 'cancelled'})
+            if mismatch=='alias_only':
+                store._execute("""INSERT INTO ml_training_submission_keys
+                    (workspace_id,owner_principal,idempotency_key,request_hash,training_run_id)
+                    VALUES(:workspace_id,:owner_principal,:key,:hash,:run)""",
+                    {**identity,'key':key,'hash':'a'*64,'run':run})
+        if mismatch=='identity':identity={**identity,'experiment_id':None}
+        store._execute("""INSERT INTO ml_training_receipt_watches(watch_id,workspace_id,owner_principal,
+            idempotency_key,request_hash,identity_json,state,training_run_id,check_count)
+            VALUES(:id,:workspace_id,:owner_principal,:key,:hash,CAST(:identity AS jsonb),:state,:run,:checks)""",
+            {**identity,'id':'mlwatch_'+uuid4().hex,'key':key,'hash':'b'*64,'identity':identity,'state':state,
+             'run':'mlrun_wrong' if mismatch=='watch_run' else run if has_receipt and state=='confirmed' else None,
+             'checks':checks})
+        with store.engine.connect() as con:
+            if allowed:store._preflight(con,owner=owner,workspace=ctx['workspace_id'])
+            else:
+                with pytest.raises(WorkspaceResetBlocked,match='ml_training'):
+                    store._preflight(con,owner=owner,workspace=ctx['workspace_id'])
+        assert store._fetch_one('SELECT status FROM workspaces WHERE workspace_id=:id',{'id':ctx['workspace_id']})['status']=='active'
+        assert store._fetch_one('SELECT count(*) AS n FROM workspace_reset_archives')['n']==0
+    finally:store.close();paper.close()
