@@ -11,22 +11,29 @@ with the original ROOT_SIGNAL_TIMEOUT failure preserved. No background request,
 settlement or success-only readonly UI ran; full F6 is **FAIL**.
 
 Exact readonly failure reconciliation, grant revocation, dedicated failed-session
-deletion and three-service same-image flag-off completed. There are no active
-Agent prompts or test runners, but **one known waiting SignalJob remains**. The
-original conversation is deleted, so its Task references do not permit original
-session continuation. The owner-visible catalog has three completed historical
-Jobs and this waiting Job; it does not prove the global Worker queue is exclusive.
-Automatic approval rejected a complete user-directory read as outside test/user
-data scope; it did not execute. A narrower isolated identifiers/status check is
-pending explicit maintainer authorization. Keep the Worker stopped meanwhile.
+deletion and three-service same-image flag-off completed. The maintainer then
+explicitly authorized the dedicated isolated account-directory read: it contains
+one active admin. Fresh full owner catalog, 98-session readiness, resource pins
+and fresh-schema/market-only provenance passed bounded scope qualification.
+Under the existing isolated Worker-operation authorization, one Docker CLI start
+completed the same existing SignalJob (attempt1) and persisted its validated
+SignalSnapshot; the dedicated Worker was promptly stopped. Three historical Jobs
+were unchanged; all four owner Jobs are now completed. SDK/prompts/model counters
+remain 0, F6 flags stay 0 and no Agent, Job or F6 chain was created/replayed.
+
+This qualifies the existing business Job/Artifact only. The original conversation
+is deleted, and v10 F6 remains FAIL; BG/request settlement/success-only UI remain
+NOT_RUN. Worker queue qualification is limited to this fresh dedicated database,
+complete sole-user directory, supported-source history and no concurrent writer;
+it is not a general SQL/global production proof. No global repair table was read.
+See [account and existing-Job result](phase17-continuation-budget-audit.md#12-限定账号检查与同一-job-独立完成2026-10-01).
 
 The separate helper repair normalizes readiness dates, saves the response before
 asserting, and refuses other visible nonterminal Jobs. Actual-function mocked
 start_worker tests passed 12/12. Tester → independent Reviewer → Root acceptance
 covers failure facts, executed cleanup and this offline repair only. The repair is
 not frozen/admitted for live use, and owner-catalog guards do not establish global
-exclusion. Do not replay another whole chain per assertion. First qualify the
-Worker scope and reconcile the existing Job; before another model call, verify the
+exclusion. Do not replay another whole chain per assertion. Before another model call, verify the
 exact canonical readiness contract and complete remaining-assertion admission.
 Valid A–D remain reused; E/F/final Golden and hosted CI are required. External test
 model calls remain authorized. No push, remote merge or deployment is authorized.

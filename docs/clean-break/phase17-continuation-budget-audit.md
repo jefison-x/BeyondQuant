@@ -1,6 +1,6 @@
 # Phase 17 — continuation 预算与 F6 观察器审计
 
-Status: **ADR-0090 已实施；F6 v10 同会话 FG1/FG2 通过，Root 就绪请求合同错误导致整链失败；开关与会话已收尾，保留一个等待 Job；BG/结算/成功 UI NOT_RUN，Phase 17 OPEN**。
+Status: **ADR-0090 已实施；F6 v10 FAIL 保留；账号检查及后续独立 Worker 已完成同一 Job 与 Artifact，专用 Worker 已停止；BG/结算/成功 UI NOT_RUN，Phase 17 OPEN**。
 本记录使用当前 Clean Break ADR-001–006/ADR-0088；历史 ADR-0086 不作为现行规范。
 [ADR-0090](../architecture/adr/ADR-0090-continuation-request-limits.md) 已于 2026-10-01 获维护者“明确接受”。以下第 1–6 节保留接受前限定验收的事实边界；当前实施及实测状态见第 9 节。
 
@@ -455,7 +455,7 @@ Tester 原报告关于绑定的布尔字段以独立 scope-clarification 为准�
 
 ## 11. F6 v10 前台通过、Root 观察器失败及离线修正（2026-10-01）
 
-本节为当前状态。实际执行 HEAD 为 `80530544af6759db09a82fbd58e733415acb0ca4`，
+本节记录 v10 当时状态；后续账号检查及同 Job 独立完成见第 12 节。实际执行 HEAD 为 `80530544af6759db09a82fbd58e733415acb0ca4`，
 产品实现仍为 `cdeeb6dbdc497133d20a4bca87a36a98b511e677`。
 没有产品源码变更、镜像构建、行情下载、A–D 重跑或推送/合并/部署。
 
@@ -511,7 +511,7 @@ GET 为原绑定不可用的422，不能声称旧会话可接续。
 且缺数据时可能创建 data repair；当前 owner 目录不是全局排他证明。
 不得据本节直接启动 Worker、创建替代 Job 或启动新的 F6。
 自动审批拒绝了全量用户目录读取，原因是超出测试授权、涉及用户数据；读取未执行。
-专用隔离栈的限定账号标识/状态只读检查已向维护者询问，尚未获新答复。
+专用隔离栈的限定账号标识/状态只读检查当时待维护者答复；后续明确授权与执行见第 12 节。
 
 ### 一次集中离线修正与限定验收
 
@@ -547,3 +547,58 @@ Worker/BG/后台限额与结算/成功只读 UI NOT_RUN；一个已知等待 Job
 下一步先确认全局 Worker 安全范围，处理同一遗留 Job，再完成新候选全包门禁与模型调用前
 的精确只读 readiness 检查。只有这些门禁满足后才运行受影响 F6；适用 A–D 继续复用，
 不拼接会话、不重放未知调用，最终 Golden/hosted CI 与仓库门禁仍必要。
+
+
+## 12. 限定账号检查与同一 Job 独立完成（2026-10-01）
+
+维护者明确允许只读检查专用隔离测试栈账号目录。执行 HEAD 为
+`397b881e6d28767c73eaf733c85011e7cd5e835c`，产品源码、镜像和98日缓存保持。
+精确核对13资源、loopback Product origin 和三个 F6 开关关闭后，读取
+`GET /api/product/admin/users`；完整无分页目录只有 **1 个 active admin**，
+仅保存账号数量、标识和状态，没有保存原目录或凭据、修改账号、操作正式或原有数据库。
+刷新完整 owner SignalJob 目录：本次 Job 等待、三个历史 Job 完成；精确缓存查询仍为
+usable98/missing0，原失败会话404、permission422。账号读取授权缺口已解除。
+
+Tester 只读事实复核、独立 Reviewer 与 Root 将该新建隔离库的来源证据、仅 admin 的
+完整目录、完整四 Job 目录及无并发 writer 条件一起核对。限定结论仅适用于这套
+fresh schema/market-only import/受支持 API 写入历史，不是一般数据库全局 SQL 行数证明；
+Worker 的全局扫描实现未改动。根据信号 Job 独立于 Agent 的现行边界，沿用既有隔离栈
+Worker 操作授权，紧邻启动重新检查账号/Job/策略与池引用/98日缓存/资源状态。
+保留三个 F6 开关关闭、Data/ML Worker 停止及 SDK/prompts/model counter0。
+
+Root 先保存只读 precheck 与独占 start marker，仅执行一次 **Docker CLI start**，
+有界 GET 同一个 Job。实际8次观察为 waiting→running→completed，未要求观察到瞬时 queued；
+同一 `signaljob_23a2bd73b82d4df98103105f120d314a` 以 **attempt1** 完成。
+完成后立即保存 stop marker 并执行一次 Docker CLI stop，Worker 现为 exited。
+生成 **validated signal_snapshot** `artifact_6914ff6a40a640d6b883d397f59018e0`，
+内容 SHA256 `ac8fcc75e56468faa6c673214ce87060922feeb8cc0adbff239c8efb152e9988`；
+Artifact 的 Task/Workspace/trace/StrategyVersion/PoolSnapshot/Job lineage 精确对应原任务。
+三个历史 Job 逐字段未变，当前完整 owner 目录四项均 completed。没有新建 Job、Agent
+会话或输入，没有重新批准或授予旧 Task，也没有恢复原 DSH/Product 会话。
+
+本次完整启动区间的日志显示仅目标98bars提升、promoted1、同 Job/Artifact完成，
+无 waiting/missing/error 分支；结合 ready 条件与当前源码，限定认定**本次 Worker
+已观察路径未创建 repair 请求**。未枚举全局 repair 表，不声称其为空。
+原报告的 `worker_start_posts:1` 字段实际单位是 Docker CLI start，不是 Product/Job POST；
+Tester 单独保存澄清，不改原报告。原始日志未另存；其三条安全投影按 LF 重建得到完整
+472bytes，SHA256 精确匹配捕获的全片段 `9c0633c54e24e2ff8b1bd7ffcd5f5fabb30ed8d3ed48be9e86fe060c5283cc6e`，
+后续 Root 离线重建证明不改写早先 Tester/Reviewer 关于未重算原始日志的记录。
+
+| 结果证据 | SHA256 |
+| --- | --- |
+| `/tmp/byq-phase17-isolated-account-readonly-20261001/account-directory-readonly.json` | `2cd9581fdf5bafd9851217afb2db94d994fc554f39e19d2b36e744447fdf6f10` |
+| `/tmp/byq-phase17-isolated-account-readonly-20261001/existing-job-worker-result.json` | `d6e06c75a44277eca953f51a3524adae43e7d9566d69b825d3b2bc6bf1cee13f` |
+| `/tmp/byq-phase17-isolated-account-test-20261001/existing-job-worker-result-tester.json` | `5699828acf24dec580adba78fd75e03795cf88c90b2770458c358b31022a7dee` |
+| `/tmp/byq-phase17-isolated-account-test-20261001/existing-job-worker-result-scope-clarification.json` | `7bd17e2909d41b24250d08a3373d4ec6f1f1074913da3572ab337456388d2be2` |
+| `/tmp/byq-phase17-isolated-account-review-20261001/actual-existing-job-result-acceptance.json` | `bdd531dc0a9d06289aaaf9862d201bf0d49670d0d801089dfbc52a2332d11408` |
+| `/tmp/byq-phase17-isolated-account-readonly-20261001/root-account-and-existing-job-acceptance.json` | `b280fcd03cdc49eacf376b28985cf6c821663e9b57669407189ab2033c3ff7f3` |
+| `/tmp/byq-phase17-isolated-account-readonly-20261001/post-worker-resource-check.json` | `675e652f58ba9c8de7f7699a8df9ca3767d460b4a0b663d7b437882c05b86fdc` |
+| `/tmp/byq-phase17-isolated-account-readonly-20261001/worker-log-segment-reconstruction.json` | `42318fcfcf8b58a161ff149391562c695de2959825662f4f91d26e6d814707d3` |
+
+Tester 的11项证据一致性检查、独立 Reviewer 与 Root 限定结果验收通过；没有重跑
+已通过测试套件或A–D。13资源身份/镜像/挂载保持，三个 F6 开关为0，Signal/Data/ML Worker
+停止、无已知测试进程，当前 SDK/prompts/normalized model counter均0，96份原v10证据未变。
+**通过范围仅账号检查、同一业务 Job 完成与 Artifact 持久化；原 F6 v10 FAIL 保留，
+BG/请求限额与结算/成功 UI NOT_RUN，Phase17 OPEN。**
+下一步准备完整修正后的观察器与模型调用前的新鲜只读门禁，再执行受影响 F6；本切片
+没有新 F6、行情下载、整套环境重建、推送/远程合并/部署，最终 Golden/hosted CI 仍必要。
