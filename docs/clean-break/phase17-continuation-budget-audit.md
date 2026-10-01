@@ -1,8 +1,8 @@
 # Phase 17 — continuation 预算与 F6 观察器审计
 
-Status: **ADR-0090 已实施并通过限定离线门禁；F6 v7 首轮实测失败并已清理；后台接续 NOT_RUN，Phase 17 OPEN**。
+Status: **ADR-0090 已实施并通过限定离线门禁；F6 v8 在授权后观察器合同断言失败并已清理；F6-2/BG/UI NOT_RUN，Phase 17 OPEN**。
 本记录使用当前 Clean Break ADR-001–006/ADR-0088；历史 ADR-0086 不作为现行规范。
-[ADR-0090](../architecture/adr/ADR-0090-continuation-request-limits.md) 已于 2026-10-01 获维护者“明确接受”。以下第 1–6 节保留接受前限定验收的事实边界；当前实施进度见第 7 节。
+[ADR-0090](../architecture/adr/ADR-0090-continuation-request-limits.md) 已于 2026-10-01 获维护者“明确接受”。以下第 1–6 节保留接受前限定验收的事实边界；当前实施及实测状态见第 9 节。
 
 ## 1. 同步、停机状态与证据保护
 
@@ -275,3 +275,93 @@ v7 60 份文件的清理后哈希清单在 `/tmp/byq-phase17-adr0090-f6-v7-prote
 完成受影响离线 Tester → 独立 Reviewer → Root 后才准备必要的真实 F6。
 **F6 scenario FAILED；真实后台接续／只读权限 UI NOT_RUN；Phase 17 OPEN。**
 A–D 适用证据继续复用；E/F／最终 Golden、hosted CI 与仓库门禁仍必需。
+
+
+## 9. F6 v8 限定门禁、实际观察器失败与收尾（2026-10-01）
+
+本节取代第 8 节的“下一步”作为当前状态；历史失败及门禁不改写。
+产品实现仍为 `cdeeb6dbdc497133d20a4bca87a36a98b511e677`；实际工程 HEAD 为
+`4bbf6737b3f8c6dd50b21e7b5acd8bcf62d990d1`，其差异只有证据文档。
+
+### 集中离线核对与实测前门禁
+
+v8 一次性核对余下断言：完整 objective 不缩短；Task 身份先保存；全部
+runtime binding/逐项 authorize/result 按权威审计核对；准确 BacktestTask
+引用和未执行状态；到期余量；稳定 Job 结果字段；F6-2 仅使用 create 回执。
+既有持久化/结算等待、usage 和权限校验按相同函数哈希复用，没有重跑 A–D。
+67 个定向动态案例及静态检查通过；静态观察有重叠，不声称 6 个独立案例。
+Reviewer/Root 又发现启用与收尾 reload 标记碰撞、pool 路径误用 snapshot ID；
+两处一起修正，另有 2 个 mocked Worker guard 案例和 1 个标记静态检查通过。
+前面的报告字段遗漏、测试计数勘误与 helper amendment 都保留原版本。
+
+v8 门禁位于 `/tmp/byq-phase17-adr0090-f6-v8/`，写入时仅资格为 offline：
+
+| 证据 | SHA256 | 边界 |
+| --- | --- | --- |
+| `tester-offline-gate.json` | `4650b4e82f399e19db6d0857aa3cda447d01f045158f3a2f9e81720ae3096248` | 限定实现/观察器及定向补充 |
+| `reviewer-offline-gate.json` | `9eb4b7e762f6ad69a9319588ae928553f00a6f4e29fdbb3b647c5019a01a69c4` | 独立审查 |
+| `root-offline-gate.json` | `6b156287146860c11ee0522b256bab856bbfcdfd58fc5fede938380e3b1bc868` | Root offline；F6 NOT_RUN |
+
+完整 admission 通过，绑定 41 个源码文件、16 个 helper、静态输入合同和 profile/限额。
+实测前只读确认测试 runner/SDK active/prompts/runnable Jobs 为 0。
+只以原镜像切换 backend/gateway/runtime-adapter 三个 F6 开关服务；
+没有 build/pull/下载，其他十项资源、五卷两网络和 98 日缓存保留。
+新鲜 preflight SHA256 `0e46da0a54833b4a72427e9c8ae2292846a11a583d855f9bd76e17068e046e2f`；
+frozen-plan SHA256 `c01e5ffcbc6aeca4d3072c9ac715d0b85beff04c943197d4322a3d3bb7b63959`。
+
+### 一次实际 F6 与错误合同分类
+
+仅运行一次 v8。会话 `conversation_994cf11a867347ddb39c21e406079f0d`，
+首轮 SDK root `d15ccddec0e64741b2461aaa6ce3d177` completed；完整 title/objective
+精确匹配、回答持久化及三项完整权威审计通过。
+Task `task_bbe20e59c62448cc857b1996ccb37301`，StrategyVersion
+`artifact_d159f39a763347b48e879c692aad1902`；Root 阅读实际源码后精确审批。
+唯一 v2 grant POST201/GET200 一致：确认资产/hash/profile/11 个限额/身份正确，
+requests_reserved=0、remaining=1、unconfirmed=0、usage/identity=null。
+这证明授权写入与读回，不证明后台请求的限额/usage 实测。
+
+随后观察器对 execution-plan GET 要求 Backend `body.detail`，但当前 Gateway
+规范化为 Product `body.error.code/message/request_id`；因此在第二轮前停止。
+原 `RUN-F6/error.json` **FAIL 保留**，没有 SignalJob、Worker start、F6-2 或 BG。
+新增 **12 normalized model calls**，raw provider HTTP **NOT_OBSERVED**。
+精确只读诊断得到 HTTP404、code=`product_domain_rejected`、
+message=`research execution plan not found`，确认未隐式创建 plan。
+诊断 SHA256 `c505a7bc37f0e2bc385b565479a8190fb13b961d40e0f82ac64eec1585fc6a60`。
+这是观察器合同错误；不能以诊断将原 F6 失败升级为 PASS。
+
+独立审查对所有 Product fault/detail 路径集中扫描，仅此处存在同类错层。
+报告 `/tmp/byq-phase17-adr0090-f6-v8-product-envelope-independent-review-20261001/review.json`，
+SHA256 `a12f2bf1433bce1c7297bfd5c27ff61b38b96973a6a1cf2752f4abafaf841aa1`。
+
+### 精确收尾及下一步边界
+
+有界 GET 对账 STOP_NOT_PASS、unresolved=[]；准确 grant_version1 已撤销并读回。
+Worker 未启动；只删除专用 session，保留 Task/Artifact/责任记录。
+三个 F6 开关已关闭；镜像、挂载、其余十资源、五卷两网络保持。
+旧 generation 的 12 次 normalized 调用保留；新 SDK/prompts/model counter 都为 0。
+`f6-off-final-environment.json` 为 **FAILURE_CLEANED_NOT_F6_PASS**，SHA256
+`76316ebfac9aad623c883468fc8a5a2d970cdc3e4f6de9b3437bf35c28a84a66`。
+86 份文件冻结于 `/tmp/byq-phase17-adr0090-f6-v8-protected-after-cleanup.json`，
+SHA256 `91f33eba7a6cacd516d03aa1e764f82e0a1029919718859854714b5556687563`。
+未知调用重放、直接 SQL、市场下载及生产/现有业务库/备份操作为 0。
+
+v9 只有离线观察器候选：精确核 Product404 error.code/message，并在断言前保存原 GET。
+没有 inputs、其余 Root helpers、执行门禁、preflight、freeze 或模型调用，不能启动。
+纯校验器 7 个动态正反例及 1 个证据顺序静态检查通过；实际 v8 404 为正例，Backend detail、空 404、错误 code/message/status 和 malformed envelope 为反例。
+报告 `/tmp/byq-phase17-adr0090-f6-v8-result-test-20261001/v9-execution-plan-validator-results.json`，SHA256 `e9926997241eac0c902b1ff2307ab4c66349265256315b668732a0243eb751f6`。
+失败事实、精确收尾与 v9 离线修正完成 Tester → 独立 Reviewer → Root 限定结果门禁。
+这项 PASS 只覆盖所述证据/修正/清理，不是完整 F6 或 Phase17 PASS。
+
+| 结果证据 | SHA256 |
+| --- | --- |
+| `/tmp/byq-phase17-adr0090-f6-v8-result-test-20261001/report.json` | `f8b542e5318130bed9876195e5c184c9c85237f5edd470963131da0891d23505` |
+| 同目录 `scope-clarification.json` | `4329d89aeff656357e56100fc62ab5be1edcf68d69fed6ae02db2a4bd8f77459` |
+| `/tmp/byq-phase17-adr0090-f6-v9-independent-review-20261001/review.json` | `b6aaf1c2a2e071cb31985c156d6e9a4f77a0040a2e6f862eea1e41b5c39a9482` |
+| `/tmp/byq-phase17-adr0090-f6-v8-v9-root-result-acceptance-20261001.json` | `53d95f207d5afa395a5a58dc97b242f1a5a1efe4db4b618dc096561e39fe362d` |
+
+Tester 原报告的 model_inputs=0 指清理新增输入，澄清 sidecar 原样保留；
+真实 v8 是 1 次 foreground input、0 次 background input 与 12 次 normalized 调用。
+本修正切片不再逐个修断言后重跑整链。
+原逻辑会话已删除，不能把 v8 FG1 与另一会话 FG2/BG 拼成 PASS。
+未来真实完整 F6 必须新会话及新鲜门禁；阶段验收仍需真实 BG、只读 UI、最终 Golden 与 hosted CI。
+**F6 v8 FAIL；F6-2/BG/UI NOT_RUN；清理仅 limited PASS；Phase17 OPEN。**

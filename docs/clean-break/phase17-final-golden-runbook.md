@@ -1,14 +1,20 @@
 # Phase 17 final Golden runbook
 
 Status: Phase 17 remains **OPEN**. Accepted ADR-0090 implementation passed
-scoped offline Tester → independent Reviewer → Root qualification. One affected
-v7 real F6 attempt failed in its first foreground Task objective assertion;
-exact read-only reconciliation and dedicated cleanup completed. Background
-continuation and the success-only read-only browser panel remain **NOT_RUN**.
-New F6 is paused for concentrated remaining-assertion/observer correction and
-its affected offline gates; the failed round is preserved and never replayed.
-External test model calls remain authorized. Applicable real A–D evidence is
-retained without replay; E/F/final Golden and hosted CI gates remain required.
+scoped offline Tester → independent Reviewer → Root qualification. After concentrated
+v8 observer gates, one affected real attempt passed FG1 exact Task/audit and the v2
+grant POST/GET, then failed before FG2 on a Product error-envelope assertion.
+Read-only diagnosis confirmed the plan was absent; the observer expected Backend
+`detail` rather than Gateway `error.code/message`. Original FAIL is preserved.
+The exact grant was revoked, dedicated session deleted and three F6 flags disabled;
+background continuation and the success-only read-only browser panel are **NOT_RUN**.
+v9 is only an offline correction candidate, with 7 focused pure-validator cases
+and raw-GET-before-assert ordering checked; the correction/failure cleanup passed
+limited Tester → independent Reviewer → Root acceptance. It has no launch
+inputs/gates/pins/freeze, and this limited PASS is not real F6 acceptance.
+Do not immediately replay another whole chain or combine v8 FG1 with a different
+session's FG2/BG. External test model calls remain authorized. Applicable A–D
+are retained without replay; E/F/final Golden and hosted CI gates remain required.
 No push, remote merge or deployment is authorized in this slice.
 See the [budget/observer audit](phase17-continuation-budget-audit.md),
 [residual audit](phase17-residual-simplification.md) and
