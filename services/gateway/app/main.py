@@ -26,6 +26,9 @@ from packages.contracts.conversation_rehydration import (
 )
 from packages.operations.admission import AdmissionClosed, chat_admission
 from packages.contracts.prompt_rejection import matches_credential_rejection
+from packages.contracts.continuation_request import (
+    RESERVATION_SCHEMA_VERSION, validate_profile_binding, validate_limits, validate_request_usage,
+)
 
 from .auth import AuthenticationUnavailable, Principal, authenticate_bearer
 from .auth_api import router as auth_router
@@ -591,13 +594,12 @@ def _consume_admitted_task_continuation(context):
         except HTTPException:
             product_sessions.remove_owned(conversation, principal)
             session = _restore_product_session(conversation, principal, workspace)
+        if session.session_id != context['session_id']:
+            raise ValueError('continuation original session identity mismatch')
         qualification = _continuation_adapter_get(
             f'/internal/runtime/sessions/{session.session_id}/continuation-qualification')
-        if qualification.get('reason') == 'session_missing':
-            product_sessions.remove_owned(conversation, principal)
-            session = _restore_product_session(conversation, principal, workspace)
-            qualification = _continuation_adapter_get(
-                f'/internal/runtime/sessions/{session.session_id}/continuation-qualification')
+        # A lost original Runtime is unqualified. Live-only Gateway attachment
+        # may observe an existing process; it never grants a replacement turn.
         if qualification.get('qualified') is not True:
             backend('block', {'reason': 'model_or_executor_unqualified'}, task=intent['task_id'])
             return
@@ -618,6 +620,8 @@ def _consume_admitted_task_continuation(context):
         raise ValueError('continuation reservation identity mismatch')
     observer = _attach_continuation_observer(context)
     if observer is not None:
+        if observer.session_id != intent['session_id']:
+            raise ValueError('continuation original session identity mismatch')
         _require_session_runtime_authority(observer)
     if observer is not None:
         if not product_sessions.hold_continuation(observer, identity, reservation['expires_at']):
@@ -632,8 +636,20 @@ def _consume_admitted_task_continuation(context):
     if settled.get('reservation_id') != identity:
         raise ValueError('continuation settlement identity mismatch')
     if settled.get('status') == 'settled':
+        if not _valid_prompt_run_id(settled.get('run_id')):
+            raise ValueError('invalid continuation settlement run identity')
+        if reservation.get('schema_version') == RESERVATION_SCHEMA_VERSION:
+            usage = validate_request_usage(settled.get('request_usage'))
+            validate_profile_binding(reservation.get('execution_profile'))
+            validate_limits(reservation.get('request_limits'))
+            if usage['execution_profile'] != reservation['execution_profile']:
+                raise ValueError('continuation settlement profile mismatch')
+            fields = {'request_usage': usage}
+        else:
+            # Historical liabilities remain reconcilable, never dispatchable.
+            fields = {'charged_tokens': settled['charged_tokens']}
         mark('accepted', run_id=settled['run_id'])
-        mark('settled', charged_tokens=settled['charged_tokens'], settlement_sha256=settled['settlement_sha256'],
+        mark('settled', **fields, settlement_sha256=settled['settlement_sha256'],
             outcome=settled['outcome'])
         if observer is not None:
             product_sessions.finish_continuation(observer, identity)
@@ -641,7 +657,8 @@ def _consume_admitted_task_continuation(context):
             if generation is not None:
                 _schedule_idle_release(observer, generation)
         return
-    if (settled.get('status') == 'accepted' and type(settled.get('charged_tokens')) is int
+    if (reservation.get('schema_version') != RESERVATION_SCHEMA_VERSION
+            and settled.get('status') == 'accepted' and type(settled.get('charged_tokens')) is int
             and receipt.get('status') != 'settled' and receipt.get('run_id')):
         # Bind the Adapter's exact durable guard charge for the lost original
         # attempt before any recovery decision; an unreadable guard stays unknown.
@@ -655,15 +672,19 @@ def _consume_admitted_task_continuation(context):
         return
     # Interrupted accepted turns stay unresolved after exact reconciliation.
     # A stale carrier from an earlier Gateway recovery path is not prompt authority.
-    if 'recovery_attempt' in reservation:
+    if reservation.get('schema_version') != RESERVATION_SCHEMA_VERSION or 'recovery_attempt' in reservation:
         return
     if receipt['status'] != 'reserved' or intent.get('may_dispatch') is not True:
         return
+    validate_profile_binding(reservation.get('execution_profile'))
+    validate_limits(reservation.get('request_limits'))
     try:
         session = product_sessions.get_owned(conversation, principal)
     except HTTPException:
         product_sessions.remove_owned(conversation, principal)
         session = _restore_product_session(conversation, principal, workspace)
+    if session.session_id != intent['session_id']:
+        raise ValueError('continuation original session identity mismatch')
     _require_session_runtime_authority(session)
     if observer is not session:
         if not product_sessions.hold_continuation(session, identity, reservation['expires_at']):
@@ -682,15 +703,20 @@ def _consume_admitted_task_continuation(context):
         accepted = _adapter_post(f'/internal/runtime/sessions/{session.session_id}/prompt', payload=payload, timeout=5.0)
     except HTTPException as exc:
         # Original identity is checked before Runtime's admission conflicts.
-        # A definite conflict may be retried under the same charged intent.
+        # A definite pre-accept conflict is recorded. Backend's one-shot request
+        # never reopens this dispatched identity for another prompt.
         # Ambiguous transport failures remain unknown and are only reconciled.
         if exc.status_code == 409:
             detail = getattr(exc, 'adapter_conflict_detail', '')
             category = ('domain_cleanup' if detail == 'previous turn domain cleanup is not yet acknowledged'
                 else 'process_cleanup' if detail == 'previous runtime process cleanup is not complete'
-                else 'running' if isinstance(detail, str) and 'cannot accept a prompt in state running' in detail
+                else 'running' if detail == f'session {session.session_id} cannot accept a prompt in state running'
                 else 'other')
             logger.warning('task continuation prompt rejected: category=%s', category)
+            # Unknown categories include reused identity conflicts: a prior
+            # run may already exist. Preserve liability and only reconcile.
+            if category == 'other':
+                return
             mark('rejected')
             if observer is not None:
                 product_sessions.finish_continuation(observer, identity)

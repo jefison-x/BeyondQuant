@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 
 from app import main
+from packages.contracts.continuation_request import (profile_binding, request_limits, USAGE_SCHEMA_VERSION, unknown_actual_usage)
 from app.task_continuation import CONTEXT_SCHEMA, TaskContinuationDelivery
 
 
@@ -18,8 +19,8 @@ def write_context(root, context):
 def fixture(monkeypatch):
     context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
         session_id='session-a', trace_id='trace-a')
-    reservation = dict(schema_version='task-continuation-reservation.v1', reservation_id='continuation_' + 'a'*32,
-        task_id='task_' + 'b'*32, owner='alice', workspace_id='workspace-a', token_limit=3000000,
+    reservation = dict(schema_version='task-continuation-reservation.v2', reservation_id='continuation_' + 'a'*32,
+        task_id='task_' + 'b'*32, owner='alice', workspace_id='workspace-a', execution_profile=profile_binding(), request_limits=request_limits(),
         expires_at='2026-09-10T12:00:00+00:00')
     receipt = dict(reservation_id=reservation['reservation_id'], instruction='Exact original task only.', status='reserved')
     intent = dict(status='intent', task_id=reservation['task_id'], conversation_id='conversation-a',
@@ -99,6 +100,7 @@ def test_implicit_data_ready_receipt_keeps_exact_settlement(monkeypatch):
     context, intent, writes, _, prompts, _, settlement = fixture(monkeypatch)
     intent['receipt'].update(grant_kind='data_ready', status='outcome_unknown')
     intent['may_dispatch'] = False
+    intent['reservation']['schema_version'] = 'task-continuation-reservation.v1'
     settlement.update(status='settled', run_id='c' * 32, charged_tokens=1056768,
         settlement_sha256='d' * 64, outcome='completed')
     main._consume_admitted_task_continuation(context)
@@ -121,6 +123,7 @@ def test_unknown_never_resubmits_or_refunds(monkeypatch):
 
 def test_accepted_settlement_projects_charge_and_failure_atomically(monkeypatch):
     context, intent, writes, _, prompts, _, settlement = fixture(monkeypatch)
+    intent['reservation']['schema_version'] = 'task-continuation-reservation.v1'
     settlement.update(status='settled', run_id='c'*32, charged_tokens=1056768,
         settlement_sha256='d'*64, outcome='needs_attention')
     main._consume_admitted_task_continuation(context)
@@ -130,15 +133,13 @@ def test_accepted_settlement_projects_charge_and_failure_atomically(monkeypatch)
 
 
 @pytest.mark.parametrize('status', [409, 422, 503, 504])
-def test_only_definite_admission_conflict_releases_dispatch_attempt(monkeypatch, status):
+def test_unclassified_error_preserves_unknown_dispatch_without_retry(monkeypatch, status):
     context, _, writes, _, prompts, _, _ = fixture(monkeypatch)
     def rejected(*args, **kwargs):
         raise HTTPException(status, 'synthetic')
     monkeypatch.setattr(main, '_adapter_post', rejected)
     main._consume_admitted_task_continuation(context)
-    assert [kind for kind, _ in writes] == (['dispatch', 'receipt'] if status == 409 else ['dispatch'])
-    if status == 409:
-        assert writes[-1][1]['status'] == 'rejected'
+    assert [kind for kind, _ in writes] == ['dispatch']
 
 
 def test_revoked_intent_can_reconcile_but_not_dispatch(monkeypatch):
@@ -545,3 +546,69 @@ def test_long_continuation_hold_survives_old_limit_without_renewal(monkeypatch):
     assert session.continuation_deadline == deadline
     registry.finish_continuation(session, 'long-reservation')
     assert registry.idle_release_delay(session) == main.RUNTIME_SESSION_IDLE_SECONDS
+
+
+def test_legacy_reserved_receipt_never_dispatches_even_if_backend_claims_permission(monkeypatch):
+    context, intent, writes, reads, prompts, _, _ = fixture(monkeypatch)
+    intent['reservation']['schema_version'] = 'task-continuation-reservation.v1'
+    main._consume_admitted_task_continuation(context)
+    assert writes == prompts == []
+    assert len(reads) == 2
+
+
+def request_usage():
+    return dict(schema_version=USAGE_SCHEMA_VERSION, execution_profile=profile_binding(), request_limits=request_limits(), limit_violations=[],
+        admission_usage=dict(provider_calls=1,provider_attempts=1,input_bytes=100,declared_output_tokens=8192,
+            tool_payload_bytes=0,max_input_bytes=100,max_declared_output_tokens=8192,max_tool_payload_bytes=0,
+            tool_calls=0,max_concurrent=1,elapsed_ms=100), actual_usage=unknown_actual_usage())
+
+
+def test_new_settlement_forwards_actual_unknown_separately_from_limits(monkeypatch):
+    context, intent, writes, _, prompts, _, settlement = fixture(monkeypatch)
+    usage = request_usage()
+    settlement.update(status='settled', run_id='c'*32, request_usage=usage, settlement_sha256='d'*64, outcome='needs_attention')
+    main._consume_admitted_task_continuation(context)
+    assert prompts == []
+    assert writes[-1] == ('receipt', dict(reservation_id=intent['reservation']['reservation_id'], status='settled',
+        request_usage=usage, settlement_sha256='d'*64, outcome='needs_attention'))
+    assert 'charged_tokens' not in writes[-1][1]
+
+
+def test_invalid_new_settlement_cannot_mark_business_receipt_accepted(monkeypatch):
+    context, _, writes, _, prompts, _, settlement = fixture(monkeypatch)
+    usage = request_usage(); usage['actual_usage']['input_tokens'] = 0
+    settlement.update(status='settled', run_id='c'*32, request_usage=usage, settlement_sha256='d'*64, outcome='completed')
+    with pytest.raises(ValueError, match='factual source'):
+        main._consume_admitted_task_continuation(context)
+    assert writes == prompts == []
+
+
+def test_live_registry_cannot_redirect_reserved_request_to_another_session(monkeypatch):
+    context, _, writes, _, prompts, _, _ = fixture(monkeypatch)
+    monkeypatch.setattr(main.product_sessions, 'get_owned', lambda *args: SimpleNamespace(session_id='different-session', boot_id='a'*32))
+    with pytest.raises(ValueError, match='original session identity'):
+        main._consume_admitted_task_continuation(context)
+    assert writes == prompts == []
+
+
+@pytest.mark.parametrize('detail,definite', [
+    ('previous turn domain cleanup is not yet acknowledged', True),
+    ('previous runtime process cleanup is not complete', True),
+    ('session session-a cannot accept a prompt in state running', True),
+    ('prompt idempotency key was reused with different content', False),
+    ('session another-session cannot accept a prompt in state running', False),
+])
+def test_known_preaccept_conflict_is_terminal_and_unknown_identity_conflict_stays_unresolved(monkeypatch, detail, definite):
+    context, intent, writes, _, prompts, _, _ = fixture(monkeypatch)
+    def rejected(path, payload, timeout):
+        prompts.append(payload)
+        error = HTTPException(409, detail)
+        error.adapter_conflict_detail = detail
+        raise error
+    monkeypatch.setattr(main, '_adapter_post', rejected)
+    main._consume_admitted_task_continuation(context)
+    assert [kind for kind, _ in writes] == (['dispatch','receipt'] if definite else ['dispatch'])
+    assert intent['receipt']['status'] == ('rejected' if definite else 'outcome_unknown')
+    main._consume_admitted_task_continuation(context)
+    assert len(prompts) == 1
+    if definite:assert writes[-1][1]['status'] == 'rejected'

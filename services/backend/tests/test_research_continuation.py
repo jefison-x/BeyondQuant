@@ -20,22 +20,25 @@ def setup_permission():
     task = store.create_task({"owner_principal": "budget-user", "title": "Synthetic permission",
         "objective": "No execution", "trace_id": "budget-trace", "idempotency_key": "budget-task"},
         trusted_context=context)
-    artifact = store.create_artifact({"task_id": task["task_id"], "kind": "research_note", "content": {"synthetic": True},
+    artifact = store.create_artifact({"task_id": task["task_id"], "kind": "strategy_version", "content": {"synthetic": True},
         "lineage": [], "trace_id": "budget-trace", "idempotency_key": "budget-artifact"})
     store.transition("artifact", artifact["artifact_id"], "validated", "budget-validate")
     return store, task["task_id"], context, {"idempotency_key": "budget-confirm",
-        "token_limit": 1000, "confirmed_artifact_ids": [artifact["artifact_id"]]}
+        "confirmed_artifact_ids": [artifact["artifact_id"]]}
 
 
 def test_permission_persists_without_enabling_execution_or_refreshing_expiry():
     store, task, context, payload = setup_permission()
     result = store.create_continuation_permission(task, payload, trusted_context=context)
     assert result["can_start"] is False
-    assert result["blocked_reason"] == "budget_enforcement_unqualified"
-    assert result["permission"]["max_turns"] == 8
+    assert result["schema_version"] == "task-continuation-permission.v2"
+    assert result["permission"]["max_turns"] == 1
     assert result["permission"]["valid_seconds"] == 86400
     assert result["permission"]["turn_timeout_seconds"] == 86400
     assert "idempotency_key" not in result["permission"]
+    assert result["permission"]["confirmation_id"] == payload["idempotency_key"]
+    assert "token_limit" not in result
+    assert "budget" not in result
     assert "continuation_permission" not in store.get_task(task)
     store.close()
     reopened = ResearchStore()
@@ -52,11 +55,11 @@ def test_permission_persists_without_enabling_execution_or_refreshing_expiry():
         reopened.close()
 
 
-@pytest.mark.parametrize("change", [{"token_limit": True}, {"token_limit": 0}, {"token_limit": 1.5},
-    {"max_turns": 9}, {"valid_seconds": 86401}, {"turn_timeout_seconds": 86401},
+@pytest.mark.parametrize("change", [{"token_limit": 1000}, {"max_turns": 2},
+    {"execution_profile_id": "unqualified-profile"}, {"valid_seconds": 86401}, {"turn_timeout_seconds": 86401},
     {"confirmed_artifact_ids": []}, {"qualified": True}, {"cost_limit": 1},
     {"confirmed_artifact_ids": ["artifact_" + "0" * 32]}])
-def test_permission_rejects_invalid_or_unverified_budget_without_writing(change):
+def test_permission_rejects_unqualified_profile_or_unverified_artifact_without_writing(change):
     store, task, context, payload = setup_permission()
     try:
         with pytest.raises(ValueError):
@@ -89,7 +92,8 @@ def test_competing_connections_create_one_immutable_permission():
                        for instance in (store, other)]
             assert futures[0].result() == futures[1].result()
         with pytest.raises(IdempotencyConflict):
-            store.create_continuation_permission(task, {**payload, "token_limit": 1001}, trusted_context=context)
+            store.create_continuation_permission(task, {**payload, "idempotency_key": "replacement-key"},
+                trusted_context=context)
         store.transition("research_task", task, "cancelled", "budget-cancel")
         assert store.get_continuation_permission(task, trusted_context=context)["blocked_reason"] == "task_terminal"
     finally:
@@ -140,39 +144,86 @@ def test_permission_backend_api_exact_identity_and_closed_fields(monkeypatch):
         store.close()
 
 
-@pytest.mark.parametrize('validity,explicit,expected', [(7200, None, 7200), (86400, None, 86400), (7200, 60, 60)])
-def test_new_permission_and_reservation_follow_the_confirmed_lifetime(validity, explicit, expected):
+@pytest.mark.parametrize('validity,explicit_timeout,expected_timeout', [
+    (7200, None, 7200), (86400, None, 86400), (7200, 60, 60)])
+def test_v2_permission_validity_and_request_timeout_are_bounded_separately(
+        validity, explicit_timeout, expected_timeout):
     from datetime import datetime
-    from tests.test_continuation_budget_ledger import reserve
     store, task, context, payload = setup_permission()
     try:
         payload['valid_seconds'] = validity
-        if explicit is not None:
-            payload['turn_timeout_seconds'] = explicit
+        if explicit_timeout is not None:
+            payload['turn_timeout_seconds'] = explicit_timeout
         view = store.create_continuation_permission(task, payload, trusted_context=context)
-        assert view['permission']['turn_timeout_seconds'] == expected
-        receipt = reserve(store, task, context)
-        duration = (datetime.fromisoformat(receipt['expires_at']) - datetime.fromisoformat(receipt['created_at'])).total_seconds()
-        assert expected - 5 <= duration <= expected
-        assert datetime.fromisoformat(receipt['expires_at']) <= datetime.fromisoformat(view['permission']['expires_at'])
+        assert view['permission']['turn_timeout_seconds'] == expected_timeout
+        duration = (datetime.fromisoformat(view['permission']['expires_at'])
+            - datetime.fromisoformat(view['permission']['created_at'])).total_seconds()
+        # Permission expiry is the grant validity; turn_timeout_seconds bounds
+        # an individual request and does not shorten the human grant.
+        assert validity - 5 <= duration <= validity
+        assert view['request_state']['requests_reserved'] == 0
+        assert view['request_state']['requests_remaining'] == 1
     finally:
         store.close()
 
 
-def test_old_implicit_short_grant_replays_without_extension_or_budget_reset():
-    from tests.test_continuation_budget_ledger import reserve
+def test_legacy_permission_is_read_only_but_revocable_and_cannot_be_replaced():
     store, task, context, payload = setup_permission()
     try:
-        original = store.create_continuation_permission(task, {**payload, 'turn_timeout_seconds': 900}, trusted_context=context)
-        receipt = reserve(store, task, context)
+        legacy = {
+            'schema_version': 'task-continuation-permission.v1',
+            'idempotency_key': 'legacy-confirmation',
+            'request_sha256': 'a' * 64,
+            'grant_version': 1,
+            'token_limit': 1000,
+            'max_turns': 2,
+            'confirmed_artifact_ids': payload['confirmed_artifact_ids'],
+            'confirmed_artifacts': [],
+            'owner_principal': context['owner_principal'],
+            'workspace_id': context['workspace_id'],
+            'conversation_id': 'legacy-conversation',
+            'confirmed_by': context['actor_principal'],
+            'created_at': '2026-01-01T00:00:00+00:00',
+            'expires_at': '2027-01-01T00:00:00+00:00',
+            'revoked_at': None,
+            'revoked_by': None,
+        }
+        store._execute('UPDATE research_tasks SET continuation_permission=:permission WHERE task_id=:task',
+            {'permission': legacy, 'task': task})
+        view = store.get_continuation_permission(task, trusted_context=context)
+        assert view['blocked_reason'] == 'legacy_continuation_read_only'
+        assert view['permission']['schema_version'] == 'task-continuation-permission.v1'
+        assert 'confirmation_id' not in view['permission']
+        with pytest.raises(ValueError, match='read-only'):
+            store.create_continuation_permission(task, payload, trusted_context=context)
+        revoked = store.revoke_continuation_permission(task, grant_version=1, trusted_context=context)
+        assert revoked['blocked_reason'] == 'legacy_continuation_read_only'
+        assert revoked['permission']['revoked_at'] is not None
+    finally:
         store.close()
-        store = ResearchStore()
-        replay = store.create_continuation_permission(task, payload, trusted_context=context)
-        assert replay['permission'] == original['permission']
-        assert replay['permission']['turn_timeout_seconds'] == 900
-        assert replay['budget']['reserved_tokens'] == 600
-        assert reserve(store, task, context) == receipt
-        with pytest.raises(IdempotencyConflict):
-            store.create_continuation_permission(task, {**payload, 'turn_timeout_seconds': 86400}, trusted_context=context)
+
+
+def test_unresolved_legacy_liability_blocks_a_new_v2_grant():
+    store, task, context, payload = setup_permission()
+    legacy_row = {
+        'reservation_id': 'continuation_' + 'f' * 32,
+        'event_key': 'legacy-event',
+        'input_sha256': 'a' * 64,
+        'token_limit': 1000,
+        'status': 'outcome_unknown',
+        'run_id': None,
+        'charged_tokens': None,
+        'settlement_sha256': None,
+        'created_at': '2026-01-01T00:00:00+00:00',
+        'instruction': 'historical instruction',
+        'dispatch_attempts': 1,
+        'next_attempt_at': '2026-01-01T00:00:00+00:00',
+        'expires_at': '2027-01-01T00:00:00+00:00',
+    }
+    try:
+        store._execute('UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
+            {'budget': [legacy_row], 'task': task})
+        with pytest.raises(ValueError, match='liability'):
+            store.create_continuation_permission(task, payload, trusted_context=context)
     finally:
         store.close()

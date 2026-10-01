@@ -984,23 +984,14 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             self.assertNotIn(forbidden, seam)
         for raw in ("bars_frame", "date_index", "symbol_index", "corporate_actions"):
             self.assertNotIn(raw, seam)
-        # Grant creation creates the plan; an identical approval POST retries
-        # only its already-committed exact action.
+        # ADR-0090: a readonly continuation grant does not create a generic
+        # execution plan; domain approval retains its exact action receipt.
         continuation = (ROOT / "services/backend/app/research_continuation.py").read_text()
-        self.assertIn("self.ensure_execution_plan(task_id, trusted_context=trusted_context)",
-                      continuation)
+        self.assertNotIn("self.ensure_execution_plan(task_id, trusted_context=trusted_context)",
+                         continuation)
         self.assertIn("reconcile_research_task_action(", backend)
         self.assertIn("agent_store.decide_approval(", backend)
         self.assertNotIn("record_plan_approval_event", backend)
-
-    def test_adr0085_p3_default_stage_call_bound_agrees_across_contract_and_guard(self) -> None:
-        from packages.contracts.research_judgment import DEFAULT_MAX_MODEL_CALLS_PER_STAGE
-
-        guard = (ROOT / "plugins/dsh-byq/runtime/byq-continuation-budget.js").read_text()
-        match = re.search(r"(?m)^export const RESEARCH_JUDGMENT_MAX_CALLS = (\d+);$", guard)
-        self.assertIsNotNone(match)
-        self.assertEqual(int(match.group(1)), DEFAULT_MAX_MODEL_CALLS_PER_STAGE)
-        self.assertEqual(DEFAULT_MAX_MODEL_CALLS_PER_STAGE, 2)
 
     def test_phase23_historical_parity_matrix_and_ui_smoke_exist(self) -> None:
         matrix = ROOT / "docs/roadmap/COMMUNITY_FEATURE_PARITY_MATRIX.md"
@@ -1322,7 +1313,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("runtime_command=self.runtime_command", adapter)
         self.assertIn("composition = self._composition", adapter)
         self.assertIn("composition=composition", adapter)
-        self.assertIn("create_guard_patch(composition, session_root, continuation_budget)", adapter)
+        self.assertRegex(adapter, r"create_guard_patch\(\s*composition, session_root, continuation_budget,\s*deadline_epoch_ms=continuation_deadline_epoch_ms\)")
         # ADR-0077: the guard requires the per-request output cap, so a
         # continuation harness must carry the reserved cap to the SDK for the
         # active route, not only the official deepseek adapter overlay.
@@ -1340,81 +1331,30 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("postgres", composition.lower())
         self.assertNotIn("redis", composition.lower())
 
-    def test_continuation_budget_guard_routes_match_dsh_composition(self) -> None:
-        # ADR-0077 auto-continuation must admit exactly the routes admission
-        # (ADR-0075/ADR-0076) already qualified. The guard table is the JS
-        # mirror of the Backend RUNTIME_MODEL_ALLOWLIST; this drift test ties
-        # every opencode route and model to the generated composition so a
-        # composition change cannot leave the guard silently stricter or
-        # looser than the model the Backend already admitted.
-        guard = (ROOT / "plugins/dsh-byq/runtime/byq-continuation-budget.js").read_text()
-        routes = {
-            match.group(1): tuple(json.loads(match.group(2)))
-            for match in re.finditer(r'(?m)^  "([A-Za-z0-9-]+)": (\[[^\]\n]*\]),$', guard)
-        }
-        self.assertEqual(set(routes), {
-            "deepseek-official", "opencode-go-responses", "opencode-go-chat",
-            "opencode-go-messages", "opencode-zen-responses", "opencode-zen-chat",
-            "opencode-zen-messages",
-        })
-        composition = composition_llm_provider_models(
-            (ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()
+    def test_continuation_guard_uses_the_shared_closed_read_request_profile(self) -> None:
+        # These are the same safety boundary in two languages, not a provider
+        # catalogue: ordinary foreground model routing remains Backend-owned.
+        from packages.contracts.continuation_request import (
+            ALLOWED_DOMAIN_TOOLS, ALLOWED_HARNESS_TOOLS, request_limits,
         )
-        self.assertEqual(
-            {provider: list(models) for provider, models in routes.items()
-             if provider != "deepseek-official"},
-            composition,
-        )
-        # deepseek-official has no explicit composition list; its allowlist is
-        # the static deepseek catalogue the Backend also resolves against.
-        self.assertEqual(
-            list(routes["deepseek-official"]),
-            ["deepseek-v4-flash", "deepseek-chat", "deepseek-reasoner"],
-        )
-        # ADR-0077: the DSH call site may report either the runtime route or the
-        # model-profile display provider ("opencode-go" / "opencode-zen"). The
-        # guard normalizes a display provider through this prefix table, which
-        # must only target routes the generated composition already admits, so
-        # normalization can never widen admission beyond the single authority.
-        display_providers: dict[str, list[tuple[str, str]]] = {}
-        block = guard[guard.index("export const DISPLAY_PROVIDER_RUNTIME_ROUTES = {"):]
-        block = block[: block.index("\n};")]
-        current = ""
-        for line in block.splitlines()[1:]:
-            if not line.strip() or line == "  ],":
-                continue
-            provider = re.fullmatch(r'  "([A-Za-z0-9-]+)": \[', line)
-            if provider:
-                current = provider.group(1)
-                display_providers[current] = []
-                continue
-            entry = re.fullmatch(r'    \["([^"]*)", "([A-Za-z0-9-]+)"\],', line)
-            self.assertIsNotNone(entry, line)
-            display_providers[current].append((entry.group(1), entry.group(2)))
-        self.assertEqual(set(display_providers), {"deepseek", "opencode-go", "opencode-zen"})
-        for provider, prefixes in display_providers.items():
-            self.assertTrue(prefixes, provider)
-            for _prefix, runtime in prefixes:
-                self.assertIn(runtime, routes, (provider, runtime))
 
-    def test_continuation_budget_ceilings_agree_across_guard_and_adapter(self) -> None:
-        # The guard enforces an already-authorized total allowance. Data-ready
-        # notifications have no model budget; Adapter per-call limits must fit
-        # inside the actual SDK guard ceilings.
         guard = (ROOT / "plugins/dsh-byq/runtime/byq-continuation-budget.js").read_text()
-        exports = {
-            name: int(value)
-            for name, value in re.findall(
-                r"(?m)^export const (CONTINUATION_(?:INPUT|OUTPUT)_CEILING) = ([0-9]+);$", guard)
-        }
-        adapter = (ROOT / "services/runtime-adapter/app/continuation_budget.py").read_text()
-        for name, value in exports.items():
-            self.assertIn(f"{name} = {value}", adapter)
-        self.assertEqual(set(exports), {"CONTINUATION_INPUT_CEILING", "CONTINUATION_OUTPUT_CEILING"})
-        output_cap = re.search(r"(?m)^CONTINUATION_MAX_OUTPUT_TOKENS = ([0-9]+)$", adapter)
-        self.assertIsNotNone(output_cap)
-        self.assertGreater(int(output_cap.group(1)), 0)
-        self.assertLessEqual(int(output_cap.group(1)), exports["CONTINUATION_OUTPUT_CEILING"])
+        block = re.search(r"export const PROFILE_LIMITS = Object.freeze\(\{(.*?)\}\);", guard, re.S)
+        self.assertIsNotNone(block)
+        limits = {key: int(value) for key, value in re.findall(r"(\w+): ([0-9]+)", block.group(1))}
+        self.assertEqual(limits, request_limits())
+        tools = re.search(r"export const ALLOWED_TOOL_NAMES = Object.freeze\(\[(.*?)\]\);", guard, re.S)
+        self.assertIsNotNone(tools)
+        self.assertEqual(set(re.findall(r"'(mcp__byq__[^']+)'", tools.group(1))),
+                         {'mcp__byq__' + tool for tool in ALLOWED_DOMAIN_TOOLS | ALLOWED_HARNESS_TOOLS})
+        self.assertIn('tools/pre-execute', guard)
+        self.assertNotIn('tokenLimit', guard)
+        # The removed JS stage-call constant never enforced durable stage-call
+        # admission. That separate Backend contract must not be deleted with it.
+        self.assertNotIn('RESEARCH_JUDGMENT_MAX_CALLS', guard)
+        stage = (ROOT / "services/backend/app/research_judgment.py").read_text()
+        self.assertIn('research_judgment_stage_calls', stage)
+        self.assertIn('stage_model_call_limit', stage)
 
     def test_phase13_roles_use_official_dsh_seams_and_bounded_capabilities(self) -> None:
         composition = (ROOT / "plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml").read_text()

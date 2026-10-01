@@ -6,19 +6,44 @@ import logging
 import re
 from datetime import datetime, timezone
 from .db import execute, fetch_one
+from packages.contracts.continuation_request import (
+    ALLOWED_DOMAIN_TOOLS,
+    ALLOWED_HARNESS_TOOLS,
+    RESERVATION_SCHEMA_VERSION,
+    validate_limits,
+    validate_profile_binding,
+)
 
 logger = logging.getLogger("byq.research.continuation.scope")
 
-TOOLS = frozenset({
-    'byq_agent_roles', 'byq_agent_run_start', 'byq_agent_authorize',
-    'byq_agent_audit', 'byq_agent_audit_get', 'byq_agent_approval_request', 'byq_agent_approval_get',
-    'byq_research_get', 'byq_research_transition', 'byq_experiment_create', 'byq_artifact_create',
-    'byq_ml_capabilities', 'byq_ml_training_get', 'byq_ml_prediction_create', 'byq_ml_prediction_get',
-    'byq_backtest_task_prepare', 'byq_backtest_task_create', 'byq_backtest_task_get',
-    'byq_backtest_task_execute', 'byq_backtest_get', 'byq_backtest_analysis_get',
-    'byq_signal_snapshot_get', 'byq_factor_job_get', 'byq_experiment_compare', 'byq_workflow_card_propose',
-    'byq_evaluation_signal_create', 'byq_evaluation_signal_get',
-})
+def _v2_tool_arguments_allowed(tool: str, args: dict, task: dict, receipt: dict, context: dict) -> bool:
+    """Keep the profile to two exact read targets and its Agent protocol tools."""
+    task_id = task['task_id']
+    backtest_task_id = receipt.get('backtest_task_id')
+    if tool == 'byq_research_get':
+        return (args.get('entity_type') == 'research_task'
+            and isinstance(args.get('entity_id'), str)
+            and args['entity_id'].strip() == task_id
+            and args.get('watch_id') is None)
+    if tool == 'byq_backtest_task_get':
+        return (isinstance(backtest_task_id, str)
+            and isinstance(args.get('backtest_task_id'), str)
+            and args['backtest_task_id'].strip() == backtest_task_id)
+    if tool == 'byq_agent_run_start':
+        if args.get('parent_run_id') is not None:
+            return False
+        return all(args.get(key) in {None, context.get(key)}
+            for key in ('owner_principal', 'actor_principal', 'session_id', 'trace_id', 'dsh_run_id'))
+    if tool in {'byq_agent_authorize', 'byq_agent_audit'}:
+        action = args.get('action')
+        if action == 'byq_research_get':
+            return (args.get('resource_type') == 'research_task'
+                and args.get('resource_id') == task_id)
+        if action == 'byq_backtest_task_get':
+            return (args.get('resource_type') == 'backtest_task'
+                and args.get('resource_id') == backtest_task_id)
+        return False
+    return False
 
 
 def authorize(store, reservation_id, payload, context):
@@ -40,26 +65,31 @@ def authorize(store, reservation_id, payload, context):
             raise ValueError('continuation reservation is unavailable')
         task, conversation = store._continuation_task(connection, match['task_id'], context, human=False)
         receipt = next(r for r in task['continuation_budget'] if r['reservation_id'] == reservation_id)
+        profiled = receipt.get('schema_version') == RESERVATION_SCHEMA_VERSION
         if (store._continuation_blocked_reason(task, conversation, receipt) is not None
+                or not profiled
                 or context['session_id'] != conversation['runtime_session_id']
                 or context['trace_id'] != conversation['trace_id']
                 or receipt['status'] not in {'outcome_unknown', 'accepted'}
                 or datetime.fromisoformat(receipt['expires_at']) <= datetime.now(timezone.utc)
                 or receipt['run_id'] not in {None, payload['root_run_id']}):
             raise ValueError('continuation action is no longer admitted')
+        permission = task.get('continuation_permission') or {}
+        try:
+            validate_profile_binding(receipt.get('execution_profile'))
+            validate_limits(receipt.get('request_limits'))
+        except ValueError as error:
+            raise ValueError('continuation request profile is invalid') from error
+        if (receipt['execution_profile'] != permission.get('execution_profile')
+                or receipt['request_limits'] != permission.get('request_limits')):
+            raise ValueError('continuation request profile changed after reservation')
         scope = Scope(connection, task, context)
         args = payload['arguments']
-        # Unscoped original-key lookups cannot choose a different task. Exact
-        # object identities and task-scoped receipts remain available.
         try:
-            if payload['tool'] not in TOOLS:
+            if payload['tool'] not in (ALLOWED_DOMAIN_TOOLS | ALLOWED_HARNESS_TOOLS):
                 raise ValueError('continuation action is outside its scope')
-            if payload['tool'] == 'byq_ml_training_get' and not args.get('training_run_id'):
-                raise ValueError('continuation requires the exact training identity')
-            if payload['tool'] == 'byq_research_get' and args.get('watch_id'):
-                scope.receipt(args['watch_id'], args.get('entity_type'))
-            elif payload['tool'] == 'byq_research_get' and not args.get('entity_id') and args.get('task_id') != task['task_id']:
-                raise ValueError('continuation requires the original task identity')
+            if not _v2_tool_arguments_allowed(payload['tool'], args, task, receipt, context):
+                raise ValueError('continuation read target is outside the exact request scope')
             scope.walk(args)
         except ValueError:
             execute(connection, "UPDATE research_tasks SET continuation_blocked_reason='continuation_needs_attention', continuation_blocked_event_key=:event WHERE task_id=:task",

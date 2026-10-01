@@ -771,11 +771,13 @@ def block_task_continuation(task_id: str, payload: dict[str, Any], request: Requ
 @app.post('/internal/task-continuation/{task_id}/receipt')
 def record_task_continuation_receipt(task_id: str, payload: dict[str, Any], request: Request) -> dict:
     context = _continuation_consumer_context(request)
-    allowed = {'reservation_id', 'status', 'run_id', 'charged_tokens', 'settlement_sha256', 'outcome'}
+    allowed = {'reservation_id', 'status', 'run_id', 'charged_tokens', 'settlement_sha256', 'outcome', 'request_usage'}
     if set(payload) - allowed:
         raise HTTPException(status_code=422, detail='invalid continuation receipt fields')
     if not {'reservation_id', 'status'} <= set(payload):
         raise HTTPException(status_code=422, detail='original reservation and status required')
+    if 'request_usage' in payload and 'charged_tokens' in payload:
+        raise HTTPException(status_code=422, detail='request usage cannot be combined with legacy token charges')
     return _research_call(lambda: research_store.record_continuation_receipt(
         task_id, trusted_context=context, **payload))
 

@@ -1,11 +1,14 @@
 # Phase 17 final Golden runbook
 
-Status: The original `.278` A1 is HANDOFF BLOCKED. A separately authorized
-`.280` A1 completed with a new bound/discoverable Task and `needs_permission`
-handoff. Tester → independent Reviewer → Root passed this bounded A1/binding
-result gate. Further inputs and TuShare calls
-are **NOT_AUTHORIZED / NOT_RUN**. See the [actual A1 record](phase17-a1-actual-evidence.md).
-Phase 17 remains **OPEN**. This runbook complements the
+Status: Phase 17 remains **OPEN**. ADR-0090 was explicitly accepted on
+2026-10-01. The accepted request-limit implementation and v7 observer undergo
+focused offline Tester → independent Reviewer → Root qualification before one
+affected real F6 journey. External test model calls are authorized by the
+maintainer; no additional per-round grant is required. New F6 remains paused until
+that offline gate and a fresh isolated-stack preflight pass. Existing applicable
+real A–D evidence is retained without replay; E/F/final Golden and hosted CI gates
+remain required. No push, remote merge or deployment is authorized in this slice.
+See the [budget/observer audit](phase17-continuation-budget-audit.md),
 [residual audit](phase17-residual-simplification.md) and
 [verification gate](verification-gates.md).
 
@@ -322,12 +325,17 @@ completed B/C event. The exact F6 preparation/Job sequence, grant timing and its
 foreground model inputs are accounted for in the reviewed ledger below; actual
 execution still requires its exact Product continuation grant and per-input manifests.
 
-The proposed grant is `max_turns=1`, `token_limit=4000000`, `valid_seconds=900`,
-`turn_timeout_seconds=900`, exact confirmed strategy IDs and one saved Product
-permission key. These are one background turn and a conservative total allowance,
-not one raw model API call. Unknown receipts are never replayed/refunded. Revoke
-that exact grant and disable the executor afterward. A grantless notification or
-synthetic reservation is not actual F6 execution.
+The current accepted contract is [ADR-0090](../architecture/adr/ADR-0090-continuation-request-limits.md).
+Use `max_turns=1`, `execution_profile_id=task-ready-read.v1`, `valid_seconds=900`,
+`turn_timeout_seconds=900`, exact confirmed strategy IDs/hashes and one saved human
+confirmation key. The grant is durable business authorization; its 900-second
+validity is separate from the request's 180-second resource deadline. New grants
+have no `token_limit`. The profile bounds attempts including retry/compaction,
+concurrency, single/total input bytes, declared output, tool data and tool dispatch.
+Actual usage/source/completeness and known violations are recorded independently;
+unknown remains unknown. Old grants and reservations remain readonly liabilities
+and cannot fund, upgrade or replay a new request. Revoke the exact grant and disable
+the executor afterward. A grantless notification or synthetic reservation is not F6.
 
 Before asking for external calls, finalize a numbered input ledger that separates
 foreground user turns, delegated runs, typed approval resumptions and F6; each
@@ -376,11 +384,21 @@ For F6, keep the appropriate signal Worker stopped while Agent initiates its new
 Job after the exact human grant. Start only that Worker so a new terminal event
 can be delivered; require the same original healthy logical Product session and matching
 validated Strategy Artifact/Task. Revoke the exact grant and disable the executor
-once the one background run settles. The 4M allowance admits at most three
-`llm/stream` budget checks with the current conservative guard; it is not a
-one-call API permission. Later root turns may create new Runtime generations;
-this does not prove reuse of the same underlying DSH process or process reattach.
-Actual enabled F6 viability remains unverified.
+once the one background request settles. The `task-ready-read.v1` profile allows
+at most 16 provider HTTP attempts, one concurrent request and 16 tool dispatches;
+its byte/output/time caps are defined by the immutable shared profile. Requests
+start fresh counters and never restore a historical balance. Later root turns may
+create new owned Runtime processes; this does not prove reuse of an old DSH process.
+New-session reads of the same Job are separate from healthy original-session
+continuation. Current F6 enabled viability still requires its actual v2 evidence.
+
+Before any new F6 run, inventory only known scoped IDs and perform one concentrated
+check of all remaining assertions. FG/BG require bounded readonly answer persistence
+and request settlement waits. Confirmed observer-only errors save evidence before
+bounded connection hold/read reconciliation. Safety/unknown actions are classified
+and never replayed. Both success and failure require exact dedicated Worker/grant/
+connection cleanup; failure cleanup preserves unknown liability and never makes
+F6 PASS. Reuse applicable A–D evidence; retain final Phase/CI gates.
 
 ## Historical preparation acceptance and A1-only plan
 
@@ -437,7 +455,7 @@ one-shot wrapper executed it. That foreground grant is now spent. Actual objects
 provider/tool observations, handoff failure and the source repair are recorded in
 [actual A1 evidence](phase17-a1-actual-evidence.md). No second model input was sent.
 
-## Acceptance
+## Historical A1 preparation acceptance
 
 Independent Tester verifies actual per-flow evidence and limits; independent Sol
 Reviewer inspects it, followed by Root. Source-slice PASS, environment preparation

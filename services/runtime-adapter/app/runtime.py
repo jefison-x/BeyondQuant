@@ -32,6 +32,11 @@ from packages.contracts.domain_call_admission import (
 )
 from packages.contracts import runtime_continuity as continuity
 from packages.contracts import session_failure_containment as containment_contract
+from packages.contracts.continuation_request import (
+    ALLOWED_MODEL as CONTINUATION_MODEL,
+    ALLOWED_PROVIDER as CONTINUATION_PROVIDER,
+    exceeded_request_limits,
+)
 
 from .contracts import WorkflowTraceEvent, make_workflow_trace_event
 from .child_lease import ChildLease
@@ -42,8 +47,9 @@ from .continuation_budget import (
     CONTINUATION_MAX_OUTPUT_TOKENS,
     validate_reservation,
     create_guard_patch,
-    read_guard,
+    read_request_guard,
 )
+from .research_request_gate import RequestGateProxy, build_continuation_request_gate
 from .normalization import NormalizationState, normalize_runtime_observation
 
 
@@ -92,14 +98,12 @@ _OPENCODE_PROVIDERS = frozenset({
 # used for background continuation. The Backend resolver has already enforced an
 # active credential and a discovered/supported model, so the adapter only has to
 # reject unknown routes here.
-_CONTINUATION_PROVIDERS = frozenset({"deepseek-official", *_OPENCODE_PROVIDERS})
-
-
 def _continuation_route_qualified(model_resolution: dict, provider: str, model: str) -> bool:
+    """ADR-0090 grants one exact provider/model pair for this request profile."""
+
     resolved_provider = str(model_resolution.get("provider") or provider)
     resolved_model = model_resolution.get("model", model)
-    return (resolved_provider in _CONTINUATION_PROVIDERS
-        and isinstance(resolved_model, str) and bool(resolved_model.strip()))
+    return resolved_provider == CONTINUATION_PROVIDER and resolved_model == CONTINUATION_MODEL
 
 
 class SessionStatus:
@@ -169,6 +173,9 @@ class RuntimeGeneration:
     continuation_budget: dict | None = field(default=None, repr=False)
     budget_journal: Path | None = field(default=None, repr=False)
     budget_run_id: str | None = field(default=None, repr=False)
+    continuation_request_gate: Any = field(default=None, repr=False)
+    continuation_request_proxy: Any = field(default=None, repr=False)
+    continuation_proxy_closed: bool = True
     active_run: ActiveRun | None = None
     normalization: NormalizationState = field(default_factory=NormalizationState)
     usage_message_ids: set[str] = field(default_factory=set)
@@ -307,6 +314,30 @@ class RuntimeSession:
     @budget_run_id.setter
     def budget_run_id(self, value: str | None) -> None:
         self._generation().budget_run_id = value
+
+    @property
+    def continuation_request_gate(self):
+        return self.current_generation.continuation_request_gate if self.current_generation is not None else None
+
+    @continuation_request_gate.setter
+    def continuation_request_gate(self, value) -> None:
+        self._generation().continuation_request_gate = value
+
+    @property
+    def continuation_request_proxy(self):
+        return self.current_generation.continuation_request_proxy if self.current_generation is not None else None
+
+    @continuation_request_proxy.setter
+    def continuation_request_proxy(self, value) -> None:
+        self._generation().continuation_request_proxy = value
+
+    @property
+    def continuation_proxy_closed(self) -> bool:
+        return self.current_generation.continuation_proxy_closed if self.current_generation is not None else True
+
+    @continuation_proxy_closed.setter
+    def continuation_proxy_closed(self, value: bool) -> None:
+        self._generation().continuation_proxy_closed = value
 
     @property
     def active_run(self) -> ActiveRun | None:
@@ -807,21 +838,47 @@ class RuntimeAdapter:
             if self._root_scoped and (record.process_used or budget is not None):
                 if record.workspace_id and conversation_context is None:
                     raise SessionConflict("new root requires a fresh public conversation projection")
-                if record.process_closing or not record.process_closed:
+                if (record.process_closing or not record.process_closed
+                        or not record.continuation_proxy_closed):
                     raise SessionConflict("previous runtime process cleanup is not complete")
                 if record.continuation_budget is not None:
                     old_id = record.continuation_budget['reservation_id']
-                    record.budget_receipts[old_id] = self._budget_receipt(record)
+                    old_receipt = self._budget_receipt(record)
+                    if old_receipt.get('status') == 'settled':
+                        record.budget_receipts[old_id] = old_receipt
                     while len(record.budget_receipts) > 64:
                         del record.budget_receipts[next(iter(record.budget_receipts))]
                 private_session = f"root-{uuid.uuid4().hex}"
                 generation = f"generation-{uuid.uuid4().hex}"
                 root_id = uuid.uuid4().hex
-                harness = self._build_harness(record.session_id,
-                    contained_session_path(self._session_root, private_session),
-                    trace_id=record.trace_id, owner_principal=record.owner_principal,
-                    workspace_id=record.workspace_id, model_resolution=record.model_resolution,
-                    runtime_generation=generation, root_run_id=root_id, continuation_budget=budget)
+                session_root = contained_session_path(self._session_root, private_session)
+                request_gate = None
+                request_proxy = None
+                tool_journal = None
+                if budget is not None:
+                    request_gate = build_continuation_request_gate(
+                        request_id=budget['reservation_id'],
+                        execution_profile=budget['execution_profile'],
+                        limits=budget['request_limits'],
+                        journal=session_root / 'continuation-provider-request.jsonl',
+                    )
+                    request_proxy = RequestGateProxy(request_gate, 'https://api.deepseek.com')
+                    request_proxy.__enter__()
+                    tool_journal = session_root / 'continuation-tool-guard.jsonl'
+                try:
+                    harness = self._build_harness(record.session_id, session_root,
+                        trace_id=record.trace_id, owner_principal=record.owner_principal,
+                        workspace_id=record.workspace_id, model_resolution=record.model_resolution,
+                        runtime_generation=generation, root_run_id=root_id, continuation_budget=budget,
+                        continuation_proxy_url=request_proxy.base_url if request_proxy is not None else None,
+                        continuation_deadline_epoch_ms=(
+                            int(time.time() * 1000 + request_gate.remaining_seconds() * 1000)
+                            if request_gate is not None else None
+                        ))
+                except BaseException:
+                    if request_proxy is not None:
+                        request_proxy.close()
+                    raise
                 # A new root turn is a NEW generation for the same durable
                 # session. Retire the previous process generation; never reuse
                 # its native identity or transient normalization state.
@@ -833,16 +890,21 @@ class RuntimeAdapter:
                 installed = record.current_generation
                 installed.harness = harness
                 installed.continuation_budget = budget
-                installed.budget_journal = (contained_session_path(self._session_root, private_session)
-                    / 'continuation-budget.jsonl') if budget else None
+                installed.budget_journal = tool_journal
                 installed.budget_run_id = root_id if budget else None
+                installed.continuation_request_gate = request_gate
+                installed.continuation_request_proxy = request_proxy
+                installed.continuation_proxy_closed = request_proxy is None
             if record.harness is None:
                 raise SessionConflict("runtime process is unavailable for this Agent session")
             now = time.monotonic()
             run = ActiveRun(run_id=record.process_root_id if self._root_scoped else uuid.uuid4().hex,
                             started_at=now, last_runtime_activity_at=now)
             if budget:
-                run.continuation_deadline = now + max(0, (datetime.fromisoformat(budget['expires_at']) - datetime.now(timezone.utc)).total_seconds())
+                # The monotonic one-request deadline includes prompt construction,
+                # provider retries/compaction, tool work and idle gaps. The
+                # business authorization expiry is validated separately above.
+                run.continuation_deadline = record.continuation_request_gate.deadline_monotonic
             record.process_used = True
             record.pending_conversation_context = []
             record.active_run = run
@@ -858,6 +920,7 @@ class RuntimeAdapter:
                 record.status = SessionStatus.FAILED
                 if idempotency_key:
                     record.prompt_idempotency.pop(idempotency_key, None)
+                self._close_continuation_proxy(record, record.runtime_generation, record.harness)
                 raise
 
             # Capture the execution owner while admission is still locked.
@@ -883,6 +946,7 @@ class RuntimeAdapter:
                         record.prompt_idempotency.pop(idempotency_key, None)
                     record.status = SessionStatus.FAILED
                     self._emit(record, "session.failed", "runtime-adapter", {"error": "thread-start", "run_id": run.run_id})
+                self._close_continuation_proxy(record, prompt_generation, prompt_harness)
             raise
         watchdog = threading.Thread(
             target=self._watch_run,
@@ -925,7 +989,7 @@ class RuntimeAdapter:
                     # Startup must demonstrate the guard registered before
                     # any model prompt is sent; a failed plugin cannot silently
                     # fall back to an unguarded runtime.
-                    read_guard(record.budget_journal, record.continuation_budget)
+                    read_request_guard(record.budget_journal, record.continuation_budget)
             try:
                 finish_reason = self._compatibility.run_prepared_prompt(
                     prepared, content,
@@ -933,13 +997,16 @@ class RuntimeAdapter:
                         source_run=run, source_runtime_session_id=runtime_session_id),
                 )
             finally:
-                if self._root_scoped:
-                    with record.lock:
-                        if record.harness is harness and not record.process_closing and not record.process_closed:
-                            record.process_closing = True
-                            self._compatibility.close(harness)
-                            record.process_closed = True
-                            record.process_closing = False
+                try:
+                    if self._root_scoped:
+                        with record.lock:
+                            if record.harness is harness and not record.process_closing and not record.process_closed:
+                                record.process_closing = True
+                                self._compatibility.close(harness)
+                                record.process_closed = True
+                                record.process_closing = False
+                finally:
+                    self._close_continuation_proxy(record, generation_id, harness)
         except Exception as exc:
             with record.lock:
                 if record.active_run is not run:
@@ -961,6 +1028,7 @@ class RuntimeAdapter:
                     else:
                         record.process_closed = True
                         record.process_closing = False
+                self._close_continuation_proxy(record, generation_id, harness)
                 record.active_run = None
                 run.watchdog_stop.set()
                 if run.hard_cancelled or record.status in {SessionStatus.INTERRUPTED, SessionStatus.CLOSED}:
@@ -997,8 +1065,16 @@ class RuntimeAdapter:
             budget_blocked = False
             if record.continuation_budget:
                 try:
-                    budget_blocked = bool(read_guard(record.budget_journal, record.continuation_budget,
-                        terminal=True)['blocked_reason'])
+                    tool_receipt = read_request_guard(
+                        record.budget_journal, record.continuation_budget, terminal=True)
+                    gate = record.continuation_request_gate
+                    if gate is None:
+                        raise ValueError('continuation provider gate is missing')
+                    usage = gate.request_usage(tool_calls=tool_receipt['tool_calls'])
+                    budget_blocked = bool(
+                        tool_receipt['blocked_reason'] or gate.has_blocked_request()
+                        or exceeded_request_limits(usage)
+                    )
                 except (OSError, ValueError, TypeError, KeyError):
                     budget_blocked = True
                 if budget_blocked:
@@ -1053,6 +1129,7 @@ class RuntimeAdapter:
                 record.active_run = None
                 record.process_closing = True
                 cancelled_harness = record.harness
+                cancelled_generation = record.runtime_generation
             cancellation = {"mode": mode, "persistence": "dsh-owned", "run_id": run.run_id}
             if mode == "hard":
                 cancellation["resume"] = "new-agent-session-after-interrupted"
@@ -1063,10 +1140,16 @@ class RuntimeAdapter:
                 # ADR-0085 P0: an interrupted terminal closes the generation.
                 self._close_generation(record, record.runtime_generation, "interrupted")
         if mode == "hard":
-            self._compatibility.close(cancelled_harness)
-            with record.lock:
-                record.process_closing = False
-                record.process_closed = True
+            # Interrupt any active upstream read before waiting for DSH process
+            # teardown; both resources are dedicated to this one request.
+            self._close_continuation_proxy(record, cancelled_generation, cancelled_harness)
+            try:
+                self._compatibility.close(cancelled_harness)
+                with record.lock:
+                    record.process_closing = False
+                    record.process_closed = True
+            finally:
+                self._close_continuation_proxy(record, cancelled_generation, cancelled_harness)
         return self.describe_session(record)
 
     def domain_call_evidence(self, context: dict, after_sequence: int = 0) -> dict:
@@ -1283,6 +1366,7 @@ class RuntimeAdapter:
                 if record.harness is not None:
                     self._compatibility.close(record.harness)
             finally:
+                self._close_continuation_proxy(record, record.runtime_generation, record.harness)
                 with record.lock:
                     for subscriber in list(record.subscribers):
                         subscriber.put(None)
@@ -1385,12 +1469,14 @@ class RuntimeAdapter:
             except Exception as exc:
                 failure = exc
             finally:
+                self._close_continuation_proxy(record, record.runtime_generation, record.harness)
                 try:
                     if record.harness is not None:
                         self._compatibility.close(record.harness)
                 except Exception as exc:
                     failure = exc
                 finally:
+                    self._close_continuation_proxy(record, record.runtime_generation, record.harness)
                     with record.lock:
                         for subscriber in record.subscribers:
                             subscriber.put(None)
@@ -1470,30 +1556,71 @@ class RuntimeAdapter:
             runtime_bin = distribution_version('deepseek-harness-runtime-bin')
         except PackageNotFoundError:
             return False
-        # The continuation executor is qualified on the byq-dsh-sdk-v1 family.
-        # The promoted 0.1.5 default and the retained 0.1.2 rollback expose a
-        # byte-identical Python SDK surface (docs/evidence/d15/upgrade-recon),
-        # so the exact-carrier gate accepts either qualified pair (never mixed).
-        exact = sdk == runtime_bin and sdk in {'0.1.2rc1', '0.1.5rc1'}
+        # ADR-0090 relies on the pinned public tools/pre-execute contract that
+        # was inspected and dynamically qualified for the 0.1.5 pair only.
+        exact = sdk == runtime_bin == '0.1.5rc1'
         return (os.environ.get('BYQ_F6_EXECUTOR_ENABLED') == '1' and self._root_scoped
-            and self._compatibility.family in {'dsh-0.1.2', 'dsh-0.1.5'} and exact
+            and self._compatibility.family == 'dsh-0.1.5' and exact
             and bool(record.model_resolution.get('api_key'))
             and _continuation_route_qualified(record.model_resolution, self._provider, self._model))
 
+    def _close_continuation_proxy(
+        self, record: RuntimeSession, generation_id: str, harness: Any,
+    ) -> None:
+        generation = record.current_generation
+        if (generation is None or generation.generation_id != generation_id
+                or generation.harness is not harness):
+            return
+        proxy = generation.continuation_request_proxy
+        if proxy is None:
+            generation.continuation_proxy_closed = True
+            return
+        try:
+            proxy.close()
+        except Exception:
+            generation.continuation_proxy_closed = False
+        else:
+            generation.continuation_proxy_closed = True
+
     def _budget_receipt(self, record: RuntimeSession) -> dict:
         reservation = record.continuation_budget
-        unknown = {'reservation_id': reservation['reservation_id'], 'status': 'outcome_unknown'}
-        if record.active_run is not None or not record.process_closed or record.process_closing:
-            return unknown
+        reservation_id = reservation['reservation_id']
+        cached = record.budget_receipts.get(reservation_id)
+        if cached is not None:
+            return cached
+        if record.active_run is not None:
+            return {'reservation_id': reservation_id, 'status': 'accepted',
+                    'run_id': record.budget_run_id}
+        if (not record.process_closed or record.process_closing
+                or not record.continuation_proxy_closed):
+            return {'reservation_id': reservation_id, 'status': 'outcome_unknown'}
         try:
-            receipt = read_guard(record.budget_journal, reservation, terminal=True)
+            tool_receipt = read_request_guard(record.budget_journal, reservation, terminal=True)
+            gate = record.continuation_request_gate
+            if gate is None:
+                raise ValueError('continuation provider gate is missing')
+            request_usage = gate.request_usage(tool_calls=tool_receipt['tool_calls'])
+            violations = exceeded_request_limits(request_usage)
             completed = any(event['kind'] == 'session.result'
                 and event['payload'].get('run_id') == record.budget_run_id for event in record.history)
-            receipt = {**receipt, 'run_id': record.budget_run_id,
-                'outcome': 'completed' if completed else 'needs_attention'}
+            needs_attention = bool(
+                not completed or tool_receipt['blocked_reason'] or gate.has_blocked_request() or violations
+            )
+            receipt = {
+                'reservation_id': reservation_id,
+                'status': 'settled',
+                'run_id': record.budget_run_id,
+                'outcome': 'needs_attention' if needs_attention else 'completed',
+                'request_usage': request_usage,
+            }
+            receipt['settlement_sha256'] = hashlib.sha256(json.dumps(
+                receipt, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+            record.budget_receipts[reservation_id] = receipt
+            while len(record.budget_receipts) > 64:
+                del record.budget_receipts[next(iter(record.budget_receipts))]
             return receipt
         except (OSError, ValueError, TypeError, KeyError):
-            return unknown
+            return {'reservation_id': reservation_id, 'status': 'outcome_unknown'}
 
     def continuation_receipt(self, session_id: str, reservation_id: str) -> dict:
         validate_identifier(session_id, field='session_id')
@@ -1519,6 +1646,8 @@ class RuntimeAdapter:
         runtime_generation: str,
         root_run_id: str = "",
         continuation_budget: dict | None = None,
+        continuation_proxy_url: str | None = None,
+        continuation_deadline_epoch_ms: int | None = None,
     ) -> Any:
         if self._root_scoped and re.fullmatch(r"[0-9a-f]{32}", root_run_id) is None:
             raise ValueError("root-scoped process requires a reserved root identity")
@@ -1563,16 +1692,21 @@ class RuntimeAdapter:
         composition = self._composition
         max_tokens = None
         if continuation_budget is not None:
-            composition, _ = create_guard_patch(composition, session_root, continuation_budget)
-            # ADR-0077: the guard charges 1,048,576 + options.maxTokens and
-            # fails closed when the request carries no output cap. The official
-            # deepseek route inherits a cap from its adapter overlay, but the
-            # qualified opencode-* pi-ai routes have no composition default, so
-            # the reserved per-turn cap is applied at the SDK request boundary
-            # for every continuation route.
+            if continuation_proxy_url is None or continuation_deadline_epoch_ms is None:
+                raise ValueError('continuation provider gate is required')
+            composition, _ = create_guard_patch(composition, session_root, continuation_budget,
+                deadline_epoch_ms=continuation_deadline_epoch_ms)
+            # The request proxy is the only provider egress for this exact route.
+            # The per-call output declaration is a safety ceiling, never a usage
+            # charge; actual provider usage is recorded by the proxy.
             max_tokens = CONTINUATION_MAX_OUTPUT_TOKENS
-            if str(model_resolution.get('provider') or self._provider) == 'deepseek-official':
-                environment['DEEPSEEK_BASE_URL'] = 'https://api.deepseek.com'
+            runtime_provider = str(model_resolution.get('provider') or self._provider)
+            runtime_model = str(model_resolution.get('model') or self._model)
+            if runtime_provider != CONTINUATION_PROVIDER or runtime_model != CONTINUATION_MODEL:
+                raise ValueError('selected continuation model is unqualified')
+            environment['DEEPSEEK_BASE_URL'] = continuation_proxy_url
+            environment['DEEPSEEK_SEARCH_BASE_URL'] = ''
+            environment['DEEPSEEK_SEARCH_API_KEY'] = ''
         return self._compatibility.build_harness(
             provider=str(model_resolution.get("provider") or self._provider),
             model=str(model_resolution.get("model") or self._model),
@@ -1768,11 +1902,20 @@ class RuntimeAdapter:
         return value
 
     def _watch_run(self, record: RuntimeSession, run: ActiveRun) -> None:
-        while not run.watchdog_stop.wait(timeout=1.0):
+        while True:
+            timeout = self._watchdog_wait_timeout(run.continuation_deadline, time.monotonic())
+            if run.watchdog_stop.wait(timeout=timeout):
+                return
             now = time.monotonic()
             if self._enforce_run_guards(record, run, now=now):
                 return
             self._emit_wait_notice(record, run, now=now)
+
+    @staticmethod
+    def _watchdog_wait_timeout(deadline: float | None, now: float) -> float:
+        if deadline is None:
+            return 1.0
+        return min(1.0, max(0.0, deadline - now))
 
     def _emit_wait_notice(self, record: RuntimeSession, run: ActiveRun, *, now: float) -> None:
         with record.lock:
@@ -1824,6 +1967,7 @@ class RuntimeAdapter:
             record.active_run = None
             record.status = SessionStatus.FAILED
             failed_harness = record.harness
+            failed_generation = record.runtime_generation
             needs_close = not record.process_closed and not record.process_closing
             record.process_closing = needs_close or record.process_closing
             self._emit(
@@ -1835,11 +1979,17 @@ class RuntimeAdapter:
         # A session owns its DSH process, so closing it cannot interrupt any
         # other Product conversation. The detached worker will discard any
         # late result and resume creates a fresh private generation.
-        if needs_close:
-            self._compatibility.close(failed_harness)
-            with record.lock:
-                record.process_closing = False
-                record.process_closed = True
+        # The request deadline also owns the in-flight upstream socket. Close
+        # it before waiting for this DSH process to stop.
+        self._close_continuation_proxy(record, failed_generation, failed_harness)
+        try:
+            if needs_close:
+                self._compatibility.close(failed_harness)
+                with record.lock:
+                    record.process_closing = False
+                    record.process_closed = True
+        finally:
+            self._close_continuation_proxy(record, failed_generation, failed_harness)
         return True
 
     @staticmethod

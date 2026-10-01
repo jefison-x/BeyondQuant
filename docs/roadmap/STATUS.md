@@ -38,7 +38,7 @@ Its connected journey reused the already qualified A1 Artifact and 98-session
 cache; the delegated child performed one new Web query. Observer failures and
 independent read-only browser qualification remain explicit in
 [actual connected A evidence](../clean-break/phase17-a2-a3-actual-evidence.md).
-B–F, enabled F6, required hosted CI and repository gates remain pending. The original `.278` A1 remains unbound.
+Final Golden closure, enabled F6, required hosted CI and repository gates remain pending. Existing real B–D evidence is retained for scoped reuse; normal CPU completion, same-Job CPU restart/reclaim and new authorized-session reads are distinct evidence. ADR-0090 changes require affected F6 qualification before phase closure. The original `.278` A1 remains unbound.
 A separately authorized one-shot `.280` A1 completed with a new Task correctly
 bound and discoverable in its original conversation; handoff is `needs_permission`
 as no continuation grant was authorized. Tester → independent Reviewer → Root
@@ -49,6 +49,7 @@ authorized continuing external test model calls without another permission reque
 This supersedes the per-round grant requirement for the isolated Phase 17 tests;
 Product business approvals, unknown-outcome protection and the existing-database,
 backup, market-download and production boundaries remain in force.
+On 2026-10-01 the maintainer explicitly accepted [ADR-0090](../architecture/adr/ADR-0090-continuation-request-limits.md): persistent continuation authorization is separated from one request’s execution limits, while exact liability/idempotency/unknown-result facts remain. Implementation and scoped F6 qualification are pending; no old DSH session or budget is reconstructed. Existing A–D evidence is reused only within its documented applicability.
 No later phase is authorized.**
 Under [ADR-0089](../architecture/adr/ADR-0089-clean-break-gpu-acceptance-scope.md),
 GPU execution and GPU checkpoint/restart are `N/A` for BYQ 0.10 acceptance;

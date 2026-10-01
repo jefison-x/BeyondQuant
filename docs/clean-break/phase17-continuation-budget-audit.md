@@ -1,8 +1,8 @@
 # Phase 17 — continuation 预算与 F6 观察器审计
 
-Status: **审计/最小方案；预算边界改变尚未实施；F6 实测暂停**。
+Status: **ADR-0090 已接受；单请求合同正在实施；F6 实测仍暂停**。
 本记录使用当前 Clean Break ADR-001–006/ADR-0088；历史 ADR-0086 不作为现行规范。
-[ADR-0090](../architecture/adr/ADR-0090-continuation-request-limits.md) 是待维护者明确接受的方案。
+[ADR-0090](../architecture/adr/ADR-0090-continuation-request-limits.md) 已于 2026-10-01 获维护者“明确接受”。以下第 1–6 节保留接受前限定验收的事实边界；当前实施进度见第 7 节。
 
 ## 1. 同步、停机状态与证据保护
 
@@ -75,7 +75,7 @@ provider 实际 usage 单独解析；Backend durable admission 防止同请求�
 既有 gate 的 180 秒 proxy deadline 不是完整 DSH 回合 watchdog；不能直接宣布 F6 全部限额已具备。
 现行 continuation journal 独占创建，失去 Adapter 原会话则 unknown；没有需要维持的旧预算恢复义务。
 
-## 4. 实际修改、测试和剩余门禁
+## 4. 接受前切片的修改、测试和剩余门禁
 
 应用源码仅修正 `services/runtime-adapter/app/research_request_gate.py` 的真实用量类型检查，
 并在对应 test 添加反例：bool/负数不是真实用量，nested cache 的 bool 也 unknown，合法 0 保留。
@@ -110,7 +110,7 @@ Node 现行 continuation guard 文件测试 PASS。未启动真实模型、proxy
 当前预算 ADR 未接受也构成 F6 暂停边界。
 
 
-## 6. 本轮 Tester → 独立 Reviewer → Root 限定验收
+## 6. 接受前切片的 Tester → 独立 Reviewer → Root 限定验收
 
 - Tester：`/tmp/byq-phase17-280-f6-v6/offline-targeted-tester-report.json`，
   SHA256 `18fd70be9ee70a2d1a8b441bcb1bf8acddd156810b416fc96f421f88c07e19f4`。
@@ -130,3 +130,71 @@ Node 现行 continuation guard 文件测试 PASS。未启动真实模型、proxy
 ADR-0090 未接受；新 profile/预算合同未实施或实测；失败资源收尾 NOT_RUN；
 真实 F6 NOT_RUN，Phase 17 OPEN，最终阶段/hosted CI 门禁仍必要。不得据本记录启动真实 F6。
 下一步是维护者明确接受或调整 ADR-0090，之后实施准确授权与单请求限额及失败收尾合同，再验收受影响 F6。
+
+
+## 7. ADR-0090 接受后的实施切片（尚未验收）
+
+维护者明确接受了持久授权与单请求限额分离；不需要再次确认同一架构决策。
+Root 维护 `packages/contracts/continuation_request.py`，Backend、Adapter、Frontend
+各一个 writer，独立 Tester 只读核对剩余观察器断言；没有第二个会话并行修改这些子系统。
+新 grant/reservation 为 v2，usage receipt 单独为 v1。工具名称使用实际
+`byq_agent_run_start`、`byq_agent_authorize`、`byq_agent_audit`，领域只允许当前
+Task 读取及精确 BacktestTask 读取；DSH 精确 MCP alias 由公开调用前 hook 核验。
+
+`provider_calls` 与 `provider_attempts` 都定义为实际 HTTP attempts，包含重试和压缩，
+必须相等；拒绝记录与已准入 attempts 分开。输入 bytes、声明输出和工具 payload
+各有单次峰值与累计总量，终态责任记录能够核对两种上限。真实 input/cache/output
+仍以 provider 响应为来源，缺失不填安全上限或 0。
+
+Root 用现有 Gateway 镜像、无网络/只读源挂载临时测试容器执行受影响两个测试文件：
+**41 passed**。共享合同定向测试 **44 passed**，覆盖不可篡改 profile、单次/累计超限事实、
+未知用量和合法 zero 的区分；相关架构边界定向测试 **4 passed / 68 deselected**。这是正在实施切片的组件测试结果，未经本切片完整
+Tester/Reviewer/Root 门禁；不代表 Backend/Adapter 整条链或 F6 已通过。
+
+锁定 DSH 二进制 SHA256
+`6f68ce88d98307533ee8fa58a8125de4dc019ab16fac8b512cec141a2d1961f8`
+的公开 catalog 定义 `tools/pre-execute` waterfall。实际 prepareExecution 先等待该 hook，
+拒绝进入 error 结果；仅 allow 且 caller 未取消才进入 dispatch。此源码核验不是动态资格。
+必须继续以相同版本、无外部 provider 的样本证明安装及第 17 次真实 dispatch 前拦截。
+
+原 `.280` 栈未更新；F6 v6 未 freeze/run；历史 A–D、v1–v5 和接受前门禁不改写。
+完成此切片及观察器/失败资源收尾的定向验证，独立 Reviewer 和 Root 验收后，
+才执行受影响 F6。阶段总门禁继续 OPEN，推送、远程合并及部署不在授权内。
+
+
+### 当前观察器与失败收尾候选
+
+新私有 v7 候选复制历史观察器，v6 原件和旧证据保持不变；没有 freeze/run。
+前后台有界等待同时核对回答持久化与 request usage settlement。精确业务责任
+从 owner-scoped Product permission 的 `request_state.request_identity` 读取，包含
+reservation、run、事件、输入摘要、grant version、dispatch attempts、outcome 和
+settlement hash；Root helper 不再查询 SQL，也不把公开“系统能力”当动作身份。
+
+Frontend 新授权只提交固定 profile，展示 Backend 的单次请求限额。未知 POST
+后的空 GET 不解除提交锁；只有同一确认 nonce、资产、profile 和 Task 的确切
+授权被确认才解除锁定。历史 v1 可读/撤销，不能转换或继续派发。
+
+失败收尾候选保存原 FAIL，先有界只读对账并结束 hold，再清理准确专用资源。
+单次 revoke 的 Tester 离线故障注入 **7 cases passed**，覆盖丢失 POST 回执后
+GET 确认、已有 marker 仅 GET、空许可不确认、身份/资产/profile 不符拒绝，以及
+未知 request usage / unconfirmed responsibility 原样保留；仍是 provisional
+组件证据，尚未经整个当前切片独立 Reviewer 与 Root 验收。
+
+### 接受后定向验证与剩余阻塞（2026-10-01）
+
+- Backend 使用新建 internal network 和 tmpfs PostgreSQL 测试库执行受影响合同；没有连接 `.280` 的业务库。合并去重证据为 **82 个 scoped cases 通过**。首次临时库 256 MiB WAL 用尽导致的环境失败原样保留；仅重跑受影响案例，使用 1536 MiB 专用 tmpfs 后完成。并发 poll 的第二读允许 waiting，不要求提前获得第一个线程尚未持久化的 intent；仍证明只有一个 reservation/dispatch。
+- 原子 dispatch 后的精确未接受拒绝保留一次已消耗请求身份、attempts 和 liability；禁止重新打开。Gateway 仅认同一会话的三个明确 admission 拒绝详情。身份冲突或其他 409 保持 unknown，不笼统退款或重发。受影响 Gateway 新增/修改 **9 cases passed**，其余此前证据复用。
+- Backend 纯 profile 合同 **10 passed**。Frontend permission panel **7 passed**，类型检查通过。历史 v1 仅读取/撤销；新授权仅固定 v2 profile，未知 POST 后空 GET 不能解锁。
+- Runtime 首批 **46 passed / 4 failed / 2 deselected** 及后续失败原样保留；只复验受影响案例。当前去重 **59 个 scoped Python cases 通过**（首批 50 个、新增未知 transport 不重放 1 个、业务恢复与长 reservation 8 个），Node guard **8 passed**。实际输出超声明如实记 partial；已修正小型 503 buffered body 的 closed socket 处理及总 deadline。上游断连后拒绝 SDK 后续外发，不重放未知结果。两个固定 `0.1.5rc1` SDK 机制用例均通过真实本地模拟 provider/MCP：各 Agent 的目录仅五个别名，根/子 Agent 共用 dispatch 计数并在第 17 次前阻止；子 Agent 仅测试公开创建 API，生产 profile 仍禁止委派。公开 scoped `agent.ctx.tools.restrict` 在同步创建事件安装；ready fence 表示监听器已安装，不等待延迟至 SDK run 的 Agent 创建。私有 cache noexec、fixture import 位置和重复 wrapper 失败不计为通过。真实外部 provider 与业务库调用为 0，F6 NOT_RUN。
+- 新 v7 失败收尾候选增加安全/未知失败的精确 GET 对账；未知读结果阻止后续清理写入。未知请求不重放。已知 healthy-session observer hold 仍使用原有有界握手；新分支的离线资格正在验证。
+- 最新只读栈清单：`/tmp/byq-phase17-adr0090-implementation/paused-stack-readonly-20261001-refresh.json`。13 个原服务，SDK active/active prompts 均 0，Signal/Data/ML Worker 均 exited，normalized model counter 仍 24；raw HTTP NOT_OBSERVED。没有新 F6、模型请求、Grant 或 Job。
+
+完整当前切片 Tester、独立 Reviewer、Root 验收尚未完成；上述定向组件证据不能替代实际 F6 接续、阶段最终验收或 hosted CI。
+
+### 最终离线门禁候选边界
+
+私有 v7 将观察器、plan、全部 Root/native/只读 UI helper 字节及完整源码切片纳入同一离线 Tester → Reviewer → Root 门禁。构建后仅由 Root 核对实际镜像、原健康会话、端口、身份和新鲜资源 pins，不重复一轮静态审阅，也不据准备 PASS 宣称 F6 PASS。准备阶段若原 Runtime authority 或完整 usage counter 变化，重建前停止并保留证据；未知 transition 不自动重放。仅四个源码变更服务重建，其他九个资源、五个卷和两个网络保留，复用 98 个交易日缓存。
+
+FG/BG 的回答持久化和 request settlement 采用有界 GET；BG 先核对权威 Job/Artifact 生命周期再解释公开回执。错误证据及 SSE 先 fsync，已确认 observer-only 错误保留原健康连接进行有界只读对账；安全/未知错误精确 GET 对账，未确认读结果阻止清理写入。离线 7 revoke、18 合同反例与 3 延迟等待、收尾/只读对账证据按函数 hash 复用；新增门禁漂移与资源保护反例定向验证，不将重复运行相加。
+
+F6 成功收尾后的独立真实浏览器检查只读取同一 Task 已撤销/花完的 v2 grant，验证 11 个可信限额、实际用量分离、不可再次提交/撤销与刷新；不发送 Agent、模型、Grant 或 Job 操作。该检查仍 NOT_RUN，未知提交锁的故障反例维持离线证据边界。
