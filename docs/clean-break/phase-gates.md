@@ -1,26 +1,30 @@
 # Phase 0–6 gate record
 
-## Current next gate — post-reset evidence save / final Golden (2026-10-02)
+## Current gate — local final mapping PASS / CI pending (2026-10-02)
 
-[Accepted ADR-0091](../architecture/adr/ADR-0091-workspace-reset-fact-retention.md)
-complete personal reset has passed the scoped real Tester → independent Reviewer → Root gate:
-72 categories/784 personal rows archived for seven days and cleared to defaults; identity/RBAC,
-shared/system state and5 CAS objects remain. A single real Reset/browser flow ran with0 models/seed.
-Standard offline fresh-build FAIL is retained; exact-source affected overlay qualification is separate.
-Seven-day elapsed GC and a current-source whole empty-stack rebuild are NOT_RUN.
+Accepted ADR-0091 personal Reset/defaults passed actual Tester → independent Reviewer → Root:
+72 categories/784 rows archived for seven days, identity/RBAC/shared state and5 CAS preserved.
+E1 normal post-reset research passed. Original E2 really delegated/searched once but its save
+failed Backend422; the later original save attempt timed out with external response/usage UNKNOWN.
+These failures are retained and unknown input is not replayed.
 
-Post-reset E1 passed. E2 really delegated/searched once, then correctly failed on unknown-publication
-sources marked SUPPORTED; no child Task/Artifact was written. All3 runs are closed with Job0 and
-no unknown liability under the current guard. Original E2 FAIL remains immutable. Only the bounded
-save-only suffix passed scoped offline observation gates, then its sole submitted input failed on
-Runtime120s no-progress timeout before any BYQ tool/delegation/save. Native actual usage/response
-remain UNKNOWN; normalized delta0 does not mean zero cost. No input replay occurred and readonly
-account/shared/archive/CAS preservation passed; actual save remains FAIL. No new Web/market/Job/Reset/seed.
-[Current actual evidence and boundaries](phase17-personal-reset-actual-evidence.md).
+A distinct current-source normal conversation now completed one parent/child save of the preserved
+actual Web material:8 unknown publication dates,8 UNESTABLISHED claims, exact Artifact hash/lineage,
+main Task unchanged,10 authoritative audits,Job0. It added no Web query/market download/Reset/seed.
+Original browser/context and status-enum observer failures remain; offline corrections and one
+separate read-only real browser visit passed,135 GET/one login POST,model/business writes0.
+Tester → independent Reviewer → Root accepted **actual save + separate readonly UI scoped PASS**.
+This is segmented evidence with explicitly corrected material; it is not original E2 same-turn PASS
+or proof of autonomous source classification correction.
 
-**Complete Golden E / Phase17 OPEN.** Reuse valid A–D/F6; preserve final Golden, affected source/build
-currency, hosted CI and repository gates. No push, merge, deployment or Phase18 is authorized.
-Historical NO-GO/proposed-plan findings below remain historical evidence.
+[Actual Reset/research/save evidence](phase17-personal-reset-actual-evidence.md) and
+[final Golden mapping](phase17-final-golden-acceptance.md) bind all receipts and current source limits.
+Final A–F/F6 mapping passed its scoped local Tester → independent Reviewer → Root gate;
+Golden E is the explicitly segmented composite, and F is qualified bounded reuse. Phase17 remains OPEN.
+Reuse qualified A–D/F6 and bounded F lifecycle/current-source build evidence. Standard networkless
+fresh dependency build FAIL is preserved; current whole empty-stack and elapsed seven-day GC are
+NOT_RUN. Required exact-head hosted CI/repository gates remain OPEN. No push, merge, deployment or
+Phase18 is authorized. Historical failed/proposed gates below keep their original verdicts.
 
 ## Current v13 affected F6 acceptance (2026-10-01)
 

@@ -3,9 +3,11 @@
 ## 当前结论
 
 **完整个人重置：Tester → 独立 Reviewer → Root scoped actual PASS。**
-重置后新研究主 Task 和第一轮回答已持久化；第二轮真实委派/搜索完成，但 Web 保存
-被正确的领域校验拒绝，原 E2 **FAIL**。受影响保存后缀已提交一次输入，发生Runtime无进展超时，实际保存 **FAIL**；两次零输入停止及最终失败均保留。
-**完整 Golden E / Phase17：OPEN。** A–D、已通过的 F6/UI 不重复执行。
+重置后 E1 新研究、真实委派/搜索、后续独立新会话的纠正材料保存和只读浏览器已分别取证。
+最新 **实际保存 + 独立只读 UI：三方 scoped PASS**；原 E2 的422、旧超时外部 UNKNOWN、
+新保存观察器的原失败均保留，不重放、不称原 E2 整链成功或自主来源分类已修复。
+**Golden E 分段组合 / 最终 A–F/F6 映射：本地限定三方 PASS；Phase17：OPEN。**
+[最终 Golden 映射](phase17-final-golden-acceptance.md)保留适用 A–D/F6/F、源码/构建边界及 CI 门禁。
 
 ## 已实现的产品语义
 
@@ -37,7 +39,7 @@ Backend 保持非 root；ML 三个精确目录采用 producer group/setgid，未
 标准 networkless Backend fresh build 因缺 setuptools83 离线依赖/DNS **FAIL**，原日志
 保留。随后仅以固定旧依赖镜像覆盖受影响当前源码，Backend/Gateway/frontend 的
 离线 overlay/build 通过，Backend 当前 70 个 app 文件逐 hash 相符。该资格不是当前
-源码从空环境重建整栈，也不是 hosted CI。Runtime 仍为已接受 `.280` 镜像。
+源码从空环境重建整栈，也不是 hosted CI。该次 Reset 时 Runtime 仍为已接受 `.280` 镜像；后续限定 Runtime/MCP 源码加载见下文。
 
 专用隔离栈 `byq-dev-dd33416d94` 仅执行 **一次 bodyless Reset POST**：
 
@@ -218,3 +220,67 @@ provider/default profile、Harness、产品预算或领域授权。
 Root限定验收：`/tmp/byq-phase17-model-http-final-root-acceptance-20261002.json`。
 **仅当前这次独立HTTP协议诊断PASS**，不替代DSH/Agent、真实保存/浏览器或完整Golden E。
 原失败不重放，Golden E/Phase17 OPEN、有效A–D/F6复用及最终阶段门禁保持。
+
+
+## 当前源码独立保存与只读浏览器（2026-10-02）
+
+应用源码基础 `a2fa32d89d8c7611861b86ed40474d42c8d149a7`；验收前工程 HEAD
+`be279a0af2958a0a7b763177a774777df4d35a30` 仅有两份证据文档差异。
+现行 Runtime/MCP skill/schema 及 Backend/Gateway/frontend 精确源码读回均有独立限定资格。
+新增正常 Product conversation `conversation_b53d824787f84bb78f3eef72c2579d76`，
+sole foreground root `9cd7e6d4939b4e6d999e432ba1ccdb92`；不是恢复旧 DSH 或重放未知请求。
+
+输入显式提供原实际 Web query 的8条结果及纠正为 UNESTABLISHED 的材料。
+它证明重置后的研究保存能力，不证明模型无需提示即可自行纠正原来源分类。
+沿用已确认422/无写入的 business key `phase17-personal-reset-e2-web-20261002-01`，
+新 parent/child registration keys 分别为 `phase17-current-source-save-parent-20261002-01`
+及 `phase17-current-source-save-child-20261002-01`；原主 Task 全13字段不变。
+
+| 实际事实 | 结果 |
+|---|---|
+| Parent / child runs | `agent_run_d38655b1240d465bbefee11b70533cae` / `agent_run_e84b29db5d5f4f03a757177bd43f9e7d`，均 completed/closed |
+| 新 child Task | `task_a1624d24a2c44f4bb618a26d5ce11f63` |
+| 保存的 draft Artifact | `artifact_e8e10b3fbdca443d98ae67ac88beeefd` |
+| Canonical content SHA256 | `aa02283eb8faf0350b11cb54a45c945b506492fc61baeeb53e21d9a79e1cb4dd` |
+| 内容/lineage | 8真实来源、8 UNESTABLISHED claims、全部发表日期 UNKNOWN；child/main Task lineage 精确相符 |
+| 审计/持久化 | 10条权威结构化 audit；SSE22事件、completed；回答 fragments 持久化、delivery up_to_date |
+| 新 Web/行情/Job/Reset/seed | 0 / 0 / 0 / 0 / 0 |
+| 真实只读浏览器 | 同一新会话回答及同一 Artifact；135 GET/1 login POST，其他写入/模型输入0 |
+| 保全 | 13容器/5卷/2网络、账号/shared8表、784归档行、5 CAS、98行情日保持 |
+| 结束状态 | 浏览器/SSE关闭、Runtime active sessions/prompts0；Workers停止、F6 flags0 |
+
+原模型 Runner 在已完成 REPAIR 后因隐式 Playwright context 第二 page 报错，仍是
+`STOPPED_NO_REPLAY`，原60文件 seal保留。后续只读 collector 原观察器把合法
+`runtime_turn_binding=active` 误判为 running；该失败转录注明来自 Root tool observation，
+原 collector stderr 未另存，不冒充原始 stderr 完整证据。
+
+独立新 `actual-contracts-v2.py` 仅修正两处合法状态集合，11离线正反例通过；显式
+`browser.newContext()` 以无网络 offline browser样本验证后，只做一次 UI-only 真实检查。
+没有重复模型输入。截图证明回答和 JSON detail 页面可见；完整 JSON 由实际 DOM 解析
+匹配，不声称单张截图同时显示所有来源或具备专用比较图表 UI。
+4MiB body接受上限在完整读取后检查，不冒充流式内存硬上限。
+
+当前 boot normalized delta11、native usage记录17，不等于原始 HTTP请求次数。
+raw provider HTTP NOT_OBSERVED；旧超时返回/取消/actual usage仍 UNKNOWN。
+独立只读 UI模型增量0 不抹掉此前调用。
+
+| 最新实际门禁/不可变证据 | SHA256 |
+|---|---|
+| `/tmp/byq-phase17-current-source-save-final-seal-20261002.json`（102文件） | `373515430b0658b2d79960620a014593e3a69eaeb331340bd5b9f75f18de2194` |
+| `/tmp/byq-phase17-current-source-save-tester-20261002/actual-save-and-readonly-ui-review.json` | `179e5f66b456420aefe96fd57b2165379e9c33e101904be44bb71ef74d1004d0` |
+| `/tmp/byq-phase17-current-source-save-independent-review-20261002/actual-save-and-readonly-ui-review.json` | `48f31fc664ef14221e27163079882ab89827eb6c00cf49365695e8846f93d992` |
+| `/tmp/byq-phase17-current-source-save-root-actual-acceptance-20261002.json` | `ef0f58db6df1266154aad371f54385242f51a6bfd211dc1b7d95760fa6162696` |
+| `/tmp/byq-phase17-current-source-save-independent-review-20261002/source-build-currency-review.json` | `29b3defd728354a8a1cf59af518d7c2b56c1ba8f89f5aa9e5fec5a73a4ec2f68` |
+
+这份 Root 门禁在真实只读 UI 后签署；旧 pre-run gate 的 NOT_RUN 字段不覆盖改写。
+最新限定保存/UI PASS 可以进入分段 Golden E 映射；完整最终门禁另行记录，
+hosted CI/仓库验收与 Phase17整体仍 OPEN。
+
+
+## 最终映射签收
+
+Tester → 独立 Reviewer → Root 已接受当前 Golden E 分段组合，并完成最终 A–F/F6
+限定本地映射；[完整门禁](phase17-final-golden-acceptance.md)记录26项绑定、五份原审查
+文档快照、ML两启动顺序首次当前限定三方签收及全部证据复用边界。
+这不将原E2、旧超时、原观察器或自主来源分类改判成功，不声称新的完整A–F执行。
+阶段本地映射完成；当前提交 hosted CI/仓库门禁未完成，Phase17整体仍OPEN。

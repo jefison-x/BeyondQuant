@@ -38,7 +38,7 @@ Its connected journey reused the already qualified A1 Artifact and 98-session
 cache; the delegated child performed one new Web query. Observer failures and
 independent read-only browser qualification remain explicit in
 [actual connected A evidence](../clean-break/phase17-a2-a3-actual-evidence.md).
-Final Golden closure, required hosted CI and repository gates remain pending. Affected v13 F6 and readonly UI passed the scoped actual gate below. Existing real B–D evidence is retained for scoped reuse; normal CPU completion, same-Job CPU restart/reclaim and new authorized-session reads are distinct evidence. ADR-0090 changes require affected F6 qualification before phase closure. The original `.278` A1 remains unbound.
+Final Golden mapping passed its bounded local gate below; required hosted CI and repository gates remain pending. Affected v13 F6 and readonly UI passed the scoped actual gate below. Existing real B–D evidence is retained for scoped reuse; normal CPU completion, same-Job CPU restart/reclaim and new authorized-session reads are distinct evidence. ADR-0090 changes require affected F6 qualification before phase closure. The original `.278` A1 remains unbound.
 A separately authorized one-shot `.280` A1 completed with a new Task correctly
 bound and discoverable in its original conversation; handoff is `needs_permission`
 as no continuation grant was authorized. Tester → independent Reviewer → Root
@@ -68,6 +68,24 @@ Accepted [ADR-0091](../architecture/adr/ADR-0091-workspace-reset-fact-retention.
 重试；HTTP200/completed/1.509秒，接口报告input21/output13/total34，响应模型
 deepseek-flash接受旧alias。此次直接外部attempt1与Adapter新boot计数0分别记录，
 原DSH返回/取消/用量UNKNOWN保持；不替代Agent保存、浏览器或Golden E验收。
+Latest post-reset delta (2026-10-02): a distinct current-source normal Product
+conversation completed one parent/child save of the preserved actual Web result
+with explicitly corrected UNESTABLISHED material. Exact8 sources/claims, content
+hash, lineage,10 authority audits, immutable main Task and persisted answer passed.
+The original context and active/running observer failures remain; offline repair
+and one separate actual readonly browser visit passed (135GET/one loginPOST,
+zero new model/business inputs). Tester → independent Reviewer → Root accepted
+actual save + separate readonly UI scoped PASS. Old E2 FAIL and timeout external
+UNKNOWN remain; no replay, new Web/market/Job/Reset/seed or autonomous classification
+fix is claimed. [Actual evidence](../clean-break/phase17-personal-reset-actual-evidence.md#当前源码独立保存与只读浏览器2026-10-02).
+[Final A–F/F6 mapping](../clean-break/phase17-final-golden-acceptance.md) passed
+its scoped local Tester → independent Reviewer → Root gate, accepting segmented
+Golden E and qualified A–D/F6/current F lifecycle/source/build reuse. Existing ML
+fresh-volume two startup orders and exact cleanup receive their first current
+limited Reviewer/Root acceptance in this gate, without inventing an older receipt. Earlier save FAIL statements above describe the
+preserved original attempts. Current empty-stack rebuild/elapsed seven-day GC
+NOT_RUN, standard fresh dependency build FAIL, hosted CI/repository gates OPEN.
+Phase17 stays OPEN; no push/merge/deploy or Phase18 authorization.
 No later phase is authorized.**
 Under [ADR-0089](../architecture/adr/ADR-0089-clean-break-gpu-acceptance-scope.md),
 GPU execution and GPU checkpoint/restart are `N/A` for BYQ 0.10 acceptance;
