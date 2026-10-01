@@ -1,0 +1,127 @@
+--- v11-frozen/root-control.py
++++ offline-closeout-repair/root-control.py
+@@ -555,6 +555,63 @@
+     return parsed[0]
+ 
+ 
++def run_worker_command_once(action: str, worker: dict, fields: dict) -> dict:
++    """Root-only one-shot CLI operation; inspect is the state authority."""
++    require(action in {"start", "stop"}, "unsupported Worker operation")
++    require(re.fullmatch(r"[0-9a-f]{64}", worker["container_id"]) is not None,
++            "Worker command requires an exact pinned container ID")
++    expected_state = "running" if action == "start" else "exited"
++    marker = CONTROL / f"signal-worker-{action}.attempt.json"
++    write_new(marker, {
++        **fields, "schema_version": f"phase17-golden-f6-worker-{action}-attempt.v1",
++        "status": "ATTEMPT_STARTED", "container_id": worker["container_id"],
++        "image_id": worker["image_id"], "created_at_utc": now_utc(),
++    })
++    command = ["docker", action]
++    if action == "stop":
++        command += ["--timeout", "0"]
++    command.append(worker["container_id"])
++    command_error = None
++    returncode = None
++    stdout = stderr = None
++    try:
++        completed = subprocess.run(command, check=False, capture_output=True, text=True, timeout=20)
++        returncode, stdout, stderr = completed.returncode, completed.stdout, completed.stderr
++    except (OSError, subprocess.SubprocessError) as exc:
++        command_error = type(exc).__name__
++        stdout, stderr = getattr(exc, "stdout", None), getattr(exc, "stderr", None)
++    def output(value):
++        return value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value
++    receipt = {"schema_version": "phase17-golden-f6-worker-cli-receipt.v1",
++               "status": "COMMAND_RETURNED" if command_error is None else "COMMAND_OUTCOME_UNKNOWN",
++               "action": action, "container_id": worker["container_id"], "command": command,
++               "returncode": returncode, "stdout": output(stdout), "stderr": output(stderr),
++               "error_type": command_error, "observed_at_utc": now_utc(), "automatic_replay": False}
++    # Save actual CLI output before any state assertion, including timeout partial output.
++    write_new(CONTROL / f"worker-{action}-cli-receipt.json", receipt)
++    projection = None
++    inspection_error = None
++    try:
++        live = docker_inspect(worker["container_id"])
++        projection = {"container_id": live.get("Id"), "image_id": live.get("Image"),
++                      "state": (live.get("State") or {}).get("Status"),
++                      "mounts": normalize_mounts(live.get("Mounts"))}
++    except Stop as exc:
++        inspection_error = type(exc).__name__
++    write_new(CONTROL / f"worker-{action}-state-readback.json", {
++        "schema_version": "phase17-golden-f6-worker-state-readback.v1",
++        "observed_at_utc": now_utc(), "projection": projection,
++        "error_type": inspection_error, "readonly_only": True, "automatic_replay": False,
++    })
++    require(command_error is None and returncode == 0,
++            "Worker command failed or outcome unknown; marker retained, read-only reconciliation only, no retry")
++    require(projection is not None and projection["container_id"] == worker["container_id"]
++            and projection["image_id"] == worker["image_id"] and projection["state"] == expected_state
++            and projection["mounts"] == sorted(worker["mounts"], key=lambda item: (str(item.get("destination")), str(item.get("type")), str(item.get("name")))),
++            "Worker state readback does not match exact pinned identity/image/mounts/expected state; no retry")
++    return receipt
++
++
+ def check_live_inventory(resources: list[dict], signal_worker_state: str) -> dict:
+     expected_by_service = {item["service"]: item for item in resources}
+     require(set(expected_by_service) == {"backend", "backtest-worker", "data-worker", "factor-worker", "frontend", "gateway", "mcp", "ml-worker", "optimization-worker", "postgres", "runtime-adapter", "signal-sandbox", "signal-worker"},
+@@ -703,20 +760,7 @@
+     require(check_signal_queue(product.request("GET", "/api/product/signal-producer/jobs?limit=100&offset=0"), job_id) == catalog,
+             "dedicated SignalJob queue changed before Worker start")
+     worker = next(r for r in resources if r["service"] == "signal-worker")
+-    attempt = CONTROL / "signal-worker-start.attempt.json"
+-    write_new(attempt, {"schema_version": "phase17-golden-f6-worker-start-attempt.v1", "status": "ATTEMPT_STARTED",
+-                        "container_id": worker["container_id"], "image_id": worker["image_id"], "job_id": job_id,
+-                        "task_id": task_id, "created_at_utc": now_utc()})
+-    try:
+-        cp = subprocess.run(["docker", "start", worker["container_id"]], check=True, capture_output=True, text=True, timeout=20)
+-    except Exception as exc:
+-        raise Stop("pinned signal-worker start outcome unknown; marker retained and no retry is permitted") from exc
+-    require(cp.stdout.strip() == worker["container_id"], "docker start did not confirm the exact pinned signal-worker")
+-    live = docker_inspect(worker["container_id"])
+-    require(live.get("Id") == worker["container_id"] and live.get("Image") == worker["image_id"]
+-            and (live.get("State") or {}).get("Status") == "running"
+-            and normalize_mounts(live.get("Mounts")) == sorted(worker["mounts"], key=lambda item: (str(item.get("destination")), str(item.get("type")), str(item.get("name")))),
+-            "started signal-worker does not match pinned identity/image/mounts/running state")
++    start_receipt = run_worker_command_once("start", worker, {"job_id": job_id, "task_id": task_id})
+     signal = {
+         "schema_version": "phase17-golden-f6-root-worker-started.v1", "status": "PASS",
+         "task_id": task_id, "conversation_id": conversation_id, "trace_id": trace_id,
+@@ -726,7 +770,7 @@
+     write_new(BASE / "root-worker-started.json", signal)
+     write_new(CONTROL / "worker-start-receipt.json", {
+         "schema_version": "phase17-golden-f6-root-worker-start-receipt.v1", "status": "PASS",
+-        "signal": signal, "product_waiting_job": exact_job, "product_readiness": ready_body,
++        "signal": signal, "worker_cli_receipt": start_receipt, "product_waiting_job": exact_job, "product_readiness": ready_body,
+         "product_permission": permission.body, "product_pool": pool_projection, "live_conversation": conversation,
+         "docker_preflight": check_live_inventory(resources, "running"),
+     })
+@@ -881,19 +925,7 @@
+     _, resources = fresh_pin(inputs, pre)
+     check_live_inventory(resources, "running")
+     worker = next(r for r in resources if r["service"] == "signal-worker")
+-    stop_marker = CONTROL / "signal-worker-stop.attempt.json"
+-    write_new(stop_marker, {"schema_version": "phase17-golden-f6-worker-stop-attempt.v1", "status": "ATTEMPT_STARTED",
+-                            "container_id": worker["container_id"], "image_id": worker["image_id"],
+-                            "job_id": job_id, "created_at_utc": now_utc()})
+-    try:
+-        stopped = subprocess.run(["docker", "stop", "--time", "0", worker["container_id"]],
+-                                 check=True, capture_output=True, text=True, timeout=20)
+-    except Exception as exc:
+-        raise Stop("pinned signal-worker stop outcome unknown; marker retained and no retry is permitted") from exc
+-    require(stopped.stdout.strip() == worker["container_id"], "docker stop did not confirm the exact pinned signal-worker")
+-    live_worker = docker_inspect(worker["container_id"])
+-    require(live_worker.get("Id") == worker["container_id"] and live_worker.get("Image") == worker["image_id"]
+-            and (live_worker.get("State") or {}).get("Status") == "exited", "exact signal-worker is not verified stopped")
++    stop_receipt = run_worker_command_once("stop", worker, {"job_id": job_id})
+     revoke_marker = CONTROL / "continuation-revoke.attempt.json"
+     grant_version = 1
+     write_new(revoke_marker, {"schema_version": "phase17-golden-f6-revoke-attempt.v1", "status": "ATTEMPT_STARTED",
+@@ -933,7 +965,7 @@
+         "schema_version": "phase17-golden-f6-root-revoke-receipt.v1", "status": "PASS",
+         "signal": signal, "product_permission": final_get.body, "read_only_ledger": ledger_row,
+         "ready_event": event, "signal_job": job, "worker_container_id": worker["container_id"],
+-        "worker_stop_stdout": stopped.stdout.strip(),
++        "worker_cli_receipt": stop_receipt,
+     })
+     print(f"Exact signal-worker stopped; Product permission revoked/read back; Root signal written: {BASE / 'root-revoke-authorization.json'}")
+ 

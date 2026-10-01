@@ -1,8 +1,8 @@
 # Phase 17 — continuation 预算与 F6 观察器审计
 
-Status: **ADR-0090 已实施；F6 v10 FAIL 保留；账号检查及后续独立 Worker 已完成同一 Job 与 Artifact，专用 Worker 已停止；BG/结算/成功 UI NOT_RUN，Phase 17 OPEN**。
+Status: **ADR-0090 已实施；v11 FG1/FG2/BG、独立请求限额及持久化结算真实通过；完整 F6 因 Root 收尾观察器超时保留 FAIL；失败清理完成，CLI 窄修正及独立空队列控制实测通过；成功 UI NOT_RUN，Phase17 OPEN**。
 本记录使用当前 Clean Break ADR-001–006/ADR-0088；历史 ADR-0086 不作为现行规范。
-[ADR-0090](../architecture/adr/ADR-0090-continuation-request-limits.md) 已于 2026-10-01 获维护者“明确接受”。以下第 1–6 节保留接受前限定验收的事实边界；当前实施及实测状态见第 9 节。
+[ADR-0090](../architecture/adr/ADR-0090-continuation-request-limits.md) 已于 2026-10-01 获维护者“明确接受”。以下第 1–6 节保留接受前限定验收的事实边界；当前实施及实测状态见第 13–14 节；旧节保留其记录时边界。
 
 ## 1. 同步、停机状态与证据保护
 
@@ -202,7 +202,7 @@ F6 成功收尾后的独立真实浏览器检查只读取同一 Task 已撤销/�
 
 ## 8. ADR-0090 实施门禁及 F6 v7 实际结果（2026-10-01）
 
-本节是最新状态；前面“实施中／尚未验收／NOT_RUN”段落保留其记录时的历史边界。
+本节记录 v7 当时状态；当前实测与修正见第13–14节，前面段落保留其记录时的历史边界。
 源码切片在隔离分支本地提交 `cdeeb6dbdc497133d20a4bca87a36a98b511e677`。
 PR #380 已纳入，不重复同步。没有推送、远程合并、部署或现有数据库操作。
 
@@ -602,3 +602,157 @@ Tester 的11项证据一致性检查、独立 Reviewer 与 Root 限定结果验�
 BG/请求限额与结算/成功 UI NOT_RUN，Phase17 OPEN。**
 下一步准备完整修正后的观察器与模型调用前的新鲜只读门禁，再执行受影响 F6；本切片
 没有新 F6、行情下载、整套环境重建、推送/远程合并/部署，最终 Golden/hosted CI 仍必要。
+
+
+## 13. F6 v11 后台真实接续与失败收尾（2026-10-01）
+
+执行 HEAD 为 `d477cf2a96c659a2527031f23b6c034aafe71316`；应用源码仍为
+`cdeeb6dbdc497133d20a4bca87a36a98b511e677`，沿用相同隔离栈、镜像与98交易日缓存。
+不重复 A–D、行情下载或整套环境重建。Root 是观察器唯一 writer。
+
+### 一次性离线准备及真实执行
+
+v11 一次性核对剩余路径，补齐 canonical YYYYMMDD、`use_case=backtest`、
+required/ready98、missing0/calendar complete、精确唯一 admin 和完整 owner SignalJob
+目录合同。模型调用前及 Worker 启动前均刷新只读条件。队列安全范围沿用第12节的
+fresh schema/market-only import/受支持写入历史/无并发 writer 限定证据，不能扩大为
+一般生产库的全局 SQL 证明。Tester **50 个唯一动态用例与3项静态检查**通过，
+独立 Reviewer → Root 完成全包门禁；13/16 helper 经字节归一证明复用，
+只变更 plan、Root preparation 与 control，未重复组件套件。可审查的准备差异见
+[观察器准入修正](evidence/phase17-f6-observer-admission.patch)。
+
+只执行一次新 F6：FG1 完整2931字符 objective 持久化并通过精确结构化审计；
+Root 精确策略审批及一次 grant 后，FG2 在同一原会话创建唯一 waiting SignalJob，
+审计通过。Root 核对原健康 Runtime、授权与队列后只启动一次 Signal Worker。
+
+- 原会话：`conversation_ae32ba863af4457499c157dc4a9d185d`。
+- Task：`task_d31ce8a8bcc14277838735b6c8a70d38`。
+- Job：`signaljob_16390f1b069c4cf5801168b16af22837`，attempt1 completed。
+- validated SignalSnapshot：`artifact_31b85eea8ffb4a7992a5366d8782cbd5`。
+- 原健康会话自动后台 run：`b8e4e7bcfda5450e8a291f77b3f19af5`；
+  reservation：`continuation_11a22041ac85403e95c6c3a41476b285`。
+
+BG 的两个精确读动作由 Root/Agent 权威审计共同确认。**25次有界只读采样**确认
+回答持久化、同一 reservation settled/completed，满足条件立即结束。
+reserved1/remaining0/unconfirmed0，dispatch_attempts1；event/run/Job/Artifact lineage 一致。
+这是本次原健康会话真实自动接续，不是恢复已失效 DSH 会话，也不是新会话查询。
+
+### 安全限额与实际消耗
+
+单次 `task-ready-read.v1` 请求使用自己的固定限额，不从历史累计预算取余额：
+模型 calls/attempts16、并发1；单次/累计输入262144/4194304 bytes；单次/累计
+声明输出8192/131072 tokens；单次/累计工具数据65536/1048576 bytes，工具调用16；
+hard deadline180000ms。profile hash 为
+`44d3e7dbb552363760516d8e5d8e0992e5ae591680badbaec8ee242485bc5df2`。
+
+| 实际 BG 请求记录 | 数值 |
+| --- | --- |
+| provider attempts/calls；工具调用 | 8；7 |
+| 耗时 | 17267ms |
+| 累计输入；最大单次输入 | 312852；50459 bytes |
+| 累计工具数据；最大单次工具数据 | 88895；17495 bytes |
+| 累计声明输出上限 | 65536 tokens（不是实际输出） |
+| 实际 provider input/output/cache-read | 77090 / 3639 / 66048 tokens |
+| usage/source/completeness | provider_response / known |
+| limit violations | `[]` |
+
+本轮原 Adapter 进程 normalized model counter 为30、3个 SDK roots；它不是仅 BG
+的8次请求，也不是全部 raw provider HTTP 数。Raw HTTP 仍 **NOT_OBSERVED**。
+关闭开关后的新 Runtime counters 为0，不代表本轮未调用模型。
+
+### Root 收尾观察器失败及精确清理
+
+保存 stop attempt 后，`subprocess.run(check=True)` 成功返回，随后 stdout 必须等于
+完整 CID 的观察器断言失败。原 stdout **未保存**；后来只读 inspect 确认精确 Worker
+已 exited。CLI help 的 `--time` 弃用提示不证明原输出或确切失败原因。
+
+Root 先保存错误、只读核对 stopped Worker、已结算请求与原健康会话，并有界保留连接。
+原 Runner 随后在 `Root-revocation-pause` 产生 `ROOT_SIGNAL_TIMEOUT`。经独立限定
+审查的 suffix 在执行时重新发现该错误，**在新 revoke marker/POST 之前 NO_GO**；
+没有重复 stop、模型或 Job，不伪造 Root success signal，不恢复原会话。
+
+后续独立失败流程只做精确只读对账、一次 grant revoke POST200及GET确认，保留
+settled责任和usage；专用会话删除后 GET404确认不存在（未保存 DELETE HTTP status，
+不宣称 DELETE 返回404）。仅三服务同镜像关闭开关，其余10资源、5卷和2网络保持；
+Signal/Data/ML Worker 均停止，新 Runtime active/prompts/model counters 均0。
+最新只读核对完整 owner 目录 **5个 SignalJob 均 completed**、唯一 admin、无测试
+runner；原 conversation GET404，精确 permission GET422（original bound conversation
+absent）。按当前合同，不能从该已删原会话补成功 UI，也不为测试改架构或恢复会话。
+
+### Tester → 独立 Reviewer → Root 限定结果
+
+| 私有证据（相对 `/tmp/byq-phase17-adr0090-f6-v11/`，另列绝对路径） | SHA256 |
+| --- | --- |
+| `offline-candidate-manifest.json` | `612241a5de95e153253ab8fd400612964fd50d52f2c7245a9ab3d8fa8f48a80b` |
+| `tester-offline-gate.json` | `3f427f1eedb0900faaa190436789d681223e36efefccafdfe59e4cda12fabc0f` |
+| `reviewer-offline-gate.json` | `de95bcf38a8ac80cd1f6be96cb9fd6d4bd58385ecdb248960e002ba8e9d416d2` |
+| `root-offline-gate.json` | `0c30b61e9c1135d8d0f2aca5a675af291cb6415aae94bbd1b736aabcb870fb8d` |
+| `frozen-plan.json` | `3bf96e873fe64da9ee2493026d1dd8668eb724e9c64f3aa2bc7f33f568f32b35` |
+| `RUN-F6/background-persistence-settlement-poll.json` | `6ea121143791b59ca5ac982e05b1500158fb734f1d0f38b0321a67d94daec0da` |
+| `root-control/ready-event-settlement-proof.json` | `885f6978cfee09136d06da9cd74e65723f514fcbf4c2af99a88c63dcbbc23b30` |
+| `RUN-F6/error.json` | `a91c8a954c68393f958e9bdf56c4a4b4c4249bedd1ffbb52a36f70ba12d3c4ff` |
+| `f6-off-final-environment.json` | `ba6ed8fd78b42ae81b89ad0ae03408e2dfa55b9cab7ce7c84e20f7dbbe8caa4c` |
+| `/tmp/byq-phase17-v11-observer-tester-20261001/actual-v11-f6-and-cleanup-evidence-review.json` | `b16075a760123215253cc1f3e48651cea60cdc7c3a3be67c28c714761283584f` |
+| `/tmp/byq-phase17-f6-v11-result-independent-review-20261001/review.json` | `bdb3b8a5ab33274c66831c54d292117062c4540113d12e0c92616ef4b6641989` |
+| `root-actual-result-acceptance.json` | `f5d691b7f1a45fef9b3ef152cbb82283fb5fff1324c9259e9a432a1886476703` |
+| `/tmp/byq-phase17-adr0090-f6-v11-protected-after-closeout.json` | `10268a6f6f51fb0f758915ad94d3a9c7f2616f2626667c0967145e7d4c68b121` |
+| `/tmp/byq-phase17-f6-v11-closeout-repair-20261001/post-closeout-readonly-state.json` | `3e92a49c419953d2f6ab46429012517e04be095613004420009d501b2c5e249b` |
+
+128份 v11/native/门禁文件及原 v10 96份证据字节均核对保护，旧失败不改写。
+**FG1/FG2/BG、独立请求限额与持久化结算实测 PASS；完整 v11 F6 仍 FAIL，
+成功 UI NOT_RUN，Phase17 OPEN。** Native delta PASS 只证明具名 native 计数事实。
+Tester、独立 Reviewer 与 Root 的限定 PASS 验收实际事实和失败收尾，不能替代完整 F6。
+
+## 14. Root CLI 观察器窄修正（2026-10-01）
+
+独立候选在 `/tmp/byq-phase17-f6-v11-closeout-repair-20261001/`；冻结 v11 原件不变。
+只修改 Root 工程观察器的 `start_worker`、`revoke_and_stop`，增加一个仅支持精确
+start/stop 的 helper；没有产品源码、预算平台、恢复协调器或第二套 Harness 变更。
+可审查修正见 [CLI 观察器差异](evidence/phase17-f6-worker-cli-observer.patch)。
+
+独占 attempt marker 先于唯一命令；stop 使用 `--timeout 0`。实际返回码、stdout、
+stderr或timeout部分输出先fsync存证，再记录精确 CID/image/mount/state 的只读 inspect。
+stdout不作为状态权威。非零/timeout/inspect失败或pin漂移均在成功信号或 revoke POST
+前停止；即使 inspect显示预期状态，也不把未知命令改判成功，不重复执行。
+
+Tester **13个实际函数 mocked 动态用例 + 1项调用点静态检查**通过，独立 Reviewer
+与 Root **限定 offline PASS**。这些检查没有实际 Docker/模型/Product/SQL调用；
+新 helper **真实 CLI NOT_RUN**，不能提升完整 v11 F6 或 UI 状态。
+
+| 修正门禁证据 | SHA256 |
+| --- | --- |
+| `/tmp/byq-phase17-f6-v11-closeout-repair-20261001/root-control.py` | `ffcfa26fdfbd4d44f89df6b9f4c20dd20a4558c5f840d82814ea929840608475` |
+| `/tmp/byq-phase17-f6-v11-closeout-repair-20261001/worker-cli-observer.patch` | `76c1866c5937bbec4086b3b38fb2f6dddc712fbd5415732479a9d162e31329fd` |
+| `/tmp/byq-phase17-v11-cli-observer-tester-20261001/report.json` | `afe173384882f67871c3f201b36aeadbe9da80529a358ddc7e538d65466f570f` |
+| `/tmp/byq-phase17-v11-cli-observer-review-20261001/review.json` | `487c06308ba9521859b4b96c9faf9d5a90ff99022a72cc07e41b0e2c3f1ba5d5` |
+| `/tmp/byq-phase17-f6-v11-closeout-repair-20261001/root-offline-repair-acceptance.json` | `1f8f71ab47640487340330bdb21009c56bd0ef9874eb3ef99737655d9c47ce26` |
+
+### 独立空队列 CLI 控制实测
+
+完成上述 offline Tester → Reviewer → Root 门禁后，Root 即时再次核对 flags0、唯一
+admin、五项 completed Job、精确资源及 Runtime0，保存新 Root admission；仅做一个
+新的空队列 Signal Worker start→stop。它是新控制周期，不重放原 v11 stop，也不发
+Agent/模型/Grant/Job 操作。独占 marker、实际输出、状态读回均另存新目录。
+
+实际 start/stop **各一次 returncode0**；实际 stdout 均为完整 pinned CID，stderr为空。
+使用 `--timeout 0` 的本次成功结果不反推原 v11 未保存 stdout 的内容或失败原因。
+精确同一 CID/image/mount 状态为 running→exited；前后五个 completed owner Job
+逐对象完全相同，Runtime对象及模型计数0完全相同，三个 Worker 停止、flags0。
+
+Tester仅依据原8份JSON确认 CLI/队列/Runtime，明确未覆盖完整资源/卷/网附件。
+Root另只读补存13资源、5卷和2网络的完整 before/after清单，独立 Reviewer逐对象
+核对保持。原 Tester 范围声明不改写。独立 Reviewer → Root **实际空队列控制限定
+PASS**；它不是带 Job 的 Worker资格、后台接续、成功UI或完整F6重验。
+
+| 实际控制结果证据 | SHA256 |
+| --- | --- |
+| `/tmp/byq-phase17-f6-v11-closeout-repair-20261001/REAL-EMPTY-WORKER-CLI/result.json` | `6336ceb021723e48ea64fdf70f350e3e1efce1fe1d42ee149294ec35c64e0361` |
+| `/tmp/byq-phase17-f6-v11-closeout-repair-20261001/actual-cli-resource-preservation-readonly.json` | `5984c7e424f508a73deb2164a5d2a64ed61f5676abc43cef45e0937fefe4be55` |
+| `/tmp/byq-phase17-v11-cli-observer-tester-20261001/actual-empty-worker-cli-result.json` | `41cd632e42a513c35549a41c8f99f09e01de7bb6fa94d9bfc4bb13487398d331` |
+| `/tmp/byq-phase17-v11-cli-observer-review-20261001/actual-empty-worker-cli-acceptance.json` | `229a0da220c842e5dd1819e282b3aa7ffce61a3637ab172c7b9795e57164b402` |
+| `/tmp/byq-phase17-f6-v11-closeout-repair-20261001/root-actual-empty-worker-cli-acceptance.json` | `666b2de8a74117bb778a46a5a627ff94f2d088128706fc5cdef1183b25f6975d` |
+
+本轮受影响的 F6 只跑一次；没有再次跑整条模型链或重复 A–D。剩余验收需要先明确
+成功 UI/原健康收尾的最小实测方案和最终 Golden 条件；新请求仍需新鲜完整准入，
+旧调用/事件/会话不得重放或恢复。最终阶段与 hosted CI 门禁继续保留。
+没有推送、远程合并、部署或正式/原有数据库、用户数据、备份操作。

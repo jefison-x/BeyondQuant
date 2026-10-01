@@ -1,5 +1,29 @@
 # Phase 0–6 gate record
 
+## Phase 17 ADR-0090 v11 actual scope and CLI observer correction (2026-10-01)
+
+Tester → independent Sol Reviewer → Root accepted actual FG1/FG2 and automatic
+BG audits, validated Job/Artifact lineage, answer persistence and one settled
+request with known usage inside its own limits. Complete v11 F6 remains **FAIL**:
+Root CLI observation failed after Worker stop, followed by bounded signal timeout.
+The timeout suffix refused new effects; exact failure cleanup preserved settlement,
+revoked once, removed the dedicated failed session and restored flags0/stopped
+Workers with other resources preserved. Successful UI is **NOT_RUN**. This is
+scoped real evidence and failure containment, not phase closure.
+
+The separate Root-only CLI correction passed 13 mocked dynamic tests plus one
+static check and independent review. It records actual command output before
+assertions, uses exact Docker state readback and never retries an unknown command.
+Root **PASS for the offline correction**. A separate one-shot empty-queue Worker
+start→stop then passed Tester → independent Reviewer → Root for actual CLI control
+only: exact state readbacks, unchanged queue/Runtime and separately recorded full
+resource/volume/network preservation. No new Job, Agent input or model call.
+The original full F6/UI verdicts remain unchanged.
+The [current evidence](phase17-continuation-budget-audit.md#13-f6-v11-后台真实接续与失败收尾2026-10-01)
+binds original failures and all gate hashes. Phase17 remains OPEN; final Golden,
+successful UI/healthy closeout and hosted CI remain necessary. No next phase,
+push, remote merge or deployment is authorized.
+
 ## Phase 17 exact-authorized legacy source slice (2026-09-30)
 
 After reviewed checkpoint `5260d3e6`, the maintainer explicitly authorized

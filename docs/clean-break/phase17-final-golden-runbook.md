@@ -1,5 +1,51 @@
 # Phase 17 final Golden runbook
 
+Status: Phase 17 remains **OPEN**. Accepted ADR-0090 has scoped source and
+offline gates. One corrected, freshly admitted v11 F6 reached exact FG1, FG2 and
+real automatic background continuation in the original healthy conversation.
+Authoritative audits, the validated SignalSnapshot and 25 bounded readonly
+samples prove answer persistence and one settled request with known provider
+usage and no limit violations. BG used 8 provider calls and 7 tool calls in
+17267ms. Safety limits and actual usage are separate; the whole Adapter process
+normalized model count was 30, while raw provider HTTP remains NOT_OBSERVED.
+
+Full v11 F6 is **FAIL**. Root stopped the exact Worker, then its stdout-equality
+observer assertion failed; original stdout was not saved. The original Runner
+subsequently timed out waiting for the Root revoke signal. The conditional suffix
+refused before any new revoke marker or POST after observing the timeout. Failure
+cleanup revoked the exact grant once, preserved settled responsibility, deleted
+the dedicated failed conversation (confirmed by GET404), and switched off only
+three pinned services with the same images. The other ten resources, five volumes
+and two networks stayed unchanged. Signal/Data/ML workers are stopped. Fresh
+readonly reconciliation finds one admin, five completed owner SignalJobs, no test
+runner and zero sessions/prompts/model counters in the new Runtime.
+
+The exact Task permission now returns 422 because the original bound conversation
+is absent. Successful readonly UI is **NOT_RUN**; do not reconstruct that session
+or alter the product boundary for the test. Worker queue exclusion remains the
+conditional fresh-schema/market-only/support-history/no-concurrent-writer scope,
+not a general production SQL proof.
+
+Tester → independent Reviewer → Root accepted the actual scoped facts and cleanup,
+then the separate Root CLI observer correction: 13 mocked dynamic cases plus one
+static caller check. It saves actual CLI output before assertions and relies on
+exact read-only container ID/image/mount/state. Nonzero/timeout/unknown results stop
+without replay. After the offline gates, one separately admitted empty-queue
+Worker start→stop passed real CLI control: actual receipts and exact state readbacks
+were saved, queue/Runtime stayed identical, and full resource/volume/network
+preservation was separately recorded and independently reviewed. This added no
+Job, Agent input or model call. The original frozen v11 failure is protected;
+there was no second whole model chain or A–D rerun.
+See [v11 evidence and CLI correction](phase17-continuation-budget-audit.md#13-f6-v11-后台真实接续与失败收尾2026-10-01).
+
+Next: specify the minimum remaining successful UI/healthy-closeout qualification
+and final Golden boundaries using the already valid component and actual BG
+facts. Any necessary new request requires fresh complete admission; no old input,
+event or session replay. Required final Golden/hosted CI remain open. External
+test model calls remain authorized; push, remote merge and deployment are not.
+
+## Historical v10 and account qualification
+
 Status: Phase 17 remains **OPEN**. Accepted ADR-0090 implementation has scoped
 offline qualification. One freshly pinned/frozen v10 F6 reached exact FG1 and FG2
 in the same original conversation: full 2931-character objective persisted, both
