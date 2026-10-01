@@ -1,6 +1,6 @@
 # Phase 17 — continuation 预算与 F6 观察器审计
 
-Status: **ADR-0090 已接受；单请求合同正在实施；F6 实测仍暂停**。
+Status: **ADR-0090 已实施并通过限定离线门禁；F6 v7 首轮实测失败并已清理；后台接续 NOT_RUN，Phase 17 OPEN**。
 本记录使用当前 Clean Break ADR-001–006/ADR-0088；历史 ADR-0086 不作为现行规范。
 [ADR-0090](../architecture/adr/ADR-0090-continuation-request-limits.md) 已于 2026-10-01 获维护者“明确接受”。以下第 1–6 节保留接受前限定验收的事实边界；当前实施进度见第 7 节。
 
@@ -198,3 +198,80 @@ GET 确认、已有 marker 仅 GET、空许可不确认、身份/资产/profile 
 FG/BG 的回答持久化和 request settlement 采用有界 GET；BG 先核对权威 Job/Artifact 生命周期再解释公开回执。错误证据及 SSE 先 fsync，已确认 observer-only 错误保留原健康连接进行有界只读对账；安全/未知错误精确 GET 对账，未确认读结果阻止清理写入。离线 7 revoke、18 合同反例与 3 延迟等待、收尾/只读对账证据按函数 hash 复用；新增门禁漂移与资源保护反例定向验证，不将重复运行相加。
 
 F6 成功收尾后的独立真实浏览器检查只读取同一 Task 已撤销/花完的 v2 grant，验证 11 个可信限额、实际用量分离、不可再次提交/撤销与刷新；不发送 Agent、模型、Grant 或 Job 操作。该检查仍 NOT_RUN，未知提交锁的故障反例维持离线证据边界。
+
+
+## 8. ADR-0090 实施门禁及 F6 v7 实际结果（2026-10-01）
+
+本节是最新状态；前面“实施中／尚未验收／NOT_RUN”段落保留其记录时的历史边界。
+源码切片在隔离分支本地提交 `cdeeb6dbdc497133d20a4bca87a36a98b511e677`。
+PR #380 已纳入，不重复同步。没有推送、远程合并、部署或现有数据库操作。
+
+### 限定离线验收
+
+共享合同、Backend、Adapter、Gateway、Frontend 与私有观察器／失败收尾完成
+Tester → 独立 Reviewer → Root 限定离线门禁。私有完整源码快照
+`/tmp/byq-phase17-adr0090-source-snapshot-20261001/manifest.json`，SHA256
+`d8391774fc05b95d312f136b6cd4768d6acae81851c8f6906ee97fa57a039801`。
+计数去重：shared 44、Backend 82 scoped、Gateway 45 scoped、Frontend 7、
+Runtime 59 Python、Node 8；Backend 纯 profile 10 的重叠边界保留，不能直接累加。
+Frontend 类型检查、31 文件 syntax、diff check 与受影响架构检查通过。
+失败样本及环境／fixture 修正原样保留，仅复验受影响案例；没有全仓回归。
+这些结果证明组件和离线边界，不证明真实后台接续。
+
+v7 最终离线门禁路径均位于 `/tmp/byq-phase17-adr0090-f6-v7/`：
+
+| 证据 | SHA256 | 范围 |
+| --- | --- | --- |
+| `tester-offline-gate.json` | `88a9e907205e859b5c5cf0086bdde78455e211a90b04d7c9266ff528611b14f6` | 实施及观察器 offline PASS |
+| `reviewer-offline-gate.json` | `67cedf2b68934fb25b8dd3da4259fe385de08d374f83716bd1fcaf8a83bb20df` | 独立限定审查 PASS |
+| `root-offline-gate.json` | `c60922c133dd23ffe8372f630e4aa30ea29e36efb2fe1b8def6632571fd23c4d` | Root offline PASS，写入时 F6 NOT_RUN |
+
+构建只涉及 backend/frontend/gateway/runtime-adapter 四项，实际镜像源码与 pin
+核对通过；其余九项容器、五个卷、两个网络及 98 个交易日缓存保留。
+首次 preflight 的 public_projection 路径错误发生在真实模型调用前，原失败保留；
+仅修正工程 helper 路径并完成窄范围门禁补充，没有重新构建整套环境。
+
+### 一次实际执行与失败对账
+
+上述门禁及新鲜 preflight 后，v7 只启动一次。实际 source 为上述提交；
+原健康会话 `conversation_632003b85c884ee3881ba9b8dca3a4b1`，
+首轮 SDK root `29bb59311e3d46a2ad4bff47317293a9` 已 completed，回答持久化 up_to_date。
+新增 **12 次 normalized model calls**；raw provider HTTP **NOT_OBSERVED**。
+只有一轮前台输入，未执行第二轮、grant、Signal Worker 或后台接续。
+
+原 `RUN-F6/error.json` 保留 FAIL：观察器要求完整 objective 精确匹配，
+实际持久化 objective 缺少末尾的精确读动作审计说明，title 一致。
+Task ID 当时尚未赋值，原 error 的 task_id=null 不改写；finally 已关闭 SSE，
+因此本轮不具备继续验收原健康会话自动接续的条件，不恢复旧 DSH 会话。
+
+随后通过原会话绑定的非 baseline Task、exact Product GET 与 owner-scoped
+结构化 AgentRun audit 有界只读对账，确认：
+
+- 仅一个 Task：`task_0a1214efd13140d6b1c6e92941c88697`。
+- Draft：`artifact_9f58ad49de5d49e6be6a48e6706d4cbb`；Version：`artifact_70687acd7e514b84a0957ccd6b854efb`。
+- 三项原始动作 task_create／strategy_validate／strategy_version_create 的 action、resource、run、owner/workspace/trace/boot 与实际 audit ID 匹配。
+  公开回答的“系统能力”仅展示，不作为权威动作。
+- 没有新 SignalJob 或 continuation grant；对账新增模型输入、业务写入、SQL、未知调用重放均为 0。
+
+只读证据 `root-control/first-turn-readonly-diagnostic.json`，SHA256
+`ef3ef93d2ce453ce91864e2ab5fb8dc1bdb52e657a041cac3d65e7ec6c2b4123`。
+这项事后对账不补写观察器未执行的后续断言，也不升级本轮为 PASS。
+
+### 实际失败收尾及剩余门禁
+
+准确专用会话已删除；Signal/Data/ML Worker 停止；只将 backend/gateway/runtime-adapter
+的 F6 开关关闭。同镜像、原挂载和其余十项资源身份／状态保持，五卷两网络保留。
+新 Runtime generation SDK active／active_prompts／normalized model calls 均为 0；
+旧 generation 的 12 次调用和实际 normalized usage 另行保留，不用新计数覆盖历史消耗。
+不删除 Task、Artifact、Job 或数据，不重放未知调用。
+
+`f6-off-final-environment.json` 为 **FAILURE_CLEANED_NOT_F6_PASS**，SHA256
+`7c8e009d0a53da48ce58f70d946a9f403efdb8abb9401e3761e181fb8a03a80b`。
+v7 60 份文件的清理后哈希清单在 `/tmp/byq-phase17-adr0090-f6-v7-protected-after-cleanup.json`。
+
+下一步集中检查全部剩余断言及失败分类：先记录精确资源身份再检查内容，
+已确认无未决副作用的观察错误先保全证据并有界保留连接只读对账；
+不得把内容不符降格为 PASS、自动改写业务 objective 或重放本轮。
+完成受影响离线 Tester → 独立 Reviewer → Root 后才准备必要的真实 F6。
+**F6 scenario FAILED；真实后台接续／只读权限 UI NOT_RUN；Phase 17 OPEN。**
+A–D 适用证据继续复用；E/F／最终 Golden、hosted CI 与仓库门禁仍必需。

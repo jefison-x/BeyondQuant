@@ -1,13 +1,15 @@
 # Phase 17 final Golden runbook
 
-Status: Phase 17 remains **OPEN**. ADR-0090 was explicitly accepted on
-2026-10-01. The accepted request-limit implementation and v7 observer undergo
-focused offline Tester → independent Reviewer → Root qualification before one
-affected real F6 journey. External test model calls are authorized by the
-maintainer; no additional per-round grant is required. New F6 remains paused until
-that offline gate and a fresh isolated-stack preflight pass. Existing applicable
-real A–D evidence is retained without replay; E/F/final Golden and hosted CI gates
-remain required. No push, remote merge or deployment is authorized in this slice.
+Status: Phase 17 remains **OPEN**. Accepted ADR-0090 implementation passed
+scoped offline Tester → independent Reviewer → Root qualification. One affected
+v7 real F6 attempt failed in its first foreground Task objective assertion;
+exact read-only reconciliation and dedicated cleanup completed. Background
+continuation and the success-only read-only browser panel remain **NOT_RUN**.
+New F6 is paused for concentrated remaining-assertion/observer correction and
+its affected offline gates; the failed round is preserved and never replayed.
+External test model calls remain authorized. Applicable real A–D evidence is
+retained without replay; E/F/final Golden and hosted CI gates remain required.
+No push, remote merge or deployment is authorized in this slice.
 See the [budget/observer audit](phase17-continuation-budget-audit.md),
 [residual audit](phase17-residual-simplification.md) and
 [verification gate](verification-gates.md).
