@@ -279,7 +279,7 @@ A–D 适用证据继续复用；E/F／最终 Golden、hosted CI 与仓库门禁
 
 ## 9. F6 v8 限定门禁、实际观察器失败与收尾（2026-10-01）
 
-本节取代第 8 节的“下一步”作为当前状态；历史失败及门禁不改写。
+本节记录 v8 收口时状态；最新 v9 实测及门禁见第 10 节。历史失败及门禁不改写。
 产品实现仍为 `cdeeb6dbdc497133d20a4bca87a36a98b511e677`；实际工程 HEAD 为
 `4bbf6737b3f8c6dd50b21e7b5acd8bcf62d990d1`，其差异只有证据文档。
 
@@ -365,3 +365,89 @@ Tester 原报告的 model_inputs=0 指清理新增输入，澄清 sidecar 原样
 原逻辑会话已删除，不能把 v8 FG1 与另一会话 FG2/BG 拼成 PASS。
 未来真实完整 F6 必须新会话及新鲜门禁；阶段验收仍需真实 BG、只读 UI、最终 Golden 与 hosted CI。
 **F6 v8 FAIL；F6-2/BG/UI NOT_RUN；清理仅 limited PASS；Phase17 OPEN。**
+
+
+## 10. F6 v9 完整观察器门禁、内容失败与有界收尾（2026-10-01）
+
+本节为当前状态。产品实现仍为 `cdeeb6dbdc497133d20a4bca87a36a98b511e677`；
+本次实际工程 HEAD 为 `29f6165087d697944cc4187ddba6e248e55eabaf`。
+没有新增产品源码、镜像构建、行情下载、A–D 重跑或推送/合并/部署。
+
+### 集中观察器修正与离线门禁
+
+补齐全部 v9 inputs、Root/native/UI helpers；Product404 原始 GET 先存证再断言。
+独立成功路径审查发现并集中修正两个 helper 缺陷：登录按钮改用当前 `进入`；
+成功收尾保留 durable Product conversation，以原镜像的三服务 flag-off 结束空闲
+Runtime，并读回同 Task 的已撤销/结算责任。允许原 Runtime 已被 Gateway 自动释放，
+或仅剩精确原记录且无 active prompt；新 boot 后不声称旧 Runtime 仍健康。
+失败分支仍可精确删除其无未决副作用的专用会话。成功分支和 UI 此次未真实到达。
+
+新增 **21/21 mocked closeout 边界**与 **3 组静态检查**通过；既有 67 个观察器案例、
+7 个 Product404 校验及已通过的预算组件/轮询证据按哈希复用，没有重跑。
+完整 Tester → 独立 Reviewer → Root 离线门禁绑定 **41 个源码文件、16 个 helpers**、
+输入合同、profile 与限额，写入时 `live_F6=NOT_RUN`：
+
+| 离线门禁（v9 目录） | SHA256 |
+| --- | --- |
+| `tester-offline-gate.json` | `79b4ef0b971938834682cc2d0723d2225f23ce81867e992af6f000fb341c0bdb` |
+| `reviewer-offline-gate.json` | `3523a6c334aa4a2293a393bc33aacfef202ec4067c56fbe78ab9daa5357dc262` |
+| `root-offline-gate.json` | `28675bf78f74d6fc105c3fc543e292edd1e99172c3522beb4461dee4b67102ef` |
+
+新鲜只读 preflight `7bdb4733eb9bfc06512c6212f7a19adac3a1745643bb7a34752312e0fc22bcb6` 与 frozen plan
+`2350487aebdb08bf5d6589eb966bab0b7cdc45ebb62c8e70e0417c7e50c4be6e` 之后，只启动一次新会话 F6。
+
+### 实际 FG1 内容失败与精确诊断
+
+会话 `conversation_b147efbff8324bd79ff03d55e61aa83c`，SDK root
+`42b1c34f5d824e31a05c1071659dac64`；Task `task_5d461619fedc4cb18ea9133fc8da3f21`。
+Task title 精确一致，但 objective 预期 **2930** 字符，实际 **2457** 字符，为严格前缀，
+缺末尾 **473** 字符。完整 runtime binding 与三次逐项 authorize/result，共七项权威
+审计通过；Task、strategy draft `artifact_9b446094bfc2412597de053be9158514`、
+StrategyVersion `artifact_2ad4eb2db25a4e0c98ec1b2e9269bcbf` 已持久化。
+
+唯一原始 DSH `byq_research_task_create` 参数长度/hash 与 Backend 实际 objective
+完全一致；原 compressed/decoded native hashes 已匹配。Backend 上限为 4000 字符，
+未截断。本次归类 **模型工具参数遗漏 / PRODUCT_CONTENT_MISMATCH**，不能降级为
+观察器错误、缩短预期内容或将不完整 Task 当作 PASS。诊断保存长度/hash/缺失尾句，
+不保存原始模型输入；诊断没有新模型调用或业务写。
+
+仅 **1 次 foreground input、12 次 normalized model calls**；raw provider HTTP
+**NOT_OBSERVED**。尚无 Root 策略批准、续接 grant POST、SignalJob、Worker start、
+第二轮或后台请求。后台请求 profile 限额与真实结算仍未实测。
+
+### 有界连接保留、只读对账与精确清理
+
+先保存失败/已完成根/审计证据，再保留原 SSE 进行 **50 次只读观察、约 50.445 秒**；
+session、answer delivery、同 Task GET 均200，1 user/1 assistant、回答持久化一致，
+连接仍开放。Root 对这三个精确资源 GET 对账，给出 STOP_NO_REPLAY；观察器核对
+停止信号后才进入 finally 关闭连接和浏览器。hold 无已知 Job/grant，不声称这期间
+做了不存在的 Job/permission GET。失败后新增 Product write/model call/未知重放为0。
+
+Worker 未启动；无 grant POST。专用失败 session DELETE 后 GET404；保留 Task 与
+两个 Artifacts，**原 durable conversation 已删除**。Task 留有 conversation_id/trace
+引用，不等于还有可用原会话绑定；后续 permission GET 为原 conversation 缺失的422。
+不能从这个失败会话继续 FG2，也不能把另一会话的后台结果拼成 F6 PASS。
+
+仅原镜像 backend/gateway/runtime-adapter 三项 flag-off，镜像/挂载保持，其他十项、
+五卷两网络保持；Signal/ML/Data Worker 均 stopped。再度只读确认已知 runner、SDK、
+active prompts、新 generation model counter 均0；完整有界 Signal/Backtest/Training/
+Prediction 目录非终态为0，Factor/Data 目录未枚举。旧 generation 的12次计数保留。
+清理仅为 **FAILURE_CLEANED_NOT_F6_PASS**；v8 86 份、v9 80 份证据字节均保护。
+
+| 结果证据 | SHA256 |
+| --- | --- |
+| `/tmp/byq-phase17-adr0090-f6-v9/f6-off-final-environment.json` | `b34c578bbbeceba61866ff87693e95ee3a8ccc496aab1f0660ad6667156c7823` |
+| `/tmp/byq-phase17-adr0090-f6-v9-objective-diagnosis-20261001/diagnosis.json` | `a9bccf3aea0b3da16c98d0ef3ef8eebf70e60b5ad5aa78dedb2bd8e2e724d641` |
+| `/tmp/byq-phase17-adr0090-f6-v9-protected-after-cleanup.json` | `783252e0816e512f74397a5462156811c2c5ec42dc7f42ad80050bae3c538fb4` |
+| `/tmp/byq-phase17-adr0090-f6-v9-post-closeout-readonly-state-20261001.json` | `1d0d5396c4c2fc91282d2f6e0867d85892500f6a2be6471a42dec0a3eddca50e` |
+| `/tmp/byq-phase17-adr0090-f6-v9-result-test-20261001/report.json` | `0fa352b4fcaaa844d9942b4fbc179a3e535a439368c8784d9175f6a38575fee0` |
+| `/tmp/byq-phase17-adr0090-f6-v9-result-test-20261001/scope-clarification.json` | `edcf5d92e3ef553fb7ece4bbef722d2e5ae5ac5cb1a3d3504ab5177888515344` |
+| `/tmp/byq-phase17-adr0090-f6-v9-result-independent-review-20261001/review.json` | `b72304f3afefc77c7d52199094bac32e46a7836fb1e9797a32e9f63d90aee634` |
+| `/tmp/byq-phase17-adr0090-f6-v9-root-result-acceptance-20261001.json` | `20e4622c4410e21e79848bf388d5f4b7a28184c57f2164acce12b3da408d2d15` |
+
+Tester → 独立 Reviewer → Root 结果验收只证明失败分类、实际有界只读保留与清理。
+Tester 原报告关于绑定的布尔字段以独立 scope-clarification 为准，原报告不改写。
+**F6 v9 FAIL_FG1_CONTENT_CLEANED；FG2/BG/UI NOT_RUN；Phase17 OPEN。**
+下一步先定向改善原值表达/工具参数保真，保持完整 objective、权威审计和安全限额；
+不重放未知调用、不直接重跑整链。任何后续完整 F6 仍需新会话、全包门禁与新鲜 pins。
+适用 A–D 继续复用；真实 BG/只读 UI、最终 Golden、hosted CI 与仓库门禁仍必需。

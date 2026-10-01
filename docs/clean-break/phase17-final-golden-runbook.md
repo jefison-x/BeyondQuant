@@ -1,20 +1,24 @@
 # Phase 17 final Golden runbook
 
 Status: Phase 17 remains **OPEN**. Accepted ADR-0090 implementation passed
-scoped offline Tester → independent Reviewer → Root qualification. After concentrated
-v8 observer gates, one affected real attempt passed FG1 exact Task/audit and the v2
-grant POST/GET, then failed before FG2 on a Product error-envelope assertion.
-Read-only diagnosis confirmed the plan was absent; the observer expected Backend
-`detail` rather than Gateway `error.code/message`. Original FAIL is preserved.
-The exact grant was revoked, dedicated session deleted and three F6 flags disabled;
-background continuation and the success-only read-only browser panel are **NOT_RUN**.
-v9 is only an offline correction candidate, with 7 focused pure-validator cases
-and raw-GET-before-assert ordering checked; the correction/failure cleanup passed
-limited Tester → independent Reviewer → Root acceptance. It has no launch
-inputs/gates/pins/freeze, and this limited PASS is not real F6 acceptance.
-Do not immediately replay another whole chain or combine v8 FG1 with a different
-session's FG2/BG. External test model calls remain authorized. Applicable A–D
-are retained without replay; E/F/final Golden and hosted CI gates remain required.
+scoped offline qualification. The complete v9 observer passed Tester → independent
+Reviewer → Root gates (41 source files, 16 helpers), with 21 new mocked closeout
+cases and 3 static check groups; prior component/observer evidence was reused.
+Success-only closeout now preserves the durable conversation; the current login
+button is `进入`. After fresh pins/freeze, one new real v9 attempt failed FG1:
+the model supplied 2457 of the required 2930 objective characters. Backend faithfully
+persisted its supplied value; this is a model tool-argument omission, not truncation.
+The original FAIL is preserved. Complete FG1 audit qualified, but FG2/background/
+success-only readonly UI remain **NOT_RUN**; no grant or Job was started.
+The original connection stayed open for 50 readonly samples over about 50 seconds,
+then closed after the exact Root stop signal. Dedicated failure session deletion
+and three-service same-image flag-off completed; no active test or prompt remains.
+Task/Artifacts retain references, but the deleted original conversation is not a
+usable continuation binding. Failure classification and cleanup have limited result
+acceptance; they do not qualify real F6 request limits/settlement or Phase17 closure.
+Do not replay another whole chain per assertion or combine sessions. First address
+exact tool-argument fidelity using focused checks. External test model calls remain
+authorized; valid A–D remain reused. E/F/final Golden and hosted CI are still required.
 No push, remote merge or deployment is authorized in this slice.
 See the [budget/observer audit](phase17-continuation-budget-audit.md),
 [residual audit](phase17-residual-simplification.md) and
