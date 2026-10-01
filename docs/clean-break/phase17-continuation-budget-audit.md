@@ -710,6 +710,13 @@ Tester、独立 Reviewer 与 Root 的限定 PASS 验收实际事实和失败收�
 start/stop 的 helper；没有产品源码、预算平台、恢复协调器或第二套 Harness 变更。
 可审查修正见 [CLI 观察器差异](evidence/phase17-f6-worker-cli-observer.patch)。
 
+仓库中的两份 diff 附件使用零上下文表示，避免把统一差异的空白上下文作为新文件空白
+问题；私有已验收原始 patch 保持不变。离线逐hunk重建3对source/target，精确生成
+相同已验收helper字节。表示等价证明在
+`/tmp/byq-phase17-v11-document-candidate/zero-context-presentation-proof.json`。
+本地 `2415676a` 的 staged空白检查失败原样保留；后续修正只改附件表示，未改应用或
+helper，不重新运行模型、Job或已通过套件。
+
 独占 attempt marker 先于唯一命令；stop 使用 `--timeout 0`。实际返回码、stdout、
 stderr或timeout部分输出先fsync存证，再记录精确 CID/image/mount/state 的只读 inspect。
 stdout不作为状态权威。非零/timeout/inspect失败或pin漂移均在成功信号或 revoke POST
