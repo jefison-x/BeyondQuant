@@ -21,3 +21,9 @@ df5e8990fb092e0f678ef5f0aa9d59cce5679904:scripts/evidence/h4-strategy-pagination
 # Phase 13 test-only RFC 4122 idempotency UUID, not an authentication key.
 # Suppress only the exact already-pushed finding; all other findings still fail.
 34fcd5103610f3151b55f831c8e8e6e11127775e:services/gateway/tests/test_workspace_runtime_reset.py:generic-api-key:16
+
+# Maintainer-approved exact historical test-only request idempotency keys:
+# p4-foreground-plan and p4-explicit-foreground; not authentication material.
+# Only these fingerprints are suppressed; other findings remain enforced.
+cdeeb6dbdc497133d20a4bca87a36a98b511e677:services/backend/tests/test_research_plan_continuation.py:generic-api-key:66
+cdeeb6dbdc497133d20a4bca87a36a98b511e677:services/backend/tests/test_research_plan_continuation.py:generic-api-key:102

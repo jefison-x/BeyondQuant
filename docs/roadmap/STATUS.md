@@ -93,8 +93,10 @@ branch. Initial PR history scan FAIL and cancelled Full run's prior build-identi
 FAIL remain; no hosted PASS is claimed. A new immutable `.281` current build repair
 preserves `.280` bytes and changes no application behavior/SDK; targeted local
 contracts and final affected independent gates apply before stable-head CI.
-Deployment requires verified images and fresh exact-resource classification;
-protected old DB/state/backup are not deployment/migration inputs. No deployment
+The maintainer also accepted only the two exact historical test-key scan
+fingerprints and fresh empty `byq-v010-*` production storage. Deployment requires
+verified images and fresh exact-resource classification; protected old
+DB/state/backup are not deployment/migration inputs. No deployment
 or Phase18 execution has occurred. [Repository gate evidence](../clean-break/phase17-final-golden-acceptance.md#repository-gate-progress--2026-10-02).
 No later phase is authorized.**
 Under [ADR-0089](../architecture/adr/ADR-0089-clean-break-gpu-acceptance-scope.md),

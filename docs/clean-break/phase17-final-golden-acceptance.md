@@ -133,8 +133,13 @@ It does not authorize old database/backup deletion or a destructive migration.
 Initial PR CI run `36942400469` failed its history secret scan before the matrix:
 two fixed test-only request idempotency values from commit `cdeeb6db` in
 `services/backend/tests/test_research_plan_continuation.py`, not credential keys.
-Only the earlier exact optimization-key-1 exception was authorized; the proposed
-two exact historical fingerprints await a separate maintainer decision.
+At that failure boundary only the earlier exact optimization-key-1 exception
+was authorized. On 2026-10-02 the maintainer explicitly accepted these two exact
+historical fingerprints; `.gitleaksignore` suppresses only commit `cdeeb6db`,
+this file, `generic-api-key`, and lines66/102. The generic rule remains enforced.
+A subsequent historical-source check corrects the second illustrative value:
+line102 is `p4-explicit-foreground`; `p4-grant-references` is adjacent line99 and
+is not exempted. The two exact finding fingerprints and their scope are unchanged.
 
 Initial exact-head Full run `36942674225` was cancelled pending stable final
 inputs. Its earlier docs/architecture/Gateway failures remain actual FAIL:
@@ -155,6 +160,11 @@ Read-only deployment inventory finds only the Phase15/17 dedicated test stacks;
 the ordinary host `.env` points to protected old DB/state volumes. The proposed
 fresh production target must bind new exact resource names and verified immutable
 images before any start. Reusing or resetting old volumes is not authorized.
-The maintainer has been asked to select fresh `byq-v010-*` production storage or
-defer deployment; neither action has occurred. Phase17 remains OPEN for CI/repository
-completion, with no Phase18 work.
+On 2026-10-02 the maintainer explicitly accepted fresh empty production storage:
+project `beyondquant`, new `byq-v010-*` volumes/networks from the classified target.
+No old DB/state/backup is attached, migrated, reset or deleted. This is initial
+fresh deployment, not personal reset or seven-day archive expiry. Successful
+exact-head CI, accepted merge preflight, attested images, absent exact resource
+names, port/admission checks and bounded login/read-only smoke remain required
+before execution. No deployment has occurred. Phase17 remains OPEN for
+CI/repository completion, with no Phase18 work.
