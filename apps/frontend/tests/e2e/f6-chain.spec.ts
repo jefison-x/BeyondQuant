@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { test, expect } from '@playwright/test';
+import { F6_BROWSER_LOGIN_PATH, f6AuthResponse, f6BrowserRoute, f6BrowserWriteAllowed } from './f6-browser-observer';
 
 type F6Evidence = {
   status: string;
@@ -55,23 +56,51 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
     const foreign: string[] = [];
     const writes: string[] = [];
     const errors: string[] = [];
+    const authResponses: Array<{ step: 'login' | 'me'; status: number }> = [];
+    let authResponseOverflow = false;
+    let loginStatus: number | 'not_observed' = 'not_observed';
     page.on('request', request => {
       const url = new URL(request.url());
       if (['http:', 'https:'].includes(url.protocol) && url.origin !== origin) foreign.push(url.origin);
-      if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method())) {
-        if (!(request.method() === 'POST' && url.pathname === '/api/product/auth/login')) {
-          writes.push(`${request.method()} ${url.pathname}`);
-        }
+      if (!f6BrowserWriteAllowed(request.method(), url.pathname)) {
+        writes.push(`${request.method()} ${url.pathname}`);
       }
     });
     page.on('pageerror', error => errors.push(error.message));
+    page.on('response', response => {
+      const url = new URL(response.url());
+      if (url.origin !== origin) return;
+      const record = f6AuthResponse(response.request().method(), url.pathname, response.status());
+      if (!record) return;
+      if (authResponses.length < 8) authResponses.push(record);
+      else authResponseOverflow = true;
+    });
 
     const target = `/agent?session=${encodeURIComponent(ids.conversation_id)}`;
     await page.goto(`/login?redirect=${encodeURIComponent(target)}`);
     await page.getByLabel('用户名').fill('f6-chain-user');
     await page.getByLabel('密码').fill('test-password-123');
-    await page.getByRole('button', { name: '进入' }).click();
-    await expect(page).toHaveURL(/\/agent\?session=/);
+    try {
+      const [loginResponse] = await Promise.all([
+        page.waitForResponse(response => new URL(response.url()).origin === origin
+          && new URL(response.url()).pathname === F6_BROWSER_LOGIN_PATH
+          && response.request().method() === 'POST', { timeout: 5000 }),
+        page.getByRole('button', { name: '进入' }).click(),
+      ]);
+      loginStatus = loginResponse.status();
+      expect(loginStatus, 'one browser login HTTP result').toBe(200);
+      await expect(page).toHaveURL(/\/agent\?session=/);
+    } finally {
+      // CI uploads only redacted console output, so preserve closed auth facts
+      // before assertions terminate the page. Never log bodies, URLs or cookies.
+      console.info('F6 browser auth diagnostics: ' + JSON.stringify({
+        schema_version: 'f6-browser-auth.v1', viewport_width: viewport.width,
+        login_status: loginStatus, responses: authResponses, overflow: authResponseOverflow,
+        route: f6BrowserRoute(new URL(page.url()).pathname),
+        page_error_count: Math.min(errors.length, 8),
+        unexpected_write_count: Math.min(writes.length, 8),
+      }));
+    }
     const transcript = page.locator('.conversation-message.agent .message-body');
     await expect.poll(async () => (await transcript.allTextContents()).some(text =>
       text.includes(ids.task_id) && text.includes(ids.backtest_task_id)

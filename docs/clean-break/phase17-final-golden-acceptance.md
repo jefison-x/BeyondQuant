@@ -1427,3 +1427,115 @@ contracts and native3 retain their earlier scoped receipts; they were not rerun
 for this test-assembly edit. Valid A–D and actualv13F6 scoped reuse remains.
 Old Build292 UNKNOWN and all failures remain preserved; unknown calls are not
 replayed. Phase17 OPEN; Phase18 NOT_STARTED. No merge or deployment occurred.
+
+
+## Build295 core acceptance and browser authentication boundary
+
+Build295 PR CI [run 37043530156, attempt 1](https://github.com/jefison-x/BeyondQuant/actions/runs/37043530156)
+completed on head `53ad81f435536ab5d7240e7c29eac9b1535c4c99`. All component lanes
+passed. Integration and the dependent CI gates **failed** at the two F6 browser
+login-to-Agent URL assertions. This was not a whole-CI timeout: both reached
+`apps/frontend/tests/e2e/f6-chain.spec.ts:74` and exhausted the five-second URL
+assertion; login and `/api/auth/me` HTTP statuses were not captured. The previous
+Tester's `real-product.spec.ts` attribution is withdrawn in the immutable correction
+receipt below. The original failure report is retained.
+
+Before the browser failure, the complete102 offline contracts and the hosted
+**keyless** F6 core passed: two foreground requests, durable SignalJob/Artifact,
+original healthy logical-session background read, exact structured authority/run
+bindings, persisted answer, independent bounded answer/settlement waits, single
+request settlement and exact grant revocation. The background Runtime completed
+with8 admitted attempts,7 tools and0 violations; actual provider usage remains
+**UNKNOWN**. Named core identities are:
+
+- Task: `task_82efa74aac0c4b9abf630500f6d65fb5`.
+- Backtest task: `backtesttask_ebe9ef5909a8428fb0b6b2e39eb5f9f6`.
+- SignalJob: `signaljob_ebe9ef5909a8428fb0b6b2e39eb5f9f6`.
+- Artifact: `artifact_5f6c0d399d214b139001e24e6f8d5d55`.
+
+The controlled core marker and structured primary record are in the sanitized
+Integration artifact's `checks.log`, SHA
+`50a2e4f3ec9421b8813f77d417034b4992014e594d06ba18a24c354f13d33fe3`.
+Candidate-service restore and run-scoped cleanup were verified; no separate
+numeric restored-flags observation is claimed. Cleanup log SHA:
+`77612c42163c891cf270d84092a9fd70034ceb9036c5c54c60e49b7b7ca0389f`.
+The CI stack and its Task were cleaned, so they cannot be recreated and presented
+as an old same-Task browser check. Full CI was not dispatched; no merge or deployment
+occurred. Valid earlier A–D and actual external-model v13 F6 retain only their recorded
+reuse scope. Keyless hosted core PASS does not override browser/Integration FAIL.
+
+### Diagnosis and affected observer preparation
+
+One deterministic observer defect was found: the old write allowlist permitted
+`POST /api/product/auth/login`, while the actual browser store uses
+`POST /api/auth/login`. Fixing that exact allowance preserves rejection of other
+writes. The defect would fail a later assertion; it does **not** explain the earlier
+login redirect. Closed, bounded authentication response/status and route-category
+records now survive failures in CI console evidence. No credential, cookie, response
+body or full URL is recorded. Product auth, Nginx, SDK, request limits and timeouts
+were not changed.
+
+After offline success/failure/unknown/cleanup/cancellation verification and
+Tester → independent Reviewer → Root admission, exactly one separate browser
+login check used the existing dedicated Phase17 test stack and its bootstrap admin.
+It completed in1.018 seconds: unauthenticated GET me401, login200, exact user/workspace
+GET me200, profile navigation, one logout200 with exact single-key `ok` receipt,
+then GET me401. Browser closed; login/logout were each attempted once. No new
+Agent, model input, Job, business write or service mutation occurred. The v2/v3/v4
+diagnostic scripts were never executed: offline review caught Fetch status-property,
+cleanup and pre-login cancellation defects first. The final v5 runner passed11 VM
+cases, including three cancellation windows before an admitted login POST.
+
+This isolated-admin check passed its actual Tester → independent Reviewer → Root
+gate, but cannot qualify the hosted F6 user, exact same Task or release browser.
+The historical CI login cause remains **UNESTABLISHED**. Neither authentication
+failure nor an obsolete Nginx address is asserted without a captured HTTP fact.
+
+The next affected hosted verification has an Engineering-only auth prerequisite:
+prepare/confirm the dedicated F6 account once, validate browser login, exact identity,
+profile and logout **before** any F6 Agent request or Job. Failed/unknown auth stops
+that chain and restores the candidate services, with closed HTTP evidence. The
+existing driver's user fixture is idempotent and reads the already confirmed user;
+its core implementation remains unchanged. The auth prerequisite is bounded,
+uses only loopback Product API, blocks unexpected writes/foreign requests, sends
+at most one login and one logout, and does not replay unknown results. Its child
+receives only system/browser paths, exact test scope and test credentials.
+Root's22 actual-source VM cases and4 mocked-command Bash ordering cases passed;
+these are offline preparation evidence, not hosted or real F6 acceptance. The
+independent source gate passed22 VM cases plus scoped Bash/helper reuse;
+immutable Build296 is prepared, with independent identity/hosted gates pending.
+
+### Immutable receipts
+
+| Scope | Receipt SHA-256 |
+| --- | --- |
+| Build295 terminal CI metadata | `a9d3c857dea7e7ec56e348b68440df6128d430efbda3d8180c4b495efc147e62` |
+| Tester keyless core classification (original retained) | `77aea48c28452be1d81a5258889e0ae4c73770b7bb739a1cd988b2738f81d716` |
+| Tester source/flags/response-shape correction | `1fd885833172d4ec49c6f8691858ae26a626eaab54a0c18fefb72dfa771bc107` |
+| Independent core/browser diagnosis | `8cb48d02b0bf5a2413449bc5d40eaaac36767c661d24151c5c304796b5a7aba4` |
+| v5 diagnostic offline Tester11 | `590486c8abbff976046477807d137e02a4b54e9e357926859aa7dcf768b4fd24` |
+| v5 diagnostic independent admission | `562c4e26c622c941cadf23b198807516d07921dbcf4514881ab1860316dae7a7` |
+| Actual isolated login evidence | `5d2001446bd49c78f87dd121958d6eea0046ea177bea25b61742af2a6cfc97dc` |
+| Actual isolated login Tester | `bfdacc0f85c9bca0f8390841e3afe0aa20843e5d04722dd017bd5958e9453dfa` |
+| Actual isolated login independent Reviewer | `88ed3d838a9c3d790c19cc23c69601a6591915aa8f68d7d63b73a0d3881b0d37` |
+| Root scoped core + local login gate | `c519d047c929b4e08b4a3341fb388ac8076bae0ab9e02481b36619f54f737ad5` |
+| Earlier CI auth observer Root15 VM cases (superseded source) | `6e39dad19b920e777969f11432551e170e1057e0d9c19304637cd454509492ab` |
+| Final CI auth observer Root22 VM cases | `40602259894fcfa78aebb72eac4d25c44ebf86d207a3b789c4fd068a719bee08` |
+| New CI auth ordering Root4 mocked cases | `15e9dc974ac9bd43916d3555e10cd5ac1a4d5231e5ed0fac5cc8785c6170c914` |
+
+Phase17 remains **OPEN** for the current-head hosted browser/Integration gate,
+required final Full CI and repository/release gates. Phase18 is **NOT_STARTED**.
+
+### Build296 immutable preparation
+
+Tester22 (`526453bbe0dcf7b33145d01e1771635e8ab874d7e6b52bc4b99b69728b838994`), independent source Reviewer
+(`158558e9060077a28a871b815c8ced2fffe214091d097d233216d41f7b097e4e`) and Root
+(`38342867a392d830039ff6370025422f723c7676e449231f3bc9cfc9917ad4a4`) passed the limited offline source gate.
+Build296 binds1003 current inputs with Build295/294/293 frozen. Manifest SHA:
+`0a99b2f8041f83790442ebcb61861aacd9629e8431eb5824d3ab2709b7764a10`; Dockerfile SHA:
+`c6a27bb444e6f18295fe5891c852c9e9acd15a45f0f860017a5ea84a5d7a6c3e`. The only operational selection changes are8 exact build
+selectors and the new frozen295 assertion; SDK/release, Product implementation,
+limits and timeouts are unchanged. Offline PASS does not claim same-Task browser
+or hosted F6 PASS. Independent identity acceptance and one current-head affected
+hosted verification remain gated. Full CI was not dispatched; no merge or deployment
+occurred at this preparation boundary. Phase17 OPEN; Phase18 NOT_STARTED.

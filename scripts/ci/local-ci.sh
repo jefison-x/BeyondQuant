@@ -334,7 +334,7 @@ prepare_ci_compose_env() {
   export BYQ_FEEDBACK_HUB_URL=""
   # ADR-0069: daily suites use the supported bundled runtime only.
   # Archived rollback images are never rebuilt or executed by routine CI.
-  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-295-candidate
+  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-296-candidate
   export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1
   export BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml
   export BYQ_DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-0.1.5rc1
@@ -823,6 +823,31 @@ PYCODE
   fi
   if ! resolve_ci_compose_urls; then
     bad "F6 endpoint discovery"
+    restore_f6_runtime || true
+    return
+  fi
+  # Check the exact browser account before any F6 Agent turn or Job. The
+  # driver's existing idempotent user fixture then reads this confirmed user.
+  if ! (docker compose cp scripts/evidence/f6-chain-fixture.py backend:/tmp/f6-chain-fixture.py >/dev/null \
+    && run_interruptible timeout --signal=TERM --kill-after=5s 30s \
+      docker compose exec -T -e BYQ_F6_FIXTURE=1 \
+      -e COMPOSE_PROJECT_NAME="$expected_project" -e BYQ_F6_CI_PROJECT="$expected_project" \
+      backend python /tmp/f6-chain-fixture.py user); then
+    bad "F6 isolated browser user preparation"
+    restore_f6_runtime || true
+    return
+  fi
+  local f6_auth_dir="$evidence_dir/f6-auth-$(date +%s)-$$"
+  mkdir -p "$f6_auth_dir"
+  if run_interruptible env -i PATH="$PATH" HOME="$HOME" \
+      PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-}" \
+      COMPOSE_PROJECT_NAME="$expected_project" BYQ_F6_AUTH_CI_PROJECT="$expected_project" \
+      BYQ_REAL_BASE_URL="$BYQ_REAL_BASE_URL" BYQ_F6_AUTH_EVIDENCE_DIR="$f6_auth_dir" \
+      BYQ_E2E_ADMIN_USERNAME=f6-chain-user BYQ_E2E_ADMIN_PASSWORD=test-password-123 \
+      timeout --signal=TERM --kill-after=9s 50s node apps/frontend/tests/e2e/f6-auth-preflight.mjs; then
+    ok "F6 browser login, exact identity and logout before Agent or Job"
+  else
+    bad "F6 browser auth preflight; Agent and Job NOT_STARTED"
     restore_f6_runtime || true
     return
   fi
