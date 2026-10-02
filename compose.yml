@@ -45,7 +45,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - wget -T 2 -q -O - http://127.0.0.1/ >/dev/null && wget -T 2 -q -O - http://gateway:8100/readyz >/dev/null || exit 1
+        - wget -T 2 -q -O - http://127.0.0.1/ >/dev/null && wget -T 2 -q -O - http://127.0.0.1/readyz >/dev/null || exit 1
       interval: 5s
       timeout: 5s
       retries: 12

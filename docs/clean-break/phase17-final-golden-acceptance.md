@@ -1605,3 +1605,126 @@ driver behavior addition is four read-only proxy sampling points. No Product,
 Nginx, SDK, request limit or timeout changed. Identity Tester → independent
 Reviewer → Root and one affected hosted gate remain necessary; Full is not
 dispatched. Phase17 OPEN; Phase18 NOT_STARTED.
+
+## Build297 terminal proxy evidence
+
+Build297 exact-head PR CI [run37064296463, attempt1](https://github.com/jefison-x/BeyondQuant/actions/runs/37064296463)
+ended FAIL. All seven component matrix lanes passed. Integration's dedicated
+F6-user auth preflight and genuine keyless F6 core passed, including authoritative
+answer persistence and settlement; actual model usage remains UNKNOWN. Both
+final browser contexts observed ME502/login502, so same-Task UI assertions were
+NOT_REACHED. Candidate restoration, cleanup and sanitized artifact upload
+completed. Numeric residual flags were NOT_OBSERVED. This is not a global timeout.
+
+Four closed diagnostic samples bind the same scoped container identities.
+Gateway changed from172.19.0.13 to172.19.0.10 on restart and its published port
+changed32770 to32772. Anonymous direct ME was401 at all four points. Frontend
+identity/start/IP/port stayed unchanged. Its proxy ME was401 before restart and
+UNAVAILABLE in the bounded collector reads afterward; those collector results
+are not HTTP502. The separate browser observations establish HTTP502.
+After-browser Nginx records in the current Gateway startup window still show
+upstream172.19.0.13 while the current Gateway is172.19.0.10. These facts support
+stale upstream resolution for Build297. No precise transport error was identified;
+Build295/296 causes remain UNESTABLISHED and are not backfilled.
+
+| Receipt | SHA256 |
+| --- | --- |
+| Terminal metadata | `fa7a8a4d144c6d7434aa3bb8dae8b9ce744a7a1152996dbedafcbf4137a74f04` |
+| Sanitized checks log | `0137cc853b0d7f8eba79bc2632f63ec58cc2d45ba819e6f02e279e3fc056ddd4` |
+| Four closed proxy observations | `7f469b6d9a6f42fa3a0ded8a842bf97eee866aa95e05f0ea4f0bcec37d01110a` |
+| Tester failure classification | `77a9ff6e6d2e1d52d58d196ae6eb4d004918b2d89a125f78af0674c3b6bc11da` |
+| Independent Reviewer classification | `892e0382dcef26e2afe2aee06f56db683745a4cc484fa4a7e3acad9caf5755f0` |
+| Root failure classification | `1f58ab2b06274956fae4400f1e33a44d57c5a0636d785af3e3b6c2312e18ee4e` |
+
+Root prepared three uncommitted proxy configuration changes: dynamic Docker DNS
+resolution in a shared Nginx upstream, an explicit compatible Nginx image tag,
+and frontend readiness through the same proxy. Original route URI/query, Host
+and SSE settings are retained; automatic alternate-upstream replay is disabled.
+The source preaudit is limited to design/source correctness. Actual candidate
+proxy verification and current-head hosted acceptance remain necessary. No new
+F6/model/Job/DB input or Full dispatch occurred during this diagnosis/fix preparation.
+Valid A–D are reused only within their unchanged scope. Phase17 OPEN;
+Phase18 NOT_STARTED; merge/deployment NOT_RUN.
+
+### First disposable proxy fixture outcome
+
+The separately admitted v4 fixture ran once and failed before Nginx version,
+config-test or HTTP assertions were recorded. The receipt records DOCKER_NONZERO
+and an unknown control outcome, but did not retain the failing subcommand or its
+error. Its exact cause remains UNESTABLISHED. No POST attempt was reached. Both
+new containers and the single dedicated network were independently recorded
+REMOVED; cleanup success does not convert the probe to PASS. The original unknown
+is retained and unreplayed. The three Product proxy source hashes remain unchanged.
+
+| Receipt | SHA256 |
+| --- | --- |
+| v4 actual report | `e257ca23bd21a09a88c608254b17056144cb2ef89eeaed1df199e043f9abd284` |
+| Tester failure classification | `78d57fc30ca4e0f19bf49ff41642de79b73bc7f6a32bd7bdcd30323000e04ddf` |
+| Independent failure classification | `a5b89af21a662aa34db5e3d0f3f10b2e28adb47e28c699819f5c647e7fb1862e` |
+| Independent evidence author correction | `5596e317dc1a503cf7134782a26e65e93b539d931d945bc23dd136ab7ad9f01f` |
+| Root failure classification | `5a17f718acba6ce44d36b1a104620105f6df3e9e7d34d032a9c7f551271856f2` |
+
+A new fixture candidate replaces the unqualified copy into a stopped read-only
+container with one exact temporary configuration file bound read-only, and adds
+closed Docker operation/returncode/error-category records. This is changed fixture
+qualification, not a claim that the original copy was proven to cause failure.
+It uses a fresh scope and intent; the old fixture action is not repeated. The
+new fixture still requires Tester → independent Reviewer → Root admission and
+actual verification. No new F6/model/Job/DB input or CI/Full/merge/deployment was
+started during this fixture correction. Phase17 OPEN; Phase18 NOT_STARTED.
+
+### Disposable proxy verification: retained failures and remaining-only recovery
+
+The v6 fixture failed before HTTP checks at `exec:nginx-version` (exit128).
+Its known control result and exact cleanup were recorded; the possible temporary
+file permission issue is not a proven runtime cause. The v7 fixture then observed
+real Nginx1.27.5/config validation, unchanged URI/query/Host, SSE and one controlled
+POST returning502 with exactly one stub receipt. Its overall FAIL remains: the
+observer incorrectly required HTTP502 during Gateway absence; transport
+UNAVAILABLE is distinct and the Compose contract requires health-command failure.
+No replacement-IP recovery was reached in v7.
+
+A separately admitted, GET-only v8 ran the remaining checks once, reusing the
+unchanged v7 route/SSE/POST evidence. The exact current Compose health command
+returned0→1→0. Frontend root remained200 with the same container ID/StartedAt,
+without restart/reload. OLD Gateway172.31.249.3 was removed; NEW Gateway172.31.249.4
+was observed through the proxy after bounded DNS refresh (NEW marker/API401 and
+readyz200). The gap readyz result was UNAVAILABLE, not HTTP502. v8 attempted zero
+POSTs. Both new containers and the dedicated network were removed, with no unknown
+control result. No Product/model/Agent/Job/DB call or existing-stack change occurred.
+
+This proves the bounded proxy/DNS/readiness mechanism with real cached Nginx and
+controlled HTTP stubs. It does not prove hosted browser acceptance, real F6,
+multi-peer failover, historical transport causes, or Phase17 completion. All
+three source hashes were unchanged across v7/v8. The earlier v4 unknown result
+is retained and unreplayed. A–D and native F6 are not repeated.
+
+| Receipt | SHA256 |
+| --- | --- |
+| v6 actual failure | `ef01eb17ae7b876207a28471bf969ee6d3b6e51a84eb1bb40d188e162c08bbaa` |
+| v6 Root classification | `949302656a368bef8af9da19836d6f146729a356c5ee5984b40665ca7077cf5d` |
+| v7 actual partial evidence, overall FAIL | `516b30fbe7c8ec42a858b1e13f5d1ceab0c7bb0b0956b1ced63d6f0e4ed51845` |
+| v7 Root classification | `10f1cec5e4dfc5f8cfb3e0b60aec0d42a6c9cd468d0316ea59edf2826a75a5f2` |
+| v8 actual remaining checks | `d36f1b038040fdd9d52e3af61c7e60d32f008c368468b05d204d2e1faac00593` |
+| v8 exact execution wrapper | `b13235a909d57fa92b095dec28325d80a1bfc69d3376143e67260289c80b2482` |
+| v8 actual Tester | `e22b24edb4fc45a788e5d0200b84669f0c82e82204473bba0f21de2047d349f7` |
+| v8 independent actual Reviewer | `e9d464cbb97ff00f01f12674bfbc8d567041674abbab0869ea6ae9d600660653` |
+| Root combined proxy-only gate | `8be99d0eb712dbdb1595b37b87418993abafeb157ec99cae1906faf4648e2a55` |
+
+Tester → independent Reviewer → Root accepted this bounded mechanism only.
+Current-head hosted CI, final Golden/Full and repository/release gates remain
+required. Phase17 OPEN; Phase18 NOT_STARTED; merge/deployment NOT_RUN.
+
+### Build298 dynamic proxy candidate preparation
+
+The bounded disposable proxy mechanism gate passed Tester → independent Reviewer
+→ Root; Root receipt SHA `8be99d0eb712dbdb1595b37b87418993abafeb157ec99cae1906faf4648e2a55`. This uses controlled HTTP stubs and
+real cached Nginx, with no Product/Agent/model/Job/DB calls. It qualifies only the
+observed proxy/DNS/readiness/route/SSE contract and exact cleanup, not real F6
+continuation or multi-peer failover. Hosted browser acceptance remains required.
+Immutable Build298 binds1005 current inputs; Build297 and earlier manifests and
+Dockerfiles remain frozen. Manifest SHA `1ea362f6950cf1013dad6879adb8c779f1ab8b44de0a8ec17d5f413870067826`; Dockerfile SHA
+`a7f48385013e5a50d9b974fe9387bd28ffbd5ad1e796e908914c606db6fff64f`. Eight operational selectors agree. SDK, business authorization,
+request budgets and Product API implementation are unchanged. Identity Tester →
+independent Reviewer → Root and one affected exact-head hosted gate are pending.
+Full NOT_DISPATCHED; merge/deployment NOT_RUN; Phase17 OPEN; Phase18 NOT_STARTED.
