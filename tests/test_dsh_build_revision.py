@@ -55,15 +55,17 @@ class BuildRevisionTests(unittest.TestCase):
         self.assertEqual(builds.check(previous)["build_id"], previous)
         self.assertEqual(builds.check(newest_frozen)["build_id"], newest_frozen)
         self.assertEqual(builds.check(older)["build_id"], older)
-        self.assertEqual(current, "dsh-0.1.5rc1-post-u8.291")
+        self.assertEqual(current, "dsh-0.1.5rc1-post-u8.292")
         self.assertEqual(builds.identity(current)[1],
-                         "services/runtime-adapter/Dockerfile.post-u8-291-candidate")
+                         "services/runtime-adapter/Dockerfile.post-u8-292-candidate")
         self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.288")["build_id"],
                          "dsh-0.1.5rc1-post-u8.288")
         self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.289")["build_id"],
                          "dsh-0.1.5rc1-post-u8.289")
         self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.290")["build_id"],
                          "dsh-0.1.5rc1-post-u8.290")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.291")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.291")
         self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.287")["build_id"],
                          "dsh-0.1.5rc1-post-u8.287")
         self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.286")["build_id"],

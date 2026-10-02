@@ -1027,3 +1027,99 @@ explicit final Full follows only a successful same-head PR. Valid A–D and actu
 v13 F6 remain reused with their qualified scope. Prior FAIL/UNKNOWN remain.
 Phase17 OPEN; required current-head CI, authorized merge, trusted-main images and
 fresh-empty deployment remain pending. Phase18 NOT_STARTED.
+
+## Build291 hosted logical-session contract failure
+
+[PR run37013483098](https://github.com/jefison-x/BeyondQuant/actions/runs/37013483098),
+attempt1 at `a3c1bb908cf05c23673ad5cc35762bf6395d6470`, completed FAIL.
+All component lanes passed; integration stopped at
+`gateway_resume_original_session_once` with **HTTP409**. F6's92 preflight
+contracts passed. Both foreground answers persisted and authority roots were
+completed/closed; FG1/FG2 authority audit counts are7/3. The temporary parser
+initially read `events` instead of the emitted `audit_events` field and wrote
+counts0. Its original summary remains; an immutable amendment corrects only
+those fields and binds the original sanitized source. This is a summary parser
+error, not evidence of absent audits. The actual409 response detail was not
+collected. Worker start, background request/settlement and browser were
+**NOT_REACHED**. Bounded readonly closeout remained incomplete; dedicated
+physical cleanup does not prove that the unfinished Job responsibility resolved.
+No Full was dispatched and no unknown external action was replayed.
+
+Independent source diagnosis explains a deterministic observer mismatch:
+F6 runs `root-turn`; `_run_prompt` closes the owned process and leaves a
+successful logical Runtime session IDLE/generation completed. The old
+`resume_session` route admits only READY and therefore rejects this completed
+root condition. The historical offline restart sample supplied a fake READY
+resume receipt, missing the current root-turn contract. This source condition
+strongly supports the409 classification without claiming its unobserved detail.
+Earlier READY-only observer/suffix gates are superseded for this scenario;
+their original PASS receipts and the hosted FAIL are preserved.
+
+| Evidence | Private receipt and SHA256 |
+|---|---|
+| Hosted terminal | `/tmp/byq-phase17-ci-watch-37013483098/final-receipt.json` — `d34185e99f8fc1e422e2978736464dc4c172ccb746e6703a2704b9191ddffd85` |
+| Sanitized checks | `/tmp/byq-phase17-ci-failure-37013483098/checks.log` — `cbb0a11d1dcfb74222ce816c7a1cb8af987123b7b55f7889d2310f489f7b25bc` |
+| Classification/count amendment | `/tmp/byq-phase17-ci-failure-37013483098/classification-amendment.json` — `5fbeafdbe1e259198db73469ad222a355cf41f39d2f42e535c4a3206075ddd81` |
+| Independent source diagnosis | `/tmp/byq-phase17-build291-resume-409-independent-diagnosis-20261002.json` — `d62800a4b54063d4d4e372b7389c569942e918599f522dd4f194c52b1eaadd79` |
+
+## Build292 original logical-session reconnect qualification
+
+The minimal correction changes only the F6 observer and bounded tests.
+Product Runtime/Gateway/Backend, provider fixture, process ownership and SDK
+version remain unchanged. Accepted ADR-002/0090 permits a new root in the
+same healthy Product conversation; it does not require old private DSH recovery.
+The observer now opens the existing authenticated public
+`GET /v1/workflows/{original_conversation}/events`. Gateway uses its exact
+`attach_live_only` path to bind the still-present Adapter record and register
+its delivery collector. No `/resume`, model prompt, replacement Product
+conversation or old request replay is performed by this reconnect.
+
+This public GET can update Gateway's transient delivery map and start existing
+collector/lifecycle delivery; it is not a claim of zero internal mutation.
+Attach alone verifies identity, not native process health. Original FG2
+completed/closed authority proof, same public SID/trace, active projection,
+persisted answer, exact owner/Job/Artifacts, valid grant and eventual BG exact
+new-root terminal/settlement remain necessary. It does not label the closed
+foreground generation `reattached` or weaken failure/unknown-result checks.
+
+The dedicated public stream is held through Worker completion, BG persistence,
+settlement/revoke and bounded failure reconciliation. It validates public event
+SID/trace, limits observation to600 seconds/16MiB/64KiB per line, and uses a
+30-second read bound for Gateway's15-second heartbeat. An unhealthy connection
+fences related actions. First failure evidence and readonly reconciliation
+precede cleanup; nested finally closes the dedicated connection even when
+evidence writing fails. A new connection is not retried after an unconfirmed
+open and never replays unknown business/model calls.
+
+Independent Tester passed18 observer cases/21 subtests. In the cached pinned
+SDK image, a network-none/read-only `/app` stage passed all92 existing F6
+preflight cases plus one direct Runtime root-turn regression: completed
+IDLE/process closed, old resume rejected, exact logical attach without process
+creation, owner mismatch rejected, then an explicitly authorized new turn uses
+a distinct root. This uses a fake Harness and is **offline contract evidence**.
+Stage87 files matched current sources with zero drift; the dedicated container
+was removed. It is not native-process recovery, hosted F6 or real-model acceptance.
+
+| Observer gate | Private receipt and SHA256 |
+|---|---|
+| Tester | `/tmp/byq-phase17-build291-live-attach-tester-20261002/report.json` — `e146d3daf3e0cf54c50fc74793284b62a4d4f3771dcd9f62af33f1c4a7025e49` |
+| Independent Reviewer | `/tmp/byq-phase17-build291-live-attach-independent-review-20261002.json` — `bbbfcee23292e13330a37477c99079fa6fa585a31bc729c9162dd6aa42ffe093` |
+| Root | `/tmp/byq-phase17-f6-logical-connect-root-admission-20261002.json` — `fdd36cdff2bccb9baa2175271e2a7216263919caa93c65568e884f0753c43732` |
+
+Immutable Build292 binds997 inputs. Manifest SHA256 `0c324dba18137a61573e94e369b5889125d5067cbdd0a7a7f35d619f7ef08066`;
+Dockerfile SHA256 `d85bff0db3004cc08e0e24cab12bfaff073f7bef0b760dc91ef79adf4df761c7`. Eight selectors advance291 to292;
+Build291 bytes are frozen and SDK0.1.5rc1 is unchanged. Ten selected identity
+cases and all997 input hashes passed Tester → independent Reviewer → Root.
+
+| Build gate | Private receipt and SHA256 |
+|---|---|
+| Tester | `/tmp/byq-phase17-build292-tester-20261002/report.json` — `18fe58637e1f57212b3f7e3b3aa83b68657e4c3e938fad702d115394a88ed590` |
+| Independent Reviewer | `/tmp/byq-phase17-build292-preparation-20261002/reviewer-report.json` — `132670886e17d89b471216c13ccfee81158e7775198b30d6fa9388c357cb1dd9` |
+| Root | `/tmp/byq-phase17-build292-root-admission-20261002.json` — `0230eb00c8ab2dea828d489dcf544e9c608280580788dd2670c812b39c04bc15` |
+
+One feature-head PR CI is admitted after these offline gates; final explicit
+Full follows only a successful exact-head PR. This is preparation, not current
+hosted F6 PASS. Valid A–D and actual v13 F6 remain reused within their existing
+scope. Historical FAIL/UNKNOWN remain, unreplayed. Phase17 OPEN; current CI,
+authorized repository merge, trusted-main images and fresh-empty deployment
+remain pending. Phase18 NOT_STARTED.

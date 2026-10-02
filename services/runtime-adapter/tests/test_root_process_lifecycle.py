@@ -234,3 +234,27 @@ def test_stop_marker_is_closed_and_not_a_generic_error_instruction(change):
               "reason": "correction_budget_exhausted", "stop": True}
     assert not RuntimeAdapter._domain_stop_result({"service": "beyondquant-mcp", "status": "error",
         "backend": {"admission": {**marker, **change}}})
+
+
+def test_completed_root_live_attach_is_logical_and_does_not_resume_closed_process(root_adapter):
+    runtime = root_adapter
+    runtime.create_session("logical-reconnect", "logical-trace", "alice", "workspace_alice")
+    FakeHarness.allow_run.set()
+    first = runtime.submit_prompt("logical-reconnect", "first", conversation_context=[])
+    wait_for_status(runtime, "logical-reconnect", SessionStatus.IDLE)
+    record = runtime._get("logical-reconnect")
+    assert record.process_closed and record.current_generation.state == "completed"
+    first_harness = record.harness
+    with pytest.raises(SessionConflict, match="cannot be resumed"):
+        runtime.resume_session("logical-reconnect")
+    attached = runtime.attach_live_session("logical-reconnect", "logical-trace", "alice", "workspace_alice")
+    assert attached["status"] == "idle" and attached["session_id"] == "logical-reconnect"
+    assert record.harness is first_harness and len(FakeHarness.instances) == 1
+    assert first_harness.closed and first_harness.run_count == 1
+    with pytest.raises(SessionConflict, match="identity"):
+        runtime.attach_live_session("logical-reconnect", "logical-trace", "bob", "workspace_alice")
+    runtime.acknowledge_terminal("logical-reconnect", record.terminal_receipts[first])
+    second = runtime.submit_prompt("logical-reconnect", "next authorized turn", conversation_context=[])
+    wait_for_status(runtime, "logical-reconnect", SessionStatus.IDLE)
+    assert second != first and len(FakeHarness.instances) == 2
+    assert runtime._get("logical-reconnect").session_id == "logical-reconnect"

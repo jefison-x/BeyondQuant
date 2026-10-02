@@ -16,6 +16,7 @@ import re
 import runpy
 import subprocess
 import time
+import threading
 import urllib.error
 from pathlib import Path
 from urllib.request import HTTPCookieProcessor, Request, build_opener
@@ -59,6 +60,7 @@ UNTRUSTED_IDENTITY_FAILURES = frozenset({
     "foreground_structured_runtime_session_changed", "background_structured_runtime_session_changed",
     "original_session_answer_or_trace_changed_after_gateway_restart", "same_job_identity_changed",
     "signal_worker_job_identity_changed", "unexpected_active_job_in_dedicated_f6_owner_scope",
+    "gateway_event_identity_changed",
     "validated_signal_artifact_identity_invalid", "validated_signal_artifact_content_lineage_invalid",
     "validated_signal_artifact_lineage_invalid", "background_grant_identity_changed",
     "background_runtime_root_identity_invalid", "background_reservation_identity_invalid",
@@ -198,9 +200,9 @@ F6_OBSERVER_STAGES = frozenset({
     "product_login_and_original_session", "foreground_1_task_and_strategy_version",
     "verify_exact_task_and_strategy_lineage", "human_strategy_approval_and_stock_pool",
     "human_product_api_v2_single_request_grant", "foreground_2_exact_backtest_task_and_signal_job",
-    "durable_exact_job_admission_with_worker_stopped", "gateway_restart_and_same_live_session_reattach",
-    "gateway_ready_original_session_before_resume", "gateway_resume_original_session_once",
-    "gateway_same_original_session_after_resume", "start_exact_signal_worker_once",
+    "durable_exact_job_admission_with_worker_stopped", "gateway_restart_and_original_logical_session_connect",
+    "gateway_ready_original_session_before_connect", "gateway_original_event_connection_once",
+    "gateway_same_original_session_after_connect", "start_exact_signal_worker_once",
     "wait_for_exact_completed_job_and_validated_signal_artifact", "background_one_exact_task_ready_read",
     "exact_grant_revoke_and_get_confirmation", "passed",
 })
@@ -208,7 +210,7 @@ F6_OBSERVER_ACTIONS = frozenset({
     "signal_worker_stop_before_job", "isolated_ci_user_fixture", "product_login",
     "product_session_create", "foreground_agent_turn_1", "product_strategy_approval",
     "product_stock_pool", "continuation_permission_grant", "foreground_agent_turn_2",
-    "gateway_restart", "gateway_session_resume", "signal_worker_start_after_durable_job",
+    "gateway_restart", "signal_worker_start_after_durable_job",
     "signal_worker_stop_after_chain", "continuation_permission_revoke",
 })
 
@@ -236,7 +238,7 @@ def _closed_execution_observation() -> dict[str, object]:
 
 def _wait_gateway_original_session(api_call, session_id: str, trace_id: str,
                                    prompt: str, answer: str, *, seconds: float = 35) -> None:
-    """Wait only by reads before the single original-session resume POST."""
+    """Wait by bounded reads before connecting the original public event stream."""
     deadline = time.monotonic() + min(35, max(0, seconds))
     reads = 0
     while time.monotonic() < deadline:
@@ -267,12 +269,80 @@ def _wait_gateway_original_session(api_call, session_id: str, trace_id: str,
     raise EvidenceError("gateway_readiness_deadline")
 
 
-def _assert_same_live_resume(receipt: object, session_id: str, trace_id: str) -> None:
-    require(isinstance(receipt, dict) and receipt.get("session_id") == session_id
-            and receipt.get("trace_id") == trace_id and receipt.get("status") == "ready"
-            and "resumed_from_run_id" in receipt and receipt["resumed_from_run_id"] is None
-            and receipt.get("continuity") == "reattached",
-            "original_live_session_not_reattached")
+class GatewayEventConnection:
+    """One bounded public connection to the existing logical session.
+
+    Gateway may bind its transient delivery map through attach_live_only. This
+    neither resumes a closed DSH process nor submits another model request.
+    Keep this connection through evidence saving and failure reconciliation.
+    """
+
+    def __init__(self, opener, base_origin: str, session_id: str, trace_id: str):
+        self.stop = threading.Event()
+        self.failure = None
+        self.deadline = time.monotonic() + 600
+        self.session_id, self.trace_id = session_id, trace_id
+        request = Request(base_origin + f"/v1/workflows/{session_id}/events",
+                          headers={"Accept": "text/event-stream"}, method="GET")
+        try:
+            self.response = opener.open(request, timeout=30)
+        except urllib.error.HTTPError as error:
+            raise HttpFailure(int(error.code)) from None
+        except (urllib.error.URLError, TimeoutError, OSError):
+            raise EvidenceError("gateway_event_connection_unconfirmed") from None
+        if self.response.status != 200 or self.response.headers.get_content_type() != "text/event-stream":
+            self.response.close()
+            raise EvidenceError("gateway_event_connection_invalid")
+        self.thread = threading.Thread(target=self._drain, name="f6-public-events", daemon=True)
+        self.thread.start()
+
+    def _drain(self):
+        total = 0
+        try:
+            while not self.stop.is_set() and time.monotonic() < self.deadline:
+                line = self.response.readline(65537)
+                if self.stop.is_set():
+                    return
+                if not line:
+                    raise EvidenceError("gateway_event_connection_closed")
+                total += len(line)
+                require(len(line) <= 65536 and total <= 16777216,
+                        "gateway_event_observation_limit")
+                if line.startswith(b"data:"):
+                    try:
+                        event = json.loads(line[5:].strip())
+                    except (ValueError, TypeError):
+                        raise EvidenceError("gateway_event_projection_invalid") from None
+                    require(isinstance(event, dict) and event.get("session_id") == self.session_id
+                            and event.get("trace_id") == self.trace_id,
+                            "gateway_event_identity_changed")
+            if not self.stop.is_set():
+                raise EvidenceError("gateway_event_observation_deadline")
+        except EvidenceError as error:
+            self.failure = error.category
+        except Exception:
+            if not self.stop.is_set():
+                self.failure = "gateway_event_read_unconfirmed"
+
+    def assert_healthy(self):
+        require(self.failure is None and self.thread.is_alive()
+                and time.monotonic() < self.deadline,
+                self.failure or "gateway_event_connection_not_live")
+
+    def close(self):
+        self.stop.set()
+        self.response.close()
+        self.thread.join(timeout=1)
+
+
+def _assert_original_session_connected(view: object, session_id: str, trace_id: str,
+                                       prompt: str, answer: str) -> None:
+    require(isinstance(view, dict)
+            and view.get("conversation", {}).get("session_id") == session_id
+            and view.get("conversation", {}).get("trace_id") == trace_id
+            and view.get("conversation", {}).get("status") == "active"
+            and _answer_after(view, prompt) == answer,
+            "original_session_answer_or_trace_changed_after_gateway_restart")
 
 
 def _write_evidence(*, suffix: str = "") -> str:
@@ -1148,6 +1218,7 @@ state: dict[str, object] = {
 }
 worker_start_attempted = False
 worker_stopped_at_start = False
+gateway_events = None
 
 try:
     state["stage"] = "isolate_signal_worker"
@@ -1387,24 +1458,20 @@ try:
             "foreground_structured_runtime_session_changed")
     state["checks"]["foreground_2_structured_audit"] = "exact_terminal_run_owner_workspace_session_trace_and_resources"
 
-    state["stage"] = "gateway_restart_and_same_live_session_reattach"
+    state["stage"] = "gateway_restart_and_original_logical_session_connect"
     _compose_once("gateway_restart", "restart", "gateway")
     binding = _compose("port", "gateway", "8100", timeout=15)
     require(re.fullmatch(r"127\.0\.0\.1:[0-9]{1,5}", binding) is not None,
             "restarted_gateway_not_loopback_bound")
     origin = "http://" + binding
-    state["stage"] = "gateway_ready_original_session_before_resume"
+    state["stage"] = "gateway_ready_original_session_before_connect"
     _wait_gateway_original_session(call, session_id, trace_id, fg2, fg2_answer)
-    state["stage"] = "gateway_resume_original_session_once"
-    reattached = _post_once(call, "gateway_session_resume", f"/v1/agent/sessions/{session_id}/resume",
-                            {}, timeout=35)
-    _assert_same_live_resume(reattached, session_id, trace_id)
-    state["stage"] = "gateway_same_original_session_after_resume"
+    state["stage"] = "gateway_original_event_connection_once"
+    gateway_events = GatewayEventConnection(client, origin, session_id, trace_id)
+    state["stage"] = "gateway_same_original_session_after_connect"
     session_after_restart = _session_call(call, session_id, trace_id)
-    require(session_after_restart.get("conversation", {}).get("status") == "active"
-            and session_after_restart.get("conversation", {}).get("trace_id") == trace_id
-            and _answer_after(session_after_restart, fg2) == fg2_answer,
-            "original_session_answer_or_trace_changed_after_gateway_restart")
+    _assert_original_session_connected(session_after_restart, session_id, trace_id, fg2, fg2_answer)
+    gateway_events.assert_healthy()
     same_job = call("GET", f"/api/product/signal-producer/jobs/{signal_job_id}")
     same_job_row = same_job.get("job") if isinstance(same_job, dict) else None
     require(isinstance(same_job_row, dict) and same_job_row.get("job_id") == signal_job_id
@@ -1414,7 +1481,7 @@ try:
             and same_job_row.get("stock_pool_snapshot_id") == snapshot_id,
             "same_job_identity_changed")
     require(same_job_row.get("status") == "waiting_for_data", "same_job_status_changed")
-    state["checks"]["gateway_restart"] = "live_reattach_same_session_and_same_durable_job_no_turn_replay"
+    state["checks"]["gateway_restart"] = "original_logical_session_public_events_same_durable_job_no_turn_replay"
 
     state["stage"] = "start_exact_signal_worker_once"
     active_jobs_view = call("GET", "/api/product/signal-producer/jobs?limit=100&offset=0")
@@ -1425,6 +1492,7 @@ try:
                and row.get("status") in {"waiting_for_data", "queued", "running"}]
     require(len(f6_jobs) == 1 and f6_jobs[0].get("job_id") == signal_job_id,
             "unexpected_active_job_in_dedicated_f6_owner_scope")
+    gateway_events.assert_healthy()
     worker_start_attempted = True
     _compose_once("signal_worker_start_after_durable_job", "up", "-d", "--no-deps", "--no-build",
                   "signal-worker")
@@ -1436,6 +1504,7 @@ try:
     artifact = None
     last_status = None
     while time.monotonic() < deadline:
+        gateway_events.assert_healthy()
         job_view = call("GET", f"/api/product/signal-producer/jobs/{signal_job_id}", timeout=15)
         job = job_view.get("job") if isinstance(job_view, dict) else None
         require(isinstance(job, dict) and job.get("job_id") == signal_job_id
@@ -1474,6 +1543,7 @@ try:
     while time.monotonic() < deadline:
         # Both readiness facts must be observed in the same bounded polling
         # pass. A settlement from an earlier pass is not enough to close it.
+        gateway_events.assert_healthy()
         request_settlement = None
         session_view = _session_call(call, session_id, trace_id)
         messages = _messages(session_view)
@@ -1612,6 +1682,7 @@ try:
     require(state["checks"].get("revoke") == "one_exact_post_and_get_confirmed_no_second_request",
             "exact_grant_revoke_get_or_no_second_request_failed")
 
+    gateway_events.assert_healthy()
     state["stage"] = "passed"
     state["status"] = "passed"
     print(json.dumps({"stage": "f6_read_only_settlement_passed",
@@ -1647,27 +1718,31 @@ except Exception as error:  # evidence stores only exception class, never messag
         state["failure_observation"] = {"category": observation_error.category}
 finally:
     try:
-        _stop_owned_signal_worker(_compose_once, attempted=worker_start_attempted, project=project)
-    except EvidenceError as error:
-        if state["status"] == "passed":
-            state["status"] = "failed"
-            state["failure_category"] = "worker_cleanup_failed"
-    if not state["revoke_attempted"]:
-        _revoke_exact_grant(call)
-        if state["status"] == "passed" and state["checks"].get("revoke") != "one_exact_post_and_get_confirmed_no_second_request":
-            # A successful run must use the single explicit revoke path above.
-            state["status"] = "failed"
-            state["failure_category"] = "exact_permission_revoke_not_proven"
-    try:
-        _write_evidence(suffix=".closeout.json" if state.get("primary_evidence_written") else "")
-    except FileExistsError:
-        print(json.dumps({"stage": "evidence_path_collision", "status": state["status"]}), flush=True)
-        if state["status"] == "passed":
-            raise
-    except OSError:
-        print(json.dumps({"stage": "evidence_write_failed", "status": state["status"]}), flush=True)
-        if state["status"] == "passed":
-            raise
+        try:
+            _stop_owned_signal_worker(_compose_once, attempted=worker_start_attempted, project=project)
+        except EvidenceError as error:
+            if state["status"] == "passed":
+                state["status"] = "failed"
+                state["failure_category"] = "worker_cleanup_failed"
+        if not state["revoke_attempted"]:
+            _revoke_exact_grant(call)
+            if state["status"] == "passed" and state["checks"].get("revoke") != "one_exact_post_and_get_confirmed_no_second_request":
+                # A successful run must use the single explicit revoke path above.
+                state["status"] = "failed"
+                state["failure_category"] = "exact_permission_revoke_not_proven"
+        try:
+            _write_evidence(suffix=".closeout.json" if state.get("primary_evidence_written") else "")
+        except FileExistsError:
+            print(json.dumps({"stage": "evidence_path_collision", "status": state["status"]}), flush=True)
+            if state["status"] == "passed":
+                raise
+        except OSError:
+            print(json.dumps({"stage": "evidence_write_failed", "status": state["status"]}), flush=True)
+            if state["status"] == "passed":
+                raise
+    finally:
+        if gateway_events is not None:
+            gateway_events.close()
 
 if state["status"] != "passed":
     raise SystemExit("F6 current read-only settlement failed: " + str(state.get("failure_category") or "unknown"))
