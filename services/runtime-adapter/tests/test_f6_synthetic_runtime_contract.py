@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import copy
+import hashlib
 import json
 import os
 import re
@@ -72,7 +73,7 @@ def _driver_functions():
             raise DriverContractRejected(category)
 
     namespace = {
-        "re": re, "require": require,
+        "re": re, "require": require, "hashlib": hashlib,
         "json": json, "os": os, "subprocess": types.SimpleNamespace(), "time": time,
         "state": {"checks": {}, "identities": {}, "audit_summaries": {},
                   "mutation_attempts": [], "uncertain_actions": [],
@@ -150,14 +151,6 @@ def _audit_fixture():
         "action": "runtime_turn_binding", "outcome": "active",
         "resource_type": "runtime_turn", "resource_id": root,
     }
-    terminal_binding = {
-        "audit_id": "agent_audit_" + "9" * 32,
-        "run_id": run_id,
-        "owner_principal": "f6-chain-user",
-        "actor_principal": "byq-product-agent-" + runtime_session,
-        "action": "runtime_turn_binding", "outcome": "completed",
-        "resource_type": "runtime_turn", "resource_id": root,
-    }
     document = {
         "schema_version": "f6-agent-run-audit.v1", "stage": "background",
         "task": {"task_id": task_id, "owner_principal": "f6-chain-user",
@@ -175,7 +168,9 @@ def _audit_fixture():
                       "role_id": "quant_orchestrator", "role_version": "2.5.0",
                       "session_id": runtime_session, "trace_id": trace,
                       "root_run_id": root, "status": "completed", "authority_status": "closed"},
-        "events": [binding, *audit_events, terminal_binding],
+        # Direct root close is the normal Gateway terminal path. A lifecycle
+        # audit binding may be appended separately by the test that covers it.
+        "events": [binding, *audit_events],
         "settlement": {"reservation_id": reservation_id, "grant_version": 1, "run_id": root,
                        "status": "settled", "outcome": "completed", "event_key": event_key,
                        "dispatch_attempts": 1, "settlement_sha256": digest},
@@ -1187,8 +1182,8 @@ def test_authoritative_audit_contract_rejects_mismatched_scope_and_unknown_recei
     variants.append(bad)
     bad = copy.deepcopy(document)
     bad["events"] = [event for event in bad["events"]
-                     if not (event.get("action") == "runtime_turn_binding"
-                             and event.get("outcome") == "completed")]
+                     if not (event.get("action") == "byq_research_get"
+                             and event.get("outcome") == "success")]
     variants.append(bad)
     bad = copy.deepcopy(document)
     bad["events"].append({
@@ -1214,6 +1209,11 @@ def test_authoritative_audit_contract_rejects_mismatched_scope_and_unknown_recei
     with pytest.raises(DriverContractRejected):
         assert_structured(bad_audit_id, **args)
 
+    duplicate_audit_id = copy.deepcopy(document)
+    duplicate_audit_id["events"][2]["audit_id"] = duplicate_audit_id["events"][1]["audit_id"]
+    with pytest.raises(DriverContractRejected, match="structured_agent_audit_event_invalid"):
+        assert_structured(duplicate_audit_id, **args)
+
     for unknown in (None, {}, {**settlement, "run_id": "agent_run_" + "1" * 32},
                     {**settlement, "settlement_sha256": "not-a-digest"},
                     {**settlement, "dispatch_attempts": 0},
@@ -1221,6 +1221,90 @@ def test_authoritative_audit_contract_rejects_mismatched_scope_and_unknown_recei
                     {**settlement, "grant_version": 2}):
         with pytest.raises(DriverContractRejected):
             validate_settlement(unknown, 1)
+
+
+def test_structured_audit_accepts_direct_close_or_one_exact_completed_binding_and_rejects_event_drift():
+    functions = _driver_functions()
+    validate = functions["_assert_structured_agent_audit"]
+    document, settlement, expected_events = _audit_fixture()
+    args = {
+        "stage": "background", "task_id": document["task"]["task_id"],
+        "conversation_id": document["task"]["conversation_id"],
+        "trace_id": document["task"]["trace_id"],
+        "runtime_root_id": document["runtime_root"]["root_run_id"],
+        "expected_events": expected_events, "settlement": settlement,
+    }
+
+    direct_close = validate(document, **args)
+    assert direct_close["active_binding_count"] == 1
+    assert direct_close["completed_binding_count"] == 0
+
+    lifecycle_close = copy.deepcopy(document)
+    completed_binding = copy.deepcopy(lifecycle_close["events"][0])
+    completed_binding.update(
+        audit_id="agent_audit_" + "9" * 32,
+        outcome="completed",
+    )
+    lifecycle_close["events"].append(completed_binding)
+    lifecycle_summary = validate(lifecycle_close, **args)
+    assert lifecycle_summary["active_binding_count"] == 1
+    assert lifecycle_summary["completed_binding_count"] == 1
+
+    missing_domain = copy.deepcopy(document)
+    missing_domain["events"] = [event for event in missing_domain["events"]
+                                if not (event.get("action") == "byq_research_get"
+                                        and event.get("outcome") == "success")]
+    with pytest.raises(DriverContractRejected) as rejected:
+        validate(missing_domain, **args)
+    assert rejected.value.category == "structured_agent_audit_events_incomplete"
+
+    wrong_domain = copy.deepcopy(document)
+    wrong_domain["events"][1]["resource_id"] = "task_" + "0" * 32
+    with pytest.raises(DriverContractRejected) as rejected:
+        validate(wrong_domain, **args)
+    assert rejected.value.category == "structured_agent_audit_actions_or_resources_invalid"
+
+    duplicate_domain = copy.deepcopy(document)
+    duplicate = copy.deepcopy(duplicate_domain["events"][1])
+    duplicate["audit_id"] = "agent_audit_" + "8" * 32
+    duplicate_domain["events"].append(duplicate)
+    with pytest.raises(DriverContractRejected) as rejected:
+        validate(duplicate_domain, **args)
+    assert rejected.value.category == "structured_agent_audit_actions_or_resources_invalid"
+
+    wrong_completed_binding = copy.deepcopy(lifecycle_close)
+    wrong_completed_binding["events"][-1]["resource_id"] = "b" * 32
+    with pytest.raises(DriverContractRejected) as rejected:
+        validate(wrong_completed_binding, **args)
+    assert rejected.value.category == "structured_agent_audit_actions_or_resources_invalid"
+
+    wrong_completed_outcome = copy.deepcopy(lifecycle_close)
+    wrong_completed_outcome["events"][-1]["outcome"] = "failed"
+    with pytest.raises(DriverContractRejected) as rejected:
+        validate(wrong_completed_outcome, **args)
+    assert rejected.value.category == "structured_agent_audit_actions_or_resources_invalid"
+
+    duplicate_active_binding = copy.deepcopy(document)
+    repeated_active = copy.deepcopy(duplicate_active_binding["events"][0])
+    repeated_active["audit_id"] = "agent_audit_" + "7" * 32
+    duplicate_active_binding["events"].append(repeated_active)
+    with pytest.raises(DriverContractRejected) as rejected:
+        validate(duplicate_active_binding, **args)
+    assert rejected.value.category == "structured_agent_audit_actions_or_resources_invalid"
+
+    duplicate_completed_binding = copy.deepcopy(lifecycle_close)
+    repeated_completed = copy.deepcopy(duplicate_completed_binding["events"][-1])
+    repeated_completed["audit_id"] = "agent_audit_" + "6" * 32
+    duplicate_completed_binding["events"].append(repeated_completed)
+    with pytest.raises(DriverContractRejected) as rejected:
+        validate(duplicate_completed_binding, **args)
+    assert rejected.value.category == "structured_agent_audit_actions_or_resources_invalid"
+
+    wrong_active_binding = copy.deepcopy(document)
+    wrong_active_binding["events"][0]["resource_id"] = "c" * 32
+    with pytest.raises(DriverContractRejected) as rejected:
+        validate(wrong_active_binding, **args)
+    assert rejected.value.category == "structured_agent_audit_actions_or_resources_invalid"
 
 
 def test_structured_audit_separates_identity_mismatch_from_missing_terminal_proof():
@@ -1252,6 +1336,19 @@ def test_structured_audit_separates_identity_mismatch_from_missing_terminal_proo
     assert rejected.value.category == "structured_runtime_root_terminal_not_confirmed"
     assert not is_untrusted(rejected.value.category)
 
+    forged_root_identity = copy.deepcopy(document)
+    forged_root_identity["runtime_root"]["root_run_id"] = "9" * 32
+    with pytest.raises(DriverContractRejected) as rejected:
+        validate(forged_root_identity, **args)
+    assert rejected.value.category == "structured_runtime_root_identity_invalid"
+    assert is_untrusted(rejected.value.category)
+
+    forged_terminal_sequence = copy.deepcopy(document)
+    forged_terminal_sequence["runtime_root"]["terminal_sequence"] = True
+    with pytest.raises(DriverContractRejected) as rejected:
+        validate(forged_terminal_sequence, **args)
+    assert rejected.value.category == "structured_runtime_root_terminal_not_confirmed"
+
     wrong_run = copy.deepcopy(document)
     wrong_run["agent_run"]["root_run_id"] = "9" * 32
     with pytest.raises(DriverContractRejected) as rejected:
@@ -1261,8 +1358,8 @@ def test_structured_audit_separates_identity_mismatch_from_missing_terminal_proo
 
     missing_event = copy.deepcopy(document)
     missing_event["events"] = [event for event in missing_event["events"]
-                               if not (event.get("action") == "runtime_turn_binding"
-                                       and event.get("outcome") == "completed")]
+                               if not (event.get("action") == "byq_backtest_task_get"
+                                       and event.get("outcome") == "success")]
     with pytest.raises(DriverContractRejected) as rejected:
         validate(missing_event, **args)
     assert rejected.value.category == "structured_agent_audit_events_incomplete"
@@ -1274,6 +1371,87 @@ def test_structured_audit_separates_identity_mismatch_from_missing_terminal_proo
         validate(wrong_event_identity, **args)
     assert rejected.value.category == "structured_agent_audit_event_identity_invalid"
     assert is_untrusted(rejected.value.category)
+
+
+def test_structured_audit_safe_summary_is_saved_before_incomplete_event_failure(monkeypatch):
+    functions = _driver_functions()
+    document, settlement, expected_events = _audit_fixture()
+    incomplete = copy.deepcopy(document)
+    incomplete["events"] = [event for event in incomplete["events"]
+                            if not (event.get("action") == "byq_research_get"
+                                    and event.get("outcome") == "success")]
+
+    functions["subprocess"].run = lambda *_args, **_kwargs: SimpleNamespace(
+        returncode=0, stdout=json.dumps(incomplete))
+    monkeypatch.setenv("COMPOSE_PROJECT_NAME", "byq-ci-stack-f6-offline")
+    with pytest.raises(DriverContractRejected) as rejected:
+        functions["_read_structured_agent_audit"](
+            "background", task_id=document["task"]["task_id"],
+            conversation_id=document["task"]["conversation_id"],
+            trace_id=document["task"]["trace_id"],
+            runtime_root_id=document["runtime_root"]["root_run_id"],
+            expected_events=expected_events, settlement=settlement, timeout=1,
+        )
+    assert rejected.value.category == "structured_agent_audit_events_incomplete"
+    checks = functions["state"]["checks"]
+    observation = checks["structured_audit_observed_background"]
+    assert observation["qualification"] == "diagnostic_only_not_a_pass"
+    assert observation["authority"]["root_status"] == "completed"
+    assert observation["authority"]["root_authority_status"] == "closed"
+    assert observation["authority"]["agent_run_status"] == "completed"
+    assert observation["authority"]["agent_run_authority_status"] == "closed"
+    assert observation["event_count"] == len(document["events"]) - 1
+    assert observation["domain_event_multiset"]["status"] == "incomplete"
+    assert observation["domain_event_multiset"]["missing"] == [{
+        "action": "byq_research_get", "outcome": "success",
+        "resource_type": "research_task", "resource_id": document["task"]["task_id"],
+    }]
+    assert functions["state"]["audit_summaries"] == {}
+    assert not any("detail" in event for event in observation["events"])
+    assert "prompt" not in repr(observation) and "answer" not in repr(observation)
+
+
+def test_structured_audit_safe_summary_captures_extra_event_before_failure(monkeypatch):
+    functions = _driver_functions()
+    document, settlement, expected_events = _audit_fixture()
+    unexpected = copy.deepcopy(document["events"][1])
+    private_extra = "OBSERVER_PRIVATE_TEXT_" + "x" * 4096
+    unexpected.update(
+        audit_id="agent_audit_" + "8" * 32,
+        action=private_extra,
+        outcome="success",
+        resource_id=private_extra,
+    )
+    extra = copy.deepcopy(document)
+    extra["events"].append(unexpected)
+
+    functions["subprocess"].run = lambda *_args, **_kwargs: SimpleNamespace(
+        returncode=0, stdout=json.dumps(extra))
+    monkeypatch.setenv("COMPOSE_PROJECT_NAME", "byq-ci-stack-f6-offline")
+    with pytest.raises(DriverContractRejected) as rejected:
+        functions["_read_structured_agent_audit"](
+            "background", task_id=document["task"]["task_id"],
+            conversation_id=document["task"]["conversation_id"],
+            trace_id=document["task"]["trace_id"],
+            runtime_root_id=document["runtime_root"]["root_run_id"],
+            expected_events=expected_events, settlement=settlement, timeout=1,
+        )
+    assert rejected.value.category == "structured_agent_audit_actions_or_resources_invalid"
+    observation = functions["state"]["checks"]["structured_audit_observed_background"]
+    assert observation["qualification"] == "diagnostic_only_not_a_pass"
+    assert observation["domain_event_multiset"]["status"] == "invalid"
+    assert observation["domain_event_multiset"]["extra"] == [{
+        "action": {"type": "string", "length": len(private_extra),
+                   "sha256": hashlib.sha256(private_extra.encode("utf-8")).hexdigest()},
+        "outcome": {"type": "string", "length": len("success"),
+                    "sha256": hashlib.sha256(b"success").hexdigest()},
+        "resource_type": {"type": "string", "length": len(unexpected["resource_type"]),
+                          "sha256": hashlib.sha256(unexpected["resource_type"].encode("utf-8")).hexdigest()},
+        "resource_id": {"type": "string", "length": len(private_extra),
+                        "sha256": hashlib.sha256(private_extra.encode("utf-8")).hexdigest()},
+    }]
+    assert private_extra not in repr(observation)
+    assert functions["state"]["audit_summaries"] == {}
 
 
 def test_validated_signal_artifact_requires_exact_owner_strategy_job_snapshot_and_lineage():

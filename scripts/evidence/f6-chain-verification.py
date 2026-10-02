@@ -309,27 +309,113 @@ def _assert_structured_agent_audit(document: object, *, stage: str, task_id: str
             "structured_agent_run_identity_invalid")
     require(run.get("status") == "completed" and run.get("authority_status") == "closed",
             "structured_agent_run_terminal_not_confirmed")
-    require(isinstance(events, list), "structured_agent_audit_events_invalid")
+    require(isinstance(events, list) and len(events) <= 32,
+            "structured_agent_audit_events_invalid")
     actual_events: list[tuple[str, str, str | None, str | None]] = []
+    seen_audit_ids: set[str] = set()
     for event in events:
         require(isinstance(event, dict) and isinstance(event.get("audit_id"), str)
                 and AUDIT_PATTERN.fullmatch(event["audit_id"]) is not None
-                and isinstance(event.get("action"), str), "structured_agent_audit_event_invalid")
+                and event["audit_id"] not in seen_audit_ids
+                and isinstance(event.get("action"), str)
+                and isinstance(event.get("outcome"), str)
+                and (event.get("resource_type") is None or isinstance(event.get("resource_type"), str))
+                and (event.get("resource_id") is None or isinstance(event.get("resource_id"), str)),
+                "structured_agent_audit_event_invalid")
+        seen_audit_ids.add(event["audit_id"])
         require(event.get("run_id") == run["run_id"] and event.get("owner_principal") == "f6-chain-user"
                 and event.get("actor_principal") == run["actor_principal"],
                 "structured_agent_audit_event_identity_invalid")
         actual_events.append((event["action"], event.get("outcome"),
                               event.get("resource_type"), event.get("resource_id")))
-    expected = [
-        ("runtime_turn_binding", "active", "runtime_turn", runtime_root_id),
-        *expected_events,
-        ("runtime_turn_binding", "completed", "runtime_turn", runtime_root_id),
-    ]
-    if sorted(actual_events, key=str) != sorted(expected, key=str):
-        subset_of_expected = all(actual_events.count(item) <= expected.count(item) for item in actual_events)
-        if subset_of_expected:
+
+    expected_active_binding = ("runtime_turn_binding", "active", "runtime_turn", runtime_root_id)
+    expected_completed_binding = ("runtime_turn_binding", "completed", "runtime_turn", runtime_root_id)
+    binding_events = [event for event in actual_events if event[0] == "runtime_turn_binding"]
+    active_bindings = [event for event in binding_events if event[1] == "active"]
+    completed_bindings = [event for event in binding_events if event[1] == "completed"]
+    invalid_bindings = [event for event in binding_events
+                        if event not in {expected_active_binding, expected_completed_binding}]
+    domain_events = [event for event in actual_events if event[0] != "runtime_turn_binding"]
+
+    def multiset_delta(observed: list[tuple[str, str, str | None, str | None]],
+                       expected: list[tuple[str, str, str | None, str | None]]) -> tuple[list, list]:
+        remaining = list(expected)
+        extras = []
+        for item in observed:
+            try:
+                remaining.remove(item)
+            except ValueError:
+                extras.append(item)
+        return remaining, extras
+
+    missing_domain_events, extra_domain_events = multiset_delta(domain_events, expected_events)
+    known_events = {expected_active_binding, expected_completed_binding, *expected_events}
+
+    def event_projection(items: list[tuple[str, str, str | None, str | None]]) -> list[dict[str, object]]:
+        projected = []
+        for item in items:
+            if item in known_events:
+                action, outcome, resource_type, resource_id = item
+                projected.append({"action": action, "outcome": outcome,
+                                  "resource_type": resource_type, "resource_id": resource_id})
+                continue
+            fields = {}
+            for name, value in zip(("action", "outcome", "resource_type", "resource_id"), item):
+                if value is None:
+                    encoded = b"null"
+                    fields[name] = {"type": "null", "length": 0,
+                                    "sha256": hashlib.sha256(encoded).hexdigest()}
+                else:
+                    encoded = value.encode("utf-8")
+                    fields[name] = {"type": "string", "length": len(value),
+                                    "sha256": hashlib.sha256(encoded).hexdigest()}
+            projected.append(fields)
+        return projected
+
+    observation = {
+        "qualification": "diagnostic_only_not_a_pass",
+        "stage": stage,
+        "authority": {
+            "runtime_root_id": root["root_run_id"], "agent_run_id": run["run_id"],
+            "owner_principal": task["owner_principal"], "workspace_id": task["workspace_id"],
+            "session_id": runtime_session_id, "trace_id": trace_id,
+            "root_status": root["status"], "root_authority_status": root["authority_status"],
+            "terminal_sequence": root["terminal_sequence"],
+            "terminal_event_sha256": root["terminal_event_sha256"],
+            "agent_run_status": run["status"],
+            "agent_run_authority_status": run["authority_status"],
+        },
+        "event_count": len(actual_events),
+        "events": event_projection(actual_events),
+        "binding_events": {
+            "active_count": len(active_bindings),
+            "completed_count": len(completed_bindings),
+            "invalid": event_projection(invalid_bindings),
+        },
+        "domain_event_multiset": {
+            "status": "pending",
+            "missing": event_projection(missing_domain_events),
+            "extra": event_projection(extra_domain_events),
+        },
+        "settlement_check": "pending",
+    }
+    # Persist only the bounded, identity-scoped projection before event and
+    # settlement assertions. It intentionally cannot qualify a run as PASS.
+    state["checks"]["structured_audit_observed_" + stage] = observation
+
+    bindings_valid = (len(active_bindings) == 1 and len(completed_bindings) <= 1
+                      and not invalid_bindings)
+    if not bindings_valid:
+        observation["domain_event_multiset"]["status"] = "not_checked_binding_invalid"
+        raise EvidenceError("structured_agent_audit_actions_or_resources_invalid")
+    if missing_domain_events or extra_domain_events:
+        observation["domain_event_multiset"]["status"] = (
+            "incomplete" if missing_domain_events and not extra_domain_events else "invalid")
+        if missing_domain_events and not extra_domain_events:
             raise EvidenceError("structured_agent_audit_events_incomplete")
         raise EvidenceError("structured_agent_audit_actions_or_resources_invalid")
+    observation["domain_event_multiset"]["status"] = "exact"
     observed_settlement = document.get("settlement")
     if settlement is None:
         require(observed_settlement is None, "unexpected_structured_request_receipt")
@@ -346,16 +432,15 @@ def _assert_structured_agent_audit(document: object, *, stage: str, task_id: str
                 and observed_settlement.get("event_key") == settlement.get("event_key")
                 and observed_settlement.get("settlement_sha256") == settlement.get("settlement_sha256"),
                 "structured_settlement_root_link_invalid")
+    observation["settlement_check"] = "validated"
     return {
         "stage": stage, "runtime_root_id": runtime_root_id, "agent_run_id": run["run_id"],
         "owner_principal": "f6-chain-user", "workspace_id": task["workspace_id"],
         "session_id": runtime_session_id, "trace_id": trace_id,
-        "terminal": "completed/closed", "audit_events": [
-            {"action": action, "outcome": outcome, "resource_type": resource_type,
-             "resource_id": resource_id}
-            for action, outcome, resource_type, resource_id in actual_events
-        ],
+        "terminal": "completed/closed", "audit_events": event_projection(actual_events),
         "settlement_status": observed_settlement.get("status") if isinstance(observed_settlement, dict) else None,
+        "active_binding_count": len(active_bindings),
+        "completed_binding_count": len(completed_bindings),
     }
 
 

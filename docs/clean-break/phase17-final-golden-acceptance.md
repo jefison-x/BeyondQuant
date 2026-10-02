@@ -499,3 +499,107 @@ The manifest was synthetic for this offline test. No actual release attestation,
 protected secret file, storage, production configuration or service was created.
 Actual final-config gates and old-resource preservation checks remain required.
 Phase17 remains OPEN and Phase18 has not started.
+
+
+## Build286 hosted audit boundary failure
+
+Build286 source `d5b09589badb25b3c0b2e2fcad2d2f10ea6c114c` reached completed
+[PR CI 36974788603](https://github.com/jefison-x/BeyondQuant/actions/runs/36974788603)
+and [explicit Full CI 36975006060](https://github.com/jefison-x/BeyondQuant/actions/runs/36975006060).
+Both are FAIL only in F6 integration and its aggregate gates; all eight component
+lanes passed. FG1 exact canonical user-turn, persisted answer markers, Task and
+validated StrategyDraft/Version lineage checks passed. The following structured
+Agent audit multiset comparison failed with `events_incomplete`; no FG2 or BG
+qualification was reached. Original accepted roots
+`76e7de7a2aa94749ae3d44e70b676844` and `f1dc96dc879e44c68d10a7c3b0b5974d`
+and their full runtime/business outcomes remain UNKNOWN. No unknown call was
+replayed. Dedicated resource cleanup does not prove terminal business state.
+
+The current direct-close path atomically closes authoritative Root and AgentRun
+rows with an exact terminal receipt, but need not emit a completed
+`runtime_turn_binding` audit row. The old lifecycle contract is explicitly
+historical. Accepted Clean Break ADR-001/002/005 distinguish business state and
+structured audit observation; the observer must still prove all exact domain
+actions/resources, identities, root terminal sequence/digest and BG settlement.
+Independent Reviewer accepted an observer-only correction, with no Backend change
+or new ADR. Root keeps the unique exact active binding required by the current
+normal chain; completed binding may be absent, but if present must be unique and
+exact. Missing/extra/wrong/duplicate domain actions or bindings still fail.
+
+The original uploaded logs contain no complete raw audit tuples; it is therefore
+not established that completed binding was the only missing row. The repair must
+save a bounded, scope-validated safe tuple projection before comparison and use
+direct-close/lifecycle samples plus negative cases in the focused offline gate.
+This preparation is not a hosted F6 PASS. Tester → independent Reviewer → Root
+and required new-head hosted gates remain necessary before merge/deployment.
+
+Completed-run classification receipt SHA256:
+`3e43e3f2e35a945a7b0a52e8ec0ed1f3ae630103bc95906b685018e33109fcfe`.
+Independent boundary decision SHA256:
+`e622b8f04baaa9cf910702079314d887fb4f0b671cde7fbe3f959f6391fae4ee`.
+The latter initially suggested optional active observation; the subsequent Root
+and Reviewer agreement retained active as mandatory for this exact F6 chain.
+All prior Build286/v7 offline records and historical failures remain immutable.
+Phase17 remains OPEN; Phase18 has not started.
+
+
+## Build287 exact audit observer
+
+The v8 correction changes only the F6 observer and its focused contracts:
+unique exact active binding remains mandatory; completed binding may be absent
+or one exact row. FG1/FG2/BG domain action/resource/outcome multisets, identities,
+authoritative completed/closed Root/Run state and BG settlement are unchanged.
+Malformed or duplicate audit IDs and extra/wrong/duplicate events are rejected.
+A scope-validated diagnostic is stored before multiset/settlement assertions,
+limited to32 events and explicitly marked `diagnostic_only_not_a_pass`.
+Only fully qualified summaries enter `audit_summaries`; unknown tuple values
+appear only as type/length/SHA256, never raw private content.
+
+Frozen driver SHA256:
+`6ecee6c3d96da86101a9d179bfe8b97d0c4e7f907ea869052252fb1c39379e4d`.
+Contract SHA256:
+`77dd473b72ca8da87e9987beaaf445bff364ec31aaa3cfa6b99947b04fe079f8`.
+Worker receipt SHA256:
+`0cbaa5ae789b2123ae5f13b185eee65b35bfa19aad9247485995c4c3a054f8af`.
+Its host run passed53 with one fixture-path skip. Independent canonical CI-path
+qualification then passed54 with zero skips. That fixture check reads source
+only and did not connect to a database. The networkless/read-only cached-image
+stage is `/app`, without a PYTHONPATH override; its temporary container was
+removed after `--rm`. Ten selected Build287 identity tests also passed.
+Tester receipt SHA256:
+`33e03683027896e479e798f3ecc9ff46c675be01039bd94697e7a4be652756fe`.
+
+Immutable Build287 manifest SHA256:
+`a354828a25e2c059fb21caaf6a5fdde8b93ab84b19e9ae0c2110427ce3d8e528`.
+Dockerfile SHA256:
+`21cc80a94a7eb17c5f4e7083e69b96420414d42fa48a307710b5c05b4e72b614`.
+The eight current selectors are updated. All994 actual input hashes match;
+Build286 manifest/Dockerfile remain unchanged. Admission receipt SHA256:
+`e527cf8d38ac3712d595787917f9f1009a6710022c47e93a8166f4a93f410ce4`.
+Independent Reviewer gave Functional/Tests/Clean Break Architecture scoped PASS,
+receipt SHA256:
+`d3c2c7c54ade2addb8d5e0b992406fe8a09558b9cf8150574d48ee50ad7d8977`.
+Root independently verified source/stage pins,994 inputs, unchanged profile and
+F6 CI function, exact14-file change scope and preserved Build286. Scoped offline
+Root receipt SHA256:
+`492296157406171debe243da6c1426ad93e13e09a2da2251be73951eec01483d`.
+This does not qualify an actual F6 chain, external model use, image build or CI.
+
+The complete remaining FG2/Worker/Artifact/BG/settlement/revoke source audit
+found no additional deterministic contract mismatch, receipt SHA256:
+`f380f53f175008a68c76a09a48523f20eed16c07e7790091f13af6e76d2d66da`.
+Its hosted-context field references historical Build285 waiter failure;
+current Build286 stopped at structured audit comparison after FG1 answer and
+lineage checks, as recorded above. FG2/BG were not reached by either version.
+The normal passing GitHub attempt has dedicated run/attempt storage, one F6
+call and one F6-owner job; its preceding Phase48 SignalJob must be completed.
+A failed earlier smoke can contaminate diagnostic F6 in an already-failing
+attempt and independently blocks phase closeout; scope reuse is not admitted.
+This static check does not replace successful current-head required CI.
+
+Existing actual A–D/v13 F6 and prior UI qualification remain reused; no additional
+model/market/Reset/Job input or replay was made in this offline gate. Old hosted
+FAIL and historical UNKNOWN remain. Current-head PR/Full CI, live authorized
+merge preflight, successful trusted-main14-image attestation/SBOM qualification,
+actual fresh-config gates and fresh-empty deployment/browser/protected-resource
+checks are still required. Phase17 OPEN; Phase18 NOT_STARTED.
