@@ -426,3 +426,76 @@ candidate source-delta scan has zero findings with the existing configuration.
 Exact-head Git-history scan and required current-head PR/Full hosted gates are
 still necessary before merge; trusted-main images and actual fresh deployment
 remain unqualified. Existing A–D/actual v13 F6 evidence remains reused.
+
+
+## Build286 persisted user-turn observer
+
+Build285 source `cefdf2b53b1a9def7affadba39b60b8b586d0d57` passed its exact-head
+Git-history scan with zero findings and the existing precise exception policy.
+[PR CI 36970669971](https://github.com/jefison-x/BeyondQuant/actions/runs/36970669971)
+and [explicit Full CI 36970747274](https://github.com/jefison-x/BeyondQuant/actions/runs/36970747274)
+both completed FAIL only in F6 integration; all component lanes, permission-control
+browser cases, 47 offline contracts and dedicated resource cleanup passed.
+The accepted FG1 roots were `b93a87dd8aa442a0885d53d47366a743` (PR) and
+`5d67890c48e04721bbf99212edd7fc84` (Full). The observer matched no answer before
+its deadline. That is not proof that the answer was absent or the root unfinished.
+Both original runtime/business outcomes remain UNKNOWN, and no call was replayed.
+FG2/background was not qualified. Each bounded closeout read the session twice
+but had no exact Task identity or structured terminal audit. Cleanup is not terminal proof.
+
+The concrete mismatch is established by current source: Backend
+`conversation_catalog._text` collapses whitespace in `append_user_message`, and
+Gateway session GET returns those persisted messages. The old waiter compared
+their content with the raw multiline FG prompt. Only the Engineering observer
+and its focused tests change: exact whitespace-equivalent user-turn matching,
+changed-content and duplicate-turn rejection, one total GET/sleep deadline and
+safe status/count/boolean observations in first-failure and closeout evidence.
+No raw prompt, answer or private payload enters that metadata. The same helper
+also checks FG2 after Gateway restart; BG has a separate ready-marker selector.
+Product code, request profile, exact action/resource audits, permission revocation
+and unknown-outcome protections are unchanged. No speculative Provider change,
+timeout increase, new harness or cumulative budget platform was added.
+
+Frozen v7 driver SHA256 is
+`af5b428a413f07f5b88c2c6af3810a6291bcd27d6c6a158636b19946163702b6`;
+contract SHA256 is
+`2bcbb31922f361e932cfd05c51f003cb5ea1183987b42716daa58bdc2d46933e`.
+Worker report SHA256 is
+`b10337252583212cb883d412f74c342dfd20f906f81a7a789202f147eefd7191`.
+Independent Tester receipt SHA256 is
+`2afd100f3d2554db79481a67a41b3d0d74afaaf851d924c19704ac5c32aa8b38`:
+51 synthetic contracts passed with zero skips in the actual CI `/app` layout,
+cached image, no PYTHONPATH override, read-only filesystem and no network;
+ten selected Build286 identity tests passed. The temporary test container is
+absent after its `--rm` exit. Earlier mocked UI and Product evidence remain reused.
+
+The new immutable Build286 manifest SHA256 is
+`eeb5342dd9728116c7acd005cd418a48516240408b662ca7483bd98ec3765309`,
+Dockerfile SHA256 is
+`3748bf912792348c373f51ed568fd11dd56474d8e9c4bbaefc7175bc38120cb5`.
+All 994 actual input hashes match, the eight current selectors are updated,
+and Build285 bytes remain unchanged. Selector admission receipt SHA256 is
+`32ebe013e534994e7a6e1d731b810ff3e20f8aeed7da46cfd36332d8f1499312`.
+The scoped Tester → independent Reviewer → Root offline acceptance passed.
+Reviewer receipt SHA256 is
+`b8284620d630a575e37a6199490f5cb2a90ff139431f37cc2610b5ebe858ae7c`;
+Root receipt SHA256 is
+`ecf48753173d909b8f8a5daade0ffadec750c7f7a1bfcfb959eddc0a20c00b6d`.
+These are offline observer/identity facts, not successful hosted F6, actual model
+use, merge, image qualification or deployment. Required current-head PR/Full CI
+and successful trusted-main signed/SBOM-bound 14-image handoff remain open.
+
+Fresh deployment preparation has only offline configuration evidence. The pure
+Engineering generator preserves 14 app images, five new volumes/two new networks,
+skips the optional publisher at startup, removes the exact PG dev init bind,
+uses new protected credentials and binds source Compose/secret-guard bytes to the
+qualified source commit. Its first 22-check transform observation predates the
+source-binding addition; the report write was blocked by the source-change guard
+and no original report bytes were overwritten. The transform body is identical
+in the current candidate, with three additional source-binding cases passing.
+Tester receipt SHA256 is
+`41843b3ff35bf60fb30640a5be5c870c8eb7e8d935f4a149bc9fbd87d6fa3309`.
+The manifest was synthetic for this offline test. No actual release attestation,
+protected secret file, storage, production configuration or service was created.
+Actual final-config gates and old-resource preservation checks remain required.
+Phase17 remains OPEN and Phase18 has not started.

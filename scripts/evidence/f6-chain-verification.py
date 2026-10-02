@@ -114,8 +114,10 @@ def _session_call(api_call, session_id: str, trace_id: str, *, timeout: float = 
 
 def _answer_after(body: dict[str, object], prompt: str) -> str | None:
     messages = _messages(body)
+    persisted_prompt = " ".join(prompt.split())
     matches = [index for index, item in enumerate(messages)
-               if item.get("role") == "user" and _body_text(item.get("content")) == prompt]
+               if item.get("role") == "user"
+               and " ".join(_body_text(item.get("content")).split()) == persisted_prompt]
     require(len(matches) <= 1, "agent_user_turn_duplicate")
     if not matches:
         return None
@@ -128,15 +130,31 @@ def _wait_answer(api_call, session_id: str, trace_id: str, prompt: str,
                  required: tuple[str, ...], *, timeout: int = 180) -> tuple[dict[str, object], str]:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        body = _session_call(api_call, session_id, trace_id)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        body = _session_call(api_call, session_id, trace_id, timeout=min(12, remaining))
         answer = _answer_after(body, prompt)
+        messages = _messages(body)
+        conversation = body.get("conversation")
+        status = conversation.get("status") if isinstance(conversation, dict) else None
+        state["answer_wait_observation"] = {
+            "foreground_step": ("fg1" if prompt.startswith("F6-CI:FG1\n") else
+                                "fg2" if prompt.startswith("F6-CI:FG2\n") else "unknown"),
+            "session_status": (status if status in {
+                "active", "unknown", "interrupted", "archived", "failed",
+            } else "other"),
+            "session_message_count": len(messages),
+            "prompt_matched": answer is not None,
+            "assistant_answer_present": bool(answer),
+            "required_answer_present": answer is not None and all(value in answer for value in required),
+        }
         if answer is not None and all(value in answer for value in required):
             return body, answer
-        conversation = body.get("conversation")
         require(not isinstance(conversation, dict)
                 or conversation.get("status") not in {"failed", "interrupted", "archived"},
                 "original_agent_session_failed")
-        time.sleep(1)
+        time.sleep(min(1, max(0, deadline - time.monotonic())))
     raise EvidenceError("agent_answer_not_persisted_before_deadline")
 
 
@@ -191,6 +209,7 @@ def _write_evidence(*, suffix: str = "") -> str:
         "identities": {key: value for key, value in state["identities"].items() if value is not None},
         "checks": state["checks"],
         "structured_agent_audits": state.get("audit_summaries", {}),
+        "answer_wait_observation": state.get("answer_wait_observation"),
         "failure_observation": state.get("failure_observation"),
         "actual_usage_policy": "provider usage omitted by the synthetic Provider; actual model usage and provider attempts remain unknown; RequestGateProxy admission measurements are retained separately",
         "excluded_old_chain": ["ML training/prediction", "native backtest execution", "comparison report", "ResearchTask completion"],
@@ -212,6 +231,7 @@ def _write_evidence(*, suffix: str = "") -> str:
         "project": project,
         "identities": payload["identities"],
         "structured_agent_audits": payload["structured_agent_audits"],
+        "answer_wait_observation": payload["answer_wait_observation"],
         "failure_reconciliation": _failure_observation_summary(state.get("failure_observation")),
     }, sort_keys=True), flush=True)
     if not suffix:
@@ -468,7 +488,8 @@ def _failure_observation_summary(observation: object) -> dict[str, object] | Non
         return None
     return {key: observation.get(key) for key in (
         "classification", "reconcile_mode", "stop_category", "session_reads", "task_reads",
-        "permission_reads", "job_reads", "side_effects_resolved",
+        "permission_reads", "job_reads", "session_status", "session_messages_observed",
+        "answer_wait_observation", "side_effects_resolved",
         "resource_cleanup_is_terminal_proof",
     )}
 
@@ -542,6 +563,14 @@ def _failure_readonly_window(api_call, *, seconds: int) -> None:
         "side_effects_resolved": False,
         "resource_cleanup_is_terminal_proof": False,
     }
+    wait_observation = state.get("answer_wait_observation")
+    if isinstance(wait_observation, dict):
+        observations["answer_wait_observation"] = {
+            key: wait_observation.get(key) for key in (
+                "foreground_step", "session_status", "session_message_count", "prompt_matched",
+                "assistant_answer_present", "required_answer_present",
+            )
+        }
     if mode == "untrusted_identity":
         observations.update(classification="untrusted_identity", stop_category=state.get("failure_category"))
         state["failure_observation"] = observations

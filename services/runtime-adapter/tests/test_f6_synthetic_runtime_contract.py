@@ -207,20 +207,96 @@ def test_foreground_session_wait_uses_exact_gateway_public_session_and_trace(sta
     session_call, wait_answer = functions["_session_call"], functions["_wait_answer"]
     session_id = "conversation_" + "1" * 32
     trace_id = "byq-trace-" + "2" * 32
-    prompt = "F6-CI:" + stage.upper()
+    prompt = "\n".join((
+        "F6-CI:" + stage.upper(),
+        "owner_principal=f6-chain-user",
+        "instruction=match the exact normalized catalog user message",
+    ))
+    catalog_prompt = " ".join(prompt.split())
     requests = []
 
     def product_api(method, path, *, timeout):
         requests.append((method, path, timeout))
-        return _gateway_session_projection(session_id, trace_id, prompt, answer)
+        return _gateway_session_projection(session_id, trace_id, catalog_prompt, answer)
 
     body = session_call(product_api, session_id, trace_id)
     assert body["conversation"]["session_id"] == session_id
     assert wait_answer(product_api, session_id, trace_id, prompt, required, timeout=1) == (body, answer)
-    assert requests == [
-        ("GET", f"/v1/agent/sessions/{session_id}", 12),
-        ("GET", f"/v1/agent/sessions/{session_id}", 12),
+    observation = functions["state"]["answer_wait_observation"]
+    assert observation == {
+        "foreground_step": stage,
+        "session_status": "active",
+        "session_message_count": 2,
+        "prompt_matched": True,
+        "assistant_answer_present": True,
+        "required_answer_present": True,
+    }
+    assert prompt not in repr(observation) and answer not in repr(observation)
+    assert [request[0:2] for request in requests] == [
+        ("GET", f"/v1/agent/sessions/{session_id}"),
+        ("GET", f"/v1/agent/sessions/{session_id}"),
     ]
+    assert requests[0][2] == 12
+    assert 0 < requests[1][2] <= 1
+
+
+@pytest.mark.parametrize("stage", ["fg1", "fg2"])
+def test_answer_after_rejects_changed_prompt_content_after_catalog_normalization(stage):
+    answer_after = _driver_functions()["_answer_after"]
+    session_id = "conversation_" + "3" * 32
+    trace_id = "byq-trace-" + "4" * 32
+    prompt = "\n".join(("F6-CI:" + stage.upper(), "exact instruction=preserve this token"))
+    changed_prompt = prompt.replace("preserve", "altered")
+    body = _gateway_session_projection(
+        session_id, trace_id, " ".join(changed_prompt.split()), "ResearchTask task_1 SignalJob signaljob_1")
+    assert answer_after(body, prompt) is None
+
+
+def test_answer_after_rejects_duplicate_canonicalized_user_turns():
+    answer_after = _driver_functions()["_answer_after"]
+    session_id = "conversation_" + "5" * 32
+    trace_id = "byq-trace-" + "6" * 32
+    prompt = "F6-CI:FG1\ncreate one exact task"
+    body = _gateway_session_projection(
+        session_id, trace_id, " ".join(prompt.split()), "ResearchTask task_1 StrategyVersion artifact_1")
+    body["messages"].insert(1, {"role": "user", "content": " ".join(prompt.split())})
+    with pytest.raises(DriverContractRejected, match="agent_user_turn_duplicate"):
+        answer_after(body, prompt)
+
+
+def test_wait_answer_clamps_each_session_read_and_sleep_to_deadline_and_saves_safe_observation():
+    functions = _driver_functions()
+    clock = _install_fake_deadline(functions)
+    session_id = "conversation_" + "7" * 32
+    trace_id = "byq-trace-" + "8" * 32
+    prompt = "\n".join(("F6-CI:FG1", "owner_principal=f6-chain-user", "private marker must not be saved"))
+    body = _gateway_session_projection(
+        session_id, trace_id, " ".join(prompt.split()), "")
+    body["messages"] = body["messages"][:1]
+    calls = []
+
+    def slow_product_api(method, path, *, timeout):
+        calls.append((method, path, timeout))
+        clock.now += 0.75
+        return body
+
+    with pytest.raises(DriverContractRejected, match="agent_answer_not_persisted_before_deadline"):
+        functions["_wait_answer"](slow_product_api, session_id, trace_id, prompt,
+                                  ("ResearchTask ",), timeout=1)
+    assert len(calls) == 1
+    assert calls[0][0:2] == ("GET", f"/v1/agent/sessions/{session_id}")
+    assert 0 < calls[0][2] <= 1
+    assert clock.now == 1
+    observation = functions["state"]["answer_wait_observation"]
+    assert observation == {
+        "foreground_step": "fg1",
+        "session_status": "active",
+        "session_message_count": 1,
+        "prompt_matched": True,
+        "assistant_answer_present": False,
+        "required_answer_present": False,
+    }
+    assert "private marker" not in repr(observation)
 
 
 def test_session_observer_rejects_wrong_or_missing_projected_identity_and_trace():
@@ -349,6 +425,11 @@ def test_failure_reconcile_confirms_only_complete_closed_scope_and_keeps_usage_u
         stage: {"runtime_root_id": root, "terminal": "completed/closed"}
         for stage, root in (("fg1", "3" * 32), ("fg2", "4" * 32), ("background", "e" * 32))
     }
+    functions["state"]["answer_wait_observation"] = {
+        "foreground_step": "fg1", "session_status": "active", "session_message_count": 2,
+        "prompt_matched": False, "assistant_answer_present": False,
+        "required_answer_present": False,
+    }
     _install_fake_deadline(functions)
     response = _failure_projection(functions, status="settled", revoked=True)
     calls = []
@@ -360,7 +441,10 @@ def test_failure_reconcile_confirms_only_complete_closed_scope_and_keeps_usage_u
     assert observed["request_state"]["request_usage"]["actual_usage"]["input_tokens"] == "unknown"
     summary = functions["_failure_observation_summary"](observed)
     assert summary["classification"] == "healthy_observer_confirmed"
-    assert "request_state" not in summary and "session_messages_observed" not in summary
+    assert "request_state" not in summary
+    assert summary["session_status"] == "active" and summary["session_messages_observed"] == 2
+    assert summary["answer_wait_observation"]["prompt_matched"] is False
+    assert summary["answer_wait_observation"]["assistant_answer_present"] is False
     assert [call[:2] for call in calls] == [
         ("GET", "/v1/agent/sessions/" + functions["state"]["identities"]["conversation_id"]),
         ("GET", "/api/product/research/tasks/" + functions["state"]["identities"]["task_id"]),
