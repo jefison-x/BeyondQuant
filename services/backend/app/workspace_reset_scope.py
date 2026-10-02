@@ -239,14 +239,76 @@ def install_reset_guards(connection) -> None:
       ELSE
         owner_name := row_value->>'owner_principal'; workspace_key := row_value->>'workspace_id';
       END IF;
-      SELECT w.* INTO workspace_row FROM workspaces w JOIN users u ON u.user_id=w.owner_user_id
+      SELECT w.*, u.status AS owner_status, m.status AS membership_status
+        INTO workspace_row FROM workspaces w JOIN users u ON u.user_id=w.owner_user_id
         JOIN workspace_memberships m ON m.workspace_id=w.workspace_id AND m.user_id=u.user_id
         WHERE (owner_name IS NULL OR u.username=owner_name)
           AND (workspace_key IS NULL OR w.workspace_id=workspace_key)
           AND (owner_name IS NOT NULL OR workspace_key IS NOT NULL)
-          AND w.kind='personal' AND u.status='active' AND m.status='active' AND m.role='owner'
-        FOR SHARE OF w;
+          AND w.kind='personal' AND m.role='owner'
+        FOR SHARE OF w, u, m;
       IF workspace_row.workspace_id IS NULL THEN RAISE EXCEPTION 'reset fence owner mismatch'; END IF;
+      IF workspace_row.owner_status <> 'active' OR workspace_row.membership_status <> 'active'
+        OR workspace_row.status <> 'active' THEN
+        -- A disabled identity has no business authority. Its trusted consumer
+        -- may still persist exact terminal facts for an already-bound root.
+        -- Pending Reset uses its separate recorded release-proof path below.
+        IF workspace_row.reset_id IS NULL THEN
+          IF TG_TABLE_NAME='agent_runtime_turns' AND TG_OP='UPDATE' THEN
+            IF OLD.status='active' AND OLD.authority_status='active'
+              AND NEW.status IN ('completed','failed','cancelled','interrupted')
+              AND NEW.authority_status='closed' AND NEW.terminal_sequence > 0
+              AND NEW.terminal_event_sha256 ~ '^[0-9a-f]{64}$'
+              AND (to_jsonb(NEW)-ARRAY['status','authority_status','updated_at','terminal_sequence','terminal_event_sha256'])=
+                  (to_jsonb(OLD)-ARRAY['status','authority_status','updated_at','terminal_sequence','terminal_event_sha256'])
+              AND EXISTS (SELECT 1 FROM product_conversations c
+                WHERE c.owner_principal=OLD.owner_principal AND c.workspace_id=OLD.workspace_id
+                  AND c.runtime_session_id=OLD.session_id AND c.trace_id=OLD.trace_id) THEN RETURN NEW; END IF;
+          END IF;
+          -- The existing tenancy triggers additionally require immutable run
+          -- fields, version+1, the matching closed root, and exact audit detail.
+          IF TG_TABLE_NAME='agent_runs' AND TG_OP='UPDATE' THEN
+            IF OLD.status IN ('active','pending_binding') AND OLD.authority_status='active'
+              AND NEW.status IN ('completed','failed','cancelled','interrupted')
+              AND NEW.authority_status='closed' AND NEW.version=OLD.version+1
+              AND EXISTS (SELECT 1 FROM agent_runtime_turns r
+                WHERE r.root_run_id=OLD.root_run_id AND r.owner_principal=OLD.owner_principal
+                  AND r.workspace_id=OLD.workspace_id AND r.session_id=OLD.session_id
+                  AND r.trace_id=OLD.trace_id AND r.status=NEW.status
+                  AND r.authority_status='closed' AND r.terminal_sequence IS NOT NULL
+                  AND r.terminal_event_sha256 ~ '^[0-9a-f]{64}$') THEN RETURN NEW; END IF;
+          END IF;
+          IF TG_TABLE_NAME='agent_audit' AND TG_OP='INSERT' THEN
+            IF NEW.action='runtime_turn_binding' AND NEW.resource_type='runtime_turn'
+              AND NEW.outcome IN ('completed','failed','cancelled','interrupted')
+              AND EXISTS (SELECT 1 FROM agent_runs a JOIN agent_runtime_turns r ON r.root_run_id=a.root_run_id
+                WHERE a.run_id=NEW.run_id AND a.owner_principal=NEW.owner_principal
+                  AND a.actor_principal=NEW.actor_principal AND a.workspace_id=workspace_row.workspace_id
+                  AND (NEW.workspace_id IS NULL OR NEW.workspace_id=a.workspace_id)
+                  AND r.owner_principal=a.owner_principal AND r.workspace_id=a.workspace_id
+                  AND r.session_id=a.session_id AND r.trace_id=a.trace_id
+                  AND a.status=NEW.outcome AND r.status=a.status
+                  AND a.authority_status='closed' AND r.authority_status='closed'
+                  AND r.terminal_sequence IS NOT NULL AND r.terminal_event_sha256 ~ '^[0-9a-f]{64}$'
+                  AND NEW.resource_id=r.root_run_id AND NEW.detail_json=jsonb_build_object(
+                    'root_run_id',r.root_run_id,'terminal_sequence',r.terminal_sequence)) THEN RETURN NEW; END IF;
+          END IF;
+          IF TG_TABLE_NAME='agent_runtime_receipts' AND TG_OP='INSERT' THEN
+            IF EXISTS (SELECT 1 FROM agent_runtime_turns r
+              JOIN product_conversations c ON c.runtime_session_id=r.session_id
+                AND c.owner_principal=r.owner_principal AND c.workspace_id=r.workspace_id AND c.trace_id=r.trace_id
+              WHERE r.owner_principal=NEW.owner_principal AND r.workspace_id=NEW.workspace_id
+                AND r.session_id=NEW.session_id AND r.trace_id=NEW.trace_id
+                AND r.status IN ('completed','failed','cancelled','interrupted') AND r.authority_status='closed'
+                AND r.terminal_sequence=NEW.sequence AND r.terminal_event_sha256 ~ '^[0-9a-f]{64}$'
+                AND NEW.receipt_json=jsonb_build_object('schema_version','agent-run-lifecycle-receipt.v1',
+                  'root_run_id',r.root_run_id,'sequence',r.terminal_sequence,'event_sha256',r.terminal_event_sha256)) THEN RETURN NEW; END IF;
+          END IF;
+        END IF;
+        IF workspace_row.owner_status <> 'active' OR workspace_row.membership_status <> 'active' THEN
+          RAISE EXCEPTION 'reset fence owner is inactive';
+        END IF;
+      END IF;
       IF TG_TABLE_NAME='users' AND TG_OP='UPDATE' THEN
         default_clear := NEW.preferences IS NULL AND NEW.default_prompt IS NULL;
       END IF;

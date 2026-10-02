@@ -1,96 +1,263 @@
 #!/usr/bin/env python3
-"""Bounded setup/assertions for the isolated F6 real-domain integration test."""
+"""Dedicated F6 CI fixture and read-only AgentRun/audit observer.
+
+The only write action creates the isolated CI user/workspace. The audit action
+uses a transaction explicitly marked READ ONLY and is scoped to that owner,
+Product conversation, ResearchTask, Runtime root, and (for BG) exact receipt.
+"""
+from __future__ import annotations
+
 import json
 import os
+import re
 import sys
-from app.conversation_catalog import ConversationCatalogStore
-from app.research import ResearchStore
-from app.market_data import MarketDataStore
-from app.backtest import membership_fingerprint
-from tests.workspace_helpers import trusted_agent_context
+from typing import Any
 
-if os.environ.get('BYQ_F6_FIXTURE') != '1':
-    raise SystemExit('explicit isolated fixture invocation required')
-owner = 'f6-chain-user'
-action = sys.argv[1]
-payload = json.load(sys.stdin) if action != 'user' else {}
-if action == 'user':
-    trusted_agent_context(owner)
-    print(json.dumps({'owner': owner}))
-elif action == 'bind':
-    catalog = ConversationCatalogStore()
-    conversation = catalog.get(owner, payload['conversation_id'])
-    catalog.close()
-    headers = trusted_agent_context(owner, session_id=conversation['runtime_session_id'], trace_id=conversation['trace_id'])
-    context = {k.removeprefix('x-byq-').replace('-', '_'): v for k, v in headers.items()}
-    store = ResearchStore()
-    task = store.create_task({'owner_principal': owner, 'title': 'F6 自动续接全链验收',
-        'objective': 'After the explicitly approved LightGBM training completes, produce predictions and frozen signals, run the native backtest and compare its measured total return with the confirmed baseline. Save a comparison report before completing this task. Inputs are labelled synthetic integration fixtures.',
-        'trace_id': context['trace_id'], 'idempotency_key': 'f6-chain-task'}, trusted_context=context)
-    market = MarketDataStore()
-    bars = market.list_bars(['000001.SZ', '600000.SH'], '20260312', '20260330', limit=100)
-    assert len(bars) == 38
-    public_bars = [{k: row[k] for k in ('symbol', 'trade_date', 'open', 'high', 'low', 'close')} for row in bars]
-    for row in public_bars:
-        day = row['trade_date']
-        row['trade_date'] = f'{day[:4]}-{day[4:6]}-{day[6:]}'
-    print(json.dumps({'task': task, 'bars': public_bars,
-        'membership_fingerprint': membership_fingerprint(['000001.SZ', '600000.SH'])}))
-    market.close(); store.close()
-elif action == 'checkpoint':
-    store = ResearchStore()
-    store.transition('research_task', payload['task_id'], 'running', 'f6-fixture-checkpoint', progress={
-        'schema_version': 'research-progress.v1', 'stage': 'training',
-        'next_action': 'Wait for the explicitly approved training, then prediction, signals, backtest and comparison',
-        'blocked_reason': None, 'linked_objects': [
-            {'kind': 'artifact', 'id': payload['approval_artifact_id']},
-            {'kind': 'artifact', 'id': payload['baseline_artifact_id']}], 'completion_evidence': []})
-    store.close(); print(json.dumps({'checkpoint': 'saved'}))
-elif action == 'diagnose':
-    # CI diagnostics contain only fixed status categories and counts. Never
-    # print identities, task content, progress text, prompts or receipts.
-    store = ResearchStore()
-    task = store._fetch_one('SELECT * FROM research_tasks WHERE task_id=:task AND owner_principal=:owner',
-        {'task': payload['task_id'], 'owner': owner})
-    budget = task.get('continuation_budget') or []
-    allowed = {'reserved', 'accepted', 'outcome_unknown', 'settled', 'rejected'}
-    statuses = {status: sum(row.get('status') == status for row in budget) for status in sorted(allowed)}
-    statuses['other'] = len(budget) - sum(statuses.values())
-    pending = [row for row in budget if row.get('status') != 'settled']
-    print(json.dumps({'task_complete': task['status'] == 'completed',
-        'budget_status_counts': statuses,
-        'pending_dispatch_started': any((row.get('dispatch_attempts') or 0) > 0 for row in pending),
-        'pending_reconcile_started': any((row.get('reconcile_attempts') or 0) > 0 for row in pending),
-        'pending_dispatch_attempts': max((row.get('dispatch_attempts') or 0 for row in pending), default=0),
-        'pending_reconcile_attempts': max((row.get('reconcile_attempts') or 0 for row in pending), default=0),
-        'prediction_completed': bool(store._execute(
-            "SELECT 1 FROM ml_prediction_runs WHERE task_id=:task AND status='completed' LIMIT 1",
-            {'task': task['task_id']}))}))
-    store.close()
-elif action == 'verify':
-    store = ResearchStore()
-    task = store._fetch_one('SELECT * FROM research_tasks WHERE task_id=:task AND owner_principal=:owner',
-        {'task': payload['task_id'], 'owner': owner})
-    assert task['status'] == 'completed', task['status']
-    budget = task['continuation_budget']
-    assert len(budget) == 3 and len({r['event_key'] for r in budget}) == 3
-    assert all(r['status'] == 'settled' and r['dispatch_attempts'] == 1 for r in budget)
-    assert sum(r['charged_tokens'] for r in budget) <= task['continuation_permission']['token_limit']
-    counts = {}
-    for table in ('ml_training_runs', 'ml_prediction_runs', 'backtest_jobs'):
-        rows = store._execute(f'SELECT status FROM {table} WHERE task_id=:task', {'task': task['task_id']})
-        assert all(r['status'] == 'completed' for r in rows)
-        counts[table] = len(rows)
-    assert counts == {'ml_training_runs': 1, 'ml_prediction_runs': 1, 'backtest_jobs': 2}, counts
-    evidence = task['progress']['completion_evidence']
-    assert len(evidence) == 1
-    report = store.get_artifact(evidence[0])
-    assert report['kind'] == 'research_report' and report['status'] == 'validated'
-    result = report['content']
-    assert result['report_type'] == 'strategy_comparison'
-    assert result['delta_total_return'] == result['candidate']['total_return'] - result['baseline']['total_return']
-    print(json.dumps({'status': 'passed', 'task_id': task['task_id'], 'counts': counts,
-        'turns': len(budget), 'charged_ceiling': sum(r['charged_tokens'] for r in budget), 'evidence': evidence}))
-    store.close()
-else:
-    raise SystemExit('unknown fixture operation')
+
+PROJECT_PATTERN = re.compile(r"byq-ci-stack-[A-Za-z0-9][A-Za-z0-9_-]{0,80}\Z")
+OWNER = "f6-chain-user"
+TASK_PATTERN = re.compile(r"task_[0-9a-f]{32}\Z")
+ARTIFACT_PATTERN = re.compile(r"artifact_[0-9a-f]{32}\Z")
+BACKTEST_TASK_PATTERN = re.compile(r"backtesttask_[0-9a-f]{32}\Z")
+CONVERSATION_PATTERN = re.compile(r"conversation_[0-9a-f]{32}\Z")
+SESSION_PATTERN = re.compile(r"byq-session-[0-9a-f]{32}\Z")
+TRACE_PATTERN = re.compile(r"byq-trace-[0-9a-f]{32}\Z")
+RUNTIME_ROOT_PATTERN = re.compile(r"[0-9a-f]{32}\Z")
+AGENT_RUN_PATTERN = re.compile(r"agent_run_[0-9a-f]{32}\Z")
+RESERVATION_PATTERN = re.compile(r"continuation_[0-9a-f]{32}\Z")
+SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
+
+
+def _required(payload: dict[str, Any], field: str, pattern: re.Pattern[str]) -> str:
+    value = payload.get(field)
+    if not isinstance(value, str) or pattern.fullmatch(value) is None:
+        raise SystemExit("invalid exact F6 observer scope")
+    return value
+
+
+def _not_ready(stage: str, category: str) -> dict[str, str]:
+    return {"schema_version": "f6-agent-audit-readiness.v1", "stage": stage,
+            "status": "not_ready", "category": category}
+
+
+def _check_environment() -> str:
+    if os.environ.get("BYQ_F6_FIXTURE") != "1":
+        raise SystemExit("explicit isolated fixture invocation required")
+    project = os.environ.get("COMPOSE_PROJECT_NAME", "")
+    if not PROJECT_PATTERN.fullmatch(project) or os.environ.get("BYQ_F6_CI_PROJECT") != project:
+        raise SystemExit("dedicated CI project required")
+    return project
+
+
+def _audit_readback(payload: object) -> dict[str, Any]:
+    if not isinstance(payload, dict) or payload.get("action") != "audit":
+        raise SystemExit("only a scoped audit read is supported")
+    stage = payload.get("stage")
+    if stage not in {"fg1", "fg2", "background"}:
+        raise SystemExit("invalid F6 audit stage")
+    task_id = _required(payload, "task_id", TASK_PATTERN)
+    conversation_id = _required(payload, "conversation_id", CONVERSATION_PATTERN)
+    trace_id = _required(payload, "trace_id", TRACE_PATTERN)
+    root_run_id = _required(payload, "runtime_root_id", RUNTIME_ROOT_PATTERN)
+    if payload.get("owner") != OWNER:
+        raise SystemExit("invalid F6 audit owner")
+
+    backtest_task_id = payload.get("backtest_task_id")
+    if stage in {"fg2", "background"}:
+        backtest_task_id = _required(payload, "backtest_task_id", BACKTEST_TASK_PATTERN)
+    elif backtest_task_id is not None:
+        raise SystemExit("unexpected F6 audit scope")
+
+    draft_id = payload.get("strategy_draft_artifact_id")
+    version_id = payload.get("strategy_version_artifact_id")
+    if stage == "fg1":
+        draft_id = _required(payload, "strategy_draft_artifact_id", ARTIFACT_PATTERN)
+        version_id = _required(payload, "strategy_version_artifact_id", ARTIFACT_PATTERN)
+    elif draft_id is not None or version_id is not None:
+        raise SystemExit("unexpected F6 audit scope")
+
+    reservation_id = payload.get("reservation_id")
+    settlement_sha256 = payload.get("settlement_sha256")
+    if stage == "background":
+        reservation_id = _required(payload, "reservation_id", RESERVATION_PATTERN)
+        settlement_sha256 = _required(payload, "settlement_sha256", SHA256_PATTERN)
+    elif reservation_id is not None or settlement_sha256 is not None:
+        raise SystemExit("unexpected F6 audit scope")
+
+    # app.db imports no store and creates no connection/schema. Construct a
+    # dedicated engine from the running Backend's configured URL; do not
+    # instantiate PgStoreMixin/AgentResearchStore because those bootstrap DDL.
+    from sqlalchemy import create_engine, text
+
+    database_url = os.environ.get("BYQ_DATABASE_URL")
+    if not database_url:
+        raise SystemExit("backend database URL unavailable")
+    engine = create_engine(database_url, pool_size=1, max_overflow=0, pool_pre_ping=True, future=True)
+    parameters = {"owner": OWNER, "conversation_id": conversation_id, "trace_id": trace_id,
+                  "task_id": task_id, "root_run_id": root_run_id}
+    try:
+        with engine.connect() as connection:
+            transaction = connection.begin()
+            try:
+                connection.execute(text("SET TRANSACTION READ ONLY"))
+                task_rows = connection.execute(text("""
+                    SELECT t.task_id, t.owner_principal, t.workspace_id, t.conversation_id,
+                           t.trace_id, t.status AS task_status,
+                           c.runtime_session_id, c.owner_principal AS conversation_owner,
+                           c.workspace_id AS conversation_workspace, c.trace_id AS conversation_trace
+                    FROM research_tasks AS t
+                    JOIN product_conversations AS c
+                      ON c.conversation_id = t.conversation_id
+                     AND c.owner_principal = t.owner_principal
+                     AND c.workspace_id = t.workspace_id
+                    WHERE t.task_id = :task_id AND t.owner_principal = :owner
+                      AND t.conversation_id = :conversation_id AND t.trace_id = :trace_id
+                    LIMIT 2
+                """), parameters).mappings().all()
+                if len(task_rows) != 1:
+                    raise SystemExit("exact F6 task/conversation scope not found")
+                task = dict(task_rows[0])
+                runtime_session_id = task.get("runtime_session_id")
+                if (not isinstance(runtime_session_id, str)
+                        or SESSION_PATTERN.fullmatch(runtime_session_id) is None
+                        or task.get("conversation_owner") != OWNER
+                        or task.get("conversation_workspace") != task.get("workspace_id")
+                        or task.get("conversation_trace") != trace_id):
+                    raise SystemExit("exact F6 Product conversation scope changed")
+
+                root_parameters = {**parameters, "workspace_id": task["workspace_id"],
+                                   "session_id": runtime_session_id}
+                root_rows = connection.execute(text("""
+                    SELECT root_run_id, owner_principal, workspace_id, session_id, trace_id,
+                           status, authority_status, terminal_sequence, terminal_event_sha256
+                    FROM agent_runtime_turns
+                    WHERE root_run_id = :root_run_id AND owner_principal = :owner
+                      AND workspace_id = :workspace_id AND session_id = :session_id
+                      AND trace_id = :trace_id
+                    LIMIT 2
+                """), root_parameters).mappings().all()
+                if not root_rows:
+                    root_identity_rows = connection.execute(text("""
+                        SELECT root_run_id, owner_principal, workspace_id, session_id, trace_id
+                        FROM agent_runtime_turns WHERE root_run_id = :root_run_id LIMIT 2
+                    """), {"root_run_id": root_run_id}).mappings().all()
+                    if not root_identity_rows:
+                        transaction.rollback()
+                        return _not_ready(stage, "runtime_root_not_visible")
+                    raise SystemExit("F6 Runtime root exists outside the exact owner/session/workspace/trace scope")
+                if len(root_rows) != 1:
+                    raise SystemExit("F6 Runtime root identity is ambiguous")
+                root = dict(root_rows[0])
+                terminal_digest = root.get("terminal_event_sha256")
+                if (root.get("status") == "active" and root.get("authority_status") == "active"
+                        and root.get("terminal_sequence") is None and terminal_digest is None):
+                    transaction.rollback()
+                    return _not_ready(stage, "runtime_root_active")
+                if (root.get("status") != "completed" or root.get("authority_status") != "closed"
+                        or type(root.get("terminal_sequence")) is not int
+                        or root.get("terminal_sequence") < 1
+                        or not isinstance(terminal_digest, str)
+                        or SHA256_PATTERN.fullmatch(terminal_digest) is None):
+                    raise SystemExit("F6 Runtime root has no exact completed terminal proof")
+
+                run_rows = connection.execute(text("""
+                    SELECT run_id, owner_principal, actor_principal, role_id, role_version,
+                           trace_id, session_id, dsh_run_id, root_run_id, status, authority_status
+                    FROM agent_runs
+                    WHERE root_run_id = :root_run_id AND owner_principal = :owner
+                      AND workspace_id = :workspace_id AND session_id = :session_id
+                      AND trace_id = :trace_id
+                    ORDER BY run_id LIMIT 3
+                """), root_parameters).mappings().all()
+                if len(run_rows) != 1:
+                    raise SystemExit("F6 Runtime root does not identify one AgentRun")
+                run = dict(run_rows[0])
+                if (not isinstance(run.get("run_id"), str)
+                        or AGENT_RUN_PATTERN.fullmatch(run["run_id"]) is None
+                        or run.get("actor_principal") != "byq-product-agent-" + runtime_session_id
+                        or run.get("role_id") != "quant_orchestrator"
+                        or run.get("status") != "completed"
+                        or run.get("authority_status") != "closed"):
+                    raise SystemExit("F6 AgentRun terminal or owner context is invalid")
+
+                if root.get("root_run_id") != root_run_id:
+                    raise SystemExit("F6 Runtime root identity changed during read")
+
+                audit_rows = connection.execute(text("""
+                    SELECT audit_id, run_id, owner_principal, actor_principal, action, outcome,
+                           resource_type, resource_id
+                    FROM agent_audit
+                    WHERE run_id = :agent_run_id AND owner_principal = :owner
+                    ORDER BY created_at ASC, audit_id ASC LIMIT 33
+                """), {"agent_run_id": run["run_id"], "owner": OWNER}).mappings().all()
+                if len(audit_rows) > 32:
+                    raise SystemExit("F6 AgentRun audit event count exceeds the exact bounded contract")
+                events = [dict(row) for row in audit_rows]
+
+                settlement = None
+                if stage == "background":
+                    receipt_rows = connection.execute(text("""
+                        SELECT budget.item->>'reservation_id' AS reservation_id,
+                               (budget.item->>'grant_version')::integer AS grant_version,
+                               budget.item->>'run_id' AS run_id,
+                               budget.item->>'status' AS status,
+                               budget.item->>'outcome' AS outcome,
+                               budget.item->>'event_key' AS event_key,
+                               budget.item->>'settlement_sha256' AS settlement_sha256,
+                               (budget.item->>'dispatch_attempts')::integer AS dispatch_attempts
+                        FROM research_tasks AS t
+                        CROSS JOIN LATERAL jsonb_array_elements(
+                            COALESCE(t.continuation_budget, '[]'::jsonb)
+                        ) AS budget(item)
+                        WHERE t.task_id = :task_id AND t.owner_principal = :owner
+                          AND t.workspace_id = :workspace_id AND t.conversation_id = :conversation_id
+                          AND budget.item->>'reservation_id' = :reservation_id
+                        LIMIT 2
+                    """), {**root_parameters, "reservation_id": reservation_id}).mappings().all()
+                    if len(receipt_rows) != 1:
+                        raise SystemExit("exact F6 settled request receipt not found")
+                    settlement = dict(receipt_rows[0])
+                    if (settlement.get("run_id") != root_run_id
+                            or settlement.get("grant_version") != 1
+                            or settlement.get("status") != "settled"
+                            or settlement.get("outcome") != "completed"
+                            or settlement.get("dispatch_attempts") != 1
+                            or settlement.get("settlement_sha256") != settlement_sha256):
+                        raise SystemExit("F6 settlement is not bound to the exact Runtime root")
+
+                transaction.rollback()
+            except BaseException:
+                transaction.rollback()
+                raise
+    finally:
+        engine.dispose()
+
+    return {
+        "schema_version": "f6-agent-run-audit.v1", "stage": stage,
+        "task": {key: task[key] for key in (
+            "task_id", "owner_principal", "workspace_id", "conversation_id", "trace_id", "task_status")},
+        "runtime_root": root, "runtime_session_id": runtime_session_id,
+        "agent_run": run, "events": events, "settlement": settlement,
+    }
+
+
+def main() -> None:
+    _check_environment()
+    if len(sys.argv) != 2:
+        raise SystemExit("one exact fixture action is required")
+    action = sys.argv[1]
+    if action == "user":
+        from tests.workspace_helpers import trusted_agent_context
+
+        trusted_agent_context(OWNER)
+        print(json.dumps({"owner": OWNER}, sort_keys=True))
+        return
+    if action == "audit":
+        payload = json.load(sys.stdin)
+        print(json.dumps(_audit_readback(payload), sort_keys=True, separators=(",", ":")))
+        return
+    raise SystemExit("unsupported F6 fixture action")
+
+
+if __name__ == "__main__":
+    main()

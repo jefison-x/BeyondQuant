@@ -244,7 +244,7 @@ class WorkspaceTenancyStore(PgStoreMixin):
                 WHERE u.username = NEW.owner_principal AND u.status = 'active'
                   AND w.status = 'active' AND m.status = 'active'
                 FOR SHARE OF w;
-              -- ADR-0063: no generic bypass. Only an immutable, already-bound
+              -- No generic bypass. Only an immutable, already-bound
               -- run may follow its trusted persisted root into a terminal state.
               IF resolved IS NULL AND TG_TABLE_NAME = 'agent_runs' AND TG_OP = 'UPDATE' THEN
                 IF OLD.status IN ('active', 'pending_binding')

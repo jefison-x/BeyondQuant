@@ -59,7 +59,25 @@ assert not os.access(runtime, os.W_OK)
 PYCODE
 
 echo "== MCP contract and auth wall =="
-contract_workspace="$("${compose[@]}" exec -T backend python -c 'from tests.workspace_helpers import trusted_agent_context; print(trusted_agent_context("mcp-contract")["x-byq-workspace-id"])')"
+contract_workspace="$("${compose[@]}" exec -T backend python - <<'PYCODE'
+from app.conversation_catalog import ConversationCatalogStore
+from tests.workspace_helpers import trusted_product_agent_context
+
+# The contract client uses a Product Agent identity. Research writes must bind
+# its original owner/workspace/session/trace conversation, just as production.
+headers = trusted_product_agent_context(
+    "mcp-contract", actor="byq-product-agent-session_mcp_contract",
+    session_id="session_mcp_contract", trace_id="trace_mcp_contract",
+)
+catalog = ConversationCatalogStore()
+try:
+    conversation = catalog.create("mcp-contract", headers["x-byq-session-id"], headers["x-byq-trace-id"])
+    assert conversation["workspace_id"] == headers["x-byq-workspace-id"]
+finally:
+    catalog.close()
+print(headers["x-byq-workspace-id"])
+PYCODE
+)"
 "${compose[@]}" exec -T \
   -e BYQ_MCP_CONTRACT_OWNER=mcp-contract \
   -e BYQ_MCP_CONTRACT_WORKSPACE="$contract_workspace" \

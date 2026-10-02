@@ -16,6 +16,7 @@ watchdog, including tool idle time.
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import socket
@@ -794,6 +795,8 @@ class _GateProxyHandler(BaseHTTPRequestHandler):
                         status = response.status
                         content_type = response.headers.get("content-type", "application/json")
                         data = _read_response(response, gate)
+                        if proxy._closed:
+                            raise OSError("continuation request proxy closed during provider response")
                     finally:
                         proxy._unregister_upstream(response)
             else:
@@ -822,7 +825,7 @@ class _GateProxyHandler(BaseHTTPRequestHandler):
                     transport_outcome_unknown = True
                 else:
                     timed_out = True
-            except (urllib.error.URLError, OSError):
+            except (urllib.error.URLError, OSError, http.client.HTTPException):
                 if gate.continuation_mode:
                     transport_outcome_unknown = True
             finally:
@@ -836,7 +839,7 @@ class _GateProxyHandler(BaseHTTPRequestHandler):
                 transport_outcome_unknown = True
             else:
                 timed_out = True
-        except (urllib.error.URLError, OSError):
+        except (urllib.error.URLError, OSError, http.client.HTTPException):
             # No complete provider response leaves the external outcome
             # unknown. Stop this request scope so the DSH retry policy cannot
             # replay it; legacy judgment transport retains its old behavior.
@@ -944,10 +947,16 @@ class RequestGateProxy:
                 self._upstream_responses.clear()
                 self._client_sockets.clear()
             for response in responses:
-                try:
-                    response.close()  # type: ignore[attr-defined]
-                except Exception:
-                    pass
+                # The handler owns HTTPResponse.close(). Closing its fp here
+                # races read1() and can erase the unknown-result receipt with
+                # an AttributeError. Interrupt only the socket; the handler
+                # records the transport outcome and closes its own response.
+                sock = _response_socket(response)
+                if sock is not None:
+                    try:
+                        sock.shutdown(socket.SHUT_RDWR)
+                    except OSError:
+                        pass
             for connection in clients:
                 try:
                     connection.shutdown(socket.SHUT_RDWR)

@@ -1,7 +1,7 @@
-"""ADR-0085 P4 grant -> execution-plan reference binding (isolated PostgreSQL).
+"""Current Clean Break plan authority; historical grant samples stay non-dispatchable.
 
-The trusted plan-creation seam must never build a plan from a stale grant or bind
-an ambiguous/wrong artifact. These are fail-able tests over the real store.
+A continuation permission cannot create a plan or adopt its artifact references.
+Foreground caller-confirmed plan references are separate from action authorization.
 """
 
 from __future__ import annotations
@@ -10,7 +10,6 @@ import hashlib
 import json
 import os
 import threading
-import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -82,20 +81,16 @@ def _grant(store, task, entries: list[dict], *, revoked: bool = False,
                    "WHERE task_id = :t", {"l": ledger, "t": task})
 
 
-def test_single_validated_version_is_deterministically_bound():
+def test_validated_version_grant_cannot_automatically_create_a_plan():
     store, task, context = _setup()
     try:
         artifact_id, digest = _artifact(store, task)
         _grant(store, task, [{"artifact_id": artifact_id, "content_sha256": digest}])
-        plan = store.ensure_execution_plan(task, trusted_context=context)
-        # The external plan projection is bounded and does not expose references;
-        # verify the persisted plan's internal trusted references instead.
-        assert "references" not in plan
-        persisted = store._fetch_one(
-            "SELECT plan FROM research_execution_plans WHERE task_id = :t",
-            {"t": task})["plan"]
-        assert persisted["references"]["strategy_version"] == {"strategy_version": artifact_id}
-        assert persisted["stage"] == "strategy_draft"
+        with pytest.raises(InvalidTransition, match="permission cannot authorize execution plan creation"):
+            store.ensure_execution_plan(task, trusted_context=context)
+        assert store._fetch_one(
+            "SELECT COUNT(*) AS c FROM research_execution_plans WHERE task_id=:t",
+            {"t": task})["c"] == 0
     finally:
         store.close()
 
@@ -204,48 +199,22 @@ def test_missing_pinned_digest_fails_closed():
         store.close()
 
 
-def _artifact_read_is_waiting_on_a_lock(store, *, timeout: float = 5.0) -> bool:
-    """True once another session is observed waiting on an artifacts row lock.
-
-    A row-lock wait appears in ``pg_locks`` as an ungranted ``transactionid``/
-    ``tuple`` lock while the relation lock stays granted, so the reliable signal is
-    a backend with ``wait_event_type = 'Lock'`` whose current statement reads the
-    confirmed artifacts row.
-    """
-
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        row = store._fetch_one(
-            """SELECT COUNT(*) AS c FROM pg_stat_activity
-               WHERE wait_event_type = 'Lock' AND query ILIKE '%FROM artifacts%'""")
-        if row and row["c"]:
-            return True
-        time.sleep(0.02)
-    return False
-
-
-def test_plan_creation_is_serialized_against_a_concurrent_artifact_supersede():
-    # Real two-transaction race: transaction A supersedes the confirmed artifact
-    # and holds its row lock (FOR UPDATE) uncommitted. The plan transaction reads
-    # the same artifact FOR SHARE, so it must block until A commits and then fail
-    # closed; without the lock it would read the stale `validated` row and insert a
-    # plan that references an already-superseded artifact.
+def test_concurrent_supersede_does_not_revive_legacy_grant_plan_authority():
     store, task, context = _setup(owner="grant-race-supersede")
     planner = ResearchStore()
+    worker = None
     try:
         artifact_id, digest = _artifact(store, task)
         _grant(store, task, [{"artifact_id": artifact_id, "content_sha256": digest}])
         outcome: dict = {}
-        started = threading.Event()
 
         def create_plan():
-            started.set()
             try:
                 outcome["plan"] = planner.create_execution_plan(
                     task, {"idempotency_key": "plan-race-supersede"},
                     trusted_context=context, require_active_grant=True,
                     bind_grant_references=True)
-            except Exception as error:  # asserted below
+            except Exception as error:
                 outcome["error"] = error
 
         with store._transaction() as connection:
@@ -253,29 +222,25 @@ def test_plan_creation_is_serialized_against_a_concurrent_artifact_supersede():
                              _connection=connection)
             worker = threading.Thread(target=create_plan)
             worker.start()
-            assert started.wait(timeout=5)
-            # The plan transaction must be observed waiting on the artifact lock,
-            # proving the FOR SHARE read conflicts with the in-flight supersede.
-            assert _artifact_read_is_waiting_on_a_lock(store), \
-                "plan creation was not observed waiting on the artifact lock"
-            assert worker.is_alive()
+            # The retired automatic-grant path must reject without adopting an
+            # artifact, even while a conflicting producer transition is pending.
+            worker.join(timeout=5)
+            assert not worker.is_alive()
+            assert isinstance(outcome.get("error"), InvalidTransition)
+            assert "permission cannot authorize" in str(outcome["error"])
+            assert "plan" not in outcome
             assert store._fetch_one(
-                "SELECT COUNT(*) AS c FROM research_execution_plans WHERE task_id = :t",
+                "SELECT COUNT(*) AS c FROM research_execution_plans WHERE task_id=:t",
                 {"t": task})["c"] == 0
-        # A committed `superseded`; the plan transaction unblocks and re-reads.
-        worker.join(timeout=10)
-        assert not worker.is_alive()
-        assert isinstance(outcome.get("error"), InvalidTransition)
-        assert "plan" not in outcome
-        assert store._fetch_one(
-            "SELECT COUNT(*) AS c FROM research_execution_plans WHERE task_id = :t",
-            {"t": task})["c"] == 0
+        assert store.get_artifact(artifact_id)["status"] == "superseded"
     finally:
+        if worker is not None:
+            worker.join(timeout=5)
         planner.close()
         store.close()
 
 
-def test_plan_created_before_a_later_supersede_keeps_its_valid_reference():
+def test_foreground_plan_keeps_its_recorded_reference_after_a_later_supersede():
     # The safe ordering: the plan commits while the artifact is still validated,
     # and a later supersede is a separate transition that cannot retroactively
     # invalidate the already-created plan reference.
@@ -283,8 +248,12 @@ def test_plan_created_before_a_later_supersede_keeps_its_valid_reference():
     try:
         artifact_id, digest = _artifact(store, task)
         _grant(store, task, [{"artifact_id": artifact_id, "content_sha256": digest}])
-        plan = store.ensure_execution_plan(task, trusted_context=context)
+        plan = store.create_execution_plan(task, {
+            "idempotency_key": "foreground-plan",
+            "references": {"strategy_version": {"strategy_version": artifact_id}},
+        }, trusted_context=context)
         assert plan["stage"] == "strategy_draft"
+        assert store.ensure_execution_plan(task, trusted_context=context) == plan
         store.transition("artifact", artifact_id, "superseded", "later-supersede")
         persisted = store._fetch_one(
             "SELECT plan FROM research_execution_plans WHERE task_id = :t",

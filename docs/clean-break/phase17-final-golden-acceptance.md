@@ -198,3 +198,105 @@ that is permission denial, not address-in-use. Docker daemon port publication
 and exact resource absence must be rechecked immediately before deployment.
 Protected container identities/mounts/networks and old configuration hashes
 are privately sealed. Actual deployment is still NOT_RUN; Phase17 is OPEN.
+
+
+### Current-contract CI repair gate
+
+The exact-head PR run `36947144904` and Full run `36947162641` on the
+previous candidate both failed. Their sanitized logs and failures remain;
+no successful hosted gate is inferred from the following offline qualification.
+The remaining keyless F6 CI driver is being aligned with ADR-0090 before a new
+stable-head dispatch; no new actual model/F6/A–D execution is part of this repair.
+
+The bounded Root-owned repair has passed Tester → independent Reviewer → Root:
+102 Backend, 53 Gateway, 39 Runtime, 15 frontend, 10 stdlib request-contract and
+one historical governance test, plus frontend build. The stdlib conversion
+retains every former parameter-table assertion without a host pytest dependency.
+The archived v0.9 source assertion now reads its existing historical source
+oracle; it does not require obsolete implementation in current Product code.
+Current v2 grants, exact Artifact/lineage identity and owner-isolation assertions
+remain. Legacy unresolved liabilities are read/reconcile-only, never permission
+for a new dispatch or plan adoption.
+
+Two product defects are corrected: request shutdown no longer closes the
+handler-owned HTTP response concurrently with `read1`, which could lose the
+unknown-result receipt; the Reset fence permits only already-bound exact terminal
+facts for disabled identities, preserving the separate reset-release proof path
+and rejecting unrelated writes, forged proof and reopening. Current positive-path
+A–D/v13 F6 evidence remains scoped reusable; this is not a new live pass.
+
+Browser tests now use the current fixed request profile and a dedicated ordinary
+CI Reset identity. Required successful Reset still expects HTTP200 and exact
+seven-day archive/identity preservation; existing HTTP409 protections are retained.
+MCP smoke creates the original Product conversation for its exact structured
+owner/workspace/session/trace rather than bypassing lineage. These browser/smoke
+changes have offline syntax/discovery qualification only; actual hosted execution
+remains required. Frontend dependency fixes are limited to DOMPurify3.4.16 and
+brace-expansion2.1.7. Root's authorized npm install/ci reported zero vulnerabilities;
+the independent extra npm audit was NOT_RUN after automatic approval review
+rejected its registry call. The required hosted audit remains OPEN.
+
+| Immutable gate record | SHA256 |
+|---|---|
+| `/tmp/byq-phase17-ci-backend-gateway-tester-20261002/report.json` | `6dbbd8561e14f29a3d8a9f98b13821d54a32086693abccf1738354426c9a62dc` |
+| `/tmp/byq-phase17-ci-root-repairs-review-20261002.json` | `2bb166d469022f8b2014553ad212878d1574b3a54ad2a28abca7e4568967392d` |
+| `/tmp/byq-phase17-ci-root-repairs-root-20261002.json` | `8f516ea8cb7e9b9f4c841b817547f9d795323567cbcd1e758e834bc08ee4ce34` |
+
+The dedicated unit PG used only newly created tmpfs storage and its own internal
+network. Both exact owned resources were removed after testing. One subsequent
+protection assertion failed without retaining its first raw delta; its cause is
+UNKNOWN and the failure receipt remains immutable. One bounded read-only
+reconciliation found all27 protected container identities, mounts, networks and
+states and old configuration hashes unchanged. No old SQL, resource mutation,
+volume removal or cleanup replay occurred. Independent cleanup review passed in
+`/tmp/byq-phase17-ci-root-repairs-cleanup-review-20261002.json`, SHA
+`48dfbe9c384909355bf95fd9692ec05730db45755893c7e1ad1543b8297cbf24`.
+
+F6 CI offline gates, new immutable current-source build identity, stable-head
+PR/Full hosted CI, live merge preflight and trusted-main attested fresh deployment
+remain OPEN. Phase17 remains OPEN and Phase18 is not started.
+
+
+### F6 current-contract offline observer gate
+
+The current keyless F6 observer has scoped Tester → independent Reviewer → Root
+PASS: 19 offline cases, zero skips, exact frozen source pins, Python/Shell and
+embedded-Python parsing, and two browser tests discovered without execution.
+The complete FG1/FG2/BG sample paths and negative cases cover repeated exact
+Authorization results, both runtime binding events, bounded terminal-proof
+readback, current Task response status and the persisted four-reference Signal
+Artifact lineage. The production RequestGateProxy remains on the background
+path; the synthetic Provider changes only its upstream and foreground child
+routing. Missing actual Provider usage stays unknown.
+
+The rejected first candidate and each correction/report remain immutable.
+Independent Tester original/focused receipts are `ec257398746c3cd6a2a5f29ca5a8ef08561a906b51d03a73097b87cc6739032b`
+and `381cd321e09e9a27701528631e7355aaf498f75b6b3a9777b7a6cdae96ab005d`.
+Reviewer receipt: `4bac746efbe131dd95d3fdb47dee581a890b2babb09b5742d9778c305fc0d587`.
+Root receipt: `44c1495f658b8eb5c388d0a7d6dc0a8666cb6be38df3716ac40288c40efb9ce0`.
+All private receipts are outside Git. These are offline observer evidence;
+existing actual A–D/v13 F6 reuse is separate, and this is not a new live F6 PASS.
+
+Current source has a new immutable candidate build `dsh-0.1.5rc1-post-u8.283`,
+manifest SHA256 `1a0cbd6134ff4e9f1b8333bb9bd57c8e7768a6a2f80d04c2638b796a003537f6`
+with 992 inputs, Dockerfile SHA256
+`a9c6b521ae46f39b371093b1f6375519569462f78787253cf43aa401bcd8f9b0`.
+Build283 identity tests, exact-head PR/Full CI, trusted-main attested image
+qualification and deployment remain separate gates. Build282 manifest and
+Dockerfile bytes are preserved as historical evidence; the F6 CI function is
+unchanged by the current build selector update.
+
+The maintainer explicitly accepted only the two named historical secret-scan
+fingerprints and fresh empty `byq-v010-*` production storage. That session
+acceptance supplements the already granted push/PR/merge/deployment scope; it
+creates no general scan allowance, old-data migration authority or later-phase
+authority. Phase17 remains OPEN until the required current remote acceptance.
+
+
+Build283 identity qualification subsequently passed Tester → independent
+Reviewer → Root: ten selected cases (four build revision, five retirement,
+one CI dependency boundary). Tester `e3438e250c147c265981e0b2e348e9093237daa8a63c5e10aae54208c402e1c0`,
+Reviewer `a9e2c4005cb342c62be9328f61b768b8a39fad468ef4e0083b356c1c8f9c4484`,
+Root `f643aabe8ccac4b5726ec50209fb2b478d2f207610b40c9d419389d7e4e988da`.
+No image was built by this offline gate. Required current-head hosted PR/Full
+CI, image qualification and fresh deployment remain OPEN.

@@ -101,6 +101,22 @@ fingerprints and fresh empty `byq-v010-*` production storage. Deployment require
 verified images and fresh exact-resource classification; protected old
 DB/state/backup are not deployment/migration inputs. No deployment
 or Phase18 execution has occurred. [Repository gate evidence](../clean-break/phase17-final-golden-acceptance.md#repository-gate-progress--2026-10-02).
+2026-10-02 current-contract CI repair: Root-owned bounded source and fixture
+corrections passed Tester → independent Reviewer → Root offline qualification
+(102 Backend,53 Gateway,39 Runtime,15 frontend,10+1 stdlib/historical tests and
+frontend build). Request-close unknown-result accounting and exact disabled-root
+terminal closure are corrected without broadening business authority. The
+ordinary-user Reset/browser, Product MCP lineage and fixed v2 profile fixtures
+retain real hosted gates. Earlier failed CI/observer records and unknowns remain;
+owned tmpfs unit resources are removed and a later bounded protected-resource
+readback passed. The current F6 observer now has a separate scoped offline
+Tester → independent Reviewer → Root PASS (19 cases, zero skips); the new
+immutable source candidate is Build283, with ten selected identity cases and
+independent Reviewer/Root offline PASS. Hosted PR/Full CI, merge and attested
+fresh deployment remain OPEN. Existing
+A–D/v13 F6 actual evidence is reused; no new real chain or Phase18 work is claimed.
+See [CI repair gate](../clean-break/phase17-final-golden-acceptance.md#current-contract-ci-repair-gate)
+and [F6 observer gate](../clean-break/phase17-final-golden-acceptance.md#f6-current-contract-offline-observer-gate).
 No later phase is authorized.**
 Under [ADR-0089](../architecture/adr/ADR-0089-clean-break-gpu-acceptance-scope.md),
 GPU execution and GPU checkpoint/restart are `N/A` for BYQ 0.10 acceptance;

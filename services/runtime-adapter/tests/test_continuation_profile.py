@@ -335,6 +335,7 @@ def test_closing_proxy_interrupts_an_active_slow_upstream_and_client():
     provider_closed = threading.Event()
     client_done = threading.Event()
     client_errors = []
+    client_responses = []
 
     class SlowProvider(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -367,7 +368,8 @@ def test_closing_proxy_interrupts_an_active_slow_upstream_and_client():
 
     def request():
         try:
-            httpx.post(proxy.base_url + "/chat/completions", content=_provider_body(), timeout=10)
+            client_responses.append(httpx.post(
+                proxy.base_url + "/chat/completions", content=_provider_body(), timeout=10))
         except httpx.HTTPError as error:
             client_errors.append(type(error).__name__)
         finally:
@@ -384,8 +386,29 @@ def test_closing_proxy_interrupts_an_active_slow_upstream_and_client():
         client_thread.join(timeout=1)
         assert not client_thread.is_alive()
         assert provider_closed.wait(2)
-        assert client_errors
-        assert gate.request_usage(tool_calls=0)["admission_usage"]["provider_calls"] == 1
+        # Closing the upstream may finish the handler before the client socket
+        # is closed. A structured failure and a transport error are both valid;
+        # a successful partial model response must never be forwarded.
+        assert len(client_errors) + len(client_responses) == 1
+        if client_responses:
+            response = client_responses[0]
+            assert response.status_code == 502
+            assert response.json()["error"]["code"] == "provider_outcome_unknown"
+        # A disconnected client can finish before the handler persists its
+        # receipt. Observe that independent completion with a bounded read.
+        receipt_deadline = time.monotonic() + 2
+        while not any(row.get("phase") == "completed" for row in gate.receipts()):
+            assert time.monotonic() < receipt_deadline
+            time.sleep(0.01)
+        usage = gate.request_usage(tool_calls=0)
+        assert usage["admission_usage"]["provider_calls"] == 1
+        assert usage["admission_usage"]["provider_attempts"] == 1
+        assert usage["actual_usage"]["provider_attempts"] == "unknown"
+        assert usage["actual_usage"]["completeness"] == "unknown"
+        assert any(row.get("reason") == "provider_outcome_unknown" for row in gate.receipts())
+        with pytest.raises(RequestGateBlocked, match="cancelled"):
+            gate.before_request(_provider_body())
+        assert gate.request_usage(tool_calls=0)["admission_usage"]["provider_attempts"] == 1
     finally:
         proxy.close()
         provider.shutdown()

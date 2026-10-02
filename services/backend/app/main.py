@@ -588,8 +588,8 @@ def append_conversation_message(conversation_id: str, payload: dict[str, Any], r
 
 @app.post("/internal/agent-lifecycle/{conversation_id}")
 def consume_agent_lifecycle(conversation_id: str, payload: dict[str, Any], request: Request) -> dict:
-    # ADR-0063: this private consumer alone may close existing disabled-owner
-    # roots. The store validates durable ownership and terminal-only authority.
+    # This private consumer may record exact terminal facts for an existing
+    # disabled-owner root. The store validates ownership and terminal-only authority.
     # Ordinary conversation and Agent APIs retain active-context validation.
     owner = request.headers.get("x-byq-owner-principal")
     if not owner:

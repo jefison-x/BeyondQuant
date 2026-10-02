@@ -1,3 +1,4 @@
+import json
 import os
 
 import pytest
@@ -104,8 +105,11 @@ def test_disabled_cleanup_rollback_and_database_guards(part, monkeypatch):
     for mutation in ["actor_principal='forged'", "trace_id='forged'", "version=version+2"]:
         with pytest.raises(DBAPIError):
             with main.agent_store.engine.begin() as connection:
-                connection.execute(text("UPDATE agent_runtime_turns SET status='failed',terminal_sequence=2"))
-                assignments = "status='failed'," + ("version=version+1," if not mutation.startswith("version") else "") + mutation
+                connection.execute(text("""UPDATE agent_runtime_turns SET status='failed',authority_status='closed',
+                    terminal_sequence=2,terminal_event_sha256=:digest"""),
+                    {"digest": lifecycle_receipt(terminal)["event_sha256"]})
+                assert connection.execute(text("SELECT authority_status FROM agent_runtime_turns")).scalar_one() == "closed"
+                assignments = "status='failed',authority_status='closed'," + ("version=version+1," if not mutation.startswith("version") else "") + mutation
                 connection.execute(text("UPDATE agent_runs SET " + assignments))
     monkeypatch.setattr(main.agent_store, "_record_runtime_binding_audit", original)
     assert consume(client, path, consumer, terminal).status_code == 200
@@ -119,6 +123,37 @@ def test_disabled_cleanup_rollback_and_database_guards(part, monkeypatch):
             main.agent_store._record_audit_row(run, action="runtime_turn_binding", outcome="failed",
                 resource_type="runtime_turn", resource_id="a" * 32,
                 detail={"root_run_id": "a" * 32, "terminal_sequence": 999}, connection=connection)
+
+
+@pytest.mark.parametrize("part", ["user", "workspace", "membership"])
+def test_disabled_terminal_facts_cannot_forge_receipts_or_reopen_a_root(part):
+    client, ctx, consumer, registration, path = setup()
+    assert consume(client, path, consumer, registration).status_code == 200
+    run = client.post("/v1/agents/runs", headers=ctx,
+        json={"role_id": "quant_orchestrator", "idempotency_key": "original-key"}).json()["run"]
+    disable_identity(part)
+    terminal = {"schema_version": "agent-run-lifecycle.v1", "root_run_id": "a" * 32,
+                "sequence": 2, "outcome": "completed"}
+    assert consume(client, path, consumer, terminal).status_code == 200
+    # Match the terminal sequence and require a fence rejection. A duplicate
+    # primary-key error must not hide acceptance of forged proof fields.
+    for change in ({"root_run_id": "b" * 32}, {"event_sha256": "0" * 64}, {"extra": True}):
+        with pytest.raises(DBAPIError, match="reset fence owner is inactive|personal workspace is disabled for reset"):
+            with main.agent_store._transaction() as connection:
+                connection.execute(text("""INSERT INTO agent_runtime_receipts
+                    (owner_principal,workspace_id,session_id,trace_id,sequence,receipt_json)
+                    VALUES ('alice',:workspace,'session-lifecycle','trace-lifecycle',2,CAST(:receipt AS jsonb))"""),
+                    {"workspace": ctx["x-byq-workspace-id"],
+                     "receipt": json.dumps({**lifecycle_receipt(terminal), **change})})
+    with pytest.raises(DBAPIError):
+        with main.agent_store.engine.begin() as connection:
+            connection.execute(text("UPDATE agent_runtime_turns SET status='active',authority_status='active'"))
+    with pytest.raises(DBAPIError):
+        with main.agent_store.engine.begin() as connection:
+            connection.execute(text("UPDATE agent_runs SET status='active',authority_status='active',version=version+1"))
+    assert main.agent_store._fetch_one("SELECT status FROM agent_runs WHERE run_id=:run", {"run": run["run_id"]})["status"] == "completed"
+    assert main.agent_store._fetch_one("SELECT count(*) AS n FROM agent_runtime_receipts")["n"] == 2
+    assert main.agent_store._fetch_one("SELECT count(*) AS n FROM agent_audit WHERE action='runtime_turn_binding' AND outcome='completed'")["n"] == 1
 
 
 def test_disabled_unbound_run_is_not_guessed_or_registered():
