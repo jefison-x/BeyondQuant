@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import threading
 import time
 from contextvars import ContextVar
@@ -31,7 +32,38 @@ _REHYDRATION_CLOSE = "[/BYQ_CONVERSATION_REHYDRATION]"
 _CURRENT_USER_OPEN = "[CURRENT_USER_MESSAGE]"
 _CURRENT_USER_CLOSE = "[/CURRENT_USER_MESSAGE]"
 _REHYDRATION_SCHEMA_VERSION = "conversation-rehydration.v1"
+_RUNTIME_SNAPSHOT_PREFIX = (
+    "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\n"
+)
+_SKILL_CATALOG_HEADER = (
+    "<system-reminder>\n"
+    "A skill is a reusable set of task-specific instructions. The following skills are available in this session:\n\n"
+    "<available_skills>\n"
+)
+_SKILL_CATALOG_FOOTER = (
+    "\n</available_skills>\n\n"
+    "If the user names a skill, or the task clearly matches a skill's description, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.\n"
+    "A user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool again for that skill.\n"
+    "</system-reminder>"
+)
 _BACKGROUND_INSTRUCTION_PREFIX = "BYQ trusted read-only task-ready follow-up for exact task "
+_BACKGROUND_INSTRUCTION_TEMPLATE = (
+    _BACKGROUND_INSTRUCTION_PREFIX + "{task_id}. "
+    "Use only byq_research_get to read this exact ResearchTask and byq_backtest_task_get "
+    "to read the exact BacktestTask linked to the completed ready signal below. "
+    "Exact BacktestTask ID: {backtest_task_id}. "
+    "Do not create or update domain objects, request approvals, execute jobs, browse the web, "
+    "delegate, or access another task. Summarize only facts returned by these exact read tools. "
+    "Ready signal: {ready_signal}"
+)
+DIAGNOSTIC_PATH = "/tmp/byq-f6-provider-diagnostics.jsonl"
+DIAGNOSTIC_SCHEMA_VERSION = "byq.f6.synthetic-provider-diagnostic.v1"
+DIAGNOSTIC_MAX_RECORDS = 256
+DIAGNOSTIC_STAGES = frozenset({"fg1", "fg2", "background", "unknown"})
+DIAGNOSTIC_OUTCOMES = frozenset({
+    "response_written", "fixture_rejected", "request_rejected", "handler_error",
+})
+DIAGNOSTIC_RESPONSE_KINDS = frozenset({"tool_call", "completion", "none"})
 
 FG1_SEQUENCE = (
     "byq_agent_run_start",
@@ -64,6 +96,147 @@ BG_SEQUENCE = (
 
 class F6FixtureRejected(RuntimeError):
     """A fixed, sanitized category; never include prompts or tool payloads."""
+
+
+FIXTURE_REJECTION_CODES = frozenset({
+    "agent_action_not_authorized",
+    "agent_audit_result_missing",
+    "agent_audit_result_scope_mismatch",
+    "agent_authorization_sequence_invalid",
+    "agent_run_not_active",
+    "agent_run_not_registered",
+    "background_backtest_read_out_of_scope",
+    "background_ready_event_invalid",
+    "background_ready_result_mismatch",
+    "background_request_gate_proxy_not_preserved",
+    "background_research_read_out_of_scope",
+    "background_scope_invalid",
+    "background_scope_missing",
+    "background_sequence_exceeded",
+    "backtest_task_lineage_invalid",
+    "continuation_proxy_official_upstream_required",
+    "f6_instruction_role_invalid",
+    "f6_stage_instruction_ambiguous",
+    "f6_tool_sequence_exceeded",
+    "fg1_sequence_exceeded",
+    "fg2_scope_invalid",
+    "fg2_sequence_exceeded",
+    "foreground_request_gate_state_invalid",
+    "isolated_ci_project_required",
+    "mcp_action_outcome_unconfirmed",
+    "mcp_action_result_ambiguous",
+    "mcp_identity_missing_or_invalid",
+    "mcp_result_unrecognized",
+    "mcp_tool_error",
+    "non_mcp_tool_in_f6_turn",
+    "provider_current_user_instruction_missing",
+    "provider_current_user_message_missing",
+    "provider_diagnostics_file_invalid",
+    "provider_messages_invalid",
+    "provider_request_invalid",
+    "provider_request_size_invalid",
+    "provider_supplemental_context_marker_rejected",
+    "provider_tool_arguments_invalid",
+    "provider_tool_history_invalid",
+    "rehydrated_current_message_malformed",
+    "required_mcp_tool_not_offered",
+    "required_prompt_field_missing",
+    "required_prompt_json_invalid",
+    "research_task_create_result_invalid",
+    "research_task_lineage_invalid",
+    "runtime_child_environment_missing",
+    "signal_job_task_link_invalid",
+    "strategy_artifacts_missing",
+    "strategy_draft_not_validated",
+    "strategy_scope_invalid",
+    "strategy_version_not_validated",
+    "synthetic_provider_marker_required",
+    "synthetic_provider_must_bind_loopback",
+    "synthetic_runtime_flag_required",
+    "unexpected_f6_tool_arguments",
+    "unexpected_f6_tool_sequence",
+    "unsupported_foreground_or_background_prompt",
+})
+DIAGNOSTIC_REJECTION_CODES = FIXTURE_REJECTION_CODES | {"unclassified_fixture_rejection"}
+
+
+def _diagnostic_rejection_code(exc: F6FixtureRejected) -> str:
+    category = exc.args[0] if len(exc.args) == 1 else None
+    if type(category) is str and category in FIXTURE_REJECTION_CODES:
+        return category
+    return "unclassified_fixture_rejection"
+
+
+class _ProviderDiagnostics:
+    """Bounded private JSONL evidence for actual loopback Provider dispatches."""
+
+    def __init__(self, descriptor: int) -> None:
+        self._descriptor = descriptor
+        self._lock = threading.Lock()
+        self._dispatches_seen = 0
+        self._rows_written = 0
+        self._overflow_written = False
+
+    @classmethod
+    def create(cls, path: str = DIAGNOSTIC_PATH) -> "_ProviderDiagnostics":
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_APPEND
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path, flags, 0o600)
+        try:
+            metadata = os.fstat(descriptor)
+            if (not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1
+                    or stat.S_IMODE(metadata.st_mode) != 0o600):
+                raise F6FixtureRejected("provider_diagnostics_file_invalid")
+        except BaseException:
+            os.close(descriptor)
+            raise
+        return cls(descriptor)
+
+    @staticmethod
+    def _write_line(descriptor: int, record: dict[str, Any]) -> None:
+        payload = (json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+        offset = 0
+        while offset < len(payload):
+            offset += os.write(descriptor, payload[offset:])
+
+    def record_dispatch(self, *, stage: str, outcome: str, response_kind: str,
+                        rejection_code: str | None, tool_call_count: int) -> None:
+        with self._lock:
+            self._dispatches_seen = min(self._dispatches_seen + 1, DIAGNOSTIC_MAX_RECORDS)
+            if self._rows_written < DIAGNOSTIC_MAX_RECORDS - 1:
+                safe_stage = stage if stage in DIAGNOSTIC_STAGES else "unknown"
+                safe_outcome = outcome if outcome in DIAGNOSTIC_OUTCOMES else "handler_error"
+                safe_response_kind = (response_kind if response_kind in DIAGNOSTIC_RESPONSE_KINDS
+                                      else "none")
+                safe_code = (rejection_code if type(rejection_code) is str
+                             and rejection_code in DIAGNOSTIC_REJECTION_CODES else None)
+                count_is_bounded = type(tool_call_count) is int and 0 <= tool_call_count <= 256
+                safe_tool_count = tool_call_count if count_is_bounded else 256
+                self._write_line(self._descriptor, {
+                    "schema_version": DIAGNOSTIC_SCHEMA_VERSION,
+                    "record_type": "dispatch",
+                    "sequence": self._dispatches_seen,
+                    "stage": safe_stage,
+                    "outcome": safe_outcome,
+                    "response_kind": safe_response_kind,
+                    "rejection_code": safe_code,
+                    "tool_call_count": safe_tool_count,
+                    "tool_call_count_capped": not count_is_bounded,
+                })
+                self._rows_written += 1
+                return
+            if not self._overflow_written:
+                self._write_line(self._descriptor, {
+                    "schema_version": DIAGNOSTIC_SCHEMA_VERSION,
+                    "record_type": "overflow",
+                    "dispatches_at_least": DIAGNOSTIC_MAX_RECORDS,
+                    "first_omitted_dispatch": DIAGNOSTIC_MAX_RECORDS,
+                })
+                self._rows_written += 1
+                self._overflow_written = True
+
+    def close(self) -> None:
+        os.close(self._descriptor)
 
 
 def validate_environment(environment: dict[str, str] | None = None) -> str:
@@ -104,6 +277,35 @@ def _has_instruction_marker(text: str) -> bool:
     ))
 
 
+def _is_skill_catalog(text: str) -> bool:
+    if (not text.startswith(_SKILL_CATALOG_HEADER) or not text.endswith(_SKILL_CATALOG_FOOTER)
+            or text.count("<system-reminder>") != 1 or text.count("</system-reminder>") != 1
+            or text.count("<available_skills>") != 1 or text.count("</available_skills>") != 1):
+        return False
+    entries_text = text[len(_SKILL_CATALOG_HEADER):-len(_SKILL_CATALOG_FOOTER)]
+    if not entries_text or "\r" in entries_text:
+        return False
+    names: set[str] = set()
+    for line in entries_text.split("\n"):
+        match = re.fullmatch(r"- `([A-Za-z0-9][A-Za-z0-9_.:-]{0,100})`: ([^\r\n]+)", line)
+        if match is None or match.group(1) in names:
+            return False
+        names.add(match.group(1))
+    return bool(names)
+
+
+def _is_supplemental_user_context(text: str) -> bool:
+    runtime_candidate = text.startswith(_RUNTIME_SNAPSHOT_PREFIX)
+    catalog_candidate = text.startswith("<system-reminder>")
+    if not runtime_candidate and not catalog_candidate:
+        return False
+    if _has_instruction_marker(text) or _has_rehydration_marker(text):
+        raise F6FixtureRejected("provider_supplemental_context_marker_rejected")
+    if runtime_candidate:
+        return bool(text[len(_RUNTIME_SNAPSHOT_PREFIX):].strip())
+    return _is_skill_catalog(text)
+
+
 def _extract_current_user_prompt(text: str) -> str | None:
     if not _has_rehydration_marker(text):
         return None
@@ -133,7 +335,7 @@ def _instruction_stages(text: str) -> list[str]:
     stages.extend(["fg1"] * len(re.findall(r"(?m)^F6-CI:FG1[ \t]*\r?$", text)))
     stages.extend(["fg2"] * len(re.findall(r"(?m)^F6-CI:FG2[ \t]*\r?$", text)))
     stages.extend(["background"] * len(re.findall(
-        rf"(?m)^{re.escape(_BACKGROUND_INSTRUCTION_PREFIX)}task_[0-9a-f]{{32}}[ \t]*\r?$",
+        rf"{re.escape(_BACKGROUND_INSTRUCTION_PREFIX)}task_[0-9a-f]{{32}}\.",
         text,
     )))
     return stages
@@ -152,6 +354,8 @@ def _selected_instruction(messages: object) -> tuple[str, str, int]:
         if role != "user":
             if _has_instruction_marker(text) or _has_rehydration_marker(text):
                 non_user_instruction_seen = True
+            continue
+        if _is_supplemental_user_context(text):
             continue
         user_messages.append((index, text))
     if not user_messages:
@@ -194,17 +398,26 @@ def _json_line(prompt: str, name: str) -> dict[str, Any]:
 
 
 def _background_scope(prompt: str) -> dict[str, str]:
-    task_matches = re.findall(r"BYQ trusted read-only task-ready follow-up for exact task (task_[0-9a-f]{32})", prompt)
-    backtest_matches = re.findall(r"Exact BacktestTask ID: (backtesttask_[0-9a-f]{32})", prompt)
-    ready_matches = re.findall(r"Ready signal: (\{[^\n]+\})", prompt)
-    if len(task_matches) != 1 or len(backtest_matches) != 1 or len(ready_matches) != 1:
+    before_task, remainder = _BACKGROUND_INSTRUCTION_TEMPLATE.split("{task_id}", 1)
+    after_task, remainder = remainder.split("{backtest_task_id}", 1)
+    after_backtest, after_signal = remainder.split("{ready_signal}", 1)
+    pattern = (
+        re.escape(before_task) + r"(?P<task_id>task_[0-9a-f]{32})" + re.escape(after_task)
+        + r"(?P<backtest_task_id>backtesttask_[0-9a-f]{32})" + re.escape(after_backtest)
+        + r"(?P<ready_signal>\{[^\r\n]+\})" + re.escape(after_signal)
+    )
+    match = re.fullmatch(pattern, prompt)
+    if match is None:
         raise F6FixtureRejected("background_scope_missing")
-    task_id, backtest_task_id = task_matches[0], backtest_matches[0]
+    task_id = match.group("task_id")
+    backtest_task_id = match.group("backtest_task_id")
+    serialized_event = match.group("ready_signal")
     try:
-        event = json.loads(ready_matches[0])
+        event = json.loads(serialized_event)
     except (ValueError, TypeError):
         raise F6FixtureRejected("background_ready_event_invalid") from None
-    if not isinstance(event, dict):
+    if (not isinstance(event, dict)
+            or json.dumps(event, sort_keys=True, separators=(",", ":")) != serialized_event):
         raise F6FixtureRejected("background_ready_event_invalid")
     job_id = event.get("identity")
     job_match = SIGNAL_JOB_PATTERN.fullmatch(job_id) if isinstance(job_id, str) else None
@@ -798,27 +1011,53 @@ def _install_f6_provider_routes(loopback_url: str) -> None:
 
 def main() -> None:
     validate_environment()
+    diagnostics = _ProviderDiagnostics.create()
 
     class Provider(BaseHTTPRequestHandler):
         def log_message(self, *_: object) -> None:
             return
 
         def do_POST(self) -> None:
+            stage = "unknown"
+            outcome = "request_rejected"
+            response_kind = "none"
+            rejection_code: str | None = None
+            tool_call_count = 0
             try:
                 length = int(self.headers.get("content-length", "0"))
                 if length <= 0 or length > 2 * 1024 * 1024:
                     raise F6FixtureRejected("provider_request_size_invalid")
-                body = json.loads(self.rfile.read(length))
+                try:
+                    body = json.loads(self.rfile.read(length))
+                except (TypeError, ValueError):
+                    raise F6FixtureRejected("provider_request_invalid") from None
                 if not isinstance(body, dict):
                     raise F6FixtureRejected("provider_request_invalid")
+                stage, _, _ = _selected_instruction(body.get("messages"))
                 action = next_action(body)
+                tool_call_count = 1 if action is not None else 0
+                response_kind = "tool_call" if action is not None else "completion"
                 response = _sse_completion(body, action)
                 self.send_response(200)
                 self.send_header("content-type", "text/event-stream")
                 self.send_header("content-length", str(len(response)))
                 self.end_headers()
                 self.wfile.write(response)
+                outcome = "response_written"
+            except F6FixtureRejected as exc:
+                rejection_code = _diagnostic_rejection_code(exc)
+                outcome = ("request_rejected" if rejection_code in {
+                    "provider_request_invalid", "provider_request_size_invalid",
+                } else "fixture_rejected")
+                # Never include prompts, cookies, credentials, MCP arguments or
+                # raw responses in logs or the error body.
+                print("f6 scripted provider rejected request: " + rejection_code, flush=True)
+                try:
+                    self.send_error(400, "synthetic F6 contract rejected the request")
+                except OSError:
+                    pass
             except Exception as exc:
+                outcome = "handler_error"
                 # Never include prompts, cookies, credentials, MCP arguments or
                 # raw responses in logs or the error body.
                 print("f6 scripted provider rejected request: " + type(exc).__name__, flush=True)
@@ -826,24 +1065,36 @@ def main() -> None:
                     self.send_error(400, "synthetic F6 contract rejected the request")
                 except OSError:
                     pass
+            finally:
+                self.server.diagnostics.record_dispatch(
+                    stage=stage, outcome=outcome, response_kind=response_kind,
+                    rejection_code=rejection_code, tool_call_count=tool_call_count,
+                )
 
         def do_GET(self) -> None:
             self.send_error(405, "method not allowed")
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Provider)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    loopback_url = f"http://127.0.0.1:{server.server_port}"
+    server: ThreadingHTTPServer | None = None
+    thread: threading.Thread | None = None
     try:
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Provider)
+        server.diagnostics = diagnostics
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        loopback_url = f"http://127.0.0.1:{server.server_port}"
         _install_f6_provider_routes(loopback_url)
         from app import main as runtime_main
         import uvicorn
 
         uvicorn.run(runtime_main.app, host="0.0.0.0", port=8400)
     finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
+        if server is not None:
+            if thread is not None:
+                server.shutdown()
+            server.server_close()
+        if thread is not None:
+            thread.join(timeout=2)
+        diagnostics.close()
 
 
 if __name__ == "__main__":

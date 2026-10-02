@@ -334,7 +334,7 @@ prepare_ci_compose_env() {
   export BYQ_FEEDBACK_HUB_URL=""
   # ADR-0069: daily suites use the supported bundled runtime only.
   # Archived rollback images are never rebuilt or executed by routine CI.
-  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-288-candidate
+  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-289-candidate
   export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1
   export BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml
   export BYQ_DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-0.1.5rc1
@@ -750,6 +750,8 @@ check_f6_chain() {
       --network none -e PYTHONDONTWRITEBYTECODE=1 \
       -e BYQ_F6_DRIVER_PATH=/app/tests/f6-chain-verification.py \
       -e BYQ_F6_FIXTURE_PATH=/app/tests/f6-chain-fixture.py \
+      -e BYQ_F6_BACKEND_SOURCE_PATH=/app/backend/research_continuation.py \
+      -v "$REPO_ROOT/services/backend/app/research_continuation.py:/app/backend/research_continuation.py:ro" \
       -v "$REPO_ROOT/services/runtime-adapter:/app" -v "$REPO_ROOT/packages:/app/packages" -w /app \
       -v "$REPO_ROOT/scripts/evidence/f6-chain-verification.py:/app/tests/f6-chain-verification.py:ro" \
       -v "$REPO_ROOT/scripts/evidence/f6-chain-fixture.py:/app/tests/f6-chain-fixture.py:ro" \
@@ -768,6 +770,13 @@ check_f6_chain() {
     if [[ "${COMPOSE_PROJECT_NAME:-}" != "$expected_project" ]]; then
       bad "F6 current scoped Compose project guard during restore"
       return 1
+    fi
+    if (( f6_stack_touched )); then
+      # Capture only the fixture's closed diagnostic schema before replacement.
+      # Missing/partial records never prove that a model or business call did not run.
+      if ! run_interruptible python3 "$REPO_ROOT/scripts/ci/f6-provider-diagnostics.py" --project "$expected_project"; then
+        printf '%s\n' 'F6 provider diagnostics: collector did not complete; calls and outcomes remain unknown'
+      fi
     fi
     export COMPOSE_FILE="$original_compose"
     if (( f6_stack_touched )); then

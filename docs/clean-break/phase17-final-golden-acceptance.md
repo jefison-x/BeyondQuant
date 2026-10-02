@@ -725,3 +725,156 @@ remains reused. The separately prepared Engineering deployment scripts retain
 their own gate and cannot substitute for trusted-main attestation, actual image
 bindings, protected-resource admission or fresh-storage deployment evidence.
 Phase17 OPEN; Phase18 NOT_STARTED.
+
+
+## Build288 hosted FG1 failure
+
+Build288 source `773029241568aef34d56edff7d3056ae4dd6228c` completed
+PR36987450286 and Full36987679467 with F6 integration FAIL; all component lanes
+passed. Both chains stopped at FG1 after accepted Root/current prompt persistence:
+one session message, active conversation and no assistant answer before the
+bounded deadline. Closeout performed two session reads, no captured Task/Job/
+permission reads, and retained `accepted_root_terminal_unobserved` / UNKNOWN.
+No absence of domain effects is established. FG2/BG were not reached; no root
+is replayed. Build287's earlier exact FG1 authority PASS remains historical.
+
+Completed failure receipt:
+`/tmp/byq-phase17-build288-hosted-failure-classification-20261002.json`,
+SHA256 `bea97b3fedaee7f6f34bf5f7303b7ad5b32e8311f71f5de4e0036de5a6a00b39`.
+It binds both final run conclusions and four protected uploaded log hashes.
+PR accepted FG1 root: `dc0ddadf4d9d408aa2b47233aebefbc1`.
+Full accepted FG1 root: `514bf3d9b0694cc9961ca46378ee5fe9`.
+
+Pure AST reconstruction of the actual driver FG1 with synthetic IDs passes the
+current selector and its first scripted action. Empty initial public context
+leaves that input unchanged at the Adapter boundary; compatibility calls
+`session.run(content)`. Uploaded logs preserve no native Provider request shape,
+request count or fixture error category, so they cannot distinguish rejection
+from no request or another Runtime wait. The hosted FG1 cause is unproven.
+
+A distinct unreached BG mismatch is source-proven: the actual Backend
+`research_continuation.py` instruction assignment concatenates trusted prefix,
+exact Task ID, policy prose, BacktestTask ID and ready JSON into one paragraph.
+Pure expression evaluation with synthetic IDs yields zero anchored stage matches
+in the current fixture; the old selector and existing scope parser accept it.
+The hand-written test sample instead has separate marker/ID lines. This omitted
+producer shape does not explain FG1; it must be corrected before future BG
+qualification. Full scripted/offline PASS remains limited to its tested inputs.
+
+New chains and CI dispatches are paused. The next diagnostic is a bounded keyless
+pinned-native input-shape observation using only synthetic data/loopback sinks,
+with no Domain tools, external model or old calls. Its scope/admission and actual
+result remain separate from F6 acceptance. Existing A–D/v13 F6 is not repeated.
+Merge, trusted-main release, fresh config/storage/deployment and Phase17 closeout
+remain OPEN. Phase18 NOT_STARTED.
+
+
+## Pinned-native F6 input diagnosis and bounded repair
+
+2026-10-02, while new whole-chain F6/CI dispatches remained paused, Root
+observed the paired `deepseek-harness-sdk` / runtime-bin `0.1.5rc1` native
+process in a dedicated network-none, read-only container. Current Adapter and
+contracts came from the frozen Build288 source snapshot; the FG1 input was
+constructed once from the actual driver AST using synthetic identities. A
+loopback MCP sink accepted initialize/tools-list only and returned no domain
+tools. A loopback Provider received at most one POST and returned fixed terminal
+SSE. No existing service/database, external model, Job, market download or
+unknown accepted request was used/replayed. Provider bodies, headers, system
+prompts and raw SDK errors were never persisted.
+
+The probe setup failures are preserved. Python module launch and CLI semver
+needed correction. Root then separated the original JSON-RPC error from SDK
+stderr: the fixed binary's public `cannot create effect on inactive context`
+message was hash-matched, without recording the error text. Fixed metadata
+identified cache-directory creation failure, followed by native `.node` shared
+object mapping failure. A dedicated writable cache tmpfs removed ENOENT;
+changing only that cache mount to exec allowed session initialization. An
+initial 32 MiB cache then exhausted during the turn (`ENOSPC`, statvfs free=0),
+while session tmpfs remained free. With 128 MiB cache the native turn completed;
+actual cache use was 39,366,656 bytes. These are the offline probe's environment
+failures; they are not attributed to hosted CI. Every owned probe container was
+removed after its bounded observation. Earlier failed/synthetic observations
+remain separate from the final result.
+
+The successful native projection contains four messages: system, the exact
+submitted FG1 user message, a runtime-context user snapshot, and a skill-catalog
+user message. The original fixture selects the last user message and rejects
+this observed input with `provider_current_user_instruction_missing`. The
+fixed binary's public renderers and a second structural-only capture confirm
+both supplemental formats. This proves an affected native input-boundary defect;
+it does not prove the missing hosted request had exactly the same body or sole
+failure cause. The two Build288 accepted roots remain UNKNOWN and unreplayed.
+
+| Scoped evidence | Private receipt and SHA256 |
+|---|---|
+| Original native projection / old selector rejection, Provider1, business MCP0 | `/tmp/byq-phase17-native-input-projection-context-shape-20261002/native-module-execution-result.json` — `2cf7a6e2d66434e8e6b6afdcc2abf3e252af53e0bacfa86109ec758ab73c6fb5` |
+| Current frozen selector: Provider1, exact FG1 hash, index1, error none, idle, cleanup confirmed | `/tmp/byq-phase17-native-current-selector-qualification-20261002/native-module-execution-result.json` — `af68d1f6605b789996c289e537e1f0672356ea863ac3fdcecd42dfde7641f040` |
+| Worker:87 offline contracts, zero skips; initial assertion failure retained | `/tmp/byq-phase17-f6-provider-fixture-v1-20261002/report.json` — `dd2eb5e01fe8d1dd2a99b954919c641b6650001ec5579de9bbb70065c419922a` |
+| Independent collector Tester:11 passed, shell syntax/diff clean; initial5 FAIL/1 ERROR retained | `/tmp/byq-phase17-f6-provider-diagnostics-tester-rerun-20261002/report.json` — `987e3a7fef6dab22c8200ab386bf2f5618b3f0accc3a403e9de12ba9b4404bb5` |
+
+The fixture now ignores only the confirmed exact initial skill catalog and
+runtime-snapshot formats, rejects instruction/rehydration markers within them,
+and still rejects unknown/latest non-F6 user text rather than falling back to
+an old marker. FG1/FG2/BG exact action, resource, run, audit and lineage checks
+remain. The Backend BG instruction is tested through its actual AST assignment,
+with a precise read-only single-file source mount; absent producer source fails
+the contract. The fixture never imports or executes Backend.
+
+Provider diagnostics use one private O_EXCL/0600 JSONL file, closed fields and
+rejection enums, at most255 dispatch rows plus one overflow marker. The CI
+collector binds the exact scoped Runtime container and validates all rows in
+memory before printing safe JSON to the existing redacted checks log. It reads
+before runtime replacement. Missing, empty, partial, invalid or overflow
+observations retain unknown total calls/business outcomes; no raw runtime logs
+are exported. Diagnostic records are not business authority or a PASS verdict.
+
+The scoped offline repair passed independent Tester, independent Reviewer and
+Root admission. Tester ran the canonical `/app` contract in the pinned cached
+image:87 passed, zero skipped, byte-identical staging and exact container cleanup;
+collector11, shell syntax and diff checks passed. The initial collector failure
+and two Tester stage setup failures remain preserved. No actual F6 ran in this gate.
+
+| Offline gate | Private receipt and SHA256 |
+|---|---|
+| Independent Tester | `/tmp/byq-phase17-f6-synthetic-contract-tester-20261002/tester-report.json` — `5d8bd83fd5ad6509ad57fa8517dd86b10e2cafe82de7d2763d18d6c83bde5b12` |
+| Independent Reviewer | `/tmp/byq-phase17-f6-provider-fixture-independent-review-20261002.json` — `a4105228566146cca179ecb45fc6c9263bee5b24d8ea0081725d8171ecf99a99` |
+| Root scoped admission | `/tmp/byq-phase17-f6-offline-repair-root-admission-20261002.json` — `e194a448848d8d0e1ef0c80fe4cdc15f6c0ce3be244e2b0ae1aa88521254886e` |
+
+Native initial input selection is
+qualified only for this synthetic loopback observation. It is not a successful
+F6 domain chain, external model qualification or current-head hosted CI PASS.
+Build288 remains immutable; a new immutable candidate and required exact-head
+CI gates remain necessary after admission. No push/CI dispatch/merge/deployment
+was performed during this diagnosis; existing A–D and actual v13 F6 are reused.
+
+## Build289 candidate following offline input diagnosis
+
+The scoped repair receives new immutable `dsh-0.1.5rc1-post-u8.289`:
+manifest SHA256 `46f61f64cfef2ddbd24e61840ef5b82ff8214750370afc1aa9837492c7262476`,
+Dockerfile SHA256 `cf9473522a7fb788a853e268e2f68d74b7cde2f881610a44a3f8f8aedc103f99`.
+Its996 input files include the new closed diagnostic collector and tests. The
+paired SDK/runtime remains0.1.5rc1. Eight current selectors change288 to289;
+Build288 is registered as frozen and its manifest/Dockerfile bytes are unchanged.
+The new Dockerfile differs only in its exact build identity COPY.
+
+Build-selector/source-binding passed Tester → independent Reviewer → Root
+limited offline admission:10 selected identity cases, all996 source hashes,
+dev-check, shell syntax and diff checks passed. The accepted87/0 fixture and
+collector11 contracts are reused across this mechanical identity delta.
+
+| Candidate gate | Private receipt and SHA256 |
+|---|---|
+| Independent Tester | `/tmp/byq-phase17-build289-tester-20261002/report.json` — `804138ea217fddedcff1e715eb61c691f5dc124837948a662f633a3f84149b21` |
+| Independent Reviewer | `/tmp/byq-phase17-build289-preparation-20261002/reviewer-report.json` — `8bcd1e6b8007bced59ea916f0534c3385d628f046d8b77df622151ba0be2f7a3` |
+| Root candidate admission | `/tmp/byq-phase17-build289-root-admission-20261002.json` — `f5208d07b37313f1d42c2d93a3953916891caa307e54a2fe4e79d54a8c01455b` |
+ The
+PR remains Draft. Before another push, read-only checks found no active branch
+CI and no diagnostic container with this probe's ownership label. Old accepted
+FG1 roots remain UNKNOWN and unreplayed. After candidate admission, one ordinary
+PR run is required; explicit final Full CI follows only if that head's PR run
+passes. A failed chain is classified before another attempt. No valid A–D or
+actual v13 F6 is rerun for this fixture repair. Required hosted integration and
+final phase gates remain separate from the reused real evidence.
+
+Phase17 stays OPEN. Trusted-main images, fresh-empty deployment and Phase18 have
+not run at this candidate boundary.

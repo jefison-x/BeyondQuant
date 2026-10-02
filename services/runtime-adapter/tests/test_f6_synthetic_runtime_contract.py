@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import sys
 import time
 import types
@@ -25,7 +26,15 @@ from tests.f6_synthetic_runtime import (
     FG1_SEQUENCE,
     FG2_SEQUENCE,
     F6FixtureRejected,
+    FIXTURE_REJECTION_CODES,
+    DIAGNOSTIC_MAX_RECORDS,
+    DIAGNOSTIC_REJECTION_CODES,
+    DIAGNOSTIC_SCHEMA_VERSION,
+    _ProviderDiagnostics,
     _authorize,
+    _background_scope,
+    _diagnostic_rejection_code,
+    _instruction_stages,
     _normalize_tool_result,
     _selected_instruction,
     _sse_completion,
@@ -789,13 +798,106 @@ def _prompt_for(stage: str) -> str:
             'execution={"initial_capital":100000,"commission_rate":0.0003}',
             "order_quantity=100", "backtest_task_idempotency_key=f6-backtest-key",
         ))
-    ready = {"identity": signal_job_id, "kind": "signal_producer_jobs", "status": "completed",
-             "result_artifact_id": signal_snapshot_id}
-    return "\n".join((
-        f"BYQ trusted read-only task-ready follow-up for exact task {task_id}",
-        f"Exact BacktestTask ID: {backtest_task_id}",
-        "Ready signal: " + json.dumps(ready, sort_keys=True, separators=(",", ":")),
-    ))
+    ready = {"data_ready": True, "identity": signal_job_id,
+             "kind": "signal_producer_jobs", "result_artifact_id": signal_snapshot_id,
+             "status": "completed", "updated_at": "2026-10-02T00:00:00+00:00"}
+    return _backend_background_instruction(task_id, ready)
+
+
+def _backend_instruction_path() -> Path:
+    source_path = os.environ.get("BYQ_F6_BACKEND_SOURCE_PATH")
+    if not source_path:
+        raise AssertionError("current Backend instruction source mount is required")
+    path = Path(source_path)
+    if not path.is_file():
+        raise AssertionError("current Backend instruction source mount is unavailable")
+    return path
+
+
+def _backend_instruction_parts(node: ast.AST) -> list[tuple[str, object]]:
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return _backend_instruction_parts(node.left) + _backend_instruction_parts(node.right)
+    if isinstance(node, ast.Constant) and type(node.value) is str:
+        return [("literal", node.value)]
+    if (isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name)
+            and node.value.id == "task" and isinstance(node.slice, ast.Constant)
+            and node.slice.value == "task_id"):
+        return [("task_id", None)]
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id == "task_id_from_signal_job" and len(node.args) == 1
+            and not node.keywords and isinstance(node.args[0], ast.Subscript)
+            and isinstance(node.args[0].value, ast.Name) and node.args[0].value.id == "event"
+            and isinstance(node.args[0].slice, ast.Constant)
+            and node.args[0].slice.value == "identity"):
+        return [("backtest_task_id", None)]
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name) and node.func.value.id == "json"
+            and node.func.attr == "dumps" and len(node.args) == 1
+            and isinstance(node.args[0], ast.Name) and node.args[0].id == "event"
+            and len(node.keywords) == 2):
+        keyword_values = {keyword.arg: ast.literal_eval(keyword.value) for keyword in node.keywords}
+        if keyword_values == {"sort_keys": True, "separators": (",", ":")}:
+            return [("ready_signal", None)]
+    raise AssertionError("Backend instruction AST contains an unsupported expression")
+
+
+def _backend_background_instruction(task_id: str, event: dict[str, Any]) -> str:
+    source_path = _backend_instruction_path()
+    tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+    assignments = [node for node in ast.walk(tree) if isinstance(node, ast.Assign)
+                   and any(isinstance(target, ast.Name) and target.id == "instruction"
+                           for target in node.targets)]
+    if len(assignments) != 1:
+        raise AssertionError("Backend task-ready instruction assignment is not unique")
+    parts = _backend_instruction_parts(assignments[0].value)
+    expected_kinds = ["literal", "task_id", "literal", "backtest_task_id", "literal", "ready_signal"]
+    if [kind for kind, _value in parts] != expected_kinds:
+        raise AssertionError("Backend task-ready instruction AST changed shape")
+    expected_literals = [
+        ("BYQ trusted read-only task-ready follow-up for exact task ",
+         ". Use only byq_research_get to read this exact ResearchTask and byq_backtest_task_get "
+         "to read the exact BacktestTask linked to the completed ready signal below. "
+         "Exact BacktestTask ID: "),
+        (". Do not create or update domain objects, request approvals, execute jobs, browse the web, "
+         "delegate, or access another task. Summarize only facts returned by these exact read tools. "
+         "Ready signal: ",),
+    ]
+    if (parts[0][1] != expected_literals[0][0]
+            or parts[2][1] != expected_literals[0][1]
+            or parts[4][1] != expected_literals[1][0]):
+        raise AssertionError("Backend task-ready instruction text changed")
+    identity = event.get("identity")
+    signal_match = re.fullmatch(r"signaljob_([0-9a-f]{32})", identity) if isinstance(identity, str) else None
+    if signal_match is None:
+        raise AssertionError("Synthetic ready event has no exact signal-job identity")
+    ready_signal = json.dumps(event, sort_keys=True, separators=(",", ":"))
+    rendered = []
+    replacements = {
+        "task_id": task_id,
+        "backtest_task_id": "backtesttask_" + signal_match.group(1),
+        "ready_signal": ready_signal,
+    }
+    for kind, value in parts:
+        rendered.append(str(value) if kind == "literal" else replacements[kind])
+    return "".join(rendered)
+
+
+def _native_runtime_snapshot(body: str = "Runtime profile: bounded F6 test session.") -> str:
+    return "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\n" + body
+
+
+def _native_skill_catalog(entries: list[tuple[str, str]] | None = None) -> str:
+    available = entries or [("f6-contract", "Bounded offline test instructions.")]
+    lines = "\n".join(f"- `{name}`: {description}" for name, description in available)
+    return (
+        "<system-reminder>\n"
+        "A skill is a reusable set of task-specific instructions. The following skills are available in this session:\n\n"
+        "<available_skills>\n" + lines
+        + "\n</available_skills>\n\n"
+        "If the user names a skill, or the task clearly matches a skill's description, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.\n"
+        "A user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool again for that skill.\n"
+        "</system-reminder>"
+    )
 
 
 def _provider_tools():
@@ -883,17 +985,9 @@ def _append_provider_tool_result(messages: list, stage: str, prompt: str,
                      "content": [{"type": "text", "text": json.dumps(wrapped, sort_keys=True)}]})
 
 
-def _drive_provider_turn(stage: str, public_history: list[dict[str, str]] | None = None,
-                         provider_messages: list[dict[str, Any]] | None = None
-                         ) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
-    prompt = _prompt_for(stage)
-    history = normalize_conversation_context(public_history or [])
-    effective_prompt = rehydrated_prompt(history, prompt)
-    messages = list(provider_messages or [
-        {"role": "system", "content": "F6 offline contract test system message."},
-    ])
-    messages.append({"role": "user", "content": effective_prompt})
-    instruction_index = len(messages) - 1
+def _drive_selected_provider_turn(stage: str, prompt: str, messages: list[dict[str, Any]],
+                                  instruction_index: int
+                                  ) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
     sequence = _sequence_for(stage)
     for step in range(len(sequence) + 1):
         body = {"messages": messages, "tools": _provider_tools()}
@@ -920,6 +1014,23 @@ def _drive_provider_turn(stage: str, public_history: list[dict[str, str]] | None
             assert action[1].get("idempotency_key") == expected_key
         _append_provider_tool_result(messages, stage, prompt, action, step)
     raise AssertionError("provider sequence did not close")
+
+
+def _drive_provider_turn(stage: str, public_history: list[dict[str, str]] | None = None,
+                         provider_messages: list[dict[str, Any]] | None = None,
+                         supplemental_user_contexts: list[str] | None = None
+                         ) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
+    prompt = _prompt_for(stage)
+    history = normalize_conversation_context(public_history or [])
+    effective_prompt = rehydrated_prompt(history, prompt)
+    messages = list(provider_messages or [
+        {"role": "system", "content": "F6 offline contract test system message."},
+    ])
+    messages.append({"role": "user", "content": effective_prompt})
+    instruction_index = len(messages) - 1
+    messages.extend({"role": "user", "content": value}
+                    for value in supplemental_user_contexts or [])
+    return _drive_selected_provider_turn(stage, prompt, messages, instruction_index)
 
 
 def test_synthetic_runtime_requires_all_three_ci_only_guard_values():
@@ -957,6 +1068,129 @@ def test_provider_next_action_accepts_full_stage_with_current_mcp_result_shapes(
     _drive_provider_turn(stage)
 
 
+def test_backend_ast_instruction_drives_exact_single_line_background_provider_contract():
+    prompt = _prompt_for("background")
+    assert "\n" not in prompt and "\r" not in prompt
+    assert _instruction_stages(prompt) == ["background"]
+    assert _background_scope(prompt) == {
+        "task_id": "task_" + "1" * 32,
+        "backtest_task_id": "backtesttask_" + "5" * 32,
+        "signal_job_id": "signaljob_" + "5" * 32,
+        "signal_snapshot_artifact_id": "artifact_" + "6" * 32,
+    }
+    _drive_provider_turn("background")
+
+
+def test_backend_instruction_ast_rejects_unrecognized_expression_shapes():
+    expression = ast.parse("instruction = 'prefix' + runtime_value(event)").body[0].value
+    with pytest.raises(AssertionError, match="unsupported expression"):
+        _backend_instruction_parts(expression)
+
+
+@pytest.mark.parametrize(("mutation", "category"), [
+    ("newline", "background_scope_missing"),
+    ("changed_clause", "background_scope_missing"),
+    ("duplicate_marker", "f6_stage_instruction_ambiguous"),
+    ("wrong_backtest", "background_scope_invalid"),
+    ("noncanonical_ready_signal", "background_ready_event_invalid"),
+])
+def test_provider_rejects_malformed_or_ambiguous_single_line_backend_instruction(mutation, category):
+    prompt = _prompt_for("background")
+    if mutation == "newline":
+        prompt = prompt.replace("task_" + "1" * 32 + ". ", "task_" + "1" * 32 + ".\n", 1)
+    elif mutation == "changed_clause":
+        prompt = prompt.replace("Use only byq_research_get", "Use byq_research_get", 1)
+    elif mutation == "duplicate_marker":
+        prompt += " " + "BYQ trusted read-only task-ready follow-up for exact task " + "task_" + "1" * 32 + "."
+    elif mutation == "wrong_backtest":
+        prompt = prompt.replace("backtesttask_" + "5" * 32, "backtesttask_" + "4" * 32, 1)
+    elif mutation == "noncanonical_ready_signal":
+        prompt = prompt.replace("Ready signal: {", "Ready signal: { ", 1)
+    with pytest.raises(F6FixtureRejected, match=category):
+        next_action({"messages": [{"role": "user", "content": prompt}], "tools": _provider_tools()})
+
+
+def test_fixture_rejection_diagnostic_codes_equal_the_closed_raise_literal_set():
+    fixture_path = Path(__file__).with_name("f6_synthetic_runtime.py")
+    tree = ast.parse(fixture_path.read_text(encoding="utf-8"), filename=str(fixture_path))
+    literal_categories = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
+                and node.func.id == "F6FixtureRejected":
+            assert len(node.args) == 1 and isinstance(node.args[0], ast.Constant) \
+                and type(node.args[0].value) is str
+            literal_categories.add(node.args[0].value)
+    assert FIXTURE_REJECTION_CODES == literal_categories
+    assert DIAGNOSTIC_REJECTION_CODES == literal_categories | {"unclassified_fixture_rejection"}
+
+
+def test_provider_diagnostics_are_private_exclusive_and_keep_per_dispatch_counts(tmp_path):
+    path = tmp_path / "provider-diagnostics.jsonl"
+    diagnostics = _ProviderDiagnostics.create(str(path))
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    for stage, count in (("fg1", len(FG1_SEQUENCE)), ("fg2", len(FG2_SEQUENCE)),
+                         ("background", len(BG_SEQUENCE))):
+        for _ in range(count):
+            diagnostics.record_dispatch(stage=stage, outcome="response_written",
+                                        response_kind="tool_call", rejection_code=None,
+                                        tool_call_count=1)
+    diagnostics.record_dispatch(stage="background", outcome="fixture_rejected",
+                                response_kind="none", rejection_code="unexpected_f6_tool_arguments",
+                                tool_call_count=0)
+    sentinel = "OBSERVER_PRIVATE_TEXT"
+    diagnostics.record_dispatch(stage="unknown", outcome="fixture_rejected", response_kind="none",
+                                rejection_code=_diagnostic_rejection_code(F6FixtureRejected(sentinel)),
+                                tool_call_count=0)
+    diagnostics.record_dispatch(stage=sentinel, outcome=sentinel, response_kind=sentinel,
+                                rejection_code=sentinel, tool_call_count=1000)
+    diagnostics.close()
+
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert len(rows) == len(FG1_SEQUENCE) + len(FG2_SEQUENCE) + len(BG_SEQUENCE) + 3
+    assert [row["sequence"] for row in rows] == list(range(1, len(rows) + 1))
+    assert [sum(row["stage"] == stage for row in rows) for stage in ("fg1", "fg2", "background")] == [
+        len(FG1_SEQUENCE), len(FG2_SEQUENCE), len(BG_SEQUENCE) + 1,
+    ]
+    assert rows[-3]["rejection_code"] == "unexpected_f6_tool_arguments"
+    assert rows[-3]["tool_call_count_capped"] is False
+    assert rows[-2]["rejection_code"] == "unclassified_fixture_rejection"
+    assert rows[-1]["rejection_code"] is None
+    assert rows[-1]["stage"] == "unknown" and rows[-1]["outcome"] == "handler_error"
+    assert rows[-1]["response_kind"] == "none" and rows[-1]["tool_call_count"] == 256
+    assert rows[-1]["tool_call_count_capped"] is True
+    assert sentinel not in path.read_text(encoding="utf-8")
+    assert all(row["schema_version"] == DIAGNOSTIC_SCHEMA_VERSION for row in rows)
+
+    with pytest.raises(FileExistsError):
+        _ProviderDiagnostics.create(str(path))
+    target = tmp_path / "target.txt"
+    target.write_text("unchanged", encoding="utf-8")
+    link = tmp_path / "provider-diagnostics-link.jsonl"
+    link.symlink_to(target)
+    with pytest.raises(FileExistsError):
+        _ProviderDiagnostics.create(str(link))
+    assert target.read_text(encoding="utf-8") == "unchanged"
+
+
+def test_provider_diagnostics_has_bounded_overflow_marker_without_inference(tmp_path):
+    path = tmp_path / "provider-overflow.jsonl"
+    diagnostics = _ProviderDiagnostics.create(str(path))
+    for _ in range(DIAGNOSTIC_MAX_RECORDS + 1):
+        diagnostics.record_dispatch(stage="fg1", outcome="response_written",
+                                    response_kind="tool_call", rejection_code=None,
+                                    tool_call_count=1)
+    diagnostics.close()
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert len(rows) == DIAGNOSTIC_MAX_RECORDS
+    assert [row["record_type"] for row in rows[:-1]] == ["dispatch"] * (DIAGNOSTIC_MAX_RECORDS - 1)
+    assert rows[-1] == {
+        "schema_version": DIAGNOSTIC_SCHEMA_VERSION,
+        "record_type": "overflow",
+        "dispatches_at_least": DIAGNOSTIC_MAX_RECORDS,
+        "first_omitted_dispatch": DIAGNOSTIC_MAX_RECORDS,
+    }
+
+
 def test_provider_uses_current_user_block_for_full_rehydrated_fg2_and_background_turns():
     fg1_history, live_provider_messages = _drive_provider_turn("fg1")
     fg2_prompt = _prompt_for("fg2")
@@ -991,6 +1225,106 @@ def test_provider_uses_current_user_block_for_full_rehydrated_fg2_and_background
 
     _drive_provider_turn("background", public_history=fg1_history + fg2_history,
                          provider_messages=live_provider_messages)
+
+
+def test_native_four_message_projection_drives_full_fg1_fg2_and_background_turns():
+    runtime_context = _native_runtime_snapshot()
+    skill_catalog = _native_skill_catalog()
+    fg1_prompt = _prompt_for("fg1")
+    fg1_messages = [
+        {"role": "system", "content": "Pinned native system message."},
+        {"role": "user", "content": fg1_prompt},
+        {"role": "user", "content": runtime_context},
+        {"role": "user", "content": skill_catalog},
+    ]
+    assert _selected_instruction(fg1_messages) == ("fg1", fg1_prompt, 1)
+    fg1_history, live_messages = _drive_selected_provider_turn("fg1", fg1_prompt, fg1_messages, 1)
+
+    fg2_prompt = _prompt_for("fg2")
+    fg2_message = rehydrated_prompt(normalize_conversation_context(fg1_history), fg2_prompt)
+    fg2_index = len(live_messages)
+    fg2_messages = [*live_messages, {"role": "user", "content": fg2_message},
+                    {"role": "user", "content": runtime_context},
+                    {"role": "user", "content": skill_catalog}]
+    assert _selected_instruction(fg2_messages) == ("fg2", fg2_prompt, fg2_index)
+    fg2_history, live_messages = _drive_provider_turn(
+        "fg2", public_history=fg1_history, provider_messages=live_messages,
+        supplemental_user_contexts=[runtime_context, skill_catalog])
+
+    bg_prompt = _prompt_for("background")
+    bg_message = rehydrated_prompt(normalize_conversation_context(fg1_history + fg2_history), bg_prompt)
+    bg_index = len(live_messages)
+    bg_messages = [*live_messages, {"role": "user", "content": bg_message},
+                   {"role": "user", "content": runtime_context},
+                   {"role": "user", "content": skill_catalog}]
+    assert _selected_instruction(bg_messages) == ("background", bg_prompt, bg_index)
+    _drive_provider_turn("background", public_history=fg1_history + fg2_history,
+                         provider_messages=live_messages,
+                         supplemental_user_contexts=[runtime_context, skill_catalog])
+
+
+@pytest.mark.parametrize("context_kind", ["runtime_marker", "catalog_marker", "rehydration_marker"])
+def test_supplemental_context_with_instruction_markers_is_never_ignored(context_kind):
+    fg1_prompt = _prompt_for("fg1")
+    if context_kind == "runtime_marker":
+        context = _native_runtime_snapshot("F6-CI:FG2")
+    elif context_kind == "catalog_marker":
+        context = _native_skill_catalog([("f6-contract", "F6-CI:FG2")])
+    else:
+        context = _native_skill_catalog([("f6-contract", "[CURRENT_USER_MESSAGE]")])
+    with pytest.raises(F6FixtureRejected, match="provider_supplemental_context_marker_rejected"):
+        _selected_instruction([
+            {"role": "user", "content": fg1_prompt},
+            {"role": "user", "content": context},
+        ])
+
+
+@pytest.mark.parametrize("catalog_mutation", [
+    "fake_prefix", "wrong_suffix", "duplicate_tag", "invalid_entry", "duplicate_name",
+])
+def test_approximate_skill_catalog_is_not_filtered_or_used_as_history_fallback(catalog_mutation):
+    fg1_prompt = _prompt_for("fg1")
+    catalog = _native_skill_catalog()
+    if catalog_mutation == "fake_prefix":
+        catalog = catalog.replace("A skill is a reusable", "A skills is a reusable", 1)
+    elif catalog_mutation == "wrong_suffix":
+        catalog = catalog.replace("</system-reminder>", "</system-reminder-approx>", 1)
+    elif catalog_mutation == "duplicate_tag":
+        catalog = catalog.replace("<available_skills>\n", "<available_skills>\n<available_skills>\n", 1)
+    elif catalog_mutation == "invalid_entry":
+        catalog = _native_skill_catalog([("invalid skill name", "Description.")])
+    elif catalog_mutation == "duplicate_name":
+        catalog = _native_skill_catalog([("f6-contract", "First description."),
+                                         ("f6-contract", "Second description.")])
+    with pytest.raises(F6FixtureRejected, match="provider_current_user_instruction_missing"):
+        _selected_instruction([
+            {"role": "user", "content": fg1_prompt},
+            {"role": "user", "content": catalog},
+        ])
+
+
+def test_unknown_supplemental_looking_tail_and_non_f6_current_user_never_fall_back():
+    fg1_prompt = _prompt_for("fg1")
+    unknown_tail = _native_runtime_snapshot().replace(
+        "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.",
+        "Current runtime context. This newer version supersedes earlier snapshots.", 1)
+    with pytest.raises(F6FixtureRejected, match="provider_current_user_instruction_missing"):
+        _selected_instruction([
+            {"role": "user", "content": fg1_prompt},
+            {"role": "user", "content": unknown_tail},
+        ])
+    with pytest.raises(F6FixtureRejected, match="provider_current_user_instruction_missing"):
+        _selected_instruction([
+            {"role": "user", "content": fg1_prompt},
+            {"role": "user", "content": "Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\n"},
+        ])
+    with pytest.raises(F6FixtureRejected, match="provider_current_user_instruction_missing"):
+        _selected_instruction([
+            {"role": "user", "content": fg1_prompt},
+            {"role": "user", "content": _native_runtime_snapshot()},
+            {"role": "user", "content": _native_skill_catalog()},
+            {"role": "user", "content": "Current user has no F6 instruction."},
+        ])
 
 
 def test_provider_ignores_historical_assistant_and_tool_markers_when_current_user_is_valid():
