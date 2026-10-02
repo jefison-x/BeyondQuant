@@ -1766,7 +1766,7 @@ def _successful_public_answers(
 def _completed_public_messages(
     messages: object, events: object, session_id: str, trace_id: str,
 ) -> list[dict[str, object]]:
-    """Keep only durable user/assistant rows belonging to completed answers."""
+    """Select completed public rows without inventing a user for automatic roots."""
     if not isinstance(messages, list):
         return []
     owned = _runtime_events(events, session_id, trace_id)
@@ -1795,14 +1795,26 @@ def _completed_public_messages(
         start_time = _event_time(start.get("timestamp"))
         if start_time is None:
             continue
+        previous_terminals = [event for event in owned
+                              if event["sequence"] < start["sequence"] and event.get("kind") in {
+                                  "session.result", "session.failed", "session.cancelled",
+                                  "session.closed", "session.result.discarded",
+                              }]
+        previous_time = (_event_time(previous_terminals[-1].get("timestamp"))
+                         if previous_terminals else None)
+        if previous_terminals and (previous_time is None or previous_time > start_time):
+            continue  # An invalid interval cannot authorize inferred user history.
         user_messages = [candidate for candidate in public if candidate.get("role") == "user"
                          and candidate["sequence"] < message["sequence"]
                          and (created := _event_time(candidate.get("created_at"))) is not None
-                         and created <= start_time]
-        if not user_messages:
-            continue
-        user = max(user_messages, key=lambda candidate: candidate["sequence"])
-        selected[user["sequence"]] = user
+                         and created <= start_time
+                         and (previous_time is None or created > previous_time)]
+        if user_messages:
+            user = max(user_messages, key=lambda candidate: candidate["sequence"])
+            selected[user["sequence"]] = user
+        # A completed automatic update remains an assistant message. The caller
+        # attests exact root completion in Backend and matches this durable row
+        # to its normalized answer; this selection grants no business authority.
         selected[message["sequence"]] = message
     return [selected[sequence] for sequence in sorted(selected)]
 

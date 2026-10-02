@@ -66,6 +66,8 @@ UNTRUSTED_IDENTITY_FAILURES = frozenset({
     "background_runtime_root_identity_invalid", "background_reservation_identity_invalid",
     "background_settlement_digest_invalid", "background_ready_event_identity_invalid",
     "background_ready_event_does_not_match_delivered_signal_job",
+    "background_root_correlation_ambiguous", "background_answer_correlation_ambiguous",
+    "structured_ready_event_input_binding_invalid",
 })
 
 
@@ -443,6 +445,66 @@ def _background_wait_observation(session_view: dict, request_state: dict, *,
     }
 
 
+def _background_answer_for_root(session_view: dict[str, object], runtime_root_id: str) -> str | None:
+    """Correlate durable Product output with one normalized root, never a fake user."""
+    require(isinstance(runtime_root_id, str) and RUNTIME_ROOT_PATTERN.fullmatch(runtime_root_id) is not None,
+            "background_runtime_root_identity_invalid")
+    conversation = session_view.get("conversation")
+    require(isinstance(conversation, dict), "background_conversation_missing")
+    events = session_view.get("events")
+    require(isinstance(events, list), "background_root_events_missing")
+    owned = [event for event in events if isinstance(event, dict)
+             and event.get("source") == "runtime-adapter"
+             and event.get("session_id") == conversation.get("session_id")
+             and event.get("trace_id") == conversation.get("trace_id")
+             and type(event.get("sequence")) is int]
+    starts = [event for event in owned if event.get("kind") == "session.started"
+              and isinstance(event.get("payload"), dict)
+              and event["payload"].get("run_id") == runtime_root_id]
+    terminals = [event for event in owned if event.get("kind") in {
+        "session.result", "session.failed", "session.cancelled", "session.result.discarded"}
+        and isinstance(event.get("payload"), dict)
+        and event["payload"].get("run_id") == runtime_root_id]
+    require(len(starts) <= 1 and len(terminals) <= 1, "background_root_correlation_ambiguous")
+    if not starts or not terminals:
+        return None
+    start, terminal = starts[0], terminals[0]
+    require(terminal.get("kind") == "session.result", "background_agent_root_not_completed")
+    require(start["sequence"] < terminal["sequence"] and not any(
+        event.get("kind") == "session.started"
+        and start["sequence"] < event["sequence"] < terminal["sequence"] for event in owned),
+        "background_root_correlation_ambiguous")
+    # Gateway intentionally omits an output event from this GET once its exact
+    # workflow_sequence is persisted. Product assistant rows are the durable
+    # answer projection; the closed Backend root/audit is checked separately.
+    answers = [message for message in _messages(session_view)
+               if message.get("role") == "assistant"
+               and type(message.get("workflow_sequence")) is int
+               and start["sequence"] < message["workflow_sequence"] < terminal["sequence"]
+               and isinstance(message.get("content"), str) and message["content"].strip()]
+    require(len(answers) <= 16 and len({item["workflow_sequence"] for item in answers}) == len(answers),
+            "background_answer_correlation_ambiguous")
+    return "\n".join(item["content"].strip() for item in sorted(
+        answers, key=lambda item: item["workflow_sequence"])) if answers else None
+
+
+def _assert_background_ready_signal(receipt: dict[str, object], signal_job_id: str,
+                                    artifact_id: str) -> None:
+    signal = receipt.get("ready_signal")
+    require(isinstance(signal, dict) and set(signal) == {
+        "kind", "data_ready", "identity", "status", "updated_at", "result_artifact_id"}
+        and signal.get("kind") == "signal_producer_jobs" and signal.get("data_ready") is True
+        and signal.get("status") == "completed" and signal.get("identity") == signal_job_id
+        and signal.get("result_artifact_id") == artifact_id
+        and isinstance(signal.get("updated_at"), str) and len(signal["updated_at"]) <= 64,
+        "background_ready_event_does_not_match_delivered_signal_job")
+    digest = "ready-v1:" + hashlib.sha256(json.dumps(signal, sort_keys=True).encode()).hexdigest()
+    require(receipt.get("event_key") == digest
+            and isinstance(receipt.get("input_sha256"), str)
+            and SHA256_PATTERN.fullmatch(receipt["input_sha256"]) is not None,
+            "structured_ready_event_input_binding_invalid")
+
+
 def _validate_settlement_identity(candidate: object, grant_version: int) -> dict[str, object]:
     require(isinstance(candidate, dict), "background_request_identity_missing")
     require(candidate.get("status") == "settled"
@@ -457,6 +519,9 @@ def _validate_settlement_identity(candidate: object, grant_version: int) -> dict
     require(isinstance(candidate.get("reservation_id"), str)
             and RESERVATION_PATTERN.fullmatch(candidate["reservation_id"]) is not None,
             "background_reservation_identity_invalid")
+    require(isinstance(candidate.get("input_sha256"), str)
+            and SHA256_PATTERN.fullmatch(candidate["input_sha256"]) is not None,
+            "structured_ready_event_input_binding_invalid")
     require(isinstance(candidate.get("settlement_sha256"), str)
             and SHA256_PATTERN.fullmatch(candidate["settlement_sha256"]) is not None,
             "background_settlement_digest_invalid")
@@ -634,8 +699,11 @@ def _assert_structured_agent_audit(document: object, *, stage: str, task_id: str
                 and type(observed_settlement.get("dispatch_attempts")) is int
                 and observed_settlement.get("dispatch_attempts") == 1
                 and observed_settlement.get("event_key") == settlement.get("event_key")
+                and observed_settlement.get("input_sha256") == settlement.get("input_sha256")
                 and observed_settlement.get("settlement_sha256") == settlement.get("settlement_sha256"),
                 "structured_settlement_root_link_invalid")
+        _assert_background_ready_signal(observed_settlement,
+            state["identities"]["signal_job_id"], state["identities"]["signal_snapshot_artifact_id"])
     observation["settlement_check"] = "validated"
     return {
         "stage": stage, "runtime_root_id": runtime_root_id, "agent_run_id": run["run_id"],
@@ -734,6 +802,7 @@ def _read_structured_agent_audit(stage: str, *, task_id: str, conversation_id: s
                 "exact F6 task/conversation scope not found": "structured_agent_audit_task_not_visible",
                 "exact F6 settled request receipt not found": "structured_settlement_not_confirmed",
                 "F6 settlement is not bound to the exact Runtime root": "structured_settlement_root_link_invalid",
+                "F6 ready event input binding is invalid": "structured_ready_event_input_binding_invalid",
                 "F6 AgentRun audit event count exceeds the exact bounded contract":
                     "structured_agent_audit_actions_or_resources_invalid",
             }
@@ -1596,49 +1665,30 @@ try:
         # pass. A settlement from an earlier pass is not enough to close it.
         gateway_events.assert_healthy()
         request_settlement = None
-        session_view = _session_call(call, session_id, trace_id)
+        session_view = _session_call(call, session_id, trace_id,
+            timeout=_remaining_timeout(deadline, 12))
         messages = _messages(session_view)
-        bg_users = [index for index, item in enumerate(messages)
-                    if item.get("role") == "user"
-                    and "BYQ trusted read-only task-ready follow-up for exact task " + task_id
-                       in _body_text(item.get("content"))]
-        require(len(bg_users) <= 1, "background_user_turn_duplicated")
-        ready_event_key = None
-        if bg_users:
-            user_text = _body_text(messages[bg_users[0]].get("content"))
-            ready_events = re.findall(r"Ready signal: (\{[^\n]+\})", user_text)
-            require(len(ready_events) == 1, "background_ready_signal_missing_or_ambiguous")
-            try:
-                ready_event = json.loads(ready_events[0])
-            except (ValueError, TypeError):
-                raise EvidenceError("background_ready_signal_invalid") from None
-            require(isinstance(ready_event, dict)
-                    and ready_event.get("kind") == "signal_producer_jobs"
-                    and ready_event.get("data_ready") is True
-                    and ready_event.get("identity") == signal_job_id
-                    and ready_event.get("status") == "completed"
-                    and ready_event.get("result_artifact_id") == state["identities"]["signal_snapshot_artifact_id"],
-                    "background_ready_signal_not_exact_job_and_artifact")
-            ready_event_key = "ready-v1:" + hashlib.sha256(
-                json.dumps(ready_event, sort_keys=True).encode("utf-8")).hexdigest()
-            assistant_answer = "\n".join(_body_text(item.get("content")) for item in messages[bg_users[0] + 1:]
-                                          if item.get("role") == "assistant")
-        view = _permission_view(call, task_id)
+        # Automatic BYQ instruction is internal request data, not a human user
+        # row. Derive readiness from the authoritative receipt, not prompt text.
+        assistant_answer = None
+        view = _permission_view(call, task_id, timeout=_remaining_timeout(deadline, 15))
         require(view.get("schema_version") == "task-continuation-permission.v2"
                 and view.get("permission", {}).get("grant_version") == grant_version,
                 "background_grant_identity_changed")
         request_state = view.get("request_state")
         require(isinstance(request_state, dict), "background_request_state_missing")
+        candidate = request_state.get("request_identity")
+        if isinstance(candidate, dict) and candidate.get("run_id") is not None:
+            require(candidate.get("grant_version") == grant_version,
+                    "background_grant_identity_changed")
+            assistant_answer = _background_answer_for_root(session_view, candidate["run_id"])
         if (request_state.get("requests_reserved") == 1
                 and request_state.get("requests_remaining") == 0
                 and request_state.get("unconfirmed_requests") == 0):
-            candidate = request_state.get("request_identity")
-            if (ready_event_key is not None and isinstance(candidate, dict)
+            if (isinstance(candidate, dict)
                     and candidate.get("status") == "settled"
                     and candidate.get("dispatch_attempts") == 1
                     and candidate.get("grant_version") == grant_version):
-                require(candidate.get("event_key") == ready_event_key,
-                        "settlement_ready_event_does_not_match_delivered_signal_job")
                 request_settlement = _validate_settlement_identity(candidate, grant_version)
         answer_ready = (isinstance(assistant_answer, str)
                         and all(value in assistant_answer for value in (
@@ -1647,18 +1697,21 @@ try:
                         ))
                         and "No domain writes were made." in assistant_answer)
         observed = _background_wait_observation(session_view, request_state,
-            bg_user_count=len(bg_users), answer_present=bool(assistant_answer), answer_ready=answer_ready)
+            bg_user_count=sum(item.get("role") == "user" and
+                "BYQ trusted read-only task-ready follow-up for exact task " + task_id
+                in _body_text(item.get("content")) for item in messages),
+            answer_present=bool(assistant_answer), answer_ready=answer_ready)
         previous = state.get("background_wait_observation") or {}
         state["background_wait_observation"] = {
             "poll_count": min(int(previous.get("poll_count", 0)) + 1, 10000),
             "last_poll": observed,
         }
-        if request_settlement is not None and answer_ready:
+        if request_settlement is not None and answer_ready and time.monotonic() <= deadline:
             break
-        if bg_users and isinstance(session_view.get("conversation"), dict):
+        if isinstance(session_view.get("conversation"), dict):
             require(session_view["conversation"].get("status") not in {"failed", "interrupted", "archived"},
                     "background_agent_session_failed")
-        time.sleep(2)
+        time.sleep(min(2, max(0, deadline - time.monotonic())))
     require(isinstance(request_settlement, dict)
             and request_settlement.get("status") == "settled"
             and request_settlement.get("dispatch_attempts") == 1

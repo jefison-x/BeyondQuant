@@ -7,6 +7,7 @@ Product conversation, ResearchTask, Runtime root, and (for BG) exact receipt.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -16,6 +17,7 @@ from typing import Any
 
 PROJECT_PATTERN = re.compile(r"byq-ci-stack-[A-Za-z0-9][A-Za-z0-9_-]{0,80}\Z")
 OWNER = "f6-chain-user"
+SIGNAL_JOB_PATTERN = re.compile(r"signaljob_[0-9a-f]{32}\Z")
 TASK_PATTERN = re.compile(r"task_[0-9a-f]{32}\Z")
 ARTIFACT_PATTERN = re.compile(r"artifact_[0-9a-f]{32}\Z")
 BACKTEST_TASK_PATTERN = re.compile(r"backtesttask_[0-9a-f]{32}\Z")
@@ -38,6 +40,32 @@ def _required(payload: dict[str, Any], field: str, pattern: re.Pattern[str]) -> 
 def _not_ready(stage: str, category: str) -> dict[str, str]:
     return {"schema_version": "f6-agent-audit-readiness.v1", "stage": stage,
             "status": "not_ready", "category": category}
+
+
+def _ready_signal_from_receipt(instruction: object, input_sha256: object, event_key: object) -> dict:
+    """Closed projection from authoritative internal input, never publish raw text."""
+    if (not isinstance(instruction, str) or len(instruction.encode()) > 262144
+            or not isinstance(input_sha256, str) or SHA256_PATTERN.fullmatch(input_sha256) is None
+            or hashlib.sha256(instruction.encode()).hexdigest() != input_sha256):
+        raise SystemExit("F6 ready event input binding is invalid")
+    signals = re.findall(r"Ready signal: (\{[^\n]+\})", instruction)
+    if len(signals) != 1:
+        raise SystemExit("F6 ready event input binding is invalid")
+    try:
+        signal = json.loads(signals[0])
+    except (ValueError, TypeError):
+        raise SystemExit("F6 ready event input binding is invalid") from None
+    if (not isinstance(signal, dict) or set(signal) != {
+            "kind", "data_ready", "identity", "status", "updated_at", "result_artifact_id"}
+            or signal.get("kind") != "signal_producer_jobs" or signal.get("data_ready") is not True
+            or signal.get("status") != "completed"
+            or not isinstance(signal.get("identity"), str) or not SIGNAL_JOB_PATTERN.fullmatch(signal["identity"])
+            or not isinstance(signal.get("result_artifact_id"), str)
+            or not ARTIFACT_PATTERN.fullmatch(signal["result_artifact_id"])
+            or not isinstance(signal.get("updated_at"), str) or len(signal["updated_at"]) > 64
+            or event_key != "ready-v1:" + hashlib.sha256(json.dumps(signal, sort_keys=True).encode()).hexdigest()):
+        raise SystemExit("F6 ready event input binding is invalid")
+    return signal
 
 
 def _check_environment() -> str:
@@ -203,6 +231,8 @@ def _audit_readback(payload: object) -> dict[str, Any]:
                                budget.item->>'status' AS status,
                                budget.item->>'outcome' AS outcome,
                                budget.item->>'event_key' AS event_key,
+                               budget.item->>'input_sha256' AS input_sha256,
+                               budget.item->>'instruction' AS instruction,
                                budget.item->>'settlement_sha256' AS settlement_sha256,
                                (budget.item->>'dispatch_attempts')::integer AS dispatch_attempts
                         FROM research_tasks AS t
@@ -217,6 +247,9 @@ def _audit_readback(payload: object) -> dict[str, Any]:
                     if len(receipt_rows) != 1:
                         raise SystemExit("exact F6 settled request receipt not found")
                     settlement = dict(receipt_rows[0])
+                    instruction = settlement.pop("instruction")
+                    settlement["ready_signal"] = _ready_signal_from_receipt(
+                        instruction, settlement["input_sha256"], settlement["event_key"])
                     if (settlement.get("run_id") != root_run_id
                             or settlement.get("grant_version") != 1
                             or settlement.get("status") != "settled"

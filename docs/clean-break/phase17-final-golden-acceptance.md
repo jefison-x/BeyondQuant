@@ -1135,7 +1135,7 @@ No Full dispatch, merge, release publication or deployment occurred.
 FG1/FG2 persisted and closed with7/3 exact authority audit events. The corrected
 public SSE reconnect, original logical Product session and same Job checks passed.
 The one Signal Worker start completed the Job and produced its validated Artifact.
-A background user message was persisted. The observer then exhausted its bounded
+The observer exhausted its bounded
 wait with `single_background_request_not_durably_settled`. No persisted background
 assistant answer or Backend settlement was confirmed; readonly browser was not
 reached. Ten bounded session/task/permission/job readback passes within the failure
@@ -1291,3 +1291,95 @@ Current/frozen identity checks and their independent gate precede commit/push;
 one affected feature-head PR CI can follow admission. Required final Full follows
 only successful exact-head PR CI. No hosted PASS, original BG settlement, new
 empty deployment or phase closure is claimed. Phase17 OPEN; Phase18 NOT_STARTED.
+
+
+## Build293 terminal evidence and background transcript contract correction
+
+Run37033774340/attempt1, head `8dce0fb0537fdaf4e52a7dbcff16127f880b5bda`,
+completed **FAIL**: Integration failed its F6 assertion; all other component
+lanes passed. Integration cleanup and sanitized upload succeeded. This is an
+observer assertion failure, not the workflow job timeout. Full remains
+**NOT_DISPATCHED**; Phase17 OPEN and Phase18 NOT_STARTED.
+
+The new bounded Runtime diagnostic proves SDK completed, `session.result`,
+Runtime idle, process/proxy closed and its request receipt settled/completed:
+8 admitted provider attempts,7 tools,0 violations, actual usage **unknown**.
+The same reservation/root hashes appear in the last Backend permission poll:
+settled/completed, one dispatch, zero unconfirmed requests, usage and settlement
+hash present. The observer performed119 polls and counted5 public messages,
+with zero matching background user messages. It selected an assistant answer
+only after finding that user, so its false answer flag does **not** establish
+missing answer persistence. The fifth message role and exact background public
+answer are **UNESTABLISHED** from the uploaded closed evidence.
+
+Source review confirms automatic task-ready input remains internal Backend
+request data; Gateway sends it to Runtime without appending a human user row.
+Only normal Product user turns append such rows. Existing Backend contracts
+explicitly keep instruction out of the public request identity. The observer's
+background-user requirement is therefore unreachable on this path. An earlier
+Build292 narrative stated a background user was persisted; its closed upload
+contains no proof of that claim, and the sentence above is corrected. Its
+original background execution outcome remains UNKNOWN, with no replay or
+retroactive use of Build293 terminal proof.
+
+Root's bounded fix keeps existing Product roles and APIs. It selects durable
+assistant fragments by workflow sequence inside the exact normalized root,
+checks settlement independently, and verifies the exact authoritative input
+hash/ready-event key/Job/Artifact inside the existing Engineering READ ONLY
+fixture. Raw instruction never leaves that fixture. Business terminal status
+still comes from Backend root/request/audit records, not trace or answer text.
+Completed public context matches users only within the current root interval;
+a completed automatic answer may remain an assistant alone. Accepted ADR-002
+and the current rehydration contract allow that selection. Independent review
+confirmed no new ADR/continuation query endpoint is required; its earlier
+extra-origin-query recommendation is preserved with a correction sidecar.
+
+Root16 new source-executing offline contracts and the full affected60 offline
+slice passed. Tester independently passed60 initial cases, then rechecked the16
+affected cases after the root-type guard; the44 other cases were reused, not
+represented as a fresh execution on the changed driver. Independent Reviewer
+and Root accepted this exact offline source correction before build preparation.
+One affected hosted validation remains required. Unchanged
+Runtime/gate/SDK native3 evidence is reused; A–D are retained within their
+recorded scope. No new CI, Provider call, Product Job or existing database
+operation occurred in this correction. Static/offline PASS does not qualify
+hosted or real F6.
+
+| Bound evidence | Private path and SHA256 |
+|---|---|
+| Terminal CI receipt | `/tmp/byq-phase17-ci-watch-37033774340/final-receipt.json` — `cddd3c06d43fd210b3147f977498e6ad9b8d20998a5184301c6272e86ad754a1` |
+| Sanitized checks | `/tmp/byq-phase17-ci-failure-37033774340/checks.log` — `667d694f0675090d2d940df63ffd0249aff79cbf71852d53225a9ef187520fd5` |
+| Runtime closed diagnostics | `/tmp/byq-phase17-ci-failure-37033774340/summary.json` — `936c707258bbcbab8106b8d5bc822292edfddf2fa3ba5b476384bd231581ae6c` |
+| Correlated observer diagnosis | `/tmp/byq-phase17-build293-bg-contract-correction-20261003/diagnosis.json` — `90e04506ad2d5352ecb956529e3f832231bc29cd18c38e379cf8f1992488ac21` |
+| Independent boundary correction | `/tmp/byq-phase17-build293-transcript-contract-decision-correction-20261003.json` — `f797f37b2542cc65b4511e7418e4dccd8c2aa872d62ede3353983137c162bc61` |
+
+
+### Build294 immutable source correction candidate
+
+Root prepared Build294 only after the scoped source gate. Its manifest binds1000
+current inputs, including the new transcript contract test; all8 selectors use294.
+Build293's manifest and Dockerfile remain frozen byte-for-byte. The new Dockerfile
+changes only its embedded manifest path; SDK/binary/dependency locks, request
+limits and timeouts are unchanged. Gateway's Product transcript selection and
+test-only observation/readback are the source changes. No Backend schema,
+business grant/dispatch logic, existing database or new runtime owner was added.
+
+| Bound gate | Private path and SHA256 |
+|---|---|
+| Independent offline Tester | `/tmp/byq-phase17-build293-f6-final-tester-n16aty4f/report.json` — `ec1c722778f37a2f0f33f8249667729f9269ba278dfbff5045b6558b26f81e14` |
+| Independent source Reviewer | `/tmp/byq-phase17-build293-background-transcript-independent-review-20261003.json` — `9d2c870f8468040faf297690ae489a12de37cd9265f770e93b48294db0ea3bd2` |
+| Root offline source gate | `/tmp/byq-phase17-bg-transcript-root-gate-20261003.json` — `12eac273088e89668959d82a5d46a6d37625cc7547ca750058626c0417af5961` |
+| New294 manifest | `config/dsh/builds/dsh-0.1.5rc1-post-u8.294.json` — `057177dfda7c1dd6d7ce8381e8ed3ab75395fcef3ec9f5ed99735a6f66a91965` |
+| New294 Dockerfile | `services/runtime-adapter/Dockerfile.post-u8-294-candidate` — `5b355943e03ec1a3732d0c2852e74a5f35513f3858ec4a5847e7b2055d4d09a2` |
+
+Identity Tester passed10 tests without skips, all1000 manifest inputs and8
+selectors, frozen293 identities and unchanged SDK release/locks. Its corrected
+O_EXCL report is `/tmp/byq-phase17-build294-identity-tester-corrected-kfh5nei_/report.json`
+SHA256 `ba050355ba6a18fce236d07a0916a7d627a8257f0ecfe4731c578f86238fd7fa`.
+Remote progress requires independent Reviewer and Root admission. Host Gateway complete imported pytest
+was NOT_RUN because FastAPI is not installed; exact-head hosted Gateway and
+Integration/F6 remain required. Offline source acceptance is not proof of a
+persisted hosted background answer. No new CI/model/Job/DB call or Full dispatch
+occurred during preparation. One new candidate verification may follow the
+identity Tester→Reviewer→Root gate, with Full only after exact-head PR CI green.
+Phase17 remains OPEN and Phase18 NOT_STARTED.
