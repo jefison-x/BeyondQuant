@@ -1383,3 +1383,47 @@ persisted hosted background answer. No new CI/model/Job/DB call or Full dispatch
 occurred during preparation. One new candidate verification may follow the
 identity Tester→Reviewer→Root gate, with Full only after exact-head PR CI green.
 Phase17 remains OPEN and Phase18 NOT_STARTED.
+
+
+## Build294 offline preflight failure and Build295 test assembly correction
+
+Exact run37040693733/attempt1 at `2974c7b94b0cf053942ea60d5451820dfb03ceee`
+completed FAIL. Backend, Gateway, Runtime, MCP, Frontend, Architecture and Docs
+component lanes passed. Integration's real-browser14 cases passed, then the F6
+**offline** contract preflight failed3/92: its AST test loader did not load the
+new actual `_assert_background_ready_signal` helper. The current F6 chain was
+NOT_STARTED; no background outcome at this head is inferred. Dedicated CI
+cleanup and artifact upload succeeded. Full was NOT_DISPATCHED.
+
+The shared offline audit sample also predated exact ready SignalJob/Artifact,
+canonical ready-event hash and input digest. Root corrected that test module
+once: load the real helper, supply consistent closed fixtures and bound identity
+state, and reject10 missing/malformed/drifted signal/input/event variants while
+keeping the observation nonqualifying. The Product driver, fixture, Gateway,
+Runtime, Backend, SDK, request limits and timeouts are byte unchanged from294.
+No product assertion was weakened. The complete affected offline module now
+passes102 cases with zero skips. The first local invocation omitted the required
+Backend source environment path (10 environment errors/92 passed); its outcome
+is retained in the Root receipt. The corrected exact CI environment and
+independent Tester each passed102; this is offline evidence only.
+
+| Evidence | Private receipt and SHA256 |
+|---|---|
+| Terminal CI metadata | `/tmp/byq-phase17-ci-watch-37040693733/final-receipt.json` — `0a41d329c6fb1bcda308181b2c580737b1f5aefc032e7bc69796e6b538655263` |
+| Sanitized Integration checks | `/tmp/byq-phase17-ci-failure-37040693733/checks.log` — `68a7111895cd03bc6a2625138e02463c652dee2908244a137e0044e511f0cf8e` |
+| Scoped Root failure diagnosis | `/tmp/byq-phase17-build294-offline-contract-correction-20261003/diagnosis.json` — `af5418021e4f8409754660a81906e9812350ba9ff137397dcccccf54b416a82a` |
+| Independent Tester102 | `/tmp/byq-phase17-f6-synthetic-contract-tester-ylni76y1/report.json` — `c76f009f2552160a6897101221dfbc3ef686429691dee85ac69a554e729001c5` |
+| Independent source Reviewer | `/tmp/byq-phase17-build294-preflight-test-correction-independent-review-20261003.json` — `d82ceab5bc13935cfbb1bce72647563926e7a4bd55538b4903ccddd80c7a4e64` |
+| Root source gate | `/tmp/byq-phase17-build294-offline-correction-root-source-gate-20261003.json` — `db6fe8c0aeace4b37fdbfe5f849593232bb0af991985524912c5346056ae3815` |
+
+Build295 references the unchanged DSH release and1000 exact source inputs.
+Manifest SHA256 `7b6dd79ae6ea28034bf8d1b219a23d23e97e4b19199e4c37f99ad548a9887101`;
+Dockerfile SHA256 `edf71161cce37626a20dd5add89c924441efa21f6691bdfc4c3dbd42e5957d69`.
+Eight existing selectors point to295;294 and293 manifests/Dockerfiles remain
+frozen. Build295 identity Tester→independent Reviewer→Root and one affected
+exact-head hosted PR CI are pending at this preparation boundary. Full follows
+only successful exact-head PR CI. The unchanged16 transcript/44 diagnostic
+contracts and native3 retain their earlier scoped receipts; they were not rerun
+for this test-assembly edit. Valid A–D and actualv13F6 scoped reuse remains.
+Old Build292 UNKNOWN and all failures remain preserved; unknown calls are not
+replayed. Phase17 OPEN; Phase18 NOT_STARTED. No merge or deployment occurred.

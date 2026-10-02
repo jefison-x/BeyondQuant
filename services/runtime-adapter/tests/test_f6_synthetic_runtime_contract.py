@@ -47,6 +47,10 @@ from tests.f6_synthetic_runtime import (
 )
 
 
+AUDIT_SIGNAL_JOB_ID = "signaljob_" + "6" * 32
+AUDIT_SIGNAL_ARTIFACT_ID = "artifact_" + "7" * 32
+
+
 class DriverContractRejected(AssertionError):
     def __init__(self, category: str) -> None:
         super().__init__(category)
@@ -60,6 +64,7 @@ def _driver_functions():
     source = Path(path).read_text(encoding="utf-8")
     tree = ast.parse(source, filename=path)
     wanted = {"_assert_structured_agent_audit", "_assert_validated_signal_artifact",
+              "_assert_background_ready_signal",
               "_read_structured_agent_audit", "_validate_settlement_identity",
               "_body_text", "_messages", "_answer_after", "_session_call", "_wait_answer",
               "_failure_readonly_window", "_permission_view", "_assert_task_ready_read_profile",
@@ -86,7 +91,9 @@ def _driver_functions():
     namespace = {
         "re": re, "require": require, "hashlib": hashlib,
         "json": json, "os": os, "subprocess": types.SimpleNamespace(), "time": time,
-        "state": {"checks": {}, "identities": {}, "audit_summaries": {},
+        "state": {"checks": {}, "identities": {
+                  "signal_job_id": AUDIT_SIGNAL_JOB_ID,
+                  "signal_snapshot_artifact_id": AUDIT_SIGNAL_ARTIFACT_ID}, "audit_summaries": {},
                   "mutation_attempts": [], "uncertain_actions": [],
                   "grant_idempotency_key": None, "revoke_attempted": False,
                   "worker_cleanup_attempted": False, "failure_category": None},
@@ -137,7 +144,15 @@ def _audit_fixture():
     run_id = "agent_run_" + "f" * 32
     digest = "1" * 64
     reservation_id = "continuation_" + "2" * 32
-    event_key = "ready-v1:" + "3" * 64
+    ready_signal = {
+        "kind": "signal_producer_jobs", "data_ready": True,
+        "identity": AUDIT_SIGNAL_JOB_ID, "status": "completed",
+        "updated_at": "2026-10-03T00:00:00+00:00",
+        "result_artifact_id": AUDIT_SIGNAL_ARTIFACT_ID,
+    }
+    event_key = "ready-v1:" + hashlib.sha256(
+        json.dumps(ready_signal, sort_keys=True).encode()).hexdigest()
+    input_sha256 = hashlib.sha256(b"offline exact ready instruction").hexdigest()
     expected_events = [
         ("byq_research_get", "authorized", "research_task", task_id),
         ("byq_research_get", "success", "research_task", task_id),
@@ -184,12 +199,13 @@ def _audit_fixture():
         "events": [binding, *audit_events],
         "settlement": {"reservation_id": reservation_id, "grant_version": 1, "run_id": root,
                        "status": "settled", "outcome": "completed", "event_key": event_key,
-                       "dispatch_attempts": 1, "settlement_sha256": digest},
+                       "dispatch_attempts": 1, "settlement_sha256": digest,
+                       "input_sha256": input_sha256, "ready_signal": copy.deepcopy(ready_signal)},
     }
     settlement = {"reservation_id": reservation_id, "run_id": root,
                   "status": "settled", "outcome": "completed", "event_key": event_key,
                   "dispatch_attempts": 1, "settlement_sha256": digest,
-                  "grant_version": 1}
+                  "grant_version": 1, "input_sha256": input_sha256}
     return document, settlement, expected_events
 
 
@@ -1778,6 +1794,59 @@ def test_authoritative_audit_contract_rejects_mismatched_scope_and_unknown_recei
                     {**settlement, "grant_version": 2}):
         with pytest.raises(DriverContractRejected):
             validate_settlement(unknown, 1)
+
+
+@pytest.mark.parametrize("mutation,category", [
+    ("missing_ready", "background_ready_event_does_not_match_delivered_signal_job"),
+    ("wrong_job", "background_ready_event_does_not_match_delivered_signal_job"),
+    ("wrong_artifact", "background_ready_event_does_not_match_delivered_signal_job"),
+    ("extra_ready_field", "background_ready_event_does_not_match_delivered_signal_job"),
+    ("wrong_status", "background_ready_event_does_not_match_delivered_signal_job"),
+    ("wrong_event_digest", "structured_ready_event_input_binding_invalid"),
+    ("missing_input_digest", "structured_ready_event_input_binding_invalid"),
+    ("malformed_input_digest", "structured_ready_event_input_binding_invalid"),
+    ("different_input_digest", "structured_settlement_root_link_invalid"),
+    ("different_event_digest", "structured_settlement_root_link_invalid"),
+])
+def test_structured_audit_binds_exact_delivered_ready_signal_and_input(mutation, category):
+    functions = _driver_functions()
+    document, settlement, expected_events = _audit_fixture()
+    receipt = document["settlement"]
+    if mutation == "missing_ready":
+        receipt.pop("ready_signal")
+    elif mutation == "wrong_job":
+        receipt["ready_signal"]["identity"] = "signaljob_" + "8" * 32
+    elif mutation == "wrong_artifact":
+        receipt["ready_signal"]["result_artifact_id"] = "artifact_" + "8" * 32
+    elif mutation == "extra_ready_field":
+        receipt["ready_signal"]["unexpected"] = True
+    elif mutation == "wrong_status":
+        receipt["ready_signal"]["status"] = "running"
+    elif mutation == "wrong_event_digest":
+        receipt["event_key"] = settlement["event_key"] = "ready-v1:" + "8" * 64
+    elif mutation == "missing_input_digest":
+        receipt.pop("input_sha256")
+        settlement.pop("input_sha256")
+    elif mutation == "malformed_input_digest":
+        receipt["input_sha256"] = settlement["input_sha256"] = "not-a-digest"
+    elif mutation == "different_input_digest":
+        receipt["input_sha256"] = "8" * 64
+    elif mutation == "different_event_digest":
+        receipt["event_key"] = "ready-v1:" + "8" * 64
+    else:
+        raise AssertionError("unknown test mutation")
+    with pytest.raises(DriverContractRejected) as rejected:
+        functions["_assert_structured_agent_audit"](
+            document, stage="background", task_id=document["task"]["task_id"],
+            conversation_id=document["task"]["conversation_id"],
+            trace_id=document["task"]["trace_id"],
+            runtime_root_id=document["runtime_root"]["root_run_id"],
+            expected_events=expected_events, settlement=settlement)
+    assert rejected.value.category == category
+    assert functions["_is_untrusted_identity"](category)
+    observation = functions["state"]["checks"]["structured_audit_observed_background"]
+    assert observation["qualification"] == "diagnostic_only_not_a_pass"
+    assert observation["settlement_check"] == "pending"
 
 
 def test_structured_audit_accepts_direct_close_or_one_exact_completed_binding_and_rejects_event_drift():
