@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import re
+import runpy
 import subprocess
 import time
 import urllib.error
@@ -32,6 +33,38 @@ RESERVATION_PATTERN = re.compile(r"continuation_[0-9a-f]{32}\Z")
 SESSION_PATTERN = re.compile(r"byq-session-[0-9a-f]{32}\Z")
 TRACE_PATTERN = re.compile(r"byq-trace-[0-9a-f]{32}\Z")
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
+_continuation_contract_path = Path(__file__).resolve().parents[2] / "packages/contracts/continuation_request.py"
+_continuation_contract = runpy.run_path(str(_continuation_contract_path))
+PROFILE_BINDING = _continuation_contract["profile_binding"]()
+PROFILE_REQUEST_LIMITS = _continuation_contract["request_limits"]()
+del _continuation_contract
+SESSION_IDENTITY_FAILURES = frozenset({
+    "original_agent_session_identity_changed", "original_agent_session_trace_changed",
+})
+UNTRUSTED_IDENTITY_FAILURES = frozenset({
+    *SESSION_IDENTITY_FAILURES,
+    "reconciliation_task_identity_changed", "reconciliation_permission_identity_changed",
+    "reconciliation_signal_job_identity_changed", "continuation_permission_identity_changed",
+    "reconciliation_unexpected_permission", "reconciliation_request_identity_changed",
+    "structured_agent_audit_task_scope_invalid", "structured_agent_audit_runtime_session_invalid",
+    "structured_agent_audit_envelope_invalid", "structured_agent_audit_event_invalid",
+    "structured_agent_audit_scope_mismatch", "unexpected_structured_request_receipt",
+    "structured_runtime_root_identity_invalid", "structured_runtime_root_scope_invalid",
+    "structured_agent_run_identity_invalid", "structured_agent_audit_event_identity_invalid",
+    "structured_agent_audit_actions_or_resources_invalid", "structured_settlement_root_link_invalid",
+    "research_task_original_conversation_identity_invalid", "strategy_draft_product_lineage_invalid",
+    "validated_strategy_version_product_lineage_invalid", "human_strategy_approval_lineage_invalid",
+    "single_request_grant_contract_invalid", "single_request_profile_binding_invalid",
+    "single_request_profile_limits_invalid", "exact_grant_version_invalid",
+    "foreground_structured_runtime_session_changed", "background_structured_runtime_session_changed",
+    "original_session_answer_or_trace_changed_after_gateway_restart", "same_job_identity_changed",
+    "signal_worker_job_identity_changed", "unexpected_active_job_in_dedicated_f6_owner_scope",
+    "validated_signal_artifact_identity_invalid", "validated_signal_artifact_content_lineage_invalid",
+    "validated_signal_artifact_lineage_invalid", "background_grant_identity_changed",
+    "background_runtime_root_identity_invalid", "background_reservation_identity_invalid",
+    "background_settlement_digest_invalid", "background_ready_event_identity_invalid",
+    "background_ready_event_does_not_match_delivered_signal_job",
+})
 
 
 class EvidenceError(RuntimeError):
@@ -69,10 +102,13 @@ def _messages(body: object) -> list[dict[str, object]]:
     return [item for item in body["messages"] if isinstance(item, dict)]
 
 
-def _session_call(client, session_id: str) -> dict[str, object]:
-    body = client("GET", f"/v1/agent/sessions/{session_id}", timeout=12)
-    require(isinstance(body, dict) and body.get("conversation", {}).get("conversation_id") == session_id,
+def _session_call(api_call, session_id: str, trace_id: str, *, timeout: float = 12) -> dict[str, object]:
+    body = api_call("GET", f"/v1/agent/sessions/{session_id}", timeout=timeout)
+    conversation = body.get("conversation") if isinstance(body, dict) else None
+    require(isinstance(conversation, dict) and conversation.get("session_id") == session_id,
             "original_agent_session_identity_changed")
+    require(conversation.get("trace_id") == trace_id,
+            "original_agent_session_trace_changed")
     return body
 
 
@@ -88,10 +124,11 @@ def _answer_after(body: dict[str, object], prompt: str) -> str | None:
                      if item.get("role") == "assistant")
 
 
-def _wait_answer(client, session_id: str, prompt: str, required: tuple[str, ...], *, timeout: int = 180) -> tuple[dict[str, object], str]:
+def _wait_answer(api_call, session_id: str, trace_id: str, prompt: str,
+                 required: tuple[str, ...], *, timeout: int = 180) -> tuple[dict[str, object], str]:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        body = _session_call(client, session_id)
+        body = _session_call(api_call, session_id, trace_id)
         answer = _answer_after(body, prompt)
         if answer is not None and all(value in answer for value in required):
             return body, answer
@@ -148,6 +185,7 @@ def _write_evidence(*, suffix: str = "") -> str:
         "scope": "keyless DSH-to-BYQ-MCP/domain/signal-Worker wiring; synthetic Provider; not model-quality evidence",
         "last_confirmed_stage": state["stage"],
         "failure_category": state.get("failure_category"),
+        "failure_reconciliation_mode": state.get("failure_reconciliation_mode"),
         "mutation_attempts": list(state["mutation_attempts"]),
         "uncertain_actions": list(state["uncertain_actions"]),
         "identities": {key: value for key, value in state["identities"].items() if value is not None},
@@ -171,8 +209,10 @@ def _write_evidence(*, suffix: str = "") -> str:
     print(json.dumps({
         "stage": "f6_evidence_saved", "status": state["status"], "phase": payload["phase"],
         "sha256": digest, "failure_category": state.get("failure_category"),
+        "project": project,
         "identities": payload["identities"],
         "structured_agent_audits": payload["structured_agent_audits"],
+        "failure_reconciliation": _failure_observation_summary(state.get("failure_observation")),
     }, sort_keys=True), flush=True)
     if not suffix:
         state["primary_evidence_written"] = True
@@ -182,7 +222,8 @@ def _write_evidence(*, suffix: str = "") -> str:
 def _validate_settlement_identity(candidate: object, grant_version: int) -> dict[str, object]:
     require(isinstance(candidate, dict), "background_request_identity_missing")
     require(candidate.get("status") == "settled"
-            and candidate.get("dispatch_attempts") == 1
+            and type(candidate.get("dispatch_attempts")) is int and candidate.get("dispatch_attempts") == 1
+            and type(candidate.get("grant_version")) is int
             and candidate.get("grant_version") == grant_version,
             "background_request_receipt_not_exactly_settled")
     runtime_root_id = candidate.get("run_id")
@@ -224,25 +265,30 @@ def _assert_structured_agent_audit(document: object, *, stage: str, task_id: str
     require(isinstance(runtime_session_id, str)
             and SESSION_PATTERN.fullmatch(runtime_session_id) is not None,
             "structured_agent_audit_runtime_session_invalid")
-    require(isinstance(root, dict) and root.get("root_run_id") == runtime_root_id
-            and root.get("owner_principal") == "f6-chain-user"
+    require(isinstance(root, dict), "structured_runtime_root_terminal_not_confirmed")
+    require(root.get("root_run_id") == runtime_root_id,
+            "structured_runtime_root_identity_invalid")
+    require(root.get("owner_principal") == "f6-chain-user"
             and root.get("workspace_id") == task.get("workspace_id")
             and root.get("session_id") == runtime_session_id
-            and root.get("trace_id") == trace_id
-            and root.get("status") == "completed" and root.get("authority_status") == "closed"
+            and root.get("trace_id") == trace_id,
+            "structured_runtime_root_scope_invalid")
+    require(root.get("status") == "completed" and root.get("authority_status") == "closed"
             and type(root.get("terminal_sequence")) is int and root["terminal_sequence"] > 0
             and isinstance(root.get("terminal_event_sha256"), str)
             and SHA256_PATTERN.fullmatch(root["terminal_event_sha256"]) is not None,
-            "structured_runtime_root_terminal_invalid")
-    require(isinstance(run, dict) and isinstance(run.get("run_id"), str)
+            "structured_runtime_root_terminal_not_confirmed")
+    require(isinstance(run, dict), "structured_agent_run_terminal_not_confirmed")
+    require(isinstance(run.get("run_id"), str)
             and AGENT_RUN_PATTERN.fullmatch(run["run_id"]) is not None
             and run.get("root_run_id") == runtime_root_id
             and run.get("owner_principal") == "f6-chain-user"
             and run.get("actor_principal") == "byq-product-agent-" + runtime_session_id
             and run.get("role_id") == "quant_orchestrator"
-            and run.get("session_id") == runtime_session_id and run.get("trace_id") == trace_id
-            and run.get("status") == "completed" and run.get("authority_status") == "closed",
-            "structured_agent_run_terminal_or_lineage_invalid")
+            and run.get("session_id") == runtime_session_id and run.get("trace_id") == trace_id,
+            "structured_agent_run_identity_invalid")
+    require(run.get("status") == "completed" and run.get("authority_status") == "closed",
+            "structured_agent_run_terminal_not_confirmed")
     require(isinstance(events, list), "structured_agent_audit_events_invalid")
     actual_events: list[tuple[str, str, str | None, str | None]] = []
     for event in events:
@@ -259,18 +305,23 @@ def _assert_structured_agent_audit(document: object, *, stage: str, task_id: str
         *expected_events,
         ("runtime_turn_binding", "completed", "runtime_turn", runtime_root_id),
     ]
-    require(sorted(actual_events, key=str) == sorted(expected, key=str),
-            "structured_agent_audit_actions_or_resources_invalid")
+    if sorted(actual_events, key=str) != sorted(expected, key=str):
+        subset_of_expected = all(actual_events.count(item) <= expected.count(item) for item in actual_events)
+        if subset_of_expected:
+            raise EvidenceError("structured_agent_audit_events_incomplete")
+        raise EvidenceError("structured_agent_audit_actions_or_resources_invalid")
     observed_settlement = document.get("settlement")
     if settlement is None:
         require(observed_settlement is None, "unexpected_structured_request_receipt")
     else:
-        require(isinstance(observed_settlement, dict)
-                and observed_settlement.get("reservation_id") == settlement.get("reservation_id")
+        require(isinstance(observed_settlement, dict), "structured_settlement_not_confirmed")
+        require(observed_settlement.get("reservation_id") == settlement.get("reservation_id")
                 and observed_settlement.get("run_id") == runtime_root_id
+                and type(observed_settlement.get("grant_version")) is int
                 and observed_settlement.get("grant_version") == settlement.get("grant_version") == 1
                 and observed_settlement.get("status") == "settled"
                 and observed_settlement.get("outcome") == "completed"
+                and type(observed_settlement.get("dispatch_attempts")) is int
                 and observed_settlement.get("dispatch_attempts") == 1
                 and observed_settlement.get("event_key") == settlement.get("event_key")
                 and observed_settlement.get("settlement_sha256") == settlement.get("settlement_sha256"),
@@ -295,9 +346,10 @@ def _assert_validated_signal_artifact(artifact: object, *, artifact_id: str, tas
     require(isinstance(artifact, dict) and artifact.get("artifact_id") == artifact_id
             and artifact.get("owner_principal") == owner_principal
             and artifact.get("workspace_id") == workspace_id
-            and artifact.get("task_id") == task_id
-            and artifact.get("kind") == "signal_snapshot" and artifact.get("status") == "validated",
-            "validated_signal_artifact_scope_or_status_invalid")
+            and artifact.get("task_id") == task_id,
+            "validated_signal_artifact_identity_invalid")
+    require(artifact.get("kind") == "signal_snapshot" and artifact.get("status") == "validated",
+            "validated_signal_artifact_state_invalid")
     content = artifact.get("content")
     strategy = content.get("strategy") if isinstance(content, dict) else None
     universe = content.get("universe") if isinstance(content, dict) else None
@@ -359,17 +411,43 @@ def _read_structured_agent_audit(stage: str, *, task_id: str, conversation_id: s
             raise EvidenceError("structured_agent_audit_read_outcome_unknown") from None
         observations["attempts"] = int(observations["attempts"]) + 1
         if result.returncode != 0:
+            stderr = result.stderr.strip() if isinstance(result.stderr, str) else ""
+            known_audit_failures = {
+                "exact F6 Product conversation scope changed": "structured_agent_audit_task_scope_invalid",
+                "F6 Runtime root exists outside the exact owner/session/workspace/trace scope":
+                    "structured_runtime_root_scope_invalid",
+                "F6 Runtime root identity is ambiguous": "structured_runtime_root_identity_invalid",
+                "F6 Runtime root identity changed during read": "structured_runtime_root_identity_invalid",
+                "F6 AgentRun terminal or owner context is invalid": "structured_agent_run_identity_invalid",
+                "F6 Runtime root has no exact completed terminal proof":
+                    "structured_runtime_root_terminal_not_confirmed",
+                "F6 Runtime root does not identify one AgentRun": "structured_agent_run_terminal_not_confirmed",
+                "exact F6 task/conversation scope not found": "structured_agent_audit_task_not_visible",
+                "exact F6 settled request receipt not found": "structured_settlement_not_confirmed",
+                "F6 settlement is not bound to the exact Runtime root": "structured_settlement_root_link_invalid",
+                "F6 AgentRun audit event count exceeds the exact bounded contract":
+                    "structured_agent_audit_actions_or_resources_invalid",
+            }
+            if stderr in known_audit_failures:
+                raise EvidenceError(known_audit_failures[stderr])
             raise EvidenceError("structured_agent_audit_read_failed")
         try:
             document = json.loads(result.stdout)
         except (ValueError, TypeError):
             raise EvidenceError("structured_agent_audit_response_invalid") from None
-        if (isinstance(document, dict) and document.get("schema_version") == "f6-agent-audit-readiness.v1"
-                and document.get("stage") == stage and document.get("status") == "not_ready"
-                and document.get("category") in {"runtime_root_not_visible", "runtime_root_active"}):
-            observations["last_not_ready_category"] = document["category"]
-            time.sleep(min(1, max(0, deadline - time.monotonic())))
-            continue
+        if (isinstance(document, dict)
+                and document.get("schema_version") == "f6-agent-audit-readiness.v1"):
+            if document.get("stage") != stage:
+                raise EvidenceError("structured_agent_audit_scope_mismatch")
+            if document.get("status") == "not_ready":
+                category = document.get("category")
+                if category in {"runtime_root_not_visible", "runtime_root_active"}:
+                    observations["last_not_ready_category"] = category
+                    time.sleep(min(1, max(0, deadline - time.monotonic())))
+                    continue
+                if category == "scope_mismatch":
+                    raise EvidenceError("structured_agent_audit_scope_mismatch")
+                raise EvidenceError("structured_agent_audit_readiness_unknown")
         summary = _assert_structured_agent_audit(
             document, stage=stage, task_id=task_id, conversation_id=conversation_id,
             trace_id=trace_id, runtime_root_id=runtime_root_id,
@@ -379,70 +457,403 @@ def _read_structured_agent_audit(stage: str, *, task_id: str, conversation_id: s
     raise EvidenceError("structured_agent_audit_terminal_proof_deadline")
 
 
-def _failure_readonly_window(client, *, seconds: int) -> None:
-    """Preserve one bounded GET-only reconciliation window after first evidence."""
-    deadline = time.monotonic() + seconds
-    observations: dict[str, object] = {"session_reads": 0, "permission_reads": 0,
-                                      "request_status": None, "answer_persisted": False}
-    task_id = state["identities"].get("task_id")
-    conversation_id = state["identities"].get("conversation_id")
-    if not isinstance(conversation_id, str):
+def _remaining_timeout(deadline: float, maximum: float) -> float:
+    remaining = deadline - time.monotonic()
+    require(remaining > 0, "reconciliation_deadline_exhausted")
+    return min(maximum, remaining)
+
+
+def _failure_observation_summary(observation: object) -> dict[str, object] | None:
+    if not isinstance(observation, dict):
+        return None
+    return {key: observation.get(key) for key in (
+        "classification", "reconcile_mode", "stop_category", "session_reads", "task_reads",
+        "permission_reads", "job_reads", "side_effects_resolved",
+        "resource_cleanup_is_terminal_proof",
+    )}
+
+
+def _is_untrusted_identity(category: object) -> bool:
+    return isinstance(category, str) and category in UNTRUSTED_IDENTITY_FAILURES
+
+
+def _request_state_identity_mismatch(request_state: object, identities: dict[str, object]) -> bool:
+    if not isinstance(request_state, dict):
+        return False
+    reserved = request_state.get("requests_reserved")
+    remaining = request_state.get("requests_remaining")
+    unconfirmed = request_state.get("unconfirmed_requests")
+    if (type(reserved) is not int or type(remaining) is not int
+            or type(unconfirmed) is not int):
+        return False
+    if reserved not in {0, 1} or (reserved, remaining) not in {(0, 1), (1, 0)}:
+        return True
+    if reserved == 0:
+        return (unconfirmed != 0 or request_state.get("request_identity") is not None
+                or request_state.get("request_usage") is not None)
+    identity = request_state.get("request_identity")
+    if not isinstance(identity, dict):
+        return unconfirmed == 0
+    status = identity.get("status")
+    if status not in {"settled", "rejected"}:
+        return unconfirmed == 0
+    if unconfirmed != 0:
+        return True
+    if (type(identity.get("grant_version")) is not int
+            or identity.get("grant_version") != identities.get("grant_version")):
+        return True
+    reservation_id = identity.get("reservation_id")
+    if (not isinstance(reservation_id, str) or RESERVATION_PATTERN.fullmatch(reservation_id) is None
+            or (isinstance(identities.get("background_reservation_id"), str)
+                and reservation_id != identities["background_reservation_id"])):
+        return True
+    event_key = identity.get("event_key")
+    if (not isinstance(event_key, str) or re.fullmatch(r"ready-v1:[0-9a-f]{64}", event_key) is None
+            or (isinstance(identities.get("background_event_key"), str)
+                and event_key != identities["background_event_key"])):
+        return True
+    if status == "rejected":
+        return identity.get("run_id") is not None
+    run_id = identity.get("run_id")
+    return (not isinstance(run_id, str) or RUNTIME_ROOT_PATTERN.fullmatch(run_id) is None
+            or (isinstance(identities.get("background_runtime_root_id"), str)
+                and run_id != identities["background_runtime_root_id"]))
+
+
+def _failure_readonly_window(api_call, *, seconds: int) -> None:
+    """Reconcile only by bounded reads; never turn missing proof into health."""
+    identities = state.get("identities", {})
+    task_id = identities.get("task_id")
+    conversation_id = identities.get("conversation_id")
+    trace_id = identities.get("trace_id")
+    mode = _failure_reconciliation_mode()
+    state["failure_reconciliation_mode"] = mode
+    observations: dict[str, object] = {
+        "classification": "unknown_unresolved_side_effects",
+        "reconcile_mode": mode,
+        "session_reads": 0, "task_reads": 0, "permission_reads": 0, "job_reads": 0,
+        "session_status": None, "session_messages_observed": None,
+        "request_state": None, "signal_job_status": None, "task_state_valid": False,
+        "known_runtime_root_ids": {
+            key: identities.get(key) for key in (
+                "foreground_1_runtime_root_id", "foreground_2_runtime_root_id",
+                "background_runtime_root_id") if identities.get(key) is not None
+        },
+        "side_effects_resolved": False,
+        "resource_cleanup_is_terminal_proof": False,
+    }
+    if mode == "untrusted_identity":
+        observations.update(classification="untrusted_identity", stop_category=state.get("failure_category"))
         state["failure_observation"] = observations
         return
+    if (not isinstance(conversation_id, str) or not isinstance(trace_id, str)
+            or re.fullmatch(r"conversation_[0-9a-f]{32}", conversation_id) is None
+            or TRACE_PATTERN.fullmatch(trace_id) is None):
+        observations["classification"] = "unknown_scope_incomplete"
+        state["failure_observation"] = observations
+        return
+
+    deadline = time.monotonic() + max(0, min(seconds, 20))
     while time.monotonic() < deadline:
+        # A previous read may be stale. Every closure decision uses one exact pass.
+        observations["request_state"] = None
+        observations["signal_job_status"] = None
+        session_ok = False
+        task_ok = not isinstance(task_id, str)
+        permission_ok = not isinstance(state.get("grant_idempotency_key"), str)
+        job_ok = not isinstance(identities.get("signal_job_id"), str)
         try:
-            session_view = _session_call(client, conversation_id)
+            session_view = _session_call(
+                api_call, conversation_id, trace_id,
+                timeout=_remaining_timeout(deadline, 12))
             observations["session_reads"] = int(observations["session_reads"]) + 1
-            if isinstance(task_id, str):
-                messages = _messages(session_view)
-                bg_indices = [index for index, item in enumerate(messages)
-                              if item.get("role") == "user"
-                              and "BYQ trusted read-only task-ready follow-up for exact task " + task_id
-                                  in _body_text(item.get("content"))]
-                if bg_indices:
-                    answer = "\n".join(_body_text(item.get("content")) for item in messages[bg_indices[0] + 1:]
-                                        if item.get("role") == "assistant")
-                    exact_ids = [state["identities"].get(key) for key in (
-                        "task_id", "backtest_task_id", "signal_job_id", "signal_snapshot_artifact_id")]
-                    observations["answer_persisted"] = (
-                        all(isinstance(value, str) and value in answer for value in exact_ids)
-                        and "No domain writes were made." in answer)
+            conversation = session_view.get("conversation")
+            observations["session_status"] = conversation.get("status")
+            messages = _messages(session_view)
+            observations["session_messages_observed"] = len(messages)
+            session_ok = True
         except EvidenceError as error:
             observations["session_read_category"] = error.category
+            if _is_untrusted_identity(error.category):
+                observations.update(classification="untrusted_identity", stop_category=error.category)
+                break
+            if error.category == "reconciliation_deadline_exhausted":
+                break
+
         if isinstance(task_id, str):
             try:
-                view = _permission_view(client, task_id)
-                observations["permission_reads"] = int(observations["permission_reads"]) + 1
-                request_state = view.get("request_state")
-                identity = request_state.get("request_identity") if isinstance(request_state, dict) else None
-                if isinstance(identity, dict):
-                    observations["request_status"] = identity.get("status")
-                    observations["runtime_root_id"] = identity.get("run_id")
-                    observations["dispatch_attempts"] = identity.get("dispatch_attempts")
+                task = api_call("GET", f"/api/product/research/tasks/{task_id}",
+                                timeout=_remaining_timeout(deadline, 15))
+                observations["task_reads"] = int(observations["task_reads"]) + 1
+                require(isinstance(task, dict) and task.get("task_id") == task_id
+                        and task.get("owner_principal") == "f6-chain-user"
+                        and task.get("conversation_id") == conversation_id
+                        and task.get("trace_id") == trace_id
+                        and (not isinstance(identities.get("workspace_id"), str)
+                             or task.get("workspace_id") == identities.get("workspace_id")),
+                        "reconciliation_task_identity_changed")
+                observations["task_status"] = task.get("status")
+                observations["task_state_valid"] = task.get("status") in {"planned", "running"}
+                task_ok = True
             except EvidenceError as error:
-                observations["permission_read_category"] = error.category
-        if observations.get("answer_persisted") and observations.get("request_status") == "settled":
+                observations["task_read_category"] = error.category
+                if _is_untrusted_identity(error.category):
+                    observations.update(classification="untrusted_identity", stop_category=error.category)
+                    break
+                if error.category == "reconciliation_deadline_exhausted":
+                    break
+
+            if task_ok:
+                try:
+                    permission_view = _permission_view(
+                        api_call, task_id, timeout=_remaining_timeout(deadline, 15))
+                    observations["permission_reads"] = int(observations["permission_reads"]) + 1
+                    require(permission_view.get("schema_version") == "task-continuation-permission.v2",
+                            "reconciliation_permission_schema_invalid")
+                    permission = permission_view.get("permission")
+                    grant_key = state.get("grant_idempotency_key")
+                    version_id = identities.get("strategy_version_artifact_id")
+                    if permission is not None and isinstance(grant_key, str):
+                        require(isinstance(permission, dict)
+                                and permission.get("confirmation_id") == grant_key
+                                and permission.get("confirmed_artifact_ids") == [version_id]
+                                and type(permission.get("grant_version")) is int
+                                and permission.get("grant_version") == identities.get("grant_version", 1),
+                                "reconciliation_permission_identity_changed")
+                        observations["grant_status"] = (
+                            "revoked" if permission.get("revoked_at") is not None else "active")
+                        permission_ok = permission.get("revoked_at") is not None
+                    elif permission is not None:
+                        raise EvidenceError("reconciliation_unexpected_permission")
+                    else:
+                        permission_ok = ("continuation_permission_grant" not in
+                                         state.get("mutation_attempts", []))
+                        observations["grant_status"] = "absent"
+                    request_state = permission_view.get("request_state")
+                    if isinstance(request_state, dict):
+                        request_identity = request_state.get("request_identity")
+                        request_summary = {
+                            key: request_state.get(key) for key in (
+                                "requests_reserved", "requests_remaining", "unconfirmed_requests")
+                        }
+                        request_summary["request_identity"] = (
+                            {key: request_identity.get(key) for key in (
+                                "reservation_id", "status", "run_id", "event_key", "grant_version",
+                                "outcome", "settlement_sha256", "dispatch_attempts")}
+                            if isinstance(request_identity, dict) else None
+                        )
+                        request_usage = request_state.get("request_usage")
+                        request_summary["request_usage"] = request_usage
+                        observations["request_state"] = request_summary
+                        if _request_state_identity_mismatch(request_state, identities):
+                            observations.update(classification="untrusted_identity",
+                                                stop_category="reconciliation_request_identity_changed")
+                            break
+                    else:
+                        observations["permission_read_category"] = "reconciliation_request_state_missing"
+                except EvidenceError as error:
+                    observations["permission_read_category"] = error.category
+                    if _is_untrusted_identity(error.category):
+                        observations.update(classification="untrusted_identity", stop_category=error.category)
+                        break
+                    if error.category == "reconciliation_deadline_exhausted":
+                        break
+
+        signal_job_id = identities.get("signal_job_id")
+        if task_ok and isinstance(signal_job_id, str):
+            try:
+                job_view = api_call("GET", f"/api/product/signal-producer/jobs/{signal_job_id}",
+                                    timeout=_remaining_timeout(deadline, 15))
+                observations["job_reads"] = int(observations["job_reads"]) + 1
+                job = job_view.get("job") if isinstance(job_view, dict) else None
+                require(isinstance(job, dict) and job.get("job_id") == signal_job_id
+                        and job.get("task_id") == task_id
+                        and job.get("owner_principal") == "f6-chain-user"
+                        and job.get("strategy_version_artifact_id") == identities.get("strategy_version_artifact_id")
+                        and job.get("stock_pool_snapshot_id") == identities.get("stock_pool_snapshot_id"),
+                        "reconciliation_signal_job_identity_changed")
+                observations["signal_job_status"] = job.get("status")
+                expected_artifact_id = identities.get("signal_snapshot_artifact_id")
+                job_ok = (job.get("status") in {"completed", "failed", "cancelled"}
+                          and (job.get("status") != "completed"
+                               or (isinstance(expected_artifact_id, str)
+                                   and job.get("result_artifact_id") == expected_artifact_id)))
+            except EvidenceError as error:
+                observations["job_read_category"] = error.category
+                if _is_untrusted_identity(error.category):
+                    observations.update(classification="untrusted_identity", stop_category=error.category)
+                    break
+                if error.category == "reconciliation_deadline_exhausted":
+                    break
+
+        request_state = observations.get("request_state")
+        request_ok = task_id is None
+        if isinstance(request_state, dict):
+            reserved = request_state.get("requests_reserved")
+            remaining = request_state.get("requests_remaining")
+            unconfirmed = request_state.get("unconfirmed_requests")
+            request_identity = request_state.get("request_identity")
+            if (type(reserved) is int and type(remaining) is int
+                    and type(unconfirmed) is int and unconfirmed == 0):
+                if reserved == 0 and remaining == 1 and request_identity is None:
+                    request_ok = True
+                elif (reserved == 1 and isinstance(request_identity, dict)
+                      and request_identity.get("status") in {"settled", "rejected"}):
+                    receipt_status = request_identity.get("status")
+                    exact_request = (
+                        remaining == 0
+                        and type(request_identity.get("grant_version")) is int
+                        and request_identity.get("grant_version") == identities.get("grant_version")
+                        and isinstance(request_identity.get("reservation_id"), str)
+                        and RESERVATION_PATTERN.fullmatch(request_identity["reservation_id"]) is not None
+                        and isinstance(request_identity.get("event_key"), str)
+                        and re.fullmatch(r"ready-v1:[0-9a-f]{64}", request_identity["event_key"]) is not None
+                        and isinstance(identities.get("background_event_key"), str)
+                        and request_identity.get("event_key") == identities.get("background_event_key")
+                        and (identities.get("background_reservation_id") is None
+                             or request_identity.get("reservation_id") == identities.get("background_reservation_id"))
+                    )
+                    if receipt_status == "rejected":
+                        request_ok = (exact_request and request_identity.get("run_id") is None
+                                      and type(request_identity.get("dispatch_attempts")) is int
+                                      and request_identity.get("dispatch_attempts") in {0, 1}
+                                      and request_identity.get("outcome") is None
+                                      and request_identity.get("settlement_sha256") is None)
+                    else:
+                        background_root = identities.get("background_runtime_root_id")
+                        receipt_root = request_identity.get("run_id")
+                        request_ok = (exact_request
+                                      and isinstance(receipt_root, str)
+                                      and RUNTIME_ROOT_PATTERN.fullmatch(receipt_root) is not None
+                                      and (background_root is None or background_root == receipt_root)
+                                      and type(request_identity.get("dispatch_attempts")) is int
+                                      and request_identity.get("dispatch_attempts") == 1
+                                      and request_identity.get("outcome") in {"completed", "needs_attention"}
+                                      and isinstance(request_identity.get("settlement_sha256"), str)
+                                      and SHA256_PATTERN.fullmatch(request_identity["settlement_sha256"]) is not None
+                                      and _audit_closes_root("background", receipt_root))
+
+        roots_closed = True
+        for stage, key in (
+            ("fg1", "foreground_1_runtime_root_id"),
+            ("fg2", "foreground_2_runtime_root_id"),
+            ("background", "background_runtime_root_id"),
+        ):
+            root_id = identities.get(key)
+            if isinstance(root_id, str) and not _audit_closes_root(stage, root_id):
+                roots_closed = False
+        turn_attempts = state.get("mutation_attempts", [])
+        if (("foreground_agent_turn_1" in turn_attempts and not isinstance(identities.get("foreground_1_runtime_root_id"), str))
+                or ("foreground_agent_turn_2" in turn_attempts and not isinstance(identities.get("foreground_2_runtime_root_id"), str))):
+            roots_closed = False
+
+        if (mode == "bounded_readonly" and session_ok and task_ok
+                and observations.get("task_state_valid", task_id is None) and permission_ok
+                and request_ok and job_ok and roots_closed):
+            observations.update(classification="healthy_observer_confirmed", side_effects_resolved=True)
             break
-        if seconds <= 4 or time.monotonic() + 2 >= deadline:
+        if time.monotonic() + 2 >= deadline:
             break
-        time.sleep(2)
+        time.sleep(min(2, max(0, deadline - time.monotonic())))
+
+    if observations.get("classification") != "untrusted_identity":
+        observations["classification"] = (
+            "healthy_observer_confirmed" if observations.get("side_effects_resolved")
+            else "bounded_reconcile_incomplete_unknown"
+        )
+    # A bounded resource stop or the enclosing ephemeral CI cleanup never
+    # upgrades an unknown turn/job/request into terminal proof.
+    observations["resource_cleanup_is_terminal_proof"] = False
     state["failure_observation"] = observations
 
 
-def _permission_view(client, task_id: str) -> dict[str, object]:
-    view = client("GET", f"/api/product/research/tasks/{task_id}/continuation-permission", timeout=15)
+def _permission_view(api_call, task_id: str, *, timeout: float = 15) -> dict[str, object]:
+    view = api_call("GET", f"/api/product/research/tasks/{task_id}/continuation-permission", timeout=timeout)
     require(isinstance(view, dict) and view.get("task_id") == task_id,
             "continuation_permission_identity_changed")
     return view
 
 
-def _revoke_exact_grant(client) -> None:
+def _assert_task_ready_read_profile(permission: object) -> dict[str, object]:
+    require(isinstance(permission, dict), "single_request_profile_invalid")
+    profile = permission.get("execution_profile")
+    require(isinstance(profile, dict) and profile == PROFILE_BINDING
+            and type(profile.get("profile_version")) is int,
+            "single_request_profile_binding_invalid")
+    limits = permission.get("request_limits")
+    require(isinstance(limits, dict) and set(limits) == set(PROFILE_REQUEST_LIMITS)
+            and all(type(limits.get(key)) is int for key in PROFILE_REQUEST_LIMITS)
+            and limits == PROFILE_REQUEST_LIMITS,
+            "single_request_profile_limits_invalid")
+    return dict(limits)
+
+
+def _audit_closes_root(stage: str, root_id: object) -> bool:
+    summary = state.get("audit_summaries", {}).get(stage)
+    return (isinstance(root_id, str) and isinstance(summary, dict)
+            and summary.get("runtime_root_id") == root_id
+            and summary.get("terminal") == "completed/closed")
+
+
+def _failure_reconciliation_mode() -> str:
+    if _is_untrusted_identity(state.get("failure_category")):
+        return "untrusted_identity"
+    if state.get("uncertain_actions"):
+        return "unknown_mutation_unresolved"
+    identities = state.get("identities", {})
+    attempts = state.get("mutation_attempts", [])
+    for stage, action, key in (
+        ("fg1", "foreground_agent_turn_1", "foreground_1_runtime_root_id"),
+        ("fg2", "foreground_agent_turn_2", "foreground_2_runtime_root_id"),
+    ):
+        if action in attempts:
+            root_id = identities.get(key)
+            if not _audit_closes_root(stage, root_id):
+                return "accepted_root_terminal_unobserved"
+    return "bounded_readonly"
+
+
+def _stop_owned_signal_worker(compose_once, *, attempted: bool, project: str) -> None:
+    if not attempted:
+        return
+    require(PROJECT_PATTERN.fullmatch(project) is not None
+            and os.environ.get("COMPOSE_PROJECT_NAME") == project,
+            "signal_worker_cleanup_project_mismatch")
+    require(state.get("worker_cleanup_attempted") is not True,
+            "signal_worker_cleanup_duplicate_attempt")
+    state["worker_cleanup_attempted"] = True
+    try:
+        compose_once("signal_worker_stop_after_chain", "stop", "signal-worker")
+    except EvidenceError as error:
+        state["checks"]["worker_final_cleanup"] = {
+            "status": error.category, "project": project, "service": "signal-worker",
+            "worker_start_attempted": True,
+            "purpose": "ci_resource_cleanup_only", "terminal_proof": False,
+        }
+        if "signal_worker_stop_after_chain" not in state["uncertain_actions"]:
+            state["uncertain_actions"].append("signal_worker_stop_after_chain")
+        state["failure_reconciliation_mode"] = "unknown_mutation_unresolved"
+        observation = state.get("failure_observation")
+        if isinstance(observation, dict) and observation.get("classification") == "healthy_observer_confirmed":
+            observation.update(classification="bounded_reconcile_incomplete_unknown",
+                               side_effects_resolved=False,
+                               stop_category="signal_worker_cleanup_outcome_unknown")
+        raise
+    state["checks"]["worker_final_cleanup"] = {
+        "status": "dedicated_signal_worker_stopped", "project": project,
+        "service": "signal-worker", "worker_start_attempted": True,
+        "purpose": "ci_resource_cleanup_only",
+        "terminal_proof": False,
+    }
+
+
+def _revoke_exact_grant(api_call) -> None:
     task_id = state["identities"].get("task_id")
     version_id = state["identities"].get("strategy_version_artifact_id")
     if not isinstance(task_id, str) or not isinstance(version_id, str):
         return
     try:
-        view = _permission_view(client, task_id)
+        view = _permission_view(api_call, task_id)
     except EvidenceError:
         state["checks"]["revoke"] = "could_not_read_exact_permission_state"
         return
@@ -452,6 +863,7 @@ def _revoke_exact_grant(client) -> None:
         return
     if (permission.get("confirmation_id") != state.get("grant_idempotency_key")
             or permission.get("confirmed_artifact_ids") != [version_id]
+            or type(permission.get("grant_version")) is not int
             or permission.get("grant_version") != 1):
         state["checks"]["revoke"] = "permission_identity_mismatch_no_mutation"
         return
@@ -461,27 +873,33 @@ def _revoke_exact_grant(client) -> None:
     before = view.get("request_state")
     state["revoke_attempted"] = True
     try:
-        revoked = _post_once(client, "continuation_permission_revoke",
+        revoked = _post_once(api_call, "continuation_permission_revoke",
             f"/api/product/research/tasks/{task_id}/continuation-permission/revoke",
             {"grant_version": 1}, headers={"x-byq-continuation-confirmation": "v1"}, timeout=20)
         permission_after_post = revoked.get("permission")
         require(isinstance(permission_after_post, dict)
+                and type(permission_after_post.get("grant_version")) is int
                 and permission_after_post.get("grant_version") == 1
-                and permission_after_post.get("revoked_at") is not None,
+                and isinstance(permission_after_post.get("revoked_at"), str)
+                and bool(permission_after_post["revoked_at"].strip()),
                 "exact_permission_revoke_not_confirmed")
     except EvidenceError as error:
         state["checks"]["revoke_post_category"] = error.category
         if "continuation_permission_revoke" not in state["uncertain_actions"]:
             state["uncertain_actions"].append("continuation_permission_revoke")
     try:
-        after = _permission_view(client, task_id)
+        after = _permission_view(api_call, task_id)
         current = after.get("permission")
-        require(isinstance(current, dict) and current.get("grant_version") == 1
-                and current.get("revoked_at") is not None,
+        require(isinstance(current, dict) and type(current.get("grant_version")) is int
+                and current.get("grant_version") == 1
+                and isinstance(current.get("revoked_at"), str)
+                and bool(current["revoked_at"].strip()),
                 "exact_permission_revoke_get_not_confirmed")
         require(after.get("request_state") == before,
                 "request_state_changed_after_exact_revoke")
         state["checks"]["revoke"] = "one_exact_post_and_get_confirmed_no_second_request"
+        state["uncertain_actions"] = [action for action in state["uncertain_actions"]
+                                       if action != "continuation_permission_revoke"]
     except EvidenceError as error:
         state["checks"]["revoke"] = error.category
 
@@ -518,7 +936,7 @@ def call(method: str, path: str, payload: object = None, *, expected: int = 200,
 state: dict[str, object] = {
     "status": "failed", "stage": "preflight", "failure_category": None,
     "identities": {key: None for key in (
-        "conversation_id", "runtime_session_id", "trace_id",
+        "conversation_id", "runtime_session_id", "trace_id", "workspace_id",
         "foreground_1_runtime_root_id", "foreground_1_agent_run_id",
         "foreground_2_runtime_root_id", "foreground_2_agent_run_id",
         "background_runtime_root_id", "background_agent_run_id", "background_reservation_id",
@@ -528,6 +946,7 @@ state: dict[str, object] = {
         "backtest_task_id", "signal_job_id", "signal_snapshot_artifact_id", "grant_version")},
     "checks": {}, "audit_summaries": {}, "mutation_attempts": [], "uncertain_actions": [],
     "grant_idempotency_key": None, "revoke_attempted": False,
+    "worker_cleanup_attempted": False,
     "primary_evidence_written": False, "failure_observation": None,
 }
 worker_start_attempted = False
@@ -594,7 +1013,8 @@ try:
     except EvidenceError as error:
         state["uncertain_actions"].append("foreground_agent_turn_1")
         state["checks"]["foreground_1_post_category"] = error.category
-    fg1_body, fg1_answer = _wait_answer(call, session_id, fg1, ("ResearchTask ", "StrategyVersion "))
+    fg1_body, fg1_answer = _wait_answer(call, session_id, trace_id, fg1,
+                                        ("ResearchTask ", "StrategyVersion "))
     task_match = re.search(r"ResearchTask (task_[0-9a-f]{32})", fg1_answer)
     draft_match = re.search(r"StrategyDraft (artifact_[0-9a-f]{32})", fg1_answer)
     version_match = re.search(r"StrategyVersion (artifact_[0-9a-f]{32})", fg1_answer)
@@ -609,8 +1029,11 @@ try:
     require(isinstance(task, dict) and task.get("task_id") == task_id
             and task.get("owner_principal") == "f6-chain-user"
             and task.get("conversation_id") == session_id and task.get("trace_id") == trace_id
-            and task.get("status") in {"planned", "running"},
-            "research_task_original_conversation_lineage_invalid")
+            and isinstance(task.get("workspace_id"), str)
+            and task["workspace_id"].startswith("workspace_"),
+            "research_task_original_conversation_identity_invalid")
+    require(task.get("status") in {"planned", "running"}, "research_task_status_invalid")
+    state["identities"]["workspace_id"] = task["workspace_id"]
     artifacts_response = call("GET", "/api/product/research/artifacts")
     artifacts = artifacts_response.get("artifacts") if isinstance(artifacts_response, dict) else None
     require(isinstance(artifacts, list), "product_artifact_list_invalid")
@@ -701,17 +1124,12 @@ try:
             and isinstance(permission, dict)
             and permission.get("confirmation_id") == grant_key
             and permission.get("confirmed_artifact_ids") == [version_id]
-            and permission.get("max_turns") == 1
-            and permission.get("execution_profile") == {
-                "profile_id": "task-ready-read.v1", "profile_version": 1,
-                "profile_sha256": permission.get("execution_profile", {}).get("profile_sha256")},
+            and type(permission.get("max_turns")) is int and permission.get("max_turns") == 1,
             "single_request_grant_contract_invalid")
-    limits = permission.get("request_limits")
-    require(isinstance(limits, dict) and limits.get("max_provider_calls") == 16
-            and limits.get("max_tool_calls") == 16 and "token_limit" not in permission,
-            "single_request_profile_limits_invalid")
+    limits = _assert_task_ready_read_profile(permission)
+    require("token_limit" not in permission, "single_request_profile_limits_invalid")
     grant_version = permission.get("grant_version")
-    require(grant_version == 1, "exact_grant_version_invalid")
+    require(type(grant_version) is int and grant_version == 1, "exact_grant_version_invalid")
     state["identities"]["grant_version"] = grant_version
 
     fg2 = "\n".join((
@@ -735,7 +1153,8 @@ try:
     except EvidenceError as error:
         state["uncertain_actions"].append("foreground_agent_turn_2")
         state["checks"]["foreground_2_post_category"] = error.category
-    _, fg2_answer = _wait_answer(call, session_id, fg2, ("BacktestTask ", "SignalJob "))
+    _, fg2_answer = _wait_answer(call, session_id, trace_id, fg2,
+                                 ("BacktestTask ", "SignalJob "))
     bt_match = re.search(r"BacktestTask (backtesttask_[0-9a-f]{32})", fg2_answer)
     job_match = re.search(r"SignalJob (signaljob_[0-9a-f]{32})", fg2_answer)
     backtest_task_id = identifier(bt_match.group(1) if bt_match else None, BACKTEST_TASK_PATTERN,
@@ -781,15 +1200,19 @@ try:
                             {}, timeout=35)
     require(isinstance(reattached, dict) and reattached.get("continuity") == "reattached",
             "original_live_session_not_reattached")
-    session_after_restart = _session_call(call, session_id)
+    session_after_restart = _session_call(call, session_id, trace_id)
     require(session_after_restart.get("conversation", {}).get("trace_id") == trace_id
             and _answer_after(session_after_restart, fg2) == fg2_answer,
             "original_session_answer_or_trace_changed_after_gateway_restart")
     same_job = call("GET", f"/api/product/signal-producer/jobs/{signal_job_id}")
     same_job_row = same_job.get("job") if isinstance(same_job, dict) else None
     require(isinstance(same_job_row, dict) and same_job_row.get("job_id") == signal_job_id
-            and same_job_row.get("task_id") == task_id and same_job_row.get("status") == "waiting_for_data",
-            "same_job_not_read_after_gateway_restart")
+            and same_job_row.get("task_id") == task_id
+            and same_job_row.get("owner_principal") == "f6-chain-user"
+            and same_job_row.get("strategy_version_artifact_id") == version_id
+            and same_job_row.get("stock_pool_snapshot_id") == snapshot_id,
+            "same_job_identity_changed")
+    require(same_job_row.get("status") == "waiting_for_data", "same_job_status_changed")
     state["checks"]["gateway_restart"] = "live_reattach_same_session_and_same_durable_job_no_turn_replay"
 
     state["stage"] = "start_exact_signal_worker_once"
@@ -851,7 +1274,7 @@ try:
         # Both readiness facts must be observed in the same bounded polling
         # pass. A settlement from an earlier pass is not enough to close it.
         request_settlement = None
-        session_view = _session_call(call, session_id)
+        session_view = _session_call(call, session_id, trace_id)
         messages = _messages(session_view)
         bg_users = [index for index, item in enumerate(messages)
                     if item.get("role") == "user"
@@ -925,9 +1348,11 @@ try:
 
     permission_state = _permission_view(call, task_id)
     usage = permission_state.get("request_state", {}).get("request_usage")
+    settled_permission = permission_state.get("permission")
+    settled_limits = _assert_task_ready_read_profile(settled_permission)
     require(isinstance(usage, dict) and usage.get("schema_version") == "continuation-request-usage.v1"
-            and usage.get("execution_profile") == permission.get("execution_profile")
-            and usage.get("request_limits") == limits
+            and usage.get("execution_profile") == PROFILE_BINDING
+            and usage.get("request_limits") == PROFILE_REQUEST_LIMITS == limits == settled_limits
             and usage.get("limit_violations") == [],
             "settled_request_usage_profile_invalid")
     admission = usage.get("admission_usage")
@@ -994,6 +1419,7 @@ try:
                       "signal_snapshot_artifact_id": state["identities"]["signal_snapshot_artifact_id"]}), flush=True)
 except EvidenceError as error:
     state["failure_category"] = error.category
+    state["failure_reconciliation_mode"] = _failure_reconciliation_mode()
     try:
         _write_evidence()
     except (FileExistsError, OSError):
@@ -1002,31 +1428,29 @@ except EvidenceError as error:
     try:
         uncertain_foreground = any(item.startswith("foreground_agent_turn")
                                    for item in state["uncertain_actions"])
-        _failure_readonly_window(client, seconds=20 if "background" in str(state["stage"])
+        _failure_readonly_window(call, seconds=20 if "background" in str(state["stage"])
                                  or uncertain_foreground else 4)
     except EvidenceError as observation_error:
         state["failure_observation"] = {"category": observation_error.category}
 except Exception as error:  # evidence stores only exception class, never message or payload
     state["failure_category"] = type(error).__name__
+    state["failure_reconciliation_mode"] = _failure_reconciliation_mode()
     try:
         _write_evidence()
     except (FileExistsError, OSError):
         print(json.dumps({"stage": "first_failure_evidence_write_failed", "status": "failed",
                           "failure_category": state["failure_category"]}), flush=True)
     try:
-        _failure_readonly_window(client, seconds=20 if "background" in str(state["stage"]) else 4)
+        _failure_readonly_window(call, seconds=20 if "background" in str(state["stage"]) else 4)
     except EvidenceError as observation_error:
         state["failure_observation"] = {"category": observation_error.category}
 finally:
-    if worker_start_attempted:
-        try:
-            _compose_once("signal_worker_stop_after_chain", "stop", "signal-worker")
-            state["checks"]["worker_final_cleanup"] = "dedicated_signal_worker_stopped"
-        except EvidenceError as error:
-            state["checks"]["worker_final_cleanup"] = error.category
-            if state["status"] == "passed":
-                state["status"] = "failed"
-                state["failure_category"] = "worker_cleanup_failed"
+    try:
+        _stop_owned_signal_worker(_compose_once, attempted=worker_start_attempted, project=project)
+    except EvidenceError as error:
+        if state["status"] == "passed":
+            state["status"] = "failed"
+            state["failure_category"] = "worker_cleanup_failed"
     if not state["revoke_attempted"]:
         _revoke_exact_grant(call)
         if state["status"] == "passed" and state["checks"].get("revoke") != "one_exact_post_and_get_confirmed_no_second_request":

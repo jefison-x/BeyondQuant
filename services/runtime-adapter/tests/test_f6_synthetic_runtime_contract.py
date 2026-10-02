@@ -15,6 +15,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.research_request_gate import parse_response_usage
+from packages.contracts.continuation_request import profile_binding, request_limits
 from tests.f6_synthetic_runtime import (
     AGENT_RUN_PATTERN,
     AUDIT_PATTERN,
@@ -47,11 +48,24 @@ def _driver_functions():
     source = Path(path).read_text(encoding="utf-8")
     tree = ast.parse(source, filename=path)
     wanted = {"_assert_structured_agent_audit", "_assert_validated_signal_artifact",
-              "_read_structured_agent_audit", "_validate_settlement_identity"}
+              "_read_structured_agent_audit", "_validate_settlement_identity",
+              "_body_text", "_messages", "_answer_after", "_session_call", "_wait_answer",
+              "_failure_readonly_window", "_permission_view", "_assert_task_ready_read_profile",
+              "_audit_closes_root", "_failure_reconciliation_mode", "_remaining_timeout",
+              "_failure_observation_summary", "_is_untrusted_identity",
+              "_request_state_identity_mismatch", "_stop_owned_signal_worker", "_revoke_exact_grant"}
     nodes = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
              and node.name in wanted]
     if {node.name for node in nodes} != wanted:
         raise AssertionError("current F6 driver audit contract helpers are missing")
+    category_names = {"SESSION_IDENTITY_FAILURES", "UNTRUSTED_IDENTITY_FAILURES"}
+    category_nodes = [node for node in tree.body if isinstance(node, ast.Assign)
+                      and any(isinstance(target, ast.Name) and target.id in category_names
+                              for target in node.targets)]
+    found_categories = {target.id for node in category_nodes for target in node.targets
+                        if isinstance(target, ast.Name) and target.id in category_names}
+    if found_categories != category_names:
+        raise AssertionError("current F6 driver failure classification sets are missing")
 
     def require(condition: object, category: str) -> None:
         if not condition:
@@ -60,19 +74,46 @@ def _driver_functions():
     namespace = {
         "re": re, "require": require,
         "json": json, "os": os, "subprocess": types.SimpleNamespace(), "time": time,
-        "state": {"checks": {}},
+        "state": {"checks": {}, "identities": {}, "audit_summaries": {},
+                  "mutation_attempts": [], "uncertain_actions": [],
+                  "grant_idempotency_key": None, "revoke_attempted": False,
+                  "worker_cleanup_attempted": False, "failure_category": None},
         "PROJECT_PATTERN": re.compile(r"byq-ci-stack-[A-Za-z0-9][A-Za-z0-9_-]{0,80}\Z"),
         "RUNTIME_ROOT_PATTERN": re.compile(r"[0-9a-f]{32}\Z"),
         "RESERVATION_PATTERN": re.compile(r"continuation_[0-9a-f]{32}\Z"),
         "SESSION_PATTERN": re.compile(r"byq-session-[0-9a-f]{32}\Z"),
+        "TRACE_PATTERN": re.compile(r"byq-trace-[0-9a-f]{32}\Z"),
         "AGENT_RUN_PATTERN": AGENT_RUN_PATTERN,
         "AUDIT_PATTERN": AUDIT_PATTERN,
         "SHA256_PATTERN": re.compile(r"[0-9a-f]{64}\Z"),
+        "PROFILE_BINDING": profile_binding(), "PROFILE_REQUEST_LIMITS": request_limits(),
+        "SESSION_IDENTITY_FAILURES": frozenset({
+            "original_agent_session_identity_changed", "original_agent_session_trace_changed"}),
         "EvidenceError": DriverContractRejected,
     }
+    exec(compile(ast.Module(body=category_nodes, type_ignores=[]), path, "exec"), namespace)
     module = ast.Module(body=nodes, type_ignores=[])
     exec(compile(module, path, "exec"), namespace)
     return namespace
+
+
+def _base_failure_state(**identity_overrides):
+    identities = {
+        "conversation_id": "conversation_" + "7" * 32,
+        "trace_id": "byq-trace-" + "8" * 32,
+        "task_id": "task_" + "9" * 32,
+        "workspace_id": "workspace_" + "a" * 32,
+        "strategy_version_artifact_id": "artifact_" + "b" * 32,
+        "stock_pool_snapshot_id": "stock_pool_snapshot_" + "c" * 64,
+        "signal_job_id": "signaljob_" + "d" * 32,
+        "grant_version": 1,
+    }
+    identities.update(identity_overrides)
+    return {"checks": {}, "identities": identities, "audit_summaries": {},
+            "mutation_attempts": [], "uncertain_actions": [],
+            "grant_idempotency_key": "f6-ci-read-grant-byq-ci-stack-test",
+            "revoke_attempted": False, "worker_cleanup_attempted": False,
+            "failure_category": None}
 
 
 def _audit_fixture():
@@ -144,6 +185,495 @@ def _audit_fixture():
                   "dispatch_attempts": 1, "settlement_sha256": digest,
                   "grant_version": 1}
     return document, settlement, expected_events
+
+
+def _gateway_session_projection(session_id: str, trace_id: str, prompt: str, answer: str):
+    return {
+        "conversation": {"session_id": session_id, "trace_id": trace_id, "status": "active"},
+        "messages": [
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": answer},
+        ],
+        "events": [], "containment": {"status": "active"},
+    }
+
+
+@pytest.mark.parametrize("stage,required,answer", [
+    ("fg1", ("ResearchTask ", "StrategyVersion "), "ResearchTask task_1 StrategyVersion artifact_1"),
+    ("fg2", ("BacktestTask ", "SignalJob "), "BacktestTask backtesttask_1 SignalJob signaljob_1"),
+])
+def test_foreground_session_wait_uses_exact_gateway_public_session_and_trace(stage, required, answer):
+    functions = _driver_functions()
+    session_call, wait_answer = functions["_session_call"], functions["_wait_answer"]
+    session_id = "conversation_" + "1" * 32
+    trace_id = "byq-trace-" + "2" * 32
+    prompt = "F6-CI:" + stage.upper()
+    requests = []
+
+    def product_api(method, path, *, timeout):
+        requests.append((method, path, timeout))
+        return _gateway_session_projection(session_id, trace_id, prompt, answer)
+
+    body = session_call(product_api, session_id, trace_id)
+    assert body["conversation"]["session_id"] == session_id
+    assert wait_answer(product_api, session_id, trace_id, prompt, required, timeout=1) == (body, answer)
+    assert requests == [
+        ("GET", f"/v1/agent/sessions/{session_id}", 12),
+        ("GET", f"/v1/agent/sessions/{session_id}", 12),
+    ]
+
+
+def test_session_observer_rejects_wrong_or_missing_projected_identity_and_trace():
+    session_call = _driver_functions()["_session_call"]
+    session_id = "conversation_" + "3" * 32
+    trace_id = "byq-trace-" + "4" * 32
+
+    def read(body):
+        return session_call(lambda *_args, **_kwargs: body, session_id, trace_id)
+
+    valid = _gateway_session_projection(session_id, trace_id, "prompt", "answer")
+    assert read(valid) == valid
+    invalid = [
+        {**valid, "conversation": {"conversation_id": session_id, "trace_id": trace_id}},
+        {**valid, "conversation": {"session_id": "conversation_" + "5" * 32,
+                                    "trace_id": trace_id}},
+        {**valid, "conversation": {"session_id": session_id,
+                                    "trace_id": "byq-trace-" + "6" * 32}},
+        {"session_id": session_id, "conversation": {"conversation_id": session_id,
+                                                       "trace_id": trace_id}},
+        {**valid, "conversation": None},
+    ]
+    for body in invalid:
+        with pytest.raises(DriverContractRejected):
+            read(body)
+
+
+class _FakeDeadline:
+    def __init__(self):
+        self.now = 0.0
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+
+def _install_fake_deadline(functions):
+    clock = _FakeDeadline()
+    functions["time"] = SimpleNamespace(monotonic=clock.monotonic, sleep=clock.sleep)
+    return clock
+
+
+def _failure_projection(functions, *, status="completed", revoked=True):
+    identities = functions["state"]["identities"]
+    session_id, trace_id, task_id = (identities[key] for key in (
+        "conversation_id", "trace_id", "task_id"))
+    response = {
+        f"/v1/agent/sessions/{session_id}": _gateway_session_projection(
+            session_id, trace_id, "failure observer exact session", "persisted answer"),
+        f"/api/product/research/tasks/{task_id}": {
+            "task_id": task_id, "owner_principal": "f6-chain-user",
+            "conversation_id": session_id, "trace_id": trace_id,
+            "workspace_id": identities["workspace_id"], "status": "running",
+        },
+    }
+    grant_id = functions["state"]["grant_idempotency_key"]
+    permission = {
+        "confirmation_id": grant_id,
+        "confirmed_artifact_ids": [identities["strategy_version_artifact_id"]],
+        "grant_version": identities["grant_version"],
+        "revoked_at": "2026-10-02T00:00:00Z" if revoked else None,
+        "execution_profile": profile_binding(), "request_limits": request_limits(),
+    }
+    request_identity = None
+    request_usage = None
+    if status == "settled":
+        root_id = "e" * 32
+        identities["signal_snapshot_artifact_id"] = "artifact_" + "a" * 32
+        identities["background_reservation_id"] = "continuation_" + "f" * 32
+        identities["background_event_key"] = "ready-v1:" + "1" * 64
+        identities["background_runtime_root_id"] = root_id
+        functions["state"]["audit_summaries"]["background"] = {
+            "runtime_root_id": root_id, "terminal": "completed/closed"}
+        request_identity = {
+            "reservation_id": "continuation_" + "f" * 32, "status": "settled",
+            "run_id": root_id, "event_key": "ready-v1:" + "1" * 64,
+            "grant_version": identities["grant_version"], "outcome": "completed",
+            "settlement_sha256": "2" * 64, "dispatch_attempts": 1,
+        }
+        request_usage = {"schema_version": "continuation-request-usage.v1",
+                         "actual_usage": {"input_tokens": "unknown", "completeness": "unknown"}}
+    response[f"/api/product/research/tasks/{task_id}/continuation-permission"] = {
+        "task_id": task_id, "schema_version": "task-continuation-permission.v2",
+        "permission": permission,
+        "request_state": {
+            "requests_reserved": 1 if status == "settled" else 0,
+            "requests_remaining": 0 if status == "settled" else 1,
+            "unconfirmed_requests": 0, "request_identity": request_identity,
+            "request_usage": request_usage,
+        },
+    }
+    job_id = identities.get("signal_job_id")
+    if isinstance(job_id, str):
+        response[f"/api/product/signal-producer/jobs/{job_id}"] = {
+            "job": {
+            "job_id": job_id, "task_id": task_id, "owner_principal": "f6-chain-user",
+            "strategy_version_artifact_id": identities["strategy_version_artifact_id"],
+            "stock_pool_snapshot_id": identities["stock_pool_snapshot_id"], "status": "completed",
+            "result_artifact_id": identities.get("signal_snapshot_artifact_id"),
+            },
+        }
+    return response
+
+
+def _api_for_projection(response, calls):
+    def product_api(method, path, *, timeout):
+        calls.append((method, path, timeout))
+        assert method == "GET"
+        if path not in response:
+            raise AssertionError("unexpected observation path")
+        return response[path]
+    return product_api
+
+
+def test_failure_reconcile_confirms_only_complete_closed_scope_and_keeps_usage_unknown():
+    functions = _driver_functions()
+    functions["state"] = _base_failure_state(
+        foreground_1_runtime_root_id="3" * 32,
+        foreground_2_runtime_root_id="4" * 32,
+        background_runtime_root_id="e" * 32,
+    )
+    functions["state"]["mutation_attempts"] = ["foreground_agent_turn_1", "foreground_agent_turn_2"]
+    functions["state"]["audit_summaries"] = {
+        stage: {"runtime_root_id": root, "terminal": "completed/closed"}
+        for stage, root in (("fg1", "3" * 32), ("fg2", "4" * 32), ("background", "e" * 32))
+    }
+    _install_fake_deadline(functions)
+    response = _failure_projection(functions, status="settled", revoked=True)
+    calls = []
+    functions["_failure_readonly_window"](_api_for_projection(response, calls), seconds=4)
+    observed = functions["state"]["failure_observation"]
+    assert observed["classification"] == "healthy_observer_confirmed"
+    assert observed["side_effects_resolved"] is True
+    assert observed["resource_cleanup_is_terminal_proof"] is False
+    assert observed["request_state"]["request_usage"]["actual_usage"]["input_tokens"] == "unknown"
+    summary = functions["_failure_observation_summary"](observed)
+    assert summary["classification"] == "healthy_observer_confirmed"
+    assert "request_state" not in summary and "session_messages_observed" not in summary
+    assert [call[:2] for call in calls] == [
+        ("GET", "/v1/agent/sessions/" + functions["state"]["identities"]["conversation_id"]),
+        ("GET", "/api/product/research/tasks/" + functions["state"]["identities"]["task_id"]),
+        ("GET", "/api/product/research/tasks/" + functions["state"]["identities"]["task_id"]
+         + "/continuation-permission"),
+        ("GET", "/api/product/signal-producer/jobs/" + functions["state"]["identities"]["signal_job_id"]),
+    ]
+    assert all(0 < call[2] <= 4 for call in calls)
+
+
+def test_unknown_post_remains_unknown_even_with_closed_known_roots_and_terminal_job():
+    functions = _driver_functions()
+    functions["state"] = _base_failure_state(
+        foreground_1_runtime_root_id="3" * 32,
+        foreground_2_runtime_root_id="4" * 32,
+        background_runtime_root_id="e" * 32,
+    )
+    functions["state"]["mutation_attempts"] = ["foreground_agent_turn_1", "foreground_agent_turn_2"]
+    functions["state"]["uncertain_actions"] = ["product_stock_pool"]
+    functions["state"]["audit_summaries"] = {
+        stage: {"runtime_root_id": root, "terminal": "completed/closed"}
+        for stage, root in (("fg1", "3" * 32), ("fg2", "4" * 32), ("background", "e" * 32))
+    }
+    _install_fake_deadline(functions)
+    response = _failure_projection(functions, status="settled", revoked=True)
+    calls = []
+    functions["_failure_readonly_window"](_api_for_projection(response, calls), seconds=1)
+    observed = functions["state"]["failure_observation"]
+    assert observed["reconcile_mode"] == "unknown_mutation_unresolved"
+    assert observed["classification"] == "bounded_reconcile_incomplete_unknown"
+    assert observed["side_effects_resolved"] is False
+    assert observed["request_state"]["request_usage"]["actual_usage"]["input_tokens"] == "unknown"
+    assert len(calls) == 4 and all(call[0] == "GET" for call in calls)
+
+
+def test_accepted_root_without_terminal_proof_stays_unknown_after_exact_reads():
+    functions = _driver_functions()
+    functions["state"] = _base_failure_state(signal_job_id=None)
+    functions["state"]["identities"]["foreground_1_runtime_root_id"] = "3" * 32
+    functions["state"]["mutation_attempts"] = ["foreground_agent_turn_1"]
+    _install_fake_deadline(functions)
+    response = _failure_projection(functions, status="absent", revoked=True)
+    calls = []
+    functions["_failure_readonly_window"](_api_for_projection(response, calls), seconds=1)
+    observed = functions["state"]["failure_observation"]
+    assert observed["reconcile_mode"] == "accepted_root_terminal_unobserved"
+    assert observed["classification"] == "bounded_reconcile_incomplete_unknown"
+    assert observed["side_effects_resolved"] is False
+    assert [call[1] for call in calls] == [
+        "/v1/agent/sessions/" + functions["state"]["identities"]["conversation_id"],
+        "/api/product/research/tasks/" + functions["state"]["identities"]["task_id"],
+        "/api/product/research/tasks/" + functions["state"]["identities"]["task_id"]
+        + "/continuation-permission",
+    ]
+
+
+def test_active_exact_grant_does_not_count_as_side_effects_resolved():
+    functions = _driver_functions()
+    functions["state"] = _base_failure_state(signal_job_id=None)
+    _install_fake_deadline(functions)
+    response = _failure_projection(functions, status="absent", revoked=False)
+    calls = []
+    functions["_failure_readonly_window"](_api_for_projection(response, calls), seconds=1)
+    observed = functions["state"]["failure_observation"]
+    assert observed["grant_status"] == "active"
+    assert observed["classification"] == "bounded_reconcile_incomplete_unknown"
+    assert observed["side_effects_resolved"] is False
+
+
+@pytest.mark.parametrize("bad_identity,expected_calls", [
+    ("session_trace", 1), ("task_workspace", 2), ("permission_artifact", 3),
+    ("settlement_event", 3), ("job_owner", 4),
+])
+def test_observer_stops_immediately_on_proven_session_task_grant_or_job_identity_mismatch(
+        bad_identity, expected_calls):
+    functions = _driver_functions()
+    functions["state"] = _base_failure_state()
+    _install_fake_deadline(functions)
+    response = _failure_projection(
+        functions, status="settled" if bad_identity == "settlement_event" else "absent", revoked=True)
+    identities = functions["state"]["identities"]
+    if bad_identity == "session_trace":
+        response[f"/v1/agent/sessions/{identities['conversation_id']}"]["conversation"]["trace_id"] = (
+            "byq-trace-" + "f" * 32)
+    elif bad_identity == "task_workspace":
+        response[f"/api/product/research/tasks/{identities['task_id']}"]["workspace_id"] = (
+            "workspace_" + "f" * 32)
+    elif bad_identity == "permission_artifact":
+        path = f"/api/product/research/tasks/{identities['task_id']}/continuation-permission"
+        response[path]["permission"]["confirmed_artifact_ids"] = ["artifact_" + "f" * 32]
+    elif bad_identity == "settlement_event":
+        path = f"/api/product/research/tasks/{identities['task_id']}/continuation-permission"
+        response[path]["request_state"]["request_identity"]["event_key"] = "ready-v1:" + "9" * 64
+    else:
+        response[f"/api/product/signal-producer/jobs/{identities['signal_job_id']}" ]["job"]["owner_principal"] = "other-user"
+    calls = []
+    functions["_failure_readonly_window"](_api_for_projection(response, calls), seconds=1)
+    observed = functions["state"]["failure_observation"]
+    assert observed["classification"] == "untrusted_identity"
+    assert observed["side_effects_resolved"] is False
+    assert len(calls) == expected_calls
+    assert all(call[0] == "GET" for call in calls)
+
+
+def test_readonly_reconcile_clamps_each_get_to_one_total_deadline(monkeypatch):
+    functions = _driver_functions()
+    functions["state"] = _base_failure_state(signal_job_id=None)
+    clock = _install_fake_deadline(functions)
+    session_id = functions["state"]["identities"]["conversation_id"]
+    trace_id = functions["state"]["identities"]["trace_id"]
+    calls = []
+
+    def slow_session(method, path, *, timeout):
+        calls.append((method, path, timeout))
+        clock.now += 1.1
+        return _gateway_session_projection(session_id, trace_id, "prompt", "answer")
+
+    functions["_failure_readonly_window"](slow_session, seconds=1)
+    assert calls == [("GET", f"/v1/agent/sessions/{session_id}", 1)]
+    assert functions["state"]["failure_observation"]["classification"] == "bounded_reconcile_incomplete_unknown"
+    assert functions["state"]["failure_observation"]["task_reads"] == 0
+
+
+def test_each_read_get_uses_only_remaining_total_deadline():
+    functions = _driver_functions()
+    functions["state"] = _base_failure_state()
+    clock = _install_fake_deadline(functions)
+    response = _failure_projection(functions, status="absent", revoked=True)
+    calls = []
+
+    def delayed_api(method, path, *, timeout):
+        calls.append((method, path, timeout))
+        clock.now += 0.2
+        return response[path]
+
+    functions["_failure_readonly_window"](delayed_api, seconds=1)
+    assert len(calls) == 4
+    assert [round(call[2], 1) for call in calls] == [1.0, 0.8, 0.6, 0.4]
+    assert all(call[0] == "GET" for call in calls)
+
+
+def test_untrusted_primary_identity_failure_skips_all_observer_reads():
+    functions = _driver_functions()
+    functions["state"] = _base_failure_state()
+    functions["state"]["failure_category"] = "structured_runtime_root_scope_invalid"
+    calls = []
+
+    def must_not_read(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise AssertionError("untrusted identity must stop reconciliation")
+
+    functions["_failure_readonly_window"](must_not_read, seconds=20)
+    observed = functions["state"]["failure_observation"]
+    assert observed["reconcile_mode"] == "untrusted_identity"
+    assert observed["classification"] == "untrusted_identity"
+    assert observed["stop_category"] == "structured_runtime_root_scope_invalid"
+    assert calls == []
+
+
+def test_task_ready_read_profile_matches_source_closed_binding_and_all_limits():
+    functions = _driver_functions()
+    driver_source = Path(os.environ["BYQ_F6_DRIVER_PATH"]).read_text(encoding="utf-8")
+    assert 'runpy.run_path(str(_continuation_contract_path))' in driver_source
+    assert '"packages/contracts/continuation_request.py"' in driver_source
+    permission = {"execution_profile": profile_binding(), "request_limits": request_limits()}
+    assert functions["_assert_task_ready_read_profile"](permission) == request_limits()
+    assert len(request_limits()) == 11
+
+
+@pytest.mark.parametrize("change,category", [
+    (lambda p: p["execution_profile"].update(profile_sha256="0" * 64),
+     "single_request_profile_binding_invalid"),
+    (lambda p: p["execution_profile"].update(unexpected="extra"),
+     "single_request_profile_binding_invalid"),
+    (lambda p: p["execution_profile"].update(profile_version=True),
+     "single_request_profile_binding_invalid"),
+    (lambda p: p["request_limits"].pop("max_total_input_bytes"),
+     "single_request_profile_limits_invalid"),
+    (lambda p: p["request_limits"].update(unexpected=1),
+     "single_request_profile_limits_invalid"),
+    (lambda p: p["request_limits"].update(max_provider_calls=15),
+     "single_request_profile_limits_invalid"),
+    (lambda p: p["request_limits"].update(max_tool_calls=True),
+     "single_request_profile_limits_invalid"),
+])
+def test_task_ready_read_profile_rejects_nonexact_binding_or_any_limit(change, category):
+    functions = _driver_functions()
+    permission = {"execution_profile": profile_binding(), "request_limits": request_limits()}
+    change(permission)
+    with pytest.raises(DriverContractRejected) as rejected:
+        functions["_assert_task_ready_read_profile"](permission)
+    assert rejected.value.category == category
+
+
+def test_one_exact_grant_revoke_preserves_unknown_request_state():
+    functions = _driver_functions()
+    state = functions["state"] = _base_failure_state()
+    state["grant_idempotency_key"] = "f6-ci-read-grant-byq-ci-stack-test"
+    state["uncertain_actions"] = ["foreground_agent_turn_1", "continuation_permission_revoke"]
+    task_id = state["identities"]["task_id"]
+    permission_path = f"/api/product/research/tasks/{task_id}/continuation-permission"
+    request_state = {
+        "requests_reserved": 1, "requests_remaining": 0, "unconfirmed_requests": 1,
+        "request_identity": {"status": "outcome_unknown", "run_id": None,
+                             "reservation_id": "continuation_" + "f" * 32,
+                             "dispatch_attempts": 1, "grant_version": 1},
+        "request_usage": {"actual_usage": {"input_tokens": "unknown", "completeness": "unknown"}},
+    }
+    active_permission = {
+        "confirmation_id": state["grant_idempotency_key"],
+        "confirmed_artifact_ids": [state["identities"]["strategy_version_artifact_id"]],
+        "grant_version": 1, "revoked_at": None,
+    }
+    revoked_permission = {**active_permission, "revoked_at": "2026-10-02T00:00:00Z"}
+    snapshots = [
+        {"task_id": task_id, "schema_version": "task-continuation-permission.v2",
+         "permission": active_permission, "request_state": copy.deepcopy(request_state)},
+        {"task_id": task_id, "schema_version": "task-continuation-permission.v2",
+         "permission": revoked_permission, "request_state": copy.deepcopy(request_state)},
+    ]
+    calls = []
+
+    def product_api(method, path, payload=None, *, expected=200, headers=None, timeout=45):
+        calls.append((method, path, payload, expected, headers))
+        if path == permission_path and method == "GET":
+            return snapshots.pop(0)
+        if path == permission_path + "/revoke" and method == "POST":
+            return {"permission": revoked_permission}
+        raise AssertionError("unexpected revoke call")
+
+    def post_once(api_call, label, path, payload, *, expected=200, headers=None, timeout=45):
+        state["mutation_attempts"].append(label)
+        return api_call("POST", path, payload, expected=expected, headers=headers, timeout=timeout)
+
+    functions["_post_once"] = post_once
+    functions["_revoke_exact_grant"](product_api)
+    assert [call[0] for call in calls] == ["GET", "POST", "GET"]
+    assert [call[1] for call in calls].count(permission_path + "/revoke") == 1
+    assert state["checks"]["revoke"] == "one_exact_post_and_get_confirmed_no_second_request"
+    assert state["uncertain_actions"] == ["foreground_agent_turn_1"]
+    assert request_state["request_identity"]["status"] == "outcome_unknown"
+    assert request_state["request_usage"]["actual_usage"]["input_tokens"] == "unknown"
+    assert calls[0][2] is None and calls[2][2] is None
+    assert state["revoke_attempted"] is True
+
+
+def test_worker_cleanup_is_exact_owned_once_and_never_terminal_proof(monkeypatch):
+    functions = _driver_functions()
+    state = functions["state"] = _base_failure_state()
+    project = "byq-ci-stack-f6-worker-test"
+    monkeypatch.setenv("COMPOSE_PROJECT_NAME", project)
+    calls = []
+    functions["_stop_owned_signal_worker"](
+        lambda *args: calls.append(args), attempted=True, project=project)
+    assert calls == [("signal_worker_stop_after_chain", "stop", "signal-worker")]
+    audit = state["checks"]["worker_final_cleanup"]
+    assert audit == {
+        "status": "dedicated_signal_worker_stopped", "project": project,
+        "service": "signal-worker", "worker_start_attempted": True,
+        "purpose": "ci_resource_cleanup_only",
+        "terminal_proof": False,
+    }
+    with pytest.raises(DriverContractRejected) as rejected:
+        functions["_stop_owned_signal_worker"](
+            lambda *args: calls.append(args), attempted=True, project=project)
+    assert rejected.value.category == "signal_worker_cleanup_duplicate_attempt"
+    assert len(calls) == 1
+
+
+def test_worker_cleanup_failure_does_not_upgrade_unknown_or_claim_terminal(monkeypatch):
+    functions = _driver_functions()
+    state = functions["state"] = _base_failure_state()
+    state["failure_observation"] = {
+        "classification": "healthy_observer_confirmed", "side_effects_resolved": True,
+        "resource_cleanup_is_terminal_proof": False,
+    }
+    project = "byq-ci-stack-f6-worker-failure"
+    monkeypatch.setenv("COMPOSE_PROJECT_NAME", project)
+
+    def failed_stop(*_args):
+        raise DriverContractRejected("dedicated_compose_action_outcome_unknown")
+
+    with pytest.raises(DriverContractRejected):
+        functions["_stop_owned_signal_worker"](failed_stop, attempted=True, project=project)
+    assert state["failure_observation"]["classification"] == "bounded_reconcile_incomplete_unknown"
+    assert state["failure_observation"]["side_effects_resolved"] is False
+    assert state["checks"]["worker_final_cleanup"]["terminal_proof"] is False
+    assert state["uncertain_actions"] == ["signal_worker_stop_after_chain"]
+
+
+def test_foreground_background_and_failure_handlers_use_product_api_callable():
+    path = os.environ.get("BYQ_F6_DRIVER_PATH")
+    if not path:
+        pytest.skip("driver call-site contract is run by check_f6_chain")
+    tree = ast.parse(Path(path).read_text(encoding="utf-8"), filename=path)
+    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+             and isinstance(node.func, ast.Name)]
+
+    def args_for(name):
+        return [node.args for node in calls if node.func.id == name]
+
+    wait_args = args_for("_wait_answer")
+    assert len(wait_args) == 2 and all(isinstance(args[0], ast.Name) and args[0].id == "call"
+                                       for args in wait_args)
+    readonly_args = args_for("_failure_readonly_window")
+    assert len(readonly_args) == 2 and all(isinstance(args[0], ast.Name) and args[0].id == "call"
+                                           for args in readonly_args)
+    session_args = args_for("_session_call")
+    assert sorted(args[0].id for args in session_args if isinstance(args[0], ast.Name)) == [
+        "api_call", "api_call", "call", "call"]
+    assert all(args and isinstance(args[0], ast.Name) and args[0].id != "client"
+               for name in ("_wait_answer", "_failure_readonly_window", "_session_call", "_permission_view")
+               for args in args_for(name))
 
 
 def _prompt_for(stage: str) -> str:
@@ -609,6 +1139,59 @@ def test_authoritative_audit_contract_rejects_mismatched_scope_and_unknown_recei
             validate_settlement(unknown, 1)
 
 
+def test_structured_audit_separates_identity_mismatch_from_missing_terminal_proof():
+    functions = _driver_functions()
+    validate = functions["_assert_structured_agent_audit"]
+    is_untrusted = functions["_is_untrusted_identity"]
+    document, settlement, expected_events = _audit_fixture()
+    args = {
+        "stage": "background", "task_id": document["task"]["task_id"],
+        "conversation_id": document["task"]["conversation_id"],
+        "trace_id": document["task"]["trace_id"],
+        "runtime_root_id": document["runtime_root"]["root_run_id"],
+        "expected_events": expected_events, "settlement": settlement,
+    }
+
+    wrong_root = copy.deepcopy(document)
+    wrong_root["runtime_root"]["owner_principal"] = "another-user"
+    with pytest.raises(DriverContractRejected) as rejected:
+        validate(wrong_root, **args)
+    assert rejected.value.category == "structured_runtime_root_scope_invalid"
+    assert is_untrusted(rejected.value.category)
+
+    nonterminal_root = copy.deepcopy(document)
+    nonterminal_root["runtime_root"].update(
+        status="active", authority_status="active", terminal_sequence=None,
+        terminal_event_sha256=None)
+    with pytest.raises(DriverContractRejected) as rejected:
+        validate(nonterminal_root, **args)
+    assert rejected.value.category == "structured_runtime_root_terminal_not_confirmed"
+    assert not is_untrusted(rejected.value.category)
+
+    wrong_run = copy.deepcopy(document)
+    wrong_run["agent_run"]["root_run_id"] = "9" * 32
+    with pytest.raises(DriverContractRejected) as rejected:
+        validate(wrong_run, **args)
+    assert rejected.value.category == "structured_agent_run_identity_invalid"
+    assert is_untrusted(rejected.value.category)
+
+    missing_event = copy.deepcopy(document)
+    missing_event["events"] = [event for event in missing_event["events"]
+                               if not (event.get("action") == "runtime_turn_binding"
+                                       and event.get("outcome") == "completed")]
+    with pytest.raises(DriverContractRejected) as rejected:
+        validate(missing_event, **args)
+    assert rejected.value.category == "structured_agent_audit_events_incomplete"
+    assert not is_untrusted(rejected.value.category)
+
+    wrong_event_identity = copy.deepcopy(document)
+    wrong_event_identity["events"][1]["owner_principal"] = "another-user"
+    with pytest.raises(DriverContractRejected) as rejected:
+        validate(wrong_event_identity, **args)
+    assert rejected.value.category == "structured_agent_audit_event_identity_invalid"
+    assert is_untrusted(rejected.value.category)
+
+
 def test_validated_signal_artifact_requires_exact_owner_strategy_job_snapshot_and_lineage():
     functions = _driver_functions()
     validate_artifact = functions["_assert_validated_signal_artifact"]
@@ -697,7 +1280,7 @@ def test_structured_audit_wait_does_not_retry_unknown_readiness_or_wrong_stage(m
     functions["subprocess"].run = read
     functions["time"] = SimpleNamespace(monotonic=time.monotonic, sleep=lambda _seconds: None)
     monkeypatch.setenv("COMPOSE_PROJECT_NAME", "byq-ci-stack-f6-offline")
-    with pytest.raises(DriverContractRejected):
+    with pytest.raises(DriverContractRejected) as rejected:
         functions["_read_structured_agent_audit"](
             "background", task_id=document["task"]["task_id"],
             conversation_id=document["task"]["conversation_id"],
@@ -705,6 +1288,8 @@ def test_structured_audit_wait_does_not_retry_unknown_readiness_or_wrong_stage(m
             runtime_root_id=document["runtime_root"]["root_run_id"],
             expected_events=expected_events, settlement=settlement, timeout=1,
         )
+    assert rejected.value.category == "structured_agent_audit_scope_mismatch"
+    assert functions["_is_untrusted_identity"](rejected.value.category)
     assert len(calls) == 1
 
 

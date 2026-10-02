@@ -340,3 +340,89 @@ All 992 current manifest input hashes match; this is an offline scoped PASS.
 Current-head PR/Full CI, trusted-main attested images and fresh deployment
 remain required. Existing real A–D and v13 F6 evidence is reused within its
 recorded limits; no new real model, Reset or market-data execution occurred.
+
+
+### Build284 hosted failures and remaining observer qualification
+
+Both exact-head runs at `51b4622a6ef71593eb5c50a2282269fbafa9b7bb`
+completed FAIL: PR [36963570000](https://github.com/jefison-x/BeyondQuant/actions/runs/36963570000)
+and explicit Full [36963636549](https://github.com/jefison-x/BeyondQuant/actions/runs/36963636549).
+All component, architecture, plan, contribution and docs lanes passed. Only
+integration failed, followed by its aggregate gates. All failures were collected
+before preparing another candidate; no valid A–D or actual v13 F6 was rerun.
+
+The two desktop/mobile Product permission tests encountered a visible Element
+Plus placeholder intercepting clicks on the readonly input. The shared test
+helper now clicks that actual placeholder without forced clicks or DOM mutation.
+Two affected offline browser samples passed at 1440px and 390px, including one
+mock grant POST and the horizontal-overflow bound. This proves rendered-control
+interaction only; it is not durable Product or live F6 acceptance. Two earlier
+mock fixture failures remain sealed. Their final read-only observation receipt
+is SHA256 `007061e86211f8e50bd8d5e897c99b9dbf3550ebf9e98bd5531bb1f3cb332671`.
+
+The keyless F6 chain accepted FG1 input, then its observer incorrectly required
+`conversation.conversation_id`; the Gateway projection authoritatively exposes
+`conversation.session_id`. Its error handler also passed an HTTP opener instead
+of the callable read adapter, so no error-window reconciliation ran. The exact
+native roots were `43f321a5c164457fa1ba05e8f27e18b6` (PR) and
+`feeb868bb33743cc86c7a70995e35f9e` (Full). Neither accepted input nor session active
+proves terminal state or absence of domain/MCP effects. Those root outcomes
+remain UNKNOWN; FG2/background continuation was not qualified. Dedicated CI
+service restoration and resource cleanup passed, but do not resolve unknown
+outcomes. No unknown call was replayed and no external real model was invoked.
+
+The bounded next correction covers public session/trace identity, callable
+read-only reconciliation, failure classification, exact permission revocation
+without clearing unknown responsibility, and complete current execution-profile
+and eleven-limit comparison. The interim v5 twenty-four-case offline PASS is
+retained as an interim result. It does not qualify the later failure-policy
+correction or final live chain. All remaining assertions must receive one scoped
+Tester → independent Reviewer → Root gate before new current-head hosted runs.
+Build284 manifest/Dockerfile remain immutable; the complete candidate receives
+a new build identity after its source freezes. Phase17 stays OPEN, Phase18 has
+not started, and no merge or fresh production deployment has occurred.
+
+
+### Build285 observer qualification
+
+The final v6 engineering observer uses the current public session/trace
+projection and callable read adapter, separates identity/security mismatch from
+missing terminal proof and unknown mutations, clamps each failure-window GET
+to the remaining total deadline, and discards stale receipt observations each
+pass. Complete profile binding and eleven integer limits come from the shared
+current contract. Exact grant revocation preserves request-state/usage liability;
+one owned SignalWorker stop and CI cleanup never prove a root terminal or clear
+UNKNOWN. Identity classifications in offline tests are loaded from the actual
+driver declarations instead of a copied test-side list. No Product execution,
+provider, budget constants, harness or architectural ownership changed.
+
+The new immutable `dsh-0.1.5rc1-post-u8.285` binds 994 inputs, manifest SHA256
+`95bfd3082ca6c8d4cc591a714d26668d223a5672857f3d960bc80242d0eb3186`,
+Dockerfile SHA256 `444c0b480ca96d004427e08b0b5a1f046a451356ad094149f0e9105f09d2dba5`.
+Build284 and older manifest/Dockerfile bytes remain unchanged. The F6 CI function
+remains SHA256 `fc4aff35ad793e3a02d5bf23752f89f1fdbbf098db3a092b82f1db4109ef49a0`.
+Frozen driver SHA256 `ffb2219a00a1b84ae599ec9d91f423b909800f3f43f7d666d2b011715c1ef5f1`;
+contract SHA256 `ff843f4e2a19b8478c01d2761eda8902811187dd7855d32c273bfefb5d1f12f5`.
+
+Independent Tester passed 47 synthetic contracts with zero skips in the actual
+CI path layout: `/app` cwd, `/app/tests/` Driver/Fixture paths, current packages
+under `/app/packages`, no PYTHONPATH override, one readonly mount and no network.
+Its initial v4 monorepo-layout sample also passed but was not canonical import
+proof; that report remains sealed. The accurate layout supplement is SHA256
+`88745a16dea7d65b32974bdb05fd2651f2fe65b9ac6065d7e0ba6e749a29daae`.
+Ten Build285 selector/identity tests passed, and the two separately qualified
+mocked browser samples remain reused without repetition. The scoped Tester
+report is SHA256 `ed64a5d3821898486798f48b8aaded012a1f5805142ec8f1ba0062975c2b88b9`.
+All prior failures, v5 evidence and UNKNOWN outcomes remain recorded.
+This is 57 selected offline cases plus two reused mocked browser cases, not
+live F6, actual model use, current-head Full CI or deployment acceptance.
+The complete scoped Tester → independent Reviewer → Root gate passed.
+Reviewer receipt SHA256
+`dd52c60da2c6b4226208f119cc002528ebad497adb655d329173854bba40cd65`;
+Root receipt SHA256
+`603059e3bf7784b8eb99979899f85ccea7654dcf8f118a777dffffc4cfc07b8c`.
+All 994 actual manifest hashes match. No new scan exception was added; the
+candidate source-delta scan has zero findings with the existing configuration.
+Exact-head Git-history scan and required current-head PR/Full hosted gates are
+still necessary before merge; trusted-main images and actual fresh deployment
+remain unqualified. Existing A–D/actual v13 F6 evidence remains reused.

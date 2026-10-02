@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { selectContinuationStrategy } from "./continuation-permission-controls";
 
 async function openUserDestination(page: Page, label: string) {
   await page.getByTitle(/用户设置/).click();
@@ -711,11 +712,7 @@ for (const viewport of ['desktop', 'mobile'] as const) {
     await expect(panel).toContainText('task-ready-read.v1');
     await expect(panel.getByRole('list', { name: '可信单次请求资源上限' })).toContainText('模型请求次数：16');
     await expect(panel.getByRole('spinbutton')).toHaveCount(0);
-    await panel.getByRole('combobox').click();
-    await page.getByRole('option', { name: /^strategy_version ·/ }).click();
-    await panel.getByRole('combobox').press('Escape');
-    await panel.getByText('我确认任务、所选策略版本和系统显示的请求档案，并允许该许可按有效交接执行一次只读研究请求。', { exact: true }).click();
-    await expect(panel.getByRole('checkbox')).toBeChecked();
+    await selectContinuationStrategy(page, panel);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     await panel.screenshot({ path: testInfo.outputPath(`f6-permission-form-${viewport}.png`) });
     const saved = page.waitForResponse(response => response.url().endsWith('/continuation-permission') && response.request().method() === 'POST');
