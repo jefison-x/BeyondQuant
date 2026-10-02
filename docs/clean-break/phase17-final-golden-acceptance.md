@@ -120,3 +120,41 @@ This local mapping does not authorize remote actions. Phase17 stays OPEN until
 required exact-head hosted CI and repository/human gates complete. There is no
 production change and no Phase18 work. Do not start another full F6/A–D or rebuild
 the whole stack to investigate a previously qualified observation defect.
+
+
+## Repository gate progress — 2026-10-02
+
+After local commit `c71c49b3`, the maintainer explicitly authorized pushing,
+PR, merge and deployment. Branch push and Draft PR #381 completed. This grant
+supersedes the earlier local-only remote-action stop statements for this task;
+ADR-0059 actual platform/CI and deployment/migration gates remain mandatory.
+It does not authorize old database/backup deletion or a destructive migration.
+
+Initial PR CI run `36942400469` failed its history secret scan before the matrix:
+two fixed test-only request idempotency values from commit `cdeeb6db` in
+`services/backend/tests/test_research_plan_continuation.py`, not credential keys.
+Only the earlier exact optimization-key-1 exception was authorized; the proposed
+two exact historical fingerprints await a separate maintainer decision.
+
+Initial exact-head Full run `36942674225` was cancelled pending stable final
+inputs. Its earlier docs/architecture/Gateway failures remain actual FAIL:
+selected `.280` build manifest no longer renders from the current source inputs.
+No failing or cancelled run is counted as hosted PASS.
+
+The narrow build-identity repair creates new immutable `.281` and a revision-specific
+Dockerfile, synchronizes current selectors and their contracts, and preserves
+`.280` manifest SHA `828b58684ae05f50f5e74995352ef30bc16295ce0740c44020426ca2f1c0d947`
+and Dockerfile SHA `10ca3f61094d9816981672fff14bff2ee574d4ad9b2bf848b02603548902f5a2`.
+New `.281` manifest SHA `e78c5cab7d5e3f36bb8c2a7ac86ca490eae6826439dd63762bcb3caa1882dfcb`.
+Application logic, pinned DSH SDK/bin/release/profile and prior actual executions
+are not changed by this repair. No live `.281` deployment is claimed. Targeted
+build/retirement contracts pass locally; independent gates and current-head hosted
+CI remain required. Valid A–D/F6 actual evidence is retained.
+
+Read-only deployment inventory finds only the Phase15/17 dedicated test stacks;
+the ordinary host `.env` points to protected old DB/state volumes. The proposed
+fresh production target must bind new exact resource names and verified immutable
+images before any start. Reusing or resetting old volumes is not authorized.
+The maintainer has been asked to select fresh `byq-v010-*` production storage or
+defer deployment; neither action has occurred. Phase17 remains OPEN for CI/repository
+completion, with no Phase18 work.

@@ -85,7 +85,17 @@ fresh-volume two startup orders and exact cleanup receive their first current
 limited Reviewer/Root acceptance in this gate, without inventing an older receipt. Earlier save FAIL statements above describe the
 preserved original attempts. Current empty-stack rebuild/elapsed seven-day GC
 NOT_RUN, standard fresh dependency build FAIL, hosted CI/repository gates OPEN.
-Phase17 stays OPEN; no push/merge/deploy or Phase18 authorization.
+At that local evidence boundary, Phase17 stayed OPEN and push/merge/deploy
+and Phase18 had not been authorized.
+2026-10-02 repository-gate update: maintainer explicitly authorized push/PR,
+merge and deployment. Draft PR #381 is open after pushing the locally accepted
+branch. Initial PR history scan FAIL and cancelled Full run's prior build-identity
+FAIL remain; no hosted PASS is claimed. A new immutable `.281` current build repair
+preserves `.280` bytes and changes no application behavior/SDK; targeted local
+contracts and final affected independent gates apply before stable-head CI.
+Deployment requires verified images and fresh exact-resource classification;
+protected old DB/state/backup are not deployment/migration inputs. No deployment
+or Phase18 execution has occurred. [Repository gate evidence](../clean-break/phase17-final-golden-acceptance.md#repository-gate-progress--2026-10-02).
 No later phase is authorized.**
 Under [ADR-0089](../architecture/adr/ADR-0089-clean-break-gpu-acceptance-scope.md),
 GPU execution and GPU checkpoint/restart are `N/A` for BYQ 0.10 acceptance;
@@ -99,7 +109,10 @@ Adapter no longer reconstructs failed/interrupted Agent sessions, generic
 failed-turn recovery was removed, and a pinned-DSH Product API two-turn flow
 passed with exact Backend terminal acknowledgement. Hosted CI and
 human PR/merge gates remain separate.
-No production deployment or release is authorized.
+The earlier phase receipts above preserve their historical authorization
+boundaries; the 2026-10-02 repository-gate grant governs current push/PR, merge
+and deployment. Verified CI/images and the protected-resource preflight remain
+required before execution.
 
 P4-C1 code is in `main`; the P4-C2 local branch/worktree remains unreviewed
 historical reference, and P4-D is not claimed complete. The previous 0.9/P4
