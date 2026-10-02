@@ -953,3 +953,77 @@ only after that exact-head PR succeeds. No actual new F6 ran during offline
 diagnosis. Valid A–D and actual v13 F6 remain reused within their evidence boundary.
 Current-head integration, required Full CI, authorized merge, trusted-main images
 and fresh-empty deployment remain pending. Phase17 OPEN; Phase18 NOT_STARTED.
+
+## Build290 hosted preflight failure
+
+[PR run37009460367](https://github.com/jefison-x/BeyondQuant/actions/runs/37009460367),
+attempt1 at `5c80274f235bdcecd5bde470354d280171b8e91e`, completed FAIL.
+Backend, Runtime, Gateway, MCP, architecture, frontend and docs lanes passed;
+integration and aggregate checks failed. Integration's F6 preflight reported
+**1 failed,86 passed**: the existing callable contract hard-coded two helper
+`api_call` sites and two top-level `call` sites. The new bounded Gateway helper
+legitimately adds a third helper read, so that unchanged oracle rejected it.
+The Root offline observer gate omitted this existing source-bound test before
+the push. This was a missed affected-test validation, not a proven Product defect.
+
+`check_f6_chain` returned at that preflight before installing the Provider override
+or creating a F6 session, turn, permission or Job. Thus this attempt's actual F6
+is **NOT_STARTED**, rather than a new unknown Product call. Missing F6 output alone
+would not prove this; the exact sanitized failure and guarded control flow do.
+Earlier Build289 HTTP unknowns and older roots stay separately unresolved and
+unreplayed. No explicit Full CI was dispatched. Integration cleanup passed.
+
+| Hosted evidence | Private receipt and SHA256 |
+|---|---|
+| Exact run/head/attempt terminal observation | `/tmp/byq-phase17-ci-watch-37009460367/final-receipt.json` — `73e4a16b0ee13f68360c280ec705eae071da5b8b1e9212144c550d07fe628be3` |
+| Source-bound classification | `/tmp/byq-phase17-ci-failure-37009460367/classification.json` — `203ea951fc6623052467baa15a194607bed5aca78279f0d72387c4a3f8c8d726` |
+| Uploaded sanitized checks | `/tmp/byq-phase17-ci-failure-37009460367/checks.log` — `38987c1b8184e8971f59ef12e07a5fcb77cfa0a3e8cdf9b0c9ea8366f56a8479` |
+| Uploaded sanitized cleanup | `/tmp/byq-phase17-ci-failure-37009460367/cleanup.log` — `ce7ae531ee4a4c8face74a1626a6c849d91833f6f40b60132f685376de92900c` |
+
+## Build291 callable contract qualification
+
+The affected existing test now checks `_session_call` by lexical scope: the three
+bounded helpers must use their own `api_call` parameter; top-level reads use
+Product `call`. The unique top-level Gateway wait also requires `call`.
+The number of legitimate helper reads is unrestricted by this oracle; its
+runtime duration remains bounded by the observer. Existing foreground/failure
+callable checks remain. One extra same-scope read is accepted; helper/top-level
+`client`, `client()` and missing readiness wait mutations are rejected.
+
+Independent Tester ran exactly the same F6 contract file with all three current
+driver/fixture/Backend source paths in `/app`, the pinned cached image, network
+none, read-only root and stage, and `/tmp` tmpfs: **92 passed,0 skipped**.
+The sealed86-file stage was copied into a new stage; only the exact current driver
+and test overlays changed. All other84 dependency files match current sources.
+The first stage-copy permission failure and default Docker sandbox rejection
+occurred before any container and remain recorded. The successful dedicated
+container was removed and its exact name absent. Syntax/dev-check/diff passed.
+The original Tester receipt had an empty stage field; a separate immutable binding
+amendment supplies the verified full source manifest without overwriting it.
+
+| Contract gate | Private receipt and SHA256 |
+|---|---|
+| Tester | `/tmp/byq-phase17-f6-callable-contract-tester-20261002/report.json` — `a5a99ca5c9fb5c608a899c4ed2bd32343a6af53845eaefee94cd9f7903781ea7` |
+| Tester source binding | `/tmp/byq-phase17-f6-callable-contract-tester-20261002/report-binding-amendment.json` — `bed6767c50911fc28222cf5079ff9e4d2c0976356d7ccc19a59247592078be92` |
+| Independent Reviewer | `/tmp/byq-phase17-f6-callable-contract-independent-review-20261002.json` — `7ae6649c543372653cf88d830d301b1871e5d436c378781d45e0eaf2c9ef5b08` |
+| Root | `/tmp/byq-phase17-f6-callable-contract-root-admission-20261002.json` — `888dabf30ae30b23198722186868eeab6dbdad6ff9e61da39808eb1a314cc8b7` |
+
+Immutable `dsh-0.1.5rc1-post-u8.291` binds997 current inputs. Manifest SHA256
+`17cd577143cba1c86d2d1ddb511a1569fa1a72a319d995bf5f71089ecc532c31`; Dockerfile SHA256
+`6b12dbc8bccf4384bd29995f17559ee4900ab28570768d1f26acea6cedb2fa81`. Eight selectors advance290 to291;
+Build290's original manifest/Dockerfile are frozen byte-identically. SDK/runtime
+remains0.1.5rc1. Ten selected identity cases,997 input hashes and static checks
+passed; qualified11-case observer behavior is reused on unchanged driver bytes.
+
+| Build gate | Private receipt and SHA256 |
+|---|---|
+| Tester | `/tmp/byq-phase17-build291-tester-20261002/report.json` — `ecba3ea969c7ded5ca7b87651ef077c161b0c9179275e55010be32826f510066` |
+| Independent Reviewer | `/tmp/byq-phase17-build291-preparation-20261002/reviewer-report.json` — `d693581520a8bae1270a0b57f6a789692a62f0fb86b5e0307e2288be43c92131` |
+| Root | `/tmp/byq-phase17-build291-root-admission-20261002.json` — `34fd42157b12dc3791c9ceef7667fe0b41df5faf3258cc995ed0fe25366770de` |
+
+Only the offline test oracle and mechanical build selectors changed after290;
+this is not current hosted F6 acceptance. One feature-branch push/PR CI is admitted;
+explicit final Full follows only a successful same-head PR. Valid A–D and actual
+v13 F6 remain reused with their qualified scope. Prior FAIL/UNKNOWN remain.
+Phase17 OPEN; required current-head CI, authorized merge, trusted-main images and
+fresh-empty deployment remain pending. Phase18 NOT_STARTED.

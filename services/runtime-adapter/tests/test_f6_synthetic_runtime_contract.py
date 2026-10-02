@@ -741,11 +741,7 @@ def test_worker_cleanup_failure_does_not_upgrade_unknown_or_claim_terminal(monke
     assert state["uncertain_actions"] == ["signal_worker_stop_after_chain"]
 
 
-def test_foreground_background_and_failure_handlers_use_product_api_callable():
-    path = os.environ.get("BYQ_F6_DRIVER_PATH")
-    if not path:
-        pytest.skip("driver call-site contract is run by check_f6_chain")
-    tree = ast.parse(Path(path).read_text(encoding="utf-8"), filename=path)
+def _assert_product_api_callable_sites(tree):
     calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
              and isinstance(node.func, ast.Name)]
 
@@ -758,12 +754,89 @@ def test_foreground_background_and_failure_handlers_use_product_api_callable():
     readonly_args = args_for("_failure_readonly_window")
     assert len(readonly_args) == 2 and all(isinstance(args[0], ast.Name) and args[0].id == "call"
                                            for args in readonly_args)
-    session_args = args_for("_session_call")
-    assert sorted(args[0].id for args in session_args if isinstance(args[0], ast.Name)) == [
-        "api_call", "api_call", "call", "call"]
+    gateway_args = args_for("_wait_gateway_original_session")
+    assert len(gateway_args) == 1 and gateway_args[0] and isinstance(gateway_args[0][0], ast.Name)
+    assert gateway_args[0][0].id == "call"
     assert all(args and isinstance(args[0], ast.Name) and args[0].id != "client"
-               for name in ("_wait_answer", "_failure_readonly_window", "_session_call", "_permission_view")
+               for name in ("_wait_answer", "_wait_gateway_original_session", "_failure_readonly_window",
+                            "_session_call", "_permission_view")
                for args in args_for(name))
+
+    helper_scopes = {"_wait_answer", "_failure_readonly_window", "_wait_gateway_original_session"}
+    seen = set()
+
+    class CallableScopeVisitor(ast.NodeVisitor):
+        function = None
+
+        def visit_FunctionDef(self, node):
+            previous = self.function
+            self.function = node
+            self.generic_visit(node)
+            self.function = previous
+
+        visit_AsyncFunctionDef = visit_FunctionDef
+
+        def visit_Call(self, node):
+            if isinstance(node.func, ast.Name) and node.func.id == "_session_call":
+                scope = self.function.name if self.function is not None else None
+                assert scope is None or scope in helper_scopes
+                expected = "call" if scope is None else "api_call"
+                if self.function is not None:
+                    assert any(argument.arg == "api_call" for argument in self.function.args.args)
+                assert node.args and isinstance(node.args[0], ast.Name) and node.args[0].id == expected
+                seen.add(scope)
+            elif isinstance(node.func, ast.Name) and node.func.id == "_wait_gateway_original_session":
+                assert self.function is None
+            self.generic_visit(node)
+
+    CallableScopeVisitor().visit(tree)
+    assert seen == helper_scopes | {None}
+
+
+def _current_callable_tree():
+    path = os.environ.get("BYQ_F6_DRIVER_PATH")
+    if not path:
+        pytest.skip("driver call-site contract is run by check_f6_chain")
+    return ast.parse(Path(path).read_text(encoding="utf-8"), filename=path)
+
+
+def test_foreground_background_and_failure_handlers_use_product_api_callable():
+    _assert_product_api_callable_sites(_current_callable_tree())
+
+
+def test_callable_contract_accepts_additional_read_in_current_helper_scope():
+    tree = _current_callable_tree()
+    helper = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                  and node.name == "_wait_gateway_original_session")
+    original = next(node for node in ast.walk(helper) if isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name) and node.func.id == "_session_call")
+    helper.body.append(ast.Expr(value=copy.deepcopy(original)))
+    _assert_product_api_callable_sites(tree)
+
+
+@pytest.mark.parametrize("mutation", ["helper_client", "top_client", "factory", "missing_gateway_wait"])
+def test_callable_contract_rejects_wrong_callable_or_missing_top_wait(mutation):
+    tree = _current_callable_tree()
+    helper = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                  and node.name == "_wait_gateway_original_session")
+    helper_call = next(node for node in ast.walk(helper) if isinstance(node, ast.Call)
+                       and isinstance(node.func, ast.Name) and node.func.id == "_session_call")
+    if mutation == "helper_client":
+        helper_call.args[0] = ast.Name(id="client", ctx=ast.Load())
+    elif mutation == "top_client":
+        top_call = next(node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Name) and node.func.id == "_session_call"
+                        and isinstance(node.args[0], ast.Name) and node.args[0].id == "call")
+        top_call.args[0] = ast.Name(id="client", ctx=ast.Load())
+    elif mutation == "factory":
+        helper_call.args[0] = ast.Call(func=ast.Name(id="client", ctx=ast.Load()), args=[], keywords=[])
+    else:
+        top_wait = next(node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Name) and node.func.id == "_wait_gateway_original_session")
+        top_wait.func.id = "missing_gateway_wait"
+    with pytest.raises(AssertionError):
+        _assert_product_api_callable_sites(tree)
+
 
 
 def _prompt_for(stage: str) -> str:
