@@ -193,6 +193,88 @@ def _compose_once(label: str, *args: str, timeout: int = 45) -> str:
         raise
 
 
+F6_OBSERVER_STAGES = frozenset({
+    "preflight", "isolate_signal_worker", "prepare_only_test_user",
+    "product_login_and_original_session", "foreground_1_task_and_strategy_version",
+    "verify_exact_task_and_strategy_lineage", "human_strategy_approval_and_stock_pool",
+    "human_product_api_v2_single_request_grant", "foreground_2_exact_backtest_task_and_signal_job",
+    "durable_exact_job_admission_with_worker_stopped", "gateway_restart_and_same_live_session_reattach",
+    "gateway_ready_original_session_before_resume", "gateway_resume_original_session_once",
+    "gateway_same_original_session_after_resume", "start_exact_signal_worker_once",
+    "wait_for_exact_completed_job_and_validated_signal_artifact", "background_one_exact_task_ready_read",
+    "exact_grant_revoke_and_get_confirmation", "passed",
+})
+F6_OBSERVER_ACTIONS = frozenset({
+    "signal_worker_stop_before_job", "isolated_ci_user_fixture", "product_login",
+    "product_session_create", "foreground_agent_turn_1", "product_strategy_approval",
+    "product_stock_pool", "continuation_permission_grant", "foreground_agent_turn_2",
+    "gateway_restart", "gateway_session_resume", "signal_worker_start_after_durable_job",
+    "signal_worker_stop_after_chain", "continuation_permission_revoke",
+})
+
+
+def _closed_execution_observation() -> dict[str, object]:
+    """Only bounded, known observer categories may enter the uploaded summary."""
+    stage = state.get("stage")
+    result: dict[str, object] = {
+        "observer_stage": stage if type(stage) is str and stage in F6_OBSERVER_STAGES else "unknown",
+    }
+    for key in ("mutation_attempts", "uncertain_actions"):
+        values = state.get(key)
+        if type(values) is not list:
+            result[key] = []
+            result[key + "_values_unknown"] = True
+            result[key + "_truncated"] = False
+            continue
+        result[key] = [item for item in values[:32]
+                       if type(item) is str and item in F6_OBSERVER_ACTIONS]
+        result[key + "_values_unknown"] = any(
+            type(item) is not str or item not in F6_OBSERVER_ACTIONS for item in values[:32])
+        result[key + "_truncated"] = len(values) > 32
+    return result
+
+
+def _wait_gateway_original_session(api_call, session_id: str, trace_id: str,
+                                   prompt: str, answer: str, *, seconds: float = 35) -> None:
+    """Wait only by reads before the single original-session resume POST."""
+    deadline = time.monotonic() + min(35, max(0, seconds))
+    reads = 0
+    while time.monotonic() < deadline:
+        try:
+            reads += 1
+            ready = api_call("GET", "/agent-readyz", timeout=_remaining_timeout(deadline, 5))
+            require(isinstance(ready, dict) and ready.get("status") == "ready",
+                    "gateway_agent_readiness_invalid")
+            reads += 1
+            view = _session_call(api_call, session_id, trace_id,
+                                 timeout=_remaining_timeout(deadline, 5))
+            require(view.get("conversation", {}).get("status") in {"active", "unknown"},
+                    "original_agent_session_failed")
+            require(_answer_after(view, prompt) == answer,
+                    "original_session_answer_or_trace_changed_after_gateway_restart")
+            require(time.monotonic() <= deadline, "gateway_readiness_deadline")
+            state["checks"]["gateway_readiness"] = {
+                "status": "agent_ready_and_original_durable_answer_observed",
+                "reads": min(reads, 256), "reads_capped": reads > 256,
+                "methods": ["GET"],
+            }
+            return
+        except EvidenceError as error:
+            if (error.category != "http_transport_or_read_outcome_unknown"
+                    and not (isinstance(error, HttpFailure) and error.status in {502, 503, 504})):
+                raise
+        time.sleep(min(0.5, max(0, deadline - time.monotonic())))
+    raise EvidenceError("gateway_readiness_deadline")
+
+
+def _assert_same_live_resume(receipt: object, session_id: str, trace_id: str) -> None:
+    require(isinstance(receipt, dict) and receipt.get("session_id") == session_id
+            and receipt.get("trace_id") == trace_id and receipt.get("status") == "ready"
+            and "resumed_from_run_id" in receipt and receipt["resumed_from_run_id"] is None
+            and receipt.get("continuity") == "reattached",
+            "original_live_session_not_reattached")
+
+
 def _write_evidence(*, suffix: str = "") -> str:
     destination = Path(evidence_path + suffix)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -233,6 +315,7 @@ def _write_evidence(*, suffix: str = "") -> str:
         "structured_agent_audits": payload["structured_agent_audits"],
         "answer_wait_observation": payload["answer_wait_observation"],
         "failure_reconciliation": _failure_observation_summary(state.get("failure_observation")),
+        "execution_observation": _closed_execution_observation(),
     }, sort_keys=True), flush=True)
     if not suffix:
         state["primary_evidence_written"] = True
@@ -1310,12 +1393,16 @@ try:
     require(re.fullmatch(r"127\.0\.0\.1:[0-9]{1,5}", binding) is not None,
             "restarted_gateway_not_loopback_bound")
     origin = "http://" + binding
+    state["stage"] = "gateway_ready_original_session_before_resume"
+    _wait_gateway_original_session(call, session_id, trace_id, fg2, fg2_answer)
+    state["stage"] = "gateway_resume_original_session_once"
     reattached = _post_once(call, "gateway_session_resume", f"/v1/agent/sessions/{session_id}/resume",
                             {}, timeout=35)
-    require(isinstance(reattached, dict) and reattached.get("continuity") == "reattached",
-            "original_live_session_not_reattached")
+    _assert_same_live_resume(reattached, session_id, trace_id)
+    state["stage"] = "gateway_same_original_session_after_resume"
     session_after_restart = _session_call(call, session_id, trace_id)
-    require(session_after_restart.get("conversation", {}).get("trace_id") == trace_id
+    require(session_after_restart.get("conversation", {}).get("status") == "active"
+            and session_after_restart.get("conversation", {}).get("trace_id") == trace_id
             and _answer_after(session_after_restart, fg2) == fg2_answer,
             "original_session_answer_or_trace_changed_after_gateway_restart")
     same_job = call("GET", f"/api/product/signal-producer/jobs/{signal_job_id}")

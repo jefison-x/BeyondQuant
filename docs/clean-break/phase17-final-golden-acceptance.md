@@ -878,3 +878,78 @@ final phase gates remain separate from the reused real evidence.
 
 Phase17 stays OPEN. Trusted-main images, fresh-empty deployment and Phase18 have
 not run at this candidate boundary.
+
+## Build289 hosted failure and bounded observer correction
+
+[PR CI 37003685407](https://github.com/jefison-x/BeyondQuant/actions/runs/37003685407),
+attempt1 at `c2134c58a9ed19a00e38312ce45a142ebf256ca8`, completed FAIL.
+Runtime had10 failed/299 passed/84 skipped: new Backend AST samples lacked the
+required `BYQ_F6_BACKEND_SOURCE_PATH` and read-only source mount. Both the Runtime
+component entry and candidate complete-unit entry now receive that exact file;
+their two independent targeted10-case retests passed with zero skips. These are
+local repairs; the hosted attempt remains failed. Other component lanes passed;
+integration and aggregate checks failed. Both failed lanes cleaned up and uploaded
+their sanitized evidence. No explicit Full CI was dispatched for Build289.
+
+Integration observed FG1 and FG2 persisted answers and exact structured terminal
+`completed/closed` audits.16 known synthetic fixture dispatch records comprise
+FG1 ten tool calls/one completion and FG2 four tool calls/one completion.
+These are not total external attempts or cost. A subsequent HTTP outcome was
+unknown; uploaded evidence omitted the entered observer stage and uncertain-action
+labels, so the exact failed request and transport cause remain UNPROVEN.
+Gateway resume is an inferred location, not proven readiness-race causality.
+BG, settlement and browser checks were not reached. New FG roots are terminal
+as observed, while the unresolved mutation and whole-chain outcome remain unknown;
+neither old nor new unknown calls are replayed.
+
+Source-bound classification: `/tmp/byq-phase17-ci-watch-37003685407/sourcebound-failure-classification.json`,
+SHA256 `046e683d5a7805ed35dc2fdf6a451fb7b06b80d6a8cbaeb745716ab5cac01db9`.
+The complete remaining Gateway/Worker/Artifact/BG/settlement/revoke/browser
+contract audit is `/tmp/byq-phase17-ci-fg2-suffix-independent-audit-20261002.json`,
+SHA256 `9f80032fbe370c6e63d20227bb882dacf95ed6aa4d4b5cc1a852053089a19b71`.
+Its static sweep is not downstream actual acceptance.
+
+The Engineering observer now waits by bounded Gateway GETs for Agent readiness
+and the exact original persisted FG2 answer, then sends the original resume POST
+once. Before resume, the new Gateway registry legitimately projects `unknown`;
+that is only durable content evidence, not a healthy session claim. Resume must
+return exact session/trace, ready, null resumed run and `reattached`, followed by
+GET `active` and the unchanged answer/Job. Offline review caught and removed the
+initial circular pre-resume `active` condition before any new CI. Gateway readiness
+GET may synchronize authority by an internal Backend POST: this is not a claim
+of zero internal state changes. No Product turn or resume is retried.
+
+Uploaded diagnostics expose only capped allowlisted `observer_stage`, attempted
+and uncertain action labels. Stage means entered, not confirmed outcome. Private
+O_EXCL first evidence preserves its historical `last_confirmed_stage` field, also
+an entered-stage value. Unknown resume remains journalled and unreplayed.
+The superseded9-case result is preserved; final11 cases exercise the current
+Gateway status/resume producer AST, actual restart control flow, unknown results,
+post-resume status, and closed diagnostics. All11 passed with dev-check/syntax/diff.
+
+| Observer gate | Private receipt and SHA256 |
+|---|---|
+| Independent Tester | `/tmp/byq-phase17-f6-gateway-restart-observer-v2-tester-20261002/report.json` — `42af9bfb956d4e7088b52c8b33ea94a53a548b2d429b1509ca7bbde8cf4b8733` |
+| Independent Reviewer | `/tmp/byq-phase17-ci-gateway-restart-observer-independent-review-20261002.json` — `6bafd30faac9d4186abe6726b81a337aee4d12eed78c1bdad8736b7f2a524047` |
+| Root | `/tmp/byq-phase17-f6-restart-observer-root-admission-20261002.json` — `8e1f93cb2781055ac8919a40e36f0f8bbe5e192cb3541cdc836b5b8717c1b4cc` |
+
+## Build290 observer and CI entrypoint qualification
+
+New immutable `dsh-0.1.5rc1-post-u8.290` binds997 current source inputs.
+Manifest SHA256 `2b0639a627cdb697e07b7a647d413595ffc9adc2c7bf47b5fcbc902d698211af`; Dockerfile SHA256 `25bf6930782ae5ba65d11d31f112843f05542657e8bdc8f055c8e203873a0b3b`.
+Eight mechanical selectors advance289 to290 and freeze289; its original manifest
+and Dockerfile stay byte-identical. Paired SDK/runtime remains0.1.5rc1.
+Ten selected build identity cases, exact input hashes and static checks passed;
+the unchanged provider87/0 and collector11 evidence are reused.
+
+| Build gate | Private receipt and SHA256 |
+|---|---|
+| Independent Tester | `/tmp/byq-phase17-build290-tester-20261002/report.json` — `4065d21365143c3bf4c5343763a5037c07fd4ab33b8c86f39fd7cf722542515d` |
+| Independent Reviewer | `/tmp/byq-phase17-build290-preparation-20261002/reviewer-report.json` — `e68e64894209d8232ecfad7fb8fd50dd083112873b54a1c455d5a50abc8e0def` |
+| Root | `/tmp/byq-phase17-build290-root-admission-20261002.json` — `f361a3a845051af1ab88a97a068936299f378e82a480ba92f5770bf276f15295` |
+
+Admission permits one feature-branch push/PR CI; explicit required Full follows
+only after that exact-head PR succeeds. No actual new F6 ran during offline
+diagnosis. Valid A–D and actual v13 F6 remain reused within their evidence boundary.
+Current-head integration, required Full CI, authorized merge, trusted-main images
+and fresh-empty deployment remain pending. Phase17 OPEN; Phase18 NOT_STARTED.

@@ -334,7 +334,7 @@ prepare_ci_compose_env() {
   export BYQ_FEEDBACK_HUB_URL=""
   # ADR-0069: daily suites use the supported bundled runtime only.
   # Archived rollback images are never rebuilt or executed by routine CI.
-  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-289-candidate
+  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-290-candidate
   export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1
   export BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml
   export BYQ_DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-0.1.5rc1
@@ -537,6 +537,8 @@ check_runtime() {
     ok "runtime helper contracts"; else bad "runtime helper contracts"; fi
   RESOURCES_TOUCHED=1
   if run_interruptible docker run --rm --name "$CI_RUNTIME_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" -e PYTHONDONTWRITEBYTECODE=1 \
+      -e BYQ_F6_BACKEND_SOURCE_PATH=/app/backend/research_continuation.py \
+      -v "$REPO_ROOT/services/backend/app/research_continuation.py:/app/backend/research_continuation.py:ro" \
       -v "$REPO_ROOT/services/runtime-adapter:/app" \
       -v "$REPO_ROOT/packages:/app/packages" -w /app \
       -v "$REPO_ROOT/plugins/dsh-byq/runtime:/opt/byq/runtime:ro" \
@@ -576,6 +578,8 @@ check_dsh_candidate() {
   # journeys below retain the image's actual root-turn default.
   if ! run_interruptible docker run --name "$CI_CANDIDATE_TEST" "${common[@]}" \
       -e BYQ_DSH_PROCESS_OWNERSHIP=session -e BYQ_DOMAIN_CALL_WIRE_TEST=1 \
+      -e BYQ_F6_BACKEND_SOURCE_PATH=/app/backend/research_continuation.py \
+      -v "$REPO_ROOT/services/backend/app/research_continuation.py:/app/backend/research_continuation.py:ro" \
       -e BYQ_ROOT_PROFILE_ROOT=/qualification-root-profiles \
       -v "$REPO_ROOT/plugins/dsh-byq/profiles/root-scoped:/qualification-root-profiles:ro" \
       -v "$CI_CANDIDATE_VOL:/var/lib/byq/dsh-sessions" "$candidate_image" \
