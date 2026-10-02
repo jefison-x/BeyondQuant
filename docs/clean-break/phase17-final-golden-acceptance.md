@@ -603,3 +603,125 @@ FAIL and historical UNKNOWN remain. Current-head PR/Full CI, live authorized
 merge preflight, successful trusted-main14-image attestation/SBOM qualification,
 actual fresh-config gates and fresh-empty deployment/browser/protected-resource
 checks are still required. Phase17 OPEN; Phase18 NOT_STARTED.
+
+
+## Build287 hosted FG2 failure
+
+Build287 source `996cfa49e6f9bdd8b1f6cb90d7770d3523301127` completed
+PR run36980488486 and explicit Full run36980622169 with integration FAIL;
+every component lane passed. Both chains qualified FG1's persisted answer,
+exact Task/strategy lineage, completed/closed Root/Run, unique active binding
+and six exact domain audit rows. This is keyless hosted evidence, not a new
+external-model qualification.
+
+Both chains accepted FG2 and observed its canonical prompt, three persisted
+messages and an active session, without an assistant answer before180seconds.
+Bounded readonly closeout observed two session, two Task and two permission
+reads. No exact Job ID had been captured, so job_reads0 cannot prove no Job or
+domain side effect. Accepted FG2 roots remain UNKNOWN and are not replayed.
+Background continuation was not reached. The uploaded checks/cleanup logs
+contain no actual Provider request wire or fixture rejection category.
+
+The protected completed-failure receipt is
+`/tmp/byq-phase17-build287-hosted-failure-classification-20261002.json`,
+SHA256 `5006d7f6dc82ba41deb77fafccd9dca293c25833171f3dbd9129e8715caaa90c`.
+It binds both exact-head final job conclusions and all four log hashes.
+PR FG2 root: `ee89c756577f418899164abc0fc8c9a7`.
+Full FG2 root: `a1ad4853b98b4226a69c8b05458fea98`.
+
+Offline reproduction with the actual `rehydrated_prompt` contract and existing
+complete stage samples demonstrates a synthetic fixture mismatch. Completed
+FG1 public history and current FG2 share one user-message content; the old
+selector treats both markers as current and the message-index tie picks FG1.
+FG1/FG2 public history with current BG also selects FG1. The initial scripted
+action therefore has the FG1 run key instead of the current stage's key.
+The earlier remaining-assertion source audit did not exercise this input shape;
+its no-additional-mismatch conclusion is incomplete. Gateway restart occurs
+after FG2 qualification in this driver and was not reached in Build287.
+
+This reproducible source defect is a strong candidate cause, not proof it was
+the sole hosted failure. The narrow correction must select and parse only the
+current user block, preserve MCP followup indexing, reject malformed/ambiguous
+instructions and ignore assistant/tool history markers. It changes the test
+Provider only; Product public-history semantics, exact audits, grants, request
+limits, settlement and revoke gates remain authoritative. Complete scoped
+Tester → independent Reviewer → Root acceptance precedes another required
+affected CI execution. Old FAIL/UNKNOWN evidence and Build287 bytes remain.
+No effective A–D/v13 F6 rerun, merge, deployment or Phase18 start is claimed.
+
+
+## Build288 current-user fixture
+
+The narrow correction changes only the synthetic test Provider and its focused
+contracts. It selects the latest user message, then parses stage and fields
+exclusively from the unique current-user block when the public-history wrapper
+is present. Historical user/assistant/tool markers cannot select the stage;
+missing current instructions never fall back to history. Malformed/duplicate
+blocks and ambiguous current-stage instructions are rejected. Original message
+indexing still limits MCP result parsing to the current input's followups.
+Exact domain authority, audits, request limits, settlement and revoke gates are
+unchanged. The frozen v8 observer driver is unchanged.
+
+Actual Gateway/Adapter source carries completed public history into the next
+effective content. Adapter creates a new private native DSH session per Root;
+cross-Root native-history restoration is not claimed. Contract tests additionally
+retain prior user/assistant/tool records across scripted turns to check parser
+robustness; that is extra offline coverage, not actual native wire evidence.
+The native implementation and Build287 Provider wire remain unobserved.
+
+Frozen Provider SHA256:
+`d92eee0d57f8e269eaeeee08b63ed7b32cee8d659ffe0faf6f578c5252914889`.
+Contract SHA256:
+`aad5666712289d4b3b190f0ff11548b7456855cf3be76be02aa17c7f2928022c`.
+Worker receipt SHA256:
+`c3ab647ce2f02b5ae5c1ba83cb41130a9f2d5c7d866a4dbef4562269ec631c6f`.
+Worker provider-focused run passed23; its complete host run passed27/skipped40
+because driver/fixture-path admission was absent. This is not the canonical
+zero-skip CI-path gate. It created no services/API/DB/model/CI/F6 execution.
+
+New immutable Build288 manifest SHA256:
+`856bc58c758f503c996cbb23af9acf05ffc463115eae8c4462296bebd6ae7293`.
+Dockerfile SHA256:
+`41aaa5dbb12e1cd304574a7e2736a6dcb2e0658e38fa5064be4e7dba96b22e45`.
+All994 actual inputs match. Build287 manifest/Dockerfile remain unchanged;
+eight current selectors now select288 without changing the F6 CI function.
+Admission receipt SHA256:
+`9222a9cb1547e1c028e6f4716ba2776d87f7e5efed73fffd07e88d68d2a93fc0`.
+Canonical Tester, independent Reviewer and Root acceptance remain required
+before a new affected hosted run. Static/fixture PASS will not be reported as
+actual F6 PASS. Current-head PR and mandatory Full CI, authorized live merge
+preflight, successful trusted-main14-image release and actual fresh-empty
+deployment remain required. Existing actual A–D/v13 F6 evidence remains reused;
+old FAIL/UNKNOWN are retained. Phase17 OPEN; Phase18 NOT_STARTED.
+
+
+### Build288 scoped offline acceptance
+
+Canonical Tester passed67 Runtime F6 contracts with zero skips and ten selected
+Build288 cases. The cached-image test used networknone/read-only/tmpfs and the
+actual CI `/app` layout, both driver/fixture env paths and no PYTHONPATH override.
+Its exact temporary container was removed;47 source/stage files are hash-bound.
+Tester receipt SHA256:
+`5fdadf91482422459af573d6c46cf3a33dc00856bbf3461151442be3550e2f9e`.
+The initial report shorthand recorded only the pytest argv tail. A metadata-only
+sidecar binds the actual full command from the unchanged Runtime receipt;
+sidecar SHA256 `c90af9458558904bdbcf90c3d673f53dde869321812b3ff53bc8ac2f966d4e79`.
+No tests were rerun for that correction.
+
+Independent Reviewer gave Functional, Tests and Clean Break Architecture scoped
+offline PASS, with no concrete blocking findings. Reviewer receipt SHA256:
+`c74e7cafd5c9ceac1de56e72e33fe32b5d762a93d3024e60aa40278e828362ef`.
+Root independently verified all evidence pins,994 build inputs,47 actual stage
+and source hashes, exact14-file scope, preserved Build287, unchanged v8 driver,
+request profile and F6 CI function. Syntax109/docs24/diff/worktree gates passed.
+Root receipt SHA256:
+`5bb4212723fffcff7737b38fe58b8a4f3ca02ac9d74662a3116c8b84e8a4398d`.
+
+This qualifies the complete affected offline Provider path before required
+current-head CI, not an actual F6/model/image/deployment PASS. The additional
+full evolving-message sequence is explicitly robustness coverage. Old Build287
+accepted FG2 roots remain UNKNOWN without replay. Existing actual A–D/v13 F6
+remains reused. The separately prepared Engineering deployment scripts retain
+their own gate and cannot substitute for trusted-main attestation, actual image
+bindings, protected-resource admission or fresh-storage deployment evidence.
+Phase17 OPEN; Phase18 NOT_STARTED.

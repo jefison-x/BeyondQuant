@@ -26,6 +26,12 @@ BACKTEST_TASK_PATTERN = re.compile(r"backtesttask_([0-9a-f]{32})\Z")
 AGENT_RUN_PATTERN = re.compile(r"agent_run_[0-9a-f]{32}\Z")
 AUDIT_PATTERN = re.compile(r"agent_audit_[0-9a-f]{32}\Z")
 MCP_PREFIX = "mcp__byq__"
+_REHYDRATION_OPEN = "[BYQ_CONVERSATION_REHYDRATION]"
+_REHYDRATION_CLOSE = "[/BYQ_CONVERSATION_REHYDRATION]"
+_CURRENT_USER_OPEN = "[CURRENT_USER_MESSAGE]"
+_CURRENT_USER_CLOSE = "[/CURRENT_USER_MESSAGE]"
+_REHYDRATION_SCHEMA_VERSION = "conversation-rehydration.v1"
+_BACKGROUND_INSTRUCTION_PREFIX = "BYQ trusted read-only task-ready follow-up for exact task "
 
 FG1_SEQUENCE = (
     "byq_agent_run_start",
@@ -85,23 +91,89 @@ def _content_text(value: object) -> str:
     return ""
 
 
+def _has_rehydration_marker(text: str) -> bool:
+    return any(marker in text for marker in (
+        _REHYDRATION_OPEN, _REHYDRATION_CLOSE, _CURRENT_USER_OPEN, _CURRENT_USER_CLOSE,
+        f"schema_version={_REHYDRATION_SCHEMA_VERSION}",
+    ))
+
+
+def _has_instruction_marker(text: str) -> bool:
+    return any(marker in text for marker in (
+        "F6-CI:FG1", "F6-CI:FG2", _BACKGROUND_INSTRUCTION_PREFIX,
+    ))
+
+
+def _extract_current_user_prompt(text: str) -> str | None:
+    if not _has_rehydration_marker(text):
+        return None
+    if any(text.count(marker) != 1 for marker in (
+        _REHYDRATION_OPEN, _REHYDRATION_CLOSE, _CURRENT_USER_OPEN, _CURRENT_USER_CLOSE,
+    )):
+        raise F6FixtureRejected("rehydrated_current_message_malformed")
+    header = f"{_REHYDRATION_OPEN}\nschema_version={_REHYDRATION_SCHEMA_VERSION}\n"
+    separator = f"\n{_REHYDRATION_CLOSE}\n{_CURRENT_USER_OPEN}\n"
+    ending = f"\n{_CURRENT_USER_CLOSE}"
+    if (not text.startswith(header) or text.count(separator) != 1
+            or text.count(f"schema_version={_REHYDRATION_SCHEMA_VERSION}") != 1
+            or not text.endswith(ending)):
+        raise F6FixtureRejected("rehydrated_current_message_malformed")
+    start = text.index(separator) + len(separator)
+    end = len(text) - len(ending)
+    if end < start:
+        raise F6FixtureRejected("rehydrated_current_message_malformed")
+    current = text[start:end]
+    if not current.strip() or _has_rehydration_marker(current):
+        raise F6FixtureRejected("rehydrated_current_message_malformed")
+    return current
+
+
+def _instruction_stages(text: str) -> list[str]:
+    stages: list[str] = []
+    stages.extend(["fg1"] * len(re.findall(r"(?m)^F6-CI:FG1[ \t]*\r?$", text)))
+    stages.extend(["fg2"] * len(re.findall(r"(?m)^F6-CI:FG2[ \t]*\r?$", text)))
+    stages.extend(["background"] * len(re.findall(
+        rf"(?m)^{re.escape(_BACKGROUND_INSTRUCTION_PREFIX)}task_[0-9a-f]{{32}}[ \t]*\r?$",
+        text,
+    )))
+    return stages
+
+
 def _selected_instruction(messages: object) -> tuple[str, str, int]:
     if not isinstance(messages, list):
         raise F6FixtureRejected("provider_messages_invalid")
-    candidates: list[tuple[str, str, int]] = []
+    user_messages: list[tuple[int, str]] = []
+    non_user_instruction_seen = False
     for index, message in enumerate(messages):
         if not isinstance(message, dict):
             continue
+        role = message.get("role")
         text = _content_text(message.get("content"))
-        if "F6-CI:FG1" in text:
-            candidates.append(("fg1", text, index))
-        if "F6-CI:FG2" in text:
-            candidates.append(("fg2", text, index))
-        if "BYQ trusted read-only task-ready follow-up for exact task " in text:
-            candidates.append(("background", text, index))
-    if not candidates:
+        if role != "user":
+            if _has_instruction_marker(text) or _has_rehydration_marker(text):
+                non_user_instruction_seen = True
+            continue
+        user_messages.append((index, text))
+    if not user_messages:
+        if non_user_instruction_seen:
+            raise F6FixtureRejected("f6_instruction_role_invalid")
+        raise F6FixtureRejected("provider_current_user_message_missing")
+
+    instruction_index, current_text = user_messages[-1]
+    prompt = _extract_current_user_prompt(current_text)
+    if prompt is None:
+        prompt = current_text
+    stages = _instruction_stages(prompt)
+    if len(stages) != 1:
+        if stages:
+            raise F6FixtureRejected("f6_stage_instruction_ambiguous")
+        if prompt != current_text or non_user_instruction_seen or any(
+            _has_instruction_marker(text) or _has_rehydration_marker(text)
+            for _index, text in user_messages[:-1]
+        ):
+            raise F6FixtureRejected("provider_current_user_instruction_missing")
         raise F6FixtureRejected("unsupported_foreground_or_background_prompt")
-    return max(candidates, key=lambda item: item[2])
+    return stages[0], prompt, instruction_index
 
 
 def _line(prompt: str, name: str) -> str:

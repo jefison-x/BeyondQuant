@@ -16,6 +16,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.research_request_gate import parse_response_usage
+from packages.contracts.conversation_rehydration import normalize_conversation_context, rehydrated_prompt
 from packages.contracts.continuation_request import profile_binding, request_limits
 from tests.f6_synthetic_runtime import (
     AGENT_RUN_PATTERN,
@@ -26,6 +27,7 @@ from tests.f6_synthetic_runtime import (
     F6FixtureRejected,
     _authorize,
     _normalize_tool_result,
+    _selected_instruction,
     _sse_completion,
     _verify_agent_audit_result,
     _verify_result,
@@ -881,12 +883,21 @@ def _append_provider_tool_result(messages: list, stage: str, prompt: str,
                      "content": [{"type": "text", "text": json.dumps(wrapped, sort_keys=True)}]})
 
 
-def _drive_provider_turn(stage: str) -> None:
+def _drive_provider_turn(stage: str, public_history: list[dict[str, str]] | None = None,
+                         provider_messages: list[dict[str, Any]] | None = None
+                         ) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
     prompt = _prompt_for(stage)
-    messages = [{"role": "user", "content": prompt}]
+    history = normalize_conversation_context(public_history or [])
+    effective_prompt = rehydrated_prompt(history, prompt)
+    messages = list(provider_messages or [
+        {"role": "system", "content": "F6 offline contract test system message."},
+    ])
+    messages.append({"role": "user", "content": effective_prompt})
+    instruction_index = len(messages) - 1
     sequence = _sequence_for(stage)
     for step in range(len(sequence) + 1):
         body = {"messages": messages, "tools": _provider_tools()}
+        assert _selected_instruction(messages) == (stage, prompt, instruction_index)
         action = next_action(body)
         if step == len(sequence):
             assert action is None
@@ -894,9 +905,19 @@ def _drive_provider_turn(stage: str) -> None:
                       if line.startswith("data: ") and line != "data: [DONE]"]
             assert chunks[0]["choices"][0]["delta"]["content"]
             assert all("usage" not in chunk for chunk in chunks)
-            return
+            answer = chunks[0]["choices"][0]["delta"]["content"]
+            messages.append({"role": "assistant", "content": answer})
+            return ([{"role": "user", "content": prompt},
+                     {"role": "assistant", "content": answer}], messages)
         assert action is not None
         assert action[0] == "mcp__byq__" + sequence[step]
+        if step == 0:
+            expected_key = {
+                "fg1": "f6-ci-fg1-agent-run",
+                "fg2": "f6-ci-fg2-agent-run",
+                "background": "f6-ci-bg-agent-run",
+            }[stage]
+            assert action[1].get("idempotency_key") == expected_key
         _append_provider_tool_result(messages, stage, prompt, action, step)
     raise AssertionError("provider sequence did not close")
 
@@ -934,6 +955,135 @@ def test_fixed_provider_tool_sequences_are_exact_two_foreground_and_two_read_onl
 @pytest.mark.parametrize("stage", ["fg1", "fg2", "background"])
 def test_provider_next_action_accepts_full_stage_with_current_mcp_result_shapes(stage):
     _drive_provider_turn(stage)
+
+
+def test_provider_uses_current_user_block_for_full_rehydrated_fg2_and_background_turns():
+    fg1_history, live_provider_messages = _drive_provider_turn("fg1")
+    fg2_prompt = _prompt_for("fg2")
+    fg2_context = normalize_conversation_context(fg1_history)
+    fg2_message = rehydrated_prompt(fg2_context, fg2_prompt)
+    fresh_fg2_root = [
+        {"role": "system", "content": "F6 offline contract test system message."},
+        {"role": "user", "content": fg2_message},
+    ]
+    assert _selected_instruction(fresh_fg2_root) == ("fg2", fg2_prompt, 1)
+    fg2_message_index = len(live_provider_messages)
+    assert _selected_instruction([
+        *live_provider_messages,
+        {"role": "user", "content": fg2_message},
+    ]) == ("fg2", fg2_prompt, fg2_message_index)
+
+    fg2_history, live_provider_messages = _drive_provider_turn(
+        "fg2", public_history=fg1_history, provider_messages=live_provider_messages)
+    bg_prompt = _prompt_for("background")
+    bg_context = normalize_conversation_context(fg1_history + fg2_history)
+    bg_message = rehydrated_prompt(bg_context, bg_prompt)
+    fresh_bg_root = [
+        {"role": "system", "content": "F6 offline contract test system message."},
+        {"role": "user", "content": bg_message},
+    ]
+    assert _selected_instruction(fresh_bg_root) == ("background", bg_prompt, 1)
+    bg_message_index = len(live_provider_messages)
+    assert _selected_instruction([
+        *live_provider_messages,
+        {"role": "user", "content": bg_message},
+    ]) == ("background", bg_prompt, bg_message_index)
+
+    _drive_provider_turn("background", public_history=fg1_history + fg2_history,
+                         provider_messages=live_provider_messages)
+
+
+def test_provider_ignores_historical_assistant_and_tool_markers_when_current_user_is_valid():
+    fg1 = _prompt_for("fg1")
+    fg2 = _prompt_for("fg2")
+    current = rehydrated_prompt(normalize_conversation_context([
+        {"role": "user", "content": fg1},
+        {"role": "assistant", "content": "Completed prior turn."},
+    ]), fg2)
+    messages = [
+        {"role": "system", "content": "F6 offline contract test system message."},
+        {"role": "user", "content": fg1},
+        {"role": "assistant", "content": fg1},
+        {"role": "tool", "content": _prompt_for("background")},
+        {"role": "user", "content": current},
+    ]
+    assert _selected_instruction(messages) == ("fg2", fg2, 4)
+
+
+@pytest.mark.parametrize("malformation", [
+    "missing_current_block", "missing_current_open", "missing_current_close",
+    "duplicate_current_block", "missing_rehydration_close", "missing_all_wrapper_tags",
+])
+def test_provider_rejects_malformed_rehydrated_current_message_without_history_fallback(malformation):
+    history = normalize_conversation_context([
+        {"role": "user", "content": _prompt_for("fg1")},
+        {"role": "assistant", "content": "Completed prior public turn."},
+    ])
+    prompt = _prompt_for("fg2")
+    content = rehydrated_prompt(history, prompt)
+    if malformation == "missing_current_block":
+        content = content.replace(
+            "[CURRENT_USER_MESSAGE]\n" + prompt + "\n[/CURRENT_USER_MESSAGE]", "", 1)
+    elif malformation == "missing_current_open":
+        content = content.replace("[CURRENT_USER_MESSAGE]", "[CURRENT_MESSAGE]", 1)
+    elif malformation == "missing_current_close":
+        content = content.replace("[/CURRENT_USER_MESSAGE]", "[/CURRENT_MESSAGE]", 1)
+    elif malformation == "duplicate_current_block":
+        content += "\n[CURRENT_USER_MESSAGE]\n" + prompt + "\n[/CURRENT_USER_MESSAGE]"
+    elif malformation == "missing_all_wrapper_tags":
+        for marker in (
+            "[BYQ_CONVERSATION_REHYDRATION]", "[/BYQ_CONVERSATION_REHYDRATION]",
+            "[CURRENT_USER_MESSAGE]", "[/CURRENT_USER_MESSAGE]",
+        ):
+            content = content.replace(marker, "")
+    else:
+        content = content.replace(
+            "[/BYQ_CONVERSATION_REHYDRATION]", "[/BYQ_CONVERSATION_REHYDRATION", 1)
+    with pytest.raises(F6FixtureRejected, match="rehydrated_current_message_malformed"):
+        _selected_instruction([{"role": "user", "content": content}])
+
+
+def test_provider_does_not_fall_back_to_earlier_user_stage_when_current_message_has_none():
+    fg1_history = [
+        {"role": "user", "content": _prompt_for("fg1")},
+        {"role": "assistant", "content": "Completed prior public turn."},
+    ]
+    wrapped_without_stage = rehydrated_prompt(
+        normalize_conversation_context(fg1_history), "Continue using only the current instruction.")
+    with pytest.raises(F6FixtureRejected, match="provider_current_user_instruction_missing"):
+        _selected_instruction([{"role": "user", "content": wrapped_without_stage}])
+    with pytest.raises(F6FixtureRejected, match="provider_current_user_instruction_missing"):
+        _selected_instruction([
+            {"role": "user", "content": _prompt_for("fg1")},
+            {"role": "user", "content": "Continue using only the current instruction."},
+        ])
+
+
+@pytest.mark.parametrize("messages", [
+    [{"role": "user", "content": _prompt_for("fg1") + "\n" + _prompt_for("fg2")}],
+    [{"role": "user", "content": _prompt_for("fg2") + "\n" + _prompt_for("fg2")}],
+])
+def test_provider_rejects_ambiguous_ordinary_user_stage_instructions(messages):
+    with pytest.raises(F6FixtureRejected, match="f6_stage_instruction_ambiguous"):
+        _selected_instruction(messages)
+
+
+def test_provider_selects_latest_ordinary_user_instruction_without_historical_stage_ambiguity():
+    fg2 = _prompt_for("fg2")
+    assert _selected_instruction([
+        {"role": "user", "content": _prompt_for("fg1")},
+        {"role": "user", "content": fg2},
+    ]) == ("fg2", fg2, 1)
+
+
+def test_provider_does_not_accept_non_user_stage_as_current_instruction():
+    with pytest.raises(F6FixtureRejected, match="f6_instruction_role_invalid"):
+        _selected_instruction([{"role": "assistant", "content": _prompt_for("fg1")}])
+    with pytest.raises(F6FixtureRejected, match="provider_current_user_instruction_missing"):
+        _selected_instruction([
+            {"role": "user", "content": "Current user has no stage marker."},
+            {"role": "assistant", "content": _prompt_for("fg1")},
+        ])
 
 
 @pytest.mark.parametrize("malformation", ["wrong_action", "wrong_run", "unknown_result"])
