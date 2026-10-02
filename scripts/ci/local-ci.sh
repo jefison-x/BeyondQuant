@@ -334,7 +334,7 @@ prepare_ci_compose_env() {
   export BYQ_FEEDBACK_HUB_URL=""
   # ADR-0069: daily suites use the supported bundled runtime only.
   # Archived rollback images are never rebuilt or executed by routine CI.
-  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-296-candidate
+  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-297-candidate
   export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1
   export BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml
   export BYQ_DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-0.1.5rc1
@@ -864,12 +864,14 @@ PYCODE
     restore_f6_runtime || true
     return
   fi
+  run_interruptible python3 "$REPO_ROOT/scripts/ci/f6-proxy-diagnostics.py" --project "$expected_project" --stage before_browser || true
   if (cd apps/frontend && BYQ_F6_EVIDENCE_PATH="$f6_evidence" npx playwright test --config playwright.f6.config.ts \
       --output "$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE/f6-browser"); then
     ok "F6 current read-only answer, settled request, and same durable Job Product API browser"
   else
     bad "F6 current read-only answer, settled request, and same durable Job Product API browser"
   fi
+  run_interruptible python3 "$REPO_ROOT/scripts/ci/f6-proxy-diagnostics.py" --project "$expected_project" --stage after_browser || true
   if restore_f6_runtime; then
     ok "F6 synthetic executor disabled and candidate services restored"
   fi

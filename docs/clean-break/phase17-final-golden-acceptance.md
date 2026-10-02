@@ -1539,3 +1539,69 @@ limits and timeouts are unchanged. Offline PASS does not claim same-Task browser
 or hosted F6 PASS. Independent identity acceptance and one current-head affected
 hosted verification remain gated. Full CI was not dispatched; no merge or deployment
 occurred at this preparation boundary. Phase17 OPEN; Phase18 NOT_STARTED.
+
+## Build296 terminal browser 502 and bounded proxy diagnosis
+
+Build296 exact-head PR CI [run37054476068, attempt1](https://github.com/jefison-x/BeyondQuant/actions/runs/37054476068)
+ended FAIL: seven component matrix lanes passed and Integration failed. This was
+an observed HTTP failure, not a global CI timeout. The dedicated F6-user browser
+preflight passed login200, exact ME200 identity, logout200 and final ME401 before
+Agent/Job. The genuine keyless F6 core passed foreground writes, durable same-Job
+execution, healthy original-session continuation, authoritative audit, persisted
+background answer, settlement and exact revocation. Actual model usage remains
+UNKNOWN. Both final browser contexts then observed anonymous ME502/login502 and
+stayed on login; same-Task transcript, permission and Product readbacks were
+NOT_REACHED. Candidate restore and dedicated cleanup were verified; numeric
+residual flags were NOT_OBSERVED. Build295 login HTTP remains NOT_OBSERVED and
+its cause is not backfilled from Build296.
+
+Closed artifact classification and independent diagnosis retain the exact scope:
+
+| Receipt | SHA256 |
+| --- | --- |
+| Current-head terminal CI metadata | `3d2cdce3156764c0226aa2b17bc259f7a69f780c2651ad57698be374fc72fab7` |
+| Sanitized checks log | `fc88a717e93674c9d2e7982d0fd5c7574f277f0f6598b28f09f2b2382df80492` |
+| Tester core/browser classification | `f9360cea77374bdc0e837bfdda7944d6c1828ab4c203f7382d9facfdd55b9b3a` |
+| Independent source/artifact diagnosis | `daeb1a2f360e263061391c04e4abc01ae50dd259214bb937a46183ba10140bb3` |
+
+One separately admitted auth-only diagnostic restarted only the existing dedicated
+isolated Gateway, once. Its ID/image/IP stayed the same; published loopback port
+changed32920→32928 and was freshly discovered. Frontend stayed untouched; before,
+after and final anonymous direct/proxy ME returned401, with no config test/reload.
+Runtime remained exactly equal: active/prompts0 and process model_calls11, with
+no new login, Agent, model, Job or DB operation. The other11 container records
+match after mount ordering normalization; five volumes and two networks match by
+full metadata. Actual receipt `12ed19e894ec9197ec6cbe60296702407dea4542d7ac5e329106c191c6858a30`,
+Tester `f80a488ac42a03341999b64f99aa6f3e8e2debd9dcad6b513d239a3e5334e2d8`,
+independent Reviewer `7b2c65f27378383badc0a4069266ef3e8019b77306c98ce914feaee8a551703d`
+and Root `6a1f2472754c600d506e23a436a2b55880e4411c72850b28780f705aec00251d`
+accept only this local auth-path result. It did not reproduce or establish the
+hosted502 cause. Earlier proxy-stub probes retain their failures/unconfirmed
+observations and cleanup; none replaces Product/F6 acceptance.
+
+Root prepares Engineering-only closed observations at four existing points:
+Gateway restart before/after, browser before/after. Each binds the current scoped
+container identities, IPs, StartedAt and loopback ports, then reads anonymous ME
+directly and through Frontend. Proxy failure logs are limited to the current
+Gateway startup window/tail80 and publish only error categories/upstream IPs.
+No response body, cookie, environment or raw log is published; diagnostics do
+not change F6/browser verdicts or repair/replay any action. The bounded source gate passed; new identity
+and one affected hosted gate remain pending. Product authentication, Nginx,
+SDK, model limits and timeouts are unchanged. Valid A–D/actualv13F6 remain scoped
+reuse. Full NOT_DISPATCHED; merge/deployment NOT_RUN. Phase17 OPEN; Phase18
+NOT_STARTED. Historical UNKNOWN results remain protected and unreplayed.
+
+### Build297 closed proxy observation candidate
+
+Tester (`2f8cb44d0e2377708168ec539e396212321ffb2f29cb8e62b2c4e3ac7fb13486`), independent Reviewer
+(`97320afdb9ac8b1a5335bb0c667d12312272fcf52f71fa5eebcd1289fb00ee14`) and Root
+(`48b72ce8de062c86513dbec7eb9213628010b4801dd1ac8ba2cd45b7e43e8d3a`) accept9 new offline contracts,1 unchanged restart-flow
+case, Bash syntax and2 actual scope-refusal CLI calls; the initial9-case run
+with a source race stays UNBOUND. No live proxy/F6 acceptance is inferred.
+Immutable Build297 binds1005 inputs and freezes296/295/294/293 bytes. Manifest
+SHA `3bb79f82ead94b0b499caef5be2d090c2a955fc1b53ad8c58fac3a24aaee2899`; Dockerfile SHA
+`04ca7f565d56ef6968f994d3f3fbe2580ef5eb4cbcb10ef3876bf983cbada1f3`. Eight current selectors agree; the only
+driver behavior addition is four read-only proxy sampling points. No Product,
+Nginx, SDK, request limit or timeout changed. Identity Tester → independent
+Reviewer → Root and one affected hosted gate remain necessary; Full is not
+dispatched. Phase17 OPEN; Phase18 NOT_STARTED.

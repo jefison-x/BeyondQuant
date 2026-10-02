@@ -15,6 +15,7 @@ import os
 import re
 import runpy
 import subprocess
+import sys
 import time
 import threading
 import urllib.error
@@ -186,6 +187,19 @@ def _compose(*args: str, timeout: int = 45) -> str:
     except (OSError, subprocess.TimeoutExpired):
         raise EvidenceError("dedicated_compose_action_outcome_unknown") from None
     return result.stdout.strip()
+
+
+def _proxy_diagnostic(stage):
+    try:
+        diagnostic = Path(__file__).resolve().parents[1] / "ci" / "f6-proxy-diagnostics.py"
+        response = subprocess.run([sys.executable, str(diagnostic), "--project", os.environ.get("COMPOSE_PROJECT_NAME", ""),
+                                   "--stage", stage], capture_output=True, text=True, timeout=35)
+        if response.returncode == 0 and len(response.stdout.encode()) <= 16384:
+            print(response.stdout.strip(), flush=True)
+        else:
+            print("F6 proxy diagnostics: collector incomplete; proxy cause unknown", flush=True)
+    except (OSError, subprocess.SubprocessError):
+        print("F6 proxy diagnostics: collector incomplete; proxy cause unknown", flush=True)
 
 
 def _compose_once(label: str, *args: str, timeout: int = 45) -> str:
@@ -1579,6 +1593,7 @@ try:
     state["checks"]["foreground_2_structured_audit"] = "exact_terminal_run_owner_workspace_session_trace_and_resources"
 
     state["stage"] = "gateway_restart_and_original_logical_session_connect"
+    _proxy_diagnostic("before_restart")
     _compose_once("gateway_restart", "restart", "gateway")
     binding = _compose("port", "gateway", "8100", timeout=15)
     require(re.fullmatch(r"127\.0\.0\.1:[0-9]{1,5}", binding) is not None,
@@ -1602,6 +1617,7 @@ try:
             "same_job_identity_changed")
     require(same_job_row.get("status") == "waiting_for_data", "same_job_status_changed")
     state["checks"]["gateway_restart"] = "original_logical_session_public_events_same_durable_job_no_turn_replay"
+    _proxy_diagnostic("after_restart")
 
     state["stage"] = "start_exact_signal_worker_once"
     active_jobs_view = call("GET", "/api/product/signal-producer/jobs?limit=100&offset=0")

@@ -183,7 +183,7 @@ class RestartObserver(unittest.TestCase):
                   signal_job_id="signaljob_" + "d" * 32, task_id="task_" + "e" * 32,
                   version_id="artifact_" + "f" * 32, snapshot_id="stock_pool_snapshot_" + "1" * 64,
                   _compose_once=lambda *_a, **_kw: "", _compose=lambda *_a, **_kw: "127.0.0.1:43123",
-                  client=object())
+                  client=object(), _proxy_diagnostic=lambda _stage: None)
         exec(compile(ast.Module(body=statements, type_ignores=[]), str(DRIVER), "exec"), ns)
 
     def test_actual_restart_flow_uses_public_events_without_resume_or_new_turn(self):
