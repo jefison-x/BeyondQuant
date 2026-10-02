@@ -711,7 +711,7 @@ for (const viewport of ['desktop', 'mobile'] as const) {
     await expect(panel).toContainText('task-ready-read.v1');
     await expect(panel.getByRole('list', { name: '可信单次请求资源上限' })).toContainText('模型请求次数：16');
     await expect(panel.getByRole('spinbutton')).toHaveCount(0);
-    await panel.getByText('选择已验证资产', { exact: true }).click();
+    await panel.getByRole('combobox').click();
     await page.getByRole('option', { name: /^strategy_version ·/ }).click();
     await panel.getByRole('combobox').press('Escape');
     await panel.getByText('我确认任务、所选策略版本和系统显示的请求档案，并允许该许可按有效交接执行一次只读研究请求。', { exact: true }).click();

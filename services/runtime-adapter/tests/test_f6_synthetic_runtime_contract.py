@@ -15,7 +15,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.research_request_gate import parse_response_usage
-from f6_synthetic_runtime import (
+from tests.f6_synthetic_runtime import (
     AGENT_RUN_PATTERN,
     AUDIT_PATTERN,
     BG_SEQUENCE,

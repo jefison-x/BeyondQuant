@@ -32,7 +32,7 @@ acceptance. The maintainer instructed the next step after Phase 16 merged.
 This phase uses a new isolated branch from fetched main, classifies residual
 state by actual ownership, and removes only tested unnecessary paths while
 preserving exact business authority, idempotency and unknown-result protection.
-Phase 17 is OPEN. Golden A local research/multi-turn/delegation/browser passed
+Phase 17 is OPEN. The current hosted CI identified three bounded test/build metadata defects; the Build284 repair passed its scoped Tester → independent Reviewer → Root offline gate and awaits the required current-head hosted gates. Existing A–D and v13 F6 evidence remains reused; no new live model or market-data run is claimed. Details are recorded in [final Golden acceptance](../clean-break/phase17-final-golden-acceptance.md#build283-hosted-failures-and-bounded-build284-repair). Golden A local research/multi-turn/delegation/browser passed
 Tester → independent Reviewer → Root on the unchanged `.280` application source.
 Its connected journey reused the already qualified A1 Artifact and 98-session
 cache; the delegated child performed one new Web query. Observer failures and

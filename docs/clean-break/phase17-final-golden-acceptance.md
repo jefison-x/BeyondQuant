@@ -300,3 +300,43 @@ Reviewer `a9e2c4005cb342c62be9328f61b768b8a39fad468ef4e0083b356c1c8f9c4484`,
 Root `f643aabe8ccac4b5726ec50209fb2b478d2f207610b40c9d419389d7e4e988da`.
 No image was built by this offline gate. Required current-head hosted PR/Full
 CI, image qualification and fresh deployment remain OPEN.
+
+
+### Build283 hosted failures and bounded Build284 repair
+
+The exact source commit `a89f95b8aee7380053f6ccc1778f446f21b3011c`
+failed both required hosted runs: PR [36961490389](https://github.com/jefison-x/BeyondQuant/actions/runs/36961490389)
+and explicit Full [36961563678](https://github.com/jefison-x/BeyondQuant/actions/runs/36961563678).
+Backend, Gateway, MCP, frontend, docs, plan and contribution lanes passed.
+Architecture failed only the stale npm declaration inventory. Runtime failed
+collection of the newly added F6 contract module. Integration retained twelve
+successful Product browser tests, but failed the two permission-form viewport
+tests at their obsolete selection text and failed the same Runtime/F6 import.
+The keyless F6 chain did not start after its offline collection failure.
+
+The bounded repair changes no Product behavior: regenerate the existing license
+inventory for DOMPurify3.4.16 and brace-expansion2.1.7 without changing declared
+licenses, use the existing `tests.f6_synthetic_runtime` package import, and select
+the permission panel's actual combobox. The earlier offline F6 test invocation
+had added the tests directory to PYTHONPATH and did not prove actual CI import
+parity. Its scoped sample results remain recorded; that parity gap is explicit.
+The Worker's three attempted post-fix container invocations ran no tests: two
+failed before OCI startup and one failed discovery. They are NOT_RUN, not PASS.
+Independent tests must use `/app`, no PYTHONPATH override, no network, and both
+Driver/Fixture paths to qualify all nineteen cases without skips.
+
+Current source is stamped once as `dsh-0.1.5rc1-post-u8.284`, with 992 inputs,
+manifest SHA256 `12e4df0c591fb7066d53e9d749120fe5ff64ad5f0847df23f843dd4851fa8af2`
+and Dockerfile SHA256 `2a72a751d1478aa7c6fe35d3ac7a74c0669a7b1c13c57ee7e64abb953cbd8449`.
+Build283 manifest and Dockerfile bytes remain immutable. Updating the current
+selector preserves the F6 CI function SHA256
+`fc4aff35ad793e3a02d5bf23752f89f1fdbbf098db3a092b82f1db4109ef49a0`.
+The affected offline Tester → independent Reviewer → Root gate passed: thirty
+selected tests and two browser tests listed without execution. Tester receipt
+`ba8e40c0a90889890601299379cae5456502f6b0dcae0662bc3a3aae943e5862`;
+Reviewer receipt `6f919ca62a8e80db1c27e74c8a267df53fcb48785da033f2fe9467613ad59439`;
+Root receipt `ed86847941a42c7a4a4779eca4a2db9318c15214f1a94080f1949c22b666e31a`.
+All 992 current manifest input hashes match; this is an offline scoped PASS.
+Current-head PR/Full CI, trusted-main attested images and fresh deployment
+remain required. Existing real A–D and v13 F6 evidence is reused within its
+recorded limits; no new real model, Reset or market-data execution occurred.
