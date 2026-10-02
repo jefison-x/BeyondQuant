@@ -362,6 +362,7 @@ def _write_evidence(*, suffix: str = "") -> str:
         "checks": state["checks"],
         "structured_agent_audits": state.get("audit_summaries", {}),
         "answer_wait_observation": state.get("answer_wait_observation"),
+        "background_wait_observation": state.get("background_wait_observation"),
         "failure_observation": state.get("failure_observation"),
         "actual_usage_policy": "provider usage omitted by the synthetic Provider; actual model usage and provider attempts remain unknown; RequestGateProxy admission measurements are retained separately",
         "excluded_old_chain": ["ML training/prediction", "native backtest execution", "comparison report", "ResearchTask completion"],
@@ -384,12 +385,62 @@ def _write_evidence(*, suffix: str = "") -> str:
         "identities": payload["identities"],
         "structured_agent_audits": payload["structured_agent_audits"],
         "answer_wait_observation": payload["answer_wait_observation"],
+        "background_wait_observation": payload["background_wait_observation"],
         "failure_reconciliation": _failure_observation_summary(state.get("failure_observation")),
         "execution_observation": _closed_execution_observation(),
     }, sort_keys=True), flush=True)
     if not suffix:
         state["primary_evidence_written"] = True
     return digest
+
+
+def _background_wait_observation(session_view: dict, request_state: dict, *,
+                                 bg_user_count: int, answer_present: bool,
+                                 answer_ready: bool) -> dict[str, object]:
+    """Closed diagnostic projection; no answer text or receipt is a PASS proof."""
+    def category(value, allowed):
+        return value if type(value) is str and value in allowed else "invalid_or_unknown"
+
+    def count(value, maximum):
+        return value if type(value) is int and 0 <= value <= maximum else "invalid_or_unknown"
+
+    identity = request_state.get("request_identity")
+    identity = identity if isinstance(identity, dict) else {}
+    usage = request_state.get("request_usage")
+    usage = usage if isinstance(usage, dict) else {}
+    actual = usage.get("actual_usage")
+    actual = actual if isinstance(actual, dict) else {}
+    violations = usage.get("limit_violations")
+    root = identity.get("run_id")
+    digest = identity.get("settlement_sha256")
+    reservation = identity.get("reservation_id")
+    return {
+        "qualification": "diagnostic_only_not_a_pass",
+        "session_status": category(session_view.get("conversation", {}).get("status"),
+            {"active", "failed", "interrupted", "archived"}),
+        "message_count": count(len(_messages(session_view)), 10000),
+        "background_user_count": count(bg_user_count, 1),
+        "assistant_answer_present": answer_present is True,
+        "exact_answer_ready": answer_ready is True,
+        "requests_reserved": count(request_state.get("requests_reserved"), 1),
+        "requests_remaining": count(request_state.get("requests_remaining"), 1),
+        "unconfirmed_requests": count(request_state.get("unconfirmed_requests"), 1),
+        "request_status": category(identity.get("status"),
+            {"reserved", "accepted", "settled", "rejected", "outcome_unknown"}),
+        "dispatch_attempts": count(identity.get("dispatch_attempts"), 1),
+        "request_outcome": category(identity.get("outcome"), {"completed", "needs_attention"}),
+        "runtime_root_sha256": (hashlib.sha256(root.encode()).hexdigest()
+            if isinstance(root, str) and RUNTIME_ROOT_PATTERN.fullmatch(root) else None),
+        "reservation_sha256": (hashlib.sha256(reservation.encode()).hexdigest()
+            if isinstance(reservation, str) and RESERVATION_PATTERN.fullmatch(reservation) else None),
+        "settlement_hash_present": isinstance(digest, str) and SHA256_PATTERN.fullmatch(digest) is not None,
+        "request_usage_present": bool(usage),
+        "usage_completeness": category(actual.get("completeness"), {"known", "partial", "unknown"}),
+        "usage_source": category(actual.get("usage_source"),
+            {"provider_response", "unknown", "no_provider_calls"}),
+        "limit_violation_count": (count(len(violations), 32)
+            if isinstance(violations, list) else "invalid_or_unknown"),
+    }
 
 
 def _validate_settlement_identity(candidate: object, grant_version: int) -> dict[str, object]:
@@ -1595,6 +1646,13 @@ try:
                             state["identities"]["signal_snapshot_artifact_id"],
                         ))
                         and "No domain writes were made." in assistant_answer)
+        observed = _background_wait_observation(session_view, request_state,
+            bg_user_count=len(bg_users), answer_present=bool(assistant_answer), answer_ready=answer_ready)
+        previous = state.get("background_wait_observation") or {}
+        state["background_wait_observation"] = {
+            "poll_count": min(int(previous.get("poll_count", 0)) + 1, 10000),
+            "last_poll": observed,
+        }
         if request_settlement is not None and answer_ready:
             break
         if bg_users and isinstance(session_view.get("conversation"), dict):

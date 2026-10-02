@@ -1012,6 +1012,9 @@ def _install_f6_provider_routes(loopback_url: str) -> None:
 def main() -> None:
     validate_environment()
     diagnostics = _ProviderDiagnostics.create()
+    from tests.f6_runtime_diagnostics import RuntimeDiagnostics, install
+    runtime_diagnostics = RuntimeDiagnostics()
+    install(runtime_diagnostics)
 
     class Provider(BaseHTTPRequestHandler):
         def log_message(self, *_: object) -> None:
@@ -1094,6 +1097,7 @@ def main() -> None:
             server.server_close()
         if thread is not None:
             thread.join(timeout=2)
+        runtime_diagnostics.close()
         diagnostics.close()
 
 

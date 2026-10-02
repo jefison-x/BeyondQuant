@@ -334,7 +334,7 @@ prepare_ci_compose_env() {
   export BYQ_FEEDBACK_HUB_URL=""
   # ADR-0069: daily suites use the supported bundled runtime only.
   # Archived rollback images are never rebuilt or executed by routine CI.
-  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-292-candidate
+  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-293-candidate
   export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1
   export BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml
   export BYQ_DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-0.1.5rc1
@@ -780,6 +780,9 @@ check_f6_chain() {
       # Missing/partial records never prove that a model or business call did not run.
       if ! run_interruptible python3 "$REPO_ROOT/scripts/ci/f6-provider-diagnostics.py" --project "$expected_project"; then
         printf '%s\n' 'F6 provider diagnostics: collector did not complete; calls and outcomes remain unknown'
+      fi
+      if ! run_interruptible python3 "$REPO_ROOT/scripts/ci/f6-provider-diagnostics.py" --project "$expected_project" --runtime-terminal; then
+        printf '%s\n' 'F6 runtime diagnostics: collector did not complete; terminal and settlement remain unknown'
       fi
     fi
     export COMPOSE_FILE="$original_compose"

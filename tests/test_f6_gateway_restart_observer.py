@@ -39,9 +39,10 @@ def driver_namespace():
     functions = {"require", "_body_text", "_messages", "_answer_after", "_session_call",
                  "_remaining_timeout", "_wait_gateway_original_session", "_assert_original_session_connected",
                  "_closed_execution_observation", "_post_once",
-                 "_write_evidence", "_failure_observation_summary"}
+                 "_write_evidence", "_failure_observation_summary", "_background_wait_observation"}
     classes = {"EvidenceError", "HttpFailure", "GatewayEventConnection"}
-    constants = {"F6_OBSERVER_STAGES", "F6_OBSERVER_ACTIONS"}
+    constants = {"F6_OBSERVER_STAGES", "F6_OBSERVER_ACTIONS", "RUNTIME_ROOT_PATTERN",
+                 "RESERVATION_PATTERN", "SHA256_PATTERN"}
     nodes = [node for node in source.body if
              (isinstance(node, ast.FunctionDef) and node.name in functions)
              or (isinstance(node, ast.ClassDef) and node.name in classes)
@@ -321,6 +322,99 @@ class RestartObserver(unittest.TestCase):
         failure=ast.unparse(ast.Module(body=[outer],type_ignores=[]))
         self.assertLess(failure.index('_failure_readonly_window'),failure.index('gateway_events.close()'))
         self.assertNotIn('/resume',DRIVER.read_text())
+
+
+class BackgroundObservation(unittest.TestCase):
+    def setUp(self):
+        self.ns, _, _ = driver_namespace()
+        self.session = {"conversation": {"status": "active"}, "messages": [
+            {"role": "user", "content": "PRIVATE-PROMPT-CANARY"},
+            {"role": "assistant", "content": "PRIVATE-ANSWER-CANARY"},
+        ]}
+        self.request = {"requests_reserved": 1, "requests_remaining": 0,
+                        "unconfirmed_requests": 1, "request_usage": None,
+                        "request_identity": {"status": "accepted", "dispatch_attempts": 1,
+                            "run_id": "a" * 32, "reservation_id": "continuation_" + "b" * 32,
+                            "outcome": None, "settlement_sha256": None}}
+
+    def observe(self, answer=False):
+        return self.ns["_background_wait_observation"](
+            self.session, self.request, bg_user_count=1,
+            answer_present=answer, answer_ready=answer)
+
+    def test_accepted_answer_missing_preserves_pending_status_and_hashes_identity(self):
+        observed = self.observe()
+        self.assertEqual(observed["request_status"], "accepted")
+        self.assertEqual(observed["unconfirmed_requests"], 1)
+        self.assertFalse(observed["assistant_answer_present"])
+        self.assertEqual(observed["runtime_root_sha256"], hashlib.sha256(b"a" * 32).hexdigest())
+        self.assertEqual(observed["qualification"], "diagnostic_only_not_a_pass")
+        self.assertNotIn("PRIVATE-", json.dumps(observed))
+
+    def test_settlement_answer_and_unknown_usage_are_independent(self):
+        self.request.update(unconfirmed_requests=0, request_usage={
+            "actual_usage": {"completeness": "unknown", "usage_source": "unknown"},
+            "limit_violations": []})
+        self.request["request_identity"].update(status="settled", outcome="completed", settlement_sha256="c" * 64)
+        without_answer = self.observe()
+        with_answer = self.observe(True)
+        self.assertEqual(without_answer["request_status"], "settled")
+        self.assertFalse(without_answer["exact_answer_ready"])
+        self.assertTrue(with_answer["exact_answer_ready"])
+        self.assertEqual(with_answer["usage_completeness"], "unknown")
+        self.assertEqual(with_answer["usage_source"], "unknown")
+        self.assertEqual(with_answer["limit_violation_count"], 0)
+        self.assertTrue(with_answer["settlement_hash_present"])
+        self.assertEqual(with_answer["qualification"], "diagnostic_only_not_a_pass")
+
+    def test_answer_persisted_without_settlement_does_not_invent_completion(self):
+        observed = self.observe(True)
+        self.assertTrue(observed["exact_answer_ready"])
+        self.assertEqual(observed["request_status"], "accepted")
+        self.assertEqual(observed["unconfirmed_requests"], 1)
+        self.assertFalse(observed["settlement_hash_present"])
+
+    def test_needs_attention_partial_provider_usage_is_retained(self):
+        self.request["request_identity"].update(status="settled", outcome="needs_attention")
+        self.request["request_usage"] = {"actual_usage": {
+            "completeness": "partial", "usage_source": "provider_response"},
+            "limit_violations": ["PRIVATE-LIMIT-CANARY"]}
+        observed = self.observe()
+        self.assertEqual(observed["request_outcome"], "needs_attention")
+        self.assertEqual(observed["usage_completeness"], "partial")
+        self.assertEqual(observed["usage_source"], "provider_response")
+        self.assertEqual(observed["limit_violation_count"], 1)
+        self.assertNotIn("PRIVATE-", json.dumps(observed))
+
+    def test_invalid_enums_boolean_counts_and_private_receipts_cannot_escape(self):
+        self.session["conversation"]["status"] = ["PRIVATE-STATUS-CANARY"]
+        self.request.update(requests_reserved=True, requests_remaining=-1, unconfirmed_requests=99)
+        self.request["request_identity"].update(status={"raw": "PRIVATE-CANARY"},
+            run_id="PRIVATE-ROOT-CANARY", reservation_id="PRIVATE-RESERVATION-CANARY",
+            outcome="PRIVATE-OUTCOME-CANARY", dispatch_attempts=True, raw="PRIVATE-RECEIPT-CANARY")
+        observed = self.observe()
+        for key in ("session_status", "requests_reserved", "requests_remaining", "unconfirmed_requests",
+                    "request_status", "request_outcome", "dispatch_attempts"):
+            self.assertEqual(observed[key], "invalid_or_unknown")
+        self.assertIsNone(observed["runtime_root_sha256"])
+        self.assertIsNone(observed["reservation_sha256"])
+        self.assertNotIn("PRIVATE-", json.dumps(observed))
+
+    def test_evidence_writer_exports_same_closed_observation_before_cleanup(self):
+        observation = {"poll_count": 3, "last_poll": self.observe()}
+        self.ns["state"].update(status="failed", stage="background_one_exact_task_ready_read",
+            identities={}, background_wait_observation=observation)
+        with tempfile.TemporaryDirectory(prefix="byq-bg-observation-") as directory:
+            destination = Path(directory) / "evidence.json"
+            self.ns.update(evidence_path=str(destination), project="byq-ci-stack-test")
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output): self.ns["_write_evidence"]()
+            private = json.loads(destination.read_text())
+            uploaded = json.loads(output.getvalue())
+            self.assertEqual(private["background_wait_observation"], observation)
+            self.assertEqual(uploaded["background_wait_observation"], observation)
+            self.assertNotIn("PRIVATE-", output.getvalue())
+
 
 
 if __name__ == "__main__":

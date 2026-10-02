@@ -1123,3 +1123,171 @@ hosted F6 PASS. Valid A–D and actual v13 F6 remain reused within their existin
 scope. Historical FAIL/UNKNOWN remain, unreplayed. Phase17 OPEN; current CI,
 authorized repository merge, trusted-main images and fresh-empty deployment
 remain pending. Phase18 NOT_STARTED.
+
+
+## Build292 hosted background persistence and settlement failure
+
+PR CI run37018488961/attempt1 for `b392bc5488dc2ce6676fcdc2aca38e55898a68f0`
+completed **FAIL**. Every component lane passed except Integration; local-ci
+and ci-gate failed. Integration cleanup and sanitized evidence upload succeeded.
+No Full dispatch, merge, release publication or deployment occurred.
+
+FG1/FG2 persisted and closed with7/3 exact authority audit events. The corrected
+public SSE reconnect, original logical Product session and same Job checks passed.
+The one Signal Worker start completed the Job and produced its validated Artifact.
+A background user message was persisted. The observer then exhausted its bounded
+wait with `single_background_request_not_durably_settled`. No persisted background
+assistant answer or Backend settlement was confirmed; readonly browser was not
+reached. Ten bounded session/task/permission/job readback passes within the failure
+window remained `bounded_reconcile_incomplete_unknown`. Exact Worker-stop/revoke
+attempts and physical cleanup are not business terminal proof. This original
+background outcome remains **UNKNOWN and unreplayed**.
+
+The closed local Provider diagnostic has24 response-written records: FG1=11,
+FG2=5, BG=8 (seven tool responses plus one completion), with no recorded fixture
+rejection or handler error. These are fixture response bodies written, **not** SDK
+completed, Runtime `session.result`, persisted answer, Backend settlement, actual
+usage or total external/provider attempts. Omitted usage is unknown, never0.
+The uploaded artifact lacks the private primary/closeout JSON and exact BG
+root/reservation/Runtime terminal details. Existing evidence cannot distinguish
+SDK finish, guard/proxy closure, Gateway delivery or Backend ledger completion.
+There is no evidence for raising a deadline or resource limit.
+
+| Bound evidence | Private path and SHA256 |
+|---|---|
+| Terminal CI receipt | `/tmp/byq-phase17-ci-watch-37018488961/final-receipt.json` — `2263ebcfe507d47ff10ba7c7a0a2e8acc671c37a8afe637a8dd15065538a2941` |
+| Sanitized checks | `/tmp/byq-phase17-ci-failure-37018488961/checks.log` — `9a534795fb566f59ac2d35d13189e91ff2c5c91b3661e0803dbe8e78727c1449` |
+| Exact cleanup | `/tmp/byq-phase17-ci-failure-37018488961/cleanup.log` — `2c48e035c70843ee9c487b2a1759ddb5f6f29bf5c03cefa4d3d61e3f5cb2e5ff` |
+| Independent failure diagnosis | `/tmp/byq-phase17-build292-bg-settlement-independent-diagnosis-20261002.json` — `32aae8a78ad3e8462940fbb4a910a9a0000b8fccd71861a8e5652c2ff93dba41` |
+
+### Bounded diagnostic candidate, not F6 acceptance
+
+Root added two opt-in real pinned DSH loopback cases (zero tools and seven
+allowed reads) to test terminal/proxy closure, one exact request receipt and
+missing-provider-usage handling. They have no Product Job, real Provider, DB or
+user data. The first cached-image preflight found a stale budget JS and started
+no pytest. A readonly exact current-JS overlay passed the four identity prechecks,
+but all three selected native cases (the two new cases plus the existing17th-tool
+boundary) failed at `create_session` with AggregateError/ENOENT before
+`submit_prompt`. The missing path belongs to the dedicated container's native
+package cache. This is an **unqualified probe environment**, not evidence for
+Build292's background cause. Original failure logs/receipts and cleanup remain
+sealed; no real chain is rerun from this result.
+
+The candidate observer reuses its existing session/permission GETs to save a
+closed background last-poll projection, including pending request versus missing
+answer, without changing the acceptance conditions. A fixture-only three-phase
+journal observes background start, normalized SDK finish and Runtime terminal,
+including process/proxy closure, guard/gate categories and hashed exact identities.
+Its `receipt_cache_status:not_cached` is distinct from outcome_unknown;
+`guard_observed/usage_observed` distinguish missing samples from unknown actual
+usage. Diagnostic usage/elapsed is a sample, not a new settlement. The existing
+Engineering collector validates the exact CI project/service/container and only
+uploads bounded closed fields from0600/O_NOFOLLOW files. It does not read raw
+service logs, replay a prompt, create a receipt or claim Product acceptance.
+
+Root's24 observer,16 collector and4 wrapper contracts passed. This is **Root
+unit evidence only**, pending independent Tester, Reviewer and Root candidate
+acceptance, native environment qualification and the necessary affected hosted
+F6 gate. Product code, request limits, timeout values and SDK version remain
+unchanged. Valid A–D and scoped actual v13 F6 are retained. Phase17 OPEN;
+Phase18 NOT_STARTED. No new Full/CI/push/merge/deploy is authorized by a static
+PASS or by this diagnostic note.
+
+
+### Native environment diagnosis and independent offline gate
+
+Independent Tester confirmed44 offline contracts (24 observer,16 collector,4
+wrapper); independent Reviewer accepted the functional and architectural scope
+of the test-only diagnostics. Native qualification and Root candidate acceptance
+remain withheld. The native cases have not yet proven the SDK/receipt hypothesis.
+
+The first readonly native-cache attempt had ENOENT. A dedicated writable128MiB
+cache removed that marker but all3 selected cases still failed before submit.
+The preserved log precisely reports `koffi.node` shared-object mapping failure in
+both official subprocess and sandbox loaders. Earlier isolated native probes
+provide an executable-cache positive control; the current probe mount omitted
+`exec`. This classifies the probe environment only, not Build292's BG cause.
+
+The old native run report appeared before its writer's O_EXCL open; provenance
+is unknown. Original bytes, failures and a separate cleanup correction are kept.
+Readonly checks found no matching dedicated native container or script process.
+Any new probe uses a random dedicated directory, one writer, nonce-bound intent
+and O_EXCL files, without relying on that report's unknown provenance. A single
+zero-tool case is admitted first; its result is not yet claimed. No unknown call
+is replayed and no Product, SDK, deadline or budget change is made.
+
+| Bound evidence | Private path and SHA256 |
+|---|---|
+| Independent host44 | `/tmp/byq-phase17-native-terminal-cache-tmpfs-tester-20261002/host-44-report.json` — `e759570cb4e9ff127cef32a4fbfb64b2143a8c21fdf99b6162375782fe8e057d` |
+| Independent scoped review | `/tmp/byq-phase17-build292-diagnostic-independent-review-20261002/report.json` — `b587813f4fc752c91274d085ab3eb2ee25076717f9ceffc980d9e3ce1f0c86aa` |
+| Native environment classification | `/tmp/byq-phase17-native-loader-classification-root-20261002.json` — `21d0c54343d9c855561ab234244b0c25c2eda2e4a556d466d266cffcb8785365` |
+| Dedicated cache3FAIL and cleanup correction | `/tmp/byq-phase17-native-terminal-cache-tmpfs-tester-20261002/native-result-correction.json` — `25394f2a964c25ba3789955276559e34e1965a927b463576688ae9f3de97425c` |
+| One-case Root admission | `/tmp/byq-phase17-native-exec0-root-admission-20261002.json` — `d026a695dbc4f1d0639e994fbf985be29b6fc527119afb3f103fb8452546e8c9` |
+
+Build292 remains FAIL, original BG UNKNOWN/unreplayed, affected hosted acceptance
+pending, Phase17 OPEN and Phase18 NOT_STARTED.
+
+
+### Affected native loopback qualification (2026-10-03 local date)
+
+The same exact pinned SDK/binary and current test/JS source passed three bounded
+native cases, in sequence: zero tools, seven permitted MCP reads, and the existing
+17th-dispatch guard. Both normal cases asserted SDK completed, closed process and
+proxy, exact settled/completed receipt, three diagnostic phases, no limit violation
+and actual usage unknown. The seven-read case asserted8 admission attempts and7
+tool calls. The guard case asserted16 admitted calls, blocked17th dispatch with
+`BYQ_CONTINUATION_TOOL_LIMIT`, failed SessionStatus and settled needs_attention.
+
+All runs used network none, readonly root/stage/current JS, a private executable
+128MiB native-cache tmpfs with uid/gid10002 and0700, and a separately bound nonce,
+intent and result. Each cache preflight passed; each exact container was verified
+absent. Preparation script errors and a default-sandbox Docker-inspect denial
+occurred before docker run and are retained separately, not counted as model
+attempts. The source file hashes, executable-cache facts and actual result files
+are authoritative; a Tester narrative transcription typo for the seven-read hash
+is superseded by the actual file SHA256 below. No original unknown call replayed.
+
+| Native case | Result and SHA256 |
+|---|---|
+| Zero tools,1PASS0skip | `/tmp/byq-phase17-native-terminal-exec0-1_8cdc42/result.json` — `206557aa69820b1fcf0175215a8ebed780e817b37082c761e3f47218affc24ca` |
+| Seven reads,1PASS0skip | `/tmp/byq-phase17-native-terminal-seven-urv7jqqm/result.json` — `8df62ff6be54d0288d61cd51232b0042fa3b74d13824a0b8f9cbda680f9809f6` |
+| 17th dispatch blocked,1PASS0skip | `/tmp/byq-phase17-native-terminal-guard-khpknc4b/result.json` — `55d300fc7fcb1b4bcff260be6287d14db3635bb0f27afd75be78873b4c99e4e4` |
+
+Independent Reviewer checked these three result/intent/source/mount/cleanup
+bindings and accepted their local Runtime scope. Root accepts that missing
+Provider usage alone does not prevent local pinned Runtime completion and that
+the dedicated cache fixes this probe initialization path. This is not a Product
+Job, authority flow, persisted BG answer, Backend settlement or hosted F6 PASS.
+Build292 remains FAIL with its original BG UNKNOWN/unreplayed and undetermined
+cause. Valid A–D/actual v13 evidence remains reused; Phase17 OPEN, Phase18
+NOT_STARTED. The diagnostic candidate still requires its final document-bound
+independent gate and immutable current-build preparation before an affected
+feature-head CI can be admitted. No Full, push, merge or deployment occurred in
+these native tests.
+
+
+### Build293 bounded diagnostic preparation
+
+Tester host44 and native3, final independent Functional/Tests/Clean Break review
+and Root accepted the diagnostic candidate within its exact local scope. Root's
+new immutable293 manifest binds999 current inputs, including both new diagnostic
+test files. All8 current selectors use293. Frozen292 manifest and Dockerfile
+remain byte-for-byte unchanged; the new Dockerfile changes only the embedded
+build-manifest COPY path. SDK, binary, Product logic, request limits and timeout
+values remain unchanged.
+
+| Bound evidence | Private path or repository file and SHA256 |
+|---|---|
+| Final independent diagnostic gate | `/tmp/byq-phase17-build292-diagnostic-independent-review-20261002/final-native-scoped-review.json` — `24397902b9b856a884c0834e2660c6e85295a7e0b71044931817820327db0ac8` |
+| Root diagnostic acceptance | `/tmp/byq-phase17-diagnostic-native-root-gate-20261002.json` — `70e3ea2fe843d5c105eb84dac67a98a9febcac4da7cc76969142071f1e4224fb` |
+| New current manifest | `config/dsh/builds/dsh-0.1.5rc1-post-u8.293.json` — `6e5fe5beb58da68a6dd19f142cee5425cf5e06dfba4a7102c08b8800faa7556e` |
+| New current Dockerfile | `services/runtime-adapter/Dockerfile.post-u8-293-candidate` — `a91a93eb052bcb2ff2b4755f51606ca8b0486bd38a042a38881687b6d250553a` |
+| Frozen292 manifest | `config/dsh/builds/dsh-0.1.5rc1-post-u8.292.json` — `0c324dba18137a61573e94e369b5889125d5067cbdd0a7a7f35d619f7ef08066` |
+| Frozen292 Dockerfile | `services/runtime-adapter/Dockerfile.post-u8-292-candidate` — `d85bff0db3004cc08e0e24cab12bfaff073f7bef0b760dc91ef79adf4df761c7` |
+
+These are local diagnostic and build preparation facts, not a hosted F6 verdict.
+Current/frozen identity checks and their independent gate precede commit/push;
+one affected feature-head PR CI can follow admission. Required final Full follows
+only successful exact-head PR CI. No hosted PASS, original BG settlement, new
+empty deployment or phase closure is claimed. Phase17 OPEN; Phase18 NOT_STARTED.

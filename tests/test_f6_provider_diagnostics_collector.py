@@ -28,7 +28,7 @@ def encode(rows):
 
 
 class Collection(unittest.TestCase):
-    def run_collector(self, payload=b"", read_code=0, labels=None):
+    def run_collector(self, payload=b"", read_code=0, labels=None, runtime=False):
         calls = []
         answers = [(0, CID.encode()+b"\n"),
                    (0, json.dumps(labels or {"com.docker.compose.project":PROJECT,"com.docker.compose.service":"runtime-adapter"}).encode()),
@@ -38,7 +38,7 @@ class Collection(unittest.TestCase):
             code, stdout = answers[len(calls)-1]
             return subprocess.CompletedProcess(args, code, stdout, b"PRIVATE-STDERR-CANARY")
         with patch.dict(os.environ,{"COMPOSE_PROJECT_NAME":PROJECT}):
-            result = collector.collect(PROJECT,SOURCE,runner=runner)
+            result = collector.collect(PROJECT,SOURCE.with_name("f6_runtime_diagnostics.py") if runtime else SOURCE,runner=runner,runtime=runtime)
         return result, calls
 
     def test_read_targets_exact_scoped_runtime_and_prints_only_closed_record(self):
@@ -121,6 +121,66 @@ class Collection(unittest.TestCase):
             self.assertNotEqual(read(link).returncode,0)
             target.chmod(0o644);self.assertEqual(read(target).returncode,4);target.chmod(0o600)
             os.link(target,directory/"hardlink");self.assertEqual(read(target).returncode,4)
+
+
+class RuntimeCollection(unittest.TestCase):
+    run_collector = Collection.run_collector
+    def runtime_row(self):
+        return {"schema_version": "byq.f6.synthetic-runtime-diagnostic.v1", "record_type": "background_terminal",
+            "session_sha256": "a" * 64, "reservation_sha256": "b" * 64, "root_sha256": "c" * 64,
+            "native_finish": "completed", "runtime_status": "idle", "terminal_kind": "session.result",
+            "terminal_code": "none", "terminal_exception_kind": "none", "receipt_cache_status": "settled", "request_outcome": "completed",
+            "guard_blocked": "none", "gate_reason": "within_request_budget", "usage_completeness": "unknown",
+            "active_run": False, "process_closed": True, "process_closing": False, "proxy_closed": True,
+            "guard_observed": True, "usage_observed": True,
+            "provider_attempts": 8, "tool_calls": 7, "limit_violation_count": 0}
+
+    def test_closed_runtime_row_retains_terminal_and_unknown_usage_without_business_pass(self):
+        value = self.runtime_row()
+        result, calls = self.run_collector(encode([value]), runtime=True)
+        self.assertEqual(result["status"], "validated")
+        self.assertEqual(result["records"], [value])
+        self.assertEqual(result["business_outcomes"], "unknown")
+        self.assertIn("/tmp/byq-f6-runtime-diagnostics.jsonl", calls[-1][-1])
+        self.assertNotIn("PRIVATE-", json.dumps(result))
+
+    def test_runtime_noncompletion_and_gate_block_are_observations_not_rejections_of_journal(self):
+        value = self.runtime_row()
+        value.update(native_finish="failed", runtime_status="failed", terminal_kind="session.failed",
+            terminal_code="model-run-failed", receipt_cache_status="settled", request_outcome="needs_attention",
+            guard_blocked="BYQ_CONTINUATION_TOOL_LIMIT", gate_reason="deadline_exceeded")
+        result, _ = self.run_collector(encode([value]), runtime=True)
+        self.assertEqual(result["records"], [value])
+        self.assertEqual(result["business_outcomes"], "unknown")
+
+    def test_runtime_unknown_missing_and_partial_records_never_become_no_calls(self):
+        value = self.runtime_row()
+        value.update(native_finish="not_returned", receipt_cache_status="unknown", provider_attempts="unknown")
+        result, _ = self.run_collector(encode([value]), runtime=True)
+        self.assertEqual(result["records"], [value])
+        for payload, code, status in [(b"", 3, "missing"), (b"", 0, "empty"), (encode([value])[:-1], 0, "unqualified")]:
+            result, _ = self.run_collector(payload, read_code=code, runtime=True)
+            self.assertEqual(result["status"], status)
+            self.assertEqual(result["total_provider_calls"], "unknown")
+
+    def test_runtime_raw_fields_invalid_enums_counts_and_identity_cannot_escape(self):
+        for field, invalid in [("raw_message", "PRIVATE-CANARY"), ("native_finish", "PRIVATE-CANARY"),
+                               ("terminal_code", []), ("provider_attempts", True), ("tool_calls", 17),
+                               ("session_sha256", "PRIVATE-CANARY")]:
+            value = self.runtime_row(); value[field] = invalid
+            result, _ = self.run_collector(encode([value]), runtime=True)
+            self.assertEqual(result["status"], "unqualified")
+            self.assertEqual(result["records"], [])
+            self.assertNotIn("PRIVATE-", json.dumps(result))
+
+    def test_runtime_bounded_rows_and_duplicate_fields_are_fail_closed(self):
+        value = self.runtime_row()
+        for payload in [encode([value] * 9), encode([value]).replace(
+            b'"native_finish": "completed"', b'"native_finish": "PRIVATE-CANARY", "native_finish": "completed"')]:
+            result, _ = self.run_collector(payload, runtime=True)
+            self.assertEqual(result["status"], "unqualified")
+            self.assertNotIn("PRIVATE-", json.dumps(result))
+
 
 
 if __name__ == "__main__":

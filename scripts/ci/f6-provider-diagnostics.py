@@ -91,7 +91,57 @@ def validate_records(payload: bytes, codes: set[str]) -> list[dict]:
     return rows
 
 
-def collect(project: str, source: Path, runner=subprocess.run) -> dict:
+def validate_runtime_records(payload: bytes, source: Path) -> list[dict]:
+    """Validate a separate closed fixture journal; never upload raw fields."""
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    names = {"SCHEMA", "ENUMS", "BOOLS", "COUNTS", "HASHES"}
+    constants = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            if node.targets[0].id in names:
+                constants[node.targets[0].id] = ast.literal_eval(node.value)
+    if set(constants) != names or constants["SCHEMA"] != "byq.f6.synthetic-runtime-diagnostic.v1":
+        raise Unqualified()
+    enums, counts = constants["ENUMS"], constants["COUNTS"]
+    booleans, hashes = constants["BOOLS"], constants["HASHES"]
+    if (not isinstance(enums, dict) or not isinstance(counts, dict)
+            or not isinstance(booleans, set) or not isinstance(hashes, set)):
+        raise Unqualified()
+    for field, values in enums.items():
+        if not isinstance(values, set) or not values or any(type(v) is not str or len(v) > 80 for v in values):
+            raise Unqualified()
+    if len(payload) > 32768 or payload and not payload.endswith(b"\n"):
+        raise Unqualified()
+    lines = payload.splitlines()
+    if len(lines) > 8:
+        raise Unqualified()
+    fields = {"schema_version", "record_type", *enums, *counts, *booleans, *hashes}
+    rows = []
+    for line in lines:
+        row = json.loads(line, object_pairs_hook=_unique_fields)
+        if (not isinstance(row, dict) or set(row) != fields
+                or row["schema_version"] != constants["SCHEMA"]
+                or type(row["record_type"]) is not str
+                or row["record_type"] not in {"background_started", "native_finished", "background_terminal"}):
+            raise Unqualified()
+        for field, values in enums.items():
+            if type(row[field]) is not str or row[field] not in values:
+                raise Unqualified()
+        for field in booleans:
+            if type(row[field]) is not bool:
+                raise Unqualified()
+        for field, maximum in counts.items():
+            value = row[field]
+            if value != "unknown" and (type(value) is not int or not 0 <= value <= maximum):
+                raise Unqualified()
+        for field in hashes:
+            if type(row[field]) is not str or re.fullmatch(r"[0-9a-f]{64}", row[field]) is None:
+                raise Unqualified()
+        rows.append(row)
+    return rows
+
+
+def collect(project: str, source: Path, runner=subprocess.run, *, runtime: bool = False) -> dict:
     report = {"schema_version": "byq.f6.synthetic-provider-collection.v1", "status": "unqualified", "records": [],
               "total_provider_calls": "unknown", "business_outcomes": "unknown"}
     if (re.fullmatch(r"byq-ci-stack-[A-Za-z0-9][A-Za-z0-9_-]{0,80}", project) is None
@@ -101,7 +151,7 @@ def collect(project: str, source: Path, runner=subprocess.run) -> dict:
     def run(args):
         return runner(args, capture_output=True, timeout=5, check=False)
     try:
-        codes = fixture_codes(source)
+        codes = fixture_codes(source) if not runtime else None
         report["fixture_source_sha256"] = hashlib.sha256(source.read_bytes()).hexdigest()
         response = run(["docker", "compose", "-p", project, "ps", "-q", "runtime-adapter"])
         cid = response.stdout.decode("ascii").strip()
@@ -114,13 +164,16 @@ def collect(project: str, source: Path, runner=subprocess.run) -> dict:
                 or labels.get("com.docker.compose.service") != "runtime-adapter"):
             report["status"] = "scope_rejected"
             return report
-        response = run(["docker", "exec", cid, "python3", "-B", "-c", READER])
+        reader = READER if not runtime else READER.replace(
+            "/tmp/byq-f6-provider-diagnostics.jsonl", "/tmp/byq-f6-runtime-diagnostics.jsonl")
+        response = run(["docker", "exec", cid, "python3", "-B", "-c", reader])
         if response.returncode == 3:
             report["status"] = "missing"
             return report
         if response.returncode:
             return report
-        records = validate_records(response.stdout, codes)
+        records = (validate_runtime_records(response.stdout, source) if runtime
+                   else validate_records(response.stdout, codes))
         report.update(status="validated" if records else "empty", records=records,
                       overflow=bool(records and records[-1]["record_type"] == "overflow"))
     except (ValueError, TypeError, KeyError, UnicodeError, OSError, SyntaxError, subprocess.SubprocessError):
@@ -133,9 +186,18 @@ def collect(project: str, source: Path, runner=subprocess.run) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", required=True)
+    parser.add_argument("--runtime-terminal", action="store_true")
     args = parser.parse_args()
     source = Path(__file__).resolve().parents[2] / "services/runtime-adapter/tests/f6_synthetic_runtime.py"
-    print("F6 provider diagnostics: " + json.dumps(collect(args.project, source), sort_keys=True, separators=(",", ":")))
+    if args.runtime_terminal:
+        source = source.with_name("f6_runtime_diagnostics.py")
+    result = collect(args.project, source, runtime=args.runtime_terminal)
+    if args.runtime_terminal:
+        result["schema_version"] = "byq.f6.synthetic-runtime-collection.v1"
+        result["qualification"] = "diagnostic_only_not_business_acceptance"
+        print("F6 runtime diagnostics: " + json.dumps(result, sort_keys=True, separators=(",", ":")))
+    else:
+        print("F6 provider diagnostics: " + json.dumps(result, sort_keys=True, separators=(",", ":")))
     return 0
 
 

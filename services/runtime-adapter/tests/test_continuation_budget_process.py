@@ -624,3 +624,114 @@ export function apply(ctx) {
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+@pytest.mark.parametrize("tool_count", [0, 7])
+def test_pinned_completion_settles_without_fabricating_missing_provider_usage(
+    tmp_path, monkeypatch, tool_count,
+):
+    """Native SDK/guard/proxy receipt probe, not Product continuation acceptance.
+
+    Match the CI Provider's two-chunk SSE shape and deliberately omit usage.
+    The seven-read case exercises the tool loop without Job or domain writes.
+    """
+    from deepseek_harness_runtime import bundled_runtime_path
+    from app.runtime import SessionStatus
+    from tests.f6_synthetic_runtime import _sse_completion
+    from tests.f6_runtime_diagnostics import RuntimeDiagnostics, install
+    from app import runtime as runtime_module
+
+    compatibility_type = type(runtime_module.compatibility_for_release(
+        os.environ.get("BYQ_DSH_COMPATIBILITY_RELEASE", "dsh-0.1.2rc1")))
+    # Register restoration before test-only install changes these class hooks.
+    monkeypatch.setattr(runtime_module.RuntimeAdapter, "_run_prompt", runtime_module.RuntimeAdapter._run_prompt)
+    monkeypatch.setattr(compatibility_type, "run_prepared_prompt", staticmethod(compatibility_type.run_prepared_prompt))
+    diagnostic_path = tmp_path / "native-terminal-diagnostics.jsonl"
+    terminal_diagnostics = RuntimeDiagnostics(diagnostic_path)
+    install(terminal_diagnostics)
+
+    assert version("deepseek-harness-sdk") == "0.1.5rc1"
+    assert version("deepseek-harness-runtime-bin") == "0.1.5rc1"
+    assert hashlib.sha256(Path(bundled_runtime_path()).read_bytes()).hexdigest() == (
+        "6f68ce88d98307533ee8fa58a8125de4dc019ab16fac8b512cec141a2d1961f8"
+    )
+    responses = [_sse_completion({"probe_step": step}, (
+        "mcp__byq__byq_research_get", {"task_id": "task_" + "b" * 32},
+    )) for step in range(tool_count)]
+    responses.append(_sse([
+        {"id": "chatcmpl-native-probe", "object": "chat.completion.chunk",
+         "model": "deepseek-v4-flash", "choices": [{"index": 0,
+          "delta": {"content": "Synthetic bounded read completed."}, "finish_reason": None}]},
+        {"id": "chatcmpl-native-probe", "object": "chat.completion.chunk",
+         "model": "deepseek-v4-flash", "choices": [{"index": 0,
+          "delta": {}, "finish_reason": "stop"}]},
+    ]))
+    mcp, mcp_thread, mcp_state = _mcp_server()
+    provider, provider_thread, provider_state = _provider_server(responses)
+    adapter = None
+    try:
+        adapter, reservation = _configure_runtime(tmp_path, monkeypatch, mcp, provider)
+        sid = "byq-session-" + "d" * 32
+        adapter.create_session(sid, "continuation-completion-trace",
+            "synthetic-owner", "synthetic-workspace")
+        run_id = adapter.submit_prompt(sid, "Bounded synthetic read only.",
+            idempotency_key=reservation["reservation_id"], conversation_context=[],
+            continuation_budget=reservation)
+        record = _wait_for_run(adapter, sid, require_continuation_cleanup=True)
+        receipt = adapter.continuation_receipt(sid, reservation["reservation_id"])
+        diagnostic = json.dumps(_continuation_failure_diagnostics(
+            adapter, record, reservation, receipt, provider_state, mcp_state, tmp_path,
+        ), sort_keys=True)
+        assert receipt["status"] == "settled", diagnostic
+        assert receipt["run_id"] == run_id, diagnostic
+        assert receipt["outcome"] == "completed", diagnostic
+        assert record.status == SessionStatus.IDLE, diagnostic
+        assert record.process_closed and record.continuation_proxy_closed, diagnostic
+        assert any(event["kind"] == "session.result"
+            and event["payload"].get("run_id") == run_id for event in record.history), diagnostic
+        usage = receipt["request_usage"]
+        assert usage["limit_violations"] == [], diagnostic
+        assert usage["admission_usage"]["provider_attempts"] == tool_count + 1, diagnostic
+        assert usage["admission_usage"]["tool_calls"] == tool_count, diagnostic
+        assert usage["actual_usage"] == {
+            "input_tokens": "unknown", "cache_read_tokens": "unknown", "output_tokens": "unknown",
+            "provider_attempts": "unknown", "usage_source": "unknown", "completeness": "unknown",
+        }, diagnostic
+        assert len(provider_state["requests"]) == tool_count + 1, diagnostic
+        assert len(mcp_state["calls"]) == tool_count, diagnostic
+        journal_deadline = time.monotonic() + 2
+        while True:
+            content = diagnostic_path.read_bytes()
+            rows = [json.loads(line) for line in content.splitlines()] if content.endswith(b"\n") else []
+            if len(rows) == 3:
+                break
+            assert time.monotonic() < journal_deadline, diagnostic
+            time.sleep(0.01)
+        assert [row["record_type"] for row in rows] == [
+            "background_started", "native_finished", "background_terminal"], diagnostic
+        assert rows[1]["native_finish"] == "completed", diagnostic
+        terminal = rows[2]
+        assert terminal["terminal_kind"] == "session.result", diagnostic
+        assert terminal["receipt_cache_status"] == "settled", diagnostic
+        assert terminal["request_outcome"] == "completed", diagnostic
+        assert terminal["process_closed"] and terminal["proxy_closed"], diagnostic
+        assert terminal["guard_observed"] and terminal["usage_observed"], diagnostic
+        assert terminal["provider_attempts"] == tool_count + 1, diagnostic
+        assert terminal["tool_calls"] == tool_count, diagnostic
+        assert terminal["usage_completeness"] == "unknown", diagnostic
+        assert terminal["session_sha256"] == hashlib.sha256(sid.encode()).hexdigest(), diagnostic
+        assert terminal["root_sha256"] == hashlib.sha256(run_id.encode()).hexdigest(), diagnostic
+    finally:
+        try:
+            if adapter is not None:
+                adapter.close()
+        finally:
+            try:
+                provider.shutdown()
+                provider.server_close()
+                provider_thread.join(timeout=2)
+                mcp.shutdown()
+                mcp.server_close()
+                mcp_thread.join(timeout=2)
+            finally:
+                terminal_diagnostics.close()
