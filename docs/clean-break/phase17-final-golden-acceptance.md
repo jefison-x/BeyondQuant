@@ -146,7 +146,7 @@ inputs. Its earlier docs/architecture/Gateway failures remain actual FAIL:
 selected `.280` build manifest no longer renders from the current source inputs.
 No failing or cancelled run is counted as hosted PASS.
 
-The narrow build-identity repair creates new immutable `.281` and a revision-specific
+The initial narrow build-identity repair created new immutable `.281` and a revision-specific
 Dockerfile, synchronizes current selectors and their contracts, and preserves
 `.280` manifest SHA `828b58684ae05f50f5e74995352ef30bc16295ce0740c44020426ca2f1c0d947`
 and Dockerfile SHA `10ca3f61094d9816981672fff14bff2ee574d4ad9b2bf848b02603548902f5a2`.
@@ -168,3 +168,33 @@ exact-head CI, accepted merge preflight, attested images, absent exact resource
 names, port/admission checks and bounded login/read-only smoke remain required
 before execution. No deployment has occurred. Phase17 remains OPEN for
 CI/repository completion, with no Phase18 work.
+
+### Bounded worker-image release repair
+
+A subsequent fresh-deployment preflight found that Full CI already builds all
+14 Compose application images, but `scripts/release/images.py` exported only11,
+omitting `backtest-worker`, `factor-worker` and `optimization-worker`. Their
+worker entrypoints are not contained in the Backend image; substituting that
+image would not be a qualified deployment. The release service set now includes
+these three existing services with their own tested images, SBOMs and digests.
+No new service, application/domain logic, Worker implementation or DSH capability
+was introduced. Independent Compose-service coverage and missing-image/SBOM/
+receipt rejection contracts protect this release boundary.
+
+This source-input change receives new immutable `.282` manifest SHA
+`bba668a85ee068f3d0406c979230574e77b985de1d2f904604fdff7eaa59a12d`;
+`.281`/`.280` manifests and Dockerfiles retain their exact original hashes.
+Current selectors use `.282`; pinned SDK/bin/release/profile remain unchanged.
+The focused Tester ran30 tests plus3 subtests, build identity and diff checks
+PASS. Independent Reviewer and Root must accept the stable slice before push;
+real `.282` image qualification remains hosted CI/release, not this offline PASS.
+The preceding actual A–D/F6 evidence is reused; no new business/model/market/
+reset input or unknown replay occurred. The two approved scan exceptions passed
+Tester → independent Reviewer → Root and were committed separately.
+
+Fresh-target metadata preflight finds no proposed volume/network names and no
+listeners on ports80/8100. A host unprivileged bind probe on80 returned errno13;
+that is permission denial, not address-in-use. Docker daemon port publication
+and exact resource absence must be rechecked immediately before deployment.
+Protected container identities/mounts/networks and old configuration hashes
+are privately sealed. Actual deployment is still NOT_RUN; Phase17 is OPEN.

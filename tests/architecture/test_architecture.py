@@ -1144,7 +1144,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             local_ci,
         )
         self.assertIn("BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml", local_ci)
-        self.assertIn("Dockerfile.post-u8-281-candidate", local_ci)
+        self.assertIn("Dockerfile.post-u8-282-candidate", local_ci)
         self.assertNotIn("CI_PG_NET=byq_product", local_ci)
         self.assertNotIn("npm run build >/tmp/byq-mcp-build.log 2>&1", local_ci)
 

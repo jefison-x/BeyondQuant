@@ -90,9 +90,12 @@ and Phase18 had not been authorized.
 2026-10-02 repository-gate update: maintainer explicitly authorized push/PR,
 merge and deployment. Draft PR #381 is open after pushing the locally accepted
 branch. Initial PR history scan FAIL and cancelled Full run's prior build-identity
-FAIL remain; no hosted PASS is claimed. A new immutable `.281` current build repair
-preserves `.280` bytes and changes no application behavior/SDK; targeted local
-contracts and final affected independent gates apply before stable-head CI.
+FAIL remain; no hosted PASS is claimed. The initial immutable `.281` build repair
+preserves `.280` bytes. A fresh-deployment preflight then found three existing
+Worker images missing from release publication. The bounded repair covers all14
+Compose application images and uses new immutable `.282`, retaining `.280`/`.281`
+bytes without changing application/Worker logic or SDK. Focused30 tests plus3
+subtests pass; final independent gates apply before stable-head CI.
 The maintainer also accepted only the two exact historical test-key scan
 fingerprints and fresh empty `byq-v010-*` production storage. Deployment requires
 verified images and fresh exact-resource classification; protected old
