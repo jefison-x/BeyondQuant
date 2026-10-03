@@ -65,6 +65,13 @@ and checksum-verified; it is never an input to the new schema.
 | Compose, dev lifecycle or resource deletion | Scoped dry run, exact resource identity and archive gate where data is deleted; verify changed Compose services or commands. Complete fresh rebuild follows the Phase 14 schema baseline. |
 | Release candidate or Phase 15–16 completion | Required Full CI, full functional fidelity and Golden Scenarios A–F with qualified real dependencies; Golden C uses the independent CPU ML Worker under ADR-0089. |
 
+For an ordinary release candidate, the final Full is the trusted-main Release Images
+qualification, which publishes the exact tested images. Do not add a standalone Full
+before it just because publication is next. Explicit pre-merge phase Full/Golden
+milestones remain required and have a separate purpose; a future release run cannot
+close an open phase gate. RC/final promotion and deployment reuse the qualified
+digests without another Full, under the [release runbook](../operations/image-release.md).
+
 Do not rerun repository-wide unittest, H4, historical frozen build revisions,
 release-input audits, full Compose or Golden scenarios for every slice merely
 because an earlier slice ran them. Run one when the diff touches that contract,

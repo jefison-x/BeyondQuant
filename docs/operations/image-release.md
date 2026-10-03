@@ -25,6 +25,17 @@ PR 的完整套件分任务并行执行；主线不因合并再次触发 Full。
 
 ## 构建发布
 
+### 一次最终 Full 的调度规则
+
+默认只执行：**PR 按影响检查 → 合并 → Release Images（最终 Full + 发布受测镜像）
+→ Promote 相同 digest → 部署健康/基本业务验证**。Release 的 qualify 已承担发布候选的
+最终 Full；不要再先调度 `ci-selfhosted.yml profile=full` 作为普通发布的前置步骤。
+本规则从合并后的下一次新发布候选生效，不取消进行中的测试或改写历史失败。
+
+阶段明确要求的合并前 Full/Golden、夜间漂移检查和必要故障诊断仍各有独立目的，不能
+用 release 尚未执行的未来结果宣称阶段通过。PR CI 必须通过；发布候选 Full 也未减少。
+普通 CI 只有测试证据，没有可信 release 归档，不可据此跳过镜像 qualify。
+
 对已合并 main 发起一次显式镜像发布，migration 必须按本次变更填写：
 
 ```bash
@@ -39,7 +50,10 @@ PR 与 release 可能各构建一次，依靠缓存降低成本；publish 与部
 和 optimization-worker。这三个服务使用各自经测试的 Worker 镜像，不得替换成缺少
 相应入口的 Backend 镜像；缺少任何镜像、SBOM 或交接绑定都不能产生可用的成功
 发布清单或用于部署。失败前可能已上传部分 candidate 镜像，这些不构成成功发布。
-发布作业失败可以只重跑失败作业，复用同一 run 中已成功验证的归档；无需重跑 Full。
+publish 作业失败时，只重跑失败作业，复用同一 run 中已成功验证且未过期的归档；无需
+重跑 Full。qualify 的测试失败必须修复，不得直接发布；修改源码/构建输入或受测归档
+已不可用时，重新资格验证。成功 run 后的 RC、正式版标签和部署均复用其镜像 digest，
+不因版本标签或部署动作再执行完整 CI。
 镜像归档压缩上传并保留一天，脱敏日志七天，发布清单/SBOM 九十天；正式 release 时把清单、SBOM
 及 attestation bundle 保存为长期 release 资产，不依赖 Actions 临时保留期。
 

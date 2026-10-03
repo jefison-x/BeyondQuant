@@ -50,7 +50,17 @@ source of truth and has architecture tests for representative routes.
   exact-head suite. The required checks remain bound to that commit; merge
   preflight still verifies the latest successful run and live PR authorization.
 - A merge to `main` does not repeat the same full suite; nightly Full detects cross-change drift.
-- Full CI remains available through `workflow_dispatch` and is mandatory for release candidates.
+- Release candidates receive their final Full CI in `BeyondQuant Release Images` on trusted
+  `main`: qualify builds/tests the images once, and publish uses that same tested archive.
+  Do not dispatch an additional standalone Full merely as a prerequisite to this release run.
+- Standalone Full remains available for nightly drift checks, an explicitly required pre-merge
+  phase milestone, or diagnosis that cannot be covered by a selected lane. Record its distinct
+  purpose; it does not provide publishable images or replace Release qualification.
+- Reuse a successful release run for RC/final promotion and deployment of the same digests.
+  Promotion does not rebuild or rerun Full; deployment verifies identity, health and basic
+  business flows. Changed source/build inputs require new qualification, never relabel old
+  evidence as a new candidate. For unchanged inputs, retry only a failed publish job when its
+  original successful qualify archive remains available; do not rerun successful qualification.
 - A phase may require real Golden or clean-environment rebuild evidence at its
   acceptance milestone. That requirement does not make Full CI or Compose a
   default for each intermediate slice.
