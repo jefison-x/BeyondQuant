@@ -14,6 +14,7 @@ This directory contains the Phase 0–6 review package and the accepted BYQ 0.10
 - [Phase gates](phase-gates.md) — Tester, independent Reviewer and Root verdicts with activation limits.
 - [Phase 17 residual simplification](phase17-residual-simplification.md) — current ownership audit, source slices and pending final Golden gates.
 - [Agent stop/session issue](runtime-stop-session-issue.md) — diagnosed hard-cancel/resume and terminal reconnect defects; repair deferred.
+- [Personal workspace menu issue](personal-workspace-menu-issue.md) — stale Bootstrap Admin label after nickname changes; repair deferred.
 - [Phase 7 Gateway slice](phase7-gateway-proxy.md) — first bounded removal and replacement contract.
 - [Phase 7 generation history slice](phase7-generation-ledger.md) — second bounded removal and gate evidence.
 - [Phase 7 child lifecycle qualification](phase7-child-lifecycle-qualification.md) — current DSH 0.1.5rc1 contract gap and NO-GO cutover decision.
