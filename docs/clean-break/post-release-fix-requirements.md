@@ -1,6 +1,6 @@
 # BYQ 0.10 发布后待修复需求
 
-状态：**R1–R4 修复候选已实现，ADR-0092 已接受；R1 合成终态、R2/R4 与 R3 旧书签的隔离真实浏览器检查通过，R1 实际 DSH 终态和 R3 Hub 往返仍待验收。**
+状态：**R1–R4 修复候选已实现，ADR-0092 已接受；R1 实际 DSH 正常释放/硬取消、R2/R4 与 R3 旧书签的隔离真实浏览器检查通过，R3 Hub 往返仍待验收。**
 
 日期：2026-10-03。当前记录分支基线：`adca19bae7bee1db28e33633f30c3f45bc432d27`。
 维护者最初要求先记录问题，随后已明确授权直接修复 R1–R4，并保持现有 DSH runtime。
@@ -13,7 +13,7 @@
 
 | 编号 | 需求 | 状态与证据 |
 |---|---|---|
-| R1 | 硬取消后不恢复旧 Agent；正常释放及取消后的会话终态不循环重连 | 候选实现；前端单测与 Gateway 合同、隔离真实浏览器合成关闭会话 1/1 通过；实际 DSH 正常释放/硬取消浏览器验收 NOT_RUN。 |
+| R1 | 硬取消后不恢复旧 Agent；正常释放及取消后的会话终态不循环重连 | 候选实现；前端单测与 Gateway 合同、隔离真实浏览器合成关闭会话 1/1、实际 DSH 正常释放/硬取消各 1/1 通过；原双均线生产历史案例未重放。 |
 | R2 | 菜单消除 Bootstrap Admin 初始化名称 | 候选实现；前端单测与隔离 Gateway/Product API 桌面、手机真实浏览器 1/1 通过。 |
 | R3 | 会话反馈作为唯一产品入口，审核集中到 Cloudflare Hub，移除本机直发与独立反馈页面 | 候选实现；合同及隔离真实浏览器旧书签 1/1 通过；ADR-0092 已接受，真实会话发送/Hub 往返 NOT_RUN。 |
 | R4 | 用户在前端修改自己的密码，后端持久更新并注销旧登录 | 候选实现；Backend/Gateway 数据库合同及隔离真实浏览器普通用户/Admin 2/2 通过。 |
@@ -212,9 +212,20 @@ Binding 认证仍需保留，不能全仓按变量名删除。前端反馈 API/h
   标签/redirect 断言问题及随机端口 Host 丢失，均修正后针对受影响场景重跑通过。
 - R1 在同类隔离真实浏览器栈中，用测试夹具向临时 Backend/Gateway 注入
   合成 `session.closed` 终态与持久用户消息，历史重放 1/1 通过：消息可见、
-  新会话入口可见，旧会话无事件订阅或写入。该证据不含真实 DSH 正常释放、
-  硬取消或双均线历史案例；这些实际终态浏览器验收与 R3 真实会话反馈到
-  Cloudflare Hub 的整链验收仍为 **NOT_RUN**。R1 脚本限定 loopback、
+  新会话入口可见，旧会话无事件订阅或写入。R1 另以镜像 digest
+  `20f673f520c83bf9bdbc94b64d2ed5e24e18f357496a6c5245c956e5cc9a4e72`
+  的 Adapter、现有 Phase7 脚本化 provider、一次性 PostgreSQL、Gateway 与
+  前端组成隔离栈，经普通用户 Product API 创建并运行会话。正常路径释放脚本
+  provider，确认真实 DSH `session.result`，打开再断开 Product SSE 以触发 5 秒
+  空闲释放，确认 replay 出现 `session.closed`；强制取消路径在 provider 等待时
+  经 Product API 提交 `mode=hard`，确认 replay 出现 `session.cancelled` 且
+  `mode=hard`。随后对两个真实终态各运行同一真实 Chromium 历史会话用例，
+  各 1/1 通过：旧会话不再订阅或写入，新会话入口可见。脚本化 provider 不证明
+  真实付费模型或原双均线生产历史案例的语义，这两个场景仍为 **NOT_RUN**；
+  R3 真实会话反馈到 Cloudflare Hub 的整链验收亦为 **NOT_RUN**。两次隔离栈的
+  容器、网络和临时数据库均已清理。镜像内 build identity 为
+  `dsh-0.1.5rc1-post-u8.302`，该 identity 文件与 Adapter `runtime.py` 的
+  SHA-256 均与当前 worktree 对应文件一致。R1 脚本限定 loopback、
   `BYQ_R1_DISPOSABLE_STACK=1` 与 `r1-test-user-` 前缀账号。R4 脚本要求 loopback 上的一次性测试栈、
   `BYQ_R4_DISPOSABLE_STACK=1` 和 `r4-test-user-` / `r4-test-admin-` 前缀账号；
   成功后测试账号密码停留在新值，重新运行须重新预置一次性账号。
