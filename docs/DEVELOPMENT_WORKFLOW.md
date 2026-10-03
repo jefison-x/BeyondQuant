@@ -53,7 +53,7 @@ AGENTS 为入口，ARCHITECTURE 定义持久边界，Accepted ADR 定义具名�
 | 公共 API、MCP、DSH、共享合同、schema、Job/Worker | 边界合同、错误/授权路径、相关集成；schema 从全新基线验证 | 按影响运行组件与集成 CI；用户可见流程变化验证真实 Product API/浏览器 |
 | 审批、租户、凭据、资金或不可逆外部动作 | 对应不变量与失败/未知结果路径，必要时隔离真实进程 | 保留专项安全验收；不能用 mock 或无关全仓 PASS 代替 |
 | Compose、开发环境、资源清理 | 配置校验、限定资源的预览及受影响服务启动 | 环境里程碑从源码、模板、schema 和 seed 做一次清洁重建 |
-| 阶段收口、发布候选 | 阶段功能清单与尚未覆盖的风险 | 阶段规定的 Golden/真实流程；发布候选必跑 Full CI |
+| 阶段收口、发布候选 | 阶段功能清单与尚未覆盖的风险 | 阶段规定的 Golden/真实流程；发布候选的最终 Full 由 Release Images 承担 |
 
 本地默认 `make dev-check`、`git diff --check` 和定向测试。长期分支若默认
 `dev-check` 的 `origin/main` 基线因已提交的旧切片失败，可用
@@ -63,6 +63,13 @@ AGENTS 为入口，ARCHITECTURE 定义持久边界，Accepted ADR 定义具名�
 [CI 策略](operations/ci-policy.md)按影响选择；本地仅在定向验证不足、调试
 失败或专项验收要求时重复。没有 PR CI 的本地 PASS 只能证明本地切片，不能
 充当合并门禁。
+
+发布默认顺序为 **PR 按影响 CI → 合并 → Release Images 一次最终 Full 并发布同批受测镜像
+→ Promote 同 digest → 部署健康/基本业务验证**。不在镜像发布前额外调度一遍 standalone
+Full。若阶段明确要求合并前 Full/Golden，保留该独立阶段证据；它不替代可信 main 的
+镜像资格验证，也不成为每次修复或普通发布的惯例。Nightly Full 仍用于跨变更漂移检查。
+发布失败按 [发布 runbook](operations/image-release.md) 重试必要步骤，不重新运行已成功
+且仍可复用的资格验证。不能复用失败、过期或不同构建输入的证据。
 
 开发环境可重建性在环境或阶段里程碑验证，不在每个代码切片重跑完整 Compose。
 从空环境重建的测试默认使用新 schema、最小 seed 和新数据，不要求恢复历史用户
