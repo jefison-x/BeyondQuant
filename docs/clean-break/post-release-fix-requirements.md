@@ -10,7 +10,7 @@
 
 | 编号 | 需求 | 状态与证据 |
 |---|---|---|
-| R1 | 硬取消后不恢复旧 Agent，会话终态不循环重连 | OPEN；[已定位问题](runtime-stop-session-issue.md)，有先前实际只读 trace/日志证据。 |
+| R1 | 硬取消后不恢复旧 Agent；正常释放及取消后的会话终态不循环重连 | OPEN；[已定位问题](runtime-stop-session-issue.md)，有先前实际只读 trace/日志证据。 |
 | R2 | 菜单消除 Bootstrap Admin 初始化名称 | OPEN；[用户要求与源码分析](personal-workspace-menu-issue.md)，接受 Admin 或昵称（Admin）形式。 |
 | R3 | 会话反馈作为唯一产品入口，审核集中到 Cloudflare Hub，移除本机直发与独立反馈页面 | OPEN；以下是本次源码与依赖分析，尚无修复实测。 |
 

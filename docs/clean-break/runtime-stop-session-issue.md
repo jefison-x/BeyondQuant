@@ -84,3 +84,42 @@ Backend `agent_runtime_turns` 中该 root 为 `cancelled`、authority 为 `close
 完整日志、用户消息和凭据不纳入此文档。脱敏日志对包含 `task-` 的路由片段存在
 过度遮盖，不能据此推断路由损坏；本问题的取消、恢复及 events 状态和规范化
 生命周期证据不依赖该片段。`/tmp` 不是长期归档；本文保存了修复所需的关键事实。
+
+## 补充实际案例：双均线研究会话正常释放后重连
+
+2026-10-03 维护者要求核对“建立一个双均线研究策略，同步近三年的数据，完成回测分析。”
+是否为同一问题。本次只读观察确认：**复现同一终态重连缺陷，但未复现硬取消后
+立即 resume 的触发路径。** 后续 R1 验收必须覆盖正常释放与硬取消两种场景。
+
+- Conversation：`conversation_366894ff6c1f46399523e33d364e637f`
+- Runtime session：`byq-session-ba36364386604467a49e8caa18c9f6bc`
+- Trace：`byq-trace-64b85a3e9bce43c590dd742cab420c15`
+- Root：`22f9e37b5fd84a518ca588fdb16eb551`、`064a7434ccbd44e791dc2adbf2fa051a`。
+- Backend 两个 root 都为 `completed`，authority 为 `closed`；规范化 trace 有两次
+  `session.result`，没有 `session.cancelled` 或 `session.failed`。
+- 北京时间 15:09:36、15:11:02 两轮正常完成；15:12:38 `session.closed`，
+  `reason=released`，Adapter release 请求返回 200。
+- 保存的有界 Gateway 日志窗口中，该 conversation 的 events 有 304 次 409，
+  时间为 15:15:51 至 15:20:44。这个窗口不是完整日志，不将首条记录冒称首次失败。
+  同期历史会话 GET 返回 200，说明消息可读与 live subscription 失效需分别处理。
+- 观察时 Adapter ready、发布身份匹配，活动 prompt 为 0。没有触发新模型、
+  Job、数据同步、取消、release 或浏览器连接；日志中的动作来自已有产品使用。
+
+### 数据阻塞是另一项事实
+
+该研究 Task `task_a54e5d2918c54d458f176f968a5100d8` 的持久 progress 为 `blocked`，
+原因为缺证券主数据。Agent 最近回答在 15:11:02 完成；实际主数据随后于 15:12:28
+建成快照、15:12:32 同步 Job 完成。因此不能用后来存在的主数据推断早先回答不实。
+
+此次只读检查时，证券主数据有 5910 条、日线有 16677 条；这是后续新增数据，
+不能继续沿用早先空库结论，也不能据总行数宣称目标股票池近三年已就绪。
+Task 仍保存原阻塞状态；需要在后续明确用户指令及权限下重新核对目标范围与
+任务状态。本次没有重放同步/回测或承诺自动推进。
+
+私有只读证据：`/tmp/byq-live-ma-session-readonly-20261003-072031/` 中的
+`receipt.json`、`activity-log-receipt.json`、`data-execution-receipt.json` 和
+`data-timing-receipt.json`。初版只读查询器误用 audit 的不存在列 `session_id`，
+在 SELECT 阶段失败；失败版本保留，改用权威 run_id 后完成读取。该观察器错误
+不代表产品故障，未写入数据库或重放任何业务操作。
+
+修复仍为 NOT_RUN；旧会话关闭后不得通过恢复 DSH 私有上下文来迁就前端。
