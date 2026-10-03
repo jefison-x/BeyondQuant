@@ -1858,3 +1858,28 @@ and pre-panel safety VM evidence are reused within their exact source/path limit
 Manifest SHA `39d37727635d1b1df2242649ea9bf339ae6738a92171a8d4efb0060f8d07151c`; Dockerfile SHA `687031850fc60a0a961e9602e05546aef76b07384a600d53ef120b9ea5892100`.
 Preparation and offline rendering are not Product or CI acceptance. New CI/model/
 Job/DB NOT_RUN; Full NOT_DISPATCHED; merge/deployment NOT_RUN; Phase17 OPEN.
+
+## Trusted-main release admission maintenance (2026-10-03)
+
+PR381 merged after exact c421 PR37085502174 and Full37087327746 each passed
+12/12 jobs. Its tested and squash-merged source trees are identical. Source/
+Golden acceptance remains scoped; Phase17 documentation closure is pending.
+
+Trusted-main release37089434999 failed its secret scan before image qualification;
+publish was SKIPPED. No application image was published; no formal storage or services started.
+The two findings are the exact previously approved synthetic idempotency fixture
+lines at66/102, now attributed to the squash commit. Terminal SHA
+`a64affc866cb386ad3d6a6bbccddfe69a5736321a36353c6adcea11fe98613c5`;
+readonly reproduction SHA
+`cf32d3785495b5aecb9ba0dea89e13b536069fe7171a00ed1324f7c2743ecb44`.
+The original failed release remains FAIL; new release dispatch is not a retry
+until the exact cause is corrected and reviewed.
+
+The bounded maintenance replaces only those two test payload values with short
+synthetic ids. AST comparison proves all other test structure/assertions unchanged.
+No scanning exception or Product source change is introduced. Immutable Build302
+records the changed test input and selects its manifest through eight existing
+selectors; Build301 and earlier bytes remain frozen. Source identity, actual
+scanner reproduction and Tester/independent Reviewer/Root are pending before
+push/affected CI and a new trusted-main release. No native A-D/F6/model/Job/
+market/data operation is included. Phase18 NOT_STARTED; deployment NOT_RUN.

@@ -21,6 +21,7 @@ RETIRED_SOURCE = "b6c8034ed638447aa1d0ddd82af9738df830bbdf"
 # They are historical evidence only; current source changes get a new immutable
 # Dockerfile and manifest.
 FROZEN_BUILDS = {
+    "dsh-0.1.5rc1-post-u8.301": "sha256:39d37727635d1b1df2242649ea9bf339ae6738a92171a8d4efb0060f8d07151c",
     "dsh-0.1.5rc1-post-u8.300": "sha256:a2a896ab3e0a0c63c22e19e240aebc92ac010d177c734fb94bfaaa4e49756248",
     "dsh-0.1.5rc1-post-u8.299": "sha256:89830627faf7b778e794e18b0b2f0c79b663e4eee612c671e7140142316cffdb",
     "dsh-0.1.5rc1-post-u8.298": "sha256:1ea362f6950cf1013dad6879adb8c779f1ab8b44de0a8ec17d5f413870067826",
@@ -163,7 +164,7 @@ def selected_build_id(release):
     if release == "dsh-0.1.1rc1":
         return RETIRED_BUILD  # Historical identity only; never a current build.
     if release in RELEASES:
-        return release + "-post-u8.301"
+        return release + "-post-u8.302"
     if release in HISTORICAL_BUILDS:
         return HISTORICAL_BUILDS[release]
     raise ValueError("unregistered release")

@@ -63,7 +63,7 @@ def test_foreground_explicit_plan_creates_one_bounded_plan_without_permission_gr
     store, task, context = _setup(owner="p4-user", session="p4-session", trace="p4-trace")
     try:
         artifact_id = _validated_strategy(store, task)
-        payload = {"idempotency_key": "p4-foreground-plan",
+        payload = {"idempotency_key": "p4-plan",
                    "references": _references(strategy_version=artifact_id)}
         plan = store.create_execution_plan(task, payload, trusted_context=context)
         assert plan["stage"] == "strategy_draft"
@@ -99,7 +99,7 @@ def test_request_permission_cannot_create_plan_and_explicit_plan_is_owner_scoped
             store.create_execution_plan(task, {"idempotency_key": "p4-grant-references"},
                 trusted_context=context, bind_grant_references=True)
         explicit = store.create_execution_plan(task, {
-            "idempotency_key": "p4-explicit-foreground",
+            "idempotency_key": "p4-explicit",
             "references": _references(strategy_version=artifact_id),
         }, trusted_context=context)
         assert explicit["stage"] == "strategy_draft"
