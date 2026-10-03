@@ -56,6 +56,53 @@ def logout(session_id: str) -> None:
         raise ProductAuthError(503, "logout_outcome_unknown", "注销结果尚未确认，请重试注销。") from exc
 
 
+def change_password(session_id: str, payload: dict[str, object]) -> None:
+    """Forward one own-password change and require an exact Backend receipt."""
+    try:
+        response = httpx.post(
+            f"{BACKEND_URL}/v1/auth/change-password",
+            json=payload,
+            headers={"x-byq-session-id": session_id},
+            timeout=8.0,
+        )
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        if status == 401:
+            raise ProductAuthError(401, "session_invalid", "登录已失效，请重新登录。") from exc
+        if status == 403:
+            try:
+                detail = exc.response.json().get("detail")
+            except (ValueError, AttributeError):
+                detail = None
+            if detail == "current password is incorrect":
+                raise ProductAuthError(403, "current_password_invalid", "当前密码不正确。") from exc
+            raise ProductAuthError(401, "session_invalid", "登录已失效，请重新登录。") from exc
+        if status == 422:
+            raise ProductAuthError(
+                422,
+                "password_policy_invalid",
+                "密码长度须为 8 到 256 个字符；首尾空白会被忽略。",
+            ) from exc
+        if status == 429:
+            raise ProductAuthError(429, "password_change_rate_limited", "操作过于频繁，请稍后再试。") from exc
+        # An unexpected server response may follow a committed transaction.
+        raise ProductAuthError(
+            503, "password_change_outcome_unknown", "改密结果尚未确认，请检查登录状态后再继续。"
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise ProductAuthError(
+            503, "password_change_outcome_unknown", "改密结果尚未确认，请检查登录状态后再继续。"
+        ) from exc
+    try:
+        if response.json() != {"status": "ok"}:
+            raise ValueError("password change receipt mismatch")
+    except ValueError as exc:
+        raise ProductAuthError(
+            503, "password_change_outcome_unknown", "改密结果尚未确认，请检查登录状态后再继续。"
+        ) from exc
+
+
 def resolve_principal(request: Request) -> Principal:
     user = resolve_user(request)
     return Principal(subject=str(user.get("username") or user.get("user_id")))

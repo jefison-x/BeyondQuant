@@ -13,7 +13,7 @@ const auth = useAuthStore();
 const isPublicRoute = computed(() => Boolean(route.meta.public));
 const isConversationRoute = computed(() => route.path === "/agent");
 const isSystemSettingsRoute = computed(() => route.path.startsWith("/settings/system"));
-const isOverlayRoute = computed(() => isSystemSettingsRoute.value || route.path === "/feedback");
+const isOverlayRoute = computed(() => isSystemSettingsRoute.value);
 const isMobile = ref(false);
 const sidebarCollapsed = ref(false);
 const mobileDrawerOpen = ref(false);

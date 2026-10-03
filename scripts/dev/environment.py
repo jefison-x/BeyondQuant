@@ -15,7 +15,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-CURRENT_DSH_DOCKERFILE = "services/runtime-adapter/Dockerfile.post-u8-302-candidate"
+CURRENT_DSH_DOCKERFILE = "services/runtime-adapter/Dockerfile.post-u8-304-candidate"
 ENV_FILE = ROOT / ".env.dev"
 TEMPLATE = ROOT / ".env.example"
 VOLUME_SUFFIXES = ("postgres-data", "domain-state", "ml-model-state", "dsh-sessions", "workflow-traces")
@@ -134,7 +134,6 @@ def init() -> None:
         "BYQ_RUNTIME_AUTHORITY_TOKEN": secrets.token_hex(32),
         "BYQ_CREDENTIAL_RESOLVER_TOKEN": secrets.token_hex(32),
         "BYQ_PLUGIN_DEPLOYMENT_TOKEN": secrets.token_hex(32),
-        "BYQ_FEEDBACK_PUBLISHER_TOKEN": secrets.token_hex(32),
         "BYQ_FEEDBACK_HUB_RELAY_TOKEN": secrets.token_hex(32),
         "BYQ_BOOTSTRAP_ADMIN_PASSWORD": secrets.token_hex(24),
         "BYQ_CREDENTIAL_KEYRING": "'" + json.dumps({"local-v1": key}, separators=(",", ":")) + "'",

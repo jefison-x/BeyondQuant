@@ -11,6 +11,8 @@ def child(parent: str, key: str, foreign: str | None = None) -> str:
 # Child-first, explicit ownership; every selected row is archived before deletion.
 # Personal configuration is distinct from Workspace-bearing domain records.
 RESET_SCOPE = (
+    # Retained local-publication rows are historical: archive them only through
+    # the normal verified reset after external side effects are classified.
     ("product_feedback_hub_outbox", child("product_feedback", "feedback_id")),
     ("product_feedback_outbox", child("product_feedback", "feedback_id")),
     ("product_feedback_publications", child("product_feedback", "feedback_id")),

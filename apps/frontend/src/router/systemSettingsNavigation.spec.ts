@@ -17,7 +17,6 @@ describe("system settings navigation", () => {
     ]);
     expect(systemSettingsItems.map((item) => item.path)).toEqual([
       "/settings/system/overview",
-      "/settings/system/feedback",
       "/settings/system/data",
       "/settings/system/sources",
       "/settings/system/cache",
@@ -36,8 +35,10 @@ describe("system settings navigation", () => {
   it("preserves old administrator deep links through explicit redirects", () => {
     expect(legacySystemSettingsPath("database")).toBe("/settings/system/database");
     expect(legacySystemSettingsPath("graphs")).toBe("/settings/system/workflow");
+    expect(legacySystemSettingsPath("feedback")).toBe("/agent");
     expect(legacySystemSettingsPath("unknown")).toBe("/settings/system/overview");
     expect(legacySystemSettingsRouteName("graphs")).toBe("system-settings-workflow");
+    expect(legacySystemSettingsRouteName("feedback")).toBe("agent");
     expect(findSystemSettingsItem("/settings/system/audit").label).toBe("审计记录");
   });
 });

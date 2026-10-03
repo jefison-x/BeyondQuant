@@ -48,6 +48,9 @@ const approvalContinuationChecks = new Map<string, number>();
 let viewDisposed = false;
 let reconciliationTimer: ReturnType<typeof setTimeout> | null = null;
 let lastStreamEventAt = 0;
+const terminalSessionId = ref("");
+const terminalSessionMessage = "该会话已结束。历史消息仍可查看；请新建会话继续。";
+const terminalSessionCodes = new Set(["agent_session_interrupted", "agent_session_failed"]);
 
 const activeSession = computed(() => agent.sessions.find((item) => item.session_id === agent.activeSessionId));
 const userDisplayName = computed(() => auth.user?.display_name?.trim() || "我");
@@ -61,7 +64,8 @@ const waiting = computed(() => workflowWaiting(agent.events, agent.activeSession
 const activeActivity = computed(() => [...activities.value].reverse().find((item) =>
   item.payload.state === "started" || item.payload.state === "progress" || item.payload.state === "waiting_approval",
 ));
-const runActive = computed(() => replayRun.value.running || Boolean(localRunStartedAt.value));
+const runActive = computed(() => terminalSessionId.value !== agent.activeSessionId
+  && (replayRun.value.running || Boolean(localRunStartedAt.value)));
 const processingVisible = computed(() => runActive.value && !replayRun.value.answerStarted);
 const runStartedAt = computed(() => replayRun.value.startedAt || localRunStartedAt.value);
 const elapsedSeconds = computed(() => {
@@ -121,6 +125,13 @@ function handleEvent(event: WorkflowTraceEvent, generation: number) {
   if (generation !== conversationGeneration || event.session_id !== agent.activeSessionId) return;
   if (agent.events.some((current) => current.sequence === event.sequence)) return;
   agent.addEvent(event);
+  if (event.kind === "session.closed" || (event.kind === "session.cancelled" && event.payload.mode === "hard")) {
+    terminalSessionId.value = event.session_id;
+    error.value = terminalSessionMessage;
+    stopStream();
+    stopReconciliation();
+    localRunStartedAt.value = "";
+  }
   if (event.kind === "agent.card.approval") {
     window.dispatchEvent(new Event("byq:approvals-changed"));
   }
@@ -174,6 +185,12 @@ async function maintainStream(
     } catch (exc) {
       if (controller.signal.aborted || generation !== conversationGeneration) return;
       if (exc instanceof AgentRequestError && [401, 403, 404, 410].includes(exc.status)) return;
+      if (exc instanceof AgentRequestError && terminalSessionCodes.has(exc.code ?? "")) {
+        terminalSessionId.value = sessionId;
+        error.value = terminalSessionMessage;
+        stopReconciliation();
+        return;
+      }
     }
     try {
       cursor = Math.max(cursor, await replayMissedEvents(sessionId, generation));
@@ -209,15 +226,21 @@ function scheduleRunReconciliation(sessionId: string, generation: number) {
 async function openSession(sessionId: string, updateRoute = true) {
   const generation = ++conversationGeneration;
   stopStream(); stopReconciliation(); localRunStartedAt.value = ""; stopping.value = false;
+  terminalSessionId.value = "";
   loading.value = true; error.value = "";
   try {
     const replay = await getAgentSession(sessionId, auth.token);
     if (generation !== conversationGeneration) return;
     agent.replaceSession({ ...replay.conversation, session_id: sessionId });
     agent.hydrateSession(sessionId, replayMessages(replay.messages, replay.events), replay.events);
+    if (replay.events.some((event) => event.kind === "session.closed"
+      || (event.kind === "session.cancelled" && event.payload.mode === "hard"))) {
+      terminalSessionId.value = sessionId;
+      error.value = terminalSessionMessage;
+    }
     if (updateRoute) await router.replace({ path: "/agent", query: { session: sessionId } });
     const lastSequence = replay.events.reduce((maximum, event) => Math.max(maximum, event.sequence), 0);
-    startStream(sessionId, lastSequence, generation);
+    if (terminalSessionId.value !== sessionId) startStream(sessionId, lastSequence, generation);
     await nextTick();
     scrollConversation();
   } catch (exc) {
@@ -235,6 +258,7 @@ function startNewSession(preservePrompt = false) {
   conversationGeneration += 1;
   stopStream(); stopReconciliation();
   localRunStartedAt.value = ""; stopping.value = false; loading.value = false; error.value = "";
+  terminalSessionId.value = "";
   agent.clearActiveSession();
   if (!preservePrompt) prompt.value = "";
 }
@@ -358,20 +382,31 @@ function navigateCard(event: WorkflowCardEvent) {
 async function send(value = prompt.value) {
   const content = value.trim();
   if (!content || busy.value || runActive.value) return;
+  if (agent.activeSessionId && terminalSessionId.value === agent.activeSessionId) {
+    error.value = terminalSessionMessage;
+    return;
+  }
   error.value = ""; busy.value = true;
   let pendingMessage: AgentMessage | undefined;
   let pendingSession = "";
   try {
     if (!agent.activeSessionId) await persistNewSession();
+    pendingSession = agent.activeSessionId;
     if (replayRun.value.failed) await resumeSession(agent.activeSessionId, auth.token);
     pendingMessage = { role: "user", text: content, createdAt: new Date().toISOString() };
-    pendingSession = agent.activeSessionId;
     agent.addMessage(pendingMessage);
     localRunStartedAt.value = new Date().toISOString();
     await submitTurn(agent.activeSessionId, content, auth.token);
     scheduleRunReconciliation(agent.activeSessionId, conversationGeneration);
     prompt.value = ""; await refreshCatalog();
   } catch (exc) {
+    if (exc instanceof AgentRequestError && terminalSessionCodes.has(exc.code ?? "")
+        && agent.activeSessionId === pendingSession) {
+      terminalSessionId.value = pendingSession;
+      stopStream();
+      stopReconciliation();
+      error.value = terminalSessionMessage;
+    }
     if (exc instanceof Error && "code" in exc && exc.code === "chat_maintenance"
         && pendingMessage && agent.activeSessionId === pendingSession) {
       // This exact Product code guarantees rejection before the durable user
@@ -380,7 +415,9 @@ async function send(value = prompt.value) {
         && message.createdAt === pendingMessage!.createdAt && message.text === pendingMessage!.text));
     }
     localRunStartedAt.value = "";
-    error.value = exc instanceof Error ? exc.message : "发送失败";
+    if (terminalSessionId.value !== pendingSession) {
+      error.value = exc instanceof Error ? exc.message : "发送失败";
+    }
   }
   finally { busy.value = false; }
 }
@@ -442,10 +479,12 @@ async function stopCurrentRun() {
   stopping.value = true;
   try {
     await cancelSession(agent.activeSessionId, "hard", auth.token);
-    await resumeSession(agent.activeSessionId, auth.token);
+    terminalSessionId.value = agent.activeSessionId;
+    error.value = terminalSessionMessage;
     localRunStartedAt.value = "";
     stopReconciliation();
-    ElMessage.success("本轮已停止，可以继续提问");
+    stopStream();
+    ElMessage.success("本轮已停止，请新建会话继续");
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "停止失败";
   } finally {

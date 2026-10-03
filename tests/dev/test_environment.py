@@ -95,6 +95,8 @@ class DevEnvironmentTests(unittest.TestCase):
                 self.assertEqual(values["COMPOSE_PROJECT_NAME"], env.scope())
                 self.assertIn("@postgres:5432/byq_domain", values["BYQ_DATABASE_URL"])
                 self.assertNotEqual(values["BYQ_PRODUCT_TOKEN"], "dev-product-token-change-me")
+                self.assertNotIn("BYQ_FEEDBACK_PUBLISHER_TOKEN", values)
+                self.assertIn("BYQ_FEEDBACK_HUB_RELAY_TOKEN", values)
                 before = config.read_bytes()
                 env.init()
                 self.assertEqual(config.read_bytes(), before)

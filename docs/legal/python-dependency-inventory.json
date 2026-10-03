@@ -133,11 +133,6 @@
       "requirement": "uvicorn[standard]==0.35.0"
     },
     {
-      "source": "workers/feedback-publisher/Dockerfile",
-      "group": "build-declaration",
-      "requirement": "cryptography==50.0.1"
-    },
-    {
       "source": "workers/ml/Dockerfile",
       "group": "build-declaration",
       "requirement": "lightgbm==4.7.0"

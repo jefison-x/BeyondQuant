@@ -49,6 +49,10 @@ Cloudflare 用于 source build/check 的 `Cloudflare Workers and Pages` GitHub A
 首次 build 如果提示缺少 required secrets，是预期的 fail-closed 行为。Project 已创建后，进入
 **Settings → Variables and Secrets → Add → Secret**，添加：
 
+本文中的 `BYQ_FEEDBACK_PUBLISHER_TOKEN` 只用于 Cloudflare Hub 与私有 Cloudflare
+Publisher Worker 之间的 Service Binding 认证；它不是 BYQ Backend 或本机 Compose
+worker 的配置项。
+
 | Hub runtime secret | 值 |
 |---|---|
 | `BYQ_FEEDBACK_HUB_STATUS_SECRET` | 保存的 status secret |

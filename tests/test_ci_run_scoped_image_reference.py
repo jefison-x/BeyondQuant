@@ -51,7 +51,7 @@ class RunScopedImageReferenceTests(unittest.TestCase):
 
     def test_backend_and_mcp_runs_use_the_captured_ref_and_never_pull(self):
         backend_refs = self.script.count('"$(ci_image_ref backend)"')
-        self.assertGreaterEqual(backend_refs, 5)
+        self.assertGreaterEqual(backend_refs, 4)
         self.assertIn('"$(ci_image_ref mcp)"', self.script)
         shard_script = (ROOT / "scripts/ci/run_backend_shards.py").read_text()
         self.assertIn('args.image, "python", "-m", "pytest"', shard_script)
@@ -59,10 +59,11 @@ class RunScopedImageReferenceTests(unittest.TestCase):
         self.assertIn('--image "$(ci_image_ref backend)"', self.script)
         # The remaining backend runs and MCP runs still resolve immutable refs.
         self.assertGreaterEqual(self.script.count("--pull=never"), 5)
-        for block in ("tests/test_schema_isolation.py",
-                      "feedback publisher fake-GitHub", "feedback hub relay"):
+        for block in ("tests/test_schema_isolation.py", "feedback hub relay"):
             self.assertIn(block, self.script)
-        self.assertGreaterEqual(len(re.findall(r"docker run[^\n]*--pull=never", self.script)), 5)
+        self.assertNotIn("feedback publisher fake-GitHub", self.script)
+        self.assertNotIn("--profile feedback-publisher", self.script)
+        self.assertGreaterEqual(len(re.findall(r"docker run[^\n]*--pull=never", self.script)), 4)
 
     def test_identity_gate_is_unchanged(self):
         self.assertIn(

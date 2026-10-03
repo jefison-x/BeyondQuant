@@ -150,7 +150,7 @@ def test_feedback_product_api_is_same_origin_paged_and_forwards_only_coarse_clie
     def backend(method, path, payload=None, *, headers=None, params=None):
         calls.append({"method": method, "path": path, "payload": payload, "headers": headers})
         if path == "/v1/feedback/options":
-            return {"schema_version": "product-feedback-options.v1", "publisher": {"configured": False}}
+            return {"schema_version": "product-feedback-options.v1", "central_hub": {"configured": True}}
         if path.startswith("/v1/feedback/items?"):
             return {"schema_version": "product-feedback-catalog.v1", "items": [], "total": 0,
                     "limit": 12, "offset": 24, "has_more": False}
@@ -162,7 +162,9 @@ def test_feedback_product_api_is_same_origin_paged_and_forwards_only_coarse_clie
         "Authorization": "Bearer product-test-token",
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit Chrome/125.0 Safari/537.36 raw-fingerprint",
     }
-    assert browser.get("/api/product/feedback/options", headers=headers).status_code == 200
+    options = browser.get("/api/product/feedback/options", headers=headers)
+    assert options.status_code == 200
+    assert "publisher" not in options.json() and options.json()["central_hub"]["configured"] is True
     page = browser.get("/api/product/feedback/items?status=all&category=bug&query=slow&limit=12&offset=24", headers=headers)
     assert page.status_code == 200
     created = browser.post("/api/product/feedback/items", headers=headers, json={"schema_version": "product-feedback.v1"})
@@ -175,40 +177,27 @@ def test_feedback_product_api_is_same_origin_paged_and_forwards_only_coarse_clie
         assert "user-agent" not in forwarded
 
 
-def test_feedback_moderation_requires_admin_session_and_never_forwards_workspace_identity(monkeypatch) -> None:
+def test_feedback_local_moderation_and_publisher_routes_are_removed(monkeypatch) -> None:
     calls: list[dict[str, object]] = []
-    current = {"role": "user"}
-
-    def user(_request):
-        return {
-            "username": "moderator", "role": current["role"],
-            "_workspace": {"workspace_id": "workspace_personal", "contract": "personal-workspace.v1",
-                           "kind": "personal", "display_name": "Personal", "role": "owner"},
-        }
 
     def backend(method, path, payload=None, *, headers=None, params=None):
         calls.append({"method": method, "path": path, "payload": payload, "headers": headers})
-        return {"schema_version": "feedback-moderation-catalog.v1", "items": [], "total": 0}
+        return {}
 
-    monkeypatch.setattr(product_api, "resolve_user", user)
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
     monkeypatch.setattr(product_api, "_backend_request", backend)
     browser = TestClient(main.app)
-    browser.cookies.set(product_api.SESSION_COOKIE, "session_moderator")
-    denied = browser.get("/api/product/feedback/moderation/items")
-    assert denied.status_code == 403 and not calls
-    current["role"] = "admin"
-    response = browser.get("/api/product/feedback/moderation/items?limit=10&offset=0")
-    assert response.status_code == 200
-    forwarded = calls[0]["headers"]
-    assert forwarded == {"x-byq-actor-principal": "moderator", "x-byq-actor-role": "admin"}
-    receipt_path = "/api/product/feedback/moderation/receipts?feedback_id=feedback_" + "a" * 32 + "&action=triage&idempotency_key=original"
-    current["role"] = "user"
-    assert browser.get(receipt_path).status_code == 403
-    assert len(calls) == 1
-    current["role"] = "admin"
-    assert browser.get(receipt_path).status_code == 200
-    assert calls[-1]["method"] == "GET" and calls[-1]["headers"] == forwarded
-    assert calls[-1]["path"].startswith("/v1/feedback/moderation/receipts?")
+    headers = {"Authorization": "Bearer product-test-token"}
+    requests = (
+        ("GET", "/api/product/feedback/moderation/items"),
+        ("POST", "/api/product/feedback/moderation/items/feedback_" + "a" * 32 + "/triage"),
+        ("GET", "/api/product/feedback/moderation/receipts?feedback_id=feedback_" + "a" * 32 + "&action=triage&idempotency_key=old"),
+        ("GET", "/api/product/feedback/moderation/publisher-status"),
+    )
+    for method, path in requests:
+        response = browser.request(method, path, headers=headers, json={} if method == "POST" else None)
+        assert response.status_code == 404
+    assert calls == []
 
 
 def test_ml_workspace_projects_safe_artifacts_and_owner_context(monkeypatch) -> None:

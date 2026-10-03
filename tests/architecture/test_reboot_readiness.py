@@ -24,7 +24,7 @@ class RebootReadinessTests(unittest.TestCase):
     def test_all_persistent_services_restart(self):
         for service in ('postgres', 'backend', 'mcp', 'runtime-adapter', 'gateway',
                         'frontend', 'data-worker', 'ml-worker', 'signal-worker',
-                        'signal-sandbox', 'feedback-hub-relay', 'feedback-publisher'):
+                        'signal-sandbox', 'feedback-hub-relay'):
             with self.subTest(service=service):
                 self.assertIn('    restart: unless-stopped\n', block(service))
 

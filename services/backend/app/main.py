@@ -180,6 +180,7 @@ from .user_auth import (
     UserConflict,
     UserForbidden,
     UserNotFound,
+    UserRateLimited,
 )
 from .workspace_tenancy import WorkspaceTenancyStore
 from .user_policy import (
@@ -410,7 +411,6 @@ optimization_job_store = OptimizationJobStore.from_env()
 workspace_tenancy_store = WorkspaceTenancyStore.from_env()
 workspace_runtime_reset_store = WorkspaceRuntimeResetStore.from_env()
 CREDENTIAL_RESOLVER_TOKEN = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
-FEEDBACK_PUBLISHER_TOKEN = os.environ.get("BYQ_FEEDBACK_PUBLISHER_TOKEN")
 FEEDBACK_HUB_RELAY_TOKEN = os.environ.get("BYQ_FEEDBACK_HUB_RELAY_TOKEN")
 RUNTIME_AUTHORITY_TOKEN = os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN")
 if os.environ.get("BYQ_BOOTSTRAP_ADMIN_USERNAME") and os.environ.get("BYQ_BOOTSTRAP_ADMIN_PASSWORD"):
@@ -856,16 +856,6 @@ def _feedback_client_context(request: Request) -> tuple[str, str]:
     )
 
 
-def _feedback_moderator(request: Request) -> tuple[str, str]:
-    actor = request.headers.get("x-byq-actor-principal", "").strip()
-    role = request.headers.get("x-byq-actor-role", "").strip()
-    if not actor:
-        raise HTTPException(status_code=401, detail="actor principal is required")
-    if role != "admin":
-        raise HTTPException(status_code=403, detail="feedback moderator role required")
-    return actor, role
-
-
 @app.get("/v1/feedback/options")
 def feedback_options(request: Request) -> dict[str, object]:
     _feedback_context(request)
@@ -974,92 +964,6 @@ def feedback_withdraw(feedback_id: str, payload: dict[str, Any], request: Reques
     return _feedback_call(lambda: feedback_store.withdraw(
         feedback_id, payload, trusted_workspace=context["workspace_id"], trusted_actor=context["actor_principal"],
     ))
-
-
-@app.get("/v1/feedback/moderation/receipts")
-def feedback_moderation_receipt(request: Request, feedback_id: str, action: str, idempotency_key: str):
-    actor, role = _feedback_moderator(request)
-    return _feedback_call(lambda: feedback_store.reconcile_moderation(feedback_id, action, idempotency_key,
-        trusted_actor=actor, actor_role=role))
-
-
-@app.get("/v1/feedback/moderation/items")
-def feedback_moderation_items(
-    request: Request, status: str = "submitted", category: str = "all", query: str = "",
-    limit: int = 20, offset: int = 0,
-) -> dict[str, object]:
-    _actor, role = _feedback_moderator(request)
-    return _feedback_call(lambda: feedback_store.list_moderation(
-        actor_role=role, status=status, category=category, query=query, limit=limit, offset=offset,
-    ))
-
-
-@app.get("/v1/feedback/moderation/items/{feedback_id}")
-def feedback_moderation_get(feedback_id: str, request: Request) -> dict[str, object]:
-    _actor, role = _feedback_moderator(request)
-    return _feedback_call(lambda: feedback_store.get_moderation(feedback_id, actor_role=role))
-
-
-@app.get("/v1/feedback/moderation/items/{feedback_id}/audit")
-def feedback_moderation_audit(
-    feedback_id: str, request: Request, limit: int = 20, offset: int = 0,
-) -> dict[str, object]:
-    _actor, role = _feedback_moderator(request)
-    return _feedback_call(lambda: feedback_store.list_audit(
-        feedback_id, actor_role=role, limit=limit, offset=offset,
-    ))
-
-
-@app.post("/v1/feedback/moderation/items/{feedback_id}/{action}")
-def feedback_moderate(feedback_id: str, action: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
-    actor, role = _feedback_moderator(request)
-    return _feedback_call(lambda: feedback_store.moderate(
-        feedback_id, action, payload, trusted_actor=actor, actor_role=role,
-    ))
-
-
-@app.get("/v1/feedback/moderation/publisher-status")
-def feedback_publisher_status(request: Request) -> dict[str, object]:
-    _actor, role = _feedback_moderator(request)
-    return _feedback_call(lambda: feedback_store.outbox_summary(actor_role=role))
-
-
-def _require_feedback_publisher(request: Request) -> None:
-    supplied = request.headers.get("x-byq-feedback-publisher-token", "")
-    if not FEEDBACK_PUBLISHER_TOKEN:
-        raise HTTPException(status_code=503, detail="feedback publisher endpoint is disabled")
-    if not supplied or not secrets.compare_digest(supplied, FEEDBACK_PUBLISHER_TOKEN):
-        raise HTTPException(status_code=401, detail="feedback publisher authentication failed")
-
-
-@app.post("/internal/feedback-publications/heartbeat")
-def feedback_publisher_heartbeat(payload: dict[str, Any], request: Request) -> dict[str, object]:
-    _require_feedback_publisher(request)
-    return _feedback_call(lambda: feedback_store.publisher_heartbeat(payload))
-
-
-@app.post("/internal/feedback-publications/claim")
-def feedback_publication_claim(payload: dict[str, Any], request: Request) -> dict[str, object]:
-    _require_feedback_publisher(request)
-    return _feedback_call(lambda: feedback_store.claim_publications(payload))
-
-
-@app.post("/internal/feedback-publications/{event_id}/begin-create")
-def feedback_publication_begin_create(event_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
-    _require_feedback_publisher(request)
-    return _feedback_call(lambda: feedback_store.begin_publication_create(event_id, payload))
-
-
-@app.post("/internal/feedback-publications/{event_id}/complete")
-def feedback_publication_complete(event_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
-    _require_feedback_publisher(request)
-    return _feedback_call(lambda: feedback_store.complete_publication(event_id, payload))
-
-
-@app.post("/internal/feedback-publications/{event_id}/retry")
-def feedback_publication_retry(event_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
-    _require_feedback_publisher(request)
-    return _feedback_call(lambda: feedback_store.retry_publication(event_id, payload))
 
 
 def _require_feedback_hub_relay(request: Request) -> None:
@@ -2155,6 +2059,8 @@ def _user_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
         return operation()
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+    except UserRateLimited as error:
+        raise HTTPException(status_code=429, detail="password change rate limit reached; try again later") from error
     except UserForbidden as error:
         raise HTTPException(status_code=403, detail=str(error)) from error
     except UserNotFound as error:
@@ -5838,6 +5744,14 @@ def logout(payload: dict[str, Any]) -> dict[str, object]:
         user_store.logout(payload.get("session_id"))
         return {"status": "ok"}
     return _user_call(operation)
+
+
+@app.post("/v1/auth/change-password")
+def change_password(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    session_id = request.headers.get("x-byq-session-id")
+    if not session_id:
+        raise HTTPException(status_code=401, detail="session required")
+    return _user_call(lambda: user_store.change_password(session_id, payload))
 
 
 @app.get("/v1/auth/session")

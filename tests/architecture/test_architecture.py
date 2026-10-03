@@ -308,7 +308,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("## P. Product Feedback 与外部 Issue 发布", architecture)
         self.assertIn("Frontend、Gateway、MCP 和 Backend MUST NOT 持有 GitHub credential", architecture)
 
-    def test_phase88_keeps_feedback_durable_paged_and_github_free(self) -> None:
+    def test_feedback_keeps_historical_tables_and_uses_current_hub_api(self) -> None:
         backend = (ROOT / "services/backend/app/product_feedback.py").read_text()
         backend_api = (ROOT / "services/backend/app/main.py").read_text()
         gateway = (ROOT / "services/gateway/app/product_api.py").read_text()
@@ -325,13 +325,13 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             self.assertIn(table, backend)
         self.assertIn("feedback-publication-preview.v1", backend)
         self.assertIn("submitted-feedback-snapshot.v1", backend)
-        self.assertIn("publisher_unconfigured", backend)
+        self.assertIn("product_feedback_hub_outbox", backend)
         self.assertIn("FOR UPDATE", backend)
         self.assertNotIn("import httpx", backend)
         self.assertNotIn("import requests", backend)
         self.assertNotIn("api.github.com", backend)
         self.assertIn('@app.post("/v1/feedback/items/{feedback_id}/submit")', backend_api)
-        self.assertIn('@app.post("/v1/feedback/moderation/items/{feedback_id}/{action}")', backend_api)
+        self.assertNotIn('@app.post("/v1/feedback/moderation/items/{feedback_id}/{action}")', backend_api)
         self.assertIn('@router.get("/feedback/items")', gateway)
         self.assertIn('"product_feedback", "product_feedback_revisions", "product_feedback_audit"', workspace)
         self.assertIn("/api/product/feedback/items:", openapi)
@@ -339,11 +339,11 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("Phase 88 — Durable feedback domain and Product API（`COMPLETE`）", plan)
         self.assertIn("Phase 89 — Trusted GitHub publisher and operations（`COMPLETE`）", plan)
         self.assertIn("transaction rollback", evidence.lower())
-        self.assertIn('@router.get("/feedback/moderation/items")', gateway)
-        self.assertIn("_feedback_moderator_headers", gateway)
+        self.assertNotIn('@router.get("/feedback/moderation/items")', gateway)
+        self.assertNotIn("_feedback_moderator_headers", gateway)
         self.assertIn('"product_feedback", "product_feedback_revisions", "product_feedback_audit"', workspace)
         self.assertIn("/api/product/feedback/items:", openapi)
-        self.assertIn("/api/product/feedback/moderation/items:", openapi)
+        self.assertNotIn("/api/product/feedback/moderation/items:", openapi)
 
     def test_base_compose_uses_runtime_adapter_as_the_only_product_dsh_path(self) -> None:
         compose = (ROOT / "compose.yml").read_text()
@@ -451,30 +451,32 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotRegex(contents, r"(?i)(github_token|gh_token|codex_auth|docker_host)")
         self.assertNotRegex(contents, r"(?i)(socat|nginx|iptables|network namespace|host network)")
 
-    def test_phase89_isolates_the_only_github_credential_in_publisher(self) -> None:
+    def test_r3_removes_local_publisher_from_current_build_and_keeps_cloudflare_token(self) -> None:
         compose = (ROOT / "compose.yml").read_text()
-        publisher = service_block("feedback-publisher")
-        worker = (ROOT / "workers/feedback-publisher/publisher.py").read_text()
-        dockerfile = (ROOT / "workers/feedback-publisher/Dockerfile").read_text()
         plan = (ROOT / "docs/roadmap/PRODUCT_FEEDBACK_DELIVERY_PLAN.md").read_text()
         evidence = (ROOT / "docs/evidence/phase-89/README.md").read_text()
+        env_example = (ROOT / ".env.example").read_text()
+        central_hub_ops = (ROOT / "docs/operations/central-feedback-hub.md").read_text()
         for service in ("frontend", "gateway", "runtime-adapter", "mcp", "backend", "data-worker", "signal-worker", "ml-worker"):
             self.assertNotRegex(service_block(service), r"(?i)(feedback_github_token|feedback_github_app_private)")
-        self.assertIn("BYQ_FEEDBACK_GITHUB_TOKEN", publisher)
-        self.assertIn("profiles:", publisher)
-        self.assertIn("read_only: true", publisher)
-        self.assertIn("cap_drop:", publisher)
-        self.assertNotIn("BYQ_DATABASE_URL", publisher)
-        self.assertNotIn("volumes:", publisher)
-        self.assertNotRegex(publisher, r"(?i)(docker.sock|/workspace|/src|dsh)")
-        self.assertIn("USER 10006:10006", dockerfile)
-        self.assertNotRegex(worker, r"(?i)(subprocess|os.system|git |docker|postgres|psycopg|sqlalchemy)")
-        self.assertIn("https://api.github.com", worker)
-        self.assertIn("/repos/{config.repository}/issues", worker)
-        self.assertIn("/internal/feedback-publications/claim", worker)
-        self.assertNotIn("/pulls", worker)
-        self.assertNotIn("/contents", worker)
-        self.assertEqual(compose.count("BYQ_FEEDBACK_GITHUB_TOKEN"), 2)
+        self.assertNotRegex(compose, r"(?m)^  feedback-publisher:\s*$")
+        self.assertNotIn("BYQ_FEEDBACK_PUBLISHER_TOKEN", service_block("backend"))
+        self.assertNotIn("BYQ_FEEDBACK_GITHUB_TOKEN", compose)
+        self.assertNotIn("BYQ_FEEDBACK_PUBLISHER_TOKEN", env_example)
+        self.assertIn("BYQ_FEEDBACK_PUBLISHER_TOKEN", central_hub_ops)
+        for obsolete in (
+            "workers/feedback-publisher/Dockerfile",
+            "workers/feedback-publisher/publisher.py",
+            "workers/feedback-publisher/tests/test_publisher.py",
+            "workers/feedback-publisher/tests/test_http_deadline.py",
+        ):
+            self.assertFalse((ROOT / obsolete).exists())
+        local_build = (ROOT / "scripts/ci/build-images.py").read_text()
+        local_ci = (ROOT / "scripts/ci/local-ci.sh").read_text()
+        release = (ROOT / "scripts/release/images.py").read_text()
+        self.assertNotIn("--profile feedback-publisher", local_build)
+        self.assertNotIn("workers/feedback-publisher", local_ci)
+        self.assertNotIn("feedback-publisher", release)
         self.assertIn("Phase 89 — Trusted GitHub publisher and operations（`COMPLETE`）", plan)
         self.assertIn("Phase 90 — Product UI and Xiaoba closure（`COMPLETE`）", plan)
         self.assertIn("zero real github writes", evidence.lower())
@@ -1144,7 +1146,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             local_ci,
         )
         self.assertIn("BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml", local_ci)
-        self.assertIn("Dockerfile.post-u8-302-candidate", local_ci)
+        self.assertIn("Dockerfile.post-u8-304-candidate", local_ci)
         self.assertNotIn("CI_PG_NET=byq_product", local_ci)
         self.assertNotIn("npm run build >/tmp/byq-mcp-build.log 2>&1", local_ci)
 
@@ -1206,7 +1208,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("npm run test:e2e:real", local_ci)
         self.assertIn("[ -x node_modules/.bin/playwright ] || npm ci", local_ci)
         cleanup = (ROOT / "scripts/ci/cleanup-resources.sh").read_text()
-        self.assertIn("docker compose --profile feedback-publisher down --rmi local -v --remove-orphans", cleanup)
+        self.assertIn("docker compose down --rmi local -v --remove-orphans", cleanup)
+        self.assertNotIn("--profile feedback-publisher", cleanup)
 
     def test_postgres_memory_baseline_is_bounded_and_configurable(self) -> None:
         compose = service_block("postgres")

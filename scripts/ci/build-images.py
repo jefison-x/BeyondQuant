@@ -10,7 +10,7 @@ services = sys.argv[1:]
 if not services or any(not s.replace('-', '').isalnum() for s in services):
     raise SystemExit('explicit service targets required')
 config = json.loads(subprocess.check_output(
-    ['docker', 'compose', '--profile', 'feedback-publisher', 'build', '--print', *services], text=True))
+    ['docker', 'compose', 'build', '--print', *services], text=True))
 for name, target in config['target'].items():
     target['platforms'] = ['linux/amd64']
     target['cache-from'] = [f'type=gha,version=2,scope=byq-{name}-amd64']

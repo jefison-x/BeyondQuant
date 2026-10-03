@@ -1,6 +1,27 @@
 # Product Feedback Contract
 
-本合同落实 ADR-0049。Phase 87 冻结合同；Phase 88 已实现 durable schema、domain 与 Product API；Phase 89
+## 当前边界（发布后 R3 候选）
+
+本节对应已接受的 [ADR-0092](../architecture/adr/ADR-0092-conversation-feedback-cloudflare-review.md)。
+下方第 1–15 节记录 ADR-0049 与 Phase 87–90 的历史合同，包含已经不再作为目标的本机审核、
+独立页面及 Python GitHub publisher；第 16–17 节记录现有中央 Hub/Cloudflare 合同。
+ADR-0092 的接受不代表实现已通过真实 Product API 验收或已经部署。
+
+- 用户从会话请求反馈。Product Agent 仅经 BYQ MCP 创建 owner-scoped 草稿、生成服务端脱敏预览，
+  并在后续明确批准 exact feedback ID、版本及 preview hash 后提交。旧 `/feedback` 书签只引导回会话。
+- Backend 在提交事务中保存 immutable snapshot 和 `product_feedback_hub_outbox`；本机
+  `feedback-hub-relay` 有界投递、保存 Hub receipt/status capability 并核对状态。
+- Cloudflare Hub 是唯一审核地点。Hub 私有 Publisher Worker 是唯一 GitHub 写入者；
+  BYQ 不暴露本地 moderation/publisher Product API，也不运行本机 Python publisher。
+- Owner Product API/MCP 继续提供草稿、版本、预览、提交、撤回、回执和自己反馈的状态。
+  撤回只允许 Hub outbox 尚未尝试投递的 queued 项；已收到、正在投递或结果未知时
+  必须拒绝本机伪撤回，等待 Hub 状态核对。
+  `received`、`triaged`、`accepted`、`rejected`、`duplicate`、`publishing`、
+  `published` 只从已持久化的 Hub 事实投影；未送达和结果未知必须如实区分。
+- 历史本机 publication/outbox 数据、审核审计、镜像与备份保留待独立分类；
+  不因移除运行入口而自动删除生产数据。
+
+本合同最初落实 ADR-0049。Phase 87 冻结合同；Phase 88 已实现 durable schema、domain 与 Product API；Phase 89
 已实现隔离 trusted publisher；Phase 90 已完成 Product UI、MCP 与 Xiaoba 闭环。
 
 ## 1. 身份、所有权与权限

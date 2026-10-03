@@ -2,6 +2,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { flushPromises, shallowMount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ElementPlus, { ElMessageBox } from "element-plus";
+import { AgentRequestError } from "@/api/agent";
 import AgentView from "./AgentView.vue";
 import { useAgentStore } from "@/stores/agent";
 import { useAuthStore } from "@/stores/auth";
@@ -15,6 +16,7 @@ const deleteAgentSession = vi.fn();
 const listAgentSessions = vi.fn();
 const updateAgentSession = vi.fn();
 const continueApproval = vi.fn();
+const streamWorkflowEvents = vi.fn();
 
 vi.mock("@/api/research", () => ({ continueApproval: (...args: unknown[]) => continueApproval(...args) }));
 
@@ -24,13 +26,16 @@ vi.mock("vue-router", () => ({
 }));
 
 vi.mock("@/api/agent", () => ({
+  AgentRequestError: class AgentRequestError extends Error {
+    constructor(message: string, readonly status: number, readonly code?: string) { super(message); }
+  },
   cancelSession: (...args: unknown[]) => cancelSession(...args),
   createAgentSession: (...args: unknown[]) => createAgentSession(...args),
   deleteAgentSession: (...args: unknown[]) => deleteAgentSession(...args),
   getAgentSession: (...args: unknown[]) => getAgentSession(...args),
   listAgentSessions: (...args: unknown[]) => listAgentSessions(...args),
   resumeSession: (...args: unknown[]) => resumeSession(...args),
-  streamWorkflowEvents: vi.fn(() => new Promise<void>(() => undefined)),
+  streamWorkflowEvents: (...args: unknown[]) => streamWorkflowEvents(...args),
   submitTurn: (...args: unknown[]) => submitTurn(...args),
   updateAgentSession: (...args: unknown[]) => updateAgentSession(...args),
 }));
@@ -38,6 +43,8 @@ vi.mock("@/api/agent", () => ({
 describe("AgentView", () => {
   beforeEach(() => {
     continueApproval.mockReset();
+    streamWorkflowEvents.mockReset();
+    streamWorkflowEvents.mockImplementation(() => new Promise<void>(() => undefined));
     setActivePinia(createPinia());
     useAuthStore().setUser({
       subject: "alice",
@@ -128,6 +135,70 @@ describe("AgentView", () => {
     expect(wrapper.find(".composer-stop").attributes("aria-label")).toBe("停止本轮");
     expect(wrapper.text()).not.toContain("Ctrl + Enter 发送");
     expect(wrapper.text()).not.toContain("关键执行仍需 BYQ 审批");
+  });
+
+  it("hard cancel ends the old session without a resume or another prompt", async () => {
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const view = wrapper.vm as unknown as { prompt: string; send: () => Promise<void>; stopCurrentRun: () => Promise<void> };
+    view.prompt = "第一轮";
+    await view.send();
+    await view.stopCurrentRun();
+    expect(cancelSession).toHaveBeenCalledWith("session-1", "hard", "");
+    expect(resumeSession).not.toHaveBeenCalled();
+    view.prompt = "继续";
+    await view.send();
+    expect(submitTurn).toHaveBeenCalledTimes(1);
+    expect(wrapper.text()).toContain("请新建会话继续");
+    wrapper.unmount();
+  });
+
+  it("keeps released conversation history while refusing another turn", async () => {
+    getAgentSession.mockResolvedValueOnce({
+      conversation: { session_id: "session-1", trace_id: "trace-1", title: "旧会话" },
+      messages: [{ message_id: "m1", sequence: 1, role: "user", content: "旧消息", created_at: "2026-08-28T00:00:00Z" }],
+      events: [
+        { session_id: "session-1", trace_id: "trace-1", sequence: 2,
+          timestamp: "2026-08-28T00:00:01Z", kind: "session.started", source: "runtime-adapter", payload: {} },
+        { session_id: "session-1", trace_id: "trace-1", sequence: 3,
+          timestamp: "2026-08-28T00:00:02Z", kind: "session.closed", source: "runtime-adapter", payload: { reason: "released" } },
+      ],
+    });
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    expect(wrapper.text()).toContain("旧消息");
+    expect(wrapper.text()).toContain("请新建会话继续");
+    expect(wrapper.find(".assistant-processing").exists()).toBe(false);
+    expect(wrapper.find(".composer-stop").exists()).toBe(false);
+    const view = wrapper.vm as unknown as { prompt: string; send: () => Promise<void> };
+    view.prompt = "继续";
+    await view.send();
+    expect(submitTurn).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain("请新建会话继续");
+    wrapper.unmount();
+  });
+
+  it("stops reconnecting after the Product API reports an ended session", async () => {
+    streamWorkflowEvents.mockRejectedValue(new AgentRequestError("ended", 409, "agent_session_interrupted"));
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    expect(streamWorkflowEvents).toHaveBeenCalledTimes(1);
+    expect(wrapper.text()).toContain("请新建会话继续");
+    wrapper.unmount();
+  });
+
+  it("does not resend after a turn is rejected because its session ended", async () => {
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const view = wrapper.vm as unknown as { prompt: string; send: () => Promise<void> };
+    submitTurn.mockRejectedValueOnce(new AgentRequestError("ended", 409, "agent_session_interrupted"));
+    view.prompt = "旧会话请求";
+    await view.send();
+    view.prompt = "再次发送";
+    await view.send();
+    expect(submitTurn).toHaveBeenCalledTimes(1);
+    expect(wrapper.text()).toContain("请新建会话继续");
+    wrapper.unmount();
   });
 
   it("falls back to 我 when no nickname is available", async () => {

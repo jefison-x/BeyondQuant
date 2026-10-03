@@ -50,7 +50,7 @@ const router = createRouter({
             { path: "workflow", name: "system-settings-workflow", component: () => import("@/views/AdminOpsView.vue"), props: { section: "graphs" } },
             { path: "access", name: "system-settings-access", component: () => import("@/views/AdminOpsView.vue"), props: { section: "access" } },
             { path: "audit", name: "system-settings-audit", component: () => import("@/views/AdminOpsView.vue"), props: { section: "audit" } },
-            { path: "feedback", name: "system-settings-feedback", component: () => import("@/views/FeedbackAdminView.vue") },
+            { path: "feedback", redirect: { name: "agent" } },
           ],
         },
         { path: "system-status", redirect: "/settings/system/overview", meta: { requiresAdmin: true } },
@@ -66,9 +66,7 @@ const router = createRouter({
         },
         {
           path: "feedback",
-          name: "feedback",
-          component: () => import("@/views/FeedbackView.vue"),
-          meta: { title: "反馈与建议", kicker: "产品共建", subtitle: "提交经你确认的隐私安全反馈" },
+          redirect: { name: "agent" },
         },
         {
           path: "stock-pool",

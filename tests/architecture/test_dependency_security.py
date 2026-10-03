@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-import re
 import tomllib
 import unittest
 
@@ -23,14 +22,8 @@ def _exact_pin(path: Path, package: str, section: str) -> str:
 
 
 class DependencySecurityTests(unittest.TestCase):
-    def test_cryptography_runtime_pins_are_aligned_and_patched(self):
+    def test_backend_cryptography_runtime_pin_is_patched(self):
         backend = _exact_pin(ROOT / "services/backend/pyproject.toml", "cryptography", "dependencies")
-        publisher = re.search(
-            r"\bcryptography==([0-9.]+)\b",
-            (ROOT / "workers/feedback-publisher/Dockerfile").read_text(),
-        )
-        self.assertIsNotNone(publisher)
-        self.assertEqual(publisher.group(1), backend)
         self.assertGreaterEqual(_version_tuple(backend), (50, 0, 0))
 
     def test_python_build_and_test_tools_clear_advisory_floors(self):

@@ -1,8 +1,9 @@
-"""Workspace-owned Product Feedback domain (ADR-0049, Phase 88).
+"""Workspace-owned Product Feedback domain with central Hub review.
 
-This module owns feedback lifecycle, immutable revisions, safe publication
-previews, moderation and the transactional publication outbox. It deliberately
-contains no GitHub client and accepts no publisher credential or destination.
+This module owns feedback lifecycle, immutable revisions, safe disclosure
+previews, and the transactional Cloudflare Hub outbox. Historical local
+moderation and publisher schema remains for reset/archive compatibility; the
+active feedback operations do not read or write those legacy records.
 """
 
 from __future__ import annotations
@@ -23,8 +24,6 @@ from .db import bounded_metadata_transaction, PgStoreMixin, execute, fetch_one
 
 SCHEMA_VERSION = "product-feedback.v1"
 PREVIEW_SCHEMA = "feedback-publication-preview.v1"
-PUBLICATION_SCHEMA = "feedback-publication.v1"
-OUTBOX_SCHEMA = "feedback-outbox.v1"
 HUB_DELIVERY_SCHEMA = "feedback-hub-delivery.v1"
 FINGERPRINT_SCHEMA = "feedback_fingerprint.v1"
 CATEGORIES = ("bug", "feature", "performance", "usability", "other")
@@ -34,25 +33,13 @@ COMPONENTS = (
 )
 SEVERITIES = ("low", "normal", "high")
 OWNER_STATUSES = ("draft", "submitted", "triaged", "accepted", "rejected", "duplicate", "withdrawn")
-MODERATION_STATUSES = ("submitted", "triaged", "accepted", "rejected", "duplicate")
 MAX_REQUEST_BYTES = 24 * 1024
 MAX_STEPS = 12
 OWNER_PAGE_LIMIT = 100
 DETAIL_PAGE_LIMIT = 50
 CREATE_LIMIT_PER_HOUR = 10
 SUBMIT_LIMIT_PER_HOUR = 6
-DESTINATION_KEY = "github_primary"
-MAX_PUBLICATION_ATTEMPTS = 6
 MAX_HUB_DELIVERY_ATTEMPTS = 8
-PUBLISHER_ERROR_CATEGORIES = (
-    "transport_ambiguous", "rate_limited", "provider_unavailable",
-    "authentication_failed", "permission_denied", "repository_unavailable",
-    "issues_disabled", "validation_rejected", "reconciliation_conflict",
-)
-TERMINAL_PUBLISHER_ERRORS = {
-    "authentication_failed", "permission_denied", "repository_unavailable",
-    "issues_disabled", "validation_rejected", "reconciliation_conflict",
-}
 _DEFAULT_HUB_INSTALLATION_ID = f"byq-installation-{uuid.uuid4().hex}"
 
 _ID = re.compile(r"^feedback_[0-9a-f]{32}$")
@@ -347,6 +334,9 @@ class ProductFeedbackStore(PgStoreMixin):
         """,
         "CREATE INDEX IF NOT EXISTS product_feedback_audit_page ON product_feedback_audit(feedback_id, created_at DESC, audit_id DESC)",
         "CREATE INDEX IF NOT EXISTS product_feedback_rate ON product_feedback_audit(workspace_id, action, created_at DESC)",
+        # Frozen local-publication tables are retained for historical data and
+        # workspace-reset archive compatibility. Active feedback operations do
+        # not read or write these records; physical cleanup needs separate review.
         """
         CREATE TABLE IF NOT EXISTS product_feedback_publications (
             publication_id TEXT PRIMARY KEY,
@@ -479,7 +469,7 @@ class ProductFeedbackStore(PgStoreMixin):
             return fetch_one(connection, sql, params)
 
     @staticmethod
-    def options(*, publisher_configured: bool = False, publisher_status: str | None = None) -> dict[str, object]:
+    def options() -> dict[str, object]:
         return {
             "schema_version": "product-feedback-options.v1",
             "categories": list(CATEGORIES), "components": list(COMPONENTS), "severities": list(SEVERITIES),
@@ -489,19 +479,12 @@ class ProductFeedbackStore(PgStoreMixin):
                 "attachments_supported": False, "security_reports_public": False,
                 "normal_user_github_configuration": False,
             },
-            "publisher": {"configured": publisher_configured,
-                          "status": publisher_status or ("ready" if publisher_configured else "unconfigured")},
         }
 
     def public_options(self) -> dict[str, object]:
-        state = self._fetch_one("""SELECT configured,last_heartbeat_at FROM product_feedback_publisher_state
-            WHERE destination_key=:destination""", {"destination": DESTINATION_KEY})
-        configured = bool(state and state["configured"])
-        fresh = self._publisher_fresh(state)
-        result = self.options(publisher_configured=configured,
-                              publisher_status="ready" if configured and fresh else "stale" if configured else "unconfigured")
         hub = self._fetch_one("SELECT configured,last_heartbeat_at FROM product_feedback_hub_state WHERE state_key='central'")
-        hub_fresh = self._publisher_fresh(hub)
+        hub_fresh = self._heartbeat_fresh(hub)
+        result = self.options()
         result["central_hub"] = {
             "configured": bool(hub and hub["configured"]),
             "status": "ready" if hub and hub["configured"] and hub_fresh else "stale" if hub and hub["configured"] else "unconfigured",
@@ -509,7 +492,7 @@ class ProductFeedbackStore(PgStoreMixin):
         return result
 
     @staticmethod
-    def _publisher_fresh(state: dict[str, object] | None) -> bool:
+    def _heartbeat_fresh(state: dict[str, object] | None) -> bool:
         if not state or not state.get("last_heartbeat_at"):
             return False
         try:
@@ -532,7 +515,7 @@ class ProductFeedbackStore(PgStoreMixin):
         result = row["result_json"]
         if not isinstance(result, dict):
             raise FeedbackPersistenceError("stored feedback command result is invalid")
-        return result
+        return ProductFeedbackStore._owner_receipt_projection(result)
 
     def _record_command(self, connection: Any, *, scope: str, actor: str, operation: str, key: str,
                         request_hash: str, result: dict[str, object], now: str) -> None:
@@ -572,19 +555,11 @@ class ProductFeedbackStore(PgStoreMixin):
 
     @staticmethod
     def _owner_row(connection: Any, feedback_id: str, workspace: str) -> dict[str, object]:
-        row = fetch_one(connection, """SELECT * FROM product_feedback
+        row = fetch_one(connection, """SELECT feedback_id,workspace_id,status,current_revision,version FROM product_feedback
             WHERE feedback_id=:feedback AND workspace_id=:workspace FOR UPDATE""",
             {"feedback": feedback_id, "workspace": workspace})
         if row is None:
             raise FeedbackNotFound("feedback not found")
-        return row
-
-    @staticmethod
-    def _moderator_row(connection: Any, feedback_id: str) -> dict[str, object]:
-        row = fetch_one(connection, "SELECT * FROM product_feedback WHERE feedback_id=:feedback FOR UPDATE",
-                        {"feedback": feedback_id})
-        if row is None or row["status"] == "draft":
-            raise FeedbackNotFound("submitted feedback not found")
         return row
 
     @staticmethod
@@ -599,11 +574,7 @@ class ProductFeedbackStore(PgStoreMixin):
             "schema_version": SCHEMA_VERSION, "feedback_id": row["feedback_id"], "status": row["status"],
             "category": row["category"], "component": row["component"], "severity": row["severity"],
             "title": row["title"], "version": row["version"], "current_revision": row["current_revision"],
-            "publication_status": row["publication_status"], "github_issue": hub_issue or (
-                {"repository": row["github_repository"], "issue_number": row["github_issue_number"],
-                 "html_url": row["github_html_url"]}
-                if row.get("publication_status") == "published" and row.get("github_issue_number") else None
-            ),
+            "github_issue": hub_issue,
             "created_at": row["created_at"], "updated_at": row["updated_at"],
         }
         result["central_hub"] = (
@@ -612,25 +583,22 @@ class ProductFeedbackStore(PgStoreMixin):
         )
         if content is not None:
             result["content"] = content
-        if row.get("canonical_feedback_id"):
-            result["duplicate_of_public_issue"] = None
         return result
 
     @staticmethod
-    def _moderator_projection(row: dict[str, object]) -> dict[str, object]:
-        snapshot = row.get("submitted_snapshot_json")
-        if not isinstance(snapshot, dict):
-            raise FeedbackPersistenceError("submitted feedback snapshot is unavailable")
-        return {
-            "schema_version": "feedback-moderation.v1", "feedback_id": row["feedback_id"],
-            "status": row["status"], "category": row["category"], "component": row["component"],
-            "severity": row["severity"], "title": row["title"], "version": row["version"],
-            "submitted_snapshot": snapshot, "publication_status": row["publication_status"],
-            "github_issue": ({"repository": row["github_repository"], "issue_number": row["github_issue_number"],
-                              "html_url": row["github_html_url"]}
-                             if row.get("publication_status") == "published" and row.get("github_issue_number") else None),
-            "created_at": row["created_at"], "updated_at": row["updated_at"],
-        }
+    def _owner_receipt_projection(result: dict[str, object]) -> dict[str, object]:
+        """Strip fields from persisted receipts written by the retired local publisher."""
+        feedback = result.get("feedback")
+        if not isinstance(feedback, dict):
+            return result
+        projection = dict(feedback)
+        projection.pop("publication_status", None)
+        projection.pop("duplicate_of_public_issue", None)
+        # Historical cached issue links did not record whether the Hub or the
+        # removed local publisher supplied them. Current Hub status is available
+        # from the owner item projection, so do not replay an unproven link.
+        projection["github_issue"] = None
+        return {**result, "feedback": projection}
 
     def create(self, payload: object, *, trusted_workspace: str, trusted_owner: str, trusted_actor: str) -> dict[str, object]:
         if not isinstance(payload, dict):
@@ -653,15 +621,17 @@ class ProductFeedbackStore(PgStoreMixin):
             }
             execute(connection, """INSERT INTO product_feedback
                 (feedback_id,workspace_id,owner_principal,status,category,component,severity,title,current_revision,
-                 fingerprint,publication_status,version,created_at,updated_at)
+                 fingerprint,version,created_at,updated_at)
                 VALUES (:feedback_id,:workspace_id,:owner_principal,:status,:category,:component,:severity,:title,
-                 :current_revision,:fingerprint,'not_queued',:version,:created_at,:updated_at)""", row_values)
+                 :current_revision,:fingerprint,:version,:created_at,:updated_at)""", row_values)
             execute(connection, """INSERT INTO product_feedback_revisions
                 (revision_id,feedback_id,workspace_id,revision_number,content_json,content_hash,created_by,created_at)
                 VALUES (:revision,:feedback,:workspace,1,:content,:hash,:actor,:now)""",
                 {"revision": _new_id("feedback_revision"), "feedback": feedback_id, "workspace": trusted_workspace,
                  "content": content, "hash": content_hash, "actor": trusted_actor, "now": now})
-            row = fetch_one(connection, "SELECT * FROM product_feedback WHERE feedback_id=:id", {"id": feedback_id})
+            row = fetch_one(connection, """SELECT feedback_id,workspace_id,status,category,component,severity,title,
+                current_revision,version,created_at,updated_at FROM product_feedback WHERE feedback_id=:id""",
+                {"id": feedback_id})
             assert row is not None
             self._audit(connection, row=row, action="create", actor=trusted_actor, role="owner", from_status=None,
                         to_status="draft", now=now)
@@ -687,9 +657,10 @@ class ProductFeedbackStore(PgStoreMixin):
         actual = _feedback_id(result["feedback"].get("feedback_id"))
         if identity is not None and actual != identity:
             raise FeedbackPersistenceError("feedback receipt identity differs")
-        # Confirm the object remains in this workspace; return the original command result.
+        # Confirm the object remains in this workspace before returning the sanitized receipt.
         self.get_owner(actual, trusted_workspace=trusted_workspace)
-        return {"state":"confirmed", "feedback":result["feedback"]}
+        sanitized = self._owner_receipt_projection(result)
+        return {"state":"confirmed", "feedback":sanitized["feedback"]}
 
     def list_owner(self, *, trusted_workspace: str, status: str = "all", category: str = "all",
                    query: str = "", limit: int = 20, offset: int = 0) -> dict[str, object]:
@@ -712,12 +683,12 @@ class ProductFeedbackStore(PgStoreMixin):
         joined_where = where.replace("workspace_id", "f.workspace_id").replace("status=:status", "f.status=:status").replace(
             "category=:category", "f.category=:category").replace("(title ILIKE", "(f.title ILIKE").replace(
             "OR component ILIKE", "OR f.component ILIKE")
-        rows = self._execute(f"""SELECT f.*,p.github_repository,p.github_issue_number,p.github_html_url,
+        rows = self._execute(f"""SELECT f.feedback_id,f.workspace_id,f.status,f.category,f.component,f.severity,
+            f.title,f.version,f.current_revision,f.created_at,f.updated_at,
             h.state AS hub_delivery_state,h.receipt_id AS hub_receipt_id,h.last_error_category AS hub_last_error_category,
             h.github_repository AS hub_github_repository,h.github_issue_number AS hub_github_issue_number,
             h.github_html_url AS hub_github_html_url
-            FROM product_feedback f LEFT JOIN product_feedback_publications p ON p.feedback_id=f.feedback_id
-            LEFT JOIN product_feedback_hub_outbox h ON h.feedback_id=f.feedback_id
+            FROM product_feedback f LEFT JOIN product_feedback_hub_outbox h ON h.feedback_id=f.feedback_id
             WHERE {joined_where} ORDER BY f.updated_at DESC,f.feedback_id DESC LIMIT :limit OFFSET :offset""", params)
         total = int(count["count"] if count else 0)
         return {"schema_version": "product-feedback-catalog.v1", "items": [self._owner_projection(row) for row in rows],
@@ -725,12 +696,12 @@ class ProductFeedbackStore(PgStoreMixin):
 
     def get_owner(self, feedback_id: object, *, trusted_workspace: str) -> dict[str, object]:
         identity = _feedback_id(feedback_id)
-        row = self._fetch_one("""SELECT f.*,p.github_repository,p.github_issue_number,p.github_html_url,
+        row = self._fetch_one("""SELECT f.feedback_id,f.workspace_id,f.status,f.category,f.component,f.severity,
+            f.title,f.version,f.current_revision,f.created_at,f.updated_at,
             h.state AS hub_delivery_state,h.receipt_id AS hub_receipt_id,h.last_error_category AS hub_last_error_category,
             h.github_repository AS hub_github_repository,h.github_issue_number AS hub_github_issue_number,
             h.github_html_url AS hub_github_html_url
-            FROM product_feedback f LEFT JOIN product_feedback_publications p ON p.feedback_id=f.feedback_id
-            LEFT JOIN product_feedback_hub_outbox h ON h.feedback_id=f.feedback_id
+            FROM product_feedback f LEFT JOIN product_feedback_hub_outbox h ON h.feedback_id=f.feedback_id
             WHERE f.feedback_id=:feedback AND f.workspace_id=:workspace""",
                               {"feedback": identity, "workspace": trusted_workspace})
         if row is None:
@@ -794,7 +765,9 @@ class ProductFeedbackStore(PgStoreMixin):
                 {"category": content["category"], "component": content["component"], "severity": content["severity"],
                  "title": content["title"], "revision": revision_number, "fingerprint": _fingerprint(content, self.product_version),
                  "now": now, "feedback": identity})
-            row = fetch_one(connection, "SELECT * FROM product_feedback WHERE feedback_id=:feedback", {"feedback": identity})
+            row = fetch_one(connection, """SELECT feedback_id,workspace_id,status,category,component,severity,title,
+                current_revision,version,created_at,updated_at FROM product_feedback WHERE feedback_id=:feedback""",
+                {"feedback": identity})
             assert row is not None
             self._audit(connection, row=row, action="update", actor=trusted_actor, role="owner", from_status="draft",
                         to_status="draft", detail={"revision_number": revision_number}, now=now)
@@ -858,7 +831,9 @@ class ProductFeedbackStore(PgStoreMixin):
                 VALUES (:event,:feedback,:schema,:snapshot,:hash,'queued',0,:now,0,:now,:now)""",
                 {"event": hub_event_id, "feedback": identity, "schema": HUB_DELIVERY_SCHEMA,
                  "snapshot": snapshot, "hash": snapshot_hash, "now": now})
-            row = fetch_one(connection, "SELECT * FROM product_feedback WHERE feedback_id=:feedback", {"feedback": identity})
+            row = fetch_one(connection, """SELECT feedback_id,workspace_id,status,category,component,severity,title,
+                current_revision,version,created_at,updated_at FROM product_feedback WHERE feedback_id=:feedback""",
+                {"feedback": identity})
             assert row is not None
             row["hub_delivery_state"] = "queued"
             row["hub_receipt_id"] = None
@@ -894,13 +869,22 @@ class ProductFeedbackStore(PgStoreMixin):
                 raise FeedbackForbidden(f"feedback cannot transition from {row['status']} using {action}")
             if int(row["version"]) != expected:
                 raise FeedbackConflict("feedback version changed")
+            if target == "withdrawn":
+                hub_delivery = fetch_one(connection, """SELECT state,attempt FROM product_feedback_hub_outbox
+                    WHERE feedback_id=:feedback FOR UPDATE""", {"feedback": identity})
+                if hub_delivery is None:
+                    raise FeedbackConflict("feedback has no central hub delivery to withdraw")
+                if hub_delivery["state"] != "queued" or int(hub_delivery["attempt"]) != 0:
+                    raise FeedbackConflict("feedback cannot be withdrawn after central hub delivery starts")
             execute(connection, "UPDATE product_feedback SET status=:target,version=version+1,updated_at=:now WHERE feedback_id=:feedback",
                     {"target": target, "now": now, "feedback": identity})
             if target == "withdrawn":
                 execute(connection, """UPDATE product_feedback_hub_outbox SET state='cancelled',updated_at=:now
-                    WHERE feedback_id=:feedback AND state IN ('queued','retry_wait')""",
+                    WHERE feedback_id=:feedback AND state='queued' AND attempt=0""",
                     {"now": now, "feedback": identity})
-            row = fetch_one(connection, "SELECT * FROM product_feedback WHERE feedback_id=:feedback", {"feedback": identity})
+            row = fetch_one(connection, """SELECT feedback_id,workspace_id,status,category,component,severity,title,
+                current_revision,version,created_at,updated_at FROM product_feedback WHERE feedback_id=:feedback""",
+                {"feedback": identity})
             assert row is not None
             self._audit(connection, row=row, action=action, actor=trusted_actor, role="owner", from_status=allowed_from,
                         to_status=target, now=now)
@@ -1065,7 +1049,7 @@ class ProductFeedbackStore(PgStoreMixin):
         if status == "published":
             if not isinstance(issue, dict):
                 raise ValueError("published feedback hub status requires github_issue")
-            repository = self._publisher_repository(issue.get("repository"))
+            repository = self._canonical_github_repository(issue.get("repository"))
             number = _positive_int(issue.get("issue_number"), field="issue_number")
             url = f"https://github.com/{repository}/issues/{number}"
             if issue.get("html_url") != url:
@@ -1094,351 +1078,7 @@ class ProductFeedbackStore(PgStoreMixin):
         return {"schema_version": "feedback-hub-status-result.v1", "status": status}
 
     @staticmethod
-    def _require_moderator(role: str) -> None:
-        if role != "admin":
-            raise FeedbackForbidden("feedback moderator role required")
-
-    def list_moderation(self, *, actor_role: str, status: str = "submitted", category: str = "all",
-                        query: str = "", limit: int = 20, offset: int = 0) -> dict[str, object]:
-        self._require_moderator(actor_role)
-        limit, offset = self._page(limit, offset, OWNER_PAGE_LIMIT)
-        if status != "all": _enum(status, field="status", allowed=MODERATION_STATUSES)
-        if category != "all": _enum(category, field="category", allowed=CATEGORIES)
-        query = _optional_text(query, field="query", maximum=80)
-        filters = ["status <> 'draft'", "submitted_snapshot_json IS NOT NULL"]
-        params: dict[str, object] = {"limit": limit, "offset": offset}
-        if status != "all": filters.append("status=:status"); params["status"] = status
-        if category != "all": filters.append("category=:category"); params["category"] = category
-        if query: filters.append("(title ILIKE :query OR component ILIKE :query)"); params["query"] = f"%{query}%"
-        where = " AND ".join(filters)
-        count = self._fetch_one(f"SELECT COUNT(*) AS count FROM product_feedback WHERE {where}", params)
-        joined_where = where.replace("status ", "f.status ").replace("status=", "f.status=").replace(
-            "submitted_snapshot_json", "f.submitted_snapshot_json").replace("category=:category", "f.category=:category").replace(
-            "(title ILIKE", "(f.title ILIKE").replace("OR component ILIKE", "OR f.component ILIKE")
-        rows = self._execute(f"""SELECT f.*,p.github_repository,p.github_issue_number,p.github_html_url
-            FROM product_feedback f LEFT JOIN product_feedback_publications p ON p.feedback_id=f.feedback_id
-            WHERE {joined_where} ORDER BY f.updated_at,f.feedback_id LIMIT :limit OFFSET :offset""", params)
-        total = int(count["count"] if count else 0)
-        return {"schema_version": "feedback-moderation-catalog.v1", "items": [self._moderator_projection(row) for row in rows],
-                "total": total, "limit": limit, "offset": offset, "has_more": offset + len(rows) < total}
-
-    def get_moderation(self, feedback_id: object, *, actor_role: str) -> dict[str, object]:
-        self._require_moderator(actor_role)
-        identity = _feedback_id(feedback_id)
-        row = self._fetch_one("""SELECT f.*,p.github_repository,p.github_issue_number,p.github_html_url
-            FROM product_feedback f LEFT JOIN product_feedback_publications p ON p.feedback_id=f.feedback_id
-            WHERE f.feedback_id=:feedback AND f.status <> 'draft'""",
-                              {"feedback": identity})
-        if row is None:
-            raise FeedbackNotFound("submitted feedback not found")
-        return {"feedback": self._moderator_projection(row)}
-
-    def list_audit(self, feedback_id: object, *, actor_role: str, limit: int = 20, offset: int = 0) -> dict[str, object]:
-        self._require_moderator(actor_role)
-        identity = _feedback_id(feedback_id)
-        self.get_moderation(identity, actor_role=actor_role)
-        limit, offset = self._page(limit, offset, DETAIL_PAGE_LIMIT)
-        count = self._fetch_one("SELECT COUNT(*) AS count FROM product_feedback_audit WHERE feedback_id=:feedback",
-                                {"feedback": identity})
-        rows = self._execute("""SELECT audit_id,action,actor_role,from_status,to_status,rationale,detail_json,created_at
-            FROM product_feedback_audit WHERE feedback_id=:feedback
-            ORDER BY created_at DESC,audit_id DESC LIMIT :limit OFFSET :offset""",
-            {"feedback": identity, "limit": limit, "offset": offset})
-        safe_rows = []
-        for row in rows:
-            raw_detail = row.get("detail_json") if isinstance(row.get("detail_json"), dict) else {}
-            detail: dict[str, object] = {}
-            if isinstance(raw_detail.get("revision_number"), int):
-                detail["revision_number"] = raw_detail["revision_number"]
-            if raw_detail.get("canonical_feedback_id"):
-                detail["duplicate_linked"] = True
-            if raw_detail.get("publication_id"):
-                detail["publication_queued"] = True
-            safe_rows.append({
-                "audit_id": row["audit_id"], "action": row["action"], "actor_role": row["actor_role"],
-                "from_status": row["from_status"], "to_status": row["to_status"],
-                "rationale": row["rationale"], "detail": detail, "created_at": row["created_at"],
-            })
-        total = int(count["count"] if count else 0)
-        return {"schema_version": "feedback-moderation-audit.v1", "audit": safe_rows, "total": total,
-                "limit": limit, "offset": offset, "has_more": offset + len(rows) < total}
-
-    def reconcile_moderation(self, feedback_id, action, key, *, trusted_actor, actor_role):
-        self._require_moderator(actor_role)
-        identity = _feedback_id(feedback_id)
-        if action not in {"triage", "accept", "reject", "duplicate"}:
-            raise ValueError("moderation action is invalid")
-        key = _idempotency(key)
-        row = self._fetch_one("""SELECT result_json FROM product_feedback_commands
-            WHERE scope_key='platform-feedback' AND actor_principal=:actor
-              AND operation=:operation AND idempotency_key=:key""",
-            {"actor": trusted_actor, "operation": f"moderate:{action}:{identity}", "key": key})
-        if row is None:
-            return {"state": "not_found"}
-        result = row["result_json"]
-        if not isinstance(result, dict) or not isinstance(result.get("feedback"), dict) or result["feedback"].get("feedback_id") != identity:
-            raise FeedbackPersistenceError("feedback moderation receipt is invalid")
-        self.get_moderation(identity, actor_role=actor_role)
-        return {"state": "confirmed", "feedback": result["feedback"]}
-
-    def moderate(self, feedback_id: object, action: str, payload: object, *, trusted_actor: str, actor_role: str) -> dict[str, object]:
-        self._require_moderator(actor_role)
-        identity = _feedback_id(feedback_id)
-        if action not in {"triage", "accept", "reject", "duplicate"}:
-            raise ValueError("moderation action is invalid")
-        if not isinstance(payload, dict):
-            raise ValueError("moderation request must be an object")
-        allowed = {"expected_version", "idempotency_key", "rationale"}
-        if action == "duplicate": allowed.add("canonical_feedback_id")
-        _reject_unknown(payload, allowed)
-        expected = _positive_int(payload.get("expected_version"), field="expected_version")
-        key = _idempotency(payload.get("idempotency_key"))
-        rationale = _text(payload.get("rationale"), field="rationale", minimum=2, maximum=1000, multiline=True)
-        _assert_safe_public_text(rationale)
-        canonical = _feedback_id(payload.get("canonical_feedback_id")) if action == "duplicate" else None
-        request_hash = _hash({"feedback_id": identity, "action": action, "version": expected,
-                              "rationale": rationale, "canonical_feedback_id": canonical})
-        now = _now()
-        with self._transaction() as connection:
-            operation = f"moderate:{action}:{identity}"
-            replay = self._replay(connection, scope="platform-feedback", actor=trusted_actor, operation=operation, key=key, request_hash=request_hash)
-            if replay is not None: return replay
-            row = self._moderator_row(connection, identity)
-            expected_from = "submitted" if action == "triage" else "triaged"
-            target = {"triage": "triaged", "accept": "accepted", "reject": "rejected", "duplicate": "duplicate"}[action]
-            if row["status"] != expected_from:
-                raise FeedbackForbidden(f"feedback cannot transition from {row['status']} using {action}")
-            if int(row["version"]) != expected:
-                raise FeedbackConflict("feedback version changed")
-            if canonical is not None:
-                target_row = fetch_one(connection, "SELECT feedback_id,status FROM product_feedback WHERE feedback_id=:feedback",
-                                       {"feedback": canonical})
-                if target_row is None or target_row["feedback_id"] == identity or target_row["status"] not in {"triaged", "accepted"}:
-                    raise FeedbackConflict("canonical feedback is not available")
-            publication_status = "publisher_unconfigured" if action == "accept" else str(row["publication_status"])
-            execute(connection, """UPDATE product_feedback SET status=:target,canonical_feedback_id=:canonical,
-                publication_status=:publication_status,version=version+1,updated_at=:now WHERE feedback_id=:feedback""",
-                {"target": target, "canonical": canonical, "publication_status": publication_status,
-                 "now": now, "feedback": identity})
-            row = fetch_one(connection, "SELECT * FROM product_feedback WHERE feedback_id=:feedback", {"feedback": identity})
-            assert row is not None
-            detail: dict[str, object] = {}
-            if canonical is not None: detail["canonical_feedback_id"] = canonical
-            if action == "accept":
-                submitted = row["submitted_snapshot_json"]
-                assert isinstance(submitted, dict)
-                snapshot = {"schema_version": PUBLICATION_SCHEMA, "public_content": submitted["public_content"],
-                            "redactions": submitted["redactions"]}
-                snapshot_hash = _hash(snapshot)
-                publication_id, event_id = _new_id("feedback_publication"), _new_id("feedback_outbox")
-                execute(connection, """INSERT INTO product_feedback_publications
-                    (publication_id,feedback_id,schema_version,snapshot_json,snapshot_hash,created_by,created_at)
-                    VALUES (:publication,:feedback,:schema,:snapshot,:hash,:actor,:now)""",
-                    {"publication": publication_id, "feedback": identity, "schema": PUBLICATION_SCHEMA,
-                     "snapshot": snapshot, "hash": snapshot_hash, "actor": trusted_actor, "now": now})
-                execute(connection, """INSERT INTO product_feedback_outbox
-                    (event_id,feedback_id,publication_id,schema_version,snapshot_hash,destination_key,state,attempt,
-                     next_attempt_at,lease_fence,created_at,updated_at)
-                    VALUES (:event,:feedback,:publication,:schema,:hash,:destination,'queued',0,:now,0,:now,:now)""",
-                    {"event": event_id, "feedback": identity, "publication": publication_id, "schema": OUTBOX_SCHEMA,
-                     "hash": snapshot_hash, "destination": DESTINATION_KEY, "now": now})
-                detail = {"publication_id": publication_id, "outbox_event_id": event_id, "snapshot_hash": snapshot_hash}
-            self._audit(connection, row=row, action=action, actor=trusted_actor, role="moderator", from_status=expected_from,
-                        to_status=target, rationale=rationale, detail=detail, now=now)
-            result = {"feedback": self._moderator_projection(row)}
-            self._record_command(connection, scope="platform-feedback", actor=trusted_actor, operation=operation, key=key,
-                                 request_hash=request_hash, result=result, now=now)
-            return result
-
-    def outbox_summary(self, *, actor_role: str) -> dict[str, object]:
-        self._require_moderator(actor_role)
-        queue_rows = self._execute("""SELECT state,COUNT(*) AS count FROM product_feedback_outbox
-            GROUP BY state ORDER BY state""")
-        queue = {state: 0 for state in ("queued", "publishing", "retry_wait", "published", "failed_terminal")}
-        for row in queue_rows:
-            queue[str(row["state"])] = int(row["count"])
-        state = self._fetch_one("SELECT * FROM product_feedback_publisher_state WHERE destination_key=:destination",
-                                {"destination": DESTINATION_KEY})
-        configured = bool(state and state["configured"])
-        fresh = self._publisher_fresh(state)
-        return {"schema_version": "feedback-publisher-status.v1", "configured": configured,
-                "status": "ready" if configured and fresh else "stale" if configured else "unconfigured",
-                "repository": state["repository"] if configured and state else None,
-                "credential_kind": state["credential_kind"] if configured and state else None,
-                "queue": queue, "last_error_category": state["last_error_category"] if state else None,
-                "last_heartbeat_at": state["last_heartbeat_at"] if state else None,
-                "last_success_at": state["last_success_at"] if state else None}
-
-    @staticmethod
-    def _publisher_repository(value: object) -> str:
+    def _canonical_github_repository(value: object) -> str:
         if not isinstance(value, str) or re.fullmatch(r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}", value) is None:
-            raise ValueError("publisher repository is invalid")
+            raise ValueError("feedback hub repository is invalid")
         return value
-
-    @staticmethod
-    def _publisher_kind(value: object) -> str:
-        if value not in {"github_app", "fine_grained_token"}:
-            raise ValueError("publisher credential kind is invalid")
-        return str(value)
-
-    def publisher_heartbeat(self, payload: object) -> dict[str, object]:
-        if not isinstance(payload, dict):
-            raise ValueError("publisher heartbeat must be an object")
-        _reject_unknown(payload, {"configured", "credential_kind", "repository", "worker_version"})
-        configured = payload.get("configured")
-        if not isinstance(configured, bool):
-            raise ValueError("publisher configured must be a boolean")
-        repository = self._publisher_repository(payload.get("repository")) if configured else None
-        credential_kind = self._publisher_kind(payload.get("credential_kind")) if configured else None
-        worker_version = _text(payload.get("worker_version"), field="worker_version", minimum=1, maximum=40)
-        now = _now()
-        with self._transaction() as connection:
-            execute(connection, """INSERT INTO product_feedback_publisher_state
-                (destination_key,configured,credential_kind,repository,worker_version,last_heartbeat_at)
-                VALUES (:destination,:configured,:kind,:repository,:version,:now)
-                ON CONFLICT(destination_key) DO UPDATE SET configured=EXCLUDED.configured,
-                credential_kind=EXCLUDED.credential_kind,repository=EXCLUDED.repository,
-                worker_version=EXCLUDED.worker_version,last_heartbeat_at=EXCLUDED.last_heartbeat_at""",
-                {"destination": DESTINATION_KEY, "configured": configured, "kind": credential_kind,
-                 "repository": repository, "version": worker_version, "now": now})
-            execute(connection, """UPDATE product_feedback f SET publication_status=:status,updated_at=:now
-                FROM product_feedback_outbox o WHERE o.feedback_id=f.feedback_id AND o.state='queued'
-                AND f.publication_status IN ('publisher_unconfigured','queued')""",
-                {"status": "queued" if configured else "publisher_unconfigured", "now": now})
-        return {"schema_version": "feedback-publisher-heartbeat.v1", "accepted": True, "configured": configured}
-
-    def claim_publications(self, payload: object) -> dict[str, object]:
-        if not isinstance(payload, dict):
-            raise ValueError("publisher claim must be an object")
-        _reject_unknown(payload, {"worker_id", "limit", "lease_seconds"})
-        worker = _text(payload.get("worker_id"), field="worker_id", minimum=3, maximum=80)
-        limit = min(_positive_int(payload.get("limit", 5), field="limit"), 10)
-        lease_seconds = min(max(_positive_int(payload.get("lease_seconds", 60), field="lease_seconds"), 15), 300)
-        now_dt = datetime.now(timezone.utc)
-        now, expiry = now_dt.isoformat(), (now_dt + timedelta(seconds=lease_seconds)).isoformat()
-        with self._transaction() as connection:
-            publisher = fetch_one(connection, """SELECT configured FROM product_feedback_publisher_state
-                WHERE destination_key=:destination""", {"destination": DESTINATION_KEY})
-            if publisher is None or not publisher["configured"]:
-                return {"schema_version": "feedback-publisher-claim.v1", "events": []}
-            rows = execute(connection, """SELECT o.*,p.snapshot_json FROM product_feedback_outbox o
-                JOIN product_feedback_publications p ON p.publication_id=o.publication_id
-                WHERE ((o.state IN ('queued','retry_wait') AND o.next_attempt_at <= :now)
-                    OR (o.state='publishing' AND o.lease_expires_at < :now))
-                ORDER BY o.next_attempt_at,o.event_id FOR UPDATE OF o SKIP LOCKED LIMIT :limit""",
-                {"now": now, "limit": limit})
-            events: list[dict[str, object]] = []
-            for row in rows:
-                if int(row["attempt"]) >= MAX_PUBLICATION_ATTEMPTS:
-                    execute(connection, """UPDATE product_feedback_outbox
-                        SET state='failed_terminal',last_error_category='transport_ambiguous',
-                            lease_owner=NULL,lease_expires_at=NULL,updated_at=:now WHERE event_id=:event""",
-                        {"now": now, "event": row["event_id"]})
-                    execute(connection, """UPDATE product_feedback SET publication_status='failed_terminal',
-                        updated_at=:now WHERE feedback_id=:feedback""", {"now": now, "feedback": row["feedback_id"]})
-                    continue
-                fence = int(row["lease_fence"]) + 1
-                attempt = int(row["attempt"]) + 1
-                execute(connection, """UPDATE product_feedback_outbox SET state='publishing',attempt=:attempt,
-                    lease_owner=:worker,lease_expires_at=:expiry,lease_fence=:fence,updated_at=:now
-                    WHERE event_id=:event""", {"attempt": attempt, "worker": worker, "expiry": expiry,
-                    "fence": fence, "now": now, "event": row["event_id"]})
-                execute(connection, "UPDATE product_feedback SET publication_status='publishing',updated_at=:now WHERE feedback_id=:feedback",
-                        {"now": now, "feedback": row["feedback_id"]})
-                events.append({"event_id": row["event_id"], "feedback_id": row["feedback_id"],
-                    "publication_id": row["publication_id"], "snapshot_hash": row["snapshot_hash"],
-                    "snapshot": row["snapshot_json"], "attempt": attempt, "lease_fence": fence,
-                    "lease_expires_at": expiry})
-        return {"schema_version": "feedback-publisher-claim.v1", "events": events}
-
-    @staticmethod
-    def _leased_row(connection: Any, event_id: str, worker: str, fence: int) -> dict[str, object]:
-        row = fetch_one(connection, """SELECT * FROM product_feedback_outbox WHERE event_id=:event FOR UPDATE""",
-                        {"event": event_id})
-        if row is None:
-            raise FeedbackNotFound("publication event not found")
-        if row["state"] != "publishing" or row["lease_owner"] != worker or int(row["lease_fence"]) != fence:
-            raise FeedbackConflict("publication lease is stale")
-        return row
-
-    def begin_publication_create(self, event_id: object, payload: object) -> dict[str, object]:
-        if not isinstance(event_id, str) or re.fullmatch(r"feedback_outbox_[0-9a-f]{32}", event_id) is None:
-            raise ValueError("publication event id is invalid")
-        if not isinstance(payload, dict):
-            raise ValueError("publisher create permit must be an object")
-        _reject_unknown(payload, {"worker_id", "lease_fence"})
-        worker = _text(payload.get("worker_id"), field="worker_id", minimum=3, maximum=80)
-        fence = _positive_int(payload.get("lease_fence"), field="lease_fence")
-        with self._transaction() as connection:
-            row = self._leased_row(connection, event_id, worker, fence)
-            if datetime.fromisoformat(str(row["lease_expires_at"]).replace("Z", "+00:00")) <= datetime.now(timezone.utc):
-                raise FeedbackConflict("publication lease is stale")
-            allowed = not row["create_started"]
-            if allowed:
-                execute(connection, "UPDATE product_feedback_outbox SET create_started=TRUE WHERE event_id=:event",
-                        {"event": event_id})
-        # Lost permit replies are unknown. Never issue the same create permission twice.
-        return {"schema_version": "feedback-publisher-create-permit.v1", "allowed": allowed}
-
-    def complete_publication(self, event_id: object, payload: object) -> dict[str, object]:
-        if not isinstance(event_id, str) or re.fullmatch(r"feedback_outbox_[0-9a-f]{32}", event_id) is None:
-            raise ValueError("publication event id is invalid")
-        if not isinstance(payload, dict):
-            raise ValueError("publisher completion must be an object")
-        _reject_unknown(payload, {"worker_id", "lease_fence", "repository", "issue_number", "html_url", "provider_identity"})
-        worker = _text(payload.get("worker_id"), field="worker_id", minimum=3, maximum=80)
-        fence = _positive_int(payload.get("lease_fence"), field="lease_fence")
-        repository = self._publisher_repository(payload.get("repository"))
-        issue_number = _positive_int(payload.get("issue_number"), field="issue_number")
-        expected_url = f"https://github.com/{repository}/issues/{issue_number}"
-        if payload.get("html_url") != expected_url:
-            raise ValueError("publisher issue URL is not canonical")
-        provider_identity = _text(payload.get("provider_identity"), field="provider_identity", minimum=1, maximum=120)
-        now = _now()
-        with self._transaction() as connection:
-            state = fetch_one(connection, "SELECT * FROM product_feedback_publisher_state WHERE destination_key=:destination",
-                              {"destination": DESTINATION_KEY})
-            if state is None or not state["configured"] or state["repository"] != repository:
-                raise FeedbackConflict("publisher destination is not registered")
-            row = self._leased_row(connection, event_id, worker, fence)
-            execute(connection, """UPDATE product_feedback_publications SET github_repository=:repository,
-                github_issue_number=:number,github_html_url=:url,provider_identity=:provider,published_at=:now
-                WHERE publication_id=:publication""", {"repository": repository, "number": issue_number,
-                "url": expected_url, "provider": provider_identity, "now": now, "publication": row["publication_id"]})
-            execute(connection, """UPDATE product_feedback_outbox SET state='published',lease_owner=NULL,
-                lease_expires_at=NULL,last_error_category=NULL,updated_at=:now WHERE event_id=:event""",
-                {"now": now, "event": event_id})
-            execute(connection, """UPDATE product_feedback SET publication_status='published',updated_at=:now
-                WHERE feedback_id=:feedback""", {"now": now, "feedback": row["feedback_id"]})
-            execute(connection, """UPDATE product_feedback_publisher_state SET last_success_at=:now,
-                last_error_category=NULL WHERE destination_key=:destination""", {"now": now, "destination": DESTINATION_KEY})
-        return {"schema_version": "feedback-publisher-result.v1", "status": "published",
-                "issue_number": issue_number, "html_url": expected_url}
-
-    def retry_publication(self, event_id: object, payload: object) -> dict[str, object]:
-        if not isinstance(event_id, str) or re.fullmatch(r"feedback_outbox_[0-9a-f]{32}", event_id) is None:
-            raise ValueError("publication event id is invalid")
-        if not isinstance(payload, dict):
-            raise ValueError("publisher retry must be an object")
-        _reject_unknown(payload, {"worker_id", "lease_fence", "error_category", "retry_after_seconds"})
-        worker = _text(payload.get("worker_id"), field="worker_id", minimum=3, maximum=80)
-        fence = _positive_int(payload.get("lease_fence"), field="lease_fence")
-        category = _enum(payload.get("error_category"), field="error_category", allowed=PUBLISHER_ERROR_CATEGORIES)
-        retry_after = min(max(_positive_int(payload.get("retry_after_seconds", 30), field="retry_after_seconds"), 5), 3600)
-        now_dt = datetime.now(timezone.utc)
-        now = now_dt.isoformat()
-        with self._transaction() as connection:
-            row = self._leased_row(connection, event_id, worker, fence)
-            terminal = category in TERMINAL_PUBLISHER_ERRORS or int(row["attempt"]) >= MAX_PUBLICATION_ATTEMPTS
-            target = "failed_terminal" if terminal else "retry_wait"
-            next_attempt = (now_dt + timedelta(seconds=retry_after)).isoformat()
-            execute(connection, """UPDATE product_feedback_outbox SET state=:state,next_attempt_at=:next,
-                lease_owner=NULL,lease_expires_at=NULL,last_error_category=:category,updated_at=:now
-                WHERE event_id=:event""", {"state": target, "next": next_attempt, "category": category,
-                "now": now, "event": event_id})
-            execute(connection, """UPDATE product_feedback SET publication_status=:state,updated_at=:now
-                WHERE feedback_id=:feedback""", {"state": target, "now": now, "feedback": row["feedback_id"]})
-            execute(connection, """UPDATE product_feedback_publisher_state SET last_error_category=:category
-                WHERE destination_key=:destination""", {"category": category, "destination": DESTINATION_KEY})
-        return {"schema_version": "feedback-publisher-result.v1", "status": target,
-                "error_category": category, "attempt": int(row["attempt"])}
