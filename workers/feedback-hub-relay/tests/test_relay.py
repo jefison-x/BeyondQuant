@@ -185,3 +185,33 @@ def test_slow_body_deadline_preserves_unknown_result():
         assert signal.getitimer(signal.ITIMER_REAL) == (0., 0.)
     finally:
         server.shutdown(); server.server_close(); thread.join(2)
+
+
+def test_shared_http_deadline_rejects_background_and_nested_calls_without_overwriting_timer():
+    import signal
+    from concurrent.futures import ThreadPoolExecutor
+    from feedback_http_deadline import request_deadline
+    import pytest
+
+    observed = []
+
+    def background():
+        with request_deadline(1):
+            observed.append("unsafe")
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with pytest.raises(TimeoutError):
+            executor.submit(background).result(timeout=2)
+    assert observed == []
+
+    previous = signal.getsignal(signal.SIGALRM)
+    with request_deadline(2):
+        handler = signal.getsignal(signal.SIGALRM)
+        with pytest.raises(TimeoutError):
+            with request_deadline(1):
+                observed.append("nested")
+        assert signal.getsignal(signal.SIGALRM) == handler
+        assert signal.getitimer(signal.ITIMER_REAL)[0] > 0
+    assert observed == []
+    assert signal.getsignal(signal.SIGALRM) == previous
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)

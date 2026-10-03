@@ -431,8 +431,9 @@ class WorkspaceResetStore(PgStoreMixin):
                 f"SELECT 1 FROM {table} WHERE workspace_id=:workspace AND {predicate} LIMIT 1", params)
             if row is not None:
                 raise WorkspaceResetBlocked(f"unresolved {table} prevents workspace reset")
-        # failed_terminal is a queue state, not evidence that an external
-        # create had no effect. Lost-response and exhausted retries stay unknown.
+        # Keep both Hub and legacy local-publication checks until their rows
+        # are separately classified. failed_terminal is not evidence that an
+        # external create had no effect; lost-response outcomes remain unknown.
         checks = (
             ("product_feedback_outbox", """r.lease_owner IS NOT NULL OR r.lease_expires_at IS NOT NULL
                OR (r.state='published' AND NOT EXISTS (SELECT 1 FROM product_feedback_publications p

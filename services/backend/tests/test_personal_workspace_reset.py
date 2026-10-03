@@ -21,7 +21,7 @@ from app.workspace_runtime_reset import WorkspaceRuntimeResetStore,WorkspaceRunt
 from app.workspace_reset_retention import expire_archives,collect_expired_objects
 from app.workspace_reset_scope import RESET_SCOPE
 from tests.test_workspace_reset import _research_graph
-from tests.test_product_feedback import content
+from tests.test_product_feedback import content, create, provision, workspace
 
 pytestmark=pytest.mark.skipif(not os.environ.get('BYQ_DATABASE_URL'),reason='disposable PostgreSQL required')
 
@@ -166,18 +166,30 @@ def test_archive_truncate_is_rejected(table):
 
 
 @pytest.mark.parametrize('category',['transport_ambiguous','reconciliation_conflict','provider_unavailable'])
-def test_failed_terminal_publication_is_not_known_external_outcome(category):
-    from tests.test_feedback_publisher_create_permit import seed
-    feedback,event=seed();reset=WorkspaceRuntimeResetStore()
+def test_legacy_failed_terminal_publication_is_not_known_external_outcome(category):
+    _admin,alice,_bob=provision();feedback=ProductFeedbackStore();reset=WorkspaceRuntimeResetStore()
     try:
-        feedback.begin_publication_create(event['event_id'],{'worker_id':'worker-original','lease_fence':event['lease_fence']})
-        feedback._execute("""UPDATE product_feedback_outbox SET state='failed_terminal',last_error_category=:category,
-          lease_owner=NULL,lease_expires_at=NULL WHERE event_id=:event""",{'category':category,'event':event['event_id']})
-        workspace=feedback._fetch_one('SELECT workspace_id FROM product_feedback WHERE feedback_id=:id',{'id':event['feedback_id']})['workspace_id']
+        item=create(feedback,alice,'legacy-reset-'+uuid4().hex)
+        publication_id='feedback_publication_'+uuid4().hex
+        event_id='feedback_outbox_'+uuid4().hex
+        feedback._execute("UPDATE product_feedback SET publication_status='failed_terminal' WHERE feedback_id=:id",
+                          {'id':item['feedback_id']})
+        feedback._execute('''INSERT INTO product_feedback_publications
+          (publication_id,feedback_id,schema_version,snapshot_json,snapshot_hash,created_by,created_at)
+          VALUES(:publication,:feedback,'feedback-publication.v1',:snapshot,:hash,'legacy-test',NOW())''',
+          {'publication':publication_id,'feedback':item['feedback_id'],
+           'snapshot':{'schema_version':'feedback-publication.v1','public_content':{},'redactions':{}},'hash':'b'*64})
+        feedback._execute('''INSERT INTO product_feedback_outbox
+          (event_id,feedback_id,publication_id,schema_version,snapshot_hash,destination_key,state,attempt,
+           next_attempt_at,lease_fence,create_started,last_error_category,created_at,updated_at)
+          VALUES(:event,:feedback,:publication,'feedback-outbox.v1',:hash,'github_primary','failed_terminal',1,
+                 NOW(),0,TRUE,:category,NOW(),NOW())''',
+          {'event':event_id,'feedback':item['feedback_id'],'publication':publication_id,'hash':'b'*64,'category':category})
+        legacy_workspace=workspace(alice)
         with pytest.raises(WorkspaceRuntimeResetConflict,match='feedback delivery'):
-            reset.begin_workspace_reset(owner_principal='feedback-alice',workspace_id=workspace,idempotency_key=str(uuid4()))
-        assert feedback._fetch_one('SELECT state,create_started FROM product_feedback_outbox WHERE event_id=:id',{'id':event['event_id']})=={'state':'failed_terminal','create_started':True}
-        assert feedback._fetch_one('SELECT count(*) AS n FROM workspace_reset_archives')['n']==0
+            reset.begin_workspace_reset(owner_principal=str(alice['username']),workspace_id=legacy_workspace,idempotency_key=str(uuid4()))
+        assert feedback._fetch_one('SELECT state,create_started FROM product_feedback_outbox WHERE event_id=:id',{'id':event_id})=={'state':'failed_terminal','create_started':True}
+        assert feedback._fetch_one('SELECT github_issue_number FROM product_feedback_publications WHERE publication_id=:id',{'id':publication_id})['github_issue_number'] is None
     finally:feedback.close();reset.close()
 
 

@@ -1,18 +1,30 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
+import { useRouter } from "vue-router";
+import { changePassword, PasswordChangeError } from "@/api/auth";
 import { getProfile, updateProfile } from "@/api/settings";
 import type { UserProfile } from "@/api/types";
 import { useUnsavedChanges } from "@/composables/useUnsavedChanges";
 import { useAuthStore } from "@/stores/auth";
 
 const auth = useAuthStore();
+const router = useRouter();
 const loading = ref(true);
 const saving = ref(false);
 const error = ref("");
 const profile = ref<UserProfile | null>(null);
 const form = ref({ display_name: "", preferences: "", default_prompt: "" });
 const savedForm = ref("");
+const passwordForm = ref({ current: "", next: "", confirm: "" });
+const passwordSaving = ref(false);
+const passwordError = ref("");
+const passwordOutcomeUnknown = ref(false);
+const passwordReady = computed(() => !passwordSaving.value && !passwordOutcomeUnknown.value
+  && passwordForm.value.current.length > 0
+  && Array.from(passwordForm.value.next.trim()).length >= 8
+  && Array.from(passwordForm.value.next.trim()).length <= 256
+  && passwordForm.value.next === passwordForm.value.confirm);
 const dirty = computed(() => !loading.value && JSON.stringify(form.value) !== savedForm.value);
 useUnsavedChanges(dirty);
 
@@ -53,6 +65,33 @@ async function save() {
   } finally {
     saving.value = false;
   }
+}
+
+async function savePassword() {
+  if (!passwordReady.value) return;
+  passwordSaving.value = true;
+  passwordError.value = "";
+  try {
+    await changePassword(passwordForm.value.current, passwordForm.value.next);
+    passwordForm.value = { current: "", next: "", confirm: "" };
+    auth.$patch({ user: null });
+    ElMessage.success("密码已修改，请重新登录");
+    await router.push({ name: "login" });
+  } catch (exc) {
+    passwordError.value = exc instanceof Error ? exc.message : "修改密码失败";
+    if (exc instanceof PasswordChangeError && exc.code === "password_change_outcome_unknown") {
+      passwordOutcomeUnknown.value = true;
+      passwordForm.value = { current: "", next: "", confirm: "" };
+    }
+  } finally {
+    passwordSaving.value = false;
+  }
+}
+
+async function checkPasswordChangeByLogin() {
+  passwordForm.value = { current: "", next: "", confirm: "" };
+  auth.$patch({ user: null });
+  await router.push({ name: "login" });
 }
 </script>
 
@@ -106,6 +145,28 @@ async function save() {
         <div class="form-actions">
           <span class="save-state" aria-live="polite">{{ dirty ? "有未保存更改" : "已保存" }}</span>
           <el-button type="primary" :loading="saving" :disabled="!dirty" @click="save">保存设置</el-button>
+        </div>
+      </el-form>
+    </el-card>
+    <el-card shadow="never">
+      <template #header>
+        <div class="page-card-title">修改密码</div>
+      </template>
+      <el-form label-position="top" class="profile-form" @submit.prevent="savePassword">
+        <el-form-item label="当前密码">
+          <el-input v-model="passwordForm.current" type="password" autocomplete="current-password" show-password />
+        </el-form-item>
+        <el-form-item label="新密码">
+          <el-input v-model="passwordForm.next" type="password" autocomplete="new-password" show-password />
+          <div class="form-hint">8 至 256 个字符；修改成功后，所有旧登录立即失效。</div>
+        </el-form-item>
+        <el-form-item label="确认新密码">
+          <el-input v-model="passwordForm.confirm" type="password" autocomplete="new-password" show-password />
+        </el-form-item>
+        <div v-if="passwordError" role="alert" class="base-error">{{ passwordError }}</div>
+        <div class="form-actions">
+          <el-button type="primary" native-type="submit" :loading="passwordSaving" :disabled="!passwordReady">修改密码</el-button>
+          <el-button v-if="passwordOutcomeUnknown" type="button" @click="checkPasswordChangeByLogin">重新登录核对</el-button>
         </div>
       </el-form>
     </el-card>

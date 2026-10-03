@@ -102,4 +102,14 @@ describe("agent api client", () => {
     expect(failure).toBeInstanceOf(AgentRequestError);
     expect(failure.status).toBe(403);
   });
+
+  it("preserves the Product code for an ended session without treating every 409 alike", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: { code: "agent_session_interrupted", message: "Start a new Agent session" },
+    }), { status: 409, headers: { "content-type": "application/json" } })));
+    const failure = await streamWorkflowEvents("s1", "token", () => undefined).catch((error) => error);
+    expect(failure).toBeInstanceOf(AgentRequestError);
+    expect(failure.code).toBe("agent_session_interrupted");
+    expect(failure.status).toBe(409);
+  });
 });

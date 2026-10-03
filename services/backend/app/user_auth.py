@@ -22,6 +22,9 @@ _SESSION_ID_PATTERN = re.compile(r"^session_[0-9a-f]{32}$")
 _SCRYPT_N = 2**14
 _SCRYPT_R = 8
 _SCRYPT_P = 1
+_PASSWORD_CHANGE_FAILURE_LIMIT = 5
+_PASSWORD_CHANGE_WINDOW = timedelta(minutes=15)
+_PASSWORD_CHANGE_LOCKOUT = timedelta(minutes=15)
 _UI_PREFERENCES_SCHEMA = "ui-preferences.v1"
 _COLOR_MODES = {"system", "light", "dark"}
 _ACCENT_THEMES = {"emerald", "ocean", "indigo", "amber", "graphite"}
@@ -40,6 +43,10 @@ class UserConflict(UserAuthError):
 
 
 class UserForbidden(UserAuthError):
+    pass
+
+
+class UserRateLimited(UserAuthError):
     pass
 
 
@@ -70,6 +77,24 @@ def _optional_text(value: object, *, field: str, max_length: int) -> str | None:
     normalized = value.strip()
     if len(normalized) > max_length:
         raise ValueError(f"{field} exceeds {max_length} characters")
+    return normalized
+
+
+def _password(value: object, *, field: str = "password") -> str:
+    """Apply the same password contract at creation, login, and change time.
+
+    Outer whitespace has historically been stripped by ``_text``. Keep that
+    behavior stable and make the 8-256 character bounds explicit everywhere.
+    """
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be a string")
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(f"{field} must not be empty")
+    if len(normalized) < 8:
+        raise ValueError(f"{field} must be at least 8 characters")
+    if len(normalized) > 256:
+        raise ValueError(f"{field} exceeds 256 characters")
     return normalized
 
 
@@ -110,6 +135,16 @@ def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex}"
 
 
+def _utc_timestamp(value: object) -> datetime:
+    try:
+        parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+    except (TypeError, ValueError) as exc:
+        raise UserAuthPersistenceError("user storage is unavailable") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 class UserAuthStore(PgStoreMixin):
     SCHEMA_DDL: list[str] = [
         """
@@ -142,6 +177,14 @@ class UserAuthStore(PgStoreMixin):
         """
         CREATE INDEX IF NOT EXISTS auth_sessions_user
             ON auth_sessions(user_id, expires_at)
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS user_password_change_attempts (
+            user_id TEXT PRIMARY KEY REFERENCES users(user_id),
+            window_started_at TIMESTAMPTZ NOT NULL,
+            failed_attempts INTEGER NOT NULL CHECK (failed_attempts > 0),
+            blocked_until TIMESTAMPTZ
+        )
         """,
         """
         CREATE TABLE IF NOT EXISTS user_ui_preferences (
@@ -185,9 +228,7 @@ class UserAuthStore(PgStoreMixin):
         username = _username(payload.get("username"))
         email = _text(payload["email"], field="email", max_length=254) if payload.get("email") else None
         display_name = _text(payload.get("display_name"), field="display_name", max_length=128)
-        password = _text(payload.get("password"), field="password", max_length=256)
-        if len(password) < 8:
-            raise ValueError("password must be at least 8 characters")
+        password = _password(payload.get("password"))
         role = _text(payload.get("role", "user"), field="role", max_length=16)
         if role not in {"admin", "user"}:
             raise ValueError("role must be admin or user")
@@ -379,11 +420,142 @@ class UserAuthStore(PgStoreMixin):
         assert updated is not None
         return self._user_row(updated)
 
+    def change_password(self, session_id: object, payload: object) -> dict[str, object]:
+        """Change the authenticated user's password and revoke all their sessions.
+
+        Login and password change both lock the user row before checking a
+        password. This serializes the check with session creation so an old
+        password cannot create a session after the revocation transaction.
+        """
+        session_id = self._session_id(session_id)
+        if not isinstance(payload, dict):
+            raise ValueError("password change request must be an object")
+        allowed = {"current_password", "new_password"}
+        unknown = sorted(set(payload) - allowed)
+        if unknown:
+            raise ValueError(f"password change request has unknown fields: {', '.join(unknown)}")
+        current_password = _password(payload.get("current_password"), field="current_password")
+        new_password = _password(payload.get("new_password"), field="new_password")
+        outcome: UserAuthError | None = None
+
+        try:
+            with self._transaction() as connection:
+                # Read the owner first without a lock, then lock in a stable
+                # user-before-session order shared with account administration.
+                reference = fetch_one(
+                    connection,
+                    "SELECT user_id FROM auth_sessions WHERE session_id = :session_id",
+                    {"session_id": session_id},
+                )
+                if reference is None:
+                    raise UserForbidden("session is not valid")
+                now = _now()
+                user = fetch_one(
+                    connection,
+                    "SELECT * FROM users WHERE user_id = :user_id FOR UPDATE",
+                    {"user_id": reference["user_id"]},
+                )
+                session = fetch_one(
+                    connection,
+                    """SELECT session_id, user_id, expires_at FROM auth_sessions
+                    WHERE session_id = :session_id AND user_id = :user_id FOR UPDATE""",
+                    {"session_id": session_id, "user_id": reference["user_id"]},
+                )
+                if (user is None or session is None
+                        or session["expires_at"] < now.isoformat()
+                        or user["status"] != "active"):
+                    raise UserForbidden("session is not valid")
+
+                attempts = fetch_one(
+                    connection,
+                    """SELECT window_started_at, failed_attempts, blocked_until
+                    FROM user_password_change_attempts WHERE user_id = :user_id FOR UPDATE""",
+                    {"user_id": user["user_id"]},
+                )
+                window_started: datetime | None = None
+                failed_attempts = 0
+                if attempts is not None:
+                    window_started = _utc_timestamp(attempts["window_started_at"])
+                    blocked_until = (
+                        _utc_timestamp(attempts["blocked_until"])
+                        if attempts["blocked_until"] is not None else None
+                    )
+                    if blocked_until is not None and now < blocked_until:
+                        outcome = UserRateLimited("password change rate limit reached; try again later")
+                    elif now >= window_started + _PASSWORD_CHANGE_WINDOW:
+                        execute(
+                            connection,
+                            "DELETE FROM user_password_change_attempts WHERE user_id = :user_id",
+                            {"user_id": user["user_id"]},
+                        )
+                    else:
+                        failed_attempts = int(attempts["failed_attempts"])
+                        if failed_attempts >= _PASSWORD_CHANGE_FAILURE_LIMIT:
+                            if blocked_until is None:
+                                blocked_until = now + _PASSWORD_CHANGE_LOCKOUT
+                                execute(
+                                    connection,
+                                    """UPDATE user_password_change_attempts SET blocked_until = :blocked_until
+                                    WHERE user_id = :user_id""",
+                                    {"blocked_until": blocked_until.isoformat(), "user_id": user["user_id"]},
+                                )
+                            outcome = UserRateLimited("password change rate limit reached; try again later")
+
+                if outcome is None and not _verify_password(current_password, user["password_hash"]):
+                    if failed_attempts == 0:
+                        window_started = now
+                    next_count = failed_attempts + 1
+                    blocked_until = (
+                        now + _PASSWORD_CHANGE_LOCKOUT
+                        if next_count >= _PASSWORD_CHANGE_FAILURE_LIMIT else None
+                    )
+                    execute(
+                        connection,
+                        """INSERT INTO user_password_change_attempts
+                        (user_id, window_started_at, failed_attempts, blocked_until)
+                        VALUES (:user_id, :window_started_at, :failed_attempts, :blocked_until)
+                        ON CONFLICT (user_id) DO UPDATE SET
+                            window_started_at = EXCLUDED.window_started_at,
+                            failed_attempts = EXCLUDED.failed_attempts,
+                            blocked_until = EXCLUDED.blocked_until""",
+                        {"user_id": user["user_id"], "window_started_at": window_started.isoformat(),
+                         "failed_attempts": next_count,
+                         "blocked_until": blocked_until.isoformat() if blocked_until is not None else None},
+                    )
+                    if next_count >= _PASSWORD_CHANGE_FAILURE_LIMIT:
+                        outcome = UserRateLimited("password change rate limit reached; try again later")
+                    else:
+                        outcome = UserForbidden("current password is incorrect")
+
+                if outcome is None:
+                    new_password_hash = _password_hash(new_password)
+                    timestamp = now.isoformat()
+                    execute(
+                        connection,
+                        "DELETE FROM user_password_change_attempts WHERE user_id = :user_id",
+                        {"user_id": user["user_id"]},
+                    )
+                    execute(
+                        connection,
+                        """UPDATE users SET password_hash = :password_hash,
+                        password_changed_at = :password_changed_at, updated_at = :updated_at
+                        WHERE user_id = :user_id""",
+                        {"password_hash": new_password_hash, "password_changed_at": timestamp,
+                         "updated_at": timestamp, "user_id": user["user_id"]},
+                    )
+                    execute(connection, "DELETE FROM auth_sessions WHERE user_id = :user_id",
+                            {"user_id": user["user_id"]})
+        except SQLAlchemyError as exc:
+            raise UserAuthPersistenceError("user storage is unavailable") from exc
+        if outcome is not None:
+            raise outcome
+        return {"status": "ok"}
+
     def login(self, username: object, password: object) -> dict[str, object]:
         username = _username(username)
-        password = _text(password, field="password", max_length=256)
+        password = _password(password)
         with self._transaction() as connection:
-            row = fetch_one(connection, "SELECT * FROM users WHERE username = :username", {"username": username})
+            row = fetch_one(connection, "SELECT * FROM users WHERE username = :username FOR UPDATE", {"username": username})
             if row is None or not _verify_password(password, row["password_hash"]):
                 raise UserForbidden("invalid username or password")
             if row["status"] != "active":

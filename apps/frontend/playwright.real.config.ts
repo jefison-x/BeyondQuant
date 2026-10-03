@@ -2,7 +2,11 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testMatch: "real-product.spec.ts",
+  testMatch: [
+    "real-product.spec.ts",
+    "post-release-r1-terminal-session.real.spec.ts",
+    "post-release-r4-password-change.real.spec.ts",
+  ],
   forbidOnly: true,
   fullyParallel: false,
   workers: 1,

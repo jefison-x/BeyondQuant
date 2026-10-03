@@ -10,7 +10,7 @@ import subprocess
 
 SERVICES = ('backend', 'gateway', 'runtime-adapter', 'mcp', 'frontend', 'data-worker',
             'backtest-worker', 'factor-worker', 'optimization-worker',
-            'signal-worker', 'ml-worker', 'signal-sandbox', 'feedback-publisher', 'feedback-hub-relay')
+            'signal-worker', 'ml-worker', 'signal-sandbox', 'feedback-hub-relay')
 DIGEST = re.compile(r'sha256:[0-9a-f]{64}')
 
 

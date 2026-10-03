@@ -327,10 +327,8 @@ prepare_ci_compose_env() {
   export BYQ_CREDENTIAL_ACTIVE_KEY_ID=ci-v1
   export BYQ_CREDENTIAL_RESOLVER_TOKEN=ci-credential-resolver-test-only
   export BYQ_PLUGIN_DEPLOYMENT_TOKEN=ci-plugin-test-only
-  export BYQ_FEEDBACK_PUBLISHER_TOKEN=ci-publisher-test-only BYQ_FEEDBACK_HUB_RELAY_TOKEN=ci-relay-test-only
+  export BYQ_FEEDBACK_HUB_RELAY_TOKEN=ci-relay-test-only
   export DEEPSEEK_API_KEY="" TUSHARE_TOKEN=""
-  export BYQ_FEEDBACK_GITHUB_TOKEN="" BYQ_FEEDBACK_GITHUB_APP_ID="" BYQ_FEEDBACK_GITHUB_REPOSITORY=""
-  export BYQ_FEEDBACK_GITHUB_INSTALLATION_ID="" BYQ_FEEDBACK_GITHUB_APP_PRIVATE_KEY_FILE=""
   export BYQ_FEEDBACK_HUB_URL=""
   # ADR-0069: daily suites use the supported bundled runtime only.
   # Archived rollback images are never rebuilt or executed by routine CI.
@@ -383,7 +381,7 @@ build_test_images() {
   python3 -c 'from scripts.dsh import build_revision as b; [b.check(b.selected_build_id(r)) for r in sorted(b.RELEASES)]' || return 1
   prepare_ci_compose_env
   if [ "$WITH_SMOKE" -eq 1 ] || [ "$WITH_DSH_WEB" -eq 1 ]; then
-    services=(backend gateway runtime-adapter mcp frontend data-worker backtest-worker factor-worker optimization-worker signal-worker ml-worker signal-sandbox feedback-publisher feedback-hub-relay)
+    services=(backend gateway runtime-adapter mcp frontend data-worker backtest-worker factor-worker optimization-worker signal-worker ml-worker signal-sandbox feedback-hub-relay)
   else
     if want backend || want mcp || want runtime; then services+=(backend); fi
     if want gateway; then services+=(gateway); fi
@@ -397,7 +395,7 @@ build_test_images() {
   if [ "${BYQ_CI_GHA_CACHE:-0}" = 1 ]; then
     run_interruptible python3 scripts/ci/build-images.py "${services[@]}" || return 1
   else
-    run_interruptible docker compose --profile feedback-publisher build "${services[@]}" || return 1
+    run_interruptible docker compose build "${services[@]}" || return 1
   fi
   for service in "${services[@]}"; do
     printf '    image identity -> service=%s tag=%s id=' "$service" "$(ci_image "$service")"
@@ -482,15 +480,6 @@ check_backend() {
       "$(ci_image_ref backend)" python -m pytest -q -p no:cacheprovider \
       tests/test_schema_isolation.py; then
     ok "backend schema isolation (shuffled)"; else bad "backend schema isolation (shuffled)"; fi
-  if [ -d "$REPO_ROOT/workers/feedback-publisher/tests" ]; then
-    if run_interruptible docker run --pull=never --rm --name "$CI_BACKEND_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" \
-        -e PYTHONDONTWRITEBYTECODE=1 \
-        -v "$REPO_ROOT/workers/feedback-publisher:/publisher:ro" -w /publisher \
-        -v "$REPO_ROOT/workers/feedback_http_deadline.py:/opt/byq-worker-http/feedback_http_deadline.py:ro" \
-        -e PYTHONPATH=/opt/byq-worker-http:/app \
-        "$(ci_image_ref backend)" python -m pytest -q -p no:cacheprovider tests; then
-      ok "feedback publisher fake-GitHub tests"; else bad "feedback publisher fake-GitHub tests"; fi
-  fi
   if [ -d "$REPO_ROOT/workers/feedback-hub-relay/tests" ]; then
     if run_interruptible docker run --pull=never --rm --name "$CI_BACKEND_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" \
         -e PYTHONDONTWRITEBYTECODE=1 -v "$REPO_ROOT/workers/feedback-hub-relay:/relay:ro" -w /relay \
@@ -676,18 +665,6 @@ check_smoke() {
     return
   fi
   if run_interruptible ./tests/smoke/run.sh; then ok "full smoke"; else bad "full smoke"; fi
-  if [ -f "$REPO_ROOT/workers/feedback-publisher/Dockerfile" ]; then
-    if run_interruptible docker compose --profile feedback-publisher up -d --no-build --wait feedback-publisher \
-      && [ "$(docker compose --profile feedback-publisher exec -T feedback-publisher id -u)" = "10006" ] \
-      && docker compose --profile feedback-publisher exec -T feedback-publisher python -c \
-        "import json,urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8700/healthz')); assert data['status']=='ok'" \
-      && docker compose exec -T postgres sh -ec \
-        'test "$(psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT configured FROM product_feedback_publisher_state WHERE destination_key='"'"'github_primary'"'"'")" = f'; then
-      ok "unconfigured non-root feedback publisher"; else bad "unconfigured non-root feedback publisher"; fi
-    # The profile is optional and the rest of the smoke validates the default
-    # Product stack. Do not let its heartbeat alter that test workload.
-    run_interruptible docker compose --profile feedback-publisher stop feedback-publisher >/dev/null 2>&1 || true
-  fi
   if docker compose cp scripts/evidence/phase67-seed.py backend:/tmp/phase67-seed.py >/dev/null \
     && docker compose exec -T backend python /tmp/phase67-seed.py; then
     ok "Phase 67 validated index fixture"; else bad "Phase 67 validated index fixture"; fi

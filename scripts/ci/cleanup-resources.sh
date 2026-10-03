@@ -79,7 +79,7 @@ export BYQ_WORKFLOW_TRACES_VOLUME_NAME="byq-ci-workflow-traces-$SCOPE"
 
 image_resources=(backend gateway runtime-adapter mcp frontend data-worker backtest-worker factor-worker optimization-worker \
   signal-worker ml-worker \
-  signal-sandbox feedback-publisher feedback-hub-relay dsh runtime-candidate)
+  signal-sandbox feedback-hub-relay dsh runtime-candidate)
 network_resources=("$BYQ_PRODUCT_NETWORK_NAME" "$BYQ_SIGNAL_SANDBOX_NETWORK_NAME")
 [ "$KEEP_POSTGRES" -eq 1 ] || network_resources+=("$PG_NET")
 volume_resources=("$BYQ_POSTGRES_VOLUME_NAME" "$BYQ_DOMAIN_VOLUME_NAME" "$BYQ_ML_MODEL_VOLUME_NAME" \
@@ -197,7 +197,7 @@ cleanup_exact_resources() {
   fi
   (
     cd "$REPO_ROOT"
-    docker compose --profile feedback-publisher down --rmi local -v --remove-orphans >/dev/null 2>&1 || true
+    docker compose down --rmi local -v --remove-orphans >/dev/null 2>&1 || true
   )
   # Component-only runs never create Compose containers; remove their exact tags too.
   for service in "${image_resources[@]}"; do

@@ -1,37 +1,17 @@
-# Product Feedback Publisher Runbook
+# Local Product Feedback Publisher (Archived)
 
-The local direct publisher is an advanced self-hosted compatibility option and remains disabled by default. The normal open-source
-path is the ADR-0052/ADR-0053 Cloudflare Central Feedback Hub; see `central-feedback-hub.md`. Normal BYQ users never configure a GitHub account, token,
-repository, or permission.
+This page records the retired local direct-to-GitHub publisher path. The local
+Python publisher is not part of the current Compose services, CI build targets,
+or release image set. Do not use this page to configure or start a local
+publisher.
 
-## Preferred GitHub App setup
+The R3 source change removes future configuration and build paths only. It does
+not remove existing Docker images or running deployments, credentials, stored
+feedback/publication data, backups, or historical release manifests.
 
-1. Create/install a GitHub App on exactly the target repository with repository `Issues: write` and no Contents, Pull requests,
-   Actions, Administration, Secrets, Deployments, or organization permission.
-2. Store the App private key outside the repository and mount it read-only into `feedback-publisher` with a local Compose
-   override or platform secret mechanism. Set the App id, installation id, in-container key path, and fixed `owner/repo` in the
-   ignored deployment environment.
-3. Generate a distinct high-entropy `BYQ_FEEDBACK_PUBLISHER_TOKEN` shared only by Backend and publisher. It authenticates the
-   internal lease API and is not a GitHub credential.
-4. Start with `docker compose --profile feedback-publisher up -d --wait feedback-publisher`. Verify the admin publisher status
-   reports the fixed repository, `github_app`, a recent heartbeat, and bounded queue counts.
-
-A fine-grained token limited to the same repository with `Issues: write` may be injected only as
-`BYQ_FEEDBACK_GITHUB_TOKEN` when GitHub App installation is unavailable. Do not ask end users for a token.
-
-## Failure handling
-
-- `rate_limited`, `provider_unavailable`, and `transport_ambiguous` enter bounded retry. Every retry first reconciles the exact
-  immutable marker, so a timed-out successful create is mapped instead of repeated.
-- Authentication, permission, unavailable repository/issues, validation rejection, marker conflict, or six attempts become
-  `failed_terminal`; no unbounded loop runs and no fake Issue URL is returned.
-- To pause safely, stop only `feedback-publisher`. Feedback drafts, submission, moderation, publication snapshots and outbox
-  remain durable. Restart after fixing configuration; expired leases are reclaimed with a higher fence.
-- To revoke, stop the service, uninstall/revoke the App or token, and clear the credential from the deployment secret store.
-  Never delete outbox/publication rows. Already-created Issues are not modified or closed by BYQ.
-
-## Security checks
-
-The container must remain UID 10006, read-only, all capabilities dropped, with no source/Git/Docker socket/PostgreSQL/DSH
-mount or credential. The only allowed connections are Backend internal publication routes and the fixed GitHub API origin.
-Required CI uses a loopback fake GitHub server and makes zero real GitHub writes.
+The current feedback route sends accepted Product feedback through the local
+`feedback-hub-relay` to the Cloudflare Feedback Hub. Hub moderation and the
+private Cloudflare Publisher remain documented in
+[Central Feedback Hub operations](central-feedback-hub.md). The
+`BYQ_FEEDBACK_PUBLISHER_TOKEN` described there is the Cloudflare Hub/Publisher
+service-binding credential; it is not a local Compose or Backend credential.

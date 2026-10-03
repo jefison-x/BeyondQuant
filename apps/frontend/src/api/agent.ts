@@ -25,8 +25,9 @@ async function jsonRequest<T>(path: string, token: string, init: RequestInit = {
     const unknownPrompt = response.status === 502 && body.error?.code === "prompt_outcome_unknown";
     const message = typeof body.error?.message === "string" ? body.error.message
       : typeof body.detail === "string" ? body.detail : "agent request failed";
+    const productCode = typeof body.error?.code === "string" ? body.error.code : undefined;
     throw new AgentRequestError(message.slice(0, 500), response.status,
-      maintenance ? "chat_maintenance" : unknownPrompt ? "prompt_outcome_unknown" : undefined);
+      productCode ?? (maintenance ? "chat_maintenance" : unknownPrompt ? "prompt_outcome_unknown" : undefined));
   }
   return (await response.json()) as T;
 }
@@ -104,7 +105,10 @@ export async function streamWorkflowEvents(
     signal,
   });
   if (!response.ok || !response.body) {
-    throw new AgentRequestError("workflow stream failed", response.status);
+    const body = (await response.json().catch(() => ({}))) as { error?: { code?: unknown; message?: unknown } };
+    const code = typeof body.error?.code === "string" ? body.error.code : undefined;
+    const message = typeof body.error?.message === "string" ? body.error.message : "workflow stream failed";
+    throw new AgentRequestError(message.slice(0, 500), response.status, code);
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();

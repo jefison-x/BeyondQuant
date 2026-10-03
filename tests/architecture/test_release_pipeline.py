@@ -29,6 +29,8 @@ class ReleasePipelineTests(unittest.TestCase):
         expected = set(re.findall(r'^  ([a-z][a-z0-9-]*):$', services, re.MULTILINE)) - {'postgres'}
         self.assertEqual(set(images.SERVICES), expected)
         self.assertEqual(len(images.SERVICES), len(expected))
+        self.assertNotIn('feedback-publisher', images.SERVICES)
+        self.assertIn('feedback-hub-relay', images.SERVICES)
 
     def test_missing_durable_worker_image_or_sbom_is_rejected(self):
         for worker in ('backtest-worker', 'factor-worker', 'optimization-worker'):

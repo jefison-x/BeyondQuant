@@ -28,7 +28,7 @@ def draft_payload() -> dict[str, object]:
     }
 
 
-def test_feedback_api_owner_preview_moderation_and_outbox() -> None:
+def test_feedback_api_owner_preview_submit_and_hub_outbox() -> None:
     headers = {
         **trusted_agent_context("feedback-api-owner"),
         "x-byq-feedback-browser-family": "chrome", "x-byq-feedback-os-family": "linux",
@@ -36,6 +36,8 @@ def test_feedback_api_owner_preview_moderation_and_outbox() -> None:
     options = client.get("/v1/feedback/options", headers=headers)
     assert options.status_code == 200
     assert options.json()["privacy"]["normal_user_github_configuration"] is False
+    assert "publisher" not in options.json()
+    assert "central_hub" in options.json()
 
     created = client.post("/v1/feedback/items", headers=headers, json=draft_payload())
     assert created.status_code == 201, created.text
@@ -67,28 +69,9 @@ def test_feedback_api_owner_preview_moderation_and_outbox() -> None:
         {"feedback": feedback_id},
     )
     assert hub_outbox["state"] == "queued" and len(hub_outbox["snapshot_hash"]) == 64
-
-    denied = client.get("/v1/feedback/moderation/items", headers={"x-byq-actor-principal": "reader", "x-byq-actor-role": "user"})
-    assert denied.status_code == 403
-    moderator = {"x-byq-actor-principal": "feedback-admin", "x-byq-actor-role": "admin"}
-    inbox = client.get("/v1/feedback/moderation/items", headers=moderator)
-    assert inbox.status_code == 200 and inbox.json()["total"] == 1
-    assert "owner_principal" not in inbox.text and "workspace_id" not in inbox.text
-
-    triage = client.post(
-        f"/v1/feedback/moderation/items/{feedback_id}/triage", headers=moderator,
-        json={"expected_version": submitted["version"], "rationale": "复现信息完整", "idempotency_key": "api-triage"},
-    )
-    assert triage.status_code == 200, triage.text
-    accept = client.post(
-        f"/v1/feedback/moderation/items/{feedback_id}/accept", headers=moderator,
-        json={"expected_version": triage.json()["feedback"]["version"], "rationale": "进入公开发布队列",
-              "idempotency_key": "api-accept"},
-    )
-    assert accept.status_code == 200, accept.text
-    assert accept.json()["feedback"]["publication_status"] == "publisher_unconfigured"
-    status = client.get("/v1/feedback/moderation/publisher-status", headers=moderator)
-    assert status.json()["configured"] is False and status.json()["queue"]["queued"] == 1
+    assert "publication_status" not in submitted
+    assert client.get("/v1/feedback/moderation/items", headers=headers).status_code == 404
+    assert client.post("/internal/feedback-publications/claim", json={"worker_id": "legacy-worker"}).status_code == 404
 
 
 def test_feedback_api_fails_closed_for_cross_workspace_and_unsafe_payload() -> None:
@@ -105,18 +88,14 @@ def test_feedback_api_fails_closed_for_cross_workspace_and_unsafe_payload() -> N
     assert "Bearer-secret-value" not in unsafe.text
 
 
-def test_feedback_publisher_internal_routes_require_service_token(monkeypatch) -> None:
-    monkeypatch.setattr(main_module, "FEEDBACK_PUBLISHER_TOKEN", "publisher-test-token")
-    assert client.post("/internal/feedback-publications/claim", json={"worker_id": "worker-api"}).status_code == 401
-    headers = {"x-byq-feedback-publisher-token": "publisher-test-token"}
-    heartbeat = client.post("/internal/feedback-publications/heartbeat", headers=headers, json={
-        "configured": True, "credential_kind": "github_app", "repository": "jefison-x/BeyondQuant",
-        "worker_version": "test-v1",
-    })
-    assert heartbeat.status_code == 200 and heartbeat.json()["accepted"] is True
-    claimed = client.post("/internal/feedback-publications/claim", headers=headers,
-                          json={"worker_id": "worker-api", "limit": 1, "lease_seconds": 30})
-    assert claimed.status_code == 200 and claimed.json()["events"] == []
+def test_feedback_hub_relay_route_remains_service_authenticated(monkeypatch) -> None:
+    monkeypatch.setattr(main_module, "FEEDBACK_HUB_RELAY_TOKEN", "hub-relay-test-token")
+    payload = {"worker_id": "hub-relay-api", "limit": 1, "lease_seconds": 30}
+    assert client.post("/internal/feedback-hub/claim", json=payload).status_code == 401
+    claimed = client.post("/internal/feedback-hub/claim", headers={
+        "x-byq-feedback-hub-relay-token": "hub-relay-test-token",
+    }, json=payload)
+    assert claimed.status_code == 200 and isinstance(claimed.json()["events"], list)
 
 
 def test_agent_feedback_submit_requires_exact_global_approval(monkeypatch) -> None:

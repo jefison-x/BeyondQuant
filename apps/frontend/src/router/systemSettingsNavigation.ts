@@ -13,7 +13,6 @@ import {
   Share,
   Tools,
   Grid,
-  ChatDotRound,
 } from "@element-plus/icons-vue";
 
 export interface SystemSettingsItem {
@@ -33,7 +32,6 @@ export const systemSettingsGroups: SystemSettingsGroup[] = [
     label: "系统",
     items: [
       { path: "/settings/system/overview", label: "系统概览", description: "服务、存储与运行边界", icon: DataBoard },
-      { path: "/settings/system/feedback", label: "反馈审核", description: "分诊、采纳与发布状态", icon: ChatDotRound },
     ],
   },
   {
@@ -81,15 +79,16 @@ const legacySections: Record<string, string> = {
   runtime: "runtime",
   graphs: "workflow",
   access: "access",
-  feedback: "feedback",
 };
 
 export function legacySystemSettingsPath(section?: string | string[]): string {
   const value = Array.isArray(section) ? section[0] : section;
+  if (value === "feedback") return "/agent";
   return `/settings/system/${legacySections[value ?? ""] ?? "overview"}`;
 }
 
 export function legacySystemSettingsRouteName(section?: string | string[]): string {
   const value = Array.isArray(section) ? section[0] : section;
+  if (value === "feedback") return "agent";
   return `system-settings-${legacySections[value ?? ""] ?? "overview"}`;
 }

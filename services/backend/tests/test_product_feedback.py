@@ -91,7 +91,7 @@ def submit(store: ProductFeedbackStore, feedback: dict[str, object], user: dict[
     )["feedback"]
 
 
-def test_feedback_lifecycle_is_workspace_owned_and_accept_enqueues_atomically() -> None:
+def test_feedback_lifecycle_is_workspace_owned_and_hub_receipt_is_authoritative() -> None:
     _admin, alice, bob = provision()
     store = ProductFeedbackStore()
     draft = create(store, alice)
@@ -113,31 +113,75 @@ def test_feedback_lifecycle_is_workspace_owned_and_accept_enqueues_atomically() 
 
     submitted = submit(store, updated, alice)
     assert submitted["status"] == "submitted"
-    moderation = store.list_moderation(actor_role="admin")
-    assert moderation["total"] == 1
-    moderated = moderation["items"][0]
-    assert "workspace_id" not in moderated and "owner_principal" not in moderated
-    assert moderated["submitted_snapshot"]["public_content"]["title"] == updated["title"]
-    with pytest.raises(FeedbackForbidden):
-        store.list_moderation(actor_role="user")
+    assert "publication_status" not in submitted
+    assert submitted["central_hub"]["status"] == "queued"
+    store.hub_relay_heartbeat({
+        "configured": True, "hub_origin": "https://feedback.example", "worker_version": "test-v1",
+    })
+    delivery = store.claim_hub_deliveries({"worker_id": "hub-relay-test", "limit": 1, "lease_seconds": 30})["events"][0]
+    receipt = "cf-hub-receipt-1234567890"
+    store.complete_hub_delivery(delivery["event_id"], {
+        "worker_id": "hub-relay-test", "lease_fence": delivery["lease_fence"],
+        "receipt_id": receipt, "status_token": "status-token-" + "x" * 40,
+    })
+    issue = {"repository": "jefison-x/BeyondQuant", "issue_number": 321,
+             "html_url": "https://github.com/jefison-x/BeyondQuant/issues/321"}
+    store.update_hub_status(delivery["event_id"], {
+        "schema_version": "central-feedback-status.v1", "receipt_id": receipt,
+        "status": "published", "github_issue": issue,
+    })
+    owner = store.get_owner(draft["feedback_id"], trusted_workspace=workspace(alice))["feedback"]
+    assert owner["central_hub"] == {"status": "published", "receipt_id": receipt, "last_error_category": None}
+    assert owner["github_issue"] == issue
+    assert "publication_status" not in owner
+    store.close()
 
-    triaged = store.moderate(
-        draft["feedback_id"], "triage",
-        {"expected_version": submitted["version"], "rationale": "已确认可复现", "idempotency_key": "triage-1"},
-        trusted_actor="feedback-admin", actor_role="admin",
-    )["feedback"]
-    accepted = store.moderate(
-        draft["feedback_id"], "accept",
-        {"expected_version": triaged["version"], "rationale": "进入公开问题队列", "idempotency_key": "accept-1"},
-        trusted_actor="feedback-admin", actor_role="admin",
-    )["feedback"]
-    assert accepted["status"] == "accepted"
-    assert accepted["publication_status"] == "publisher_unconfigured"
-    assert store.outbox_summary(actor_role="admin")["queue"]["queued"] == 1
-    publication = store._fetch_one("SELECT snapshot_json FROM product_feedback_publications WHERE feedback_id=:id", {"id": draft["feedback_id"]})
-    assert publication["snapshot_json"]["schema_version"] == "feedback-publication.v1"
-    outbox = store._fetch_one("SELECT state,destination_key,attempt,lease_owner FROM product_feedback_outbox WHERE feedback_id=:id", {"id": draft["feedback_id"]})
-    assert outbox == {"state": "queued", "destination_key": "github_primary", "attempt": 0, "lease_owner": None}
+
+def test_owner_projection_ignores_historical_local_publication_mapping() -> None:
+    _admin, alice, bob = provision()
+    store = ProductFeedbackStore()
+    draft = create(store, alice, "legacy-publication-projection")
+    submit(store, draft, alice, "legacy-publication-submit")
+    legacy_publication_id = "feedback_publication_" + "f" * 32
+    store._execute("UPDATE product_feedback SET publication_status='published' WHERE feedback_id=:feedback",
+                   {"feedback": draft["feedback_id"]})
+    store._execute("""INSERT INTO product_feedback_publications
+        (publication_id,feedback_id,schema_version,snapshot_json,snapshot_hash,created_by,created_at,
+         github_repository,github_issue_number,github_html_url,provider_identity,published_at)
+        VALUES (:publication,:feedback,'feedback-publication.v1',:snapshot,:hash,'legacy',NOW(),
+                'legacy-org/legacy-repo',77,'https://github.com/legacy-org/legacy-repo/issues/77','legacy-77',NOW())""",
+        {"publication": legacy_publication_id, "feedback": draft["feedback_id"],
+         "snapshot": {"schema_version": "feedback-publication.v1", "public_content": {}, "redactions": {}},
+         "hash": "a" * 64})
+
+    owner = store.get_owner(draft["feedback_id"], trusted_workspace=workspace(alice))["feedback"]
+    assert owner["github_issue"] is None
+    assert owner["central_hub"]["status"] == "queued"
+    assert "publication_status" not in owner
+    legacy = store._fetch_one("SELECT github_issue_number FROM product_feedback_publications WHERE publication_id=:id",
+                              {"id": legacy_publication_id})
+    assert legacy["github_issue_number"] == 77
+
+    command = store._fetch_one("""SELECT command_id,result_json FROM product_feedback_commands
+        WHERE scope_key=:workspace AND actor_principal=:actor AND operation=:operation AND idempotency_key=:key""",
+        {"workspace": workspace(alice), "actor": alice["username"],
+         "operation": f"submit:{draft['feedback_id']}", "key": "legacy-publication-submit"})
+    old_receipt = command["result_json"]
+    old_receipt["feedback"]["publication_status"] = "published"
+    old_receipt["feedback"]["github_issue"] = {
+        "repository": "legacy-org/legacy-repo", "issue_number": 77,
+        "html_url": "https://github.com/legacy-org/legacy-repo/issues/77",
+    }
+    store._execute("UPDATE product_feedback_commands SET result_json=:result WHERE command_id=:id",
+                   {"result": old_receipt, "id": command["command_id"]})
+    receipt = store.reconcile_command("submit", "legacy-publication-submit", feedback_id=draft["feedback_id"],
+        trusted_workspace=workspace(alice), trusted_actor=str(alice["username"]))
+    assert receipt["state"] == "confirmed"
+    assert "publication_status" not in receipt["feedback"]
+    assert receipt["feedback"]["github_issue"] is None
+    assert receipt["feedback"]["central_hub"]["status"] == "queued"
+    with pytest.raises(FeedbackNotFound):
+        store.get_owner(draft["feedback_id"], trusted_workspace=workspace(bob))
     store.close()
 
 
@@ -171,35 +215,12 @@ def test_preview_requires_exact_version_confirmation_and_safe_content() -> None:
     store.close()
 
 
-def test_withdraw_duplicate_pagination_and_rate_limit_are_bounded() -> None:
+def test_withdraw_pagination_and_rate_limit_are_bounded() -> None:
     _admin, alice, _bob = provision()
     store = ProductFeedbackStore()
-    canonical = create(store, alice, "create-canonical")
-    canonical = submit(store, canonical, alice, "submit-canonical")
-    canonical = store.moderate(
-        canonical["feedback_id"], "triage",
-        {"expected_version": canonical["version"], "rationale": "canonical item", "idempotency_key": "triage-canonical"},
-        trusted_actor="feedback-admin", actor_role="admin",
-    )["feedback"]
-
-    second = create(store, alice, "create-second")
-    second = submit(store, second, alice, "submit-second")
-    second = store.moderate(
-        second["feedback_id"], "triage",
-        {"expected_version": second["version"], "rationale": "duplicate candidate", "idempotency_key": "triage-second"},
-        trusted_actor="feedback-admin", actor_role="admin",
-    )["feedback"]
-    duplicate = store.moderate(
-        second["feedback_id"], "duplicate",
-        {"expected_version": second["version"], "rationale": "same reproduction",
-         "canonical_feedback_id": canonical["feedback_id"], "idempotency_key": "duplicate-second"},
-        trusted_actor="feedback-admin", actor_role="admin",
-    )["feedback"]
-    assert duplicate["status"] == "duplicate"
-    assert "canonical_feedback_id" not in duplicate
-
-    third = create(store, alice, "create-third")
-    third = submit(store, third, alice, "submit-third")
+    first = submit(store, create(store, alice, "create-first"), alice, "submit-first")
+    second = submit(store, create(store, alice, "create-second"), alice, "submit-second")
+    third = submit(store, create(store, alice, "create-third"), alice, "submit-third")
     withdrawn = store.withdraw(
         third["feedback_id"], {"expected_version": third["version"], "idempotency_key": "withdraw-third"},
         trusted_workspace=workspace(alice), trusted_actor=str(alice["username"]),
@@ -215,96 +236,89 @@ def test_withdraw_duplicate_pagination_and_rate_limit_are_bounded() -> None:
     store.close()
 
 
-def test_accept_and_outbox_roll_back_as_one_transaction(monkeypatch) -> None:
+def test_withdraw_is_rejected_after_hub_receipt_and_review() -> None:
     _admin, alice, _bob = provision()
     store = ProductFeedbackStore()
     item = submit(store, create(store, alice), alice)
-    item = store.moderate(
-        item["feedback_id"], "triage",
-        {"expected_version": item["version"], "rationale": "ready for review", "idempotency_key": "rollback-triage"},
-        trusted_actor="feedback-admin", actor_role="admin",
-    )["feedback"]
+    store.hub_relay_heartbeat({
+        "configured": True, "hub_origin": "https://feedback.example", "worker_version": "test-v1",
+    })
+    delivery = store.claim_hub_deliveries({"worker_id": "hub-relay-withdraw", "limit": 1, "lease_seconds": 30})["events"][0]
+    receipt = "cf-hub-receipt-withdraw-12345"
+    store.complete_hub_delivery(delivery["event_id"], {
+        "worker_id": "hub-relay-withdraw", "lease_fence": delivery["lease_fence"],
+        "receipt_id": receipt, "status_token": "status-token-" + "w" * 40,
+    })
+    with pytest.raises(FeedbackConflict, match="central hub delivery starts"):
+        store.withdraw(item["feedback_id"], {
+            "expected_version": item["version"], "idempotency_key": "withdraw-after-receipt",
+        }, trusted_workspace=workspace(alice), trusted_actor=str(alice["username"]))
+    store.update_hub_status(delivery["event_id"], {
+        "schema_version": "central-feedback-status.v1", "receipt_id": receipt, "status": "triaged",
+    })
+    with pytest.raises(FeedbackConflict, match="central hub delivery starts"):
+        store.withdraw(item["feedback_id"], {
+            "expected_version": item["version"], "idempotency_key": "withdraw-after-triage",
+        }, trusted_workspace=workspace(alice), trusted_actor=str(alice["username"]))
+    current = store.get_owner(item["feedback_id"], trusted_workspace=workspace(alice))["feedback"]
+    assert current["status"] == "submitted"
+    assert current["central_hub"]["status"] == "triaged"
+    store.close()
+
+
+def test_hub_delivery_retry_fences_unknown_attempt_and_publishes_receipt() -> None:
+    _admin, alice, _bob = provision()
+    store = ProductFeedbackStore()
+    item = submit(store, create(store, alice), alice)
+    store.hub_relay_heartbeat({
+        "configured": True, "hub_origin": "https://feedback.example", "worker_version": "test-v1",
+    })
+    first = store.claim_hub_deliveries({"worker_id": "hub-relay-one", "limit": 1, "lease_seconds": 30})["events"][0]
+    assert first["attempt"] == 1 and first["lease_fence"] == 1
+    with pytest.raises(FeedbackConflict, match="stale"):
+        store.retry_hub_delivery(first["event_id"], {
+            "worker_id": "hub-relay-one", "lease_fence": 2, "error_category": "transport_ambiguous",
+            "retry_after_seconds": 5,
+        })
+    retry = store.retry_hub_delivery(first["event_id"], {
+        "worker_id": "hub-relay-one", "lease_fence": 1, "error_category": "transport_ambiguous",
+        "retry_after_seconds": 5,
+    })
+    assert retry["status"] == "retry_wait"
+    with pytest.raises(FeedbackConflict, match="central hub delivery starts"):
+        store.withdraw(item["feedback_id"], {
+            "expected_version": item["version"], "idempotency_key": "withdraw-after-unknown-delivery",
+        }, trusted_workspace=workspace(alice), trusted_actor=str(alice["username"]))
+    store._execute("UPDATE product_feedback_hub_outbox SET next_attempt_at=NOW()-INTERVAL '1 second'")
+    second = store.claim_hub_deliveries({"worker_id": "hub-relay-two", "limit": 1, "lease_seconds": 30})["events"][0]
+    assert second["attempt"] == 2 and second["lease_fence"] == 2
+    receipt = "cf-hub-receipt-recovered-12345"
+    store.complete_hub_delivery(second["event_id"], {
+        "worker_id": "hub-relay-two", "lease_fence": 2,
+        "receipt_id": receipt, "status_token": "status-token-" + "r" * 40,
+    })
+    owner = store.get_owner(item["feedback_id"], trusted_workspace=workspace(alice))["feedback"]
+    assert owner["central_hub"] == {"status": "received", "receipt_id": receipt, "last_error_category": None}
+    assert owner["github_issue"] is None
+    store.close()
+
+
+def test_hub_outbox_insert_rolls_back_submission(monkeypatch) -> None:
+    _admin, alice, _bob = provision()
+    store = ProductFeedbackStore()
+    draft = create(store, alice)
     original_execute = feedback_module.execute
 
-    def fail_outbox(connection, sql, params=None):
-        if "INSERT INTO product_feedback_outbox" in sql:
-            raise RuntimeError("injected outbox failure")
+    def fail_hub_outbox(connection, sql, params=None):
+        if "INSERT INTO product_feedback_hub_outbox" in sql:
+            raise RuntimeError("injected hub outbox failure")
         return original_execute(connection, sql, params)
 
-    monkeypatch.setattr(feedback_module, "execute", fail_outbox)
-    with pytest.raises(RuntimeError, match="injected outbox failure"):
-        store.moderate(
-            item["feedback_id"], "accept",
-            {"expected_version": item["version"], "rationale": "queue publication", "idempotency_key": "rollback-accept"},
-            trusted_actor="feedback-admin", actor_role="admin",
-        )
-    current = store.get_moderation(item["feedback_id"], actor_role="admin")["feedback"]
-    assert current["status"] == "triaged" and current["publication_status"] == "not_queued"
-    assert store._fetch_one("SELECT COUNT(*) AS count FROM product_feedback_publications")["count"] == 0
-    assert store._fetch_one("SELECT COUNT(*) AS count FROM product_feedback_outbox")["count"] == 0
-    store.close()
-
-
-def test_publisher_lease_fence_retry_reclaim_and_completion_are_bounded() -> None:
-    _admin, alice, _bob = provision()
-    store = ProductFeedbackStore()
-    item = submit(store, create(store, alice), alice)
-    item = store.moderate(
-        item["feedback_id"], "triage",
-        {"expected_version": item["version"], "rationale": "ready to publish", "idempotency_key": "publisher-triage"},
-        trusted_actor="feedback-admin", actor_role="admin",
-    )["feedback"]
-    store.moderate(
-        item["feedback_id"], "accept",
-        {"expected_version": item["version"], "rationale": "approved snapshot", "idempotency_key": "publisher-accept"},
-        trusted_actor="feedback-admin", actor_role="admin",
-    )
-    assert store.claim_publications({"worker_id": "worker-one", "limit": 1, "lease_seconds": 15})["events"] == []
-    store.publisher_heartbeat({"configured": True, "credential_kind": "github_app",
-                               "repository": "jefison-x/BeyondQuant", "worker_version": "test-v1"})
-    event = store.claim_publications({"worker_id": "worker-one", "limit": 1, "lease_seconds": 15})["events"][0]
-    assert event["attempt"] == 1 and event["lease_fence"] == 1
-    with pytest.raises(FeedbackConflict, match="stale"):
-        store.retry_publication(event["event_id"], {"worker_id": "worker-one", "lease_fence": 2,
-            "error_category": "rate_limited", "retry_after_seconds": 5})
-    retry = store.retry_publication(event["event_id"], {"worker_id": "worker-one", "lease_fence": 1,
-        "error_category": "rate_limited", "retry_after_seconds": 5})
-    assert retry["status"] == "retry_wait"
-    store._execute("UPDATE product_feedback_outbox SET next_attempt_at=NOW()-INTERVAL '1 second'")
-    reclaimed = store.claim_publications({"worker_id": "worker-two", "limit": 1, "lease_seconds": 15})["events"][0]
-    assert reclaimed["attempt"] == 2 and reclaimed["lease_fence"] == 2
-    completed = store.complete_publication(reclaimed["event_id"], {
-        "worker_id": "worker-two", "lease_fence": 2, "repository": "jefison-x/BeyondQuant",
-        "issue_number": 321, "html_url": "https://github.com/jefison-x/BeyondQuant/issues/321",
-        "provider_identity": "github-issue-9001",
-    })
-    assert completed["status"] == "published"
-    status = store.outbox_summary(actor_role="admin")
-    assert status["configured"] is True and status["queue"]["published"] == 1
-    owner = store.get_owner(item["feedback_id"], trusted_workspace=workspace(alice))["feedback"]
-    assert owner["publication_status"] == "published"
-    assert owner["github_issue"] == {"repository": "jefison-x/BeyondQuant", "issue_number": 321,
-                                     "html_url": "https://github.com/jefison-x/BeyondQuant/issues/321"}
-    assert store.get_moderation(item["feedback_id"], actor_role="admin")["feedback"]["github_issue"] == owner["github_issue"]
-    store.close()
-
-
-def test_publisher_terminal_error_and_attempt_budget_fail_closed() -> None:
-    _admin, alice, _bob = provision()
-    store = ProductFeedbackStore()
-    item = submit(store, create(store, alice), alice)
-    item = store.moderate(item["feedback_id"], "triage",
-        {"expected_version": item["version"], "rationale": "triaged", "idempotency_key": "terminal-triage"},
-        trusted_actor="feedback-admin", actor_role="admin")["feedback"]
-    store.moderate(item["feedback_id"], "accept",
-        {"expected_version": item["version"], "rationale": "accepted", "idempotency_key": "terminal-accept"},
-        trusted_actor="feedback-admin", actor_role="admin")
-    store.publisher_heartbeat({"configured": True, "credential_kind": "fine_grained_token",
-                               "repository": "jefison-x/BeyondQuant", "worker_version": "test-v1"})
-    event = store.claim_publications({"worker_id": "worker-terminal", "limit": 1, "lease_seconds": 15})["events"][0]
-    result = store.retry_publication(event["event_id"], {"worker_id": "worker-terminal", "lease_fence": 1,
-        "error_category": "permission_denied", "retry_after_seconds": 30})
-    assert result["status"] == "failed_terminal"
-    assert store.claim_publications({"worker_id": "worker-terminal", "limit": 1, "lease_seconds": 15})["events"] == []
-    assert store.outbox_summary(actor_role="admin")["last_error_category"] == "permission_denied"
+    monkeypatch.setattr(feedback_module, "execute", fail_hub_outbox)
+    with pytest.raises(RuntimeError, match="injected hub outbox failure"):
+        submit(store, draft, alice, "hub-outbox-rollback")
+    current = store.get_owner(draft["feedback_id"], trusted_workspace=workspace(alice))["feedback"]
+    assert current["status"] == "draft" and current["central_hub"] is None
+    assert store._fetch_one("SELECT COUNT(*) AS count FROM product_feedback_hub_outbox WHERE feedback_id=:feedback",
+                            {"feedback": draft["feedback_id"]})["count"] == 0
     store.close()
