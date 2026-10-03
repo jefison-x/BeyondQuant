@@ -324,7 +324,9 @@ class RealCodeFactTests(unittest.TestCase):
         self.assertIn("PRIMARY KEY (owner_principal, workspace_id, session_id, sequence)", call_evidence)
 
     def test_previous_unconfirmed_rejection_and_outcome_unknown(self):
-        source = CONTINUATION.read_text(encoding="utf-8")
+        # This archived design binds its original pre-Clean-Break mechanism.
+        # Current ADR-0090 request/unknown-result contracts are tested separately.
+        source = _historical_source(str(CONTINUATION.relative_to(ROOT)))
         self.assertIn("previous continuation result is unconfirmed", source)
         self.assertIn("row['status'] = 'outcome_unknown'", source)
         self.assertIn("FOR UPDATE", source)

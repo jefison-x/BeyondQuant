@@ -278,7 +278,7 @@ class ResearchTaskActionMixin:
                     plan_version = :plan_version, task_version = :task_version, stage = :stage,
                     iteration = :iteration, status = :status, next_action = :next_action,
                     plan = :plan, idempotency_key = :idempotency_key, request_hash = :request_hash,
-                    legacy_reason = NULL, updated_at = :now
+                    updated_at = :now
                     WHERE task_id = :task AND plan_version = :expected_plan_version
                       AND task_version = :expected_task_version
                     RETURNING task_id""", {

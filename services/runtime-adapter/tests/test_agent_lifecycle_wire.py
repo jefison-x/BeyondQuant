@@ -1,4 +1,4 @@
-"""Opt-in synthetic HTTP/official-process test; no external model or market data."""
+"""Opt-in synthetic Backend/MCP and official-process test; paid mode is separately gated."""
 import importlib.util
 import json
 import os
@@ -14,7 +14,7 @@ import httpx
 import pytest
 import uvicorn
 
-from app.runtime import RuntimeAdapter, SessionConflict
+from app.runtime import RuntimeAdapter
 
 pytestmark = pytest.mark.skipif(os.environ.get("BYQ_LIFECYCLE_WIRE_TEST") != "1",
                               reason="requires synthetic Backend/MCP and read-only Gateway source")
@@ -22,7 +22,7 @@ pytestmark = pytest.mark.skipif(os.environ.get("BYQ_LIFECYCLE_WIRE_TEST") != "1"
 
 @pytest.mark.parametrize("outcome", ["completed", "cancelled", pytest.param("paid", marks=pytest.mark.skipif(
     os.environ.get("BYQ_LIFECYCLE_PAID_TEST") != "1", reason="separate bounded paid authorization required"))])
-def test_official_registration_gateway_http_delivery_and_restart(monkeypatch, tmp_path, outcome):
+def test_official_registration_gateway_collector_terminal_ack_retry_same_boot(monkeypatch, tmp_path, outcome):
     paid_key = os.environ.get("BYQ_LIFECYCLE_PAID_KEY", "").strip().strip('"').strip("'")
     paid = outcome == "paid"
     if paid:
@@ -35,7 +35,6 @@ def test_official_registration_gateway_http_delivery_and_restart(monkeypatch, tm
     sys.modules["wire_gateway"] = module
     spec.loader.exec_module(module)
     from wire_gateway import main as gateway
-    from wire_gateway.agent_lifecycle_delivery import LifecycleDelivery
     from wire_gateway.trace_store import TraceStore
     from app import main as runtime_http
 
@@ -135,34 +134,56 @@ def test_official_registration_gateway_http_delivery_and_restart(monkeypatch, tm
     monkeypatch.setattr(gateway, "BACKEND_URL", backend)
     traces = TraceStore(tmp_path)
     monkeypatch.setattr(gateway, "trace_store", traces)
-    lost_ack = threading.Event()
-    blocked_ack = threading.Event()
-    original_post = gateway._adapter_post
-    def postpone_first_ack(path, **kwargs):
-        if not paid and path.endswith("/terminal-receipt") and not blocked_ack.is_set():
-            from fastapi import HTTPException
-            blocked_ack.set()
-            raise HTTPException(status_code=503, detail="synthetic terminal ack unavailable")
-        return original_post(path, **kwargs)
-    monkeypatch.setattr(gateway, "_adapter_post", postpone_first_ack)
-    terminals = []
-    def send(context, event):
-        result = gateway._send_agent_lifecycle(context, event)
+    monkeypatch.setattr(gateway, "_register_answer_delivery", lambda _: None)
+    monkeypatch.setattr(gateway, "product_sessions", gateway.ProductSessionRegistry())
+    original_adapter_post = gateway._adapter_post
+    original_backend_authority_request = gateway._backend_runtime_authority_request
+    terminal_ack_attempts = []
+    backend_root_closes = []
+    terminal_events = []
+    lost_ack_response = threading.Event()
+    terminal_send_completed = threading.Event()
+
+    def lose_first_ack_response_after_commit(path, *, payload=None, timeout=20.0):
+        reply = original_adapter_post(path, payload=payload, timeout=timeout)
+        if path.endswith("/terminal-receipt"):
+            terminal_ack_attempts.append((path, payload, gateway._adapter_authority()["boot_id"]))
+            if not paid and len(terminal_ack_attempts) == 1:
+                # The real Adapter commits the exact receipt before this synthetic
+                # transport drops the first response. Gateway must retry only that
+                # receipt under the same still-current Adapter boot.
+                lost_ack_response.set()
+                from fastapi import HTTPException
+                raise HTTPException(status_code=503, detail="synthetic committed ACK response lost")
+        return reply
+
+    def record_backend_root_close(method, path, payload=None, scope=None):
+        reply = original_backend_authority_request(method, path, payload, scope)
+        if path.startswith("/internal/runtime-authority/roots/") and path.endswith("/close"):
+            backend_root_closes.append((method, path, payload, reply))
+        return reply
+
+    original_send_agent_lifecycle = gateway._send_agent_lifecycle
+
+    def observe_lifecycle_send(context, event, *, expected_boot_id=None):
         if event["outcome"] != "active":
-            terminals.append(event)
-            if len(terminals) == 1:
-                lost_ack.set()
-                raise TimeoutError("synthetic response lost after committed terminal")
-        return result
-    delivery = LifecycleDelivery(tmp_path, traces, send)
-    monkeypatch.setattr(gateway, "lifecycle_delivery", delivery)
+            terminal_events.append((event, expected_boot_id))
+        reply = original_send_agent_lifecycle(context, event, expected_boot_id=expected_boot_id)
+        if event["outcome"] != "active":
+            terminal_send_completed.set()
+        return reply
+
+    monkeypatch.setattr(gateway, "_adapter_post", lose_first_ack_response_after_commit)
+    monkeypatch.setattr(gateway, "_backend_runtime_authority_request", record_backend_root_close)
+    monkeypatch.setattr(gateway, "_send_agent_lifecycle", observe_lifecycle_send)
     collector = None
+    session = None
     try:
         adapter.create_session(session_id, trace_id, owner, workspace)
         session = gateway.ProductSession(conversation_id, session_id, trace_id,
-                                         gateway.Principal(subject=owner), workspace)
-        delivery.register(session)
-        delivery.start()
+                                         gateway.Principal(subject=owner), workspace,
+                                         boot_id=adapter.boot_id)
+        gateway.product_sessions.add(session)
         collector = threading.Thread(target=gateway._collect_trace, args=(session,), daemon=True)
         collector.start()
         adapter.submit_prompt(session_id, "仅做合成接口核查：调用 byq_agent_run_start，参数必须且只能是 "
@@ -185,33 +206,43 @@ def test_official_registration_gateway_http_delivery_and_restart(monkeypatch, tm
             adapter.cancel_session(session_id, "hard")
             allow_answer.set()
         if not paid:
-            assert blocked_ack.wait(20)
+            assert lost_ack_response.wait(20)
             assert httpx.get(receipt_url, headers=context).json()["run"]["status"] == outcome
-            with pytest.raises(SessionConflict, match="cleanup"):
-                adapter.submit_prompt(session_id, "must not execute before cleanup acknowledgement")
-        assert lost_ack.wait(60 if paid else 20)
+        assert terminal_send_completed.wait(60 if paid else 20)
         assert httpx.get(receipt_url, headers=context).json()["run"]["status"] == outcome
-        delivery.close()
-        delivery = LifecycleDelivery(tmp_path, TraceStore(tmp_path), send)
-        delivery.start()
-        deadline = time.monotonic() + 10
-        ledger = tmp_path / f"{session_id}.lifecycle.json"
-        while time.monotonic() < deadline:
-            if len(terminals) == 2 and json.loads(ledger.read_text())["pending"] == {}:
-                break
-            time.sleep(0.05)
-        assert len(terminals) == 2
-        assert terminals[0] == terminals[1]
-        assert json.loads(ledger.read_text())["pending"] == {}
-        result = httpx.get(receipt_url, headers=context).json()["run"]
-        assert result["root_run_id"] == terminals[0]["root_run_id"]
-        assert result["status"] == outcome
+        expected_ack_count = 1 if paid else 2
+        assert len(terminal_events) == 1
+        terminal_event, expected_boot_id = terminal_events[0]
+        assert terminal_event["outcome"] == outcome
+        assert expected_boot_id == adapter.boot_id
+        receipt = gateway.lifecycle_receipt(terminal_event)
+        assert len(backend_root_closes) == 1
+        close_method, close_path, close_payload, closed = backend_root_closes[0]
+        assert close_method == "POST"
+        assert close_path == f"/internal/runtime-authority/roots/{terminal_event['root_run_id']}/close"
+        assert close_payload == {
+            "schema_version": gateway.RUNTIME_ROOT_CLOSE_SCHEMA,
+            "boot_id": adapter.boot_id,
+            "sequence": terminal_event["sequence"],
+            "outcome": outcome,
+            "event_sha256": receipt["event_sha256"],
+        }
+        assert closed == {"receipt": receipt}
+        assert len(terminal_ack_attempts) == expected_ack_count
+        expected_ack = (f"/internal/runtime/sessions/{session_id}/terminal-receipt",
+                        closed, expected_boot_id)
+        assert terminal_ack_attempts == [expected_ack] * expected_ack_count
         assert not record.pending_terminal_receipts
+        assert not list(tmp_path.glob("*.lifecycle.json"))
+        result = httpx.get(receipt_url, headers=context).json()["run"]
+        assert result["root_run_id"] == terminal_event["root_run_id"]
+        assert result["status"] == outcome
         if paid:
             assert len(paid_calls) == 2
     finally:
         allow_answer.set()
-        delivery.close()
+        if session is not None:
+            session.released = True
         adapter.close()
         server.should_exit = True
         http_thread.join(5)

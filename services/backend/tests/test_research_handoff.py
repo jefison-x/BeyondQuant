@@ -3,6 +3,7 @@ import os
 import pytest
 
 from app.research import ResearchNotFound, ResearchStore
+from packages.contracts.continuation_request import RESERVATION_SCHEMA_VERSION, profile_binding, request_limits
 from tests.test_research_continuation import setup_permission
 
 pytestmark = pytest.mark.skipif(not os.environ.get('BYQ_DATABASE_URL'), reason='isolated PostgreSQL required')
@@ -57,7 +58,7 @@ def test_permission_alone_does_not_mean_continuation_is_queued(monkeypatch):
     store, task, context, payload = setup_permission()
     try:
         monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
-        store.create_continuation_permission(task, {**payload, 'token_limit': 4000000}, trusted_context=context)
+        store.create_continuation_permission(task, payload, trusted_context=context)
         view = store.get_task_handoff(task, trusted_context=context)
         assert view['state'] == 'blocked'
         assert view['reason'] == 'no_registered_executor'
@@ -72,13 +73,59 @@ def test_durable_receipt_controls_queue_state_and_revocation(delivery_status, ex
     store, task, context, payload = setup_permission()
     try:
         monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
-        store.create_continuation_permission(task, {**payload, 'token_limit': 4000000}, trusted_context=context)
+        store.create_continuation_permission(task, payload, trusted_context=context)
         store._execute('UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task', {
-            'task': task, 'budget': [{'status': delivery_status, 'instruction': 'synthetic',
-                'token_limit': 100, 'charged_tokens': None, 'expires_at': (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()}]})
+             'task': task, 'budget': [{'schema_version': RESERVATION_SCHEMA_VERSION,
+                'reservation_id': 'continuation_' + 'a' * 32,
+                'event_key': 'ready-v1:' + 'a' * 64, 'input_sha256': 'b' * 64,
+                'grant_kind': 'explicit', 'grant_version': 1,
+                'execution_profile': profile_binding(), 'request_limits': request_limits(),
+                'status': delivery_status, 'instruction': 'synthetic',
+                'expires_at': (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()}]})
         assert store.get_task_handoff(task, trusted_context=context)['state'] == expected
         store.revoke_continuation_permission(task, grant_version=1, trusted_context=context)
         assert store.get_task_handoff(task, trusted_context=context)['state'] != 'continuation_queued'
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize(('status', 'expected_reason'), [
+    ('reserved', 'unsupported_model_grant'),
+    ('outcome_unknown', 'continuation_result_unconfirmed'),
+])
+def test_legacy_data_ready_liability_prevents_a_new_human_grant_and_dispatch(
+        status, expected_reason, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    store, task, context, payload = setup_permission()
+    now = datetime.now(timezone.utc)
+    receipt = {
+        'reservation_id': 'continuation_' + 'a' * 32,
+        'grant_kind': 'data_ready', 'grant_version': None,
+        'event_key': 'ready-v1:' + 'a' * 64, 'input_sha256': 'b' * 64,
+        'token_limit': 8000000, 'status': status, 'run_id': None,
+        'charged_tokens': None, 'settlement_sha256': None,
+        'created_at': (now - timedelta(minutes=1)).isoformat(),
+        'instruction': 'legacy data-ready model instruction',
+        'dispatch_attempts': 0, 'next_attempt_at': (now - timedelta(minutes=1)).isoformat(),
+        'expires_at': (now + timedelta(hours=1)).isoformat(),
+    }
+    try:
+        # Store the historical reservation first, then add a valid grant. The
+        # attempted v2 grant must fail without conferring dispatch eligibility.
+        store._execute('UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
+            {'task': task, 'budget': [receipt]})
+        with pytest.raises(ValueError, match='unresolved legacy continuation liability'):
+            store.create_continuation_permission(task, payload, trusted_context=context)
+        assert store.get_continuation_permission(task, trusted_context=context)['permission'] is None
+        monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
+
+        view = store.get_task_handoff(task, trusted_context=context)
+        assert view['state'] == 'needs_reconciliation'
+        assert view['reason'] == expected_reason
+        persisted = store._fetch_one('SELECT continuation_budget FROM research_tasks WHERE task_id=:task',
+            {'task': task})['continuation_budget']
+        assert persisted == [receipt]
     finally:
         store.close()
 

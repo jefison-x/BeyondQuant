@@ -1,4 +1,14 @@
-# 任务续接预算账本合同（ADR-0065）
+# 历史任务续接预算账本合同（ADR-0065）
+
+> **历史合同，已被 Accepted [ADR-0090](../architecture/adr/ADR-0090-continuation-request-limits.md) 取代。**
+> 当前 0.10 新许可使用 `task-continuation-permission.v2` 和固定
+> `task-ready-read.v1` 单次只读请求档案，`max_turns=1`，不接受 `token_limit`，
+> 不恢复累计预算。持久 reservation 保留业务责任、幂等与未知结果；真实 usage
+> 和请求上限分开。旧记录仅供读取、撤销与对账，不取得新的 dispatch 资格。
+> 下文及 `.29` 证据仅说明旧实现，不能作为当前验收或部署依据。
+> 当前资格以 ADR-0090、[Phase17 最终验收](../clean-break/phase17-final-golden-acceptance.md)
+> 和 [ADR-0091](../architecture/adr/ADR-0091-workspace-reset-fact-retention.md) 为准。
+
 
 状态：已实现持久许可、预算预留/结算、通知消费者、MCP 原任务范围门禁与前端许可控件。
 **F6 已通过 `.29` 集成资格验证；普通分发默认 `BYQ_F6_EXECUTOR_ENABLED=0`，启用须受控部署。**

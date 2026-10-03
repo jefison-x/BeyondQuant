@@ -1,0 +1,32 @@
+--- a/root-readonly-panel.mjs
++++ b/root-readonly-panel.mjs
+@@ -4,0 +5 @@
++import { fileURLToPath } from 'node:url';
+@@ -13,0 +15,17 @@
++const correction=load('/tmp/byq-phase17-v13-ui-catalog-repair-v2-20261001/root-ui-offline-acceptance.json');
++check(correction.status==='ROOT_PASS_UI_CATALOG_OBSERVER_OFFLINE_ONLY'
++ &&correction.candidate_helper_sha256===digest(fileURLToPath(import.meta.url))
++ &&correction.original_helper_sha256===gates.helper_bindings.readonly_panel.sha256,'qualified UI correction binding');
++function permittedAgentRead(method,path){return method==='GET'&&path==='/v1/agent/sessions';}
++function isAgentPath(path){
++ // Canonical GET catalog is the sole Agent-named read allowed by this probe.
++ // Decode bounded path spellings and fail closed on ambiguous encodings.
++ let decoded=path;
++ for(let depth=0;depth<3;depth++){
++  if(decoded.replace(/\/+/g,'/').startsWith('/v1/agent'))return true;
++  try{const next=decodeURIComponent(decoded);if(next===decoded)return false;decoded=next;}
++  catch{return true;}
++ }
++ return true;
++}
++function noAgentAction(request){return !isAgentPath(request.path)||permittedAgentRead(request.method,request.path);}
+@@ -16 +34 @@
+-const out=base+'/READONLY-PANEL';check(!existsSync(out),'readonly UI probe already exists; no replay');mkdirSync(out,{mode:0o700});
++const out=base+'/READONLY-PANEL-CATALOG-QUALIFIED';check(!existsSync(out),'readonly UI probe already exists; no replay');mkdirSync(out,{mode:0o700});
+@@ -25 +43,2 @@
+-  if(url.origin!==origin || !(['GET','HEAD'].includes(method) || (method==='POST'&&url.pathname==='/api/auth/login'&&loginPosts===0))){blocked.push({method,path:url.pathname});await route.abort();return;}
++  if(url.origin!==origin || !(['GET','HEAD'].includes(method) || (method==='POST'&&url.pathname==='/api/auth/login'&&loginPosts===0))
++   || (isAgentPath(url.pathname)&&!permittedAgentRead(method,url.pathname))){blocked.push({method,path:url.pathname});await route.abort();return;}
+@@ -79 +98 @@
+- check(loginPosts===1&&blocked.length===0&&requests.every(r=>!r.path.startsWith('/v1/agent/')),'no Agent/domain mutation');
++ check(loginPosts===1&&blocked.length===0&&requests.every(noAgentAction),'no Agent/domain mutation');

@@ -15,6 +15,12 @@ content, not a current Product Core ADR roster.
 [ADR-0089](ADR-0089-clean-break-gpu-acceptance-scope.md) narrows the BYQ 0.10
 GPU verification gate; it does not alter the six Product Core ADRs.
 
+[ADR-0090](ADR-0090-continuation-request-limits.md) is **Accepted** by the maintainer
+on 2026-10-01. It separates background continuation authorization from one
+request's execution limits, preserves durable authorization and unknown-outcome
+responsibility, and does not restore an old DSH session or budget. Its implementation
+and live profile qualification remain separate gates.
+
 ## Historical ADR index (non-normative)
 
 Architecture Decision Record（ADR）记录改变或澄清持久系统边界的决策。以下边界的
@@ -180,3 +186,11 @@ Proposed 只允许规划/验证，不授权越界实现。Accepted 必须记录�
 
 - ADR-0068 按维护者明确授权免除当前及之后所有开发步骤的 Community 原实现检查；
   保留只读保护、主动复用分类与真实数据迁移验证。
+
+[ADR-0091](ADR-0091-workspace-reset-fact-retention.md) is **Accepted**. Explicit
+personal Workspace reset atomically archives classified closed user payloads
+for seven days, restores registration defaults, and retains the same account
+and Workspace identity. Unresolved or unknown external responsibility blocks
+reset until reconciled; minimal retired-key replay protection remains separate.
+Implementation and real E acceptance are recorded in the Phase17 evidence;
+acceptance does not authorize resetting existing production data.

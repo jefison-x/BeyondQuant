@@ -20,7 +20,9 @@ class CleanBreakGovernanceTests(unittest.TestCase):
             self.assertEqual(len(matches), 1)
             self.assertIn("Status: Accepted under ADR-0088", matches[0].read_text())
         old_adrs = list((ROOT / "docs/architecture/adr").glob("ADR-*.md"))
-        historical = [p for p in old_adrs if p.name != "ADR-0088-clean-break-baseline-activation.md"]
+        # ADR-0088 archives pre-baseline product ADRs, not subsequently
+        # accepted Clean Break decisions such as request limits and reset.
+        historical = [p for p in old_adrs if int(p.name[4:8]) < 88 or int(p.name[4:8]) == 89]
         self.assertTrue(historical)
         governance = {15, 59, 68, 70, 80, 89}
         for path in historical:
@@ -29,6 +31,10 @@ class CleanBreakGovernanceTests(unittest.TestCase):
                 self.assertIn("Current non-product governance/security policy", path.read_text(), path.name)
             else:
                 self.assertIn("Historical-only under BYQ 0.10 Clean Break", path.read_text(), path.name)
+        for number in (90, 91):
+            matches = list((ROOT / "docs/architecture/adr").glob(f"ADR-{number:04d}-*.md"))
+            self.assertEqual(len(matches), 1)
+            self.assertRegex(matches[0].read_text(), r"Status: \*\*Accepted")
         for name in ("ADR-0059", "ADR-0068", "ADR-0080"):
             self.assertIn(name, activation)
 
@@ -47,11 +53,11 @@ class CleanBreakGovernanceTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text()
         plan = (ROOT / "docs/roadmap/IMPLEMENTATION_PLAN.md").read_text()
         architecture = (ROOT / "ARCHITECTURE.md").read_text()
-        expected = "<!-- byq:clean-break-current-phase=16 -->"
+        expected = "<!-- byq:clean-break-current-phase=17 -->"
         self.assertIn(expected, status)
         self.assertIn(expected, readme)
         self.assertEqual(re.findall(r"<!-- byq:current-completed-phase=(\d+) -->", status), ["97"])
-        self.assertIn("Current phase: Clean Break Phase 16", status.split("## Historical 0.9/P4 status")[0])
+        self.assertIn("Current phase: Clean Break Phase 17", status.split("## Historical 0.9/P4 status")[0])
         self.assertIn("Phase 7–17 sequence", plan.split("## Historical implementation plan")[0])
         current_architecture = architecture.split("## Historical pre-Clean-Break architecture")[0]
         for required in ("DSH owns Agent loop", "BYQ owns quant domain", "Product Agent-to-Domain calls MUST use BYQ MCP", "Long deterministic compute"):

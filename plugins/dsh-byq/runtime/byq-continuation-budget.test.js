@@ -1,291 +1,187 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
+import { readFileSync, unlinkSync } from 'node:fs';
 import {
-  CONTINUATION_INPUT_CEILING,
-  CONTINUATION_OUTPUT_CEILING,
-  DATA_READY_CALL_CEILING,
-  DATA_READY_MAX_CALLS,
-  DATA_READY_MAX_OUTPUT_TOKENS,
-  DATA_READY_TOKEN_LIMIT,
-  DISPLAY_PROVIDER_RUNTIME_ROUTES,
-  QUALIFIED_CONTINUATION_ROUTES,
-  RESEARCH_JUDGMENT_MAX_CALLS,
-  continuationRouteQualified,
-  createBudgetGate,
-  runtimeRouteFor,
+  ALLOWED_TOOL_NAMES,
+  PROFILE_LIMITS,
+  createToolGuard,
+  inject,
+  apply,
 } from './byq-continuation-budget.js';
 
-const request = { provider: 'deepseek-official', model: 'deepseek-v4-flash', maxTokens: 8 };
-const ceiling = 1048576 + 8;
-const config = { tokenLimit: ceiling, expiresAt: 1000, reservationId: 'reservation-synthetic' };
+const reservationId = `continuation_${'a'.repeat(32)}`;
+const config = {
+  reservationId,
+  deadlineEpochMs: Date.now() + PROFILE_LIMITS.deadline_ms,
+  journalPath: '/private/request/continuation-tool-guard.jsonl',
+  executionProfile: {
+    profile_id: 'task-ready-read.v1',
+    profile_version: 1,
+    profile_sha256: 'a'.repeat(64),
+  },
+  requestLimits: { ...PROFILE_LIMITS },
+};
+const allowedTool = ALLOWED_TOOL_NAMES[0];
 
-// The composition is present in the repository and in the architecture lane,
-// but the runtime helper container mounts only this directory. When it is
-// absent the authoritative composition drift assertion lives in
-// tests/architecture/test_architecture.py.
-const compositionUrl = new URL('../compositions/byq-product-sdk.cordis.yml', import.meta.url);
-const compositionAvailable = existsSync(compositionUrl);
-
-function compositionProviderModels(source) {
-  const lines = source.split('\n');
-  const start = lines.indexOf('- id: llm-opencode');
-  assert.notEqual(start, -1, 'composition llm-opencode entry is required');
-  let providersIndex = -1;
-  for (let index = start + 1; index < lines.length; index += 1) {
-    if (lines[index].startsWith('- ')) break;
-    if (lines[index] === '    providers:') {
-      providersIndex = index;
-      break;
-    }
-  }
-  assert.notEqual(providersIndex, -1, 'composition llm-opencode providers are required');
-  const providers = {};
-  let current = null;
-  let inModels = false;
-  for (const line of lines.slice(providersIndex + 1)) {
-    if (line.trim() === '') continue;
-    if (line.startsWith('- ')) break;
-    const indent = line.length - line.trimStart().length;
-    if (indent <= 4) break;
-    if (indent === 6 && line.trimEnd().endsWith(':')) {
-      current = line.trim().slice(0, -1);
-      providers[current] = [];
-      inModels = false;
-    } else if (indent === 8 && line.trim() === 'models:') {
-      inModels = true;
-    } else if (indent === 8) {
-      inModels = false;
-    } else if (indent === 10 && inModels && line.trim().startsWith('- id:')) {
-      providers[current].push(line.trim().slice('- id:'.length).trim());
-    }
-  }
-  return providers;
-}
-
-test('exact ceiling admits once; one-token shortage refuses before storage', () => {
-  const records = [];
-  const gate = createBudgetGate(config, r => records.push(r), () => 1, () => 1);
-  assert.equal(gate(request).charged_ceiling, ceiling);
-  assert.throws(() => gate(request), /EXHAUSTED/);
-  assert.equal(records.length, 1);
-  assert.throws(() => createBudgetGate({ ...config, tokenLimit: ceiling - 1 },
-    () => assert.fail('must not persist'), () => 1, () => 1)(request), /EXHAUSTED/);
-});
-
-test('data-ready constants define a bounded multi-call budget', () => {
-  assert.equal(CONTINUATION_INPUT_CEILING, 1048576);
-  assert.equal(DATA_READY_MAX_OUTPUT_TOKENS, 8192);
-  assert.equal(DATA_READY_MAX_CALLS, 8);
-  assert.equal(DATA_READY_CALL_CEILING, CONTINUATION_INPUT_CEILING + DATA_READY_MAX_OUTPUT_TOKENS);
-  assert.equal(DATA_READY_TOKEN_LIMIT, DATA_READY_MAX_CALLS * DATA_READY_CALL_CEILING);
-  // The multi-call budget must exceed a single conservative per-call ceiling;
-  // a single-call-sized reservation is the exact production defect that
-  // blocked the second model call of a tool-calling turn.
-  assert.ok(DATA_READY_TOKEN_LIMIT > DATA_READY_CALL_CEILING);
-});
-
-test('a data-ready reservation completes a bounded multi-call turn then fails closed', () => {
-  const records = [];
-  const gate = createBudgetGate({ ...config, tokenLimit: DATA_READY_TOKEN_LIMIT },
-    r => records.push(r), () => 1, () => 1);
-  for (let call = 1; call <= DATA_READY_MAX_CALLS; call += 1) {
-    assert.equal(gate(request).call, call);
-  }
-  assert.throws(() => gate(request),
-    error => error.message === 'BYQ_CONTINUATION_BUDGET_EXHAUSTED');
-  assert.equal(records.length, DATA_READY_MAX_CALLS);
-  assert.equal(records.at(-1).charged_ceiling, DATA_READY_MAX_CALLS * ceiling);
-});
-
-test('the total token budget blocks large-output calls before the call bound', () => {
-  const records = [];
-  const gate = createBudgetGate({ ...config, tokenLimit: DATA_READY_TOKEN_LIMIT },
-    r => records.push(r), () => 1, () => 1);
-  const large = { ...request, maxTokens: CONTINUATION_OUTPUT_CEILING };
-  const affordable = Math.floor(
-    DATA_READY_TOKEN_LIMIT / (CONTINUATION_INPUT_CEILING + CONTINUATION_OUTPUT_CEILING));
-  assert.ok(affordable < DATA_READY_MAX_CALLS);
-  for (let call = 1; call <= affordable; call += 1) {
-    assert.equal(gate(large).call, call);
-  }
-  assert.throws(() => gate(large), /EXHAUSTED/);
-  assert.equal(records.length, affordable);
-});
-
-test('unknown calls retain full ceiling; concurrent intents cannot overspend', async () => {
-  const records = [];
-  const gate = createBudgetGate(config, r => records.push(r), () => 1, () => 1);
-  const results = await Promise.allSettled(Array.from({ length: 8 }, () => Promise.resolve().then(() => gate(request))));
-  assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);
-  assert.equal(records.length, 1);
-});
-
-test('journal failure poisons gate rather than retrying a possibly persisted charge', () => {
-  let writes = 0;
-  const gate = createBudgetGate(config, () => { writes++; throw new Error('synthetic'); }, () => 1, () => 1);
-  assert.throws(() => gate(request), /STORAGE_FAILED/);
-  assert.throws(() => gate(request), /CLOSED/);
-  assert.equal(writes, 1);
-});
-
-test('expiry and monotonic hard timeout each close admission', () => {
-  let wall = 1, elapsed = 1;
-  const gate = createBudgetGate(config, () => assert.fail('closed'), () => wall, () => elapsed);
-  wall = 1000;
-  assert.throws(() => gate(request), /CLOSED/);
-  wall = 1; elapsed = 900001;
-  assert.throws(() => gate(request), /CLOSED/);
-});
-
-test('invalid allowances and unsupported route/output reject', () => {
-  for (const tokenLimit of [true, 0, -1, 1.5, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
-    assert.throws(() => createBudgetGate({ ...config, tokenLimit }, () => {}), /INVALID/);
-  }
-  const gate = createBudgetGate(config, () => assert.fail('unqualified'), () => 1, () => 1);
-  for (const change of [{ provider: 'unqualified-provider' }, { model: 'unknown' },
-    { maxTokens: undefined }, { maxTokens: true }, { maxTokens: 393217 }]) {
-    assert.throws(() => gate({ ...request, ...change }), /UNQUALIFIED/);
-  }
-});
-
-test('every allowlisted route and model is qualified, including discovered models', () => {
-  for (const [provider, models] of Object.entries(QUALIFIED_CONTINUATION_ROUTES)) {
-    for (const model of models) {
-      assert.equal(continuationRouteQualified(provider, model), true, `${provider}/${model}`);
-    }
-  }
-  // The production admin profile is opencode-go / deepseek-v4.1-flash; the
-  // backend maps it to the opencode-go-chat runtime route that DSH exposes.
-  assert.equal(continuationRouteQualified('opencode-go-chat', 'deepseek-v4.1-flash'), true);
-  assert.equal(continuationRouteQualified('opencode-go-messages', 'minimax-m3'), true);
-  assert.equal(continuationRouteQualified('opencode-zen-messages', 'claude-opus-5'), true);
-});
-
-test('display providers normalize to the exact runtime route the Backend admits', () => {
-  // Mirrors services/backend/app/credentials.py::_runtime_provider_for: the
-  // first empty or matching model prefix wins, so the guard evaluates the same
-  // runtime route the Backend resolved before admission.
-  assert.equal(runtimeRouteFor('opencode-go', 'deepseek-v4.1-flash'), 'opencode-go-chat');
-  assert.equal(runtimeRouteFor('opencode-go', 'deepseek-v4-flash'), 'opencode-go-chat');
-  assert.equal(runtimeRouteFor('opencode-go', 'gpt-5.6-luna'), 'opencode-go-responses');
-  assert.equal(runtimeRouteFor('opencode-go', 'grok-4.6'), 'opencode-go-responses');
-  assert.equal(runtimeRouteFor('opencode-go', 'minimax-m3'), 'opencode-go-messages');
-  assert.equal(runtimeRouteFor('opencode-go', 'qwen3.8-max'), 'opencode-go-messages');
-  assert.equal(runtimeRouteFor('opencode-zen', 'claude-opus-5'), 'opencode-zen-messages');
-  assert.equal(runtimeRouteFor('opencode-zen', 'deepseek-v4-flash'), 'opencode-zen-chat');
-  assert.equal(runtimeRouteFor('opencode-zen', 'gpt-5.6-sol'), 'opencode-zen-responses');
-  assert.equal(runtimeRouteFor('deepseek', 'deepseek-chat'), 'deepseek-official');
-  // A runtime route and an unknown provider resolve without inventing a route.
-  assert.equal(runtimeRouteFor('opencode-go-chat', 'deepseek-v4.1-flash'), 'opencode-go-chat');
-  assert.equal(runtimeRouteFor('deepseek-official', 'deepseek-v4-flash'), 'deepseek-official');
-  assert.equal(runtimeRouteFor('unqualified-provider', 'deepseek-v4-flash'), null);
-  assert.equal(runtimeRouteFor('opencode-go', undefined), null);
-  // Every normalization target is itself one of the qualified runtime routes,
-  // so the prefix map can never introduce a route outside the single allowlist.
-  for (const [provider, prefixes] of Object.entries(DISPLAY_PROVIDER_RUNTIME_ROUTES)) {
-    assert.ok(prefixes.length > 0, provider);
-    for (const [, runtime] of prefixes) {
-      assert.ok(runtime in QUALIFIED_CONTINUATION_ROUTES, `${provider} -> ${runtime}`);
-    }
-  }
-});
-
-test('a display provider and its runtime route are both admitted', () => {
-  assert.equal(continuationRouteQualified('opencode-go', 'deepseek-v4.1-flash'), true);
-  assert.equal(continuationRouteQualified('opencode-go-chat', 'deepseek-v4.1-flash'), true);
-  assert.equal(continuationRouteQualified('opencode-go', 'gpt-5.6-luna'), true);
-  assert.equal(continuationRouteQualified('opencode-go', 'minimax-m3'), true);
-  assert.equal(continuationRouteQualified('opencode-zen', 'claude-opus-5'), true);
-  assert.equal(continuationRouteQualified('deepseek', 'deepseek-v4-flash'), true);
-});
-
-test('an unlisted model on a known route and an unknown provider are unqualified', () => {
-  assert.equal(continuationRouteQualified('opencode-go-chat', 'kimi-k3-experimental'), false);
-  assert.equal(continuationRouteQualified('opencode-zen-chat', 'deepseek-v4.1-flash'), false);
-  assert.equal(continuationRouteQualified('deepseek-official', 'deepseek-v4.1-flash'), false);
-  assert.equal(continuationRouteQualified('unqualified-provider', 'deepseek-v4-flash'), false);
-  assert.equal(continuationRouteQualified('opencode-go-chat', ''), false);
-  assert.equal(continuationRouteQualified('opencode-go-chat', undefined), false);
-  // A display provider whose model maps to a route that does not list it, or
-  // whose model prefix the Backend cannot map at all, still fails closed.
-  assert.equal(continuationRouteQualified('opencode-go', 'kimi-k3-experimental'), false);
-  assert.equal(continuationRouteQualified('opencode-go', 'claude-opus-5'), false);
-  assert.equal(continuationRouteQualified('opencode-zen', 'deepseek-v4.1-flash'), false);
-  assert.equal(continuationRouteQualified('opencode-go', ''), false);
-  assert.equal(continuationRouteQualified('opencode-go', undefined), false);
-});
-
-test('the gate blocks a non-allowlisted model on an opencode route with the stable error', () => {
-  const gate = createBudgetGate(config, () => assert.fail('must not persist unqualified route'), () => 1, () => 1);
-  assert.throws(
-    () => gate({ provider: 'opencode-go-chat', model: 'kimi-k3-experimental', maxTokens: 8 }),
-    error => error.message === 'BYQ_CONTINUATION_ROUTE_UNQUALIFIED',
-  );
-});
-
-test('an admitted opencode continuation charges the same conservative ceiling', () => {
-  const records = [];
-  const gate = createBudgetGate(config, r => records.push(r), () => 1, () => 1);
-  const record = gate({ provider: 'opencode-go-chat', model: 'deepseek-v4.1-flash', maxTokens: 8 });
-  assert.deepEqual(record, { reservation_id: 'reservation-synthetic', call: 1,
-    reserved_tokens: ceiling, charged_ceiling: ceiling });
-  assert.equal(records.length, 1);
-});
-
-test('the gate admits the production display provider without changing its accounting', () => {
-  const records = [];
-  const gate = createBudgetGate(config, r => records.push(r), () => 1, () => 1);
-  const record = gate({ provider: 'opencode-go', model: 'deepseek-v4.1-flash', maxTokens: 8 });
-  assert.deepEqual(record, { reservation_id: 'reservation-synthetic', call: 1,
-    reserved_tokens: ceiling, charged_ceiling: ceiling });
-  assert.equal(records.length, 1);
-  assert.throws(
-    () => gate({ provider: 'opencode-go', model: 'kimi-k3-experimental', maxTokens: 8 }),
-    error => error.message === 'BYQ_CONTINUATION_ROUTE_UNQUALIFIED',
-  );
-});
-
-test('long reservation passes fifteen minutes but rollback cannot extend its deadline', () => {
-  let wall = 1000, elapsed = 0;
-  const records = [];
-  const gate = createBudgetGate({ ...config, tokenLimit: ceiling * 3, expiresAt: wall + 7200000 },
-    r => records.push(r), () => wall, () => elapsed);
-  elapsed = 900001; wall += 900001;
-  assert.equal(gate(request).call, 1);
-  elapsed = 7199999; wall = 1;
-  assert.equal(gate(request).call, 2);
-  elapsed = 7200000;
-  assert.throws(() => gate(request), /CLOSED/);
-  assert.equal(records.length, 2);
-});
-
-test('an existing short reservation still stops at its original monotonic deadline', () => {
-  let wall = 1000, elapsed = 0;
-  const gate = createBudgetGate({ ...config, expiresAt: wall + 900000 }, () => assert.fail('expired'),
-    () => wall, () => elapsed);
-  elapsed = 900000; wall = 1;
-  assert.throws(() => gate(request), /CLOSED/);
-});
-
-test('research-judgment stages default to a two-call bound', () => {
-  assert.equal(RESEARCH_JUDGMENT_MAX_CALLS, 2);
-  const records = [];
-  let wall = 1000;
-  const gate = createBudgetGate(
-    { ...config, tokenLimit: RESEARCH_JUDGMENT_MAX_CALLS * DATA_READY_CALL_CEILING,
-      expiresAt: wall + 60000 },
-    r => records.push(r), () => wall);
-  assert.equal(gate(request).call, 1);
-  assert.equal(gate(request).call, 2);
-  assert.throws(() => gate(request), /BUDGET_EXHAUSTED/);
-  assert.equal(records.length, 2);
-});
-
-test('qualified opencode routes mirror the DSH product composition allowlist',
-  { skip: compositionAvailable ? false : 'DSH composition is not mounted in this environment' }, () => {
-    const composition = compositionProviderModels(readFileSync(compositionUrl, 'utf8'));
-    const opencode = Object.fromEntries(Object.entries(QUALIFIED_CONTINUATION_ROUTES)
-      .filter(([provider]) => provider !== 'deepseek-official'));
-    assert.deepEqual(opencode, composition);
+test('profile limits and DSH plugin dependencies are closed request scope', () => {
+  assert.deepEqual(PROFILE_LIMITS, {
+    max_provider_calls: 16,
+    max_attempts: 16,
+    max_concurrent: 1,
+    max_input_bytes: 262144,
+    max_total_input_bytes: 4194304,
+    max_output_tokens: 8192,
+    max_total_output_tokens: 131072,
+    max_tool_payload_bytes: 65536,
+    max_total_tool_payload_bytes: 1048576,
+    max_tool_calls: 16,
+    deadline_ms: 180000,
   });
+  assert.deepEqual(inject, ['tools', 'agents']);
+  assert.deepEqual(ALLOWED_TOOL_NAMES, [
+    'mcp__byq__byq_research_get',
+    'mcp__byq__byq_backtest_task_get',
+    'mcp__byq__byq_agent_run_start',
+    'mcp__byq__byq_agent_authorize',
+    'mcp__byq__byq_agent_audit',
+  ]);
+});
+
+test('seventeenth tool dispatch is denied before dispatch, with exact journal facts', () => {
+  const rows = [];
+  const cancellations = [];
+  const guard = createToolGuard(config, row => rows.push(row), agents => cancellations.push([...agents]));
+  const agents = Array.from({ length: 17 }, () => ({ cancel: () => {} }));
+  for (let index = 0; index < 16; index += 1) {
+    assert.equal(guard.beforeExecute({ name: allowedTool, agent: agents[index] }).kind, 'allow');
+  }
+  const seventeenth = guard.beforeExecute({ name: allowedTool, agent: agents[16] });
+  assert.deepEqual(seventeenth, { kind: 'deny', reason: 'BYQ_CONTINUATION_TOOL_LIMIT' });
+  assert.equal(guard.calls, 16);
+  assert.equal(rows.filter(row => row.phase === 'tool').length, 16);
+  assert.deepEqual(rows.at(-1), {
+    phase: 'blocked', reservation_id: reservationId,
+    blocked_reason: 'BYQ_CONTINUATION_TOOL_LIMIT', tool_name: allowedTool,
+  });
+  assert.equal(cancellations.length, 1);
+  assert.equal(cancellations[0].length, 17);
+  assert.deepEqual(guard.beforeExecute({ name: allowedTool }), seventeenth);
+});
+
+test('unknown tools are denied before admission and stop the owned agent drivers', () => {
+  const rows = [];
+  const cancelled = [];
+  const agent = { cancel: detail => cancelled.push(detail) };
+  const guard = createToolGuard(config, row => rows.push(row));
+  const decision = guard.beforeExecute({ name: 'mcp__byq__byq_artifact_create', agent });
+  assert.deepEqual(decision, { kind: 'deny', reason: 'BYQ_CONTINUATION_TOOL_UNQUALIFIED' });
+  assert.equal(guard.calls, 0);
+  assert.equal(rows.filter(row => row.phase === 'tool').length, 0);
+  assert.equal(rows.at(-1).phase, 'blocked');
+  assert.equal(cancelled.length, 1);
+});
+
+test('pre-cancelled DSH execution never reaches allow and poisons this request', () => {
+  const rows = [];
+  const guard = createToolGuard(config, row => rows.push(row));
+  assert.deepEqual(guard.beforeExecute({ name: allowedTool, signal: { aborted: true } }), {
+    kind: 'deny', reason: 'BYQ_CONTINUATION_CANCELLED',
+  });
+  assert.equal(guard.calls, 0);
+  assert.equal(rows.at(-1).blocked_reason, 'BYQ_CONTINUATION_CANCELLED');
+});
+
+test('expired request deadline denies tool dispatch before journal admission', () => {
+  const rows = [];
+  const cancelled = [];
+  const expired = { ...config, deadlineEpochMs: 5000 };
+  const agent = { cancel: detail => cancelled.push(detail) };
+  const guard = createToolGuard(expired, row => rows.push(row), undefined, () => 5000);
+  assert.deepEqual(guard.beforeExecute({ name: allowedTool, agent }), {
+    kind: 'deny', reason: 'BYQ_CONTINUATION_DEADLINE_EXCEEDED',
+  });
+  assert.equal(guard.calls, 0);
+  assert.equal(rows.some(row => row.phase === 'tool'), false);
+  assert.equal(rows.at(-1).blocked_reason, 'BYQ_CONTINUATION_DEADLINE_EXCEEDED');
+  assert.equal(cancelled.length, 1);
+});
+
+test('journal failure denies and cancels rather than dispatching or replaying', () => {
+  let calls = 0;
+  const guard = createToolGuard(config, () => { calls += 1; throw new Error('synthetic storage failure'); });
+  const agent = { cancel: () => { calls += 10; } };
+  assert.deepEqual(guard.beforeExecute({ name: allowedTool, agent }), {
+    kind: 'deny', reason: 'BYQ_CONTINUATION_TOOL_STORAGE_FAILED',
+  });
+  assert.equal(guard.calls, 0);
+  assert.equal(calls, 12); // attempted admission append + agent cancellation
+});
+
+
+test('production plugin restricts each published Agent scope and keeps one shared dispatch cap', async () => {
+  const hooks = new Map();
+  const effects = [];
+  const ctx = {
+    effect: effect => effects.push(effect),
+    on: (event, hook) => hooks.set(event, hook),
+  };
+  const runtimeConfig = { ...config, journalPath: `/tmp/byq-continuation-${process.pid}.jsonl` };
+  apply(ctx, runtimeConfig);
+  assert.deepEqual([...hooks.keys()], ['agent/created', 'agent/disposed', 'tools/pre-execute']);
+  const header = JSON.parse(readFileSync(runtimeConfig.journalPath, 'utf8').trim().split(/\r?\n/)[0]);
+  assert.equal(header.ready, true);
+  assert.equal(header.reservation_id, reservationId);
+  assert.throws(() => hooks.get('agent/created')({ agent: {} }), /TOOL_RESTRICTION_UNQUALIFIED/);
+
+  const releases = [];
+  const scopeReleases = new Map();
+  const makeAgent = name => {
+    const calls = [];
+    const agent = { name, cancel() {} };
+    agent.ctx = { tools: { restrict: filter => {
+      calls.push(filter);
+      const release = () => releases.push(name);
+      scopeReleases.set(agent, release);
+      return release;
+    } } };
+    assert.equal(hooks.get('agent/created')({ agent }), undefined);
+    assert.deepEqual(calls, [{ allow: [...ALLOWED_TOOL_NAMES] }]);
+    return agent;
+  };
+  const rootAgent = makeAgent('root');
+  const childAgent = makeAgent('child');
+
+  const preExecute = hooks.get('tools/pre-execute');
+  for (let index = 0; index < 16; index += 1) {
+    const agent = index % 2 === 0 ? rootAgent : childAgent;
+    assert.deepEqual(await preExecute({ name: allowedTool, agent }, async () => ({ kind: 'allow' })), {
+      kind: 'allow',
+    });
+  }
+  assert.deepEqual(await preExecute({ name: allowedTool, agent: childAgent }, async () => ({ kind: 'allow' })), {
+    kind: 'deny', reason: 'BYQ_CONTINUATION_TOOL_LIMIT',
+  });
+  const journal = readFileSync(runtimeConfig.journalPath, 'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(journal.filter(row => row.phase === 'tool').length, 16);
+  assert.equal(journal.filter(row => row.phase === 'blocked').length, 1);
+
+  // DSH unwinds an Agent's scope before publishing agent/disposed. Model that
+  // scope-owned disposer, then verify process cleanup releases the live root.
+  scopeReleases.get(childAgent)();
+  hooks.get('agent/disposed')({ agent: childAgent });
+  effects[0]()();
+  assert.deepEqual(releases, ['child', 'root']);
+  unlinkSync(runtimeConfig.journalPath);
+});
+
+test('v1 money grants and widened or malformed profile carriers fail closed', () => {
+  for (const invalid of [
+    { ...config, tokenLimit: 16000000 },
+    { ...config, requestLimits: { ...config.requestLimits, max_tool_calls: 17 } },
+    { ...config, executionProfile: { ...config.executionProfile, profile_id: 'other.v1' } },
+    { ...config, executionProfile: { ...config.executionProfile, profile_sha256: 'bad' } },
+    { ...config, reservationId: 'not-a-v2-id' },
+  ]) {
+    assert.throws(() => createToolGuard(invalid, () => {}), /GUARD_INVALID/);
+  }
+});

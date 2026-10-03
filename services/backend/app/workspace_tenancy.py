@@ -13,9 +13,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from .db import PgStoreMixin, ensure_column, execute, fetch_one
 
 
+from .workspace_reset_scope import ARCHIVE_DDL, install_reset_guards
+
 CONTRACT_VERSION = "personal-workspace.v1"
 
 IDENTITY_SCHEMA_DDL = [
+    *ARCHIVE_DDL,
     """
     CREATE TABLE IF NOT EXISTS workspaces (
         workspace_id TEXT PRIMARY KEY,
@@ -168,6 +171,7 @@ class WorkspaceTenancyStore(PgStoreMixin):
                     f"CREATE INDEX IF NOT EXISTS {table_name}_workspace ON {table_name}(workspace_id)"
                 ))
             self._install_write_triggers(connection)
+            install_reset_guards(connection)
 
     def provision_all_users(self) -> dict[str, int]:
         created = 0
@@ -240,7 +244,7 @@ class WorkspaceTenancyStore(PgStoreMixin):
                 WHERE u.username = NEW.owner_principal AND u.status = 'active'
                   AND w.status = 'active' AND m.status = 'active'
                 FOR SHARE OF w;
-              -- ADR-0063: no generic bypass. Only an immutable, already-bound
+              -- No generic bypass. Only an immutable, already-bound
               -- run may follow its trusted persisted root into a terminal state.
               IF resolved IS NULL AND TG_TABLE_NAME = 'agent_runs' AND TG_OP = 'UPDATE' THEN
                 IF OLD.status IN ('active', 'pending_binding')

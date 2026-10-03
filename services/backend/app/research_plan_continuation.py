@@ -9,9 +9,9 @@ deterministic Job results.
 This module adds ONLY the missing trusted consumer seam, as BYQ Domain Workflow
 (not a second generic agent harness and not a second session store):
 
-* :meth:`ResearchPlanContinuationMixin.ensure_execution_plan` creates the single
-  current plan for a task that already has a durable continuation grant. It is
-  idempotent and fails closed for an ungranted or terminal task.
+* :meth:`ResearchPlanContinuationMixin.ensure_execution_plan` returns an
+  existing current plan but never creates one from a continuation permission.
+  Foreground callers create plans with explicit domain references.
 * :meth:`ResearchPlanContinuationMixin.plan_continuation_dispatch` is READ-ONLY.
   It returns the exact bounded next step (judgment turn / approval wait /
   deterministic action / waiting / terminal) derived from the persisted plan.
@@ -96,15 +96,14 @@ class ResearchPlanContinuationMixin:
     """Trusted, deterministic plan-continuation consumer seam."""
 
     # ------------------------------------------------------------------ #
-    # Plan creation for a granted compound task
+    # Existing-plan lookup for a compound task
     # ------------------------------------------------------------------ #
 
     def ensure_execution_plan(self, task_id: str, *, trusted_context: dict) -> dict:
-        """Create the one current plan for a granted compound task (idempotent).
+        """Return an existing plan; a continuation permission cannot create one.
 
-        A plan is only created when the task already carries a durable
-        continuation grant; an ungranted task is refused (fail closed). A task
-        that already has a plan returns the existing bounded projection.
+        Foreground plan creation uses create_execution_plan with caller-confirmed
+        domain references. A background request grant is not plan authorization.
         """
 
         from .research import InvalidTransition, ResearchNotFound
@@ -123,13 +122,8 @@ class ResearchPlanContinuationMixin:
             if not isinstance(grant, dict) or grant.get("revoked_at") is not None:
                 raise InvalidTransition(
                     "an execution plan requires an active continuation grant")
-        # Creation (including the deterministic grant reference binding and the
-        # revoke/expiry/artifact re-validation) happens in ONE trusted transaction
-        # under the task-row lock, so nothing can go invalid in between.
-        return self.create_execution_plan(
-            task_id, {"idempotency_key": f"plan-grant-{task_id}"},
-            trusted_context=trusted_context,
-            require_active_grant=True, bind_grant_references=True)
+            raise InvalidTransition(
+                "a continuation permission cannot authorize execution plan creation")
 
     # ------------------------------------------------------------------ #
     # Read-only bounded dispatch
@@ -474,7 +468,7 @@ class ResearchPlanContinuationMixin:
                 plan_version = :plan_version, task_version = :task_version, stage = :stage,
                 iteration = :iteration, status = :status, next_action = :next_action,
                 plan = :plan, idempotency_key = :idempotency_key, request_hash = :request_hash,
-                legacy_reason = NULL, updated_at = :now
+                updated_at = :now
                 WHERE task_id = :task_id AND plan_version = :expected_plan_version
                 RETURNING task_id""",
                 {"plan_version": advanced["plan_version"], "task_version": advanced["task_version"],

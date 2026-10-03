@@ -2,7 +2,7 @@
 
 ## Current authority — BYQ 0.10 Clean Break (2026-09-25)
 
-<!-- byq:clean-break-current-phase=16 -->
+<!-- byq:clean-break-current-phase=17 -->
 
 The maintainer's explicit Clean Break direction supersedes the 0.9/P4 and Phase 100
 implementation routing below. The current architecture is [ADR-0088](../architecture/adr/ADR-0088-clean-break-baseline-activation.md)
@@ -23,14 +23,101 @@ Phase 15 — fresh-state functional fidelity: local Tester → independent Sol
 Reviewer → Root PASS, exact-head hosted Full CI and PR CI PASS, PR #378 merged.
 Its final CI and merge receipts are recorded in
 [Phase 16 Golden acceptance](../clean-break/phase16-golden-acceptance.md).
-Current phase: Clean Break Phase 16 — Golden Scenarios A–F acceptance.
-The maintainer instructed continuation after Phase 15 merged. The new isolated
-branch reconciles the accepted post-rebuild evidence and supplements only
-necessary gaps; it does not automatically repeat provider/model calls, market
-downloads or full rebuilds. Phase 16 local evidence reconciliation has Tester → independent Sol Reviewer
-→ Root PASS, with runtime-source and rebuild currency limits preserved. Phase
-16 overall remains OPEN for required exact-head Full CI and repository gates.
-Phase 17 remains closed.**
+Phase 16 — Golden A–F evidence reconciliation: local Tester → independent Sol
+Reviewer → Root PASS, exact-head Full CI and PR CI PASS, PR #379 merged.
+Its bounded baseline reuse and source/rebuild currency limits remain recorded
+in the Phase 16 acceptance document; no new-head live execution was claimed.
+Current phase: Clean Break Phase 17 — residual simplification and final Golden
+acceptance. The maintainer instructed the next step after Phase 16 merged.
+This phase uses a new isolated branch from fetched main, classifies residual
+state by actual ownership, and removes only tested unnecessary paths while
+preserving exact business authority, idempotency and unknown-result protection.
+Phase 17 is OPEN. Build293 exact-head PR CI failed Integration's F6 observer assertion; all other component lanes passed and cleanup/upload succeeded. New closed diagnostics confirm SDK/Runtime completed and the same Backend request settled/completed:8 admitted attempts,7 tools,0 violations, actual usage unknown. Background public answer persistence is UNESTABLISHED: the observer required a synthetic user row that the current automatic-input path never appends, so its answer selection was not attempted. Build292 outcome remains UNKNOWN/unreplayed; its earlier unsupported background-user narrative is corrected without importing new terminal proof. Root fixed exact-root assistant selection, bounded independent answer/settlement waiting, readonly receipt input/ready-event binding and completed public message intervals. Root60 initial offline contracts and Tester60 initial plus16 affected rechecks passed. Independent Reviewer→Root accepted the scoped source correction; immutable Build294 binds1000 inputs with293 frozen. Identity Tester passed10 cases and1000 input hashes; one affected hosted verification remains gated by independent Reviewer/Root admission; local Gateway full import tests were NOT_RUN and remain a hosted gate. At the Build294 preparation boundary no new CI/model/Job/DB call, Full dispatch, merge or deployment occurred. Build294 PR CI subsequently failed its offline F6 test loader before the genuine F6 chain; all component lanes and cleanup passed. The complete test-only loader/ready-event sample correction passed102 offline contracts through Tester→independent Reviewer→Root. Immutable Build295 binds1000 inputs with294/293 frozen; its exact-head hosted component lanes passed. Integration failed only after the genuine keyless F6 core passed, at both browser login-to-Agent assertions; the login HTTP cause remains UNESTABLISHED. Candidate restore and scope cleanup were verified. A separate existing-stack admin login/identity/logout passed actual Tester → independent Reviewer → Root, without new Agent/model/Job/business inputs, and does not replace hosted F6-user/same-Task browser acceptance. The browser allowlist is corrected and bounded closed auth diagnostics added. An Engineering-only auth preflight now stops before F6 Agent/Job on failed or unknown login; Root22 VM and4 mocked Bash ordering cases passed, with Tester → independent Reviewer → Root scoped source PASS. Immutable Build296 binds1003 inputs with295/294/293 frozen. Its exact-head PR CI ended FAIL: seven component lanes passed; Integration core F6 and dedicated F6-user auth preflight passed, but final browser ME/login502 prevented same-Task UI assertions. This is not a global CI timeout; the proxy cause remains UNESTABLISHED. One separately gated existing-stack auth-only Gateway restart returned direct/proxy401 with no new model/Job/login, no Frontend reload and unchanged Runtime/other resources/volumes/networks; it did not reproduce hosted502. Root added four closed proxy sampling points;9 offline contracts,1 existing restart-flow case and2 scope-refusal CLI checks passed Tester → independent Reviewer → Root. Immutable Build297 binds1005 inputs with296/295/294/293 frozen; identity passed, and its exact-head PR CI ended FAIL: seven component lanes, F6-user auth preflight and genuine keyless F6 core passed, but final browser ME/login502 blocked same-Task UI. Four closed samples show the same Gateway changing172.19.0.13→172.19.0.10, direct ME401 throughout, and unchanged Frontend still recording upstream.13. This supports Build297 stale upstream resolution; precise transport error and Build295/296 causes remain UNESTABLISHED. The three-file dynamic-DNS/proxy-readiness candidate passed bounded disposable proxy verification through Tester → independent Reviewer → Root, without Product/model/Job/DB calls. Immutable Build298 binds1005 inputs with297 and earlier evidence frozen; identity passed and its exact-head PR CI ended FAIL after seven component lanes, auth preflight and core F6 passed. Both browsers logged in200 and reached the answer/task row, then the whole-row completed assertion misclassified objective text despite the independent task record being planned. Permission/snapshot UI checks were NOT_REACHED; services restored and cleanup verified. The complete remaining source contract audit found no second definite schema/path conflict, without claiming actual UI acceptance. Root prepared a three-test-file correction with bounded Product reads, exact status-column comparison and safe failure evidence/reconciliation. Build299/300 passed bounded offline source/identity gates with prior bytes retained. Exact-head Build300 CI ended FAIL: seven component lanes/core F6/auth passed, exact structured state and Task cell passed, but line167's combined usage text omitted Vue's separator space. Both bounded failure reconciliations completed; later UI checks were NOT_REACHED; restore/cleanup passed. Root changed only the spec to check the unique usage paragraph's explicit unknown fields separately. Actual Vue mount plus offline Playwright passed both widths/all eight remaining panel assertions and seven negatives, with zero page HTTP; this is rendering mechanism, not real Product acceptance. Immutable Build301 binds1005 inputs with300/299/298 frozen. One combined classification/render/current identity Tester→independent Reviewer→Root gate precedes one affected hosted gate and remains pending. Full/merge/deployment NOT_RUN; Phase17 OPEN. [Build297 terminal proxy evidence](../clean-break/phase17-final-golden-acceptance.md#build297-terminal-proxy-evidence). [Build296 terminal boundary](../clean-break/phase17-final-golden-acceptance.md#build296-terminal-browser-502-and-bounded-proxy-diagnosis). [Build295 scoped core and browser boundary](../clean-break/phase17-final-golden-acceptance.md#build295-core-acceptance-and-browser-authentication-boundary). No product implementation, SDK, limit or timeout changed. Valid A–D and unchanged native3/actual v13 F6 retain their scoped reuse; offline PASS is not hosted/real F6 PASS. Phase18 NOT_STARTED. [Current terminal evidence and correction](../clean-break/phase17-final-golden-acceptance.md#build293-terminal-evidence-and-background-transcript-contract-correction).
+Tester → independent Reviewer → Root on the unchanged `.280` application source.
+Its connected journey reused the already qualified A1 Artifact and 98-session
+cache; the delegated child performed one new Web query. Observer failures and
+independent read-only browser qualification remain explicit in
+[actual connected A evidence](../clean-break/phase17-a2-a3-actual-evidence.md).
+Final Golden mapping passed its bounded local gate below; required hosted CI and repository gates remain pending. Affected v13 F6 and readonly UI passed the scoped actual gate below. Existing real B–D evidence is retained for scoped reuse; normal CPU completion, same-Job CPU restart/reclaim and new authorized-session reads are distinct evidence. ADR-0090 changes require affected F6 qualification before phase closure. The original `.278` A1 remains unbound.
+A separately authorized one-shot `.280` A1 completed with a new Task correctly
+bound and discoverable in its original conversation; handoff is `needs_permission`
+as no continuation grant was authorized. Tester → independent Reviewer → Root
+passed the bounded A1/binding result gate; see
+[Phase 17 A1](../clean-break/phase17-a1-actual-evidence.md).
+Both historical one-shot grants are spent. On 2026-09-30 the maintainer explicitly
+authorized continuing external test model calls without another permission request.
+This supersedes the per-round grant requirement for the isolated Phase 17 tests;
+Product business approvals, unknown-outcome protection and the existing-database,
+backup, market-download and production boundaries remain in force.
+On 2026-10-01 the maintainer accepted [ADR-0090](../architecture/adr/ADR-0090-continuation-request-limits.md). After complete scoped offline gates and fresh readonly admission, one v11 F6 passed exact FG1/FG2 and real automatic background continuation in its original healthy session. A validated SignalSnapshot, authoritative audits and 25 bounded readbacks prove persistence and one settled request with known actual usage and no limit violations. Limits are per request and separate from actual consumption. Complete v11 F6 remains FAIL: Root's Worker-stop stdout assertion failed after the command returned, then the bounded Root-signal wait timed out. Original stdout was not saved; its exact cause is unproven. The conditional suffix stopped before a new revoke marker/POST; independent failure cleanup revoked the exact grant once and preserved settlement, removed the failed conversation, and disabled F6 on the three same-image services. Other resources/volumes/networks remained. Historical v8/v9/v10 failures and the independently completed v10 Job remain protected.
+
+At the historical v11 boundary, Tester → independent Reviewer → Root accepted the scoped real facts and failure cleanup, then the narrow offline CLI observer correction (13 mocked dynamic cases and one static check). A separately admitted empty-queue Worker start→stop passed real CLI control with saved actual output and exact state readbacks; queue/Runtime and complete 13-resource/5-volume/2-network inventories remained identical. This added no Job, Agent input or model call and does not qualify full F6 or UI. Fresh readonly checks show one dedicated admin, five completed owner SignalJobs, no test runner, three stopped Workers, flags0 and zero new Runtime sessions/prompts/model counters. These new counters do not erase the preceding 30 normalized model calls. Original session GET404 and permission GET422 prevent successful UI qualification from the deleted conversation. Successful UI is NOT_RUN; whole F6 FAIL and Phase17 OPEN remain explicit. See [current v11 evidence](../clean-break/phase17-continuation-budget-audit.md#13-f6-v11-后台真实接续与失败收尾2026-10-01). Specify the minimum remaining UI/healthy-closeout qualification and final Golden scope before any further real chain; retain valid A–D evidence, required final Golden and hosted CI. No push, remote merge or deployment is authorized.
+Historical affected v12 F6 remains FAIL in FG1: a legal exact-Task strategy-validation authorization was rejected by two frozen observer assumptions. Root saved authority evidence and kept the original connection for bounded readonly persistence/catalog reconciliation before a truthful negative termination signal. FG1 really wrote one Task/two validated Artifacts and used12 normalized model calls; raw HTTP NOT_OBSERVED. No grant/new Job/FG2/BG/UI ran. Tester → independent Reviewer → Root accepted failure containment and same-image flags0 cleanup, then the minimal observer correction offline only. Original68 evidence files and earlier failures remain protected; new Runtime0 does not erase preceding usage. Exact null/current-Task matching and pre-assertion authority-wire storage retain all other scope checks. See [v12 audit/repair evidence](../clean-break/phase17-continuation-budget-audit.md#15-f6-v12-合法-task-授权与冻结观察器失败2026-10-01). At the v12 boundary, fresh fully bound admission and affected successful F6/readonly UI were still required; v13 qualifies these below. Final Golden and hosted CI remain required. Valid A–D remain reused; no push/remote merge/deployment or Phase18 is authorized.
+Current v13 affected F6 and readonly UI passed Tester → independent Reviewer → Root actual acceptance: new Agent-created Task/Job, automatic BG in the original healthy session,17 bounded persistence/settlement reads,8 provider attempts/7 tools with known usage inside request limits, exact Worker stop/revoke, preserved durable responsibility and same-image flags0 success closeout. A separately qualified UI-only check passed all11 limits/actual usage/refresh assertions with83 requests (82GET/one loginPOST), no new model or business inputs. Original UI1 FAIL and offline UI candidate v1 BLOCKED remain; sealed prior evidence was not rewritten. [Actual v13 facts and gate hashes](../clean-break/phase17-continuation-budget-audit.md#17-f6-v13-实际接续及成功收尾2026-10-01). Phase17 remains OPEN for current populated-scope Golden E, Tester/Reviewer/Root-qualified bounded source/build reuse of Golden F (no new-empty-stack claim), final Golden and hosted CI/repository gates. Reuse valid A–D; no push/remote merge/deployment is authorized.
+Accepted [ADR-0091](../architecture/adr/ADR-0091-workspace-reset-fact-retention.md) is implemented with complete personal reset and seven-day DB/CAS archive. Current affected Backend/Gateway/frontend overlay qualification passed; standard networkless fresh Backend build failed on unavailable offline dependencies and remains recorded. One actual populated Reset passed Tester → independent Reviewer → Root:72 categories/784 rows archived and cleared, identity/RBAC/shared/system state preserved,5 CAS intact and registration defaults visible in a real browser. No Engineering seed or duplicate Reset ran. Actual seven-day elapsed cleanup NOT_RUN; offline expiry contracts passed. Post-reset E1 passed; E2 performed real delegation/one Web query but failed to save because all8 sources had unknown publication time while claims were SUPPORTED. Both Backend422 rejections had no writes;3 runs closed,Job0 and full readonly preservation passed. Original E2 FAIL is sealed. The affected save-only observer passed25 offline cases and scoped independent review, then its sole submitted input failed on Runtime120s no-progress timeout before any BYQ tool/delegation/save. Original two zero-input observer failures remain. Native response/usage UNKNOWN is not replayed; normalized delta0 is not zero actual cost. Fresh readonly identity/shared/archive/CAS preservation and closed Backend root passed; actual save FAIL. No new Web/market/Job/Reset; A–D/F6 remain reused. [Actual reset, failed research and acceptance boundaries](../clean-break/phase17-personal-reset-actual-evidence.md). **Complete Golden E and Phase17 OPEN.** Final Golden, current source/build currency, hosted CI and repository gates remain pending; no current-source empty-stack rebuild claim, push, merge, deployment or Phase18 authorization.
+2026-10-02只读超时审计与两服务提示源码加载通过限定门禁：没有遗留测试/DSH进程；
+外部返回/取消/实际用量仍UNKNOWN，不能从14→14推断实际0。候选离线构建与MCP
+88工具保存描述合同通过；Tester→独立Reviewer→Root准入后，仅隔离Runtime/MCP
+加载当前skill/schema，实际文件hash读回通过。首次raw资源比较观察器失败保留，
+当时快照未存证、原因未证明；一次只读对账证明其他11容器/5卷/2网络及账号/shared/
+七天归档/CAS保持，没有重复apply。
+新boot计数0不抹掉旧14或历史未知用量，没有新模型/Reset/Job/Web/行情请求。
+原保存FAIL与完整Golden E/Phase17 OPEN保持，最终Golden/source-build和hosted CI/
+仓库门禁仍必要；[完整限定证据](../clean-break/phase17-personal-reset-actual-evidence.md#超时只读审计与提示源码加载2026-10-02)。
+一次独立Engineering模型HTTP诊断通过：非业务188-byte输入、128输出限额、无工具/
+重试；HTTP200/completed/1.509秒，接口报告input21/output13/total34，响应模型
+deepseek-flash接受旧alias。此次直接外部attempt1与Adapter新boot计数0分别记录，
+原DSH返回/取消/用量UNKNOWN保持；不替代Agent保存、浏览器或Golden E验收。
+Latest post-reset delta (2026-10-02): a distinct current-source normal Product
+conversation completed one parent/child save of the preserved actual Web result
+with explicitly corrected UNESTABLISHED material. Exact8 sources/claims, content
+hash, lineage,10 authority audits, immutable main Task and persisted answer passed.
+The original context and active/running observer failures remain; offline repair
+and one separate actual readonly browser visit passed (135GET/one loginPOST,
+zero new model/business inputs). Tester → independent Reviewer → Root accepted
+actual save + separate readonly UI scoped PASS. Old E2 FAIL and timeout external
+UNKNOWN remain; no replay, new Web/market/Job/Reset/seed or autonomous classification
+fix is claimed. [Actual evidence](../clean-break/phase17-personal-reset-actual-evidence.md#当前源码独立保存与只读浏览器2026-10-02).
+[Final A–F/F6 mapping](../clean-break/phase17-final-golden-acceptance.md) passed
+its scoped local Tester → independent Reviewer → Root gate, accepting segmented
+Golden E and qualified A–D/F6/current F lifecycle/source/build reuse. Existing ML
+fresh-volume two startup orders and exact cleanup receive their first current
+limited Reviewer/Root acceptance in this gate, without inventing an older receipt. Earlier save FAIL statements above describe the
+preserved original attempts. Current empty-stack rebuild/elapsed seven-day GC
+NOT_RUN, standard fresh dependency build FAIL, hosted CI/repository gates OPEN.
+At that local evidence boundary, Phase17 stayed OPEN and push/merge/deploy
+and Phase18 had not been authorized.
+2026-10-02 repository-gate update: maintainer explicitly authorized push/PR,
+merge and deployment. Draft PR #381 is open after pushing the locally accepted
+branch. Initial PR history scan FAIL and cancelled Full run's prior build-identity
+FAIL remain; no hosted PASS is claimed. The initial immutable `.281` build repair
+preserves `.280` bytes. A fresh-deployment preflight then found three existing
+Worker images missing from release publication. The bounded repair covers all14
+Compose application images and uses new immutable `.282`, retaining `.280`/`.281`
+bytes without changing application/Worker logic or SDK. Focused30 tests plus3
+subtests pass; final independent gates apply before stable-head CI.
+The maintainer also accepted only the two exact historical test-key scan
+fingerprints and fresh empty `byq-v010-*` production storage. Deployment requires
+verified images and fresh exact-resource classification; protected old
+DB/state/backup are not deployment/migration inputs. No deployment
+or Phase18 execution has occurred. [Repository gate evidence](../clean-break/phase17-final-golden-acceptance.md#repository-gate-progress--2026-10-02).
+2026-10-02 current-contract CI repair: Root-owned bounded source and fixture
+corrections passed Tester → independent Reviewer → Root offline qualification
+(102 Backend,53 Gateway,39 Runtime,15 frontend,10+1 stdlib/historical tests and
+frontend build). Request-close unknown-result accounting and exact disabled-root
+terminal closure are corrected without broadening business authority. The
+ordinary-user Reset/browser, Product MCP lineage and fixed v2 profile fixtures
+retain real hosted gates. Earlier failed CI/observer records and unknowns remain;
+owned tmpfs unit resources are removed and a later bounded protected-resource
+readback passed. The current F6 observer now has a separate scoped offline
+Tester → independent Reviewer → Root PASS (19 cases, zero skips); the new
+immutable source candidate is Build283, with ten selected identity cases and
+independent Reviewer/Root offline PASS. Hosted PR/Full CI, merge and attested
+fresh deployment remain OPEN. Existing
+A–D/v13 F6 actual evidence is reused; no new real chain or Phase18 work is claimed.
+See [CI repair gate](../clean-break/phase17-final-golden-acceptance.md#current-contract-ci-repair-gate)
+and [F6 observer gate](../clean-break/phase17-final-golden-acceptance.md#f6-current-contract-offline-observer-gate).
+No later phase is authorized.**
 Under [ADR-0089](../architecture/adr/ADR-0089-clean-break-gpu-acceptance-scope.md),
 GPU execution and GPU checkpoint/restart are `N/A` for BYQ 0.10 acceptance;
 real CPU Golden C passed locally; no GPU pass is inferred.
@@ -43,7 +130,10 @@ Adapter no longer reconstructs failed/interrupted Agent sessions, generic
 failed-turn recovery was removed, and a pinned-DSH Product API two-turn flow
 passed with exact Backend terminal acknowledgement. Hosted CI and
 human PR/merge gates remain separate.
-No production deployment or release is authorized.
+The earlier phase receipts above preserve their historical authorization
+boundaries; the 2026-10-02 repository-gate grant governs current push/PR, merge
+and deployment. Verified CI/images and the protected-resource preflight remain
+required before execution.
 
 P4-C1 code is in `main`; the P4-C2 local branch/worktree remains unreviewed
 historical reference, and P4-D is not claimed complete. The previous 0.9/P4

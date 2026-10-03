@@ -1,225 +1,217 @@
-// Task budget enforcement candidate. Loaded only by an explicitly qualified
-// continuation composition; the ordinary Product composition does not load it.
-import { openSync, writeSync, fsyncSync, closeSync } from 'node:fs';
-import { performance } from 'node:perf_hooks';
+// ADR-0090: one fresh task-ready background request. Durable business
+// permission and settlement stay in Backend; this hook fences DSH tool
+// dispatch only. Provider HTTP requests are bounded by Runtime Adapter's
+// request-scoped proxy, not by a persisted token balance.
+import { closeSync, fsyncSync, mkdirSync, openSync, writeSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-// Conservative per-call ceilings. Every admitted `llm/stream` call re-sends its
-// whole input, so the guard charges the input ceiling plus that call's output
-// bound. These values are the single source of truth mirrored by the Backend
-// reservation sizing (services/backend/app/research_continuation.py) and the
-// runtime-adapter output cap (services/runtime-adapter/app/continuation_budget.py);
-// tests/architecture/test_architecture.py fails CI on any divergence.
-export const CONTINUATION_INPUT_CEILING = 1048576;
-export const CONTINUATION_OUTPUT_CEILING = 393216;
+export const PROFILE_LIMITS = Object.freeze({
+  max_provider_calls: 16,
+  max_attempts: 16,
+  max_concurrent: 1,
+  max_input_bytes: 262144,
+  max_total_input_bytes: 4194304,
+  max_output_tokens: 8192,
+  max_total_output_tokens: 131072,
+  max_tool_payload_bytes: 65536,
+  max_total_tool_payload_bytes: 1048576,
+  max_tool_calls: 16,
+  deadline_ms: 180000,
+});
 
-// A data-ready auto-continuation is a bounded tool-calling turn, not a single
-// model call: the first call returns tool calls and the next call resumes after
-// the tools ran. One reservation therefore covers a bounded number of calls for
-// one event, each charged the conservative per-call ceiling, for a fixed total
-// token budget. `DATA_READY_MAX_CALLS` is the per-turn call bound and
-// `DATA_READY_TOKEN_LIMIT` is the total budget the Backend reserves for the
-// event. `createBudgetGate` also enforces the call bound derived from that
-// total, so an exhausted reservation fails closed on either bound.
-export const DATA_READY_MAX_OUTPUT_TOKENS = 8192;
-export const DATA_READY_MAX_CALLS = 8;
-export const DATA_READY_CALL_CEILING = CONTINUATION_INPUT_CEILING + DATA_READY_MAX_OUTPUT_TOKENS;
-export const DATA_READY_TOKEN_LIMIT = DATA_READY_MAX_CALLS * DATA_READY_CALL_CEILING;
+export const ALLOWED_TOOL_NAMES = Object.freeze([
+  'mcp__byq__byq_research_get',
+  'mcp__byq__byq_backtest_task_get',
+  'mcp__byq__byq_agent_run_start',
+  'mcp__byq__byq_agent_authorize',
+  'mcp__byq__byq_agent_audit',
+]);
 
-// ADR-0085 P3: a genuine research-judgment stage uses at most two model calls by
-// default. BYQ owns and enforces the durable-progress fence; this guard mirrors
-// the SAME default so a single stage reservation can never fund more than two
-// calls. tests/architecture/test_architecture.py fails CI if it diverges from
-// packages/contracts/research_judgment.py DEFAULT_MAX_MODEL_CALLS_PER_STAGE.
-export const RESEARCH_JUDGMENT_MAX_CALLS = 2;
+const PROFILE_ID = 'task-ready-read.v1';
+const PROFILE_VERSION = 1;
+const JOURNAL_SCHEMA = 'continuation-tool-guard.v1';
+const TOOL_LIMIT = PROFILE_LIMITS.max_tool_calls;
+const MAX_JOURNAL_BYTES = 128 * 1024;
+const ALLOWED = new Set(ALLOWED_TOOL_NAMES);
 
-// Absolute process-local safety cap, independent of any single reservation.
-const MAX_CALLS = 256;
-
-// Qualified continuation routes. This mirrors the single Backend authority,
-// RUNTIME_MODEL_ALLOWLIST in services/backend/app/credentials.py (ADR-0075 /
-// ADR-0076): deepseek-official plus the six closed opencode-* DSH runtime
-// providers, each with the exact model ids the DSH composition accepts.
-// tests/architecture/test_architecture.py parses this table together with
-// plugins/dsh-byq/compositions/byq-product-sdk.cordis.yml and fails CI on any
-// divergence, so the guard can never silently drift stricter (blocking an
-// admitted route) or looser (admitting an unconfigured route) than admission.
-export const QUALIFIED_CONTINUATION_ROUTES = {
-  "deepseek-official": ["deepseek-v4-flash", "deepseek-chat", "deepseek-reasoner"],
-  "opencode-go-responses": ["gpt-5.6-luna", "grok-4.6"],
-  "opencode-go-chat": ["deepseek-v4-flash", "deepseek-v4.1-flash", "deepseek-v4-pro", "glm-5.3", "kimi-k3"],
-  "opencode-go-messages": ["minimax-m3", "qwen3.8-max"],
-  "opencode-zen-responses": ["gpt-5.6-sol", "gpt-5.6-terra", "grok-4.6"],
-  "opencode-zen-chat": ["deepseek-v4-flash", "minimax-m3"],
-  "opencode-zen-messages": ["claude-opus-5", "claude-sonnet-5", "qwen3.7-max"],
-};
-
-// Display/credential provider -> DSH runtime route by model prefix. The
-// Backend owns this exact semantics in services/backend/app/credentials.py
-// (_MODEL_RUNTIME_PREFIXES / _runtime_provider_for): a model profile stores a
-// display provider such as "opencode-go", while DSH registers one route per
-// wire protocol (opencode-go-chat / -responses / -messages). The first entry
-// whose prefix is empty or is a prefix of the model id wins, exactly as the
-// Backend resolves it. services/backend/tests/test_credentials.py parses this
-// table and fails CI if it diverges from the Backend mapping, so the guard
-// admits the same (provider, model) pair the Backend already admitted without
-// keeping a second model list.
-export const DISPLAY_PROVIDER_RUNTIME_ROUTES = {
-  "deepseek": [
-    ["", "deepseek-official"],
-  ],
-  "opencode-go": [
-    ["gpt-", "opencode-go-responses"],
-    ["grok-", "opencode-go-responses"],
-    ["deepseek-", "opencode-go-chat"],
-    ["glm-", "opencode-go-chat"],
-    ["kimi-", "opencode-go-chat"],
-    ["minimax-", "opencode-go-messages"],
-    ["qwen", "opencode-go-messages"],
-  ],
-  "opencode-zen": [
-    ["gpt-", "opencode-zen-responses"],
-    ["grok-", "opencode-zen-responses"],
-    ["claude-", "opencode-zen-messages"],
-    ["qwen", "opencode-zen-messages"],
-    ["deepseek-", "opencode-zen-chat"],
-    ["minimax-", "opencode-zen-messages"],
-  ],
-};
-
-// Resolve the runtime route the guard should evaluate for one call. An
-// already-runtime provider is returned unchanged; a display provider is
-// normalized through the Backend mapping; an unknown provider resolves to
-// null so it can only fail closed.
-export function runtimeRouteFor(provider, model) {
-  if (Object.prototype.hasOwnProperty.call(QUALIFIED_CONTINUATION_ROUTES, provider)) {
-    return provider;
-  }
-  const prefixes = DISPLAY_PROVIDER_RUNTIME_ROUTES[provider];
-  if (!Array.isArray(prefixes) || typeof model !== 'string') {
-    return null;
-  }
-  for (const [prefix, runtime] of prefixes) {
-    if (prefix === '' || model.startsWith(prefix)) {
-      return runtime;
-    }
-  }
-  return null;
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-export function continuationRouteQualified(provider, model) {
-  const runtime = runtimeRouteFor(provider, model);
-  if (runtime === null) {
-    return false;
-  }
-  const models = QUALIFIED_CONTINUATION_ROUTES[runtime];
-  return Array.isArray(models) && typeof model === 'string' && models.includes(model);
+function sameClosedLimits(value) {
+  if (!isRecord(value) || Object.keys(value).length !== Object.keys(PROFILE_LIMITS).length) return false;
+  return Object.entries(PROFILE_LIMITS).every(([name, limit]) =>
+    Number.isSafeInteger(value[name]) && value[name] === limit);
 }
 
-function positive(value) {
-  return Number.isSafeInteger(value) && value > 0;
+function validateConfig(config) {
+  if (!isRecord(config)
+      || Object.keys(config).sort().join(',') !== 'deadlineEpochMs,executionProfile,journalPath,requestLimits,reservationId'
+      || typeof config.journalPath !== 'string' || !config.journalPath.startsWith('/')
+      || typeof config.reservationId !== 'string'
+      || !/^continuation_[a-f0-9]{32}$/.test(config.reservationId)
+      || !Number.isSafeInteger(config.deadlineEpochMs) || config.deadlineEpochMs <= 0
+      || !isRecord(config.executionProfile)
+      || Object.keys(config.executionProfile).sort().join(',') !== 'profile_id,profile_sha256,profile_version'
+      || config.executionProfile.profile_id !== PROFILE_ID
+      || config.executionProfile.profile_version !== PROFILE_VERSION
+      || typeof config.executionProfile.profile_sha256 !== 'string'
+      || !/^[a-f0-9]{64}$/.test(config.executionProfile.profile_sha256)
+      || !sameClosedLimits(config.requestLimits)) {
+    throw new Error('BYQ_CONTINUATION_GUARD_INVALID');
+  }
 }
 
-export function createBudgetGate(config, append, now = Date.now, monotonic = () => performance.now()) {
-  if (!config || !positive(config.tokenLimit) || !positive(config.expiresAt)
-      || typeof config.reservationId !== 'string' || !/^[a-zA-Z0-9_-]{8,128}$/.test(config.reservationId)) {
-    throw new Error('BYQ_CONTINUATION_BUDGET_INVALID');
+/** Pure pre-dispatch guard shared with focused offline tests. */
+export function createToolGuard(config, append, cancelAgents = () => {}, now = () => Date.now()) {
+  validateConfig(config);
+  if (typeof append !== 'function' || typeof cancelAgents !== 'function' || typeof now !== 'function') {
+    throw new Error('BYQ_CONTINUATION_GUARD_INVALID');
   }
-  const started = monotonic();
-  // Capture the admitted remaining lifetime once; wall-clock rollback must
-  // never extend this reservation, including after a long-running model call.
-  const lifetime = Math.max(0, Math.min(86400000, config.expiresAt - now()));
-  // Strict per-reservation call bound. Every admitted call costs at least the
-  // input ceiling plus one output token, so the fixed total budget can never
-  // fund more than this many calls even before the absolute MAX_CALLS cap.
-  const maxCalls = Math.max(1, Math.min(MAX_CALLS,
-    Math.floor(config.tokenLimit / (CONTINUATION_INPUT_CEILING + 1))));
-  let charged = 0;
   let calls = 0;
-  let failed = false;
-  return (options) => {
-    if (failed || now() >= config.expiresAt || monotonic() - started >= lifetime) {
-      throw new Error('BYQ_CONTINUATION_BUDGET_CLOSED');
+  let stopped = false;
+  let blockedReason = null;
+  const agents = new Set();
+
+  const cancel = () => {
+    for (const agent of agents) {
+      try { agent.cancel({ kind: 'hook', reason: 'byq-continuation-guard' }); } catch { /* already disposed */ }
     }
-    // The route must be one admission already qualified (ADR-0075): an exact
-    // (provider, model) pair from the Backend runtime allowlist. Unknown
-    // providers, a known route with an unlisted model, and the official route
-    // with an unknown model all fail closed before any budget is charged.
-    if (!continuationRouteQualified(options.provider, options.model)
-        || !positive(options.maxTokens) || options.maxTokens > CONTINUATION_OUTPUT_CEILING) {
-      throw new Error('BYQ_CONTINUATION_ROUTE_UNQUALIFIED');
+    try { cancelAgents(agents); } catch { /* caller cancellation is best effort */ }
+  };
+  const block = (reason, toolName) => {
+    if (!stopped) {
+      stopped = true;
+      blockedReason = reason;
+      try {
+        append({ phase: 'blocked', reservation_id: config.reservationId,
+          blocked_reason: reason, tool_name: toolName });
+      } catch { /* original block remains fail-closed */ }
+      cancel();
     }
-    const ceiling = CONTINUATION_INPUT_CEILING + options.maxTokens;
-    if (calls >= maxCalls || ceiling > config.tokenLimit - charged) {
-      throw new Error('BYQ_CONTINUATION_BUDGET_EXHAUSTED');
-    }
-    const record = { reservation_id: config.reservationId, call: calls + 1,
-      reserved_tokens: ceiling, charged_ceiling: charged + ceiling };
-    // Synchronous durable append precedes next(). Shared in-process children
-    // cannot interleave between the availability check and the charge.
-    try { append(record); } catch {
-      failed = true;
-      throw new Error('BYQ_CONTINUATION_BUDGET_STORAGE_FAILED');
-    }
-    charged += ceiling;
-    calls += 1;
-    return record;
+    return { kind: 'deny', reason: blockedReason };
+  };
+
+  return {
+    beforeExecute(exec) {
+      const toolName = typeof exec?.name === 'string' ? exec.name.slice(0, 192) : '';
+      if (exec?.agent && typeof exec.agent.cancel === 'function') agents.add(exec.agent);
+      if (stopped) return { kind: 'deny', reason: blockedReason };
+      if (exec?.signal?.aborted) return block('BYQ_CONTINUATION_CANCELLED', toolName);
+      if (now() >= config.deadlineEpochMs) return block('BYQ_CONTINUATION_DEADLINE_EXCEEDED', toolName);
+      if (!ALLOWED.has(toolName)) return block('BYQ_CONTINUATION_TOOL_UNQUALIFIED', toolName);
+      if (calls >= TOOL_LIMIT) return block('BYQ_CONTINUATION_TOOL_LIMIT', toolName);
+      const ordinal = calls + 1;
+      try {
+        // Durable intent precedes DSH dispatch. The plugin is inserted at the
+        // root composition (untagged/global listener), so one in-memory count
+        // covers root and child agents in this single owned process.
+        append({ phase: 'tool', reservation_id: config.reservationId,
+          call: ordinal, tool_name: toolName });
+      } catch {
+        return block('BYQ_CONTINUATION_TOOL_STORAGE_FAILED', toolName);
+      }
+      calls = ordinal;
+      return { kind: 'allow', call: ordinal };
+    },
+    get calls() { return calls; },
+    get blockedReason() { return blockedReason; },
   };
 }
 
+function writeAll(fd, data) {
+  let offset = 0;
+  while (offset < data.length) {
+    const written = writeSync(fd, data, offset, data.length - offset);
+    if (written <= 0) throw new Error('short continuation tool journal write');
+    offset += written;
+  }
+  fsyncSync(fd);
+}
+
+function appendJsonl(fd, row) {
+  const line = Buffer.from(`${JSON.stringify(row)}\n`);
+  if (line.length > MAX_JOURNAL_BYTES) throw new Error('continuation tool journal row is oversized');
+  writeAll(fd, line);
+}
+
 export const name = 'byq-continuation-budget';
-export const inject = ['llm', 'agents'];
+export const inject = ['tools', 'agents'];
 
 export function apply(ctx, config) {
-  if (!config || typeof config.journalPath !== 'string' || !config.journalPath.startsWith('/')) {
-    throw new Error('BYQ_CONTINUATION_BUDGET_INVALID');
-  }
-  // Reopening the same reservation is refused. Crash recovery must reconcile
-  // its original receipt; it must not reset the process-local allowance.
+  validateConfig(config);
+  mkdirSync(dirname(config.journalPath), { recursive: true, mode: 0o700 });
   const fd = openSync(config.journalPath, 'wx', 0o600);
   let closed = false;
+  const agentRestrictionReleases = new Map();
   const close = () => { if (!closed) { closed = true; closeSync(fd); } };
+  const releaseAllAgentRestrictions = () => {
+    for (const release of agentRestrictionReleases.values()) {
+      try { release(); } catch { /* agent scope may already have unwound */ }
+    }
+    agentRestrictionReleases.clear();
+  };
+  const releaseAgentRestriction = (agent) => {
+    const release = agentRestrictionReleases.get(agent);
+    if (release === void 0) return;
+    agentRestrictionReleases.delete(agent);
+    try { release(); } catch { /* the Agent scope owns normal teardown */ }
+  };
   try {
-    const append = record => {
-      const data = Buffer.from(JSON.stringify(record) + '\n');
-      let offset = 0;
-      while (offset < data.length) {
-        const written = writeSync(fd, data, offset, data.length - offset);
-        if (written <= 0) throw new Error('short budget journal write');
-        offset += written;
-      }
-      fsyncSync(fd);
+    const append = row => appendJsonl(fd, row);
+    const header = {
+      schema_version: JOURNAL_SCHEMA,
+      reservation_id: config.reservationId,
+      execution_profile: config.executionProfile,
+      request_limits: config.requestLimits,
+      ready: true,
     };
-    const gate = createBudgetGate(config, append);
-    const initiators = new Set();
-    let stopped = false;
-    ctx.effect(() => close);
-    ctx.on('llm/stream', async function* (options, next) {
-      const initiator = ctx.agents.currentInitiator();
-      if (initiator) initiators.add(initiator);
-      try {
-        if (stopped) throw new Error('BYQ_CONTINUATION_BUDGET_CLOSED');
-        gate(options);
-      } catch (error) {
-        if (!stopped) {
-          stopped = true;
-          try { append({ blocked_reason: error.message, blocked_purpose: options.purpose === 'compaction' ? 'compaction' : 'model' }); } catch { /* unreadable evidence retains the full reservation */ }
-        }
-        // Public DSH cancellation closes the owned agent drivers, including
-        // an 'always' retry policy; it does not cancel BYQ business jobs.
-        for (const agent of initiators) {
-          try { agent.cancel({ kind: 'hook', reason: 'byq-continuation-budget' }); } catch { /* disposal already fences this driver */ }
-        }
-        throw error;
+    const restrictAgentCatalog = ({ agent }) => {
+      const agentTools = agent?.ctx?.tools;
+      if (!agent || !agentTools || typeof agentTools.restrict !== 'function'
+          || agentRestrictionReleases.has(agent)) {
+        throw new Error('BYQ_CONTINUATION_TOOL_RESTRICTION_UNQUALIFIED');
       }
-      yield* next();
+      // `tools.restrict` is scoped by DSH to the calling Agent context. A
+      // process-global restriction is rejected by the pinned runtime and would
+      // affect unrelated Agents, so install it synchronously for every fully
+      // configured Agent before `agent/session-start` starts the driver.
+      const release = agentTools.restrict({ allow: [...ALLOWED_TOOL_NAMES] });
+      if (typeof release !== 'function') {
+        throw new Error('BYQ_CONTINUATION_TOOL_RESTRICTION_UNQUALIFIED');
+      }
+      agentRestrictionReleases.set(agent, release);
+    };
+    ctx.on('agent/created', restrictAgentCatalog);
+    ctx.on('agent/disposed', ({ agent }) => {
+      // DSH unwinds that Agent's scoped registrations before this event.
+      // Drop our reference; the returned disposer remains available for
+      // process-level cleanup if the Agent is still live when the plugin ends.
+      agentRestrictionReleases.delete(agent);
     });
-    append({ schema_version: 'continuation-budget-guard.v1', reservation_id: config.reservationId,
-      token_limit: config.tokenLimit, ready: true });
+    const guard = createToolGuard(config, append);
+    ctx.effect(() => () => {
+      close();
+      releaseAllAgentRestrictions();
+    });
+    // Pinned DSH exposes tools/pre-execute as a public waterfall before
+    // dispatch. This untagged root-composition listener shares one request-wide
+    // in-memory cap across root and child Agents.
+    ctx.on('tools/pre-execute', async (exec, next) => {
+      const decision = guard.beforeExecute(exec);
+      if (decision.kind === 'deny') return decision;
+      return next();
+    });
+    // This readiness row proves plugin setup and its mandatory lifecycle and
+    // pre-dispatch listeners are installed. Runtime checks it before Session.run;
+    // every Agent's tool catalog is still restricted synchronously at its own
+    // agent/created event, before that Agent's driver or provider call starts.
+    append(header);
     const directory = openSync(dirname(config.journalPath), 'r');
     try { fsyncSync(directory); } finally { closeSync(directory); }
   } catch (error) {
     close();
+    releaseAllAgentRestrictions();
     throw error;
   }
 }

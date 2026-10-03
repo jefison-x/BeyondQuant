@@ -1,0 +1,97 @@
+--- v11-frozen/root-control.py
++++ offline-closeout-repair/root-control.py
+@@ -557,0 +558,57 @@
++def run_worker_command_once(action: str, worker: dict, fields: dict) -> dict:
++    """Root-only one-shot CLI operation; inspect is the state authority."""
++    require(action in {"start", "stop"}, "unsupported Worker operation")
++    require(re.fullmatch(r"[0-9a-f]{64}", worker["container_id"]) is not None,
++            "Worker command requires an exact pinned container ID")
++    expected_state = "running" if action == "start" else "exited"
++    marker = CONTROL / f"signal-worker-{action}.attempt.json"
++    write_new(marker, {
++        **fields, "schema_version": f"phase17-golden-f6-worker-{action}-attempt.v1",
++        "status": "ATTEMPT_STARTED", "container_id": worker["container_id"],
++        "image_id": worker["image_id"], "created_at_utc": now_utc(),
++    })
++    command = ["docker", action]
++    if action == "stop":
++        command += ["--timeout", "0"]
++    command.append(worker["container_id"])
++    command_error = None
++    returncode = None
++    stdout = stderr = None
++    try:
++        completed = subprocess.run(command, check=False, capture_output=True, text=True, timeout=20)
++        returncode, stdout, stderr = completed.returncode, completed.stdout, completed.stderr
++    except (OSError, subprocess.SubprocessError) as exc:
++        command_error = type(exc).__name__
++        stdout, stderr = getattr(exc, "stdout", None), getattr(exc, "stderr", None)
++    def output(value):
++        return value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value
++    receipt = {"schema_version": "phase17-golden-f6-worker-cli-receipt.v1",
++               "status": "COMMAND_RETURNED" if command_error is None else "COMMAND_OUTCOME_UNKNOWN",
++               "action": action, "container_id": worker["container_id"], "command": command,
++               "returncode": returncode, "stdout": output(stdout), "stderr": output(stderr),
++               "error_type": command_error, "observed_at_utc": now_utc(), "automatic_replay": False}
++    # Save actual CLI output before any state assertion, including timeout partial output.
++    write_new(CONTROL / f"worker-{action}-cli-receipt.json", receipt)
++    projection = None
++    inspection_error = None
++    try:
++        live = docker_inspect(worker["container_id"])
++        projection = {"container_id": live.get("Id"), "image_id": live.get("Image"),
++                      "state": (live.get("State") or {}).get("Status"),
++                      "mounts": normalize_mounts(live.get("Mounts"))}
++    except Stop as exc:
++        inspection_error = type(exc).__name__
++    write_new(CONTROL / f"worker-{action}-state-readback.json", {
++        "schema_version": "phase17-golden-f6-worker-state-readback.v1",
++        "observed_at_utc": now_utc(), "projection": projection,
++        "error_type": inspection_error, "readonly_only": True, "automatic_replay": False,
++    })
++    require(command_error is None and returncode == 0,
++            "Worker command failed or outcome unknown; marker retained, read-only reconciliation only, no retry")
++    require(projection is not None and projection["container_id"] == worker["container_id"]
++            and projection["image_id"] == worker["image_id"] and projection["state"] == expected_state
++            and projection["mounts"] == sorted(worker["mounts"], key=lambda item: (str(item.get("destination")), str(item.get("type")), str(item.get("name")))),
++            "Worker state readback does not match exact pinned identity/image/mounts/expected state; no retry")
++    return receipt
++
++
+@@ -706,14 +763 @@
+-    attempt = CONTROL / "signal-worker-start.attempt.json"
+-    write_new(attempt, {"schema_version": "phase17-golden-f6-worker-start-attempt.v1", "status": "ATTEMPT_STARTED",
+-                        "container_id": worker["container_id"], "image_id": worker["image_id"], "job_id": job_id,
+-                        "task_id": task_id, "created_at_utc": now_utc()})
+-    try:
+-        cp = subprocess.run(["docker", "start", worker["container_id"]], check=True, capture_output=True, text=True, timeout=20)
+-    except Exception as exc:
+-        raise Stop("pinned signal-worker start outcome unknown; marker retained and no retry is permitted") from exc
+-    require(cp.stdout.strip() == worker["container_id"], "docker start did not confirm the exact pinned signal-worker")
+-    live = docker_inspect(worker["container_id"])
+-    require(live.get("Id") == worker["container_id"] and live.get("Image") == worker["image_id"]
+-            and (live.get("State") or {}).get("Status") == "running"
+-            and normalize_mounts(live.get("Mounts")) == sorted(worker["mounts"], key=lambda item: (str(item.get("destination")), str(item.get("type")), str(item.get("name")))),
+-            "started signal-worker does not match pinned identity/image/mounts/running state")
++    start_receipt = run_worker_command_once("start", worker, {"job_id": job_id, "task_id": task_id})
+@@ -729 +773 @@
+-        "signal": signal, "product_waiting_job": exact_job, "product_readiness": ready_body,
++        "signal": signal, "worker_cli_receipt": start_receipt, "product_waiting_job": exact_job, "product_readiness": ready_body,
+@@ -884,13 +928 @@
+-    stop_marker = CONTROL / "signal-worker-stop.attempt.json"
+-    write_new(stop_marker, {"schema_version": "phase17-golden-f6-worker-stop-attempt.v1", "status": "ATTEMPT_STARTED",
+-                            "container_id": worker["container_id"], "image_id": worker["image_id"],
+-                            "job_id": job_id, "created_at_utc": now_utc()})
+-    try:
+-        stopped = subprocess.run(["docker", "stop", "--time", "0", worker["container_id"]],
+-                                 check=True, capture_output=True, text=True, timeout=20)
+-    except Exception as exc:
+-        raise Stop("pinned signal-worker stop outcome unknown; marker retained and no retry is permitted") from exc
+-    require(stopped.stdout.strip() == worker["container_id"], "docker stop did not confirm the exact pinned signal-worker")
+-    live_worker = docker_inspect(worker["container_id"])
+-    require(live_worker.get("Id") == worker["container_id"] and live_worker.get("Image") == worker["image_id"]
+-            and (live_worker.get("State") or {}).get("Status") == "exited", "exact signal-worker is not verified stopped")
++    stop_receipt = run_worker_command_once("stop", worker, {"job_id": job_id})
+@@ -936 +968 @@
+-        "worker_stop_stdout": stopped.stdout.strip(),
++        "worker_cli_receipt": stop_receipt,

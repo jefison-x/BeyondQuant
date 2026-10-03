@@ -55,11 +55,65 @@ class BuildRevisionTests(unittest.TestCase):
         self.assertEqual(builds.check(previous)["build_id"], previous)
         self.assertEqual(builds.check(newest_frozen)["build_id"], newest_frozen)
         self.assertEqual(builds.check(older)["build_id"], older)
-        self.assertEqual(current, "dsh-0.1.5rc1-post-u8.272")
+        self.assertEqual(current, "dsh-0.1.5rc1-post-u8.301")
         self.assertEqual(builds.identity(current)[1],
-                         "services/runtime-adapter/Dockerfile.post-u8-272-candidate")
-        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.271")["build_id"],
-                         "dsh-0.1.5rc1-post-u8.271")
+                         "services/runtime-adapter/Dockerfile.post-u8-301-candidate")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.288")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.288")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.289")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.289")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.290")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.290")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.291")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.291")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.297")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.297")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.298")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.298")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.299")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.299")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.300")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.300")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.296")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.296")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.295")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.295")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.294")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.294")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.293")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.293")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.292")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.292")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.287")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.287")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.286")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.286")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.285")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.285")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.284")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.284")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.283")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.283")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.282")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.282")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.281")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.281")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.280")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.280")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.279")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.279")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.278")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.278")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.277")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.277")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.276")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.276")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.275")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.275")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.274")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.274")
+        self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.273")["build_id"],
+                         "dsh-0.1.5rc1-post-u8.273")
         self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.270")["build_id"],
                          "dsh-0.1.5rc1-post-u8.270")
 

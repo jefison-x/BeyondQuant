@@ -215,6 +215,38 @@ FROZEN_ARTIFACTS = {
         "services/runtime-adapter/Dockerfile.post-u8-271-candidate",
         "b16e18882b74431b25720b028a135ae1dd924382f8526cd2f87fa772c9dfecae",
         "bb3553580d1d35fc6dba9587586e0b897974cc96c953629ba9d8f40f096b74db"),
+    "dsh-0.1.5rc1-post-u8.272": (
+        "services/runtime-adapter/Dockerfile.post-u8-272-candidate",
+        "a4ea957ef6123d1b8c80882172c89b5b0857bdb4ab163028382d89b7291e3414",
+        "8a72fc3a826e9f571b642512df7f08d6bd244c27a631c93e1182b4b6d87226dc"),
+    "dsh-0.1.5rc1-post-u8.273": (
+        "services/runtime-adapter/Dockerfile.post-u8-273-candidate",
+        "029eadcb55f4ed5a784d7eb3d5c87150d85e43e5abfd17240606db15ff2fe9a9",
+        "4b9dbe2b46ebded1131f3996482e4f99a1e83605e33f9c471825af7a6ebb392f"),
+    "dsh-0.1.5rc1-post-u8.274": (
+        "services/runtime-adapter/Dockerfile.post-u8-274-candidate",
+        "cf7f85fbf62219c58df2c9903164699891ec737f4b0c137d773c7adf26715b7b",
+        "5bab015079049079ea530cfbad27155311742486ade8eca99bf2c8cd64c78343"),
+    "dsh-0.1.5rc1-post-u8.275": (
+        "services/runtime-adapter/Dockerfile.post-u8-275-candidate",
+        "c1ce46ac6ce876a0b2f4aeb1988d6381c8ab09bbf63b0458299eb847f4f5ff28",
+        "bfd143c08c54a0a1bfc12c6d96ecaffbe73a70dd90d19870b6cf60e379b20011"),
+    "dsh-0.1.5rc1-post-u8.276": (
+        "services/runtime-adapter/Dockerfile.post-u8-276-candidate",
+        "e4f6a417095baca1eea5b3291329004d63c6a1639fef973fa2d9f3b4bb388400",
+        "b986cbf6d26b8cbb93507d8e344b367a12892fbba15c85a6d6d35006413414f3"),
+    "dsh-0.1.5rc1-post-u8.277": (
+        "services/runtime-adapter/Dockerfile.post-u8-277-candidate",
+        "36d14cca3d16f0eed89060630e84177fa8d9193bda3132cf66aa66320d2dfbd5",
+        "ab9606267b1a056311bfb1e22f201d1a3e11da09380a2b9d6a722a151744aafd"),
+    "dsh-0.1.5rc1-post-u8.281": (
+        "services/runtime-adapter/Dockerfile.post-u8-281-candidate",
+        "e78c5cab7d5e3f36bb8c2a7ac86ca490eae6826439dd63762bcb3caa1882dfcb",
+        "0ac76cebd8a3d087fadd240570b44d4fe3106f8ee216ebb66e3c408f038304b3"),
+    "dsh-0.1.5rc1-post-u8.280": (
+        "services/runtime-adapter/Dockerfile.post-u8-280-candidate",
+        "828b58684ae05f50f5e74995352ef30bc16295ce0740c44020426ca2f1c0d947",
+        "10ca3f61094d9816981672fff14bff2ee574d4ad9b2bf848b02603548902f5a2"),
 }
 
 
@@ -238,9 +270,9 @@ class CurrentBuildRevisionTests(unittest.TestCase):
         self.assertIn(
             f"COPY config/dsh/builds/{selected}.json /opt/byq/builds/build.identity.json",
             dockerfile)
-        previous = ROOT / "services/runtime-adapter/Dockerfile.post-u8-271-candidate"
+        previous = ROOT / "services/runtime-adapter/Dockerfile.post-u8-277-candidate"
         expected = previous.read_text().replace(
-            "dsh-0.1.5rc1-post-u8.271.json", f"{selected}.json")
+            "dsh-0.1.5rc1-post-u8.277.json", f"{selected}.json")
         self.assertEqual(dockerfile, expected)
 
     def test_frozen_build_manifests_and_dockerfiles_are_not_rewritten(self) -> None:

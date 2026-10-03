@@ -21,6 +21,19 @@ RETIRED_SOURCE = "b6c8034ed638447aa1d0ddd82af9738df830bbdf"
 # They are historical evidence only; current source changes get a new immutable
 # Dockerfile and manifest.
 FROZEN_BUILDS = {
+    "dsh-0.1.5rc1-post-u8.300": "sha256:a2a896ab3e0a0c63c22e19e240aebc92ac010d177c734fb94bfaaa4e49756248",
+    "dsh-0.1.5rc1-post-u8.299": "sha256:89830627faf7b778e794e18b0b2f0c79b663e4eee612c671e7140142316cffdb",
+    "dsh-0.1.5rc1-post-u8.298": "sha256:1ea362f6950cf1013dad6879adb8c779f1ab8b44de0a8ec17d5f413870067826",
+    "dsh-0.1.5rc1-post-u8.297": "sha256:3bb79f82ead94b0b499caef5be2d090c2a955fc1b53ad8c58fac3a24aaee2899",
+    "dsh-0.1.5rc1-post-u8.296": "sha256:0a99b2f8041f83790442ebcb61861aacd9629e8431eb5824d3ab2709b7764a10",
+    "dsh-0.1.5rc1-post-u8.295": "sha256:7b6dd79ae6ea28034bf8d1b219a23d23e97e4b19199e4c37f99ad548a9887101",
+    "dsh-0.1.5rc1-post-u8.294": "sha256:057177dfda7c1dd6d7ce8381e8ed3ab75395fcef3ec9f5ed99735a6f66a91965",
+    "dsh-0.1.5rc1-post-u8.293": "sha256:6e5fe5beb58da68a6dd19f142cee5425cf5e06dfba4a7102c08b8800faa7556e",
+    "dsh-0.1.5rc1-post-u8.292": "sha256:0c324dba18137a61573e94e369b5889125d5067cbdd0a7a7f35d619f7ef08066",
+    "dsh-0.1.5rc1-post-u8.291": "sha256:17cd577143cba1c86d2d1ddb511a1569fa1a72a319d995bf5f71089ecc532c31",
+    "dsh-0.1.5rc1-post-u8.290": "sha256:2b0639a627cdb697e07b7a647d413595ffc9adc2c7bf47b5fcbc902d698211af",
+    "dsh-0.1.5rc1-post-u8.289": "sha256:46f61f64cfef2ddbd24e61840ef5b82ff8214750370afc1aa9837492c7262476",
+    "dsh-0.1.5rc1-post-u8.288": "sha256:856bc58c758f503c996cbb23af9acf05ffc463115eae8c4462296bebd6ae7293",
     "dsh-0.1.5rc1-post-u8.215": "sha256:81a7631851ca3d90caa8ce15b27911b45e3d1cb8537189ca973a534271106c56",
     "dsh-0.1.5rc1-post-u8.216": "sha256:0a28e9c6037f82caf367df1928217439f7e3936669f334c60fc1603226aa57ee",
     "dsh-0.1.5rc1-post-u8.217": "sha256:249ef7d02019b52596f74182164a323a902a7597ba9f5f41f12ddc19c98bcb19",
@@ -78,6 +91,22 @@ FROZEN_BUILDS = {
     "dsh-0.1.5rc1-post-u8.269": "sha256:56cc131e66c800798dce1d72bb895ffe9f378cce4e854376da0c567037810a08",
     "dsh-0.1.5rc1-post-u8.270": "sha256:1b65d0ffd84988e2675936d51957ec8c36d903a0cd71c5fce8245276391ec593",
     "dsh-0.1.5rc1-post-u8.271": "sha256:b16e18882b74431b25720b028a135ae1dd924382f8526cd2f87fa772c9dfecae",
+    "dsh-0.1.5rc1-post-u8.272": "sha256:a4ea957ef6123d1b8c80882172c89b5b0857bdb4ab163028382d89b7291e3414",
+    "dsh-0.1.5rc1-post-u8.273": "sha256:029eadcb55f4ed5a784d7eb3d5c87150d85e43e5abfd17240606db15ff2fe9a9",
+    "dsh-0.1.5rc1-post-u8.274": "sha256:cf7f85fbf62219c58df2c9903164699891ec737f4b0c137d773c7adf26715b7b",
+    "dsh-0.1.5rc1-post-u8.275": "sha256:c1ce46ac6ce876a0b2f4aeb1988d6381c8ab09bbf63b0458299eb847f4f5ff28",
+    "dsh-0.1.5rc1-post-u8.276": "sha256:e4f6a417095baca1eea5b3291329004d63c6a1639fef973fa2d9f3b4bb388400",
+    "dsh-0.1.5rc1-post-u8.277": "sha256:36d14cca3d16f0eed89060630e84177fa8d9193bda3132cf66aa66320d2dfbd5",
+    "dsh-0.1.5rc1-post-u8.278": "sha256:8c9eeb1569643054a67e71e31ecab10d843035050de944b638b1485cd83afe3e",
+    "dsh-0.1.5rc1-post-u8.279": "sha256:c6e65dd149ed9f195dc3909613d9b4d2a1045d915060fe2d5c23159b68b96f59",
+    "dsh-0.1.5rc1-post-u8.280": "sha256:828b58684ae05f50f5e74995352ef30bc16295ce0740c44020426ca2f1c0d947",
+    "dsh-0.1.5rc1-post-u8.281": "sha256:e78c5cab7d5e3f36bb8c2a7ac86ca490eae6826439dd63762bcb3caa1882dfcb",
+    "dsh-0.1.5rc1-post-u8.282": "sha256:bba668a85ee068f3d0406c979230574e77b985de1d2f904604fdff7eaa59a12d",
+    "dsh-0.1.5rc1-post-u8.283": "sha256:1a0cbd6134ff4e9f1b8333bb9bd57c8e7768a6a2f80d04c2638b796a003537f6",
+    "dsh-0.1.5rc1-post-u8.284": "sha256:12e4df0c591fb7066d53e9d749120fe5ff64ad5f0847df23f843dd4851fa8af2",
+    "dsh-0.1.5rc1-post-u8.285": "sha256:95bfd3082ca6c8d4cc591a714d26668d223a5672857f3d960bc80242d0eb3186",
+    "dsh-0.1.5rc1-post-u8.286": "sha256:eeb5342dd9728116c7acd005cd418a48516240408b662ca7483bd98ec3765309",
+    "dsh-0.1.5rc1-post-u8.287": "sha256:a354828a25e2c059fb21caaf6a5fdde8b93ab84b19e9ae0c2110427ce3d8e528",
 }
 KEYS = {"schema_version", "build_id", "release_id", "release_descriptor_hash", "dockerfile", "inputs"}
 SOURCE_ROOTS = (
@@ -134,7 +163,7 @@ def selected_build_id(release):
     if release == "dsh-0.1.1rc1":
         return RETIRED_BUILD  # Historical identity only; never a current build.
     if release in RELEASES:
-        return release + "-post-u8.272"
+        return release + "-post-u8.301"
     if release in HISTORICAL_BUILDS:
         return HISTORICAL_BUILDS[release]
     raise ValueError("unregistered release")

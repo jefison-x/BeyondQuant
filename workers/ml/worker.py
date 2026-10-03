@@ -17,6 +17,7 @@ import lightgbm as lgb
 import numpy as np
 
 from app.backtest import LocalObjectStore
+from app.ml_object_permissions import prepare_ml_object_directories
 from app.market_readiness import MarketReadinessStore
 from app.market_automation import MarketAutomationStore
 from app.ml_strategy import FEATURE_ORDER, RUNTIME_LOCK, effective_lightgbm_parameters
@@ -537,7 +538,8 @@ def main() -> int:
     research = ResearchStore.from_env()
     readiness = MarketReadinessStore.from_env()
     repairs = MarketAutomationStore()
-    objects = LocalObjectStore(os.environ.get("BYQ_ML_OBJECT_ROOT", "/var/lib/byq/ml-objects"))
+    objects = LocalObjectStore(prepare_ml_object_directories(
+        os.environ.get("BYQ_ML_OBJECT_ROOT", "/var/lib/byq/ml-objects")))
     coordinator = MLTrainingCoordinator(
         runs, research, objects, QualifiedTrainer(),
         worker_id=os.environ.get("BYQ_ML_WORKER_ID", "ml-worker-1"),

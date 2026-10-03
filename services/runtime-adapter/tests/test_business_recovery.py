@@ -11,6 +11,7 @@ import pytest
 from app.runtime import RuntimeAdapter
 from .test_process_cleanup import FakeHarness, release_compatibility
 from .test_session_rehydration import _simulate_process_death
+from packages.contracts.continuation_request import profile_binding, request_limits
 
 _ROOT_IDENTITY_LINE = "X-BYQ-Root-Run-ID: !!js process.env.BYQ_ROOT_RUN_ID\n"
 
@@ -39,11 +40,12 @@ def _root_scoped_adapter(tmp_path: Path, monkeypatch) -> RuntimeAdapter:
 
 def _plain_reservation() -> dict:
     return {
-        "schema_version": "task-continuation-reservation.v1",
+        "schema_version": "task-continuation-reservation.v2",
         "reservation_id": "continuation_" + "a" * 32,
         "task_id": "task_" + "b" * 32,
         "owner": "alice", "workspace_id": "workspace_alice",
-        "token_limit": 2_000_000,
+        "execution_profile": profile_binding(),
+        "request_limits": request_limits(),
         "expires_at": (datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat(),
     }
 
@@ -91,7 +93,10 @@ def test_lost_original_prompt_remains_unknown_until_a_fresh_session(tmp_path, mo
 
     FakeHarness.reset()
     adapter = _root_scoped_adapter(tmp_path, monkeypatch)
-    monkeypatch.setattr(runtime_module, "read_guard", lambda *args, **kwargs: {"charged_tokens": 1})
+    def clean_tool_guard(_journal, _reservation, *, terminal=False):
+        return {"reservation_id": _reservation["reservation_id"], "tool_calls": 0,
+                "blocked_reason": None, "status": "settled" if terminal else "accepted"}
+    monkeypatch.setattr(runtime_module, "read_request_guard", clean_tool_guard)
     monkeypatch.setattr(FakeHarness, "close", lambda self: None)
     try:
         adapter.create_session("lost", "lost-trace", "alice", "workspace_alice")
@@ -128,7 +133,8 @@ def test_missing_continuation_receipt_does_not_scan_old_guard_files(tmp_path, mo
     old_session_root.mkdir(parents=True)
     reservation = _plain_reservation()
     (old_session_root / "continuation-budget.jsonl").write_text(json.dumps({
-        "reservation_id": reservation["reservation_id"], "token_limit": reservation["token_limit"],
+        "schema_version": "continuation-budget-guard.v1",
+        "reservation_id": reservation["reservation_id"], "token_limit": 2_000_000,
     }))
     try:
         assert adapter.continuation_receipt("missing-session", reservation["reservation_id"]) == {

@@ -1,5 +1,138 @@
 # Phase 0–6 gate record
 
+## Current gate — local final mapping PASS / CI pending (2026-10-02)
+
+Accepted ADR-0091 personal Reset/defaults passed actual Tester → independent Reviewer → Root:
+72 categories/784 rows archived for seven days, identity/RBAC/shared state and5 CAS preserved.
+E1 normal post-reset research passed. Original E2 really delegated/searched once but its save
+failed Backend422; the later original save attempt timed out with external response/usage UNKNOWN.
+These failures are retained and unknown input is not replayed.
+
+A distinct current-source normal conversation now completed one parent/child save of the preserved
+actual Web material:8 unknown publication dates,8 UNESTABLISHED claims, exact Artifact hash/lineage,
+main Task unchanged,10 authoritative audits,Job0. It added no Web query/market download/Reset/seed.
+Original browser/context and status-enum observer failures remain; offline corrections and one
+separate read-only real browser visit passed,135 GET/one login POST,model/business writes0.
+Tester → independent Reviewer → Root accepted **actual save + separate readonly UI scoped PASS**.
+This is segmented evidence with explicitly corrected material; it is not original E2 same-turn PASS
+or proof of autonomous source classification correction.
+
+[Actual Reset/research/save evidence](phase17-personal-reset-actual-evidence.md) and
+[final Golden mapping](phase17-final-golden-acceptance.md) bind all receipts and current source limits.
+Final A–F/F6 mapping passed its scoped local Tester → independent Reviewer → Root gate;
+Golden E is the explicitly segmented composite, and F is qualified bounded reuse. Phase17 remains OPEN.
+Reuse qualified A–D/F6 and bounded F lifecycle/current-source build evidence. Standard networkless
+fresh dependency build FAIL is preserved; current whole empty-stack and elapsed seven-day GC are
+NOT_RUN. Required exact-head hosted CI/repository gates remain OPEN. No push, merge, deployment or
+Phase18 is authorized. Historical failed/proposed gates below keep their original verdicts.
+
+## Current v13 affected F6 acceptance (2026-10-01)
+
+Tester → independent Reviewer → Root accepted real FG1/FG2, the original healthy
+session's automatic background continuation, bounded answer persistence and
+settlement, exact Worker stop/revoke and successful flags0 closeout. The actual
+readonly Product permission panel and refresh then passed a separately gated
+UI-only Chromium check:83 requests,82 GET/one login POST, zero Agent/model or
+business inputs.11 limit fields and known actual usage match authority wire.
+The legal audit-resource and canonical Product catalog observer repairs were
+qualified offline before their affected real executions. Historical v11/v12,
+v13 UI1 FAIL and blocked UI candidate v1 remain immutable.
+
+**Affected F6 + readonly UI: scoped real PASS; Phase17: OPEN.** The affected post-reset save and final Golden summary remain required; complete personal reset does not use Engineering seed. Tester/Reviewer/Root accepted
+Golden F scoped source/build reuse without a current-source empty-rebuild claim;
+reuse valid A–D and preserve final phase/hosted CI/repository gates. No push,
+remote merge, deployment or Phase18 is authorized. [Actual v13 evidence](phase17-continuation-budget-audit.md#17-f6-v13-实际接续及成功收尾2026-10-01).
+
+
+## Phase17 v12 failed audit observation and scoped repair (2026-10-01)
+
+Complete v12 F6 **FAIL**; FG2/BG/UI **NOT_RUN**. FG1 created a new Task and two
+validated Artifacts, but frozen observers rejected a legal exact-Task validation
+authorization. Root saved evidence and bounded readonly reconciliation before
+a truthful negative STOP_NOT_PASS notification. Exact failed-session/flag0
+cleanup preserved resources and zeroed the new Runtime;12 prior normalized
+model calls remain recorded (raw HTTP NOT_OBSERVED). Tester → independent
+Reviewer → Root accepted these facts and containment only.
+
+The separate two-observer resource correction and authority-wire preservation
+passed scoped offline sample/stub gates; no architecture change or real F6 pass.
+The68 original evidence files remain sealed. New real admission/freeze, healthy
+success closeout and real UI are still necessary, alongside final Golden and
+hosted CI. Reuse valid A–D; no next phase/push/remote merge/deployment.
+See [v12 evidence](phase17-continuation-budget-audit.md#15-f6-v12-合法-task-授权与冻结观察器失败2026-10-01).
+
+## Phase 17 ADR-0090 v11 actual scope and CLI observer correction (2026-10-01)
+
+Tester → independent Sol Reviewer → Root accepted actual FG1/FG2 and automatic
+BG audits, validated Job/Artifact lineage, answer persistence and one settled
+request with known usage inside its own limits. Complete v11 F6 remains **FAIL**:
+Root CLI observation failed after Worker stop, followed by bounded signal timeout.
+The timeout suffix refused new effects; exact failure cleanup preserved settlement,
+revoked once, removed the dedicated failed session and restored flags0/stopped
+Workers with other resources preserved. Successful UI is **NOT_RUN**. This is
+scoped real evidence and failure containment, not phase closure.
+
+The separate Root-only CLI correction passed 13 mocked dynamic tests plus one
+static check and independent review. It records actual command output before
+assertions, uses exact Docker state readback and never retries an unknown command.
+Root **PASS for the offline correction**. A separate one-shot empty-queue Worker
+start→stop then passed Tester → independent Reviewer → Root for actual CLI control
+only: exact state readbacks, unchanged queue/Runtime and separately recorded full
+resource/volume/network preservation. No new Job, Agent input or model call.
+The original full F6/UI verdicts remain unchanged.
+The [current evidence](phase17-continuation-budget-audit.md#13-f6-v11-后台真实接续与失败收尾2026-10-01)
+binds original failures and all gate hashes. Phase17 remains OPEN; final Golden,
+successful UI/healthy closeout and hosted CI remain necessary. No next phase,
+push, remote merge or deployment is authorized.
+
+## Phase 17 exact-authorized legacy source slice (2026-09-30)
+
+After reviewed checkpoint `5260d3e6`, the maintainer explicitly authorized
+removal of the unreachable old-plan adoption/classification path and
+`legacy_reason` references in fresh DDL, source and tests. The previous automatic
+approval rejection is resolved for this exact scope. The [phase record](phase17-residual-simplification.md)
+records caller/reference closure, retained domain invariants and the new isolated
+synthetic `byq_domain_test` scope. No existing database/backup or provider/model
+operation follows from this source authorization. Worker pure contract 22/parse/diff
+checks PASS. Independent Tester PASS: 75 tests across six affected current
+contract/store/judgment/approval/continuation suites; 53 schema resets only in the
+new disposable tmpfs test PG, table existence/`legacy_reason=0` confirmed and
+exact resource cleanup verified. Identity/selection 12, architecture 74, syntax
+18 files, two Markdown and diff checks PASS. Independent Sol Reviewer:
+**Functional PASS / Tests PASS / Clean Break Architecture PASS**; Root: **PASS
+for this precise source slice**. Current factory, exact approval/CAS, scope and
+durable idempotency/unknown-outcome contracts remain. Hosted CI/real Golden and
+remaining residual qualification are not covered by this slice verdict.
+Current immutable `.274` is generated with hash
+`sha256:cf7f85fbf62219c58df2c9903164699891ec737f4b0c137d773c7adf26715b7b`;
+checkpoint `.273` is frozen unchanged. Phase 17 overall remains OPEN.
+
+## Phase 17 entry and residual audit (2026-09-30)
+
+Phase 16 PR #379 and its exact-head Full/PR CI passed and merged. The maintainer
+then instructed the next step. A new verified isolated worktree and branch
+`codex/clean-break-phase17` were created from fetched main at observed base
+`ff6756be3e7bf6cb6d3213c6dcd9bf016ecb9545`. STATUS/README now route Phase 17.
+The [residual audit](phase17-residual-simplification.md) records finite owners,
+Gateway/MCP deletions, focused Tester evidence, the Reviewer-found synthetic
+wire regression, and the exact approval-blocked legacy source proposal.
+Final A–F reruns after the last deletion and all repository gates remain OPEN.
+No new model/provider call, database/backup operation, push or deployment has
+occurred. Earlier Phase 16 pending/routing snapshots below are historical.
+
+Current source checkpoint: Tester **PASS**, Gateway 29 focused tests, MCP build
+and research/real MCP wire tests, governance three, normative architecture 74,
+identity/selection 12, syntax 14 files, six Markdown documents and diff checks.
+Independent Sol Reviewer: **Functional PASS / Tests PASS / Clean Break
+Architecture PASS**; Root: **PASS for the interim Gateway/MCP source slice**.
+New immutable `.273` hash is
+`sha256:029eadcb55f4ed5a784d7eb3d5c87150d85e43e5abfd17240606db15ff2fe9a9`;
+published `.272` manifest/Dockerfile remain unchanged. Corrected opt-in wire
+source preserves current terminal close/ACK and paid separation; actual wire
+and real MCP Backend/DB integration remain NOT_RUN. Optional F6 automatic Agent
+prompt dispatch and extra plugin deployment/Adapter alias contracts remain
+separate qualification candidates; they are not silently marked retired.
+
 ## Phase 16 entry and Golden evidence reconciliation (2026-09-30)
 
 Phase 15 repository completion is verified: PR #378 merged, final-head Full CI

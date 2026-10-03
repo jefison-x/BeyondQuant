@@ -45,7 +45,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - wget -T 2 -q -O - http://127.0.0.1/ >/dev/null && wget -T 2 -q -O - http://gateway:8100/readyz >/dev/null || exit 1
+        - wget -T 2 -q -O - http://127.0.0.1/ >/dev/null && wget -T 2 -q -O - http://127.0.0.1/readyz >/dev/null || exit 1
       interval: 5s
       timeout: 5s
       retries: 12
@@ -178,6 +178,7 @@ services:
       BYQ_DATABASE_URL: ${BYQ_DATABASE_URL:-postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain}
       BYQ_RUNTIME_AUTHORITY_TOKEN: ${BYQ_RUNTIME_AUTHORITY_TOKEN:?BYQ_RUNTIME_AUTHORITY_TOKEN must be set}
       BYQ_BACKTEST_OBJECT_ROOT: /var/lib/byq/domain/backtest-objects
+      BYQ_ML_OBJECT_ROOT: /var/lib/byq/ml-objects
       BYQ_ENGINEERING_WORKTREE_ROOT: ${BYQ_ENGINEERING_WORKTREE_ROOT:-/home/jefison/projects/.byq-worktrees}
       BYQ_BOOTSTRAP_ADMIN_USERNAME: ${BYQ_BOOTSTRAP_ADMIN_USERNAME:-admin}
       BYQ_BOOTSTRAP_ADMIN_PASSWORD: ${BYQ_BOOTSTRAP_ADMIN_PASSWORD:-password}
@@ -195,8 +196,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    group_add:
+      - "10005" # ML CAS producer group; Backend owns exact expired-object cleanup.
     volumes:
       - byq_domain_state:/var/lib/byq/domain
+      - byq_ml_model_state:/var/lib/byq/ml-objects
     healthcheck:
       test:
         - CMD

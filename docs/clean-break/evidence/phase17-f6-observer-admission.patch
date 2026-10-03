@@ -1,0 +1,140 @@
+--- v10/root-control/root-control.py
++++ v11/root-control/root-control.py
+@@ -26 +26 @@
+-V7_BASE = Path("/tmp/byq-phase17-adr0090-f6-v10")
++V7_BASE = Path("/tmp/byq-phase17-adr0090-f6-v11")
+@@ -56,0 +57,66 @@
++
++
++def cached_readiness_request(inputs: dict) -> dict:
++    pool = inputs["pool"]
++    dates = []
++    for key in ("start_date", "end_date"):
++        raw = pool[key]
++        require(isinstance(raw, str), "frozen cache date is not text")
++        try:
++            parsed = dt.date.fromisoformat(raw)
++        except ValueError as exc:
++            raise Stop("frozen cache date is invalid") from exc
++        require(parsed.isoformat() == raw, "frozen cache date is not canonical ISO")
++        dates.append(parsed)
++    require(dates[0] <= dates[1], "frozen cache date range is reversed")
++    return {"symbols": [pool["symbol"]], "start_date": dates[0].strftime("%Y%m%d"),
++            "end_date": dates[1].strftime("%Y%m%d"), "use_case": "backtest",
++            "data_requirements": inputs["strategy"].get("data_requirements", {})}
++
++
++def check_cached_readiness(reply, inputs: dict) -> dict:
++    body = reply.body
++    wanted = cached_readiness_request(inputs)
++    require(reply.status == 200 and reply.same_origin and isinstance(body, dict)
++            and body.get("schema_version") == "data-readiness-product.v1"
++            and body.get("verdict") == "usable" and body.get("checked_against") == "persisted_byq"
++            and all(body.get("scope", {}).get(key) == wanted[key]
++                    for key in ("symbols", "start_date", "end_date", "use_case"))
++            and body.get("summary", {}).get("required_sessions") == inputs["pool"]["sessions"]
++            and body.get("summary", {}).get("missing_items") == 0
++            and body.get("summary", {}).get("ready_items") == inputs["pool"]["sessions"]
++            and body.get("summary", {}).get("calendar_complete") is True,
++            "Product cache readiness does not prove the exact cached range usable")
++    return body
++
++
++def check_test_accounts(reply, expected_owner: str, expected_user_id: str) -> list[dict]:
++    body = reply.body
++    require(reply.status == 200 and reply.same_origin and isinstance(body, dict)
++            and set(body) == {"users"} and isinstance(body["users"], list)
++            and len(body["users"]) == 1, "dedicated test account scope changed")
++    user = body["users"][0]
++    require(isinstance(user, dict) and user.get("username") == expected_owner
++            and user.get("status") == "active" and isinstance(user.get("user_id"), str)
++            and user["user_id"] == expected_user_id, "dedicated sole test owner is invalid")
++    return [{key: user[key] for key in ("user_id", "username", "status")}]
++
++
++def check_signal_queue(reply, allowed_job_id: str | None = None) -> dict:
++    body = reply.body
++    require(reply.status == 200 and reply.same_origin and isinstance(body, dict)
++            and isinstance(body.get("jobs"), list) and type(body.get("total")) is int
++            and body["total"] == len(body["jobs"]) < 100,
++            "dedicated SignalJob catalog is unknown or incomplete")
++    rows = body["jobs"]
++    ids = [row.get("job_id") for row in rows if isinstance(row, dict)]
++    require(len(ids) == len(rows) and all(isinstance(jid, str) and jid.startswith("signaljob_") for jid in ids)
++            and len(set(ids)) == len(ids), "dedicated SignalJob identities are invalid or duplicated")
++    active = [row for row in rows if row.get("status") not in {"completed", "failed", "cancelled"}]
++    if allowed_job_id is None:
++        require(not active, "dedicated SignalJob queue is not idle")
++    else:
++        require(len(active) == 1 and active[0].get("job_id") == allowed_job_id
++                and active[0].get("status") == "waiting_for_data" and active[0].get("attempt_count") == 0,
++                "dedicated queue is not exactly the one unclaimed waiting SignalJob")
++    return body
+@@ -93 +159 @@
+-    allowed_roots = [CONTROL.resolve(), Path("/tmp/byq-phase17-adr0090-f6-native-v10").resolve()]
++    allowed_roots = [CONTROL.resolve(), Path("/tmp/byq-phase17-adr0090-f6-native-v11").resolve()]
+@@ -585,0 +652 @@
++    accounts = check_test_accounts(product.request("GET", "/api/product/admin/users"), pre["identity"]["owner_principal"], inputs["queue_scope"]["expected_user_id"])
+@@ -587,5 +654,6 @@
+-    require(job_list.status == 200 and job_list.same_origin and isinstance(job_list.body, dict)
+-            and isinstance(job_list.body.get("jobs"), list) and job_list.body.get("total") == len(job_list.body["jobs"])
+-            and job_list.body.get("total", 100) < 100
+-            and [x.get("job_id") for x in job_list.body["jobs"]].count(job_id) == 1,
+-            "exact SignalJob catalog is paginated or does not contain this one job")
++    catalog = check_signal_queue(job_list, job_id)
++    write_new(CONTROL / "pre-worker-account-queue-readback.json", {
++        "observed_at_utc": now_utc(), "accounts": accounts, "catalog": catalog,
++        "scope": inputs["scope"], "queue_scope": inputs["queue_scope"],
++        "scope_limit": "fresh dedicated supported-source history, sole user and no concurrent writer; not global SQL proof",
++    })
+@@ -609,5 +677 @@
+-    readiness_body = {
+-        "symbols": [inputs["pool"]["symbol"]], "start_date": inputs["pool"]["start_date"],
+-        "end_date": inputs["pool"]["end_date"], "use_case": "backtest",
+-        "data_requirements": inputs["strategy"].get("data_requirements", {}),
+-    }
++    readiness_body = cached_readiness_request(inputs)
+@@ -616,9 +680,7 @@
+-    require(readiness.status == 200 and readiness.same_origin and isinstance(ready_body, dict)
+-            and ready_body.get("schema_version") == "data-readiness-product.v1" and ready_body.get("verdict") == "usable"
+-            and ready_body.get("checked_against") == "persisted_byq"
+-            and ready_body.get("scope", {}).get("symbols") == [inputs["pool"]["symbol"]]
+-            and ready_body.get("scope", {}).get("start_date") == inputs["pool"]["start_date"].replace("-", "")
+-            and ready_body.get("scope", {}).get("end_date") == inputs["pool"]["end_date"].replace("-", "")
+-            and ready_body.get("summary", {}).get("required_sessions") == inputs["pool"]["sessions"]
+-            and ready_body.get("summary", {}).get("missing_items") == 0,
+-            "Product cache readiness does not prove the exact 98-session range usable")
++    write_new(CONTROL / "pre-worker-readiness-readback.json", {
++        "schema_version": "phase17-f6-pre-worker-readiness-readback.v1",
++        "observed_at_utc": now_utc(), "request_body": readiness_body,
++        "status": readiness.status, "same_origin": readiness.same_origin,
++        "response_body": ready_body, "readonly_query": True,
++    })
++    check_cached_readiness(readiness, inputs)
+@@ -638,0 +701,4 @@
++    require(check_test_accounts(product.request("GET", "/api/product/admin/users"), pre["identity"]["owner_principal"], inputs["queue_scope"]["expected_user_id"]) == accounts,
++            "dedicated test owner changed before Worker start")
++    require(check_signal_queue(product.request("GET", "/api/product/signal-producer/jobs?limit=100&offset=0"), job_id) == catalog,
++            "dedicated SignalJob queue changed before Worker start")
+--- v10/root-prepare-live.py
++++ v11/root-prepare-live.py
+@@ -10 +10 @@
+-BASE=Path('/tmp/byq-phase17-adr0090-f6-v10')
++BASE=Path('/tmp/byq-phase17-adr0090-f6-v11')
+@@ -80 +80,12 @@
+- signal=get('/api/product/signal-producer/jobs?limit=100&offset=0')
++ accounts=c.check_test_accounts(product.request('GET','/api/product/admin/users'),prior['identity']['owner_principal'],inputs['queue_scope']['expected_user_id'])
++ queue_scope=inputs['queue_scope'];assert queue_scope['kind']=='fresh-dedicated-sole-user-supported-source-history' and queue_scope['expected_owner']==prior['identity']['owner_principal']
++ assert queue_scope['fresh_directory_required'] is True and queue_scope['no_concurrent_writer'] is True and queue_scope['global_SQL_exclusion_claimed'] is False
++ proof=Path(queue_scope['acceptance_evidence']['path']);assert sha(proof)==queue_scope['acceptance_evidence']['sha256']
++ acceptance=load(proof);assert acceptance['status']=='ROOT_PASS_ACCOUNT_SCOPE_AND_SAME_JOB_ARTIFACT_ONLY' and acceptance['account_count']==1 and acceptance['account_username']==accounts[0]['username']
++ readiness_body=c.cached_readiness_request(inputs)
++ readiness=product.request('POST','/api/product/data-center/readiness',readiness_body)
++ readiness_record={'method':'POST','path':'/api/product/data-center/readiness','readonly_query':True,'request_body':readiness_body,'status':readiness.status,'same_origin':readiness.same_origin,'response_body':readiness.body}
++ # Preserve an invalid observed reply as well; a failed preflight never submits a model input.
++ write(BASE/('readiness-preflight-'+sys.argv[1]+'.json'),readiness_record)
++ c.check_cached_readiness(readiness,inputs)
++ signal=c.check_signal_queue(product.request('GET','/api/product/signal-producer/jobs?limit=100&offset=0'))
+@@ -90 +101 @@
+-  'pool_snapshot_reverified':True,'cached_98_sessions_evidence_reused':True,'business_mutations':0,'model_inputs':0,'sql_calls':0}
++  'pool_snapshot_reverified':True,'cached_98_sessions_reverified':True,'canonical_readonly_readiness':readiness_record,'sole_test_accounts':accounts,'queue_scope':queue_scope,'business_mutations':0,'model_inputs':0,'sql_calls':0}

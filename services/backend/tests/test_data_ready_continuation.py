@@ -7,6 +7,7 @@ normal budgeted F6 permission continues to work unchanged.
 import hashlib
 import os
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -14,6 +15,7 @@ from app.conversation_catalog import ConversationCatalogStore
 from app.research import ResearchStore
 from tests.workspace_helpers import trusted_agent_context
 from tests.test_backtest_task_reconciliation import setup_creation
+from tests.continuation_request_fixtures import confirmed_request_usage
 
 pytestmark = pytest.mark.skipif(not os.environ.get('BYQ_DATABASE_URL'), reason='isolated PostgreSQL required')
 
@@ -67,6 +69,24 @@ def continuation_block(store, task_id):
         FROM research_tasks WHERE task_id=:task""", {'task': task_id})
 
 
+def legacy_model_reservation(suffix, *, status='reserved'):
+    """Persist a pre-cleanup data-ready model receipt in the disposable DB."""
+    now = datetime.now(timezone.utc)
+    created = (now - timedelta(minutes=1)).isoformat()
+    return {
+        'reservation_id': 'continuation_' + suffix * 32,
+        'grant_kind': 'data_ready', 'grant_version': None,
+        'event_key': 'ready-v1:' + suffix * 64,
+        'input_sha256': 'a' * 64, 'token_limit': 8000000,
+        'status': status, 'run_id': None, 'charged_tokens': None,
+        'settlement_sha256': None, 'created_at': created,
+        'instruction': 'legacy data-ready model instruction',
+        'dispatch_attempts': 0, 'next_attempt_at': created,
+        'reconcile_attempts': 0, 'next_reconcile_at': created,
+        'expires_at': (now + timedelta(hours=1)).isoformat(),
+    }
+
+
 def add_ready_event(fixture, *, key, content):
     """Create a second completed signal job with its own validated snapshot."""
     store, jobs, task = fixture['store'], fixture['jobs'], fixture['payload']['task_id']
@@ -88,9 +108,9 @@ def add_ready_event(fixture, *, key, content):
     return job_id, artifact['artifact_id']
 
 
-def grant_retry_permission(store, fixture, *, key, max_turns=8):
+def grant_retry_permission(store, fixture, *, key, max_turns=1):
     store.create_continuation_permission(fixture['payload']['task_id'], {
-        'idempotency_key': key, 'token_limit': max_turns * (1048576 + 8192),
+        'idempotency_key': key,
         'max_turns': max_turns,
         'confirmed_artifact_ids': [fixture['payload']['strategy_version_artifact_id']]},
         trusted_context=fixture['context'])
@@ -102,7 +122,8 @@ def grant_retry_permission(store, fixture, *, key, max_turns=8):
 def settle_needs_attention(store, fixture, intent):
     return store.record_continuation_receipt(fixture['payload']['task_id'],
         trusted_context=fixture['context'], reservation_id=intent['receipt']['reservation_id'],
-        status='settled', charged_tokens=1048576, settlement_sha256='a' * 64,
+        status='settled', request_usage=confirmed_request_usage(),
+        settlement_sha256='a' * 64,
         outcome='needs_attention')
 
 
@@ -140,13 +161,7 @@ def test_ready_signal_job_enqueues_exactly_one_data_ready_continuation(monkeypat
         fixture['jobs'].close()
 
 
-def test_data_ready_budget_covers_a_bounded_multi_call_turn(monkeypatch, tmp_path):
-    """The grantless notification reserves no model budget at all."""
-    from app.research_continuation import (DATA_READY_INPUT_CEILING, DATA_READY_MAX_CALLS,
-        DATA_READY_MAX_OUTPUT_TOKENS, DATA_READY_TOKEN_LIMIT)
-    per_call = DATA_READY_INPUT_CEILING + DATA_READY_MAX_OUTPUT_TOKENS
-    assert DATA_READY_MAX_CALLS >= 2
-    assert DATA_READY_TOKEN_LIMIT == DATA_READY_MAX_CALLS * per_call
+def test_grantless_data_ready_notification_records_zero_model_liability(monkeypatch, tmp_path):
     fixture = setup_ready(monkeypatch, tmp_path)
     store, task, conversation, context = (fixture['store'], fixture['payload']['task_id'],
         fixture['conversation'], fixture['context'])
@@ -155,8 +170,10 @@ def test_data_ready_budget_covers_a_bounded_multi_call_turn(monkeypatch, tmp_pat
         assert intent['status'] == 'notified'
         receipt = intent['receipt']
         assert receipt['grant_kind'] == 'data_ready_notification'
-        # The notification is settled immediately with zero token liability, so
-        # it can never be reported as model usage.
+        assert receipt['event_key'].startswith('ready-v1:')
+        assert receipt['instruction'] is None
+        assert receipt['run_id'] is None
+        # Notifications are settled immediately and never enter model dispatch.
         assert receipt['token_limit'] == 0
         assert receipt['charged_tokens'] == 0
         assert receipt['status'] == 'settled'
@@ -250,7 +267,7 @@ def test_data_ready_scope_admits_only_the_original_task(monkeypatch, tmp_path):
         # ADR-0085 P0: grantless data-ready is notify-only, so the task-bound
         # scope check is exercised through an explicit budgeted continuation.
         store.create_continuation_permission(task, {
-            'token_limit': 8000000, 'max_turns': 8, 'valid_seconds': 86400,
+            'max_turns': 1, 'valid_seconds': 86400,
             'idempotency_key': 'data-ready-scope-grant',
             'confirmed_artifact_ids': [fixture['payload']['strategy_version_artifact_id']]},
             trusted_context=context)
@@ -259,8 +276,8 @@ def test_data_ready_scope_admits_only_the_original_task(monkeypatch, tmp_path):
             {'job': fixture['job_id']})
         reservation_id = store.claim_conversation_continuation(
             conversation, trusted_context=context)['receipt']['reservation_id']
-        store.record_continuation_receipt(task, trusted_context=context,
-            reservation_id=reservation_id, status='outcome_unknown')
+        assert store.claim_continuation_dispatch(task, reservation_id,
+            trusted_context=context) == {'dispatch': True, 'attempt': 1}
         call = {'tool': 'byq_research_get', 'arguments': {'entity_type': 'research_task', 'entity_id': task},
             'root_run_id': 'a' * 32}
         assert authorize(store, reservation_id, call, context)['admitted'] is True
@@ -281,7 +298,7 @@ def test_budgeted_permission_still_reserves_the_ready_event(monkeypatch, tmp_pat
         fixture['conversation'], fixture['context'])
     try:
         store.create_continuation_permission(task, {'idempotency_key': 'ready-grant',
-            'token_limit': 8000000, 'confirmed_artifact_ids': [fixture['payload']['strategy_version_artifact_id']]},
+            'confirmed_artifact_ids': [fixture['payload']['strategy_version_artifact_id']]},
             trusted_context=context)
         # The grant predates the readiness transition in this regression path.
         fixture['jobs']._execute("UPDATE signal_producer_jobs SET updated_at=now() WHERE job_id=:job",
@@ -290,14 +307,63 @@ def test_budgeted_permission_still_reserves_the_ready_event(monkeypatch, tmp_pat
         assert intent['status'] == 'intent'
         assert intent['receipt']['event_key'].startswith('ready-v1:')
         assert intent['receipt'].get('grant_kind') != 'data_ready'
-        assert intent['receipt']['token_limit'] == 8000000
+        assert intent['receipt']['schema_version'] == 'task-continuation-reservation.v2'
+        assert 'token_limit' not in intent['receipt']
+        assert intent['receipt']['dispatch_attempts'] == 0
     finally:
         store.close()
         fixture['backtests'].close()
         fixture['jobs'].close()
 
 
-def test_needs_attention_rearms_on_a_distinct_ready_event(monkeypatch, tmp_path):
+@pytest.mark.parametrize('later_grant', [False, True])
+def test_legacy_data_ready_model_receipt_never_dispatches_or_authorizes(
+        monkeypatch, tmp_path, later_grant):
+    from app.continuation_scope import authorize
+
+    monkeypatch.setenv('BYQ_F6_EXECUTOR_ENABLED', '1')
+    fixture = setup_ready(monkeypatch, tmp_path)
+    store, task, conversation, context = (fixture['store'], fixture['payload']['task_id'],
+        fixture['conversation'], fixture['context'])
+    reserved = legacy_model_reservation('c', status='reserved')
+    unknown = legacy_model_reservation('d', status='outcome_unknown')
+    try:
+        store._execute('UPDATE research_tasks SET continuation_budget=:budget WHERE task_id=:task',
+            {'task': task, 'budget': [reserved, unknown]})
+        if later_grant:
+            # The historical reservation predates this explicit human grant.
+            with pytest.raises(ValueError, match='legacy continuation liability'):
+                grant_retry_permission(store, fixture, key='grant-after-legacy-reservation')
+
+        intent = store.claim_conversation_continuation(conversation, trusted_context=context)
+        dispatch = store.claim_continuation_dispatch(task, reserved['reservation_id'],
+            trusted_context=context)
+        call = {'tool': 'byq_research_get',
+            'arguments': {'entity_type': 'research_task', 'entity_id': task},
+            'root_run_id': 'e' * 32}
+        try:
+            authorization = authorize(store, unknown['reservation_id'], call, context)
+            authorization_denied = authorization.get('admitted') is not True
+        except ValueError as exc:
+            assert str(exc) == 'continuation action is no longer admitted'
+            authorization_denied = True
+
+        persisted = {row['reservation_id']: row for row in continuation_budget(store, task)}
+        assert intent['status'] == 'intent'
+        assert intent['may_dispatch'] is False
+        assert dispatch == {'dispatch': False}
+        assert authorization_denied is True
+        assert persisted[reserved['reservation_id']]['status'] == 'reserved'
+        assert persisted[reserved['reservation_id']]['dispatch_attempts'] == 0
+        assert persisted[unknown['reservation_id']]['status'] == 'outcome_unknown'
+        assert persisted[unknown['reservation_id']]['run_id'] is None
+    finally:
+        store.close()
+        fixture['backtests'].close()
+        fixture['jobs'].close()
+
+
+def test_needs_attention_request_cannot_rearm_on_a_distinct_ready_event(monkeypatch, tmp_path):
     fixture = setup_ready(monkeypatch, tmp_path)
     store, task, conversation, context = (fixture['store'], fixture['payload']['task_id'],
         fixture['conversation'], fixture['context'])
@@ -313,19 +379,13 @@ def test_needs_attention_rearms_on_a_distinct_ready_event(monkeypatch, tmp_path)
         # The settled event itself never re-fires while the world is unchanged.
         assert store.claim_conversation_continuation(conversation, trusted_context=context)['status'] == 'waiting'
         assert len(continuation_budget(store, task)) == 1
-        # A new distinct completed job with a new validated snapshot re-arms the task.
+        # A fresh ready event cannot renew or replenish the one-request grant.
         second_job, second_artifact = add_ready_event(fixture, key='ready-snapshot-2',
             content={'synthetic': 'data-ready-2'})
-        intent = store.claim_conversation_continuation(conversation, trusted_context=context)
-        assert intent['status'] == 'intent'
-        second_key = intent['receipt']['event_key']
-        assert second_key.startswith('ready-v1:') and second_key != first_key
-        assert second_job in intent['receipt']['instruction']
-        assert second_artifact in intent['receipt']['instruction']
-        assert intent['may_dispatch'] is True
-        assert len(continuation_budget(store, task)) == 2
-        assert continuation_block(store, task) == {
-            'continuation_blocked_reason': None, 'continuation_blocked_event_key': None}
+        assert second_job != fixture['job_id'] and second_artifact != fixture['artifact_id']
+        assert store.claim_conversation_continuation(conversation, trusted_context=context)['status'] == 'waiting'
+        assert len(continuation_budget(store, task)) == 1
+        assert continuation_block(store, task)['continuation_blocked_event_key'] == first_key
     finally:
         store.close()
         fixture['backtests'].close()
@@ -368,7 +428,7 @@ def test_terminal_task_still_blocks_a_distinct_ready_event(monkeypatch, tmp_path
         fixture['jobs'].close()
 
 
-def test_rearmed_event_is_admitted_once_across_concurrent_polls_and_restart(monkeypatch, tmp_path):
+def test_active_request_stays_at_most_once_across_concurrent_polls_and_restart(monkeypatch, tmp_path):
     fixture = setup_ready(monkeypatch, tmp_path)
     store, task, conversation, context = (fixture['store'], fixture['payload']['task_id'],
         fixture['conversation'], fixture['context'])
@@ -376,7 +436,6 @@ def test_rearmed_event_is_admitted_once_across_concurrent_polls_and_restart(monk
     try:
         grant_retry_permission(store, fixture, key='concurrent-grant')
         first = store.claim_conversation_continuation(conversation, trusted_context=context)
-        settle_needs_attention(store, fixture, first)
         add_ready_event(fixture, key='ready-snapshot-concurrent',
             content={'synthetic': 'data-ready-concurrent'})
         with ThreadPoolExecutor(max_workers=2) as pool:
@@ -384,18 +443,35 @@ def test_rearmed_event_is_admitted_once_across_concurrent_polls_and_restart(monk
                 lambda instance: instance.claim_conversation_continuation(
                     conversation, trusted_context=context),
                 (store, other)))
-        reservation_id = receipts[0]['receipt']['reservation_id']
-        assert reservation_id == receipts[1]['receipt']['reservation_id']
-        assert receipts[0]['receipt']['event_key'] != first['receipt']['event_key']
-        assert len(continuation_budget(store, task)) == 2
+        intents = [reply for reply in receipts if reply['status'] == 'intent']
+        waits = [reply for reply in receipts if reply['status'] == 'waiting']
+        assert len(intents) == 1
+        assert len(waits) == 1
+        reservation_id = intents[0]['receipt']['reservation_id']
+        assert reservation_id == first['receipt']['reservation_id']
+        assert intents[0]['receipt']['event_key'] == first['receipt']['event_key']
+        assert len(continuation_budget(store, task)) == 1
+        assert store.claim_continuation_dispatch(task, reservation_id,
+            trusted_context=context) == {'dispatch': True, 'attempt': 1}
+        assert other.claim_continuation_dispatch(task, reservation_id,
+            trusted_context=context) == {'dispatch': False}
         store.close()
         restarted = ResearchStore()
         try:
-            for _ in range(2):
-                restarted.claim_conversation_continuation(conversation, trusted_context=context)
+            replies = [restarted.claim_conversation_continuation(
+                conversation, trusted_context=context) for _ in range(2)]
+            for reply in replies:
+                if reply['status'] == 'intent':
+                    assert reply['receipt']['reservation_id'] == reservation_id
+                    assert reply['may_dispatch'] is False
+                else:
+                    assert reply['status'] == 'waiting'
             ledger = continuation_budget(restarted, task)
-            assert [row['event_key'] for row in ledger] == [
-                first['receipt']['event_key'], receipts[0]['receipt']['event_key']]
+            assert len(ledger) == 1
+            assert ledger[0]['event_key'] == first['receipt']['event_key']
+            assert ledger[0]['reservation_id'] == reservation_id
+            assert ledger[0]['status'] == 'outcome_unknown'
+            assert ledger[0]['dispatch_attempts'] == 1
         finally:
             restarted.close()
     finally:
@@ -422,10 +498,9 @@ def test_legacy_null_block_recovers_its_event_from_the_settled_ledger(monkeypatc
         # The settled event is still suppressed by its ledger row.
         assert store.claim_conversation_continuation(conversation, trusted_context=context)['status'] == 'waiting'
         add_ready_event(fixture, key='ready-snapshot-legacy', content={'synthetic': 'data-ready-legacy'})
-        intent = store.claim_conversation_continuation(conversation, trusted_context=context)
-        assert intent['status'] == 'intent'
-        assert intent['receipt']['event_key'] != first_key
-        assert len(continuation_budget(store, task)) == 2
+        assert store.claim_conversation_continuation(conversation, trusted_context=context)['status'] == 'waiting'
+        assert len(continuation_budget(store, task)) == 1
+        assert continuation_block(store, task)['continuation_blocked_reason'] == 'continuation_needs_attention'
     finally:
         store.close()
         fixture['backtests'].close()

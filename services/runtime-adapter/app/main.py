@@ -294,11 +294,6 @@ def release_session(session_id: str) -> dict[str, object]:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-@app.delete("/internal/runtime/sessions/{session_id}")
-def close_session(session_id: str) -> dict[str, object]:
-    return release_session(session_id)
-
-
 @app.get("/internal/runtime/sessions/{session_id}/events")
 async def events(session_id: str, replay: bool = False) -> StreamingResponse:
     try:

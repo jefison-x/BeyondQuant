@@ -75,8 +75,8 @@ export function bindActiveWebEvidenceProducer(content: Record<string, unknown>):
   const active = loadWebEvidencePolicy().active_producer;
   const supplied = search as Record<string, unknown>;
   for (const field of ["plugin_id", "plugin_version"] as const) {
-    if (field in supplied && supplied[field] !== active[field]) {
-      throw new Error("web evidence producer claim does not match trusted deployment");
+    if (field in supplied) {
+      throw new Error("web evidence producer identity is supplied by the trusted deployment");
     }
   }
   return {

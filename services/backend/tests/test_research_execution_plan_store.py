@@ -1,4 +1,4 @@
-"""ADR-0085 P1 persistence tests: one-current-plan, task/plan CAS, legacy policy.
+"""ADR-0085 P1 persistence tests: one-current-plan and task/plan CAS.
 
 These exercise the INTERNAL Backend store seam used by the deterministic
 reducer. There is no agent-facing HTTP/MCP write route for a plan.
@@ -74,12 +74,6 @@ def _strategy_gate_payload(*, key: str, plan: int = 2, **overrides: object):
     }
     payload.update(overrides)
     return payload
-
-
-def _legacy_progress(stage: str):
-    return {"schema_version": "research-progress.v1", "stage": stage, "next_action": "继续",
-            "blocked_reason": "legacy_blocker" if stage == "blocked" else None,
-            "linked_objects": [], "completion_evidence": []}
 
 
 def test_create_and_get_is_one_current_plan_per_task():
@@ -226,33 +220,6 @@ def test_terminal_task_cannot_start_a_plan():
         store.transition("research_task", task, "cancelled", "cancel-1")
         with pytest.raises(InvalidTransition):
             store.create_execution_plan(task, {"idempotency_key": "plan-1"}, trusted_context=context)
-    finally:
-        store.close()
-
-
-def test_all_legacy_tasks_enter_needs_attention_from_persisted_facts_only():
-    # No persisted plan facts can uniquely prove a closed stage/action in P1, so
-    # even a coarse data_preparation/comparison progress enters needs_attention.
-    for stage in ("data_preparation", "comparison", "strategy", "backtest", "blocked"):
-        store, task, context = _setup(owner=f"legacy-{stage}", session=f"legacy-s-{stage}",
-                                      trace=f"legacy-t-{stage}")
-        try:
-            store.transition("research_task", task, "running", "legacy-progress",
-                             progress=_legacy_progress(stage))
-            plan = store.adopt_legacy_execution_plan(task, trusted_context=context)
-            assert plan["stage"] == "needs_attention", stage
-            assert plan["status"] == "blocked" and plan["next_action"] == "resolve_blockers"
-            # Adoption is one-shot; a second call replays the existing plan.
-            assert store.adopt_legacy_execution_plan(task, trusted_context=context) == plan
-        finally:
-            store.close()
-
-
-def test_legacy_task_without_progress_enters_needs_attention():
-    store, task, context = _setup()
-    try:
-        plan = store.adopt_legacy_execution_plan(task, trusted_context=context)
-        assert plan["stage"] == "needs_attention" and plan["status"] == "blocked"
     finally:
         store.close()
 

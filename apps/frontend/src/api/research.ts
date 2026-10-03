@@ -57,21 +57,113 @@ export function listTasks(): Promise<{ tasks: Array<Record<string, unknown>> }> 
   return getJson("/research/tasks");
 }
 
-export interface ContinuationPermissionView {
+export interface ContinuationExecutionProfileBinding {
+  profile_id: 'task-ready-read.v1';
+  profile_version: number;
+  profile_sha256: string;
+}
+
+export interface ContinuationRequestLimits {
+  max_provider_calls: number;
+  max_attempts: number;
+  max_concurrent: number;
+  max_input_bytes: number;
+  max_total_input_bytes: number;
+  max_output_tokens: number;
+  max_total_output_tokens: number;
+  max_tool_payload_bytes: number;
+  max_total_tool_payload_bytes: number;
+  max_tool_calls: number;
+  deadline_ms: number;
+}
+
+export interface ContinuationAvailableProfile {
+  execution_profile: ContinuationExecutionProfileBinding;
+  request_limits: ContinuationRequestLimits;
+}
+
+export interface ContinuationRequestUsage {
+  schema_version: 'continuation-request-usage.v1';
+  execution_profile: ContinuationExecutionProfileBinding;
+  request_limits: ContinuationRequestLimits;
+  admission_usage: {
+    provider_calls: number; provider_attempts: number; input_bytes: number; declared_output_tokens: number;
+    tool_payload_bytes: number; max_input_bytes: number; max_declared_output_tokens: number;
+    max_tool_payload_bytes: number; tool_calls: number; max_concurrent: number; elapsed_ms: number;
+  };
+  actual_usage: {
+    input_tokens: number | 'unknown'; cache_read_tokens: number | 'unknown';
+    output_tokens: number | 'unknown'; provider_attempts: number | 'unknown';
+    usage_source: 'provider_response' | 'unknown' | 'no_provider_calls';
+    completeness: 'known' | 'partial' | 'unknown';
+  };
+  limit_violations: Array<keyof ContinuationRequestLimits | 'provider_declared_output_exceeded'>;
+}
+
+export interface ContinuationV2Permission {
+  schema_version: 'task-continuation-permission.v2';
+  grant_version: number;
+  confirmation_id: string;
+  confirmed_artifact_ids: string[];
+  execution_profile: ContinuationExecutionProfileBinding;
+  request_limits: ContinuationRequestLimits;
+  max_turns: 1;
+  turn_timeout_seconds: number;
+  expires_at: string;
+  revoked_at: string | null;
+}
+
+interface ContinuationPermissionViewBase {
   task_id: string;
   can_start: boolean;
   blocked_reason: string;
-  permission: null | { grant_version: number; token_limit: number; turn_timeout_seconds?: number; expires_at: string; revoked_at: string | null };
-  budget?: { reserved_tokens: number; charged_tokens: number; available_tokens: number;
-    turns_remaining: number; unconfirmed_reservations: number };
+  blocked_event_key?: string | null;
+  blocked_reason_detail?: string | null;
 }
+
+export interface ContinuationPermissionViewV2 extends ContinuationPermissionViewBase {
+  schema_version: 'task-continuation-permission.v2';
+  available_profile: ContinuationAvailableProfile | null;
+  permission: ContinuationV2Permission | null;
+  request_state: {
+    requests_reserved: number;
+    requests_remaining: number;
+    unconfirmed_requests: number;
+    request_usage: ContinuationRequestUsage | null;
+    request_identity?: null | {
+      reservation_id: string;
+      status: string;
+      run_id: string | null;
+      event_key: string | null;
+      input_sha256: string | null;
+      grant_version: number;
+      outcome: string | null;
+      settlement_sha256: string | null;
+      dispatch_attempts: number;
+    };
+  };
+}
+
+export interface ContinuationPermissionViewLegacy extends ContinuationPermissionViewBase {
+  schema_version: 'task-continuation-permission.v1';
+  permission: null | {
+    grant_version: number; token_limit: number; max_turns?: number;
+    turn_timeout_seconds?: number; expires_at: string; revoked_at: string | null;
+  };
+  budget?: { token_limit?: number; reserved_tokens: number; charged_tokens: number;
+    available_tokens: number; turns_remaining: number; unconfirmed_reservations: number;
+    reserved_token_ceiling?: number; actual_usage?: Record<string, unknown> };
+}
+
+export type ContinuationPermissionView = ContinuationPermissionViewV2 | ContinuationPermissionViewLegacy;
 
 export function getContinuationPermission(taskId: string): Promise<ContinuationPermissionView> {
   return getJson(`/research/tasks/${encodeURIComponent(taskId)}/continuation-permission`);
 }
 
 export function confirmContinuationPermission(taskId: string, payload: {
-  idempotency_key: string; token_limit: number; confirmed_artifact_ids: string[];
+  idempotency_key: string; confirmed_artifact_ids: string[];
+  execution_profile_id: 'task-ready-read.v1';
 }): Promise<ContinuationPermissionView> {
   return getJson(`/research/tasks/${encodeURIComponent(taskId)}/continuation-permission`, {
     method: 'POST', headers: { 'x-byq-continuation-confirmation': 'v1' }, body: JSON.stringify(payload),

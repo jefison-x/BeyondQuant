@@ -724,7 +724,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/brace-expansion",
-      "version": "2.1.4",
+      "version": "2.1.7",
       "license": "MIT",
       "dev": true,
       "optional": false
@@ -884,7 +884,7 @@
     {
       "lock": "apps/frontend/package-lock.json",
       "path": "node_modules/dompurify",
-      "version": "3.4.14",
+      "version": "3.4.16",
       "license": "(MPL-2.0 OR Apache-2.0)",
       "dev": false,
       "optional": false

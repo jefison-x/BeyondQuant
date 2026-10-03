@@ -1,7 +1,7 @@
-"""ADR-0085 P4 plan-continuation production seam tests.
+"""ADR-0085 plan-continuation production seam tests.
 
-These exercise the INTERNAL trusted Backend seam that closes the gap left by
-P0-P3: creating the single plan for a granted compound task, the bounded
+These exercise the INTERNAL trusted Backend seam for explicit foreground plan
+creation, the bounded
 read-only dispatch descriptor, the server-side plan-command-bound approval
 request, the deterministic READY-action result CAS, and the wiring that advances
 the plan from a real human approval decision. There is no agent-facing write
@@ -46,7 +46,7 @@ def _validated_strategy(store, task):
 
 def _grant(store, task, context, *, artifact_id, key="p4-grant"):
     return store.create_continuation_permission(task, {
-        "idempotency_key": key, "token_limit": 8 * (1048576 + 8192), "max_turns": 8,
+        "idempotency_key": key, "max_turns": 1,
         "confirmed_artifact_ids": [artifact_id]}, trusted_context=context)
 
 
@@ -59,12 +59,13 @@ def _start_bound_run(owner, session, trace, *, key):
     return agent, run
 
 
-def test_grant_creates_one_current_plan_and_bounded_dispatch():
+def test_foreground_explicit_plan_creates_one_bounded_plan_without_permission_grant():
     store, task, context = _setup(owner="p4-user", session="p4-session", trace="p4-trace")
     try:
         artifact_id = _validated_strategy(store, task)
-        _grant(store, task, context, artifact_id=artifact_id)
-        plan = store.get_execution_plan(task, trusted_context=context)
+        payload = {"idempotency_key": "p4-foreground-plan",
+                   "references": _references(strategy_version=artifact_id)}
+        plan = store.create_execution_plan(task, payload, trusted_context=context)
         assert plan["stage"] == "strategy_draft"
         dispatch = store.plan_continuation_dispatch(task, trusted_context=context)
         assert dispatch["kind"] == "judgment_turn"
@@ -75,18 +76,33 @@ def test_grant_creates_one_current_plan_and_bounded_dispatch():
         assert all(tool.startswith("byq_") for tool in dispatch["allowed_tools"])
         assert not any(tool.endswith(("_create", "_execute", "_approve", "_transition"))
                        for tool in dispatch["allowed_tools"])
-        # Replaying the grant does not create a second plan.
-        _grant(store, task, context, artifact_id=artifact_id)
+        # Replaying the exact foreground plan request does not create another.
+        store.create_execution_plan(task, payload, trusted_context=context)
         assert store.get_execution_plan(task, trusted_context=context)["plan_version"] == 1
     finally:
         store.close()
 
 
-def test_plan_requires_an_active_grant_and_is_owner_scoped():
+def test_request_permission_cannot_create_plan_and_explicit_plan_is_owner_scoped():
     store, task, context = _setup(owner="p4-owner", session="p4-s2", trace="p4-t2")
     try:
+        artifact_id = _validated_strategy(store, task)
         with pytest.raises(InvalidTransition):
             store.ensure_execution_plan(task, trusted_context=context)
+        _grant(store, task, context, artifact_id=artifact_id)
+        with pytest.raises(InvalidTransition, match="cannot authorize execution plan"):
+            store.ensure_execution_plan(task, trusted_context=context)
+        with pytest.raises(InvalidTransition, match="cannot authorize execution plan"):
+            store.create_execution_plan(task, {"idempotency_key": "p4-grant-bound"},
+                trusted_context=context, require_active_grant=True)
+        with pytest.raises(InvalidTransition, match="foreground caller"):
+            store.create_execution_plan(task, {"idempotency_key": "p4-grant-references"},
+                trusted_context=context, bind_grant_references=True)
+        explicit = store.create_execution_plan(task, {
+            "idempotency_key": "p4-explicit-foreground",
+            "references": _references(strategy_version=artifact_id),
+        }, trusted_context=context)
+        assert explicit["stage"] == "strategy_draft"
         other = {"owner_principal": "p4-other", "workspace_id": context["workspace_id"]}
         with pytest.raises(Exception):
             store.plan_continuation_dispatch(task, trusted_context=other)

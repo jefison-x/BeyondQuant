@@ -1,4 +1,9 @@
-"""Qualify official SDK max_tokens with a loopback-only synthetic Provider."""
+"""Historical native-SDK baseline, not the ADR-0090 continuation gate.
+
+Use only when reproducing the archived proof that the SDK's per-call
+``max_tokens`` field does not bound a complete turn. Current request-profile
+qualification lives in ``test_continuation_budget_process.py``.
+"""
 import json
 import os
 import re
@@ -8,11 +13,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-pytestmark = pytest.mark.skipif(os.environ.get("BYQ_BUDGET_SEMANTICS_TEST") != "1", reason="explicit loopback qualification")
+pytestmark = pytest.mark.skipif(
+    os.environ.get("BYQ_LEGACY_DSH_NATIVE_BUDGET_TEST") != "1",
+    reason="historical SDK-only baseline; not the current ADR-0090 profile",
+)
 
 
-def test_locked_product_composition_has_meter_but_no_agent_budget(tmp_path):
-    """Inventory evidence only: this is not proof that every extension lacks a guard."""
+def test_historical_composition_inventory_has_meter_but_no_agent_budget(tmp_path):
+    """Inventory evidence only; it does not qualify a continuation profile."""
     from importlib.metadata import version
     from deepseek_harness_runtime import bundled_runtime_path
 
@@ -20,7 +28,7 @@ def test_locked_product_composition_has_meter_but_no_agent_budget(tmp_path):
     assert version("deepseek-harness-runtime-bin") == "0.1.5rc1"
     result = subprocess.run(
         [str(bundled_runtime_path()), "--profile", "sdk", "--patch",
-         "/opt/byq/profiles/byq-product.patch.yml", "--dump-config"],
+         os.environ["BYQ_DSH_COMPOSITION"], "--dump-config"],
         cwd=tmp_path, env={"PATH": os.defpath, "DSH_HOME": str(tmp_path),
                           "DSH_TELEMETRY_DISABLED": "1"},
         capture_output=True, text=True, timeout=15, check=True,
@@ -32,7 +40,7 @@ def test_locked_product_composition_has_meter_but_no_agent_budget(tmp_path):
     assert "@deepseek-ai/dsh-agent-budget" not in names
 
 
-def test_sdk_max_tokens_does_not_bound_whole_multistep_turn(tmp_path):
+def test_historical_sdk_max_tokens_does_not_bound_whole_multistep_turn(tmp_path):
     from deepseek_harness import DeepSeekHarness, DeepSeekHarnessConfig
     from deepseek_harness_runtime import bundled_runtime_path
 

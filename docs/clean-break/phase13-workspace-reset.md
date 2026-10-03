@@ -1,3 +1,7 @@
+> Current refinement (2026-10-01): Accepted [ADR-0091](../architecture/adr/ADR-0091-workspace-reset-fact-retention.md)
+> replaces research-only Workspace reset with complete personal Product reset and a seven-day archive.
+> Historical Phase13 evidence below remains unchanged; it does not qualify the new implementation.
+
 # Phase 13 — Runtime and Workspace reset
 
 Base: `8d6929a140d4ebddc55091b43f9c8a3c9d465e4b` (Phase 12 merged `origin/main`).

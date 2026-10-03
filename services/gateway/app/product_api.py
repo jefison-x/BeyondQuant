@@ -647,7 +647,7 @@ def product_get_continuation_permission(task_id: str, request: Request) -> dict[
 @router.post("/research/tasks/{task_id}/continuation-permission", status_code=201)
 def product_create_continuation_permission(task_id: str, request: Request, payload: dict[str, object]) -> dict[str, object]:
     headers = _continuation_permission_headers(request)
-    allowed = {"idempotency_key", "token_limit", "confirmed_artifact_ids", "max_turns", "valid_seconds", "turn_timeout_seconds"}
+    allowed = {"idempotency_key", "execution_profile_id", "confirmed_artifact_ids", "max_turns", "valid_seconds", "turn_timeout_seconds"}
     if set(payload) - allowed:
         raise ProductError(422, "product_request_invalid", "续接许可包含不支持的字段。")
     return _backend_request("POST", f"/v1/research/tasks/{quote(task_id, safe='')}/continuation-permission", payload, headers=headers)

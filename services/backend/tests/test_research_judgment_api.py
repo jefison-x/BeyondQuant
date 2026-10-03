@@ -41,9 +41,9 @@ def _seed_plan(store, task, stage, *, iteration=1, references=None):
     store._execute("""INSERT INTO research_execution_plans
         (task_id, owner_principal, workspace_id, conversation_id, plan_version, task_version,
          stage, iteration, status, next_action, plan, idempotency_key, request_hash,
-         legacy_reason, created_at, updated_at)
+         created_at, updated_at)
         VALUES (:task, :owner, :workspace, :conversation, :plan_version, :task_version, :stage,
-                :iteration, :status, :next_action, :plan, :idempotency_key, 'seed', NULL, now(), now())""",
+                :iteration, :status, :next_action, :plan, :idempotency_key, 'seed', now(), now())""",
         {"task": task, "owner": row["owner_principal"], "workspace": row["workspace_id"],
          "conversation": row["conversation_id"], "plan_version": plan["plan_version"],
          "task_version": plan["task_version"], "stage": plan["stage"],

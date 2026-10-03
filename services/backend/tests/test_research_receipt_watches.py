@@ -130,6 +130,9 @@ def test_expired_inactive_or_disabled_identity_never_reads_domain(monkeypatch,ch
     from app.research import ResearchNotFound
     store, context, conversation, payload = fixture()
     watch = store.register_submission_watch(payload,trusted_context=context)
+    # Schedule the receipt while the owner is active; disabling the owner also
+    # fences writes, including this test-only next_check_at mutation.
+    due(store)
     if change=='expiry':
         store._execute("UPDATE research_receipt_watches SET deadline_at=now()-interval '1 second'")
     elif change=='conversation':
@@ -137,7 +140,6 @@ def test_expired_inactive_or_disabled_identity_never_reads_domain(monkeypatch,ch
     else:
         store._execute("UPDATE users SET status='disabled' WHERE username='watch-owner'")
     monkeypatch.setattr(store,'_find_watched_submission',lambda *_:pytest.fail('inactive identity read a domain result'))
-    due(store)
     if change=='disabled_owner':
         with pytest.raises(ResearchNotFound):
             store.consume_submission_watches(conversation,trusted_context=context)

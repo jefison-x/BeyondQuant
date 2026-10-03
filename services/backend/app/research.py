@@ -388,15 +388,24 @@ class ResearchStore(
         CREATE OR REPLACE FUNCTION byq_strategy_approval_fact_archive_immutable()
         RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
-            RAISE EXCEPTION 'strategy approval fact archive is immutable';
+            IF TG_OP='DELETE' AND OLD.reset_at + interval '7 days' <= clock_timestamp() THEN
+                RETURN OLD;
+            END IF;
+            RAISE EXCEPTION 'strategy approval fact archive is immutable until seven-day expiry';
         END $$
         """,
         "DROP TRIGGER IF EXISTS strategy_approval_fact_archive_immutable ON strategy_approval_fact_archive",
         """
         CREATE TRIGGER strategy_approval_fact_archive_immutable
-        BEFORE UPDATE OR DELETE OR TRUNCATE ON strategy_approval_fact_archive
-        FOR EACH STATEMENT EXECUTE FUNCTION byq_strategy_approval_fact_archive_immutable()
+        BEFORE UPDATE OR DELETE ON strategy_approval_fact_archive
+        FOR EACH ROW EXECUTE FUNCTION byq_strategy_approval_fact_archive_immutable()
         """,
+        """CREATE OR REPLACE FUNCTION byq_strategy_archive_reject_truncate()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN RAISE EXCEPTION 'strategy archive truncation is forbidden'; END $$""",
+        "DROP TRIGGER IF EXISTS strategy_approval_archive_no_truncate ON strategy_approval_fact_archive",
+        """CREATE TRIGGER strategy_approval_archive_no_truncate BEFORE TRUNCATE ON strategy_approval_fact_archive
+           FOR EACH STATEMENT EXECUTE FUNCTION byq_strategy_archive_reject_truncate()""",
         "REVOKE ALL ON TABLE strategy_approval_fact_archive FROM PUBLIC",
         """CREATE TABLE IF NOT EXISTS artifact_submission_receipts (
             task_id TEXT NOT NULL REFERENCES research_tasks(task_id),
@@ -444,6 +453,31 @@ class ResearchStore(
         with self._transaction() as connection:
             return fetch_one(connection, sql, params)
 
+    @staticmethod
+    def _trusted_conversation_id(
+        connection, *, owner_principal: str, trace_id: str,
+        trusted_context: dict[str, str] | None,
+    ) -> str | None:
+        if trusted_context is None:
+            return None
+        if trusted_context["owner_principal"] != owner_principal:
+            raise ValueError("research owner does not match trusted context")
+        conversation = fetch_one(connection, """SELECT * FROM product_conversations
+            WHERE runtime_session_id = :session_id FOR SHARE""",
+            {"session_id": trusted_context["session_id"]})
+        product_actor = trusted_context["actor_principal"] == f"byq-product-agent-{trusted_context['session_id']}"
+        if conversation is None:
+            if product_actor:
+                raise ValueError("research requires its original conversation")
+            return None
+        if (conversation["owner_principal"] != owner_principal
+                or conversation["workspace_id"] != trusted_context["workspace_id"]
+                or conversation["trace_id"] != trusted_context["trace_id"]
+                or conversation["trace_id"] != trace_id
+                or conversation["status"] != "active"):
+            raise ValueError("research conversation identity is invalid")
+        return str(conversation["conversation_id"])
+
     def bootstrap_schema(self) -> None:
         super().bootstrap_schema()
         # Column back-migration parity with the former SQLite schema.
@@ -459,24 +493,10 @@ class ResearchStore(
         data = self._task_payload(payload)
         request_hash = _hash_request(data)
         with self._transaction() as connection:
-            conversation_id = None
-            if trusted_context is not None:
-                if trusted_context["owner_principal"] != data["owner_principal"]:
-                    raise ValueError("research owner does not match trusted context")
-                conversation = fetch_one(connection, """SELECT * FROM product_conversations
-                    WHERE runtime_session_id = :session_id FOR SHARE""", {"session_id": trusted_context["session_id"]})
-                product_actor = trusted_context["actor_principal"] == f"byq-product-agent-{trusted_context['session_id']}"
-                if conversation is None:
-                    if product_actor:
-                        raise ValueError("research requires its original conversation")
-                else:
-                    if (conversation["owner_principal"] != data["owner_principal"]
-                            or conversation["workspace_id"] != trusted_context["workspace_id"]
-                            or conversation["trace_id"] != trusted_context["trace_id"]
-                            or data["trace_id"] != trusted_context["trace_id"]
-                            or conversation["status"] != "active"):
-                        raise ValueError("research conversation identity is invalid")
-                    conversation_id = conversation["conversation_id"]
+            conversation_id = self._trusted_conversation_id(
+                connection, owner_principal=str(data["owner_principal"]),
+                trace_id=str(data["trace_id"]), trusted_context=trusted_context,
+            )
             execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {
                 "scope": f"research-task|{data['owner_principal']}|{data['idempotency_key']}",
             })
@@ -507,7 +527,9 @@ class ResearchStore(
             )
         return self.get_task(task_id)
 
-    def create_web_evidence_record(self, payload: object) -> dict[str, object]:
+    def create_web_evidence_record(
+        self, payload: object, *, trusted_context: dict[str, str] | None = None,
+    ) -> dict[str, object]:
         """Atomically create the task and its normalized web-evidence Artifact."""
 
         if not isinstance(payload, dict):
@@ -533,6 +555,10 @@ class ResearchStore(
         task_hash = _hash_request(task_data)
 
         with self._transaction() as connection:
+            conversation_id = self._trusted_conversation_id(
+                connection, owner_principal=owner, trace_id=trace_id,
+                trusted_context=trusted_context,
+            )
             execute(connection, "SELECT pg_advisory_xact_lock(hashtext(:scope))", {
                 "scope": f"research-task|{owner}|{task_data['idempotency_key']}",
             })
@@ -548,15 +574,16 @@ class ResearchStore(
                     connection,
                     """INSERT INTO research_tasks
                     (task_id, owner_principal, title, objective, status, trace_id,
-                     idempotency_key, request_hash, created_at, updated_at, version)
+                     idempotency_key, request_hash, created_at, updated_at, version, conversation_id)
                     VALUES (:task_id, :owner_principal, :title, :objective, 'planned', :trace_id,
-                            :idempotency_key, :request_hash, :created_at, :updated_at, 1)""",
+                            :idempotency_key, :request_hash, :created_at, :updated_at, 1, :conversation_id)""",
                     {
                         **task_data,
                         "task_id": task_id,
                         "request_hash": task_hash,
                         "created_at": now,
                         "updated_at": now,
+                        "conversation_id": conversation_id,
                     },
                 )
                 task_row = fetch_one(
@@ -564,6 +591,8 @@ class ResearchStore(
                 )
             elif task_row["request_hash"] != task_hash:
                 raise IdempotencyConflict("web evidence record idempotency key was reused")
+            elif task_row.get("conversation_id") != conversation_id:
+                raise IdempotencyConflict("web evidence record conversation cannot be rebound")
             assert task_row is not None
 
             artifact_data = self._artifact_payload(

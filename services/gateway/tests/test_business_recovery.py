@@ -6,6 +6,9 @@ from types import SimpleNamespace
 import pytest
 
 from app import main
+from packages.contracts.continuation_request import (
+    RESERVATION_SCHEMA_VERSION, profile_binding, request_limits,
+)
 
 LOST = 'c' * 32
 CARRIER = {
@@ -17,12 +20,16 @@ CARRIER = {
 
 
 def _fixture(monkeypatch, *, receipt_status='accepted', settled_status='outcome_unknown',
-             settled_charge=None, reconcile_state='unknown', stale_carrier=False):
+             settled_charge=None, reconcile_state='unknown', stale_carrier=False, current_request=False):
     context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
         session_id='session-a', trace_id='trace-a')
     reservation = dict(schema_version='task-continuation-reservation.v1',
         reservation_id='continuation_' + 'a' * 32, task_id='task_' + 'b' * 32, owner='alice',
         workspace_id='workspace-a', token_limit=3000000, expires_at='2030-01-01T00:00:00+00:00')
+    if current_request:
+        reservation.pop('token_limit')
+        reservation.update(schema_version=RESERVATION_SCHEMA_VERSION,
+            execution_profile=profile_binding(), request_limits=request_limits())
     if stale_carrier:
         reservation['recovery_attempt'] = stale_carrier if isinstance(stale_carrier, dict) else CARRIER
     receipt = dict(reservation_id=reservation['reservation_id'], instruction='Exact original task only.',
@@ -137,7 +144,8 @@ def test_stale_recovery_carrier_fails_closed_without_dispatch_or_prompt(monkeypa
 
 
 def test_normal_reserved_dispatch_uses_original_reservation_id(monkeypatch):
-    context, intent, writes, prompts, _ = _fixture(monkeypatch, receipt_status='reserved')
+    context, intent, writes, prompts, _ = _fixture(
+        monkeypatch, receipt_status='reserved', current_request=True)
 
     main._consume_admitted_task_continuation(context)
 
@@ -148,3 +156,12 @@ def test_normal_reserved_dispatch_uses_original_reservation_id(monkeypatch):
     assert writes[1] == ('receipt', {
         'reservation_id': intent['reservation']['reservation_id'], 'status': 'accepted', 'run_id': 'e' * 32,
     })
+
+
+def test_legacy_reserved_liability_is_reconciled_without_new_dispatch(monkeypatch):
+    context, intent, writes, prompts, reads = _fixture(monkeypatch, receipt_status='reserved')
+    main._consume_admitted_task_continuation(context)
+    assert writes == []
+    assert prompts == []
+    assert [(path, params) for path, params in reads if path.endswith('/prompts/reconcile')] == [(
+        '/internal/runtime/sessions/session-a/prompts/reconcile', _expected_original_reconcile(intent))]

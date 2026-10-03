@@ -1,4 +1,4 @@
-"""ADR-0085 P1 contract tests: closed schema, gates, transitions, CAS, legacy."""
+"""ADR-0085 P1 contract tests: closed schema, gates, transitions and CAS."""
 
 from __future__ import annotations
 
@@ -22,7 +22,6 @@ from packages.contracts.research_execution_plan import (
     advance,
     assert_transition,
     can_transition,
-    classify_legacy_task,
     is_deterministic_action,
     new_plan,
     plan_at_stage,
@@ -363,37 +362,11 @@ def test_deterministic_actions_never_need_a_model_turn() -> None:
         is_deterministic_action("unknown_action")
 
 
-# --------------------------------------------------------------------------- #
-# Legacy migration policy
-# --------------------------------------------------------------------------- #
-
-def test_legacy_migration_requires_a_unique_closed_mapping() -> None:
-    assert classify_legacy_task(task_terminal=False, stage_hint="waiting_for_data",
-                                next_action_hint="wait_for_data",
-                                has_unique_plan_object=True)["status"] == "migratable"
-    asserts = [
-        dict(task_terminal=False, stage_hint=None, next_action_hint="wait_for_data",
-             has_unique_plan_object=True),
-        dict(task_terminal=False, stage_hint="waiting_for_data",
-             next_action_hint="draft_strategy", has_unique_plan_object=True),
-        dict(task_terminal=False, stage_hint="waiting_for_data",
-             next_action_hint="wait_for_data", has_unique_plan_object=False),
-        dict(task_terminal=True, stage_hint="waiting_for_data",
-             next_action_hint="wait_for_data", has_unique_plan_object=True),
-        dict(task_terminal=False, stage_hint="研究进行中", next_action_hint="继续",
-             has_unique_plan_object=True),
-        dict(task_terminal=False, stage_hint="completed", next_action_hint="notify_user",
-             has_unique_plan_object=True),
-    ]
-    for case in asserts:
-        assert classify_legacy_task(**case)["status"] == "needs_attention"
-
-
 def test_plan_at_stage_builds_the_stage_defaults() -> None:
     waiting = plan_at_stage(
         task_id=TASK, owner_principal="alice", workspace_id=WORKSPACE,
         conversation_id=CONVERSATION, task_version=1, stage="waiting_for_data",
-        idempotency_key="legacy-1",
+        idempotency_key="stage-plan-1",
     )
     assert waiting["status"] == "waiting"
     assert waiting["next_action"] == STAGE_ACTION["waiting_for_data"]
@@ -402,7 +375,7 @@ def test_plan_at_stage_builds_the_stage_defaults() -> None:
     blocked = plan_at_stage(
         task_id=TASK, owner_principal="alice", workspace_id=WORKSPACE,
         conversation_id=CONVERSATION, task_version=1, stage="needs_attention",
-        idempotency_key="legacy-2",
+        idempotency_key="stage-plan-2",
     )
     assert blocked["status"] == STAGE_STATUS["needs_attention"] == "blocked"
     assert blocked["next_action"] == "resolve_blockers"
@@ -414,12 +387,12 @@ def test_plan_at_stage_requires_a_write_ready_approval_and_closed_stage() -> Non
         plan_at_stage(
             task_id=TASK, owner_principal="alice", workspace_id=WORKSPACE,
             conversation_id=CONVERSATION, task_version=1,
-            stage="ready_to_create_backtest_task", idempotency_key="legacy-3",
+            stage="ready_to_create_backtest_task", idempotency_key="stage-plan-3",
         )
     ready = plan_at_stage(
         task_id=TASK, owner_principal="alice", workspace_id=WORKSPACE,
         conversation_id=CONVERSATION, task_version=1,
-        stage="ready_to_create_backtest_task", idempotency_key="legacy-4",
+        stage="ready_to_create_backtest_task", idempotency_key="stage-plan-4",
         references=_references(strategy_version=STRATEGY),
         approval=_approval("backtest_task_create", "strategy_version", STRATEGY),
     )
@@ -429,7 +402,7 @@ def test_plan_at_stage_requires_a_write_ready_approval_and_closed_stage() -> Non
         plan_at_stage(
             task_id=TASK, owner_principal="alice", workspace_id=WORKSPACE,
             conversation_id=CONVERSATION, task_version=1, stage="free_text",
-            idempotency_key="legacy-5",
+            idempotency_key="stage-plan-5",
         )
 
 

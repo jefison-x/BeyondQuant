@@ -370,7 +370,7 @@ STAGE_APPROVAL_REQUIREMENT = {
 }
 
 # The single non-cancelled status a stage defaults to when a plan is built
-# directly at that stage (legacy adoption). A stage whose legal set is only
+# directly at that stage. A stage whose legal set is only
 # ``{completed, cancelled}`` defaults to ``completed``; every other stage has
 # exactly one legal status.
 STAGE_STATUS = {
@@ -607,13 +607,12 @@ def plan_at_stage(
     approval: dict[str, object] | None = None,
     last_progress_identity: str | None = None,
 ) -> dict[str, object]:
-    """Build a validated version-1 plan at an explicit legal stage.
+    """Build a validated version-1 BYQ domain plan at an explicit legal stage.
 
-    This is only for adopting an already-existing legacy task whose stage maps
-    UNIQUELY (ADR-0085 §Migration). It never invents a next action: the stage's
-    single legal action, prerequisite set and expected postcondition are used.
-    A write-ready stage still requires its exact bound approval; without it the
-    caller must fall back to ``needs_attention`` rather than guess.
+    This constructor derives the stage's single legal action, prerequisite set,
+    and expected postcondition. A write-ready stage still requires its exact
+    bound approval. It is used by trusted domain fixtures and constructors; it
+    does not adopt or migrate pre-existing task state.
     """
 
     if stage not in STAGES:
@@ -743,30 +742,3 @@ def advance(
         "last_progress_identity": last_progress_identity,
     }
     return validate_plan(advanced)
-
-
-def classify_legacy_task(
-    *, task_terminal: bool, stage_hint: str | None, next_action_hint: str | None,
-    has_unique_plan_object: bool,
-) -> dict[str, object]:
-    """Decide whether an existing task can be migrated to a plan.
-
-    ADR-0085: a task that cannot be mapped UNIQUELY enters ``needs_attention``.
-    This never guesses a stage from free text.
-    """
-
-    if task_terminal:
-        return {"status": "needs_attention", "reason": "task_terminal_requires_review"}
-    if not has_unique_plan_object:
-        return {"status": "needs_attention", "reason": "no_unique_current_plan_object"}
-    if not isinstance(stage_hint, str) or stage_hint not in STAGES:
-        return {"status": "needs_attention", "reason": "stage_is_not_a_closed_plan_stage"}
-    if not isinstance(next_action_hint, str) or next_action_hint not in NEXT_ACTIONS:
-        return {"status": "needs_attention", "reason": "next_action_is_not_a_closed_plan_action"}
-    if stage_hint == CANCEL_STAGE:
-        return {"status": "needs_attention", "reason": "terminal_or_blocked_requires_review"}
-    if _STAGE_SPEC[stage_hint]["action"] != next_action_hint:
-        return {"status": "needs_attention", "reason": "stage_and_action_disagree"}
-    if stage_hint == "needs_attention":
-        return {"status": "needs_attention", "reason": "terminal_or_blocked_requires_review"}
-    return {"status": "migratable", "reason": "unique_closed_stage_and_action"}

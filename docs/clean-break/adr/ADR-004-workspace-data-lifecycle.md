@@ -9,6 +9,10 @@ Old BYQ databases receive one verified, checksum-recorded, read-only final archi
 
 `Reset Runtime` is workspace-scoped and idempotently removes disposable Agent references, transient execution state, temporary artifacts, traces and caches, while preserving or explicitly cancelling durable Jobs according to documented state rules. `Reset Workspace` removes user-scoped research, histories, temporary strategies/experiments, generated development Artifacts and associated runtime references, then recreates a minimal default Workspace. It preserves user accounts, authentication, RBAC, system configuration, global credentials and shared datasource configuration. Cross-workspace deletion is forbidden.
 
+## Accepted personal-reset refinement (2026-10-01)
+
+[ADR-0091](../../architecture/adr/ADR-0091-workspace-reset-fact-retention.md) supersedes the research-only Workspace reset scope with complete personal Product data reset, same account/Workspace identity, registration defaults and seven-day read-only archive. Closed personal audit and simulated financial history can expire; unresolved external responsibility, system security facts and minimal reset/idempotency proof remain protected. Shared market data/global credentials and the old final database archive remain outside this operation.
+
 ## Acceptance
 
 Isolated tests show reset scope and idempotency; seed after reset works; old archive is readable and checksum-valid but never auto-restored or used by tests.

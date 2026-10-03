@@ -334,7 +334,7 @@ prepare_ci_compose_env() {
   export BYQ_FEEDBACK_HUB_URL=""
   # ADR-0069: daily suites use the supported bundled runtime only.
   # Archived rollback images are never rebuilt or executed by routine CI.
-  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-272-candidate
+  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-301-candidate
   export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1
   export BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml
   export BYQ_DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-0.1.5rc1
@@ -537,6 +537,8 @@ check_runtime() {
     ok "runtime helper contracts"; else bad "runtime helper contracts"; fi
   RESOURCES_TOUCHED=1
   if run_interruptible docker run --rm --name "$CI_RUNTIME_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" -e PYTHONDONTWRITEBYTECODE=1 \
+      -e BYQ_F6_BACKEND_SOURCE_PATH=/app/backend/research_continuation.py \
+      -v "$REPO_ROOT/services/backend/app/research_continuation.py:/app/backend/research_continuation.py:ro" \
       -v "$REPO_ROOT/services/runtime-adapter:/app" \
       -v "$REPO_ROOT/packages:/app/packages" -w /app \
       -v "$REPO_ROOT/plugins/dsh-byq/runtime:/opt/byq/runtime:ro" \
@@ -576,6 +578,8 @@ check_dsh_candidate() {
   # journeys below retain the image's actual root-turn default.
   if ! run_interruptible docker run --name "$CI_CANDIDATE_TEST" "${common[@]}" \
       -e BYQ_DSH_PROCESS_OWNERSHIP=session -e BYQ_DOMAIN_CALL_WIRE_TEST=1 \
+      -e BYQ_F6_BACKEND_SOURCE_PATH=/app/backend/research_continuation.py \
+      -v "$REPO_ROOT/services/backend/app/research_continuation.py:/app/backend/research_continuation.py:ro" \
       -e BYQ_ROOT_PROFILE_ROOT=/qualification-root-profiles \
       -v "$REPO_ROOT/plugins/dsh-byq/profiles/root-scoped:/qualification-root-profiles:ro" \
       -v "$CI_CANDIDATE_VOL:/var/lib/byq/dsh-sessions" "$candidate_image" \
@@ -696,6 +700,9 @@ check_smoke() {
   if docker compose cp scripts/evidence/phase74-seed.py backend:/tmp/phase74-seed.py >/dev/null \
     && docker compose exec -T backend python /tmp/phase74-seed.py; then
     ok "Phase 74 LightGBM fixture"; else bad "Phase 74 LightGBM fixture"; fi
+  if docker compose cp scripts/evidence/workspace-reset-browser-seed.py backend:/tmp/workspace-reset-browser-seed.py >/dev/null \
+    && docker compose exec -T -e BYQ_RESET_BROWSER_FIXTURE=1 backend python /tmp/workspace-reset-browser-seed.py; then
+    ok "ordinary-user successful Reset browser fixture"; else bad "ordinary-user successful Reset browser fixture"; fi
   if docker compose cp scripts/evidence/f6-permission-seed.py backend:/tmp/f6-permission-seed.py >/dev/null \
     && docker compose exec -T -e BYQ_F6_FIXTURE=1 backend python /tmp/f6-permission-seed.py; then
     ok "F6 bound-task permission fixture"; else bad "F6 bound-task permission fixture"; fi
@@ -736,16 +743,68 @@ check_smoke() {
 }
 
 check_f6_chain() {
-  step "F6: candidate DSH to real MCP/ML/native-backtest continuation chain"
+  step "F6: keyless 2-foreground plus read-only continuation and durable signal result"
+  local expected_project="byq-ci-stack-$BYQ_CI_SCOPE"
+  if [[ "${COMPOSE_PROJECT_NAME:-}" != "$expected_project" ]]; then
+    bad "F6 current scoped Compose project guard"
+    return
+  fi
+  local f6_test_image="$(ci_image runtime-adapter)"
+  if ! run_interruptible docker run --rm --name "$CI_RUNTIME_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" \
+      --network none -e PYTHONDONTWRITEBYTECODE=1 \
+      -e BYQ_F6_DRIVER_PATH=/app/tests/f6-chain-verification.py \
+      -e BYQ_F6_FIXTURE_PATH=/app/tests/f6-chain-fixture.py \
+      -e BYQ_F6_BACKEND_SOURCE_PATH=/app/backend/research_continuation.py \
+      -v "$REPO_ROOT/services/backend/app/research_continuation.py:/app/backend/research_continuation.py:ro" \
+      -v "$REPO_ROOT/services/runtime-adapter:/app" -v "$REPO_ROOT/packages:/app/packages" -w /app \
+      -v "$REPO_ROOT/scripts/evidence/f6-chain-verification.py:/app/tests/f6-chain-verification.py:ro" \
+      -v "$REPO_ROOT/scripts/evidence/f6-chain-fixture.py:/app/tests/f6-chain-fixture.py:ro" \
+      "$f6_test_image" python3 -m pytest -q -p no:cacheprovider tests/test_f6_synthetic_runtime_contract.py; then
+    bad "F6 offline provider, settlement, and audit contracts"
+    return
+  fi
+  ok "F6 offline provider, settlement, and audit contracts"
   local override="$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE/f6-compose.json"
   local original_compose="$COMPOSE_FILE"
-  F6_CANDIDATE_IMAGE="$(ci_image runtime-candidate)" F6_TESTS_SOURCE="$REPO_ROOT/services/runtime-adapter/tests" python3 - "$override" <<'PYCODE'
+  local evidence_dir="$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE"
+  local f6_evidence="$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE/f6-current-$(date +%s)-$$.json"
+  local f6_stack_touched=0
+  mkdir -p "$evidence_dir"
+  restore_f6_runtime() {
+    if [[ "${COMPOSE_PROJECT_NAME:-}" != "$expected_project" ]]; then
+      bad "F6 current scoped Compose project guard during restore"
+      return 1
+    fi
+    if (( f6_stack_touched )); then
+      # Capture only the fixture's closed diagnostic schema before replacement.
+      # Missing/partial records never prove that a model or business call did not run.
+      if ! run_interruptible python3 "$REPO_ROOT/scripts/ci/f6-provider-diagnostics.py" --project "$expected_project"; then
+        printf '%s\n' 'F6 provider diagnostics: collector did not complete; calls and outcomes remain unknown'
+      fi
+      if ! run_interruptible python3 "$REPO_ROOT/scripts/ci/f6-provider-diagnostics.py" --project "$expected_project" --runtime-terminal; then
+        printf '%s\n' 'F6 runtime diagnostics: collector did not complete; terminal and settlement remain unknown'
+      fi
+    fi
+    export COMPOSE_FILE="$original_compose"
+    if (( f6_stack_touched )); then
+      if ! run_interruptible docker compose up -d --no-build --no-deps --force-recreate --wait \
+          backend runtime-adapter gateway frontend; then
+        bad "F6 synthetic executor disabled and candidate services restored"
+        return 1
+      fi
+      f6_stack_touched=0
+    fi
+    return 0
+  }
+  F6_CANDIDATE_IMAGE="$(ci_image runtime-candidate)" F6_TESTS_SOURCE="$REPO_ROOT/services/runtime-adapter/tests" \
+    F6_CI_PROJECT="$COMPOSE_PROJECT_NAME" python3 - "$override" <<'PYCODE'
 import json, os, sys
 value = {'services': {
   'runtime-adapter': {'image': os.environ['F6_CANDIDATE_IMAGE'],
     'volumes': [{'type': 'bind', 'source': os.environ['F6_TESTS_SOURCE'], 'target': '/app/tests', 'read_only': True}],
     'command': ['python3', '-m', 'tests.f6_synthetic_runtime'], 'environment': {
       'BYQ_F6_EXECUTOR_ENABLED': '1', 'BYQ_F6_SYNTHETIC_RUNTIME': '1', 'DEEPSEEK_API_KEY': 'f6-synthetic-only',
+      'COMPOSE_PROJECT_NAME': os.environ['F6_CI_PROJECT'], 'BYQ_F6_CI_PROJECT': os.environ['F6_CI_PROJECT'],
       'BYQ_DSH_COMPATIBILITY_RELEASE': 'dsh-0.1.5rc1', 'BYQ_DSH_PROCESS_OWNERSHIP': 'root-turn',
       'BYQ_DSH_COMPOSITION': '/opt/byq/profiles/byq-product.patch.yml',
       'BYQ_DSH_COMPOSITION_IDENTITY': '/opt/byq/profiles/byq-product.identity.json',
@@ -756,34 +815,66 @@ value = {'services': {
 with open(sys.argv[1], 'w') as stream: json.dump(value, stream)
 PYCODE
   export COMPOSE_FILE="$REPO_ROOT/compose.yml:$override"
-  if ! run_interruptible docker compose up -d --no-build --force-recreate --wait backend runtime-adapter gateway frontend; then
-    bad "F6 isolated candidate stack"; export COMPOSE_FILE="$original_compose"; return
+  f6_stack_touched=1
+  if ! run_interruptible docker compose up -d --no-build --no-deps --force-recreate --wait backend runtime-adapter gateway frontend; then
+    bad "F6 isolated candidate stack"
+    restore_f6_runtime || true
+    return
   fi
   if ! resolve_ci_compose_urls; then
-    bad "F6 endpoint discovery"; export COMPOSE_FILE="$original_compose"; return
+    bad "F6 endpoint discovery"
+    restore_f6_runtime || true
+    return
+  fi
+  # Check the exact browser account before any F6 Agent turn or Job. The
+  # driver's existing idempotent user fixture then reads this confirmed user.
+  if ! (docker compose cp scripts/evidence/f6-chain-fixture.py backend:/tmp/f6-chain-fixture.py >/dev/null \
+    && run_interruptible timeout --signal=TERM --kill-after=5s 30s \
+      docker compose exec -T -e BYQ_F6_FIXTURE=1 \
+      -e COMPOSE_PROJECT_NAME="$expected_project" -e BYQ_F6_CI_PROJECT="$expected_project" \
+      backend python /tmp/f6-chain-fixture.py user); then
+    bad "F6 isolated browser user preparation"
+    restore_f6_runtime || true
+    return
+  fi
+  local f6_auth_dir="$evidence_dir/f6-auth-$(date +%s)-$$"
+  mkdir -p "$f6_auth_dir"
+  if run_interruptible env -i PATH="$PATH" HOME="$HOME" \
+      PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-}" \
+      COMPOSE_PROJECT_NAME="$expected_project" BYQ_F6_AUTH_CI_PROJECT="$expected_project" \
+      BYQ_REAL_BASE_URL="$BYQ_REAL_BASE_URL" BYQ_F6_AUTH_EVIDENCE_DIR="$f6_auth_dir" \
+      BYQ_E2E_ADMIN_USERNAME=f6-chain-user BYQ_E2E_ADMIN_PASSWORD=test-password-123 \
+      timeout --signal=TERM --kill-after=9s 50s node apps/frontend/tests/e2e/f6-auth-preflight.mjs; then
+    ok "F6 browser login, exact identity and logout before Agent or Job"
+  else
+    bad "F6 browser auth preflight; Agent and Job NOT_STARTED"
+    restore_f6_runtime || true
+    return
   fi
   # Prior golden journeys intentionally replace their own market/security
   # fixtures. Restore the complete F6 input scope before this independent chain.
   if docker compose cp scripts/evidence/phase74-seed.py backend:/tmp/f6-market-seed.py >/dev/null \
     && docker compose exec -T backend python /tmp/f6-market-seed.py \
     && docker compose cp scripts/evidence/f6-chain-fixture.py backend:/tmp/f6-chain-fixture.py >/dev/null \
-    && BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" run_interruptible python3 scripts/evidence/f6-chain-verification.py; then
-    ok "F6 real-domain chain and Gateway restart"
+    && BYQ_F6_EVIDENCE_PATH="$f6_evidence" BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" \
+       run_interruptible python3 scripts/evidence/f6-chain-verification.py; then
+    ok "F6 exact foreground writes, durable Worker result, and structured read-only settlement"
   else
-    # Summarize the new continuation warnings using fixed categories only.
-    # The existing bounded Compose tail below retains its own log policy.
-    docker compose logs --no-color gateway 2>/dev/null | \
-      grep -E 'task continuation (prompt rejected: category=|delivery paused: stage=)' | tail -12 || true
-    docker compose logs --no-color --tail 40 runtime-adapter gateway backend || true
-    bad "F6 real-domain chain and Gateway restart"; export COMPOSE_FILE="$original_compose"; return
+    bad "F6 real-domain chain and Gateway restart"
+    restore_f6_runtime || true
+    return
   fi
-  if (cd apps/frontend && npx playwright test --config playwright.f6.config.ts \
+  run_interruptible python3 "$REPO_ROOT/scripts/ci/f6-proxy-diagnostics.py" --project "$expected_project" --stage before_browser || true
+  if (cd apps/frontend && BYQ_F6_EVIDENCE_PATH="$f6_evidence" npx playwright test --config playwright.f6.config.ts \
       --output "$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE/f6-browser"); then
-    ok "F6 completed-task Product API desktop/mobile browser"
+    ok "F6 current read-only answer, settled request, and same durable Job Product API browser"
   else
-    bad "F6 completed-task Product API desktop/mobile browser"
+    bad "F6 current read-only answer, settled request, and same durable Job Product API browser"
   fi
-  export COMPOSE_FILE="$original_compose"
+  run_interruptible python3 "$REPO_ROOT/scripts/ci/f6-proxy-diagnostics.py" --project "$expected_project" --stage after_browser || true
+  if restore_f6_runtime; then
+    ok "F6 synthetic executor disabled and candidate services restored"
+  fi
 }
 
 check_dsh_web() {

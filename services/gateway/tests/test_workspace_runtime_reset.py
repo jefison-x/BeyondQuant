@@ -13,6 +13,8 @@ from app.trace_store import TraceStore
 WORKSPACE_ID = "workspace-alice"
 RESET_ID = "a" * 32
 COOKIE = {"byq_session": "durable-auth-session"}
+ARCHIVE = {"reset_id":RESET_ID,"created_at":"2026-10-01T00:00:00+00:00",
+           "expires_at":"2026-10-08T00:00:00+00:00","retention_days":7,"row_count":2,"payload_sha256":"b"*64}
 REQUEST_KEY = "66aebeb6-247d-48e5-bb0f-137a2befa5f2"
 
 
@@ -47,7 +49,7 @@ def workspace_begin_receipt(sessions=None) -> dict[str, object]:
 def workspace_finalize_receipt() -> dict[str, object]:
     return {"schema_version": main.WORKSPACE_RESET_FINALIZE_SCHEMA,
             "workspace_id": WORKSPACE_ID, "reset_id": RESET_ID,
-            "status": "reset", "deleted": {"research_tasks": 2}, "already_empty": False}
+            "status": "reset", "deleted": {"research_tasks": 2}, "already_empty": False, "archive":ARCHIVE}
 
 
 @pytest.fixture
@@ -346,7 +348,7 @@ def test_product_workspace_reset_releases_sessions_and_returns_scoped_receipt(mo
                            headers={"Idempotency-Key": REQUEST_KEY})
     assert response.status_code == 200
     assert response.json() == {"status": "reset", "workspace_id": WORKSPACE_ID,
-                               "deleted": {"research_tasks": 2}, "already_empty": False}
+                               "deleted": {"research_tasks": 2}, "already_empty": False, "archive":ARCHIVE}
     assert calls == [
         ("/internal/workspace-reset/begin", {"schema_version": main.WORKSPACE_RESET_BEGIN_SCHEMA,
                                              "request_key": REQUEST_KEY}),
@@ -361,7 +363,7 @@ def test_product_workspace_reset_completed_retry_skips_adapter(monkeypatch, gate
     monkeypatch.setattr(main, "_workspace_runtime_reset_backend_request", lambda *_args: {
         "schema_version": main.WORKSPACE_RESET_BEGIN_SCHEMA, "workspace_id": WORKSPACE_ID,
         "status": "completed", "receipt": {"status": "reset", "workspace_id": WORKSPACE_ID,
-                                         "deleted": {}, "already_empty": True},
+                                         "deleted": {}, "already_empty": True, "archive":{**ARCHIVE,"row_count":0}},
     })
     monkeypatch.setattr(main, "_adapter_post", lambda *_args, **_kwargs: pytest.fail("no adapter retry"))
     response = client.post("/v1/workspaces/current/reset", cookies=COOKIE,
@@ -390,3 +392,17 @@ def test_product_workspace_reset_requires_login_and_uuid(monkeypatch, gateway):
     assert client.post("/v1/workspaces/current/reset", headers={"Idempotency-Key": REQUEST_KEY}).status_code == 401
     assert client.post("/v1/workspaces/current/reset", cookies=COOKIE,
                        headers={"Idempotency-Key": "not-a-uuid"}).status_code == 422
+
+
+@pytest.mark.parametrize('change',[
+    {'retention_days':6}, {'expires_at':'2026-10-09T00:00:00Z'},
+    {'row_count':3}, {'reset_id':'c'*32}, {'payload_sha256':'not-a-digest'},
+])
+def test_workspace_reset_rejects_invalid_archive_contract(monkeypatch,gateway,change):
+    client,_=gateway
+    final=workspace_finalize_receipt();final['archive']={**ARCHIVE,**change}
+    def backend(_method,path,payload,principal,workspace):
+        return workspace_begin_receipt() if path.endswith('/begin') else final
+    monkeypatch.setattr(main,'_workspace_runtime_reset_backend_request',backend)
+    response=client.post('/v1/workspaces/current/reset',cookies=COOKIE,headers={'Idempotency-Key':REQUEST_KEY})
+    assert response.status_code==502

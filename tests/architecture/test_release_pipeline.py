@@ -2,6 +2,7 @@ import copy
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -23,6 +24,29 @@ def fixture():
 
 
 class ReleasePipelineTests(unittest.TestCase):
+    def test_release_covers_every_compose_application_image(self):
+        services = (ROOT / 'compose.yml').read_text().split('\nnetworks:\n', 1)[0]
+        expected = set(re.findall(r'^  ([a-z][a-z0-9-]*):$', services, re.MULTILINE)) - {'postgres'}
+        self.assertEqual(set(images.SERVICES), expected)
+        self.assertEqual(len(images.SERVICES), len(expected))
+
+    def test_missing_durable_worker_image_or_sbom_is_rejected(self):
+        for worker in ('backtest-worker', 'factor-worker', 'optimization-worker'):
+            with self.subTest(worker=worker):
+                for section in ('images', 'sbom'):
+                    data = fixture()
+                    del data[section][worker]
+                    with self.assertRaises(ValueError):
+                        manifest.validate(data)
+                receipt = {'schema': 'byq-release-images.v1', 'source_sha': 'a' * 40,
+                           'run_id': '123-1', 'profile': 'full',
+                           'archive_sha256': 'sha256:' + 'b' * 64,
+                           'images': {s: {'tag': f'byq-release-123-1-{s}:tested',
+                                         'image_id': 'sha256:' + 'c' * 64}
+                                      for s in images.SERVICES if s != worker}}
+                with self.assertRaises(ValueError):
+                    images.validate(receipt, 'a' * 40, '123-1')
+
     def test_digest_manifest_rejects_registry_escape_mutable_tags_and_missing_service(self):
         manifest.validate(fixture())
         for value in ('ghcr.io/attacker/backend@sha256:' + 'b' * 64,

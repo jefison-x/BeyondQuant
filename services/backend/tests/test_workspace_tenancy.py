@@ -115,12 +115,14 @@ def test_new_domain_writes_are_stamped_and_mismatched_workspace_is_rejected() ->
             {"task_id": task["task_id"]},
         ).scalar_one() == alice_workspace
 
-    with pytest.raises(DBAPIError, match="workspace owner mismatch"):
+    with pytest.raises(DBAPIError, match="owner mismatch"):
         with tenancy.engine.begin() as connection:
             connection.execute(
                 text("UPDATE research_tasks SET workspace_id = :workspace_id WHERE task_id = :task_id"),
                 {"workspace_id": bob_workspace, "task_id": task["task_id"]},
             )
+    assert research._fetch_one("SELECT workspace_id FROM research_tasks WHERE task_id=:task",
+                               {"task": task["task_id"]})["workspace_id"] == alice_workspace
     research.close()
     tenancy.close()
     users.close()

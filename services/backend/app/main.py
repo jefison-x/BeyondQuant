@@ -249,7 +249,9 @@ VERSION = "0.1.0"
 
 logger = logging.getLogger("byq.backend")
 
-app = FastAPI(title="BeyondQuant Backend", version=VERSION)
+from .workspace_reset_retention import retention_lifespan
+
+app = FastAPI(title="BeyondQuant Backend", version=VERSION, lifespan=retention_lifespan)
 
 
 class _RuntimeAuthorityRejected(Exception):
@@ -586,8 +588,8 @@ def append_conversation_message(conversation_id: str, payload: dict[str, Any], r
 
 @app.post("/internal/agent-lifecycle/{conversation_id}")
 def consume_agent_lifecycle(conversation_id: str, payload: dict[str, Any], request: Request) -> dict:
-    # ADR-0063: this private consumer alone may close existing disabled-owner
-    # roots. The store validates durable ownership and terminal-only authority.
+    # This private consumer may record exact terminal facts for an existing
+    # disabled-owner root. The store validates ownership and terminal-only authority.
     # Ordinary conversation and Agent APIs retain active-context validation.
     owner = request.headers.get("x-byq-owner-principal")
     if not owner:
@@ -771,11 +773,13 @@ def block_task_continuation(task_id: str, payload: dict[str, Any], request: Requ
 @app.post('/internal/task-continuation/{task_id}/receipt')
 def record_task_continuation_receipt(task_id: str, payload: dict[str, Any], request: Request) -> dict:
     context = _continuation_consumer_context(request)
-    allowed = {'reservation_id', 'status', 'run_id', 'charged_tokens', 'settlement_sha256', 'outcome'}
+    allowed = {'reservation_id', 'status', 'run_id', 'charged_tokens', 'settlement_sha256', 'outcome', 'request_usage'}
     if set(payload) - allowed:
         raise HTTPException(status_code=422, detail='invalid continuation receipt fields')
     if not {'reservation_id', 'status'} <= set(payload):
         raise HTTPException(status_code=422, detail='original reservation and status required')
+    if 'request_usage' in payload and 'charged_tokens' in payload:
+        raise HTTPException(status_code=422, detail='request usage cannot be combined with legacy token charges')
     return _research_call(lambda: research_store.record_continuation_receipt(
         task_id, trusted_context=context, **payload))
 
@@ -2507,7 +2511,7 @@ def create_web_research_evidence(payload: dict[str, Any], request: Request) -> d
 def create_web_research_evidence_record(payload: dict[str, Any], request: Request) -> dict[str, object]:
     """Atomically create a ResearchTask and its bounded web-evidence Artifact."""
 
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         return research_store.create_web_evidence_record(
@@ -2515,7 +2519,7 @@ def create_web_research_evidence_record(payload: dict[str, Any], request: Reques
                 **payload,
                 "owner_principal": context["owner_principal"],
                 "trace_id": context["trace_id"],
-            }
+            }, trusted_context=context,
         )
 
     return _research_call(operation)

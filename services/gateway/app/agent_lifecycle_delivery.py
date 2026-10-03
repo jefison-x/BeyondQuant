@@ -1,4 +1,4 @@
-"""Durable delivery bookkeeping for BYQ WorkflowTrace, never a model/job queue."""
+"""Deliver public answers and private domain-call evidence, never Agent lifecycle."""
 from __future__ import annotations
 
 import fcntl
@@ -10,7 +10,6 @@ import threading
 import time
 from pathlib import Path
 
-from packages.contracts.agent_run_lifecycle import lifecycle_receipt, project_lifecycle_event
 from packages.contracts.domain_call_admission import call_evidence_receipt, validate_call_evidence
 
 
@@ -21,21 +20,19 @@ BACKOFF_SECONDS = (2, 5, 15, 60, 300, 900, 3600, 3600)
 
 class LifecycleDelivery:
     def __init__(self, root, traces, send, *, clock=time.time, answers=False, private_source=None):
-        if private_source is not None and answers:
-            raise ValueError("private evidence cannot use public answer projection")
+        if answers == (private_source is not None):
+            raise ValueError("delivery requires exactly one public-answer or private-evidence mode")
         self.root = Path(root)
         self.traces, self.send, self.clock = traces, send, clock
         self.stop = threading.Event()
         self.thread = None
         self.answers = answers
         self.private_source = private_source
-        self.suffix = "domain-calls" if private_source is not None else "answers" if answers else "lifecycle"
+        self.suffix = "domain-calls" if private_source is not None else "answers"
 
     def _project(self, source, context):
         if self.private_source is not None:
             return validate_call_evidence(source)
-        if not self.answers:
-            return project_lifecycle_event(source, context["session_id"], context["trace_id"])
         if (source.get("session_id"), source.get("trace_id"), source.get("kind"), source.get("source")) != (
                 context["session_id"], context["trace_id"], "agent.output.delta", "runtime-adapter"):
             return None
@@ -49,8 +46,6 @@ class LifecycleDelivery:
     def receipt(self, event):
         if self.private_source is not None:
             return call_evidence_receipt(event)
-        if not self.answers:
-            return lifecycle_receipt(event)
         return {"schema_version": "public-answer-receipt.v1", "workflow_sequence": event["sequence"],
                 "content_sha256": hashlib.sha256(event["content"].encode()).hexdigest()}
 
@@ -118,14 +113,6 @@ class LifecycleDelivery:
                     # Preserve a visible local rejection, not a fabricated ack.
                     state["pending"][str(source["sequence"])] = {"status": "invalid_event"}
                     event = None
-                if event and self.private_source is None and not self.answers and event["outcome"] != "active":
-                    terminals = state.setdefault("terminal_events", {})
-                    if event["root_run_id"] in terminals:
-                        # Soft cancellation can later emit a discarded-result
-                        # notification. The original terminal remains canonical.
-                        event = None
-                    else:
-                        terminals[event["root_run_id"]] = event["sequence"]
                 if event:
                     state["pending"][str(source["sequence"])] = {
                         "event": event, "status": "pending", "attempts": 0,
@@ -234,7 +221,7 @@ class LifecycleDelivery:
     def status(self, context):
         self.traces._path(context["session_id"])
         path = self.root / f"{context['session_id']}.{self.suffix}.json"
-        result = {"schema_version": "domain-call-delivery-status.v1" if self.private_source is not None else "public-answer-delivery-status.v1" if self.answers else "agent-run-delivery-status.v1", "state": "not_registered",
+        result = {"schema_version": "domain-call-delivery-status.v1" if self.private_source is not None else "public-answer-delivery-status.v1", "state": "not_registered",
                   "pending_events": 0, "exhausted_events": 0, "rejected_events": 0,
                   "max_attempts": MAX_ATTEMPTS, "deadline_seconds": DEADLINE_SECONDS}
         if not path.exists():

@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 
 from app import main
+from packages.contracts.continuation_request import (profile_binding, request_limits, USAGE_SCHEMA_VERSION, unknown_actual_usage)
 from app.task_continuation import CONTEXT_SCHEMA, TaskContinuationDelivery
 
 
@@ -18,8 +19,8 @@ def write_context(root, context):
 def fixture(monkeypatch):
     context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
         session_id='session-a', trace_id='trace-a')
-    reservation = dict(schema_version='task-continuation-reservation.v1', reservation_id='continuation_' + 'a'*32,
-        task_id='task_' + 'b'*32, owner='alice', workspace_id='workspace-a', token_limit=3000000,
+    reservation = dict(schema_version='task-continuation-reservation.v2', reservation_id='continuation_' + 'a'*32,
+        task_id='task_' + 'b'*32, owner='alice', workspace_id='workspace-a', execution_profile=profile_binding(), request_limits=request_limits(),
         expires_at='2026-09-10T12:00:00+00:00')
     receipt = dict(reservation_id=reservation['reservation_id'], instruction='Exact original task only.', status='reserved')
     intent = dict(status='intent', task_id=reservation['task_id'], conversation_id='conversation-a',
@@ -81,17 +82,36 @@ def test_dispatch_then_lost_ack_only_reconciles_exact_original(monkeypatch):
     assert writes[-1][1]['run_id'] == 'c'*32
 
 
-def test_data_ready_intent_uses_the_existing_dispatch_path(monkeypatch):
-    context, intent, writes, _, prompts, _, _ = fixture(monkeypatch)
-    intent['receipt']['grant_kind'] = 'data_ready'
-    intent['receipt']['instruction'] = 'Data-ready original task continuation only.'
+@pytest.mark.parametrize('status', ['reserved', 'outcome_unknown', 'accepted'])
+def test_implicit_data_ready_receipt_cannot_submit_another_prompt(monkeypatch, status):
+    context, intent, writes, reads, prompts, _, _ = fixture(monkeypatch)
+    intent['receipt'].update(grant_kind='data_ready', status=status)
+    if status == 'accepted':
+        intent['receipt']['run_id'] = 'c' * 32
+    # Backend supplies the dispatch decision; historical receipt facts remain
+    # available for exact reconciliation without becoming a new permission.
+    intent['may_dispatch'] = False
     main._consume_admitted_task_continuation(context)
-    assert [kind for kind, _ in writes] == ['dispatch', 'receipt']
-    assert len(prompts) == 1
-    assert prompts[0]['content'] == 'Data-ready original task continuation only.'
-    assert prompts[0]['idempotency_key'] == intent['reservation']['reservation_id']
-    assert prompts[0]['continuation_budget'] == intent['reservation']
-    assert writes[0][1] == {'reservation_id': intent['reservation']['reservation_id']}
+    assert writes == prompts == []
+    assert len(reads) == 2
+
+
+def test_implicit_data_ready_receipt_keeps_exact_settlement(monkeypatch):
+    context, intent, writes, _, prompts, _, settlement = fixture(monkeypatch)
+    intent['receipt'].update(grant_kind='data_ready', status='outcome_unknown')
+    intent['may_dispatch'] = False
+    intent['reservation']['schema_version'] = 'task-continuation-reservation.v1'
+    settlement.update(status='settled', run_id='c' * 32, charged_tokens=1056768,
+        settlement_sha256='d' * 64, outcome='completed')
+    main._consume_admitted_task_continuation(context)
+    assert prompts == []
+    assert writes == [
+        ('receipt', {'reservation_id': intent['reservation']['reservation_id'],
+            'status': 'accepted', 'run_id': 'c' * 32}),
+        ('receipt', {'reservation_id': intent['reservation']['reservation_id'],
+            'status': 'settled', 'charged_tokens': 1056768,
+            'settlement_sha256': 'd' * 64, 'outcome': 'completed'}),
+    ]
 
 
 def test_unknown_never_resubmits_or_refunds(monkeypatch):
@@ -103,6 +123,7 @@ def test_unknown_never_resubmits_or_refunds(monkeypatch):
 
 def test_accepted_settlement_projects_charge_and_failure_atomically(monkeypatch):
     context, intent, writes, _, prompts, _, settlement = fixture(monkeypatch)
+    intent['reservation']['schema_version'] = 'task-continuation-reservation.v1'
     settlement.update(status='settled', run_id='c'*32, charged_tokens=1056768,
         settlement_sha256='d'*64, outcome='needs_attention')
     main._consume_admitted_task_continuation(context)
@@ -112,15 +133,13 @@ def test_accepted_settlement_projects_charge_and_failure_atomically(monkeypatch)
 
 
 @pytest.mark.parametrize('status', [409, 422, 503, 504])
-def test_only_definite_admission_conflict_releases_dispatch_attempt(monkeypatch, status):
+def test_unclassified_error_preserves_unknown_dispatch_without_retry(monkeypatch, status):
     context, _, writes, _, prompts, _, _ = fixture(monkeypatch)
     def rejected(*args, **kwargs):
         raise HTTPException(status, 'synthetic')
     monkeypatch.setattr(main, '_adapter_post', rejected)
     main._consume_admitted_task_continuation(context)
-    assert [kind for kind, _ in writes] == (['dispatch', 'receipt'] if status == 409 else ['dispatch'])
-    if status == 409:
-        assert writes[-1][1]['status'] == 'rejected'
+    assert [kind for kind, _ in writes] == ['dispatch']
 
 
 def test_revoked_intent_can_reconcile_but_not_dispatch(monkeypatch):
@@ -137,6 +156,141 @@ def test_identity_mismatch_stops_before_runtime_access(monkeypatch):
     with pytest.raises(ValueError, match='identity'):
         main._consume_admitted_task_continuation(context)
     assert writes == reads == prompts == []
+
+
+@pytest.mark.parametrize(('field', 'value'), [
+    ('owner', 'mallory'),
+    ('workspace_id', 'workspace-other'),
+    ('task_id', 'task_' + 'c' * 32),
+    ('reservation_id', 'continuation_' + 'd' * 32),
+])
+def test_misbound_reservation_fails_before_observer_or_runtime_io(monkeypatch, field, value):
+    context, intent, writes, reads, prompts, _, _ = fixture(monkeypatch)
+    intent['reservation'][field] = value
+    owned_reads = []
+    authority_checks = []
+    monkeypatch.setattr(main.product_sessions, 'get_owned',
+        lambda *args: owned_reads.append(args) or SimpleNamespace(session_id='session-a', boot_id='a' * 32))
+    monkeypatch.setattr(main, '_require_session_runtime_authority',
+        lambda session: authority_checks.append(session))
+
+    with pytest.raises(ValueError, match='identity'):
+        main._consume_admitted_task_continuation(context)
+
+    assert owned_reads == []
+    assert authority_checks == []
+    assert writes == reads == prompts == []
+
+
+def test_waiting_backend_intent_does_not_touch_runtime_or_prompt(monkeypatch):
+    context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
+        session_id='session-a', trace_id='trace-a')
+    calls = []
+
+    def backend(method, path, principal, workspace, payload=None):
+        calls.append((method, path, principal.subject, workspace, payload))
+        return {'status': 'waiting'}
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError('waiting continuation must not access Runtime')
+
+    monkeypatch.setattr(main, '_catalog_request', backend)
+    monkeypatch.setattr(main, '_continuation_adapter_get', unexpected)
+    monkeypatch.setattr(main, '_adapter_post', unexpected)
+    monkeypatch.setattr(main.product_sessions, 'get_owned', unexpected)
+
+    main._consume_admitted_task_continuation(context)
+
+    assert calls == [(
+        'POST', '/internal/task-continuation/conversation-a/peek', 'alice', 'workspace-a', None,
+    )]
+
+
+def test_unqualified_executor_blocks_before_claim_or_prompt(monkeypatch):
+    context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
+        session_id='session-a', trace_id='trace-a')
+    task_id = 'task_' + 'b' * 32
+    backend_calls = []
+    adapter_reads = []
+    prompts = []
+
+    def backend(method, path, principal, workspace, payload=None):
+        backend_calls.append((path, payload))
+        if path.endswith('/peek'):
+            return {'status': 'eligible', 'task_id': task_id}
+        if path.endswith('/block'):
+            return {'blocked_reason': payload['reason']}
+        raise AssertionError(f'unexpected Backend call: {path}')
+
+    monkeypatch.setattr(main, '_catalog_request', backend)
+    monkeypatch.setattr(main.product_sessions, 'get_owned',
+        lambda *args: SimpleNamespace(session_id='session-a', boot_id='a' * 32))
+    monkeypatch.setattr(main, '_continuation_adapter_get',
+        lambda path, params=None: adapter_reads.append((path, params)) or {
+            'qualified': False, 'reason': 'model_or_executor_unqualified'})
+    monkeypatch.setattr(main, '_adapter_post', lambda *args, **kwargs: prompts.append((args, kwargs)))
+
+    main._consume_admitted_task_continuation(context)
+
+    assert [path.rsplit('/', 1)[-1] for path, _ in backend_calls] == ['peek', 'block']
+    assert backend_calls[-1][1] == {'reason': 'model_or_executor_unqualified'}
+    assert adapter_reads == [(
+        '/internal/runtime/sessions/session-a/continuation-qualification', None,
+    )]
+    assert prompts == []
+
+
+def test_eligible_missing_runtime_uses_live_attach_only_and_never_prompts(monkeypatch):
+    context = dict(owner='alice', workspace_id='workspace-a', conversation_id='conversation-a',
+        session_id='session-a', trace_id='trace-a')
+    task_id = 'task_' + 'b' * 32
+    backend_calls = []
+    catalog_reads = []
+    adapter_posts = []
+
+    def backend(method, path, principal, workspace, payload=None):
+        backend_calls.append((path, payload))
+        assert path.endswith('/peek')
+        return {'status': 'eligible', 'task_id': task_id}
+
+    def catalog(method, path, principal, workspace, payload=None):
+        catalog_reads.append((method, path, principal.subject, workspace))
+        return {'conversation': {
+            'conversation_id': context['conversation_id'],
+            'runtime_session_id': context['session_id'],
+            'trace_id': context['trace_id'],
+            'status': 'active',
+        }}
+
+    def lost_attach(path, *, payload=None, timeout=20.0):
+        adapter_posts.append((path, payload))
+        error = HTTPException(status_code=409, detail='runtime session is not available')
+        error.adapter_conflict_detail = 'BYQ runtime session was interrupted; start a new Agent session'
+        raise error
+
+    def missing_product_session(*args):
+        raise HTTPException(status_code=404, detail='product session missing from Gateway registry')
+
+    monkeypatch.setattr(main, 'product_sessions', main.ProductSessionRegistry())
+    monkeypatch.setattr(main.product_sessions, 'get_owned', missing_product_session)
+    monkeypatch.setattr(main, '_catalog_request', lambda method, path, principal, workspace, payload=None:
+        backend(method, path, principal, workspace, payload) if '/task-continuation/' in path else
+        catalog(method, path, principal, workspace, payload))
+    monkeypatch.setattr(main, 'trace_store', SimpleNamespace(read=lambda *_: []))
+    monkeypatch.setattr(main, '_adapter_post', lost_attach)
+
+    with pytest.raises(main.ProductError) as error:
+        main._consume_admitted_task_continuation(context)
+
+    assert error.value.code == 'agent_session_interrupted'
+    assert backend_calls == [('/internal/task-continuation/conversation-a/peek', None)]
+    assert catalog_reads == [(
+        'GET', '/v1/product/conversations/conversation-a', 'alice', 'workspace-a',
+    )]
+    assert adapter_posts == [('/internal/runtime/sessions', {
+        'session_id': 'session-a', 'trace_id': 'trace-a', 'workspace_id': 'workspace-a',
+        'owner_principal': 'alice', 'initial_sequence': 0, 'attach_live_only': True,
+    })]
 
 
 def test_registered_conversation_scan_is_bounded_fair_and_flagged(tmp_path, monkeypatch):
@@ -392,3 +546,69 @@ def test_long_continuation_hold_survives_old_limit_without_renewal(monkeypatch):
     assert session.continuation_deadline == deadline
     registry.finish_continuation(session, 'long-reservation')
     assert registry.idle_release_delay(session) == main.RUNTIME_SESSION_IDLE_SECONDS
+
+
+def test_legacy_reserved_receipt_never_dispatches_even_if_backend_claims_permission(monkeypatch):
+    context, intent, writes, reads, prompts, _, _ = fixture(monkeypatch)
+    intent['reservation']['schema_version'] = 'task-continuation-reservation.v1'
+    main._consume_admitted_task_continuation(context)
+    assert writes == prompts == []
+    assert len(reads) == 2
+
+
+def request_usage():
+    return dict(schema_version=USAGE_SCHEMA_VERSION, execution_profile=profile_binding(), request_limits=request_limits(), limit_violations=[],
+        admission_usage=dict(provider_calls=1,provider_attempts=1,input_bytes=100,declared_output_tokens=8192,
+            tool_payload_bytes=0,max_input_bytes=100,max_declared_output_tokens=8192,max_tool_payload_bytes=0,
+            tool_calls=0,max_concurrent=1,elapsed_ms=100), actual_usage=unknown_actual_usage())
+
+
+def test_new_settlement_forwards_actual_unknown_separately_from_limits(monkeypatch):
+    context, intent, writes, _, prompts, _, settlement = fixture(monkeypatch)
+    usage = request_usage()
+    settlement.update(status='settled', run_id='c'*32, request_usage=usage, settlement_sha256='d'*64, outcome='needs_attention')
+    main._consume_admitted_task_continuation(context)
+    assert prompts == []
+    assert writes[-1] == ('receipt', dict(reservation_id=intent['reservation']['reservation_id'], status='settled',
+        request_usage=usage, settlement_sha256='d'*64, outcome='needs_attention'))
+    assert 'charged_tokens' not in writes[-1][1]
+
+
+def test_invalid_new_settlement_cannot_mark_business_receipt_accepted(monkeypatch):
+    context, _, writes, _, prompts, _, settlement = fixture(monkeypatch)
+    usage = request_usage(); usage['actual_usage']['input_tokens'] = 0
+    settlement.update(status='settled', run_id='c'*32, request_usage=usage, settlement_sha256='d'*64, outcome='completed')
+    with pytest.raises(ValueError, match='factual source'):
+        main._consume_admitted_task_continuation(context)
+    assert writes == prompts == []
+
+
+def test_live_registry_cannot_redirect_reserved_request_to_another_session(monkeypatch):
+    context, _, writes, _, prompts, _, _ = fixture(monkeypatch)
+    monkeypatch.setattr(main.product_sessions, 'get_owned', lambda *args: SimpleNamespace(session_id='different-session', boot_id='a'*32))
+    with pytest.raises(ValueError, match='original session identity'):
+        main._consume_admitted_task_continuation(context)
+    assert writes == prompts == []
+
+
+@pytest.mark.parametrize('detail,definite', [
+    ('previous turn domain cleanup is not yet acknowledged', True),
+    ('previous runtime process cleanup is not complete', True),
+    ('session session-a cannot accept a prompt in state running', True),
+    ('prompt idempotency key was reused with different content', False),
+    ('session another-session cannot accept a prompt in state running', False),
+])
+def test_known_preaccept_conflict_is_terminal_and_unknown_identity_conflict_stays_unresolved(monkeypatch, detail, definite):
+    context, intent, writes, _, prompts, _, _ = fixture(monkeypatch)
+    def rejected(path, payload, timeout):
+        prompts.append(payload)
+        error = HTTPException(409, detail)
+        error.adapter_conflict_detail = detail
+        raise error
+    monkeypatch.setattr(main, '_adapter_post', rejected)
+    main._consume_admitted_task_continuation(context)
+    assert [kind for kind, _ in writes] == (['dispatch','receipt'] if definite else ['dispatch'])
+    assert intent['receipt']['status'] == ('rejected' if definite else 'outcome_unknown')
+    main._consume_admitted_task_continuation(context)
+    assert len(prompts) == 1
+    if definite:assert writes[-1][1]['status'] == 'rejected'

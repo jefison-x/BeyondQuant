@@ -113,8 +113,8 @@ try {
   const contentSchema = webProperties?.content as { properties?: Record<string, unknown> } | undefined;
   const searchSchema = contentSchema?.properties?.search as { properties?: Record<string, unknown>; required?: string[] } | undefined;
   assert.ok(searchSchema?.properties?.queries, "web evidence search queries schema is missing");
-  assert.ok(!searchSchema?.required?.includes("plugin_id"), "model must not need to construct a producer ID");
-  assert.ok(!searchSchema?.required?.includes("plugin_version"), "model must not need to construct a producer version");
+  assert.ok(!Object.hasOwn(searchSchema?.properties ?? {}, "plugin_id"), "producer ID must not be in the model input schema");
+  assert.ok(!Object.hasOwn(searchSchema?.properties ?? {}, "plugin_version"), "producer version must not be in the model input schema");
 
   const called = await client.callTool({ name: "byq_health", arguments: {} });
   const textBlock = called.content.find((block) => block.type === "text");
@@ -185,23 +185,23 @@ try {
   const repeatedText = repeated.content.find((block) => block.type === "text");
   assert.ok(repeatedText && "text" in repeatedText);
   assert.equal(JSON.parse(repeatedText.text).audit_resource.resource_id, artifactId);
-  const legacy = await client.callTool({
+  const matchingLegacy = await client.callTool({
     name: "byq_web_evidence_create",
     arguments: {
       ...evidenceArgs,
       content: { ...evidenceArgs.content, search: { ...evidenceArgs.content.search, plugin_id: "web-search", plugin_version: expectedWebPluginVersion } },
     },
-  });
-  assert.notEqual(legacy.isError, true, "matching legacy commands must remain compatible");
+  }).catch(() => ({ isError: true }));
+  assert.equal(matchingLegacy.isError, true, "even matching producer identity fields must be rejected at the MCP boundary");
   const forged = await client.callTool({
     name: "byq_web_evidence_create",
     arguments: {
       ...evidenceArgs,
       content: { ...evidenceArgs.content, search: { ...evidenceArgs.content.search, plugin_id: "web-search", plugin_version: "9.9.9" } },
     },
-  });
-  assert.equal(forged.isError, true, "legacy fields cannot select a producer version");
-  console.log("Web evidence MCP live save PASS: trusted version, persisted content/hash, idempotency and legacy compatibility");
+  }).catch(() => ({ isError: true }));
+  assert.equal(forged.isError, true, "forged producer identity fields must be rejected at the MCP boundary");
+  console.log("Web evidence MCP live save PASS: trusted version, persisted content/hash, idempotency and producer-field rejection");
 
   const invalidAuditRun = await client.callTool({
     name: "byq_agent_audit_get",

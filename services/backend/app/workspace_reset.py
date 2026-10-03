@@ -1,9 +1,7 @@
-"""Narrow, transactional BYQ workspace reset (ADR-004 / Phase 13).
+"""Transactional personal Product reset with seven-day archive (ADR-0091).
 
-This store deletes only the enumerated workspace research graph and terminal
-specialized Job records. It never bootstraps other stores, resets a schema, or
-touches Agent authority/audit, financial facts, users, feedback, shared data, or
-object files. Object references are returned for a caller-owned global GC pass.
+Same identity, static ownership and closed history only; no shared schema/data
+reset, Agent recovery or unknown external replay. Binary collection is separate.
 """
 
 from __future__ import annotations
@@ -11,13 +9,15 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import uuid
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from .db import PgStoreMixin
+from .db import PgStoreMixin, execute
+from .workspace_reset_scope import RESET_SCOPE, SCOPE_BY_TABLE, RETIRED_KEY_FIELDS
 
 
 _RESET_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}$")
@@ -52,42 +52,14 @@ _JOB_TERMINAL_STATES: dict[str, tuple[str, tuple[str, ...]]] = {
 # Only the FK children listed here are deleted as part of this bounded graph.
 # PostgreSQL catalog preflight below verifies that inbound references either
 # delete earlier in the explicit order or do not contain rows for this workspace.
-_DELETE_TABLES = frozenset({
-    "product_conversation_messages", "research_receipt_watches",
-    "ml_training_submission_keys", "ml_training_receipt_watches",
-    "data_demands", "factor_jobs", "signal_producer_jobs", "backtest_jobs",
-    "optimization_jobs", "ml_prediction_runs", "ml_training_runs",
-    "research_judgment_stage_calls", "research_execution_plan_receipts",
-    "research_execution_plans", "artifact_submission_receipts",
-    "research_transitions", "artifacts", "experiments", "research_tasks",
-    "product_conversations",
-})
-
-# Explicit dependency-first SQL. Parent ownership is checked again on every
-# statement; child rows without a direct owner are joined through their parent.
-_DELETE_PLAN: tuple[tuple[str, str], ...] = (
-    ("product_conversation_messages", "DELETE FROM product_conversation_messages WHERE owner_principal=:owner AND workspace_id=:workspace"),
-    ("research_receipt_watches", "DELETE FROM research_receipt_watches WHERE owner_principal=:owner AND workspace_id=:workspace"),
-    ("ml_training_submission_keys", "DELETE FROM ml_training_submission_keys WHERE owner_principal=:owner AND workspace_id=:workspace"),
-    ("ml_training_receipt_watches", "DELETE FROM ml_training_receipt_watches WHERE owner_principal=:owner AND workspace_id=:workspace"),
-    ("data_demands", "DELETE FROM data_demands WHERE owner_principal=:owner AND workspace_id=:workspace"),
-    ("factor_jobs", "DELETE FROM factor_jobs WHERE owner_principal=:owner AND workspace_id=:workspace"),
-    ("signal_producer_jobs", "DELETE FROM signal_producer_jobs WHERE owner_principal=:owner AND workspace_id=:workspace"),
-    ("backtest_jobs", "DELETE FROM backtest_jobs WHERE owner_principal=:owner AND workspace_id=:workspace"),
-    ("optimization_jobs", "DELETE FROM optimization_jobs WHERE owner_principal=:owner AND workspace_id=:workspace"),
-    ("ml_prediction_runs", "DELETE FROM ml_prediction_runs WHERE owner_principal=:owner AND workspace_id=:workspace"),
-    ("ml_training_runs", "DELETE FROM ml_training_runs WHERE owner_principal=:owner AND workspace_id=:workspace"),
-    ("research_judgment_stage_calls", "DELETE FROM research_judgment_stage_calls c USING research_tasks t WHERE c.task_id=t.task_id AND t.owner_principal=:owner AND t.workspace_id=:workspace"),
-    ("research_execution_plan_receipts", "DELETE FROM research_execution_plan_receipts c USING research_tasks t WHERE c.task_id=t.task_id AND t.owner_principal=:owner AND t.workspace_id=:workspace"),
-    ("research_execution_plans", "DELETE FROM research_execution_plans WHERE owner_principal=:owner AND workspace_id=:workspace"),
-    ("artifact_submission_receipts", "DELETE FROM artifact_submission_receipts c USING research_tasks t WHERE c.task_id=t.task_id AND t.owner_principal=:owner AND t.workspace_id=:workspace"),
-    ("research_transitions", "DELETE FROM research_transitions WHERE workspace_id=:workspace"),
-    ("artifacts", "DELETE FROM artifacts WHERE owner_principal=:owner AND workspace_id=:workspace"),
-    ("experiments", "DELETE FROM experiments WHERE owner_principal=:owner AND workspace_id=:workspace"),
-    ("research_tasks", "DELETE FROM research_tasks WHERE owner_principal=:owner AND workspace_id=:workspace"),
-    ("product_conversations", "DELETE FROM product_conversations WHERE owner_principal=:owner AND workspace_id=:workspace"),
-)
+_DELETE_PLAN = tuple((table, f"DELETE FROM {table} r WHERE {predicate}")
+                     for table, predicate in RESET_SCOPE)
+_DELETE_TABLES = frozenset(SCOPE_BY_TABLE)
 _DELETE_ORDER = {table: index for index, (table, _sql) in enumerate(_DELETE_PLAN)}
+_REQUIRED_TABLES = tuple(dict.fromkeys((*_REQUIRED_TABLES, *SCOPE_BY_TABLE,
+    "workspace_reset_archives", "workspace_reset_retired_keys", "workspace_reset_expired_objects")))
+MAX_ARCHIVE_ROWS = 100000
+MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
 
 
 class WorkspaceResetError(RuntimeError):
@@ -107,7 +79,7 @@ class WorkspaceResetPersistenceError(WorkspaceResetError):
 
 
 class WorkspaceResetStore(PgStoreMixin):
-    """Delete one workspace's explicitly classified disposable research data."""
+    """Archive and delete one workspace's explicitly classified closed personal data."""
 
     SCHEMA_DDL: list[str] = []
 
@@ -131,10 +103,7 @@ class WorkspaceResetStore(PgStoreMixin):
 
     @staticmethod
     def _check_unknown_foreign_keys(connection, *, owner: str, workspace: str) -> None:
-        targets = tuple(sorted({
-            "product_conversations", "research_tasks", "experiments", "artifacts",
-            "ml_training_runs",
-        }))
+        targets = tuple(sorted(SCOPE_BY_TABLE))
         rows = connection.execute(text("""
             SELECT child.relname AS child_table, parent.relname AS parent_table,
                    constraint_row.conname AS constraint_name,
@@ -164,8 +133,7 @@ class WorkspaceResetStore(PgStoreMixin):
             parent = str(row["parent_table"])
             child_order = _DELETE_ORDER.get(child)
             parent_order = _DELETE_ORDER.get(parent)
-            if child_order is not None and parent_order is not None and child_order < parent_order:
-                continue
+
             child_columns = list(row["child_columns"] or [])
             parent_columns = list(row["parent_columns"] or [])
             if not child_columns or len(child_columns) != len(parent_columns):
@@ -173,19 +141,64 @@ class WorkspaceResetStore(PgStoreMixin):
                     f"foreign-key constraint {row['constraint_name']} cannot be classified"
                 )
             joins = " AND ".join(
-                f"c.{quote(str(child_column))}=p.{quote(str(parent_column))}"
+                f"childrow.{quote(str(child_column))}=target.{quote(str(parent_column))}"
                 for child_column, parent_column in zip(child_columns, parent_columns)
             )
+            # A known child is safe only when the referencing row is also
+            # selected, and deletes first (or in the same self-FK DELETE).
+            predicate = SCOPE_BY_TABLE[parent].replace("r.", "target.")
+            selected_child = SCOPE_BY_TABLE.get(child)
+            child_filter = ""
+            if child_order is not None and parent_order is not None and child_order <= parent_order:
+                child_filter = " AND (" + selected_child.replace("r.", "childrow.") + ") IS NOT TRUE"
             referenced = connection.execute(text(f"""
-                SELECT 1 FROM {quote(child)} c
-                  JOIN {quote(parent)} p ON {joins}
-                 WHERE p.workspace_id=:workspace AND p.owner_principal=:owner
-                 LIMIT 1
-            """), {"workspace": workspace, "owner": owner}).first()
+                SELECT 1 FROM {quote(child)} childrow JOIN {quote(parent)} target ON {joins}
+                 WHERE ({predicate}) {child_filter} LIMIT 1
+            """), {"workspace":workspace, "owner":owner,
+                   "user_id": connection.execute(text("SELECT user_id FROM users WHERE username=:owner"),
+                      {"owner":owner}).scalar_one()}).first()
             if referenced is not None:
                 raise WorkspaceResetBlocked(
-                    f"foreign-key constraint {row['constraint_name']} retains workspace rows; reset was not started"
-                )
+                    f"foreign-key constraint {row['constraint_name']} retains out-of-scope rows; reset was not started")
+
+        for child,foreign,parent,key in (
+            ('ml_training_runs','task_id','research_tasks','task_id'),
+            ('ml_training_runs','stock_pool_snapshot_id','stock_pool_snapshots','snapshot_id'),
+            ('ml_prediction_runs','task_id','research_tasks','task_id'),
+            ('ml_prediction_runs','stock_pool_snapshot_id','stock_pool_snapshots','snapshot_id'),
+            ('backtest_jobs','task_id','research_tasks','task_id'),
+            ('optimization_jobs','task_id','research_tasks','task_id'),
+            ('factor_jobs','task_id','research_tasks','task_id'),
+            ('paper_accounts','bound_pool_id','stock_pools','pool_id'),
+            ('paper_accounts','bound_snapshot_id','stock_pool_snapshots','snapshot_id'),
+            ('paper_orders','pool_id','stock_pools','pool_id'),
+            ('paper_orders','stock_pool_snapshot_id','stock_pool_snapshots','snapshot_id'),
+            ('stock_pool_domain_references','pool_id','stock_pools','pool_id'),
+            ('stock_pool_domain_references','snapshot_id','stock_pool_snapshots','snapshot_id'),
+            ('learning_runs','task_id','research_tasks','task_id'),
+            ('evaluation_signals','task_id','research_tasks','task_id'),
+            ('evaluation_signals','source_artifact_id','artifacts','artifact_id'),
+            ('lessons','task_id','research_tasks','task_id'),
+        ):
+            left=SCOPE_BY_TABLE[child].replace('r.','c.')
+            right=SCOPE_BY_TABLE[parent].replace('r.','target.')
+            row=connection.execute(text(f"""SELECT 1 FROM {child} c JOIN {parent} target
+              ON c.{foreign}=target.{key} WHERE (({left}) IS TRUE AND ({right}) IS NOT TRUE)
+                OR (({right}) IS TRUE AND ({left}) IS NOT TRUE) LIMIT 1"""),
+                {'owner':owner,'workspace':workspace}).first()
+            if row is not None:
+                raise WorkspaceResetBlocked('cross-Workspace domain reference prevents reset')
+
+        # New Workspace tables are not implicitly swept into the reset contract.
+        columns = connection.execute(text("""SELECT table_name FROM information_schema.columns
+          WHERE table_schema=current_schema() AND column_name='workspace_id'""")).scalars().all()
+        excluded = {"workspaces","workspace_memberships","workspace_reset_receipts",
+                    "workspace_reset_archives","workspace_reset_retired_keys","strategy_approval_fact_archive"}
+        for table in columns:
+            if table not in SCOPE_BY_TABLE and table not in excluded:
+                if connection.execute(text(f"SELECT 1 FROM {quote(table)} WHERE workspace_id=:workspace LIMIT 1"),
+                                      {"workspace":workspace}).first() is not None:
+                    raise WorkspaceResetBlocked(f"unclassified personal table {table} prevents reset")
 
     @staticmethod
     def _first_row(connection, sql: str, params: dict[str, Any]) -> dict[str, Any] | None:
@@ -212,8 +225,7 @@ class WorkspaceResetStore(PgStoreMixin):
         """), params).scalar_one())
         if count == 0:
             return []
-        if connection.execute(text("SELECT to_regclass('strategy_approval_fact_archive')")).scalar_one() is None:
-            raise WorkspaceResetBlocked("strategy approval archive schema is missing; reset was not started")
+
         rows = connection.execute(text("""
             SELECT a.artifact_id, a.task_id, a.experiment_id, a.owner_principal, a.workspace_id, a.kind, a.status,
                    a.content, a.content_sha256, a.lineage, a.created_at, to_jsonb(a) AS snapshot,
@@ -292,44 +304,6 @@ class WorkspaceResetStore(PgStoreMixin):
         return candidates
 
     @staticmethod
-    def _archive_strategy_approval_facts(connection, *, owner: str, workspace: str,
-                                         reset_at: datetime) -> int:
-        candidates = WorkspaceResetStore._strategy_approval_archive_candidates(
-            connection, owner=owner, workspace=workspace)
-        for row in candidates:
-            target_sql = "a.content->>'strategy_version_artifact_id'" if row["kind"] == "strategy_approval" else "a.content->>'ml_strategy_artifact_id'"
-            connection.execute(text(f"""
-                INSERT INTO strategy_approval_fact_archive
-                    (source_artifact_id, approval_kind, owner_principal, workspace_id, research_task_id,
-                     approval_created_at, approval_content_sha256, strategy_version_artifact_id,
-                     strategy_version_created_at, strategy_version_content_sha256,
-                     approval_snapshot, strategy_version_snapshot, reset_at)
-                SELECT a.artifact_id, a.kind, a.owner_principal, a.workspace_id, a.task_id,
-                       a.created_at, a.content_sha256, v.artifact_id, v.created_at, v.content_sha256,
-                       to_jsonb(a), to_jsonb(v), :reset_at
-                  FROM artifacts a JOIN artifacts v ON v.artifact_id={target_sql}
-                 WHERE a.artifact_id=:source_id
-                ON CONFLICT (source_artifact_id) DO NOTHING
-            """), {"source_id": row["artifact_id"], "reset_at": reset_at})
-            fact = WorkspaceResetStore._first_row(connection,
-                "SELECT * FROM strategy_approval_fact_archive WHERE source_artifact_id=:id",
-                {"id": row["artifact_id"]})
-            if (fact is None or fact["approval_kind"] != row["kind"]
-                    or fact["owner_principal"] != owner or fact["workspace_id"] != workspace
-                    or fact["research_task_id"] != row["task_id"]
-                    or fact["approval_created_at"] != row["created_at"]
-                    or fact["approval_content_sha256"] != row["content_sha256"]
-                    or fact["strategy_version_artifact_id"] != row["target_id"]
-                    or fact["strategy_version_created_at"] != row["version_created"]
-                    or fact["strategy_version_content_sha256"] != row["version_hash"]
-                    or fact["approval_snapshot"] != row["snapshot"]
-                    or fact["strategy_version_snapshot"] != row["version_snapshot"]):
-                raise WorkspaceResetBlocked("strategy approval archive count or snapshot conflicts with source; reset was not started")
-        if len(candidates) != len({row["artifact_id"] for row in candidates}):
-            raise WorkspaceResetBlocked("strategy approval archive source IDs are not unique; reset was not started")
-        return len(candidates)
-
-    @staticmethod
     def _preflight(connection, *, owner: str, workspace: str,
                    allow_active_agent_roots: bool = False) -> None:
         params = {"owner": owner, "workspace": workspace}
@@ -404,95 +378,97 @@ class WorkspaceResetStore(PgStoreMixin):
         if receipt is not None:
             raise WorkspaceResetBlocked("unresolved research submission receipt prevents workspace reset")
 
-        action = WorkspaceResetStore._first_row(connection, """
-            SELECT action_id FROM research_task_actions
-             WHERE owner_principal=:owner AND workspace_id=:workspace
-             ORDER BY action_id LIMIT 1
+        # A prepared preview has no submission. A rejection is closed only if
+        # the frozen key has no receipt; a confirmation must name the exact
+        # terminal Job. Unknown or contradictory watch states remain blocked.
+        ml_watch = WorkspaceResetStore._first_row(connection, """
+            SELECT w.watch_id FROM ml_training_receipt_watches w
+             WHERE w.workspace_id=:workspace AND w.owner_principal=:owner
+               AND (CASE
+                 WHEN w.state IN ('prepared','rejected') THEN
+                   w.training_run_id IS NULL
+                   AND (w.state='rejected' OR w.check_count=0)
+                   AND NOT EXISTS (SELECT 1 FROM ml_training_submission_keys k
+                     WHERE k.workspace_id=w.workspace_id AND k.owner_principal=w.owner_principal
+                       AND k.idempotency_key=w.idempotency_key)
+                   AND NOT EXISTS (SELECT 1 FROM ml_training_runs r
+                     WHERE r.workspace_id=w.workspace_id AND r.owner_principal=w.owner_principal
+                       AND r.idempotency_key=w.idempotency_key)
+                 WHEN w.state='confirmed' THEN
+                   EXISTS (SELECT 1 FROM ml_training_runs r
+                     WHERE r.training_run_id=w.training_run_id
+                       AND r.workspace_id=w.workspace_id AND r.owner_principal=w.owner_principal
+                       AND r.status IN ('completed','failed','cancelled')
+                       AND jsonb_build_object('workspace_id',r.workspace_id,
+                         'owner_principal',r.owner_principal,'task_id',r.task_id,
+                         'experiment_id',r.experiment_id,
+                         'ml_strategy_artifact_id',r.ml_strategy_artifact_id,
+                         'stock_pool_snapshot_id',r.stock_pool_snapshot_id)=w.identity_json
+                       AND (r.idempotency_key=w.idempotency_key OR EXISTS
+                         (SELECT 1 FROM ml_training_submission_keys k
+                          WHERE k.workspace_id=w.workspace_id AND k.owner_principal=w.owner_principal
+                            AND k.idempotency_key=w.idempotency_key
+                            AND k.training_run_id=r.training_run_id)))
+                   AND NOT EXISTS (SELECT 1 FROM ml_training_submission_keys k
+                     WHERE k.workspace_id=w.workspace_id AND k.owner_principal=w.owner_principal
+                       AND k.idempotency_key=w.idempotency_key AND k.training_run_id<>w.training_run_id)
+                   AND NOT EXISTS (SELECT 1 FROM ml_training_runs r
+                     WHERE r.workspace_id=w.workspace_id AND r.owner_principal=w.owner_principal
+                       AND r.idempotency_key=w.idempotency_key AND r.training_run_id<>w.training_run_id)
+                 ELSE false END) IS NOT TRUE
+             ORDER BY w.watch_id LIMIT 1
         """, params)
-        if action is not None:
-            raise WorkspaceResetBlocked(
-                "retained approval decision references a ResearchTask; reset would remove an authoritative fact"
-            )
+        if ml_watch is not None:
+            raise WorkspaceResetBlocked("unresolved ml_training_receipt_watches prevents workspace reset")
 
-        # Approval artifacts are eligible for removal only after the reset path
-        # proves that each complete fact and its exact validated version can be
-        # retained in the internal archive. This check is read-only; archival
-        # happens only in reset_in_connection after release proof is accepted.
-        WorkspaceResetStore._strategy_approval_archive_candidates(
-            connection, owner=owner, workspace=workspace,
-        )
-
-        retained_approval = WorkspaceResetStore._first_row(connection, """
-            SELECT a.approval_id FROM agent_approvals a
-              JOIN agent_runs r ON r.run_id=a.run_id
-              JOIN artifacts target ON target.artifact_id=a.resource_id
-             WHERE r.owner_principal=:owner AND r.workspace_id=:workspace
-               AND target.owner_principal=:owner AND target.workspace_id=:workspace
-             ORDER BY a.approval_id LIMIT 1
-        """, params)
-        if retained_approval is not None:
-            raise WorkspaceResetBlocked(
-                "Agent approval references a workspace Artifact; reset would remove an authoritative fact"
-            )
-
-        retained_audit = WorkspaceResetStore._first_row(connection, """
-            SELECT a.audit_id FROM agent_audit a
-              JOIN agent_runs r ON r.run_id=a.run_id
-              JOIN artifacts target ON target.artifact_id=a.resource_id
-             WHERE r.owner_principal=:owner AND r.workspace_id=:workspace
-               AND target.owner_principal=:owner AND target.workspace_id=:workspace
-               AND (a.action='byq_web_evidence_create' AND a.resource_type='artifact'
-                    AND a.outcome IN ('success','saved')
-                    AND target.kind='web_research_evidence') IS NOT TRUE
-             ORDER BY a.audit_id LIMIT 1
-        """, params)
-        if retained_audit is not None:
-            raise WorkspaceResetBlocked(
-                "Agent audit references a workspace Artifact; reset would remove an authoritative fact"
-            )
-
-        retained_task_approval = WorkspaceResetStore._first_row(connection, """
-            SELECT a.approval_id FROM agent_approvals a
-              JOIN agent_runs r ON r.run_id=a.run_id
-              JOIN research_tasks t ON t.task_id=a.plan_task_id
-             WHERE r.owner_principal=:owner AND r.workspace_id=:workspace
-               AND t.owner_principal=:owner AND t.workspace_id=:workspace
-             ORDER BY a.approval_id LIMIT 1
-        """, params)
-        if retained_task_approval is not None:
-            raise WorkspaceResetBlocked(
-                "Agent approval references a ResearchTask; reset would remove an authoritative fact"
-            )
-
-        retained_task_audit = WorkspaceResetStore._first_row(connection, """
-            SELECT a.audit_id FROM agent_audit a
-              JOIN agent_runs r ON r.run_id=a.run_id
-              JOIN research_tasks t ON t.task_id=a.resource_id
-             WHERE r.owner_principal=:owner AND r.workspace_id=:workspace
-               AND t.owner_principal=:owner AND t.workspace_id=:workspace
-               AND a.resource_type='research_task'
-             ORDER BY a.audit_id LIMIT 1
-        """, params)
-        if retained_task_audit is not None:
-            raise WorkspaceResetBlocked(
-                "Agent audit references a ResearchTask; reset would remove an authoritative fact"
-            )
-
-        # This first slice does not classify the separate learning subsystem.
-        for table, identity_column in (
-            ("learning_runs", "learning_run_id"),
-            ("evaluation_signals", "signal_id"),
-            ("lessons", "lesson_id"),
-            ("learning_history", "history_id"),
+        WorkspaceResetStore._strategy_approval_archive_candidates(connection, owner=owner, workspace=workspace)
+        for table, predicate in (
+            ("learning_runs", "status NOT IN ('completed','failed','cancelled')"),
+            ("stock_pool_materialization_runs", "status NOT IN ('succeeded','failed','cancelled')"),
+            ("research_task_actions", "status IN ('pending','waiting_for_agent','needs_attention')"),
         ):
-            learning_row = WorkspaceResetStore._first_row(connection, f"""
-                SELECT {identity_column} FROM {table}
-                 WHERE workspace_id=:workspace ORDER BY {identity_column} LIMIT 1
-            """, params)
-            if learning_row is not None:
-                raise WorkspaceResetBlocked(
-                    f"workspace contains unclassified {table} records; reset was not started"
-                )
+            row = WorkspaceResetStore._first_row(connection,
+                f"SELECT 1 FROM {table} WHERE workspace_id=:workspace AND {predicate} LIMIT 1", params)
+            if row is not None:
+                raise WorkspaceResetBlocked(f"unresolved {table} prevents workspace reset")
+        # failed_terminal is a queue state, not evidence that an external
+        # create had no effect. Lost-response and exhausted retries stay unknown.
+        checks = (
+            ("product_feedback_outbox", """r.lease_owner IS NOT NULL OR r.lease_expires_at IS NOT NULL
+               OR (r.state='published' AND NOT EXISTS (SELECT 1 FROM product_feedback_publications p
+                   WHERE p.publication_id=r.publication_id AND p.github_issue_number IS NOT NULL
+                     AND p.provider_identity IS NOT NULL AND p.published_at IS NOT NULL))
+               OR (r.state='failed_terminal' AND r.create_started)
+               OR r.state NOT IN ('published','failed_terminal')"""),
+            ("product_feedback_hub_outbox", """r.lease_owner IS NOT NULL OR r.lease_expires_at IS NOT NULL
+               OR (r.state IN ('published','rejected','duplicate') AND r.receipt_id IS NULL)
+               OR (r.state IN ('failed_terminal','cancelled') AND r.attempt>0)
+               OR r.state NOT IN ('published','rejected','duplicate','failed_terminal','cancelled')"""),
+        )
+        for table,unresolved in checks:
+            row = WorkspaceResetStore._first_row(connection,f"""SELECT 1 FROM {table} r
+              JOIN product_feedback f ON f.feedback_id=r.feedback_id
+              WHERE f.workspace_id=:workspace AND ({unresolved}) LIMIT 1""",params)
+            if row is not None:
+                raise WorkspaceResetBlocked('unresolved feedback delivery prevents workspace reset')
+        tasks = connection.execute(text("""SELECT task_id,continuation_permission,continuation_budget
+          FROM research_tasks WHERE owner_principal=:owner AND workspace_id=:workspace"""), params).mappings()
+        for task in tasks:
+            ledger = task['continuation_budget']
+            if ledger is not None and (not isinstance(ledger,list) or any(
+                not isinstance(r,dict) or r.get('status') not in {'settled','rejected'} for r in ledger)):
+                raise WorkspaceResetBlocked("unresolved continuation reservation prevents workspace reset")
+            permission = task['continuation_permission']
+            if permission is not None and not isinstance(permission,dict):
+                raise WorkspaceResetBlocked("unclassified continuation permission prevents workspace reset")
+            if permission and not allow_active_agent_roots:
+                expiry = permission.get('expires_at')
+                try:
+                    expired = datetime.fromisoformat(expiry).astimezone(timezone.utc) <= datetime.now(timezone.utc)
+                except (TypeError, ValueError):
+                    expired = False
+                if permission.get('revoked_at') is None and not expired:
+                    raise WorkspaceResetBlocked("active continuation permission prevents workspace reset")
 
     @staticmethod
     def preflight_in_connection(
@@ -531,25 +507,102 @@ class WorkspaceResetStore(PgStoreMixin):
                                        allow_active_agent_roots=allow_active_agent_roots)
 
     @staticmethod
-    def reset_in_connection(connection, *, owner_principal: str, workspace_id: str) -> dict[str, int]:
-        """Delete the bounded Workspace graph on a caller-owned transaction.
+    def revoke_continuation_in_connection(connection, *, owner: str, workspace: str) -> None:
+        execute(connection, """UPDATE research_tasks SET continuation_permission=
+          continuation_permission || jsonb_build_object('revoked_at',now()::text,'revoked_by',:owner)
+          WHERE owner_principal=:owner AND workspace_id=:workspace
+            AND continuation_permission IS NOT NULL
+            AND continuation_permission->>'revoked_at' IS NULL""", {'owner':owner,'workspace':workspace})
 
-        Callers must hold the Workspace reset advisory lock and complete
-        ``preflight_in_connection`` in the same transaction first. This only
-        removes database references; CAS objects are left for offline global
-        reference collection and are never unlinked by the Product API.
-        """
-        owner = WorkspaceResetStore._identity(owner_principal, "owner_principal")
-        workspace = WorkspaceResetStore._identity(workspace_id, "workspace_id")
-        params = {"owner": owner, "workspace": workspace}
-        WorkspaceResetStore._archive_strategy_approval_facts(
-            connection, owner=owner, workspace=workspace, reset_at=datetime.now(timezone.utc),
-        )
-        deleted: dict[str, int] = {}
-        for table, sql in _DELETE_PLAN:
-            result = connection.execute(text(sql), params)
-            deleted[table] = max(0, int(result.rowcount or 0))
-        return deleted
+    @staticmethod
+    def _archive_in_connection(connection, *, owner: str, workspace: str, reset_id: str,
+                               now: datetime) -> tuple[dict[str,int], dict[str,object]]:
+        user_id = connection.execute(text('SELECT user_id FROM users WHERE username=:owner'),
+                                     {'owner':owner}).scalar_one()
+        params = {'owner':owner,'workspace':workspace,'user_id':user_id}
+        snapshots = {}; counts = {}; total = 0; encoded_size = 0
+        references = {}
+        def collect(value):
+            if isinstance(value,dict):
+                if 'namespace' in value and 'object_id' in value:
+                    ref = WorkspaceResetStore._object_reference(value)
+                    if ref is None:
+                        raise WorkspaceResetBlocked('malformed archived object reference prevents reset')
+                    key=(ref['namespace'],ref['object_id'])
+                    if key in references and references[key] != ref:
+                        raise WorkspaceResetBlocked('conflicting archived object reference prevents reset')
+                    references[key]=ref
+                for v in value.values(): collect(v)
+            elif isinstance(value,list):
+                for v in value: collect(v)
+        for table,predicate in RESET_SCOPE:
+            count = int(connection.execute(text(f'SELECT count(*) FROM {table} r WHERE {predicate}'),params).scalar_one())
+            total += count
+            if total > MAX_ARCHIVE_ROWS:
+                raise WorkspaceResetBlocked('personal archive exceeds row limit; data retained')
+            rows = connection.execute(text(f'SELECT to_jsonb(r) AS snapshot FROM {table} r WHERE {predicate}'),params).scalars().all()
+            if len(rows) != count:
+                raise WorkspaceResetBlocked('archive source count changed; data retained')
+            for row in rows:
+                if table=='product_feedback_hub_outbox' and row.get('status_token'):
+                    row['status_token_sha256']=hashlib.sha256(row.pop('status_token').encode('utf8')).hexdigest()
+            encoded = [json.dumps(row,sort_keys=True,ensure_ascii=False,allow_nan=False,separators=(',',':')) for row in rows]
+            encoded.sort(); encoded_size += sum(len(row.encode('utf8')) for row in encoded)
+            if encoded_size > MAX_ARCHIVE_BYTES:
+                raise WorkspaceResetBlocked('personal archive exceeds byte limit; data retained')
+            snapshots[table] = [json.loads(row) for row in encoded]; counts[table] = count
+            collect(rows)
+        profile = connection.execute(text("""SELECT jsonb_build_object('preferences',preferences,
+          'default_prompt',default_prompt,'preferences_version',preferences_version)
+          FROM users WHERE user_id=:user_id"""),params).scalar_one()
+        payload = {'schema_version':'personal-reset-archive.v1','tables':snapshots,'profile_defaults':profile}
+        encoded = json.dumps(payload,sort_keys=True,ensure_ascii=False,allow_nan=False,separators=(',',':')).encode('utf8')
+        if len(encoded) > MAX_ARCHIVE_BYTES:
+            raise WorkspaceResetBlocked('personal archive exceeds byte limit; data retained')
+        digest = hashlib.sha256(encoded).hexdigest(); expires=now+timedelta(days=7)
+        refs = [references[key] for key in sorted(references)]
+        execute(connection, """INSERT INTO workspace_reset_archives
+          (reset_id,workspace_id,owner_principal,created_at,expires_at,payload_json,
+           payload_sha256,counts_json,object_references_json)
+          VALUES (:reset_id,:workspace,:owner,:now,:expires,CAST(:payload AS jsonb),:digest,
+                  CAST(:counts AS jsonb),CAST(:refs AS jsonb))""",
+          params|{'reset_id':reset_id,'now':now,'expires':expires,'payload':payload,'digest':digest,'counts':counts,'refs':refs})
+        saved = connection.execute(text('SELECT payload_json,counts_json FROM workspace_reset_archives WHERE reset_id=:id'),
+                                   {'id':reset_id}).mappings().one()
+        if WorkspaceResetStore._content_digest(saved['payload_json']) != digest or saved['counts_json'] != counts:
+            raise WorkspaceResetBlocked('archive verification failed; data retained')
+        for table,fields in RETIRED_KEY_FIELDS.items():
+            predicate = SCOPE_BY_TABLE[table]
+            field_sql = ','.join(f"'{field}',to_jsonb(r)->'{field}'" for field in fields)
+            nonnull = ' AND '.join(f"to_jsonb(r)->>'{field}' IS NOT NULL" for field in fields)
+            execute(connection, f"""INSERT INTO workspace_reset_retired_keys
+              (source_table,identity_sha256,reset_id,workspace_id)
+              SELECT :table,encode(sha256(convert_to(jsonb_build_object({field_sql})::text,'UTF8')),'hex'),
+                     :reset_id,:workspace FROM {table} r WHERE ({predicate}) AND {nonnull}
+              ON CONFLICT(source_table,identity_sha256) DO NOTHING""", params|{'table':table,'reset_id':reset_id})
+        return counts, {'reset_id':reset_id,'created_at':now.isoformat(),'expires_at':expires.isoformat(),
+                        'retention_days':7,'row_count':total,'payload_sha256':digest}
+
+    @staticmethod
+    def reset_in_connection(connection, *, owner_principal: str, workspace_id: str,
+                            reset_id: str | None = None, now: datetime | None = None) -> dict[str,object]:
+        owner = WorkspaceResetStore._identity(owner_principal,'owner_principal')
+        workspace = WorkspaceResetStore._identity(workspace_id,'workspace_id')
+        reset_id = reset_id or uuid.uuid4().hex; now = now or datetime.now(timezone.utc)
+        params = {'owner':owner,'workspace':workspace,
+                  'user_id':connection.execute(text('SELECT user_id FROM users WHERE username=:owner'),{'owner':owner}).scalar_one()}
+        counts, archive = WorkspaceResetStore._archive_in_connection(
+            connection,owner=owner,workspace=workspace,reset_id=reset_id,now=now)
+        execute(connection,"SELECT set_config('byq.personal_reset_id',:id,true)",{'id':reset_id})
+        deleted = {}
+        for table,sql in _DELETE_PLAN:
+            result = connection.execute(text(sql),params)
+            deleted[table] = max(0,int(result.rowcount or 0))
+            if deleted[table] != counts[table]:
+                raise WorkspaceResetBlocked('archive/delete count mismatch; transaction rolled back')
+        execute(connection,"""UPDATE users SET preferences=NULL,default_prompt=NULL,
+          preferences_version=preferences_version+1,updated_at=:now WHERE user_id=:user_id""",params|{'now':now})
+        return {'deleted':deleted,'archive':archive}
 
     @staticmethod
     def _object_reference(value: object) -> dict[str, object] | None:
@@ -601,7 +654,7 @@ class WorkspaceResetStore(PgStoreMixin):
 
     def reset_workspace(self, *, owner_principal: str, workspace_id: str,
                         preview: bool = False) -> dict[str, object]:
-        """Delete one exact personal workspace's disposable research graph.
+        """Archive and reset one exact personal Product scope with the same identity.
 
         The method is idempotent. It raises before any committed deletion when
         a durable Job, Agent authority, approval fact, or unresolved external
@@ -632,9 +685,20 @@ class WorkspaceResetStore(PgStoreMixin):
                             "workspace_id": workspace, "ready": True,
                             "candidate_object_references": candidate_refs}
 
-                deleted = self.reset_in_connection(
-                    connection, owner_principal=owner, workspace_id=workspace,
-                )
+                reset_id=uuid.uuid4().hex
+                self.revoke_continuation_in_connection(connection,owner=owner,workspace=workspace)
+                execute(connection,"""UPDATE workspaces SET status='disabled',reset_kind='workspace',reset_id=:id
+                  WHERE workspace_id=:workspace""",params|{'id':reset_id})
+                result = self.reset_in_connection(connection, owner_principal=owner, workspace_id=workspace,reset_id=reset_id)
+                execute(connection,"""UPDATE workspaces SET status='active',reset_kind=NULL,reset_id=NULL
+                  WHERE workspace_id=:workspace""",params)
+                deleted = result['deleted']
+                archive = result['archive']
+                execute(connection,"""INSERT INTO workspace_reset_receipts
+                  (workspace_id,request_key,reset_id,receipt_json,released_sessions_json,created_at)
+                  VALUES (:workspace,:key,:id,CAST(:receipt AS jsonb),'[]'::jsonb,now())""",
+                  params|{'key':str(uuid.uuid4()),'id':reset_id,'receipt':{'status':'reset','workspace_id':workspace,
+                   'deleted':deleted,'already_empty':not any(deleted.values()),'archive':archive}})
 
                 # Identify CAS objects which have no remaining database row
                 # reference. The caller still performs the filesystem check and
@@ -648,6 +712,9 @@ class WorkspaceResetStore(PgStoreMixin):
                     UNION ALL
                     SELECT result_reference_json AS reference FROM backtest_jobs
                      WHERE result_reference_json IS NOT NULL
+                    UNION ALL
+                    SELECT value AS reference FROM workspace_reset_archives,
+                      jsonb_array_elements(object_references_json) WHERE expires_at>now()
                 """)).mappings().all()
                 live = set()
                 global_scan_complete = True
@@ -679,6 +746,7 @@ class WorkspaceResetStore(PgStoreMixin):
             "workspace_id": workspace,
             "deleted": deleted,
             "already_empty": not any(deleted.values()),
+            "archive": archive,
             "candidate_object_references": candidate_refs,
             "unreferenced_object_references": safe_object_refs,
             "retained_object_references": retained_object_refs,
