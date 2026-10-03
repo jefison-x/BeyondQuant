@@ -21,6 +21,11 @@ request's execution limits, preserves durable authorization and unknown-outcome
 responsibility, and does not restore an old DSH session or budget. Its implementation
 and live profile qualification remain separate gates.
 
+[ADR-0092](ADR-0092-conversation-feedback-cloudflare-review.md) is **Accepted**
+by the maintainer on 2026-10-03 for conversation feedback and Cloudflare Hub as
+the sole review path. Real Product API browser acceptance, the release-time
+legacy-feedback preflight, and deployment remain separate gates.
+
 ## Historical ADR index (non-normative)
 
 Architecture Decision Record（ADR）记录改变或澄清持久系统边界的决策。以下边界的

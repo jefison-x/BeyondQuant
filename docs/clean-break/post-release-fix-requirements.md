@@ -1,6 +1,6 @@
 # BYQ 0.10 发布后待修复需求
 
-状态：**R1–R4 修复候选已实现；真实 Product API 浏览器验收与 ADR-0092 接受仍未完成。**
+状态：**R1–R4 修复候选已实现，ADR-0092 已接受；真实 Product API 浏览器验收仍未完成。**
 
 日期：2026-10-03。当前记录分支基线：`adca19bae7bee1db28e33633f30c3f45bc432d27`。
 维护者最初要求先记录问题，随后已明确授权直接修复 R1–R4，并保持现有 DSH runtime。
@@ -15,7 +15,7 @@
 |---|---|---|
 | R1 | 硬取消后不恢复旧 Agent；正常释放及取消后的会话终态不循环重连 | 候选实现；前端单测与 Gateway 合同通过，真实历史会话浏览器验收 NOT_RUN。 |
 | R2 | 菜单消除 Bootstrap Admin 初始化名称 | 候选实现；前端单测通过，真实浏览器验收 NOT_RUN。 |
-| R3 | 会话反馈作为唯一产品入口，审核集中到 Cloudflare Hub，移除本机直发与独立反馈页面 | 候选实现；Backend/Gateway/relay 合同及旧书签浏览器测试通过；ADR-0092 待接受，真实会话发送/Hub 往返 NOT_RUN。 |
+| R3 | 会话反馈作为唯一产品入口，审核集中到 Cloudflare Hub，移除本机直发与独立反馈页面 | 候选实现；Backend/Gateway/relay 合同及旧书签浏览器测试通过；ADR-0092 已接受，真实会话发送/Hub 往返 NOT_RUN。 |
 | R4 | 用户在前端修改自己的密码，后端持久更新并注销旧登录 | 候选实现；Backend/Gateway 数据库合同通过，专用用户/Admin 真实浏览器验收 NOT_RUN。 |
 
 “一并修复”表示集中跟踪，不免除每项的受影响场景验收；每个子系统保持单一 writer。
@@ -195,7 +195,7 @@ Binding 认证仍需保留，不能全仓按变量名删除。前端反馈 API/h
 和对应路由，保留 owner MCP/API、Hub outbox/relay、Cloudflare 私有 Publisher，
 旧本机表和归档检查继续保留；R4 通过 Gateway 自助改密并在一个数据库事务中
 撤销该用户全部会话；当前密码在 15 分钟内输错 5 次后按用户限流 15 分钟，
-限流状态持久化。R3 架构变更见待接受的 [ADR-0092](../architecture/adr/ADR-0092-conversation-feedback-cloudflare-review.md)。
+限流状态持久化。R3 架构变更见已接受的 [ADR-0092](../architecture/adr/ADR-0092-conversation-feedback-cloudflare-review.md)。
 
 - 前端完整单测：69 文件、238 项通过；R1 定向会话测试 18 项通过；
   旧反馈书签 Chromium 浏览器测试 1 项通过，生产构建通过。
@@ -208,5 +208,5 @@ Binding 认证仍需保留，不能全仓按变量名删除。前端反馈 API/h
   R4 脚本要求 loopback 上的一次性测试栈、`BYQ_R4_DISPOSABLE_STACK=1` 和
   `r4-test-user-` / `r4-test-admin-` 前缀账号；成功后测试账号密码停留在新值，
   重新运行须重新预置一次性账号。
-  独立 Tester/Reviewer 与 Root 结论需另行记录；ADR-0092 接受、PR、合并和
+  独立 Tester/Reviewer 与 Root 结论需另行记录；PR、合并和
   部署均是独立门槛。生产旧反馈表、历史镜像、备份不在本次删除范围。

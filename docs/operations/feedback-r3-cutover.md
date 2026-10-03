@@ -1,6 +1,6 @@
 # R3 旧反馈记录切换预检
 
-状态：ADR-0092 候选发布门槛；此页不授权部署或删除数据。
+状态：已接受 ADR-0092 的发布门槛；此页不授权部署或删除数据。
 
 R3 候选移除本机审核与 GitHub 直发，并将 owner 的发布状态只投影自
 Cloudflare Hub。旧本机 `product_feedback_publications`、`product_feedback_outbox`

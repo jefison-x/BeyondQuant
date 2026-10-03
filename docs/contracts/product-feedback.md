@@ -2,10 +2,10 @@
 
 ## 当前边界（发布后 R3 候选）
 
-本节对应待维护者接受的 [ADR-0092](../architecture/adr/ADR-0092-conversation-feedback-cloudflare-review.md)。
+本节对应已接受的 [ADR-0092](../architecture/adr/ADR-0092-conversation-feedback-cloudflare-review.md)。
 下方第 1–15 节记录 ADR-0049 与 Phase 87–90 的历史合同，包含已经不再作为目标的本机审核、
 独立页面及 Python GitHub publisher；第 16–17 节记录现有中央 Hub/Cloudflare 合同。
-在 ADR-0092 被接受并通过实现验收前，不应把本节当作已部署事实。
+ADR-0092 的接受不代表实现已通过真实 Product API 验收或已经部署。
 
 - 用户从会话请求反馈。Product Agent 仅经 BYQ MCP 创建 owner-scoped 草稿、生成服务端脱敏预览，
   并在后续明确批准 exact feedback ID、版本及 preview hash 后提交。旧 `/feedback` 书签只引导回会话。

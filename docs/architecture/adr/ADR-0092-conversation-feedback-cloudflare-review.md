@@ -1,6 +1,7 @@
 # ADR-0092 — 会话反馈与 Cloudflare 唯一审核出口
 
-- Status: **Proposed — 2026-10-03；待维护者审阅接受**
+- Status: **Accepted — 2026-10-03；实现与真实浏览器验收仍是独立门槛**
+- Acceptance: 维护者在 R1–R4 修复候选及本 ADR 的待接受状态明确呈报后回复“接受”，接受本 ADR 的会话反馈与 Cloudflare 唯一审核出口决策范围；该回复不授权推送、合并、部署或删除生产数据。
 - Scope: BYQ 0.10 发布后 R3 反馈入口、审核与发布边界。
 - Supersedes: 归档 ADR-0049/0052/0053 中保留本机 direct publisher 与本地审核作为产品路径的历史决定；不改变其历史验收记录。当前 Clean Break ADR-001/002/004/005/006 的身份、数据、审批与 DSH 边界仍适用。
 
