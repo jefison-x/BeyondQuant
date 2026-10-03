@@ -328,11 +328,11 @@ prepare_ci_compose_env() {
   export BYQ_CREDENTIAL_RESOLVER_TOKEN=ci-credential-resolver-test-only
   export BYQ_PLUGIN_DEPLOYMENT_TOKEN=ci-plugin-test-only
   export BYQ_FEEDBACK_HUB_RELAY_TOKEN=ci-relay-test-only
-  export DEEPSEEK_API_KEY="" TUSHARE_TOKEN=""
+  export DEEPSEEK_API_KEY="" TUSHARE_TOKEN="" BYQ_FEEDBACK_GITHUB_TOKEN=""
   export BYQ_FEEDBACK_HUB_URL=""
   # ADR-0069: daily suites use the supported bundled runtime only.
   # Archived rollback images are never rebuilt or executed by routine CI.
-  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-303-candidate
+  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-304-candidate
   export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1
   export BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml
   export BYQ_DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-0.1.5rc1

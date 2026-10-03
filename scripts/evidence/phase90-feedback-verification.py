@@ -80,9 +80,10 @@ def main() -> None:
     other_page = other.call("GET", f"/api/product/feedback/items?status=all&category=all&query={encoded}&limit=10&offset=0")
     if other_page["items"] or other_page["total"]:
         raise AssertionError("secondary user can enumerate owner feedback")
-    moderation = owner.call("GET", f"/api/product/feedback/moderation/items/{feedback_id}")["feedback"]
-    if moderation["status"] != "submitted" or "owner_principal" in json.dumps(moderation):
-        raise AssertionError("moderation projection is invalid or leaked owner identity")
+    detail = owner.call("GET", f"/api/product/feedback/items/{feedback_id}")["feedback"]
+    if (detail["status"] != "submitted" or not isinstance(detail.get("central_hub"), dict)
+            or "owner_principal" in json.dumps(detail) or "publication_status" in detail):
+        raise AssertionError("owner feedback projection is invalid or leaked internal state")
     print(json.dumps({"status": "passed", "restart_verified": args.verify, "feedback_id": feedback_id, "secondary_user_hidden": True}, indent=2))
 
 
