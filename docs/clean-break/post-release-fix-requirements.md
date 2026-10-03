@@ -237,15 +237,15 @@ Binding 认证仍需保留，不能全仓按变量名删除。前端反馈 API/h
 ## 2026-10-03 正式 Hub 定向验收
 
 维护者明确选择正式 Hub。先对正式域名 `/healthz` 做只读检查，返回
-`central-feedback-hub: ok`。随后只提交两条明确标记的合成反馈；两条均停在
-`received`，未调用 `accept` 或 Publisher，未创建公开 Issue。
+`central-feedback-hub: ok`。随后只提交两条明确标记的合成反馈；测试结束时
+两条均为 `received`，未调用 `accept` 或 Publisher，未创建公开 Issue。
 
 1. 直接向正式 `/v1/intake` 提交一条符合 `central-feedback-intake.v1` 的合成
    envelope，HTTP 202、回执状态 `received`。其标题为
    `R3正式Hub验收测试 20261003T132947Z be7561`，回执 ID 的 SHA-256 前 16 位为
    `612decfdf9901062`。无令牌查询该回执状态返回 401；持回执 token 查询返回
    HTTP 200、`central-feedback-status.v1`、`received`，无 `github_issue`。
-   token 仅存于本机权限 0600 的 `/tmp/byq-formal-hub-r3-receipt.json`，不入 Git。
+   token 曾仅存于本机权限 0600 的临时文件，不入 Git；拒绝状态核验后已清理。
 2. 以当前候选 Backend 源码、当前 relay 源码、一次性 PostgreSQL 和隔离 Docker
    网络启动独立测试栈。测试用户在该 Backend 创建私有草稿、取服务端预览、明确
    确认提交，owner 投影先为 `queued`。relay 向正式 Hub 投递后，owner 再读到
@@ -255,7 +255,10 @@ Binding 认证仍需保留，不能全仓按变量名删除。前端反馈 API/h
 
 这证明正式 Hub 接收/鉴权及候选 Backend outbox→relay→正式 Hub 回执写回，
 不证明 DSH 会话内创建、MCP 与全局批准、浏览器确认，也不证明 Hub 管理员
-审核后 BYQ 状态轮询。正式 Hub 管理员凭据不在本工作区；两条待审核测试记录
-仍需在 Hub 管理台按上述标题先“分诊”再“拒绝”，不可“采纳”。候选未部署，
+审核后 BYQ 状态轮询。正式 Hub 管理员凭据不在本工作区。维护者随后报告已将
+两条记录先分诊再拒绝；2026-10-03 13:41 UTC 用第一条记录的私有回执令牌
+只读查询正式 Hub，HTTP 200、状态 `rejected`，仍无公开 Issue。第二条记录的
+隔离数据库和回执令牌已随测试栈清理，因此其 `rejected` 状态仅有维护者操作
+回报，未能由本工作区独立查询；不把它计作 BYQ 审核后状态轮询验收。候选未部署，
 发布前仍需重新执行旧记录切换预检。Tester、独立 Reviewer、Root 对本增量
 证据的结论另行记录。
