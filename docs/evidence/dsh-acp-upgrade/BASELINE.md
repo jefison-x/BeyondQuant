@@ -9,6 +9,7 @@ Date: 2026-10-04. Standalone maintenance; no Product Phase change.
 | Fetched `origin/main` and isolated branch base | `5619d6aee53a75ae1d461e7732efa922f89c6e4b` |
 | R1–R4 | Merged PR #385 is in that base; affected contracts need qualification. |
 | Running Runtime Adapter image | `sha256:968aef621c15fee97457ecd72962f91aaabba65cee350a05075c6420d6351bd0` (read-only Docker inspection); in-container SDK and runtime-bin both report `0.1.5rc1`. |
+| Preliminary local ACP candidate image | `sha256:16b5238ddded2c04ae9ac66812b391e4991122ceb1ef94b7ba8fbd90dd3e3437`, 1,430,939,146 bytes. Built from exact official commit and lock; it predates the final Adapter binding and identity-file edits, so it is not a release candidate or final tested image. |
 | Existing Dockerfile | `services/runtime-adapter/Dockerfile.post-u8-304-candidate`, SHA-256 `93b2b2646f0b1f7c1209af81c5e97d4e6f0e638df7036c7ff2e66ebb444ae636` |
 | Existing Python lock | `services/runtime-adapter/requirements.candidate.lock`, SHA-256 `3040ac39eb1ead938b87a59b743ca6b7aa28c61cc880a7ce74451ea1de7e541a`; DSH SDK and runtime wheels are `0.1.5rc1`. |
 | Existing Product composition | `plugins/dsh-byq/profiles/root-scoped/dsh-0.1.2rc1/byq-product.yml`, SHA-256 `68dc022bd520feff8559835e7853190a8bf325d475b10d2ac5362d57f233923b` |
@@ -36,13 +37,23 @@ At the pinned ACP source, `session/new` and `session/resume` receive `mcpServers
 | Protected live configuration backup and full rollback readiness | NOT_RUN | Trusted operator predeployment gate; no secret values were opened or copied. |
 | Per-root MCP identity in one reused ACP session | FAIL | No supported per-prompt MCP/header mutation. |
 | Same-root Product recovery across Adapter boot rotation | FAIL | Native ACP resume works at protocol level, but current Backend authority cannot transfer to the new boot. |
-| ACP mapping and restart design acceptance | NOT_RUN | ADR-0093 is Proposed; maintainer must decide the recovery contract. |
-| ACP executable keyless tests and complete matching container | NOT_RUN | No dependencies installed or BYQ candidate image built in this track; prior isolated upstream report is not BYQ acceptance. |
-| Adapter implementation and BYQ targeted integration | NOT_RUN | Held at design gate. |
+| ACP mapping and restart design acceptance | PASS | Maintainer accepted ADR-0093's same-root Backend transfer on 2026-10-04; implementation and qualification remain gated. |
+| ACP session MCP identity across two root sessions | PASS | Independent keyless mock MCP probe observed separate A/B bearer headers at root session setup. No business/model call was made. |
+| Product in-process delegate MCP access | FAIL | At pinned official source, independent Tester observed child model tool catalog empty for both sessions; an exact `toolFilter` on `mcp__byq__ping` failed as an unknown global tool. Root-local ACP MCP clients do not reach spawned child scopes. ADR-0094 records the tested process-scoped alternative and remaining evidence failure. |
+| Process-scoped per-root MCP alternative | PASS | Independent keyless two-process probe: root and child saw exact mock BYQ tool; child allowlist and persona held; each process sent only its own synthetic bearer. This does not qualify the current ACP per-session implementation or child event evidence. |
+| ACP child domain-call evidence projection | FAIL | Child native log had exact tool call/result, but parent ACP `session/update` omitted both. BYQ Adapter cannot currently prove child business-call evidence from ACP. ADR-0094 remains Proposed. |
+| Product model route and credential parity | NOT_RUN | Existing OpenCode routes are absent from the ACP overlay. Automatic approval review rejected adding the existing provider configuration, citing the prohibition on external paid-model calls; no such call was made. Do not treat DeepSeek-only static composition as parity. |
+| ACP continuation guard integration | NOT_RUN | The process-specific guard patch and exact ACP reservation header are implemented, but no fixed-container pre-dispatch/unknown-outcome test has qualified them. An earlier proposed relaxation of the old header check was rejected by automatic review and abandoned. |
+| Fixed upstream ACP source build and keyless focused tests | PASS | `corepack pnpm install --frozen-lockfile`, native system addon, `build:lib:host`; 4 ACP test files and 97 tests passed. Local source only, no BYQ acceptance. |
+| Backend same-root transfer focused tests | PASS | Three exact tests passed in the branch Backend image against a new tmpfs-only `byq_domain_test` PostgreSQL instance. An initial fixture actor mismatch failed, was corrected, and the exact trio passed; isolated container/network were removed. |
+| Gateway recovery focused tests | PASS | Seven tests passed in the branch Gateway test image, network disabled. They cover exact transfer ordering, settled receipt check, missing binding fail-closed, stale cache and no duplicate public history. |
+| ACP transport mock tests in candidate image | PASS | Four focused tests passed with current isolated Adapter files mounted read-only in the preliminary image; this is a mocked ACP peer, not a Product flow. |
+| Complete matching BYQ ACP container | NOT_RUN | A preliminary fixed-source local image built and its profile dump passed, but the image predates current BYQ code/identity files and has no full integration qualification. |
+| BYQ Adapter/Gateway/Backend integration qualification | NOT_RUN | Isolated implementation slices exist but are not yet qualified. Product promotion held at delegate MCP failure. |
 | Browser and runtime Tester/Reviewer/Root qualification | NOT_RUN | Required after implementation; current independent source Tester and design Reviewer do not substitute. |
 | Push, PR, exact-head CI, merge, Release Images, Promote, deploy | NOT_RUN | Downstream gates closed. |
 
-No model, MCP business, Job, market-data, migration, CI, merge or deployment operation was run in this track.
+No model, MCP business, Job, market-data, migration, CI, merge or deployment operation was run in this track. The upstream source build and tests used no model credential.
 
 ## Primary references
 

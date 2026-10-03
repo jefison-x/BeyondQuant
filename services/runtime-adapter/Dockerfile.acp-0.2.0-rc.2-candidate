@@ -1,0 +1,56 @@
+FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS official-dsh
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates git build-essential python3 \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /opt/dsh-runtime
+RUN git clone --depth 1 --branch dsh-v0.2.0-rc.2 \
+    https://github.com/deepseek-ai/deepseek-harness.git . \
+    && test "$(git rev-parse HEAD)" = 639ed015397290b3745d163aafe02ffee4aa3f84 \
+    && echo '80fe05eae33582ae26839afd05f1965f9b0e4be11034ddf9797af6085d5ba9b1  pnpm-lock.yaml' | sha256sum -c -
+RUN corepack pnpm install --frozen-lockfile \
+    && corepack pnpm run build:native-system \
+    && corepack pnpm run build:lib:host
+
+FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH=/opt/byq-venv/bin:$PATH \
+    BYQ_DSH_COMPATIBILITY_RELEASE=dsh-v0.2.0-rc.2-acp \
+    BYQ_DSH_PROCESS_OWNERSHIP=root-turn \
+    BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml \
+    BYQ_DSH_COMPOSITION_IDENTITY=/opt/byq/profiles/byq-product.identity.json \
+    BYQ_DSH_RELEASE_IDENTITY=/opt/byq/releases/deployment.identity.json \
+    BYQ_DSH_RUNTIME_ROOT=/opt/dsh-runtime \
+    DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-v0.2.0-rc.2-acp \
+    DSH_TELEMETRY_DISABLED=1 \
+    DSH_PERMISSION_MODE=read-only
+
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3 -m venv /opt/byq-venv
+WORKDIR /app
+COPY services/runtime-adapter/requirements.acp-candidate.lock ./requirements.acp-candidate.lock
+RUN pip install --no-cache-dir --require-hashes -r requirements.acp-candidate.lock \
+    && pip install --no-cache-dir \
+       fastapi==0.116.1 httpx==0.28.1 'uvicorn[standard]==0.35.0' pytest==9.0.3 \
+    && pip check
+
+COPY --from=official-dsh /opt/dsh-runtime /opt/dsh-runtime
+COPY services/runtime-adapter/app ./app
+COPY packages/contracts ./packages/contracts
+COPY packages/operations ./packages/operations
+COPY plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-product.patch.yml /opt/byq/profiles/byq-product.patch.yml
+COPY plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-product.identity.json /opt/byq/profiles/byq-product.identity.json
+COPY config/dsh/acp-0.2.0-rc.2.identity.json /opt/byq/releases/deployment.identity.json
+COPY plugins/dsh-byq/runtime/package.json plugins/dsh-byq/runtime/byq-continuation-budget.js plugins/dsh-byq/runtime/byq-runtime-time-context.js /opt/byq/runtime/
+COPY plugins/dsh-byq/skills /opt/dsh/bundles/dsh-byq/skills
+
+RUN groupadd --system --gid 10002 byq \
+    && useradd --system --uid 10002 --gid byq --no-create-home \
+       --home-dir /var/lib/byq/dsh-runtime-home --shell /usr/sbin/nologin byq \
+    && mkdir -p /var/lib/byq/dsh-sessions /var/lib/byq/dsh-runtime-home \
+    && chown -R byq:byq /var/lib/byq/dsh-sessions /var/lib/byq/dsh-runtime-home \
+    && chmod -R a-w /app /opt/byq /opt/dsh-runtime
+USER byq
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8400"]

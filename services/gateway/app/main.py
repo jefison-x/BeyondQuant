@@ -89,6 +89,9 @@ RUNTIME_ADAPTER_AUTHORITY_PATH = "/internal/runtime/authority"
 RUNTIME_AUTHORITY_BOOT_SCHEMA = "byq-runtime-authority-boot.v1"
 RUNTIME_AUTHORITY_RECEIPT_SCHEMA = "byq-runtime-authority-receipt.v1"
 RUNTIME_AUTHORITY_CURRENT_SCHEMA = "byq-runtime-authority-current.v1"
+RUNTIME_ROOT_TRANSFER_SCHEMA = "byq-runtime-root-authority-transfer.v1"
+RUNTIME_ROOT_TRANSFER_RECEIPT_SCHEMA = "byq-runtime-root-authority-transfer-receipt.v1"
+RUNTIME_RECOVERY_BINDING_SCHEMA = "byq-runtime-recovery-binding.v1"
 RUNTIME_TERMINAL_EVIDENCE_SCHEMA = "byq-runtime-terminal-evidence.v1"
 RUNTIME_ROOT_CLOSE_SCHEMA = "byq-runtime-root-close.v1"
 WORKSPACE_RUNTIME_RESET_BEGIN_SCHEMA = "workspace-runtime-reset-begin.v1"
@@ -1587,7 +1590,159 @@ def _catalog_request(
     return body
 
 
-def _restore_product_session(conversation_id: str, principal: Principal, workspace_id: str) -> ProductSession:
+def _runtime_root_rows(session: ProductSession) -> list[dict[str, object]]:
+    """Read Backend's owner-scoped root ledger without inferring business outcomes."""
+    try:
+        body = _backend_runtime_authority_request(
+            "GET", f"/internal/runtime-authority/sessions/{session.session_id}/roots", scope=session,
+        )
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail="business root recovery is unavailable") from exc
+    if (not isinstance(body, dict) or set(body) != {"schema_version", "roots"}
+            or body.get("schema_version") != "byq-business-root-status.v1"):
+        raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+    roots = body.get("roots")
+    if not isinstance(roots, list) or len(roots) > 500:
+        raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+    validated: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for row in roots:
+        status = row.get("status") if isinstance(row, dict) else None
+        authority_status = row.get("authority_status") if isinstance(row, dict) else None
+        terminal_sequence = row.get("terminal_sequence") if isinstance(row, dict) else None
+        terminal_digest = row.get("terminal_event_sha256") if isinstance(row, dict) else None
+        root_id = row.get("root_run_id") if isinstance(row, dict) else None
+        if (not isinstance(row, dict)
+                or set(row) != {"root_run_id", "status", "authority_status", "terminal_sequence",
+                                "terminal_event_sha256"}
+                or not isinstance(root_id, str) or re.fullmatch(r"[0-9a-f]{32}", root_id) is None
+                or root_id in seen
+                or not isinstance(status, str)
+                or status not in {"active", "completed", "failed", "cancelled", "interrupted"}
+                or not isinstance(authority_status, str)
+                or authority_status not in {"active", "authority_revoked_unconfirmed", "closed"}
+                or (terminal_sequence is not None
+                    and (type(terminal_sequence) is not int or terminal_sequence < 1))
+                or (terminal_digest is not None
+                    and (not isinstance(terminal_digest, str)
+                         or re.fullmatch(r"[0-9a-f]{64}", terminal_digest) is None))):
+            raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+        seen.add(root_id)
+        validated.append(row)
+    return validated
+
+
+def _validate_recovery_binding(body: object, session: ProductSession) -> dict[str, object]:
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=502, detail="runtime recovery binding is invalid")
+    state = body.get("state")
+    expected = {"schema_version", "state", "session_id", "trace_id", "owner_principal", "workspace_id",
+                "root_run_id", "previous_boot_id", "previous_authority_epoch", "sequence"}
+    if state == "settled":
+        expected = {*expected, "settlement_receipt"}
+    if (set(body) != expected or body.get("schema_version") != RUNTIME_RECOVERY_BINDING_SCHEMA
+            or state not in ("transfer_required", "settled")
+            or body.get("session_id") != session.session_id or body.get("trace_id") != session.trace_id
+            or body.get("owner_principal") != session.principal.subject
+            or body.get("workspace_id") != session.workspace_id
+            or not isinstance(body.get("root_run_id"), str)
+            or re.fullmatch(r"[0-9a-f]{32}", body["root_run_id"]) is None
+            or not _valid_runtime_boot_id(body.get("previous_boot_id"))
+            or type(body.get("previous_authority_epoch")) is not int
+            or body["previous_authority_epoch"] < 1
+            or type(body.get("sequence")) is not int or body["sequence"] < 0):
+        raise HTTPException(status_code=502, detail="runtime recovery binding is invalid")
+    if state == "settled":
+        receipt = body.get("settlement_receipt")
+        if (not isinstance(receipt, dict)
+                or set(receipt) != {"schema_version", "sequence", "root_run_id", "event_sha256"}
+                or receipt.get("schema_version") != "agent-run-lifecycle-receipt.v1"
+                or receipt.get("root_run_id") != body["root_run_id"]
+                or type(receipt.get("sequence")) is not int or receipt["sequence"] < 1
+                or not isinstance(receipt.get("event_sha256"), str)
+                or re.fullmatch(r"[0-9a-f]{64}", receipt["event_sha256"]) is None):
+            raise HTTPException(status_code=502, detail="runtime recovery binding is invalid")
+    return body
+
+
+def _verify_settled_recovery_binding(
+    binding: dict[str, object], session: ProductSession,
+) -> dict[str, object]:
+    receipt = binding["settlement_receipt"]
+    roots = _runtime_root_rows(session)
+    matched = [row for row in roots if row["root_run_id"] == binding["root_run_id"]]
+    if (len(matched) != 1 or matched[0]["authority_status"] != "closed"
+            or matched[0]["status"] not in {"completed", "failed", "cancelled", "interrupted"}
+            or matched[0]["terminal_sequence"] != receipt["sequence"]
+            or matched[0]["terminal_event_sha256"] != receipt["event_sha256"]):
+        _raise_agent_session_interrupted()
+    return receipt
+
+
+def _transfer_runtime_root_authority(
+    session: ProductSession, binding: dict[str, object],
+) -> dict[str, object]:
+    snapshot = _runtime_authority_snapshot()
+    boot_id = snapshot.get("boot_id")
+    authority_epoch = snapshot.get("authority_epoch")
+    if (snapshot.get("ready") is not True or not _valid_runtime_boot_id(boot_id)
+            or type(authority_epoch) is not int or authority_epoch < 1
+            or binding.get("previous_boot_id") == boot_id):
+        raise HTTPException(status_code=503, detail="runtime recovery authority is unavailable")
+    token = os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN", "")
+    if not token:
+        raise HTTPException(status_code=503, detail="runtime recovery authority is unavailable")
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "x-byq-owner-principal": session.principal.subject,
+        "x-byq-workspace-id": session.workspace_id,
+        "x-byq-session-id": session.session_id,
+        "x-byq-trace-id": session.trace_id,
+    }
+    payload = {
+        "schema_version": RUNTIME_ROOT_TRANSFER_SCHEMA,
+        "previous_boot_id": binding["previous_boot_id"],
+        "previous_authority_epoch": binding["previous_authority_epoch"],
+        "boot_id": boot_id,
+        "authority_epoch": authority_epoch,
+    }
+    try:
+        response = httpx.post(
+            f"{BACKEND_URL}/internal/runtime-authority/roots/{binding['root_run_id']}/transfer",
+            json=payload, headers=headers, timeout=5.0,
+        )
+        response.raise_for_status()
+        body = response.json()
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in {404, 409}:
+            _raise_agent_session_interrupted()
+        raise HTTPException(status_code=503, detail="runtime recovery authority is unavailable") from exc
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail="runtime recovery authority is unavailable") from exc
+    receipt = body.get("receipt") if isinstance(body, dict) else None
+    if (not isinstance(body, dict) or set(body) != {"receipt"}
+            or not isinstance(receipt, dict)
+            or set(receipt) != {"schema_version", "root_run_id", "previous_boot_id",
+                                "previous_authority_epoch", "boot_id", "authority_epoch", "status"}
+            or receipt.get("schema_version") != RUNTIME_ROOT_TRANSFER_RECEIPT_SCHEMA
+            or receipt.get("root_run_id") != binding["root_run_id"]
+            or receipt.get("previous_boot_id") != binding["previous_boot_id"]
+            or receipt.get("previous_authority_epoch") != binding["previous_authority_epoch"]
+            or receipt.get("boot_id") != boot_id or receipt.get("authority_epoch") != authority_epoch
+            or receipt.get("status") != "transferred"):
+        raise HTTPException(status_code=503, detail="runtime recovery authority is unavailable")
+    return receipt
+
+
+def _initial_runtime_sequence(session_id: str, binding_sequence: int = 0) -> int:
+    events = trace_store.read(session_id)
+    persisted = max((event["sequence"] for event in events), default=0)
+    return max(persisted, binding_sequence)
+
+
+def _restore_product_session(
+    conversation_id: str, principal: Principal, workspace_id: str, *, force_recovery: bool = False,
+) -> ProductSession:
     body = _catalog_request("GET", f"/v1/product/conversations/{conversation_id}", principal, workspace_id)
     conversation = body.get("conversation")
     if not isinstance(conversation, dict) or conversation.get("status") != "active":
@@ -1599,9 +1754,10 @@ def _restore_product_session(conversation_id: str, principal: Principal, workspa
         principal=principal,
         workspace_id=workspace_id,
     )
-    persisted_events = trace_store.read(session.session_id)
-    initial_sequence = max((event["sequence"] for event in persisted_events), default=0)
+    initial_sequence = _initial_runtime_sequence(session.session_id)
     try:
+        if force_recovery:
+            raise HTTPException(status_code=404, detail="cached runtime session belongs to an old Adapter boot")
         attached = _adapter_post(
             "/internal/runtime/sessions",
             payload={
@@ -1616,8 +1772,52 @@ def _restore_product_session(conversation_id: str, principal: Principal, workspa
         session.boot_id = _adopt_runtime_session_boot(attached)
     except HTTPException as exc:
         if _is_lost_runtime_session(exc):
-            _raise_agent_session_interrupted()
-        raise
+            try:
+                binding_reply = _adapter_get(
+                    f"/internal/runtime/sessions/{session.session_id}/recovery-binding", timeout=5.0,
+                )
+            except HTTPException as binding_error:
+                if binding_error.status_code != 404:
+                    raise
+                # A missing Adapter record proves nothing by itself. A fresh
+                # shell is safe only when Backend confirms this session never
+                # had a business root bound to it.
+                if _runtime_root_rows(session):
+                    _raise_agent_session_interrupted()
+                attached = _adapter_post(
+                    "/internal/runtime/sessions",
+                    payload={
+                        "session_id": session.session_id,
+                        "trace_id": session.trace_id,
+                        "workspace_id": session.workspace_id,
+                        "owner_principal": session.principal.subject,
+                        "initial_sequence": initial_sequence,
+                    },
+                )
+                session.boot_id = _adopt_runtime_session_boot(attached)
+            else:
+                binding = _validate_recovery_binding(binding_reply, session)
+                initial_sequence = _initial_runtime_sequence(session.session_id, binding["sequence"])
+                if binding["state"] == "transfer_required":
+                    recovery_receipt = _transfer_runtime_root_authority(session, binding)
+                else:
+                    recovery_receipt = _verify_settled_recovery_binding(binding, session)
+                recovered = _adapter_post(
+                    f"/internal/runtime/sessions/{session.session_id}/recover",
+                    payload={"receipt": recovery_receipt, "initial_sequence": initial_sequence},
+                    timeout=20.0,
+                )
+                if (recovered.get("session_id") != session.session_id
+                        or recovered.get("trace_id") != session.trace_id
+                        or recovered.get("status") != "idle"
+                        or recovered.get("active_prompt") is not False
+                        or recovered.get("continuity") != "reattached"
+                        or recovered.get("resumed_from_run_id") != (
+                            binding["root_run_id"] if binding["state"] == "transfer_required" else None)):
+                    raise HTTPException(status_code=502, detail="runtime recovery receipt is invalid")
+                session.boot_id = _adopt_runtime_session_boot(recovered)
+        else:
+            raise
     try:
         product_sessions.add(session)
     except RuntimeError:
@@ -1839,11 +2039,26 @@ def _reject_ambiguous_continuation_after_failure(
 def _product_session(request: Request, session_id: str) -> ProductSession:
     principal, workspace_id = _trusted_request_identity(request)
     try:
-        return product_sessions.get_owned(session_id, principal)
+        session = product_sessions.get_owned(session_id, principal)
     except HTTPException as exc:
         if exc.status_code != 404:
             raise
         return _restore_product_session(session_id, principal, workspace_id)
+    snapshot = _runtime_authority_snapshot()
+    if snapshot.get("ready") is not True or not _valid_runtime_boot_id(snapshot.get("boot_id")):
+        raise HTTPException(status_code=503, detail="Agent runtime authority is not ready")
+    if session.boot_id == snapshot["boot_id"] and session.workspace_id == workspace_id:
+        return session
+    # A cached Gateway binding belongs to a superseded Adapter boot (or a
+    # different active Workspace context). Remove only the local binding; the
+    # owner-scoped restore path must obtain exact Backend proof before it can
+    # adopt the new Adapter boot.
+    previous_boot_id = session.boot_id
+    product_sessions.remove_owned(session_id, principal)
+    return _restore_product_session(
+        session_id, principal, workspace_id,
+        force_recovery=previous_boot_id != snapshot["boot_id"],
+    )
 
 
 def _adopt_runtime_session_boot(reply: object) -> str:
@@ -1916,6 +2131,7 @@ def _runtime_conversation_payload(
 
 TRANSIENT_ROOT_CONFLICTS = (
     "previous runtime process cleanup is not complete",
+    "previous turn domain cleanup is not yet acknowledged",
     "new root requires a fresh public conversation projection",
     "session closed during initialization",
     "is still initializing",
@@ -2282,10 +2498,31 @@ def submit_product_turn(
                            "原消息的保存回执尚未确认，本次未启动模型；请先核对原会话。")
     prompt_payload["idempotency_key"] = message_id
     try:
-        body = _adapter_post(
-            f"/internal/runtime/sessions/{session.session_id}/prompt",
-            payload=prompt_payload, timeout=5.0,
-        )
+        body = None
+        conflict: HTTPException | None = None
+        # Recovery can emit the old root's terminal event. The collector must
+        # close that exact root in Backend and ACK Adapter before this same
+        # persisted message is admitted under a fresh root identity.
+        for delay in (0.0, 0.1, 0.25, 0.5, 1.0, 2.0):
+            if delay:
+                time.sleep(delay)
+            try:
+                body = _adapter_post(
+                    f"/internal/runtime/sessions/{session.session_id}/prompt",
+                    payload=prompt_payload, timeout=5.0,
+                )
+                break
+            except HTTPException as exc:
+                if _is_lost_runtime_session(exc):
+                    _raise_agent_session_interrupted()
+                if exc.status_code == 409 and _transient_root_conflict(exc):
+                    conflict = exc
+                    continue
+                raise
+        if body is None:
+            if conflict is not None:
+                raise conflict
+            raise HTTPException(status_code=502, detail="prompt was not accepted")
         if not isinstance(body, dict) or body.get("accepted") is not True or not _valid_prompt_run_id(body.get("run_id")):
             raise HTTPException(status_code=502, detail="prompt receipt is unconfirmed")
     except HTTPException as exc:
@@ -2312,11 +2549,13 @@ def submit_product_turn(
 def resume_product_session(session_id: str, request: Request) -> dict[str, object]:
     session = _product_session(request, session_id)
     _require_session_runtime_authority(session)
-    resume_payload = _runtime_conversation_payload(session)
     try:
         body = _adapter_post(
             f"/internal/runtime/sessions/{session.session_id}/resume",
-            payload=resume_payload,
+            # ACP resume restores DSH's native history. Supplying BYQ's
+            # completed public rows here would duplicate that context; rows
+            # are rehydrated only for the next fresh root prompt.
+            payload={},
         )
     except HTTPException as exc:
         if _is_lost_runtime_session(exc):

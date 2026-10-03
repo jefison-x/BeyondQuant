@@ -113,6 +113,43 @@ def create_guard_patch(
     return patch, journal
 
 
+def create_acp_guard_patch(
+    source: Path, root: Path, reservation: dict, *, deadline_epoch_ms: int,
+    root_run_id: str, mcp_reservation_id: str,
+) -> tuple[Path, Path]:
+    """Compose the existing DSH guard for one ACP process and exact MCP carrier.
+
+    ACP mounts HTTP MCP headers at session/new rather than through a Cordis
+    process row. The transport validates and sends the same reservation ID on
+    that call; this constructor refuses a missing or mismatched root/carrier.
+    """
+
+    if (re.fullmatch(r'[0-9a-f]{32}', root_run_id) is None
+            or reservation.get('reservation_id') != mcp_reservation_id
+            or re.fullmatch(r'continuation_[0-9a-f]{32}', mcp_reservation_id) is None):
+        raise ValueError('ACP continuation MCP identity carrier is unproven')
+    if type(deadline_epoch_ms) is not int or deadline_epoch_ms <= int(time.time() * 1000):
+        raise ValueError('continuation request deadline must be a future epoch millisecond')
+    root.mkdir(parents=True, exist_ok=True)
+    journal = root / 'continuation-tool-guard.jsonl'
+    patch = root / 'continuation.yml'
+    config = {
+        'deadlineEpochMs': deadline_epoch_ms,
+        'journalPath': str(journal),
+        'reservationId': mcp_reservation_id,
+        'executionProfile': reservation['execution_profile'],
+        'requestLimits': reservation['request_limits'],
+    }
+    overlay = '\n- id: web-search-deepseek\n  disabled: true\n- id: tool-web\n  disabled: true\n'
+    overlay += '- id: llm-deepseek\n  config:\n    maxTokens: ' + str(CONTINUATION_MAX_OUTPUT_TOKENS) + '\n'
+    overlay += "- insert:\n    - id: byq-continuation-budget\n      name: 'file:///opt/byq/runtime/byq-continuation-budget.js'\n      config:\n"
+    overlay += ''.join(f'        {key}: {json.dumps(value, separators=(",", ":"))}\n'
+                       for key, value in config.items())
+    with patch.open('x', encoding='utf-8') as stream:
+        stream.write(source.read_text(encoding='utf-8') + overlay)
+    return patch, journal
+
+
 def read_request_guard(journal: Path, reservation: dict, *, terminal: bool = False) -> dict:
     """Read DSH's fsynced pre-dispatch allow/deny journal for this request."""
 

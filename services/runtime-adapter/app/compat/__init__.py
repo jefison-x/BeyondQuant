@@ -4,6 +4,10 @@ from .types import RuntimeCompatibility, RuntimeObservation
 
 
 def compatibility_for_release(release: str) -> RuntimeCompatibility:
+    if release == "dsh-v0.2.0-rc.2-acp":
+        from .dsh_acp import DshAcpCompatibility
+
+        return DshAcpCompatibility()
     if release == "dsh-0.1.5rc1":
         # Repository default since the 0.9 formal default upgrade. The Python SDK
         # public surface is byte-identical to 0.1.2rc1 (docs/evidence/d15), so the

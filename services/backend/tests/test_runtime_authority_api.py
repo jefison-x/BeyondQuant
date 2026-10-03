@@ -45,6 +45,15 @@ def test_gateway_authority_routes_require_service_bearer_and_exact_contract(monk
         "root_run_id": root_id,
         "event_sha256": digest,
     }
+    transfer_receipt = {
+        "schema_version": "byq-runtime-root-authority-transfer-receipt.v1",
+        "root_run_id": root_id,
+        "previous_boot_id": "d" * 32,
+        "previous_authority_epoch": 4,
+        "boot_id": boot_id,
+        "authority_epoch": 5,
+        "status": "transferred",
+    }
 
     class Store:
         def rotate_runtime_authority(self, received_boot_id):
@@ -57,6 +66,16 @@ def test_gateway_authority_routes_require_service_bearer_and_exact_contract(monk
                 "boot_id": boot_id, "sequence": 9, "outcome": "failed", "event_sha256": digest,
             }
             return terminal_receipt
+
+        def transfer_runtime_root_authority(self, received_root_id, **kwargs):
+            assert received_root_id == root_id
+            assert kwargs == {
+                "previous_boot_id": "d" * 32, "previous_authority_epoch": 4,
+                "boot_id": boot_id, "authority_epoch": 5,
+                "owner_principal": "owner", "workspace_id": "workspace_1",
+                "session_id": "session_1", "trace_id": "trace_1",
+            }
+            return transfer_receipt
 
     monkeypatch.setattr(main, "agent_store", Store())
     monkeypatch.setattr(main, "RUNTIME_AUTHORITY_TOKEN", "synthetic-service-token")
@@ -80,6 +99,24 @@ def test_gateway_authority_routes_require_service_bearer_and_exact_contract(monk
     response = client.post(close_path, json=close_body, headers=headers)
     assert response.status_code == 200
     assert response.json() == {"receipt": terminal_receipt}
+
+    transfer_path = f"/internal/runtime-authority/roots/{root_id}/transfer"
+    transfer_body = {
+        "schema_version": "byq-runtime-root-authority-transfer.v1",
+        "previous_boot_id": "d" * 32, "previous_authority_epoch": 4,
+        "boot_id": boot_id, "authority_epoch": 5,
+    }
+    scope_headers = {**headers, "x-byq-owner-principal": "owner",
+        "x-byq-workspace-id": "workspace_1", "x-byq-session-id": "session_1",
+        "x-byq-trace-id": "trace_1"}
+    assert client.post(transfer_path, json=transfer_body).status_code == 401
+    assert client.post(transfer_path, json={**transfer_body, "extra": True},
+                       headers=scope_headers).status_code == 422
+    assert client.post(transfer_path, json=transfer_body,
+                       headers={"Authorization": headers["Authorization"]}).status_code == 401
+    response = client.post(transfer_path, json=transfer_body, headers=scope_headers)
+    assert response.status_code == 200
+    assert response.json() == {"receipt": transfer_receipt}
 
 
 def test_runtime_authority_identity_fields_fail_closed_before_database_access():

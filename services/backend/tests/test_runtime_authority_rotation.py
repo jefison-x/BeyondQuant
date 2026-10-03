@@ -201,6 +201,126 @@ def test_terminal_close_persists_exact_adapter_digest_and_is_idempotent_after_ro
         store.close()
 
 
+def test_same_root_transfer_is_exact_idempotent_and_preserves_unknown_call_receipts():
+    old_boot, new_boot = "8" * 32, "9" * 32
+    root = "a" * 32
+    ctx = trusted_agent_context("authority-transfer-user", actor="byq-product-agent-session-transfer",
+        session_id="session-transfer", trace_id="trace-transfer", dsh_run_id="generation-transfer")
+    catalog, research, store = ConversationCatalogStore(), ResearchStore(), AgentResearchStore()
+    try:
+        old_authority = store.rotate_runtime_authority(old_boot)
+        ctx["x-byq-runtime-boot-id"] = old_boot
+        conversation = catalog.create("authority-transfer-user", "session-transfer", "trace-transfer")
+        task = _task(research, ctx, conversation, "transfer-task")
+        apply(store, ctx, root, key="transfer-agent")
+        run = start(store, ctx, "transfer-agent")
+        payload, evidence = _evidence(task["task_id"], run["run_id"], ctx, root,
+                                     "transfer-call", 1)
+        proof_scope = _proof_scope(ctx, conversation)
+        evidence_receipt = store.consume_domain_call_evidence(evidence, **proof_scope)
+        claim_scope = _claim_scope(ctx, root)
+        claim = store.claim_domain_call("byq_strategy_validate", payload, **claim_scope)
+        assert claim["state"] == "claimed"
+        store._execute("UPDATE agent_domain_call_claims SET status='executing' WHERE claim_id=:id",
+                       {"id": claim["claim_id"]})
+
+        evidence_before = store._fetch_one("""SELECT evidence_json,receipt_json FROM agent_domain_call_evidence
+            WHERE root_run_id=:root""", {"root": root})
+        claim_before = store._fetch_one("""SELECT status,result_json,evidence_sequence,agent_run_id
+            FROM agent_domain_call_claims WHERE root_run_id=:root""", {"root": root})
+        new_authority = store.rotate_runtime_authority(new_boot)
+        assert old_authority["authority_epoch"] + 1 == new_authority["authority_epoch"]
+
+        kwargs = {
+            "previous_boot_id": old_boot,
+            "previous_authority_epoch": old_authority["authority_epoch"],
+            "boot_id": new_boot,
+            "authority_epoch": new_authority["authority_epoch"],
+            "owner_principal": ctx["x-byq-owner-principal"],
+            "workspace_id": ctx["x-byq-workspace-id"],
+            "session_id": ctx["x-byq-session-id"],
+            "trace_id": ctx["x-byq-trace-id"],
+        }
+        receipt = store.transfer_runtime_root_authority(root, **kwargs)
+        assert receipt == {
+            "schema_version": "byq-runtime-root-authority-transfer-receipt.v1",
+            "root_run_id": root,
+            "previous_boot_id": old_boot,
+            "previous_authority_epoch": old_authority["authority_epoch"],
+            "boot_id": new_boot,
+            "authority_epoch": new_authority["authority_epoch"],
+            "status": "transferred",
+        }
+        assert store.transfer_runtime_root_authority(root, **kwargs) == receipt
+        assert store._fetch_one("""SELECT status,authority_status,authority_boot_id,
+                previous_authority_boot_id,previous_authority_epoch
+            FROM agent_runtime_turns WHERE root_run_id=:root""", {"root": root}) == {
+                "status": "active", "authority_status": "active", "authority_boot_id": new_boot,
+                "previous_authority_boot_id": old_boot,
+                "previous_authority_epoch": old_authority["authority_epoch"],
+            }
+        assert store._fetch_one("SELECT status,authority_status,authority_boot_id FROM agent_runs WHERE run_id=:id",
+                                {"id": run["run_id"]}) == {
+                                    "status": "active", "authority_status": "active", "authority_boot_id": new_boot,
+                                }
+        assert store._fetch_one("""SELECT evidence_json,receipt_json FROM agent_domain_call_evidence
+            WHERE root_run_id=:root""", {"root": root}) == evidence_before
+        assert store._fetch_one("""SELECT status,result_json,evidence_sequence,agent_run_id
+            FROM agent_domain_call_claims WHERE root_run_id=:root""", {"root": root}) == claim_before
+        assert evidence_receipt == store.consume_domain_call_evidence(evidence, **proof_scope)
+
+        # The exact retry remains an unknown call, not a second execution.
+        resumed_scope = {**claim_scope, "trusted_boot_id": new_boot}
+        assert store.claim_domain_call("byq_strategy_validate", payload, **resumed_scope) == {"state": "unknown"}
+        executed = []
+        with pytest.raises((AgentConflict, AgentUnauthorized)):
+            store.execute_domain_call(claim, lambda _connection: executed.append(True))
+        assert executed == []
+
+        # A changed prior epoch cannot reuse the root's committed transfer proof.
+        with pytest.raises(AgentConflict, match="previous runtime boot receipt"):
+            store.transfer_runtime_root_authority(root,
+                **{**kwargs, "previous_authority_epoch": old_authority["authority_epoch"] + 1})
+    finally:
+        store.close()
+        research.close()
+        catalog.close()
+
+
+def test_same_root_transfer_fails_closed_for_unbound_registration_and_wrong_scope():
+    old_boot, new_boot = "c" * 32, "d" * 32
+    root = "e" * 32
+    ctx = trusted_agent_context("authority-transfer-pending-user", actor="byq-product-agent-transfer-pending",
+        session_id="session-transfer-pending", trace_id="trace-transfer-pending",
+        dsh_run_id="generation-transfer-pending")
+    store = AgentResearchStore()
+    try:
+        old_authority = store.rotate_runtime_authority(old_boot)
+        ctx["x-byq-runtime-boot-id"] = old_boot
+        apply(store, ctx, root, key="bound-agent")
+        start(store, ctx, "bound-agent")
+        start(store, ctx, "unbound-agent")
+        new_authority = store.rotate_runtime_authority(new_boot)
+        kwargs = {
+            "previous_boot_id": old_boot,
+            "previous_authority_epoch": old_authority["authority_epoch"],
+            "boot_id": new_boot,
+            "authority_epoch": new_authority["authority_epoch"],
+            "owner_principal": ctx["x-byq-owner-principal"],
+            "workspace_id": ctx["x-byq-workspace-id"],
+            "session_id": ctx["x-byq-session-id"],
+            "trace_id": ctx["x-byq-trace-id"],
+        }
+        with pytest.raises(AgentConflict, match="unbound AgentRun registration"):
+            store.transfer_runtime_root_authority(root, **kwargs)
+        with pytest.raises(AgentUnauthorized, match="transfer scope"):
+            store.transfer_runtime_root_authority(root, **{**kwargs, "trace_id": "other-trace"})
+        assert store._fetch_one("SELECT authority_status FROM agent_runtime_turns WHERE root_run_id=:root",
+                                {"root": root})["authority_status"] == "authority_revoked_unconfirmed"
+    finally:
+        store.close()
+
+
 def test_plain_agent_turn_without_domain_registration_closes_exact_root():
     boot = uuid4().hex
     root = uuid4().hex

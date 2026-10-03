@@ -466,9 +466,12 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             authority_status TEXT NOT NULL DEFAULT 'active'
                 CHECK (authority_status IN ('active','authority_revoked_unconfirmed','closed')),
             authority_boot_id TEXT,
+            previous_authority_boot_id TEXT, previous_authority_epoch BIGINT,
             terminal_sequence BIGINT, terminal_event_sha256 TEXT,
             created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL
         )""",
+        "ALTER TABLE agent_runtime_turns ADD COLUMN IF NOT EXISTS previous_authority_boot_id TEXT",
+        "ALTER TABLE agent_runtime_turns ADD COLUMN IF NOT EXISTS previous_authority_epoch BIGINT",
         """CREATE TABLE IF NOT EXISTS agent_runtime_authority_current (
             authority_key TEXT PRIMARY KEY CHECK (authority_key = 'current'),
             boot_id TEXT NOT NULL,
@@ -843,6 +846,147 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                     epoch=EXCLUDED.epoch,receipt_json=EXCLUDED.receipt_json,updated_at=EXCLUDED.updated_at""",
                 {"boot_id": boot_id, "epoch": epoch, "receipt": encoded, "now": now})
         return receipt
+
+    def transfer_runtime_root_authority(self, root_run_id: object, *, previous_boot_id: object,
+                                        previous_authority_epoch: object, boot_id: object,
+                                        authority_epoch: object, owner_principal: object,
+                                        workspace_id: object, session_id: object,
+                                        trace_id: object) -> dict[str, object]:
+        """Reattach one revoked active root to the current runtime boot.
+
+        Rotation has already drained in-flight Product Agent requests and
+        fenced the old boot. This operation requires the exact recorded old
+        and current boot epochs, the root's original scope, and a root that is
+        still active and revoked under that old boot. Durable call evidence and
+        claims are intentionally untouched: unresolved claims stay unknown and
+        are never replayed here.
+        """
+        if not isinstance(root_run_id, str) or re.fullmatch(r"[0-9a-f]{32}", root_run_id) is None:
+            raise ValueError("invalid exact root run identity")
+        previous_boot_id = _runtime_boot_id(previous_boot_id)
+        boot_id = _runtime_boot_id(boot_id)
+        if previous_boot_id == boot_id:
+            raise ValueError("root authority transfer requires two distinct boots")
+        if type(previous_authority_epoch) is not int or not 1 <= previous_authority_epoch <= 2**63 - 1:
+            raise ValueError("invalid previous runtime authority epoch")
+        if type(authority_epoch) is not int or not 1 <= authority_epoch <= 2**63 - 1:
+            raise ValueError("invalid current runtime authority epoch")
+        owner = _principal(owner_principal, field="owner_principal")
+        workspace = _trace(workspace_id, field="workspace_id")
+        session = _trace(session_id, field="session_id")
+        trace = _trace(trace_id, field="trace_id")
+
+        # Drain current-boot Product Agent requests before moving this root.
+        # This follows rotation's lock order and closes the gap between the
+        # old-boot fence and the new root authority grant.
+        with transaction(self.runtime_authority_guard_engine) as gate_connection:
+            self._lifecycle_lock(gate_connection, "runtime-authority:agent-writers")
+            with self._transaction() as connection:
+                self._lifecycle_lock(connection, "runtime-authority:current")
+                current = self._current_authority_row(connection, for_update=True)
+                if (current is None or current["boot_id"] != boot_id
+                        or current["epoch"] != authority_epoch
+                        or current["receipt_json"].get("boot_id") != boot_id
+                        or current["receipt_json"].get("authority_epoch") != authority_epoch
+                        or current["receipt_json"].get("status") != "current"):
+                    raise AgentConflict("current runtime boot receipt does not match transfer proof")
+
+                previous = fetch_one(connection, """SELECT epoch,receipt_json
+                    FROM agent_runtime_authority_boot_receipts
+                    WHERE boot_id=:boot_id""", {"boot_id": previous_boot_id})
+                if (previous is None or previous["epoch"] != previous_authority_epoch
+                        or previous["receipt_json"].get("schema_version") != "byq-runtime-authority-receipt.v1"
+                        or previous["receipt_json"].get("boot_id") != previous_boot_id
+                        or previous["receipt_json"].get("authority_epoch") != previous_authority_epoch):
+                    raise AgentConflict("previous runtime boot receipt does not match transfer proof")
+
+                self._require_lifecycle_workspace(connection, owner, workspace)
+                self._lifecycle_lock(connection, "root:" + root_run_id)
+                root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:id",
+                                 {"id": root_run_id})
+                if root is None:
+                    raise AgentNotFound("runtime root not found")
+                if (root["owner_principal"], root["workspace_id"], root["session_id"], root["trace_id"]) != (
+                        owner, workspace, session, trace):
+                    raise AgentUnauthorized("runtime root does not match transfer scope")
+
+                receipt = {
+                    "schema_version": "byq-runtime-root-authority-transfer-receipt.v1",
+                    "root_run_id": root_run_id,
+                    "previous_boot_id": previous_boot_id,
+                    "previous_authority_epoch": previous_authority_epoch,
+                    "boot_id": boot_id,
+                    "authority_epoch": authority_epoch,
+                    "status": "transferred",
+                }
+                # Exact retry after commit returns the same proof. These two
+                # fields are written with the authority change, so a root
+                # created directly under this boot cannot claim a transfer.
+                if (root["status"] in {"active", "completed", "failed", "cancelled", "interrupted"}
+                        and root["authority_status"] in {"active", "closed"}
+                        and root["authority_boot_id"] == boot_id
+                        and root.get("previous_authority_boot_id") == previous_boot_id
+                        and root.get("previous_authority_epoch") == previous_authority_epoch):
+                    return receipt
+
+                self._require_current_runtime_boot(connection, boot_id, required=True)
+                if (root["status"] != "active"
+                        or root["authority_status"] != "authority_revoked_unconfirmed"
+                        or root["authority_boot_id"] != previous_boot_id):
+                    raise AgentConflict("runtime root is not revoked under the exact previous boot")
+
+                # An unbound registration has no durable proof tying it to this
+                # root. Do not guess from a shared session or revive it.
+                unbound = fetch_one(connection, """SELECT run_id FROM agent_runs
+                    WHERE owner_principal=:owner AND workspace_id=:workspace
+                      AND session_id=:session AND trace_id=:trace
+                      AND root_run_id IS NULL AND runtime_registration_fingerprint IS NOT NULL
+                      AND status IN ('active','pending_binding')
+                      AND authority_status='authority_revoked_unconfirmed'
+                      AND authority_boot_id=:previous_boot LIMIT 1""",
+                    {"owner": owner, "workspace": workspace, "session": session,
+                     "trace": trace, "previous_boot": previous_boot_id})
+                if unbound is not None:
+                    raise AgentConflict("unbound AgentRun registration prevents root authority transfer")
+
+                bindings = execute(connection, """SELECT registration_fingerprint
+                    FROM agent_runtime_registrations WHERE root_run_id=:root
+                    ORDER BY registration_fingerprint""", {"root": root_run_id})
+                for binding in bindings:
+                    self._lifecycle_lock(connection, "registration:" + binding["registration_fingerprint"])
+
+                active_runs = execute(connection, """SELECT run_id,authority_status,authority_boot_id
+                    FROM agent_runs WHERE root_run_id=:root AND status IN ('active','pending_binding')
+                    ORDER BY run_id""", {"root": root_run_id})
+                for run in active_runs:
+                    if (run["authority_status"] != "authority_revoked_unconfirmed"
+                            or run["authority_boot_id"] != previous_boot_id):
+                        raise AgentConflict("bound AgentRun does not match the previous root authority")
+
+                now = _now()
+                updated_root = execute(connection, """UPDATE agent_runtime_turns
+                    SET authority_status='active',authority_boot_id=:boot_id,
+                        previous_authority_boot_id=:previous_boot,
+                        previous_authority_epoch=:previous_epoch,updated_at=:now
+                    WHERE root_run_id=:root AND status='active'
+                      AND authority_status='authority_revoked_unconfirmed'
+                      AND authority_boot_id=:previous_boot RETURNING root_run_id""",
+                    {"boot_id": boot_id, "previous_boot": previous_boot_id,
+                     "previous_epoch": previous_authority_epoch, "now": now,
+                     "root": root_run_id})
+                if len(updated_root) != 1:
+                    raise AgentConflict("runtime root changed during authority transfer")
+                rebound_runs = execute(connection, """UPDATE agent_runs
+                    SET authority_status='active',authority_boot_id=:boot_id,
+                        updated_at=:now,version=version+1
+                    WHERE root_run_id=:root AND status IN ('active','pending_binding')
+                      AND authority_status='authority_revoked_unconfirmed'
+                      AND authority_boot_id=:previous_boot RETURNING run_id""",
+                    {"boot_id": boot_id, "previous_boot": previous_boot_id,
+                     "now": now, "root": root_run_id})
+                if len(rebound_runs) != len(active_runs):
+                    raise AgentConflict("bound AgentRun set changed during authority transfer")
+                return receipt
 
     def close_runtime_root(self, root_run_id: object, *, boot_id: object, sequence: object,
                            outcome: object, event_sha256: object) -> dict[str, object]:

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import hashlib
+import fcntl
 import os
 import queue
 import re
 import secrets
 import shutil
+import tempfile
 import threading
 import time
 import uuid
@@ -47,6 +49,7 @@ from .continuation_budget import (
     CONTINUATION_MAX_OUTPUT_TOKENS,
     validate_reservation,
     create_guard_patch,
+    create_acp_guard_patch,
     read_request_guard,
 )
 from .research_request_gate import RequestGateProxy, build_continuation_request_gate
@@ -221,6 +224,9 @@ class RuntimeSession:
     lock: threading.RLock = field(default_factory=threading.RLock)
     executor_epoch: int = 0
     continuity: str | None = None
+    authority_epoch: int | None = None
+    recovery_cwd: str | None = None
+    settlement_receipt: dict[str, Any] | None = None
     current_generation: RuntimeGeneration | None = field(default=None, repr=False)
 
     def _generation(self) -> RuntimeGeneration:
@@ -376,6 +382,7 @@ class RuntimeAdapter:
         self._compatibility = compatibility or compatibility_for_release(
             os.environ.get("BYQ_DSH_COMPATIBILITY_RELEASE", "dsh-0.1.2rc1")
         )
+        self._acp = self._compatibility.family == "dsh-v0.2.0-rc.2-acp"
         self._sessions: dict[str, RuntimeSession] = {}
         # Lost ACK responses can be retried after a released session is reaped,
         # but this receipt cache never crosses an Adapter boot.
@@ -407,7 +414,7 @@ class RuntimeAdapter:
         if ownership not in {"session", "root-turn"}:
             raise ValueError("unsupported runtime process ownership")
         self._root_scoped = ownership == "root-turn"
-        if self._root_scoped:
+        if self._root_scoped and not self._acp:
             identity = json.loads(self._composition_identity.read_text())
             composition = self._composition.read_text()
             if (not isinstance(identity, dict) or identity.get("root_identity_contract") != "byq-root-process.v1"
@@ -459,6 +466,7 @@ class RuntimeAdapter:
         release_identity = self._safe_release_identity()
         adapter_status = (
             "ready" if release_identity["status"] == "matched"
+            and (not self._acp or composition_identity["composition_hash"] != "unavailable")
             else "release-identity-mismatch"
         )
         return {
@@ -509,7 +517,7 @@ class RuntimeAdapter:
             "status": "ready",
         }
 
-    def require_current_backend_authority(self) -> None:
+    def require_current_backend_authority(self) -> int:
         """Fail closed unless Backend has committed this exact Adapter boot."""
 
         try:
@@ -531,6 +539,7 @@ class RuntimeAdapter:
                 or current.get("status") != "current"
                 or current.get("boot_id") != self.boot_id):
             raise RuntimeAuthorityUnavailable("Backend runtime authority is not current")
+        return current["authority_epoch"]
 
     def operations_snapshot(self) -> dict[str, Any]:
         """Return process-local, normalized runtime accounting only."""
@@ -610,10 +619,33 @@ class RuntimeAdapter:
             for item in plugin_ids
         ):
             return fallback
+        if self._acp:
+            try:
+                actual = "sha256:" + hashlib.sha256(self._composition.read_bytes()).hexdigest()
+            except OSError:
+                return fallback
+            if actual != digest:
+                return fallback
         return {"profile": profile, "composition_hash": digest, "enabled_plugin_ids": plugin_ids}
 
     def _safe_release_identity(self) -> dict[str, str]:
         """Match deployment-controlled identity to installed distribution metadata."""
+
+        if self._acp:
+            fallback = {"release_id": "dsh-v0.2.0-rc.2", "installed_sdk": "not-applicable",
+                        "installed_runtime_bin": "not-applicable", "status": "unavailable"}
+            try:
+                value = json.loads(self._release_identity.read_text(encoding="utf-8"))
+                lock_hash = hashlib.sha256((self._runtime_root / "pnpm-lock.yaml").read_bytes()).hexdigest()
+            except (OSError, ValueError):
+                return fallback
+            if (not isinstance(value, dict)
+                    or value.get("schema_version") != "dsh-acp-deployment-identity.v1"
+                    or value.get("source_commit") != "639ed015397290b3745d163aafe02ffee4aa3f84"
+                    or value.get("pnpm_lock_sha256") != lock_hash
+                    or not (self._runtime_root / "apps/cli/lib/bin.js").is_file()):
+                return fallback
+            return {**fallback, "status": "matched"}
 
         try:
             installed_sdk = distribution_version("deepseek-harness-sdk")
@@ -713,11 +745,14 @@ class RuntimeAdapter:
     ) -> dict[str, Any]:
         validate_identifier(session_id, field="session_id")
         validate_identifier(trace_id, field="trace_id")
-        if type(initial_sequence) is not int or initial_sequence != 0:
+        if (type(initial_sequence) is not int or initial_sequence < 0
+                or (not self._acp and initial_sequence != 0)):
             raise SessionConflict(SESSION_LOST_DETAIL)
         with self._lock:
             if session_id in self._sessions:
                 raise SessionConflict(f"BYQ session already exists: {session_id}")
+        if self._acp and self._acp_binding_path(session_id).exists():
+            raise SessionConflict("BYQ session has a persistent ACP recovery binding")
         context = normalize_conversation_context([] if conversation_context is None else conversation_context)
         # DSH session files are private execution state. Give every fresh BYQ
         # session a new native identity; the Adapter never reopens old state.
@@ -749,8 +784,9 @@ class RuntimeAdapter:
                 workspace_id=workspace_id,
                 model_resolution=model_resolution,
                 pending_conversation_context=context,
-                sequence=0,
+                sequence=initial_sequence,
                 history=[],
+                recovery_cwd=str(session_root),
             )
             self._install_generation(
                 record, native_session_id=runtime_session_id,
@@ -763,6 +799,10 @@ class RuntimeAdapter:
 
         try:
             self._compatibility.start(harness)
+            if self._acp:
+                native_id = self._compatibility.create_session(harness, cwd=session_root)
+                with record.lock:
+                    record.runtime_session_id = native_id
             with record.lock:
                 if record.status != SessionStatus.STARTING:
                     raise SessionConflict("session closed during initialization")
@@ -879,6 +919,15 @@ class RuntimeAdapter:
                     if request_proxy is not None:
                         request_proxy.close()
                     raise
+                if self._acp:
+                    try:
+                        self._compatibility.start(harness)
+                        private_session = self._compatibility.create_session(harness, cwd=session_root)
+                    except BaseException:
+                        self._compatibility.close(harness)
+                        if request_proxy is not None:
+                            request_proxy.close()
+                        raise
                 # A new root turn is a NEW generation for the same durable
                 # session. Retire the previous process generation; never reuse
                 # its native identity or transient normalization state.
@@ -889,6 +938,8 @@ class RuntimeAdapter:
                 )
                 installed = record.current_generation
                 installed.harness = harness
+                record.recovery_cwd = str(session_root)
+                record.settlement_receipt = None
                 installed.continuation_budget = budget
                 installed.budget_journal = tool_journal
                 installed.budget_run_id = root_id if budget else None
@@ -914,6 +965,9 @@ class RuntimeAdapter:
             if idempotency_key is not None:
                 record.prompt_idempotency[idempotency_key] = (identity_content, run.run_id)
             try:
+                if self._acp:
+                    record.authority_epoch = self.require_current_backend_authority()
+                    self._persist_acp_binding(record)
                 self._emit(record, "session.started", "runtime-adapter", {"run_id": run.run_id})
             except BaseException:
                 record.active_run = None
@@ -1119,6 +1173,8 @@ class RuntimeAdapter:
             if mode == "soft":
                 run.soft_cancel_requested = True
                 record.status = SessionStatus.CANCELLING
+                cancelled_harness = record.harness
+                cancelled_native_session = record.runtime_session_id
             else:
                 run.hard_cancelled = True
                 run.watchdog_stop.set()
@@ -1139,6 +1195,8 @@ class RuntimeAdapter:
             if mode == "hard":
                 # ADR-0085 P0: an interrupted terminal closes the generation.
                 self._close_generation(record, record.runtime_generation, "interrupted")
+        if mode == "soft" and self._acp:
+            self._compatibility.cancel_session(cancelled_harness, cancelled_native_session)
         if mode == "hard":
             # Interrupt any active upstream read before waiting for DSH process
             # teardown; both resources are dedicated to this one request.
@@ -1217,6 +1275,8 @@ class RuntimeAdapter:
                 raise SessionConflict("private evidence receipts must be acknowledged in sequence")
             record.domain_call_drained_sequence = sequence
             self._remember_ack("domain-call", record, expected)
+            if self._acp:
+                self._persist_acp_binding(record)
             acknowledged = {"receipt": dict(expected)}
         self._maybe_reap_released(record)
         return acknowledged
@@ -1241,6 +1301,9 @@ class RuntimeAdapter:
             evidence = self._terminal_evidence_for(record, root)
             record.pending_terminal_receipts.discard(root)
             self._remember_ack("terminal", record, receipt, terminal_evidence=evidence)
+            if self._acp:
+                record.settlement_receipt = dict(receipt)
+                self._persist_acp_binding(record)
             acknowledged = {"receipt": dict(receipt)}
         self._maybe_reap_released(record)
         return acknowledged
@@ -1361,6 +1424,8 @@ class RuntimeAdapter:
         try:
             with record.lock:
                 self._emit(record, "session.closed", "runtime-adapter", {"reason": "released"})
+                if self._acp and record.authority_epoch is not None:
+                    self._persist_acp_binding(record)
         finally:
             try:
                 if record.harness is not None:
@@ -1433,6 +1498,220 @@ class RuntimeAdapter:
                 # exposing the ephemeral generation/native process identity.
                 "continuity": record.continuity,
             }
+
+    def _acp_binding_path(self, session_id: str) -> Path:
+        validate_identifier(session_id, field="session_id")
+        directory = contained_session_path(self._session_root, "byq-acp-bindings")
+        return directory / f"{session_id}.json"
+
+    def _persist_acp_binding(self, record: RuntimeSession) -> None:
+        """Store only the exact root/native binding required by ADR-0093."""
+
+        if not self._acp:
+            return
+        root = record.process_root_id
+        if re.fullmatch(r"[0-9a-f]{32}", root) is None or record.authority_epoch is None:
+            raise SessionConflict("ACP recovery binding has no exact root authority")
+        cwd = record.recovery_cwd
+        if not cwd or not Path(cwd).resolve().is_relative_to(self._session_root):
+            raise SessionConflict("ACP recovery working directory is not contained")
+        value = {
+            "schema_version": "byq-acp-root-binding.v1",
+            "session_id": record.session_id,
+            "trace_id": record.trace_id,
+            "owner_principal": record.owner_principal,
+            "workspace_id": record.workspace_id,
+            "root_run_id": root,
+            "native_session_id": record.runtime_session_id,
+            "runtime_generation": record.runtime_generation,
+            "model_provider": str(record.model_resolution.get("provider") or self._provider),
+            "model_id": str(record.model_resolution.get("model") or self._model),
+            "cwd": str(Path(cwd).resolve()),
+            "previous_boot_id": record.boot_id,
+            "previous_authority_epoch": record.authority_epoch,
+            "sequence": record.sequence,
+            "settlement_receipt": record.settlement_receipt,
+            "domain_call_sequence": record.domain_call_sequence,
+            "domain_call_drained_sequence": record.domain_call_drained_sequence,
+            "closed": record.status == SessionStatus.CLOSED,
+        }
+        path = self._acp_binding_path(record.session_id)
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        payload = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+        lock_path = path.with_suffix(".lock")
+        lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            # A superseded Adapter boot must never overwrite the new boot's
+            # native/root binding after Backend authority rotation.
+            if self.require_current_backend_authority() != record.authority_epoch:
+                raise SessionConflict("ACP binding writer lost Backend authority")
+            temporary = None
+            try:
+                with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".binding-", delete=False) as stream:
+                    temporary = Path(stream.name)
+                    os.chmod(temporary, 0o600)
+                    stream.write(payload)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary, path)
+                directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+            finally:
+                if temporary is not None:
+                    temporary.unlink(missing_ok=True)
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
+
+    def _read_acp_binding(self, session_id: str) -> dict[str, Any]:
+        if not self._acp:
+            raise KeyError(session_id)
+        path = self._acp_binding_path(session_id)
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError as exc:
+            raise KeyError(session_id) from exc
+        if (not isinstance(value, dict)
+                or set(value) != {"schema_version", "session_id", "trace_id", "owner_principal",
+                                      "workspace_id", "root_run_id", "native_session_id",
+                                      "runtime_generation", "model_provider", "model_id", "cwd",
+                                      "previous_boot_id", "previous_authority_epoch", "sequence",
+                                      "settlement_receipt", "domain_call_sequence",
+                                      "domain_call_drained_sequence", "closed"}
+                or value["schema_version"] != "byq-acp-root-binding.v1"
+                or value["session_id"] != session_id
+                or re.fullmatch(r"[0-9a-f]{32}", str(value["root_run_id"])) is None
+                or re.fullmatch(r"[0-9a-f]{32}", str(value["previous_boot_id"])) is None
+                or type(value["previous_authority_epoch"]) is not int
+                or type(value["sequence"]) is not int
+                or type(value["domain_call_sequence"]) is not int
+                or type(value["domain_call_drained_sequence"]) is not int
+                or not 0 <= value["domain_call_drained_sequence"] <= value["domain_call_sequence"]
+                or type(value["closed"]) is not bool):
+            raise SessionConflict("ACP recovery binding is invalid")
+        cwd = Path(value["cwd"])
+        if not cwd.is_absolute() or cwd.resolve() != cwd or not cwd.is_relative_to(self._session_root):
+            raise SessionConflict("ACP recovery working directory is invalid")
+        return value
+
+    def recovery_binding(self, session_id: str) -> dict[str, Any]:
+        binding = self._read_acp_binding(session_id)
+        if binding["closed"]:
+            raise SessionConflict("BYQ session was ended")
+        public = {key: binding[key] for key in (
+            "session_id", "trace_id", "owner_principal", "workspace_id", "root_run_id",
+            "previous_boot_id", "previous_authority_epoch", "sequence")}
+        settled = binding["settlement_receipt"] is not None
+        return {"schema_version": "byq-runtime-recovery-binding.v1",
+                "state": "settled" if settled else "transfer_required",
+                **public,
+                **({"settlement_receipt": binding["settlement_receipt"]} if settled else {})}
+
+    def recover_acp_session(self, session_id: str, receipt: object,
+                            initial_sequence: int) -> dict[str, Any]:
+        """Reattach one exact root after Backend transfer, without prompt replay."""
+
+        with self._lock:
+            existing = self._sessions.get(session_id)
+        if existing is not None:
+            with existing.lock:
+                exact_root = receipt.get("root_run_id") if isinstance(receipt, dict) else None
+                if (existing.boot_id != self.boot_id or exact_root != existing.process_root_id
+                        or (receipt != existing.settlement_receipt
+                            and not (existing.interrupted_run_id == exact_root
+                                     and receipt.get("boot_id") == self.boot_id))):
+                    raise SessionConflict("ACP recovery retry does not match the live binding")
+                return {**self.describe_session(existing),
+                        "resumed_from_run_id": existing.interrupted_run_id}
+        binding = self._read_acp_binding(session_id)
+        if binding["closed"]:
+            raise SessionConflict("BYQ session was ended")
+        if (type(initial_sequence) is not int or initial_sequence < binding["sequence"]
+                or initial_sequence >= 2**63):
+            raise SessionConflict("recovery event sequence is not proven")
+        if binding["domain_call_sequence"] != binding["domain_call_drained_sequence"]:
+            raise SessionConflict("undrained domain-call evidence blocks recovery")
+        settled = binding["settlement_receipt"] is not None
+        if settled:
+            if receipt != binding["settlement_receipt"]:
+                raise SessionConflict("settled root receipt mismatch")
+        else:
+            expected = {
+                "schema_version": "byq-runtime-root-authority-transfer-receipt.v1",
+                "root_run_id": binding["root_run_id"],
+                "previous_boot_id": binding["previous_boot_id"],
+                "previous_authority_epoch": binding["previous_authority_epoch"],
+                "boot_id": self.boot_id,
+                "authority_epoch": self.require_current_backend_authority(),
+                "status": "transferred",
+            }
+            if receipt != expected:
+                raise SessionConflict("Backend root transfer receipt mismatch")
+        model_resolution = self._resolve_model(
+            owner_principal=binding["owner_principal"],
+            session_id=session_id, trace_id=binding["trace_id"],
+        )
+        if (str(model_resolution.get("provider") or self._provider) != binding["model_provider"]
+                or str(model_resolution.get("model") or self._model) != binding["model_id"]):
+            raise SessionConflict("recovered root model route changed")
+        with self._lock:
+            if session_id in self._sessions:
+                raise SessionConflict("BYQ session already exists in this Adapter boot")
+        record = RuntimeSession(
+            session_id=session_id, trace_id=binding["trace_id"], boot_id=self.boot_id,
+            owner_principal=binding["owner_principal"], workspace_id=binding["workspace_id"],
+            model_resolution=model_resolution, status=SessionStatus.IDLE,
+            sequence=initial_sequence, continuity=continuity.REATTACHED,
+            authority_epoch=self.require_current_backend_authority(),
+            recovery_cwd=binding["cwd"], settlement_receipt=binding["settlement_receipt"],
+            domain_call_sequence=binding["domain_call_sequence"],
+            domain_call_drained_sequence=binding["domain_call_drained_sequence"],
+        )
+        self._install_generation(
+            record, native_session_id=binding["native_session_id"], executor_epoch=0,
+            process_root_id=binding["root_run_id"],
+            generation_id=binding["runtime_generation"],
+        )
+        record.process_used = True
+        record.process_closed = True
+        if not settled:
+            cwd = Path(binding["cwd"])
+            harness = self._build_harness(
+                session_id, cwd, trace_id=record.trace_id,
+                owner_principal=record.owner_principal, workspace_id=record.workspace_id,
+                model_resolution=model_resolution,
+                runtime_generation=binding["runtime_generation"],
+                root_run_id=binding["root_run_id"],
+            )
+            try:
+                self._compatibility.start(harness)
+                resumed_id = self._compatibility.resume_session(
+                    harness, binding["native_session_id"], cwd=cwd)
+                if resumed_id != binding["native_session_id"]:
+                    raise SessionConflict("ACP resumed another native session")
+            finally:
+                self._compatibility.close(harness)
+        with self._lock:
+            if session_id in self._sessions:
+                raise SessionConflict("BYQ session already exists in this Adapter boot")
+            self._sessions[session_id] = record
+        if not settled:
+            # ACP resume repairs its own log but never replays the interrupted
+            # prompt. BYQ records an interrupted terminal for the same root;
+            # Gateway must close it in Backend and ACK before another input.
+            with record.lock:
+                record.interrupted_run_id = binding["root_run_id"]
+                self._emit(record, "session.failed", "runtime-adapter", {
+                    "code": "runtime-interrupted", "retryable": False,
+                    "run_id": binding["root_run_id"],
+                })
+                self._persist_acp_binding(record)
+        return {**self.describe_session(record),
+                "resumed_from_run_id": None if settled else binding["root_run_id"]}
 
     def attach_live_session(
         self, session_id: str, trace_id: str, owner_principal: str | None,
@@ -1694,8 +1973,19 @@ class RuntimeAdapter:
         if continuation_budget is not None:
             if continuation_proxy_url is None or continuation_deadline_epoch_ms is None:
                 raise ValueError('continuation provider gate is required')
-            composition, _ = create_guard_patch(composition, session_root, continuation_budget,
-                deadline_epoch_ms=continuation_deadline_epoch_ms)
+            if self._acp:
+                environment['BYQ_CONTINUATION_RESERVATION_ID'] = continuation_budget['reservation_id']
+                composition, _ = create_acp_guard_patch(
+                    composition, session_root, continuation_budget,
+                    deadline_epoch_ms=continuation_deadline_epoch_ms,
+                    root_run_id=root_run_id,
+                    mcp_reservation_id=environment['BYQ_CONTINUATION_RESERVATION_ID'],
+                )
+            else:
+                composition, _ = create_guard_patch(
+                    composition, session_root, continuation_budget,
+                    deadline_epoch_ms=continuation_deadline_epoch_ms,
+                )
             # The request proxy is the only provider egress for this exact route.
             # The per-call output declaration is a safety ceiling, never a usage
             # charge; actual provider usage is recorded by the proxy.
@@ -1844,6 +2134,8 @@ class RuntimeAdapter:
                         validate_call_evidence(observed_call)
                         record.domain_call_evidence.append(observed_call)
                         record.domain_call_sequence = observed_call["sequence"]
+                        if self._acp:
+                            self._persist_acp_binding(record)
                 if (runtime_activity and observation.registration_key and record.owner_principal
                         and record.workspace_id and record.runtime_generation):
                     fingerprint = registration_fingerprint(

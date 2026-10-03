@@ -37,6 +37,11 @@ class ResumeSessionRequest(BaseModel):
     conversation_context: list[ConversationContextMessage] = Field(default_factory=list)
 
 
+class RecoverAcpRequest(BaseModel):
+    receipt: dict[str, object]
+    initial_sequence: int = Field(ge=0)
+
+
 class PromptRequest(BaseModel):
     content: str
     require_model_key: bool = False
@@ -184,6 +189,30 @@ def resume_session(session_id: str, request: ResumeSessionRequest | None = None)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail="DSH runtime failed to resume") from exc
+
+
+@app.get("/internal/runtime/sessions/{session_id}/recovery-binding",
+         dependencies=[Depends(require_chat_admission)])
+def recovery_binding(session_id: str) -> dict[str, object]:
+    try:
+        return adapter.recovery_binding(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="ACP recovery binding unavailable") from exc
+    except (ValueError, SessionConflict, OSError) as exc:
+        raise HTTPException(status_code=409, detail="ACP recovery binding is unproven") from exc
+
+
+@app.post("/internal/runtime/sessions/{session_id}/recover",
+          dependencies=[Depends(require_chat_admission)])
+def recover_acp_session(session_id: str, request: RecoverAcpRequest) -> dict[str, object]:
+    try:
+        return adapter.recover_acp_session(session_id, request.receipt, request.initial_sequence)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="ACP recovery binding unavailable") from exc
+    except (ValueError, SessionConflict, OSError) as exc:
+        raise HTTPException(status_code=409, detail="ACP recovery is unproven") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="ACP runtime failed to resume") from exc
 
 
 @app.post("/internal/runtime/sessions/{session_id}/terminal-receipt")

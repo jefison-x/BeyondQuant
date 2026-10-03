@@ -722,6 +722,28 @@ def close_runtime_authority_root(root_run_id: str, payload: dict[str, Any], requ
         outcome=payload["outcome"], event_sha256=payload["event_sha256"])})
 
 
+@app.post("/internal/runtime-authority/roots/{root_run_id}/transfer")
+def transfer_runtime_root_authority(root_run_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_runtime_authority_bearer(request)
+    actor = request.headers.get("x-byq-actor-principal", "")
+    if actor.startswith("byq-product-agent-"):
+        raise HTTPException(status_code=403, detail="runtime root transfer requires private service context")
+    fields = {"schema_version", "previous_boot_id", "previous_authority_epoch", "boot_id", "authority_epoch"}
+    if set(payload) != fields or payload.get("schema_version") != "byq-runtime-root-authority-transfer.v1":
+        raise HTTPException(status_code=422, detail="exact runtime root authority transfer request required")
+    owner = request.headers.get("x-byq-owner-principal")
+    workspace = request.headers.get("x-byq-workspace-id")
+    session = request.headers.get("x-byq-session-id")
+    trace = request.headers.get("x-byq-trace-id")
+    if not all((owner, workspace, session, trace)):
+        raise HTTPException(status_code=401, detail="exact runtime root transfer scope is required")
+    return _agent_call(lambda: {"receipt": agent_store.transfer_runtime_root_authority(
+        root_run_id, previous_boot_id=payload["previous_boot_id"],
+        previous_authority_epoch=payload["previous_authority_epoch"], boot_id=payload["boot_id"],
+        authority_epoch=payload["authority_epoch"], owner_principal=owner,
+        workspace_id=workspace, session_id=session, trace_id=trace)})
+
+
 def _continuation_consumer_context(request: Request) -> dict:
     # This is the existing private Gateway catalog consumer, before a model
     # root exists. MCP action admission below still requires full Agent context.

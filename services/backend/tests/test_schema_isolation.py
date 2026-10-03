@@ -219,6 +219,8 @@ def test_registered_migrations_run_on_reset() -> None:
                     SELECT table_name, column_name FROM information_schema.columns
                     WHERE table_schema = 'public'
                       AND ((table_name = 'agent_runs' AND column_name = 'root_run_id')
+                        OR (table_name = 'agent_runtime_turns' AND column_name = 'previous_authority_boot_id')
+                        OR (table_name = 'agent_runtime_turns' AND column_name = 'previous_authority_epoch')
                         OR (table_name = 'ml_training_runs' AND column_name = 'preparation_claim')
                         OR (table_name = 'product_feedback_outbox' AND column_name = 'create_started')
                         OR (table_name = 'agent_approvals' AND column_name = 'continuation_status'))
@@ -230,6 +232,8 @@ def test_registered_migrations_run_on_reset() -> None:
     assert {"research_tasks", "agent_runs", "backtest_jobs"} <= tables
     assert migration_columns == {
         ("agent_runs", "root_run_id"),
+        ("agent_runtime_turns", "previous_authority_boot_id"),
+        ("agent_runtime_turns", "previous_authority_epoch"),
         ("ml_training_runs", "preparation_claim"),
         ("product_feedback_outbox", "create_started"),
         ("agent_approvals", "continuation_status"),
