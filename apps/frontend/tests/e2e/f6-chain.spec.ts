@@ -163,8 +163,11 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       const panel = page.getByRole('region', { name: '任务后台续接许可' });
       await expect(panel).toContainText('task-ready-read.v1');
       await expect(panel).toContainText('已预留请求：1；剩余请求：0；未确认请求：0');
-      await expect(panel).toContainText('实际用量：输入 未知 token，缓存读取 未知 token');
-      await expect(panel).toContainText('输出 未知 token；模型尝试 未知 次；完整性：未知');
+      const usageRecord = panel.getByLabel('实际用量记录');
+      await expect(usageRecord).toHaveCount(1);
+      await expect(usageRecord).toContainText('实际用量：输入 未知 token，缓存读取 未知 token');
+      await expect(usageRecord).toContainText('输出 未知 token；模型尝试 未知 次');
+      await expect(usageRecord).toContainText('完整性：未知');
       await expect(panel).toContainText('许可已撤销，不会启动新的后台请求。');
       await expect(panel.getByRole('button', { name: '撤销后台续接许可' })).toHaveCount(0);
       await panel.screenshot({ path: info.outputPath(`f6-settlement-${viewport.width}.png`) });

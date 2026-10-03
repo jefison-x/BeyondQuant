@@ -1811,3 +1811,50 @@ No Product, SDK, authorization, budget or proxy source was changed.
 Manifest SHA `a2a896ab3e0a0c63c22e19e240aebc92ac010d177c734fb94bfaaa4e49756248`; Dockerfile SHA `81f76d2b5b073b3361a5341b970bba297c2b085d86cffc683e664264e4947d96`.
 Preparation is not acceptance. New CI/model/Job/DB NOT_RUN; Full NOT_DISPATCHED;
 merge/deployment NOT_RUN; Phase17 OPEN; Phase18 NOT_STARTED.
+
+### Build300 terminal usage-paragraph mismatch
+
+Exact-head PR CI37081412540, attempt1 at0791693d, ended FAIL. All seven
+component lanes passed; Integration/local-ci/ci-gate failed. F6 keyless core and
+F6-user login preflight passed. Both1440/390 browsers authenticated200 and passed
+the persisted answer, exact structured task/Job/Artifact/session/trace/v2 settled
+and revoked permission/unknown usage checks and separate Task record cell. At
+immutable spec line167, the rendered usage paragraph has a space after `次；`,
+while its combined expected string has none. This observer presentation failure
+does not establish wrong Product usage. Both bounded failure reconciliations
+recorded all identity/settlement/revoked/answer facts true. Later revoked reason,
+absent button, panel screenshot and final safety assertions were NOT_REACHED.
+Dedicated candidate restore and cleanup passed; actual model usage UNKNOWN.
+Integration script576s/F6phase163s are not a global CI timeout.
+
+Terminal metadata SHA `74ba404dde57ee88dda781806bceec59c88ec0e2e1e62cfd78030e2b8762922e`;
+checks SHA `e59b8ab2251828bf82aa4dfd2365167e3f12da7e84b3264fe172df917c281dd4`;
+cleanup SHA `e348f624e9c478e866663c559613c2126649151fbea1def8bf7536cfd8b6d7b0`.
+The prior complete source audit missed Vue's cross-line whitespace; its source
+PASS was not real rendering/UI PASS. Old300 failure and298/299 evidence remain.
+
+### Build301 actual Vue mechanism and identity preparation
+
+Root changed only the Engineering F6 spec: target the unique aria-labelled actual
+usage paragraph, then assert explicit unknown input/cache, output/attempts and
+completeness fields separately. Job/Artifact/authority/safety/revocation checks
+remain; Product, proxy, SDK, authorization and budget sources are unchanged.
+The exact current Vue component was mounted six times with six mocked GET, no
+confirm/revoke, then its actual HTML was loaded through offline managed
+Playwright setContent. Both1440/390 passed all eight current panel assertions;
+five independent zero/known-value and duplicate/button negatives rejected. No
+page HTTP request occurred. Assertions were extracted from pinned spec by regex,
+not by executing the whole F6 callback. Stubs for Element Plus controls do not
+qualify whole Product layout. Finally invoked close; separate close ACK was not
+recorded. Earlier reporter/quoting/sandbox setup failures lack persisted exact
+argv/log binding and are not passed tests or Product failures.
+
+Qualified renderer sample SHA `327fff8ac9e5bd4d4664f6fbdd0f4b7211308a4a90c57384e09502d78daf3619`;
+Root child SHA `4c686b60c21e9d2bfababf97bd4aafb7af274889959f188632e3c5e4f2c07855`.
+Immutable Build301 binds1005 inputs with300/299/298 bytes preserved. One combined
+classification/render/current identity Tester→independent Reviewer→Root gate
+remains pending before one affected hosted verification. Unchanged helper/DOM
+and pre-panel safety VM evidence are reused within their exact source/path limits.
+Manifest SHA `39d37727635d1b1df2242649ea9bf339ae6738a92171a8d4efb0060f8d07151c`; Dockerfile SHA `687031850fc60a0a961e9602e05546aef76b07384a600d53ef120b9ea5892100`.
+Preparation and offline rendering are not Product or CI acceptance. New CI/model/
+Job/DB NOT_RUN; Full NOT_DISPATCHED; merge/deployment NOT_RUN; Phase17 OPEN.
