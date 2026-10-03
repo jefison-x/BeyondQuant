@@ -1728,3 +1728,86 @@ Dockerfiles remain frozen. Manifest SHA `1ea362f6950cf1013dad6879adb8c779f1ab8b4
 request budgets and Product API implementation are unchanged. Identity Tester →
 independent Reviewer → Root and one affected exact-head hosted gate are pending.
 Full NOT_DISPATCHED; merge/deployment NOT_RUN; Phase17 OPEN; Phase18 NOT_STARTED.
+
+## Build298 terminal browser observer collision
+
+Build298 exact head `2a411dd55a527ee34160cbff5a63c86e2e8150b2`
+[PR CI37075858919, attempt1](https://github.com/jefison-x/BeyondQuant/actions/runs/37075858919)
+ended FAIL. Seven component lanes passed; Integration/local-ci/ci-gate failed.
+F6-user auth preflight and genuine keyless F6 core passed. Both viewports observed
+ME401→login200→ME200 and reached the persisted answer and task row. Immediate
+post-restart proxy sampling was UNAVAILABLE; before/after-browser samples were401
+with unchanged Frontend and the new Gateway IP. The previous502 was not observed
+in these current browser auth diagnostics. This does not rewrite earlier failures.
+
+Both browser failures are at observer line114: a whole-row negative search for
+`completed` matches the objective's `completed signal artifact`, while the separate
+Task record is `planned`. The displayed objective is not the task-status fact.
+Permission-panel and later Product snapshot/UI assertions were NOT_REACHED.
+The one-time complete suffix source audit found no additional definite field/path
+conflict; this is not actual acceptance of those unreached assertions. Candidate
+services were restored and exact CI-scope cleanup was verified. Actual model usage
+remains UNKNOWN, not zero. No rerun or Full was dispatched.
+
+| Receipt | SHA256 |
+| --- | --- |
+| Terminal metadata | `e9f64e9c1796b8c80c3f0888d89648f8c0cdd691e1da3cf8f4235bf65acd996f` |
+| Sanitized Integration checks | `4276fe61491719779b76db7058347262edb4b4f3fc13852520ba1ff269ef4b6a` |
+| Verified scope cleanup | `ba0ecc80361a83ff94fda0e82593062304adabd76ef41c2e5c6088ce4be460f0` |
+| Tester final failure classification | `5aa482d976c9a503e0c5c79ead34e774e74546ceb01dc65265406970f97146b4` |
+| Tester misnamed auth-field clarification | `03926234eb0712b5a35e641d4151514b7e446ec9d6585eef1a5b8c927964c863` |
+| Independent failure and all-suffix source audit | `9a08465cd3881befb10c6c3ad3e9d1e4fe350ddb7e1fdd0f6b1c7c2e4b9646ea` |
+| Root failure classification | `33e3a27f98b59f6bce7cc767792eab85761da2b1643bf3ef6a0e63d030518cd5` |
+
+The earlier provisional Tester parser omitted the prefixed second viewport label;
+its incomplete receipt remains. The final receipt binds both viewports. Its
+misnamed `errors_or_unexpected_writes=true` field means both counts were zero;
+the separately bound clarification states `any_page_error_or_unexpected_write=false`.
+The two original receipts were not overwritten.
+
+Root prepared a three-test-file observer correction: five existing Product GETs
+share a two-second deadline before UI classification; structured lineage/settlement
+and usage assertions remain mandatory. The unique task-record column must equal
+the exact Product status display; objective/title wording is irrelevant. A safe
+noncritical UI failure saves closed facts/screenshot before one bounded read-only
+reconciliation; authority or safety failures stop follow-on actions. The original
+failure is rethrown, with no login/Agent/Job/model retry or reconnect. Other panel
+and safety assertions are preserved. Offline regression, independent review and
+one affected exact-head hosted gate remain required; no actual UI PASS is claimed.
+Product runtime, authorization, budgets, SDK and accepted proxy source are unchanged.
+Valid A–D and native F6 retain their existing reuse boundaries. Phase17 OPEN;
+Phase18 NOT_STARTED; Full/merge/deployment NOT_RUN.
+
+### Build299 test-only browser observer preparation
+
+Immutable Build299 binds1005 current inputs, preserving298 and earlier manifest
+and Docker bytes. Manifest SHA `89830627faf7b778e794e18b0b2f0c79b663e4eee612c671e7140142316cffdb`; Dockerfile SHA `99030350f6dd2ed981f26ed26483b43da74244b6e4077d48a6fbb6a70546c4f9`.
+Eight operational selectors agree. The three modified test files implement the
+status-column and bounded read/evidence correction described above. Product, SDK,
+authorization, budgets and the accepted proxy bytes are unchanged. Focused offline
+observer regressions, Playwright parse/list, identity checks and one independent
+Reviewer→Root source/build gate remain pending before one affected exact-head CI.
+This preparation is not an offline or actual UI PASS. Full NOT_DISPATCHED;
+merge/deployment NOT_RUN; Phase17 OPEN; Phase18 NOT_STARTED.
+
+### Build300 observer safety correction and combined offline gate
+
+Build299's Tester passed10 observer contracts,10 identity cases, Playwright
+list-only and one inert-HTML status-cell sample. These are offline mechanism
+evidence, not actual Product UI acceptance. Independent pre-review found two
+remaining observer safety gaps: the session envelope identity was not asserted
+and the failure screenshot could invalidate the prior safe-to-reconcile decision.
+Root corrected only the F6 spec to require exact business conversation session
+and trace before authority confirmation and recheck safety after the screenshot
+and after the bounded read. Late safety violations produce a stopped diagnostic,
+not trusted observations; the original assertion failure is always rethrown.
+
+Immutable Build300 binds1005 inputs. Build299 manifest/Docker bytes and its
+Tester evidence remain preserved; the unchanged helper contracts and inert-HTML
+locator evidence are reused. Only affected spec loading/safety negatives and
+current build identity require new offline checks in one combined
+Tester→independent Reviewer→Root admission before one affected hosted gate.
+No Product, SDK, authorization, budget or proxy source was changed.
+Manifest SHA `a2a896ab3e0a0c63c22e19e240aebc92ac010d177c734fb94bfaaa4e49756248`; Dockerfile SHA `81f76d2b5b073b3361a5341b970bba297c2b085d86cffc683e664264e4947d96`.
+Preparation is not acceptance. New CI/model/Job/DB NOT_RUN; Full NOT_DISPATCHED;
+merge/deployment NOT_RUN; Phase17 OPEN; Phase18 NOT_STARTED.
