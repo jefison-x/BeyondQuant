@@ -5,6 +5,7 @@ export default defineConfig({
   testMatch: [
     "real-product.spec.ts",
     "post-release-r1-terminal-session.real.spec.ts",
+    "post-release-r2-workspace-menu.real.spec.ts",
     "post-release-r4-password-change.real.spec.ts",
   ],
   forbidOnly: true,

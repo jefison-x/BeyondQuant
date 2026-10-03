@@ -14,7 +14,12 @@ async function login(page: Page) {
   await expect(page).toHaveURL(/\/agent$/);
 }
 
-test("R1 opens terminal history without reconnecting or writing, and offers a new conversation", async ({ page }) => {
+test("R1 opens terminal history without reconnecting or writing, and offers a new conversation", async ({ page, baseURL }) => {
+  const testOrigin = new URL(baseURL ?? "");
+  expect(process.env.BYQ_R1_DISPOSABLE_STACK, "explicit disposable-stack opt-in is required").toBe("1");
+  expect(testOrigin.protocol).toBe("http:");
+  expect(["127.0.0.1", "localhost"]).toContain(testOrigin.hostname);
+  expect(username!.startsWith("r1-test-user-")).toBe(true);
   const streamRequests: string[] = [];
   const sessionWrites: string[] = [];
   page.on("request", request => {
@@ -27,12 +32,8 @@ test("R1 opens terminal history without reconnecting or writing, and offers a ne
   await login(page);
   streamRequests.length = 0;
   sessionWrites.length = 0;
-  const replayResponsePromise = page.waitForResponse(response => {
-    const url = new URL(response.url());
-    return response.request().method() === "GET" && url.pathname === `/v1/agent/sessions/${encodeURIComponent(sessionId!)}`;
-  });
   await page.goto(`/agent?session=${encodeURIComponent(sessionId!)}`);
-  const replayResponse = await replayResponsePromise;
+  const replayResponse = await page.request.get(`/v1/agent/sessions/${encodeURIComponent(sessionId!)}`);
   expect(replayResponse.ok()).toBe(true);
   const replay = await replayResponse.json() as {
     messages?: Array<{ role: string; content: string }>;

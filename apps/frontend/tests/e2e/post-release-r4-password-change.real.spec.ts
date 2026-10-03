@@ -47,15 +47,21 @@ async function loginProfile(page: Page, username: string, password: string) {
 
 async function changePasswordOnProfile(page: Page, current: string, next: string) {
   await page.getByLabel("当前密码").fill(current);
-  await page.getByLabel("新密码").fill(next);
+  await page.getByLabel("新密码", { exact: true }).fill(next);
   await page.getByLabel("确认新密码").fill(next);
+  const responsePromise = page.waitForResponse(response =>
+    new URL(response.url()).pathname === "/api/auth/change-password" && response.request().method() === "POST");
   await page.getByRole("button", { name: "修改密码" }).click();
+  const response = await responsePromise;
+  const receipt = await response.json() as { status?: string; error?: { code?: string } };
+  expect(response.status(), receipt.error?.code ?? "missing password-change receipt").toBe(200);
+  expect(receipt.status).toBe("ok");
   await expect(page).toHaveURL(/\/login$/);
 }
 
 async function staleSessionIsRejected(page: Page) {
   await page.goto("/user/profile");
-  await expect(page).toHaveURL(/\/login$/);
+  await expect(page).toHaveURL(/\/login(?:\?|$)/);
 }
 
 async function verifyIdentity(page: Page, username: string, role: "user" | "admin") {
@@ -89,7 +95,7 @@ for (const account of accounts) {
 
     await staleSessionIsRejected(oldSessionPage);
     await login(oldSessionPage, account.username!, account.currentPassword!);
-    await expect(oldSessionPage).toHaveURL(/\/login$/);
+    await expect(oldSessionPage).toHaveURL(/\/login(?:\?|$)/);
     await expect(oldSessionPage.locator(".login-error")).toBeVisible();
 
     await page.setViewportSize(account.loginViewport);
