@@ -255,17 +255,25 @@ class DomainCallEvidenceMixin:
         """
         from .agent_research import AgentConflict
 
+        lookup = fetch_one(connection, """SELECT task_id,call_identity
+            FROM research_judgment_acp_roots WHERE root_run_id=:root""",
+            {"root": root_run_id})
+        if lookup is None:
+            return
+        fetch_one(connection, """SELECT task_id FROM research_tasks
+            WHERE task_id=:task FOR SHARE""", {"task": lookup["task_id"]})
+        call = fetch_one(connection, """SELECT status,result_json FROM research_judgment_stage_calls
+            WHERE task_id=:task AND call_identity=:identity FOR SHARE""",
+            {"task": lookup["task_id"], "identity": lookup["call_identity"]})
         binding = fetch_one(connection, """SELECT task_id,call_identity,status,agent_run_id,
                 result_request_sha256
             FROM research_judgment_acp_roots WHERE root_run_id=:root FOR SHARE""",
             {"root": root_run_id})
-        if binding is None:
-            return
+        if binding is None or (binding["task_id"], binding["call_identity"]) != (
+                lookup["task_id"], lookup["call_identity"]):
+            raise AgentConflict("judgment root binding changed during terminal admission")
         if outcome != "completed" or binding["status"] != "agent_bound" or not binding["agent_run_id"]:
             raise AgentConflict("judgment root requires a completed result and bound Agent before close")
-        call = fetch_one(connection, """SELECT status,result_json FROM research_judgment_stage_calls
-            WHERE task_id=:task AND call_identity=:identity FOR SHARE""",
-            {"task": binding["task_id"], "identity": binding["call_identity"]})
         if (not isinstance(binding["result_request_sha256"], str)
                 or not binding["result_request_sha256"].startswith("sha256:")
                 or _ACP_SHA256.fullmatch(binding["result_request_sha256"][7:]) is None

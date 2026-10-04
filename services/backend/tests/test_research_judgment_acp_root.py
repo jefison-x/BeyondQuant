@@ -9,7 +9,7 @@ import pytest
 
 from app.agent_research import AgentConflict, AgentForbidden, AgentResearchStore, AgentUnauthorized, role_catalog
 from app.conversation_catalog import ConversationCatalogStore
-from app.research import InvalidTransition, ResearchStore
+from app.research import InvalidTransition, ResearchNotFound, ResearchStore
 from packages.contracts.research_execution_plan import plan_at_stage
 from packages.contracts.research_judgment import attempt_binding
 from tests.workspace_helpers import trusted_product_agent_context
@@ -89,7 +89,7 @@ def _route_inputs(route: str):
                 "call_identity": "byq-judgment-" + "c" * 32, "root_run_id": root_id,
                 "runtime_boot_id": "d" * 32,
                 "native_root_session_id": str(uuid4())}
-    else:
+    elif route == "result":
         path = f"/internal/research-judgment/{task_id}/acp-root/result"
         body = {"schema_version": "byq-research-judgment-acp-result.v1",
                 "call_identity": "byq-judgment-" + "c" * 32,
@@ -99,6 +99,11 @@ def _route_inputs(route: str):
                 "agent_run_id": "agent_run_" + "f" * 32,
                 "native_root_session_id": str(uuid4()),
                 "durable_evidence": {"kind": "none"}}
+    else:
+        path = f"/internal/research-judgment/{task_id}/acp-root/status"
+        body = {"schema_version": "byq-research-judgment-acp-status.v1",
+                "call_identity": "byq-judgment-" + "c" * 32,
+                "attempt_binding": "1:strategy_draft:1"}
     headers = {"Authorization": "Bearer test-runtime-authority-token",
         "x-byq-owner-principal": "route-test-user", "x-byq-workspace-id": "workspace-route-test",
         "x-byq-runtime-boot-id": "d" * 32}
@@ -229,6 +234,20 @@ def test_acp_judgment_result_commits_once_then_allows_exact_root_close():
         binding = research._fetch_one("""SELECT * FROM research_judgment_acp_roots
             WHERE task_id=:task AND call_identity=:identity""",
             {"task": task, "identity": begin["call_identity"]})
+        status_request = {"schema_version": "byq-research-judgment-acp-status.v1",
+                          "call_identity": begin["call_identity"],
+                          "attempt_binding": begin["attempt_binding"]}
+        pending = research.get_acp_judgment_root_status(
+            task, status_request, trusted_context=context,
+            runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        assert pending["binding_status"] == "agent_bound"
+        assert pending["stage_call_status"] == "admitted"
+        assert pending["result_receipt"] is None
+        with pytest.raises(ResearchNotFound, match="research task not found"):
+            research.get_acp_judgment_root_status(
+                task, status_request,
+                trusted_context={**context, "owner_principal": "another-owner"},
+                runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
         request = {
             "schema_version": "byq-research-judgment-acp-result.v1",
             "call_identity": begin["call_identity"],
@@ -258,7 +277,7 @@ def test_acp_judgment_result_commits_once_then_allows_exact_root_close():
                 task, dict(request, native_root_session_id=str(uuid4())),
                 trusted_context=context, runtime_boot_id=headers["x-byq-runtime-boot-id"],
                 agent_store=agents)
-        with pytest.raises(AgentConflict, match="exact root binding"):
+        with pytest.raises(ResearchNotFound, match="research task not found"):
             research.record_acp_judgment_root_result(
                 task, request, trusted_context={**context, "owner_principal": "another-owner"},
                 runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
@@ -271,6 +290,14 @@ def test_acp_judgment_result_commits_once_then_allows_exact_root_close():
         assert result["schema_version"] == "research-judgment-result-receipt.v1"
         assert not result["replayed"] and replay == {**result, "replayed": True}
         assert result["proposal"]["stage"] == "iteration_comparison"
+        committed = research.get_acp_judgment_root_status(
+            task, status_request, trusted_context=context,
+            runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        assert committed["stage_call_status"] == "completed"
+        assert committed["root_status"] == "active"
+        assert committed["result_receipt"] == {key: value for key, value in result.items()
+                                               if key != "replayed"}
+        assert committed["terminal_sequence"] is None
         assert research._fetch_one("""SELECT status FROM research_judgment_stage_calls
             WHERE task_id=:task AND call_identity=:identity""",
             {"task": task, "identity": begin["call_identity"]})["status"] == "completed"
@@ -294,13 +321,28 @@ def test_acp_judgment_result_commits_once_then_allows_exact_root_close():
         assert agents.close_runtime_root(begin["root"]["root_run_id"],
             boot_id=headers["x-byq-runtime-boot-id"], sequence=2,
             outcome="completed", event_sha256="a" * 64) == receipt
+        closed = research.get_acp_judgment_root_status(
+            task, status_request, trusted_context=context,
+            runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        assert closed["root_status"] == "completed"
+        assert closed["terminal_sequence"] == receipt["sequence"]
+        assert closed["terminal_event_sha256"] == receipt["event_sha256"]
+        assert "terminal_ack" not in closed
         assert research.record_acp_judgment_root_result(
             task, request, trusted_context=context,
             runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents) == replay
-        agents.rotate_runtime_authority(uuid4().hex)
+        new_boot = uuid4().hex
+        agents.rotate_runtime_authority(new_boot)
         with pytest.raises(AgentUnauthorized, match="current Backend authority"):
             research.record_acp_judgment_root_result(
                 task, request, trusted_context=context,
+                runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        assert research.get_acp_judgment_root_status(
+            task, status_request, trusted_context=context,
+            runtime_boot_id=new_boot, agent_store=agents)["root_status"] == "completed"
+        with pytest.raises(AgentUnauthorized, match="current Backend authority"):
+            research.get_acp_judgment_root_status(
+                task, status_request, trusted_context=context,
                 runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
     finally:
         _close(catalog, research, agents)
@@ -417,7 +459,7 @@ def test_legacy_admitted_call_is_never_automatically_adopted_by_acp():
         _close(catalog, research, agents)
 
 
-@pytest.mark.parametrize("route", ["begin", "register", "result"])
+@pytest.mark.parametrize("route", ["begin", "register", "result", "status"])
 def test_acp_judgment_routes_reject_wrong_bearer_before_storage(route, monkeypatch):
     client = _route_client(monkeypatch)
     path, body, headers = _route_inputs(route)
@@ -427,7 +469,7 @@ def test_acp_judgment_routes_reject_wrong_bearer_before_storage(route, monkeypat
     assert "service credential" in response.json()["detail"]
 
 
-@pytest.mark.parametrize("route", ["begin", "register", "result"])
+@pytest.mark.parametrize("route", ["begin", "register", "result", "status"])
 @pytest.mark.parametrize("missing_header", [
     "x-byq-owner-principal", "x-byq-workspace-id", "x-byq-runtime-boot-id",
 ])
@@ -440,7 +482,7 @@ def test_acp_judgment_routes_require_exact_trusted_scope_headers(route, missing_
     assert "owner, Workspace and runtime boot" in response.json()["detail"]
 
 
-@pytest.mark.parametrize("route", ["begin", "register", "result"])
+@pytest.mark.parametrize("route", ["begin", "register", "result", "status"])
 def test_acp_judgment_routes_reject_open_body_before_storage(route, monkeypatch):
     client = _route_client(monkeypatch)
     path, body, headers = _route_inputs(route)
@@ -450,7 +492,7 @@ def test_acp_judgment_routes_reject_open_body_before_storage(route, monkeypatch)
     assert "exact ACP judgment" in response.json()["detail"]
 
 
-@pytest.mark.parametrize("route", ["begin", "register", "result"])
+@pytest.mark.parametrize("route", ["begin", "register", "result", "status"])
 def test_acp_judgment_routes_validate_identity_fields_before_storage(route, monkeypatch):
     client = _route_client(monkeypatch)
     path, body, headers = _route_inputs(route)
@@ -458,8 +500,10 @@ def test_acp_judgment_routes_validate_identity_fields_before_storage(route, monk
         body["call_identity"] = "not-a-call-identity"
     elif route == "register":
         body["native_root_session_id"] = "not-a-native-session-id"
-    else:
+    elif route == "result":
         body["agent_run_id"] = "not-an-AgentRun-id"
+    else:
+        body["call_identity"] = "not-a-call-identity"
     response = client.post(path, headers=headers, json=body)
     assert response.status_code == 422
     assert response.json()["detail"]

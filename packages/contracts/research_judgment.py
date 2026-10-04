@@ -402,6 +402,7 @@ ACP_JUDGMENT_ROOT_BEGIN_SCHEMA_VERSION = "byq-research-judgment-acp-root-begin.v
 ACP_JUDGMENT_ROOT_RECEIPT_SCHEMA_VERSION = "byq-research-judgment-acp-root-receipt.v1"
 ACP_JUDGMENT_AGENT_REGISTER_SCHEMA_VERSION = "byq-research-judgment-acp-agent-register.v1"
 ACP_JUDGMENT_RESULT_SCHEMA_VERSION = "byq-research-judgment-acp-result.v1"
+ACP_JUDGMENT_STATUS_SCHEMA_VERSION = "byq-research-judgment-acp-status.v1"
 _ACP_ROOT_ID = re.compile(r"^[0-9a-f]{32}$")
 _ACP_JUDGMENT_CALL_IDENTITY = re.compile(r"^byq-judgment-[0-9a-f]{32}$")
 _ACP_NATIVE_ROOT_SESSION_ID = re.compile(
@@ -489,6 +490,20 @@ def validate_acp_judgment_result_request(value: object) -> dict[str, object]:
         "durable_evidence": value["durable_evidence"],
         **({"proposal": value["proposal"]} if "proposal" in value else {}),
     })
+    return value
+
+
+def validate_acp_judgment_status_request(value: object) -> dict[str, str]:
+    """Exact readback key for a trusted Adapter after a lost response or restart."""
+
+    fields = {"schema_version", "call_identity", "attempt_binding"}
+    if (not isinstance(value, dict) or set(value) != fields
+            or value.get("schema_version") != ACP_JUDGMENT_STATUS_SCHEMA_VERSION):
+        raise ValueError("exact ACP judgment status request required")
+    if (not isinstance(value["call_identity"], str)
+            or _ACP_JUDGMENT_CALL_IDENTITY.fullmatch(value["call_identity"]) is None):
+        raise ValueError("exact ACP judgment call identity required")
+    validate_attempt_binding(value["attempt_binding"])
     return value
 
 

@@ -585,6 +585,10 @@ class ResearchJudgmentMixin:
         with self._transaction() as connection:
             agent_store._lifecycle_lock(connection, "runtime-authority:current")
             agent_store._lifecycle_lock(connection, "root:" + request["root_run_id"])
+            task = self._plan_task(connection, task_id, trusted_context, lock=True)
+            row = self._load_stage_call(connection, task_id, call_identity, lock=True)
+            if row is None:
+                raise InvalidTransition("research stage call was not admitted")
             binding = fetch_one(connection, """SELECT * FROM research_judgment_acp_roots
                 WHERE task_id=:task AND call_identity=:identity FOR UPDATE""",
                 {"task": task_id, "identity": call_identity})
@@ -605,10 +609,6 @@ class ResearchJudgmentMixin:
                     or request["attempt_binding"] != make_attempt_binding(
                         binding["plan_version"], binding["stage"], binding["iteration"])):
                 raise AgentConflict("ACP judgment result conflicts with its exact root binding")
-            task = self._plan_task(connection, task_id, trusted_context, lock=True)
-            row = self._load_stage_call(connection, task_id, call_identity, lock=True)
-            if row is None:
-                raise InvalidTransition("research stage call was not admitted")
             authority = agent_store._require_current_runtime_boot(connection, boot_id, required=True)
             if int(authority["epoch"]) != request["authority_epoch"]:
                 raise AgentConflict("ACP judgment result authority epoch is no longer current")
@@ -660,6 +660,80 @@ class ResearchJudgmentMixin:
                 {"digest": request_hash, "now": _now(), "task": task_id,
                  "identity": call_identity})
             return receipt
+
+    def get_acp_judgment_root_status(self, task_id: str, payload: object, *,
+                                     trusted_context: dict, runtime_boot_id: str,
+                                     agent_store) -> dict:
+        """Read persisted call/root facts; never infer an ACK or replay a model."""
+        from .agent_research import AgentConflict, AgentNotFound, _runtime_boot_id
+        from packages.contracts.research_judgment import (
+            attempt_binding as make_attempt_binding,
+            validate_acp_judgment_status_request,
+        )
+
+        request = validate_acp_judgment_status_request(payload)
+        boot_id = _runtime_boot_id(runtime_boot_id)
+        with self._transaction() as connection:
+            agent_store._lifecycle_lock(connection, "runtime-authority:current")
+            agent_store._require_current_runtime_boot(connection, boot_id, required=True)
+            lookup = fetch_one(connection, """SELECT root_run_id FROM research_judgment_acp_roots
+                WHERE task_id=:task AND call_identity=:identity""",
+                {"task": task_id, "identity": request["call_identity"]})
+            if lookup is None:
+                raise AgentNotFound("exact ACP judgment root status is unavailable")
+            agent_store._lifecycle_lock(connection, "root:" + lookup["root_run_id"])
+            task = self._plan_task(connection, task_id, trusted_context, lock=False)
+            call = fetch_one(connection, """SELECT * FROM research_judgment_stage_calls
+                WHERE task_id=:task AND call_identity=:identity FOR SHARE""",
+                {"task": task["task_id"], "identity": request["call_identity"]})
+            binding = fetch_one(connection, """SELECT * FROM research_judgment_acp_roots
+                WHERE task_id=:task AND call_identity=:identity FOR SHARE""",
+                {"task": task_id, "identity": request["call_identity"]})
+            if binding is None or binding["root_run_id"] != lookup["root_run_id"]:
+                raise AgentConflict("ACP judgment root changed during exact status readback")
+            if (binding["owner_principal"] != trusted_context.get("owner_principal")
+                    or binding["workspace_id"] != trusted_context.get("workspace_id")
+                    or request["attempt_binding"] != make_attempt_binding(
+                        binding["plan_version"], binding["stage"], binding["iteration"])):
+                raise AgentConflict("ACP judgment status does not match the exact admitted scope")
+            root = fetch_one(connection, """SELECT * FROM agent_runtime_turns
+                WHERE root_run_id=:root FOR SHARE""", {"root": binding["root_run_id"]})
+            if (call is None or root is None
+                    or any(root.get(field) != binding[field] for field in (
+                        "owner_principal", "workspace_id", "session_id", "trace_id"))):
+                raise AgentConflict("ACP judgment status has inconsistent persisted root facts")
+            result = call["result_json"] if call["status"] == "completed" else None
+            digest = binding["result_request_sha256"]
+            if ((call["status"] == "completed") != (result is not None and digest is not None)
+                    or (result is not None and (not isinstance(result, dict)
+                        or result.get("schema_version") != RESULT_RECEIPT_SCHEMA_VERSION))
+                    or (root["status"] != "active" and (result is None
+                        or root["terminal_sequence"] is None
+                        or root["terminal_event_sha256"] is None))):
+                raise AgentConflict("ACP judgment status has inconsistent result or terminal evidence")
+            return {
+                "schema_version": "byq-research-judgment-acp-status-receipt.v1",
+                "task_id": task_id, "call_identity": request["call_identity"],
+                "attempt_binding": request["attempt_binding"],
+                "root_run_id": binding["root_run_id"],
+                "runtime_boot_id": binding["runtime_boot_id"],
+                "authority_epoch": int(binding["authority_epoch"]),
+                "dsh_run_id": binding["dsh_run_id"],
+                "binding_status": binding["status"],
+                "native_root_session_id": binding["native_root_session_id"],
+                "agent_run_id": binding["agent_run_id"],
+                "stage_call_status": call["status"],
+                "result_request_sha256": digest,
+                "result_receipt": result,
+                "root_status": root["status"],
+                "root_authority_status": root["authority_status"],
+                "terminal_sequence": root["terminal_sequence"],
+                "terminal_event_sha256": root["terminal_event_sha256"],
+                "terminal_acp_ingress_sequence": root["terminal_acp_ingress_sequence"],
+                "terminal_acp_ingress_sha256": root["terminal_acp_ingress_sha256"],
+                "terminal_unknown_claim_count": root["terminal_unknown_claim_count"],
+                "terminal_unknown_claims_sha256": root["terminal_unknown_claims_sha256"],
+            }
 
     def _commit_judgment_result_in_transaction(self, connection, task, plan, row,
                                                 evidence, proposal) -> dict:
