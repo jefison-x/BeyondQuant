@@ -23,6 +23,7 @@ model_value = '["deepseek-official","deepseek-v4.1-flash"]'
 with open(os.environ["ACP_TEST_ENV_CAPTURE"], "w", encoding="utf-8") as output:
     json.dump({"legacy_mcp_token": os.environ.get("BYQ_MCP_TOKEN"),
         "backend_proof_token": os.environ.get("BYQ_MCP_BACKEND_PROOF_TOKEN"),
+        "judgment_backend_proof_token": os.environ.get("BYQ_MCP_ACP_JUDGMENT_PROOF_TOKEN"),
         "credential_resolver_token": os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN"),
         "runtime_authority_token": os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN"),
         "product_token": os.environ.get("BYQ_PRODUCT_TOKEN"),
@@ -274,7 +275,8 @@ def test_judgment_identity_mode_is_explicit_and_process_scope_has_only_its_crede
     assert child_environment["mcp_url"] == "http://mcp.judgment.test/mcp/v1"
     assert child_environment["product_mcp_url"] == "http://mcp.product.test/mcp/v1"
     for name in (
-        "legacy_mcp_token", "backend_proof_token", "credential_resolver_token",
+        "legacy_mcp_token", "backend_proof_token", "judgment_backend_proof_token",
+        "credential_resolver_token",
         "runtime_authority_token", "runtime_judgment_token", "product_token",
         "read_only_token", "discovery_token", "signing_key",
     ):
@@ -290,6 +292,7 @@ def test_judgment_identity_mode_is_explicit_and_process_scope_has_only_its_crede
     [
         "BYQ_MCP_ACP_DISCOVERY_TOKEN", "BYQ_MCP_ACP_SIGNING_KEY", "BYQ_MCP_TOKEN",
         "BYQ_MCP_READ_ONLY_TOKEN", "BYQ_MCP_BACKEND_PROOF_TOKEN",
+        "BYQ_MCP_ACP_JUDGMENT_PROOF_TOKEN",
         "BYQ_RUNTIME_AUTHORITY_TOKEN", "BYQ_RUNTIME_JUDGMENT_TOKEN",
         "BYQ_CREDENTIAL_RESOLVER_TOKEN", "BYQ_PRODUCT_TOKEN",
         "BYQ_NATIVE_ROOT_SESSION_ID", "BYQ_CONTINUATION_RESERVATION_ID",
