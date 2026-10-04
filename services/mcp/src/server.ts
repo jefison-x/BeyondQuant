@@ -444,7 +444,7 @@ function trustedBackendFetcher(context: CompleteAgentContext): typeof fetch {
     }
     const auth = context[privateAuth];
     const markedInit = init as (RequestInit & { [admittedLegacyEvidenceRoot]?: string }) | undefined;
-    if (auth?.kind === "acp-agent") {
+    if (auth?.kind === "acp-agent" || auth?.kind === "acp-judgment-root") {
       headers.set("x-byq-root-run-id", auth.claims.root_run_id);
     } else if (markedInit?.[admittedLegacyEvidenceRoot]
       && /^[a-f0-9]{32}$/.test(markedInit[admittedLegacyEvidenceRoot])) {
