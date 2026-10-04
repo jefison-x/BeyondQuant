@@ -12,10 +12,18 @@ import sys
 
 from .research_judgment_acp_provider_proxy import _send_https
 from .research_judgment_acp_provider_usage import MAX_SSE_BYTES
+from .process_secrecy import require_private_process
+
+PRIVATE_READY = b"BYQ_ACP_WORKER_PRIVATE_V1\n"
 
 
 def main() -> int:
     try:
+        require_private_process()
+        # Parent must observe this only after /proc access is closed, before
+        # sending the provider credential and request body through stdin.
+        sys.stdout.buffer.write(PRIVATE_READY)
+        sys.stdout.buffer.flush()
         raw = sys.stdin.buffer.read(12 * 1024 * 1024 + 1)
         if len(raw) > 12 * 1024 * 1024:
             return 1

@@ -21,6 +21,7 @@ from .runtime import (
     SessionConflict,
 )
 from .research_judgment_api import router as research_judgment_router
+from .process_secrecy import guard_candidate_adapter_process
 
 
 class CreateSessionRequest(BaseModel):
@@ -50,6 +51,7 @@ class PromptRequest(BaseModel):
     continuation_budget: dict[str, object] | None = None
 
 
+guard_candidate_adapter_process()
 adapter = RuntimeAdapter()
 app = FastAPI(title="BeyondQuant DSH Runtime Adapter", version="0.1.0")
 # ADR-0085 P4: the INTERNAL bounded research-judgment entry. It is not part of

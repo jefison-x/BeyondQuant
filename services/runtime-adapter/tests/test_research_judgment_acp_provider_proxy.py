@@ -430,6 +430,23 @@ def test_default_https_worker_loads_and_fails_closed_on_local_refusal():
     transport.abort()
 
 
+def test_private_worker_startup_withholds_provider_request_until_guard_ready(tmp_path):
+    observed = tmp_path / "pre-ready-input"
+    worker = (
+        "import os,select,sys,time; from pathlib import Path; "
+        "readable,_,_=select.select([sys.stdin.buffer],[],[],0.15); "
+        "Path(sys.argv[1]).write_bytes(os.read(0,1024) if readable else b''); "
+        "time.sleep(5)"
+    )
+    transport = _IsolatedHttpsTransport(command=(sys.executable, "-c", worker, str(observed)))
+    transport._require_private_ready = True
+    with pytest.raises(TimeoutError, match="private startup"):
+        transport("https://127.0.0.1:1/v1/chat/completions",
+                  {"authorization": "Bearer synthetic-secret"}, b"synthetic-prompt",
+                  time.monotonic() + 0.5)
+    assert observed.read_bytes() == b"", "credential/request bytes must wait for the private worker marker"
+
+
 def test_proxy_close_kills_blocked_https_worker_and_latches_unknown(tmp_path):
     journal, limits = _ready(tmp_path)
     marker = tmp_path / "dns-started"

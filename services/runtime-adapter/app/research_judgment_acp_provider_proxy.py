@@ -100,6 +100,7 @@ class _IsolatedHttpsTransport:
 
     def __init__(self, *, command=None) -> None:
         self._command = command or (sys.executable, "-m", "app.research_judgment_acp_provider_worker")
+        self._require_private_ready = command is None
         self._lock = threading.Lock()
         self._active = None
         self._aborted = False
@@ -135,6 +136,29 @@ class _IsolatedHttpsTransport:
                     pass
         if process.poll() is None:
             raise AcpJudgmentOutcomeUnknown("provider transport process did not stop")
+
+    @staticmethod
+    def _wait_private_worker(process, deadline_monotonic: float) -> None:
+        """Never deliver a provider credential before the worker disables /proc."""
+        assert process.stdout is not None
+        marker = b"BYQ_ACP_WORKER_PRIVATE_V1\n"
+        descriptor = process.stdout.fileno()
+        os.set_blocking(descriptor, False)
+        received = bytearray()
+        with selectors.DefaultSelector() as selector:
+            selector.register(process.stdout, selectors.EVENT_READ)
+            while len(received) < len(marker):
+                remaining = deadline_monotonic - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("provider worker private startup expired")
+                if not selector.select(remaining):
+                    raise TimeoutError("provider worker private startup expired")
+                chunk = os.read(descriptor, len(marker) - len(received))
+                if not chunk:
+                    raise OSError("provider worker ended before private startup")
+                received.extend(chunk)
+                if not marker.startswith(received):
+                    raise OSError("provider worker private startup is invalid")
 
     @staticmethod
     def _exchange(process, payload: bytes, deadline_monotonic: float) -> bytes:
@@ -205,6 +229,10 @@ class _IsolatedHttpsTransport:
                 self._active = process
             finally:
                 self._lock.release()
+            if self._aborted:
+                raise TimeoutError("provider transport was closed before request delivery")
+            if self._require_private_ready:
+                self._wait_private_worker(process, deadline_monotonic)
             if self._aborted:
                 raise TimeoutError("provider transport was closed before request delivery")
             raw = self._exchange(process, payload, deadline_monotonic)

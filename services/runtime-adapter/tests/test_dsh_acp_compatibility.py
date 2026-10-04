@@ -28,6 +28,8 @@ with open(os.environ.get("ACP_TEST_ENV_CAPTURE", capture + ".env"), "w", encodin
         "runtime_authority_token": os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN"),
         "product_token": os.environ.get("BYQ_PRODUCT_TOKEN"),
         "runtime_judgment_token": os.environ.get("BYQ_RUNTIME_JUDGMENT_TOKEN"),
+        "runner_control_secret": os.environ.get("BYQ_ACP_JUDGMENT_RUNNER_CONTROL_SECRET"),
+        "gateway_service_token": os.environ.get("BYQ_GATEWAY_SERVICE_TOKEN"),
         "read_only_token": os.environ.get("BYQ_MCP_READ_ONLY_TOKEN"),
         "postgres_password": os.environ.get("POSTGRES_PASSWORD"),
         "discovery_token": os.environ.get("BYQ_MCP_ACP_DISCOVERY_TOKEN"),
@@ -585,6 +587,8 @@ def test_acp_child_receives_only_selected_provider_credential(
     capture = tmp_path / f"{provider}.jsonl"
     environment = _identity_environment(capture)
     environment["BYQ_CREDENTIAL_RESOLVER_TOKEN"] = "explicit-resolver-must-not-leak"
+    environment["BYQ_ACP_JUDGMENT_RUNNER_CONTROL_SECRET"] = "explicit-runner-must-not-leak"
+    environment["BYQ_GATEWAY_SERVICE_TOKEN"] = "explicit-gateway-must-not-leak"
     environment.pop("DEEPSEEK_API_KEY", None)
     environment[selected_key] = (
         "selected-deepseek" if selected_key == "DEEPSEEK_API_KEY" else "selected-opencode"
@@ -607,6 +611,8 @@ def test_acp_child_receives_only_selected_provider_credential(
     assert child_environment["opencode_key"] == expected_opencode
     assert child_environment["search_key"] is None
     assert child_environment["credential_resolver_token"] is None
+    assert child_environment["runner_control_secret"] is None
+    assert child_environment["gateway_service_token"] is None
     assert child_environment["runtime_authority_token"] is None
     assert child_environment["product_token"] is None
     assert child_environment["postgres_password"] is None
