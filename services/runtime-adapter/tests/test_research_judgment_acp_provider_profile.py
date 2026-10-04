@@ -7,7 +7,9 @@ import time
 
 import pytest
 
-from app.research_judgment_acp_provider_profile import build_provider_profile
+from app.research_judgment_acp_provider_profile import (
+    build_provider_profile, require_current_model_resolution,
+)
 from app.research_judgment_boundary import derive_call_identity
 
 
@@ -96,3 +98,29 @@ def test_user_binding_requires_nonsecret_credential_versions():
 def test_unselected_route_cannot_open_provider_profile():
     with pytest.raises(ValueError):
         build_provider_profile(BEGIN, {**RESOLUTION, "provider": "opencode-unknown"})
+
+
+def test_pre_dispatch_model_selection_must_match_frozen_profile():
+    profile = build_provider_profile(BEGIN, RESOLUTION)
+    require_current_model_resolution(profile, RESOLUTION)
+    for changed in ({"provider": "opencode-go-chat"},
+                    {"model": "different"},
+                    {"api_key": "rotated-secret"},
+                    {"source": "user_binding"},
+                    {"api_key": ""}):
+        with pytest.raises(ValueError, match="binding changed"):
+            require_current_model_resolution(profile, {**RESOLUTION, **changed})
+    user = {**RESOLUTION, "source": "user_binding",
+            "profile_id": "profile_" + "1" * 32, "profile_version": 2,
+            "credential_id": "cred_" + "2" * 32,
+            "credential_version": 3, "binding_version": 4}
+    user_profile = build_provider_profile(BEGIN, user)
+    require_current_model_resolution(user_profile, user)
+    for changed in ({"profile_version": 3}, {"credential_version": 4},
+                    {"binding_version": 5}, {"credential_id": "cred_" + "3" * 32},
+                    {"profile_id": "profile_" + "4" * 32},
+                    {"source": "environment"}):
+        with pytest.raises(ValueError, match="binding changed"):
+            require_current_model_resolution(user_profile, {**user, **changed})
+    with pytest.raises(ValueError, match="current trusted"):
+        require_current_model_resolution(user_profile, None)

@@ -192,7 +192,7 @@ supplies stable nonsecret binding/profile/credential IDs and versions. The
 resolver now returns these fields from one Backend query, and the Adapter
 preserves them in its private model resolution. Focused Backend database tests
 passed 3/3 in an isolated tmpfs PostgreSQL container; the existing Adapter
-personal binding test passed 1/1 in an offline read-only rollback image. Ten
+personal binding test passed 1/1 in an offline read-only rollback image. Eleven
 focused pure profile tests passed. This
 does not prove receipt origin, current Backend authority, or that resolution
 belongs to the admitted owner/session.
@@ -221,6 +221,10 @@ could hold another secret, and direct constructor callers still exist. The
 final trusted ACP entry must keep one resolver/profile instance through
 journal, proxy, overlay and child start, and recheck its owner/version before
 dispatch. The actual ACP child and network confinement remain NOT_RUN.
+An unwired comparison helper rejects changed provider/model, binding IDs
+and versions, and upstream key at a later resolution. It cannot prove that
+the later resolution came from the same trusted owner/session/trace, or
+eliminate a change after this check; final entry binding remains NOT_RUN.
 Actual HTTPS redirect, partial-body, size and deadline negatives remain
 NOT_RUN. Real DNS and HTTPS interruption still need an isolated transport
 qualification; the tested endless resolver is a synthetic child. Storage

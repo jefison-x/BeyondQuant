@@ -70,7 +70,8 @@ same live proxy instance; matching caller strings alone are insufficient.
 Backend-bound selection, actual ACP child environment, network
 egress confinement and real provider behavior remain NOT_RUN.
 
-The new pure provider-profile builder passed 10/10 focused tests. It checks a
+The new pure provider-profile builder and resolution recheck passed 11/11
+focused tests. The builder checks a
 caller-supplied `created:true` Backend receipt for shape and internal
 consistency, then derives
 limits from the existing named BYQ stage budget instead of caller-selected
@@ -95,7 +96,10 @@ creation use one lock. Independent Tester passed the earlier proxy snapshot
 22/22; Root's focused factory/start-close cases passed 2/2 after the lock
 change. This still cannot prove the upstream key came from the trusted
 resolver or that the ACP child uses this same live proxy; final entry binding
-and user credential version recheck remain NOT_RUN.
+and trusted user credential version recheck remain NOT_RUN. An unwired helper
+now rejects changed provider/model/source, binding ID/version and upstream
+key when supplied with a later resolution; its trusted source and timing are
+not proven.
 
 ## Exact local candidate inputs
 

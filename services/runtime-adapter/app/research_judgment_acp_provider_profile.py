@@ -9,6 +9,7 @@ the receipt and resolution came from the same current trusted Backend scope.
 from __future__ import annotations
 
 import json
+import hmac
 import re
 import time
 from dataclasses import dataclass, field
@@ -29,6 +30,34 @@ class AcpJudgmentProviderProfile:
     @property
     def public(self) -> dict:
         return json.loads(self._public_json)
+
+
+def require_current_model_resolution(profile: AcpJudgmentProviderProfile,
+                                     resolution: dict) -> None:
+    """Reject a changed private selection before an eventual ACP dispatch.
+
+    The trusted caller must repeat the Backend resolver request for the exact
+    admitted owner/session/trace. This comparison alone does not prove that
+    caller performed that request.
+    """
+    if not isinstance(profile, AcpJudgmentProviderProfile) or not isinstance(resolution, dict):
+        raise ValueError("current trusted model resolution is required")
+    public = profile.public
+    source = resolution.get("source")
+    reference = {"source": source}
+    if source == "user_binding":
+        reference.update({key: resolution.get(key) for key in (
+            "profile_id", "profile_version", "credential_id",
+            "credential_version", "binding_version")})
+    credential = resolution.get("api_key")
+    if (source not in {"environment", "user_binding"}
+            or resolution.get("provider") != public.get("provider_route")
+            or resolution.get("model") != public.get("model")
+            or reference != public.get("credential_reference")
+            or not isinstance(credential, str) or not credential
+            or not hmac.compare_digest(credential.encode("utf-8"),
+                                       profile.upstream_credential.encode("utf-8"))):
+        raise ValueError("selected ACP judgment model binding changed")
 
 
 def build_provider_profile(begin: dict, resolution: dict) -> AcpJudgmentProviderProfile:
