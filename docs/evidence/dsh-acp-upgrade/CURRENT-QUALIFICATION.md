@@ -50,7 +50,7 @@ The isolated BYQ branch is `codex/dsh-acp-upgrade`, based on
 | Observe-response loss reconciliation | PASS, focused; crash limit open | Backend's exact pre-dispatch abort and tombstone passed an independent 10-test isolated DB run, including both observe/abort orders, late observe rejection and idempotent receipt. Reviewer accepted the request/root lock ordering. Independent MCP snapshot build and bridge/ingress tests passed: a missing observe receipt triggers exact-ID abort before handler entry; wrong native Agent and malformed receipts are rejected. A simulated lost abort response was sent only once and remained unknown. MCP crash before abort or lost abort response still leaves a fail-closed pending/unknown record until exact reconciliation. No automatic expiry or speculative abort is allowed. |
 | Complete matching ACP image | NOT_RUN, current code; prior image PASS, historical only | `byq-runtime-adapter-acp:qualification-20261004` built from the fixed official source/lock and the BYQ app/profile/plugin files as they stood before the ADR-0096 Adapter edits. Image ID `sha256:f600f4eb348542b96d9e0c64243edc47ee37c8f8f509200c8099da9d658aa2ba`, size 1,430,951,403 bytes. Offline `--dump-config` passed with six OpenCode routes and the Product plugins; dump SHA-256 `6a5f7048289dc8adc1d40b7138fd92d7bb1ba14a32bb8c7312940b39117932e0`. Local ADR-0096 tests mount current source read-only over this image; the image itself does not contain the new Adapter code and must be rebuilt before candidate qualification. The historical recovery fixture imports the old `deepseek_harness` SDK and runs only in the retained dependency image. This image is not a release artifact or Product acceptance. |
 | Real Backend held-write race | PASS, focused Backend path | Independent Tester used a fresh tmpfs PostgreSQL and a temporary advisory-lock trigger to hold a real feedback insert. Close rejected pending ingress with 409; after the insert committed (201), exact settle (200) allowed close (200) with the frozen cursor. A response rewritten to 5xx after commit remained unknown and blocked close/transfer. In a separate rotated-boot fixture, transfer rejected pending ingress twice with 409; the held handler returned 503 after lock timeout, made no command row, stale boot settle returned 401, and ingress stayed pending. These direct Backend routes do not yet prove the full MCP→Backend→Adapter/Gateway chain or terminal ACK. |
-| Full cross-service terminal ACK and next-root release | FAIL for pre-result failure path; successful integration NOT_RUN | Backend currently rejects judgment-root `failed`, `cancelled` and `interrupted` close before a committed result. A pre-prompt fault, user cancellation or unknown provider response therefore has no exact non-success terminal ACK. Proposed ADR-0098 specifies a durable pre-result settlement with no replay or fabricated result; it is not Accepted or implemented. The Backend and MCP focused successful-path tests do not constitute an integrated Product run. `/acp-root/run` remains 503. |
+| Full cross-service terminal ACK and next-root release | FAIL for pre-result failure path; successful integration NOT_RUN | Backend at the last tested head rejected judgment-root `failed`, `cancelled` and `interrupted` close before a committed result. A pre-prompt fault, user cancellation or unknown provider response therefore had no exact non-success terminal ACK. ADR-0098 is now Accepted and its Backend implementation is in progress, but has no completed test receipt. The Backend and MCP focused successful-path tests do not constitute an integrated Product run. `/acp-root/run` remains 503. |
 | Consecutive rounds, stop/continue, end rejection, restart recovery, two-user isolation, identity switch, budget/unknown protection | NOT_RUN | Full BYQ Gateway/Product API acceptance has not run. |
 | Real Gateway/Product API browser flow | NOT_RUN | Required because public behavior changes; mock-only tests do not close this gate. |
 | Exact head CI, PR, merge, release images, promote, trusted deployment | NOT_RUN | Qualification gate has not passed. There has been no push, PR, merge or deployment. |
@@ -69,6 +69,20 @@ local proxy file passed 21/21. The final entry must bind these values to the
 same live proxy instance; matching caller strings alone are insufficient.
 Backend-bound selection, actual ACP child environment, network
 egress confinement and real provider behavior remain NOT_RUN.
+
+ADR-0099's per-root judgment MCP key derivation is a local, unwired PASS.
+Adapter and MCP use the same nine-field HMAC derivation; DSH is intended to
+receive only the derived key, while Adapter and isolated MCP retain the master.
+Root ran the focused Python 9/9, MCP build and two authentication suites;
+independent Tester repeated the Python tests and compiled MCP to a temporary
+directory, then passed both authentication suites. Independent Reviewer found
+no P1/P2 in this slice. Direct-master signatures, altered task/call/root/owner
+claims and malformed scope fail. A modified native Agent session ID can still
+be signed with the same root key: the synthetic Backend receipt mismatch
+blocks the business handler, but real Backend AgentRun admission is NOT_RUN.
+The trusted entry has not yet supplied a Backend-bound derived key, and
+the isolated MCP/runner network has not been qualified. This local proof does
+not enable `/acp-root/run` or default ACP promotion.
 
 The new pure provider-profile builder and resolution recheck passed 11/11
 focused tests. The builder checks a

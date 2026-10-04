@@ -53,6 +53,12 @@ const NATIVE_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{
 const ROOT_ID = /^[0-9a-f]{32}$/;
 const JUDGMENT_TASK_ID = /^task_[0-9a-f]{32}$/;
 const JUDGMENT_CALL_IDENTITY = /^byq-judgment-[0-9a-f]{32}$/;
+const ACP_JUDGMENT_KEY_SCOPE_FIELDS = [
+  "task_id", "call_identity", "root_run_id", "runtime_boot_id", "owner_principal",
+  "workspace_id", "session_id", "trace_id", "dsh_run_id",
+] as const;
+type AcpJudgmentRootKeyScope = Pick<AcpJudgmentRootClaims,
+  typeof ACP_JUDGMENT_KEY_SCOPE_FIELDS[number]>;
 const MAX_TOKEN_BYTES = 8192;
 const MAX_PAYLOAD_BYTES = 6144;
 export const ACP_AGENT_MAX_DEPTH = 1;
@@ -122,6 +128,35 @@ export function isValidAcpSigningKey(value: unknown): value is string {
   return typeof value === "string" && Buffer.byteLength(value, "utf8") >= 32;
 }
 
+/**
+ * Derive the one-root judgment bearer key shared with the Runtime Adapter.
+ * The MCP process keeps the master key; DSH receives only this derived key.
+ * Wire format: HMAC-SHA256(master UTF-8 bytes,
+ * UTF-8("byq-acp-judgment-root-key-v1\n" + the fixed scope fields joined by LF)),
+ * rendered as lowercase hexadecimal and then used as UTF-8 key bytes by the
+ * existing token signer.
+ */
+export function deriveAcpJudgmentRootSigningKey(
+  masterSigningKey: unknown,
+  scope: AcpJudgmentRootKeyScope,
+): string | undefined {
+  if (!isValidAcpSigningKey(masterSigningKey)
+    || !validText(scope?.task_id, JUDGMENT_TASK_ID, 37)
+    || !validText(scope?.call_identity, JUDGMENT_CALL_IDENTITY, 45)
+    || !validText(scope?.root_run_id, ROOT_ID, 32)
+    || !validText(scope?.runtime_boot_id, ROOT_ID, 32)
+    || !validText(scope?.owner_principal, PRINCIPAL, 128)
+    || !validText(scope?.workspace_id, TRACE, 64)
+    || !validText(scope?.session_id, TRACE, 64)
+    || !validText(scope?.trace_id, TRACE, 64)
+    || !validText(scope?.dsh_run_id, TRACE, 64)) return undefined;
+  const fields = ACP_JUDGMENT_KEY_SCOPE_FIELDS.map(field => scope[field]);
+  const input = `byq-acp-judgment-root-key-v1\n${fields.join("\n")}`;
+  return createHmac("sha256", Buffer.from(masterSigningKey, "utf8"))
+    .update(input, "utf8")
+    .digest("hex");
+}
+
 /** Keep the dedicated judgment signing key disjoint from any configured bearer/key. */
 export function isAcpJudgmentSigningKeyDistinct(
   signingKey: unknown,
@@ -188,9 +223,6 @@ export function verifyAcpJudgmentRootBearer(
   const signature = decodeCanonicalBase64Url(parts[2]);
   if (!payload || payload.byteLength > MAX_PAYLOAD_BYTES || !signature || signature.byteLength !== 32) return undefined;
 
-  const expected = createHmac("sha256", Buffer.from(signingKey, "utf8")).update(payload).digest();
-  if (!timingSafeEqual(signature, expected)) return undefined;
-
   let parsed: unknown;
   try {
     parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(payload));
@@ -203,6 +235,13 @@ export function verifyAcpJudgmentRootBearer(
   if (actualKeys.length !== ACP_JUDGMENT_CLAIM_KEYS.length
     || actualKeys.some((key, index) => key !== ACP_JUDGMENT_CLAIM_KEYS[index])
     || canonicalClaimsJson(claims) !== payload.toString("utf8")) return undefined;
+
+  // Parse the bounded, canonical but still untrusted scope first. A DSH root
+  // can only produce a valid MAC for the key derived from these exact claims.
+  const rootSigningKey = deriveAcpJudgmentRootSigningKey(signingKey, claims as unknown as AcpJudgmentRootKeyScope);
+  if (!rootSigningKey) return undefined;
+  const expected = createHmac("sha256", Buffer.from(rootSigningKey, "utf8")).update(payload).digest();
+  if (!timingSafeEqual(signature, expected)) return undefined;
 
   if (claims.v !== 1 || claims.aud !== "byq-product-acp-judgment-mcp"
     || claims.origin !== "root" || claims.depth !== 0 || claims.native_parent_session_id !== null) return undefined;

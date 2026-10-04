@@ -9,6 +9,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import {
   classifyMcpBearer,
+  deriveAcpJudgmentRootSigningKey,
   isAcpJudgmentSigningKeyDistinct,
   verifyAcpJudgmentRootBearer,
   type AcpAgentClaims,
@@ -23,6 +24,7 @@ const READ_ONLY = [
   "byq_research_stage_input_get",
 ];
 const judgmentKey = "synthetic-adr0097-judgment-signing-key-at-least-32-bytes";
+const adapterVectorMaster = "synthetic-judgment-master-with-at-least-32-bytes";
 const productKey = "synthetic-product-acp-signing-key-at-least-32-bytes";
 const now = Date.now();
 
@@ -59,7 +61,24 @@ function sign(prefix: string, claims: Record<string, unknown>, key: string): str
   return `${prefix}.${payload.toString("base64url")}.${mac.toString("base64url")}`;
 }
 
-const judgmentToken = sign("byq-acp-judgment-v1", judgmentClaims as unknown as Record<string, unknown>, judgmentKey);
+const judgmentRootKey = deriveAcpJudgmentRootSigningKey(judgmentKey, judgmentClaims);
+assert.equal(judgmentRootKey, "9d443d02ad0a2a30e89e3c0b997a8617a1ef911cf3d0c8f106e896de922020ea",
+  "judgment root key derivation must match the Adapter wire format");
+assert.ok(judgmentRootKey);
+assert.equal(deriveAcpJudgmentRootSigningKey(adapterVectorMaster, {
+  ...judgmentClaims,
+  task_id: "task_" + "a".repeat(32),
+  call_identity: "byq-judgment-" + "b".repeat(32),
+  root_run_id: "c".repeat(32),
+  runtime_boot_id: "d".repeat(32),
+  owner_principal: "alice",
+  workspace_id: "workspace_1",
+  session_id: "session_1",
+  trace_id: "trace_1",
+  dsh_run_id: "byqjudg-" + "e".repeat(32),
+}), "5e46d07590d6aa0b71601a29453c008eeb770c28230b2720cb70212fda1025d7",
+"MCP derivation must match the Runtime Adapter cross-language vector");
+const judgmentToken = sign("byq-acp-judgment-v1", judgmentClaims as unknown as Record<string, unknown>, judgmentRootKey);
 const productClaims: AcpAgentClaims = {
   ...judgmentClaims,
   aud: "byq-product-mcp",
@@ -73,6 +92,35 @@ const productAgentToken = sign("byq-acp-v1", productClaims as unknown as Record<
 assert.deepEqual(verifyAcpJudgmentRootBearer(judgmentToken, judgmentKey, now), judgmentClaims);
 assert.equal(verifyAcpJudgmentRootBearer(judgmentToken, productKey, now), undefined,
   "judgment token must not verify under the Product ACP signing key");
+assert.equal(verifyAcpJudgmentRootBearer(
+  sign("byq-acp-judgment-v1", judgmentClaims as unknown as Record<string, unknown>, judgmentKey),
+  judgmentKey,
+  now,
+), undefined, "the MCP master key must not directly sign a judgment token");
+for (const crossScopeClaims of [
+  { ...judgmentClaims, task_id: "task_" + "e".repeat(32) },
+  { ...judgmentClaims, call_identity: "byq-judgment-" + "e".repeat(32) },
+  { ...judgmentClaims, root_run_id: "f".repeat(32) },
+  { ...judgmentClaims, owner_principal: "mallory" },
+]) {
+  const crossScopeToken = sign("byq-acp-judgment-v1",
+    crossScopeClaims as unknown as Record<string, unknown>, judgmentRootKey);
+  assert.equal(verifyAcpJudgmentRootBearer(crossScopeToken, judgmentKey, now), undefined,
+    "a root-scoped key cannot mint a judgment token for another task, root, or owner");
+}
+const otherNativeAgentRunClaims = {
+  ...judgmentClaims,
+  native_root_session_id: "00000000-0000-4000-8000-000000000002",
+  native_agent_session_id: "00000000-0000-4000-8000-000000000002",
+};
+const otherNativeAgentRunToken = sign("byq-acp-judgment-v1",
+  otherNativeAgentRunClaims as unknown as Record<string, unknown>, judgmentRootKey);
+assert.deepEqual(verifyAcpJudgmentRootBearer(otherNativeAgentRunToken, judgmentKey, now),
+  otherNativeAgentRunClaims,
+  "the agreed nine-field MAC scope does not bind the post-startup native AgentRun ID");
+assert.equal(deriveAcpJudgmentRootSigningKey(judgmentKey,
+  { ...judgmentClaims, task_id: "task_" + "c".repeat(31) } as AcpJudgmentRootClaims), undefined,
+  "key derivation must reject malformed task scope");
 assert.equal(isAcpJudgmentSigningKeyDistinct(judgmentKey, [productKey, "legacy-bearer"]), true);
 assert.equal(isAcpJudgmentSigningKeyDistinct(judgmentKey, [judgmentKey]), false);
 assert.equal(classifyMcpBearer(`Bearer ${judgmentToken}`, { legacyToken: judgmentToken }), undefined,
@@ -282,12 +330,14 @@ try {
   delete missingCall.call_identity;
   invalidClaims.push(missingTask, missingCall);
   for (const claims of invalidClaims) {
-    const token = sign("byq-acp-judgment-v1", claims, judgmentKey);
+    const token = sign("byq-acp-judgment-v1", claims, judgmentRootKey);
     assert.equal((await post(judgmentPort, token, "tools/list")).status, 401,
       "invalid judgment claims must be rejected before MCP dispatch");
   }
+  const productRootKey = deriveAcpJudgmentRootSigningKey(productKey, judgmentClaims);
+  assert.ok(productRootKey);
   const wrongKeyToken = sign("byq-acp-judgment-v1",
-    judgmentClaims as unknown as Record<string, unknown>, productKey);
+    judgmentClaims as unknown as Record<string, unknown>, productRootKey);
   assert.equal((await post(judgmentPort, wrongKeyToken, "tools/list")).status, 401,
     "Product signing key cannot mint judgment credentials");
 
@@ -336,6 +386,30 @@ try {
         arguments: { task_id: judgmentClaims.task_id } });
       assert.equal(rejected.isError, true);
       backendMode = "admit";
+      const otherAgentRunClient = new Client({
+        name: "byq-acp-judgment-other-agent-run-test", version: "1.0.0",
+      });
+      try {
+        await otherAgentRunClient.connect(new StreamableHTTPClientTransport(
+          new URL(`http://127.0.0.1:${admissionPort}/mcp/v1`), {
+            authProvider: { token: async () => otherNativeAgentRunToken },
+          }));
+        const rejectedOtherAgentRun = await otherAgentRunClient.callTool({
+          name: "byq_research_stage_input_get", arguments: { task_id: judgmentClaims.task_id },
+        });
+        assert.equal(rejectedOtherAgentRun.isError, true,
+          "Backend receipt for a different native AgentRun must block handler dispatch");
+        assert.equal(backendRequests[2]?.body?.native_root_session_id,
+          otherNativeAgentRunClaims.native_root_session_id,
+          "MCP must present the token's native AgentRun claim for Backend binding");
+        assert.equal(backendRequests.some(request => request.path
+          === `/v1/research/tasks/${judgmentClaims.task_id}/stage-input`), false,
+        "the mismatched Backend native AgentRun receipt must stop before business read");
+        // This is a synthetic receipt matcher test; live Backend registration and
+        // AgentRun admission remain a separate acceptance gate (NOT_RUN here).
+      } finally {
+        await otherAgentRunClient.close();
+      }
       const admittedRead = await client.callTool({ name: "byq_research_stage_input_get",
         arguments: { task_id: judgmentClaims.task_id } });
       assert.equal(admittedRead.isError, false, "valid admitted read must reach the bounded handler");
@@ -349,6 +423,8 @@ try {
     "/internal/acp/judgment-tool-ingress-observe",
     "/internal/acp/judgment-tool-ingress-abort",
     "/internal/acp/judgment-tool-ingress-observe",
+    "/internal/acp/judgment-tool-ingress-abort",
+    "/internal/acp/judgment-tool-ingress-observe",
     `/v1/research/tasks/${judgmentClaims.task_id}/stage-input`,
     "/internal/acp/judgment-tool-ingress-settle",
   ], "rejected admission must never enter the business read handler");
@@ -357,8 +433,8 @@ try {
     assert.equal(request.task, judgmentClaims.task_id);
     assert.equal(request.call, judgmentClaims.call_identity);
   }
-  assert.equal(backendRequests[3]?.observation, backendRequests[2]?.body?.mcp_request_id);
-  assert.equal(backendRequests[4]?.body?.outcome, "settled");
+  assert.equal(backendRequests[5]?.observation, backendRequests[4]?.body?.mcp_request_id);
+  assert.equal(backendRequests[6]?.body?.outcome, "settled");
 
   console.log(JSON.stringify({
     ok: true,
@@ -368,6 +444,8 @@ try {
     cross_audience_and_credential_rejection: true,
     default_judgment_tool_calls_denied_before_backend: true,
     opt_in_synthetic_bounded_read_settled: true,
+    cross_agent_run_rejected_by_backend_receipt_binding: true,
+    live_backend_agent_run_admission: "NOT_RUN",
   }));
 } finally {
   await Promise.all([stop(judgmentServer), stop(readOnlyServer), stop(productServer)]);
