@@ -864,6 +864,22 @@ def register_acp_research_judgment_root_agent(task_id: str, payload: dict[str, A
         agent_store=agent_store)))
 
 
+@app.post("/internal/research-judgment/{task_id}/acp-root/result")
+def record_acp_research_judgment_root_result(task_id: str, payload: dict[str, Any],
+                                             request: Request) -> dict:
+    _require_runtime_authority_bearer(request)
+    from packages.contracts.research_judgment import validate_acp_judgment_result_request
+
+    try:
+        validate_acp_judgment_result_request(payload)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    context, boot_id = _acp_judgment_scope(request)
+    return _research_call(lambda: _agent_call(lambda: research_store.record_acp_judgment_root_result(
+        task_id, payload, trusted_context=context, runtime_boot_id=boot_id,
+        agent_store=agent_store)))
+
+
 @app.post('/internal/research-judgment/{task_id}/result')
 def record_research_judgment_result(task_id: str, payload: dict[str, Any], request: Request) -> dict:
     # ADR-0085 P3 private runtime-adapter consumer. ONE atomic named store

@@ -116,6 +116,7 @@ SCHEMA_DDL: list[str] = [
         agent_run_id TEXT UNIQUE,
         begin_receipt_json JSONB NOT NULL,
         registration_receipt_json JSONB,
+        result_request_sha256 TEXT,
         created_at TIMESTAMPTZ NOT NULL,
         updated_at TIMESTAMPTZ NOT NULL,
         PRIMARY KEY (task_id, call_identity),
@@ -123,6 +124,8 @@ SCHEMA_DDL: list[str] = [
             REFERENCES research_judgment_stage_calls(task_id, call_identity)
     )
     """,
+    "ALTER TABLE research_judgment_acp_roots "
+    "ADD COLUMN IF NOT EXISTS result_request_sha256 TEXT",
     "CREATE INDEX IF NOT EXISTS research_judgment_acp_roots_scope "
     "ON research_judgment_acp_roots(owner_principal, workspace_id, session_id, trace_id)",
 ]
@@ -559,27 +562,127 @@ class ResearchJudgmentMixin:
             if row["status"] != "admitted":
                 raise InvalidTransition("research stage call is not completable")
             self._require_model_stage(row["stage"])
+            return self._commit_judgment_result_in_transaction(
+                connection, task, plan, row, evidence, proposal)
 
-            committed = None
-            if proposal is not None:
-                committed = self._commit_proposal_in_transaction(connection, task, plan, proposal)
-                plan = committed["plan"]
-            progress = self._complete_stage_call(connection, task, plan, row, evidence)
-            receipt = {
-                "schema_version": RESULT_RECEIPT_SCHEMA_VERSION,
-                "call_identity": call_identity,
-                "proposal": committed["projection"] if committed is not None else None,
-                "proposal_identity": committed["proposal_identity"] if committed is not None else None,
-                "progress": progress,
+    def record_acp_judgment_root_result(self, task_id: str, payload: object, *,
+                                        trusted_context: dict, runtime_boot_id: str,
+                                        agent_store) -> dict:
+        """Commit one root-bound result; exact retries never repeat the reducer."""
+        from .agent_research import AgentConflict, _runtime_boot_id
+        from .research import InvalidTransition, ResearchNotFound
+        from packages.contracts.research_judgment import (
+            attempt_binding as make_attempt_binding,
+            validate_acp_judgment_result_request,
+        )
+
+        request = validate_acp_judgment_result_request(payload)
+        boot_id = _runtime_boot_id(runtime_boot_id)
+        if request["runtime_boot_id"] != boot_id:
+            raise AgentConflict("ACP judgment result boot differs from trusted Backend boot")
+        call_identity = request["call_identity"]
+        request_hash = _hash(request)
+        with self._transaction() as connection:
+            agent_store._lifecycle_lock(connection, "runtime-authority:current")
+            agent_store._lifecycle_lock(connection, "root:" + request["root_run_id"])
+            binding = fetch_one(connection, """SELECT * FROM research_judgment_acp_roots
+                WHERE task_id=:task AND call_identity=:identity FOR UPDATE""",
+                {"task": task_id, "identity": call_identity})
+            if binding is None:
+                raise InvalidTransition("exact ACP judgment root is not admitted")
+            expected = {
+                "root_run_id": request["root_run_id"],
+                "runtime_boot_id": boot_id,
+                "authority_epoch": request["authority_epoch"],
+                "dsh_run_id": request["dsh_run_id"],
+                "agent_run_id": request["agent_run_id"],
+                "native_root_session_id": request["native_root_session_id"],
+                "owner_principal": trusted_context.get("owner_principal"),
+                "workspace_id": trusted_context.get("workspace_id"),
             }
-            execute(connection, """UPDATE research_judgment_stage_calls SET
-                status = 'completed', completed_at = :now, progress_identity = :progress,
-                outcome = :outcome, result_json = :result
-                WHERE task_id = :task AND call_identity = :identity AND status = 'admitted'""",
-                {"now": _now(), "progress": progress.get("progress_identity"),
-                 "outcome": progress.get("outcome"), "result": receipt,
-                 "task": task["task_id"], "identity": call_identity})
-            return {**receipt, "replayed": False}
+            if (binding["status"] != "agent_bound"
+                    or any(binding.get(field) != value for field, value in expected.items())
+                    or request["attempt_binding"] != make_attempt_binding(
+                        binding["plan_version"], binding["stage"], binding["iteration"])):
+                raise AgentConflict("ACP judgment result conflicts with its exact root binding")
+            task = self._plan_task(connection, task_id, trusted_context, lock=True)
+            row = self._load_stage_call(connection, task_id, call_identity, lock=True)
+            if row is None:
+                raise InvalidTransition("research stage call was not admitted")
+            authority = agent_store._require_current_runtime_boot(connection, boot_id, required=True)
+            if int(authority["epoch"]) != request["authority_epoch"]:
+                raise AgentConflict("ACP judgment result authority epoch is no longer current")
+            if row["status"] == "completed":
+                if (binding["result_request_sha256"] != request_hash
+                        or not isinstance(row["result_json"], dict)):
+                    raise AgentConflict("ACP judgment result retry differs from committed input")
+                return {**row["result_json"], "replayed": True}
+            agent_store._require_lifecycle_workspace(
+                connection, binding["owner_principal"], binding["workspace_id"])
+            root = fetch_one(connection, """SELECT * FROM agent_runtime_turns
+                WHERE root_run_id=:root FOR SHARE""", {"root": request["root_run_id"]})
+            run = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id=:run FOR SHARE",
+                            {"run": request["agent_run_id"]})
+            from .agent_research import RESEARCH_JUDGMENT_ROLE_ID
+            if (root is None or root["status"] != "active"
+                    or root["authority_status"] != "active"
+                    or root["authority_boot_id"] != boot_id
+                    or root["owner_principal"] != binding["owner_principal"]
+                    or root["workspace_id"] != binding["workspace_id"]
+                    or root["session_id"] != binding["session_id"]
+                    or root["trace_id"] != binding["trace_id"]
+                    or run is None or run["root_run_id"] != request["root_run_id"]
+                    or run["role_id"] != RESEARCH_JUDGMENT_ROLE_ID
+                    or run["owner_principal"] != binding["owner_principal"]
+                    or run["workspace_id"] != binding["workspace_id"]
+                    or run["session_id"] != binding["session_id"]
+                    or run["trace_id"] != binding["trace_id"]
+                    or run["dsh_run_id"] != binding["dsh_run_id"]
+                    or run["status"] != "active" or run["authority_status"] != "active"
+                    or run["authority_boot_id"] != boot_id):
+                raise AgentConflict("ACP judgment result requires its current active root and AgentRun")
+            plan_row = self._load_current_plan(connection, task_id, lock=True)
+            if plan_row is None:
+                raise ResearchNotFound("research execution plan not found")
+            plan = validate_plan(plan_row["plan"])
+            if (row["status"] != "admitted" or row["plan_version"] != binding["plan_version"]
+                    or row["stage"] != binding["stage"] or row["call_index"] != binding["call_index"]
+                    or plan["plan_version"] != binding["plan_version"]
+                    or plan["stage"] != binding["stage"]
+                    or plan["iteration"] != binding["iteration"]):
+                raise AgentConflict("ACP judgment result is not current for its admitted plan attempt")
+            self._require_model_stage(row["stage"])
+            receipt = self._commit_judgment_result_in_transaction(
+                connection, task, plan, row, request["durable_evidence"], request.get("proposal"))
+            execute(connection, """UPDATE research_judgment_acp_roots
+                SET result_request_sha256=:digest,updated_at=:now
+                WHERE task_id=:task AND call_identity=:identity AND result_request_sha256 IS NULL""",
+                {"digest": request_hash, "now": _now(), "task": task_id,
+                 "identity": call_identity})
+            return receipt
+
+    def _commit_judgment_result_in_transaction(self, connection, task, plan, row,
+                                                evidence, proposal) -> dict:
+        committed = None
+        if proposal is not None:
+            committed = self._commit_proposal_in_transaction(connection, task, plan, proposal)
+            plan = committed["plan"]
+        progress = self._complete_stage_call(connection, task, plan, row, evidence)
+        receipt = {
+            "schema_version": RESULT_RECEIPT_SCHEMA_VERSION,
+            "call_identity": row["call_identity"],
+            "proposal": committed["projection"] if committed is not None else None,
+            "proposal_identity": committed["proposal_identity"] if committed is not None else None,
+            "progress": progress,
+        }
+        execute(connection, """UPDATE research_judgment_stage_calls SET
+            status = 'completed', completed_at = :now, progress_identity = :progress,
+            outcome = :outcome, result_json = :result
+            WHERE task_id = :task AND call_identity = :identity AND status = 'admitted'""",
+            {"now": _now(), "progress": progress.get("progress_identity"),
+             "outcome": progress.get("outcome"), "result": receipt,
+             "task": task["task_id"], "identity": row["call_identity"]})
+        return {**receipt, "replayed": False}
 
     # ------------------------------------------------------------------ #
     # Narrow named seams (shared transaction-internal helpers)

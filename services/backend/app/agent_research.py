@@ -1144,6 +1144,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             authority = self._require_current_runtime_boot(connection, boot_id, required=True)
             if (root["authority_status"] != "active" or root["authority_boot_id"] != authority["boot_id"]):
                 raise AgentConflict("runtime root no longer has current business authority")
+            self._require_judgment_root_result_before_close(connection, root_run_id, outcome)
             self._require_acp_root_terminal_safe(connection, root_run_id)
             terminal_evidence = self._acp_terminal_evidence_snapshot(connection, root_run_id)
             registrations = execute(connection, """SELECT registration_fingerprint
@@ -1308,6 +1309,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                         raise AgentConflict("runtime terminal evidence conflicts with its original receipt")
                     return dict(root)
                 # Freeze registrations against concurrent start_run inserts.
+                self._require_judgment_root_result_before_close(connection, root_id, outcome)
                 self._require_acp_root_terminal_safe(connection, root_id)
                 terminal_evidence = self._acp_terminal_evidence_snapshot(connection, root_id)
                 bindings = execute(connection, """SELECT registration_fingerprint FROM agent_runtime_registrations

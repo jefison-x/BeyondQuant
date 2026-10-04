@@ -401,6 +401,7 @@ _ATTEMPT_BINDING = re.compile(r"^[0-9]+:[a-z_]+:[0-9]+$")
 ACP_JUDGMENT_ROOT_BEGIN_SCHEMA_VERSION = "byq-research-judgment-acp-root-begin.v1"
 ACP_JUDGMENT_ROOT_RECEIPT_SCHEMA_VERSION = "byq-research-judgment-acp-root-receipt.v1"
 ACP_JUDGMENT_AGENT_REGISTER_SCHEMA_VERSION = "byq-research-judgment-acp-agent-register.v1"
+ACP_JUDGMENT_RESULT_SCHEMA_VERSION = "byq-research-judgment-acp-result.v1"
 _ACP_ROOT_ID = re.compile(r"^[0-9a-f]{32}$")
 _ACP_JUDGMENT_CALL_IDENTITY = re.compile(r"^byq-judgment-[0-9a-f]{32}$")
 _ACP_NATIVE_ROOT_SESSION_ID = re.compile(
@@ -451,6 +452,43 @@ def validate_acp_judgment_agent_register_request(value: object) -> dict[str, str
     if (not isinstance(value["native_root_session_id"], str)
             or _ACP_NATIVE_ROOT_SESSION_ID.fullmatch(value["native_root_session_id"]) is None):
         raise ValueError("native_root_session_id must be a lowercase UUIDv4")
+    return value
+
+
+def validate_acp_judgment_result_request(value: object) -> dict[str, object]:
+    """Closed trusted result bound to the admitted ACP root and native AgentRun."""
+
+    fields = {"schema_version", "call_identity", "attempt_binding", "root_run_id",
+              "runtime_boot_id", "authority_epoch", "dsh_run_id", "agent_run_id",
+              "native_root_session_id", "durable_evidence"}
+    if (not isinstance(value, dict) or not fields <= set(value)
+            or set(value) - (fields | {"proposal"})
+            or value.get("schema_version") != ACP_JUDGMENT_RESULT_SCHEMA_VERSION):
+        raise ValueError("exact ACP judgment result request required")
+    if (not isinstance(value["call_identity"], str)
+            or _ACP_JUDGMENT_CALL_IDENTITY.fullmatch(value["call_identity"]) is None):
+        raise ValueError("exact ACP judgment call identity required")
+    validate_attempt_binding(value["attempt_binding"])
+    for field in ("root_run_id", "runtime_boot_id"):
+        if not isinstance(value[field], str) or _ACP_ROOT_ID.fullmatch(value[field]) is None:
+            raise ValueError(f"ACP judgment {field} is invalid")
+    if (not isinstance(value["agent_run_id"], str)
+            or re.fullmatch(r"agent_run_[0-9a-f]{32}", value["agent_run_id"]) is None):
+        raise ValueError("ACP judgment AgentRun identity is invalid")
+    if (type(value["authority_epoch"]) is not int or value["authority_epoch"] < 1
+            or value["authority_epoch"] > 2**63 - 1):
+        raise ValueError("ACP judgment authority epoch is invalid")
+    if (not isinstance(value["dsh_run_id"], str)
+            or re.fullmatch(r"byqjudg-[0-9a-f]{32}", value["dsh_run_id"]) is None):
+        raise ValueError("ACP judgment generation is invalid")
+    if (not isinstance(value["native_root_session_id"], str)
+            or _ACP_NATIVE_ROOT_SESSION_ID.fullmatch(value["native_root_session_id"]) is None):
+        raise ValueError("ACP judgment native root session is invalid")
+    validate_judgment_result_request({
+        "call_identity": value["call_identity"],
+        "durable_evidence": value["durable_evidence"],
+        **({"proposal": value["proposal"]} if "proposal" in value else {}),
+    })
     return value
 
 

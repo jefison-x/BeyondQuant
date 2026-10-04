@@ -244,6 +244,36 @@ class DomainCallEvidenceMixin:
             if unresolved_claims["count"]:
                 raise AgentConflict("unresolved ACP domain call claim prevents root close")
 
+    @staticmethod
+    def _require_judgment_root_result_before_close(connection, root_run_id: str,
+                                                    outcome: str) -> None:
+        """A dedicated judgment root cannot produce a terminal ACK before its result.
+
+        This is deliberately narrower than the general ACP root lifecycle. An
+        uncertain or cancelled judgment still needs an explicit durable outcome
+        contract; it must not be inferred from a stopped DSH process.
+        """
+        from .agent_research import AgentConflict
+
+        binding = fetch_one(connection, """SELECT task_id,call_identity,status,agent_run_id,
+                result_request_sha256
+            FROM research_judgment_acp_roots WHERE root_run_id=:root FOR SHARE""",
+            {"root": root_run_id})
+        if binding is None:
+            return
+        if outcome != "completed" or binding["status"] != "agent_bound" or not binding["agent_run_id"]:
+            raise AgentConflict("judgment root requires a completed result and bound Agent before close")
+        call = fetch_one(connection, """SELECT status,result_json FROM research_judgment_stage_calls
+            WHERE task_id=:task AND call_identity=:identity FOR SHARE""",
+            {"task": binding["task_id"], "identity": binding["call_identity"]})
+        if (not isinstance(binding["result_request_sha256"], str)
+                or not binding["result_request_sha256"].startswith("sha256:")
+                or _ACP_SHA256.fullmatch(binding["result_request_sha256"][7:]) is None
+                or call is None or call["status"] != "completed"
+                or not isinstance(call["result_json"], dict)
+                or call["result_json"].get("schema_version") != "research-judgment-result-receipt.v1"):
+            raise AgentConflict("judgment root result is not durably committed")
+
     def _require_current_acp_boot(self, connection, boot_id: str):
         from .agent_research import AgentConflict, AgentUnauthorized
 
