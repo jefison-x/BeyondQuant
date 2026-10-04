@@ -15,7 +15,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from datetime import datetime, timezone
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -30,6 +30,7 @@ PRODUCT_TOKEN = os.environ.get("BYQ_PRODUCT_TOKEN")
 PRODUCT_PRINCIPAL = os.environ.get("BYQ_PRODUCT_PRINCIPAL", "product-user")
 BACKEND_URL = os.environ.get("BYQ_BACKEND_URL", "http://backend:8000")
 RUNTIME_ADAPTER_URL = os.environ.get("BYQ_RUNTIME_ADAPTER_URL", "http://runtime-adapter:8400")
+GATEWAY_SERVICE_TOKEN = os.environ.get("BYQ_GATEWAY_SERVICE_TOKEN")
 _SECRET_KEY_FRAGMENTS = (
     "token",
     "password",
@@ -624,6 +625,50 @@ def _continuation_permission_headers(request: Request) -> dict[str, str]:
     if request.headers.get("sec-fetch-site") == "cross-site":
         raise ProductError(403, "product_forbidden", "不允许跨站许可操作。")
     return _trusted_agent_headers(request)
+
+
+def _judgment_cancel_user_headers(request: Request) -> dict[str, str]:
+    """Keep the internal cancellation intent bound to a real browser user."""
+    if SESSION_COOKIE not in request.cookies:
+        raise ProductError(401, "product_authentication_required", "请先登录个人账号。")
+    if request.headers.get("x-byq-judgment-cancel-confirmation") != "v1":
+        raise ProductError(403, "product_confirmation_required", "请明确确认停止当前研究判断。")
+    if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+        raise ProductError(403, "product_forbidden", "不允许跨站取消操作。")
+    origin = request.headers.get("origin")
+    if origin is not None:
+        try:
+            parsed = urlsplit(origin)
+        except ValueError:
+            parsed = None
+        if (parsed is None or parsed.scheme not in {"http", "https"}
+                or not parsed.netloc
+                or parsed.netloc.casefold() != request.headers.get("host", "").casefold()
+                or parsed.username or parsed.password or parsed.path
+                or parsed.query or parsed.fragment):
+            raise ProductError(403, "product_forbidden", "不允许跨站取消操作。")
+    if (not GATEWAY_SERVICE_TOKEN or len(GATEWAY_SERVICE_TOKEN.encode("utf-8")) < 32
+            or GATEWAY_SERVICE_TOKEN in {PRODUCT_TOKEN, os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN")}):
+        raise ProductError(503, "product_service_unavailable", "研究判断取消服务暂不可用。")
+    return {**_trusted_agent_headers(request),
+            "authorization": f"Bearer {GATEWAY_SERVICE_TOKEN}"}
+
+
+@router.post("/research/tasks/{task_id}/acp-judgment/cancel-intent")
+def product_cancel_acp_judgment(task_id: str, request: Request,
+                                payload: dict[str, object]) -> dict[str, object]:
+    """Record user intent; Backend chooses and locks the exact active root."""
+    headers = _judgment_cancel_user_headers(request)
+    if set(payload) != {"idempotency_key"}:
+        raise ProductError(422, "product_request_invalid", "取消请求需要幂等键。")
+    key = payload["idempotency_key"]
+    if (not isinstance(key, str) or not 8 <= len(key) <= 96
+            or not all(char.isascii() and (char.isalnum() or char in {"-", "_"}) for char in key)):
+        raise ProductError(422, "product_request_invalid", "取消幂等键格式无效。")
+    return _backend_request(
+        "POST", f"/internal/research-judgment/{quote(task_id, safe='')}/acp-root/cancel-intent",
+        {"schema_version": "byq-research-judgment-acp-cancel-intent-request.v1",
+         "idempotency_key": key}, headers=headers)
 
 
 @router.get("/research/tasks/{task_id}/continuation-permission")
