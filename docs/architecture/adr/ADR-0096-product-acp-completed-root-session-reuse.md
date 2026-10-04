@@ -1,9 +1,9 @@
 # ADR-0096 — Reuse a DSH ACP session after a completed BYQ root
 
-- Status: Proposed for maintainer acceptance; no implementation authority for the conflicting mapping yet.
+- Status: Accepted (2026-10-04). The maintainer explicitly accepted the simplified session design in the development chat. Implementation and qualification remain separate.
 - Date: 2026-10-04
 - Scope: fixed official `dsh-v0.2.0-rc.2` at `639ed015397290b3745d163aafe02ffee4aa3f84`, Product Runtime Adapter only. No Product Phase change.
-- Amends, if Accepted: the one-native-session-per-root mapping in Accepted ADR-0093 and ADR-0094. A fresh process per BYQ root, their business proof, same-root transfer, per-Agent identity and security gates remain in force.
+- Amends the one-native-session-per-root mapping in Accepted ADR-0093 and ADR-0094 for the normally completed, exactly acknowledged path only. A fresh process per BYQ root, their business proof, same-root transfer, per-Agent identity and security gates remain in force.
 
 ## Evidence and limit
 
@@ -13,7 +13,7 @@ The fixed source accepts `mcpServers` on `session/resume` for an inactive top-le
 
 The present Adapter tears down the root-scoped process in `_run_prompt` before publishing a terminal event and receiving Backend ACK. It does not explicitly await ACP `session/close` on that normal path. The proposed ACK → close → resume ordering therefore needs a focused lifecycle change and crash-window proof, not just replacement of `session/new` with `session/resume`.
 
-## Proposed narrow amendment
+## Accepted narrow amendment
 
 For a **normally completed** BYQ root only, the next reply may reuse the same DSH native ACP session and canonical contained cwd after all of these conditions are proven in order:
 
@@ -42,4 +42,4 @@ Run narrow, keyless fixed-source and isolated BYQ tests for: delayed old-root MC
 
 The existing `0.1.5rc1` image and tracked/protected configuration remain the exact rollback set. Its SDK cannot read an ACP native session: cutover or rollback must use only verified completed public BYQ history for a fresh old-runtime root, after exact business-root closure. No pending/unknown prompt or business action is replayed. Any durable binding-format change must be additive and explicitly checked for rollback; incompatible migration needs a separate accepted decision.
 
-Accepting this ADR would authorize a bounded design and implementation slice for normally completed roots, not ACP default promotion. Until acceptance, ADR-0093/0094's fresh-native mapping remains authoritative. Current qualification blockers and all PR/release gates remain unchanged.
+Acceptance authorizes a bounded design and implementation slice for normally completed roots, not ACP default promotion. ADR-0093/0094's fresh-native mapping remains authoritative for the other outcomes above. Current qualification blockers and all PR/release gates remain unchanged. The maintainer's later instruction to hold broad implementation, PR push, merge and deployment remains in force.

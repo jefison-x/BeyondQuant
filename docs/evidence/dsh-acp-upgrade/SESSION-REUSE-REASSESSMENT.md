@@ -1,6 +1,6 @@
 # ACP native session reuse reassessment
 
-Date: 2026-10-04. Read-only design reassessment plus narrow keyless verification. No Product Phase change, implementation of the conflicting mapping, PR push, merge or deployment.
+Date: 2026-10-04. Read-only design reassessment plus narrow keyless verification. The maintainer subsequently accepted ADR-0096's simplified mapping on 2026-10-04. No Product Phase change, implementation of that mapping, PR push, merge or deployment is recorded here.
 
 ## Mapping and delta
 
@@ -12,7 +12,7 @@ Date: 2026-10-04. Read-only design reassessment plus narrow keyless verification
 | Domain proof | Backend root, AgentRun, per-Agent MCP identity, ingress/claim/result, unknown handling and terminal ACK | All retained, with distinct Backend registration for each BYQ root even when the native root ID repeats |
 | Restart | Same-root Backend authority transfer; no interrupted-prompt replay | Same until old root closes; a crash between ACK and ACP close needs explicit fence/drain proof before cross-root reuse |
 
-The branch can reuse its ACP transport `session/resume`, per-Agent signed MCP client, discovery-only guard, Backend ingress and registration proof, frozen terminal cursor, Gateway-to-Adapter exact ACK, public API projection, model credential isolation and old-runtime rollback artifacts. The new-root `session/new`/new-cwd path, completed-public-history injection and one-root/native binding assumptions must be replaced together **only after ADR acceptance**. Do not remove the BYQ transcript, root IDs, AgentRun/Backend evidence, prompt idempotency, budgets, unknown-result protection, late-call fence or terminal ACK. The existing fresh-native path remains needed for unqualified cancellation/fault outcomes and rollback.
+The branch can reuse its ACP transport `session/resume`, per-Agent signed MCP client, discovery-only guard, Backend ingress and registration proof, frozen terminal cursor, Gateway-to-Adapter exact ACK, public API projection, model credential isolation and old-runtime rollback artifacts. The new-root `session/new`/new-cwd path, completed-public-history injection and one-root/native binding assumptions require a bounded, tested replacement under Accepted ADR-0096; no such implementation is recorded by this reassessment. Do not remove the BYQ transcript, root IDs, AgentRun/Backend evidence, prompt idempotency, budgets, unknown-result protection, late-call fence or terminal ACK. The existing fresh-native path remains needed for unqualified cancellation/fault outcomes and rollback.
 
 The current Adapter closes the DSH process in `_run_prompt` before publishing terminal evidence, while the proposal requires exact ACK followed by confirmed ACP `session/close` and process exit before cross-root resume. This ordering and its ACK-to-close crash window require an explicit implementation and test; existing process teardown alone is not the proposed close proof.
 
@@ -33,7 +33,7 @@ The current Adapter closes the DSH process in `_run_prompt` before publishing te
 | Fault before closure / ACK-to-close crash window | NOT_RUN | Requires separate fencing and native close/drain proof; same-root authority transfer evidence cannot prove cross-root reuse. |
 | Real Product API/browser, paid model, exact-head CI/release | NOT_RUN | This reassessment makes no Product acceptance or deployment claim. |
 
-Independent Reviewer recommends **deferring ACP default promotion** while treating completed-root reuse as a candidate amendment. See Proposed ADR-0096. The fixed current candidate's other recorded failures remain in [CURRENT-QUALIFICATION](CURRENT-QUALIFICATION.md); reuse does not supersede them.
+Independent Reviewer recommends **deferring ACP default promotion**. The maintainer accepted the completed-root reuse amendment in [ADR-0096](../../architecture/adr/ADR-0096-product-acp-completed-root-session-reuse.md); its implementation and qualification remain open. The fixed current candidate's other recorded failures remain in [CURRENT-QUALIFICATION](CURRENT-QUALIFICATION.md); reuse does not supersede them.
 
 Documentation verification: `git diff --check` passed. The branch's architecture unit test run completed 72 tests with two failures unrelated to these new documents: `test_phase63_product_plugins_are_generated_and_cannot_online_install` and `test_sdk_runtime_does_not_use_bundled_zero_config` inspect existing Runtime Adapter source and Dockerfile text. Full output is retained at `/tmp/byq-acp-reuse-architecture-tests.log`; these failures remain open and are not overwritten by the session probe.
 
