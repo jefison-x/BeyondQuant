@@ -10,6 +10,12 @@
 - Current authority: ADR-0088 and the Clean Break baseline; builds on
   ADR-0093 and ADR-0094. ADR-0085 is historical context. This decision does
   not advance `STATUS.md`.
+- Later decision: Accepted ADR-0097 selects a dedicated ACP root and isolated
+  five-tool MCP endpoint for each named research-judgment invocation. The
+  judgment-child role-claim and delegation-depth requirements below remain
+  historical qualification findings for the unselected child path; they are
+  not implementation requirements for the dedicated root. Other Product ACP
+  Agents remain subject to ADR-0094 per-Agent identity and call evidence.
 
 ## Observed conflict
 

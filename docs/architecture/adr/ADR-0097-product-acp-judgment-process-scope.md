@@ -1,14 +1,14 @@
-# ADR-0097 — Proposed dedicated ACP root for research judgment
+# ADR-0097 — Dedicated ACP root for research judgment
 
-- Status: **Proposed — maintainer decision required** (revised 2026-10-04).
+- Status: **Accepted** (2026-10-04; maintainer: "接受 ADR-0097 使用专用 ACP root").
 - Scope: fixed official dsh-v0.2.0-rc.2 Product ACP research-judgment
   invocation only; normal Product conversation roots keep ADR-0096.
-- Would amend: Accepted ADR-0095's judgment child and DSH child-creation
+- Amends: Accepted ADR-0095's judgment child and DSH child-creation
   role-claim requirements. Accepted ADR-0094's per-Agent identity, ingress
   evidence and terminal rules remain mandatory. Historical ADR-0085 is not
   current Clean Break authority, but its bounded domain behavior is retained.
-- This proposal alone authorizes no conflicting implementation, version
-  change, default upgrade, PR push, merge or deployment.
+- Acceptance selects this design for the named judgment path. It is not
+  implementation, default upgrade, PR, merge or deployment qualification.
 
 ## Fixed-source and BYQ evidence
 
@@ -46,7 +46,7 @@ dedicated composition can therefore omit the subagent providers and tools,
 subject to inspecting the actual loaded plugin graph and proving there is no
 other child-creation path.
 
-## Proposed decision
+## Decision
 
 Run each admitted, named research-judgment request as **one dedicated DSH ACP
 root Agent**, not as a child of a model-facing root. The trusted Adapter
@@ -141,5 +141,5 @@ old SDK runner.
    the exact 0.1.5rc1 image/configuration rollback path and the original
    PR/release/deployment gates. Keyless probes are not Product acceptance.
 
-Until this ADR is accepted and these proofs pass, the affected judgment path
-and ACP default promotion remain blocked. The fixed official pin is unchanged.
+Until these proofs pass, the affected judgment path and ACP default promotion
+remain blocked. The fixed official pin is unchanged.
