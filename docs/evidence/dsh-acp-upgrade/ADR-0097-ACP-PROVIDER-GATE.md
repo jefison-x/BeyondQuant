@@ -97,6 +97,33 @@ has passed through it. The caller has not yet been wired to Backend admission
 or the trusted credential resolver. The selected model, secret and final loaded
 route still need an exact binding to the admitted Backend call at process start.
 
+## Stream terminal and usage slice
+
+All seven pinned adapter routes request streaming responses. The unwired
+`research_judgment_acp_provider_usage.py` parser consumes a bounded, complete
+SSE body and keeps terminal state separate from provider-reported token fields.
+Chat requires `[DONE]` plus `stop`, `end` or a tool-call finish reason;
+Responses requires `response.completed` with `status: completed`; Messages
+requires `message_start`, a supported `message_delta` stop reason and
+`message_stop`. Limit/error reasons and incomplete streams do not prove a
+completed provider response. Missing or malformed usage remains `unknown`, not
+zero. Anthropic's cumulative `message_delta.usage` replaces earlier values;
+cache-read and cache-write facts remain separate. For Chat and Responses, the
+provider's total prompt/input count includes cached input; this parser subtracts
+validated cache-read and cache-write counts to match the pinned pi-ai SDK's
+disjoint input fields. An impossible cache count makes the receipt unknown.
+Messages reports disjoint input and cache counts and is mapped directly.
+The Chat `[DONE]` and final
+frame-delimiter requirements are conservative: the pinned SDK may accept a
+stream that this helper rejects. Such a route needs local provider-stream proof
+before enablement; the helper must never loosen terminal evidence by inference.
+
+This is **PASS for isolated parser contracts only**. The current proxy does not
+call the parser. HTTP status, complete socket read, redirect, declared-output
+comparison, response-size enforcement before buffering, durable attempt marker
+and unknown-outcome stop remain separate gates. Parser `output_proven` alone
+cannot authorize another request, a business result or terminal ACK.
+
 ## Current BYQ proxy gaps
 
 The retained judgment `RequestGateProxy` is **not** a qualified ACP gate:

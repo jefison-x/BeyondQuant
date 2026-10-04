@@ -102,8 +102,13 @@ def admit_provider_request(
         raise AcpProviderRouteRejected("ACP provider body is invalid") from error
     if not isinstance(payload, dict) or payload.get("model") != selected_model:
         raise AcpProviderRouteRejected("ACP provider model differs from selection")
+    if payload.get("stream") is not True:
+        raise AcpProviderRouteRejected("ACP provider must use the qualified streaming path")
     if resolve_declared_output_tokens(payload)[1] is not None:
         raise AcpProviderRouteRejected("ACP provider output limit is missing or invalid")
+    if route.protocol == "chat" and "n" in payload \
+            and (type(payload["n"]) is not int or payload["n"] != 1):
+        raise AcpProviderRouteRejected("ACP Chat requires exactly one choice")
 
     normalized: dict[str, str] = {}
     for name, value in headers.items():

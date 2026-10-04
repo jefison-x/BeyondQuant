@@ -41,7 +41,7 @@ def _headers(protocol: str) -> dict[str, str]:
 
 def _body(protocol: str, *, model: str = "selected-model") -> bytes:
     limit = "max_output_tokens" if protocol == "responses" else "max_tokens"
-    return json.dumps({"model": model, limit: 32}).encode()
+    return json.dumps({"model": model, limit: 32, "stream": True}).encode()
 
 
 @pytest.mark.parametrize("name,target,upstream,protocol", _CASES)
@@ -96,6 +96,7 @@ def test_deepseek_rejects_files_discovery_and_altered_messages(target):
     b'{"model":"selected-model"}', b'{"model":"selected-model","max_tokens":0}',
     b'{"model":"other","model":"selected-model","max_tokens":32}',
     b'{"model":"selected-model","max_tokens":16,"max_tokens":32}',
+    b'{"model":"selected-model","max_tokens":32,"stream":false}',
 ])
 def test_model_and_declared_ceiling_are_closed(body):
     route = selected_route("opencode-go-messages")
@@ -137,3 +138,13 @@ def test_matching_shape_with_wrong_trusted_credential_is_rejected(name, target, 
         admit_provider_request(selected_route(name), target=target,
                                selected_model="selected-model", trusted_credential="other-key",
                                headers=_headers(protocol), body=_body(protocol))
+
+
+@pytest.mark.parametrize("choice_count", [0, 2, True])
+def test_chat_rejects_multiple_or_invalid_choice_count(choice_count):
+    body = json.dumps({"model": "selected-model", "max_tokens": 32,
+                       "stream": True, "n": choice_count}).encode()
+    with pytest.raises(AcpProviderRouteRejected, match="one choice"):
+        admit_provider_request(selected_route("opencode-go-chat"),
+                               target="/v1/chat/completions", selected_model="selected-model",
+                               trusted_credential="synthetic-key", headers=_headers("chat"), body=body)
