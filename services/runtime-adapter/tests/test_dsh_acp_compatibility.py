@@ -16,11 +16,11 @@ from app.compat.dsh_acp import (
 
 _SERVER = r'''import json, os, sys
 
-capture = os.environ["ACP_TEST_CAPTURE"]
+capture = os.environ.get("ACP_TEST_CAPTURE", os.path.join(os.environ["DSH_HOME"], "wire.jsonl"))
 session_id = "8b90c2b5-3a08-4eae-9fc7-04baf12910de"
 model_value = '["deepseek-official","deepseek-v4.1-flash"]'
 
-with open(os.environ["ACP_TEST_ENV_CAPTURE"], "w", encoding="utf-8") as output:
+with open(os.environ.get("ACP_TEST_ENV_CAPTURE", capture + ".env"), "w", encoding="utf-8") as output:
     json.dump({"legacy_mcp_token": os.environ.get("BYQ_MCP_TOKEN"),
         "backend_proof_token": os.environ.get("BYQ_MCP_BACKEND_PROOF_TOKEN"),
         "judgment_backend_proof_token": os.environ.get("BYQ_MCP_ACP_JUDGMENT_PROOF_TOKEN"),
@@ -40,6 +40,8 @@ with open(os.environ["ACP_TEST_ENV_CAPTURE"], "w", encoding="utf-8") as output:
         "product_mcp_url": os.environ.get("BYQ_MCP_PRODUCT_URL"),
         "deepseek_key": os.environ.get("DEEPSEEK_API_KEY"),
         "opencode_key": os.environ.get("OPENCODE_API_KEY"),
+        "node_options": os.environ.get("NODE_OPTIONS"),
+        "deepseek_base_url": os.environ.get("DEEPSEEK_BASE_URL"),
         "search_key": os.environ.get("DEEPSEEK_SEARCH_API_KEY"),
         "dsh_home": os.environ.get("DSH_HOME"),
         "dsh_session_root": os.environ.get("DSH_SESSION_ROOT")}, output)
@@ -54,7 +56,9 @@ def send(message):
 
 def config_options():
     return [{"id": "model", "options": [{"group": "deepseek-official",
-        "options": [{"value": model_value, "name": "DeepSeek V4.1 Flash"}]}]}]
+        "options": [{"value": model_value, "name": "DeepSeek V4.1 Flash"}]},
+        {"group": "opencode-go-chat", "options": [{"value":
+        '["opencode-go-chat","deepseek-v4.1-flash"]', "name": "OpenCode Go Flash"}]}]}]
 
 def update(params):
     send({"jsonrpc":"2.0", "method":"session/update", "params":params})
@@ -146,10 +150,8 @@ def _harness(tmp_path: Path, capture: Path, *, boot_id: str = "b" * 32):
     return compatibility, harness
 
 
-def _judgment_identity_environment(capture: Path) -> dict[str, str]:
+def _judgment_identity_environment() -> dict[str, str]:
     return {
-        "ACP_TEST_CAPTURE": str(capture),
-        "ACP_TEST_ENV_CAPTURE": str(capture.with_name(capture.name + ".env")),
         "BYQ_MCP_URL": "http://mcp.judgment.test/mcp/v1",
         "BYQ_MCP_PRODUCT_URL": "http://mcp.product.test/mcp/v1",
         "BYQ_MCP_ACP_IDENTITY_MODE": "research-judgment-root-v1",
@@ -244,20 +246,30 @@ def test_official_acp_stdio_lifecycle_and_scoped_mcp_identity_resume(tmp_path: P
     assert "reasoning-never-public" not in repr(observations)
 
 
+@pytest.mark.parametrize(("provider", "model", "selected_key"), [
+    ("deepseek-official", "deepseek-v4.1-flash", "DEEPSEEK_API_KEY"),
+    ("opencode-go-chat", "deepseek-v4.1-flash", "OPENCODE_API_KEY"),
+])
 def test_judgment_identity_mode_is_explicit_and_process_scope_has_only_its_credential(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch, provider: str, model: str, selected_key: str,
 ) -> None:
-    capture = tmp_path / "judgment-root.jsonl"
+    monkeypatch.setenv("NODE_OPTIONS", "--require=ambient-must-not-leak")
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "http://ambient-must-not-leak.test")
     composition = tmp_path / "judgment-composition.yml"
     composition.write_text("[]\n", encoding="utf-8")
     session_root = tmp_path / "sessions" / "judgment-root"
     session_root.mkdir(parents=True)
+    capture = session_root / "wire.jsonl"
     compatibility = DshAcpCompatibility()
+    environment = _judgment_identity_environment()
+    if selected_key == "OPENCODE_API_KEY":
+        environment.pop("DEEPSEEK_API_KEY")
+        environment["OPENCODE_API_KEY"] = "test-only-opencode-key"
     harness = compatibility.build_harness(
-        provider="deepseek-official", model="deepseek-v4.1-flash",
+        provider=provider, model=model,
         composition=composition, session_root=session_root,
         runtime_command=(sys.executable, "-u", "-c", _SERVER),
-        environment=_judgment_identity_environment(capture),
+        environment=environment,
     )
     try:
         compatibility.start(harness)
@@ -274,6 +286,10 @@ def test_judgment_identity_mode_is_explicit_and_process_scope_has_only_its_crede
         "synthetic-judgment-signing-key-0123456789"
     assert child_environment["mcp_url"] == "http://mcp.judgment.test/mcp/v1"
     assert child_environment["product_mcp_url"] == "http://mcp.product.test/mcp/v1"
+    assert child_environment["deepseek_key"] == ("test-only-model-key" if selected_key == "DEEPSEEK_API_KEY" else None)
+    assert child_environment["opencode_key"] == ("test-only-opencode-key" if selected_key == "OPENCODE_API_KEY" else None)
+    assert child_environment["node_options"] is None
+    assert child_environment["deepseek_base_url"] is None
     for name in (
         "legacy_mcp_token", "backend_proof_token", "judgment_backend_proof_token",
         "credential_resolver_token",
@@ -285,6 +301,60 @@ def test_judgment_identity_mode_is_explicit_and_process_scope_has_only_its_crede
     assert any(item.get("method") == "session/new" for item in requests)
     assert not any(item.get("method") == "session/prompt" for item in requests)
     assert native_id in harness.native_session_ids
+
+
+@pytest.mark.parametrize("unapproved_key", [
+    "NODE_OPTIONS", "DEEPSEEK_BASE_URL", "OPENCODE_API_KEY",
+    "BYQ_PROVIDER_SESSION_ID", "ACP_TEST_CAPTURE",
+])
+def test_judgment_process_rejects_unlisted_explicit_environment(
+    tmp_path: Path, unapproved_key: str,
+) -> None:
+    composition = tmp_path / "composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    environment = _judgment_identity_environment()
+    environment[unapproved_key] = "unapproved"
+    with pytest.raises(AcpTransportError, match="unapproved entries"):
+        DshAcpCompatibility().build_harness(
+            provider="deepseek-official", model="deepseek-v4.1-flash",
+            composition=composition, session_root=tmp_path / "root",
+            runtime_command=(sys.executable, "-u", "-c", _SERVER),
+            environment=environment,
+        )
+
+
+@pytest.mark.parametrize(("changed_key", "changed_value"), [
+    ("NODE_OPTIONS", "--require=unapproved"),
+    ("BYQ_MCP_ACP_IDENTITY_MODE", "product"),
+])
+def test_judgment_process_rechecks_environment_before_start(
+    tmp_path: Path, changed_key: str, changed_value: str,
+) -> None:
+    composition = tmp_path / "composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    compatibility = DshAcpCompatibility()
+    harness = compatibility.build_harness(
+        provider="deepseek-official", model="deepseek-v4.1-flash",
+        composition=composition, session_root=tmp_path / "root",
+        runtime_command=(sys.executable, "-u", "-c", _SERVER),
+        environment=_judgment_identity_environment(),
+    )
+    harness.environment[changed_key] = changed_value
+    with pytest.raises(AcpTransportError):
+        compatibility.start(harness)
+    assert harness.process is None
+
+
+def test_judgment_process_rejects_unselected_provider(tmp_path: Path) -> None:
+    composition = tmp_path / "composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    with pytest.raises(AcpTransportError, match="unapproved entries"):
+        DshAcpCompatibility().build_harness(
+            provider="unqualified-provider", model="model",
+            composition=composition, session_root=tmp_path / "root",
+            runtime_command=(sys.executable, "-u", "-c", _SERVER),
+            environment=_judgment_identity_environment(),
+        )
 
 
 @pytest.mark.parametrize(
@@ -305,7 +375,7 @@ def test_judgment_identity_rejects_product_or_stale_credentials_even_when_empty(
     composition.write_text("[]\n", encoding="utf-8")
     session_root = tmp_path / "sessions" / "root-1"
     session_root.mkdir(parents=True)
-    environment = _judgment_identity_environment(tmp_path / "wire.jsonl")
+    environment = _judgment_identity_environment()
     environment[forbidden_key] = ""
     with pytest.raises(AcpTransportError, match="contains Product credentials"):
         DshAcpCompatibility().build_harness(

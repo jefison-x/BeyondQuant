@@ -42,6 +42,11 @@ _ACP_JUDGMENT_PROCESS_ENV = frozenset({
     "BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY",
     "BYQ_MCP_PRODUCT_URL",
 })
+_ACP_JUDGMENT_ALLOWED_ENV = _ACP_JUDGMENT_PROCESS_ENV | frozenset({
+    "BYQ_MCP_URL", "BYQ_RUNTIME_BOOT_ID", "BYQ_OWNER_PRINCIPAL",
+    "BYQ_WORKSPACE_ID", "BYQ_ACTOR_PRINCIPAL", "BYQ_TRACE_ID",
+    "BYQ_SESSION_ID", "BYQ_DSH_RUN_ID", "BYQ_ROOT_RUN_ID",
+})
 _ACP_JUDGMENT_FORBIDDEN_ENV = frozenset({
     "BYQ_MCP_ACP_DISCOVERY_TOKEN",
     "BYQ_MCP_ACP_SIGNING_KEY",
@@ -510,6 +515,7 @@ class DshAcpCompatibility:
         ):
             raise ValueError("candidate DSH ACP environment is invalid")
         self._validate_runtime_identity(environment)
+        self._validate_judgment_process_environment(environment, provider)
         self._mcp_servers(environment)
         home.mkdir(parents=True, exist_ok=True)
         return AcpHarness(
@@ -526,6 +532,8 @@ class DshAcpCompatibility:
         with harness.lock:
             if harness.process is not None:
                 return
+            self._validate_runtime_identity(harness.environment)
+            self._validate_judgment_process_environment(harness.environment, harness.provider)
             command = [*harness.runtime_command, "--profile", "acp", "--patch", str(harness.composition)]
             environment = {
                 key: os.environ[key]
@@ -886,6 +894,18 @@ class DshAcpCompatibility:
                     or re.fullmatch(r"continuation_[0-9a-f]{32}", reservation_id) is None):
                 raise AcpTransportError("continuation MCP authority identity is invalid")
         return []
+
+    @staticmethod
+    def _validate_judgment_process_environment(
+        environment: dict[str, str], provider: str,
+    ) -> None:
+        if environment.get(_ACP_IDENTITY_MODE_ENV) != _ACP_JUDGMENT_ROOT_MODE:
+            return
+        provider_key = ("DEEPSEEK_API_KEY" if provider == "deepseek-official"
+                        else "OPENCODE_API_KEY" if provider.startswith("opencode-")
+                        else None)
+        if provider_key is None or set(environment) - (_ACP_JUDGMENT_ALLOWED_ENV | {provider_key}):
+            raise AcpTransportError("ACP judgment process environment contains unapproved entries")
 
     @staticmethod
     def _validate_runtime_identity(environment: dict[str, str]) -> None:
