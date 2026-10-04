@@ -1,150 +1,145 @@
-# ADR-0097 — Proposed Product ACP judgment process scope
+# ADR-0097 — Proposed dedicated ACP root for research judgment
 
-- Status: **Proposed — maintainer decision required** (2026-10-04).
-- Scope: fixed official `dsh-v0.2.0-rc.2` Product ACP research-judgment
-  invocation only. This does not change the normal Product conversation root.
-- Would amend: Accepted ADR-0095's requirement that the judgment role claim
-  come from an official DSH child-creation role field. ADR-0088 and the Clean
-  Break baseline remain authoritative; ADR-0085 remains historical context.
-- No implementation, version change, Product Phase change, PR, merge or
-  deployment is authorized by this proposal alone.
+- Status: **Proposed — maintainer decision required** (revised 2026-10-04).
+- Scope: fixed official dsh-v0.2.0-rc.2 Product ACP research-judgment
+  invocation only; normal Product conversation roots keep ADR-0096.
+- Would amend: Accepted ADR-0095's judgment child and DSH child-creation
+  role-claim requirements. Accepted ADR-0094's per-Agent identity, ingress
+  evidence and terminal rules remain mandatory. Historical ADR-0085 is not
+  current Clean Break authority, but its bounded domain behavior is retained.
+- This proposal alone authorizes no conflicting implementation, version
+  change, default upgrade, PR push, merge or deployment.
 
-## Evidence and problem
+## Fixed-source and BYQ evidence
 
-ADR-0095 permits the judgment child's model to see the Product MCP catalog
-but requires every forbidden call to be denied before the Product MCP handler
-or Backend ingress. The current BYQ ACP identity plugin signs root, native
-Agent, parent, origin and depth, but no judgment role. It mounts each Agent's
-executable MCP client at official `agent/created`.
+The official pinned DSH toolFilter applies to inherited registrations; it does
+not remove registrations made in the child's own scope. BYQ's ACP identity
+plugin mounts a full Product MCP client into each Agent's scope. The keyless
+child probe therefore saw all 13 fixture tools despite the five-tool filter.
+ADR-0095 now allows this visibility but requires a trusted call-time role
+guard.
 
-In the pinned official source, a child's creation header contains parent,
-origin and depth, but no invoking `tool-subagent` instance or trusted role
-(`packages/subagent/subagent/src/child-agent.ts:139`). The one-shot
-`subagent/descriptor` contains provider and a model-supplied description,
-not the invoking tool identity (`descriptor.ts:50`). Its append occurs on
-`agent/pre-step`, after the child's creation hook
-(`subagent-in-process-driver/src/index.ts:80`). The `subagent/start` event
-contains child ID, provider and locality, but no invoking tool identity
-(`subagent/src/types.ts:75`); it is emitted after publication. None of these
-observations proves that the child was created by the configured
-`byq_research_judgment_turn` tool before BYQ issues an executable MCP token.
-The model's description/persona and a guessed child ID remain unsuitable
-authority. A narrow keyless probe of the exact hook ordering and every
-alternative trusted field remains a qualification step; this source audit
-does not claim that no other official extension exists.
+The inspected pinned child creation path records parent, origin and depth, not
+the invoking tool instance (packages/subagent/subagent/src/child-agent.ts).
+The one-shot descriptor arrives after agent/created and its label is
+model-supplied; subagent/start also lacks the invoking tool identity. No
+trusted role field was identified in those inspected paths. A complete
+official hook audit and dynamic ordering proof remain NOT_RUN. Parent and
+depth alone must not authorize a child as the judgment role.
 
-BYQ already has a trusted, authenticated
-`/internal/runtime/research-judgment/{task_id}/run` entry that binds one task
-and call identity, asks Backend to admit the stage, and launches a dedicated
-DSH process/composition. The retained `0.1.5rc1` implementation is evidence
-of this ownership boundary, not an ACP implementation or acceptance test.
-That runner operates outside a RuntimeAdapter conversation session. Its
-`adapter_invocation_id` is temporary and explicitly not a persisted
-RuntimeGeneration (`research_judgment_api.py:86-91,123-132`); its research
-stage result receipt is not a BYQ root terminal ACK. Neither root lifecycle
-nor terminal settlement is inherited from the existing entry.
+BYQ already has an authenticated, task/call-bound judgment entry
+(services/runtime-adapter/app/research_judgment_api.py) and an isolated
+read-only MCP server mode (services/mcp/src/server.ts,
+BYQ_MCP_READ_ONLY_SUBSET=1) that registers exactly five bounded read tools on
+a separate port and token. The retained SDK composition connects only to that
+endpoint. These are reusable ownership and network boundaries, **not** ACP
+integration proof. The present runner is outside a RuntimeAdapter conversation
+session; its temporary adapter_invocation_id is not a persisted
+RuntimeGeneration, and its stage result receipt is not a BYQ root terminal
+ACK. The current read-only mode skips some actor/boot validation
+(server.ts:385-388); this is an ACP implementation gate, not an existing
+signed-root security guarantee.
+
+The official pinned DSH subagent documentation says mounting the subagent
+service alone does not delegate: delegation requires a mounted tool. A
+dedicated composition can therefore omit the subagent providers and tools,
+subject to inspecting the actual loaded plugin graph and proving there is no
+other child-creation path.
 
 ## Proposed decision
 
-Use the **dedicated judgment process** as the trusted capability boundary
-instead of inferring a role from a generic child. The Runtime Adapter may
-launch that process only after the exact Backend research-judgment admission;
-the normal Product conversation process cannot select this mode. Reuse the
-same official DSH ACP transport and Agent machinery, with a separately
-attested dedicated composition; do not fork DSH or create another generic
-Agent harness.
+Run each admitted, named research-judgment request as **one dedicated DSH ACP
+root Agent**, not as a child of a model-facing root. The trusted Adapter
+selects this mode after exact Backend stage admission. No Gateway/Product
+input or normal Product DSH Agent may select it. Keep the same official DSH
+ACP transport and Agent loop; the separate composition and process are a
+task-specific invocation, not another generic harness or an Engineering grant.
 
-The Adapter supplies a process-scoped, non-model-controlled judgment marker
-bound to the exact task, call, owner/workspace, BYQ root, boot and generation.
-The BYQ identity plugin signs this scope into each root/child Agent token
-alongside the existing native lineage. Product MCP verifies the signed scope
-on **every** `tools/call` before handler or Backend ingress, including direct
-MCP requests outside DSH's dispatcher:
+The dedicated composition mounts the Agent-scoped BYQ identity client only
+against the isolated five-tool read-only MCP endpoint. It mounts no subagent
+provider, delegation/control/fork tool, shell, filesystem, job or other local
+execution surface. Its immutable process scope binds task, call,
+owner/workspace, BYQ root, Adapter boot and durable generation. The identity
+plugin signs those claims with the native root Agent ID. The read-only MCP
+server verifies scope and root identity on every tools/call before handler or
+Backend ingress; a direct MCP request with this credential remains limited to
+the same five reads. The ACP path must use a distinct signed credential, not
+the retained SDK runner's static read-only bearer plus client-provided
+identity headers. Main and read-only MCP must reject each other's ACP
+credentials; distinct keys and an explicit audience check require
+qualification. The model may see only the dedicated endpoint's catalog;
+ADR-0095 permits extra visibility but does not require it.
+The retained static read-only bearer and self-reported identity headers must
+not bypass ACP root, AgentRun or terminal admission for the new path.
 
-- The dedicated root may use the one configured local judgment delegation
-  tool but no Product MCP business tool.
-- Only its depth-one child may execute the five bounded judgment reads.
-  Other model-visible Product MCP tools return a denied result without
-  invoking their handler, Backend ingress or an external side effect.
-- Depth greater than one, a missing/mismatched process scope, wrong parent,
-  stale root/boot/generation, or ambiguous role proof fails closed. DSH's
-  pre-execute guard also denies non-MCP local tools and enforces depth one.
+This removes the unprovable **child role attribution** from this one named
+judgment path. It does not remove Product-wide per-Agent identity or call
+evidence. If a child is created despite the composition, it receives no
+judgment authority and the turn fails closed.
 
-Process scope represents a judgment role only if the attested dedicated
-composition has **exactly one child-creation route**, the configured judgment
-delegation tool. Remove or deny `fork`, `control`, other subagent providers,
-and any alternate child-creation path before issuing child MCP authority.
-Audit the actual loaded official plugin/tool graph and test each reachable
-route. If another route can create a depth-one child, process scope alone is
-insufficient and that child's five-read authority must fail closed.
+The ACP judgment path must create and persist a distinct BYQ Backend root for
+the exact admitted task/call before launching DSH or issuing MCP identity.
+Bind root, owner/workspace, call identity, Adapter boot/authority and durable
+generation; the temporary invocation ID cannot substitute for this. Register
+the native root AgentRun through a trusted non-model control path under a
+dedicated least-privilege judgment role before any business read. The model
+must neither call byq_agent_run_start nor choose its role.
 
-The ACP judgment path must create and persist a **distinct BYQ Backend root**
-for the exact admitted task/call before launching the process or issuing its
-MCP identity. Bind root, owner/workspace, call identity, current Adapter
-boot/authority and a durable generation to the dedicated invocation; the
-temporary `adapter_invocation_id` cannot stand in for that binding. Register
-root and child native Agents under this root before any business read. Commit
-the research stage result through the existing exact-call idempotency path,
-then close this root with its complete ingress/unknown-outcome evidence and
-obtain the exact Backend terminal ACK before reporting the turn settled or
-releasing another invocation. A lost response to result commit or root close
-remains unknown and must be reconciled by exact receipt; it cannot trigger a
-second model or business call. The implementation must define and test the
-durable state transitions across admission, root creation, registration,
-result commit, close and ACK, including crash windows. This is new work,
-not a capability of the retained SDK runner.
+Commit the stage result through the existing exact-call idempotency path, then
+close the BYQ root with complete ingress and unknown-outcome evidence. Obtain
+its exact Backend terminal ACK before reporting settlement or releasing
+another invocation. A lost result or close response stays unknown until exact
+receipt reconciliation; do not repeat the model or business call. Persist and
+test the transitions across admission, root creation, registration, result
+commit, close and ACK. This lifecycle is **new work**, not inherited from the
+old SDK runner.
 
-The five reads require native AgentRun registration. Product MCP/Backend must
-provide a trusted, non-model registration path for the exact root and child,
-with a dedicated least-privilege judgment role and exact parent binding.
-`byq_agent_run_start` must not become a sixth model-executable tool, and the
-model must not choose the role. Unknown registration or business outcome
-retains the existing fail-closed reconciliation and terminal ACK rules.
+## Alternatives evaluated
 
-The dedicated composition must disable shell, filesystem, job, unrestricted
-delegation and other non-MCP execution surfaces. It must set the judgment
-tool's `maxDepth: 1` only after the MCP dispatch guard and registration path
-are qualified. A separate process is a task-specific DSH invocation under
-the existing Adapter, not a second Agent harness or Engineering grant.
+1. **Dedicated ACP process with a judgment child** (previous ADR-0097 draft):
+   preserves the child shape but requires proving that the judgment tool is
+   the sole child-creation route. Otherwise any other depth-one child could
+   inherit process-scoped authority. It also still needs the new BYQ root,
+   AgentRun and terminal lifecycle. More moving parts, no demonstrated Product
+   benefit for this named turn.
+2. **Official DSH provider/plugin supplies a trusted tool-instance claim at
+   child creation**: would preserve ADR-0095 exactly and support other
+   role-specific children. The inspected fixed-source events do not expose
+   that claim. A supported extension or upstream fix would need a narrow
+   proof; a new DSH tag requires a separate pin and qualification decision.
+3. **Global rather than Agent-scoped MCP registration with toolFilter**: the
+   pinned filter could hide inherited tools, but BYQ has not shown how one
+   global client safely supplies distinct signed root/child headers or
+   prevents direct MCP use. Do not trade away ADR-0094 lineage evidence for
+   a smaller model catalog.
+4. **ACP permission prompt, DSH pre-execute guard, or persona alone**: useful
+   as defense in depth, but none establishes role identity or blocks direct
+   MCP requests with a valid Agent credential. They cannot replace the
+   MCP/Backend boundary.
+5. **Keep the retained 0.1.5rc1 judgment runner**: safe rollback and viable
+   deferral if root-only ACP qualification fails; this does not make the fixed
+   ACP candidate a complete default Product replacement.
 
-## Rejected and fallback paths
+## Qualification before promotion
 
-- Do not sign a judgment role from a model-written description, persona text,
-  tool arguments, native session ID or parent/depth alone. Other depth-one
-  Product delegates may need different capabilities.
-- Do not rely only on DSH `tools/pre-execute`; a still-valid Agent token can
-  call Product MCP directly, so MCP must enforce the same scope before each
-  handler.
-- If the dedicated process cannot be proven exclusive to the trusted
-  judgment entry, or cannot register the child without model authority,
-  retain ADR-0095's fail-closed block. The earlier official scoped-filter
-  route remains an alternative future ADR decision, not an automatic version
-  change.
+1. Confirm the pinned official plugin graph contains no executable child or
+   local side-effect route in the dedicated composition. Verify dedicated mode
+   cannot be selected by normal Product chat, another DSH Agent or an
+   untrusted caller. A root-only keyless ACP probe must show one native root,
+   five reads and no child.
+2. Verify separate endpoint, token and audience; correct owner/task/call/root
+   binding; allowed reads; direct-MCP forbidden calls; two-user isolation;
+   late/stale token denial; and no handler/Backend entry on a denied call.
+   Exercise the retained static bearer and forged identity headers against
+   the new path to prove they cannot bypass signed-root admission.
+3. Prove trusted root AgentRun registration, persisted BYQ root/generation,
+   exact stage-result idempotency, ingress/unknown reconciliation and exact
+   Backend terminal ACK across crash and lost-response windows. The existing
+   stage result receipt alone is insufficient.
+4. Verify the actual Gateway/Product integration and user-visible behavior,
+   then obtain independent Tester and Reviewer checks and Root PASS. Preserve
+   the exact 0.1.5rc1 image/configuration rollback path and the original
+   PR/release/deployment gates. Keyless probes are not Product acceptance.
 
-## Qualification before accepting implementation
-
-1. Prove the exact official hook order and absence/presence of a usable
-   trusted tool-instance role field at child creation, with fixed-source
-   keyless evidence. Prove that the dedicated mode cannot be selected through
-   Gateway/Product input or by a normal Product DSH Agent; inspect all loaded
-   child-creation routes and prove only the judgment tool remains executable.
-2. In the actual dedicated ACP composition, inspect root and child catalogs,
-   create exactly one depth-one judgment child, and reject a grandchild.
-   The model-visible extra schemas are permitted; execution is not.
-3. Exercise each allowed read and representative forbidden write, approval,
-   execution, routing, identity, job and out-of-role read calls through both
-   DSH and direct MCP using signed root/child tokens. Denials must precede
-   handler and Backend ingress, with exact audit evidence.
-4. Prove persisted, exact-call Backend root creation, trusted root/child
-   AgentRun registration and correct parent binding, including crash windows
-   between admission, result commit, root close and ACK. Prove two-user
-   isolation, stale/late token rejection, process restart and unknown-result
-   behavior. Obtain exact Backend terminal ACK; do not replay an interrupted
-   model or business call.
-5. Run independent Tester and Reviewer on the actual diff, then Root
-   qualification and the original image, Product API/browser, PR and release
-   gates. Preserve the exact `0.1.5rc1` image/configuration rollback path.
-
-Until this amendment is accepted and these proofs pass, leave the affected
-ACP judgment execution and default promotion blocked. Local source audits
-and keyless probes may continue without changing the fixed candidate pin.
+Until this ADR is accepted and these proofs pass, the affected judgment path
+and ACP default promotion remain blocked. The fixed official pin is unchanged.
