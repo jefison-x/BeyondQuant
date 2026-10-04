@@ -35,6 +35,10 @@ _MODEL_CONFIG_ID = "model"
 _ROOT_BINDING_MARKER = ".byq-acp-root-binding.json"
 _ACP_IDENTITY_MODE_ENV = "BYQ_MCP_ACP_IDENTITY_MODE"
 _ACP_JUDGMENT_ROOT_MODE = "research-judgment-root-v1"
+_ACP_JUDGMENT_OPENCODE_ROUTES = frozenset({
+    "opencode-go-responses", "opencode-go-chat", "opencode-go-messages",
+    "opencode-zen-responses", "opencode-zen-chat", "opencode-zen-messages",
+})
 _ACP_JUDGMENT_PROCESS_ENV = frozenset({
     _ACP_IDENTITY_MODE_ENV,
     "BYQ_MCP_ACP_JUDGMENT_TASK_ID",
@@ -902,7 +906,7 @@ class DshAcpCompatibility:
         if environment.get(_ACP_IDENTITY_MODE_ENV) != _ACP_JUDGMENT_ROOT_MODE:
             return
         provider_key = ("DEEPSEEK_API_KEY" if provider == "deepseek-official"
-                        else "OPENCODE_API_KEY" if provider.startswith("opencode-")
+                        else "OPENCODE_API_KEY" if provider in _ACP_JUDGMENT_OPENCODE_ROUTES
                         else None)
         if provider_key is None or set(environment) - (_ACP_JUDGMENT_ALLOWED_ENV | {provider_key}):
             raise AcpTransportError("ACP judgment process environment contains unapproved entries")

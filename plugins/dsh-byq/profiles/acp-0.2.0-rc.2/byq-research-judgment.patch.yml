@@ -153,7 +153,8 @@
           mode: normal
           maxRetries: 0
         api: anthropic-messages
-        baseURL: https://opencode.ai/zen/go/v1
+        # The pinned Anthropic SDK appends /v1/messages itself.
+        baseURL: https://opencode.ai/zen/go
         models:
           - id: minimax-m3
           - id: qwen3.8-max
@@ -187,7 +188,7 @@
           mode: normal
           maxRetries: 0
         api: anthropic-messages
-        baseURL: https://opencode.ai/zen/v1
+        baseURL: https://opencode.ai/zen
         models:
           - id: claude-opus-5
           - id: claude-sonnet-5

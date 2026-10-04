@@ -345,12 +345,15 @@ def test_judgment_process_rechecks_environment_before_start(
     assert harness.process is None
 
 
-def test_judgment_process_rejects_unselected_provider(tmp_path: Path) -> None:
+@pytest.mark.parametrize("provider", ["unqualified-provider", "opencode-unqualified"])
+def test_judgment_process_rejects_unselected_provider(
+    tmp_path: Path, provider: str,
+) -> None:
     composition = tmp_path / "composition.yml"
     composition.write_text("[]\n", encoding="utf-8")
     with pytest.raises(AcpTransportError, match="unapproved entries"):
         DshAcpCompatibility().build_harness(
-            provider="unqualified-provider", model="model",
+            provider=provider, model="model",
             composition=composition, session_root=tmp_path / "root",
             runtime_command=(sys.executable, "-u", "-c", _SERVER),
             environment=_judgment_identity_environment(),
