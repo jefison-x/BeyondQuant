@@ -150,6 +150,10 @@ def _harness(tmp_path: Path, capture: Path, *, boot_id: str = "b" * 32):
     return compatibility, harness
 
 
+JUDGMENT_LOCAL_TOKEN = "byq-acp-proxy-" + "A" * 43
+JUDGMENT_OTHER_LOCAL_TOKEN = "byq-acp-proxy-" + "B" * 43
+
+
 def _judgment_identity_environment() -> dict[str, str]:
     return {
         "BYQ_MCP_URL": "http://mcp.judgment.test/mcp/v1",
@@ -166,7 +170,7 @@ def _judgment_identity_environment() -> dict[str, str]:
         "BYQ_SESSION_ID": "judgment-session-1",
         "BYQ_DSH_RUN_ID": "generation-judgment-1",
         "BYQ_ROOT_RUN_ID": "c" * 32,
-        "DEEPSEEK_API_KEY": "test-only-model-key",
+        "DEEPSEEK_API_KEY": JUDGMENT_LOCAL_TOKEN,
     }
 
 
@@ -276,7 +280,7 @@ def test_judgment_identity_mode_is_explicit_and_process_scope_has_only_its_crede
     environment = _judgment_identity_environment()
     if selected_key == "OPENCODE_API_KEY":
         environment.pop("DEEPSEEK_API_KEY")
-        environment["OPENCODE_API_KEY"] = "test-only-opencode-key"
+        environment["OPENCODE_API_KEY"] = JUDGMENT_OTHER_LOCAL_TOKEN
     private_patch, proxy_base = _judgment_private_patch(tmp_path, provider, model)
     harness = compatibility.build_harness(
         provider=provider, model=model,
@@ -284,6 +288,8 @@ def test_judgment_identity_mode_is_explicit_and_process_scope_has_only_its_crede
         runtime_command=(sys.executable, "-u", "-c", _SERVER),
         environment=environment,
         private_provider_patch=private_patch, provider_proxy_base_url=proxy_base,
+        provider_local_token=(JUDGMENT_LOCAL_TOKEN if selected_key == "DEEPSEEK_API_KEY"
+                              else JUDGMENT_OTHER_LOCAL_TOKEN),
     )
     try:
         compatibility.start(harness)
@@ -300,8 +306,8 @@ def test_judgment_identity_mode_is_explicit_and_process_scope_has_only_its_crede
         "synthetic-judgment-signing-key-0123456789"
     assert child_environment["mcp_url"] == "http://mcp.judgment.test/mcp/v1"
     assert child_environment["product_mcp_url"] == "http://mcp.product.test/mcp/v1"
-    assert child_environment["deepseek_key"] == ("test-only-model-key" if selected_key == "DEEPSEEK_API_KEY" else None)
-    assert child_environment["opencode_key"] == ("test-only-opencode-key" if selected_key == "OPENCODE_API_KEY" else None)
+    assert child_environment["deepseek_key"] == (JUDGMENT_LOCAL_TOKEN if selected_key == "DEEPSEEK_API_KEY" else None)
+    assert child_environment["opencode_key"] == (JUDGMENT_OTHER_LOCAL_TOKEN if selected_key == "OPENCODE_API_KEY" else None)
     assert child_environment["node_options"] is None
     assert child_environment["deepseek_base_url"] is None
     for name in (
@@ -333,13 +339,44 @@ def test_judgment_process_rejects_unlisted_explicit_environment(
             provider="deepseek-official", model="deepseek-v4.1-flash",
             composition=composition, session_root=tmp_path / "root",
             runtime_command=(sys.executable, "-u", "-c", _SERVER),
-            environment=environment,
+            environment=environment, provider_local_token=JUDGMENT_LOCAL_TOKEN,
+        )
+
+
+def test_judgment_process_rejects_real_provider_key_instead_of_local_token(
+    tmp_path: Path,
+) -> None:
+    composition = tmp_path / "composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    environment = _judgment_identity_environment()
+    environment["DEEPSEEK_API_KEY"] = "synthetic-real-provider-key"
+    with pytest.raises(AcpTransportError, match="local provider token"):
+        DshAcpCompatibility().build_harness(
+            provider="deepseek-official", model="deepseek-v4.1-flash",
+            composition=composition, session_root=tmp_path / "root",
+            runtime_command=(sys.executable, "-u", "-c", _SERVER),
+            environment=environment, provider_local_token=JUDGMENT_LOCAL_TOKEN,
+        )
+
+
+def test_judgment_process_rejects_other_well_formed_local_token(tmp_path: Path) -> None:
+    composition = tmp_path / "composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    environment = _judgment_identity_environment()
+    environment["DEEPSEEK_API_KEY"] = JUDGMENT_OTHER_LOCAL_TOKEN
+    with pytest.raises(AcpTransportError, match="exact local provider token"):
+        DshAcpCompatibility().build_harness(
+            provider="deepseek-official", model="deepseek-v4.1-flash",
+            composition=composition, session_root=tmp_path / "root",
+            runtime_command=(sys.executable, "-u", "-c", _SERVER),
+            environment=environment, provider_local_token=JUDGMENT_LOCAL_TOKEN,
         )
 
 
 @pytest.mark.parametrize(("changed_key", "changed_value"), [
     ("NODE_OPTIONS", "--require=unapproved"),
     ("BYQ_MCP_ACP_IDENTITY_MODE", "product"),
+    ("DEEPSEEK_API_KEY", JUDGMENT_OTHER_LOCAL_TOKEN),
 ])
 def test_judgment_process_rechecks_environment_before_start(
     tmp_path: Path, changed_key: str, changed_value: str,
@@ -355,6 +392,7 @@ def test_judgment_process_rechecks_environment_before_start(
         runtime_command=(sys.executable, "-u", "-c", _SERVER),
         environment=_judgment_identity_environment(),
         private_provider_patch=private_patch, provider_proxy_base_url=proxy_base,
+        provider_local_token=JUDGMENT_LOCAL_TOKEN,
     )
     harness.environment[changed_key] = changed_value
     with pytest.raises(AcpTransportError):
@@ -375,13 +413,14 @@ def test_judgment_private_provider_patch_is_last_and_rechecked_before_start(tmp_
     composition.write_text("[]\n", encoding="utf-8")
     environment = _judgment_identity_environment()
     environment.pop("DEEPSEEK_API_KEY")
-    environment["OPENCODE_API_KEY"] = "synthetic-key"
+    environment["OPENCODE_API_KEY"] = JUDGMENT_OTHER_LOCAL_TOKEN
     compatibility = DshAcpCompatibility()
     harness = compatibility.build_harness(
         provider="opencode-go-chat", model="synthetic-model", composition=composition,
         session_root=tmp_path / "root", runtime_command=(sys.executable, "-u", "-c", _SERVER),
         environment=environment, private_provider_patch=patch,
-        provider_proxy_base_url=base)
+        provider_proxy_base_url=base,
+        provider_local_token=JUDGMENT_OTHER_LOCAL_TOKEN)
     compatibility.start(harness)
     try:
         assert harness.process.command[-4:] == (
@@ -401,7 +440,8 @@ def test_judgment_root_refuses_start_without_private_provider_patch(tmp_path: Pa
             provider="deepseek-official", model="deepseek-v4.1-flash",
             composition=composition, session_root=tmp_path / "root",
             runtime_command=(sys.executable, "-u", "-c", _SERVER),
-            environment=_judgment_identity_environment())
+            environment=_judgment_identity_environment(),
+            provider_local_token=JUDGMENT_LOCAL_TOKEN)
 
 
 def test_product_root_cannot_add_private_provider_patch(tmp_path: Path) -> None:
@@ -423,6 +463,19 @@ def test_product_root_cannot_add_private_provider_patch(tmp_path: Path) -> None:
             private_provider_patch=patch, provider_proxy_base_url=base)
 
 
+def test_product_root_cannot_receive_judgment_local_provider_token(tmp_path: Path) -> None:
+    composition = tmp_path / "composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    with pytest.raises(AcpTransportError, match="requires judgment root"):
+        DshAcpCompatibility().build_harness(
+            provider="deepseek-official", model="deepseek-v4.1-flash",
+            composition=composition, session_root=tmp_path / "root",
+            runtime_command=(sys.executable, "-u", "-c", _SERVER),
+            environment=_identity_environment(tmp_path / "capture.jsonl"),
+            provider_local_token=JUDGMENT_LOCAL_TOKEN,
+        )
+
+
 @pytest.mark.parametrize("provider", ["unqualified-provider", "opencode-unqualified"])
 def test_judgment_process_rejects_unselected_provider(
     tmp_path: Path, provider: str,
@@ -435,6 +488,7 @@ def test_judgment_process_rejects_unselected_provider(
             composition=composition, session_root=tmp_path / "root",
             runtime_command=(sys.executable, "-u", "-c", _SERVER),
             environment=_judgment_identity_environment(),
+            provider_local_token=JUDGMENT_LOCAL_TOKEN,
         )
 
 
@@ -463,6 +517,7 @@ def test_judgment_identity_rejects_product_or_stale_credentials_even_when_empty(
             provider="deepseek-official", model="deepseek-v4.1-flash",
             composition=composition, session_root=session_root,
             runtime_command=(sys.executable, "-u", "-c", _SERVER), environment=environment,
+            provider_local_token=JUDGMENT_LOCAL_TOKEN,
         )
 
 

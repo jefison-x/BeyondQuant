@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import selectors
+import secrets
 import socket
 import subprocess
 import sys
@@ -24,7 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .research_judgment_acp_journal import AcpJudgmentJournal
 from .research_judgment_acp_provider_routes import (
-    AcpProviderRouteRejected, admit_provider_request, selected_route,
+    LOCAL_TOKEN_PREFIX, AcpProviderRouteRejected, admit_provider_request, selected_route,
 )
 from .research_judgment_acp_provider_usage import MAX_SSE_BYTES, parse_acp_provider_stream
 from .research_judgment_acp_control import AcpJudgmentOutcomeUnknown
@@ -324,7 +325,8 @@ class _Handler(BaseHTTPRequestHandler):
             body = b"".join(chunks)
             url, headers = admit_provider_request(
                 proxy.route, target=self.path, selected_model=proxy.model,
-                trusted_credential=proxy.credential,
+                local_credential=proxy.local_credential,
+                upstream_credential=proxy.credential,
                 headers=dict(raw_headers), body=body)
             parsed = json.loads(body)
             declared, reason = resolve_declared_output_tokens(parsed)
@@ -410,6 +412,9 @@ class AcpJudgmentProviderProxy:
         self.journal = journal
         self.model = model
         self.credential = credential
+        self.local_credential = LOCAL_TOKEN_PREFIX + secrets.token_urlsafe(32)
+        if self.local_credential == credential:
+            raise ValueError("local proxy token must differ from provider credential")
         self.limits = dict(limits)
         self.transport = transport or _IsolatedHttpsTransport()
         self.deadline_monotonic = time.monotonic() + max(

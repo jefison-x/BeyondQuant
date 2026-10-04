@@ -115,6 +115,9 @@ def test_all_selected_proxy_routes_use_exact_upstream_and_headers(tmp_path, rout
         assert url == route.upstream_url
         assert set(headers) <= {"content-type", "accept", "authorization",
                                 "x-api-key", "anthropic-version"}
+        assert proxy.local_credential not in str(headers)
+        assert headers.get("x-api-key", headers.get("authorization")) == (
+            "synthetic-key" if route.protocol == "messages" else "Bearer synthetic-key")
         sent.append(url)
         return ProviderHttpResponse(200, "text/event-stream", _route_sse(route.protocol))
 
@@ -123,9 +126,10 @@ def test_all_selected_proxy_routes_use_exact_upstream_and_headers(tmp_path, rout
             credential="synthetic-key", limits=limits,
             transport=fake_transport) as proxy:
         origin = proxy.base_url.removesuffix(route.local_base_path) if route.local_base_path else proxy.base_url
-        token_headers = ({"x-api-key": "synthetic-key", "anthropic-version": "2023-06-01"}
+        token_headers = ({"x-api-key": proxy.local_credential,
+                          "anthropic-version": "2023-06-01"}
                          if route.protocol == "messages" else
-                         {"authorization": "Bearer synthetic-key"})
+                         {"authorization": "Bearer " + proxy.local_credential})
         limit = "max_output_tokens" if route.protocol == "responses" else "max_tokens"
         body = json.dumps({"model": "synthetic-model", limit: 16,
                            "stream": True, "messages": []}).encode()
@@ -139,6 +143,23 @@ def test_all_selected_proxy_routes_use_exact_upstream_and_headers(tmp_path, rout
             assert response.read() == _route_sse(route.protocol)
     assert sent == [route.upstream_url]
     _await_phase(journal, "completed")
+
+
+def test_each_proxy_mints_distinct_local_token(tmp_path):
+    journal, limits = _ready(tmp_path)
+    first = AcpJudgmentProviderProxy(
+        journal, route_name="opencode-go-chat", model="synthetic-model",
+        credential="synthetic-key", limits=limits)
+    second = AcpJudgmentProviderProxy(
+        journal, route_name="opencode-go-chat", model="synthetic-model",
+        credential="synthetic-key", limits=limits)
+    try:
+        assert first.local_credential != second.local_credential
+        assert first.local_credential != "synthetic-key"
+        assert second.local_credential != "synthetic-key"
+    finally:
+        first.close()
+        second.close()
 
 
 def test_proxy_forwards_only_selected_route_after_durable_attempt(tmp_path):
@@ -163,7 +184,8 @@ def test_proxy_forwards_only_selected_route_after_durable_attempt(tmp_path):
         origin = proxy.base_url.removesuffix("/v1")
         assert _post(origin, path="/v1/models")[0] == 502
         assert journal.snapshot().get("provider_attempts") is None
-        status, body = _post(origin)
+        assert _post(origin)[0] == 502  # real upstream credential is not a local token
+        status, body = _post(origin, authorization="Bearer " + proxy.local_credential)
         assert status == 200 and body == _chat_sse()
         _await_phase(journal, "completed")
         assert _post(origin, authorization="Bearer wrong")[0] == 502
@@ -185,9 +207,9 @@ def test_lost_provider_response_latches_unknown_and_blocks_retry(tmp_path):
             credential="synthetic-key", limits=limits,
             transport=lost_response) as proxy:
         origin = proxy.base_url.removesuffix("/v1")
-        assert _post(origin)[0] == 502
+        assert _post(origin, authorization="Bearer " + proxy.local_credential)[0] == 502
         _await_phase(journal, "unknown")
-        assert _post(origin)[0] == 502
+        assert _post(origin, authorization="Bearer " + proxy.local_credential)[0] == 502
     assert len(sent) == 1
 
 
@@ -207,7 +229,7 @@ def test_next_call_waits_for_previous_delivery_and_durable_settlement(tmp_path):
     outcomes = []
 
     def call(origin):
-        outcomes.append(_post(origin)[0])
+        outcomes.append(_post(origin, authorization="Bearer " + proxy.local_credential)[0])
 
     with AcpJudgmentProviderProxy(
             journal, route_name="opencode-go-chat", model="synthetic-model",
@@ -250,7 +272,7 @@ def test_close_waits_for_inflight_dispatch_and_no_new_send_after_return(tmp_path
     origin = proxy.base_url.removesuffix("/v1")
     def send_during_close():
         try:
-            _post(origin)
+            _post(origin, authorization="Bearer " + proxy.local_credential)
         except OSError:
             pass
 
@@ -323,7 +345,7 @@ def test_proxy_close_kills_blocked_https_worker_and_latches_unknown(tmp_path):
     outcome = []
     def send_while_worker_stalls():
         try:
-            outcome.append(_post(origin)[0])
+            outcome.append(_post(origin, authorization="Bearer " + proxy.local_credential)[0])
         except OSError:
             outcome.append("disconnected")
 
@@ -355,8 +377,9 @@ def test_proxy_close_interrupts_stalled_local_client_body(tmp_path):
     try:
         client.sendall(
             b"POST /v1/chat/completions HTTP/1.1\r\nHost: 127.0.0.1\r\n"
-            b"Content-Type: application/json\r\nAuthorization: Bearer synthetic-key\r\n"
-            b"Content-Length: 100\r\n\r\n{}")
+            b"Content-Type: application/json\r\nAuthorization: Bearer "
+            + proxy.local_credential.encode()
+            + b"\r\nContent-Length: 100\r\n\r\n{}")
         deadline = time.monotonic() + 2
         while proxy._active_client is None and time.monotonic() < deadline:
             time.sleep(0.01)

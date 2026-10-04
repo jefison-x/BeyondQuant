@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import hmac
+import re
 from dataclasses import dataclass
 from typing import Mapping
 
@@ -17,6 +18,14 @@ from .research_request_gate import resolve_declared_output_tokens
 
 class AcpProviderRouteRejected(ValueError):
     """The request cannot be sent on the selected provider route."""
+
+
+LOCAL_TOKEN_PREFIX = "byq-acp-proxy-"
+_LOCAL_TOKEN = re.compile(r"byq-acp-proxy-[A-Za-z0-9_-]{43}\Z")
+
+
+def valid_local_provider_token(value: object) -> bool:
+    return isinstance(value, str) and _LOCAL_TOKEN.fullmatch(value) is not None
 
 
 def _same_secret(received: str, expected: str) -> bool:
@@ -80,7 +89,7 @@ def selected_route(name: str) -> AcpProviderRoute:
 
 def admit_provider_request(
     route: AcpProviderRoute, *, target: str, selected_model: str,
-    trusted_credential: str,
+    local_credential: str, upstream_credential: str,
     headers: Mapping[str, str], body: bytes,
 ) -> tuple[str, dict[str, str]]:
     """Return one exact upstream URL and credential headers or reject locally.
@@ -94,8 +103,10 @@ def admit_provider_request(
         raise AcpProviderRouteRejected("ACP provider path is unqualified")
     if not isinstance(selected_model, str) or not selected_model or len(selected_model) > 128:
         raise AcpProviderRouteRejected("selected model is invalid")
-    if not isinstance(trusted_credential, str) or not trusted_credential.strip():
-        raise AcpProviderRouteRejected("trusted provider credential is missing")
+    if (not valid_local_provider_token(local_credential)
+            or not isinstance(upstream_credential, str) or not upstream_credential.strip()
+            or _same_secret(local_credential, upstream_credential)):
+        raise AcpProviderRouteRejected("distinct local and upstream credentials are required")
     try:
         payload = json.loads(body, object_pairs_hook=_unique_json_object)
     except (UnicodeDecodeError, json.JSONDecodeError, TypeError) as error:
@@ -126,18 +137,18 @@ def admit_provider_request(
         # Their exact semantics are not qualified for this bounded text path.
         if "anthropic-beta" in normalized:
             raise AcpProviderRouteRejected("ACP Messages beta feature is unqualified")
-        if (not _same_secret(normalized.get("x-api-key", ""), trusted_credential)
+        if (not _same_secret(normalized.get("x-api-key", ""), local_credential)
                 or normalized.get("authorization")
                 or normalized.get("anthropic-version") != "2023-06-01"):
             raise AcpProviderRouteRejected("ACP Messages credential or version is invalid")
-        forwarded.update({"x-api-key": normalized["x-api-key"],
+        forwarded.update({"x-api-key": upstream_credential,
                           "anthropic-version": "2023-06-01"})
     else:
         authorization = normalized.get("authorization", "")
-        if (not _same_secret(authorization, "Bearer " + trusted_credential)
+        if (not _same_secret(authorization, "Bearer " + local_credential)
                 or normalized.get("x-api-key")):
             raise AcpProviderRouteRejected("ACP OpenAI credential is invalid")
-        forwarded["authorization"] = authorization
+        forwarded["authorization"] = "Bearer " + upstream_credential
     if "accept" in normalized:
         forwarded["accept"] = normalized["accept"]
     return route.upstream_url, forwarded

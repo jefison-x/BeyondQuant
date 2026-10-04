@@ -132,6 +132,22 @@ tests exercised all seven exact paths and headers, an unknown lost response,
 two consecutive calls, and close ordering. These are **synthetic loopback
 facts**, not real `_send_https`, DSH process, credential or Product acceptance.
 
+The proxy now mints a distinct random local token for each root. The eventual
+DSH child must receive only this token through the selected provider's
+`apiKeyEnv`; the proxy compares the inbound token and substitutes the trusted
+real provider credential on the allowlisted HTTPS request. The real key is
+rejected if presented to the local proxy. The ACP judgment process launcher
+now requires the exact trusted local token value for its selected provider
+key, including a second check just before process start. The seven route
+contracts and local proxy tests prove the swap with synthetic credentials;
+compatibility negatives reject both a normal provider key and another
+well-formed local token. The
+trusted invocation has not yet wired the generated token into a real ACP
+child. The final entry must compare the selected route, model, loopback URL
+and local token against the **same live proxy instance**; two matching
+caller-provided strings alone do not prove this. Network egress isolation
+also remains a promotion gate.
+
 The real HTTPS attempt now runs in a short-lived worker process. It receives
 only fixed Python import paths and no Adapter secrets in its environment.
 Credentials and request bytes enter by a private stdin pipe, not the process

@@ -59,6 +59,17 @@ The earlier authorized OpenCode paid API call was for the old SDK route. No
 new paid provider call has been made for this ACP candidate. No local, mock or
 synthetic result in this ledger is production acceptance.
 
+The unwired provider proxy now mints a distinct local token per root. The
+Adapter swaps it for the real service key in allowlisted outbound headers,
+then sends that request by private stdin to the isolated HTTPS worker. The
+dedicated ACP launcher requires the exact trusted local token value both when
+building and starting a judgment process; ordinary Product mode is unchanged.
+Root's affected pure route/compatibility files passed 81/81, and the synthetic
+local proxy file passed 21/21. The final entry must bind these values to the
+same live proxy instance; matching caller strings alone are insufficient.
+Backend-bound selection, actual ACP child environment, network
+egress confinement and real provider behavior remain NOT_RUN.
+
 ## Exact local candidate inputs
 
 | Input | SHA-256 |

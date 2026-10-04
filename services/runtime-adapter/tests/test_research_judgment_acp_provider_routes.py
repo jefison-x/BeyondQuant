@@ -30,12 +30,15 @@ _CASES = (
      "https://opencode.ai/zen/v1/messages?beta=true", "messages"),
 )
 
+LOCAL = "byq-acp-proxy-" + "A" * 43
+UPSTREAM = "synthetic-upstream-key"
+
 
 def _headers(protocol: str) -> dict[str, str]:
     if protocol == "messages":
-        return {"Content-Type": "application/json", "x-api-key": "synthetic-key",
+        return {"Content-Type": "application/json", "x-api-key": LOCAL,
                 "anthropic-version": "2023-06-01", "x-byq-secret": "must-not-forward"}
-    return {"Content-Type": "application/json", "Authorization": "Bearer synthetic-key",
+    return {"Content-Type": "application/json", "Authorization": "Bearer " + LOCAL,
             "x-byq-secret": "must-not-forward"}
 
 
@@ -51,13 +54,16 @@ def test_exact_selected_route_maps_only_its_protocol_path(name, target, upstream
     assert route.upstream_url == upstream
     url, headers = admit_provider_request(
         route, target=target, selected_model="selected-model",
-        trusted_credential="synthetic-key", headers=_headers(protocol),
+        local_credential=LOCAL, upstream_credential=UPSTREAM,
+        headers=_headers(protocol),
         body=_body(protocol))
     assert url == upstream
     assert "x-byq-secret" not in headers
     assert headers["content-type"] == "application/json"
     assert ("x-api-key" in headers) == (protocol == "messages")
     assert ("authorization" in headers) == (protocol != "messages")
+    assert headers.get("x-api-key", headers.get("authorization")) == (
+        UPSTREAM if protocol == "messages" else "Bearer " + UPSTREAM)
 
 
 @pytest.mark.parametrize("name", ["opencode-unknown", "deepseek-account", "opencode-"])
@@ -75,7 +81,7 @@ def test_messages_rejects_discovery_files_and_altered_paths(target):
     route = selected_route("opencode-go-messages")
     with pytest.raises(AcpProviderRouteRejected, match="path"):
         admit_provider_request(route, target=target, selected_model="selected-model",
-                               trusted_credential="synthetic-key",
+                               local_credential=LOCAL, upstream_credential=UPSTREAM,
                                headers=_headers("messages"), body=_body("messages"))
 
 
@@ -87,7 +93,7 @@ def test_deepseek_rejects_files_discovery_and_altered_messages(target):
     route = selected_route("deepseek-official")
     with pytest.raises(AcpProviderRouteRejected, match="path"):
         admit_provider_request(route, target=target, selected_model="selected-model",
-                               trusted_credential="synthetic-key",
+                               local_credential=LOCAL, upstream_credential=UPSTREAM,
                                headers=_headers("messages"), body=_body("messages"))
 
 
@@ -103,21 +109,21 @@ def test_model_and_declared_ceiling_are_closed(body):
     with pytest.raises(AcpProviderRouteRejected):
         admit_provider_request(route, target="/v1/messages?beta=true",
                                selected_model="selected-model",
-                               trusted_credential="synthetic-key",
+                               local_credential=LOCAL, upstream_credential=UPSTREAM,
                                headers=_headers("messages"), body=body)
 
 
 @pytest.mark.parametrize("headers", [
-    {"Content-Type": "application/json", "x-api-key": "synthetic-key"},
-    {"Content-Type": "application/json", "x-api-key": "synthetic-key",
+    {"Content-Type": "application/json", "x-api-key": LOCAL},
+    {"Content-Type": "application/json", "x-api-key": LOCAL,
      "anthropic-version": "2023-06-01", "Authorization": "Bearer mixed"},
-    {"Content-Type": "text/plain", "x-api-key": "synthetic-key",
+    {"Content-Type": "text/plain", "x-api-key": LOCAL,
      "anthropic-version": "2023-06-01"},
-    {"Content-Type": "application/json", "x-api-key": "synthetic-key",
+    {"Content-Type": "application/json", "x-api-key": LOCAL,
      "anthropic-version": "2023-06-01", "X-API-KEY": "second-key"},
-    {"Content-Type": "application/json", "x-api-key": "synthetic-key",
+    {"Content-Type": "application/json", "x-api-key": LOCAL,
      "anthropic-version": "2023-06-01", 7: "unexpected-name"},
-    {"Content-Type": "application/json", "x-api-key": "synthetic-key",
+    {"Content-Type": "application/json", "x-api-key": LOCAL,
      "anthropic-version": "2023-06-01", "anthropic-beta": "unqualified-feature"},
 ])
 def test_messages_rejects_missing_mixed_or_ambiguous_auth(headers):
@@ -125,7 +131,7 @@ def test_messages_rejects_missing_mixed_or_ambiguous_auth(headers):
     with pytest.raises(AcpProviderRouteRejected):
         admit_provider_request(route, target="/v1/messages?beta=true",
                                selected_model="selected-model",
-                               trusted_credential="synthetic-key",
+                               local_credential=LOCAL, upstream_credential=UPSTREAM,
                                headers=headers, body=_body("messages"))
 
 
@@ -133,10 +139,12 @@ def test_messages_rejects_missing_mixed_or_ambiguous_auth(headers):
     ("deepseek-official", "/anthropic/v1/messages", "messages"),
     ("opencode-go-chat", "/v1/chat/completions", "chat"),
 ])
-def test_matching_shape_with_wrong_trusted_credential_is_rejected(name, target, protocol):
+def test_matching_shape_with_wrong_local_credential_is_rejected(name, target, protocol):
     with pytest.raises(AcpProviderRouteRejected, match="credential"):
         admit_provider_request(selected_route(name), target=target,
-                               selected_model="selected-model", trusted_credential="other-key",
+                               selected_model="selected-model",
+                               local_credential="byq-acp-proxy-" + "B" * 43,
+                               upstream_credential=UPSTREAM,
                                headers=_headers(protocol), body=_body(protocol))
 
 
@@ -147,4 +155,30 @@ def test_chat_rejects_multiple_or_invalid_choice_count(choice_count):
     with pytest.raises(AcpProviderRouteRejected, match="one choice"):
         admit_provider_request(selected_route("opencode-go-chat"),
                                target="/v1/chat/completions", selected_model="selected-model",
-                               trusted_credential="synthetic-key", headers=_headers("chat"), body=body)
+                               local_credential=LOCAL, upstream_credential=UPSTREAM,
+                               headers=_headers("chat"), body=body)
+
+
+def test_local_and_upstream_credentials_must_differ():
+    with pytest.raises(AcpProviderRouteRejected, match="distinct"):
+        admit_provider_request(
+            selected_route("opencode-go-chat"), target="/v1/chat/completions",
+            selected_model="selected-model", local_credential=LOCAL,
+            upstream_credential=LOCAL, headers=_headers("chat"), body=_body("chat"))
+
+
+@pytest.mark.parametrize("name,target,protocol", [
+    ("deepseek-official", "/anthropic/v1/messages", "messages"),
+    ("opencode-go-chat", "/v1/chat/completions", "chat"),
+])
+def test_real_upstream_credential_is_rejected_as_local_token(name, target, protocol):
+    headers = _headers(protocol)
+    if protocol == "messages":
+        headers["x-api-key"] = UPSTREAM
+    else:
+        headers["Authorization"] = "Bearer " + UPSTREAM
+    with pytest.raises(AcpProviderRouteRejected, match="credential"):
+        admit_provider_request(
+            selected_route(name), target=target, selected_model="selected-model",
+            local_credential=LOCAL, upstream_credential=UPSTREAM,
+            headers=headers, body=_body(protocol))
