@@ -338,7 +338,26 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
         ),
     ),
 )
+
+# This role is deliberately absent from ROLE_CATALOG: only the trusted
+# research-judgment registration route may create it. Its static capability
+# ceiling is the union of the five bounded reads; ingress narrows it further to
+# the persisted stage's STAGE_ALLOWED_TOOLS.
+RESEARCH_JUDGMENT_ROLE_ID = "research_judgment_readonly"
+from packages.contracts.research_judgment import STAGE_ALLOWED_TOOLS as _JUDGMENT_STAGE_TOOLS
+
+RESEARCH_JUDGMENT_ROLE = AgentRole(
+    role_id=RESEARCH_JUDGMENT_ROLE_ID,
+    version="1.0.0",
+    description="Private least-privilege role for one trusted research-judgment stage.",
+    allowed_tools=tuple(sorted(set().union(*_JUDGMENT_STAGE_TOOLS.values()))),
+    delegate_to=(),
+    approval_required_actions=(),
+    evidence_kinds=("research_evidence", "backtest_result"),
+)
 ROLE_BY_ID = {role.role_id: role for role in ROLE_CATALOG}
+_INTERNAL_ROLE_BY_ID = {RESEARCH_JUDGMENT_ROLE_ID: RESEARCH_JUDGMENT_ROLE}
+_ALL_ROLE_BY_ID = ROLE_BY_ID | _INTERNAL_ROLE_BY_ID
 
 
 def _now() -> str:
@@ -601,7 +620,8 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
     def start_run(self, payload: object, *, trusted_owner: str | None = None, trusted_actor: str | None = None,
                   trusted_workspace: str | None = None, trusted_boot_id: str | None = None,
                   trusted_root_run_id: str | None = None, trusted_acp_registration: dict | None = None,
-                  require_runtime_binding: bool = False) -> dict[str, object]:
+                  require_runtime_binding: bool = False, trusted_judgment_registration: bool = False,
+                  _connection=None) -> dict[str, object]:
         if not isinstance(payload, dict):
             raise ValueError("agent run request must be an object")
         allowed = {"owner_principal", "actor_principal", "role_id", "trace_id", "session_id", "dsh_run_id", "parent_run_id", "idempotency_key"}
@@ -615,9 +635,11 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         if trusted_actor and payload.get("actor_principal") not in {None, trusted_actor}:
             raise AgentUnauthorized("agent actor does not match trusted product context")
         role_id = _text(payload.get("role_id"), field="role_id", max_length=64)
-        role = ROLE_BY_ID.get(role_id)
+        role = _ALL_ROLE_BY_ID.get(role_id)
         if role is None:
             raise ValueError("unknown agent role")
+        if role_id in _INTERNAL_ROLE_BY_ID and not trusted_judgment_registration:
+            raise AgentForbidden("private research-judgment role requires trusted Backend registration")
         trace_id = _trace(payload.get("trace_id"), field="trace_id")
         session_id = _trace(payload.get("session_id"), field="session_id")
         dsh_run_id = _trace(payload.get("dsh_run_id") or session_id, field="dsh_run_id")
@@ -651,7 +673,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             "parent_run_id": parent_run_id,
             "idempotency_key": key,
         }
-        with self._transaction() as connection:
+        with (nullcontext(_connection) if _connection is not None else self._transaction()) as connection:
             authority = None
             if require_runtime_binding or trusted_boot_id is not None or acp_identity is not None:
                 self._lifecycle_lock(connection, "runtime-authority:current")
@@ -732,7 +754,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                         or (root_run_id is not None and parent.get("root_run_id") != root_run_id)
                         or (not require_runtime_binding and parent.get("root_run_id") != root_run_id)):
                     raise AgentForbidden("parent agent run does not belong to this active runtime context")
-                parent_role = ROLE_BY_ID[parent["role_id"]]
+                parent_role = _ALL_ROLE_BY_ID[parent["role_id"]]
                 if role_id not in parent_role.delegate_to:
                     raise AgentForbidden("parent role is not authorized to delegate to this role")
             now = _now()
@@ -1171,14 +1193,15 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             detail={"root_run_id": root["root_run_id"], "terminal_sequence": root["terminal_sequence"]},
             connection=connection)
 
-    def consume_runtime_lifecycle_event(self, event: object, **context: str) -> dict:
+    def consume_runtime_lifecycle_event(self, event: object, *, _connection=None,
+                                        **context: str) -> dict:
         event = validate_lifecycle_event(event)
         receipt = lifecycle_receipt(event)
         trusted_boot_id = context.get("trusted_boot_id")
         params = {"owner": context["trusted_owner"], "workspace": context["trusted_workspace"],
                   "session": context["trusted_session_id"], "trace": context["trusted_trace_id"],
                   "sequence": receipt["sequence"]}
-        with self._transaction() as connection:
+        with (nullcontext(_connection) if _connection is not None else self._transaction()) as connection:
             self._lifecycle_lock(connection, "runtime-authority:current")
             self._require_lifecycle_workspace(connection, params["owner"], params["workspace"],
                                               terminal_cleanup=event["outcome"] != "active")
@@ -1353,7 +1376,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             self._check_run_access(row, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
             self._check_agent_run_authority(connection, row, authority, trusted_boot_id)
             self._check_runtime_context(row, trusted_session_id, trusted_dsh_run_id)
-            role = ROLE_BY_ID[row["role_id"]]
+            role = _ALL_ROLE_BY_ID[row["role_id"]]
             index_action = action in {
                 "byq_index_pool_catalog", "byq_index_pool_create", "byq_index_pool_status",
             }
@@ -1465,7 +1488,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             self._check_run_access(run, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
             self._check_agent_run_authority(connection, run, authority, trusted_boot_id)
             self._check_runtime_context(run, trusted_session_id, trusted_dsh_run_id)
-            role = ROLE_BY_ID[run["role_id"]]
+            role = _ALL_ROLE_BY_ID[run["role_id"]]
             if action not in role.approval_required_actions:
                 raise AgentForbidden("agent action does not require or support this approval boundary")
             if action == "byq_ml_training_create" and run["role_version"] != role.version:

@@ -49,6 +49,9 @@ RESET_SCOPE = (
     ("lessons", OWNED),
     ("learning_runs", OWNED),
     ("research_task_actions", OWNED),
+    # ACP judgment root bindings reference the call ledger and are archived/
+    # removed before it during an exact personal Workspace reset.
+    ("research_judgment_acp_roots", OWNED),
     ("research_judgment_stage_calls", child("research_tasks", "task_id")),
     ("research_execution_plan_receipts", child("research_tasks", "task_id")),
     ("research_execution_plans", OWNED),
@@ -100,6 +103,7 @@ RETIRED_KEY_FIELDS = {
     "artifact_submission_receipts": ("task_id", "idempotency_key"),
     "research_execution_plan_receipts": ("task_id", "idempotency_key"),
     "research_judgment_stage_calls": ("task_id", "call_identity"),
+    "research_judgment_acp_roots": ("task_id", "call_identity"),
     "research_task_actions": ("task_id", "action_id"),
     "agent_runs": ("owner_principal", "idempotency_key"),
     "agent_approvals": ("run_id", "idempotency_key"),

@@ -398,6 +398,13 @@ _STAGE_ADMISSION_FIELDS = frozenset({"call_identity"})
 _STAGE_ADMISSION_OPTIONAL_FIELDS = frozenset({"attempt_binding"})
 _STAGE_PROGRESS_FIELDS = frozenset({"call_identity", "durable_evidence"})
 _ATTEMPT_BINDING = re.compile(r"^[0-9]+:[a-z_]+:[0-9]+$")
+ACP_JUDGMENT_ROOT_BEGIN_SCHEMA_VERSION = "byq-research-judgment-acp-root-begin.v1"
+ACP_JUDGMENT_ROOT_RECEIPT_SCHEMA_VERSION = "byq-research-judgment-acp-root-receipt.v1"
+ACP_JUDGMENT_AGENT_REGISTER_SCHEMA_VERSION = "byq-research-judgment-acp-agent-register.v1"
+_ACP_ROOT_ID = re.compile(r"^[0-9a-f]{32}$")
+_ACP_JUDGMENT_CALL_IDENTITY = re.compile(r"^byq-judgment-[0-9a-f]{32}$")
+_ACP_NATIVE_ROOT_SESSION_ID = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
 
 def validate_call_identity(value: object) -> str:
@@ -409,6 +416,41 @@ def validate_call_identity(value: object) -> str:
 def validate_attempt_binding(value: object) -> str:
     if not isinstance(value, str) or _ATTEMPT_BINDING.fullmatch(value) is None:
         raise ValueError("research stage attempt binding is invalid")
+    return value
+
+
+def validate_acp_judgment_root_begin_request(value: object) -> dict[str, str]:
+    """Closed trusted request to atomically admit one call and open its ACP root."""
+
+    fields = {"schema_version", "call_identity", "attempt_binding"}
+    if (not isinstance(value, dict) or set(value) != fields
+            or value.get("schema_version") != ACP_JUDGMENT_ROOT_BEGIN_SCHEMA_VERSION):
+        raise ValueError("exact ACP judgment root begin request required")
+    if (not isinstance(value["call_identity"], str)
+            or _ACP_JUDGMENT_CALL_IDENTITY.fullmatch(value["call_identity"]) is None):
+        raise ValueError("exact ACP judgment call identity required")
+    validate_attempt_binding(value["attempt_binding"])
+    return value
+
+
+def validate_acp_judgment_agent_register_request(value: object) -> dict[str, str]:
+    """Closed trusted request to register the native root Agent for one call."""
+
+    fields = {"schema_version", "call_identity", "root_run_id", "runtime_boot_id",
+              "native_root_session_id"}
+    if (not isinstance(value, dict) or set(value) != fields
+            or value.get("schema_version") != ACP_JUDGMENT_AGENT_REGISTER_SCHEMA_VERSION):
+        raise ValueError("exact ACP judgment root Agent registration request required")
+    if (not isinstance(value["call_identity"], str)
+            or _ACP_JUDGMENT_CALL_IDENTITY.fullmatch(value["call_identity"]) is None):
+        raise ValueError("exact ACP judgment call identity required")
+    if not isinstance(value["root_run_id"], str) or _ACP_ROOT_ID.fullmatch(value["root_run_id"]) is None:
+        raise ValueError("root_run_id must be a 32-character lowercase hexadecimal identity")
+    if not isinstance(value["runtime_boot_id"], str) or _ACP_ROOT_ID.fullmatch(value["runtime_boot_id"]) is None:
+        raise ValueError("runtime_boot_id must be a 32-character lowercase hexadecimal identity")
+    if (not isinstance(value["native_root_session_id"], str)
+            or _ACP_NATIVE_ROOT_SESSION_ID.fullmatch(value["native_root_session_id"]) is None):
+        raise ValueError("native_root_session_id must be a lowercase UUIDv4")
     return value
 
 

@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import uuid
 
 from .db import execute, fetch_one
 from packages.contracts.research_execution_plan import (
@@ -93,6 +94,37 @@ SCHEMA_DDL: list[str] = [
     """,
     """CREATE INDEX IF NOT EXISTS research_judgment_stage_calls_scope
         ON research_judgment_stage_calls(task_id, plan_version, stage)""",
+    """
+    CREATE TABLE IF NOT EXISTS research_judgment_acp_roots (
+        task_id TEXT NOT NULL,
+        call_identity TEXT NOT NULL,
+        root_run_id TEXT NOT NULL UNIQUE,
+        owner_principal TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        actor_principal TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        trace_id TEXT NOT NULL,
+        runtime_boot_id TEXT NOT NULL,
+        authority_epoch BIGINT NOT NULL CHECK (authority_epoch > 0),
+        dsh_run_id TEXT NOT NULL,
+        plan_version INTEGER NOT NULL,
+        stage TEXT NOT NULL,
+        call_index INTEGER NOT NULL,
+        iteration INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('root_created','agent_bound')),
+        native_root_session_id TEXT,
+        agent_run_id TEXT UNIQUE,
+        begin_receipt_json JSONB NOT NULL,
+        registration_receipt_json JSONB,
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL,
+        PRIMARY KEY (task_id, call_identity),
+        FOREIGN KEY (task_id, call_identity)
+            REFERENCES research_judgment_stage_calls(task_id, call_identity)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS research_judgment_acp_roots_scope "
+    "ON research_judgment_acp_roots(owner_principal, workspace_id, session_id, trace_id)",
 ]
 
 _STAGE_INSTRUCTION = {
@@ -117,6 +149,284 @@ def _hash(value: object) -> str:
 
 class ResearchJudgmentMixin:
     """Read-only stage input, durable admission, atomic commit/progress and fence."""
+
+    @staticmethod
+    def _reject_legacy_acp_call(connection, task_id: str, call_identity: str) -> None:
+        from .research import InvalidTransition
+
+        binding = fetch_one(connection, """SELECT 1 FROM research_judgment_acp_roots
+            WHERE task_id=:task AND call_identity=:identity""",
+            {"task": task_id, "identity": call_identity})
+        if binding is not None:
+            raise InvalidTransition("ACP-bound judgment calls require their trusted root result path")
+
+    @staticmethod
+    def _reject_legacy_acp_stage(connection, task_id: str, plan: dict) -> None:
+        from .research import InvalidTransition
+
+        binding = fetch_one(connection, """SELECT 1 FROM research_judgment_acp_roots
+            WHERE task_id=:task AND plan_version=:plan AND stage=:stage""",
+            {"task": task_id, "plan": plan["plan_version"], "stage": plan["stage"]})
+        if binding is not None:
+            raise InvalidTransition("ACP-bound judgment stages require their trusted root result path")
+
+    def begin_acp_judgment_root(self, task_id: str, payload: object, *,
+                                trusted_context: dict, runtime_boot_id: str,
+                                agent_store) -> dict:
+        """Atomically admit one exact plan call and open its distinct Backend root.
+
+        Legacy SDK admissions remain valid. An already admitted legacy call has
+        an unknown provider outcome and cannot be adopted into ACP automatically.
+        """
+        from .agent_research import AgentConflict, _runtime_boot_id
+        from .research import InvalidTransition, ResearchNotFound
+        from packages.contracts.research_judgment import (
+            ACP_JUDGMENT_ROOT_RECEIPT_SCHEMA_VERSION,
+            attempt_binding as make_attempt_binding,
+            validate_acp_judgment_root_begin_request,
+        )
+
+        request = validate_acp_judgment_root_begin_request(payload)
+        boot_id = _runtime_boot_id(runtime_boot_id)
+        call_identity = str(request["call_identity"])
+        attempt = str(request["attempt_binding"])
+        expected_call = "byq-judgment-" + hashlib.sha256(
+            f"{task_id}:{attempt}".encode("utf-8")).hexdigest()[:32]
+        if call_identity != expected_call:
+            raise ValueError("call_identity does not match the exact task attempt")
+        owner = trusted_context.get("owner_principal")
+        workspace = trusted_context.get("workspace_id")
+        if not isinstance(owner, str) or not isinstance(workspace, str):
+            raise ValueError("trusted owner and Workspace scope are required")
+
+        with self._transaction() as connection:
+            agent_store._lifecycle_lock(connection, "runtime-authority:current")
+            authority = agent_store._require_current_runtime_boot(connection, boot_id, required=True)
+            task = self._plan_task(connection, task_id, trusted_context, lock=True)
+            conversation = fetch_one(connection, """SELECT * FROM product_conversations
+                WHERE conversation_id=:conversation AND owner_principal=:owner
+                  AND workspace_id=:workspace FOR SHARE""",
+                {"conversation": task.get("conversation_id"), "owner": owner, "workspace": workspace})
+            if (conversation is None or conversation.get("trace_id") != task.get("trace_id")
+                    or conversation.get("status") != "active"):
+                raise InvalidTransition("research judgment requires the task's active bound conversation")
+            session_id = conversation["runtime_session_id"]
+            trace_id = conversation["trace_id"]
+            actor = f"byq-product-agent-{session_id}"
+            scope = {"owner": owner, "workspace": workspace, "actor": actor,
+                     "session": session_id, "trace": trace_id}
+
+            existing = self._load_stage_call(connection, task_id, call_identity, lock=True)
+            binding = fetch_one(connection, """SELECT * FROM research_judgment_acp_roots
+                WHERE task_id=:task AND call_identity=:identity FOR UPDATE""",
+                {"task": task_id, "identity": call_identity})
+            if existing is not None:
+                if binding is None:
+                    if existing["status"] == "completed":
+                        return {
+                            "schema_version": ACP_JUDGMENT_ROOT_RECEIPT_SCHEMA_VERSION,
+                            "status": "completed", "task_id": task_id,
+                            "call_identity": call_identity, "attempt_binding": attempt,
+                            "plan_version": int(existing["plan_version"]),
+                            "stage": existing["stage"], "call_index": int(existing["call_index"]),
+                            "receipt": existing["result_json"], "root": None,
+                        }
+                    raise AgentConflict(
+                        "an admitted legacy judgment call has an unknown outcome and cannot be adopted")
+                if existing["status"] == "completed":
+                    raise AgentConflict(
+                        "ACP judgment call has a committed result but no terminal root reconciliation")
+                expected_binding = {
+                    "owner_principal": owner, "workspace_id": workspace,
+                    "trace_id": trace_id,
+                    "runtime_boot_id": boot_id, "authority_epoch": int(authority["epoch"]),
+                    "plan_version": int(existing["plan_version"]),
+                    "stage": existing["stage"], "call_index": int(existing["call_index"]),
+                }
+                if any(binding.get(key) != value for key, value in expected_binding.items()):
+                    raise AgentConflict("ACP judgment call binding differs from the exact current scope")
+                current_plan_row = self._load_current_plan(connection, task_id, lock=True)
+                if current_plan_row is None:
+                    raise ResearchNotFound("research execution plan not found")
+                current_plan = validate_plan(current_plan_row["plan"])
+                if (current_plan["plan_version"] != binding["plan_version"]
+                        or current_plan["stage"] != binding["stage"]
+                        or int(current_plan["iteration"]) != int(binding["iteration"])
+                        or attempt != make_attempt_binding(current_plan["plan_version"],
+                            current_plan["stage"], current_plan["iteration"])):
+                    raise AgentConflict("ACP judgment root no longer matches the current exact plan attempt")
+                root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root",
+                                 {"root": binding["root_run_id"]})
+                if (root is None or any(root.get(key) != binding[key] for key in (
+                        "owner_principal", "workspace_id", "session_id", "trace_id"))
+                        or binding["actor_principal"] != f"byq-product-agent-{binding['session_id']}"
+                        or root["status"] != "active"
+                        or root.get("authority_status", "active") != "active"
+                        or root.get("authority_boot_id") != boot_id):
+                    raise AgentConflict("ACP judgment root is no longer active under this Backend boot")
+                return binding["begin_receipt_json"]
+
+            plan_row = self._load_current_plan(connection, task_id, lock=True)
+            if plan_row is None:
+                raise ResearchNotFound("research execution plan not found")
+            plan = validate_plan(plan_row["plan"])
+            stage = self._require_model_stage(plan["stage"])
+            if task["status"] in {"cancelled", "failed", "completed"}:
+                raise InvalidTransition("terminal research task cannot start a judgment root")
+            expected_attempt = make_attempt_binding(
+                plan["plan_version"], stage, plan["iteration"])
+            if attempt != expected_attempt:
+                raise InvalidTransition("research judgment attempt does not match the current plan")
+            counted = fetch_one(connection, """SELECT COUNT(*) AS count
+                FROM research_judgment_stage_calls
+                WHERE task_id=:task AND plan_version=:plan AND stage=:stage""",
+                {"task": task_id, "plan": plan["plan_version"], "stage": stage})
+            used = int(counted["count"] if counted else 0)
+            limit = stage_model_call_limit(stage)
+            if used >= limit:
+                raise StageModelCallLimitExceeded("research stage model call limit reached for this plan revision")
+            call_index = used + 1
+            now = _now()
+            execute(connection, """INSERT INTO research_judgment_stage_calls
+                (task_id,call_identity,plan_version,stage,call_index,status,admitted_at,
+                 completed_at,progress_identity,outcome,result_json)
+                VALUES (:task,:identity,:plan,:stage,:index,'admitted',:now,NULL,NULL,NULL,NULL)""",
+                {"task": task_id, "identity": call_identity, "plan": plan["plan_version"],
+                 "stage": stage, "index": call_index, "now": now})
+
+            root_run_id = uuid.uuid4().hex
+            session_id = "byqjdg-" + uuid.uuid4().hex
+            dsh_run_id = "byqjudg-" + uuid.uuid4().hex
+            actor = f"byq-product-agent-{session_id}"
+            lifecycle = {"schema_version": "agent-run-lifecycle.v1",
+                         "root_run_id": root_run_id, "sequence": 1, "outcome": "active"}
+            agent_store.consume_runtime_lifecycle_event(
+                lifecycle, trusted_owner=owner, trusted_workspace=workspace,
+                trusted_session_id=session_id, trusted_trace_id=trace_id,
+                trusted_boot_id=boot_id, _connection=connection)
+            root = {"root_run_id": root_run_id, "owner_principal": owner,
+                    "workspace_id": workspace, "actor_principal": actor,
+                    "session_id": session_id, "trace_id": trace_id,
+                    "runtime_boot_id": boot_id, "authority_epoch": int(authority["epoch"]),
+                    "dsh_run_id": dsh_run_id}
+            receipt = {
+                "schema_version": ACP_JUDGMENT_ROOT_RECEIPT_SCHEMA_VERSION,
+                "status": "admitted", "task_id": task_id,
+                "call_identity": call_identity, "attempt_binding": attempt,
+                "plan_version": int(plan["plan_version"]), "task_version": int(plan["task_version"]),
+                "stage": stage, "iteration": int(plan["iteration"]),
+                "call_index": call_index, "model_call_limit": limit,
+                "stage_input": self._build_stage_input(task, plan), "root": root,
+            }
+            execute(connection, """INSERT INTO research_judgment_acp_roots
+                (task_id,call_identity,root_run_id,owner_principal,workspace_id,actor_principal,
+                 session_id,trace_id,runtime_boot_id,authority_epoch,dsh_run_id,plan_version,
+                 stage,call_index,iteration,status,begin_receipt_json,created_at,updated_at)
+                VALUES (:task,:identity,:root,:owner,:workspace,:actor,:session,:trace,:boot,
+                 :epoch,:generation,:plan,:stage,:index,:iteration,'root_created',
+                 CAST(:receipt AS jsonb),:now,:now)""",
+                {"task": task_id, "identity": call_identity, "root": root_run_id,
+                 "owner": owner, "workspace": workspace, "actor": actor,
+                 "session": session_id, "trace": trace_id, "boot": boot_id,
+                 "epoch": int(authority["epoch"]), "generation": dsh_run_id,
+                 "plan": plan["plan_version"], "stage": stage, "index": call_index,
+                 "iteration": int(plan["iteration"]), "receipt": json.dumps(receipt), "now": now})
+            return receipt
+
+    def register_acp_judgment_root_agent(self, task_id: str, payload: object, *,
+                                         trusted_context: dict, runtime_boot_id: str,
+                                         agent_store) -> dict:
+        """Create and durably bind the fixed-role native root AgentRun."""
+        from .agent_research import AgentConflict, AgentNotFound, _runtime_boot_id
+        from packages.contracts.research_judgment import validate_acp_judgment_agent_register_request
+
+        request = validate_acp_judgment_agent_register_request(payload)
+        boot_id = _runtime_boot_id(runtime_boot_id)
+        if request["runtime_boot_id"] != boot_id:
+            raise AgentConflict("judgment Agent registration boot differs from trusted Backend boot")
+        if not isinstance(trusted_context.get("owner_principal"), str) or not isinstance(
+                trusted_context.get("workspace_id"), str):
+            raise ValueError("trusted owner and Workspace scope are required")
+
+        with self._transaction() as connection:
+            agent_store._lifecycle_lock(connection, "runtime-authority:current")
+            authority = agent_store._require_current_runtime_boot(connection, boot_id, required=True)
+            agent_store._lifecycle_lock(connection, "root:" + request["root_run_id"])
+            call = self._load_stage_call(connection, task_id, request["call_identity"], lock=True)
+            if call is None or call["status"] != "admitted":
+                raise AgentConflict("exact admitted judgment call is not available for native registration")
+            binding = fetch_one(connection, """SELECT * FROM research_judgment_acp_roots
+                WHERE task_id=:task AND call_identity=:identity FOR UPDATE""",
+                {"task": task_id, "identity": request["call_identity"]})
+            if binding is None:
+                raise AgentNotFound("exact ACP judgment root is not admitted")
+            owner, workspace = trusted_context["owner_principal"], trusted_context["workspace_id"]
+            if (binding["root_run_id"] != request["root_run_id"]
+                    or binding["runtime_boot_id"] != boot_id
+                    or binding["authority_epoch"] != int(authority["epoch"])
+                    or binding["owner_principal"] != owner
+                    or binding["workspace_id"] != workspace):
+                raise AgentConflict("judgment Agent registration does not match the exact root binding")
+            native_id = request["native_root_session_id"]
+            if binding["status"] == "agent_bound":
+                if (binding["native_root_session_id"] != native_id
+                        or binding["registration_receipt_json"] is None):
+                    raise AgentConflict("native judgment Agent identity conflicts with its durable binding")
+                root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root FOR SHARE",
+                                 {"root": binding["root_run_id"]})
+                native_binding = fetch_one(connection, """SELECT * FROM agent_acp_native_agent_registrations
+                    WHERE root_run_id=:root AND native_agent_session_id=:native FOR SHARE""",
+                    {"root": binding["root_run_id"], "native": native_id})
+                run = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id=:run FOR SHARE",
+                                 {"run": binding["agent_run_id"]})
+                if (root is None or root["status"] != "active"
+                        or root.get("authority_status", "active") != "active"
+                        or root.get("authority_boot_id") != boot_id
+                        or run is None or run["status"] != "active"
+                        or run.get("authority_status", "active") != "active"
+                        or run.get("authority_boot_id") != boot_id
+                        or native_binding is None or native_binding["status"] != "bound"
+                        or native_binding["agent_run_id"] != binding["agent_run_id"]
+                        or native_binding["receipt_json"] != binding["registration_receipt_json"]):
+                    raise AgentConflict("bound judgment Agent registration is no longer active under this boot")
+                return binding["registration_receipt_json"]
+            if binding["status"] != "root_created":
+                raise AgentConflict("judgment root is not available for native Agent registration")
+
+            from .agent_research import RESEARCH_JUDGMENT_ROLE_ID
+            registration_key = "judgment-root-" + hashlib.sha256(
+                f"{task_id}:{request['call_identity']}".encode("utf-8")).hexdigest()[:32]
+            run = agent_store.start_run({
+                "role_id": RESEARCH_JUDGMENT_ROLE_ID,
+                "trace_id": binding["trace_id"], "session_id": binding["session_id"],
+                "dsh_run_id": binding["dsh_run_id"], "idempotency_key": registration_key,
+            }, trusted_owner=owner, trusted_actor=binding["actor_principal"],
+                trusted_workspace=workspace, trusted_boot_id=boot_id,
+                trusted_root_run_id=binding["root_run_id"],
+                trusted_acp_registration={
+                    "root_run_id": binding["root_run_id"], "runtime_boot_id": boot_id,
+                    "native_root_session_id": native_id, "native_agent_session_id": native_id,
+                    "native_parent_session_id": None, "origin": "root", "depth": 0,
+                }, require_runtime_binding=True, trusted_judgment_registration=True,
+                _connection=connection)
+            receipt = agent_store.bind_acp_agent({
+                "schema_version": "byq-acp-agent-bind.v1",
+                "root_run_id": binding["root_run_id"], "runtime_boot_id": boot_id,
+                "native_root_session_id": native_id, "native_agent_session_id": native_id,
+                "native_parent_session_id": None, "origin": "root", "depth": 0,
+                "agent_run_id": run["run_id"], "parent_run_id": None,
+            }, trusted_scope={"owner": owner, "workspace": workspace,
+                "actor": binding["actor_principal"], "session": binding["session_id"],
+                "trace": binding["trace_id"], "generation": binding["dsh_run_id"],
+                "boot_id": boot_id, "root": binding["root_run_id"]}, _connection=connection)
+            execute(connection, """UPDATE research_judgment_acp_roots
+                SET status='agent_bound',native_root_session_id=:native,agent_run_id=:run,
+                    registration_receipt_json=CAST(:receipt AS jsonb),updated_at=:now
+                WHERE task_id=:task AND call_identity=:identity AND status='root_created'""",
+                {"native": native_id, "run": run["run_id"],
+                 "receipt": json.dumps(receipt, allow_nan=False), "now": _now(),
+                 "task": task_id, "identity": request["call_identity"]})
+            return receipt
 
     @staticmethod
     def _require_model_stage(stage: object) -> str:
@@ -155,6 +465,7 @@ class ResearchJudgmentMixin:
         attempt = request.get("attempt_binding")
         with self._transaction() as connection:
             task = self._plan_task(connection, task_id, trusted_context, lock=True)
+            self._reject_legacy_acp_call(connection, task_id, call_identity)
             # A COMPLETED call is an idempotent replay FIRST, before any attempt or
             # current-plan check: its result may already have advanced the plan (and
             # even moved it to a non-judgment stage), so a late retry with the old
@@ -239,6 +550,7 @@ class ResearchJudgmentMixin:
             row = self._load_stage_call(connection, task["task_id"], call_identity, lock=True)
             if row is None:
                 raise InvalidTransition("research stage call was not admitted")
+            self._reject_legacy_acp_call(connection, task_id, call_identity)
             if int(row["plan_version"]) > plan["plan_version"]:
                 raise InvalidTransition("research stage call belongs to a newer plan revision")
             if row["status"] == "completed":
@@ -289,6 +601,7 @@ class ResearchJudgmentMixin:
             if plan_row is None:
                 raise ResearchNotFound("research execution plan not found")
             plan = validate_plan(plan_row["plan"])
+            self._reject_legacy_acp_stage(connection, task_id, plan)
             committed = self._commit_proposal_in_transaction(connection, task, plan, proposal)
             return committed["projection"]
 
@@ -310,6 +623,7 @@ class ResearchJudgmentMixin:
             row = self._load_stage_call(connection, task["task_id"], call_identity, lock=True)
             if row is None:
                 raise InvalidTransition("research stage call was not admitted")
+            self._reject_legacy_acp_call(connection, task_id, call_identity)
             if int(row["plan_version"]) > plan["plan_version"]:
                 raise InvalidTransition("research stage call belongs to a newer plan revision")
             if row["status"] == "completed":

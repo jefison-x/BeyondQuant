@@ -4,6 +4,7 @@ import hashlib
 import math
 import re
 import uuid
+from contextlib import nullcontext
 
 from packages.contracts.domain_call_admission import call_evidence_receipt, request_evidence, validate_call_evidence
 from .db import execute, fetch_one
@@ -254,7 +255,8 @@ class DomainCallEvidenceMixin:
     def _acp_tool_ingress_agent_run(self, connection, identity: dict, scope: dict,
                                     tool_name: str, *, bootstrap: bool) -> str | None:
         """Resolve the exact bound AgentRun admission shared by observe and abort."""
-        from .agent_research import AgentConflict, AgentForbidden, ROLE_BY_ID
+        from .agent_research import (AgentConflict, AgentForbidden, RESEARCH_JUDGMENT_ROLE_ID,
+            _ALL_ROLE_BY_ID)
 
         if identity["origin"] == "subagent":
             if identity["native_parent_session_id"] != identity["native_root_session_id"]:
@@ -293,6 +295,21 @@ class DomainCallEvidenceMixin:
             if any(binding.get(key) != value for key, value in expected_binding.items()):
                 raise AgentConflict("ACP tool ingress conflicts with the durable native Agent lineage")
 
+        judgment_root = fetch_one(connection, """SELECT * FROM research_judgment_acp_roots
+            WHERE root_run_id=:root FOR SHARE""", {"root": identity["root_run_id"]})
+        if judgment_root is not None:
+            if (identity["origin"] != "root" or identity["depth"] != 0
+                    or identity["native_parent_session_id"] is not None
+                    or identity["native_agent_session_id"] != identity["native_root_session_id"]):
+                raise AgentForbidden("research-judgment root does not delegate native Agent authority")
+            if (judgment_root["status"] != "agent_bound"
+                    or judgment_root["native_root_session_id"] != identity["native_root_session_id"]
+                    or judgment_root["agent_run_id"] is None):
+                raise AgentConflict("research-judgment root requires its trusted native AgentRun before ingress")
+            from packages.contracts.research_judgment import STAGE_ALLOWED_TOOLS
+            if tool_name not in STAGE_ALLOWED_TOOLS.get(judgment_root["stage"], frozenset()):
+                raise AgentForbidden("research-judgment stage is not authorized for this MCP tool")
+
         if binding is None or binding["status"] != "bound":
             if not bootstrap:
                 raise AgentConflict("ACP business tool ingress requires a bound native AgentRun")
@@ -309,9 +326,11 @@ class DomainCallEvidenceMixin:
         if (run is None or any(run.get(key) != value for key, value in expected_run.items())
                 or run.get("authority_status", "active") != "active"):
             raise AgentConflict("ACP tool ingress AgentRun is no longer active under this authority")
-        role = ROLE_BY_ID.get(run["role_id"])
+        role = _ALL_ROLE_BY_ID.get(run["role_id"])
         if role is None or (not bootstrap and tool_name not in role.allowed_tools):
             raise AgentForbidden("ACP Agent role is not authorized for this MCP tool")
+        if judgment_root is not None and run["run_id"] != judgment_root["agent_run_id"]:
+            raise AgentConflict("research-judgment ingress AgentRun does not match its root binding")
         return run["run_id"]
 
     @staticmethod
@@ -409,7 +428,7 @@ class DomainCallEvidenceMixin:
             "trace_id": scope["trace"], "dsh_run_id": scope["generation"]}
         return all(row.get(key) == value for key, value in expected.items())
 
-    def bind_acp_agent(self, payload: object, *, trusted_scope: dict) -> dict:
+    def bind_acp_agent(self, payload: object, *, trusted_scope: dict, _connection=None) -> dict:
         from .agent_research import (AgentConflict, AgentNotFound, AgentUnauthorized,
             _entity_id, _runtime_boot_id)
 
@@ -431,7 +450,7 @@ class DomainCallEvidenceMixin:
         scope = {"owner": trusted_scope["owner"], "workspace": trusted_scope["workspace"],
                  "actor": trusted_scope["actor"], "session": trusted_scope["session"],
                  "trace": trusted_scope["trace"], "generation": trusted_scope["generation"]}
-        with self._transaction() as connection:
+        with (nullcontext(_connection) if _connection is not None else self._transaction()) as connection:
             self._lifecycle_lock(connection, "runtime-authority:current")
             self._require_lifecycle_workspace(connection, scope["owner"], scope["workspace"])
             authority = self._require_current_acp_boot(connection, identity["runtime_boot_id"])
@@ -1075,7 +1094,7 @@ class DomainCallEvidenceMixin:
         return row["receipt_json"]
 
     def _domain_identity(self, connection, evidence, context, *, active):
-        from .agent_research import AgentConflict, AgentUnauthorized, ROLE_BY_ID
+        from .agent_research import AgentConflict, AgentUnauthorized, _ALL_ROLE_BY_ID
 
         self._lifecycle_lock(connection, "runtime-authority:current")
         self._require_lifecycle_workspace(connection, context["owner"], context["workspace"])
@@ -1093,7 +1112,7 @@ class DomainCallEvidenceMixin:
                 "trace_id": context["trace"], "root_run_id": context["root"], "dsh_run_id": evidence["generation"],
         }.items()):
             raise AgentUnauthorized("private call does not match its registered agent")
-        role = ROLE_BY_ID.get(run["role_id"])
+        role = _ALL_ROLE_BY_ID.get(run["role_id"])
         if role is None or evidence["action"] not in role.allowed_tools:
             raise AgentUnauthorized("private call action is outside the registered role")
         task = fetch_one(connection, "SELECT * FROM research_tasks WHERE task_id=:task FOR SHARE", {"task": evidence["task_id"]})
@@ -1291,7 +1310,7 @@ class DomainCallEvidenceMixin:
     def consume_domain_call_evidence(self, value, *, trusted_owner, trusted_workspace,
                                     trusted_session_id, trusted_trace_id, conversation_id,
                                     trusted_boot_id=None):
-        from .agent_research import AgentConflict, AgentUnauthorized, ROLE_BY_ID, _principal, _trace
+        from .agent_research import AgentConflict, AgentUnauthorized, _ALL_ROLE_BY_ID, _principal, _trace
 
         evidence = validate_call_evidence(value)
         receipt = call_evidence_receipt(evidence)
@@ -1335,7 +1354,7 @@ class DomainCallEvidenceMixin:
                     "trace_id": context["trace"], "root_run_id": context["root"], "dsh_run_id": evidence["generation"],
             }.items()):
                 raise AgentUnauthorized("private call does not match its registered agent")
-            role = ROLE_BY_ID.get(run["role_id"])
+            role = _ALL_ROLE_BY_ID.get(run["role_id"])
             if role is None or evidence["action"] not in role.allowed_tools:
                 raise AgentUnauthorized("private call action is outside the registered role")
             task = fetch_one(connection, "SELECT * FROM research_tasks WHERE task_id=:task", {"task": evidence["task_id"]})
