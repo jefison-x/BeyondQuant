@@ -92,7 +92,11 @@ accepted protocol and end-to-end qualification:
    not qualify ACP.
 
 The scoped-client probe now asserts every observed bootstrap, root and child
-header exactly. Independent review still rates the overall design FAIL until
+header exactly. A separate negative control disposed the child client before its
+call and proved official DSH fell back to the global client; a discovery-only
+mock MCP rejected that same fallback request before its business handler ran.
+See [fallback qualification](../../evidence/dsh-acp-upgrade/FALLBACK-QUALIFICATION.md).
+The actual BYQ MCP guard and disconnect/reconnect path remain NOT_RUN. Independent review still rates the overall design FAIL until
 global fallback denial, trusted lineage, Backend binding and recovery are
 proved in the packaged Product composition.
 
