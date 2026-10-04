@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import socket
+import sys
 import threading
 import time
 import urllib.error
@@ -12,7 +15,7 @@ import pytest
 
 from app.research_judgment_acp_journal import AcpJudgmentJournal
 from app.research_judgment_acp_provider_proxy import (
-    AcpJudgmentProviderProxy, ProviderHttpResponse,
+    AcpJudgmentProviderProxy, ProviderHttpResponse, _IsolatedHttpsTransport,
 )
 from app.research_judgment_acp_provider_routes import selected_route
 
@@ -245,7 +248,13 @@ def test_close_waits_for_inflight_dispatch_and_no_new_send_after_return(tmp_path
         credential="synthetic-key", limits=limits, transport=held_transport)
     proxy.__enter__()
     origin = proxy.base_url.removesuffix("/v1")
-    caller = threading.Thread(target=lambda: _post(origin))
+    def send_during_close():
+        try:
+            _post(origin)
+        except OSError:
+            pass
+
+    caller = threading.Thread(target=send_during_close)
     caller.start()
     assert dispatched.wait(3)
     closer = threading.Thread(target=lambda: (proxy.close(), close_returned.set()))
@@ -261,3 +270,197 @@ def test_close_waits_for_inflight_dispatch_and_no_new_send_after_return(tmp_path
     with pytest.raises(urllib.error.URLError):
         _post(origin)
     assert len(sent) == 1
+
+
+def test_isolated_transport_abort_kills_blocked_resolution(tmp_path):
+    marker = tmp_path / "dns-started"
+    stalled_worker = "from pathlib import Path; import sys,time; Path(sys.argv[1]).write_text('resolving'); time.sleep(60)"
+    transport = _IsolatedHttpsTransport(
+        command=(sys.executable, "-c", stalled_worker, str(marker)))
+    result = []
+
+    def send():
+        try:
+            transport("https://example.invalid", {}, b"request", time.monotonic() + 10)
+        except (OSError, TimeoutError):
+            result.append("unknown")
+
+    caller = threading.Thread(target=send)
+    caller.start()
+    deadline = time.monotonic() + 3
+    while not marker.exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert marker.exists(), "transport worker did not reach the blocked resolver"
+    started = time.monotonic()
+    transport.abort()
+    caller.join(timeout=2)
+    assert not caller.is_alive()
+    assert time.monotonic() - started < 2
+    assert result == ["unknown"]
+    with pytest.raises(TimeoutError):
+        transport("https://example.invalid", {}, b"request", time.monotonic() + 10)
+
+
+def test_default_https_worker_loads_and_fails_closed_on_local_refusal():
+    transport = _IsolatedHttpsTransport()
+    with pytest.raises(OSError):
+        transport("https://127.0.0.1:1/v1/chat/completions", {}, b"{}",
+                  time.monotonic() + 3)
+    transport.abort()
+
+
+def test_proxy_close_kills_blocked_https_worker_and_latches_unknown(tmp_path):
+    journal, limits = _ready(tmp_path)
+    marker = tmp_path / "dns-started"
+    stalled_worker = "from pathlib import Path; import sys,time; Path(sys.argv[1]).write_text('resolving'); time.sleep(60)"
+    transport = _IsolatedHttpsTransport(
+        command=(sys.executable, "-c", stalled_worker, str(marker)))
+    proxy = AcpJudgmentProviderProxy(
+        journal, route_name="opencode-go-chat", model="synthetic-model",
+        credential="synthetic-key", limits=limits, transport=transport)
+    proxy.__enter__()
+    origin = proxy.base_url.removesuffix("/v1")
+    outcome = []
+    def send_while_worker_stalls():
+        try:
+            outcome.append(_post(origin)[0])
+        except OSError:
+            outcome.append("disconnected")
+
+    caller = threading.Thread(target=send_while_worker_stalls)
+    caller.start()
+    deadline = time.monotonic() + 3
+    while not marker.exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert marker.exists(), "worker did not reach the stalled resolution phase"
+    started = time.monotonic()
+    proxy.close()
+    caller.join(timeout=2)
+    assert not caller.is_alive() and outcome[0] in (502, "disconnected")
+    assert time.monotonic() - started < 2
+    assert journal.snapshot()["provider_attempts"][0]["phase"] == "unknown"
+    with pytest.raises(urllib.error.URLError):
+        _post(origin)
+
+
+def test_proxy_close_interrupts_stalled_local_client_body(tmp_path):
+    journal, limits = _ready(tmp_path)
+    proxy = AcpJudgmentProviderProxy(
+        journal, route_name="opencode-go-chat", model="synthetic-model",
+        credential="synthetic-key", limits=limits,
+        transport=lambda *_: pytest.fail("incomplete body reached upstream"))
+    proxy.__enter__()
+    port = proxy._server.server_address[1]
+    client = socket.create_connection(("127.0.0.1", port), timeout=2)
+    try:
+        client.sendall(
+            b"POST /v1/chat/completions HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+            b"Content-Type: application/json\r\nAuthorization: Bearer synthetic-key\r\n"
+            b"Content-Length: 100\r\n\r\n{}")
+        deadline = time.monotonic() + 2
+        while proxy._active_client is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert proxy._active_client is not None
+        started = time.monotonic()
+        proxy.close()
+        assert time.monotonic() - started < 2
+        assert journal.snapshot().get("provider_attempts") is None
+    finally:
+        client.close()
+
+
+def test_proxy_close_interrupts_partial_headers_before_handler_entry(tmp_path):
+    journal, limits = _ready(tmp_path)
+    proxy = AcpJudgmentProviderProxy(
+        journal, route_name="opencode-go-chat", model="synthetic-model",
+        credential="synthetic-key", limits=limits,
+        transport=lambda *_: pytest.fail("partial headers reached upstream"))
+    proxy.__enter__()
+    port = proxy._server.server_address[1]
+    client = socket.create_connection(("127.0.0.1", port), timeout=2)
+    try:
+        client.sendall(b"POST /v1/chat/completions HTTP/1.1\r\nContent-Type:")
+        deadline = time.monotonic() + 2
+        while not proxy._clients and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert proxy._clients
+        started = time.monotonic()
+        proxy.close()
+        assert time.monotonic() - started < 2
+        assert journal.snapshot().get("provider_attempts") is None
+        proxy.close()
+    finally:
+        client.close()
+
+
+def test_close_failure_still_closes_listener_and_can_be_rechecked(tmp_path):
+    journal, limits = _ready(tmp_path)
+    proxy = AcpJudgmentProviderProxy(
+        journal, route_name="opencode-go-chat", model="synthetic-model",
+        credential="synthetic-key", limits=limits,
+        transport=lambda *_: pytest.fail("unexpected upstream"))
+    proxy.__enter__()
+    origin = proxy.base_url.removesuffix("/v1")
+    proxy._dispatch_lock.acquire()
+    try:
+        with pytest.raises(Exception, match="dispatch did not stop"):
+            proxy.close()
+        with pytest.raises(urllib.error.URLError):
+            _post(origin)
+    finally:
+        proxy._dispatch_lock.release()
+    proxy.close()
+    assert proxy._close_complete
+
+
+def test_https_worker_environment_excludes_unrelated_secrets(monkeypatch):
+    monkeypatch.setenv("BYQ_RUNTIME_JUDGMENT_TOKEN", "synthetic-secret")
+    monkeypatch.setenv("HTTPS_PROXY", "http://untrusted.invalid")
+    env = _IsolatedHttpsTransport._worker_environment()
+    assert set(env) == {"PYTHONPATH", "PYTHONNOUSERSITE", "PYTHONDONTWRITEBYTECODE"}
+    assert "synthetic-secret" not in str(env)
+    assert "untrusted.invalid" not in str(env)
+    assert os.path.isdir(env["PYTHONPATH"].split(os.pathsep)[0])
+
+
+def test_https_worker_stdout_bound_is_checked_while_reading():
+    flood = "import sys; sys.stdout.buffer.write(b'x' * (17 * 1024 * 1024)); sys.stdout.flush()"
+    transport = _IsolatedHttpsTransport(command=(sys.executable, "-c", flood))
+    with pytest.raises(OSError, match="exceeds bound"):
+        transport("https://127.0.0.1:1", {}, b"{}", time.monotonic() + 3)
+    transport.abort()
+
+
+def test_abort_after_worker_registration_prevents_request_delivery(tmp_path):
+    marker = tmp_path / "received-secret"
+    receiver = ("from pathlib import Path; import sys; data=sys.stdin.buffer.read(); "
+                "Path(sys.argv[1]).write_bytes(data)")
+    transport = _IsolatedHttpsTransport(
+        command=(sys.executable, "-c", receiver, str(marker)))
+    registered = threading.Event()
+    release = threading.Event()
+    original_exchange = transport._exchange
+
+    def held_exchange(process, payload, deadline):
+        registered.set()
+        assert release.wait(3)
+        return original_exchange(process, payload, deadline)
+
+    transport._exchange = held_exchange
+    outcomes = []
+
+    def send():
+        try:
+            transport("https://127.0.0.1:1", {"authorization": "synthetic-secret"},
+                      b"prompt", time.monotonic() + 5)
+        except (OSError, TimeoutError):
+            outcomes.append("unknown")
+
+    caller = threading.Thread(target=send)
+    caller.start()
+    assert registered.wait(3)
+    transport.abort()
+    release.set()
+    caller.join(timeout=2)
+    assert not caller.is_alive() and outcomes == ["unknown"]
+    assert not marker.exists()

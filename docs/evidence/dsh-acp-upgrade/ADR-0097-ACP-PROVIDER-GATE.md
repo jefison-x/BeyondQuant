@@ -132,15 +132,42 @@ tests exercised all seven exact paths and headers, an unknown lost response,
 two consecutive calls, and close ordering. These are **synthetic loopback
 facts**, not real `_send_https`, DSH process, credential or Product acceptance.
 
+The real HTTPS attempt now runs in a short-lived worker process. It receives
+only fixed Python import paths and no Adapter secrets in its environment.
+Credentials and request bytes enter by a private stdin pipe, not the process
+command line; the parent bounds stdout while reading and the worker logs no
+request or secret. The
+parent kills and reaps this process at the request deadline or on proxy close.
+If the child or dispatch cannot be proven stopped, close raises an unknown
+outcome instead of reporting successful cleanup. A local negative test held
+the child in a simulated endless DNS resolution, then closed the proxy: the
+child was stopped, the request returned 502, the durable attempt remained
+`unknown`, and no next request was admitted. A second isolated test verified
+worker termination directly; a loopback refusal verified the default worker
+loads and fails closed. These prove the simulated blocked-worker cleanup path,
+not real provider HTTPS behavior or DSH consumption.
+Every accepted local client is registered before header parsing, gets an idle
+read timeout, and is shut down during close; response writes have a two-second
+timeout. Stalled request-body and partial-header negatives verified that close
+interrupts both before provider dispatch. A forced dispatch-lock timeout
+closed the listener and allowed a later cleanup recheck. Secret-environment
+and oversized-worker-stdout negatives also passed. A later test held the
+parent after child registration and then aborted; no credential/request was
+delivered to the child. Root's final focused proxy file passed 20/20 with
+thread warnings treated as errors.
+Independent Tester passed the corrected 19-case proxy snapshot and 88 related
+pure cases; independent Reviewer found no remaining P1/P2 in that snapshot.
+
 The proxy constructor still receives model, credential and limits from its
 caller. The private last-layer profile is generated and loaded offline, but
 it is not bound to trusted Backend admission or the running proxy yet. The
 loopback port is not isolated from unrelated local processes.
 Actual HTTPS redirect, partial-body, size and deadline negatives remain
-NOT_RUN. The real transport's DNS lookup is not covered by urllib's socket
-timeout; a blocked lookup could make `close()` wait on the dispatch lock without
-a bounded end. Process-level termination and a blocking-resolution negative
-must be proven before connecting this proxy to ACP. The seven synthetic
+NOT_RUN. Real DNS and HTTPS interruption still need an isolated transport
+qualification; the tested endless resolver is a synthetic child. Storage
+fsync can still prevent a successful close proof;
+the 2-second dispatch wait then fails closed with an unknown outcome. The
+seven synthetic
 Messages fixtures explicitly report zero cache
 read/write; omitted cache fields remain unknown pending fixed-provider stream
 qualification. Therefore the outbound budget and unknown-result gate remains

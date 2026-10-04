@@ -7,8 +7,14 @@ trusted admitted invocation. This module does not open the ACP entry itself.
 from __future__ import annotations
 
 import http.client
+import base64
 import json
+import os
+from pathlib import Path
+import selectors
 import socket
+import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -88,8 +94,165 @@ def _send_https(url: str, headers: dict[str, str], body: bytes,
         return ProviderHttpResponse(status, content_type, data)
 
 
+class _IsolatedHttpsTransport:
+    """One killable HTTPS attempt; abort unblocks proxy close during DNS stalls."""
+
+    def __init__(self, *, command=None) -> None:
+        self._command = command or (sys.executable, "-m", "app.research_judgment_acp_provider_worker")
+        self._lock = threading.Lock()
+        self._active = None
+        self._aborted = False
+
+    @staticmethod
+    def _worker_environment() -> dict[str, str]:
+        service_root = Path(__file__).resolve().parents[1]
+        packages_root = next(
+            (path for path in (service_root, *service_root.parents)
+             if (path / "packages" / "contracts").is_dir()), None)
+        if packages_root is None:
+            raise AcpJudgmentOutcomeUnknown("provider worker packages are unavailable")
+        return {"PYTHONPATH": os.pathsep.join((str(service_root), str(packages_root))),
+                "PYTHONNOUSERSITE": "1", "PYTHONDONTWRITEBYTECODE": "1"}
+
+    @staticmethod
+    def _stop(process) -> None:
+        if process.poll() is None:
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                pass
+            try:
+                process.wait(timeout=0.25)
+            except subprocess.TimeoutExpired:
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+                try:
+                    process.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    pass
+        if process.poll() is None:
+            raise AcpJudgmentOutcomeUnknown("provider transport process did not stop")
+
+    @staticmethod
+    def _exchange(process, payload: bytes, deadline_monotonic: float) -> bytes:
+        """Pump private stdin/stdout with an absolute deadline and memory cap."""
+        assert process.stdin is not None and process.stdout is not None
+        stdin, stdout = process.stdin, process.stdout
+        os.set_blocking(stdin.fileno(), False)
+        os.set_blocking(stdout.fileno(), False)
+        result = bytearray()
+        written = 0
+        output_limit = MAX_SSE_BYTES * 2 + 4096
+        with selectors.DefaultSelector() as selector:
+            selector.register(stdin, selectors.EVENT_WRITE)
+            selector.register(stdout, selectors.EVENT_READ)
+            while selector.get_map():
+                remaining = deadline_monotonic - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("provider transport deadline expired")
+                events = selector.select(remaining)
+                if not events:
+                    raise TimeoutError("provider transport deadline expired")
+                for key, _ in events:
+                    if key.fileobj is stdin:
+                        try:
+                            size = os.write(stdin.fileno(), payload[written:written + 65536])
+                        except BrokenPipeError as error:
+                            raise OSError("provider worker ended before request delivery") from error
+                        written += size
+                        if written == len(payload):
+                            selector.unregister(stdin)
+                            stdin.close()
+                    else:
+                        chunk = os.read(stdout.fileno(), 65536)
+                        if not chunk:
+                            selector.unregister(stdout)
+                            stdout.close()
+                        else:
+                            result.extend(chunk)
+                            if len(result) > output_limit:
+                                raise OSError("provider worker response exceeds bound")
+        remaining = max(0.0, deadline_monotonic - time.monotonic())
+        try:
+            process.wait(timeout=remaining)
+        except subprocess.TimeoutExpired as error:
+            raise TimeoutError("provider worker did not exit by deadline") from error
+        return bytes(result)
+
+    def __call__(self, url: str, headers: dict[str, str], body: bytes,
+                 deadline_monotonic: float) -> ProviderHttpResponse:
+        payload = json.dumps({
+            "url": url, "headers": headers,
+            "body_b64": base64.b64encode(body).decode("ascii"),
+            "deadline_monotonic": deadline_monotonic,
+        }, separators=(",", ":")).encode()
+        if len(payload) > 12 * 1024 * 1024:
+            raise ValueError("provider worker request exceeds bound")
+        process = None
+        try:
+            if not self._lock.acquire(timeout=2):
+                raise AcpJudgmentOutcomeUnknown("provider transport start did not settle")
+            try:
+                if self._aborted or time.monotonic() >= deadline_monotonic:
+                    raise TimeoutError("provider transport is closed or expired")
+                process = subprocess.Popen(
+                    self._command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL, close_fds=True,
+                    env=self._worker_environment())
+                self._active = process
+            finally:
+                self._lock.release()
+            if self._aborted:
+                raise TimeoutError("provider transport was closed before request delivery")
+            raw = self._exchange(process, payload, deadline_monotonic)
+            if process.returncode != 0 or len(raw) > (MAX_SSE_BYTES * 2 + 4096):
+                raise OSError("provider transport ended without a bounded reply")
+            try:
+                result = json.loads(raw)
+                response = ProviderHttpResponse(
+                    result["status"], result["content_type"],
+                    base64.b64decode(result["body_b64"], validate=True))
+            except (KeyError, TypeError, ValueError) as error:
+                raise OSError("provider transport reply is invalid") from error
+            if (type(response.status) is not int or not isinstance(response.content_type, str)
+                    or len(response.body) > MAX_SSE_BYTES):
+                raise OSError("provider transport reply is unqualified")
+            return response
+        finally:
+            if process is not None:
+                self._stop(process)
+                if process.stdin is not None:
+                    process.stdin.close()
+                if process.stdout is not None:
+                    process.stdout.close()
+                with self._lock:
+                    if self._active is process:
+                        self._active = None
+
+    def abort(self) -> None:
+        # This flag must become visible even if Popen itself is stuck while
+        # holding the registration lock. The sender rechecks before stdin I/O.
+        self._aborted = True
+        if not self._lock.acquire(timeout=2):
+            raise AcpJudgmentOutcomeUnknown("provider transport start did not stop")
+        try:
+            process = self._active
+        finally:
+            self._lock.release()
+        if process is not None:
+            self._stop(process)
+
+
 class _Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+
+    def finish(self) -> None:
+        try:
+            super().finish()
+        finally:
+            self.server.proxy._untrack_client(self.connection)  # type: ignore[attr-defined]
 
     def log_message(self, *args: object) -> None:
         return
@@ -117,7 +280,15 @@ class _Handler(BaseHTTPRequestHandler):
         # A following model call may arrive as soon as DSH reads the terminal
         # bytes. Keep it waiting until delivery and durable settlement finish.
         with proxy._dispatch_lock:
-            self._handle_post(proxy)
+            with proxy._client_lock:
+                proxy._active_client = self.connection
+            try:
+                self._handle_post(proxy)
+            finally:
+                with proxy._client_lock:
+                    if proxy._active_client is self.connection:
+                        proxy._active_client = None
+
 
     def _handle_post(self, proxy: "AcpJudgmentProviderProxy") -> None:
         if proxy.closed or self.path != proxy.route.local_base_path + proxy.route.request_target:
@@ -172,7 +343,9 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             if proxy.closed:
                 raise OSError("provider proxy closed before dispatch")
-            response = proxy.transport(url, headers, body, proxy.deadline_monotonic)
+            response = proxy.transport(
+                url, headers, body,
+                min(proxy.deadline_monotonic, time.monotonic() + 120))
             if (not isinstance(response, ProviderHttpResponse)
                     or type(response.status) is not int or response.status != 200
                     or not isinstance(response.body, bytes)
@@ -185,6 +358,10 @@ class _Handler(BaseHTTPRequestHandler):
                     or receipt.actual_output_tokens > attempt["declared_output_tokens"]
                     or proxy.closed):
                 raise ValueError("provider terminal or usage is unproven")
+            remaining = proxy.deadline_monotonic - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("provider delivery deadline expired")
+            self.connection.settimeout(min(remaining, 2.0))
             self.send_response(200)
             self.send_header("content-type", "text/event-stream")
             self.send_header("content-length", str(len(response.body)))
@@ -210,6 +387,16 @@ class _Handler(BaseHTTPRequestHandler):
             self._fail()
 
 
+class _TrackedServer(ThreadingHTTPServer):
+    def get_request(self):
+        connection, address = super().get_request()
+        connection.settimeout(2.0)
+        if not self.proxy._track_client(connection):  # type: ignore[attr-defined]
+            connection.close()
+            raise OSError("provider proxy closed during accept")
+        return connection, address
+
+
 class AcpJudgmentProviderProxy:
     """Private loopback listener for one selected root and one provider route."""
 
@@ -224,17 +411,32 @@ class AcpJudgmentProviderProxy:
         self.model = model
         self.credential = credential
         self.limits = dict(limits)
-        self.transport = transport or _send_https
+        self.transport = transport or _IsolatedHttpsTransport()
         self.deadline_monotonic = time.monotonic() + max(
             0.0, (self.limits["deadline_at_ms"] - time.time() * 1000) / 1000)
-        self._server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        self._server = _TrackedServer(("127.0.0.1", 0), _Handler)
         self._server.daemon_threads = True
         self._server.proxy = self  # type: ignore[attr-defined]
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._dispatch_lock = threading.Lock()
+        self._client_lock = threading.Lock()
+        self._active_client = None
+        self._clients: set[socket.socket] = set()
         self._close_lock = threading.Lock()
         self._closed = False
+        self._close_complete = False
         self._started = False
+
+    def _track_client(self, connection: socket.socket) -> bool:
+        with self._client_lock:
+            if self._closed:
+                return False
+            self._clients.add(connection)
+            return True
+
+    def _untrack_client(self, connection: socket.socket) -> None:
+        with self._client_lock:
+            self._clients.discard(connection)
 
     @property
     def closed(self) -> bool:
@@ -255,18 +457,48 @@ class AcpJudgmentProviderProxy:
 
     def close(self) -> None:
         with self._close_lock:
-            if self._closed:
+            if self._close_complete:
                 return
-            self._closed = True
+            with self._client_lock:
+                self._closed = True
+                clients = tuple(self._clients)
+            abort_error = None
+            try:
+                if isinstance(self.transport, _IsolatedHttpsTransport):
+                    self.transport.abort()
+            except AcpJudgmentOutcomeUnknown as error:
+                abort_error = error
+            for client in clients:
+                try:
+                    client.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
             # A handler holds this lock through provider transport, client
             # delivery and journal settlement. Waiting here makes return from
             # close a boundary after which no outbound call can begin.
-            with self._dispatch_lock:
-                pass
+            settled = self._dispatch_lock.acquire(timeout=2)
+            if settled:
+                self._dispatch_lock.release()
             if self._started:
                 self._server.shutdown()
                 self._thread.join(timeout=2)
             self._server.server_close()
+            client_deadline = time.monotonic() + 2
+            while True:
+                with self._client_lock:
+                    clients_left = bool(self._clients)
+                if not clients_left or time.monotonic() >= client_deadline:
+                    break
+                time.sleep(0.005)
+            if not settled:
+                raise AcpJudgmentOutcomeUnknown("provider dispatch did not stop after close")
+            if abort_error is not None:
+                raise abort_error
+            if self._started and self._thread.is_alive():
+                raise AcpJudgmentOutcomeUnknown("provider listener did not stop")
+            if clients_left:
+                raise AcpJudgmentOutcomeUnknown("provider clients did not stop")
+            self._close_complete = True
 
     def __exit__(self, *_args):
         self.close()
