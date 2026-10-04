@@ -7,7 +7,9 @@ import { test } from 'node:test';
 import {
   installProductAcpIdentity,
   signAcpAgentToken,
+  signAcpJudgmentRootToken,
   validateClaims,
+  validateJudgmentClaims,
 } from './byq-acp-mcp-identity.js';
 
 const NOW = 1_800_000_000_000;
@@ -15,6 +17,9 @@ const SIGNING_KEY = 'synthetic-acp-signing-key-32-bytes-minimum';
 const ROOT_ID = 'b'.repeat(32);
 const BOOT_ID = 'c'.repeat(32);
 const RESERVATION_ID = `continuation_${'d'.repeat(32)}`;
+const JUDGMENT_KEY = 'synthetic-adr0097-judgment-signing-key-at-least-32-bytes';
+const TASK_ID = `task_${'e'.repeat(32)}`;
+const CALL_IDENTITY = `byq-judgment-${'f'.repeat(32)}`;
 
 function claims(overrides = {}) {
   const rootSession = '8b90c2b5-3a08-4eae-9fc7-04baf12910de';
@@ -55,6 +60,22 @@ function identityEnv(home, overrides = {}) {
     BYQ_DSH_RUN_ID: 'generation-1',
     BYQ_ROOT_RUN_ID: ROOT_ID,
     BYQ_CONTINUATION_RESERVATION_ID: RESERVATION_ID,
+    ...overrides,
+  };
+}
+
+function judgmentIdentityEnv(home, overrides = {}) {
+  const env = identityEnv(home);
+  delete env.BYQ_MCP_ACP_DISCOVERY_TOKEN;
+  delete env.BYQ_MCP_ACP_SIGNING_KEY;
+  delete env.BYQ_CONTINUATION_RESERVATION_ID;
+  return {
+    ...env,
+    BYQ_MCP_URL: 'http://judgment-mcp.test/mcp/v1',
+    BYQ_MCP_ACP_IDENTITY_MODE: 'research-judgment-root-v1',
+    BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY: JUDGMENT_KEY,
+    BYQ_MCP_ACP_JUDGMENT_TASK_ID: TASK_ID,
+    BYQ_MCP_ACP_JUDGMENT_CALL_IDENTITY: CALL_IDENTITY,
     ...overrides,
   };
 }
@@ -108,6 +129,38 @@ function tokenClaims(token) {
   return JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
 }
 
+function judgmentTokenClaims(token) {
+  const [prefix, encoded] = token.split('.');
+  assert.equal(prefix, 'byq-acp-judgment-v1');
+  assert.equal(token.split('.').length, 3);
+  return JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+}
+
+function judgmentClaims(overrides = {}) {
+  const nativeRootId = '8b90c2b5-3a08-4eae-9fc7-04baf12910de';
+  return {
+    v: 1,
+    aud: 'byq-product-acp-judgment-mcp',
+    root_run_id: ROOT_ID,
+    runtime_boot_id: BOOT_ID,
+    owner_principal: 'alice@example.test',
+    workspace_id: 'workspace_alice',
+    actor_principal: 'byq-product-agent-public-session-1',
+    trace_id: 'trace-1',
+    session_id: 'public-session-1',
+    dsh_run_id: 'generation-1',
+    native_root_session_id: nativeRootId,
+    native_agent_session_id: nativeRootId,
+    native_parent_session_id: null,
+    origin: 'root',
+    depth: 0,
+    task_id: TASK_ID,
+    call_identity: CALL_IDENTITY,
+    expires_at: NOW + 24 * 60 * 60 * 1000,
+    ...overrides,
+  };
+}
+
 test('signed identity uses exact compact sorted JSON bytes and 24 hour maximum expiry', () => {
   const input = claims();
   const token = signAcpAgentToken(input, SIGNING_KEY, NOW);
@@ -130,6 +183,37 @@ test('signed identity uses exact compact sorted JSON bytes and 24 hour maximum e
     SIGNING_KEY, NOW));
   assert.throws(() => signAcpAgentToken(claims(), 'short', NOW));
   assert.throws(() => validateClaims(claims({ native_agent_session_id: randomUUID() }), NOW));
+});
+
+test('judgment identity signs only exact root/task/call claims with a separate audience', () => {
+  const input = judgmentClaims();
+  const token = signAcpJudgmentRootToken(input, JUDGMENT_KEY, NOW);
+  const [prefix, encoded, signature] = token.split('.');
+  assert.equal(prefix, 'byq-acp-judgment-v1');
+  const payload = Buffer.from(encoded, 'base64url');
+  const expectedPayload = Buffer.from(JSON.stringify(Object.fromEntries(
+    Object.keys(input).sort().map(key => [key, input[key]]))), 'utf8');
+  assert.deepEqual(payload, expectedPayload);
+  assert.equal(signature, createHmac('sha256', Buffer.from(JUDGMENT_KEY, 'utf8'))
+    .update(expectedPayload).digest('base64url'));
+  assert.deepEqual(judgmentTokenClaims(token), input);
+  assert.deepEqual(Object.keys(judgmentTokenClaims(token)).sort(), Object.keys(input).sort());
+
+  assert.throws(() => signAcpJudgmentRootToken(judgmentClaims({ aud: 'byq-product-mcp' }),
+    JUDGMENT_KEY, NOW));
+  assert.throws(() => signAcpJudgmentRootToken(judgmentClaims({ origin: 'subagent', depth: 1 }),
+    JUDGMENT_KEY, NOW));
+  assert.throws(() => signAcpJudgmentRootToken(judgmentClaims({ native_agent_session_id: randomUUID() }),
+    JUDGMENT_KEY, NOW));
+  assert.throws(() => signAcpJudgmentRootToken(judgmentClaims({ task_id: 'task_invalid' }),
+    JUDGMENT_KEY, NOW));
+  assert.throws(() => signAcpJudgmentRootToken(judgmentClaims({ call_identity: 'forged-call' }),
+    JUDGMENT_KEY, NOW));
+  assert.throws(() => signAcpJudgmentRootToken(judgmentClaims({ expires_at: NOW }),
+    JUDGMENT_KEY, NOW));
+  assert.throws(() => signAcpJudgmentRootToken({ ...input, unexpected: true }, JUDGMENT_KEY, NOW));
+  assert.throws(() => signAcpJudgmentRootToken(input, 'short', NOW));
+  assert.doesNotThrow(() => validateJudgmentClaims(input, NOW));
 });
 
 test('official Agent creation mounts distinct root and child tokens under discovery bootstrap', async () => {
@@ -239,6 +323,122 @@ test('resume requires the exact persisted native root marker and exact process i
     await handlers.get('agent/created')({ agent: root, source: 'resume' });
     assert.equal(scopedConfigs.length, 1);
     assert.equal(tokenClaims(scopedConfigs[0].headers.Authorization.slice(7)).native_root_session_id, rootId);
+  } finally {
+    process.chdir(previousCwd);
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('judgment mode mounts one dedicated bearer on the actual native root only', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'byq-acp-judgment-'));
+  const previousCwd = process.cwd();
+  process.chdir(home);
+  try {
+    const { context, handlers, eventOptions, globalConfigs, McpClient } = fakeContext();
+    await installProductAcpIdentity(context, { maxDepth: 1 }, {
+      McpClient, env: judgmentIdentityEnv(home), now: () => NOW,
+    });
+    assert.equal(globalConfigs.length, 0, 'judgment mode has no global or discovery client');
+    assert.equal(eventOptions.get('agent/created').global, true);
+
+    const rootId = '8b90c2b5-3a08-4eae-9fc7-04baf12910de';
+    const { agent: root, scopedConfigs: rootConfigs } = fakeAgent(rootId, home);
+    context.sessions.set(rootId, root.session);
+    await handlers.get('agent/created')({ agent: root, source: 'startup' });
+    assert.equal(rootConfigs.length, 1);
+    assert.equal(rootConfigs[0].url, 'http://judgment-mcp.test/mcp/v1');
+    assert.equal(rootConfigs[0].serverName, 'byq');
+    assert.deepEqual(Object.keys(rootConfigs[0].headers), ['Authorization']);
+
+    const token = rootConfigs[0].headers.Authorization.slice('Bearer '.length);
+    const actual = judgmentTokenClaims(token);
+    assert.deepEqual(Object.keys(actual).sort(), Object.keys(judgmentClaims()).sort());
+    assert.equal(actual.aud, 'byq-product-acp-judgment-mcp');
+    assert.equal(actual.task_id, TASK_ID);
+    assert.equal(actual.call_identity, CALL_IDENTITY);
+    assert.equal(actual.native_root_session_id, rootId);
+    assert.equal(actual.native_agent_session_id, rootId);
+    assert.equal(actual.native_parent_session_id, null);
+    assert.equal(actual.origin, 'root');
+    assert.equal(actual.depth, 0);
+    assert.equal(actual.runtime_boot_id, BOOT_ID);
+
+    const { agent: child, scopedConfigs: childConfigs } = fakeAgent(randomUUID(), home, {
+      parentSession: rootId, origin: 'subagent', delegationDepth: 1,
+    });
+    context.sessions.set(child.id, child.session);
+    await assert.rejects(handlers.get('agent/created')({ agent: child, source: 'startup' }));
+    assert.equal(childConfigs.length, 0, 'child receives no judgment or Product fallback token');
+
+    const preExecute = handlers.get('tools/pre-execute');
+    let reached = false;
+    const denied = await preExecute({ name: 'mcp__byq__byq_research_get', agent: child }, async () => {
+      reached = true;
+      return { kind: 'allow' };
+    });
+    assert.equal(denied.kind, 'deny');
+    assert.equal(reached, false);
+  } finally {
+    process.chdir(previousCwd);
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('judgment startup rejects fallback credentials, shared endpoints, and recovery scope', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'byq-acp-judgment-invalid-'));
+  const previousCwd = process.cwd();
+  process.chdir(home);
+  try {
+    const cases = [
+      ['mode is required', { BYQ_MCP_ACP_IDENTITY_MODE: undefined }],
+      ['task is required', { BYQ_MCP_ACP_JUDGMENT_TASK_ID: undefined }],
+      ['call identity is required', { BYQ_MCP_ACP_JUDGMENT_CALL_IDENTITY: undefined }],
+      ['task format is exact', { BYQ_MCP_ACP_JUDGMENT_TASK_ID: 'task_invalid' }],
+      ['call format is exact', { BYQ_MCP_ACP_JUDGMENT_CALL_IDENTITY: 'byq-judgment-invalid' }],
+      ['Product discovery token forbidden', { BYQ_MCP_ACP_DISCOVERY_TOKEN: 'discovery' }],
+      ['Product signing key forbidden', { BYQ_MCP_ACP_SIGNING_KEY: SIGNING_KEY }],
+      ['static read-only token forbidden', { BYQ_MCP_READ_ONLY_TOKEN: 'static' }],
+      ['Product bearer forbidden', { BYQ_MCP_TOKEN: 'product' }],
+      ['Backend proof token forbidden', { BYQ_MCP_BACKEND_PROOF_TOKEN: 'backend-proof' }],
+      ['runtime authority token forbidden', { BYQ_RUNTIME_AUTHORITY_TOKEN: 'authority' }],
+      ['credential resolver token forbidden', { BYQ_CREDENTIAL_RESOLVER_TOKEN: 'resolver' }],
+      ['Product endpoint cannot be reused', { BYQ_MCP_PRODUCT_URL: 'http://judgment-mcp.test:80/mcp/v1' }],
+      ['static endpoint cannot be reused', { BYQ_MCP_READ_ONLY_URL: 'http://judgment-mcp.test/mcp/v1' }],
+      ['judgment root cannot be resumed implicitly', { BYQ_NATIVE_ROOT_SESSION_ID: '8b90c2b5-3a08-4eae-9fc7-04baf12910de' }],
+    ];
+    for (const [label, overrides] of cases) {
+      const { context, McpClient } = fakeContext();
+      const env = judgmentIdentityEnv(home, overrides);
+      if (Object.hasOwn(overrides, 'BYQ_MCP_ACP_IDENTITY_MODE')
+          && overrides.BYQ_MCP_ACP_IDENTITY_MODE === undefined) {
+        delete env.BYQ_MCP_ACP_IDENTITY_MODE;
+      }
+      if (Object.hasOwn(overrides, 'BYQ_MCP_ACP_JUDGMENT_TASK_ID')
+          && overrides.BYQ_MCP_ACP_JUDGMENT_TASK_ID === undefined) {
+        delete env.BYQ_MCP_ACP_JUDGMENT_TASK_ID;
+      }
+      if (Object.hasOwn(overrides, 'BYQ_MCP_ACP_JUDGMENT_CALL_IDENTITY')
+          && overrides.BYQ_MCP_ACP_JUDGMENT_CALL_IDENTITY === undefined) {
+        delete env.BYQ_MCP_ACP_JUDGMENT_CALL_IDENTITY;
+      }
+      await assert.rejects(installProductAcpIdentity(context, { maxDepth: 1 }, {
+        McpClient, env, now: () => NOW,
+      }), undefined, label);
+    }
+
+    const { context, McpClient } = fakeContext();
+    await assert.rejects(installProductAcpIdentity(context, { maxDepth: 1 }, {
+      McpClient,
+      env: judgmentIdentityEnv(home, { BYQ_MCP_ACP_IDENTITY_MODE: 'unexpected-mode' }),
+      now: () => NOW,
+    }), undefined, 'unknown identity mode is never treated as Product mode');
+
+    const noMode = judgmentIdentityEnv(home);
+    delete noMode.BYQ_MCP_ACP_IDENTITY_MODE;
+    const { context: fallbackContext, McpClient: fallbackClient } = fakeContext();
+    await assert.rejects(installProductAcpIdentity(fallbackContext, { maxDepth: 1 }, {
+      McpClient: fallbackClient, env: noMode, now: () => NOW,
+    }), undefined, 'judgment claims without explicit mode cannot fall back to Product');
   } finally {
     process.chdir(previousCwd);
     rmSync(home, { recursive: true, force: true });

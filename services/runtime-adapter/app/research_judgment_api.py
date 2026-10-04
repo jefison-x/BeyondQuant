@@ -19,6 +19,7 @@ never supply a model result, a next action, an approval or a routing decision.
 from __future__ import annotations
 
 import os
+import re
 import uuid
 from pathlib import Path
 
@@ -129,6 +130,35 @@ def run_judgment(task_id: str, request: Request) -> dict:
         "dsh_generation": {"status": "not_available", "id": None,
                            "note": "adapter invocation id is not a persisted runtime generation"},
     }
+
+
+@router.post("/internal/runtime/research-judgment/{task_id}/acp-root/run")
+def run_acp_judgment_root(task_id: str, request: Request) -> dict:
+    """Fail closed until the dedicated ACP root has a complete terminal path.
+
+    ADR-0097 requires persisted Backend root admission and AgentRun registration
+    before MCP identity, followed by exact result, close, and terminal ACK. The
+    current Backend slice does not qualify the latter lifecycle yet, so this
+    opt-in route deliberately stops before any Backend request, ACP process, or
+    provider dispatch. The retained ``/run`` SDK route remains available as the
+    rollback path.
+    """
+
+    try:
+        require_service_token(request.headers)
+        trusted_context(request.headers)
+        require_attempt(request.headers)
+    except BoundaryError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from error
+    if re.fullmatch(r"task_[0-9a-f]{32}", task_id) is None:
+        raise HTTPException(status_code=422, detail="exact research task identity required")
+    # This route is intentionally unconditional until the exact result, close,
+    # terminal ACK, and crash/lost-response paths are qualified. Do not add a
+    # configurable bypass.
+    raise HTTPException(
+        status_code=503,
+        detail={"code": "research_judgment_acp_lifecycle_unqualified"},
+    )
 
 
 # Kept importable for the targeted route test without starting a real carrier.

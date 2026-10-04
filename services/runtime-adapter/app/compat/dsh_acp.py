@@ -33,6 +33,28 @@ _MAX_TEXT_BYTES = 8 * 1024 * 1024
 _REQUEST_TIMEOUT_SECONDS = 60.0
 _MODEL_CONFIG_ID = "model"
 _ROOT_BINDING_MARKER = ".byq-acp-root-binding.json"
+_ACP_IDENTITY_MODE_ENV = "BYQ_MCP_ACP_IDENTITY_MODE"
+_ACP_JUDGMENT_ROOT_MODE = "research-judgment-root-v1"
+_ACP_JUDGMENT_PROCESS_ENV = frozenset({
+    _ACP_IDENTITY_MODE_ENV,
+    "BYQ_MCP_ACP_JUDGMENT_TASK_ID",
+    "BYQ_MCP_ACP_JUDGMENT_CALL_IDENTITY",
+    "BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY",
+    "BYQ_MCP_PRODUCT_URL",
+})
+_ACP_JUDGMENT_FORBIDDEN_ENV = frozenset({
+    "BYQ_MCP_ACP_DISCOVERY_TOKEN",
+    "BYQ_MCP_ACP_SIGNING_KEY",
+    "BYQ_MCP_READ_ONLY_TOKEN",
+    "BYQ_MCP_TOKEN",
+    "BYQ_MCP_BACKEND_PROOF_TOKEN",
+    "BYQ_RUNTIME_AUTHORITY_TOKEN",
+    "BYQ_RUNTIME_JUDGMENT_TOKEN",
+    "BYQ_CREDENTIAL_RESOLVER_TOKEN",
+    "BYQ_PRODUCT_TOKEN",
+    "BYQ_NATIVE_ROOT_SESSION_ID",
+    "BYQ_CONTINUATION_RESERVATION_ID",
+})
 _INHERITED_RUNTIME_ENV = frozenset({
     # Minimum host environment needed to launch Node and validate TLS. Do not
     # inherit arbitrary BYQ service configuration, shell preload, or proxy
@@ -47,6 +69,7 @@ _INTERNAL_SERVICE_SECRETS = frozenset({
     "BYQ_RUNTIME_AUTHORITY_TOKEN",
     "BYQ_PRODUCT_TOKEN",
     "BYQ_MCP_READ_ONLY_TOKEN",
+    "BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY",
     "BYQ_RUNTIME_JUDGMENT_TOKEN",
     "BYQ_FEEDBACK_HUB_ADMIN_TOKEN",
     "BYQ_FEEDBACK_HUB_RELAY_TOKEN",
@@ -513,6 +536,10 @@ class DshAcpCompatibility:
             # internal service credentials.
             for key in _INTERNAL_SERVICE_SECRETS:
                 environment.pop(key, None)
+            # Judgment identity is never ambient. Forward its selector and its
+            # sole signing secret only for an explicitly validated fresh root.
+            for key in _ACP_JUDGMENT_PROCESS_ENV:
+                environment.pop(key, None)
             # Provider keys are credentials, not harmless ambient settings.
             # The Adapter passes exactly the selected route's credential in
             # harness.environment; never inherit the other provider's key (or
@@ -526,6 +553,10 @@ class DshAcpCompatibility:
                 selected_key = "OPENCODE_API_KEY"
             if selected_key is not None and selected_key in harness.environment:
                 environment[selected_key] = harness.environment[selected_key]
+            if harness.environment.get(_ACP_IDENTITY_MODE_ENV) == _ACP_JUDGMENT_ROOT_MODE:
+                for key in _ACP_JUDGMENT_PROCESS_ENV:
+                    if key in harness.environment:
+                        environment[key] = harness.environment[key]
             # The ACP composition authenticates through discovery-only and
             # signed per-Agent credentials. Recovery/continuation selectors
             # are added only when they are explicit in this harness.
@@ -856,12 +887,28 @@ class DshAcpCompatibility:
 
     @staticmethod
     def _validate_runtime_identity(environment: dict[str, str]) -> None:
+        identity_mode = environment.get(_ACP_IDENTITY_MODE_ENV)
+        judgment_root = identity_mode == _ACP_JUDGMENT_ROOT_MODE
+        if identity_mode is not None and not judgment_root:
+            raise AcpTransportError("ACP Product MCP identity mode is invalid")
+        if not judgment_root and any(key in environment for key in _ACP_JUDGMENT_PROCESS_ENV):
+            raise AcpTransportError("ACP judgment identity is not allowed on the Product root")
         required = (
-            "BYQ_MCP_URL", "BYQ_MCP_ACP_DISCOVERY_TOKEN", "BYQ_MCP_ACP_SIGNING_KEY",
-            "BYQ_RUNTIME_BOOT_ID", "BYQ_OWNER_PRINCIPAL", "BYQ_WORKSPACE_ID",
-            "BYQ_ACTOR_PRINCIPAL", "BYQ_TRACE_ID", "BYQ_SESSION_ID",
-            "BYQ_DSH_RUN_ID", "BYQ_ROOT_RUN_ID",
+            "BYQ_MCP_URL", "BYQ_RUNTIME_BOOT_ID", "BYQ_OWNER_PRINCIPAL",
+            "BYQ_WORKSPACE_ID", "BYQ_ACTOR_PRINCIPAL", "BYQ_TRACE_ID",
+            "BYQ_SESSION_ID", "BYQ_DSH_RUN_ID", "BYQ_ROOT_RUN_ID",
         )
+        if judgment_root:
+            required += (
+                "BYQ_MCP_ACP_JUDGMENT_TASK_ID",
+                "BYQ_MCP_ACP_JUDGMENT_CALL_IDENTITY",
+                "BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY",
+                "BYQ_MCP_PRODUCT_URL",
+            )
+            if any(key in environment for key in _ACP_JUDGMENT_FORBIDDEN_ENV):
+                raise AcpTransportError("ACP judgment identity contains Product credentials")
+        else:
+            required += ("BYQ_MCP_ACP_DISCOVERY_TOKEN", "BYQ_MCP_ACP_SIGNING_KEY")
         if any(not environment.get(key) for key in required):
             raise AcpTransportError("ACP Product MCP identity configuration is incomplete")
         endpoint = environment["BYQ_MCP_URL"]
@@ -870,14 +917,37 @@ class DshAcpCompatibility:
                 or parsed.username is not None or parsed.password is not None
                 or parsed.query or parsed.fragment):
             raise AcpTransportError("ACP Product MCP endpoint is invalid")
-        if len(environment["BYQ_MCP_ACP_SIGNING_KEY"].encode("utf-8")) < 32:
-            raise AcpTransportError("ACP Product MCP signing key is invalid")
-        distinct = [environment["BYQ_MCP_ACP_DISCOVERY_TOKEN"],
-                    environment["BYQ_MCP_ACP_SIGNING_KEY"]]
-        if environment.get("BYQ_MCP_TOKEN"):
-            distinct.append(environment["BYQ_MCP_TOKEN"])
-        if len(set(distinct)) != len(distinct):
-            raise AcpTransportError("ACP Product MCP credentials must be distinct")
+        if judgment_root:
+            signing_key = environment["BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY"]
+            if len(signing_key.encode("utf-8")) < 32:
+                raise AcpTransportError("ACP judgment signing key is invalid")
+            for product_endpoint_name in ("BYQ_MCP_PRODUCT_URL", "BYQ_MCP_READ_ONLY_URL"):
+                if product_endpoint_name not in environment:
+                    continue
+                product_endpoint_value = environment[product_endpoint_name]
+                product_endpoint = urlsplit(product_endpoint_value)
+                if (product_endpoint.scheme not in {"http", "https"}
+                        or not product_endpoint.hostname
+                        or product_endpoint.username is not None
+                        or product_endpoint.password is not None
+                        or product_endpoint.query or product_endpoint.fragment
+                        or endpoint == product_endpoint_value):
+                    raise AcpTransportError("ACP judgment MCP endpoint is not isolated")
+            if re.fullmatch(r"task_[0-9a-f]{32}",
+                            environment["BYQ_MCP_ACP_JUDGMENT_TASK_ID"]) is None:
+                raise AcpTransportError("ACP judgment task identity is invalid")
+            if re.fullmatch(r"byq-judgment-[0-9a-f]{32}",
+                            environment["BYQ_MCP_ACP_JUDGMENT_CALL_IDENTITY"]) is None:
+                raise AcpTransportError("ACP judgment call identity is invalid")
+        else:
+            if len(environment["BYQ_MCP_ACP_SIGNING_KEY"].encode("utf-8")) < 32:
+                raise AcpTransportError("ACP Product MCP signing key is invalid")
+            distinct = [environment["BYQ_MCP_ACP_DISCOVERY_TOKEN"],
+                        environment["BYQ_MCP_ACP_SIGNING_KEY"]]
+            if environment.get("BYQ_MCP_TOKEN"):
+                distinct.append(environment["BYQ_MCP_TOKEN"])
+            if len(set(distinct)) != len(distinct):
+                raise AcpTransportError("ACP Product MCP credentials must be distinct")
         if re.fullmatch(r"[0-9a-f]{32}", environment["BYQ_RUNTIME_BOOT_ID"]) is None:
             raise AcpTransportError("ACP Product runtime boot identity is invalid")
         if re.fullmatch(r"[0-9a-f]{32}", environment["BYQ_ROOT_RUN_ID"]) is None:

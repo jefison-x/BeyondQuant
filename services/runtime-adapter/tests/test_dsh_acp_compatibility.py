@@ -26,9 +26,17 @@ with open(os.environ["ACP_TEST_ENV_CAPTURE"], "w", encoding="utf-8") as output:
         "credential_resolver_token": os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN"),
         "runtime_authority_token": os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN"),
         "product_token": os.environ.get("BYQ_PRODUCT_TOKEN"),
+        "runtime_judgment_token": os.environ.get("BYQ_RUNTIME_JUDGMENT_TOKEN"),
+        "read_only_token": os.environ.get("BYQ_MCP_READ_ONLY_TOKEN"),
         "postgres_password": os.environ.get("POSTGRES_PASSWORD"),
         "discovery_token": os.environ.get("BYQ_MCP_ACP_DISCOVERY_TOKEN"),
         "signing_key": os.environ.get("BYQ_MCP_ACP_SIGNING_KEY"),
+        "judgment_mode": os.environ.get("BYQ_MCP_ACP_IDENTITY_MODE"),
+        "judgment_task_id": os.environ.get("BYQ_MCP_ACP_JUDGMENT_TASK_ID"),
+        "judgment_call_identity": os.environ.get("BYQ_MCP_ACP_JUDGMENT_CALL_IDENTITY"),
+        "judgment_signing_key": os.environ.get("BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY"),
+        "mcp_url": os.environ.get("BYQ_MCP_URL"),
+        "product_mcp_url": os.environ.get("BYQ_MCP_PRODUCT_URL"),
         "deepseek_key": os.environ.get("DEEPSEEK_API_KEY"),
         "opencode_key": os.environ.get("OPENCODE_API_KEY"),
         "search_key": os.environ.get("DEEPSEEK_SEARCH_API_KEY"),
@@ -137,6 +145,28 @@ def _harness(tmp_path: Path, capture: Path, *, boot_id: str = "b" * 32):
     return compatibility, harness
 
 
+def _judgment_identity_environment(capture: Path) -> dict[str, str]:
+    return {
+        "ACP_TEST_CAPTURE": str(capture),
+        "ACP_TEST_ENV_CAPTURE": str(capture.with_name(capture.name + ".env")),
+        "BYQ_MCP_URL": "http://mcp.judgment.test/mcp/v1",
+        "BYQ_MCP_PRODUCT_URL": "http://mcp.product.test/mcp/v1",
+        "BYQ_MCP_ACP_IDENTITY_MODE": "research-judgment-root-v1",
+        "BYQ_MCP_ACP_JUDGMENT_TASK_ID": "task_" + "a" * 32,
+        "BYQ_MCP_ACP_JUDGMENT_CALL_IDENTITY": "byq-judgment-" + "b" * 32,
+        "BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY": "synthetic-judgment-signing-key-0123456789",
+        "BYQ_RUNTIME_BOOT_ID": "b" * 32,
+        "BYQ_OWNER_PRINCIPAL": "owner-1",
+        "BYQ_WORKSPACE_ID": "workspace-1",
+        "BYQ_ACTOR_PRINCIPAL": "byq-product-agent-judgment-session-1",
+        "BYQ_TRACE_ID": "trace-judgment-1",
+        "BYQ_SESSION_ID": "judgment-session-1",
+        "BYQ_DSH_RUN_ID": "generation-judgment-1",
+        "BYQ_ROOT_RUN_ID": "c" * 32,
+        "DEEPSEEK_API_KEY": "test-only-model-key",
+    }
+
+
 def test_official_acp_stdio_lifecycle_and_scoped_mcp_identity_resume(tmp_path: Path) -> None:
     capture = tmp_path / "wire.jsonl"
     compatibility, harness = _harness(tmp_path, capture)
@@ -186,6 +216,10 @@ def test_official_acp_stdio_lifecycle_and_scoped_mcp_identity_resume(tmp_path: P
     assert child_environment["backend_proof_token"] is None
     assert child_environment["discovery_token"] == "synthetic-discovery-only-token"
     assert child_environment["signing_key"] == "synthetic-signing-key-0123456789abcdef"
+    assert child_environment["judgment_mode"] is None
+    assert child_environment["judgment_task_id"] is None
+    assert child_environment["judgment_call_identity"] is None
+    assert child_environment["judgment_signing_key"] is None
     assert child_environment["dsh_home"] == str(harness.session_root)
     assert child_environment["dsh_session_root"] == str(harness.session_root.parent)
 
@@ -207,6 +241,91 @@ def test_official_acp_stdio_lifecycle_and_scoped_mcp_identity_resume(tmp_path: P
     assert sequences == sorted(sequences)
     assert len(set(sequences)) == len(sequences)
     assert "reasoning-never-public" not in repr(observations)
+
+
+def test_judgment_identity_mode_is_explicit_and_process_scope_has_only_its_credential(
+    tmp_path: Path,
+) -> None:
+    capture = tmp_path / "judgment-root.jsonl"
+    composition = tmp_path / "judgment-composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    session_root = tmp_path / "sessions" / "judgment-root"
+    session_root.mkdir(parents=True)
+    compatibility = DshAcpCompatibility()
+    harness = compatibility.build_harness(
+        provider="deepseek-official", model="deepseek-v4.1-flash",
+        composition=composition, session_root=session_root,
+        runtime_command=(sys.executable, "-u", "-c", _SERVER),
+        environment=_judgment_identity_environment(capture),
+    )
+    try:
+        compatibility.start(harness)
+        native_id = compatibility.create_session(harness)
+    finally:
+        compatibility.close(harness)
+
+    child_environment = json.loads(capture.with_name(capture.name + ".env").read_text(
+        encoding="utf-8"))
+    assert child_environment["judgment_mode"] == "research-judgment-root-v1"
+    assert child_environment["judgment_task_id"] == "task_" + "a" * 32
+    assert child_environment["judgment_call_identity"] == "byq-judgment-" + "b" * 32
+    assert child_environment["judgment_signing_key"] == \
+        "synthetic-judgment-signing-key-0123456789"
+    assert child_environment["mcp_url"] == "http://mcp.judgment.test/mcp/v1"
+    assert child_environment["product_mcp_url"] == "http://mcp.product.test/mcp/v1"
+    for name in (
+        "legacy_mcp_token", "backend_proof_token", "credential_resolver_token",
+        "runtime_authority_token", "runtime_judgment_token", "product_token",
+        "read_only_token", "discovery_token", "signing_key",
+    ):
+        assert child_environment[name] is None
+    requests = [json.loads(line) for line in capture.read_text(encoding="utf-8").splitlines()]
+    assert any(item.get("method") == "session/new" for item in requests)
+    assert not any(item.get("method") == "session/prompt" for item in requests)
+    assert native_id in harness.native_session_ids
+
+
+@pytest.mark.parametrize(
+    "forbidden_key",
+    [
+        "BYQ_MCP_ACP_DISCOVERY_TOKEN", "BYQ_MCP_ACP_SIGNING_KEY", "BYQ_MCP_TOKEN",
+        "BYQ_MCP_READ_ONLY_TOKEN", "BYQ_MCP_BACKEND_PROOF_TOKEN",
+        "BYQ_RUNTIME_AUTHORITY_TOKEN", "BYQ_RUNTIME_JUDGMENT_TOKEN",
+        "BYQ_CREDENTIAL_RESOLVER_TOKEN", "BYQ_PRODUCT_TOKEN",
+        "BYQ_NATIVE_ROOT_SESSION_ID", "BYQ_CONTINUATION_RESERVATION_ID",
+    ],
+)
+def test_judgment_identity_rejects_product_or_stale_credentials_even_when_empty(
+    tmp_path: Path, forbidden_key: str,
+) -> None:
+    composition = tmp_path / "composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    session_root = tmp_path / "sessions" / "root-1"
+    session_root.mkdir(parents=True)
+    environment = _judgment_identity_environment(tmp_path / "wire.jsonl")
+    environment[forbidden_key] = ""
+    with pytest.raises(AcpTransportError, match="contains Product credentials"):
+        DshAcpCompatibility().build_harness(
+            provider="deepseek-official", model="deepseek-v4.1-flash",
+            composition=composition, session_root=session_root,
+            runtime_command=(sys.executable, "-u", "-c", _SERVER), environment=environment,
+        )
+
+
+def test_product_identity_cannot_select_the_judgment_root_mode(tmp_path: Path) -> None:
+    capture = tmp_path / "product-root.jsonl"
+    composition = tmp_path / "composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    session_root = tmp_path / "sessions" / "root-1"
+    session_root.mkdir(parents=True)
+    environment = _identity_environment(capture)
+    environment["BYQ_MCP_ACP_IDENTITY_MODE"] = "research-judgment-root-v1"
+    with pytest.raises(AcpTransportError, match="Product credentials"):
+        DshAcpCompatibility().build_harness(
+            provider="deepseek-official", model="deepseek-v4.1-flash",
+            composition=composition, session_root=session_root,
+            runtime_command=(sys.executable, "-u", "-c", _SERVER), environment=environment,
+        )
 
 
 def test_close_retains_transport_handle_until_process_exit_is_confirmed(tmp_path: Path) -> None:

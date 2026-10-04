@@ -3,8 +3,9 @@
 # No global/static MCP discovery client is mounted. The Agent-scoped identity
 # client is the only intended tools/list and tools/call path. The trusted
 # invocation must bind BYQ_MCP_URL to the isolated read-only MCP endpoint.
-# The existing identity plugin/audience is not qualified for that endpoint;
-# this profile remains blocked until the separate ACP auth contract is fixed.
+# The judgment identity mode exists, but trusted Adapter scope injection,
+# Backend admission and the fixed official runtime composition remain
+# unqualified. This profile stays blocked.
 - id: agent-loop
   config:
     maxParallelToolCalls: 1

@@ -19,6 +19,9 @@ import { pathToFileURL } from 'node:url';
 const SERVER_NAME = 'byq';
 const AUDIENCE = 'byq-product-mcp';
 const TOKEN_PREFIX = 'byq-acp-v1';
+const JUDGMENT_MODE = 'research-judgment-root-v1';
+const JUDGMENT_AUDIENCE = 'byq-product-acp-judgment-mcp';
+const JUDGMENT_TOKEN_PREFIX = 'byq-acp-judgment-v1';
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_DELEGATION_DEPTH = 1;
 const ROOT_BINDING_MARKER = '.byq-acp-root-binding.json';
@@ -26,10 +29,18 @@ const ACP_NATIVE_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a
 const ROOT_ID = /^[0-9a-f]{32}$/;
 const PRINCIPAL = /^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}$/;
 const TRACE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+const JUDGMENT_TASK_ID = /^task_[0-9a-f]{32}$/;
+const JUDGMENT_CALL_IDENTITY = /^byq-judgment-[0-9a-f]{32}$/;
 const CLAIM_KEYS = Object.freeze([
   'actor_principal', 'aud', 'depth', 'dsh_run_id', 'expires_at', 'native_agent_session_id',
   'native_parent_session_id', 'native_root_session_id', 'origin', 'owner_principal',
   'root_run_id', 'runtime_boot_id', 'session_id', 'trace_id', 'v', 'workspace_id',
+]);
+const JUDGMENT_CLAIM_KEYS = Object.freeze([
+  'actor_principal', 'aud', 'call_identity', 'depth', 'dsh_run_id', 'expires_at',
+  'native_agent_session_id', 'native_parent_session_id', 'native_root_session_id', 'origin',
+  'owner_principal', 'root_run_id', 'runtime_boot_id', 'session_id', 'task_id', 'trace_id',
+  'v', 'workspace_id',
 ]);
 
 export const name = 'byq-acp-mcp-identity';
@@ -71,6 +82,15 @@ export function signAcpAgentToken(claims, signingKey, now = Date.now()) {
   return `${TOKEN_PREFIX}.${base64url(payload)}.${base64url(signature)}`;
 }
 
+/** Canonical HMAC signer for one isolated, root-only ADR-0097 judgment identity. */
+export function signAcpJudgmentRootToken(claims, signingKey, now = Date.now()) {
+  validateJudgmentClaims(claims, now);
+  if (!validSigningKey(signingKey)) fail();
+  const payload = canonicalPayload(claims);
+  const signature = createHmac('sha256', Buffer.from(signingKey, 'utf8')).update(payload).digest();
+  return `${JUDGMENT_TOKEN_PREFIX}.${base64url(payload)}.${base64url(signature)}`;
+}
+
 /** Validate exact signed claims before mounting the token on a scoped client. */
 export function validateClaims(claims, now = Date.now()) {
   if (!exactObjectKeys(claims, CLAIM_KEYS)
@@ -102,16 +122,44 @@ export function validateClaims(claims, now = Date.now()) {
   return claims;
 }
 
-function runtimeIdentity(env) {
-  const endpoint = env.BYQ_MCP_URL;
+/** The judgment bearer is purpose-bound and can only represent the native ACP root Agent. */
+export function validateJudgmentClaims(claims, now = Date.now()) {
+  if (!exactObjectKeys(claims, JUDGMENT_CLAIM_KEYS)
+      || claims.v !== 1 || claims.aud !== JUDGMENT_AUDIENCE
+      || !validString(claims.root_run_id, ROOT_ID)
+      || !validString(claims.runtime_boot_id, ROOT_ID)
+      || !validString(claims.owner_principal, PRINCIPAL)
+      || !validString(claims.actor_principal, PRINCIPAL)
+      || !validString(claims.workspace_id, TRACE)
+      || !validString(claims.trace_id, TRACE)
+      || !validString(claims.session_id, TRACE)
+      || !validString(claims.dsh_run_id, TRACE)
+      || !validString(claims.native_root_session_id, ACP_NATIVE_SESSION_ID)
+      || !validString(claims.native_agent_session_id, ACP_NATIVE_SESSION_ID)
+      || claims.native_parent_session_id !== null
+      || claims.origin !== 'root' || claims.depth !== 0
+      || !validString(claims.task_id, JUDGMENT_TASK_ID)
+      || !validString(claims.call_identity, JUDGMENT_CALL_IDENTITY)
+      || !Number.isSafeInteger(claims.expires_at)
+      || !Number.isSafeInteger(now)
+      || claims.expires_at <= now || claims.expires_at > now + TOKEN_TTL_MS) fail();
+  if (claims.actor_principal !== `byq-product-agent-${claims.session_id}`
+      || claims.native_agent_session_id !== claims.native_root_session_id) fail();
+  return claims;
+}
+
+function validatedEndpoint(endpoint) {
   let parsed;
   try { parsed = new URL(endpoint); } catch { fail(); }
   if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname
       || parsed.username || parsed.password || parsed.search || parsed.hash) fail();
-  if (typeof env.BYQ_MCP_ACP_DISCOVERY_TOKEN !== 'string'
-      || env.BYQ_MCP_ACP_DISCOVERY_TOKEN.length === 0
-      || !validSigningKey(env.BYQ_MCP_ACP_SIGNING_KEY)
-      || !validString(env.BYQ_ROOT_RUN_ID, ROOT_ID)
+  return parsed;
+}
+
+function runtimeScopeIdentity(env) {
+  const endpoint = env.BYQ_MCP_URL;
+  const parsedEndpoint = validatedEndpoint(endpoint);
+  if (!validString(env.BYQ_ROOT_RUN_ID, ROOT_ID)
       || !validString(env.BYQ_RUNTIME_BOOT_ID, ROOT_ID)
       || !validString(env.BYQ_OWNER_PRINCIPAL, PRINCIPAL)
       || !validString(env.BYQ_ACTOR_PRINCIPAL, PRINCIPAL)
@@ -128,8 +176,7 @@ function runtimeIdentity(env) {
         || !validString(env.BYQ_ROOT_RUN_ID, ROOT_ID))) fail();
   return {
     endpoint,
-    discoveryToken: env.BYQ_MCP_ACP_DISCOVERY_TOKEN,
-    signingKey: env.BYQ_MCP_ACP_SIGNING_KEY,
+    parsedEndpoint,
     rootRunId: env.BYQ_ROOT_RUN_ID,
     runtimeBootId: env.BYQ_RUNTIME_BOOT_ID,
     owner: env.BYQ_OWNER_PRINCIPAL,
@@ -140,6 +187,52 @@ function runtimeIdentity(env) {
     dshRunId: env.BYQ_DSH_RUN_ID,
     expectedNativeRootId: env.BYQ_NATIVE_ROOT_SESSION_ID,
     continuationReservationId: reservation,
+  };
+}
+
+function runtimeProductIdentity(env) {
+  const identity = runtimeScopeIdentity(env);
+  if (typeof env.BYQ_MCP_ACP_DISCOVERY_TOKEN !== 'string'
+      || env.BYQ_MCP_ACP_DISCOVERY_TOKEN.length === 0
+      || !validSigningKey(env.BYQ_MCP_ACP_SIGNING_KEY)) fail();
+  return {
+    ...identity,
+    discoveryToken: env.BYQ_MCP_ACP_DISCOVERY_TOKEN,
+    signingKey: env.BYQ_MCP_ACP_SIGNING_KEY,
+    mode: 'product',
+  };
+}
+
+function runtimeJudgmentIdentity(env) {
+  const identity = runtimeScopeIdentity(env);
+  const forbiddenCredentials = [
+    'BYQ_MCP_ACP_DISCOVERY_TOKEN', 'BYQ_MCP_ACP_SIGNING_KEY',
+    'BYQ_MCP_READ_ONLY_TOKEN', 'BYQ_MCP_TOKEN', 'BYQ_MCP_BACKEND_PROOF_TOKEN',
+    'BYQ_RUNTIME_AUTHORITY_TOKEN', 'BYQ_CREDENTIAL_RESOLVER_TOKEN',
+  ];
+  if (forbiddenCredentials.some(name => env[name] !== undefined)
+      || typeof env.BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY !== 'string'
+      || !validSigningKey(env.BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY)
+      || !validString(env.BYQ_MCP_ACP_JUDGMENT_TASK_ID, JUDGMENT_TASK_ID)
+      || !validString(env.BYQ_MCP_ACP_JUDGMENT_CALL_IDENTITY, JUDGMENT_CALL_IDENTITY)
+      || env.BYQ_CONTINUATION_RESERVATION_ID !== undefined
+      || env.BYQ_NATIVE_ROOT_SESSION_ID !== undefined) fail();
+
+  for (const productEndpointName of ['BYQ_MCP_PRODUCT_URL', 'BYQ_MCP_READ_ONLY_URL']) {
+    if (env[productEndpointName] === undefined) continue;
+    let productEndpoint;
+    try { productEndpoint = new URL(env[productEndpointName]); } catch { fail(); }
+    if (!['http:', 'https:'].includes(productEndpoint.protocol) || !productEndpoint.hostname
+        || productEndpoint.username || productEndpoint.password
+        || productEndpoint.search || productEndpoint.hash
+        || productEndpoint.href === identity.parsedEndpoint.href) fail();
+  }
+  return {
+    ...identity,
+    signingKey: env.BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY,
+    taskId: env.BYQ_MCP_ACP_JUDGMENT_TASK_ID,
+    callIdentity: env.BYQ_MCP_ACP_JUDGMENT_CALL_IDENTITY,
+    mode: JUDGMENT_MODE,
   };
 }
 
@@ -312,6 +405,41 @@ function makeClaims(identity, lineage, agentId, now) {
   return validateClaims(claims, now);
 }
 
+function makeJudgmentClaims(identity, lineage, agentId, now) {
+  if (!lineage.isRoot || lineage.depth !== 0 || lineage.parentSessionId !== null
+      || lineage.nativeRootId !== agentId) fail();
+  return validateJudgmentClaims({
+    v: 1,
+    aud: JUDGMENT_AUDIENCE,
+    root_run_id: identity.rootRunId,
+    runtime_boot_id: identity.runtimeBootId,
+    owner_principal: identity.owner,
+    workspace_id: identity.workspace,
+    actor_principal: identity.actor,
+    trace_id: identity.trace,
+    session_id: identity.publicSession,
+    dsh_run_id: identity.dshRunId,
+    native_root_session_id: lineage.nativeRootId,
+    native_agent_session_id: agentId,
+    native_parent_session_id: null,
+    origin: 'root',
+    depth: 0,
+    task_id: identity.taskId,
+    call_identity: identity.callIdentity,
+    expires_at: now + TOKEN_TTL_MS,
+  }, now);
+}
+
+function runtimeIdentity(env) {
+  const mode = env.BYQ_MCP_ACP_IDENTITY_MODE;
+  if (mode === JUDGMENT_MODE) return runtimeJudgmentIdentity(env);
+  if (mode !== undefined
+      || env.BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY !== undefined
+      || env.BYQ_MCP_ACP_JUDGMENT_TASK_ID !== undefined
+      || env.BYQ_MCP_ACP_JUDGMENT_CALL_IDENTITY !== undefined) fail();
+  return runtimeProductIdentity(env);
+}
+
 /** Test seam and shared implementation for the official Cordis Product plugin. */
 export async function installProductAcpIdentity(ctx, config, { McpClient, env = process.env, now = Date.now } = {}) {
   if (!McpClient || typeof McpClient !== 'object' || typeof McpClient.apply !== 'function') fail();
@@ -328,9 +456,9 @@ export async function installProductAcpIdentity(ctx, config, { McpClient, env = 
   const registeredAgents = new WeakSet();
   let rootBinding;
 
-  // The composition installs one global discovery client before this plugin.
-  // Keep ownership there so a second global `byq` namespace cannot shadow the
-  // discovery-only client; this plugin owns signed per-Agent clients only.
+  // Product composition owns its global discovery-only client. Judgment mode
+  // intentionally has no global client; this plugin mounts only its signed
+  // per-Agent root client and never creates a discovery or execution fallback.
 
   ctx.on('tools/pre-execute', (exec, next) => {
     if (typeof exec?.name !== 'string' || !exec.name.startsWith('mcp__byq__')) return next();
@@ -341,10 +469,16 @@ export async function installProductAcpIdentity(ctx, config, { McpClient, env = 
   }, { prepend: true, global: true });
 
   ctx.on('agent/created', async ({ agent, source }) => {
+    if (identity.mode === JUDGMENT_MODE && (source !== 'startup' || rootBinding !== undefined)) fail();
     const lineage = validateRootOrChild(ctx, agent, source, identity, rootBinding, expectedCwd);
-    const claims = makeClaims(identity, lineage, agent.id, now());
-    const token = signAcpAgentToken(claims, identity.signingKey, claims.expires_at - TOKEN_TTL_MS);
-    const config = mcpConfig(identity, token, { includeReservation: true });
+    const issuedAt = now();
+    const claims = identity.mode === JUDGMENT_MODE
+      ? makeJudgmentClaims(identity, lineage, agent.id, issuedAt)
+      : makeClaims(identity, lineage, agent.id, issuedAt);
+    const token = identity.mode === JUDGMENT_MODE
+      ? signAcpJudgmentRootToken(claims, identity.signingKey, issuedAt)
+      : signAcpAgentToken(claims, identity.signingKey, issuedAt);
+    const config = mcpConfig(identity, token, { includeReservation: identity.mode === 'product' });
 
     // Agent-scoped plugin activation is awaited by the official serial event.
     // A discovery client cannot become an execution fallback if this fails.

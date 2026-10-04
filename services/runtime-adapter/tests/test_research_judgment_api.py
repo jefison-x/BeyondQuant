@@ -159,3 +159,44 @@ def test_non_task_identity_is_rejected_after_authentication(monkeypatch):
                            headers=HEADERS, json={})
     assert response.status_code == 422
     assert calls == []
+
+
+def test_acp_root_route_stays_disabled_before_backend_or_model_dispatch(monkeypatch):
+    client = _client(monkeypatch)
+    calls = _spy(monkeypatch)
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("unqualified ACP judgment route attempted execution")
+
+    from app import main
+    from app.compat.dsh_acp import DshAcpCompatibility
+    monkeypatch.setattr(main.adapter, "require_current_backend_authority", forbidden)
+    monkeypatch.setattr(DshAcpCompatibility, "start", forbidden)
+    response = client.post(
+        f"/internal/runtime/research-judgment/{TASK}/acp-root/run",
+        headers=HEADERS,
+        json={"model_result": {"proposal": {"forged": True}}, "call_identity": "forged"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "research_judgment_acp_lifecycle_unqualified"
+    assert calls == []
+
+
+def test_acp_root_route_requires_runtime_authentication_and_exact_task(monkeypatch):
+    client = _client(monkeypatch)
+    calls = _spy(monkeypatch)
+    no_service_token = {key: value for key, value in HEADERS.items()
+                        if key != "x-byq-runtime-judgment-token"}
+    denied = client.post(
+        f"/internal/runtime/research-judgment/{TASK}/acp-root/run",
+        headers=no_service_token, json={},
+    )
+    invalid_task = client.post(
+        "/internal/runtime/research-judgment/task_bad/acp-root/run",
+        headers=HEADERS, json={},
+    )
+
+    assert denied.status_code == 401
+    assert invalid_task.status_code == 422
+    assert calls == []

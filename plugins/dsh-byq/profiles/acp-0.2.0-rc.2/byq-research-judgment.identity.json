@@ -3,7 +3,7 @@
   "profile": "byq-research-judgment-acp-0.2.0-rc.2",
   "release_id": "dsh-v0.2.0-rc.2",
   "source_commit": "639ed015397290b3745d163aafe02ffee4aa3f84",
-  "composition_hash": "sha256:3a99e498ffd6d1caf15bb9af21d81cd533709f8c41c66969896a8d0549b30631",
+  "composition_hash": "sha256:1f9fe5c361972076d81b20f9d03c39ab19c21ccb41c36a0ff0e616dd8a2937ca",
   "enabled_plugin_ids": [
     "acp",
     "acp-app-startup",
@@ -80,9 +80,8 @@
     "paid_model_calls": "not-run",
     "blockers": [
       "No trusted invocation selects this profile or binds BYQ_MCP_URL to the isolated signed judgment endpoint.",
-      "The existing identity plugin still signs with the Product key and audience; it is not wired to the separate judgment signing key and audience.",
-      "The existing identity plugin still requires BYQ_MCP_ACP_DISCOVERY_TOKEN even though this profile deliberately has no global discovery client.",
-      "The profile disables the official child providers and tools, but unexpected-child denial by the current identity plugin is not dynamically qualified.",
+      "The judgment identity mode is implemented, but no trusted Adapter invocation injects its dedicated endpoint, key, task/call and persisted root scope.",
+      "The profile and plugin have not been exercised together in the fixed official ACP runtime; the complete loaded plugin graph and unexpected-child denial are not dynamically qualified.",
       "BYQ root persistence, trusted AgentRun registration, stage result commit, and exact terminal ACK are outside this profile-only slice."
     ]
   }
