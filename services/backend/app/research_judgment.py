@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 
 from .db import execute, fetch_one
@@ -57,6 +58,7 @@ from packages.contracts.research_judgment import (
     validate_judgment_result_request,
     validate_progress_evidence,
     validate_proposal,
+    validate_attempt_binding,
     validate_stage_admission_request,
     validate_stage_input,
     validate_stage_progress_request,
@@ -117,6 +119,18 @@ SCHEMA_DDL: list[str] = [
         begin_receipt_json JSONB NOT NULL,
         registration_receipt_json JSONB,
         result_request_sha256 TEXT,
+        settlement_digest TEXT,
+        settlement_kind TEXT,
+        settlement_terminal_outcome TEXT,
+        settlement_evidence_json JSONB,
+        settlement_receipt_json JSONB,
+        settlement_attention_reason TEXT,
+        settled_at TIMESTAMPTZ,
+        cancel_intent_id TEXT,
+        cancel_intent_actor_principal TEXT,
+        cancel_intent_idempotency_key TEXT,
+        cancel_intent_request_sha256 TEXT,
+        cancel_intent_receipt_json JSONB,
         created_at TIMESTAMPTZ NOT NULL,
         updated_at TIMESTAMPTZ NOT NULL,
         PRIMARY KEY (task_id, call_identity),
@@ -126,6 +140,23 @@ SCHEMA_DDL: list[str] = [
     """,
     "ALTER TABLE research_judgment_acp_roots "
     "ADD COLUMN IF NOT EXISTS result_request_sha256 TEXT",
+    "ALTER TABLE research_judgment_acp_roots ADD COLUMN IF NOT EXISTS settlement_digest TEXT",
+    "ALTER TABLE research_judgment_acp_roots ADD COLUMN IF NOT EXISTS settlement_kind TEXT",
+    "ALTER TABLE research_judgment_acp_roots ADD COLUMN IF NOT EXISTS settlement_terminal_outcome TEXT",
+    "ALTER TABLE research_judgment_acp_roots ADD COLUMN IF NOT EXISTS settlement_evidence_json JSONB",
+    "ALTER TABLE research_judgment_acp_roots ADD COLUMN IF NOT EXISTS settlement_receipt_json JSONB",
+    "ALTER TABLE research_judgment_acp_roots ADD COLUMN IF NOT EXISTS settlement_attention_reason TEXT",
+    "ALTER TABLE research_judgment_acp_roots ADD COLUMN IF NOT EXISTS settled_at TIMESTAMPTZ",
+    "ALTER TABLE research_judgment_acp_roots ADD COLUMN IF NOT EXISTS cancel_intent_id TEXT",
+    "ALTER TABLE research_judgment_acp_roots ADD COLUMN IF NOT EXISTS cancel_intent_actor_principal TEXT",
+    "ALTER TABLE research_judgment_acp_roots ADD COLUMN IF NOT EXISTS cancel_intent_idempotency_key TEXT",
+    "ALTER TABLE research_judgment_acp_roots ADD COLUMN IF NOT EXISTS cancel_intent_request_sha256 TEXT",
+    "ALTER TABLE research_judgment_acp_roots ADD COLUMN IF NOT EXISTS cancel_intent_receipt_json JSONB",
+    "CREATE UNIQUE INDEX IF NOT EXISTS research_judgment_acp_roots_cancel_intent_id "
+    "ON research_judgment_acp_roots(cancel_intent_id) WHERE cancel_intent_id IS NOT NULL",
+    "CREATE UNIQUE INDEX IF NOT EXISTS research_judgment_acp_roots_cancel_intent_key "
+    "ON research_judgment_acp_roots(task_id,owner_principal,workspace_id,cancel_intent_idempotency_key) "
+    "WHERE cancel_intent_idempotency_key IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS research_judgment_acp_roots_scope "
     "ON research_judgment_acp_roots(owner_principal, workspace_id, session_id, trace_id)",
 ]
@@ -142,12 +173,168 @@ _COMPLETION_EVIDENCE_REFERENCE_KINDS = (
 )
 
 RESULT_RECEIPT_SCHEMA_VERSION = "research-judgment-result-receipt.v1"
+ACP_JUDGMENT_CANCEL_INTENT_REQUEST_SCHEMA_VERSION = (
+    "byq-research-judgment-acp-cancel-intent-request.v1")
+ACP_JUDGMENT_CANCEL_INTENT_RECEIPT_SCHEMA_VERSION = (
+    "byq-research-judgment-acp-cancel-intent-receipt.v1")
+ACP_JUDGMENT_SETTLEMENT_REQUEST_SCHEMA_VERSION = (
+    "byq-research-judgment-acp-settlement-request.v1")
+ACP_JUDGMENT_SETTLEMENT_EVIDENCE_SCHEMA_VERSION = (
+    "byq-research-judgment-acp-settlement-evidence.v1")
+ACP_JUDGMENT_SETTLEMENT_RECEIPT_SCHEMA_VERSION = (
+    "byq-research-judgment-acp-settlement-receipt.v1")
+_ACP_ROOT_ID = re.compile(r"^[0-9a-f]{32}$")
+_ACP_CALL_ID = re.compile(r"^byq-judgment-[0-9a-f]{32}$")
+_ACP_TASK_ID = re.compile(r"^task_[0-9a-f]{32}$")
+_ACP_DSH_RUN_ID = re.compile(r"^byqjudg-[0-9a-f]{32}$")
+_ACP_CANCEL_INTENT_ID = re.compile(r"^byqcancel-[0-9a-f]{32}$")
+_ACP_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 def _hash(value: object) -> str:
     return "sha256:" + hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()
     ).hexdigest()
+
+
+def _acp_nonempty(value: object, field: str, *, max_length: int = 128) -> str:
+    if not isinstance(value, str) or not value or value.strip() != value or len(value) > max_length:
+        raise ValueError(f"{field} is invalid")
+    return value
+
+
+def _acp_digest(value: object, field: str, *, optional: bool = False) -> str | None:
+    if value is None and optional:
+        return None
+    if not isinstance(value, str) or _ACP_DIGEST.fullmatch(value) is None:
+        raise ValueError(f"{field} must be sha256:<64 lowercase hexadecimal characters>")
+    return value
+
+
+def validate_acp_judgment_cancel_intent_request(value: object) -> dict[str, str]:
+    """Closed Gateway-to-Backend request to durably record one user cancel intent."""
+    fields = {"schema_version", "idempotency_key"}
+    if (not isinstance(value, dict) or set(value) != fields
+            or value.get("schema_version") != ACP_JUDGMENT_CANCEL_INTENT_REQUEST_SCHEMA_VERSION):
+        raise ValueError("exact ACP judgment cancel-intent request required")
+    _acp_nonempty(value["idempotency_key"], "idempotency_key")
+    return value
+
+
+def _validate_cancel_intent_receipt(value: object) -> dict[str, str] | None:
+    if value is None:
+        return None
+    fields = {"schema_version", "intent_id", "task_id", "owner_principal", "workspace_id",
+              "call_identity", "root_run_id", "intent_sha256"}
+    if (not isinstance(value, dict) or set(value) != fields
+            or value.get("schema_version") != ACP_JUDGMENT_CANCEL_INTENT_RECEIPT_SCHEMA_VERSION):
+        raise ValueError("exact Backend cancel-intent receipt required")
+    if not isinstance(value["intent_id"], str) or _ACP_CANCEL_INTENT_ID.fullmatch(value["intent_id"]) is None:
+        raise ValueError("cancel intent identity is invalid")
+    if not isinstance(value["task_id"], str) or _ACP_TASK_ID.fullmatch(value["task_id"]) is None:
+        raise ValueError("cancel-intent task identity is invalid")
+    _acp_nonempty(value["owner_principal"], "owner_principal")
+    _acp_nonempty(value["workspace_id"], "workspace_id")
+    if not isinstance(value["call_identity"], str) or _ACP_CALL_ID.fullmatch(value["call_identity"]) is None:
+        raise ValueError("cancel-intent call identity is invalid")
+    if not isinstance(value["root_run_id"], str) or _ACP_ROOT_ID.fullmatch(value["root_run_id"]) is None:
+        raise ValueError("cancel-intent root identity is invalid")
+    _acp_digest(value["intent_sha256"], "intent_sha256")
+    return value
+
+
+def validate_acp_judgment_settlement_request(value: object) -> dict[str, object]:
+    """Closed Adapter-to-Backend pre-result settlement request and evidence declaration."""
+    fields = {"schema_version", "call_identity", "attempt_binding", "root_run_id",
+              "runtime_boot_id", "authority_epoch", "dsh_run_id", "settlement_kind",
+              "terminal_outcome", "evidence"}
+    if (not isinstance(value, dict) or set(value) != fields
+            or value.get("schema_version") != ACP_JUDGMENT_SETTLEMENT_REQUEST_SCHEMA_VERSION):
+        raise ValueError("exact ACP judgment pre-result settlement request required")
+    if not isinstance(value["call_identity"], str) or _ACP_CALL_ID.fullmatch(value["call_identity"]) is None:
+        raise ValueError("exact ACP judgment call identity required")
+    validate_attempt_binding(value["attempt_binding"])
+    for field in ("root_run_id", "runtime_boot_id"):
+        if not isinstance(value[field], str) or _ACP_ROOT_ID.fullmatch(value[field]) is None:
+            raise ValueError(f"ACP judgment {field} is invalid")
+    if type(value["authority_epoch"]) is not int or not 1 <= value["authority_epoch"] <= 2**63 - 1:
+        raise ValueError("ACP judgment authority epoch is invalid")
+    if not isinstance(value["dsh_run_id"], str) or _ACP_DSH_RUN_ID.fullmatch(value["dsh_run_id"]) is None:
+        raise ValueError("ACP judgment DSH run identity is invalid")
+
+    kind = value["settlement_kind"]
+    outcome = value["terminal_outcome"]
+    if (not isinstance(kind, str)
+            or kind not in {"never_dispatched", "cancelled_after_dispatch", "outcome_unknown"}):
+        raise ValueError("ACP judgment settlement kind is invalid")
+    if not isinstance(outcome, str) or outcome not in {"failed", "cancelled", "interrupted"}:
+        raise ValueError("ACP judgment terminal outcome is invalid")
+
+    evidence = value["evidence"]
+    evidence_fields = {"schema_version", "journal_status", "journal_sha256", "prompt_dispatch",
+                       "prompt_sha256", "provider_attempt", "provider_attempt_sha256",
+                       "process_fence", "process_fence_sha256", "known_usage",
+                       "cancellation_intent_receipt"}
+    if (not isinstance(evidence, dict) or set(evidence) != evidence_fields
+            or evidence.get("schema_version") != ACP_JUDGMENT_SETTLEMENT_EVIDENCE_SCHEMA_VERSION):
+        raise ValueError("exact ACP judgment settlement evidence declaration required")
+    if (not isinstance(evidence["journal_status"], str)
+            or evidence["journal_status"] not in {"available", "missing", "unavailable"}):
+        raise ValueError("journal_status is invalid")
+    journal_digest = _acp_digest(evidence["journal_sha256"], "journal_sha256", optional=True)
+    if ((evidence["journal_status"] == "available") != (journal_digest is not None)):
+        raise ValueError("journal status and digest must agree")
+    if (not isinstance(evidence["prompt_dispatch"], str)
+            or evidence["prompt_dispatch"] not in {"not_dispatched", "may_have_dispatched"}):
+        raise ValueError("prompt_dispatch is invalid")
+    _acp_digest(evidence["prompt_sha256"], "prompt_sha256", optional=True)
+    if (not isinstance(evidence["provider_attempt"], str)
+            or evidence["provider_attempt"] not in {"not_started", "may_have_started"}):
+        raise ValueError("provider_attempt is invalid")
+    provider_digest = _acp_digest(evidence["provider_attempt_sha256"],
+                                  "provider_attempt_sha256", optional=True)
+    if evidence["provider_attempt"] == "not_started" and provider_digest is not None:
+        raise ValueError("a not-started provider attempt cannot carry a provider-attempt digest")
+    if (not isinstance(evidence["process_fence"], str)
+            or evidence["process_fence"] not in {"stopped", "unproven"}):
+        raise ValueError("process_fence is invalid")
+    process_fence_digest = _acp_digest(evidence["process_fence_sha256"],
+                                       "process_fence_sha256", optional=True)
+    if ((evidence["process_fence"] == "stopped") != (process_fence_digest is not None)):
+        raise ValueError("process-fence status and digest must agree")
+
+    usage = evidence["known_usage"]
+    if not isinstance(usage, dict):
+        raise ValueError("known_usage must be an object")
+    if usage == {"status": "unknown"}:
+        pass
+    elif set(usage) == {"status", "input_tokens", "output_tokens", "total_tokens"} and usage["status"] == "known":
+        for field in ("input_tokens", "output_tokens", "total_tokens"):
+            token_count = usage[field]
+            if token_count is not None and (type(token_count) is not int or not 0 <= token_count <= 2**63 - 1):
+                raise ValueError(f"known_usage.{field} is invalid")
+    else:
+        raise ValueError("known_usage must be the exact known or unknown form")
+
+    cancellation_receipt = _validate_cancel_intent_receipt(evidence["cancellation_intent_receipt"])
+    if outcome == "cancelled" and cancellation_receipt is None:
+        raise ValueError("cancelled outcome requires an authenticated cancel-intent receipt")
+    if outcome != "cancelled" and cancellation_receipt is not None:
+        raise ValueError("cancel-intent receipt only authorizes a cancelled outcome")
+    if kind == "never_dispatched":
+        if (outcome not in {"failed", "cancelled"} or evidence["journal_status"] != "available"
+                or evidence["prompt_dispatch"] != "not_dispatched"
+                or evidence["provider_attempt"] != "not_started"
+                or evidence["process_fence"] != "stopped"):
+            raise ValueError("never_dispatched requires durable no-dispatch evidence and a stopped process fence")
+    elif kind == "cancelled_after_dispatch":
+        if (outcome != "cancelled" or cancellation_receipt is None
+                or evidence["prompt_dispatch"] != "may_have_dispatched"
+                or evidence["process_fence"] != "stopped"):
+            raise ValueError("cancelled_after_dispatch requires user intent, possible dispatch and stopped processes")
+    elif outcome != "interrupted" or cancellation_receipt is not None:
+        raise ValueError("outcome_unknown requires interrupted outcome and no cancel-intent receipt")
+    return value
 
 
 class ResearchJudgmentMixin:
@@ -242,6 +429,10 @@ class ResearchJudgmentMixin:
                 if existing["status"] == "completed":
                     raise AgentConflict(
                         "ACP judgment call has a committed result but no terminal root reconciliation")
+                if existing["status"] == "settled":
+                    raise AgentConflict("settled ACP judgment call cannot be replayed or readmitted")
+                if existing["status"] != "admitted":
+                    raise AgentConflict("ACP judgment call is no longer available for root admission")
                 expected_binding = {
                     "owner_principal": owner, "workspace_id": workspace,
                     "trace_id": trace_id,
@@ -437,6 +628,99 @@ class ResearchJudgmentMixin:
                  "task": task_id, "identity": request["call_identity"]})
             return receipt
 
+    def record_acp_judgment_cancel_intent(self, task_id: str, payload: object, *,
+                                          trusted_context: dict, agent_store) -> dict[str, object]:
+        """Bind a Gateway-authenticated user cancel command to one exact active root."""
+        from .agent_research import AgentConflict, AgentNotFound
+
+        request = validate_acp_judgment_cancel_intent_request(payload)
+        owner = trusted_context.get("owner_principal")
+        workspace = trusted_context.get("workspace_id")
+        actor = trusted_context.get("actor_principal")
+        if not isinstance(owner, str) or not isinstance(workspace, str) or actor != owner:
+            from .agent_research import AgentForbidden
+            raise AgentForbidden("ACP judgment cancel intent requires its authenticated task owner")
+
+        with self._transaction() as connection:
+            agent_store._lifecycle_lock(connection, "runtime-authority:current")
+            task = self._plan_task(connection, task_id, trusted_context, lock=True)
+            prior = fetch_one(connection, """SELECT * FROM research_judgment_acp_roots
+                WHERE task_id=:task AND owner_principal=:owner AND workspace_id=:workspace
+                  AND cancel_intent_idempotency_key=:key FOR UPDATE""",
+                {"task": task_id, "owner": owner, "workspace": workspace,
+                 "key": request["idempotency_key"]})
+            if prior is not None:
+                prior_receipt = prior.get("cancel_intent_receipt_json")
+                if (not isinstance(prior_receipt, dict)
+                        or prior.get("cancel_intent_actor_principal") != owner
+                        or prior_receipt.get("task_id") != task_id
+                        or prior_receipt.get("owner_principal") != owner
+                        or prior_receipt.get("workspace_id") != workspace
+                        or prior_receipt.get("call_identity") != prior["call_identity"]
+                        or prior_receipt.get("root_run_id") != prior["root_run_id"]
+                        or prior_receipt.get("intent_sha256") != prior.get("cancel_intent_request_sha256")):
+                    raise AgentConflict("stored ACP judgment cancel-intent receipt is inconsistent")
+                return {**prior_receipt, "replayed": True}
+            if task["status"] in {"completed", "failed", "cancelled"}:
+                raise AgentConflict("terminal research task has no cancellable judgment root")
+
+            candidates = execute(connection, """SELECT b.* FROM research_judgment_acp_roots b
+                JOIN research_judgment_stage_calls c
+                  ON c.task_id=b.task_id AND c.call_identity=b.call_identity
+                JOIN agent_runtime_turns r ON r.root_run_id=b.root_run_id
+                WHERE b.task_id=:task AND b.owner_principal=:owner AND b.workspace_id=:workspace
+                  AND b.settlement_digest IS NULL AND c.status='admitted'
+                  AND b.status IN ('root_created','agent_bound')
+                  AND r.status='active' AND r.authority_status='active'
+                  AND r.authority_boot_id=b.runtime_boot_id
+                ORDER BY b.created_at,b.call_identity FOR UPDATE OF b,c,r""",
+                {"task": task_id, "owner": owner, "workspace": workspace})
+            if len(candidates) != 1:
+                raise AgentConflict("cancel intent requires exactly one active admitted ACP judgment root")
+            binding = candidates[0]
+            agent_store._lifecycle_lock(connection, "root:" + binding["root_run_id"])
+            if binding.get("cancel_intent_receipt_json") is not None:
+                raise AgentConflict("active ACP judgment root already has a different cancel-intent key")
+            authority = agent_store._require_current_runtime_boot(
+                connection, binding["runtime_boot_id"], required=True)
+            if int(authority["epoch"]) != int(binding["authority_epoch"]):
+                raise AgentConflict("ACP judgment root authority epoch is no longer current")
+            if (binding["owner_principal"] != owner or binding["workspace_id"] != workspace
+                    or task["owner_principal"] != owner):
+                raise AgentNotFound("exact active ACP judgment call is not available")
+            attempt = f"{binding['plan_version']}:{binding['stage']}:{binding['iteration']}"
+            receipt_hash = _hash({
+                "schema_version": request["schema_version"], "task_id": task_id,
+                "owner_principal": owner, "workspace_id": workspace,
+                "actor_principal": actor, "idempotency_key": request["idempotency_key"],
+                "call_identity": binding["call_identity"], "attempt_binding": attempt,
+                "root_run_id": binding["root_run_id"],
+                "runtime_boot_id": binding["runtime_boot_id"],
+                "authority_epoch": int(binding["authority_epoch"]),
+                "dsh_run_id": binding["dsh_run_id"],
+            })
+            intent_id = "byqcancel-" + uuid.uuid4().hex
+            intent_receipt = {
+                "schema_version": ACP_JUDGMENT_CANCEL_INTENT_RECEIPT_SCHEMA_VERSION,
+                "intent_id": intent_id, "task_id": task_id, "owner_principal": owner,
+                "workspace_id": workspace, "call_identity": binding["call_identity"],
+                "root_run_id": binding["root_run_id"], "intent_sha256": receipt_hash,
+            }
+            updated = fetch_one(connection, """UPDATE research_judgment_acp_roots SET
+                cancel_intent_id=:intent_id,cancel_intent_actor_principal=:actor,
+                cancel_intent_idempotency_key=:key,
+                cancel_intent_request_sha256=:request_sha,
+                cancel_intent_receipt_json=CAST(:receipt AS jsonb),updated_at=:now
+                WHERE task_id=:task AND call_identity=:identity AND cancel_intent_id IS NULL
+                  AND settlement_digest IS NULL RETURNING cancel_intent_id""",
+                {"intent_id": intent_id, "actor": actor, "key": request["idempotency_key"],
+                 "request_sha": receipt_hash,
+                 "receipt": json.dumps(intent_receipt, allow_nan=False), "now": _now(),
+                 "task": task_id, "identity": binding["call_identity"]})
+            if updated is None:
+                raise AgentConflict("ACP judgment call changed while admitting cancel intent")
+            return {**intent_receipt, "replayed": False}
+
     @staticmethod
     def _require_model_stage(stage: object) -> str:
         if not stage_requires_model(stage):
@@ -615,6 +899,8 @@ class ResearchJudgmentMixin:
                     or request["attempt_binding"] != make_attempt_binding(
                         binding["plan_version"], binding["stage"], binding["iteration"])):
                 raise AgentConflict("ACP judgment result conflicts with its exact root binding")
+            if binding.get("cancel_intent_receipt_json") is not None:
+                raise AgentConflict("authenticated ACP judgment cancel intent already owns this call")
             authority = agent_store._require_current_runtime_boot(connection, boot_id, required=True)
             if int(authority["epoch"]) != request["authority_epoch"]:
                 raise AgentConflict("ACP judgment result authority epoch is no longer current")
@@ -667,6 +953,205 @@ class ResearchJudgmentMixin:
                  "identity": call_identity})
             return receipt
 
+    def settle_acp_judgment_root(self, task_id: str, payload: object, *,
+                                 trusted_context: dict, runtime_boot_id: str,
+                                 agent_store) -> dict[str, object]:
+        """Consume one admitted call without manufacturing a judgment result."""
+        from .agent_research import AgentConflict, AgentNotFound, _runtime_boot_id
+        from .research import ResearchNotFound
+
+        request = validate_acp_judgment_settlement_request(payload)
+        boot_id = _runtime_boot_id(runtime_boot_id)
+        if request["runtime_boot_id"] != boot_id:
+            raise AgentConflict("ACP judgment settlement boot differs from trusted Backend boot")
+        owner = trusted_context.get("owner_principal")
+        workspace = trusted_context.get("workspace_id")
+        if not isinstance(owner, str) or not isinstance(workspace, str):
+            raise ValueError("trusted owner and Workspace scope are required")
+        requested_digest = _hash(request)
+
+        with self._transaction() as connection:
+            agent_store._lifecycle_lock(connection, "runtime-authority:current")
+            authority = agent_store._require_current_runtime_boot(connection, boot_id, required=True)
+            agent_store._lifecycle_lock(connection, "root:" + request["root_run_id"])
+            task = self._plan_task(connection, task_id, trusted_context, lock=True)
+            call = self._load_stage_call(connection, task_id, request["call_identity"], lock=True)
+            binding = fetch_one(connection, """SELECT * FROM research_judgment_acp_roots
+                WHERE task_id=:task AND call_identity=:identity FOR UPDATE""",
+                {"task": task_id, "identity": request["call_identity"]})
+            if binding is None or call is None:
+                raise AgentNotFound("exact admitted ACP judgment call is not available")
+            expected_attempt = f"{binding['plan_version']}:{binding['stage']}:{binding['iteration']}"
+            expected_request_scope = {
+                "root_run_id": binding["root_run_id"],
+                "runtime_boot_id": binding["runtime_boot_id"],
+                "authority_epoch": int(binding["authority_epoch"]),
+                "dsh_run_id": binding["dsh_run_id"],
+            }
+            if (any(request.get(field) != value for field, value in expected_request_scope.items())
+                    or request["attempt_binding"] != expected_attempt
+                    or binding["task_id"] != task_id
+                    or binding["owner_principal"] != owner
+                    or binding["workspace_id"] != workspace
+                    or call["call_identity"] != binding["call_identity"]
+                    or int(call["plan_version"]) != int(binding["plan_version"])
+                    or call["stage"] != binding["stage"]
+                    or int(call["call_index"]) != int(binding["call_index"])):
+                raise AgentConflict("ACP judgment settlement conflicts with its exact task/call/root scope")
+
+            admission_scope = {
+                "task_id": task_id, "owner_principal": binding["owner_principal"],
+                "workspace_id": binding["workspace_id"], "actor_principal": binding["actor_principal"],
+                "call_identity": binding["call_identity"], "attempt_binding": expected_attempt,
+                "root_run_id": binding["root_run_id"], "runtime_boot_id": binding["runtime_boot_id"],
+                "authority_epoch": int(binding["authority_epoch"]), "dsh_run_id": binding["dsh_run_id"],
+                "plan_version": int(binding["plan_version"]), "stage": binding["stage"],
+                "iteration": int(binding["iteration"]), "call_index": int(binding["call_index"]),
+            }
+            settlement_digest = _hash({
+                "admission": admission_scope,
+                "request_sha256": requested_digest,
+                "settlement_kind": request["settlement_kind"],
+                "terminal_outcome": request["terminal_outcome"],
+                "evidence": request["evidence"],
+            })
+            stored_digest = binding.get("settlement_digest")
+            if stored_digest is not None:
+                receipt = binding.get("settlement_receipt_json")
+                if stored_digest != settlement_digest or not isinstance(receipt, dict):
+                    raise AgentConflict("ACP judgment call already has a different terminal settlement")
+                if receipt.get("settlement_digest") != settlement_digest:
+                    raise AgentConflict("stored ACP judgment settlement receipt is inconsistent")
+                return {**receipt, "replayed": True}
+            if (binding.get("result_request_sha256") is not None or call["status"] == "completed"
+                    or isinstance(call.get("result_json"), dict)):
+                raise AgentConflict("committed ACP judgment result cannot be replaced by settlement")
+            if call["status"] != "admitted":
+                raise AgentConflict("ACP judgment call is no longer available for settlement")
+            if int(authority["epoch"]) != int(binding["authority_epoch"]):
+                raise AgentConflict("ACP judgment settlement authority epoch is no longer current")
+
+            root = fetch_one(connection, """SELECT * FROM agent_runtime_turns
+                WHERE root_run_id=:root FOR UPDATE""", {"root": binding["root_run_id"]})
+            if (root is None or root["status"] != "active"
+                    or root["authority_status"] != "active"
+                    or root["authority_boot_id"] != boot_id
+                    or root["owner_principal"] != binding["owner_principal"]
+                    or root["workspace_id"] != binding["workspace_id"]
+                    or root["session_id"] != binding["session_id"]
+                    or root["trace_id"] != binding["trace_id"]):
+                raise AgentConflict("ACP judgment settlement requires the exact active root authority")
+
+            cancellation_receipt = request["evidence"]["cancellation_intent_receipt"]
+            stored_cancel_receipt = binding.get("cancel_intent_receipt_json")
+            if cancellation_receipt is not None and (
+                    cancellation_receipt != stored_cancel_receipt
+                    or binding.get("cancel_intent_actor_principal") != binding["owner_principal"]
+                    or cancellation_receipt.get("task_id") != task_id
+                    or cancellation_receipt.get("owner_principal") != binding["owner_principal"]
+                    or cancellation_receipt.get("workspace_id") != binding["workspace_id"]
+                    or cancellation_receipt.get("call_identity") != binding["call_identity"]
+                    or cancellation_receipt.get("root_run_id") != binding["root_run_id"]
+                    or cancellation_receipt.get("intent_sha256") != binding.get("cancel_intent_request_sha256")):
+                raise AgentConflict("cancelled outcome requires the exact persisted owner cancel intent")
+
+            kind = request["settlement_kind"]
+            if kind == "never_dispatched":
+                counts = fetch_one(connection, """SELECT
+                    (SELECT count(*) FROM agent_acp_tool_ingress_observations WHERE root_run_id=:root)
+                    + (SELECT count(*) FROM agent_acp_domain_call_observations WHERE root_run_id=:root)
+                    AS ingress_count,
+                    (SELECT count(*) FROM agent_domain_call_claims
+                     WHERE root_run_id=:root AND status IN ('claimed','executing')) AS unresolved_claim_count""",
+                    {"root": binding["root_run_id"]})
+                if counts["ingress_count"] or counts["unresolved_claim_count"]:
+                    raise AgentConflict(
+                        "never_dispatched requires Backend proof of no business ingress or unresolved claim")
+            elif kind == "cancelled_after_dispatch":
+                # The Adapter declaration says owned processes stopped; Backend
+                # independently freezes only the currently observed ingress and
+                # claim ledger here. A later close takes and reads back its own
+                # exact terminal snapshot under the same root lock.
+                agent_store._require_acp_root_terminal_safe(connection, binding["root_run_id"])
+
+            backend_snapshot = agent_store._acp_terminal_evidence_snapshot(
+                connection, binding["root_run_id"])
+            backend_ingress = {
+                "schema_version": "byq-acp-terminal-evidence-snapshot.v1",
+                "terminal_acp_ingress_sequence": backend_snapshot["terminal_acp_ingress_sequence"],
+                "terminal_acp_ingress_sha256": backend_snapshot["terminal_acp_ingress_sha256"],
+                "terminal_unknown_claim_count": backend_snapshot["terminal_unknown_claim_count"],
+                "terminal_unknown_claims_sha256": backend_snapshot["terminal_unknown_claims_sha256"],
+            }
+            if kind == "never_dispatched" and (
+                    backend_ingress["terminal_acp_ingress_sequence"] != 0
+                    or backend_ingress["terminal_unknown_claim_count"] != 0):
+                raise AgentConflict("never_dispatched ingress snapshot is not empty")
+            if kind == "cancelled_after_dispatch" and backend_ingress["terminal_unknown_claim_count"] != 0:
+                raise AgentConflict("cancelled_after_dispatch requires a frozen resolved claim snapshot")
+
+            attention_reason = (
+                f"ACP judgment {kind} root={binding['root_run_id']} call={binding['call_identity']}")
+            attention_state = "task_terminal_preserved"
+            attention_plan_version = None
+            settled_task_version = int(task["version"])
+            if task["status"] not in {"completed", "failed", "cancelled"}:
+                plan_row = self._load_current_plan(connection, task_id, lock=True)
+                if plan_row is None:
+                    raise ResearchNotFound("research execution plan not found")
+                plan = validate_plan(plan_row["plan"])
+                if plan["stage"] == "needs_attention":
+                    attention_plan_version = int(plan["plan_version"])
+                    attention_state = "already_needs_attention"
+                else:
+                    identity = "acp-settlement-" + settlement_digest[7:39]
+                    advanced = self._apply_stage_needs_attention(
+                        connection, task, plan, attention_reason, identity)
+                    attention_plan_version = int(advanced["plan_version"])
+                    attention_state = "needs_attention"
+                    settled_task_version = int(task["version"]) + 1
+
+            now = _now()
+            receipt = {
+                "schema_version": ACP_JUDGMENT_SETTLEMENT_RECEIPT_SCHEMA_VERSION,
+                "status": "settled", **admission_scope,
+                "settlement_kind": kind, "terminal_outcome": request["terminal_outcome"],
+                "settlement_digest": settlement_digest,
+                "evidence": request["evidence"],
+                "backend_ingress_evidence": backend_ingress,
+                "attention": {
+                    "state": attention_state, "reason": attention_reason,
+                    "task_status": task["status"], "task_version": settled_task_version,
+                    "plan_version": attention_plan_version,
+                },
+                "settled_at": now,
+            }
+            updated_call = fetch_one(connection, """UPDATE research_judgment_stage_calls SET
+                status='settled',completed_at=:now,progress_identity=NULL,
+                outcome=:outcome,result_json=NULL
+                WHERE task_id=:task AND call_identity=:identity AND status='admitted'
+                RETURNING call_identity""",
+                {"now": now, "outcome": request["terminal_outcome"], "task": task_id,
+                 "identity": binding["call_identity"]})
+            if updated_call is None:
+                raise AgentConflict("ACP judgment call changed while committing settlement")
+            updated_binding = fetch_one(connection, """UPDATE research_judgment_acp_roots SET
+                settlement_digest=:digest,settlement_kind=:kind,
+                settlement_terminal_outcome=:outcome,
+                settlement_evidence_json=CAST(:evidence AS jsonb),
+                settlement_receipt_json=CAST(:receipt AS jsonb),
+                settlement_attention_reason=:reason,settled_at=:now,updated_at=:now
+                WHERE task_id=:task AND call_identity=:identity
+                  AND settlement_digest IS NULL AND result_request_sha256 IS NULL
+                RETURNING settlement_digest""",
+                {"digest": settlement_digest, "kind": kind, "outcome": request["terminal_outcome"],
+                 "evidence": json.dumps(request["evidence"], allow_nan=False),
+                 "receipt": json.dumps(receipt, allow_nan=False), "reason": attention_reason,
+                 "now": now, "task": task_id, "identity": binding["call_identity"]})
+            if updated_binding is None:
+                raise AgentConflict("ACP judgment root changed while committing settlement")
+            return {**receipt, "replayed": False}
+
     def get_acp_judgment_root_status(self, task_id: str, payload: object, *,
                                      trusted_context: dict, runtime_boot_id: str,
                                      agent_store) -> dict:
@@ -709,14 +1194,53 @@ class ResearchJudgmentMixin:
                         "owner_principal", "workspace_id", "session_id", "trace_id"))):
                 raise AgentConflict("ACP judgment status has inconsistent persisted root facts")
             result = call["result_json"] if call["status"] == "completed" else None
-            digest = binding["result_request_sha256"]
-            if ((call["status"] == "completed") != (result is not None and digest is not None)
-                    or (result is not None and (not isinstance(result, dict)
-                        or result.get("schema_version") != RESULT_RECEIPT_SCHEMA_VERSION))
-                    or (root["status"] != "active" and (result is None
-                        or root["terminal_sequence"] is None
-                        or root["terminal_event_sha256"] is None))):
-                raise AgentConflict("ACP judgment status has inconsistent result or terminal evidence")
+            result_digest = binding["result_request_sha256"]
+            settlement = binding.get("settlement_receipt_json") if call["status"] == "settled" else None
+            settlement_digest = binding.get("settlement_digest")
+            if call["status"] == "completed":
+                if (not isinstance(result, dict)
+                        or result.get("schema_version") != RESULT_RECEIPT_SCHEMA_VERSION
+                        or not isinstance(result_digest, str) or _ACP_DIGEST.fullmatch(result_digest) is None
+                        or settlement_digest is not None or binding.get("settlement_receipt_json") is not None):
+                    raise AgentConflict("ACP judgment status has inconsistent committed result evidence")
+            elif call["status"] == "settled":
+                if (call.get("result_json") is not None
+                        or call.get("outcome") != binding.get("settlement_terminal_outcome")
+                        or result is not None or result_digest is not None or not isinstance(settlement, dict)
+                        or settlement.get("schema_version") != ACP_JUDGMENT_SETTLEMENT_RECEIPT_SCHEMA_VERSION
+                        or settlement.get("status") != "settled"
+                        or settlement.get("task_id") != task_id
+                        or settlement.get("owner_principal") != binding["owner_principal"]
+                        or settlement.get("workspace_id") != binding["workspace_id"]
+                        or settlement.get("call_identity") != request["call_identity"]
+                        or settlement.get("attempt_binding") != make_attempt_binding(
+                            binding["plan_version"], binding["stage"], binding["iteration"])
+                        or settlement.get("root_run_id") != binding["root_run_id"]
+                        or settlement.get("runtime_boot_id") != binding["runtime_boot_id"]
+                        or settlement.get("authority_epoch") != int(binding["authority_epoch"])
+                        or settlement.get("dsh_run_id") != binding["dsh_run_id"]
+                        or settlement.get("settlement_digest") != settlement_digest
+                        or binding.get("settlement_kind") != settlement.get("settlement_kind")
+                        or binding.get("settlement_terminal_outcome") != settlement.get("terminal_outcome")
+                        or binding.get("settlement_evidence_json") != settlement.get("evidence")
+                        or not isinstance(settlement_digest, str)
+                        or _ACP_DIGEST.fullmatch(settlement_digest) is None):
+                    raise AgentConflict("ACP judgment status has inconsistent settlement evidence")
+            elif (result_digest is not None or settlement_digest is not None
+                    or binding.get("settlement_receipt_json") is not None):
+                raise AgentConflict("unsettled ACP judgment call has persisted terminal evidence")
+
+            if root["status"] != "active":
+                terminal_fields = ("terminal_sequence", "terminal_event_sha256",
+                    "terminal_acp_ingress_sequence", "terminal_acp_ingress_sha256",
+                    "terminal_unknown_claim_count", "terminal_unknown_claims_sha256")
+                if any(root.get(field) is None for field in terminal_fields):
+                    raise AgentConflict("ACP judgment status has incomplete root terminal evidence")
+                if ((call["status"] == "completed" and root["status"] != "completed")
+                        or (call["status"] == "settled"
+                            and root["status"] != binding["settlement_terminal_outcome"])
+                        or call["status"] == "admitted"):
+                    raise AgentConflict("ACP judgment status terminal outcome conflicts with call settlement")
             return {
                 "schema_version": "byq-research-judgment-acp-status-receipt.v1",
                 "task_id": task_id, "call_identity": request["call_identity"],
@@ -729,8 +1253,16 @@ class ResearchJudgmentMixin:
                 "native_root_session_id": binding["native_root_session_id"],
                 "agent_run_id": binding["agent_run_id"],
                 "stage_call_status": call["status"],
-                "result_request_sha256": digest,
+                "stage_call_outcome": call["outcome"],
+                "result_request_sha256": result_digest,
                 "result_receipt": result,
+                "settlement_digest": settlement_digest,
+                "settlement_kind": binding.get("settlement_kind"),
+                "settlement_terminal_outcome": binding.get("settlement_terminal_outcome"),
+                "terminal_outcome": binding.get("settlement_terminal_outcome"),
+                "settlement_evidence": binding.get("settlement_evidence_json"),
+                "settlement_receipt": settlement,
+                "cancellation_intent_receipt": binding.get("cancel_intent_receipt_json"),
                 "root_status": root["status"],
                 "root_authority_status": root["authority_status"],
                 "terminal_sequence": root["terminal_sequence"],

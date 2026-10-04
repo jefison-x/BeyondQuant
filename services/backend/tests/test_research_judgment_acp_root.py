@@ -70,6 +70,57 @@ def _begin_request(task_id: str, plan: dict) -> dict:
             "call_identity": call_identity, "attempt_binding": binding}
 
 
+def _settlement_request(task_id: str, begin: dict, headers: dict, *,
+                        settlement_kind: str = "never_dispatched",
+                        terminal_outcome: str = "failed",
+                        cancellation_intent_receipt: dict | None = None,
+                        process_fence: str = "stopped") -> dict:
+    if settlement_kind == "never_dispatched":
+        journal_status, journal_digest = "available", "sha256:" + "1" * 64
+        prompt_dispatch, provider_attempt = "not_dispatched", "not_started"
+    elif settlement_kind == "cancelled_after_dispatch":
+        journal_status, journal_digest = "available", "sha256:" + "2" * 64
+        prompt_dispatch, provider_attempt = "may_have_dispatched", "may_have_started"
+    else:
+        journal_status, journal_digest = "unavailable", None
+        prompt_dispatch, provider_attempt = "may_have_dispatched", "may_have_started"
+    return {
+        "schema_version": "byq-research-judgment-acp-settlement-request.v1",
+        "call_identity": begin["call_identity"],
+        "attempt_binding": begin["attempt_binding"],
+        "root_run_id": begin["root"]["root_run_id"],
+        "runtime_boot_id": headers["x-byq-runtime-boot-id"],
+        "authority_epoch": begin["root"]["authority_epoch"],
+        "dsh_run_id": begin["root"]["dsh_run_id"],
+        "settlement_kind": settlement_kind,
+        "terminal_outcome": terminal_outcome,
+        "evidence": {
+            "schema_version": "byq-research-judgment-acp-settlement-evidence.v1",
+            "journal_status": journal_status,
+            "journal_sha256": journal_digest,
+            "prompt_dispatch": prompt_dispatch,
+            "prompt_sha256": None,
+            "provider_attempt": provider_attempt,
+            "provider_attempt_sha256": None,
+            "process_fence": process_fence,
+            "process_fence_sha256": "sha256:" + "3" * 64 if process_fence == "stopped" else None,
+            "known_usage": {"status": "unknown"},
+            "cancellation_intent_receipt": cancellation_intent_receipt,
+        },
+    }
+
+
+def _status_request(begin: dict) -> dict:
+    return {"schema_version": "byq-research-judgment-acp-status.v1",
+            "call_identity": begin["call_identity"],
+            "attempt_binding": begin["attempt_binding"]}
+
+
+def _cancel_intent_request(key: str = "cancel-" + "1" * 24) -> dict:
+    return {"schema_version": "byq-research-judgment-acp-cancel-intent-request.v1",
+            "idempotency_key": key}
+
+
 def _close(*stores):
     for store in stores:
         store.close()
@@ -99,6 +150,23 @@ def _route_inputs(route: str):
                 "agent_run_id": "agent_run_" + "f" * 32,
                 "native_root_session_id": str(uuid4()),
                 "durable_evidence": {"kind": "none"}}
+    elif route == "settle":
+        path = f"/internal/research-judgment/{task_id}/acp-root/settle"
+        body = {"schema_version": "byq-research-judgment-acp-settlement-request.v1",
+                "call_identity": "byq-judgment-" + "c" * 32,
+                "attempt_binding": "1:strategy_draft:1", "root_run_id": root_id,
+                "runtime_boot_id": "d" * 32, "authority_epoch": 1,
+                "dsh_run_id": "byqjudg-" + "e" * 32,
+                "settlement_kind": "never_dispatched", "terminal_outcome": "failed",
+                "evidence": {"schema_version": "byq-research-judgment-acp-settlement-evidence.v1",
+                    "journal_status": "available", "journal_sha256": "sha256:" + "1" * 64,
+                    "prompt_dispatch": "not_dispatched", "prompt_sha256": None,
+                    "provider_attempt": "not_started", "provider_attempt_sha256": None,
+                    "process_fence": "stopped", "process_fence_sha256": "sha256:" + "2" * 64,
+                    "known_usage": {"status": "unknown"}, "cancellation_intent_receipt": None}}
+    elif route == "cancel_intent":
+        path = f"/internal/research-judgment/{task_id}/acp-root/cancel-intent"
+        body = _cancel_intent_request()
     else:
         path = f"/internal/research-judgment/{task_id}/acp-root/status"
         body = {"schema_version": "byq-research-judgment-acp-status.v1",
@@ -107,6 +175,10 @@ def _route_inputs(route: str):
     headers = {"Authorization": "Bearer test-runtime-authority-token",
         "x-byq-owner-principal": "route-test-user", "x-byq-workspace-id": "workspace-route-test",
         "x-byq-runtime-boot-id": "d" * 32}
+    if route == "cancel_intent":
+        headers = {"Authorization": "Bearer test-gateway-service-token-0123456789",
+            "x-byq-owner-principal": "route-test-user", "x-byq-workspace-id": "workspace-route-test",
+            "x-byq-actor-principal": "route-test-user"}
     return path, body, headers
 
 
@@ -119,6 +191,7 @@ def _route_client(monkeypatch):
             raise AssertionError(f"route reached Backend storage method {name}")
 
     monkeypatch.setattr(main, "RUNTIME_AUTHORITY_TOKEN", "test-runtime-authority-token")
+    monkeypatch.setattr(main, "GATEWAY_SERVICE_TOKEN", "test-gateway-service-token-0123456789")
     monkeypatch.setattr(main, "research_store", NeverStore())
     monkeypatch.setattr(main, "agent_store", NeverStore())
     return TestClient(main.app)
@@ -209,7 +282,7 @@ def test_judgment_root_cannot_close_before_exact_result_commit():
         with pytest.raises(AgentConflict, match="result is not durably committed"):
             agents.close_runtime_root(root, boot_id=headers["x-byq-runtime-boot-id"],
                 sequence=2, outcome="completed", event_sha256=digest)
-        with pytest.raises(AgentConflict, match="completed result and bound Agent"):
+        with pytest.raises(AgentConflict, match="matching durable pre-result settlement"):
             agents.close_runtime_root(root, boot_id=headers["x-byq-runtime-boot-id"],
                 sequence=2, outcome="cancelled", event_sha256=digest)
         stored = research._fetch_one("SELECT status FROM agent_runtime_turns WHERE root_run_id=:root",
@@ -313,7 +386,7 @@ def test_acp_judgment_result_commits_once_then_allows_exact_root_close():
             research.record_acp_judgment_root_result(
                 task, dict(request, root_run_id=uuid4().hex), trusted_context=context,
                 runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
-        with pytest.raises(AgentConflict, match="completed result and bound Agent"):
+        with pytest.raises(AgentConflict, match="matching durable pre-result settlement"):
             agents.close_runtime_root(begin["root"]["root_run_id"],
                 boot_id=headers["x-byq-runtime-boot-id"], sequence=2,
                 outcome="failed", event_sha256="a" * 64)
@@ -349,6 +422,291 @@ def test_acp_judgment_result_commits_once_then_allows_exact_root_close():
                 runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
     finally:
         _close(catalog, research, agents)
+
+
+def test_never_dispatched_settlement_is_idempotent_consumes_call_and_closes_exact_root():
+    catalog, research, agents, task, context, headers, plan = _setup("strategy_draft")
+    try:
+        begin = research.begin_acp_judgment_root(
+            task, _begin_request(task, plan), trusted_context=context,
+            runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        request = _settlement_request(task, begin, headers)
+        first = research.settle_acp_judgment_root(
+            task, request, trusted_context=context,
+            runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        replay = research.settle_acp_judgment_root(
+            task, request, trusted_context=context,
+            runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        assert first["status"] == "settled" and first["settlement_kind"] == "never_dispatched"
+        assert first["terminal_outcome"] == "failed" and first["settlement_digest"].startswith("sha256:")
+        assert replay == {**first, "replayed": True}
+        assert first["attention"]["state"] == "needs_attention"
+        assert first["attention"]["reason"].find(begin["call_identity"]) >= 0
+        call = research._fetch_one("""SELECT status,outcome,result_json FROM research_judgment_stage_calls
+            WHERE task_id=:task AND call_identity=:identity""",
+            {"task": task, "identity": begin["call_identity"]})
+        assert call == {"status": "settled", "outcome": "failed", "result_json": None}
+        current_plan = research.get_execution_plan(task, trusted_context=context)
+        assert current_plan["stage"] == "needs_attention"
+        pending = research.get_acp_judgment_root_status(
+            task, _status_request(begin), trusted_context=context,
+            runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        assert pending["stage_call_status"] == "settled"
+        assert pending["result_receipt"] is None
+        assert pending["settlement_digest"] == first["settlement_digest"]
+        assert pending["terminal_outcome"] == pending["stage_call_outcome"] == "failed"
+        assert pending["settlement_receipt"] == {key: value for key, value in first.items()
+                                                  if key != "replayed"}
+        assert pending["terminal_sequence"] is None
+
+        changed = dict(request)
+        changed["evidence"] = {**request["evidence"], "prompt_sha256": "sha256:" + "4" * 64}
+        with pytest.raises(AgentConflict, match="different terminal settlement"):
+            research.settle_acp_judgment_root(
+                task, changed, trusted_context=context,
+                runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        with pytest.raises(AgentConflict, match="settled ACP judgment call"):
+            research.begin_acp_judgment_root(task, _begin_request(task, plan), trusted_context=context,
+                runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+
+        with pytest.raises(AgentConflict, match="matching durable pre-result settlement"):
+            agents.close_runtime_root(begin["root"]["root_run_id"],
+                boot_id=headers["x-byq-runtime-boot-id"], sequence=2,
+                outcome="interrupted", event_sha256="a" * 64)
+        terminal = agents.close_runtime_root(begin["root"]["root_run_id"],
+            boot_id=headers["x-byq-runtime-boot-id"], sequence=2,
+            outcome="failed", event_sha256="a" * 64)
+        assert terminal["root_run_id"] == begin["root"]["root_run_id"]
+        closed = research.get_acp_judgment_root_status(
+            task, _status_request(begin), trusted_context=context,
+            runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        assert closed["root_status"] == "failed"
+        assert closed["settlement_digest"] == first["settlement_digest"]
+        assert closed["terminal_sequence"] == 2
+        assert closed["terminal_event_sha256"] == "a" * 64
+        assert closed["terminal_acp_ingress_sequence"] == 0
+        assert closed["terminal_unknown_claim_count"] == 0
+    finally:
+        _close(catalog, research, agents)
+
+
+def test_cancelled_after_dispatch_requires_persisted_owner_intent_receipt():
+    catalog, research, agents, task, context, headers, plan = _setup("backtest_analysis")
+    try:
+        begin = research.begin_acp_judgment_root(
+            task, _begin_request(task, plan), trusted_context=context,
+            runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        native = str(uuid4())
+        research.register_acp_judgment_root_agent(task, {
+            "schema_version": "byq-research-judgment-acp-agent-register.v1",
+            "call_identity": begin["call_identity"], "root_run_id": begin["root"]["root_run_id"],
+            "runtime_boot_id": headers["x-byq-runtime-boot-id"],
+            "native_root_session_id": native,
+        }, trusted_context=context, runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        request = _settlement_request(task, begin, headers,
+            settlement_kind="cancelled_after_dispatch", terminal_outcome="cancelled")
+        with pytest.raises(ValueError, match="cancel-intent receipt"):
+            research.settle_acp_judgment_root(
+                task, request, trusted_context=context,
+                runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+
+        owner_context = {**context, "actor_principal": context["owner_principal"]}
+        intent_request = _cancel_intent_request()
+        cancel_receipt = research.record_acp_judgment_cancel_intent(
+            task, intent_request, trusted_context=owner_context, agent_store=agents)
+        assert cancel_receipt["owner_principal"] == owner_context["owner_principal"]
+        assert cancel_receipt["workspace_id"] == owner_context["workspace_id"]
+        assert cancel_receipt["call_identity"] == begin["call_identity"]
+        assert cancel_receipt["root_run_id"] == begin["root"]["root_run_id"]
+        assert cancel_receipt["intent_sha256"].startswith("sha256:")
+        assert research.record_acp_judgment_cancel_intent(
+            task, intent_request, trusted_context=owner_context, agent_store=agents
+        ) == {**cancel_receipt, "replayed": True}
+
+        binding = research._fetch_one("""SELECT agent_run_id FROM research_judgment_acp_roots
+            WHERE task_id=:task AND call_identity=:identity""",
+            {"task": task, "identity": begin["call_identity"]})
+        result_request = {
+            "schema_version": "byq-research-judgment-acp-result.v1",
+            "call_identity": begin["call_identity"], "attempt_binding": begin["attempt_binding"],
+            "root_run_id": begin["root"]["root_run_id"],
+            "runtime_boot_id": headers["x-byq-runtime-boot-id"],
+            "authority_epoch": begin["root"]["authority_epoch"],
+            "dsh_run_id": begin["root"]["dsh_run_id"],
+            "agent_run_id": binding["agent_run_id"], "native_root_session_id": native,
+            "durable_evidence": {"kind": "none"},
+        }
+        with pytest.raises(AgentConflict, match="cancel intent already owns this call"):
+            research.record_acp_judgment_root_result(
+                task, result_request, trusted_context=context,
+                runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+
+        body_receipt = {key: value for key, value in cancel_receipt.items() if key != "replayed"}
+        request["evidence"]["cancellation_intent_receipt"] = body_receipt
+        forged = dict(request)
+        forged["evidence"] = {**request["evidence"], "cancellation_intent_receipt": {
+            **body_receipt, "intent_sha256": "sha256:" + "f" * 64}}
+        with pytest.raises(AgentConflict, match="exact persisted owner cancel intent"):
+            research.settle_acp_judgment_root(
+                task, forged, trusted_context=context,
+                runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        settled = research.settle_acp_judgment_root(
+            task, request, trusted_context=context,
+            runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        assert settled["settlement_kind"] == "cancelled_after_dispatch"
+        assert settled["terminal_outcome"] == "cancelled"
+        assert settled["evidence"]["cancellation_intent_receipt"] == body_receipt
+        assert research.record_acp_judgment_cancel_intent(
+            task, intent_request, trusted_context=owner_context, agent_store=agents
+        ) == {**body_receipt, "replayed": True}
+        terminal = agents.close_runtime_root(begin["root"]["root_run_id"],
+            boot_id=headers["x-byq-runtime-boot-id"], sequence=2,
+            outcome="cancelled", event_sha256="b" * 64)
+        assert terminal["root_run_id"] == begin["root"]["root_run_id"]
+        status = research.get_acp_judgment_root_status(
+            task, _status_request(begin), trusted_context=context,
+            runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        assert status["root_status"] == "cancelled"
+        assert status["settlement_receipt"]["settlement_digest"] == settled["settlement_digest"]
+        assert status["cancellation_intent_receipt"] == body_receipt
+        research.transition("research_task", task, "cancelled", "cancel-after-acp-settlement")
+        assert research.record_acp_judgment_cancel_intent(
+            task, intent_request, trusted_context=owner_context, agent_store=agents
+        ) == {**body_receipt, "replayed": True}
+    finally:
+        _close(catalog, research, agents)
+
+
+def test_unknown_settlement_with_unproven_process_fence_cannot_close_or_ack():
+    catalog, research, agents, task, context, headers, plan = _setup("iteration_comparison")
+    try:
+        begin = research.begin_acp_judgment_root(
+            task, _begin_request(task, plan), trusted_context=context,
+            runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        request = _settlement_request(task, begin, headers, settlement_kind="outcome_unknown",
+            terminal_outcome="interrupted", process_fence="unproven")
+        settled = research.settle_acp_judgment_root(
+            task, request, trusted_context=context,
+            runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        assert settled["status"] == "settled"
+        assert settled["evidence"]["process_fence"] == "unproven"
+        with pytest.raises(AgentConflict, match="matching durable pre-result settlement"):
+            agents.close_runtime_root(begin["root"]["root_run_id"],
+                boot_id=headers["x-byq-runtime-boot-id"], sequence=2,
+                outcome="interrupted", event_sha256="c" * 64)
+        status = research.get_acp_judgment_root_status(
+            task, _status_request(begin), trusted_context=context,
+            runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        assert status["root_status"] == "active"
+        assert status["stage_call_status"] == "settled"
+        assert status["terminal_sequence"] is None
+        assert status["settlement_digest"] == settled["settlement_digest"]
+    finally:
+        _close(catalog, research, agents)
+
+
+def test_terminal_task_settlement_preserves_task_and_plan_rows():
+    catalog, research, agents, task, context, headers, plan = _setup("strategy_draft")
+    try:
+        begin = research.begin_acp_judgment_root(
+            task, _begin_request(task, plan), trusted_context=context,
+            runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        research.transition("research_task", task, "cancelled", "user-cancel-before-settlement")
+        before_task = research._fetch_one("""SELECT status,version,progress,updated_at FROM research_tasks
+            WHERE task_id=:task""", {"task": task})
+        before_plan = research._fetch_one("""SELECT plan_version,task_version,stage,status,plan,
+            idempotency_key,request_hash,updated_at FROM research_execution_plans WHERE task_id=:task""",
+            {"task": task})
+        request = _settlement_request(task, begin, headers, settlement_kind="outcome_unknown",
+            terminal_outcome="interrupted", process_fence="stopped")
+        receipt = research.settle_acp_judgment_root(
+            task, request, trusted_context=context,
+            runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        assert receipt["attention"]["state"] == "task_terminal_preserved"
+        after_task = research._fetch_one("""SELECT status,version,progress,updated_at FROM research_tasks
+            WHERE task_id=:task""", {"task": task})
+        after_plan = research._fetch_one("""SELECT plan_version,task_version,stage,status,plan,
+            idempotency_key,request_hash,updated_at FROM research_execution_plans WHERE task_id=:task""",
+            {"task": task})
+        assert after_task == before_task
+        assert after_plan == before_plan
+    finally:
+        _close(catalog, research, agents)
+
+
+def test_result_and_pre_result_settlement_race_has_one_winner():
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    catalog, research, agents, task, context, headers, plan = _setup("strategy_draft")
+    second_research = second_agents = None
+    try:
+        begin = research.begin_acp_judgment_root(
+            task, _begin_request(task, plan), trusted_context=context,
+            runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        native = str(uuid4())
+        research.register_acp_judgment_root_agent(task, {
+            "schema_version": "byq-research-judgment-acp-agent-register.v1",
+            "call_identity": begin["call_identity"], "root_run_id": begin["root"]["root_run_id"],
+            "runtime_boot_id": headers["x-byq-runtime-boot-id"], "native_root_session_id": native,
+        }, trusted_context=context, runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        binding = research._fetch_one("""SELECT agent_run_id FROM research_judgment_acp_roots
+            WHERE task_id=:task AND call_identity=:identity""",
+            {"task": task, "identity": begin["call_identity"]})
+        result_request = {
+            "schema_version": "byq-research-judgment-acp-result.v1",
+            "call_identity": begin["call_identity"], "attempt_binding": begin["attempt_binding"],
+            "root_run_id": begin["root"]["root_run_id"],
+            "runtime_boot_id": headers["x-byq-runtime-boot-id"],
+            "authority_epoch": begin["root"]["authority_epoch"],
+            "dsh_run_id": begin["root"]["dsh_run_id"],
+            "agent_run_id": binding["agent_run_id"], "native_root_session_id": native,
+            "durable_evidence": {"kind": "none"},
+        }
+        settlement_request = _settlement_request(task, begin, headers,
+            settlement_kind="outcome_unknown", terminal_outcome="interrupted")
+        second_research = ResearchStore()
+        second_agents = AgentResearchStore()
+        barrier = Barrier(2)
+
+        def run_result():
+            barrier.wait(timeout=10)
+            try:
+                return ("result", research.record_acp_judgment_root_result(
+                    task, result_request, trusted_context=context,
+                    runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents))
+            except Exception as error:  # the competing transaction must lose cleanly
+                return ("result_error", type(error).__name__, str(error))
+
+        def run_settlement():
+            barrier.wait(timeout=10)
+            try:
+                return ("settlement", second_research.settle_acp_judgment_root(
+                    task, settlement_request, trusted_context=context,
+                    runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=second_agents))
+            except Exception as error:
+                return ("settlement_error", type(error).__name__, str(error))
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            result_future = executor.submit(run_result)
+            settlement_future = executor.submit(run_settlement)
+            outcomes = [result_future.result(timeout=30), settlement_future.result(timeout=30)]
+        successes = [item for item in outcomes if item[0] in {"result", "settlement"}]
+        errors = [item for item in outcomes if item[0].endswith("_error")]
+        assert len(successes) == 1, outcomes
+        assert len(errors) == 1, outcomes
+        assert errors[0][1] in {"AgentConflict", "InvalidTransition"}, outcomes
+        stored = research._fetch_one("""SELECT status,result_json,outcome FROM research_judgment_stage_calls
+            WHERE task_id=:task AND call_identity=:identity""",
+            {"task": task, "identity": begin["call_identity"]})
+        assert stored["status"] in {"completed", "settled"}
+        if stored["status"] == "completed":
+            assert isinstance(stored["result_json"], dict) and stored["outcome"] is not None
+        else:
+            assert stored["result_json"] is None and stored["outcome"] == "interrupted"
+    finally:
+        _close(catalog, research, agents)
+        _close(*(store for store in (second_research, second_agents) if store is not None))
 
 
 def test_private_role_is_not_public_or_model_selectable_and_native_registration_is_idempotent():
@@ -543,7 +901,7 @@ def test_legacy_admitted_call_is_never_automatically_adopted_by_acp():
         _close(catalog, research, agents)
 
 
-@pytest.mark.parametrize("route", ["begin", "register", "result", "status"])
+@pytest.mark.parametrize("route", ["begin", "register", "result", "settle", "status"])
 def test_acp_judgment_routes_reject_wrong_bearer_before_storage(route, monkeypatch):
     client = _route_client(monkeypatch)
     path, body, headers = _route_inputs(route)
@@ -553,7 +911,7 @@ def test_acp_judgment_routes_reject_wrong_bearer_before_storage(route, monkeypat
     assert "service credential" in response.json()["detail"]
 
 
-@pytest.mark.parametrize("route", ["begin", "register", "result", "status"])
+@pytest.mark.parametrize("route", ["begin", "register", "result", "settle", "status"])
 @pytest.mark.parametrize("missing_header", [
     "x-byq-owner-principal", "x-byq-workspace-id", "x-byq-runtime-boot-id",
 ])
@@ -566,7 +924,7 @@ def test_acp_judgment_routes_require_exact_trusted_scope_headers(route, missing_
     assert "owner, Workspace and runtime boot" in response.json()["detail"]
 
 
-@pytest.mark.parametrize("route", ["begin", "register", "result", "status"])
+@pytest.mark.parametrize("route", ["begin", "register", "result", "settle", "status"])
 def test_acp_judgment_routes_reject_open_body_before_storage(route, monkeypatch):
     client = _route_client(monkeypatch)
     path, body, headers = _route_inputs(route)
@@ -576,7 +934,7 @@ def test_acp_judgment_routes_reject_open_body_before_storage(route, monkeypatch)
     assert "exact ACP judgment" in response.json()["detail"]
 
 
-@pytest.mark.parametrize("route", ["begin", "register", "result", "status"])
+@pytest.mark.parametrize("route", ["begin", "register", "result", "settle", "status"])
 def test_acp_judgment_routes_validate_identity_fields_before_storage(route, monkeypatch):
     client = _route_client(monkeypatch)
     path, body, headers = _route_inputs(route)
@@ -591,6 +949,44 @@ def test_acp_judgment_routes_validate_identity_fields_before_storage(route, monk
     response = client.post(path, headers=headers, json=body)
     assert response.status_code == 422
     assert response.json()["detail"]
+
+
+def test_acp_judgment_cancel_intent_route_is_gateway_only_and_owner_scoped(monkeypatch):
+    client = _route_client(monkeypatch)
+    path, body, headers = _route_inputs("cancel_intent")
+
+    wrong_service = client.post(path, headers={**headers, "Authorization": "Bearer wrong"}, json=body)
+    assert wrong_service.status_code == 401
+    assert "Gateway Backend service credential" in wrong_service.json()["detail"]
+
+    missing_scope = {**headers}
+    missing_scope.pop("x-byq-workspace-id")
+    response = client.post(path, headers=missing_scope, json=body)
+    assert response.status_code == 401
+
+    wrong_actor = {**headers, "x-byq-actor-principal": "another-user"}
+    response = client.post(path, headers=wrong_actor, json=body)
+    assert response.status_code == 403
+
+    response = client.post(path, headers=headers, json={**body, "call_identity": "untrusted"})
+    assert response.status_code == 422
+    assert "exact ACP judgment cancel-intent request" in response.json()["detail"]
+
+
+def test_acp_judgment_cancel_intent_route_requires_gateway_service_credential(monkeypatch):
+    from app import main
+
+    client = _route_client(monkeypatch)
+    monkeypatch.setattr(main, "GATEWAY_SERVICE_TOKEN", None)
+    path, body, headers = _route_inputs("cancel_intent")
+    response = client.post(path, headers=headers, json=body)
+    assert response.status_code == 503
+    assert "Gateway Backend service credential is unavailable" in response.json()["detail"]
+
+    monkeypatch.setattr(main, "GATEWAY_SERVICE_TOKEN", "short")
+    response = client.post(path, headers={**headers, "Authorization": "Bearer short"}, json=body)
+    assert response.status_code == 503
+    assert "Gateway Backend service credential is too short" in response.json()["detail"]
 
 
 @pytest.mark.parametrize("operation", ["observe", "abort", "settle"])

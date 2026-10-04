@@ -422,9 +422,15 @@ FEEDBACK_HUB_RELAY_TOKEN = os.environ.get("BYQ_FEEDBACK_HUB_RELAY_TOKEN")
 RUNTIME_AUTHORITY_TOKEN = os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN")
 MCP_BACKEND_PROOF_TOKEN = os.environ.get("BYQ_MCP_BACKEND_PROOF_TOKEN")
 MCP_ACP_JUDGMENT_PROOF_TOKEN = os.environ.get("BYQ_MCP_ACP_JUDGMENT_PROOF_TOKEN")
+GATEWAY_SERVICE_TOKEN = os.environ.get("BYQ_GATEWAY_SERVICE_TOKEN")
+if GATEWAY_SERVICE_TOKEN is not None and len(GATEWAY_SERVICE_TOKEN.encode("utf-8")) < 32:
+    raise RuntimeError("Gateway Backend service credential must be at least 32 UTF-8 bytes")
 if (MCP_ACP_JUDGMENT_PROOF_TOKEN and MCP_ACP_JUDGMENT_PROOF_TOKEN in {
         MCP_BACKEND_PROOF_TOKEN, RUNTIME_AUTHORITY_TOKEN}):
     raise RuntimeError("ACP judgment Backend proof credential must be distinct")
+if (GATEWAY_SERVICE_TOKEN and GATEWAY_SERVICE_TOKEN in {
+        MCP_BACKEND_PROOF_TOKEN, RUNTIME_AUTHORITY_TOKEN, MCP_ACP_JUDGMENT_PROOF_TOKEN}):
+    raise RuntimeError("Gateway Backend service credential must be distinct")
 if os.environ.get("BYQ_BOOTSTRAP_ADMIN_USERNAME") and os.environ.get("BYQ_BOOTSTRAP_ADMIN_PASSWORD"):
     user_store.ensure_bootstrap_admin(
         os.environ["BYQ_BOOTSTRAP_ADMIN_USERNAME"],
@@ -638,6 +644,17 @@ def _require_runtime_authority_bearer(request: Request) -> None:
         raise HTTPException(status_code=401, detail="runtime authority service credential required")
 
 
+def _require_gateway_service_bearer(request: Request) -> None:
+    if not GATEWAY_SERVICE_TOKEN:
+        raise HTTPException(status_code=503, detail="Gateway Backend service credential is unavailable")
+    if len(GATEWAY_SERVICE_TOKEN.encode("utf-8")) < 32:
+        raise HTTPException(status_code=503, detail="Gateway Backend service credential is too short")
+    supplied = request.headers.get("authorization", "")
+    expected = f"Bearer {GATEWAY_SERVICE_TOKEN}"
+    if not secrets.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8")):
+        raise HTTPException(status_code=401, detail="Gateway Backend service credential required")
+
+
 def _workspace_runtime_reset_call(call: Callable[[], dict[str, object]]) -> dict[str, object]:
     try:
         return call()
@@ -839,6 +856,18 @@ def _acp_judgment_scope(request: Request) -> tuple[dict[str, str], str]:
     return {"owner_principal": owner, "workspace_id": workspace}, boot_id
 
 
+def _acp_judgment_gateway_user_scope(request: Request) -> dict[str, str]:
+    """Read the authenticated owner identity forwarded by the trusted Gateway."""
+    owner = request.headers.get("x-byq-owner-principal")
+    workspace = request.headers.get("x-byq-workspace-id")
+    actor = request.headers.get("x-byq-actor-principal")
+    if not owner or not workspace or not actor:
+        raise HTTPException(status_code=401, detail="Gateway owner, Workspace and actor are required")
+    if actor != owner:
+        raise HTTPException(status_code=403, detail="ACP judgment cancel intent requires the authenticated task owner")
+    return {"owner_principal": owner, "workspace_id": workspace, "actor_principal": actor}
+
+
 @app.post("/internal/research-judgment/{task_id}/acp-root/begin")
 def begin_acp_research_judgment_root(task_id: str, payload: dict[str, Any], request: Request) -> dict:
     _require_runtime_authority_bearer(request)
@@ -883,6 +912,37 @@ def record_acp_research_judgment_root_result(task_id: str, payload: dict[str, An
     return _research_call(lambda: _agent_call(lambda: research_store.record_acp_judgment_root_result(
         task_id, payload, trusted_context=context, runtime_boot_id=boot_id,
         agent_store=agent_store)))
+
+
+@app.post("/internal/research-judgment/{task_id}/acp-root/settle")
+def settle_acp_research_judgment_root(task_id: str, payload: dict[str, Any],
+                                      request: Request) -> dict:
+    _require_runtime_authority_bearer(request)
+    from .research_judgment import validate_acp_judgment_settlement_request
+
+    try:
+        validate_acp_judgment_settlement_request(payload)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    context, boot_id = _acp_judgment_scope(request)
+    return _research_call(lambda: _agent_call(lambda: research_store.settle_acp_judgment_root(
+        task_id, payload, trusted_context=context, runtime_boot_id=boot_id,
+        agent_store=agent_store)))
+
+
+@app.post("/internal/research-judgment/{task_id}/acp-root/cancel-intent")
+def record_acp_research_judgment_cancel_intent(task_id: str, payload: dict[str, Any],
+                                               request: Request) -> dict:
+    _require_gateway_service_bearer(request)
+    from .research_judgment import validate_acp_judgment_cancel_intent_request
+
+    try:
+        validate_acp_judgment_cancel_intent_request(payload)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    context = _acp_judgment_gateway_user_scope(request)
+    return _research_call(lambda: _agent_call(lambda: research_store.record_acp_judgment_cancel_intent(
+        task_id, payload, trusted_context=context, agent_store=agent_store)))
 
 
 @app.post("/internal/research-judgment/{task_id}/acp-root/status")

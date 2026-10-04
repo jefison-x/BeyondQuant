@@ -247,12 +247,7 @@ class DomainCallEvidenceMixin:
     @staticmethod
     def _require_judgment_root_result_before_close(connection, root_run_id: str,
                                                     outcome: str) -> None:
-        """A dedicated judgment root cannot produce a terminal ACK before its result.
-
-        This is deliberately narrower than the general ACP root lifecycle. An
-        uncertain or cancelled judgment still needs an explicit durable outcome
-        contract; it must not be inferred from a stopped DSH process.
-        """
+        """Require the exact result or pre-result settlement before terminal ACK."""
         from .agent_research import AgentConflict
 
         lookup = fetch_one(connection, """SELECT task_id,call_identity
@@ -262,25 +257,87 @@ class DomainCallEvidenceMixin:
             return
         fetch_one(connection, """SELECT task_id FROM research_tasks
             WHERE task_id=:task FOR SHARE""", {"task": lookup["task_id"]})
-        call = fetch_one(connection, """SELECT status,result_json FROM research_judgment_stage_calls
+        call = fetch_one(connection, """SELECT status,outcome,result_json FROM research_judgment_stage_calls
             WHERE task_id=:task AND call_identity=:identity FOR SHARE""",
             {"task": lookup["task_id"], "identity": lookup["call_identity"]})
-        binding = fetch_one(connection, """SELECT task_id,call_identity,status,agent_run_id,
-                result_request_sha256
+        binding = fetch_one(connection, """SELECT *
             FROM research_judgment_acp_roots WHERE root_run_id=:root FOR SHARE""",
             {"root": root_run_id})
         if binding is None or (binding["task_id"], binding["call_identity"]) != (
                 lookup["task_id"], lookup["call_identity"]):
             raise AgentConflict("judgment root binding changed during terminal admission")
-        if outcome != "completed" or binding["status"] != "agent_bound" or not binding["agent_run_id"]:
-            raise AgentConflict("judgment root requires a completed result and bound Agent before close")
-        if (not isinstance(binding["result_request_sha256"], str)
-                or not binding["result_request_sha256"].startswith("sha256:")
-                or _ACP_SHA256.fullmatch(binding["result_request_sha256"][7:]) is None
-                or call is None or call["status"] != "completed"
-                or not isinstance(call["result_json"], dict)
-                or call["result_json"].get("schema_version") != "research-judgment-result-receipt.v1"):
-            raise AgentConflict("judgment root result is not durably committed")
+        if outcome == "completed":
+            if (binding["status"] != "agent_bound" or not binding["agent_run_id"]
+                    or binding.get("settlement_digest") is not None):
+                raise AgentConflict("judgment root requires a completed result and bound Agent before close")
+            if (not isinstance(binding["result_request_sha256"], str)
+                    or not binding["result_request_sha256"].startswith("sha256:")
+                    or _ACP_SHA256.fullmatch(binding["result_request_sha256"][7:]) is None
+                    or call is None or call["status"] != "completed"
+                    or not isinstance(call["result_json"], dict)
+                    or call["result_json"].get("schema_version") != "research-judgment-result-receipt.v1"):
+                raise AgentConflict("judgment root result is not durably committed")
+            return
+
+        receipt = binding.get("settlement_receipt_json")
+        digest = binding.get("settlement_digest")
+        evidence = receipt.get("evidence") if isinstance(receipt, dict) else None
+        backend_evidence = receipt.get("backend_ingress_evidence") if isinstance(receipt, dict) else None
+        if (outcome not in {"failed", "cancelled", "interrupted"}
+                or binding.get("settlement_kind") not in {
+                    "never_dispatched", "cancelled_after_dispatch", "outcome_unknown"}
+                or call is None or call["status"] != "settled"
+                or call["outcome"] != outcome or call["result_json"] is not None
+                or binding.get("result_request_sha256") is not None
+                or not isinstance(digest, str) or not digest.startswith("sha256:")
+                or _ACP_SHA256.fullmatch(digest[7:]) is None
+                or not isinstance(receipt, dict)
+                or receipt.get("schema_version") != "byq-research-judgment-acp-settlement-receipt.v1"
+                or receipt.get("status") != "settled"
+                or receipt.get("task_id") != binding["task_id"]
+                or receipt.get("call_identity") != binding["call_identity"]
+                or receipt.get("root_run_id") != root_run_id
+                or receipt.get("settlement_digest") != digest
+                or receipt.get("settlement_kind") != binding.get("settlement_kind")
+                or receipt.get("terminal_outcome") != outcome
+                or not isinstance(evidence, dict)
+                or evidence != binding.get("settlement_evidence_json")
+                or evidence.get("process_fence") != "stopped"
+                or not isinstance(evidence.get("process_fence_sha256"), str)
+                or not evidence["process_fence_sha256"].startswith("sha256:")
+                or _ACP_SHA256.fullmatch(evidence["process_fence_sha256"][7:]) is None
+                or not isinstance(backend_evidence, dict)
+                or backend_evidence.get("schema_version") != "byq-acp-terminal-evidence-snapshot.v1"
+                or type(backend_evidence.get("terminal_acp_ingress_sequence")) is not int
+                or backend_evidence.get("terminal_acp_ingress_sequence") < 0
+                or not isinstance(backend_evidence.get("terminal_acp_ingress_sha256"), str)
+                or _ACP_SHA256.fullmatch(backend_evidence["terminal_acp_ingress_sha256"]) is None
+                or type(backend_evidence.get("terminal_unknown_claim_count")) is not int
+                or backend_evidence.get("terminal_unknown_claim_count") < 0
+                or not isinstance(backend_evidence.get("terminal_unknown_claims_sha256"), str)
+                or _ACP_SHA256.fullmatch(backend_evidence["terminal_unknown_claims_sha256"]) is None):
+            raise AgentConflict("judgment root requires a matching durable pre-result settlement before close")
+        if outcome == "cancelled":
+            cancel_receipt = evidence.get("cancellation_intent_receipt")
+            if (not isinstance(cancel_receipt, dict)
+                    or cancel_receipt != binding.get("cancel_intent_receipt_json")
+                    or binding.get("cancel_intent_actor_principal") != binding.get("owner_principal")
+                    or cancel_receipt.get("task_id") != binding["task_id"]
+                    or cancel_receipt.get("owner_principal") != binding["owner_principal"]
+                    or cancel_receipt.get("workspace_id") != binding["workspace_id"]
+                    or cancel_receipt.get("call_identity") != binding["call_identity"]
+                    or cancel_receipt.get("root_run_id") != root_run_id
+                    or cancel_receipt.get("intent_sha256") != binding.get("cancel_intent_request_sha256")):
+                raise AgentConflict("cancelled judgment root requires the exact persisted owner intent receipt")
+        if binding.get("settlement_kind") == "never_dispatched" and (
+                backend_evidence["terminal_acp_ingress_sequence"] != 0
+                or backend_evidence["terminal_unknown_claim_count"] != 0):
+            raise AgentConflict("never_dispatched settlement lacks an empty Backend ingress proof")
+        if binding.get("settlement_kind") == "cancelled_after_dispatch" and (
+                outcome != "cancelled"
+                or evidence.get("cancellation_intent_receipt") is None
+                or backend_evidence["terminal_unknown_claim_count"] != 0):
+            raise AgentConflict("cancelled_after_dispatch settlement lacks its exact intent or claim proof")
 
     @staticmethod
     def _require_judgment_tool_scope(connection, identity: dict, trusted_scope: dict,
