@@ -169,6 +169,25 @@ class AcpJudgmentJournal:
     def snapshot(self) -> dict | None:
         return self._locked(lambda value: value)
 
+    def record_request_start(self, started_at_ms: int) -> dict:
+        """Persist the exact task/call clock before asking Backend to admit it."""
+        if (type(started_at_ms) is not int or started_at_ms <= 0
+                or started_at_ms > int(time.time() * 1000)):
+            raise ValueError("judgment request start time is required")
+
+        def save(value):
+            if value is not None:
+                if value.get("request_started_at_ms") != started_at_ms:
+                    raise AcpJudgmentOutcomeUnknown("judgment request start time changed")
+                return value
+            value = {"schema_version": _SCHEMA, "task_id": self.task_id,
+                     "call_identity": self.call_identity, "phase": "prepared",
+                     "request_started_at_ms": started_at_ms}
+            self._write(value)
+            return value
+
+        return self._locked(save)
+
     def record_begin(self, begin: dict) -> dict:
         """Persist the fresh Backend response immediately; never cache its creation bit."""
         if (not isinstance(begin, dict) or begin.get("task_id") != self.task_id
@@ -180,6 +199,13 @@ class AcpJudgmentJournal:
 
         def save(value):
             if value is not None:
+                if value.get("phase") == "prepared":
+                    if begin["created"] is not True:
+                        raise AcpJudgmentOutcomeUnknown(
+                            "replayed judgment root has no durable Backend begin receipt")
+                    value = {**value, "phase": "begun", "begin": stable_begin}
+                    self._write(value)
+                    return value
                 if value.get("begin") != stable_begin:
                     raise AcpJudgmentOutcomeUnknown("judgment begin receipt differs from durable journal")
                 return value
@@ -273,6 +299,11 @@ class AcpJudgmentJournal:
         def save(value):
             if value is None or value.get("phase") not in {"begun", "bound"}:
                 raise AcpJudgmentOutcomeUnknown("judgment provider profile must precede prompt dispatch")
+            started_at_ms = value.get("request_started_at_ms")
+            if (type(started_at_ms) is not int or started_at_ms <= 0
+                    or limits["deadline_at_ms"] > started_at_ms + named["deadline_ms"]):
+                raise AcpJudgmentOutcomeUnknown(
+                    "provider deadline is not bound to durable request start")
             begin = value["begin"]
             root = begin["root"]
             for field in ("task_id", "call_identity", "attempt_binding", "plan_version",

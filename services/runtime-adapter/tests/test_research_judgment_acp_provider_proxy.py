@@ -47,6 +47,8 @@ def _ready(tmp_path, *, route_name="opencode-go-chat"):
                       "owner_principal": "alice", "workspace_id": "workspace-alice",
                       "session_id": "session-1", "trace_id": "trace-1",
                       "actor_principal": "byq-product-agent-session-1"}}
+    request_started_at_ms = int(time.time() * 1000)
+    journal.record_request_start(request_started_at_ms)
     journal.record_begin(begin)
     journal.record_binding({"schema_version": "byq-acp-agent-bind-receipt.v1",
                             "status": "bound", "root_run_id": ROOT,
@@ -63,7 +65,7 @@ def _ready(tmp_path, *, route_name="opencode-go-chat"):
     profile = build_provider_profile(begin, {
         "source": "environment", "provider": route_name,
         "model": "synthetic-model", "api_key": "synthetic-key"},
-        request_started_at_ms=int(time.time() * 1000))
+        request_started_at_ms=request_started_at_ms)
     public = {**profile.public, "limits": limits}
     journal.record_provider_profile(AcpJudgmentProviderProfile(
         json.dumps(public).encode(), profile.upstream_credential))

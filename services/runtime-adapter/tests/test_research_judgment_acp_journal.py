@@ -138,10 +138,18 @@ def test_journal_freezes_nonsecret_profile_to_admitted_root_and_provider_request
     journal = AcpJudgmentJournal(
         directory, task, call, backend_url="http://backend",
         authority_headers={"authorization": "Bearer synthetic-runtime-authority"})
+    request_started_at_ms = int(time.time() * 1000) - 10_000
+    journal.record_request_start(request_started_at_ms)
     journal.record_begin(begin)
-    request_started_at_ms = int(time.time() * 1000)
     profile = build_provider_profile(
         begin, resolution, request_started_at_ms=request_started_at_ms)
+    extended = AcpJudgmentProviderProfile(json.dumps({
+        **profile.public,
+        "limits": {**profile.public["limits"],
+                   "deadline_at_ms": profile.public["limits"]["deadline_at_ms"] + 1},
+    }).encode(), "synthetic-secret")
+    with pytest.raises(AcpJudgmentOutcomeUnknown, match="durable request start"):
+        journal.record_provider_profile(extended)
     future = AcpJudgmentProviderProfile(json.dumps({
         **profile.public,
         "limits": {**profile.public["limits"],
@@ -192,6 +200,7 @@ def test_journal_freezes_nonsecret_profile_to_admitted_root_and_provider_request
 
 def test_journal_fsync_phase_order_and_restart_never_replays_prompt(tmp_path):
     journal, current, post = _journal(tmp_path)
+    journal.record_request_start(int(time.time() * 1000))
     journal.record_begin(BEGIN)
     assert journal.record_begin({**BEGIN, "created": False})["phase"] == "begun"
     journal.record_binding(BINDING)
@@ -218,6 +227,28 @@ def test_journal_fsync_phase_order_and_restart_never_replays_prompt(tmp_path):
     assert restarted.snapshot()["phase"] == "terminal_closed"
 
 
+def test_request_start_is_durable_before_begin_and_cannot_be_reset(tmp_path):
+    journal, _, post = _journal(tmp_path)
+    started_at_ms = int(time.time() * 1000) - 1000
+    assert journal.record_request_start(started_at_ms)["phase"] == "prepared"
+    assert journal.record_request_start(started_at_ms)["request_started_at_ms"] == started_at_ms
+    with pytest.raises(AcpJudgmentOutcomeUnknown, match="start time changed"):
+        journal.record_request_start(started_at_ms + 1)
+    restarted = AcpJudgmentJournal(
+        journal.directory, TASK, CALL, backend_url="http://backend",
+        authority_headers={"authorization": "Bearer synthetic-runtime-authority"},
+        transport=post)
+    assert restarted.snapshot()["request_started_at_ms"] == started_at_ms
+    with pytest.raises(AcpJudgmentOutcomeUnknown, match="replayed judgment root"):
+        restarted.record_begin({**BEGIN, "created": False})
+    assert restarted.snapshot()["phase"] == "prepared"
+    assert restarted.record_begin(BEGIN)["phase"] == "begun"
+    assert restarted.record_begin({**BEGIN, "created": False})["phase"] == "begun"
+    assert restarted.snapshot()["request_started_at_ms"] == started_at_ms
+    with pytest.raises(AcpJudgmentOutcomeUnknown, match="start time changed"):
+        restarted.record_request_start(started_at_ms + 1)
+
+
 def test_journal_refuses_prompt_without_frozen_provider_profile(tmp_path):
     journal, _, _ = _journal(tmp_path)
     journal.record_begin(BEGIN)
@@ -229,6 +260,7 @@ def test_journal_refuses_prompt_without_frozen_provider_profile(tmp_path):
 
 def test_journal_rejects_changed_root_and_result_without_overwriting(tmp_path):
     journal, _, _ = _journal(tmp_path)
+    journal.record_request_start(int(time.time() * 1000))
     journal.record_begin(BEGIN)
     with pytest.raises(AcpJudgmentOutcomeUnknown, match="begin receipt differs"):
         journal.record_begin({**BEGIN, "root": {**BEGIN["root"], "root_run_id": "0" * 32}})
@@ -256,6 +288,7 @@ def test_journal_rejects_non_private_file_and_premature_terminal(tmp_path):
 
 def test_journal_never_promotes_unproven_backend_result_or_terminal(tmp_path):
     journal, current, _ = _journal(tmp_path)
+    journal.record_request_start(int(time.time() * 1000))
     journal.record_begin(BEGIN)
     journal.record_binding(BINDING)
     _freeze_fixture_profile(journal, _small_limits())
@@ -281,6 +314,7 @@ def test_journal_never_promotes_unproven_backend_result_or_terminal(tmp_path):
 
 def test_journal_rejects_changed_root_generation_in_prepared_result(tmp_path):
     journal, _, _ = _journal(tmp_path)
+    journal.record_request_start(int(time.time() * 1000))
     journal.record_begin(BEGIN)
     journal.record_binding(BINDING)
     _freeze_fixture_profile(journal, _small_limits())
@@ -309,6 +343,7 @@ def test_empty_journal_rejects_replayed_backend_root(tmp_path):
 
 def _provider_ready(tmp_path, *, route="opencode-go-chat", override=None):
     journal, _, post = _journal(tmp_path)
+    journal.record_request_start(int(time.time() * 1000))
     journal.record_begin(BEGIN)
     journal.record_binding(BINDING)
     limits = {"max_calls": 2, "max_input_bytes": 1000,

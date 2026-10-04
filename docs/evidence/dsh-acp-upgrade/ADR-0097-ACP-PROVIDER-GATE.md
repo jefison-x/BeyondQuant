@@ -195,6 +195,15 @@ rejects a future or expired time, so setup time can consume the same
 started: the final trusted entry must persist this timestamp before Backend
 begin and bind it to the exact task/call, without resetting it after a
 restart. Wall-clock rollback and live ACP budget behavior remain NOT_RUN.
+The journal now provides an unwired `prepared` phase that fsyncs that
+task/call start before Backend begin and refuses a changed time. A first
+`created:false` Backend response cannot promote `prepared` to `begun`;
+an already durable exact `begun` receipt can be read back idempotently.
+Provider freeze rejects a deadline even 1 ms beyond the persisted start plus
+the named ceiling. Independent Tester passed 39 journal/profile and 23
+synthetic local-proxy cases; Reviewer found no P1/P2 in this slice. Lost
+first-create replies remain fail closed pending ADR-0098 reconciliation.
+The actual ACP entry has not called this journal phase yet.
 It refuses a `created:false` replay, unknown route or deterministic stage.
 It also refuses a user-bound model key unless the internal credential resolver
 supplies stable nonsecret binding/profile/credential IDs and versions. The
