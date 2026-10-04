@@ -29,7 +29,7 @@ def _context(label: str) -> dict[str, str]:
 
 
 def _open_root(store: AgentResearchStore, ctx: dict[str, str], key: str,
-               native_root_session_id: str) -> tuple[str, dict[str, object]]:
+               native_root_session_id: str, *, sequence: int = 1) -> tuple[str, dict[str, object]]:
     root = uuid4().hex
     fingerprint = registration_fingerprint(*[
         ctx[f"x-byq-{field}"] for field in (
@@ -38,7 +38,7 @@ def _open_root(store: AgentResearchStore, ctx: dict[str, str], key: str,
     ], key)
     store.consume_runtime_lifecycle_event({
         "schema_version": "agent-run-lifecycle.v1", "root_run_id": root,
-        "sequence": 1, "outcome": "active", "registration_fingerprint": fingerprint,
+        "sequence": sequence, "outcome": "active", "registration_fingerprint": fingerprint,
     }, trusted_owner=ctx["x-byq-owner-principal"],
        trusted_workspace=ctx["x-byq-workspace-id"],
        trusted_session_id=ctx["x-byq-session-id"],
@@ -508,6 +508,54 @@ def test_acp_close_projection_freezes_zero_cursor_for_new_root_and_lifecycle_ter
         assert row["terminal_sequence"] == 2
         with pytest.raises(AgentConflict, match="not active under current Backend authority"):
             _observe_tool(store, ctx, identity, "byq_feedback_create_draft", {"title": "after terminal"})
+    finally:
+        store.close()
+
+
+def test_completed_roots_rebind_one_native_session_without_admitting_late_old_calls():
+    """The native ID may persist; business and child identities remain root-scoped."""
+    first = _context("native-reuse")
+    store = AgentResearchStore()
+    try:
+        authority = store.rotate_runtime_authority(uuid4().hex)
+        first["x-byq-runtime-boot-id"] = authority["boot_id"]
+        native = str(uuid4())
+        old_root, old_agent = _open_root(store, first, f"reuse-old-{uuid4().hex}", native)
+        _bind(store, first, old_agent)
+        old_child = _child(store, first, old_root, native, f"reuse-child-old-{uuid4().hex}")
+        _bind(store, first, old_child)
+        old_call = _observe_tool(store, first, old_child, "byq_strategy_validate",
+            {"agent_run_id": old_child["agent_run_id"], "task_id": "old-task", "strategy": {}})
+        _settle_tool(store, first, old_child, old_call)
+        closed = store.consume_runtime_lifecycle_event({
+            "schema_version": "agent-run-lifecycle.v1", "root_run_id": old_root,
+            "sequence": 2, "outcome": "completed",
+        }, trusted_owner=first["x-byq-owner-principal"],
+           trusted_workspace=first["x-byq-workspace-id"],
+           trusted_session_id=first["x-byq-session-id"],
+           trusted_trace_id=first["x-byq-trace-id"],
+           trusted_boot_id=authority["boot_id"])
+        assert closed["root_run_id"] == old_root
+
+        second = {**first, "x-byq-dsh-run-id": f"generation-acp-native-reuse-{uuid4().hex}"}
+        new_root, new_agent = _open_root(store, second, f"reuse-new-{uuid4().hex}", native,
+            sequence=3)
+        _bind(store, second, new_agent)
+        assert new_root != old_root
+        assert new_agent["agent_run_id"] != old_agent["agent_run_id"]
+        assert new_agent["native_agent_session_id"] == old_agent["native_agent_session_id"] == native
+        new_child = _child(store, second, new_root, native, f"reuse-child-new-{uuid4().hex}")
+        child_receipt = _bind(store, second, new_child)
+        assert child_receipt["parent_run_id"] == new_agent["agent_run_id"]
+        new_call = _observe_tool(store, second, new_child, "byq_strategy_validate",
+            {"agent_run_id": new_child["agent_run_id"], "task_id": "new-task", "strategy": {}})
+        assert new_call["root_run_id"] == new_root
+        assert new_call["agent_run_id"] == new_child["agent_run_id"]
+        _settle_tool(store, second, new_child, new_call)
+
+        with pytest.raises(AgentConflict, match="not active under current Backend authority"):
+            _observe_tool(store, first, old_child, "byq_strategy_validate",
+                {"agent_run_id": old_child["agent_run_id"], "task_id": "late-old-task", "strategy": {}})
     finally:
         store.close()
 
