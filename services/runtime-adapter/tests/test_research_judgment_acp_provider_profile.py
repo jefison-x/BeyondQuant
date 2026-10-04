@@ -1,0 +1,97 @@
+"""A frozen provider choice must come from one fresh exact Backend root."""
+
+from __future__ import annotations
+
+import copy
+import time
+
+import pytest
+
+from app.research_judgment_acp_provider_profile import build_provider_profile
+from app.research_judgment_boundary import derive_call_identity
+
+
+TASK = "task_" + "a" * 32
+ATTEMPT = "1:strategy_draft:1"
+CALL = derive_call_identity(TASK, ATTEMPT)
+BEGIN = {
+    "schema_version": "byq-research-judgment-acp-root-receipt.v1",
+    "status": "admitted", "created": True, "task_id": TASK,
+    "call_identity": CALL, "attempt_binding": ATTEMPT,
+    "stage": "strategy_draft", "plan_version": 1, "task_version": 1,
+    "iteration": 1, "call_index": 1, "model_call_limit": 2,
+    "root": {
+        "root_run_id": "b" * 32, "runtime_boot_id": "c" * 32,
+        "authority_epoch": 1, "dsh_run_id": "byqjudg-" + "d" * 32,
+        "owner_principal": "owner-1", "workspace_id": "workspace-1",
+        "session_id": "session-1", "trace_id": "trace-1",
+        "actor_principal": "byq-product-agent-session-1",
+    },
+}
+RESOLUTION = {
+    "source": "environment", "provider": "deepseek-official",
+    "model": "selected-model", "api_key": "synthetic-upstream-secret",
+}
+
+
+def test_fresh_root_selection_is_nonsecret_and_uses_closed_stage_profile():
+    before = int(time.time() * 1000)
+    selection = build_provider_profile(BEGIN, RESOLUTION)
+    after = int(time.time() * 1000)
+    public = selection.public
+    assert public["call_identity"] == CALL
+    assert public["root_run_id"] == "b" * 32
+    assert public["actor_principal"] == "byq-product-agent-session-1"
+    assert public["provider_route"] == "deepseek-official"
+    assert public["budget_profile_id"] == "strategy-draft-bounded.v1"
+    assert {key: value for key, value in public["limits"].items()
+            if key != "deadline_at_ms"} == {
+        "max_calls": 3, "max_input_bytes": 131072,
+        "max_total_input_bytes": 131072,
+        "max_output_tokens": 8192, "max_total_output_tokens": 8192,
+        "max_tool_payload_bytes": 65536,
+        "max_total_tool_payload_bytes": 65536,
+    }
+    assert before + 180000 <= public["limits"]["deadline_at_ms"] <= after + 180000
+    assert selection.upstream_credential == "synthetic-upstream-secret"
+    assert "synthetic-upstream-secret" not in repr(selection)
+    assert "synthetic-upstream-secret" not in str(public)
+    public["limits"]["max_calls"] = 99
+    assert selection.public["limits"]["max_calls"] == 3
+
+
+@pytest.mark.parametrize("changed", [
+    {"created": False},
+    {"call_identity": "byq-judgment-" + "f" * 32},
+    {"stage": "deterministic_stage"},
+    {"call_index": 3},
+    {"model_call_limit": 3},
+    {"root": {**BEGIN["root"], "runtime_boot_id": "wrong"}},
+    {"root": {**BEGIN["root"], "actor_principal": "other"}},
+])
+def test_replay_wrong_root_or_stage_cannot_select_provider(changed):
+    begin = copy.deepcopy(BEGIN)
+    begin.update(changed)
+    with pytest.raises(ValueError):
+        build_provider_profile(begin, RESOLUTION)
+
+
+def test_user_binding_requires_nonsecret_credential_versions():
+    user = {**RESOLUTION, "source": "user_binding", "provider": "opencode-go-chat"}
+    with pytest.raises(ValueError, match="stable nonsecret version"):
+        build_provider_profile(BEGIN, user)
+    user.update({"profile_id": "profile_1", "profile_version": 2,
+                 "credential_id": "cred_1", "credential_version": 3,
+                 "binding_version": 4})
+    profile = build_provider_profile(BEGIN, user).public
+    assert profile["credential_reference"] == {
+        "source": "user_binding", "profile_id": "profile_1", "profile_version": 2,
+        "credential_id": "cred_1", "credential_version": 3,
+        "binding_version": 4,
+    }
+    assert profile["provider_route"] == "opencode-go-chat"
+
+
+def test_unselected_route_cannot_open_provider_profile():
+    with pytest.raises(ValueError):
+        build_provider_profile(BEGIN, {**RESOLUTION, "provider": "opencode-unknown"})

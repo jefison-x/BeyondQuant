@@ -178,6 +178,24 @@ The proxy constructor still receives model, credential and limits from its
 caller. The private last-layer profile is generated and loaded offline, but
 it is not bound to trusted Backend admission or the running proxy yet. The
 loopback port is not isolated from unrelated local processes.
+
+A new pure provider-profile builder checks a caller-supplied `created:true`
+Backend ACP root receipt shape, exact task/call derivation, consistent
+stage/attempt and complete root scope. It selects one of the seven routes
+from caller-supplied model resolution,
+derives the deadline and call/input/output/tool limits from the existing
+stage-specific BYQ request-budget registry, and produces a nonsecret,
+immutable public snapshot alongside the upstream credential kept in memory.
+It refuses a `created:false` replay, unknown route or deterministic stage.
+It also refuses a user-bound model key until the internal credential resolver
+supplies stable nonsecret binding/profile/credential IDs and versions; the
+current resolver does not expose these. Ten focused pure tests passed. This
+does not prove receipt origin, current Backend authority, or that resolution
+belongs to the admitted owner/session.
+This builder is not yet journaled or used by the ACP entry; it does not make
+caller-selected proxy settings trustworthy by itself. The old three-call
+stage profile is a conservative ceiling from the former root-child-root path,
+not an ACP dedicated-root request-shape qualification.
 Actual HTTPS redirect, partial-body, size and deadline negatives remain
 NOT_RUN. Real DNS and HTTPS interruption still need an isolated transport
 qualification; the tested endless resolver is a synthetic child. Storage

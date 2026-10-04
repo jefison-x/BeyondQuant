@@ -70,6 +70,17 @@ same live proxy instance; matching caller strings alone are insufficient.
 Backend-bound selection, actual ACP child environment, network
 egress confinement and real provider behavior remain NOT_RUN.
 
+The new pure provider-profile builder passed 10/10 focused tests. It checks a
+caller-supplied `created:true` Backend receipt for shape and internal
+consistency, then derives
+limits from the existing named BYQ stage budget instead of caller-selected
+numbers. It keeps the actual key out of its public snapshot. User-bound
+credentials currently fail closed because the internal resolver does not
+expose stable nonsecret versions. The builder is not yet written to the
+journal or connected to the ACP entry, and the old three-call ceiling has not
+been measured against the dedicated ACP root. Receipt origin, current Backend
+authority, and credential resolution ownership remain unproven.
+
 ## Exact local candidate inputs
 
 | Input | SHA-256 |
