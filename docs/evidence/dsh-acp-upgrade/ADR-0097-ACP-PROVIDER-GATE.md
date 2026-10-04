@@ -1,8 +1,8 @@
 # ADR-0097 ACP judgment provider gate: fixed-source route audit
 
-Status: **design evidence only**. The `/acp-root/run` entry remains an
-unconditional 503. No provider, Product, or paid-model request was made by
-this audit.
+Status: **route admission helper only; outbound gate unqualified**. The
+`/acp-root/run` entry remains an unconditional 503. No provider, Product, or
+paid-model request was made by this audit.
 
 ## Fixed candidate and native controls
 
@@ -83,6 +83,20 @@ to the exact admitted call before prompt dispatch. The static profile alone
 does not do this. The ACP model-selection option can change routes, so merely
 setting a default model is insufficient.
 
+The unwired `research_judgment_acp_provider_routes.py` helper now maps only
+these seven names to exact local request targets and upstream URLs. Before a
+request could be forwarded, it compares the request model and credential to
+caller-supplied trusted values, checks the declared output ceiling, and
+rejects duplicate JSON fields, ambiguous/mixed credentials, Files,
+discovery, altered paths and currently unqualified `anthropic-beta` features,
+and returns only protocol-specific credential
+headers. Its focused offline tests also check that BYQ headers are not returned
+for forwarding. This is **PASS for pure admission only**. It has no HTTP
+listener, attempt counter, response parser or durable journal; no DSH request
+has passed through it. The caller has not yet been wired to Backend admission
+or the trusted credential resolver. The selected model, secret and final loaded
+route still need an exact binding to the admitted Backend call at process start.
+
 ## Current BYQ proxy gaps
 
 The retained judgment `RequestGateProxy` is **not** a qualified ACP gate:
@@ -92,7 +106,8 @@ The retained judgment `RequestGateProxy` is **not** a qualified ACP gate:
 2. It forwards only `authorization`, `content-type`, and `accept`. Messages
    requests need protocol-specific `x-api-key`, `anthropic-version`, and
    possibly `anthropic-beta`; they cannot authenticate correctly through the
-   current header filter.
+   current header filter. The pure admission helper rejects any beta feature
+   until the selected models' exact fixed-source requests are qualified.
 3. Its actual-usage parser expects OpenAI Chat fields. Responses and Messages
    have different usage fields and streamed event forms. A missing or partial
    usage receipt must stay unknown rather than be treated as zero.
