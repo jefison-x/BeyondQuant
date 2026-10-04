@@ -56,9 +56,9 @@ logger = logging.getLogger('uvicorn.error')
 TRACE_LIFECYCLE_SEND_ATTEMPTS = 3
 TRACE_RETRY_DELAY_SECONDS = 0.05
 TRACE_RETRY_MAX_DELAY_SECONDS = 5.0
-# ACP `session/close` can drain descendants for up to 60 seconds before the
-# Adapter returns the exact terminal receipt. Keep this internal request alive
-# through that bound so Gateway does not retry while cleanup is still active.
+# The Adapter waits up to 60 seconds for ACP `session/close` to drain and
+# respond, then confirms process exit before returning the exact receipt.
+# Keep this internal request alive through the Adapter's bounded attempt.
 TRACE_TERMINAL_ACK_TIMEOUT_SECONDS = 75.0
 
 
