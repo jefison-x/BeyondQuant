@@ -71,8 +71,13 @@ The evaluated alternatives were:
    a new trusted role-aware dispatch guard would need implementation and
    qualification; the current Product identity guard is insufficient.
 
-The role's `maxDepth` must be corrected and tested under any choice: the
-parent may start this one child, and that child may not start a grandchild.
+The fixed-source depth rule was checked separately: `maxDepth: 0` rejects a
+first child; `maxDepth: 1` permits depth one and rejects depth two. The ACP
+candidate profile remains at `0` while its child catalog exposes forbidden
+tools. Do not enable that child merely to fix the depth setting. Once official
+scoped filtering qualifies, set the role to `1` and verify through the actual
+delegation path that the parent can start one child and that child cannot
+start a grandchild.
 No option permits a DSH fork, a second Agent harness, direct business DB
 access, Product Engineering privileges, or automatic replay of unknown calls.
 
