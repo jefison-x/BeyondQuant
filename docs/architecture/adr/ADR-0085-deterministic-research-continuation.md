@@ -7,6 +7,7 @@
 
 
 - Status: Accepted
+- Later Product ACP note: 2026-10-04，维护者明确允许研究判断子代理看到额外工具目录，但要求可信角色感知的调用前拒绝；本 ADR 仍是历史记录，现行 ACP 决定见 ADR-0095。
 - Date: 2026-09-22
 - Accepted: 2026-09-22（维护者明确“接受 ADR-0085 的完整决定”，并授权标为 Accepted、
   同步修订 ADR-0062/0065/0077、STATUS 与专项计划，随后按 P0→P4 每步独立 PR 实施；
@@ -101,10 +102,18 @@ Backend/Worker 继续保存完整不可变 signal snapshot 作为回测输入。
 
 - 当前 `research-execution-plan.v1` 的有界投影；
 - 当前分析所需的有界结果摘要；
-- 本阶段允许的最小只读工具；
+- 本阶段允许执行的最小只读工具；
 - 一个用于提交 proposal/analysis/decision 的领域命令。
 
-不默认重放完整公开会话，也不暴露宽泛的研究创建、执行、审批和子代理工具集合。需要原始目标时由计划保存规范化 objective/constraints。
+不默认重放完整公开会话。原决定要求模型目录不暴露宽泛的研究创建、执行、审批和子代理工具集合；Product ACP 的受限例外见下节。需要原始目标时由计划保存规范化 objective/constraints。
+
+#### 历史注记：后续 Product ACP 工具目录决定（2026-10-04）
+
+维护者明确允许固定官方 ACP 候选中的研究判断子代理**看见**超出上述最小集合的工具名和 schema，但不因此获得调用权限。后续决定只放宽模型可见目录，不放宽领域权限、逐动作审批、幂等、预算或未知结果处理。除可信 Adapter 的内部结果提交外，研究判断角色实际可执行的工具仍限于本阶段核准的有界只读集合；写入、审批、执行、路由、身份和作业类调用必须在任何 Backend 业务处理、MCP handler 或外部副作用前被可信角色感知的执行门禁拒绝。
+
+门禁须从 DSH 官方子代理创建事实取得不可由模型提示、工具参数或显示标签伪造的角色身份，并与已签名的原生 Agent、父 Agent、BYQ root、boot 和 generation 绑定。角色识别缺失、含糊、跨 root 不一致、恢复后无法重建或门禁不可用时，拒绝该研究判断调用及其后续分发；不能把 persona 文本或现有 Agent 注册检查当作角色授权。拒绝必须留下精确工具、Agent 与 root 的审计证据，且不得把结果未知的业务调用判为未发生。
+
+本注记不表示现有 ACP 实现已具备该门禁，也不解除固定候选的升级阻断。本 ADR 在 BYQ 0.10 Clean Break 下仍属历史记录；现行 Product ACP 边界及资格证据由 Clean Break 基线和 ADR-0095 独立规定。
 
 每个模型响应后检查 `plan_version` 或 durable progress identity：
 
