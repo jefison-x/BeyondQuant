@@ -56,6 +56,10 @@ logger = logging.getLogger('uvicorn.error')
 TRACE_LIFECYCLE_SEND_ATTEMPTS = 3
 TRACE_RETRY_DELAY_SECONDS = 0.05
 TRACE_RETRY_MAX_DELAY_SECONDS = 5.0
+# ACP `session/close` can drain descendants for up to 60 seconds before the
+# Adapter returns the exact terminal receipt. Keep this internal request alive
+# through that bound so Gateway does not retry while cleanup is still active.
+TRACE_TERMINAL_ACK_TIMEOUT_SECONDS = 75.0
 
 
 @asynccontextmanager
@@ -830,7 +834,7 @@ def _send_agent_lifecycle(context, event, *, expected_boot_id=None):
             try:
                 acknowledged = _adapter_post(
                     f"/internal/runtime/sessions/{context['session_id']}/terminal-receipt",
-                    payload=closed, timeout=5.0)
+                    payload=closed, timeout=TRACE_TERMINAL_ACK_TIMEOUT_SECONDS)
             except HTTPException as exc:
                 retryable = exc.status_code in {408, 429} or exc.status_code >= 500
                 if not retryable or attempt + 1 >= TRACE_LIFECYCLE_SEND_ATTEMPTS:
