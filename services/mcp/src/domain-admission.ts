@@ -2,6 +2,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const REASONS = new Set(["call_evidence_pending", "prior_call_outcome_unknown", "unchanged_failed_input",
   "correction_budget_exhausted", "call_retention_bound", "domain_validation_failed", "correction_failed"]);
+export const admittedLegacyEvidenceRoot = Symbol("BYQ legacy evidence root admitted by domain wrapper");
 
 export function safeDomainAdmission(payload: unknown) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
@@ -28,7 +29,8 @@ export function evidenceBoundedFetcher(fetcher: typeof fetch, root: string | und
     const headers = new Headers(init?.headers);
     if (root && /^[a-f0-9]{32}$/.test(root)) headers.set("x-byq-root-run-id", root);
     else headers.delete("x-byq-root-run-id");
-    const bounded = { ...init, headers };
+    const bounded = { ...init, headers } as RequestInit & { [admittedLegacyEvidenceRoot]?: string };
+    bounded[admittedLegacyEvidenceRoot] = root && /^[a-f0-9]{32}$/.test(root) ? root : undefined;
     for (let attempt = 0; ; attempt += 1) {
       const response = await fetcher(input, bounded);
       if (response.status !== 425 || attempt >= 4) return response;

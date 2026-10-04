@@ -43,7 +43,7 @@ COPY packages/operations ./packages/operations
 COPY plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-product.patch.yml /opt/byq/profiles/byq-product.patch.yml
 COPY plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-product.identity.json /opt/byq/profiles/byq-product.identity.json
 COPY config/dsh/acp-0.2.0-rc.2.identity.json /opt/byq/releases/deployment.identity.json
-COPY plugins/dsh-byq/runtime/package.json plugins/dsh-byq/runtime/byq-continuation-budget.js plugins/dsh-byq/runtime/byq-runtime-time-context.js /opt/byq/runtime/
+COPY plugins/dsh-byq/runtime/package.json plugins/dsh-byq/runtime/byq-acp-mcp-identity.js plugins/dsh-byq/runtime/byq-continuation-budget.js plugins/dsh-byq/runtime/byq-runtime-time-context.js /opt/byq/runtime/
 COPY plugins/dsh-byq/skills /opt/dsh/bundles/dsh-byq/skills
 
 RUN groupadd --system --gid 10002 byq \

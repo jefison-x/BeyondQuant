@@ -1,5 +1,6 @@
-# Official dsh-v0.2.0-rc.2 ACP Product overlay. BYQ MCP is mounted per root
-# through ACP session/new or session/resume, never as a process-wide row.
+# Official dsh-v0.2.0-rc.2 ACP Product overlay. The global BYQ MCP client is
+# discovery-only; the Product identity plugin mounts one signed client per
+# official Agent scope before that Agent may execute a BYQ tool.
 - id: agent-loop
   config:
     maxParallelToolCalls: 1
@@ -94,7 +95,78 @@
 - id: llm-deepseek
   config:
     apiKeyEnv: DEEPSEEK_API_KEY
+- id: llm-pi-ai
+  config:
+    providers:
+      opencode-go-responses:
+        displayName: OpenCode Go · Responses
+        apiKeyEnv: OPENCODE_API_KEY
+        api: openai-responses
+        baseURL: https://opencode.ai/zen/go/v1
+        models:
+          - id: gpt-5.6-luna
+          - id: grok-4.6
+      opencode-go-chat:
+        displayName: OpenCode Go · Chat Completions
+        apiKeyEnv: OPENCODE_API_KEY
+        api: openai-completions
+        baseURL: https://opencode.ai/zen/go/v1
+        models:
+          - id: deepseek-v4-flash
+          - id: deepseek-v4.1-flash
+          - id: deepseek-v4-pro
+          - id: glm-5.3
+          - id: kimi-k3
+      opencode-go-messages:
+        displayName: OpenCode Go · Messages
+        apiKeyEnv: OPENCODE_API_KEY
+        api: anthropic-messages
+        baseURL: https://opencode.ai/zen/go/v1
+        models:
+          - id: minimax-m3
+          - id: qwen3.8-max
+      opencode-zen-responses:
+        displayName: OpenCode Zen · Responses
+        apiKeyEnv: OPENCODE_API_KEY
+        api: openai-responses
+        baseURL: https://opencode.ai/zen/v1
+        models:
+          - id: gpt-5.6-sol
+          - id: gpt-5.6-terra
+          - id: grok-4.6
+      opencode-zen-chat:
+        displayName: OpenCode Zen · Chat Completions
+        apiKeyEnv: OPENCODE_API_KEY
+        api: openai-completions
+        baseURL: https://opencode.ai/zen/v1
+        models:
+          - id: deepseek-v4-flash
+          - id: minimax-m3
+      opencode-zen-messages:
+        displayName: OpenCode Zen · Messages
+        apiKeyEnv: OPENCODE_API_KEY
+        api: anthropic-messages
+        baseURL: https://opencode.ai/zen/v1
+        models:
+          - id: claude-opus-5
+          - id: claude-sonnet-5
+          - id: qwen3.7-max
 - insert:
+    - id: mcp-byq-discovery
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: byq
+        transport: streamable-http
+        url: !!js process.env.BYQ_MCP_URL
+        headers:
+          Authorization: !!js '`Bearer ${process.env.BYQ_MCP_ACP_DISCOVERY_TOKEN}`'
+        failOnStartupError: true
+
+    - id: byq-acp-mcp-identity
+      name: 'file:///opt/byq/runtime/byq-acp-mcp-identity.js'
+      config:
+        maxDepth: 1
+
     - id: trusted-time-context
       name: 'file:///opt/byq/runtime/byq-runtime-time-context.js'
       config:

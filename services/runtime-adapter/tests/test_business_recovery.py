@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from app.compat import compatibility_for_release
 from app.runtime import RuntimeAdapter
 from .test_process_cleanup import FakeHarness, release_compatibility
 from .test_session_rehydration import _simulate_process_death
@@ -143,3 +144,87 @@ def test_missing_continuation_receipt_does_not_scan_old_guard_files(tmp_path, mo
     finally:
         adapter.close()
         FakeHarness.allow_run.set()
+
+
+def test_acp_recovery_accepts_closed_before_ack_receipt_without_resume_or_replay(
+    tmp_path, monkeypatch,
+):
+    """A Backend close receipt repairs the ACK race without reopening DSH."""
+    session_id = "ack-race-session"
+    trace_id = "ack-race-trace"
+    root_run_id = "a" * 32
+    native_session_id = "8b90c2b5-3a08-4eae-9fc7-04baf12910de"
+    runtime_generation = "generation-" + "d" * 32
+    session_root = tmp_path / "sessions"
+    cwd = session_root / "byq-acp-workspaces" / session_id
+    cwd.mkdir(parents=True)
+    monkeypatch.setenv("BYQ_DSH_PROCESS_OWNERSHIP", "root-turn")
+    monkeypatch.setenv("DSH_SESSION_ROOT", str(session_root))
+
+    adapter = RuntimeAdapter(compatibility_for_release("dsh-v0.2.0-rc.2-acp"))
+    monkeypatch.setattr(adapter, "require_current_backend_authority", lambda: 8)
+    monkeypatch.setattr(adapter, "_resolve_model", lambda **kwargs: {
+        "provider": "deepseek-official", "model": "deepseek-v4-flash",
+        "api_key": "synthetic-only",
+    })
+    monkeypatch.setattr(adapter, "_build_harness", lambda *args, **kwargs: pytest.fail(
+        "settled lifecycle recovery must not resume or start ACP"))
+
+    binding = {
+        "schema_version": "byq-acp-root-binding.v1",
+        "session_id": session_id,
+        "trace_id": trace_id,
+        "owner_principal": "alice",
+        "workspace_id": "workspace_alice",
+        "root_run_id": root_run_id,
+        "native_session_id": native_session_id,
+        "runtime_generation": runtime_generation,
+        "model_provider": "deepseek-official",
+        "model_id": "deepseek-v4-flash",
+        "cwd": str(cwd.resolve()),
+        "previous_boot_id": "b" * 32,
+        "previous_authority_epoch": 7,
+        "sequence": 4,
+        "settlement_receipt": None,
+        "domain_call_sequence": 0,
+        "domain_call_drained_sequence": 0,
+        "closed": False,
+    }
+    binding_path = adapter._acp_binding_path(session_id)
+    binding_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    binding_path.write_text(json.dumps(binding), encoding="utf-8")
+    lifecycle_receipt = {
+        "schema_version": "agent-run-lifecycle-receipt.v1",
+        "root_run_id": root_run_id,
+        "sequence": 5,
+        "event_sha256": "c" * 64,
+    }
+
+    try:
+        result = adapter.recover_acp_session(
+            session_id, lifecycle_receipt, initial_sequence=5,
+        )
+
+        assert result["status"] == "idle"
+        assert result["continuity"] == "reattached"
+        assert result["resumed_from_run_id"] is None
+        persisted = json.loads(binding_path.read_text(encoding="utf-8"))
+        assert persisted["settlement_receipt"] == lifecycle_receipt
+        assert persisted["native_session_id"] == native_session_id
+        assert persisted["runtime_generation"] == runtime_generation
+        assert adapter.recovery_binding(session_id) == {
+            "schema_version": "byq-runtime-recovery-binding.v1",
+            "state": "settled",
+            "session_id": session_id,
+            "trace_id": trace_id,
+            "owner_principal": "alice",
+            "workspace_id": "workspace_alice",
+            "root_run_id": root_run_id,
+            "previous_boot_id": adapter.boot_id,
+            "previous_authority_epoch": 8,
+            "sequence": 5,
+            "settlement_receipt": lifecycle_receipt,
+        }
+        assert adapter._get(session_id).history == []
+    finally:
+        adapter.close()

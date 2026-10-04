@@ -74,6 +74,8 @@ WORKSPACE_TABLES = (
     "research_execution_plans", "research_execution_plan_receipts",
     "research_task_actions",
     "agent_runs", "agent_audit", "agent_approvals",
+    "agent_acp_native_agent_registrations", "agent_acp_domain_call_observations",
+    "agent_acp_tool_ingress_observations",
     "data_demands",
     "signal_producer_jobs", "ml_training_runs", "backtest_jobs", "optimization_jobs",
     "paper_accounts", "stock_pools", "stock_pool_snapshots",

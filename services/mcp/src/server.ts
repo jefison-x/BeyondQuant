@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -7,9 +8,27 @@ import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { continuationAdmission } from './continuation-admission.js';
 import { domainValidationSchemas } from "./domain-validation-schema.js";
-import { evidenceBoundedFetcher, safeDomainAdmission } from "./domain-admission.js";
-import { observeDomainSchemaFailures } from "./domain-schema-observation.js";
+import { admittedLegacyEvidenceRoot, evidenceBoundedFetcher, safeDomainAdmission } from "./domain-admission.js";
+import { boundedBody, observeDomainSchemaFailures } from "./domain-schema-observation.js";
 import { fetchResearchContext } from "./research-context.js";
+import {
+  areAcpCredentialsSeparated,
+  classifyMcpBearer,
+  isValidAcpSigningKey,
+  type AcpAgentClaims,
+  type McpBearerIdentity,
+} from "./acp-auth.js";
+import {
+  acpAgentRunRegistrationFetcher,
+  addAcpObservationHeader,
+  abortAcpToolIngressBeforeDispatch,
+  bindAcpAgentRun,
+  getAcpAgentBindingStatus,
+  observeAcpDomainCall,
+  observeAcpToolIngress,
+  settleAcpToolIngress,
+  type AcpToolIngressOutcome,
+} from "./acp-bridge.js";
 
 import { fetchByqHealth } from "./backend-health.js";
 import {
@@ -145,6 +164,9 @@ const SERVICE = "beyondquant-mcp";
 const VERSION = "0.1.0";
 const MCP_PATH = "/mcp/v1";
 const BACKEND_URL = process.env.BYQ_BACKEND_URL ?? "http://backend:8000";
+const ACP_DISCOVERY_TOKEN = process.env.BYQ_MCP_ACP_DISCOVERY_TOKEN;
+const ACP_SIGNING_KEY = process.env.BYQ_MCP_ACP_SIGNING_KEY;
+const BACKEND_PROOF_TOKEN = process.env.BYQ_MCP_BACKEND_PROOF_TOKEN;
 
 // ADR-0085 P4: the bounded research-judgment composition must not be able to
 // discover any write/approval/execute/routing/identity/job tool. When
@@ -160,6 +182,14 @@ const READ_ONLY_JUDGMENT_TOOLS = [
   "byq_backtest_analysis_get",
 ] as const;
 const READ_ONLY_JUDGMENT_TOOL_SET: ReadonlySet<string> = new Set(READ_ONLY_JUDGMENT_TOOLS);
+// Explicitly reviewed callbacks that only issue reads. Error responses from
+// this set cannot leave an unresolved domain write behind. Do not infer this
+// property from a tool name suffix; add a tool only after auditing its handler.
+const ACP_READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
+  ...READ_ONLY_JUDGMENT_TOOLS,
+  "byq_health",
+  "byq_agent_roles",
+]);
 const READ_ONLY_SUBSET = process.env.BYQ_MCP_READ_ONLY_SUBSET === "1";
 const PORT = READ_ONLY_SUBSET
   ? Number(process.env.BYQ_MCP_READ_ONLY_PORT ?? "")
@@ -167,6 +197,10 @@ const PORT = READ_ONLY_SUBSET
 const MCP_TOKEN = READ_ONLY_SUBSET
   ? process.env.BYQ_MCP_READ_ONLY_TOKEN
   : process.env.BYQ_MCP_TOKEN;
+const ACP_DOMAIN_CALL_ACTIONS = new Set([
+  "byq_strategy_validate", "byq_ml_strategy_create", "byq_factor_compute", "byq_strategy_version_create",
+]);
+const ACP_LOCAL_ONLY_TOOLS = new Set(["byq_product_help_query", "byq_workflow_card_propose"]);
 const BACKTEST_ANALYSIS_PAGE_LIMIT = boundedIntegerEnvironment(
   "BYQ_BACKTEST_ANALYSIS_PAGE_CALL_LIMIT", 6, 1, 20,
 );
@@ -243,7 +277,7 @@ function writeJson(response: ServerResponse, statusCode: number, payload: unknow
 }
 
 function authorized(request: IncomingMessage): boolean {
-  return Boolean(MCP_TOKEN) && request.headers.authorization === `Bearer ${MCP_TOKEN}`;
+  return bearerIdentity({ request: { headers: request.headers } }) !== undefined;
 }
 
 async function byqHealth() {
@@ -263,12 +297,48 @@ function headerValue(headers: unknown, name: string): string | undefined {
 }
 
 const privateRoot = Symbol("BYQ trusted root header");
+const privateAuth = Symbol("BYQ verified MCP carrier");
+const privateObservationId = Symbol("BYQ durable ACP observation receipt");
+
+type FactoryContext = { request?: { headers?: unknown }; requestInfo?: { headers?: unknown } } | undefined;
+
+function requestHeaders(extra: unknown): unknown {
+  const request = extra as FactoryContext;
+  return request?.request?.headers ?? request?.requestInfo?.headers;
+}
+
+function bearerIdentity(extra: unknown): McpBearerIdentity | undefined {
+  if (extra && typeof extra === "object" && Object.hasOwn(extra, privateAuth)) {
+    return (extra as { [privateAuth]?: McpBearerIdentity })[privateAuth];
+  }
+  return classifyMcpBearer(headerValue(requestHeaders(extra), "authorization"), {
+    legacyToken: MCP_TOKEN,
+    discoveryToken: ACP_DISCOVERY_TOKEN,
+    signingKey: ACP_SIGNING_KEY,
+  });
+}
 
 function rootHeader(extra: unknown): string | undefined {
-  return extra && typeof extra === "object" ? (extra as { [privateRoot]?: string })[privateRoot] : undefined;
+  if (!extra || typeof extra !== "object") return undefined;
+  const auth = (extra as { [privateAuth]?: McpBearerIdentity })[privateAuth];
+  if (auth?.kind === "acp-agent") return auth.claims.root_run_id;
+  return (extra as { [privateRoot]?: string })[privateRoot];
 }
 
 function agentContext(extra: unknown): AgentContext {
+  const auth = bearerIdentity(extra);
+  if (auth?.kind === "acp-agent") {
+    return {
+      workspace_id: auth.claims.workspace_id,
+      owner_principal: auth.claims.owner_principal,
+      actor_principal: auth.claims.actor_principal,
+      trace_id: auth.claims.trace_id,
+      session_id: auth.claims.session_id,
+      dsh_run_id: auth.claims.dsh_run_id,
+      runtime_boot_id: auth.claims.runtime_boot_id,
+    };
+  }
+  if (auth?.kind === "discovery") return {};
   if (extra && typeof extra === "object" && "owner_principal" in extra) {
     const value = extra as AgentContext;
     return {
@@ -281,8 +351,7 @@ function agentContext(extra: unknown): AgentContext {
       runtime_boot_id: isValidRuntimeBootId(value.runtime_boot_id) ? value.runtime_boot_id : undefined,
     };
   }
-  const request = (extra as { request?: { headers?: unknown }; requestInfo?: { headers?: unknown } } | undefined);
-  const headers = request?.request?.headers ?? request?.requestInfo?.headers;
+  const headers = requestHeaders(extra);
   const runtimeBootId = headerValue(headers, "x-byq-runtime-boot-id");
   return {
     workspace_id: headerValue(headers, "x-byq-workspace-id"),
@@ -302,7 +371,11 @@ function agentContextUnavailable(): AgentResult {
   };
 }
 
-type CompleteAgentContext = Required<Omit<AgentContext, "runtime_boot_id">> & Pick<AgentContext, "runtime_boot_id">;
+type CompleteAgentContext = Required<Omit<AgentContext, "runtime_boot_id">> & Pick<AgentContext, "runtime_boot_id"> & {
+  [privateAuth]?: McpBearerIdentity;
+  [privateRoot]?: string;
+  [privateObservationId]?: string;
+};
 
 function completeAgentContext(extra: unknown): CompleteAgentContext | undefined {
   const context = agentContext(extra);
@@ -313,7 +386,12 @@ function completeAgentContext(extra: unknown): CompleteAgentContext | undefined 
   // The dedicated read-only MCP subset has no mutating tools. Product MCP
   // requires the exact process boot identity on every Agent-context request.
   if (!READ_ONLY_SUBSET && !isValidRuntimeBootId(context.runtime_boot_id)) return undefined;
-  return context as CompleteAgentContext;
+  return Object.assign(context, {
+    [privateAuth]: bearerIdentity(extra),
+    [privateRoot]: rootHeader(extra),
+    [privateObservationId]: extra && typeof extra === "object"
+      ? (extra as { [privateObservationId]?: string })[privateObservationId] : undefined,
+  }) as CompleteAgentContext;
 }
 
 function completeLearningContext(extra: unknown): LearningContext | undefined {
@@ -336,7 +414,23 @@ function trustedBackendFetcher(context: CompleteAgentContext): typeof fetch {
     } else {
       headers.delete("x-byq-runtime-boot-id");
     }
-    return fetch(input, { ...init, headers });
+    const auth = context[privateAuth];
+    const markedInit = init as (RequestInit & { [admittedLegacyEvidenceRoot]?: string }) | undefined;
+    if (auth?.kind === "acp-agent") {
+      headers.set("x-byq-root-run-id", auth.claims.root_run_id);
+    } else if (markedInit?.[admittedLegacyEvidenceRoot]
+      && /^[a-f0-9]{32}$/.test(markedInit[admittedLegacyEvidenceRoot])) {
+      // Only evidenceBoundedFetcher can attach this process-local marker.
+      // Preserve its admitted legacy root while ignoring ordinary caller
+      // headers. ACP always replaces it with the signed claim above.
+      headers.set("x-byq-root-run-id", markedInit[admittedLegacyEvidenceRoot]);
+    } else {
+      headers.delete("x-byq-root-run-id");
+    }
+    addAcpObservationHeader(headers, context[privateObservationId]);
+    const safeInit = { ...init, headers } as RequestInit & { [admittedLegacyEvidenceRoot]?: string };
+    delete safeInit[admittedLegacyEvidenceRoot];
+    return fetch(input, safeInit);
   };
 }
 
@@ -408,7 +502,113 @@ async function byqAgentRoles() {
 
 async function byqAgentRunStart(args: Record<string, unknown>, extra: unknown) {
   const context = completeAgentContext(extra);
-  return context ? fetchByqAgentRunStart(BACKEND_URL, args, context) : agentContextUnavailable();
+  if (!context) return agentContextUnavailable();
+  const auth = context[privateAuth];
+  if (auth?.kind !== "acp-agent") return fetchByqAgentRunStart(BACKEND_URL, args, context);
+  if (!BACKEND_PROOF_TOKEN) return acpBridgeUnavailable("acp_backend_proof_unavailable");
+
+  const claims = auth.claims;
+  const register = acpAgentRunRegistrationFetcher(claims, BACKEND_PROOF_TOKEN, trustedBackendFetcher(context));
+  const result = await fetchByqAgentRunStart(BACKEND_URL, args, context, register);
+  if (result.isError) return result;
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(result.content[0]?.text ?? "null") as Record<string, unknown>;
+  } catch {
+    return acpBridgeUnavailable("acp_registration_receipt_invalid");
+  }
+  const run = payload?.run;
+  if (!run || typeof run !== "object" || Array.isArray(run)) {
+    return acpBridgeUnavailable("acp_registration_receipt_invalid");
+  }
+  const registeredRun = run as Record<string, unknown>;
+  if (registeredRun.status !== "active" || typeof registeredRun.run_id !== "string"
+    || !/^agent_run_[0-9a-f]{32}$/.test(registeredRun.run_id)) {
+    return acpBridgeUnavailable(registeredRun.status === "pending_binding"
+      ? "acp_registration_pending" : "acp_registration_receipt_invalid");
+  }
+  const parentRunId = registeredRun.parent_run_id === undefined || registeredRun.parent_run_id === null
+    ? null : registeredRun.parent_run_id;
+  if ((claims.origin === "root" && parentRunId !== null)
+    || (claims.origin === "subagent" && (typeof parentRunId !== "string"
+      || !/^agent_run_[0-9a-f]{32}$/.test(parentRunId)))) {
+    return acpBridgeUnavailable("acp_registration_lineage_invalid");
+  }
+
+  if (args.receipt_only === true) {
+    const binding = await getAcpAgentBindingStatus(BACKEND_URL, BACKEND_PROOF_TOKEN, claims);
+    if (!binding || binding.status !== "bound"
+      || binding.receipt.agent_run_id !== registeredRun.run_id
+      || binding.receipt.parent_run_id !== parentRunId) {
+      return acpBridgeUnavailable(binding?.status === "pending"
+        ? "acp_binding_outcome_unknown" : "acp_binding_reconciliation_unavailable");
+    }
+    return result;
+  }
+
+  const receipt = await bindAcpAgentRun(BACKEND_URL, BACKEND_PROOF_TOKEN, claims,
+    registeredRun.run_id, parentRunId as string | null);
+  if (!receipt) return acpBridgeUnavailable("acp_binding_outcome_unknown");
+  return result;
+}
+
+function acpBridgeUnavailable(status: string): AgentResult {
+  return {
+    content: [{ type: "text", text: JSON.stringify({ service: SERVICE, status: "error",
+      backend: { status } }) }],
+    isError: true,
+  };
+}
+
+function classifyAcpToolCompletion(toolName: string, value: unknown): AcpToolIngressOutcome {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "unknown";
+  const result = value as { isError?: unknown; content?: unknown };
+  if (typeof result.isError !== "boolean" || !Array.isArray(result.content)) return "unknown";
+  const text = result.content.find((item): item is { type: "text"; text: string } =>
+    Boolean(item && typeof item === "object" && (item as { type?: unknown }).type === "text"
+      && typeof (item as { text?: unknown }).text === "string"));
+  if (!text) return "unknown";
+  let payload: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(text.text) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return "unknown";
+    payload = parsed as Record<string, unknown>;
+  } catch { return "unknown"; }
+
+  if (payload.status === "outcome_unknown" || payload.status === "unknown") return "unknown";
+  if (result.isError === false) {
+    return typeof payload.status === "string" && payload.status !== "error" ? "settled" : "unknown";
+  }
+  const backend = payload.backend;
+  if (!backend || typeof backend !== "object" || Array.isArray(backend)) return "unknown";
+  const response = backend as Record<string, unknown>;
+  if (response.http_status === 425 && response.admission && typeof response.admission === "object"
+    && !Array.isArray(response.admission)) {
+    const admission = response.admission as Record<string, unknown>;
+    if (Object.keys(admission).sort().join(",") === "reason,schema_version,state,stop"
+      && admission.schema_version === "domain-call-admission.v1"
+      && admission.state === "blocked" && admission.reason === "call_evidence_pending" && admission.stop === true) {
+      return "settled";
+    }
+  }
+  if (ACP_READ_ONLY_TOOL_NAMES.has(toolName)) return "settled";
+
+  // These four endpoints share Backend's atomic domain-validation operation:
+  // a precise correctable_failure is returned only after the artifact/job
+  // transaction rolls back and the bounded terminal result is persisted.
+  // Other 4xx responses, including mutable 409 conflicts, are not proof that
+  // an arbitrary handler had no effect and therefore remain unknown.
+  if (ACP_DOMAIN_CALL_ACTIONS.has(toolName) && response.http_status === 422
+    && response.admission && typeof response.admission === "object" && !Array.isArray(response.admission)) {
+    const admission = response.admission as Record<string, unknown>;
+    const reasonIsBounded = (admission.reason === "domain_validation_failed" && admission.stop === false)
+      || (admission.reason === "correction_failed" && admission.stop === true);
+    if (Object.keys(admission).sort().join(",") === "reason,schema_version,state,stop"
+      && admission.schema_version === "domain-call-admission.v1"
+      && admission.state === "correctable_failure" && reasonIsBounded) return "settled";
+  }
+  return "unknown";
 }
 
 async function byqAgentAuthorize(args: Record<string, unknown>, extra: unknown) {
@@ -769,9 +969,10 @@ async function byqWebEvidenceCreate(args: WebEvidenceCreateRequest, extra: unkno
 }
 
 export function buildServer(factoryContext: unknown = undefined): McpServer {
-  const factory = factoryContext as { request?: { headers?: unknown }; requestInfo?: { headers?: unknown } } | undefined;
-  const trustedContext = { ...agentContext(factoryContext),
-    [privateRoot]: headerValue(factory?.request?.headers ?? factory?.requestInfo?.headers, "x-byq-root-run-id") };
+  const auth = bearerIdentity(factoryContext);
+  const trustedContext = { ...agentContext(factoryContext), [privateAuth]: auth,
+    [privateRoot]: auth?.kind === "acp-agent" ? auth.claims.root_run_id
+      : headerValue(requestHeaders(factoryContext), "x-byq-root-run-id") };
   const server = new McpServer({ name: SERVICE, version: VERSION });
   // ADR-0085 P4: explicit, type-checked registration gate. In the isolated
   // read-only subset only the five bounded read tools are registered; every
@@ -779,15 +980,65 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
   // discover any write/approval/execute/routing/identity/job tool. This is
   // non-exposure, not permission denial, and the default surface is unchanged.
   const rawRegisterTool = server.registerTool.bind(server) as McpServer["registerTool"];
-  const registerTool: McpServer["registerTool"] = READ_ONLY_SUBSET
-    ? ((name: string, ...rest: unknown[]) => {
+  const registerTool: McpServer["registerTool"] = ((name: string, ...rest: unknown[]) => {
         if (!READ_ONLY_JUDGMENT_TOOL_SET.has(name)) {
-          return undefined as never;
+          if (READ_ONLY_SUBSET) return undefined as never;
         }
-        return (rawRegisterTool as unknown as (n: string, ...r: unknown[]) => unknown)(
-          name, ...rest) as never;
-      }) as unknown as McpServer["registerTool"]
-    : rawRegisterTool;
+        const callbackIndex = rest.length - 1;
+        const callback = rest[callbackIndex];
+        if (typeof callback === "function") {
+          rest[callbackIndex] = async (...callArgs: unknown[]) => {
+            if (!auth || auth.kind === "discovery") return agentContextUnavailable();
+            const toolArgs = callArgs[0];
+            if (auth.kind === "acp-agent" && name !== "byq_agent_run_start" && !ACP_LOCAL_ONLY_TOOLS.has(name)) {
+              if (!BACKEND_PROOF_TOKEN || !toolArgs || typeof toolArgs !== "object" || Array.isArray(toolArgs)) {
+                return acpBridgeUnavailable("acp_ingress_observation_unavailable");
+              }
+              const ingressRequestId = randomBytes(16).toString("hex");
+              const ingressArgs = toolArgs as Record<string, unknown>;
+              const ingress = await observeAcpToolIngress(BACKEND_URL, BACKEND_PROOF_TOKEN,
+                auth.claims, name, ingressArgs, fetch, ingressRequestId);
+              if (!ingress) {
+                // The handler has not entered. A lost observe response may have
+                // left a pending Backend row; an exact abort either settles it
+                // or writes a tombstone that excludes a delayed observe.
+                // If abort itself is unknown, Backend's pending fence remains.
+                await abortAcpToolIngressBeforeDispatch(BACKEND_URL, BACKEND_PROOF_TOKEN,
+                  auth.claims, name, ingressArgs, ingressRequestId);
+                return acpBridgeUnavailable("acp_ingress_observation_unavailable");
+              }
+              let handlerResult: unknown;
+              try {
+                if (ACP_DOMAIN_CALL_ACTIONS.has(name)) {
+                  const receipt = await observeAcpDomainCall(BACKEND_URL, BACKEND_PROOF_TOKEN,
+                    auth.claims, name, toolArgs as Record<string, unknown>);
+                  if (!receipt) {
+                    handlerResult = acpBridgeUnavailable("acp_observation_unavailable");
+                  } else {
+                    const callContext = { ...trustedContext, [privateObservationId]: receipt.mcp_request_id };
+                    handlerResult = await (callback as (...args: unknown[]) => unknown)(
+                      toolArgs, callContext, ...callArgs.slice(2));
+                  }
+                } else {
+                  handlerResult = await (callback as (...args: unknown[]) => unknown)(...callArgs);
+                }
+              } catch {
+                handlerResult = acpBridgeUnavailable("acp_handler_outcome_unknown");
+              }
+              const outcome = classifyAcpToolCompletion(name, handlerResult);
+              const settlement = await settleAcpToolIngress(
+                BACKEND_URL, BACKEND_PROOF_TOKEN, auth.claims, ingress, outcome);
+              if (!settlement) return acpBridgeUnavailable("acp_ingress_settlement_unknown");
+              return handlerResult;
+            }
+            if (name === "byq_agent_run_start" || ACP_DOMAIN_CALL_ACTIONS.has(name)) {
+              return (callback as (...args: unknown[]) => unknown)(toolArgs, trustedContext, ...callArgs.slice(2));
+            }
+            return (callback as (...args: unknown[]) => unknown)(...callArgs);
+          };
+        }
+        return (rawRegisterTool as unknown as (n: string, ...r: unknown[]) => unknown)(name, ...rest) as never;
+      }) as unknown as McpServer["registerTool"];
   registerTool(
     "byq_health",
     {
@@ -995,7 +1246,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
         receipt_only: z.boolean().optional(),
       },
     },
-    (args) => byqAgentRunStart(args, trustedContext),
+    (args, extra) => byqAgentRunStart(args, extra),
   );
   registerTool(
     "byq_agent_authorize",
@@ -1285,7 +1536,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
   registerTool(
     "byq_ml_strategy_create",
     { description: "Create a validated closed-profile ML strategy: v1 LightGBM compatibility, v2 purged walk-forward with a qualified learner, or an explicit HS300 regime-expert plan. Human approval remains a separate Product action.", inputSchema: domainValidationSchemas.byq_ml_strategy_create },
-    (args) => byqMlStrategyCreate(args, trustedContext),
+    (args, extra) => byqMlStrategyCreate(args, extra),
   );
   registerTool(
     "byq_ml_strategy_approve",
@@ -1361,7 +1612,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
       description: "Validate point-in-time factor input and queue an independent BYQ Factor Job. Read status with byq_factor_job_get, cancel active work with byq_factor_job_cancel, and fetch the result Artifact by ID when complete.",
       inputSchema: domainValidationSchemas.byq_factor_compute,
     },
-    (args) => byqFactorCompute(args, trustedContext),
+    (args, extra) => byqFactorCompute(args, extra),
   );
   registerTool(
     "byq_factor_job_get",
@@ -1446,7 +1697,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
       description: "Validate and persist a StrategyDraft. script must define class CustomStrategy with exactly one synchronous generate_signals(self, data, parameters) or generate_target_weights(self, data, portfolio_state, parameters). A planned research task is valid. On 422, use the safe validation message for at most one repair.",
       inputSchema: domainValidationSchemas.byq_strategy_validate,
     },
-    (args) => byqStrategyValidate(args, trustedContext),
+    (args, extra) => byqStrategyValidate(args, extra),
   );
   registerTool(
     "byq_strategy_version_create",
@@ -1454,7 +1705,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
       description: "Materialize an immutable content-addressed StrategyVersion from a validated draft.",
       inputSchema: domainValidationSchemas.byq_strategy_version_create,
     },
-    (args) => byqStrategyVersionCreate(args, trustedContext),
+    (args, extra) => byqStrategyVersionCreate(args, extra),
   );
   registerTool(
     "byq_strategy_approve",
@@ -1727,6 +1978,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
 }
 
 const observedHandler = observeDomainSchemaFailures(createMcpHandler(buildServer), async (failure, request) => {
+  if (bearerIdentity({ request })?.kind === "acp-agent") return;
   const context = completeAgentContext({ request });
   if (!context) return;
   const send = evidenceBoundedFetcher(trustedBackendFetcher(context), request.headers.get("x-byq-root-run-id") ?? undefined);
@@ -1742,7 +1994,32 @@ const observedHandler = observeDomainSchemaFailures(createMcpHandler(buildServer
     return safeDomainAdmission({ detail: { schema_version: "domain-call-admission.v1", state: "unknown" } });
   }
 });
-const handler = toNodeHandler(continuationAdmission(observedHandler, async (reservation, call, request) => {
+type ParsedFetchHandler = { fetch(request: Request, options?: { parsedBody?: unknown }): Promise<Response> };
+const discoveryOnlyHandler: ParsedFetchHandler = {
+  async fetch(request, options) {
+    const identity = classifyMcpBearer(request.headers.get("authorization") ?? undefined, {
+      legacyToken: MCP_TOKEN,
+      discoveryToken: ACP_DISCOVERY_TOKEN,
+      signingKey: ACP_SIGNING_KEY,
+    });
+    if (identity?.kind !== "discovery") return observedHandler.fetch(request, options);
+    if (request.method !== "POST") {
+      return Response.json({ service: SERVICE, status: "discovery_only" }, { status: 403 });
+    }
+    const body = options?.parsedBody ?? await boundedBody(request);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return new Response("Invalid MCP discovery envelope", { status: 400 });
+    }
+    const envelope = body as Record<string, unknown>;
+    const method = envelope.method;
+    if (!["initialize", "notifications/initialized", "tools/list"].includes(String(method))) {
+      return Response.json({ jsonrpc: "2.0", id: envelope.id ?? null,
+        error: { code: -32003, message: "ACP discovery credential only permits tool listing" } }, { status: 403 });
+    }
+    return observedHandler.fetch(request, { ...options, parsedBody: body });
+  },
+};
+const continuationHandler = continuationAdmission(observedHandler, async (reservation, call, request) => {
   const context = completeAgentContext({ request });
   if (!context) return false;
   const response = await trustedBackendFetcher(context)(`${BACKEND_URL}/internal/task-continuation/${reservation}/authorize-tool`, {
@@ -1753,7 +2030,20 @@ const handler = toNodeHandler(continuationAdmission(observedHandler, async (rese
   const value = await response.json() as Record<string, unknown>;
   return value.schema_version === 'continuation-action-admission.v1' && value.admitted === true
     && value.reservation_id === reservation;
-}));
+});
+const requestGateHandler: ParsedFetchHandler = {
+  fetch(request, options) {
+    const identity = classifyMcpBearer(request.headers.get("authorization") ?? undefined, {
+      legacyToken: MCP_TOKEN,
+      discoveryToken: ACP_DISCOVERY_TOKEN,
+      signingKey: ACP_SIGNING_KEY,
+    });
+    return identity?.kind === "discovery"
+      ? discoveryOnlyHandler.fetch(request, options)
+      : continuationHandler.fetch(request, options);
+  },
+};
+const handler = toNodeHandler(requestGateHandler);
 
 const httpServer = createServer(async (request, response) => {
   let url: URL;
@@ -1801,6 +2091,16 @@ if (isMain && !MCP_TOKEN) {
   throw new Error(READ_ONLY_SUBSET
     ? "BYQ_MCP_READ_ONLY_TOKEN is required to start the read-only MCP service"
     : "BYQ_MCP_TOKEN is required to start the MCP service");
+}
+if (isMain && ACP_DISCOVERY_TOKEN && !isValidAcpSigningKey(ACP_SIGNING_KEY)) {
+  throw new Error("BYQ_MCP_ACP_SIGNING_KEY must be at least 32 UTF-8 bytes when ACP discovery is enabled");
+}
+if (isMain && ACP_DISCOVERY_TOKEN && !BACKEND_PROOF_TOKEN) {
+  throw new Error("BYQ_MCP_BACKEND_PROOF_TOKEN is required when ACP discovery is enabled");
+}
+if (isMain && ACP_DISCOVERY_TOKEN
+  && !areAcpCredentialsSeparated(MCP_TOKEN, ACP_DISCOVERY_TOKEN, BACKEND_PROOF_TOKEN, ACP_SIGNING_KEY)) {
+  throw new Error("ACP, legacy, and Backend proof credentials must be present and distinct; the signing key must not reuse any bearer");
 }
 if (isMain && READ_ONLY_SUBSET && !(Number.isInteger(PORT) && PORT > 0 && PORT <= 65535)) {
   throw new Error("BYQ_MCP_READ_ONLY_PORT must be a valid TCP port to start the read-only MCP service");

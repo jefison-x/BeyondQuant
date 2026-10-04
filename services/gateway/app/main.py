@@ -1606,15 +1606,20 @@ def _runtime_root_rows(session: ProductSession) -> list[dict[str, object]]:
         raise HTTPException(status_code=503, detail="business root recovery is unavailable")
     validated: list[dict[str, object]] = []
     seen: set[str] = set()
+    base_keys = {"root_run_id", "status", "authority_status", "terminal_sequence",
+                 "terminal_event_sha256"}
+    acp_keys = {"terminal_acp_ingress_sequence", "terminal_acp_ingress_sha256",
+                "terminal_unknown_claim_count", "terminal_unknown_claims_sha256"}
     for row in roots:
         status = row.get("status") if isinstance(row, dict) else None
         authority_status = row.get("authority_status") if isinstance(row, dict) else None
         terminal_sequence = row.get("terminal_sequence") if isinstance(row, dict) else None
         terminal_digest = row.get("terminal_event_sha256") if isinstance(row, dict) else None
         root_id = row.get("root_run_id") if isinstance(row, dict) else None
+        keys = set(row) if isinstance(row, dict) else set()
+        has_acp_snapshot = keys == base_keys | acp_keys
         if (not isinstance(row, dict)
-                or set(row) != {"root_run_id", "status", "authority_status", "terminal_sequence",
-                                "terminal_event_sha256"}
+                or keys not in (base_keys, base_keys | acp_keys)
                 or not isinstance(root_id, str) or re.fullmatch(r"[0-9a-f]{32}", root_id) is None
                 or root_id in seen
                 or not isinstance(status, str)
@@ -1627,6 +1632,22 @@ def _runtime_root_rows(session: ProductSession) -> list[dict[str, object]]:
                     and (not isinstance(terminal_digest, str)
                          or re.fullmatch(r"[0-9a-f]{64}", terminal_digest) is None))):
             raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+        if has_acp_snapshot:
+            cursor = row["terminal_acp_ingress_sequence"]
+            cursor_digest = row["terminal_acp_ingress_sha256"]
+            unknown_count = row["terminal_unknown_claim_count"]
+            unknown_digest = row["terminal_unknown_claims_sha256"]
+            values = (cursor, cursor_digest, unknown_count, unknown_digest)
+            if any(value is not None for value in values) and (
+                type(cursor) is not int or not 0 <= cursor <= 4096
+                or not isinstance(cursor_digest, str) or re.fullmatch(r"[0-9a-f]{64}", cursor_digest) is None
+                or type(unknown_count) is not int or not 0 <= unknown_count <= 1024
+                or not isinstance(unknown_digest, str) or re.fullmatch(r"[0-9a-f]{64}", unknown_digest) is None
+            ):
+                raise HTTPException(status_code=503, detail="business root recovery is unavailable")
+            # Historical SDK roots predate the ACP cursor and legitimately
+            # carry four nulls. ACP recovery explicitly requires all four
+            # non-null fields before accepting a settled binding.
         seen.add(root_id)
         validated.append(row)
     return validated
@@ -1671,10 +1692,48 @@ def _verify_settled_recovery_binding(
     receipt = binding["settlement_receipt"]
     roots = _runtime_root_rows(session)
     matched = [row for row in roots if row["root_run_id"] == binding["root_run_id"]]
-    if (len(matched) != 1 or matched[0]["authority_status"] != "closed"
+    snapshot = matched[0] if len(matched) == 1 else {}
+    if (len(matched) != 1 or snapshot["authority_status"] != "closed"
             or matched[0]["status"] not in {"completed", "failed", "cancelled", "interrupted"}
             or matched[0]["terminal_sequence"] != receipt["sequence"]
-            or matched[0]["terminal_event_sha256"] != receipt["event_sha256"]):
+            or matched[0]["terminal_event_sha256"] != receipt["event_sha256"]
+            or type(snapshot.get("terminal_acp_ingress_sequence")) is not int
+            or not isinstance(snapshot.get("terminal_acp_ingress_sha256"), str)
+            or snapshot.get("terminal_unknown_claim_count") != 0
+            or not isinstance(snapshot.get("terminal_unknown_claims_sha256"), str)):
+        _raise_agent_session_interrupted()
+    return receipt
+
+
+def _closed_before_adapter_ack_receipt(
+    binding: dict[str, object], session: ProductSession,
+) -> dict[str, object] | None:
+    """Recover a Backend-closed ACP root whose Adapter lost its terminal ACK."""
+    roots = _runtime_root_rows(session)
+    matched = [row for row in roots if row["root_run_id"] == binding["root_run_id"]]
+    if len(matched) != 1:
+        _raise_agent_session_interrupted()
+    row = matched[0]
+    if row["status"] == "active" and row["authority_status"] != "closed":
+        return None
+    if (row["authority_status"] != "closed"
+            or row["status"] not in {"completed", "failed", "cancelled", "interrupted"}
+            or type(row.get("terminal_acp_ingress_sequence")) is not int
+            or not isinstance(row.get("terminal_acp_ingress_sha256"), str)
+            or row.get("terminal_unknown_claim_count") != 0
+            or not isinstance(row.get("terminal_unknown_claims_sha256"), str)):
+        _raise_agent_session_interrupted()
+    matches: list[dict[str, object]] = []
+    for event in _runtime_events(trace_store.read(session.session_id), session.session_id, session.trace_id):
+        lifecycle = project_lifecycle_event(event, session.session_id, session.trace_id)
+        if (lifecycle is not None and lifecycle["outcome"] != "active"
+                and lifecycle["root_run_id"] == binding["root_run_id"]):
+            matches.append(lifecycle)
+    if len(matches) != 1 or matches[0]["outcome"] != row["status"]:
+        _raise_agent_session_interrupted()
+    receipt = lifecycle_receipt(matches[0])
+    if (receipt["sequence"] != row["terminal_sequence"]
+            or receipt["event_sha256"] != row["terminal_event_sha256"]):
         _raise_agent_session_interrupted()
     return receipt
 
@@ -1799,7 +1858,16 @@ def _restore_product_session(
                 binding = _validate_recovery_binding(binding_reply, session)
                 initial_sequence = _initial_runtime_sequence(session.session_id, binding["sequence"])
                 if binding["state"] == "transfer_required":
-                    recovery_receipt = _transfer_runtime_root_authority(session, binding)
+                    recovery_receipt = _closed_before_adapter_ack_receipt(binding, session)
+                    if recovery_receipt is None:
+                        try:
+                            recovery_receipt = _transfer_runtime_root_authority(session, binding)
+                        except ProductError as transfer_error:
+                            if transfer_error.status_code != 409:
+                                raise
+                            recovery_receipt = _closed_before_adapter_ack_receipt(binding, session)
+                            if recovery_receipt is None:
+                                raise transfer_error
                 else:
                     recovery_receipt = _verify_settled_recovery_binding(binding, session)
                 recovered = _adapter_post(
@@ -1813,7 +1881,7 @@ def _restore_product_session(
                         or recovered.get("active_prompt") is not False
                         or recovered.get("continuity") != "reattached"
                         or recovered.get("resumed_from_run_id") != (
-                            binding["root_run_id"] if binding["state"] == "transfer_required" else None)):
+                            binding["root_run_id"] if recovery_receipt.get("status") == "transferred" else None)):
                     raise HTTPException(status_code=502, detail="runtime recovery receipt is invalid")
                 session.boot_id = _adopt_runtime_session_boot(recovered)
         else:
@@ -1894,19 +1962,9 @@ def _attested_runtime_events(events: list[dict[str, object]], session: ProductSe
     if not any(event.get("kind") in terminals for event in events):
         return events
     try:
-        body = _backend_runtime_authority_request(
-            "GET", f"/internal/runtime-authority/sessions/{session.session_id}/roots", scope=session,
-        )
-        if set(body) != {"schema_version", "roots"} or body["schema_version"] != "byq-business-root-status.v1":
-            raise ValueError("invalid business root status response")
-        roots = body["roots"]
-        if not isinstance(roots, list) or len(roots) > 500:
-            raise ValueError("invalid business root status list")
         indexed: dict[str, dict[str, object]] = {}
-        for row in roots:
-            if (not isinstance(row, dict) or set(row) != {"root_run_id", "status", "authority_status",
-                                                        "terminal_sequence", "terminal_event_sha256"}
-                    or not isinstance(row["root_run_id"], str) or row["root_run_id"] in indexed):
+        for row in _runtime_root_rows(session):
+            if row["root_run_id"] in indexed:
                 raise ValueError("invalid business root status row")
             indexed[row["root_run_id"]] = row
         attested: list[dict[str, object]] = []

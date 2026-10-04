@@ -13,6 +13,7 @@ import queue
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import threading
 from dataclasses import dataclass, field
@@ -31,6 +32,33 @@ _MAX_TOOL_RESULT_BYTES = 1024 * 1024
 _MAX_TEXT_BYTES = 8 * 1024 * 1024
 _REQUEST_TIMEOUT_SECONDS = 60.0
 _MODEL_CONFIG_ID = "model"
+_ROOT_BINDING_MARKER = ".byq-acp-root-binding.json"
+_INHERITED_RUNTIME_ENV = frozenset({
+    # Minimum host environment needed to launch Node and validate TLS. Do not
+    # inherit arbitrary BYQ service configuration, shell preload, or proxy
+    # settings into the Product DSH process.
+    "PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "TZ",
+    "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS",
+})
+_INTERNAL_SERVICE_SECRETS = frozenset({
+    "BYQ_MCP_TOKEN",
+    "BYQ_MCP_BACKEND_PROOF_TOKEN",
+    "BYQ_CREDENTIAL_RESOLVER_TOKEN",
+    "BYQ_RUNTIME_AUTHORITY_TOKEN",
+    "BYQ_PRODUCT_TOKEN",
+    "BYQ_MCP_READ_ONLY_TOKEN",
+    "BYQ_RUNTIME_JUDGMENT_TOKEN",
+    "BYQ_FEEDBACK_HUB_ADMIN_TOKEN",
+    "BYQ_FEEDBACK_HUB_RELAY_TOKEN",
+    "BYQ_FEEDBACK_HUB_STATUS_SECRET",
+    "BYQ_FEEDBACK_PUBLISHER_TOKEN",
+    "BYQ_PLUGIN_DEPLOYMENT_TOKEN",
+    "BYQ_PHASE10_OBSERVER_TOKEN",
+    "BYQ_BOOTSTRAP_ADMIN_PASSWORD",
+    "POSTGRES_PASSWORD",
+    "TUSHARE_TOKEN",
+})
+_NATIVE_SESSION_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 _FINISH_REASONS = {
     "end_turn": "completed",
     "max_tokens": "max_tokens",
@@ -454,6 +482,8 @@ class DshAcpCompatibility:
             for key, value in environment.items()
         ):
             raise ValueError("candidate DSH ACP environment is invalid")
+        self._validate_runtime_identity(environment)
+        self._mcp_servers(environment)
         home.mkdir(parents=True, exist_ok=True)
         return AcpHarness(
             provider=provider,
@@ -470,9 +500,41 @@ class DshAcpCompatibility:
             if harness.process is not None:
                 return
             command = [*harness.runtime_command, "--profile", "acp", "--patch", str(harness.composition)]
-            environment = {**os.environ, **harness.environment}
+            environment = {
+                key: os.environ[key]
+                for key in _INHERITED_RUNTIME_ENV
+                if key in os.environ
+            }
+            environment.update(harness.environment)
+            # Defense in depth for explicit caller environments too. The ACP
+            # process must not receive resolver, authority, Backend, or other
+            # internal service credentials.
+            for key in _INTERNAL_SERVICE_SECRETS:
+                environment.pop(key, None)
+            # Provider keys are credentials, not harmless ambient settings.
+            # The Adapter passes exactly the selected route's credential in
+            # harness.environment; never inherit the other provider's key (or
+            # search-specific credentials) from the Adapter process.
+            for key in ("DEEPSEEK_API_KEY", "OPENCODE_API_KEY", "DEEPSEEK_SEARCH_API_KEY"):
+                environment.pop(key, None)
+            selected_key = {
+                "deepseek-official": "DEEPSEEK_API_KEY",
+            }.get(harness.provider)
+            if harness.provider.startswith("opencode-"):
+                selected_key = "OPENCODE_API_KEY"
+            if selected_key is not None and selected_key in harness.environment:
+                environment[selected_key] = harness.environment[selected_key]
+            # The ACP composition authenticates through discovery-only and
+            # signed per-Agent credentials. Recovery/continuation selectors
+            # are added only when they are explicit in this harness.
+            for key in ("BYQ_NATIVE_ROOT_SESSION_ID", "BYQ_CONTINUATION_RESERVATION_ID"):
+                if key not in harness.environment:
+                    environment.pop(key, None)
             environment.update({
                 "DSH_HOME": str(harness.session_root),
+                # The Product identity plugin proves the ACP home remains
+                # inside this session's private runtime storage root.
+                "DSH_SESSION_ROOT": str(harness.session_root.parent),
                 "DSH_TELEMETRY_DISABLED": "1",
                 "DSH_PERMISSION_MODE": "read-only",
                 "DSH_MAX_TOKENS_AS_SUCCESS": "false",
@@ -488,11 +550,16 @@ class DshAcpCompatibility:
     def create_session(self, harness: AcpHarness, *, cwd: Path | str | None = None) -> str:
         transport = self._require_process(harness)
         working_directory = self._canonical_cwd(cwd or harness.session_root)
+        if transport.environment.get("BYQ_NATIVE_ROOT_SESSION_ID"):
+            raise AcpTransportError("fresh ACP root unexpectedly has a persisted native identity")
         result = transport.request("session/new", {
             "cwd": working_directory,
-            "mcpServers": self._mcp_servers(harness.environment),
+            # Product MCP is composed in DSH scopes. ACP's per-session mount
+            # would duplicate it and cannot carry child Agent identity.
+            "mcpServers": [],
         }, timeout=_REQUEST_TIMEOUT_SECONDS)
         session_id = _session_id(result)
+        self._verify_root_binding(harness, session_id, working_directory)
         self._select_route(transport, session_id, result, harness.provider, harness.model)
         harness.native_session_ids.add(session_id)
         with transport._notification_lock:
@@ -503,16 +570,20 @@ class DshAcpCompatibility:
     def resume_session(
         self, harness: AcpHarness, native_session_id: str, *, cwd: Path | str | None = None,
     ) -> str:
-        if not isinstance(native_session_id, str) or not native_session_id:
+        if not isinstance(native_session_id, str) or _NATIVE_SESSION_ID_RE.fullmatch(native_session_id) is None:
             raise ValueError("native ACP session identity is required")
         transport = self._require_process(harness)
+        if transport.environment.get("BYQ_NATIVE_ROOT_SESSION_ID") != native_session_id:
+            raise AcpTransportError("persisted ACP root identity is not configured for resume")
         working_directory = self._canonical_cwd(cwd or harness.session_root)
         result = transport.request("session/resume", {
             "sessionId": native_session_id,
             "cwd": working_directory,
-            "mcpServers": self._mcp_servers(harness.environment),
+            "mcpServers": [],
         }, timeout=_REQUEST_TIMEOUT_SECONDS)
         returned_id = _session_id(result, expected=native_session_id)
+        self._verify_root_binding(harness, returned_id, working_directory,
+                                  expected_native_session_id=native_session_id)
         self._select_route(transport, returned_id, result, harness.provider, harness.model)
         harness.native_session_ids.add(returned_id)
         with transport._notification_lock:
@@ -770,46 +841,92 @@ class DshAcpCompatibility:
 
     @staticmethod
     def _mcp_servers(environment: dict[str, str]) -> list[dict[str, Any]]:
-        required = {
-            "BYQ_MCP_URL": "MCP endpoint",
-            "BYQ_MCP_TOKEN": "MCP token",
-            "BYQ_RUNTIME_BOOT_ID": "runtime boot identity",
-            "BYQ_OWNER_PRINCIPAL": "owner identity",
-            "BYQ_WORKSPACE_ID": "workspace identity",
-            "BYQ_ACTOR_PRINCIPAL": "actor identity",
-            "BYQ_TRACE_ID": "trace identity",
-            "BYQ_SESSION_ID": "BYQ session identity",
-            "BYQ_DSH_RUN_ID": "DSH run identity",
-            "BYQ_ROOT_RUN_ID": "root run identity",
-        }
-        missing = [label for key, label in required.items() if not environment.get(key)]
-        if missing:
-            raise AcpTransportError("root-scoped BYQ MCP identity is incomplete")
-        endpoint = environment["BYQ_MCP_URL"]
-        parsed = urlsplit(endpoint)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise AcpTransportError("root-scoped BYQ MCP endpoint is invalid")
-        headers = [
-            {"name": "Authorization", "value": f"Bearer {environment['BYQ_MCP_TOKEN']}"},
-            {"name": "x-byq-runtime-boot-id", "value": environment["BYQ_RUNTIME_BOOT_ID"]},
-            {"name": "x-byq-owner-principal", "value": environment["BYQ_OWNER_PRINCIPAL"]},
-            {"name": "x-byq-workspace-id", "value": environment["BYQ_WORKSPACE_ID"]},
-            {"name": "x-byq-actor-principal", "value": environment["BYQ_ACTOR_PRINCIPAL"]},
-            {"name": "x-byq-trace-id", "value": environment["BYQ_TRACE_ID"]},
-            {"name": "x-byq-session-id", "value": environment["BYQ_SESSION_ID"]},
-            {"name": "x-byq-dsh-run-id", "value": environment["BYQ_DSH_RUN_ID"]},
-            {"name": "x-byq-root-run-id", "value": environment["BYQ_ROOT_RUN_ID"]},
-        ]
+        """ACP mounts no Product MCP client; DSH composition owns scoped clients."""
         reservation_id = environment.get("BYQ_CONTINUATION_RESERVATION_ID")
         if reservation_id is not None:
-            if (re.fullmatch(r"[0-9a-f]{32}", environment["BYQ_ROOT_RUN_ID"]) is None
+            if (re.fullmatch(r"[0-9a-f]{32}", environment.get("BYQ_ROOT_RUN_ID", "")) is None
                     or re.fullmatch(r"continuation_[0-9a-f]{32}", reservation_id) is None):
                 raise AcpTransportError("continuation MCP authority identity is invalid")
-            headers.append({
-                "name": "X-BYQ-Continuation-Reservation",
-                "value": reservation_id,
-            })
-        return [{"type": "http", "name": "byq", "url": endpoint, "headers": headers}]
+        return []
+
+    @staticmethod
+    def _validate_runtime_identity(environment: dict[str, str]) -> None:
+        required = (
+            "BYQ_MCP_URL", "BYQ_MCP_ACP_DISCOVERY_TOKEN", "BYQ_MCP_ACP_SIGNING_KEY",
+            "BYQ_RUNTIME_BOOT_ID", "BYQ_OWNER_PRINCIPAL", "BYQ_WORKSPACE_ID",
+            "BYQ_ACTOR_PRINCIPAL", "BYQ_TRACE_ID", "BYQ_SESSION_ID",
+            "BYQ_DSH_RUN_ID", "BYQ_ROOT_RUN_ID",
+        )
+        if any(not environment.get(key) for key in required):
+            raise AcpTransportError("ACP Product MCP identity configuration is incomplete")
+        endpoint = environment["BYQ_MCP_URL"]
+        parsed = urlsplit(endpoint)
+        if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+                or parsed.username is not None or parsed.password is not None
+                or parsed.query or parsed.fragment):
+            raise AcpTransportError("ACP Product MCP endpoint is invalid")
+        if len(environment["BYQ_MCP_ACP_SIGNING_KEY"].encode("utf-8")) < 32:
+            raise AcpTransportError("ACP Product MCP signing key is invalid")
+        distinct = [environment["BYQ_MCP_ACP_DISCOVERY_TOKEN"],
+                    environment["BYQ_MCP_ACP_SIGNING_KEY"]]
+        if environment.get("BYQ_MCP_TOKEN"):
+            distinct.append(environment["BYQ_MCP_TOKEN"])
+        if len(set(distinct)) != len(distinct):
+            raise AcpTransportError("ACP Product MCP credentials must be distinct")
+        if re.fullmatch(r"[0-9a-f]{32}", environment["BYQ_RUNTIME_BOOT_ID"]) is None:
+            raise AcpTransportError("ACP Product runtime boot identity is invalid")
+        if re.fullmatch(r"[0-9a-f]{32}", environment["BYQ_ROOT_RUN_ID"]) is None:
+            raise AcpTransportError("ACP Product root identity is invalid")
+        principal = r"[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}"
+        trace = r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}"
+        for key in ("BYQ_OWNER_PRINCIPAL", "BYQ_ACTOR_PRINCIPAL"):
+            if re.fullmatch(principal, environment[key]) is None:
+                raise AcpTransportError("ACP Product principal identity is invalid")
+        for key in ("BYQ_WORKSPACE_ID", "BYQ_TRACE_ID", "BYQ_SESSION_ID", "BYQ_DSH_RUN_ID"):
+            if re.fullmatch(trace, environment[key]) is None:
+                raise AcpTransportError("ACP Product session identity is invalid")
+        expected_actor = f"byq-product-agent-{environment['BYQ_SESSION_ID']}"
+        if environment["BYQ_ACTOR_PRINCIPAL"] != expected_actor:
+            raise AcpTransportError("ACP Product actor identity is invalid")
+        expected_native_id = environment.get("BYQ_NATIVE_ROOT_SESSION_ID")
+        if expected_native_id is not None and _NATIVE_SESSION_ID_RE.fullmatch(expected_native_id) is None:
+            raise AcpTransportError("persisted ACP root identity is invalid")
+
+    @staticmethod
+    def _verify_root_binding(
+        harness: AcpHarness,
+        native_session_id: str,
+        cwd: str,
+        *,
+        expected_native_session_id: str | None = None,
+    ) -> None:
+        marker = harness.session_root / _ROOT_BINDING_MARKER
+        try:
+            marker_info = os.lstat(marker)
+            if not stat.S_ISREG(marker_info.st_mode) or stat.S_IMODE(marker_info.st_mode) != 0o600:
+                raise ValueError("binding marker is not a private regular file")
+            if marker_info.st_size > 4096:
+                raise ValueError("binding marker exceeds its bound")
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(marker, flags)
+            with os.fdopen(descriptor, "rb") as source:
+                opened_info = os.fstat(source.fileno())
+                if (opened_info.st_dev, opened_info.st_ino) != (marker_info.st_dev, marker_info.st_ino):
+                    raise ValueError("binding marker changed while opening")
+                raw = source.read(4097)
+            if len(raw) > 4096:
+                raise ValueError("binding marker exceeds its bound")
+            value = json.loads(raw.decode("utf-8"), object_pairs_hook=_strict_object)
+            if (not isinstance(value, dict)
+                    or set(value) != {"schema_version", "native_root_session_id", "cwd"}
+                    or value["schema_version"] != "byq-acp-root-binding.v1"
+                    or value["native_root_session_id"] != native_session_id
+                    or value["cwd"] != cwd
+                    or (expected_native_session_id is not None
+                        and value["native_root_session_id"] != expected_native_session_id)):
+                raise ValueError("binding marker does not match the ACP root")
+        except (OSError, ValueError, TypeError, UnicodeError, json.JSONDecodeError, RecursionError):
+            raise AcpTransportError("official DSH ACP root binding could not be verified") from None
 
     @staticmethod
     def _select_route(
@@ -842,11 +959,20 @@ class DshAcpCompatibility:
 
 def _session_id(value: object, *, expected: str | None = None) -> str:
     session_id = value.get("sessionId") if isinstance(value, dict) else None
-    if not isinstance(session_id, str) or not session_id:
+    if not isinstance(session_id, str) or _NATIVE_SESSION_ID_RE.fullmatch(session_id) is None:
         raise AcpTransportError("official DSH ACP did not return a native session identity")
     if expected is not None and session_id != expected:
         raise AcpTransportError("official DSH ACP resumed a different native session")
     return session_id
+
+
+def _strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON key")
+        result[key] = value
+    return result
 
 
 def _domain_arguments(name: object, raw_input: object) -> dict[str, Any] | None:

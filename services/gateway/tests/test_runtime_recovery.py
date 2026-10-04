@@ -91,6 +91,14 @@ def test_restore_transfers_exact_backend_proof_before_adapter_recovery(monkeypat
         return binding
 
     monkeypatch.setattr(main, "_adapter_get", adapter_get)
+    monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda *_args, **_kwargs: (
+        order.append("roots") or {"schema_version": "byq-business-root-status.v1", "roots": [{
+            "root_run_id": ROOT_ID, "status": "active", "authority_status": "authority_revoked_unconfirmed",
+            "terminal_sequence": None, "terminal_event_sha256": None,
+            "terminal_acp_ingress_sequence": None, "terminal_acp_ingress_sha256": None,
+            "terminal_unknown_claim_count": None, "terminal_unknown_claims_sha256": None,
+        }]}
+    ))
     transfer_receipt = {
         "schema_version": "byq-runtime-root-authority-transfer-receipt.v1",
         "root_run_id": ROOT_ID,
@@ -134,7 +142,7 @@ def test_restore_transfers_exact_backend_proof_before_adapter_recovery(monkeypat
     restored = main._restore_product_session(CONVERSATION_ID, PRINCIPAL, WORKSPACE_ID)
 
     assert restored.boot_id == NEW_BOOT_ID
-    assert order == ["attach", "binding", "transfer", "recover"]
+    assert order == ["attach", "binding", "roots", "transfer", "recover"]
     assert transfer_calls == [(
         f"{main.BACKEND_URL}/internal/runtime-authority/roots/{ROOT_ID}/transfer",
         {
@@ -178,6 +186,10 @@ def test_settled_recovery_requires_backend_terminal_ack_match(monkeypatch, tmp_p
                 "authority_status": "closed",
                 "terminal_sequence": 9,
                 "terminal_event_sha256": "d" * 64,
+                "terminal_acp_ingress_sequence": 0,
+                "terminal_acp_ingress_sha256": "a" * 64,
+                "terminal_unknown_claim_count": 0,
+                "terminal_unknown_claims_sha256": "e" * 64,
             }],
         }
     ))
@@ -211,6 +223,76 @@ def test_settled_recovery_requires_backend_terminal_ack_match(monkeypatch, tmp_p
         f"/internal/runtime/sessions/{SESSION_ID}/recover",
         {"receipt": binding["settlement_receipt"], "initial_sequence": 5},
     )
+
+
+def test_settled_acp_recovery_requires_frozen_backend_cursor_and_no_unknown_claim(monkeypatch) -> None:
+    session = main.ProductSession(CONVERSATION_ID, SESSION_ID, TRACE_ID, PRINCIPAL, WORKSPACE_ID)
+    binding = _binding("settled")
+    row = {"root_run_id": ROOT_ID, "status": "failed", "authority_status": "closed",
+           "terminal_sequence": 9, "terminal_event_sha256": "d" * 64,
+           "terminal_acp_ingress_sequence": 0, "terminal_acp_ingress_sha256": "a" * 64,
+           "terminal_unknown_claim_count": 0, "terminal_unknown_claims_sha256": "e" * 64}
+    monkeypatch.setattr(main, "_runtime_root_rows", lambda _session: [row])
+    assert main._verify_settled_recovery_binding(binding, session) == binding["settlement_receipt"]
+    for altered in ({**row, "terminal_acp_ingress_sequence": None},
+                    {**row, "terminal_unknown_claim_count": 1}):
+        monkeypatch.setattr(main, "_runtime_root_rows", lambda _session, value=altered: [value])
+        with pytest.raises(main.ProductError):
+            main._verify_settled_recovery_binding(binding, session)
+
+
+def test_backend_closed_before_adapter_ack_recovers_without_transfer_or_prompt(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    store = TraceStore(tmp_path)
+    terminal = {**_trace_event(9), "kind": "session.failed",
+                "payload": {"run_id": ROOT_ID, "code": "runtime-interrupted"}}
+    store.append(terminal)
+    monkeypatch.setattr(main, "trace_store", store)
+    monkeypatch.setattr(main, "_catalog_request", _conversation_catalog)
+    monkeypatch.setattr(main, "_adapter_get", lambda *_args, **_kwargs: _binding("transfer_required"))
+    receipt = main.lifecycle_receipt(main.project_lifecycle_event(terminal, SESSION_ID, TRACE_ID))
+    row = {"root_run_id": ROOT_ID, "status": "failed", "authority_status": "closed",
+           "terminal_sequence": receipt["sequence"], "terminal_event_sha256": receipt["event_sha256"],
+           "terminal_acp_ingress_sequence": 1, "terminal_acp_ingress_sha256": "a" * 64,
+           "terminal_unknown_claim_count": 0, "terminal_unknown_claims_sha256": "e" * 64}
+    monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda *_args, **_kwargs: {
+        "schema_version": "byq-business-root-status.v1", "roots": [row]})
+    calls: list[tuple[str, object]] = []
+    def adapter_post(path, *, payload=None, timeout=20.0):
+        calls.append((path, payload))
+        if payload and payload.get("attach_live_only") is True:
+            raise main.HTTPException(status_code=404, detail="runtime session not found")
+        return {"session_id": SESSION_ID, "trace_id": TRACE_ID, "boot_id": NEW_BOOT_ID,
+                "status": "idle", "active_prompt": False, "continuity": "reattached",
+                "resumed_from_run_id": None}
+    monkeypatch.setattr(main, "_adapter_post", adapter_post)
+    monkeypatch.setattr(main.httpx, "post", lambda *_args, **_kwargs: pytest.fail("closed root must not transfer"))
+    monkeypatch.setattr(main, "_start_trace_collector", lambda _session: None)
+    assert main._restore_product_session(CONVERSATION_ID, PRINCIPAL, WORKSPACE_ID).boot_id == NEW_BOOT_ID
+    assert calls[-1] == (f"/internal/runtime/sessions/{SESSION_ID}/recover",
+                          {"receipt": receipt, "initial_sequence": 9})
+
+
+def test_backend_root_status_rejects_partial_or_unknown_terminal_snapshot(monkeypatch) -> None:
+    session = main.ProductSession(CONVERSATION_ID, SESSION_ID, TRACE_ID, PRINCIPAL, WORKSPACE_ID)
+    row = {"root_run_id": ROOT_ID, "status": "completed", "authority_status": "closed",
+           "terminal_sequence": 3, "terminal_event_sha256": "d" * 64,
+           "terminal_acp_ingress_sequence": 2, "terminal_acp_ingress_sha256": "a" * 64,
+           "terminal_unknown_claim_count": 0, "terminal_unknown_claims_sha256": "e" * 64}
+    def project(value):
+        monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda *_args, **_kwargs: {
+            "schema_version": "byq-business-root-status.v1", "roots": [value]})
+        return main._runtime_root_rows(session)
+    assert project(row) == [row]
+    legacy = {**row, "terminal_acp_ingress_sequence": None,
+              "terminal_acp_ingress_sha256": None,
+              "terminal_unknown_claim_count": None,
+              "terminal_unknown_claims_sha256": None}
+    assert project(legacy) == [legacy]
+    with pytest.raises(main.HTTPException):
+        project({**row, "terminal_acp_ingress_sha256": None})
+    with pytest.raises(main.HTTPException):
+        project({**row, "terminal_unknown_claim_count": -1})
 
 
 def test_missing_recovery_binding_needs_zero_backend_roots_before_fresh_shell(monkeypatch, tmp_path: Path) -> None:

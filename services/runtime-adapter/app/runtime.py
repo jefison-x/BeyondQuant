@@ -1635,10 +1635,22 @@ class RuntimeAdapter:
             raise SessionConflict("recovery event sequence is not proven")
         if binding["domain_call_sequence"] != binding["domain_call_drained_sequence"]:
             raise SessionConflict("undrained domain-call evidence blocks recovery")
-        settled = binding["settlement_receipt"] is not None
-        if settled:
+        persisted_settled = binding["settlement_receipt"] is not None
+        if persisted_settled:
             if receipt != binding["settlement_receipt"]:
                 raise SessionConflict("settled root receipt mismatch")
+        elif (isinstance(receipt, dict)
+              and set(receipt) == {"schema_version", "root_run_id", "sequence", "event_sha256"}
+              and receipt.get("schema_version") == "agent-run-lifecycle-receipt.v1"
+              and receipt.get("root_run_id") == binding["root_run_id"]
+              and type(receipt.get("sequence")) is int and receipt["sequence"] > 0
+              and isinstance(receipt.get("event_sha256"), str)
+              and re.fullmatch(r"[0-9a-f]{64}", receipt["event_sha256"])):
+            # Gateway proved Backend closed this root just before the old
+            # Adapter could persist its terminal ACK. Reattach the public
+            # session without replaying the ACP prompt or transferring a
+            # root that Backend already closed.
+            pass
         else:
             expected = {
                 "schema_version": "byq-runtime-root-authority-transfer-receipt.v1",
@@ -1651,6 +1663,7 @@ class RuntimeAdapter:
             }
             if receipt != expected:
                 raise SessionConflict("Backend root transfer receipt mismatch")
+        settled = persisted_settled or receipt.get("schema_version") == "agent-run-lifecycle-receipt.v1"
         model_resolution = self._resolve_model(
             owner_principal=binding["owner_principal"],
             session_id=session_id, trace_id=binding["trace_id"],
@@ -1667,7 +1680,7 @@ class RuntimeAdapter:
             model_resolution=model_resolution, status=SessionStatus.IDLE,
             sequence=initial_sequence, continuity=continuity.REATTACHED,
             authority_epoch=self.require_current_backend_authority(),
-            recovery_cwd=binding["cwd"], settlement_receipt=binding["settlement_receipt"],
+            recovery_cwd=binding["cwd"], settlement_receipt=dict(receipt) if settled else None,
             domain_call_sequence=binding["domain_call_sequence"],
             domain_call_drained_sequence=binding["domain_call_drained_sequence"],
         )
@@ -1686,6 +1699,7 @@ class RuntimeAdapter:
                 model_resolution=model_resolution,
                 runtime_generation=binding["runtime_generation"],
                 root_run_id=binding["root_run_id"],
+                native_root_session_id=binding["native_session_id"],
             )
             try:
                 self._compatibility.start(harness)
@@ -1695,6 +1709,9 @@ class RuntimeAdapter:
                     raise SessionConflict("ACP resumed another native session")
             finally:
                 self._compatibility.close(harness)
+        if settled and not persisted_settled:
+            with record.lock:
+                self._persist_acp_binding(record)
         with self._lock:
             if session_id in self._sessions:
                 raise SessionConflict("BYQ session already exists in this Adapter boot")
@@ -1924,6 +1941,7 @@ class RuntimeAdapter:
         model_resolution: dict[str, object],
         runtime_generation: str,
         root_run_id: str = "",
+        native_root_session_id: str | None = None,
         continuation_budget: dict | None = None,
         continuation_proxy_url: str | None = None,
         continuation_deadline_epoch_ms: int | None = None,
@@ -1956,6 +1974,18 @@ class RuntimeAdapter:
             "BYQ_DSH_RUN_ID": runtime_generation,
             "BYQ_ROOT_RUN_ID": root_run_id,
         }
+        # ACP owns MCP identity inside DSH's official per-Agent composition.
+        # These credentials are passed only to that pinned candidate; the ACP
+        # transport strips the legacy execution bearer and Backend proof token
+        # before starting DSH. A resumed root additionally pins its persisted
+        # native session identity before DSH restores it.
+        if self._acp:
+            environment["BYQ_MCP_ACP_DISCOVERY_TOKEN"] = os.environ.get(
+                "BYQ_MCP_ACP_DISCOVERY_TOKEN", "")
+            environment["BYQ_MCP_ACP_SIGNING_KEY"] = os.environ.get(
+                "BYQ_MCP_ACP_SIGNING_KEY", "")
+            if native_root_session_id is not None:
+                environment["BYQ_NATIVE_ROOT_SESSION_ID"] = native_root_session_id
         # The provider credential enters only the adapter-owned SDK child
         # environment. It is never returned in readiness, lifecycle responses,
         # trace payloads, or exception details.
@@ -2118,7 +2148,11 @@ class RuntimeAdapter:
                         threading.Thread(target=self._enforce_run_guards,
                             args=(record, run), kwargs={"now": time.monotonic()}, daemon=True,
                             name="byq-domain-stop").start()
-                if (self._root_scoped and source_run is run and runtime_activity and not run.domain_stop_code
+                # ACP child tool updates do not reach this parent stream. Its
+                # domain proof is durably recorded by MCP/Backend for both root
+                # and child, so do not create a second, in-memory-only Adapter
+                # evidence cursor that cannot be drained after process restart.
+                if (self._root_scoped and not self._acp and source_run is run and runtime_activity and not run.domain_stop_code
                         and observation.domain_arguments is not None and observation.event_sequence is not None
                         and record.process_root_id == run.run_id):
                     try:
@@ -2134,8 +2168,6 @@ class RuntimeAdapter:
                         validate_call_evidence(observed_call)
                         record.domain_call_evidence.append(observed_call)
                         record.domain_call_sequence = observed_call["sequence"]
-                        if self._acp:
-                            self._persist_acp_binding(record)
                 if (runtime_activity and observation.registration_key and record.owner_principal
                         and record.workspace_id and record.runtime_generation):
                     fingerprint = registration_fingerprint(

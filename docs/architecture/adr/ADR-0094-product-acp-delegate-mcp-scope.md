@@ -23,7 +23,7 @@ The fixed ACP source filters notifications to its owned root session. In-process
 
 An independent second keyless probe of the exact official ACP bridge used two separate DSH processes with process-global root-scoped MCP configuration. Root and spawned child in each process saw the BYQ tool, the child's exact `toolFilter` succeeded, and the two processes sent only their own synthetic bearer headers. **That narrow mount/access result is PASS.** The same probe found child `tool/call` and `tool/result` with a stable child call ID in the native child log, but **no corresponding child `session/update` in the parent ACP stream**. Thus BYQ's required pre-execution domain-call evidence remains FAIL. Process-level MCP mounting alone cannot qualify the Product upgrade.
 
-The remaining design options require a separately accepted, concrete proof contract: obtain official DSH ACP child event projection in a fixed future candidate (without forking or silently changing this pinned candidate), or move exact pre-execution evidence to a trusted BYQ MCP/Backend boundary with root/child attribution, idempotency and unknown-outcome preservation. Neither option is implemented or accepted here. The current `0.1.5rc1` Product runtime remains the deployable baseline. Do not add a BYQ Agent harness or fork DSH.
+At this probe stage the remaining design options were: obtain official DSH ACP child event projection in a fixed future candidate (without forking or silently changing this pinned candidate), or move exact pre-execution evidence to a trusted BYQ MCP/Backend boundary with root/child attribution, idempotency and unknown-outcome preservation. The latter contract is accepted below; the keyless probe itself did not qualify implementation. The current `0.1.5rc1` Product runtime remains the deployable baseline until end-to-end qualification. Do not add a BYQ Agent harness or fork DSH.
 
 ## Candidate resolution: official per-Agent MCP scopes and ingress proof
 
@@ -130,19 +130,57 @@ or bound ACP marker on the root requires ACP evidence for domain claims; it
 cannot fall through the old SDK evidence path. Exact retries return the same
 receipt, while altered identity or input conflicts.
 
-For a consequential domain tool, MCP observes the actual validated arguments
-before invoking its handler. Backend computes the existing bounded canonical
-request and input digests, verifies the native Agent binding and authority,
-and durably returns a unique ingress observation receipt. Only that receipt
-may satisfy the existing claim-before-execution path. Raw arguments are not
-stored in the evidence ledger. Timeouts or uncertain responses stop dispatch
-without automatic replay; an already claimed outcome stays unknown until
-exact reconciliation. Backend's persisted evidence cursor and terminal
-sequence/digest govern restart and next-root admission.
+For every Product MCP tool that enters Backend, MCP observes the actual
+validated arguments before invoking its handler. Backend verifies the native
+Agent binding and authority, stores only a bounded canonical argument digest,
+and durably returns a unique ingress receipt in a pending state. The existing
+four consequential domain actions additionally use their canonical request
+and input digests and claim-before-execution receipt. Raw arguments are not
+stored in the evidence ledger.
+
+The ingress receipt remains pending until MCP proves that its handler has
+finished and submits an exact settlement. A lost response, timeout, uncertain
+write, or lost MCP process remains pending or unknown; elapsed time never
+means the business effect was absent, and no interrupted call is replayed
+automatically. Backend serializes ingress, settlement and root close under the
+same root lock. It refuses terminal close or authority transfer while any
+ingress, native Agent binding, or consequential domain claim is unresolved.
+If MCP receives no valid observation receipt **before entering the handler**,
+it may send one exact `abort_before_dispatch` using the original request ID,
+signed scope, native lineage, tool name and validated arguments. Backend
+recomputes the argument digest under the same request/root locks. An existing
+pending observation becomes durably aborted; if the observation has not yet
+arrived, Backend stores a terminal tombstone that rejects a delayed observe.
+The abort cannot reclassify a settled or unknown handler result. A lost abort
+response or MCP crash before the abort remains fail closed until exact
+reconciliation; no timeout expiry clears pending evidence.
+A successful close freezes the bounded ingress
+high-water cursor and digest, including each settled or aborted outcome and
+settlement hash, together with the exact terminal sequence and
+digest. A later old-root request cannot be dispatched, and the next root
+requires the confirmed Backend terminal receipt. Restart reconciliation uses
+the persisted receipts and preserves uncertain outcomes until exact
+operation-specific reconciliation or trusted operator resolution.
 
 The candidate Compose overlay supplies these credentials only to the services
 that use them. Secret values remain outside Git. The old SDK image and
 configuration remain the exact rollback set.
+
+## Fixed-source qualification finding after acceptance
+
+The official `tools.restrict` contract filters inherited global tools but
+deliberately keeps registrations made in the Agent's own scope visible. The
+accepted per-Agent MCP client registers the complete BYQ catalog in that
+scope. A keyless fixed-source probe therefore found `byq_strategy_validate`
+model-visible in root and child catalogs despite the continuation restriction
+and child `toolFilter`. A pre-execute guard can still deny dispatch, but the
+bounded `research-judgment-turn` has a separate Accepted ADR-0085 obligation
+to **not expose** write, approval, execution or routing tools in its model
+catalog. The exact role path and a supported filter mechanism remain to be
+qualified. This ADR does not waive ADR-0085; until the role's catalog is
+proved bounded, the Product ACP candidate cannot be promoted. Do not insert
+a speculative compatibility wrapper or fork the fixed official DSH source.
+
 ## Decision and promotion boundary
 
 The maintainer's acceptance of ADR-0093 approved **same-root Backend authority
