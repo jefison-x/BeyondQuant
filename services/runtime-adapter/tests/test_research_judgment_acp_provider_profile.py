@@ -80,13 +80,14 @@ def test_user_binding_requires_nonsecret_credential_versions():
     user = {**RESOLUTION, "source": "user_binding", "provider": "opencode-go-chat"}
     with pytest.raises(ValueError, match="stable nonsecret version"):
         build_provider_profile(BEGIN, user)
-    user.update({"profile_id": "profile_1", "profile_version": 2,
-                 "credential_id": "cred_1", "credential_version": 3,
+    user.update({"profile_id": "profile_" + "1" * 32, "profile_version": 2,
+                 "credential_id": "cred_" + "2" * 32, "credential_version": 3,
                  "binding_version": 4})
     profile = build_provider_profile(BEGIN, user).public
     assert profile["credential_reference"] == {
-        "source": "user_binding", "profile_id": "profile_1", "profile_version": 2,
-        "credential_id": "cred_1", "credential_version": 3,
+        "source": "user_binding", "profile_id": "profile_" + "1" * 32,
+        "profile_version": 2,
+        "credential_id": "cred_" + "2" * 32, "credential_version": 3,
         "binding_version": 4,
     }
     assert profile["provider_route"] == "opencode-go-chat"

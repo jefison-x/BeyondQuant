@@ -14,42 +14,59 @@ import urllib.request
 import pytest
 
 from app.research_judgment_acp_journal import AcpJudgmentJournal
+from app.research_judgment_acp_provider_profile import (
+    AcpJudgmentProviderProfile, build_provider_profile,
+)
 from app.research_judgment_acp_provider_proxy import (
     AcpJudgmentProviderProxy, ProviderHttpResponse, _IsolatedHttpsTransport,
 )
 from app.research_judgment_acp_provider_routes import selected_route
+from app.research_judgment_boundary import derive_call_identity
 
 
 TASK = "task_" + "a" * 32
-CALL = "byq-judgment-" + "d" * 32
+CALL = derive_call_identity(TASK, "1:strategy_draft:1")
 ROOT = "b" * 32
 BOOT = "c" * 32
 NATIVE = "00000000-0000-4000-8000-000000000001"
 
 
-def _ready(tmp_path):
+def _ready(tmp_path, *, route_name="opencode-go-chat"):
     directory = tmp_path / "control"
     directory.mkdir(mode=0o700)
     journal = AcpJudgmentJournal(
         directory, TASK, CALL, backend_url="http://backend",
         authority_headers={"authorization": "Bearer synthetic-runtime-authority"})
-    journal.record_begin({"task_id": TASK, "status": "admitted", "created": True,
-                          "call_identity": CALL, "attempt_binding": "1:strategy_draft:1",
-                          "root": {"root_run_id": ROOT, "runtime_boot_id": BOOT,
-                                   "authority_epoch": 1, "dsh_run_id": "byqjudg-" + "f" * 32}})
+    begin = {"schema_version": "byq-research-judgment-acp-root-receipt.v1",
+             "task_id": TASK, "status": "admitted", "created": True,
+             "call_identity": CALL, "attempt_binding": "1:strategy_draft:1",
+             "stage": "strategy_draft", "plan_version": 1, "task_version": 1,
+             "iteration": 1, "call_index": 1, "model_call_limit": 2,
+             "root": {"root_run_id": ROOT, "runtime_boot_id": BOOT,
+                      "authority_epoch": 1, "dsh_run_id": "byqjudg-" + "f" * 32,
+                      "owner_principal": "alice", "workspace_id": "workspace-alice",
+                      "session_id": "session-1", "trace_id": "trace-1",
+                      "actor_principal": "byq-product-agent-session-1"}}
+    journal.record_begin(begin)
     journal.record_binding({"schema_version": "byq-acp-agent-bind-receipt.v1",
                             "status": "bound", "root_run_id": ROOT,
                             "runtime_boot_id": BOOT, "origin": "root", "depth": 0,
                             "native_agent_session_id": NATIVE,
                             "native_parent_session_id": None,
                             "agent_run_id": "agent_run_" + "e" * 32})
-    journal.mark_prompt_may_dispatch()
     limits = {"max_calls": 2, "max_input_bytes": 1024,
               "max_total_input_bytes": 2048, "max_output_tokens": 32,
               "max_total_output_tokens": 64,
               "max_tool_payload_bytes": 1024,
               "max_total_tool_payload_bytes": 2048,
               "deadline_at_ms": int(time.time() * 1000) + 10000}
+    profile = build_provider_profile(begin, {
+        "source": "environment", "provider": route_name,
+        "model": "synthetic-model", "api_key": "synthetic-key"})
+    public = {**profile.public, "limits": limits}
+    journal.record_provider_profile(AcpJudgmentProviderProfile(
+        json.dumps(public).encode(), profile.upstream_credential))
+    journal.mark_prompt_may_dispatch()
     return journal, limits
 
 
@@ -106,7 +123,7 @@ def _route_sse(protocol):
     "opencode-zen-messages",
 ])
 def test_all_selected_proxy_routes_use_exact_upstream_and_headers(tmp_path, route_name):
-    journal, limits = _ready(tmp_path)
+    journal, limits = _ready(tmp_path, route_name=route_name)
     route = selected_route(route_name)
     sent = []
 

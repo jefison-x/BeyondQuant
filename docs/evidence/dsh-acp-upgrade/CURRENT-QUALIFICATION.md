@@ -79,9 +79,12 @@ credentials require stable nonsecret versions. Backend now returns profile,
 credential and binding IDs/versions from one resolver query, and Adapter keeps
 them in private resolution: independent Tester ran 3/3 focused Backend DB tests
 in a new tmpfs PostgreSQL container, while Root ran the existing Adapter
-personal binding test 1/1 in an offline read-only image. The builder is not
-yet written to the journal or connected to the ACP entry, and the old
-three-call ceiling has not
+personal binding test 1/1 in an offline read-only image. The journal now has
+an unwired strict profile freeze: exact root match, closed nonsecret snapshot,
+named stage budget ceiling, and no prompt/provider attempt without a frozen
+profile. Root's focused journal/control/profile tests passed 41/41 and
+the seven-route local proxy file passed 21/21. The builder and freeze method
+are not connected to the ACP entry, and the old three-call ceiling has not
 been measured against the dedicated ACP root. Receipt origin, current Backend
 authority, and credential resolution ownership remain unproven.
 

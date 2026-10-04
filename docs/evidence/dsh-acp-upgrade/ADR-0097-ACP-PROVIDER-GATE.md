@@ -196,8 +196,15 @@ personal binding test passed 1/1 in an offline read-only rollback image. Ten
 focused pure profile tests passed. This
 does not prove receipt origin, current Backend authority, or that resolution
 belongs to the admitted owner/session.
-This builder is not yet journaled or used by the ACP entry; it does not make
-caller-selected proxy settings trustworthy by itself. The old three-call
+The existing private journal now has an unwired strict freeze method for this
+public profile. It matches the admitted root fields, limits the budget to the
+named stage profile and 180-second deadline, rejects secret-bearing fields,
+and prevents prompt dispatch and provider attempts without a frozen profile.
+Each attempt must match its frozen route and limits. Root's narrow journal,
+control and profile tests passed 41/41; the existing seven-route proxy
+loopback file passed 21/21 under the freeze. The builder and freeze method
+are not yet used by the ACP entry; they do not prove Backend receipt origin or
+bind the live proxy, overlay and ACP child. The old three-call
 stage profile is a conservative ceiling from the former root-child-root path,
 not an ACP dedicated-root request-shape qualification.
 Actual HTTPS redirect, partial-body, size and deadline negatives remain

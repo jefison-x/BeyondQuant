@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 from packages.contracts.agent_run_lifecycle import lifecycle_receipt
+from packages.contracts.research_request_budget import profile_for_stage
 from packages.contracts.research_judgment import validate_acp_judgment_result_request
 
 from .research_judgment_acp_control import (
@@ -32,6 +33,14 @@ _PROVIDER_LIMIT_KEYS = frozenset({"max_calls", "max_input_bytes", "max_total_inp
                                   "max_output_tokens", "max_total_output_tokens",
                                   "max_tool_payload_bytes", "max_total_tool_payload_bytes",
                                   "deadline_at_ms"})
+_PROVIDER_PROFILE_KEYS = frozenset({
+    "schema_version", "task_id", "call_identity", "attempt_binding",
+    "plan_version", "task_version", "stage", "iteration", "call_index",
+    "model_call_limit", "root_run_id", "runtime_boot_id", "authority_epoch",
+    "dsh_run_id", "owner_principal", "workspace_id", "actor_principal",
+    "session_id", "trace_id", "provider_route", "model",
+    "credential_reference", "budget_profile_id", "limits",
+})
 
 
 def _provider_limits(value: dict) -> dict:
@@ -46,6 +55,17 @@ def _provider_limits(value: dict) -> dict:
             or value["max_total_tool_payload_bytes"] > 32 * 1024 * 1024):
         raise ValueError("closed ACP provider limits are required")
     return dict(value)
+
+
+def _contains_secret(value: object, secret: str) -> bool:
+    if isinstance(value, str):
+        return secret in value
+    if isinstance(value, dict):
+        return any(_contains_secret(key, secret) or _contains_secret(item, secret)
+                   for key, item in value.items())
+    if isinstance(value, list):
+        return any(_contains_secret(item, secret) for item in value)
+    return False
 
 
 class AcpJudgmentJournal:
@@ -197,10 +217,90 @@ class AcpJudgmentJournal:
 
         return self._locked(save)
 
+    def record_provider_profile(self, profile) -> dict:
+        """Freeze the nonsecret selected provider under the exact admitted root.
+
+        This method is not yet called by the ACP entry. The credential stays in
+        Adapter memory; only its nonsecret identity/version is persisted.
+        """
+        from .research_judgment_acp_provider_profile import AcpJudgmentProviderProfile
+
+        if not isinstance(profile, AcpJudgmentProviderProfile):
+            raise ValueError("built ACP provider profile is required")
+        public = profile.public
+        if not isinstance(public, dict):
+            raise ValueError("exact nonsecret ACP provider profile is required")
+        reference = public.get("credential_reference")
+        if (set(public) != _PROVIDER_PROFILE_KEYS
+                or not isinstance(profile.upstream_credential, str)
+                or not profile.upstream_credential
+                or _contains_secret(public, profile.upstream_credential)
+                or public.get("schema_version") != "byq-acp-judgment-provider-profile.v1"
+                or not isinstance(reference, dict)
+                or set(reference) != ({"source"} if reference.get("source") == "environment"
+                                     else {"source", "profile_id", "profile_version",
+                                           "credential_id", "credential_version",
+                                           "binding_version"})
+                or reference.get("source") not in {"environment", "user_binding"}
+                or not isinstance(public.get("provider_route"), str)
+                or not isinstance(public.get("model"), str)
+                or not public["model"] or len(public["model"]) > 128
+                or any(ord(char) < 32 for char in public["model"])):
+            raise ValueError("exact nonsecret ACP provider profile is required")
+        limits = _provider_limits(public.get("limits"))
+        named = profile_for_stage(public.get("stage"), profile=public.get("budget_profile_id"))
+        ceiling = {
+            "max_calls": min(named["max_provider_calls"], named["max_attempts"]),
+            "max_input_bytes": named["max_input_bytes"],
+            "max_total_input_bytes": named["max_input_bytes"],
+            "max_output_tokens": named["max_output_tokens"],
+            "max_total_output_tokens": named["max_output_tokens"],
+            "max_tool_payload_bytes": named["max_tool_payload_bytes"],
+            "max_total_tool_payload_bytes": named["max_tool_payload_bytes"],
+        }
+        if (any(limits[key] > maximum for key, maximum in ceiling.items())
+                or limits["deadline_at_ms"] > int(time.time() * 1000) + named["deadline_ms"]
+                or (reference["source"] == "user_binding" and (
+                    not isinstance(reference["profile_id"], str)
+                    or re.fullmatch(r"profile_[0-9a-f]{32}", reference["profile_id"]) is None
+                    or not isinstance(reference["credential_id"], str)
+                    or re.fullmatch(r"cred_[0-9a-f]{32}", reference["credential_id"]) is None
+                    or any(type(reference[key]) is not int or reference[key] <= 0
+                           for key in ("profile_version", "credential_version",
+                                       "binding_version"))))):
+            raise ValueError("provider profile exceeds named budget or has invalid credential reference")
+
+        def save(value):
+            if value is None or value.get("phase") not in {"begun", "bound"}:
+                raise AcpJudgmentOutcomeUnknown("judgment provider profile must precede prompt dispatch")
+            begin = value["begin"]
+            root = begin["root"]
+            for field in ("task_id", "call_identity", "attempt_binding", "plan_version",
+                          "task_version", "stage", "iteration", "call_index",
+                          "model_call_limit"):
+                if public.get(field) != begin.get(field):
+                    raise AcpJudgmentOutcomeUnknown("provider profile differs from Backend admission")
+            for field in ("root_run_id", "runtime_boot_id", "authority_epoch",
+                          "dsh_run_id", "owner_principal", "workspace_id",
+                          "actor_principal", "session_id", "trace_id"):
+                if public.get(field) != root.get(field):
+                    raise AcpJudgmentOutcomeUnknown("provider profile differs from Backend root")
+            if value.get("provider_profile") is not None:
+                if value["provider_profile"] != public:
+                    raise AcpJudgmentOutcomeUnknown("judgment provider profile changed")
+                return value
+            value = {**value, "provider_profile": public, "provider_limits": limits}
+            self._write(value)
+            return value
+
+        return self._locked(save)
+
     def mark_prompt_may_dispatch(self) -> dict:
         def save(value):
             if value is None or value.get("phase") != "bound":
                 raise AcpJudgmentOutcomeUnknown("judgment prompt may already have been dispatched")
+            if value.get("provider_profile") is None:
+                raise AcpJudgmentOutcomeUnknown("judgment provider profile is not frozen")
             value = {**value, "phase": "prompt_may_have_dispatched"}
             self._write(value)
             return value
@@ -236,6 +336,11 @@ class AcpJudgmentJournal:
                 raise AcpJudgmentOutcomeUnknown("previous provider attempt is unknown")
             if value.get("provider_limits") not in (None, limits):
                 raise AcpJudgmentOutcomeUnknown("provider limits changed within root")
+            profile = value.get("provider_profile")
+            if profile is None or (
+                    route != profile.get("provider_route")
+                    or limits != profile.get("limits")):
+                raise AcpJudgmentOutcomeUnknown("provider request differs from frozen root profile")
             if (now_ms >= limits["deadline_at_ms"]
                     or len(attempts) >= limits["max_calls"]
                     or len(body) > limits["max_input_bytes"]
@@ -313,6 +418,8 @@ class AcpJudgmentJournal:
             if value is None or value.get("phase") not in {
                     "prompt_may_have_dispatched", "result_prepared"}:
                 raise AcpJudgmentOutcomeUnknown("judgment result has no dispatched prompt")
+            if value.get("provider_profile") is None:
+                raise AcpJudgmentOutcomeUnknown("judgment result has no frozen provider profile")
             attempts = value.get("provider_attempts")
             if (not isinstance(attempts, list) or not attempts
                     or any(not isinstance(row, dict) or row.get("phase") != "completed"

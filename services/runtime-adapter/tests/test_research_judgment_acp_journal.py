@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import json
 import stat
+import time
 
 import pytest
 
@@ -11,23 +13,33 @@ from app.research_judgment_acp_control import (
     AcpJudgmentOutcomeUnknown, result_request, result_request_sha256,
 )
 from app.research_judgment_acp_journal import AcpJudgmentJournal
+from app.research_judgment_acp_provider_profile import (
+    AcpJudgmentProviderProfile, build_provider_profile,
+)
 from app.research_judgment_acp_provider_usage import AcpProviderStreamReceipt
+from app.research_judgment_boundary import derive_call_identity
 from packages.contracts.agent_run_lifecycle import lifecycle_receipt
 
 
 TASK = "task_" + "a" * 32
 ROOT = "b" * 32
 BOOT = "c" * 32
-CALL = "byq-judgment-" + "d" * 32
+CALL = derive_call_identity(TASK, "1:strategy_draft:1")
 NATIVE = "00000000-0000-4000-8000-000000000001"
 BINDING = {"schema_version": "byq-acp-agent-bind-receipt.v1", "status": "bound",
            "root_run_id": ROOT, "runtime_boot_id": BOOT, "origin": "root", "depth": 0,
            "native_agent_session_id": NATIVE, "native_parent_session_id": None,
            "agent_run_id": "agent_run_" + "e" * 32}
-BEGIN = {"task_id": TASK, "status": "admitted", "created": True, "call_identity": CALL,
+BEGIN = {"schema_version": "byq-research-judgment-acp-root-receipt.v1",
+         "task_id": TASK, "status": "admitted", "created": True, "call_identity": CALL,
          "attempt_binding": "1:strategy_draft:1",
+         "stage": "strategy_draft", "plan_version": 1, "task_version": 1,
+         "iteration": 1, "call_index": 1, "model_call_limit": 2,
          "root": {"root_run_id": ROOT, "runtime_boot_id": BOOT,
-                  "authority_epoch": 1, "dsh_run_id": "byqjudg-" + "f" * 32}}
+                  "authority_epoch": 1, "dsh_run_id": "byqjudg-" + "f" * 32,
+                  "owner_principal": "alice", "workspace_id": "workspace-alice",
+                  "session_id": "session-1", "trace_id": "trace-1",
+                  "actor_principal": "byq-product-agent-session-1"}}
 RESULT_RECEIPT = {"schema_version": "research-judgment-result-receipt.v1",
                   "call_identity": CALL, "proposal": None, "progress": {"outcome": "no_progress"}}
 TERMINAL = lifecycle_receipt({"schema_version": "agent-run-lifecycle.v1",
@@ -69,19 +81,109 @@ def _status(request, *, closed=False):
             "terminal_unknown_claims_sha256": "b" * 64 if closed else None}
 
 
+def _freeze_fixture_profile(journal, limits, *, route="deepseek-official"):
+    """Synthetic small limits for the legacy journal boundary fixtures."""
+    begin = journal.snapshot()["begin"]
+    profile = build_provider_profile({**begin, "created": True}, {
+        "source": "environment", "provider": route,
+        "model": "synthetic-model", "api_key": "synthetic-secret"})
+    public = {**profile.public, "limits": limits}
+    journal.record_provider_profile(AcpJudgmentProviderProfile(
+        json.dumps(public).encode(), "synthetic-secret"))
+
+
+def _small_limits():
+    return {"max_calls": 1, "max_input_bytes": 1000,
+            "max_total_input_bytes": 1000, "max_output_tokens": 32,
+            "max_total_output_tokens": 32,
+            "max_tool_payload_bytes": 1000,
+            "max_total_tool_payload_bytes": 1000,
+            "deadline_at_ms": 2000}
+
+
 def _complete_provider(journal):
-    limits = {"max_calls": 1, "max_input_bytes": 1000,
-              "max_total_input_bytes": 1000, "max_output_tokens": 32,
-              "max_total_output_tokens": 32,
-              "max_tool_payload_bytes": 1000,
-              "max_total_tool_payload_bytes": 1000,
-              "deadline_at_ms": 2000}
+    limits = _small_limits()
     journal.reserve_provider_attempt(route="deepseek-official", body=b"synthetic",
                                      declared_output_tokens=16, limits=limits, now_ms=1000)
     journal.settle_provider_attempt(
         index=1, status=200,
         receipt=AcpProviderStreamReceipt("completed", 5, 6, 0, 0),
         transport_complete=True, now_ms=1001)
+
+
+def test_journal_freezes_nonsecret_profile_to_admitted_root_and_provider_requests(tmp_path):
+    task = "task_" + "a" * 32
+    attempt = "1:strategy_draft:1"
+    call = derive_call_identity(task, attempt)
+    begin = {
+        "schema_version": "byq-research-judgment-acp-root-receipt.v1",
+        "task_id": task, "status": "admitted", "created": True,
+        "call_identity": call, "attempt_binding": attempt,
+        "stage": "strategy_draft", "plan_version": 1, "task_version": 1,
+        "iteration": 1, "call_index": 1, "model_call_limit": 2,
+        "root": {"root_run_id": ROOT, "runtime_boot_id": BOOT,
+                 "authority_epoch": 1, "dsh_run_id": "byqjudg-" + "f" * 32,
+                 "owner_principal": "alice", "workspace_id": "workspace-alice",
+                 "session_id": "session-1", "trace_id": "trace-1",
+                 "actor_principal": "byq-product-agent-session-1"},
+    }
+    resolution = {"source": "user_binding", "provider": "deepseek-official",
+                  "model": "selected-model", "api_key": "synthetic-secret",
+                  "profile_id": "profile_" + "1" * 32, "profile_version": 2,
+                  "credential_id": "cred_" + "2" * 32, "credential_version": 3,
+                  "binding_version": 4}
+    directory = tmp_path / "control"
+    directory.mkdir(mode=0o700)
+    journal = AcpJudgmentJournal(
+        directory, task, call, backend_url="http://backend",
+        authority_headers={"authorization": "Bearer synthetic-runtime-authority"})
+    journal.record_begin(begin)
+    profile = build_provider_profile(begin, resolution)
+    future = AcpJudgmentProviderProfile(json.dumps({
+        **profile.public,
+        "limits": {**profile.public["limits"],
+                   "deadline_at_ms": int(time.time() * 1000) + 3600000},
+    }).encode(), "synthetic-secret")
+    with pytest.raises(ValueError, match="named budget"):
+        journal.record_provider_profile(future)
+    secret_model = AcpJudgmentProviderProfile(json.dumps({
+        **profile.public, "model": "synthetic-secret",
+    }).encode(), "synthetic-secret")
+    with pytest.raises(ValueError, match="nonsecret"):
+        journal.record_provider_profile(secret_model)
+    frozen = journal.record_provider_profile(profile)
+    assert frozen["provider_profile"] == profile.public
+    assert frozen["provider_limits"] == profile.public["limits"]
+    assert b"synthetic-secret" not in journal.path.read_bytes()
+    malformed = AcpJudgmentProviderProfile(
+        json.dumps({**profile.public, "api_key": "synthetic-secret"}).encode(),
+        "synthetic-secret")
+    with pytest.raises(ValueError, match="nonsecret"):
+        journal.record_provider_profile(malformed)
+    assert b"synthetic-secret" not in journal.path.read_bytes()
+    assert journal.record_provider_profile(profile) == frozen
+    with pytest.raises(AcpJudgmentOutcomeUnknown, match="profile changed"):
+        journal.record_provider_profile(build_provider_profile(
+            begin, {**resolution, "model": "different-model"}))
+    with pytest.raises(AcpJudgmentOutcomeUnknown, match="Backend root"):
+        journal.record_provider_profile(build_provider_profile(
+            {**begin, "root": {**begin["root"], "root_run_id": "0" * 32}},
+            resolution))
+    journal.record_binding(BINDING)
+    journal.mark_prompt_may_dispatch()
+    limits = profile.public["limits"]
+    with pytest.raises(AcpJudgmentOutcomeUnknown, match="frozen root profile"):
+        journal.reserve_provider_attempt(
+            route="opencode-go-chat", body=b"synthetic",
+            declared_output_tokens=16, limits=limits)
+    with pytest.raises(AcpJudgmentOutcomeUnknown, match="provider limits changed"):
+        journal.reserve_provider_attempt(
+            route="deepseek-official", body=b"synthetic",
+            declared_output_tokens=16, limits={**limits, "max_calls": 2})
+    attempt_row = journal.reserve_provider_attempt(
+        route="deepseek-official", body=b"synthetic",
+        declared_output_tokens=16, limits=limits)
+    assert attempt_row["index"] == 1
 
 
 def test_journal_fsync_phase_order_and_restart_never_replays_prompt(tmp_path):
@@ -91,6 +193,7 @@ def test_journal_fsync_phase_order_and_restart_never_replays_prompt(tmp_path):
     journal.record_binding(BINDING)
     assert stat.S_IMODE(os.stat(journal.path).st_mode) == 0o600
     assert stat.S_IMODE(os.stat(journal.directory).st_mode) == 0o700
+    _freeze_fixture_profile(journal, _small_limits())
     journal.mark_prompt_may_dispatch()
     restarted = AcpJudgmentJournal(journal.directory, TASK, CALL,
                                    backend_url="http://backend",
@@ -111,12 +214,22 @@ def test_journal_fsync_phase_order_and_restart_never_replays_prompt(tmp_path):
     assert restarted.snapshot()["phase"] == "terminal_closed"
 
 
+def test_journal_refuses_prompt_without_frozen_provider_profile(tmp_path):
+    journal, _, _ = _journal(tmp_path)
+    journal.record_begin(BEGIN)
+    journal.record_binding(BINDING)
+    with pytest.raises(AcpJudgmentOutcomeUnknown, match="profile is not frozen"):
+        journal.mark_prompt_may_dispatch()
+    assert journal.snapshot()["phase"] == "bound"
+
+
 def test_journal_rejects_changed_root_and_result_without_overwriting(tmp_path):
     journal, _, _ = _journal(tmp_path)
     journal.record_begin(BEGIN)
     with pytest.raises(AcpJudgmentOutcomeUnknown, match="begin receipt differs"):
         journal.record_begin({**BEGIN, "root": {**BEGIN["root"], "root_run_id": "0" * 32}})
     journal.record_binding(BINDING)
+    _freeze_fixture_profile(journal, _small_limits())
     journal.mark_prompt_may_dispatch()
     _complete_provider(journal)
     request = result_request(TASK, BEGIN, BINDING, NATIVE,
@@ -141,6 +254,7 @@ def test_journal_never_promotes_unproven_backend_result_or_terminal(tmp_path):
     journal, current, _ = _journal(tmp_path)
     journal.record_begin(BEGIN)
     journal.record_binding(BINDING)
+    _freeze_fixture_profile(journal, _small_limits())
     journal.mark_prompt_may_dispatch()
     _complete_provider(journal)
     request = result_request(TASK, BEGIN, BINDING, NATIVE,
@@ -165,6 +279,7 @@ def test_journal_rejects_changed_root_generation_in_prepared_result(tmp_path):
     journal, _, _ = _journal(tmp_path)
     journal.record_begin(BEGIN)
     journal.record_binding(BINDING)
+    _freeze_fixture_profile(journal, _small_limits())
     journal.mark_prompt_may_dispatch()
     _complete_provider(journal)
     request = result_request(TASK, BEGIN, BINDING, NATIVE,
@@ -188,27 +303,29 @@ def test_empty_journal_rejects_replayed_backend_root(tmp_path):
     assert journal.snapshot() is None
 
 
-def _provider_ready(tmp_path):
+def _provider_ready(tmp_path, *, route="opencode-go-chat", override=None):
     journal, _, post = _journal(tmp_path)
     journal.record_begin(BEGIN)
     journal.record_binding(BINDING)
-    journal.mark_prompt_may_dispatch()
     limits = {"max_calls": 2, "max_input_bytes": 1000,
               "max_total_input_bytes": 1500, "max_output_tokens": 32,
               "max_total_output_tokens": 64,
               "max_tool_payload_bytes": 1000,
               "max_total_tool_payload_bytes": 1500,
               "deadline_at_ms": 2000}
+    limits = {**limits, **(override or {})}
+    _freeze_fixture_profile(journal, limits, route=route)
+    journal.mark_prompt_may_dispatch()
     return journal, limits, post
 
 
 def test_provider_attempt_is_fsynced_before_dispatch_and_unknown_after_restart(tmp_path):
-    journal, limits, post = _provider_ready(tmp_path)
+    journal, limits, post = _provider_ready(tmp_path, route="deepseek-official")
     attempt = journal.reserve_provider_attempt(
         route="deepseek-official", body=b'{"synthetic":true}',
         declared_output_tokens=16, limits=limits, now_ms=1000)
     assert attempt["phase"] == "may_have_dispatched"
-    assert "synthetic" not in journal.path.read_text()
+    assert '"synthetic":true' not in journal.path.read_text()
     restarted = AcpJudgmentJournal(journal.directory, TASK, CALL,
                                    backend_url="http://backend",
                                    authority_headers={"authorization": "Bearer synthetic-runtime-authority"},
@@ -287,8 +404,7 @@ def test_unproved_provider_outcome_permanently_blocks_following_call(
 ])
 def test_provider_first_call_bounds_refuse_before_attempt_marker(
         tmp_path, override, body, declared, now_ms):
-    journal, limits, _ = _provider_ready(tmp_path)
-    limits = {**limits, **override}
+    journal, limits, _ = _provider_ready(tmp_path, override=override)
     with pytest.raises(AcpJudgmentOutcomeUnknown, match="budget exhausted"):
         journal.reserve_provider_attempt(route="opencode-go-chat", body=body,
                                          declared_output_tokens=declared,
@@ -302,8 +418,7 @@ def test_provider_first_call_bounds_refuse_before_attempt_marker(
     {"max_total_output_tokens": 20},
 ])
 def test_provider_cumulative_bounds_refuse_second_call(tmp_path, override):
-    journal, limits, _ = _provider_ready(tmp_path)
-    limits = {**limits, **override}
+    journal, limits, _ = _provider_ready(tmp_path, override=override)
     journal.reserve_provider_attempt(route="opencode-go-chat", body=b"first",
                                      declared_output_tokens=16, limits=limits, now_ms=1000)
     journal.settle_provider_attempt(index=1, status=200,

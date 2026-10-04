@@ -81,8 +81,10 @@ def build_provider_profile(begin: dict, resolution: dict) -> AcpJudgmentProvider
     if source == "user_binding":
         required = ("profile_id", "profile_version", "credential_id",
                     "credential_version", "binding_version")
-        if (any(not isinstance(resolution.get(key), str) or not resolution[key]
-                for key in ("profile_id", "credential_id"))
+        if (not isinstance(resolution.get("profile_id"), str)
+                or re.fullmatch(r"profile_[0-9a-f]{32}", resolution["profile_id"]) is None
+                or not isinstance(resolution.get("credential_id"), str)
+                or re.fullmatch(r"cred_[0-9a-f]{32}", resolution["credential_id"]) is None
                 or any(type(resolution.get(key)) is not int or resolution[key] <= 0
                        for key in ("profile_version", "credential_version", "binding_version"))):
             raise ValueError("user model credential has no stable nonsecret version")
