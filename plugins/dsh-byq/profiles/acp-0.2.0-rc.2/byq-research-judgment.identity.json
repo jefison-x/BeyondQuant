@@ -3,7 +3,7 @@
   "profile": "byq-research-judgment-acp-0.2.0-rc.2",
   "release_id": "dsh-v0.2.0-rc.2",
   "source_commit": "639ed015397290b3745d163aafe02ffee4aa3f84",
-  "composition_hash": "sha256:1f9fe5c361972076d81b20f9d03c39ab19c21ccb41c36a0ff0e616dd8a2937ca",
+  "composition_hash": "sha256:2dbe86fbc057908f5f187b46157eabef68cdf91e97c28eb8769fce22070964a2",
   "enabled_plugin_ids": [
     "acp",
     "acp-app-startup",
@@ -16,6 +16,8 @@
   "enabled_plugin_ids_scope": "selected-security-relevant-plugins-not-complete-graph",
   "disabled_plugin_ids": [
     "attachment-local",
+    "compaction-basic",
+    "image-offload",
     "command-compact",
     "command-feedback",
     "command-goal",
@@ -23,6 +25,7 @@
     "config-editor",
     "credentials",
     "deepseek-account",
+    "llm-deepseek-account",
     "goal",
     "goal-round-driver",
     "plan-mode",

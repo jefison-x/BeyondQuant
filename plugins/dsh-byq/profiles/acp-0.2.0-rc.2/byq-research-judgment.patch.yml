@@ -11,6 +11,10 @@
     maxParallelToolCalls: 1
 - id: session-title-llm
   disabled: true
+- id: compaction-basic
+  disabled: true
+- id: image-offload
+  disabled: true
 - id: tool-plugin-manager
   disabled: true
 - id: plugin-manager
@@ -109,12 +113,20 @@
 - id: llm-deepseek
   config:
     apiKeyEnv: DEEPSEEK_API_KEY
+    retryPolicy:
+      mode: normal
+      maxRetries: 0
+- id: llm-deepseek-account
+  disabled: true
 - id: llm-pi-ai
   config:
     providers:
       opencode-go-responses:
         displayName: OpenCode Go · Responses
         apiKeyEnv: OPENCODE_API_KEY
+        retryPolicy:
+          mode: normal
+          maxRetries: 0
         api: openai-responses
         baseURL: https://opencode.ai/zen/go/v1
         models:
@@ -123,6 +135,9 @@
       opencode-go-chat:
         displayName: OpenCode Go · Chat Completions
         apiKeyEnv: OPENCODE_API_KEY
+        retryPolicy:
+          mode: normal
+          maxRetries: 0
         api: openai-completions
         baseURL: https://opencode.ai/zen/go/v1
         models:
@@ -134,6 +149,9 @@
       opencode-go-messages:
         displayName: OpenCode Go · Messages
         apiKeyEnv: OPENCODE_API_KEY
+        retryPolicy:
+          mode: normal
+          maxRetries: 0
         api: anthropic-messages
         baseURL: https://opencode.ai/zen/go/v1
         models:
@@ -142,6 +160,9 @@
       opencode-zen-responses:
         displayName: OpenCode Zen · Responses
         apiKeyEnv: OPENCODE_API_KEY
+        retryPolicy:
+          mode: normal
+          maxRetries: 0
         api: openai-responses
         baseURL: https://opencode.ai/zen/v1
         models:
@@ -151,6 +172,9 @@
       opencode-zen-chat:
         displayName: OpenCode Zen · Chat Completions
         apiKeyEnv: OPENCODE_API_KEY
+        retryPolicy:
+          mode: normal
+          maxRetries: 0
         api: openai-completions
         baseURL: https://opencode.ai/zen/v1
         models:
@@ -159,6 +183,9 @@
       opencode-zen-messages:
         displayName: OpenCode Zen · Messages
         apiKeyEnv: OPENCODE_API_KEY
+        retryPolicy:
+          mode: normal
+          maxRetries: 0
         api: anthropic-messages
         baseURL: https://opencode.ai/zen/v1
         models:
