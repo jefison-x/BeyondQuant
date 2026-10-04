@@ -23,7 +23,7 @@ BINDING = {"schema_version": "byq-acp-agent-bind-receipt.v1", "status": "bound",
            "root_run_id": ROOT, "runtime_boot_id": BOOT, "origin": "root", "depth": 0,
            "native_agent_session_id": NATIVE, "native_parent_session_id": None,
            "agent_run_id": "agent_run_" + "e" * 32}
-BEGIN = {"task_id": TASK, "status": "admitted", "call_identity": CALL,
+BEGIN = {"task_id": TASK, "status": "admitted", "created": True, "call_identity": CALL,
          "attempt_binding": "1:strategy_draft:1",
          "root": {"root_run_id": ROOT, "runtime_boot_id": BOOT,
                   "authority_epoch": 1, "dsh_run_id": "byqjudg-" + "f" * 32}}
@@ -71,6 +71,7 @@ def _status(request, *, closed=False):
 def test_journal_fsync_phase_order_and_restart_never_replays_prompt(tmp_path):
     journal, current, post = _journal(tmp_path)
     journal.record_begin(BEGIN)
+    assert journal.record_begin({**BEGIN, "created": False})["phase"] == "begun"
     journal.record_binding(BINDING)
     assert stat.S_IMODE(os.stat(journal.path).st_mode) == 0o600
     assert stat.S_IMODE(os.stat(journal.directory).st_mode) == 0o700
@@ -158,3 +159,10 @@ def test_journal_requires_preprovisioned_private_directory(tmp_path):
         AcpJudgmentJournal(tmp_path / "missing", TASK, CALL,
                            backend_url="http://backend",
                            authority_headers={"authorization": "Bearer synthetic-runtime-authority"})
+
+
+def test_empty_journal_rejects_replayed_backend_root(tmp_path):
+    journal, _, _ = _journal(tmp_path)
+    with pytest.raises(AcpJudgmentOutcomeUnknown, match="no durable prompt fence"):
+        journal.record_begin({**BEGIN, "created": False})
+    assert journal.snapshot() is None

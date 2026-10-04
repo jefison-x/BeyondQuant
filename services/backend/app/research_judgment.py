@@ -180,6 +180,8 @@ class ResearchJudgmentMixin:
 
         Legacy SDK admissions remain valid. An already admitted legacy call has
         an unknown provider outcome and cannot be adopted into ACP automatically.
+        The response-only ``created`` bit is true solely for the transaction
+        that created the root; it is not persisted in the idempotent receipt.
         """
         from .agent_research import AgentConflict, _runtime_boot_id
         from .research import InvalidTransition, ResearchNotFound
@@ -233,6 +235,7 @@ class ResearchJudgmentMixin:
                             "plan_version": int(existing["plan_version"]),
                             "stage": existing["stage"], "call_index": int(existing["call_index"]),
                             "receipt": existing["result_json"], "root": None,
+                            "created": False,
                         }
                     raise AgentConflict(
                         "an admitted legacy judgment call has an unknown outcome and cannot be adopted")
@@ -267,7 +270,10 @@ class ResearchJudgmentMixin:
                         or root.get("authority_status", "active") != "active"
                         or root.get("authority_boot_id") != boot_id):
                     raise AgentConflict("ACP judgment root is no longer active under this Backend boot")
-                return binding["begin_receipt_json"]
+                # The receipt is idempotent; creation provenance is not. A
+                # caller with a lost local prompt fence must never interpret
+                # this replay as permission to launch another model turn.
+                return {**binding["begin_receipt_json"], "created": False}
 
             plan_row = self._load_current_plan(connection, task_id, lock=True)
             if plan_row is None:
@@ -334,7 +340,7 @@ class ResearchJudgmentMixin:
                  "epoch": int(authority["epoch"]), "generation": dsh_run_id,
                  "plan": plan["plan_version"], "stage": stage, "index": call_index,
                  "iteration": int(plan["iteration"]), "receipt": json.dumps(receipt), "now": now})
-            return receipt
+            return {**receipt, "created": True}
 
     def register_acp_judgment_root_agent(self, task_id: str, payload: object, *,
                                          trusted_context: dict, runtime_boot_id: str,

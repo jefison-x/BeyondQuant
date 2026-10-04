@@ -129,18 +129,24 @@ class AcpJudgmentJournal:
         return self._locked(lambda value: value)
 
     def record_begin(self, begin: dict) -> dict:
+        """Persist the fresh Backend response immediately; never cache its creation bit."""
         if (not isinstance(begin, dict) or begin.get("task_id") != self.task_id
                 or begin.get("call_identity") != self.call_identity
-                or begin.get("status") != "admitted" or not isinstance(begin.get("root"), dict)):
+                or begin.get("status") != "admitted" or not isinstance(begin.get("root"), dict)
+                or type(begin.get("created")) is not bool):
             raise ValueError("exact admitted judgment root receipt required")
+        stable_begin = {key: value for key, value in begin.items() if key != "created"}
 
         def save(value):
             if value is not None:
-                if value.get("begin") != begin:
+                if value.get("begin") != stable_begin:
                     raise AcpJudgmentOutcomeUnknown("judgment begin receipt differs from durable journal")
                 return value
+            if begin["created"] is not True:
+                raise AcpJudgmentOutcomeUnknown(
+                    "replayed judgment root has no durable prompt fence")
             value = {"schema_version": _SCHEMA, "task_id": self.task_id,
-                     "call_identity": self.call_identity, "phase": "begun", "begin": begin}
+                     "call_identity": self.call_identity, "phase": "begun", "begin": stable_begin}
             self._write(value)
             return value
 

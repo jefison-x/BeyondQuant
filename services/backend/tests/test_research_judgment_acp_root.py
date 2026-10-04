@@ -134,7 +134,10 @@ def test_acp_judgment_begin_is_exact_retry_and_creates_one_bound_root():
         replay = research.begin_acp_judgment_root(
             task, request, trusted_context=context,
             runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
-        assert replay == first
+        assert first["created"] is True
+        assert replay["created"] is False
+        assert {key: value for key, value in replay.items() if key != "created"} == {
+            key: value for key, value in first.items() if key != "created"}
         assert first["status"] == "admitted"
         assert first["attempt_binding"] == request["attempt_binding"]
         assert first["root"]["runtime_boot_id"] == headers["x-byq-runtime-boot-id"]
