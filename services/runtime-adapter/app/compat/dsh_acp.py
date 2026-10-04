@@ -372,23 +372,23 @@ class _AcpProcess:
             events.put(error)
 
     def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
         process = self.process
         if process is None:
             return
-        try:
-            if process.stdin is not None:
-                process.stdin.close()
-        except OSError:
-            pass
-        try:
-            process.wait(timeout=3.0)
-        except subprocess.TimeoutExpired:
-            self._terminate(process)
-        except OSError:
-            self._terminate(process)
+        if not self._closed:
+            self._closed = True
+            try:
+                if process.stdin is not None:
+                    process.stdin.close()
+            except OSError:
+                pass
+        if process.poll() is None:
+            try:
+                process.wait(timeout=3.0)
+            except (OSError, subprocess.TimeoutExpired):
+                self._terminate(process)
+        if process.poll() is None:
+            raise AcpTransportError("official DSH ACP process exit could not be confirmed")
         reader = self._reader
         if reader is not None and reader is not threading.current_thread():
             reader.join(timeout=1.0)
@@ -413,6 +413,8 @@ class _AcpProcess:
                 process.wait(timeout=1.0)
             except (OSError, subprocess.TimeoutExpired):
                 pass
+        if process.poll() is None:
+            raise AcpTransportError("official DSH ACP process exit could not be confirmed")
 
 
 @dataclass(slots=True)
@@ -540,12 +542,10 @@ class DshAcpCompatibility:
                 "DSH_MAX_TOKENS_AS_SUCCESS": "false",
             })
             transport = _AcpProcess(tuple(command), harness.session_root, environment)
-            try:
-                transport.start()
-            except BaseException:
-                transport.close()
-                raise
+            # Publish the handle before start so any startup failure retains a
+            # closeable reference for the Runtime Adapter's fail-closed path.
             harness.process = transport
+            transport.start()
 
     def create_session(self, harness: AcpHarness, *, cwd: Path | str | None = None) -> str:
         transport = self._require_process(harness)
@@ -709,9 +709,14 @@ class DshAcpCompatibility:
     def close(self, harness: AcpHarness) -> None:
         with harness.lock:
             transport = harness.process
-            harness.process = None
         if transport is not None:
             transport.close()
+            process = transport.process
+            if process is None or process.poll() is None:
+                raise AcpTransportError("official DSH ACP process exit could not be confirmed")
+            with harness.lock:
+                if harness.process is transport:
+                    harness.process = None
 
     @staticmethod
     def observe(notification: object, *, root_session_id: str) -> RuntimeObservation:

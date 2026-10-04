@@ -209,6 +209,31 @@ def test_official_acp_stdio_lifecycle_and_scoped_mcp_identity_resume(tmp_path: P
     assert "reasoning-never-public" not in repr(observations)
 
 
+def test_close_retains_transport_handle_until_process_exit_is_confirmed(tmp_path: Path) -> None:
+    capture = tmp_path / "close-proof.jsonl"
+    compatibility, harness = _harness(tmp_path, capture)
+
+    class PendingExitTransport:
+        exit_code = None
+        process = None
+
+        def __init__(self) -> None:
+            self.process = type("Process", (), {"poll": lambda _self: self.exit_code})()
+
+        def close(self) -> None:
+            return None
+
+    transport = PendingExitTransport()
+    harness.process = transport
+    with pytest.raises(AcpTransportError, match="exit could not be confirmed"):
+        compatibility.close(harness)
+    assert harness.process is transport
+
+    transport.exit_code = 0
+    compatibility.close(harness)
+    assert harness.process is None
+
+
 @pytest.mark.parametrize(
     ("provider", "selected_key", "expected_deepseek", "expected_opencode"),
     [

@@ -173,6 +173,10 @@ class RuntimeGeneration:
     process_used: bool = field(default=False, repr=False)
     process_closed: bool = field(default=False, repr=False)
     process_closing: bool = field(default=False, repr=False)
+    native_session_close_confirmed: bool = field(default=False, repr=False)
+    process_exit_confirmed: bool = field(default=False, repr=False)
+    close_attempt_in_progress: bool = field(default=False, repr=False)
+    close_attempt_event: threading.Event = field(default_factory=threading.Event, repr=False)
     continuation_budget: dict | None = field(default=None, repr=False)
     budget_journal: Path | None = field(default=None, repr=False)
     budget_run_id: str | None = field(default=None, repr=False)
@@ -182,6 +186,9 @@ class RuntimeGeneration:
     active_run: ActiveRun | None = None
     normalization: NormalizationState = field(default_factory=NormalizationState)
     usage_message_ids: set[str] = field(default_factory=set)
+
+    def __post_init__(self) -> None:
+        self.close_attempt_event.set()
 
     def describe(self) -> dict[str, Any]:
         """Framework-neutral identity only; no DSH native/process schema."""
@@ -227,6 +234,13 @@ class RuntimeSession:
     authority_epoch: int | None = None
     recovery_cwd: str | None = None
     settlement_receipt: dict[str, Any] | None = None
+    # Set only for a normal completed root whose exact Backend receipt was
+    # accepted and whose ACP session close and process exit were both proven.
+    # It is deliberately in-memory only: Adapter restart falls back to a fresh
+    # ACP session and the Gateway's public history projection.
+    reuse_native_session_ready: bool = False
+    cleanup_unconfirmed: bool = False
+    cleanup_harness: Any = field(default=None, repr=False)
     current_generation: RuntimeGeneration | None = field(default=None, repr=False)
 
     def _generation(self) -> RuntimeGeneration:
@@ -825,6 +839,9 @@ class RuntimeAdapter:
         continuation_budget: object = None,
     ) -> str:
         record = self._get(session_id)
+        with record.lock:
+            if record.cleanup_unconfirmed:
+                raise SessionConflict("previous ACP root startup cleanup is unconfirmed")
         if not record.model_resolution:
             with record.lock:
                 if not record.model_resolution:
@@ -849,8 +866,10 @@ class RuntimeAdapter:
             # credentials are subsequently absent. Reject only a new admission.
             if require_model_key and not record.model_resolution.get("api_key"):
                 raise ModelCredentialUnavailable("the configured model provider has no credential")
-            if record.workspace_id and record.pending_terminal_receipts:
+            if (record.workspace_id or self._acp) and record.pending_terminal_receipts:
                 raise SessionConflict("previous turn domain cleanup is not yet acknowledged")
+            if (self._acp and record.domain_call_drained_sequence != record.domain_call_sequence):
+                raise SessionConflict("previous turn domain-call evidence is not yet acknowledged")
             budget = None
             if continuation_budget is not None:
                 if not self.continuation_qualified(record):
@@ -871,16 +890,27 @@ class RuntimeAdapter:
             context = record.pending_conversation_context
             if conversation_context is not None:
                 context = normalize_conversation_context(conversation_context)
-            effective_content = rehydrated_prompt(context, content)
+            reuse_native = bool(
+                self._acp and self._root_scoped and record.process_used
+                and record.reuse_native_session_ready and budget is None
+            )
+            # A resumed ACP root already owns the complete native history.
+            # Reinjecting Gateway's public projection would duplicate turns.
+            effective_content = content if reuse_native else rehydrated_prompt(context, content)
             if budget is not None and not record.process_used:
                 self._compatibility.close(record.harness)
                 record.process_closed = True
+                if self._acp and record.current_generation is not None:
+                    record.current_generation.process_exit_confirmed = True
             if self._root_scoped and (record.process_used or budget is not None):
-                if record.workspace_id and conversation_context is None:
+                if record.workspace_id and conversation_context is None and not reuse_native:
                     raise SessionConflict("new root requires a fresh public conversation projection")
                 if (record.process_closing or not record.process_closed
                         or not record.continuation_proxy_closed):
                     raise SessionConflict("previous runtime process cleanup is not complete")
+                if (self._acp and record.process_used and record.current_generation is not None
+                        and not record.current_generation.process_exit_confirmed):
+                    raise SessionConflict("previous ACP process exit is not confirmed")
                 if record.continuation_budget is not None:
                     old_id = record.continuation_budget['reservation_id']
                     old_receipt = self._budget_receipt(record)
@@ -888,10 +918,16 @@ class RuntimeAdapter:
                         record.budget_receipts[old_id] = old_receipt
                     while len(record.budget_receipts) > 64:
                         del record.budget_receipts[next(iter(record.budget_receipts))]
+                previous_native_session = record.runtime_session_id
                 private_session = f"root-{uuid.uuid4().hex}"
                 generation = f"generation-{uuid.uuid4().hex}"
                 root_id = uuid.uuid4().hex
-                session_root = contained_session_path(self._session_root, private_session)
+                session_root = (Path(record.recovery_cwd) if reuse_native and record.recovery_cwd
+                                else contained_session_path(self._session_root, private_session))
+                if not session_root.resolve().is_relative_to(self._session_root):
+                    raise SessionConflict("reused ACP working directory is not contained")
+                if reuse_native:
+                    record.reuse_native_session_ready = False
                 request_gate = None
                 request_proxy = None
                 tool_journal = None
@@ -914,23 +950,47 @@ class RuntimeAdapter:
                         continuation_deadline_epoch_ms=(
                             int(time.time() * 1000 + request_gate.remaining_seconds() * 1000)
                             if request_gate is not None else None
-                        ))
+                        ),
+                        native_root_session_id=(previous_native_session if reuse_native else None))
                 except BaseException:
                     if request_proxy is not None:
                         request_proxy.close()
                     raise
                 if self._acp:
+                    # Write a durable fail-closed marker before a replacement
+                    # ACP process can own the new root identity.
+                    record.cleanup_harness = harness
+                    record.cleanup_unconfirmed = True
                     try:
-                        self._compatibility.start(harness)
-                        private_session = self._compatibility.create_session(harness, cwd=session_root)
+                        self._persist_acp_binding(record)
                     except BaseException:
-                        self._compatibility.close(harness)
+                        record.cleanup_harness = None
+                        record.cleanup_unconfirmed = False
                         if request_proxy is not None:
                             request_proxy.close()
                         raise
-                # A new root turn is a NEW generation for the same durable
-                # session. Retire the previous process generation; never reuse
-                # its native identity or transient normalization state.
+                    try:
+                        self._compatibility.start(harness)
+                        if reuse_native:
+                            private_session = self._compatibility.resume_session(
+                                harness, previous_native_session, cwd=session_root)
+                            if private_session != previous_native_session:
+                                raise SessionConflict("ACP resumed another native session")
+                        else:
+                            private_session = self._compatibility.create_session(harness, cwd=session_root)
+                    except BaseException:
+                        # Do not block on ACP teardown while holding the
+                        # RuntimeSession lock. Keep the process handle and
+                        # permanently fence this record until cleanup can be
+                        # confirmed by an operator/runtime restart.
+                        record.cleanup_harness = harness
+                        record.cleanup_unconfirmed = True
+                        if request_proxy is not None:
+                            request_proxy.close()
+                        raise
+                # Every BYQ root gets a fresh process generation and MCP
+                # identity. Only a normally completed, exactly acknowledged,
+                # cleanly closed ACP root may carry its native transcript.
                 self._install_generation(
                     record, native_session_id=private_session,
                     executor_epoch=record.executor_epoch, process_root_id=root_id,
@@ -940,6 +1000,8 @@ class RuntimeAdapter:
                 installed.harness = harness
                 record.recovery_cwd = str(session_root)
                 record.settlement_receipt = None
+                record.cleanup_unconfirmed = False
+                record.cleanup_harness = None
                 installed.continuation_budget = budget
                 installed.budget_journal = tool_journal
                 installed.budget_run_id = root_id if budget else None
@@ -1052,7 +1114,7 @@ class RuntimeAdapter:
                 )
             finally:
                 try:
-                    if self._root_scoped:
+                    if self._root_scoped and not self._acp:
                         with record.lock:
                             if record.harness is harness and not record.process_closing and not record.process_closed:
                                 record.process_closing = True
@@ -1071,7 +1133,7 @@ class RuntimeAdapter:
                     record.active_run = None
                     run.watchdog_stop.set()
                     return
-                if self._root_scoped and not record.process_closed and not record.process_closing:
+                if self._root_scoped and not self._acp and not record.process_closed and not record.process_closing:
                     record.process_closing = True
                     try:
                         self._compatibility.close(harness)
@@ -1156,9 +1218,9 @@ class RuntimeAdapter:
                     "runtime-adapter",
                     {"finish_reason": finish_reason, "run_id": run.run_id},
                 )
-                # A root-scoped turn ends its process here, so its generation is
-                # terminal and must not be left "starting"/"running". A durable
-                # non-root session that returns to IDLE keeps its generation.
+                # The generation is terminal even when ACP remains alive for
+                # Gateway's exact Backend receipt. That receipt path closes
+                # ACP outside this worker before another root is admitted.
                 if self._root_scoped:
                     self._close_generation(record, generation_id, "completed")
 
@@ -1184,6 +1246,9 @@ class RuntimeAdapter:
                 # run now so no post-close result can be accepted or emitted.
                 record.active_run = None
                 record.process_closing = True
+                if record.current_generation is not None:
+                    record.current_generation.close_attempt_in_progress = True
+                    record.current_generation.close_attempt_event.clear()
                 cancelled_harness = record.harness
                 cancelled_generation = record.runtime_generation
             cancellation = {"mode": mode, "persistence": "dsh-owned", "run_id": run.run_id}
@@ -1206,6 +1271,19 @@ class RuntimeAdapter:
                 with record.lock:
                     record.process_closing = False
                     record.process_closed = True
+                    if record.current_generation is not None:
+                        record.current_generation.process_exit_confirmed = True
+                        record.current_generation.close_attempt_in_progress = False
+                        record.current_generation.close_attempt_event.set()
+            except Exception:
+                with record.lock:
+                    record.process_closing = True
+                    record.process_closed = False
+                    if record.current_generation is not None:
+                        record.current_generation.process_exit_confirmed = False
+                        record.current_generation.close_attempt_in_progress = False
+                        record.current_generation.close_attempt_event.set()
+                raise
             finally:
                 self._close_continuation_proxy(record, cancelled_generation, cancelled_harness)
         return self.describe_session(record)
@@ -1299,14 +1377,145 @@ class RuntimeAdapter:
                     or record.terminal_receipts.get(root) != receipt):
                 raise SessionConflict("terminal receipt does not match this runtime turn")
             evidence = self._terminal_evidence_for(record, root)
-            record.pending_terminal_receipts.discard(root)
-            self._remember_ack("terminal", record, receipt, terminal_evidence=evidence)
-            if self._acp:
+            current_root = record.process_root_id
+            if self._acp and root == current_root:
                 record.settlement_receipt = dict(receipt)
+                # Persist the exact Backend result before ACP teardown. Keep
+                # the root admission fence asserted until process exit is
+                # confirmed below; retries can safely resume this sequence.
                 self._persist_acp_binding(record)
+            else:
+                record.pending_terminal_receipts.discard(root)
+                self._remember_ack("terminal", record, receipt, terminal_evidence=evidence)
             acknowledged = {"receipt": dict(receipt)}
+        if self._acp and root == current_root:
+            self._close_acp_after_terminal_ack(record, root, receipt)
+            with record.lock:
+                record.pending_terminal_receipts.discard(root)
+                self._remember_ack("terminal", record, receipt, terminal_evidence=evidence)
+                # Close proof may have been unavailable for an interrupted or
+                # failed process, but the exact Backend receipt is still
+                # durably acknowledged after process cleanup completes.
+                try:
+                    self._persist_acp_binding(record)
+                except Exception:
+                    record.reuse_native_session_ready = False
         self._maybe_reap_released(record)
         return acknowledged
+
+    def _close_acp_after_terminal_ack(
+        self, record: RuntimeSession, root_run_id: str, receipt: object,
+    ) -> None:
+        """Close the exact ACP root only after its Backend terminal receipt.
+
+        The Gateway waits for this bounded close path before accepting a new
+        user turn. The DSH request may drain or callback while close runs, so
+        no RuntimeSession lock is held across ACP RPC or process teardown.
+        """
+
+        deadline = time.monotonic() + 68.0
+        while True:
+            with record.lock:
+                generation = record.current_generation
+                if generation is None or generation.process_root_id != root_run_id:
+                    raise SessionConflict("ACP root binding changed before terminal close")
+                if record.settlement_receipt != receipt:
+                    raise SessionConflict("ACP terminal settlement receipt changed before close")
+                if generation.process_closed and not generation.process_closing:
+                    if generation.process_exit_confirmed:
+                        return
+                    raise SessionConflict("prior ACP process exit is not confirmed")
+                if generation.close_attempt_in_progress:
+                    wait_for = generation.close_attempt_event
+                    owns_attempt = False
+                else:
+                    generation.close_attempt_in_progress = True
+                    generation.close_attempt_event.clear()
+                    generation.process_closing = True
+                    harness = generation.harness
+                    native_session_id = generation.native_session_id
+                    native_closed = generation.native_session_close_confirmed
+                    owns_attempt = True
+            if not owns_attempt:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not wait_for.wait(remaining):
+                    raise SessionConflict("ACP root close is still in progress")
+                continue
+
+            close_error = None
+            if harness is None:
+                close_error = SessionConflict("ACP root process is unavailable for close")
+            else:
+                if not native_closed:
+                    try:
+                        self._compatibility.close_session(harness, native_session_id)
+                    except Exception:
+                        # A failed/ambiguous session-close response cannot
+                        # prove that DSH closed its native conversation. Kill
+                        # the dedicated process below and use a fresh native
+                        # session on the next root.
+                        native_closed = False
+                    else:
+                        native_closed = True
+                try:
+                    # DshAcpCompatibility.close returns only after poll()
+                    # confirms process exit; a mere close call is insufficient
+                    # evidence for reuse.
+                    self._compatibility.close(harness)
+                except Exception as exc:
+                    close_error = exc
+
+            with record.lock:
+                current = record.current_generation
+                if current is not generation:
+                    generation.close_attempt_in_progress = False
+                    generation.close_attempt_event.set()
+                    raise SessionConflict("ACP generation changed before prior process exit was confirmed")
+                generation.native_session_close_confirmed = native_closed
+                generation.close_attempt_in_progress = False
+                generation.close_attempt_event.set()
+                if close_error is not None:
+                    # Keep process_closing asserted. An exact receipt retry
+                    # may retry cleanup, but no new root can pass the gate.
+                    generation.process_closed = False
+                    generation.process_closing = True
+                    record.reuse_native_session_ready = False
+                else:
+                    generation.process_closed = True
+                    generation.process_exit_confirmed = True
+                    generation.process_closing = False
+                    terminal_success = any(
+                        event.get("kind") == "session.result"
+                        and isinstance(event.get("payload"), dict)
+                        and event["payload"].get("run_id") == root_run_id
+                        for event in record.history
+                    )
+                    cancelled = any(
+                        event.get("kind") in {"session.cancelled", "session.result.discarded"}
+                        and isinstance(event.get("payload"), dict)
+                        and event["payload"].get("run_id") == root_run_id
+                        for event in record.history
+                    )
+                    generation.process_exit_confirmed = True
+                    record.reuse_native_session_ready = bool(
+                        native_closed and generation.process_exit_confirmed
+                        and terminal_success and not cancelled
+                        and record.status == SessionStatus.IDLE
+                        and not record.release_finalized
+                        and record.domain_call_drained_sequence == record.domain_call_sequence
+                        and generation.continuation_budget is None
+                        and record.recovery_cwd
+                    )
+                try:
+                    self._persist_acp_binding(record)
+                except Exception:
+                    # The pre-close exact ACK binding remains durable. Without
+                    # durable close proof, keep this boot safe by disabling
+                    # reuse; fresh-native recovery is the fallback.
+                    record.reuse_native_session_ready = False
+            if close_error is not None:
+                raise SessionConflict("ACP root process exit could not be confirmed") from None
+            return
 
     def terminal_evidence(self, session_id: str, root_run_id: str, boot_id: str) -> dict:
         """Return the exact observed terminal and its stored receipt for Gateway."""
@@ -1387,6 +1596,8 @@ class RuntimeAdapter:
         record = self._get(session_id)
         context = normalize_conversation_context([] if conversation_context is None else conversation_context)
         with record.lock:
+            if record.cleanup_unconfirmed:
+                raise SessionConflict("previous ACP root startup cleanup is unconfirmed")
             if record.process_closing:
                 raise SessionConflict("previous runtime process cleanup is not complete")
             if (record.status == SessionStatus.READY and record.active_run is None
@@ -1418,6 +1629,10 @@ class RuntimeAdapter:
                 raise SessionConflict(f"session {session_id} is still initializing")
             if record.process_closing or record.active_run is not None or record.status in SessionStatus.ACTIVE_PROMPT:
                 raise SessionConflict(f"session {session_id} has an active prompt")
+            if self._acp and record.pending_terminal_receipts:
+                raise SessionConflict("Backend terminal receipt must be acknowledged before ACP release")
+            if record.cleanup_unconfirmed:
+                raise SessionConflict("previous ACP root startup cleanup is unconfirmed")
             if record.continuation_budget:
                 self._budget_receipt(record)
             record.status = SessionStatus.CLOSED
@@ -1533,6 +1748,11 @@ class RuntimeAdapter:
             "settlement_receipt": record.settlement_receipt,
             "domain_call_sequence": record.domain_call_sequence,
             "domain_call_drained_sequence": record.domain_call_drained_sequence,
+            "native_session_close_confirmed": bool(
+                record.current_generation and record.current_generation.native_session_close_confirmed),
+            "process_exit_confirmed": bool(
+                record.current_generation and record.current_generation.process_exit_confirmed),
+            "cleanup_unconfirmed": record.cleanup_unconfirmed,
             "closed": record.status == SessionStatus.CLOSED,
         }
         path = self._acp_binding_path(record.session_id)
@@ -1575,13 +1795,21 @@ class RuntimeAdapter:
             value = json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError as exc:
             raise KeyError(session_id) from exc
+        # Additive v1 compatibility: older bindings omit close proofs and are
+        # always treated as non-reusable. A process restart never transfers the
+        # in-memory normal-completion reuse gate.
+        if isinstance(value, dict):
+            value.setdefault("native_session_close_confirmed", False)
+            value.setdefault("process_exit_confirmed", False)
+            value.setdefault("cleanup_unconfirmed", False)
         if (not isinstance(value, dict)
                 or set(value) != {"schema_version", "session_id", "trace_id", "owner_principal",
                                       "workspace_id", "root_run_id", "native_session_id",
                                       "runtime_generation", "model_provider", "model_id", "cwd",
                                       "previous_boot_id", "previous_authority_epoch", "sequence",
                                       "settlement_receipt", "domain_call_sequence",
-                                      "domain_call_drained_sequence", "closed"}
+                                      "domain_call_drained_sequence", "native_session_close_confirmed",
+                                      "process_exit_confirmed", "cleanup_unconfirmed", "closed"}
                 or value["schema_version"] != "byq-acp-root-binding.v1"
                 or value["session_id"] != session_id
                 or re.fullmatch(r"[0-9a-f]{32}", str(value["root_run_id"])) is None
@@ -1591,6 +1819,9 @@ class RuntimeAdapter:
                 or type(value["domain_call_sequence"]) is not int
                 or type(value["domain_call_drained_sequence"]) is not int
                 or not 0 <= value["domain_call_drained_sequence"] <= value["domain_call_sequence"]
+                or type(value["native_session_close_confirmed"]) is not bool
+                or type(value["process_exit_confirmed"]) is not bool
+                or type(value["cleanup_unconfirmed"]) is not bool
                 or type(value["closed"]) is not bool):
             raise SessionConflict("ACP recovery binding is invalid")
         cwd = Path(value["cwd"])
@@ -1602,6 +1833,10 @@ class RuntimeAdapter:
         binding = self._read_acp_binding(session_id)
         if binding["closed"]:
             raise SessionConflict("BYQ session was ended")
+        if binding["cleanup_unconfirmed"]:
+            raise SessionConflict("ACP recovery is blocked by unconfirmed process cleanup")
+        if not binding["process_exit_confirmed"]:
+            raise SessionConflict("ACP recovery is blocked until prior process exit is confirmed")
         public = {key: binding[key] for key in (
             "session_id", "trace_id", "owner_principal", "workspace_id", "root_run_id",
             "previous_boot_id", "previous_authority_epoch", "sequence")}
@@ -1630,6 +1865,8 @@ class RuntimeAdapter:
         binding = self._read_acp_binding(session_id)
         if binding["closed"]:
             raise SessionConflict("BYQ session was ended")
+        if binding["cleanup_unconfirmed"]:
+            raise SessionConflict("ACP recovery is blocked by unconfirmed process cleanup")
         if (type(initial_sequence) is not int or initial_sequence < binding["sequence"]
                 or initial_sequence >= 2**63):
             raise SessionConflict("recovery event sequence is not proven")
@@ -1639,6 +1876,8 @@ class RuntimeAdapter:
         if persisted_settled:
             if receipt != binding["settlement_receipt"]:
                 raise SessionConflict("settled root receipt mismatch")
+            if not binding["process_exit_confirmed"]:
+                raise SessionConflict("settled ACP binding has no confirmed prior process exit")
         elif (isinstance(receipt, dict)
               and set(receipt) == {"schema_version", "root_run_id", "sequence", "event_sha256"}
               and receipt.get("schema_version") == "agent-run-lifecycle-receipt.v1"
@@ -1646,6 +1885,8 @@ class RuntimeAdapter:
               and type(receipt.get("sequence")) is int and receipt["sequence"] > 0
               and isinstance(receipt.get("event_sha256"), str)
               and re.fullmatch(r"[0-9a-f]{64}", receipt["event_sha256"])):
+            if not binding["process_exit_confirmed"]:
+                raise SessionConflict("Backend-closed ACP binding has no confirmed prior process exit")
             # Gateway proved Backend closed this root just before the old
             # Adapter could persist its terminal ACK. Reattach the public
             # session without replaying the ACP prompt or transferring a
@@ -1663,6 +1904,12 @@ class RuntimeAdapter:
             }
             if receipt != expected:
                 raise SessionConflict("Backend root transfer receipt mismatch")
+            if not binding["process_exit_confirmed"]:
+                # The transfer receipt fences the old root's Backend authority,
+                # but does not prove its ACP process stopped. Do not publish a
+                # reattached session while that old process may still emit late
+                # requests; a repair process cannot provide this old-boot proof.
+                raise SessionConflict("transferred ACP binding has no confirmed prior process exit")
         settled = persisted_settled or receipt.get("schema_version") == "agent-run-lifecycle-receipt.v1"
         model_resolution = self._resolve_model(
             owner_principal=binding["owner_principal"],
@@ -1689,6 +1936,8 @@ class RuntimeAdapter:
             process_root_id=binding["root_run_id"],
             generation_id=binding["runtime_generation"],
         )
+        record.current_generation.native_session_close_confirmed = binding["native_session_close_confirmed"]
+        record.current_generation.process_exit_confirmed = binding["process_exit_confirmed"]
         record.process_used = True
         record.process_closed = True
         if not settled:
@@ -1709,6 +1958,10 @@ class RuntimeAdapter:
                     raise SessionConflict("ACP resumed another native session")
             finally:
                 self._compatibility.close(harness)
+                # This confirms only the repair process started above. The
+                # old-boot process was independently required to be confirmed
+                # exited before entering this branch.
+                record.current_generation.process_exit_confirmed = True
         if settled and not persisted_settled:
             with record.lock:
                 self._persist_acp_binding(record)
@@ -1751,6 +2004,12 @@ class RuntimeAdapter:
             records = list(self._sessions.values())
             self._sessions.clear()
         failure = None
+
+        def remember_failure(exc: Exception) -> None:
+            nonlocal failure
+            if failure is None:
+                failure = exc
+
         for record in records:
             try:
                 with record.lock:
@@ -1763,16 +2022,26 @@ class RuntimeAdapter:
                         "reason": "adapter-shutdown", **({"run_id": closing_run.run_id} if closing_run is not None else {}),
                     })
             except Exception as exc:
-                failure = exc
+                remember_failure(exc)
             finally:
-                self._close_continuation_proxy(record, record.runtime_generation, record.harness)
                 try:
-                    if record.harness is not None:
-                        self._compatibility.close(record.harness)
-                except Exception as exc:
-                    failure = exc
-                finally:
                     self._close_continuation_proxy(record, record.runtime_generation, record.harness)
+                except Exception as exc:
+                    remember_failure(exc)
+                seen_harnesses: set[int] = set()
+                for harness in (record.harness, record.cleanup_harness):
+                    if harness is None or id(harness) in seen_harnesses:
+                        continue
+                    seen_harnesses.add(id(harness))
+                    try:
+                        self._compatibility.close(harness)
+                    except Exception as exc:
+                        remember_failure(exc)
+                try:
+                    self._close_continuation_proxy(record, record.runtime_generation, record.harness)
+                except Exception as exc:
+                    remember_failure(exc)
+                finally:
                     with record.lock:
                         for subscriber in record.subscribers:
                             subscriber.put(None)
@@ -2294,6 +2563,9 @@ class RuntimeAdapter:
             failed_generation = record.runtime_generation
             needs_close = not record.process_closed and not record.process_closing
             record.process_closing = needs_close or record.process_closing
+            if needs_close and record.current_generation is not None:
+                record.current_generation.close_attempt_in_progress = True
+                record.current_generation.close_attempt_event.clear()
             self._emit(
                 record,
                 "session.failed",
@@ -2312,7 +2584,23 @@ class RuntimeAdapter:
                 with record.lock:
                     record.process_closing = False
                     record.process_closed = True
+                    if record.current_generation is not None:
+                        record.current_generation.process_exit_confirmed = True
+                        record.current_generation.close_attempt_in_progress = False
+                        record.current_generation.close_attempt_event.set()
+        except Exception:
+            with record.lock:
+                record.process_closing = True
+                record.process_closed = False
+                if record.current_generation is not None:
+                    record.current_generation.process_exit_confirmed = False
+            raise
         finally:
+            if needs_close:
+                with record.lock:
+                    if record.current_generation is not None:
+                        record.current_generation.close_attempt_in_progress = False
+                        record.current_generation.close_attempt_event.set()
             self._close_continuation_proxy(record, failed_generation, failed_harness)
         return True
 

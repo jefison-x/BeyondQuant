@@ -188,6 +188,12 @@ def test_acp_recovery_accepts_closed_before_ack_receipt_without_resume_or_replay
         "settlement_receipt": None,
         "domain_call_sequence": 0,
         "domain_call_drained_sequence": 0,
+        # This fixture represents the narrow ACK race after the prior process
+        # was independently confirmed exited. Without this proof, reattach
+        # must fail closed even though Backend supplied a terminal receipt.
+        "native_session_close_confirmed": False,
+        "process_exit_confirmed": True,
+        "cleanup_unconfirmed": False,
         "closed": False,
     }
     binding_path = adapter._acp_binding_path(session_id)
