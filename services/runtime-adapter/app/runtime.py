@@ -2351,6 +2351,9 @@ class RuntimeAdapter:
                 "provider": provider,
                 "model": model,
                 "api_key": api_key,
+                **{key: resolution.get(key) for key in (
+                    "profile_id", "profile_version", "credential_id",
+                    "credential_version", "binding_version")},
             }
         except ModelCredentialUnavailable:
             raise

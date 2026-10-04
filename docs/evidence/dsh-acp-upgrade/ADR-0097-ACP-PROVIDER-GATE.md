@@ -187,9 +187,13 @@ derives the deadline and call/input/output/tool limits from the existing
 stage-specific BYQ request-budget registry, and produces a nonsecret,
 immutable public snapshot alongside the upstream credential kept in memory.
 It refuses a `created:false` replay, unknown route or deterministic stage.
-It also refuses a user-bound model key until the internal credential resolver
-supplies stable nonsecret binding/profile/credential IDs and versions; the
-current resolver does not expose these. Ten focused pure tests passed. This
+It also refuses a user-bound model key unless the internal credential resolver
+supplies stable nonsecret binding/profile/credential IDs and versions. The
+resolver now returns these fields from one Backend query, and the Adapter
+preserves them in its private model resolution. Focused Backend database tests
+passed 3/3 in an isolated tmpfs PostgreSQL container; the existing Adapter
+personal binding test passed 1/1 in an offline read-only rollback image. Ten
+focused pure profile tests passed. This
 does not prove receipt origin, current Backend authority, or that resolution
 belongs to the admitted owner/session.
 This builder is not yet journaled or used by the ACP entry; it does not make

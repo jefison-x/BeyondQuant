@@ -153,6 +153,11 @@ def test_profile_binding_resolution_and_rotation_fail_closed() -> None:
         "temperature": 0.2,
         "reasoning_enabled": False,
         "api_key": "sk-phase37-secret-abcd",
+        "profile_id": profile["profile_id"],
+        "profile_version": 1,
+        "credential_id": credential["credential_id"],
+        "credential_version": 1,
+        "binding_version": 1,
     }
     assert store.resolve_model("bob", "byq-product") is None
 
@@ -218,6 +223,11 @@ def test_opencode_go_credential_resolves_to_the_reviewed_protocol_route() -> Non
         "temperature": 0.2,
         "reasoning_enabled": True,
         "api_key": "go-personal-secret-abcd",
+        "profile_id": profile["profile_id"],
+        "profile_version": 1,
+        "credential_id": credential["credential_id"],
+        "credential_version": 1,
+        "binding_version": 1,
     }
     with pytest.raises(CredentialNotFound, match="active model credential"):
         store.create_profile(
@@ -343,6 +353,10 @@ def test_backend_model_routes_never_echo_secret_and_resolver_is_private(monkeypa
     )
     assert resolved.status_code == 200
     assert resolved.json()["resolution"]["api_key"] == "sk-http-secret-abcd"
+    assert resolved.json()["resolution"]["profile_id"] == profile_id
+    assert resolved.json()["resolution"]["profile_version"] == 1
+    assert resolved.json()["resolution"]["credential_version"] == 1
+    assert resolved.json()["resolution"]["binding_version"] == 1
 
     other_headers = trusted_agent_context("bob")
     hidden = client.get("/v1/users/model-credentials", headers=other_headers)

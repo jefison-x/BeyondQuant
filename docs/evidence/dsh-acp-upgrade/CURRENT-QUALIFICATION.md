@@ -75,9 +75,13 @@ caller-supplied `created:true` Backend receipt for shape and internal
 consistency, then derives
 limits from the existing named BYQ stage budget instead of caller-selected
 numbers. It keeps the actual key out of its public snapshot. User-bound
-credentials currently fail closed because the internal resolver does not
-expose stable nonsecret versions. The builder is not yet written to the
-journal or connected to the ACP entry, and the old three-call ceiling has not
+credentials require stable nonsecret versions. Backend now returns profile,
+credential and binding IDs/versions from one resolver query, and Adapter keeps
+them in private resolution: independent Tester ran 3/3 focused Backend DB tests
+in a new tmpfs PostgreSQL container, while Root ran the existing Adapter
+personal binding test 1/1 in an offline read-only image. The builder is not
+yet written to the journal or connected to the ACP entry, and the old
+three-call ceiling has not
 been measured against the dedicated ACP root. Receipt origin, current Backend
 authority, and credential resolution ownership remain unproven.
 
