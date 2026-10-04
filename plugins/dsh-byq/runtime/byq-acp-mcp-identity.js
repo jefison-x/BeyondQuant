@@ -455,6 +455,7 @@ export async function installProductAcpIdentity(ctx, config, { McpClient, env = 
   const rootMarker = rootMarkerPath(expectedCwd);
   const registeredAgents = new WeakSet();
   let rootBinding;
+  let judgmentChildCreationVetoed = false;
 
   // Product composition owns its global discovery-only client. Judgment mode
   // intentionally has no global client; this plugin mounts only its signed
@@ -469,7 +470,10 @@ export async function installProductAcpIdentity(ctx, config, { McpClient, env = 
   }, { prepend: true, global: true });
 
   ctx.on('agent/created', async ({ agent, source }) => {
-    if (identity.mode === JUDGMENT_MODE && (source !== 'startup' || rootBinding !== undefined)) fail();
+    if (identity.mode === JUDGMENT_MODE && (source !== 'startup' || rootBinding !== undefined)) {
+      judgmentChildCreationVetoed = true;
+      fail();
+    }
     const lineage = validateRootOrChild(ctx, agent, source, identity, rootBinding, expectedCwd);
     const issuedAt = now();
     const claims = identity.mode === JUDGMENT_MODE
@@ -495,6 +499,13 @@ export async function installProductAcpIdentity(ctx, config, { McpClient, env = 
       rootBinding = { nativeRootId: lineage.nativeRootId, cwd: lineage.cwd };
     }
     registeredAgents.add(agent);
+  }, { prepend: true, global: true });
+
+  // A rejected child is returned to the parent as a failed tool result. Veto
+  // the parent's otherwise successful turn as well; a later JSON answer must
+  // not turn that attempted delegation into a judgment result.
+  ctx.on('agent/turn-stopping', () => {
+    if (identity.mode === JUDGMENT_MODE && judgmentChildCreationVetoed) fail();
   }, { prepend: true, global: true });
 
   ctx.on('agent/disposed', ({ agent }) => { registeredAgents.delete(agent); }, { global: true });

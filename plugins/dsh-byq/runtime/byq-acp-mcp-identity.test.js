@@ -369,6 +369,8 @@ test('judgment mode mounts one dedicated bearer on the actual native root only',
     context.sessions.set(child.id, child.session);
     await assert.rejects(handlers.get('agent/created')({ agent: child, source: 'startup' }));
     assert.equal(childConfigs.length, 0, 'child receives no judgment or Product fallback token');
+    assert.throws(() => handlers.get('agent/turn-stopping')({ agent: root, turn: 1 }),
+      /BYQ_ACP_AGENT_IDENTITY_UNAVAILABLE/);
 
     const preExecute = handlers.get('tools/pre-execute');
     let reached = false;
