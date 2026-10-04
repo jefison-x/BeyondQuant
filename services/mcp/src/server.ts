@@ -14,6 +14,8 @@ import { fetchResearchContext } from "./research-context.js";
 import {
   areAcpCredentialsSeparated,
   classifyMcpBearer,
+  classifyAcpJudgmentBearer,
+  isAcpJudgmentSigningKeyDistinct,
   isValidAcpSigningKey,
   type AcpAgentClaims,
   type McpBearerIdentity,
@@ -166,6 +168,7 @@ const MCP_PATH = "/mcp/v1";
 const BACKEND_URL = process.env.BYQ_BACKEND_URL ?? "http://backend:8000";
 const ACP_DISCOVERY_TOKEN = process.env.BYQ_MCP_ACP_DISCOVERY_TOKEN;
 const ACP_SIGNING_KEY = process.env.BYQ_MCP_ACP_SIGNING_KEY;
+const ACP_JUDGMENT_SIGNING_KEY = process.env.BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY;
 const BACKEND_PROOF_TOKEN = process.env.BYQ_MCP_BACKEND_PROOF_TOKEN;
 
 // ADR-0085 P4: the bounded research-judgment composition must not be able to
@@ -191,12 +194,15 @@ const ACP_READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
   "byq_agent_roles",
 ]);
 const READ_ONLY_SUBSET = process.env.BYQ_MCP_READ_ONLY_SUBSET === "1";
-const PORT = READ_ONLY_SUBSET
-  ? Number(process.env.BYQ_MCP_READ_ONLY_PORT ?? "")
-  : Number(process.env.PORT ?? "8300");
+const ACP_JUDGMENT_SUBSET = process.env.BYQ_MCP_ACP_JUDGMENT_SUBSET === "1";
+const PORT = ACP_JUDGMENT_SUBSET
+  ? Number(process.env.BYQ_MCP_ACP_JUDGMENT_PORT ?? "")
+  : READ_ONLY_SUBSET
+    ? Number(process.env.BYQ_MCP_READ_ONLY_PORT ?? "")
+    : Number(process.env.PORT ?? "8300");
 const MCP_TOKEN = READ_ONLY_SUBSET
-  ? process.env.BYQ_MCP_READ_ONLY_TOKEN
-  : process.env.BYQ_MCP_TOKEN;
+  ? (ACP_JUDGMENT_SUBSET ? undefined : process.env.BYQ_MCP_READ_ONLY_TOKEN)
+  : (ACP_JUDGMENT_SUBSET ? undefined : process.env.BYQ_MCP_TOKEN);
 const ACP_DOMAIN_CALL_ACTIONS = new Set([
   "byq_strategy_validate", "byq_ml_strategy_create", "byq_factor_compute", "byq_strategy_version_create",
 ]);
@@ -308,10 +314,20 @@ function requestHeaders(extra: unknown): unknown {
 }
 
 function bearerIdentity(extra: unknown): McpBearerIdentity | undefined {
+  const authorization = headerValue(requestHeaders(extra), "authorization");
+  if (ACP_JUDGMENT_SUBSET) {
+    // Tool callbacks receive the server-verified identity through a private
+    // symbol; their context does not carry the original HTTP request header.
+    if (extra && typeof extra === "object" && Object.hasOwn(extra, privateAuth)) {
+      const trusted = (extra as { [privateAuth]?: McpBearerIdentity })[privateAuth];
+      return trusted?.kind === "acp-judgment-root" ? trusted : undefined;
+    }
+    return classifyAcpJudgmentBearer(authorization, ACP_JUDGMENT_SIGNING_KEY);
+  }
   if (extra && typeof extra === "object" && Object.hasOwn(extra, privateAuth)) {
     return (extra as { [privateAuth]?: McpBearerIdentity })[privateAuth];
   }
-  return classifyMcpBearer(headerValue(requestHeaders(extra), "authorization"), {
+  return classifyMcpBearer(authorization, {
     legacyToken: MCP_TOKEN,
     discoveryToken: ACP_DISCOVERY_TOKEN,
     signingKey: ACP_SIGNING_KEY,
@@ -322,12 +338,24 @@ function rootHeader(extra: unknown): string | undefined {
   if (!extra || typeof extra !== "object") return undefined;
   const auth = (extra as { [privateAuth]?: McpBearerIdentity })[privateAuth];
   if (auth?.kind === "acp-agent") return auth.claims.root_run_id;
+  if (auth?.kind === "acp-judgment-root") return auth.claims.root_run_id;
   return (extra as { [privateRoot]?: string })[privateRoot];
 }
 
 function agentContext(extra: unknown): AgentContext {
   const auth = bearerIdentity(extra);
   if (auth?.kind === "acp-agent") {
+    return {
+      workspace_id: auth.claims.workspace_id,
+      owner_principal: auth.claims.owner_principal,
+      actor_principal: auth.claims.actor_principal,
+      trace_id: auth.claims.trace_id,
+      session_id: auth.claims.session_id,
+      dsh_run_id: auth.claims.dsh_run_id,
+      runtime_boot_id: auth.claims.runtime_boot_id,
+    };
+  }
+  if (auth?.kind === "acp-judgment-root") {
     return {
       workspace_id: auth.claims.workspace_id,
       owner_principal: auth.claims.owner_principal,
@@ -971,7 +999,8 @@ async function byqWebEvidenceCreate(args: WebEvidenceCreateRequest, extra: unkno
 export function buildServer(factoryContext: unknown = undefined): McpServer {
   const auth = bearerIdentity(factoryContext);
   const trustedContext = { ...agentContext(factoryContext), [privateAuth]: auth,
-    [privateRoot]: auth?.kind === "acp-agent" ? auth.claims.root_run_id
+    [privateRoot]: auth?.kind === "acp-agent" || auth?.kind === "acp-judgment-root"
+      ? auth.claims.root_run_id
       : headerValue(requestHeaders(factoryContext), "x-byq-root-run-id") };
   const server = new McpServer({ name: SERVICE, version: VERSION });
   // ADR-0085 P4: explicit, type-checked registration gate. In the isolated
@@ -982,12 +1011,18 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
   const rawRegisterTool = server.registerTool.bind(server) as McpServer["registerTool"];
   const registerTool: McpServer["registerTool"] = ((name: string, ...rest: unknown[]) => {
         if (!READ_ONLY_JUDGMENT_TOOL_SET.has(name)) {
-          if (READ_ONLY_SUBSET) return undefined as never;
+          if (READ_ONLY_SUBSET || ACP_JUDGMENT_SUBSET) return undefined as never;
         }
         const callbackIndex = rest.length - 1;
         const callback = rest[callbackIndex];
         if (typeof callback === "function") {
           rest[callbackIndex] = async (...callArgs: unknown[]) => {
+            // ADR-0097's trusted Backend root/AgentRun admission and terminal
+            // lifecycle are not implemented yet. Do not let this opt-in surface
+            // enter any existing business handler until that seam is available.
+            if (ACP_JUDGMENT_SUBSET) {
+              return acpBridgeUnavailable("acp_judgment_backend_admission_unavailable");
+            }
             if (!auth || auth.kind === "discovery") return agentContextUnavailable();
             const toolArgs = callArgs[0];
             if (auth.kind === "acp-agent" && name !== "byq_agent_run_start" && !ACP_LOCAL_ONLY_TOOLS.has(name)) {
@@ -1978,7 +2013,8 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
 }
 
 const observedHandler = observeDomainSchemaFailures(createMcpHandler(buildServer), async (failure, request) => {
-  if (bearerIdentity({ request })?.kind === "acp-agent") return;
+  const identity = bearerIdentity({ request });
+  if (identity?.kind === "acp-agent" || identity?.kind === "acp-judgment-root") return;
   const context = completeAgentContext({ request });
   if (!context) return;
   const send = evidenceBoundedFetcher(trustedBackendFetcher(context), request.headers.get("x-byq-root-run-id") ?? undefined);
@@ -2033,12 +2069,18 @@ const continuationHandler = continuationAdmission(observedHandler, async (reserv
 });
 const requestGateHandler: ParsedFetchHandler = {
   fetch(request, options) {
-    const identity = classifyMcpBearer(request.headers.get("authorization") ?? undefined, {
+    const identity = bearerIdentity({ request });
+    if (identity?.kind === "acp-judgment-root") {
+      // This branch avoids Product ACP, discovery and continuation middleware.
+      // The isolated judgment tool callbacks then fail closed before dispatch.
+      return observedHandler.fetch(request, options);
+    }
+    const productIdentity = classifyMcpBearer(request.headers.get("authorization") ?? undefined, {
       legacyToken: MCP_TOKEN,
       discoveryToken: ACP_DISCOVERY_TOKEN,
       signingKey: ACP_SIGNING_KEY,
     });
-    return identity?.kind === "discovery"
+    return productIdentity?.kind === "discovery"
       ? discoveryOnlyHandler.fetch(request, options)
       : continuationHandler.fetch(request, options);
   },
@@ -2087,10 +2129,31 @@ const httpServer = createServer(async (request, response) => {
 const isMain = process.argv[1] !== undefined
   && pathToFileURL(resolvePath(process.argv[1])).href === import.meta.url;
 
-if (isMain && !MCP_TOKEN) {
+if (isMain && !MCP_TOKEN && !ACP_JUDGMENT_SUBSET) {
   throw new Error(READ_ONLY_SUBSET
     ? "BYQ_MCP_READ_ONLY_TOKEN is required to start the read-only MCP service"
     : "BYQ_MCP_TOKEN is required to start the MCP service");
+}
+const ACP_JUDGMENT_FORBIDDEN_CREDENTIALS = [
+  "BYQ_MCP_TOKEN", "BYQ_MCP_READ_ONLY_TOKEN", "BYQ_MCP_ACP_DISCOVERY_TOKEN",
+  "BYQ_MCP_ACP_SIGNING_KEY", "BYQ_MCP_BACKEND_PROOF_TOKEN",
+] as const;
+if (isMain && ACP_JUDGMENT_SUBSET && READ_ONLY_SUBSET) {
+  throw new Error("ACP judgment MCP mode cannot be combined with the legacy read-only subset");
+}
+if (isMain && ACP_JUDGMENT_SUBSET && ACP_JUDGMENT_FORBIDDEN_CREDENTIALS.some(name =>
+  typeof process.env[name] === "string" && process.env[name]!.length > 0)) {
+  throw new Error("ACP judgment MCP mode must not receive Product, legacy read-only, discovery, or Backend proof credentials");
+}
+if (isMain && ACP_JUDGMENT_SUBSET && !isValidAcpSigningKey(ACP_JUDGMENT_SIGNING_KEY)) {
+  throw new Error("BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY must be at least 32 UTF-8 bytes");
+}
+if (isMain && ACP_JUDGMENT_SUBSET
+  && !isAcpJudgmentSigningKeyDistinct(ACP_JUDGMENT_SIGNING_KEY, [
+    MCP_TOKEN, process.env.BYQ_MCP_TOKEN, process.env.BYQ_MCP_READ_ONLY_TOKEN,
+    ACP_DISCOVERY_TOKEN, ACP_SIGNING_KEY, BACKEND_PROOF_TOKEN,
+  ])) {
+  throw new Error("ACP judgment signing key must be dedicated and distinct from every other configured credential");
 }
 if (isMain && ACP_DISCOVERY_TOKEN && !isValidAcpSigningKey(ACP_SIGNING_KEY)) {
   throw new Error("BYQ_MCP_ACP_SIGNING_KEY must be at least 32 UTF-8 bytes when ACP discovery is enabled");
@@ -2104,6 +2167,14 @@ if (isMain && ACP_DISCOVERY_TOKEN
 }
 if (isMain && READ_ONLY_SUBSET && !(Number.isInteger(PORT) && PORT > 0 && PORT <= 65535)) {
   throw new Error("BYQ_MCP_READ_ONLY_PORT must be a valid TCP port to start the read-only MCP service");
+}
+if (isMain && ACP_JUDGMENT_SUBSET && !(Number.isInteger(PORT) && PORT > 0 && PORT <= 65535)) {
+  throw new Error("BYQ_MCP_ACP_JUDGMENT_PORT must be a valid TCP port to start the ACP judgment MCP service");
+}
+if (isMain && ACP_JUDGMENT_SUBSET && (PORT === Number(process.env.PORT ?? "8300")
+  || (Number.isInteger(Number(process.env.BYQ_MCP_READ_ONLY_PORT))
+    && PORT === Number(process.env.BYQ_MCP_READ_ONLY_PORT)))) {
+  throw new Error("ACP judgment MCP port must be distinct from Product and legacy read-only MCP ports");
 }
 
 if (isMain) {

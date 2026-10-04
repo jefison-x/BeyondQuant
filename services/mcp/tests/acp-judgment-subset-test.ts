@@ -1,0 +1,287 @@
+// ADR-0097: exercise the opt-in judgment endpoint with synthetic credentials.
+// The current slice intentionally exposes the read catalog but denies every
+// tools/call before its business callback until trusted Backend admission exists.
+import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
+import { spawn, type ChildProcess } from "node:child_process";
+import { createServer, type Server } from "node:http";
+import { setTimeout as delay } from "node:timers/promises";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import {
+  classifyMcpBearer,
+  isAcpJudgmentSigningKeyDistinct,
+  verifyAcpJudgmentRootBearer,
+  type AcpAgentClaims,
+  type AcpJudgmentRootClaims,
+} from "../src/acp-auth.js";
+
+const READ_ONLY = [
+  "byq_agent_context",
+  "byq_backtest_analysis_get",
+  "byq_backtest_task_get",
+  "byq_research_get",
+  "byq_research_stage_input_get",
+];
+const judgmentKey = "synthetic-adr0097-judgment-signing-key-at-least-32-bytes";
+const productKey = "synthetic-product-acp-signing-key-at-least-32-bytes";
+const now = Date.now();
+
+const judgmentClaims: AcpJudgmentRootClaims = {
+  v: 1,
+  aud: "byq-product-acp-judgment-mcp",
+  root_run_id: "a".repeat(32),
+  runtime_boot_id: "b".repeat(32),
+  owner_principal: "alice",
+  workspace_id: "workspace_alice",
+  actor_principal: "byq-product-agent-judgment-session",
+  trace_id: "trace-judgment",
+  session_id: "judgment-session",
+  dsh_run_id: "generation-judgment",
+  native_root_session_id: "00000000-0000-4000-8000-000000000001",
+  native_agent_session_id: "00000000-0000-4000-8000-000000000001",
+  native_parent_session_id: null,
+  origin: "root",
+  depth: 0,
+  task_id: "task_" + "c".repeat(32),
+  call_identity: "byq-judgment-" + "d".repeat(32),
+  expires_at: now + 60_000,
+};
+
+function canonical(value: Record<string, unknown>): string {
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(value).sort()) sorted[key] = value[key];
+  return JSON.stringify(sorted);
+}
+
+function sign(prefix: string, claims: Record<string, unknown>, key: string): string {
+  const payload = Buffer.from(canonical(claims), "utf8");
+  const mac = createHmac("sha256", Buffer.from(key, "utf8")).update(payload).digest();
+  return `${prefix}.${payload.toString("base64url")}.${mac.toString("base64url")}`;
+}
+
+const judgmentToken = sign("byq-acp-judgment-v1", judgmentClaims as unknown as Record<string, unknown>, judgmentKey);
+const productClaims: AcpAgentClaims = {
+  ...judgmentClaims,
+  aud: "byq-product-mcp",
+  // Product ACP credentials do not carry judgment task/call claims.
+  // Keep this object exact to the existing Product v1 shape.
+} as AcpAgentClaims;
+delete (productClaims as unknown as Record<string, unknown>).task_id;
+delete (productClaims as unknown as Record<string, unknown>).call_identity;
+const productAgentToken = sign("byq-acp-v1", productClaims as unknown as Record<string, unknown>, productKey);
+
+assert.deepEqual(verifyAcpJudgmentRootBearer(judgmentToken, judgmentKey, now), judgmentClaims);
+assert.equal(verifyAcpJudgmentRootBearer(judgmentToken, productKey, now), undefined,
+  "judgment token must not verify under the Product ACP signing key");
+assert.equal(isAcpJudgmentSigningKeyDistinct(judgmentKey, [productKey, "legacy-bearer"]), true);
+assert.equal(isAcpJudgmentSigningKeyDistinct(judgmentKey, [judgmentKey]), false);
+assert.equal(classifyMcpBearer(`Bearer ${judgmentToken}`, { legacyToken: judgmentToken }), undefined,
+  "reserved judgment token prefix must not fall through to a static Product bearer");
+
+async function reservePort(): Promise<number> {
+  const reserve = createServer();
+  await new Promise<void>(resolve => reserve.listen(0, "127.0.0.1", resolve));
+  const address = reserve.address();
+  assert.ok(address && typeof address === "object");
+  const port = address.port;
+  await new Promise<void>(resolve => reserve.close(() => resolve()));
+  return port;
+}
+
+async function listen(server: Server): Promise<number> {
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  return address.port;
+}
+
+async function waitReady(endpoint: string): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (await fetch(endpoint + "/healthz").then(reply => reply.ok).catch(() => false)) return;
+    await delay(50);
+  }
+  throw new Error(`MCP server did not start: ${endpoint}`);
+}
+
+async function listToolNames(port: number, token: string): Promise<string[]> {
+  const endpoint = `http://127.0.0.1:${port}`;
+  await waitReady(endpoint);
+  const client = new Client({ name: "byq-acp-judgment-surface-test", version: "1.0.0" });
+  try {
+    await client.connect(new StreamableHTTPClientTransport(new URL(endpoint + "/mcp/v1"), {
+      authProvider: { token: async () => token },
+    }));
+    const { tools } = await client.listTools();
+    return tools.map(tool => tool.name).sort();
+  } finally {
+    await client.close();
+  }
+}
+
+async function post(port: number, token: string, method: string): Promise<Response> {
+  return fetch(`http://127.0.0.1:${port}/mcp/v1`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: {} }),
+  });
+}
+
+async function stop(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null) return;
+  child.kill("SIGTERM");
+  await new Promise<void>(resolve => {
+    if (child.exitCode !== null) resolve();
+    else child.once("exit", () => resolve());
+  });
+}
+
+async function exitCodeWithin(child: ChildProcess, timeoutMs: number): Promise<number | null> {
+  if (child.exitCode !== null) return child.exitCode;
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve(null), timeoutMs);
+    child.once("exit", code => {
+      clearTimeout(timer);
+      resolve(code);
+    });
+  });
+}
+
+const cleanEnv = { ...process.env };
+for (const name of [
+  "PORT", "BYQ_MCP_TOKEN", "BYQ_MCP_READ_ONLY_SUBSET", "BYQ_MCP_READ_ONLY_PORT",
+  "BYQ_MCP_READ_ONLY_TOKEN", "BYQ_MCP_ACP_DISCOVERY_TOKEN", "BYQ_MCP_ACP_SIGNING_KEY",
+  "BYQ_MCP_ACP_JUDGMENT_SUBSET", "BYQ_MCP_ACP_JUDGMENT_PORT",
+  "BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY", "BYQ_MCP_BACKEND_PROOF_TOKEN",
+]) delete cleanEnv[name];
+
+const judgmentPort = await reservePort();
+const readOnlyPort = await reservePort();
+const productPort = await reservePort();
+const readOnlyToken = "synthetic-read-only-static-bearer";
+const productStaticToken = "synthetic-product-static-bearer";
+const discoveryToken = "synthetic-product-discovery-bearer";
+const backendProofToken = "synthetic-backend-proof-bearer";
+
+const conflictingCredentialServer = spawn(process.execPath, ["dist/src/server.js"], {
+  env: { ...cleanEnv, BYQ_MCP_ACP_JUDGMENT_SUBSET: "1",
+    BYQ_MCP_ACP_JUDGMENT_PORT: String(await reservePort()),
+    BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY: judgmentKey,
+    BYQ_MCP_TOKEN: "must-not-enter-judgment-process" },
+  stdio: "ignore",
+});
+const conflictingCredentialExit = await exitCodeWithin(conflictingCredentialServer, 3000);
+if (conflictingCredentialExit === null) await stop(conflictingCredentialServer);
+assert.notEqual(conflictingCredentialExit, null,
+  "judgment service must refuse a process environment containing Product credentials");
+assert.notEqual(conflictingCredentialExit, 0,
+  "judgment service must fail closed when a Product credential is configured");
+
+let backendCalls = 0;
+const backend = createServer((_request, response) => {
+  backendCalls += 1;
+  response.writeHead(404).end();
+});
+const backendPort = await listen(backend);
+
+const judgmentServer = spawn(process.execPath, ["dist/src/server.js"], {
+  env: { ...cleanEnv, BYQ_BACKEND_URL: `http://127.0.0.1:${backendPort}`,
+    BYQ_MCP_ACP_JUDGMENT_SUBSET: "1", BYQ_MCP_ACP_JUDGMENT_PORT: String(judgmentPort),
+    BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY: judgmentKey },
+  stdio: "ignore",
+});
+const readOnlyServer = spawn(process.execPath, ["dist/src/server.js"], {
+  env: { ...cleanEnv, BYQ_BACKEND_URL: `http://127.0.0.1:${backendPort}`,
+    BYQ_MCP_READ_ONLY_SUBSET: "1", BYQ_MCP_READ_ONLY_PORT: String(readOnlyPort),
+    BYQ_MCP_READ_ONLY_TOKEN: readOnlyToken },
+  stdio: "ignore",
+});
+const productServer = spawn(process.execPath, ["dist/src/server.js"], {
+  env: { ...cleanEnv, BYQ_BACKEND_URL: `http://127.0.0.1:${backendPort}`,
+    PORT: String(productPort), BYQ_MCP_TOKEN: productStaticToken,
+    BYQ_MCP_ACP_DISCOVERY_TOKEN: discoveryToken,
+    BYQ_MCP_ACP_SIGNING_KEY: productKey,
+    BYQ_MCP_BACKEND_PROOF_TOKEN: backendProofToken },
+  stdio: "ignore",
+});
+
+try {
+  const [judgmentTools, readOnlyTools, productTools] = await Promise.all([
+    listToolNames(judgmentPort, judgmentToken),
+    listToolNames(readOnlyPort, readOnlyToken),
+    listToolNames(productPort, productStaticToken),
+  ]);
+  assert.deepEqual(judgmentTools, READ_ONLY, "judgment endpoint must register exactly the five bounded reads");
+  assert.deepEqual(readOnlyTools, READ_ONLY, "legacy read-only subset behavior must remain intact");
+  assert.ok(productTools.length > READ_ONLY.length, "default Product MCP surface must remain broader");
+
+  // Static/legacy/discovery/Product credentials are never classified on this endpoint.
+  for (const token of [productStaticToken, readOnlyToken, discoveryToken, backendProofToken, productAgentToken]) {
+    assert.equal((await post(judgmentPort, token, "tools/list")).status, 401,
+      "judgment endpoint accepted a non-judgment credential");
+  }
+  // The judgment credential is audience/key isolated from both existing servers.
+  assert.equal((await post(productPort, judgmentToken, "tools/list")).status, 401,
+    "Product endpoint accepted the judgment credential");
+  assert.equal((await post(readOnlyPort, judgmentToken, "tools/list")).status, 401,
+    "legacy read-only endpoint accepted the judgment credential");
+
+  // Valid HMACs with a wrong audience, child lineage, or missing/forged task/call
+  // claims fail before the MCP handler is constructed.
+  const invalidClaims: Record<string, unknown>[] = [
+    { ...judgmentClaims, aud: "byq-product-mcp" },
+    { ...judgmentClaims, origin: "subagent", depth: 1,
+      native_agent_session_id: "00000000-0000-4000-8000-000000000002",
+      native_parent_session_id: judgmentClaims.native_root_session_id },
+    { ...judgmentClaims, task_id: "task_invalid" },
+    { ...judgmentClaims, call_identity: "forged-call" },
+  ];
+  const missingTask = { ...judgmentClaims } as Record<string, unknown>;
+  delete missingTask.task_id;
+  const missingCall = { ...judgmentClaims } as Record<string, unknown>;
+  delete missingCall.call_identity;
+  invalidClaims.push(missingTask, missingCall);
+  for (const claims of invalidClaims) {
+    const token = sign("byq-acp-judgment-v1", claims, judgmentKey);
+    assert.equal((await post(judgmentPort, token, "tools/list")).status, 401,
+      "invalid judgment claims must be rejected before MCP dispatch");
+  }
+  const wrongKeyToken = sign("byq-acp-judgment-v1",
+    judgmentClaims as unknown as Record<string, unknown>, productKey);
+  assert.equal((await post(judgmentPort, wrongKeyToken, "tools/list")).status, 401,
+    "Product signing key cannot mint judgment credentials");
+
+  const judgmentClient = new Client({ name: "byq-acp-judgment-call-test", version: "1.0.0" });
+  try {
+    await judgmentClient.connect(new StreamableHTTPClientTransport(
+      new URL(`http://127.0.0.1:${judgmentPort}/mcp/v1`), {
+        authProvider: { token: async () => judgmentToken },
+      },
+    ));
+    const admitted = await judgmentClient.callTool({ name: "byq_research_stage_input_get", arguments: {
+      task_id: judgmentClaims.task_id,
+    } });
+    const forged = await judgmentClient.callTool({ name: "byq_research_stage_input_get", arguments: {
+      task_id: "task_" + "e".repeat(32),
+    } });
+    for (const result of [admitted, forged]) {
+      assert.equal(result.isError, true, "judgment tools/call must fail closed without Backend admission");
+      const output = result.content.find((item): item is { type: "text"; text: string } => item.type === "text");
+      assert.ok(output && output.text.includes("acp_judgment_backend_admission_unavailable"));
+    }
+  } finally {
+    await judgmentClient.close();
+  }
+  assert.equal(backendCalls, 0, "no judgment request reached a business or admission Backend handler");
+
+  console.log(JSON.stringify({
+    ok: true,
+    judgment_tools: judgmentTools,
+    legacy_read_only_unchanged: true,
+    product_surface_unchanged: true,
+    cross_audience_and_credential_rejection: true,
+    judgment_tool_calls_denied_before_backend: true,
+  }));
+} finally {
+  await Promise.all([stop(judgmentServer), stop(readOnlyServer), stop(productServer)]);
+  await new Promise<void>((resolve, reject) => backend.close(error => error ? reject(error) : resolve()));
+}
