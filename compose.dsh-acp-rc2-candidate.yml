@@ -11,3 +11,15 @@ services:
       BYQ_DSH_COMPOSITION_IDENTITY: /opt/byq/profiles/byq-product.identity.json
       BYQ_DSH_RELEASE_IDENTITY: /opt/byq/releases/deployment.identity.json
       DSH_SESSION_ROOT: /var/lib/byq/dsh-sessions/dsh-v0.2.0-rc.2-acp
+      BYQ_MCP_ACP_DISCOVERY_TOKEN: ${BYQ_MCP_ACP_DISCOVERY_TOKEN:?BYQ_MCP_ACP_DISCOVERY_TOKEN must be set for ACP}
+      BYQ_MCP_ACP_SIGNING_KEY: ${BYQ_MCP_ACP_SIGNING_KEY:?BYQ_MCP_ACP_SIGNING_KEY must be set for ACP}
+
+  mcp:
+    environment:
+      BYQ_MCP_ACP_DISCOVERY_TOKEN: ${BYQ_MCP_ACP_DISCOVERY_TOKEN:?BYQ_MCP_ACP_DISCOVERY_TOKEN must be set for ACP}
+      BYQ_MCP_ACP_SIGNING_KEY: ${BYQ_MCP_ACP_SIGNING_KEY:?BYQ_MCP_ACP_SIGNING_KEY must be set for ACP}
+      BYQ_MCP_BACKEND_PROOF_TOKEN: ${BYQ_MCP_BACKEND_PROOF_TOKEN:?BYQ_MCP_BACKEND_PROOF_TOKEN must be set for ACP}
+
+  backend:
+    environment:
+      BYQ_MCP_BACKEND_PROOF_TOKEN: ${BYQ_MCP_BACKEND_PROOF_TOKEN:?BYQ_MCP_BACKEND_PROOF_TOKEN must be set for ACP}

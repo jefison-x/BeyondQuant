@@ -1,6 +1,8 @@
 # ADR-0094 — Product ACP delegate MCP scope and restart evidence
 
-- Status: Proposed; maintainer decision required before Product ACP promotion.
+- Status: Accepted (2026-10-04). The maintainer explicitly accepted the new
+  MCP/Backend proof contract in the development chat. Implementation,
+  qualification, PR and release gates remain separate.
 - Date: 2026-10-04
 - Scope: amendment to the MCP mount and recovery proof in Accepted ADR-0093 for the fixed official `dsh-v0.2.0-rc.2` candidate only.
 
@@ -103,8 +105,49 @@ proved in the packaged Product composition.
 The high-level DSH/MCP/Backend ownership remains; the private MCP and Backend
 evidence contract changes. Per-Agent signed identity format, ingress receipt
 idempotency, registration lineage and restart reconciliation are **NOT_RUN**.
-This ADR stays Proposed; no Product ACP promotion follows from the keyless
-probe alone.
+Acceptance authorizes implementing this private proof contract. No Product ACP
+promotion follows from the keyless probe alone.
+
+## Accepted private proof boundary
+
+The ACP candidate uses three distinct credentials in protected configuration:
+a discovery-only MCP bearer, an HMAC key shared only by the trusted Product
+composition and MCP ingress, and a separate MCP-to-Backend proof bearer. The
+existing SDK MCP bearer remains on the old rollback path. The ACP bearer is a
+bounded signed claim over the exact root/boot/public scope, native root and
+Agent session IDs, native parent, origin, depth and expiry. MCP verifies the
+signature and replaces caller-supplied scope headers with its verified claims.
+The discovery bearer may list tools but every tool execution is refused before
+a handler runs. The ACP child process does not inherit the old SDK MCP bearer
+or the Backend proof bearer.
+
+For ACP-aware `byq_agent_run_start`, MCP forwards only token-derived native
+lineage using the private proof bearer. Backend derives the expected parent
+AgentRun from its durable native-parent binding before registration, and
+atomically stores a pending native binding with the AgentRun. MCP then
+finalizes that exact binding before returning success to the Agent. A pending
+or bound ACP marker on the root requires ACP evidence for domain claims; it
+cannot fall through the old SDK evidence path. Exact retries return the same
+receipt, while altered identity or input conflicts.
+
+For a consequential domain tool, MCP observes the actual validated arguments
+before invoking its handler. Backend computes the existing bounded canonical
+request and input digests, verifies the native Agent binding and authority,
+and durably returns a unique ingress observation receipt. Only that receipt
+may satisfy the existing claim-before-execution path. Raw arguments are not
+stored in the evidence ledger. Timeouts or uncertain responses stop dispatch
+without automatic replay; an already claimed outcome stays unknown until
+exact reconciliation. Backend's persisted evidence cursor and terminal
+sequence/digest govern restart and next-root admission.
+
+The candidate Compose overlay supplies these credentials only to the services
+that use them. Secret values remain outside Git. The old SDK image and
+configuration remain the exact rollback set.
 ## Decision and promotion boundary
 
-The maintainer's acceptance of ADR-0093 approved **same-root Backend authority transfer**. It did not approve changing the MCP mount design or relaxing completed Product behavior. This ADR remains Proposed until the exact child evidence replacement and restart reconciliation contract are reviewed and accepted. Meanwhile Product ACP promotion, PR push, auto-merge and deployment are blocked. Safe local source, transport and proof work may continue without external paid-model calls.
+The maintainer's acceptance of ADR-0093 approved **same-root Backend authority
+transfer**. The subsequent explicit acceptance of this ADR authorizes the
+per-Agent MCP scope, discovery-only bootstrap, trusted ingress evidence and
+Backend reconciliation contract above. It does not relax completed Product
+behavior or waive qualification. Product ACP promotion, PR push, auto-merge and
+deployment remain gated on the end-to-end evidence and independent review.
