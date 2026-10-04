@@ -3,7 +3,9 @@
 This builder is not wired to the ACP entry yet. It derives BYQ provider-request
 limits from the existing named stage registry and refuses a user credential
 whose stable nonsecret identity/version is unavailable. The caller must prove
-the receipt and resolution came from the same current trusted Backend scope.
+the receipt and resolution came from the same current trusted Backend scope,
+and durably bind request_started_at_ms before Backend root admission. The pure
+builder cannot prove that a caller did not supply a later timestamp.
 """
 
 from __future__ import annotations
@@ -60,7 +62,13 @@ def require_current_model_resolution(profile: AcpJudgmentProviderProfile,
         raise ValueError("selected ACP judgment model binding changed")
 
 
-def build_provider_profile(begin: dict, resolution: dict) -> AcpJudgmentProviderProfile:
+def build_provider_profile(begin: dict, resolution: dict, *,
+                           request_started_at_ms: int) -> AcpJudgmentProviderProfile:
+    now_ms = int(time.time() * 1000)
+    if (type(request_started_at_ms) is not int
+            or request_started_at_ms <= 0
+            or request_started_at_ms > now_ms):
+        raise ValueError("judgment request start time is required")
     if (not isinstance(begin, dict)
             or begin.get("schema_version") != "byq-research-judgment-acp-root-receipt.v1"
             or begin.get("status") != "admitted" or begin.get("created") is not True
@@ -120,7 +128,9 @@ def build_provider_profile(begin: dict, resolution: dict) -> AcpJudgmentProvider
         credential_reference.update({key: resolution[key] for key in required})
     budget = stage_request_limits(
         begin.get("stage"), request_id=begin["call_identity"],
-        started_at_ms=int(time.time() * 1000))
+        started_at_ms=request_started_at_ms)
+    if budget["deadline_at_ms"] <= now_ms:
+        raise ValueError("judgment provider deadline expired during admission")
     limits = _provider_limits({
         "max_calls": min(budget["max_provider_calls"], budget["max_attempts"]),
         "max_input_bytes": budget["max_input_bytes"],

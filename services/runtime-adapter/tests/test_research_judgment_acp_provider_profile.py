@@ -36,9 +36,16 @@ RESOLUTION = {
 }
 
 
+def select(begin=BEGIN, resolution=RESOLUTION, *, started_at_ms=None):
+    if started_at_ms is None:
+        started_at_ms = int(time.time() * 1000)
+    return build_provider_profile(
+        begin, resolution, request_started_at_ms=started_at_ms)
+
+
 def test_fresh_root_selection_is_nonsecret_and_uses_closed_stage_profile():
     before = int(time.time() * 1000)
-    selection = build_provider_profile(BEGIN, RESOLUTION)
+    selection = select(started_at_ms=before)
     after = int(time.time() * 1000)
     public = selection.public
     assert public["call_identity"] == CALL
@@ -62,6 +69,18 @@ def test_fresh_root_selection_is_nonsecret_and_uses_closed_stage_profile():
     assert selection.public["limits"]["max_calls"] == 3
 
 
+def test_admission_setup_time_consumes_the_same_provider_deadline():
+    started_at_ms = int(time.time() * 1000) - 10_000
+    profile = select(started_at_ms=started_at_ms).public
+    assert profile["limits"]["deadline_at_ms"] == started_at_ms + 180_000
+    with pytest.raises(ValueError, match="deadline expired"):
+        select(started_at_ms=started_at_ms - 180_000)
+    with pytest.raises(ValueError, match="start time"):
+        select(started_at_ms=int(time.time() * 1000) + 10_000)
+    with pytest.raises(ValueError, match="start time"):
+        select(started_at_ms=True)
+
+
 @pytest.mark.parametrize("changed", [
     {"created": False},
     {"call_identity": "byq-judgment-" + "f" * 32},
@@ -75,17 +94,17 @@ def test_replay_wrong_root_or_stage_cannot_select_provider(changed):
     begin = copy.deepcopy(BEGIN)
     begin.update(changed)
     with pytest.raises(ValueError):
-        build_provider_profile(begin, RESOLUTION)
+        select(begin)
 
 
 def test_user_binding_requires_nonsecret_credential_versions():
     user = {**RESOLUTION, "source": "user_binding", "provider": "opencode-go-chat"}
     with pytest.raises(ValueError, match="stable nonsecret version"):
-        build_provider_profile(BEGIN, user)
+        select(resolution=user)
     user.update({"profile_id": "profile_" + "1" * 32, "profile_version": 2,
                  "credential_id": "cred_" + "2" * 32, "credential_version": 3,
                  "binding_version": 4})
-    profile = build_provider_profile(BEGIN, user).public
+    profile = select(resolution=user).public
     assert profile["credential_reference"] == {
         "source": "user_binding", "profile_id": "profile_" + "1" * 32,
         "profile_version": 2,
@@ -97,11 +116,11 @@ def test_user_binding_requires_nonsecret_credential_versions():
 
 def test_unselected_route_cannot_open_provider_profile():
     with pytest.raises(ValueError):
-        build_provider_profile(BEGIN, {**RESOLUTION, "provider": "opencode-unknown"})
+        select(resolution={**RESOLUTION, "provider": "opencode-unknown"})
 
 
 def test_pre_dispatch_model_selection_must_match_frozen_profile():
-    profile = build_provider_profile(BEGIN, RESOLUTION)
+    profile = select()
     require_current_model_resolution(profile, RESOLUTION)
     for changed in ({"provider": "opencode-go-chat"},
                     {"model": "different"},
@@ -114,7 +133,7 @@ def test_pre_dispatch_model_selection_must_match_frozen_profile():
             "profile_id": "profile_" + "1" * 32, "profile_version": 2,
             "credential_id": "cred_" + "2" * 32,
             "credential_version": 3, "binding_version": 4}
-    user_profile = build_provider_profile(BEGIN, user)
+    user_profile = select(resolution=user)
     require_current_model_resolution(user_profile, user)
     for changed in ({"profile_version": 3}, {"credential_version": 4},
                     {"binding_version": 5}, {"credential_id": "cred_" + "3" * 32},

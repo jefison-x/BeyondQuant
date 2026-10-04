@@ -62,7 +62,8 @@ def _ready(tmp_path, *, route_name="opencode-go-chat"):
               "deadline_at_ms": int(time.time() * 1000) + 10000}
     profile = build_provider_profile(begin, {
         "source": "environment", "provider": route_name,
-        "model": "synthetic-model", "api_key": "synthetic-key"})
+        "model": "synthetic-model", "api_key": "synthetic-key"},
+        request_started_at_ms=int(time.time() * 1000))
     public = {**profile.public, "limits": limits}
     journal.record_provider_profile(AcpJudgmentProviderProfile(
         json.dumps(public).encode(), profile.upstream_credential))

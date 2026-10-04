@@ -189,14 +189,22 @@ from caller-supplied model resolution,
 derives the deadline and call/input/output/tool limits from the existing
 stage-specific BYQ request-budget registry, and produces a nonsecret,
 immutable public snapshot alongside the upstream credential kept in memory.
+The unwired builder now requires a caller-supplied request start time and
+rejects a future or expired time, so setup time can consume the same
+180-second ceiling. The pure builder cannot prove when the request actually
+started: the final trusted entry must persist this timestamp before Backend
+begin and bind it to the exact task/call, without resetting it after a
+restart. Wall-clock rollback and live ACP budget behavior remain NOT_RUN.
 It refuses a `created:false` replay, unknown route or deterministic stage.
 It also refuses a user-bound model key unless the internal credential resolver
 supplies stable nonsecret binding/profile/credential IDs and versions. The
 resolver now returns these fields from one Backend query, and the Adapter
 preserves them in its private model resolution. Focused Backend database tests
 passed 3/3 in an isolated tmpfs PostgreSQL container; the existing Adapter
-personal binding test passed 1/1 in an offline read-only rollback image. Eleven
-focused pure profile tests passed. This
+personal binding test passed 1/1 in an offline read-only rollback image.
+After the timestamp change, Root's focused profile, journal and synthetic
+loopback proxy tests passed 61/61; independent Reviewer found no current
+P1/P2 in the pure builder. This
 does not prove receipt origin, current Backend authority, or that resolution
 belongs to the admitted owner/session.
 The existing private journal now has an unwired strict freeze method for this

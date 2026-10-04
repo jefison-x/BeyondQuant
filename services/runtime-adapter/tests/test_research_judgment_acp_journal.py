@@ -86,7 +86,8 @@ def _freeze_fixture_profile(journal, limits, *, route="deepseek-official"):
     begin = journal.snapshot()["begin"]
     profile = build_provider_profile({**begin, "created": True}, {
         "source": "environment", "provider": route,
-        "model": "synthetic-model", "api_key": "synthetic-secret"})
+        "model": "synthetic-model", "api_key": "synthetic-secret"},
+        request_started_at_ms=int(time.time() * 1000))
     public = {**profile.public, "limits": limits}
     journal.record_provider_profile(AcpJudgmentProviderProfile(
         json.dumps(public).encode(), "synthetic-secret"))
@@ -138,7 +139,9 @@ def test_journal_freezes_nonsecret_profile_to_admitted_root_and_provider_request
         directory, task, call, backend_url="http://backend",
         authority_headers={"authorization": "Bearer synthetic-runtime-authority"})
     journal.record_begin(begin)
-    profile = build_provider_profile(begin, resolution)
+    request_started_at_ms = int(time.time() * 1000)
+    profile = build_provider_profile(
+        begin, resolution, request_started_at_ms=request_started_at_ms)
     future = AcpJudgmentProviderProfile(json.dumps({
         **profile.public,
         "limits": {**profile.public["limits"],
@@ -164,11 +167,12 @@ def test_journal_freezes_nonsecret_profile_to_admitted_root_and_provider_request
     assert journal.record_provider_profile(profile) == frozen
     with pytest.raises(AcpJudgmentOutcomeUnknown, match="profile changed"):
         journal.record_provider_profile(build_provider_profile(
-            begin, {**resolution, "model": "different-model"}))
+            begin, {**resolution, "model": "different-model"},
+            request_started_at_ms=request_started_at_ms))
     with pytest.raises(AcpJudgmentOutcomeUnknown, match="Backend root"):
         journal.record_provider_profile(build_provider_profile(
             {**begin, "root": {**begin["root"], "root_run_id": "0" * 32}},
-            resolution))
+            resolution, request_started_at_ms=request_started_at_ms))
     journal.record_binding(BINDING)
     journal.mark_prompt_may_dispatch()
     limits = profile.public["limits"]
