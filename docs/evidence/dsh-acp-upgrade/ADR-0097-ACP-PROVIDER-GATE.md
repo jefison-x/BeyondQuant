@@ -1,6 +1,6 @@
 # ADR-0097 ACP judgment provider gate: fixed-source route audit
 
-Status: **route admission helper only; outbound gate unqualified**. The
+Status: **isolated route/proxy slice only; outbound gate unqualified**. The
 `/acp-root/run` entry remains an unconditional 503. No provider, Product, or
 paid-model request was made by this audit.
 
@@ -38,13 +38,20 @@ python3 docs/evidence/dsh-acp-upgrade/probe-selected-routes.py \
 ```
 
 The script SHA-256 is
-`66c83abbf5a67155b9d1e613e75f53f1340a618b599444c2a0dfc00f6dd66c4d`.
+`f3e410058d648ed449bbdbac813ec2c64e43491c7368b8cd1130c096fb723590`.
 It checks `--dump-config` exit status, the selected loopback URL, exact single
 pi-ai route or disabled pi-ai, disabled DeepSeek for OpenCode selection, and
 the disabled account/compaction recovery rows.
 All seven rows printed `PASS (offline composition only)` on 2026-10-04.
 The temporary overlays and dumps are discarded after each run; the checked
 inputs and assertions are retained in the script.
+The current script uses the candidate's `private_provider_overlay` builder,
+so the seven loaded rows now check exactly one selected pi-ai route and model
+or DeepSeek alone, the loopback base URL and zero native retries. The
+`DshAcpCompatibility` process launcher accepts this last-layer file only for
+the explicit judgment-root mode and rechecks its private file permissions and
+exact selected route/model/base at build and start. This is keyless config
+loading, not a running ACP provider call or proof of network confinement.
 
 | Selected protocol | Candidate local base URL | Upstream origin/path to preserve |
 | --- | --- | --- |
@@ -91,11 +98,53 @@ rejects duplicate JSON fields, ambiguous/mixed credentials, Files,
 discovery, altered paths and currently unqualified `anthropic-beta` features,
 and returns only protocol-specific credential
 headers. Its focused offline tests also check that BYQ headers are not returned
-for forwarding. This is **PASS for pure admission only**. It has no HTTP
-listener, attempt counter, response parser or durable journal; no DSH request
-has passed through it. The caller has not yet been wired to Backend admission
+for forwarding. This is **PASS for pure admission only**. The helper itself
+holds no listener, attempt counter, parser or journal; the unwired candidate
+proxy and control journal below provide those separate responsibilities. No
+DSH request has passed through them. The caller has not yet been wired to Backend admission
 or the trusted credential resolver. The selected model, secret and final loaded
 route still need an exact binding to the admitted Backend call at process start.
+
+## Durable attempt and local proxy slice
+
+The ACP judgment control journal now fsyncs a per-provider-attempt marker before
+outbound I/O. It binds the marker to the existing task/call/root journal,
+selected route, request digest, declared output and bounded request bytes.
+A missing or incomplete terminal, transport loss, non-200 response, deadline,
+partial actual usage or excess output remains `unknown`; it blocks another
+provider attempt and the stage result. A result with zero provider receipts is
+also rejected. The journal serializes calls, caps total calls, input bytes,
+declared output and elapsed time, and charges the whole serialized request as
+a conservative upper bound for tool payload bytes. It stores no provider key or
+request body. This is an invocation-local safety record, not a persistent
+business budget across research attempts.
+
+The new unwired loopback proxy selects one of the seven fixed routes. It
+rejects other paths, duplicate/ambiguous headers, altered credentials and
+oversized request bodies before dispatch; forwards only route-approved headers
+to a fixed HTTPS URL; disables redirects and environment proxy routing; and
+buffers at most 8 MiB of provider SSE under the request deadline. It parses
+terminal and actual usage before forwarding, then fsyncs completion after
+the local response write/flush. This does not prove DSH application receipt
+or consumption. A dispatch lock makes the next request wait for that durable
+settlement; close waits for any in-flight dispatch. The local fake-transport
+tests exercised all seven exact paths and headers, an unknown lost response,
+two consecutive calls, and close ordering. These are **synthetic loopback
+facts**, not real `_send_https`, DSH process, credential or Product acceptance.
+
+The proxy constructor still receives model, credential and limits from its
+caller. The private last-layer profile is generated and loaded offline, but
+it is not bound to trusted Backend admission or the running proxy yet. The
+loopback port is not isolated from unrelated local processes.
+Actual HTTPS redirect, partial-body, size and deadline negatives remain
+NOT_RUN. The real transport's DNS lookup is not covered by urllib's socket
+timeout; a blocked lookup could make `close()` wait on the dispatch lock without
+a bounded end. Process-level termination and a blocking-resolution negative
+must be proven before connecting this proxy to ACP. The seven synthetic
+Messages fixtures explicitly report zero cache
+read/write; omitted cache fields remain unknown pending fixed-provider stream
+qualification. Therefore the outbound budget and unknown-result gate remains
+**FAIL / NOT_RUN for integration**, and `/acp-root/run` stays 503.
 
 ## Stream terminal and usage slice
 
@@ -118,11 +167,13 @@ frame-delimiter requirements are conservative: the pinned SDK may accept a
 stream that this helper rejects. Such a route needs local provider-stream proof
 before enablement; the helper must never loosen terminal evidence by inference.
 
-This is **PASS for isolated parser contracts only**. The current proxy does not
-call the parser. HTTP status, complete socket read, redirect, declared-output
-comparison, response-size enforcement before buffering, durable attempt marker
-and unknown-outcome stop remain separate gates. Parser `output_proven` alone
-cannot authorize another request, a business result or terminal ACK.
+This is **PASS for isolated parser contracts only**. The retained production
+proxy does not call the parser; the new unwired candidate proxy does so in
+local synthetic tests. Actual HTTPS status, complete socket read, redirect,
+declared-output comparison, response-size enforcement before buffering,
+durable attempt marker and unknown-outcome stop remain separate integration
+gates. Parser `output_proven` alone cannot authorize another request, a business
+result or terminal ACK.
 
 ## Current BYQ proxy gaps
 
@@ -155,9 +206,8 @@ The retained judgment `RequestGateProxy` is **not** a qualified ACP gate:
    may-have-dispatched marker prevents prompt replay but is not a per-provider
    attempt/usage receipt.
 
-Implement a private per-invocation last-layer profile, then a protocol-aware
-BYQ provider proxy with exact upstream/path/header allowlists and durable
-unknown-outcome stop. Validate all seven routes against a local fake provider,
-including lost and partial responses, before considering a separately
-authorized paid call. Keep `/acp-root/run` at 503 until Backend result/terminal
-ACK and Product qualification gates also pass.
+Bind the private per-invocation last-layer profile and protocol-aware BYQ
+provider proxy to the exact Backend admission, then prove real ACP process
+routing, network confinement and unknown-outcome behavior. Keep
+`/acp-root/run` at 503 until Backend result/terminal ACK and Product
+qualification gates also pass.

@@ -7,11 +7,13 @@ as possibly dispatched *before* calling ACP; restart never replays that prompt.
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 import re
 import stat
 import tempfile
+import time
 from pathlib import Path
 
 from packages.contracts.agent_run_lifecycle import lifecycle_receipt
@@ -20,11 +22,30 @@ from packages.contracts.research_judgment import validate_acp_judgment_result_re
 from .research_judgment_acp_control import (
     AcpJudgmentOutcomeUnknown, exact_status, result_request_sha256,
 )
+from .research_judgment_acp_provider_usage import AcpProviderStreamReceipt
 
 _TASK = re.compile(r"task_[0-9a-f]{32}\Z")
 _CALL = re.compile(r"byq-judgment-[0-9a-f]{32}\Z")
 _MAX_BYTES = 128 * 1024
 _SCHEMA = "byq-acp-judgment-control-journal.v1"
+_PROVIDER_LIMIT_KEYS = frozenset({"max_calls", "max_input_bytes", "max_total_input_bytes",
+                                  "max_output_tokens", "max_total_output_tokens",
+                                  "max_tool_payload_bytes", "max_total_tool_payload_bytes",
+                                  "deadline_at_ms"})
+
+
+def _provider_limits(value: dict) -> dict:
+    if (not isinstance(value, dict) or set(value) != _PROVIDER_LIMIT_KEYS
+            or any(type(item) is not int or item <= 0 for item in value.values())
+            or value["max_calls"] > 16
+            or value["max_input_bytes"] > 8 * 1024 * 1024
+            or value["max_total_input_bytes"] > 32 * 1024 * 1024
+            or value["max_output_tokens"] > 65536
+            or value["max_total_output_tokens"] > 262144
+            or value["max_tool_payload_bytes"] > 8 * 1024 * 1024
+            or value["max_total_tool_payload_bytes"] > 32 * 1024 * 1024):
+        raise ValueError("closed ACP provider limits are required")
+    return dict(value)
 
 
 class AcpJudgmentJournal:
@@ -186,6 +207,105 @@ class AcpJudgmentJournal:
 
         return self._locked(save)
 
+    def reserve_provider_attempt(self, *, route: str, body: bytes,
+                                 declared_output_tokens: int, limits: dict,
+                                 now_ms: int | None = None) -> dict:
+        """Fsync one exact may-have-dispatched fact before outbound I/O.
+
+        A missing completion after this write is unknown on every restart. The
+        journal deliberately serializes provider calls within this root.
+        """
+        limits = _provider_limits(limits)
+        if (not isinstance(route, str) or not route or len(route) > 80
+                or not isinstance(body, bytes) or not body
+                or type(declared_output_tokens) is not int or declared_output_tokens <= 0):
+            raise ValueError("exact provider attempt inputs are required")
+        if now_ms is None:
+            now_ms = int(time.time() * 1000)
+        if type(now_ms) is not int or now_ms <= 0:
+            raise ValueError("provider attempt time is invalid")
+        digest = "sha256:" + hashlib.sha256(body).hexdigest()
+
+        def save(value):
+            if value is None or value.get("phase") != "prompt_may_have_dispatched":
+                raise AcpJudgmentOutcomeUnknown("judgment prompt is not active")
+            attempts = value.get("provider_attempts", [])
+            if not isinstance(attempts, list) or any(not isinstance(row, dict)
+                                                     or row.get("phase") != "completed"
+                                                     for row in attempts):
+                raise AcpJudgmentOutcomeUnknown("previous provider attempt is unknown")
+            if value.get("provider_limits") not in (None, limits):
+                raise AcpJudgmentOutcomeUnknown("provider limits changed within root")
+            if (now_ms >= limits["deadline_at_ms"]
+                    or len(attempts) >= limits["max_calls"]
+                    or len(body) > limits["max_input_bytes"]
+                    # Every tool schema/result byte is contained in the
+                    # serialized request. Charge the whole request as a safe
+                    # upper bound until each provider shape is measured.
+                    or len(body) > limits["max_tool_payload_bytes"]
+                    or sum(row["input_bytes"] for row in attempts) + len(body)
+                       > limits["max_total_input_bytes"]
+                    or sum(row["tool_payload_upper_bound_bytes"] for row in attempts)
+                       + len(body) > limits["max_total_tool_payload_bytes"]
+                    or declared_output_tokens > limits["max_output_tokens"]
+                    or sum(row["declared_output_tokens"] for row in attempts)
+                       + declared_output_tokens > limits["max_total_output_tokens"]):
+                raise AcpJudgmentOutcomeUnknown("ACP provider request budget exhausted")
+            attempt = {"index": len(attempts) + 1, "phase": "may_have_dispatched",
+                       "route": route, "request_sha256": digest,
+                       "input_bytes": len(body),
+                       "tool_payload_upper_bound_bytes": len(body),
+                       "declared_output_tokens": declared_output_tokens,
+                       "at_ms": now_ms}
+            value = {**value, "provider_limits": limits,
+                     "provider_attempts": [*attempts, attempt]}
+            self._write(value)
+            return attempt
+
+        return self._locked(save)
+
+    def settle_provider_attempt(self, *, index: int, status: int,
+                                receipt: AcpProviderStreamReceipt | None,
+                                transport_complete: bool,
+                                now_ms: int | None = None) -> dict:
+        """Close a proven attempt; all other outcomes remain permanently unknown."""
+        if type(index) is not int or index <= 0 or type(status) is not int:
+            raise ValueError("exact provider attempt receipt is required")
+        if now_ms is None:
+            now_ms = int(time.time() * 1000)
+        if type(now_ms) is not int or now_ms <= 0:
+            raise ValueError("provider completion time is invalid")
+
+        def save(value):
+            if value is None or value.get("phase") != "prompt_may_have_dispatched":
+                raise AcpJudgmentOutcomeUnknown("judgment prompt is not active")
+            attempts = value.get("provider_attempts", [])
+            if (not isinstance(attempts, list) or len(attempts) != index
+                    or attempts[index - 1].get("phase") != "may_have_dispatched"):
+                raise AcpJudgmentOutcomeUnknown("provider attempt is not pending")
+            attempt = attempts[index - 1]
+            limits = value.get("provider_limits")
+            proved = (transport_complete is True and status == 200
+                      and isinstance(receipt, AcpProviderStreamReceipt)
+                      and receipt.output_proven
+                      and receipt.usage_state == "known"
+                      and all(type(count) is int and count >= 0 for count in (
+                          receipt.actual_input_tokens, receipt.actual_output_tokens,
+                          receipt.actual_cache_read_tokens, receipt.actual_cache_write_tokens))
+                      and receipt.actual_output_tokens <= attempt["declared_output_tokens"]
+                      and now_ms < limits["deadline_at_ms"])
+            completed = {**attempt, "phase": "completed" if proved else "unknown",
+                         "status": status, "completed_at_ms": now_ms,
+                         "actual_input_tokens": (receipt.actual_input_tokens if receipt else "unknown"),
+                         "actual_output_tokens": (receipt.actual_output_tokens if receipt else "unknown"),
+                         "actual_cache_read_tokens": (receipt.actual_cache_read_tokens if receipt else "unknown"),
+                         "actual_cache_write_tokens": (receipt.actual_cache_write_tokens if receipt else "unknown")}
+            value = {**value, "provider_attempts": [*attempts[:-1], completed]}
+            self._write(value)
+            return completed
+
+        return self._locked(save)
+
     def record_result_request(self, request: dict) -> dict:
         validate_acp_judgment_result_request(request)
 
@@ -193,6 +313,11 @@ class AcpJudgmentJournal:
             if value is None or value.get("phase") not in {
                     "prompt_may_have_dispatched", "result_prepared"}:
                 raise AcpJudgmentOutcomeUnknown("judgment result has no dispatched prompt")
+            attempts = value.get("provider_attempts")
+            if (not isinstance(attempts, list) or not attempts
+                    or any(not isinstance(row, dict) or row.get("phase") != "completed"
+                           for row in attempts)):
+                raise AcpJudgmentOutcomeUnknown("provider outcome is unknown before result")
             root = value["begin"]["root"]
             if (request.get("call_identity") != self.call_identity
                     or request.get("attempt_binding") != value["begin"].get("attempt_binding")

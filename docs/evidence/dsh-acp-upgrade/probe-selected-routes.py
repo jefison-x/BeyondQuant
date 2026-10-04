@@ -5,12 +5,19 @@ Requires PyYAML on the host running this evidence probe, not in Runtime Adapter.
 """
 
 import os
+import json
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 import yaml
+
+repository = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(repository))
+sys.path.insert(0, str(repository / "services/runtime-adapter"))
+from app.research_judgment_acp_provider_overlay import private_provider_overlay  # noqa: E402
+from app.research_judgment_acp_provider_routes import selected_route  # noqa: E402
 
 
 def main() -> None:
@@ -25,27 +32,13 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory(prefix="byq-acp-route-probe-") as temporary:
         for selected in ("deepseek-official", *routes):
-            if selected == "deepseek-official":
-                overlay = [
-                    {"id": "llm-deepseek", "config": {
-                        "baseURL": "http://127.0.0.1:43210/anthropic"}},
-                    {"id": "llm-pi-ai", "disabled": True},
-                ]
-            else:
-                route = dict(routes[selected])
-                # Anthropic SDK appends /v1/messages; OpenAI SDK appends its
-                # endpoint beneath the configured /v1 root. This probe still
-                # checks composition only, not actual HTTP dispatch.
-                route["baseURL"] = ("http://127.0.0.1:43210" if
-                                    route["api"] == "anthropic-messages" else
-                                    "http://127.0.0.1:43210/v1")
-                overlay = [
-                    {"id": "llm-deepseek", "disabled": True},
-                    {"id": "llm-pi-ai", "config": {"providers": {selected: route}}},
-                ]
+            route = selected_route(selected)
+            local_base = "http://127.0.0.1:43210" + route.local_base_path
+            overlay = private_provider_overlay(
+                route_name=selected, model="synthetic-model",
+                proxy_base_url=local_base)
             patch = Path(temporary) / f"{selected}.yml"
-            patch.write_text(yaml.safe_dump(overlay, allow_unicode=True, sort_keys=False),
-                             encoding="utf-8")
+            patch.write_text(json.dumps(overlay), encoding="utf-8")
             environment = {
                 "PATH": os.environ["PATH"], "HOME": temporary,
                 "DSH_HOME": str(Path(temporary) / selected),
@@ -61,12 +54,14 @@ def main() -> None:
                 assert loaded[disabled_id].get("disabled") == "true"
             if selected == "deepseek-official":
                 assert pi_ai.get("disabled") == "true"
-                assert deepseek["config"]["baseURL"] == "http://127.0.0.1:43210/anthropic"
+                assert deepseek["config"]["baseURL"] == local_base
             else:
                 assert deepseek.get("disabled") == "true"
                 assert list(pi_ai["config"]["providers"]) == [selected]
                 assert (pi_ai["config"]["providers"][selected]["baseURL"]
-                        == route["baseURL"])
+                        == local_base)
+                assert pi_ai["config"]["providers"][selected]["models"] == [
+                    {"id": "synthetic-model"}]
             print(f"{selected}: PASS (offline composition only)")
 
 

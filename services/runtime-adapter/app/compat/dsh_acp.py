@@ -24,6 +24,7 @@ from urllib.parse import urlsplit
 from packages.contracts.domain_call_admission import ACTIONS, parse_observed_arguments
 
 from .types import RuntimeObservation, RuntimeToolResult
+from ..research_judgment_acp_provider_overlay import private_provider_overlay
 
 
 _ACP_PROTOCOL_VERSION = 1
@@ -462,6 +463,8 @@ class AcpHarness:
     runtime_command: tuple[str, ...]
     environment: dict[str, str] = field(repr=False)
     max_tokens: int | None = None
+    private_provider_patch: Path | None = None
+    provider_proxy_base_url: str | None = None
     process: _AcpProcess | None = field(default=None, repr=False)
     native_session_ids: set[str] = field(default_factory=set, repr=False)
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
@@ -504,6 +507,8 @@ class DshAcpCompatibility:
         self, *, provider: str, model: str, composition: Path, session_root: Path,
         runtime_command: tuple[str, ...], environment: dict[str, str],
         max_tokens: int | None = None,
+        private_provider_patch: Path | None = None,
+        provider_proxy_base_url: str | None = None,
     ) -> AcpHarness:
         patch = composition.expanduser().resolve()
         home = session_root.expanduser().resolve()
@@ -521,6 +526,16 @@ class DshAcpCompatibility:
         self._validate_runtime_identity(environment)
         self._validate_judgment_process_environment(environment, provider)
         self._mcp_servers(environment)
+        if (environment.get(_ACP_IDENTITY_MODE_ENV) == _ACP_JUDGMENT_ROOT_MODE
+                and private_provider_patch is None):
+            raise AcpTransportError("ACP judgment root requires private provider patch")
+        if (private_provider_patch is None) != (provider_proxy_base_url is None):
+            raise AcpTransportError("ACP judgment private provider patch is incomplete")
+        if private_provider_patch is not None:
+            if environment.get(_ACP_IDENTITY_MODE_ENV) != _ACP_JUDGMENT_ROOT_MODE:
+                raise AcpTransportError("private provider patch requires judgment root")
+            self._verify_private_provider_patch(private_provider_patch, provider,
+                                                model, provider_proxy_base_url)
         home.mkdir(parents=True, exist_ok=True)
         return AcpHarness(
             provider=provider,
@@ -530,6 +545,9 @@ class DshAcpCompatibility:
             runtime_command=tuple(runtime_command),
             environment=dict(environment),
             max_tokens=max_tokens,
+            private_provider_patch=(private_provider_patch.expanduser().resolve()
+                                    if private_provider_patch is not None else None),
+            provider_proxy_base_url=provider_proxy_base_url,
         )
 
     def start(self, harness: AcpHarness) -> None:
@@ -538,7 +556,18 @@ class DshAcpCompatibility:
                 return
             self._validate_runtime_identity(harness.environment)
             self._validate_judgment_process_environment(harness.environment, harness.provider)
+            if (harness.environment.get(_ACP_IDENTITY_MODE_ENV) == _ACP_JUDGMENT_ROOT_MODE
+                    and harness.private_provider_patch is None):
+                raise AcpTransportError("ACP judgment root requires private provider patch")
+            if (harness.private_provider_patch is not None
+                    and harness.environment.get(_ACP_IDENTITY_MODE_ENV) != _ACP_JUDGMENT_ROOT_MODE):
+                raise AcpTransportError("private provider patch requires judgment root")
             command = [*harness.runtime_command, "--profile", "acp", "--patch", str(harness.composition)]
+            if harness.private_provider_patch is not None:
+                self._verify_private_provider_patch(
+                    harness.private_provider_patch, harness.provider,
+                    harness.model, harness.provider_proxy_base_url)
+                command.extend(["--patch", str(harness.private_provider_patch)])
             environment = {
                 key: os.environ[key]
                 for key in _INHERITED_RUNTIME_ENV
@@ -898,6 +927,37 @@ class DshAcpCompatibility:
                     or re.fullmatch(r"continuation_[0-9a-f]{32}", reservation_id) is None):
                 raise AcpTransportError("continuation MCP authority identity is invalid")
         return []
+
+    @staticmethod
+    def _verify_private_provider_patch(
+        patch: Path, provider: str, model: str, proxy_base_url: str | None,
+    ) -> None:
+        try:
+            path = Path(patch)
+            directory = os.lstat(path.parent)
+            info = os.lstat(path)
+            if (not stat.S_ISDIR(directory.st_mode)
+                    or stat.S_IMODE(directory.st_mode) & 0o077
+                    or directory.st_uid != os.geteuid()
+                    or not stat.S_ISREG(info.st_mode)
+                    or stat.S_IMODE(info.st_mode) != 0o600
+                    or info.st_uid != os.geteuid() or info.st_nlink != 1
+                    or info.st_size > 16 * 1024):
+                raise ValueError("private provider patch file is invalid")
+            fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            with os.fdopen(fd, "rb") as source:
+                opened = os.fstat(source.fileno())
+                if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
+                    raise ValueError("private provider patch changed")
+                raw = source.read(16 * 1024 + 1)
+            expected = private_provider_overlay(
+                route_name=provider, model=model, proxy_base_url=proxy_base_url)
+            expected_raw = json.dumps(expected, sort_keys=True,
+                                      separators=(",", ":")).encode()
+            if raw != expected_raw:
+                raise ValueError("private provider patch differs from selection")
+        except (OSError, ValueError, TypeError, UnicodeError, json.JSONDecodeError):
+            raise AcpTransportError("ACP judgment private provider patch is invalid") from None
 
     @staticmethod
     def _validate_judgment_process_environment(

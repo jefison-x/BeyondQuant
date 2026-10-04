@@ -170,6 +170,18 @@ def _judgment_identity_environment() -> dict[str, str]:
     }
 
 
+def _judgment_private_patch(tmp_path: Path, provider: str, model: str):
+    from app.research_judgment_acp_provider_overlay import write_private_provider_overlay
+    from app.research_judgment_acp_provider_routes import selected_route
+
+    directory = tmp_path / "private"
+    directory.mkdir(mode=0o700, exist_ok=True)
+    base = "http://127.0.0.1:43210" + selected_route(provider).local_base_path
+    patch = write_private_provider_overlay(directory, route_name=provider,
+                                           model=model, proxy_base_url=base)
+    return patch, base
+
+
 def test_official_acp_stdio_lifecycle_and_scoped_mcp_identity_resume(tmp_path: Path) -> None:
     capture = tmp_path / "wire.jsonl"
     compatibility, harness = _harness(tmp_path, capture)
@@ -265,11 +277,13 @@ def test_judgment_identity_mode_is_explicit_and_process_scope_has_only_its_crede
     if selected_key == "OPENCODE_API_KEY":
         environment.pop("DEEPSEEK_API_KEY")
         environment["OPENCODE_API_KEY"] = "test-only-opencode-key"
+    private_patch, proxy_base = _judgment_private_patch(tmp_path, provider, model)
     harness = compatibility.build_harness(
         provider=provider, model=model,
         composition=composition, session_root=session_root,
         runtime_command=(sys.executable, "-u", "-c", _SERVER),
         environment=environment,
+        private_provider_patch=private_patch, provider_proxy_base_url=proxy_base,
     )
     try:
         compatibility.start(harness)
@@ -333,16 +347,80 @@ def test_judgment_process_rechecks_environment_before_start(
     composition = tmp_path / "composition.yml"
     composition.write_text("[]\n", encoding="utf-8")
     compatibility = DshAcpCompatibility()
+    private_patch, proxy_base = _judgment_private_patch(
+        tmp_path, "deepseek-official", "deepseek-v4.1-flash")
     harness = compatibility.build_harness(
         provider="deepseek-official", model="deepseek-v4.1-flash",
         composition=composition, session_root=tmp_path / "root",
         runtime_command=(sys.executable, "-u", "-c", _SERVER),
         environment=_judgment_identity_environment(),
+        private_provider_patch=private_patch, provider_proxy_base_url=proxy_base,
     )
     harness.environment[changed_key] = changed_value
     with pytest.raises(AcpTransportError):
         compatibility.start(harness)
     assert harness.process is None
+
+
+def test_judgment_private_provider_patch_is_last_and_rechecked_before_start(tmp_path: Path) -> None:
+    from app.research_judgment_acp_provider_overlay import write_private_provider_overlay
+
+    directory = tmp_path / "private"
+    directory.mkdir(mode=0o700)
+    base = "http://127.0.0.1:43210/v1"
+    patch = write_private_provider_overlay(
+        directory, route_name="opencode-go-chat", model="synthetic-model",
+        proxy_base_url=base)
+    composition = tmp_path / "composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    environment = _judgment_identity_environment()
+    environment.pop("DEEPSEEK_API_KEY")
+    environment["OPENCODE_API_KEY"] = "synthetic-key"
+    compatibility = DshAcpCompatibility()
+    harness = compatibility.build_harness(
+        provider="opencode-go-chat", model="synthetic-model", composition=composition,
+        session_root=tmp_path / "root", runtime_command=(sys.executable, "-u", "-c", _SERVER),
+        environment=environment, private_provider_patch=patch,
+        provider_proxy_base_url=base)
+    compatibility.start(harness)
+    try:
+        assert harness.process.command[-4:] == (
+            "--patch", str(composition), "--patch", str(patch))
+    finally:
+        compatibility.close(harness)
+    patch.write_text("[]", encoding="utf-8")
+    with pytest.raises(AcpTransportError, match="private provider patch is invalid"):
+        compatibility.start(harness)
+
+
+def test_judgment_root_refuses_start_without_private_provider_patch(tmp_path: Path) -> None:
+    composition = tmp_path / "composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    with pytest.raises(AcpTransportError, match="requires private provider patch"):
+        DshAcpCompatibility().build_harness(
+            provider="deepseek-official", model="deepseek-v4.1-flash",
+            composition=composition, session_root=tmp_path / "root",
+            runtime_command=(sys.executable, "-u", "-c", _SERVER),
+            environment=_judgment_identity_environment())
+
+
+def test_product_root_cannot_add_private_provider_patch(tmp_path: Path) -> None:
+    from app.research_judgment_acp_provider_overlay import write_private_provider_overlay
+
+    directory = tmp_path / "private"
+    directory.mkdir(mode=0o700)
+    base = "http://127.0.0.1:43210/v1"
+    patch = write_private_provider_overlay(
+        directory, route_name="opencode-go-chat", model="synthetic-model",
+        proxy_base_url=base)
+    composition = tmp_path / "composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    with pytest.raises(AcpTransportError, match="requires judgment root"):
+        DshAcpCompatibility().build_harness(
+            provider="opencode-go-chat", model="synthetic-model", composition=composition,
+            session_root=tmp_path / "root", runtime_command=(sys.executable, "-u", "-c", _SERVER),
+            environment=_identity_environment(tmp_path / "capture.jsonl"),
+            private_provider_patch=patch, provider_proxy_base_url=base)
 
 
 @pytest.mark.parametrize("provider", ["unqualified-provider", "opencode-unqualified"])
