@@ -3,24 +3,40 @@
 from __future__ import annotations
 
 import json
+import ipaddress
 import os
 import re
 from pathlib import Path
 
 from .research_judgment_acp_provider_routes import selected_route
 
-_LOOPBACK = re.compile(r"http://127\.0\.0\.1:([1-9][0-9]{0,4})(/[^?#]*)?\Z")
+_LOCAL_HTTP = re.compile(r"http://([0-9.]+):([1-9][0-9]{0,4})(/[^?#]*)?\Z")
+_ALLOWED_BIND_NETWORKS = tuple(ipaddress.ip_network(value) for value in (
+    "127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
 _API = {"chat": "openai-completions", "responses": "openai-responses",
         "messages": "anthropic-messages"}
+
+
+def valid_local_proxy_bind_host(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    return (isinstance(address, ipaddress.IPv4Address)
+            and str(address) == value
+            and any(address in network for network in _ALLOWED_BIND_NETWORKS))
 
 
 def private_provider_overlay(*, route_name: str, model: str,
                              proxy_base_url: str) -> list[dict]:
     """Return only the selected route with its fixed local proxy endpoint."""
     route = selected_route(route_name)
-    matched = _LOOPBACK.fullmatch(proxy_base_url) if isinstance(proxy_base_url, str) else None
-    if (matched is None or int(matched[1]) > 65535
-            or (matched[2] or "") != route.local_base_path
+    matched = _LOCAL_HTTP.fullmatch(proxy_base_url) if isinstance(proxy_base_url, str) else None
+    if (matched is None or not valid_local_proxy_bind_host(matched[1])
+            or int(matched[2]) > 65535
+            or (matched[3] or "") != route.local_base_path
             or not isinstance(model, str) or not model
             or len(model) > 128 or any(ord(char) < 32 for char in model)):
         raise ValueError("exact selected ACP proxy route and model are required")

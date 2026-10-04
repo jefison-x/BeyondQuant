@@ -400,10 +400,11 @@ class _TrackedServer(ThreadingHTTPServer):
 
 
 class AcpJudgmentProviderProxy:
-    """Private loopback listener for one selected root and one provider route."""
+    """Private local listener for one selected root and one provider route."""
 
     def __init__(self, journal: AcpJudgmentJournal, *, route_name: str,
-                 model: str, credential: str, limits: dict, transport=None) -> None:
+                 model: str, credential: str, limits: dict, transport=None,
+                 bind_host: str = "127.0.0.1") -> None:
         self.route = selected_route(route_name)
         if not isinstance(journal, AcpJudgmentJournal):
             raise ValueError("durable judgment journal is required")
@@ -426,7 +427,10 @@ class AcpJudgmentProviderProxy:
         self.transport = transport or _IsolatedHttpsTransport()
         self.deadline_monotonic = time.monotonic() + max(
             0.0, (self.limits["deadline_at_ms"] - time.time() * 1000) / 1000)
-        self._server = _TrackedServer(("127.0.0.1", 0), _Handler)
+        from .research_judgment_acp_provider_overlay import valid_local_proxy_bind_host
+        if not valid_local_proxy_bind_host(bind_host):
+            raise ValueError("exact private ACP provider bind address required")
+        self._server = _TrackedServer((bind_host, 0), _Handler)
         self._server.daemon_threads = True
         self._server.proxy = self  # type: ignore[attr-defined]
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
@@ -441,7 +445,7 @@ class AcpJudgmentProviderProxy:
 
     @classmethod
     def from_frozen_profile(cls, journal: AcpJudgmentJournal, profile,
-                            *, transport=None) -> "AcpJudgmentProviderProxy":
+                            *, transport=None, bind_host: str = "127.0.0.1") -> "AcpJudgmentProviderProxy":
         """Keep the upstream key and journal choice from the same built profile."""
         from .research_judgment_acp_provider_profile import AcpJudgmentProviderProfile
 
@@ -455,7 +459,7 @@ class AcpJudgmentProviderProxy:
             raise ValueError("provider profile differs from durable root")
         return cls(journal, route_name=public["provider_route"], model=public["model"],
                    credential=profile.upstream_credential, limits=public["limits"],
-                   transport=transport)
+                   transport=transport, bind_host=bind_host)
 
     def _track_client(self, connection: socket.socket) -> bool:
         with self._client_lock:

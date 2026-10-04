@@ -9,7 +9,8 @@ import stat
 import pytest
 
 from app.research_judgment_acp_provider_overlay import (
-    private_provider_overlay, write_private_provider_overlay,
+    private_provider_overlay, valid_local_proxy_bind_host,
+    write_private_provider_overlay,
 )
 from app.research_judgment_acp_provider_routes import selected_route
 
@@ -55,3 +56,18 @@ def test_private_overlay_refuses_nonexact_loopback_base(base):
     with pytest.raises(ValueError, match="exact selected"):
         private_provider_overlay(route_name="opencode-go-chat",
                                  model="synthetic-model", proxy_base_url=base)
+
+
+def test_internal_runner_proxy_overlay_requires_a_private_literal_address():
+    base = "http://172.20.0.7:43210/v1"
+    rows = private_provider_overlay(
+        route_name="opencode-go-chat", model="synthetic-model",
+        proxy_base_url=base)
+    assert rows[1]["config"]["providers"]["opencode-go-chat"]["baseURL"] == base
+    for host in ("0.0.0.0", "8.8.8.8", "169.254.1.1", "localhost",
+                 "172.32.0.1", "127.000.000.001", "::1"):
+        assert not valid_local_proxy_bind_host(host)
+        with pytest.raises(ValueError, match="exact selected"):
+            private_provider_overlay(
+                route_name="opencode-go-chat", model="synthetic-model",
+                proxy_base_url=f"http://{host}:43210/v1")

@@ -235,6 +235,14 @@ proxy writes the nonsecret private overlay from its allocated listener port;
 start, close and overlay creation share a lock, with listener liveness checked
 before the overlay write. Root's focused factory/start-close tests passed 2/2;
 an independent Tester passed the earlier full local proxy snapshot 22/22.
+For Accepted ADR-0099, the unwired proxy can also bind a canonical RFC1918
+IPv4 literal and write that exact live address into the private overlay;
+`0.0.0.0`, public IPs, DNS names, noncanonical literals and other paths are
+rejected. Root's focused overlay/factory tests passed 14/14 and independent
+Reviewer found no current P1/P2. This does not prove the selected IP belongs
+to the candidate's internal control network, that Product bridge cannot
+reach it, or that a real DSH process uses this same listener. Those remain
+NOT_RUN until runner/Compose integration.
 This does **not** prove that a caller supplied the credential from the trusted
 Backend resolver: a new Python profile object with the same public fields
 could hold another secret, and direct constructor callers still exist. The

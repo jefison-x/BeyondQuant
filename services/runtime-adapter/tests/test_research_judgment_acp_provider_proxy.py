@@ -217,6 +217,9 @@ def test_proxy_factory_uses_one_durable_profile_and_keeps_real_key_local(tmp_pat
         AcpJudgmentProviderProxy(
             journal, route_name="deepseek-official", model="synthetic-model",
             credential="synthetic-key", limits=limits)
+    with pytest.raises(ValueError, match="private ACP provider bind address"):
+        AcpJudgmentProviderProxy.from_frozen_profile(
+            journal, profile, bind_host="0.0.0.0")
 
 
 def test_proxy_close_waits_for_listener_start_before_reporting_cleanup(tmp_path):
