@@ -409,6 +409,13 @@ class AcpJudgmentProviderProxy:
             raise ValueError("durable judgment journal is required")
         if not isinstance(model, str) or not model or not isinstance(credential, str) or not credential:
             raise ValueError("trusted provider model and credential are required")
+        frozen = journal.snapshot()
+        public = frozen.get("provider_profile") if isinstance(frozen, dict) else None
+        if (not isinstance(public, dict)
+                or frozen.get("phase") not in {"bound", "prompt_may_have_dispatched"}
+                or public.get("provider_route") != route_name
+                or public.get("model") != model or public.get("limits") != limits):
+            raise ValueError("live proxy differs from frozen judgment provider profile")
         self.journal = journal
         self.model = model
         self.credential = credential
@@ -432,6 +439,24 @@ class AcpJudgmentProviderProxy:
         self._close_complete = False
         self._started = False
 
+    @classmethod
+    def from_frozen_profile(cls, journal: AcpJudgmentJournal, profile,
+                            *, transport=None) -> "AcpJudgmentProviderProxy":
+        """Keep the upstream key and journal choice from the same built profile."""
+        from .research_judgment_acp_provider_profile import AcpJudgmentProviderProfile
+
+        if not isinstance(profile, AcpJudgmentProviderProfile):
+            raise ValueError("built ACP provider profile is required")
+        public = profile.public
+        if not isinstance(public, dict):
+            raise ValueError("exact ACP provider profile is required")
+        frozen = journal.snapshot()
+        if not isinstance(frozen, dict) or frozen.get("provider_profile") != public:
+            raise ValueError("provider profile differs from durable root")
+        return cls(journal, route_name=public["provider_route"], model=public["model"],
+                   credential=profile.upstream_credential, limits=public["limits"],
+                   transport=transport)
+
     def _track_client(self, connection: socket.socket) -> bool:
         with self._client_lock:
             if self._closed:
@@ -452,12 +477,27 @@ class AcpJudgmentProviderProxy:
         host, port = self._server.server_address[:2]
         return f"http://{host}:{port}{self.route.local_base_path}"
 
+    def write_private_overlay(self, directory: Path) -> Path:
+        """Derive the last-layer DSH route from this running proxy instance."""
+        from .research_judgment_acp_provider_overlay import write_private_provider_overlay
+
+        with self._close_lock:
+            if (not self._started or self._closed or not self._thread.is_alive()
+                    or self._server.socket.fileno() < 0):
+                raise ValueError("running ACP provider proxy is required")
+            return write_private_provider_overlay(
+                directory, route_name=self.route.name, model=self.model,
+                proxy_base_url=self.base_url)
+
     def __enter__(self):
-        if self._closed:
-            raise RuntimeError("provider proxy is closed")
-        if not self._started:
-            self._thread.start()
-            self._started = True
+        with self._close_lock:
+            if self._closed:
+                raise RuntimeError("provider proxy is closed")
+            if not self._started:
+                self._thread.start()
+                self._started = True
+            if not self._thread.is_alive():
+                raise RuntimeError("provider proxy listener is unavailable")
         return self
 
     def close(self) -> None:

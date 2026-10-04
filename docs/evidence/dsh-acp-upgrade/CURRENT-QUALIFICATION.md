@@ -88,6 +88,15 @@ are not connected to the ACP entry, and the old three-call ceiling has not
 been measured against the dedicated ACP root. Receipt origin, current Backend
 authority, and credential resolution ownership remain unproven.
 
+The proxy now checks its frozen route/model/limits and offers an unwired
+factory using an in-memory profile's upstream key. A running proxy writes its
+private overlay from its actual listener address; start/close and overlay
+creation use one lock. Independent Tester passed the earlier proxy snapshot
+22/22; Root's focused factory/start-close cases passed 2/2 after the lock
+change. This still cannot prove the upstream key came from the trusted
+resolver or that the ACP child uses this same live proxy; final entry binding
+and user credential version recheck remain NOT_RUN.
+
 ## Exact local candidate inputs
 
 | Input | SHA-256 |

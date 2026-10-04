@@ -179,6 +179,82 @@ def test_each_proxy_mints_distinct_local_token(tmp_path):
         second.close()
 
 
+def test_proxy_factory_uses_one_durable_profile_and_keeps_real_key_local(tmp_path):
+    journal, limits = _ready(tmp_path)
+    public = journal.snapshot()["provider_profile"]
+    profile = AcpJudgmentProviderProfile(json.dumps(public).encode(), "synthetic-key")
+    proxy = AcpJudgmentProviderProxy.from_frozen_profile(
+        journal, profile, transport=lambda *_: pytest.fail("unexpected upstream"))
+    private = tmp_path / "overlay"
+    private.mkdir(mode=0o700)
+    try:
+        with pytest.raises(ValueError, match="running ACP provider proxy"):
+            proxy.write_private_overlay(private)
+        proxy.__enter__()
+        assert proxy.route.name == "opencode-go-chat"
+        assert proxy.model == "synthetic-model"
+        assert proxy.limits == limits
+        assert proxy.credential == "synthetic-key"
+        assert proxy.local_credential != "synthetic-key"
+        overlay_path = proxy.write_private_overlay(private)
+        overlay = overlay_path.read_text()
+        assert proxy.base_url in overlay
+        assert "synthetic-model" in overlay
+        assert "synthetic-key" not in overlay
+        assert proxy.local_credential not in overlay
+    finally:
+        proxy.close()
+    with pytest.raises(ValueError, match="running ACP provider proxy"):
+        proxy.write_private_overlay(tmp_path / "other")
+    wrong = AcpJudgmentProviderProfile(
+        json.dumps({**public, "model": "other-model"}).encode(), "synthetic-key")
+    with pytest.raises(ValueError, match="durable root"):
+        AcpJudgmentProviderProxy.from_frozen_profile(journal, wrong)
+    with pytest.raises(ValueError, match="frozen judgment provider profile"):
+        AcpJudgmentProviderProxy(
+            journal, route_name="deepseek-official", model="synthetic-model",
+            credential="synthetic-key", limits=limits)
+
+
+def test_proxy_close_waits_for_listener_start_before_reporting_cleanup(tmp_path):
+    journal, limits = _ready(tmp_path)
+    proxy = AcpJudgmentProviderProxy(
+        journal, route_name="opencode-go-chat", model="synthetic-model",
+        credential="synthetic-key", limits=limits)
+    entering = threading.Event()
+    release = threading.Event()
+    original_start = proxy._thread.start
+    failures = []
+
+    def delayed_start():
+        entering.set()
+        assert release.wait(2)
+        original_start()
+
+    proxy._thread.start = delayed_start
+
+    def enter():
+        try:
+            proxy.__enter__()
+        except BaseException as error:
+            failures.append(error)
+
+    starter = threading.Thread(target=enter)
+    starter.start()
+    assert entering.wait(2)
+    closer = threading.Thread(target=proxy.close)
+    closer.start()
+    assert closer.is_alive()
+    release.set()
+    starter.join(3)
+    closer.join(3)
+    assert not starter.is_alive() and not closer.is_alive()
+    assert failures == []
+    assert proxy.closed and not proxy._thread.is_alive()
+    with pytest.raises(ValueError, match="running ACP provider proxy"):
+        proxy.write_private_overlay(tmp_path)
+
+
 def test_proxy_forwards_only_selected_route_after_durable_attempt(tmp_path):
     journal, limits = _ready(tmp_path)
     seen = []

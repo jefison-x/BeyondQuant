@@ -207,6 +207,20 @@ are not yet used by the ACP entry; they do not prove Backend receipt origin or
 bind the live proxy, overlay and ACP child. The old three-call
 stage profile is a conservative ceiling from the former root-child-root path,
 not an ACP dedicated-root request-shape qualification.
+
+The proxy constructor now checks the frozen journal route/model/limits, and
+an unwired factory takes its real upstream key from the same in-memory profile
+object that supplied the frozen public snapshot. A method on that running
+proxy writes the nonsecret private overlay from its allocated listener port;
+start, close and overlay creation share a lock, with listener liveness checked
+before the overlay write. Root's focused factory/start-close tests passed 2/2;
+an independent Tester passed the earlier full local proxy snapshot 22/22.
+This does **not** prove that a caller supplied the credential from the trusted
+Backend resolver: a new Python profile object with the same public fields
+could hold another secret, and direct constructor callers still exist. The
+final trusted ACP entry must keep one resolver/profile instance through
+journal, proxy, overlay and child start, and recheck its owner/version before
+dispatch. The actual ACP child and network confinement remain NOT_RUN.
 Actual HTTPS redirect, partial-body, size and deadline negatives remain
 NOT_RUN. Real DNS and HTTPS interruption still need an isolated transport
 qualification; the tested endless resolver is a synthetic child. Storage
