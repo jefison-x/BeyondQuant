@@ -174,10 +174,13 @@ thread warnings treated as errors.
 Independent Tester passed the corrected 19-case proxy snapshot and 88 related
 pure cases; independent Reviewer found no remaining P1/P2 in that snapshot.
 
-The proxy constructor still receives model, credential and limits from its
-caller. The private last-layer profile is generated and loaded offline, but
-it is not bound to trusted Backend admission or the running proxy yet. The
-loopback port is not isolated from unrelated local processes.
+The proxy constructor receives model, credential and limits from its caller,
+while checking route/model/limits against a frozen journal profile. The new
+factory derives these values from an in-memory profile, and a running proxy
+can create its own private last-layer overlay. Neither path proves the caller
+used the trusted Backend resolver or that an ACP child remains bound to that
+same proxy at dispatch. The loopback port is not isolated from unrelated
+local processes.
 
 A new pure provider-profile builder checks a caller-supplied `created:true`
 Backend ACP root receipt shape, exact task/call derivation, consistent
