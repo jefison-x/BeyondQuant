@@ -170,6 +170,7 @@ const ACP_DISCOVERY_TOKEN = process.env.BYQ_MCP_ACP_DISCOVERY_TOKEN;
 const ACP_SIGNING_KEY = process.env.BYQ_MCP_ACP_SIGNING_KEY;
 const ACP_JUDGMENT_SIGNING_KEY = process.env.BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY;
 const BACKEND_PROOF_TOKEN = process.env.BYQ_MCP_BACKEND_PROOF_TOKEN;
+const JUDGMENT_BACKEND_PROOF_TOKEN = process.env.BYQ_MCP_ACP_JUDGMENT_PROOF_TOKEN;
 
 // ADR-0085 P4: the bounded research-judgment composition must not be able to
 // discover any write/approval/execute/routing/identity/job tool. When
@@ -195,6 +196,7 @@ const ACP_READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
 ]);
 const READ_ONLY_SUBSET = process.env.BYQ_MCP_READ_ONLY_SUBSET === "1";
 const ACP_JUDGMENT_SUBSET = process.env.BYQ_MCP_ACP_JUDGMENT_SUBSET === "1";
+const ACP_JUDGMENT_ADMISSION_ENABLED = process.env.BYQ_MCP_ACP_JUDGMENT_ADMISSION_ENABLED === "1";
 const PORT = ACP_JUDGMENT_SUBSET
   ? Number(process.env.BYQ_MCP_ACP_JUDGMENT_PORT ?? "")
   : READ_ONLY_SUBSET
@@ -606,6 +608,10 @@ function classifyAcpToolCompletion(toolName: string, value: unknown): AcpToolIng
 
   if (payload.status === "outcome_unknown" || payload.status === "unknown") return "unknown";
   if (result.isError === false) {
+    if (payload.status === "error") return "unknown";
+    // Some successful read projections are the bounded resource itself and
+    // have no wrapper status field (for example research stage input).
+    if (ACP_READ_ONLY_TOOL_NAMES.has(toolName)) return "settled";
     return typeof payload.status === "string" && payload.status !== "error" ? "settled" : "unknown";
   }
   const backend = payload.backend;
@@ -1002,6 +1008,8 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
     [privateRoot]: auth?.kind === "acp-agent" || auth?.kind === "acp-judgment-root"
       ? auth.claims.root_run_id
       : headerValue(requestHeaders(factoryContext), "x-byq-root-run-id") };
+  const admittedReadContext = (extra: unknown) => extra && typeof extra === "object"
+    && Object.hasOwn(extra, privateObservationId) ? extra : trustedContext;
   const server = new McpServer({ name: SERVICE, version: VERSION });
   // ADR-0085 P4: explicit, type-checked registration gate. In the isolated
   // read-only subset only the five bounded read tools are registered; every
@@ -1017,35 +1025,42 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
         const callback = rest[callbackIndex];
         if (typeof callback === "function") {
           rest[callbackIndex] = async (...callArgs: unknown[]) => {
-            // ADR-0097's trusted Backend root/AgentRun admission and terminal
-            // lifecycle are not implemented yet. Do not let this opt-in surface
-            // enter any existing business handler until that seam is available.
-            if (ACP_JUDGMENT_SUBSET) {
+            // The judgment MCP remains closed by default. Its context tool
+            // reads generic notifications, outside the admitted frozen stage
+            // input, so it remains denied even during bounded read admission.
+            if (ACP_JUDGMENT_SUBSET && (!ACP_JUDGMENT_ADMISSION_ENABLED || name === "byq_agent_context")) {
               return acpBridgeUnavailable("acp_judgment_backend_admission_unavailable");
             }
             if (!auth || auth.kind === "discovery") return agentContextUnavailable();
             const toolArgs = callArgs[0];
-            if (auth.kind === "acp-agent" && name !== "byq_agent_run_start" && !ACP_LOCAL_ONLY_TOOLS.has(name)) {
-              if (!BACKEND_PROOF_TOKEN || !toolArgs || typeof toolArgs !== "object" || Array.isArray(toolArgs)) {
+            const judgmentCall = ACP_JUDGMENT_SUBSET && auth.kind === "acp-judgment-root";
+            const ingressProof = judgmentCall ? JUDGMENT_BACKEND_PROOF_TOKEN : BACKEND_PROOF_TOKEN;
+            if ((judgmentCall || auth.kind === "acp-agent")
+              && name !== "byq_agent_run_start" && !ACP_LOCAL_ONLY_TOOLS.has(name)) {
+              if (!ingressProof || !toolArgs || typeof toolArgs !== "object" || Array.isArray(toolArgs)) {
                 return acpBridgeUnavailable("acp_ingress_observation_unavailable");
               }
               const ingressRequestId = randomBytes(16).toString("hex");
               const ingressArgs = toolArgs as Record<string, unknown>;
-              const ingress = await observeAcpToolIngress(BACKEND_URL, BACKEND_PROOF_TOKEN,
+              const ingress = await observeAcpToolIngress(BACKEND_URL, ingressProof,
                 auth.claims, name, ingressArgs, fetch, ingressRequestId);
               if (!ingress) {
                 // The handler has not entered. A lost observe response may have
                 // left a pending Backend row; an exact abort either settles it
                 // or writes a tombstone that excludes a delayed observe.
                 // If abort itself is unknown, Backend's pending fence remains.
-                await abortAcpToolIngressBeforeDispatch(BACKEND_URL, BACKEND_PROOF_TOKEN,
+                await abortAcpToolIngressBeforeDispatch(BACKEND_URL, ingressProof,
                   auth.claims, name, ingressArgs, ingressRequestId);
                 return acpBridgeUnavailable("acp_ingress_observation_unavailable");
               }
               let handlerResult: unknown;
               try {
-                if (ACP_DOMAIN_CALL_ACTIONS.has(name)) {
-                  const receipt = await observeAcpDomainCall(BACKEND_URL, BACKEND_PROOF_TOKEN,
+                if (judgmentCall) {
+                  const callContext = { ...trustedContext, [privateObservationId]: ingress.mcp_request_id };
+                  handlerResult = await (callback as (...args: unknown[]) => unknown)(
+                    toolArgs, callContext, ...callArgs.slice(2));
+                } else if (auth.kind === "acp-agent" && ACP_DOMAIN_CALL_ACTIONS.has(name)) {
+                  const receipt = await observeAcpDomainCall(BACKEND_URL, ingressProof,
                     auth.claims, name, toolArgs as Record<string, unknown>);
                   if (!receipt) {
                     handlerResult = acpBridgeUnavailable("acp_observation_unavailable");
@@ -1062,7 +1077,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
               }
               const outcome = classifyAcpToolCompletion(name, handlerResult);
               const settlement = await settleAcpToolIngress(
-                BACKEND_URL, BACKEND_PROOF_TOKEN, auth.claims, ingress, outcome);
+                BACKEND_URL, ingressProof, auth.claims, ingress, outcome);
               if (!settlement) return acpBridgeUnavailable("acp_ingress_settlement_unknown");
               return handlerResult;
             }
@@ -1498,7 +1513,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
       inputSchema: { backtest_task_id: z.string().regex(/^backtesttask_(?:ml_)?[0-9a-f]{32}$/).optional(),
         task_id: z.string().min(1).optional(), idempotency_key: z.string().trim().min(1).max(128).optional() },
     },
-    (args) => byqBacktestTaskGet(args, trustedContext),
+    (args, extra) => byqBacktestTaskGet(args, admittedReadContext(extra)),
   );
   registerTool(
     "byq_backtest_task_execute",
@@ -1539,7 +1554,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
         offset: z.literal(0).default(0),
       },
     },
-    (args) => byqBacktestAnalysis(args, trustedContext),
+    (args, extra) => byqBacktestAnalysis(args, admittedReadContext(extra)),
   );
   registerTool(
     "byq_ml_capabilities",
@@ -1794,7 +1809,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
         task_id: z.string().min(1).optional(),
       },
     },
-    (args) => byqResearchGet(args, trustedContext),
+    (args, extra) => byqResearchGet(args, admittedReadContext(extra)),
   );
   registerTool(
     "byq_research_stage_input_get",
@@ -1802,7 +1817,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
       description: "Read the bounded, read-only research-judgment stage input for one exact research task: bounded plan projection, bounded evidence descriptors and the minimal read-only tool set. It never returns raw bars/frames/index lists or a full signal snapshot and never advances workflow state. A deterministic stage returns an error because it uses zero model calls.",
       inputSchema: { task_id: z.string().regex(/^task_[0-9a-f]{32}$/) },
     },
-    (args) => byqResearchStageInput(args, trustedContext),
+    (args, extra) => byqResearchStageInput(args, admittedReadContext(extra)),
   );
   registerTool(
     "byq_research_transition",
@@ -2148,12 +2163,23 @@ if (isMain && ACP_JUDGMENT_SUBSET && ACP_JUDGMENT_FORBIDDEN_CREDENTIALS.some(nam
 if (isMain && ACP_JUDGMENT_SUBSET && !isValidAcpSigningKey(ACP_JUDGMENT_SIGNING_KEY)) {
   throw new Error("BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY must be at least 32 UTF-8 bytes");
 }
+if (isMain && ACP_JUDGMENT_SUBSET && ACP_JUDGMENT_ADMISSION_ENABLED
+  && (!JUDGMENT_BACKEND_PROOF_TOKEN || JUDGMENT_BACKEND_PROOF_TOKEN.length < 32)) {
+  throw new Error("dedicated ACP judgment Backend proof credential is required for admission");
+}
 if (isMain && ACP_JUDGMENT_SUBSET
   && !isAcpJudgmentSigningKeyDistinct(ACP_JUDGMENT_SIGNING_KEY, [
     MCP_TOKEN, process.env.BYQ_MCP_TOKEN, process.env.BYQ_MCP_READ_ONLY_TOKEN,
-    ACP_DISCOVERY_TOKEN, ACP_SIGNING_KEY, BACKEND_PROOF_TOKEN,
+    ACP_DISCOVERY_TOKEN, ACP_SIGNING_KEY, BACKEND_PROOF_TOKEN, JUDGMENT_BACKEND_PROOF_TOKEN,
   ])) {
   throw new Error("ACP judgment signing key must be dedicated and distinct from every other configured credential");
+}
+if (isMain && ACP_JUDGMENT_SUBSET && ACP_JUDGMENT_ADMISSION_ENABLED
+  && !isAcpJudgmentSigningKeyDistinct(JUDGMENT_BACKEND_PROOF_TOKEN, [
+    MCP_TOKEN, process.env.BYQ_MCP_TOKEN, process.env.BYQ_MCP_READ_ONLY_TOKEN,
+    ACP_DISCOVERY_TOKEN, ACP_SIGNING_KEY, BACKEND_PROOF_TOKEN, ACP_JUDGMENT_SIGNING_KEY,
+  ])) {
+  throw new Error("ACP judgment Backend proof credential must be dedicated and distinct");
 }
 if (isMain && ACP_DISCOVERY_TOKEN && !isValidAcpSigningKey(ACP_SIGNING_KEY)) {
   throw new Error("BYQ_MCP_ACP_SIGNING_KEY must be at least 32 UTF-8 bytes when ACP discovery is enabled");

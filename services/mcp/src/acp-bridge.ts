@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import type { AcpAgentClaims } from "./acp-auth.js";
+import type { AcpAgentClaims, AcpJudgmentRootClaims } from "./acp-auth.js";
 
 const BACKEND_TIMEOUT_MS = 8000;
 const RUN_ID = /^agent_run_[0-9a-f]{32}$/;
@@ -90,6 +90,13 @@ export type AcpAgentBindingStatus =
       receipt: AcpAgentBindReceipt };
 
 export type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+type AcpIngressClaims = AcpAgentClaims | AcpJudgmentRootClaims;
+
+function ingressPath(claims: AcpIngressClaims, action: "observe" | "abort" | "settle"): string {
+  return claims.aud === "byq-product-acp-judgment-mcp"
+    ? `/internal/acp/judgment-tool-ingress-${action}`
+    : `/internal/acp/tool-ingress-${action}`;
+}
 
 function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
   const keys = Object.keys(value).sort();
@@ -97,7 +104,7 @@ function hasExactKeys(value: Record<string, unknown>, expected: readonly string[
   return keys.length === sorted.length && keys.every((key, index) => key === sorted[index]);
 }
 
-function scopeHeaders(claims: AcpAgentClaims, proofToken: string): Headers {
+function scopeHeaders(claims: AcpIngressClaims, proofToken: string): Headers {
   const headers = new Headers({
     authorization: `Bearer ${proofToken}`,
     "content-type": "application/json",
@@ -110,6 +117,10 @@ function scopeHeaders(claims: AcpAgentClaims, proofToken: string): Headers {
     "x-byq-runtime-boot-id": claims.runtime_boot_id,
     "x-byq-root-run-id": claims.root_run_id,
   });
+  if (claims.aud === "byq-product-acp-judgment-mcp") {
+    headers.set("x-byq-judgment-task-id", claims.task_id);
+    headers.set("x-byq-judgment-call-identity", claims.call_identity);
+  }
   return headers;
 }
 
@@ -156,7 +167,7 @@ function validObservationReceipt(value: unknown, claims: AcpAgentClaims,
     && typeof receipt.event_sha256 === "string" && SHA256.test(receipt.event_sha256);
 }
 
-function validToolIngressReceipt(value: unknown, claims: AcpAgentClaims, requestId: string,
+function validToolIngressReceipt(value: unknown, claims: AcpIngressClaims, requestId: string,
   toolName: string, allowUnboundAgent: boolean): value is AcpToolIngressReceipt {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const receipt = value as Record<string, unknown>;
@@ -277,7 +288,7 @@ export async function observeAcpDomainCall(
 export async function observeAcpToolIngress(
   backendUrl: string,
   proofToken: string,
-  claims: AcpAgentClaims,
+  claims: AcpIngressClaims,
   toolName: string,
   args: Record<string, unknown>,
   fetcher: Fetcher = fetch,
@@ -298,9 +309,9 @@ export async function observeAcpToolIngress(
     tool_name: toolName,
     arguments: args,
   };
-  const bootstrapTool = BOOTSTRAP_INGRESS_TOOLS.has(toolName);
+  const bootstrapTool = claims.aud === "byq-product-mcp" && BOOTSTRAP_INGRESS_TOOLS.has(toolName);
   try {
-    const response = await fetcher(`${backendUrl}/internal/acp/tool-ingress-observe`, {
+    const response = await fetcher(`${backendUrl}${ingressPath(claims, "observe")}`, {
       method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
     });
     const payload = await jsonObject(response);
@@ -315,7 +326,7 @@ export async function observeAcpToolIngress(
 export async function abortAcpToolIngressBeforeDispatch(
   backendUrl: string,
   proofToken: string,
-  claims: AcpAgentClaims,
+  claims: AcpIngressClaims,
   toolName: string,
   args: Record<string, unknown>,
   mcpRequestId: string,
@@ -336,7 +347,7 @@ export async function abortAcpToolIngressBeforeDispatch(
     arguments: args,
   };
   try {
-    const response = await fetcher(`${backendUrl}/internal/acp/tool-ingress-abort`, {
+    const response = await fetcher(`${backendUrl}${ingressPath(claims, "abort")}`, {
       method: "POST", headers: scopeHeaders(claims, proofToken), body: JSON.stringify(body),
       signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
     });
@@ -367,7 +378,7 @@ export async function abortAcpToolIngressBeforeDispatch(
 export async function settleAcpToolIngress(
   backendUrl: string,
   proofToken: string,
-  claims: AcpAgentClaims,
+  claims: AcpIngressClaims,
   ingress: AcpToolIngressReceipt,
   outcome: AcpToolIngressOutcome,
   fetcher: Fetcher = fetch,
@@ -389,7 +400,7 @@ export async function settleAcpToolIngress(
     outcome,
   };
   try {
-    const response = await fetcher(`${backendUrl}/internal/acp/tool-ingress-settle`, {
+    const response = await fetcher(`${backendUrl}${ingressPath(claims, "settle")}`, {
       method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
     });
     const payload = await jsonObject(response);

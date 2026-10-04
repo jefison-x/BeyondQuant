@@ -282,6 +282,82 @@ class DomainCallEvidenceMixin:
                 or call["result_json"].get("schema_version") != "research-judgment-result-receipt.v1"):
             raise AgentConflict("judgment root result is not durably committed")
 
+    @staticmethod
+    def _require_judgment_tool_scope(connection, identity: dict, trusted_scope: dict,
+                                     tool_name: str, arguments: object | None,
+                                     *, new_dispatch: bool) -> None:
+        """Separate Product proof from task-bound judgment proof before ingress."""
+        from .agent_research import AgentConflict, AgentForbidden
+
+        binding = fetch_one(connection, """SELECT * FROM research_judgment_acp_roots
+            WHERE root_run_id=:root FOR SHARE""", {"root": identity["root_run_id"]})
+        judgment = trusted_scope.get("judgment_task_id") is not None
+        if binding is None:
+            if judgment:
+                raise AgentForbidden("judgment proof cannot authorize a Product ACP root")
+            return
+        if not judgment:
+            raise AgentForbidden("Product ACP proof cannot authorize a judgment root")
+        expected = {
+            "task_id": trusted_scope.get("judgment_task_id"),
+            "call_identity": trusted_scope.get("judgment_call_identity"),
+            "owner_principal": trusted_scope["owner"],
+            "workspace_id": trusted_scope["workspace"],
+            "actor_principal": trusted_scope["actor"],
+            "session_id": trusted_scope["session"],
+            "trace_id": trusted_scope["trace"],
+            "dsh_run_id": trusted_scope["generation"],
+            "runtime_boot_id": identity["runtime_boot_id"],
+            "native_root_session_id": identity["native_root_session_id"],
+        }
+        if (binding["status"] != "agent_bound" or binding["agent_run_id"] is None
+                or any(binding.get(key) != value for key, value in expected.items())
+                or identity["origin"] != "root" or identity["depth"] != 0
+                or identity["native_parent_session_id"] is not None
+                or identity["native_agent_session_id"] != identity["native_root_session_id"]):
+            raise AgentConflict("judgment tool ingress does not match its exact bound root")
+        if not new_dispatch:
+            return
+        call = fetch_one(connection, """SELECT status FROM research_judgment_stage_calls
+            WHERE task_id=:task AND call_identity=:identity""",
+            {"task": binding["task_id"], "identity": binding["call_identity"]})
+        if call is None or call["status"] != "admitted":
+            raise AgentConflict("judgment tool ingress requires an admitted unfinished call")
+        from packages.contracts.research_judgment import STAGE_ALLOWED_TOOLS
+        if tool_name not in STAGE_ALLOWED_TOOLS.get(binding["stage"], frozenset()):
+            raise AgentForbidden("research-judgment stage is not authorized for this MCP tool")
+        stage_input = (binding.get("begin_receipt_json") or {}).get("stage_input")
+        evidence = stage_input.get("evidence") if isinstance(stage_input, dict) else None
+        if not isinstance(evidence, list) or not isinstance(arguments, dict):
+            raise AgentConflict("judgment tool admission lacks frozen stage evidence")
+        task_id = binding["task_id"]
+        allowed = False
+        if tool_name == "byq_agent_context":
+            allowed = arguments == {}
+        elif tool_name == "byq_research_get":
+            allowed = arguments == {"entity_type": "research_task", "entity_id": task_id}
+        elif tool_name == "byq_research_stage_input_get":
+            allowed = arguments == {"task_id": task_id}
+        elif tool_name == "byq_backtest_task_get":
+            allowed = (set(arguments) == {"backtest_task_id"}
+                and any(item.get("kind") == "backtest_task"
+                    and item.get("id") == arguments["backtest_task_id"]
+                    for item in evidence if isinstance(item, dict)))
+        elif tool_name == "byq_backtest_analysis_get":
+            job_id = arguments.get("job_id")
+            allowed = (set(arguments) <= {"job_id", "section", "limit", "offset"}
+                and isinstance(job_id, str)
+                and arguments.get("section", "summary") in {
+                    "summary", "trades", "blocked_trades", "logs"}
+                and type(arguments.get("limit", 20)) is int
+                and 1 <= arguments.get("limit", 20) <= 20
+                and type(arguments.get("offset", 0)) is int
+                and arguments.get("offset", 0) == 0
+                and any(item.get("kind") == "backtest_job" and item.get("id") == job_id
+                    for item in evidence if isinstance(item, dict)))
+        if not allowed:
+            raise AgentForbidden("judgment tool arguments exceed the admitted task evidence")
+
     def _require_current_acp_boot(self, connection, boot_id: str):
         from .agent_research import AgentConflict, AgentUnauthorized
 
@@ -632,6 +708,10 @@ class DomainCallEvidenceMixin:
                     or root.get("authority_boot_id") != authority["boot_id"]):
                 raise AgentConflict("ACP tool ingress root is not active under current Backend authority")
 
+            self._require_judgment_tool_scope(
+                connection, identity, trusted_scope, tool_name, payload["arguments"],
+                new_dispatch=True)
+
             prior = fetch_one(connection, "SELECT * FROM agent_acp_tool_ingress_observations WHERE mcp_request_id=:id",
                               {"id": request_id})
             if prior is not None:
@@ -743,6 +823,9 @@ class DomainCallEvidenceMixin:
             if (root["owner_principal"], root["workspace_id"], root["session_id"], root["trace_id"]) != (
                     scope["owner"], scope["workspace"], scope["session"], scope["trace"]):
                 raise AgentUnauthorized("ACP tool ingress abort does not match the exact Backend root scope")
+            self._require_judgment_tool_scope(
+                connection, identity, trusted_scope, tool_name, payload["arguments"],
+                new_dispatch=False)
 
             prior = fetch_one(connection, """SELECT * FROM agent_acp_tool_ingress_observations
                 WHERE mcp_request_id=:id FOR UPDATE""", {"id": request_id})
@@ -890,6 +973,8 @@ class DomainCallEvidenceMixin:
             self._require_current_acp_boot(connection, identity["runtime_boot_id"])
             self._lifecycle_lock(connection, "acp-mcp-request:" + request_id)
             self._lifecycle_lock(connection, "root:" + identity["root_run_id"])
+            self._require_judgment_tool_scope(
+                connection, identity, trusted_scope, tool_name, None, new_dispatch=False)
             row = fetch_one(connection, """SELECT * FROM agent_acp_tool_ingress_observations
                 WHERE mcp_request_id=:id FOR UPDATE""", {"id": request_id})
             if row is None:

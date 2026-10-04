@@ -1,6 +1,6 @@
-// ADR-0097: exercise the opt-in judgment endpoint with synthetic credentials.
-// The current slice intentionally exposes the read catalog but denies every
-// tools/call before its business callback until trusted Backend admission exists.
+// ADR-0097: exercise the dedicated judgment endpoint with synthetic credentials.
+// Default calls deny before Backend; explicit admission checks a denied call
+// and one bounded read through a synthetic Backend receipt.
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -152,6 +152,7 @@ for (const name of [
   "BYQ_MCP_READ_ONLY_TOKEN", "BYQ_MCP_ACP_DISCOVERY_TOKEN", "BYQ_MCP_ACP_SIGNING_KEY",
   "BYQ_MCP_ACP_JUDGMENT_SUBSET", "BYQ_MCP_ACP_JUDGMENT_PORT",
   "BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY", "BYQ_MCP_BACKEND_PROOF_TOKEN",
+  "BYQ_MCP_ACP_JUDGMENT_PROOF_TOKEN", "BYQ_MCP_ACP_JUDGMENT_ADMISSION_ENABLED",
 ]) delete cleanEnv[name];
 
 const judgmentPort = await reservePort();
@@ -177,8 +178,48 @@ assert.notEqual(conflictingCredentialExit, 0,
   "judgment service must fail closed when a Product credential is configured");
 
 let backendCalls = 0;
-const backend = createServer((_request, response) => {
+let backendMode: "deny" | "admit" = "deny";
+const backendRequests: Array<{ path: string | undefined; authorization: string | undefined;
+  task: string | undefined; call: string | undefined; observation: string | undefined;
+  body: Record<string, unknown> | undefined }> = [];
+const backend = createServer(async (request, response) => {
   backendCalls += 1;
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) chunks.push(Buffer.from(chunk));
+  const raw = Buffer.concat(chunks).toString("utf8");
+  const body = raw ? JSON.parse(raw) as Record<string, unknown> : undefined;
+  backendRequests.push({ path: request.url, authorization: request.headers.authorization,
+    task: request.headers["x-byq-judgment-task-id"] as string | undefined,
+    call: request.headers["x-byq-judgment-call-identity"] as string | undefined,
+    observation: request.headers["x-byq-acp-observation-id"] as string | undefined, body });
+  if (backendMode === "admit") {
+    const send = (value: unknown) => response.writeHead(200, { "content-type": "application/json" })
+      .end(JSON.stringify(value));
+    if (request.url === "/internal/acp/judgment-tool-ingress-observe") {
+      return send({ schema_version: "byq-acp-tool-ingress-receipt.v1",
+        mcp_request_id: body?.mcp_request_id, root_run_id: judgmentClaims.root_run_id,
+        runtime_boot_id: judgmentClaims.runtime_boot_id,
+        native_root_session_id: judgmentClaims.native_root_session_id,
+        native_agent_session_id: judgmentClaims.native_agent_session_id,
+        native_parent_session_id: null, origin: "root", depth: 0,
+        tool_name: body?.tool_name, agent_run_id: "agent_run_" + "e".repeat(32),
+        sequence: 11, event_sha256: "a".repeat(64) });
+    }
+    if (request.url === `/v1/research/tasks/${judgmentClaims.task_id}/stage-input`) {
+      return send({ schema_version: "research-stage-input.v1", task_id: judgmentClaims.task_id,
+        stage: "strategy_draft", plan_version: 1, task_version: 1,
+        proposal_kinds: [], allowed_tools: [], evidence: [] });
+    }
+    if (request.url === "/internal/acp/judgment-tool-ingress-settle") {
+      return send({ schema_version: "byq-acp-tool-ingress-settle-receipt.v1",
+        mcp_request_id: body?.mcp_request_id, root_run_id: judgmentClaims.root_run_id,
+        runtime_boot_id: judgmentClaims.runtime_boot_id,
+        native_agent_session_id: judgmentClaims.native_agent_session_id,
+        tool_name: body?.tool_name, sequence: body?.sequence,
+        event_sha256: body?.event_sha256, outcome: body?.outcome,
+        settlement_sha256: "b".repeat(64) });
+    }
+  }
   response.writeHead(404).end();
 });
 const backendPort = await listen(backend);
@@ -273,13 +314,60 @@ try {
   }
   assert.equal(backendCalls, 0, "no judgment request reached a business or admission Backend handler");
 
+  const admissionPort = await reservePort();
+  const judgmentProof = "synthetic-dedicated-judgment-backend-proof-token";
+  const admissionServer = spawn(process.execPath, ["dist/src/server.js"], {
+    env: { ...cleanEnv, BYQ_BACKEND_URL: `http://127.0.0.1:${backendPort}`,
+      BYQ_MCP_ACP_JUDGMENT_SUBSET: "1", BYQ_MCP_ACP_JUDGMENT_PORT: String(admissionPort),
+      BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY: judgmentKey,
+      BYQ_MCP_ACP_JUDGMENT_PROOF_TOKEN: judgmentProof,
+      BYQ_MCP_ACP_JUDGMENT_ADMISSION_ENABLED: "1" },
+    stdio: "ignore",
+  });
+  try {
+    await waitReady(`http://127.0.0.1:${admissionPort}`);
+    const client = new Client({ name: "byq-acp-judgment-admission-test", version: "1.0.0" });
+    try {
+      await client.connect(new StreamableHTTPClientTransport(
+        new URL(`http://127.0.0.1:${admissionPort}/mcp/v1`), {
+          authProvider: { token: async () => judgmentToken },
+        }));
+      const rejected = await client.callTool({ name: "byq_research_stage_input_get",
+        arguments: { task_id: judgmentClaims.task_id } });
+      assert.equal(rejected.isError, true);
+      backendMode = "admit";
+      const admittedRead = await client.callTool({ name: "byq_research_stage_input_get",
+        arguments: { task_id: judgmentClaims.task_id } });
+      assert.equal(admittedRead.isError, false, "valid admitted read must reach the bounded handler");
+    } finally {
+      await client.close();
+    }
+  } finally {
+    await stop(admissionServer);
+  }
+  assert.deepEqual(backendRequests.map(request => request.path), [
+    "/internal/acp/judgment-tool-ingress-observe",
+    "/internal/acp/judgment-tool-ingress-abort",
+    "/internal/acp/judgment-tool-ingress-observe",
+    `/v1/research/tasks/${judgmentClaims.task_id}/stage-input`,
+    "/internal/acp/judgment-tool-ingress-settle",
+  ], "rejected admission must never enter the business read handler");
+  for (const request of backendRequests.filter(request => request.path?.startsWith("/internal/acp/"))) {
+    assert.equal(request.authorization, `Bearer ${judgmentProof}`);
+    assert.equal(request.task, judgmentClaims.task_id);
+    assert.equal(request.call, judgmentClaims.call_identity);
+  }
+  assert.equal(backendRequests[3]?.observation, backendRequests[2]?.body?.mcp_request_id);
+  assert.equal(backendRequests[4]?.body?.outcome, "settled");
+
   console.log(JSON.stringify({
     ok: true,
     judgment_tools: judgmentTools,
     legacy_read_only_unchanged: true,
     product_surface_unchanged: true,
     cross_audience_and_credential_rejection: true,
-    judgment_tool_calls_denied_before_backend: true,
+    default_judgment_tool_calls_denied_before_backend: true,
+    opt_in_synthetic_bounded_read_settled: true,
   }));
 } finally {
   await Promise.all([stop(judgmentServer), stop(readOnlyServer), stop(productServer)]);

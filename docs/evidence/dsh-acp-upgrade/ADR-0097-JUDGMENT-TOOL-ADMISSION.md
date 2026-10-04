@@ -1,8 +1,10 @@
 # ADR-0097 judgment tool admission: implementation boundary
 
-Status: design audit, **not qualification**. The dedicated judgment MCP still
-rejects every `tools/call` before its business handler. This plan implements the
-Accepted ADR-0097 root/task/call boundary without changing its decision.
+Status: implementation candidate, **not Product qualification**. The dedicated
+judgment MCP rejects every `tools/call` by default. An explicit local admission
+flag reaches four bounded read handlers only after Backend ingress proof;
+`byq_agent_context` remains denied because its current callback reads generic
+notifications and research context outside the admitted frozen stage input.
 
 ## Required proof before enabling one read
 
@@ -49,10 +51,10 @@ Accepted ADR-0097 root/task/call boundary without changing its decision.
 
 ## Current finding
 
-The `trustedBackendFetcher` now forwards the verified judgment root header,
-matching Product ACP behavior. Its one-line change type-checks with the cached
-MCP dependencies. The isolated judgment callback still returns
-`acp_judgment_backend_admission_unavailable`; no proof bearer or Backend
-judgment ingress is wired. No tool business call or Product integration test was
-performed. Keep the route and callbacks disabled until all five steps above
-are implemented and qualified.
+The dedicated proof and Backend admission routes now exist in the isolated
+candidate. Focused store/route and synthetic MCP tests pass, but no actual
+business read has completed against the real Backend through this path. Keep
+the opt-in admission flag unset outside isolated qualification. The context
+tool needs a task-bounded callback or a documented denial in the final tool
+contract. Late requests, unknown outcomes and exact close/ACK still need
+integrated proof before any default ACP promotion.

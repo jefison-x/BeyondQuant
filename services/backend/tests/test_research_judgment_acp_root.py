@@ -412,32 +412,113 @@ def test_bound_judgment_root_enforces_per_stage_mcp_ingress_and_blocks_legacy_ad
             "actor": root["actor_principal"], "session": root["session_id"],
             "trace": root["trace_id"], "generation": root["dsh_run_id"],
             "boot_id": headers["x-byq-runtime-boot-id"], "root": begin["root"]["root_run_id"]}
+        judgment_scope = {**scope, "judgment_task_id": task,
+                          "judgment_call_identity": begin["call_identity"]}
         before_bind = {"schema_version": "byq-acp-tool-ingress-observe.v1",
             "mcp_request_id": uuid4().hex, **identity,
             "tool_name": "byq_agent_context", "arguments": {}}
-        with pytest.raises(AgentConflict, match="trusted native AgentRun"):
-            agents.observe_acp_tool_ingress(before_bind, trusted_scope=scope)
+        with pytest.raises(AgentConflict, match="exact bound root"):
+            agents.observe_acp_tool_ingress(before_bind, trusted_scope=judgment_scope)
         registration = {"schema_version": "byq-research-judgment-acp-agent-register.v1",
             "call_identity": begin["call_identity"], "root_run_id": begin["root"]["root_run_id"],
             "runtime_boot_id": headers["x-byq-runtime-boot-id"],
             "native_root_session_id": native_id}
         bind = research.register_acp_judgment_root_agent(task, registration,
             trusted_context=context, runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        with pytest.raises(AgentForbidden, match="Product ACP proof"):
+            agents.observe_acp_tool_ingress(before_bind, trusted_scope=scope)
         observed = agents.observe_acp_tool_ingress({
             "schema_version": "byq-acp-tool-ingress-observe.v1", "mcp_request_id": uuid4().hex,
-            **identity, "tool_name": "byq_agent_context", "arguments": {}}, trusted_scope=scope)
+            **identity, "tool_name": "byq_agent_context", "arguments": {}},
+            trusted_scope=judgment_scope)
         assert observed["agent_run_id"] == bind["agent_run_id"]
         assert len(observed["event_sha256"]) == 64
+        before_count = research._fetch_one("""SELECT COUNT(*) AS n
+            FROM agent_acp_tool_ingress_observations WHERE root_run_id=:root""",
+            {"root": root["root_run_id"]})["n"]
+        with pytest.raises(AgentForbidden, match="admitted task evidence"):
+            agents.observe_acp_tool_ingress({
+                "schema_version": "byq-acp-tool-ingress-observe.v1", "mcp_request_id": uuid4().hex,
+                **identity, "tool_name": "byq_research_get",
+                "arguments": {"entity_type": "research_task", "entity_id": "task_" + "f" * 32}},
+                trusted_scope=judgment_scope)
+        assert research._fetch_one("""SELECT COUNT(*) AS n
+            FROM agent_acp_tool_ingress_observations WHERE root_run_id=:root""",
+            {"root": root["root_run_id"]})["n"] == before_count
+        exact_task = agents.observe_acp_tool_ingress({
+            "schema_version": "byq-acp-tool-ingress-observe.v1", "mcp_request_id": uuid4().hex,
+            **identity, "tool_name": "byq_research_get",
+            "arguments": {"entity_type": "research_task", "entity_id": task}},
+            trusted_scope=judgment_scope)
+        assert exact_task["root_run_id"] == root["root_run_id"]
         with pytest.raises(AgentForbidden, match="stage is not authorized"):
             agents.observe_acp_tool_ingress({
                 "schema_version": "byq-acp-tool-ingress-observe.v1", "mcp_request_id": uuid4().hex,
                 **identity, "tool_name": "byq_backtest_analysis_get", "arguments": {}},
-                trusted_scope=scope)
+                trusted_scope=judgment_scope)
         with pytest.raises(InvalidTransition, match="ACP-bound judgment calls"):
             research.admit_research_stage_call(task, {
                 "call_identity": begin["call_identity"],
                 "attempt_binding": attempt_binding(plan["plan_version"], plan["stage"], plan["iteration"]),
             }, trusted_context=context)
+    finally:
+        _close(catalog, research, agents)
+
+
+def test_judgment_ingress_http_to_db_rejects_wrong_task_and_old_boot(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    catalog, research, agents, task, context, headers, plan = _setup("strategy_draft")
+    try:
+        begin = research.begin_acp_judgment_root(task, _begin_request(task, plan),
+            trusted_context=context, runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        native = str(uuid4())
+        research.register_acp_judgment_root_agent(task, {
+            "schema_version": "byq-research-judgment-acp-agent-register.v1",
+            "call_identity": begin["call_identity"], "root_run_id": begin["root"]["root_run_id"],
+            "runtime_boot_id": headers["x-byq-runtime-boot-id"], "native_root_session_id": native,
+        }, trusted_context=context, runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        monkeypatch.setattr(main, "agent_store", agents)
+        monkeypatch.setattr(main, "MCP_ACP_JUDGMENT_PROOF_TOKEN", "judgment-http-db-test-proof")
+        monkeypatch.setattr(main, "MCP_BACKEND_PROOF_TOKEN", "product-http-db-test-proof")
+        client = TestClient(main.app)
+        root = begin["root"]["root_run_id"]
+        ingress_headers = {**headers, "authorization": "Bearer judgment-http-db-test-proof",
+            "x-byq-root-run-id": root, "x-byq-judgment-task-id": task,
+            "x-byq-judgment-call-identity": begin["call_identity"],
+            "x-byq-dsh-run-id": begin["root"]["dsh_run_id"],
+            "x-byq-session-id": begin["root"]["session_id"],
+            "x-byq-actor-principal": begin["root"]["actor_principal"]}
+        identity = {"root_run_id": root, "runtime_boot_id": headers["x-byq-runtime-boot-id"],
+            "native_root_session_id": native, "native_agent_session_id": native,
+            "native_parent_session_id": None, "origin": "root", "depth": 0}
+        payload = {"schema_version": "byq-acp-tool-ingress-observe.v1",
+            "mcp_request_id": uuid4().hex, **identity,
+            "tool_name": "byq_research_stage_input_get", "arguments": {"task_id": task}}
+        path = "/internal/acp/judgment-tool-ingress-observe"
+        wrong_task = client.post(path, headers=ingress_headers,
+            json={**payload, "mcp_request_id": uuid4().hex,
+                  "arguments": {"task_id": "task_" + "f" * 32}})
+        assert wrong_task.status_code == 403, wrong_task.json()
+        assert research._fetch_one("""SELECT COUNT(*) AS n FROM agent_acp_tool_ingress_observations
+            WHERE root_run_id=:root""", {"root": root})["n"] == 0
+        observed = client.post(path, headers=ingress_headers, json=payload)
+        assert observed.status_code == 200
+        receipt = observed.json()
+        assert receipt["root_run_id"] == root and receipt["mcp_request_id"] == payload["mcp_request_id"]
+        settled = client.post("/internal/acp/judgment-tool-ingress-settle", headers=ingress_headers,
+            json={"schema_version": "byq-acp-tool-ingress-settle.v1",
+                  "mcp_request_id": receipt["mcp_request_id"], **identity,
+                  "tool_name": payload["tool_name"], "sequence": receipt["sequence"],
+                  "event_sha256": receipt["event_sha256"], "outcome": "settled"})
+        assert settled.status_code == 200 and settled.json()["outcome"] == "settled"
+        assert research._fetch_one("""SELECT COUNT(*) AS n FROM agent_acp_tool_ingress_observations
+            WHERE root_run_id=:root""", {"root": root})["n"] == 1
+        agents.rotate_runtime_authority(uuid4().hex)
+        late = client.post(path, headers=ingress_headers,
+            json={**payload, "mcp_request_id": uuid4().hex})
+        assert late.status_code == 401
     finally:
         _close(catalog, research, agents)
 
@@ -507,3 +588,74 @@ def test_acp_judgment_routes_validate_identity_fields_before_storage(route, monk
     response = client.post(path, headers=headers, json=body)
     assert response.status_code == 422
     assert response.json()["detail"]
+
+
+@pytest.mark.parametrize("operation", ["observe", "abort", "settle"])
+def test_judgment_ingress_routes_require_distinct_proof_and_exact_task_call(operation, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    seen = []
+
+    class CaptureStore:
+        def observe_acp_tool_ingress(self, payload, *, trusted_scope):
+            seen.append(("observe", trusted_scope))
+            return {"status": "observed"}
+
+        def abort_acp_tool_ingress_before_dispatch(self, payload, *, trusted_scope):
+            seen.append(("abort", trusted_scope))
+            return {"status": "aborted"}
+
+        def settle_acp_tool_ingress(self, payload, *, trusted_scope):
+            seen.append(("settle", trusted_scope))
+            return {"status": "settled"}
+
+    monkeypatch.setattr(main, "agent_store", CaptureStore())
+    monkeypatch.setattr(main, "MCP_ACP_JUDGMENT_PROOF_TOKEN", "judgment-proof-test-only")
+    monkeypatch.setattr(main, "MCP_BACKEND_PROOF_TOKEN", "product-proof-test-only")
+    class WorkspaceStub:
+        def resolve_context(self, owner, workspace):
+            assert owner == "judgment-route-owner" and workspace == "workspace-judgment-route"
+            return {"workspace_id": workspace}
+    monkeypatch.setattr(main, "workspace_tenancy_store", WorkspaceStub())
+    client = TestClient(main.app)
+    task = "task_" + "a" * 32
+    call = "byq-judgment-" + "b" * 32
+    authority_store = AgentResearchStore()
+    try:
+        boot = authority_store.rotate_runtime_authority(uuid4().hex)["boot_id"]
+    finally:
+        authority_store.close()
+    root = "c" * 32
+    session = "byqjdg-test-session"
+    headers = {"authorization": "Bearer judgment-proof-test-only",
+               "x-byq-owner-principal": "judgment-route-owner",
+               "x-byq-workspace-id": "workspace-judgment-route",
+               "x-byq-actor-principal": "byq-product-agent-" + session,
+               "x-byq-session-id": session, "x-byq-trace-id": "trace-judgment-route",
+               "x-byq-dsh-run-id": "byqjudg-" + "e" * 32,
+               "x-byq-root-run-id": root, "x-byq-runtime-boot-id": boot,
+               "x-byq-judgment-task-id": task, "x-byq-judgment-call-identity": call}
+    schema = {"observe": "byq-acp-tool-ingress-observe.v1",
+              "abort": "byq-acp-tool-ingress-abort.v1",
+              "settle": "byq-acp-tool-ingress-settle.v1"}[operation]
+    body = {"schema_version": schema, "root_run_id": root, "runtime_boot_id": boot}
+    path = "/internal/acp/judgment-tool-ingress-" + operation
+    assert client.post(path, headers={**headers, "authorization": "Bearer product-proof-test-only"},
+                       json=body).status_code == 401
+    assert client.post(path, headers={key: value for key, value in headers.items()
+                                      if key != "x-byq-judgment-call-identity"},
+                       json=body).status_code == 422
+    assert seen == []
+    response = client.post(path, headers=headers, json=body)
+    assert response.status_code == 200
+    assert seen == [(operation, {"owner": "judgment-route-owner",
+                                 "workspace": "workspace-judgment-route",
+                                 "actor": "byq-product-agent-" + session,
+                                 "session": session, "trace": "trace-judgment-route",
+                                 "generation": "byqjudg-" + "e" * 32,
+                                 "boot_id": boot, "root": root,
+                                 "judgment_task_id": task,
+                                 "judgment_call_identity": call})]
+    assert client.post("/internal/acp/tool-ingress-" + operation,
+                       headers=headers, json=body).status_code == 401

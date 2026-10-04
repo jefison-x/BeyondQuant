@@ -290,6 +290,7 @@ class ProductAgentAuthorityGuard:
             "x-byq-runtime-boot-id", "x-byq-root-run-id", "x-byq-acp-observation-id",
             "x-byq-acp-native-agent-session-id", "x-byq-acp-native-root-session-id",
             "x-byq-acp-native-parent-session-id", "x-byq-acp-origin", "x-byq-acp-depth",
+            "x-byq-judgment-task-id", "x-byq-judgment-call-identity",
         }
         duplicate_protected_header = False
         for raw_key, raw_value in scope.get("headers", ()):
@@ -420,6 +421,10 @@ CREDENTIAL_RESOLVER_TOKEN = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
 FEEDBACK_HUB_RELAY_TOKEN = os.environ.get("BYQ_FEEDBACK_HUB_RELAY_TOKEN")
 RUNTIME_AUTHORITY_TOKEN = os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN")
 MCP_BACKEND_PROOF_TOKEN = os.environ.get("BYQ_MCP_BACKEND_PROOF_TOKEN")
+MCP_ACP_JUDGMENT_PROOF_TOKEN = os.environ.get("BYQ_MCP_ACP_JUDGMENT_PROOF_TOKEN")
+if (MCP_ACP_JUDGMENT_PROOF_TOKEN and MCP_ACP_JUDGMENT_PROOF_TOKEN in {
+        MCP_BACKEND_PROOF_TOKEN, RUNTIME_AUTHORITY_TOKEN}):
+    raise RuntimeError("ACP judgment Backend proof credential must be distinct")
 if os.environ.get("BYQ_BOOTSTRAP_ADMIN_USERNAME") and os.environ.get("BYQ_BOOTSTRAP_ADMIN_PASSWORD"):
     user_store.ensure_bootstrap_admin(
         os.environ["BYQ_BOOTSTRAP_ADMIN_USERNAME"],
@@ -990,6 +995,34 @@ def settle_acp_tool_ingress(payload: dict[str, Any], request: Request) -> dict[s
         raise HTTPException(status_code=422, detail="exact ACP tool ingress settlement required")
     scope = _acp_private_scope(request, root_run_id=payload.get("root_run_id"),
                               runtime_boot_id=payload.get("runtime_boot_id"))
+    return _agent_call(lambda: agent_store.settle_acp_tool_ingress(payload, trusted_scope=scope))
+
+
+@app.post("/internal/acp/judgment-tool-ingress-observe")
+def observe_acp_judgment_tool_ingress(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    if payload.get("schema_version") != "byq-acp-tool-ingress-observe.v1":
+        raise HTTPException(status_code=422, detail="exact ACP judgment tool observation required")
+    scope = _acp_private_scope(request, root_run_id=payload.get("root_run_id"),
+                               runtime_boot_id=payload.get("runtime_boot_id"), judgment=True)
+    return _agent_call(lambda: agent_store.observe_acp_tool_ingress(payload, trusted_scope=scope))
+
+
+@app.post("/internal/acp/judgment-tool-ingress-abort")
+def abort_acp_judgment_tool_ingress(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    if payload.get("schema_version") != "byq-acp-tool-ingress-abort.v1":
+        raise HTTPException(status_code=422, detail="exact ACP judgment tool abort required")
+    scope = _acp_private_scope(request, root_run_id=payload.get("root_run_id"),
+                               runtime_boot_id=payload.get("runtime_boot_id"), judgment=True)
+    return _agent_call(lambda: agent_store.abort_acp_tool_ingress_before_dispatch(
+        payload, trusted_scope=scope))
+
+
+@app.post("/internal/acp/judgment-tool-ingress-settle")
+def settle_acp_judgment_tool_ingress(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    if payload.get("schema_version") != "byq-acp-tool-ingress-settle.v1":
+        raise HTTPException(status_code=422, detail="exact ACP judgment tool settlement required")
+    scope = _acp_private_scope(request, root_run_id=payload.get("root_run_id"),
+                               runtime_boot_id=payload.get("runtime_boot_id"), judgment=True)
     return _agent_call(lambda: agent_store.settle_acp_tool_ingress(payload, trusted_scope=scope))
 
 
@@ -2315,8 +2348,17 @@ def _require_mcp_backend_proof_bearer(request: Request) -> None:
 
 
 def _acp_private_scope(request: Request, *, root_run_id: object | None = None,
-                       runtime_boot_id: object | None = None) -> dict[str, str]:
-    _require_mcp_backend_proof_bearer(request)
+                       runtime_boot_id: object | None = None,
+                       judgment: bool = False) -> dict[str, str]:
+    if judgment:
+        if not MCP_ACP_JUDGMENT_PROOF_TOKEN:
+            raise HTTPException(status_code=401, detail="judgment MCP Backend proof credential required")
+        expected = f"Bearer {MCP_ACP_JUDGMENT_PROOF_TOKEN}"
+        supplied = request.headers.get("authorization", "")
+        if not secrets.compare_digest(supplied.encode(), expected.encode()):
+            raise HTTPException(status_code=401, detail="judgment MCP Backend proof credential required")
+    else:
+        _require_mcp_backend_proof_bearer(request)
     if any(not request.headers.get(name) for name in _ACP_SCOPE_HEADERS):
         raise HTTPException(status_code=401, detail="exact trusted ACP runtime scope headers are required")
     context = _required_agent_context(request, include_workspace=True)
@@ -2331,10 +2373,20 @@ def _acp_private_scope(request: Request, *, root_run_id: object | None = None,
         raise HTTPException(status_code=409, detail="ACP boot body does not match trusted runtime context")
     if context["actor_principal"] != "byq-product-agent-" + context["session_id"]:
         raise HTTPException(status_code=401, detail="trusted Product Agent actor is required")
-    return {"owner": context["owner_principal"], "workspace": context["workspace_id"],
+    scope = {"owner": context["owner_principal"], "workspace": context["workspace_id"],
             "actor": context["actor_principal"], "trace": context["trace_id"],
             "session": context["session_id"], "generation": context["dsh_run_id"],
             "boot_id": boot_header, "root": root_header}
+    if judgment:
+        task_id = request.headers.get("x-byq-judgment-task-id")
+        call_identity = request.headers.get("x-byq-judgment-call-identity")
+        if (not isinstance(task_id, str) or re.fullmatch(r"task_[0-9a-f]{32}", task_id) is None
+                or not isinstance(call_identity, str)
+                or re.fullmatch(r"byq-judgment-[0-9a-f]{32}", call_identity) is None):
+            raise HTTPException(status_code=422, detail="exact judgment task and call headers required")
+        scope["judgment_task_id"] = task_id
+        scope["judgment_call_identity"] = call_identity
+    return scope
 
 
 def _strategy_payload(payload: object, allowed: set[str]) -> dict[str, Any]:

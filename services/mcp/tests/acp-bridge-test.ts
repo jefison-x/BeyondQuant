@@ -9,7 +9,7 @@ import {
   observeAcpToolIngress,
   settleAcpToolIngress,
 } from "../src/acp-bridge.js";
-import type { AcpAgentClaims } from "../src/acp-auth.js";
+import type { AcpAgentClaims, AcpJudgmentRootClaims } from "../src/acp-auth.js";
 
 const claims: AcpAgentClaims = {
   v: 1,
@@ -37,6 +37,13 @@ const childClaims: AcpAgentClaims = {
   depth: 1,
 };
 const proof = "synthetic-backend-proof-token";
+const judgmentProof = "synthetic-dedicated-judgment-proof-token";
+const judgmentClaims: AcpJudgmentRootClaims = {
+  ...claims, aud: "byq-product-acp-judgment-mcp",
+  native_parent_session_id: null, origin: "root", depth: 0,
+  task_id: "task_" + "f".repeat(32),
+  call_identity: "byq-judgment-" + "e".repeat(32),
+};
 const validRunId = "agent_run_" + "c".repeat(32);
 const validParentRunId = "agent_run_" + "d".repeat(32);
 
@@ -97,6 +104,51 @@ assert.ok(ingress);
 assert.equal(ingressCalls, 1);
 assert.equal(ingress.schema_version, "byq-acp-tool-ingress-receipt.v1");
 assert.equal(ingress.native_agent_session_id, claims.native_agent_session_id);
+const judgmentIngress = await observeAcpToolIngress("http://backend", judgmentProof, judgmentClaims,
+  "byq_research_stage_input_get", { task_id: judgmentClaims.task_id }, async (input, init) => {
+    assert.equal(String(input), "http://backend/internal/acp/judgment-tool-ingress-observe");
+    const headers = new Headers(init?.headers);
+    assert.equal(headers.get("authorization"), `Bearer ${judgmentProof}`);
+    assert.equal(headers.get("x-byq-judgment-task-id"), judgmentClaims.task_id);
+    assert.equal(headers.get("x-byq-judgment-call-identity"), judgmentClaims.call_identity);
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return Response.json({ schema_version: "byq-acp-tool-ingress-receipt.v1",
+      mcp_request_id: body.mcp_request_id, root_run_id: judgmentClaims.root_run_id,
+      runtime_boot_id: judgmentClaims.runtime_boot_id,
+      native_root_session_id: judgmentClaims.native_root_session_id,
+      native_agent_session_id: judgmentClaims.native_agent_session_id,
+      native_parent_session_id: null, origin: "root", depth: 0,
+      tool_name: "byq_research_stage_input_get", agent_run_id: validRunId,
+      sequence: 4, event_sha256: "d".repeat(64) });
+  });
+assert.ok(judgmentIngress);
+const judgmentSettle = await settleAcpToolIngress("http://backend", judgmentProof, judgmentClaims,
+  judgmentIngress, "settled", async (input, init) => {
+    assert.equal(String(input), "http://backend/internal/acp/judgment-tool-ingress-settle");
+    assert.equal(new Headers(init?.headers).get("x-byq-judgment-task-id"), judgmentClaims.task_id);
+    return Response.json({ schema_version: "byq-acp-tool-ingress-settle-receipt.v1",
+      mcp_request_id: judgmentIngress.mcp_request_id, root_run_id: judgmentClaims.root_run_id,
+      runtime_boot_id: judgmentClaims.runtime_boot_id,
+      native_agent_session_id: judgmentClaims.native_agent_session_id,
+      tool_name: judgmentIngress.tool_name, sequence: judgmentIngress.sequence,
+      event_sha256: judgmentIngress.event_sha256, outcome: "settled", settlement_sha256: "a".repeat(64) });
+  });
+assert.ok(judgmentSettle);
+const judgmentAbort = await abortAcpToolIngressBeforeDispatch("http://backend", judgmentProof,
+  judgmentClaims, "byq_research_get", { entity_type: "research_task", entity_id: judgmentClaims.task_id },
+  "f".repeat(32), async (input, init) => {
+    assert.equal(String(input), "http://backend/internal/acp/judgment-tool-ingress-abort");
+    assert.equal(new Headers(init?.headers).get("x-byq-judgment-call-identity"), judgmentClaims.call_identity);
+    return Response.json({ schema_version: "byq-acp-tool-ingress-abort-receipt.v1",
+      mcp_request_id: "f".repeat(32), root_run_id: judgmentClaims.root_run_id,
+      runtime_boot_id: judgmentClaims.runtime_boot_id,
+      native_root_session_id: judgmentClaims.native_root_session_id,
+      native_agent_session_id: judgmentClaims.native_agent_session_id,
+      native_parent_session_id: null, origin: "root", depth: 0, tool_name: "byq_research_get",
+      arguments_sha256: "a".repeat(64), sequence: 5, event_sha256: "b".repeat(64),
+      outcome: "aborted_before_dispatch", abort_sha256: "c".repeat(64) });
+  });
+assert.ok(judgmentAbort);
 let settlementCalls = 0;
 const settledIngress = await settleAcpToolIngress("http://backend", proof, claims, ingress, "settled",
   async (input, init) => {
