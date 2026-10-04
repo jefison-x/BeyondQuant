@@ -1,7 +1,8 @@
 # ADR-0099 — Isolate dedicated ACP judgment provider egress
 
-- Status: **Proposed** (2026-10-04). Maintainer acceptance is required before
-  changing the candidate process and network boundary.
+- Status: **Accepted** (2026-10-05; maintainer: "以上都同意。", accepting
+  ADR-0098 and ADR-0099). Acceptance permits bounded implementation; it is
+  not Product qualification, PR, merge or deployment.
 - Scope: the dedicated Product ACP research-judgment root in ADR-0097 at
   official `dsh-v0.2.0-rc.2` commit
   `639ed015397290b3745d163aafe02ffee4aa3f84`. Ordinary Product sessions
@@ -24,7 +25,7 @@ authority ambiguous if a second full Adapter claimed the same boot/epoch.
 Therefore the isolation boundary must be the **dedicated judgment DSH
 execution**, not the existing Product Adapter or its global authority.
 
-## Decision proposed
+## Decision
 
 1. Keep the existing Adapter and Gateway authority owner on their current
    network. The trusted Adapter remains the sole owner of judgment admission,

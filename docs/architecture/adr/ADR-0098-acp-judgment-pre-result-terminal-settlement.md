@@ -1,7 +1,8 @@
 # ADR-0098 — ACP judgment root pre-result terminal settlement
 
-- Status: **Proposed** (2026-10-04). Maintainer acceptance is required before
-  changing the Backend judgment root/call terminal contract.
+- Status: **Accepted** (2026-10-05; maintainer: "以上都同意。", accepting
+  ADR-0098 and ADR-0099). Acceptance permits bounded implementation; it is
+  not Product qualification, PR, merge or deployment.
 - Scope: the dedicated Product ACP research-judgment root selected by Accepted
   ADR-0097 at fixed official `dsh-v0.2.0-rc.2`
   (`639ed015397290b3745d163aafe02ffee4aa3f84`). No Product Phase change.
@@ -25,7 +26,7 @@ that the model or a business tool did not run. The MCP
 `abort_before_dispatch` contract only concerns one ingress request, not the
 judgment root or stage call. The current ACP entry correctly returns 503.
 
-## Decision proposed
+## Decision
 
 Add a **named, one-way pre-result settlement** for the exact admitted
 task/call/root. It records one of these distinct facts, without manufacturing
@@ -121,7 +122,7 @@ new model request.
 - Delete the admitted call/root and retry: loses idempotency and unknown
   outcome evidence; rejected.
 
-Until this ADR is Accepted and implemented, keep `/acp-root/run` unconditional
+Until this ADR is implemented and qualified, keep `/acp-root/run` unconditional
 503. The retained DSH `0.1.5rc1` SDK route, image and configuration remain the
 exact judgment rollback path. This proposal does not authorize deployment,
 default ACP promotion, PR merge or a paid provider request.
