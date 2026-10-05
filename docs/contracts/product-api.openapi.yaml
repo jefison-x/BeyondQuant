@@ -211,6 +211,23 @@ paths:
               properties:
                 grant_version: {type: integer, minimum: 1}
       responses: *okResponses
+  /api/product/research/tasks/{task_id}/acp-judgment/cancel-intent:
+    parameters:
+      - {name: task_id, in: path, required: true, schema: {type: string}}
+    post:
+      summary: 记录个人用户对研究判断 ACP root 的取消意图；Backend 选择并锁定精确活动 root，不授予执行或终态保证。
+      security: [{sessionCookie: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [idempotency_key]
+              properties:
+                idempotency_key: {type: string, minLength: 8, maxLength: 96, pattern: '^[A-Za-z0-9_-]+$'}
+      responses: *okResponses
   /api/product/research/tasks:
     get: {summary: 列出 owner-scoped research tasks., responses: *okResponses}
     post:

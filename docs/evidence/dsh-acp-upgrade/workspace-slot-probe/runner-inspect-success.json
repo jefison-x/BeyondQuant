@@ -1,0 +1,54 @@
+{
+  "CapAdd": [
+    "CAP_CHOWN",
+    "CAP_KILL",
+    "CAP_SETGID",
+    "CAP_SETUID"
+  ],
+  "CapDrop": [
+    "ALL"
+  ],
+  "Id": "14f1b12a21fbe2df774971d5477a5a369c8040faa508ed89d5a5aff514d0f8c7",
+  "Image": "sha256:6722c919993d35201249a0eecf80b5bda3f4be7122a356876e2493dc2f318dca",
+  "Mounts": [
+    {
+      "Destination": "/run/byq-acp-product-runner",
+      "RW": true,
+      "Source": "/tmp/byq-acp-product-slot-probe-final-20261005/control",
+      "Type": "bind"
+    },
+    {
+      "Destination": "/var/lib/byq/acp-product-runner-state",
+      "RW": true,
+      "Source": "/tmp/byq-acp-product-slot-probe-final-20261005/state",
+      "Type": "bind"
+    },
+    {
+      "Destination": "/var/lib/byq/dsh-sessions/dsh-v0.2.0-rc.2-acp/workspace_probe",
+      "RW": true,
+      "Source": "/tmp/byq-acp-product-slot-probe-final-20261005/workspace",
+      "Type": "bind"
+    },
+    {
+      "Destination": "/tmp/fake_mcp.py",
+      "RW": false,
+      "Source": "/tmp/byq-acp-product-slot-probe-final-20261005/fake_mcp.py",
+      "Type": "bind"
+    }
+  ],
+  "NetworkMode": "none",
+  "ReadonlyRootfs": true,
+  "SecurityOpt": [
+    "no-new-privileges:true"
+  ],
+  "State": {
+    "Error": "",
+    "ExitCode": 0,
+    "FinishedAt": "0001-01-01T00:00:00Z",
+    "OOMKilled": false,
+    "Running": true,
+    "StartedAt": "2026-10-05T02:25:28.087392553Z",
+    "Status": "running"
+  },
+  "User": ""
+}

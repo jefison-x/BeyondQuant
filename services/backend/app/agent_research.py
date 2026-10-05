@@ -33,7 +33,9 @@ from packages.contracts.research_plan_approval import (
 from packages.contracts.approval_policy import approval_level_for_tool
 
 from .db import PgStoreMixin, execute, fetch_one, transaction
-from .domain_call_admission import DomainCallEvidenceMixin, DOMAIN_CALL_DDL
+from .domain_call_admission import (
+    DomainCallEvidenceMixin, DOMAIN_CALL_DDL, _acp_binding_fields, acp_binding_sha256,
+)
 from .research_task_actions import (
     approval_decision_digest,
     approval_source_digest,
@@ -336,7 +338,26 @@ ROLE_CATALOG: tuple[AgentRole, ...] = (
         ),
     ),
 )
+
+# This role is deliberately absent from ROLE_CATALOG: only the trusted
+# research-judgment registration route may create it. Its static capability
+# ceiling is the union of the five bounded reads; ingress narrows it further to
+# the persisted stage's STAGE_ALLOWED_TOOLS.
+RESEARCH_JUDGMENT_ROLE_ID = "research_judgment_readonly"
+from packages.contracts.research_judgment import STAGE_ALLOWED_TOOLS as _JUDGMENT_STAGE_TOOLS
+
+RESEARCH_JUDGMENT_ROLE = AgentRole(
+    role_id=RESEARCH_JUDGMENT_ROLE_ID,
+    version="1.0.0",
+    description="Private least-privilege role for one trusted research-judgment stage.",
+    allowed_tools=tuple(sorted(set().union(*_JUDGMENT_STAGE_TOOLS.values()))),
+    delegate_to=(),
+    approval_required_actions=(),
+    evidence_kinds=("research_evidence", "backtest_result"),
+)
 ROLE_BY_ID = {role.role_id: role for role in ROLE_CATALOG}
+_INTERNAL_ROLE_BY_ID = {RESEARCH_JUDGMENT_ROLE_ID: RESEARCH_JUDGMENT_ROLE}
+_ALL_ROLE_BY_ID = ROLE_BY_ID | _INTERNAL_ROLE_BY_ID
 
 
 def _now() -> str:
@@ -466,9 +487,18 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             authority_status TEXT NOT NULL DEFAULT 'active'
                 CHECK (authority_status IN ('active','authority_revoked_unconfirmed','closed')),
             authority_boot_id TEXT,
+            previous_authority_boot_id TEXT, previous_authority_epoch BIGINT,
             terminal_sequence BIGINT, terminal_event_sha256 TEXT,
+            terminal_acp_ingress_sequence BIGINT, terminal_acp_ingress_sha256 TEXT,
+            terminal_unknown_claim_count BIGINT, terminal_unknown_claims_sha256 TEXT,
             created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL
         )""",
+        "ALTER TABLE agent_runtime_turns ADD COLUMN IF NOT EXISTS previous_authority_boot_id TEXT",
+        "ALTER TABLE agent_runtime_turns ADD COLUMN IF NOT EXISTS previous_authority_epoch BIGINT",
+        "ALTER TABLE agent_runtime_turns ADD COLUMN IF NOT EXISTS terminal_acp_ingress_sequence BIGINT",
+        "ALTER TABLE agent_runtime_turns ADD COLUMN IF NOT EXISTS terminal_acp_ingress_sha256 TEXT",
+        "ALTER TABLE agent_runtime_turns ADD COLUMN IF NOT EXISTS terminal_unknown_claim_count BIGINT",
+        "ALTER TABLE agent_runtime_turns ADD COLUMN IF NOT EXISTS terminal_unknown_claims_sha256 TEXT",
         """CREATE TABLE IF NOT EXISTS agent_runtime_authority_current (
             authority_key TEXT PRIMARY KEY CHECK (authority_key = 'current'),
             boot_id TEXT NOT NULL,
@@ -589,7 +619,9 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
 
     def start_run(self, payload: object, *, trusted_owner: str | None = None, trusted_actor: str | None = None,
                   trusted_workspace: str | None = None, trusted_boot_id: str | None = None,
-                  require_runtime_binding: bool = False) -> dict[str, object]:
+                  trusted_root_run_id: str | None = None, trusted_acp_registration: dict | None = None,
+                  require_runtime_binding: bool = False, trusted_judgment_registration: bool = False,
+                  _connection=None) -> dict[str, object]:
         if not isinstance(payload, dict):
             raise ValueError("agent run request must be an object")
         allowed = {"owner_principal", "actor_principal", "role_id", "trace_id", "session_id", "dsh_run_id", "parent_run_id", "idempotency_key"}
@@ -603,15 +635,26 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         if trusted_actor and payload.get("actor_principal") not in {None, trusted_actor}:
             raise AgentUnauthorized("agent actor does not match trusted product context")
         role_id = _text(payload.get("role_id"), field="role_id", max_length=64)
-        role = ROLE_BY_ID.get(role_id)
+        role = _ALL_ROLE_BY_ID.get(role_id)
         if role is None:
             raise ValueError("unknown agent role")
+        if role_id in _INTERNAL_ROLE_BY_ID and not trusted_judgment_registration:
+            raise AgentForbidden("private research-judgment role requires trusted Backend registration")
         trace_id = _trace(payload.get("trace_id"), field="trace_id")
         session_id = _trace(payload.get("session_id"), field="session_id")
         dsh_run_id = _trace(payload.get("dsh_run_id") or session_id, field="dsh_run_id")
         parent_run_id = payload.get("parent_run_id")
         if parent_run_id is not None:
             parent_run_id = _entity_id(parent_run_id, field="parent_run_id", prefix="agent_run")
+        provided_parent_run_id = parent_run_id
+        acp_identity = (self._normalize_acp_agent_identity(trusted_acp_registration)
+                        if trusted_acp_registration is not None else None)
+        if acp_identity is not None:
+            if trusted_root_run_id != acp_identity["root_run_id"]:
+                raise AgentUnauthorized("ACP root identity must come from trusted runtime headers")
+            trusted_boot_id = _runtime_boot_id(trusted_boot_id)
+            if trusted_boot_id != acp_identity["runtime_boot_id"]:
+                raise AgentUnauthorized("ACP runtime boot does not match trusted runtime headers")
         key = _idempotency(payload.get("idempotency_key"))
         if require_runtime_binding and not trusted_workspace:
             raise AgentUnauthorized("runtime binding requires a trusted workspace")
@@ -630,15 +673,40 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             "parent_run_id": parent_run_id,
             "idempotency_key": key,
         }
-        request_hash = _hash(request)
-        with self._transaction() as connection:
+        with (nullcontext(_connection) if _connection is not None else self._transaction()) as connection:
             authority = None
-            if require_runtime_binding or trusted_boot_id is not None:
+            if require_runtime_binding or trusted_boot_id is not None or acp_identity is not None:
                 self._lifecycle_lock(connection, "runtime-authority:current")
                 authority = self._require_current_runtime_boot(
-                    connection, trusted_boot_id, required=require_runtime_binding)
+                    connection, trusted_boot_id, required=require_runtime_binding or acp_identity is not None)
             if trusted_workspace:
                 self._require_lifecycle_workspace(connection, owner, trusted_workspace)
+            acp_scope = {"owner": owner, "workspace": trusted_workspace, "actor": actor,
+                         "session": session_id, "trace": trace_id, "generation": dsh_run_id}
+            binding = None
+            if acp_identity is not None:
+                self._lifecycle_lock(connection, "root:" + acp_identity["root_run_id"])
+                root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root",
+                                 {"root": acp_identity["root_run_id"]})
+                if root is None:
+                    raise AgentConflict("ACP root is not yet registered by Backend")
+                if (root["owner_principal"], root["workspace_id"], root["session_id"], root["trace_id"],
+                        root["status"], root["authority_status"], root["authority_boot_id"]) != (
+                        owner, trusted_workspace, session_id, trace_id, "active", "active", authority["boot_id"]):
+                    raise AgentConflict("ACP root is not active under the exact current Backend scope")
+                # ACP's verified native root/boot headers bind direct children
+                # to the already durable root. Child AgentRuns do not invent a
+                # second runtime registration fingerprint for the same root.
+                binding = root
+                expected_parent = self._derive_acp_parent_run(connection, acp_identity,
+                    owner=owner, workspace=trusted_workspace, actor=actor, session=session_id,
+                    trace=trace_id, generation=dsh_run_id, root_run_id=acp_identity["root_run_id"])
+                if provided_parent_run_id is not None and provided_parent_run_id != expected_parent:
+                    raise AgentConflict("ACP parent AgentRun must come from its exact native parent binding")
+                parent_run_id = expected_parent
+                request["parent_run_id"] = parent_run_id
+                request["acp_native_registration"] = acp_identity
+            request_hash = _hash(request)
             # Serialize a registration receipt with its independently observed
             # binding. No root row lock here: root consumers lock root then key.
             if fingerprint:
@@ -654,8 +722,17 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                     raise AgentConflict("agent run idempotency key was reused")
                 if authority is not None and existing.get("authority_boot_id") != authority["boot_id"]:
                     raise AgentConflict("agent run belongs to a superseded runtime boot")
+                if acp_identity is not None:
+                    prior = fetch_one(connection, """SELECT * FROM agent_acp_native_agent_registrations
+                        WHERE root_run_id=:root AND native_agent_session_id=:native_agent""",
+                        {"root": acp_identity["root_run_id"],
+                         "native_agent": acp_identity["native_agent_session_id"]})
+                    if (prior is None or not self._acp_registration_matches(prior, acp_identity,
+                            scope=acp_scope, agent_run_id=existing["run_id"], parent_run_id=parent_run_id)
+                            or prior["status"] not in {"pending", "bound"}):
+                        raise AgentConflict("ACP exact AgentRun retry has no matching durable native registration")
                 return self._run_row(existing)
-            binding = fetch_one(connection, """SELECT t.* FROM agent_runtime_registrations r
+            binding = binding or fetch_one(connection, """SELECT t.* FROM agent_runtime_registrations r
                 JOIN agent_runtime_turns t ON t.root_run_id=r.root_run_id
                 WHERE r.registration_fingerprint=:fingerprint""", {"fingerprint": fingerprint}) if fingerprint else None
             if binding and (binding["owner_principal"], binding["workspace_id"], binding["session_id"], binding["trace_id"]) != (owner, trusted_workspace, session_id, trace_id):
@@ -677,7 +754,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                         or (root_run_id is not None and parent.get("root_run_id") != root_run_id)
                         or (not require_runtime_binding and parent.get("root_run_id") != root_run_id)):
                     raise AgentForbidden("parent agent run does not belong to this active runtime context")
-                parent_role = ROLE_BY_ID[parent["role_id"]]
+                parent_role = _ALL_ROLE_BY_ID[parent["role_id"]]
                 if role_id not in parent_role.delegate_to:
                     raise AgentForbidden("parent role is not authorized to delegate to this role")
             now = _now()
@@ -702,6 +779,9 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             row = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id = :run_id", {"run_id": run_id})
             if binding and row:
                 self._record_runtime_binding_audit(connection, row, binding)
+            if acp_identity is not None:
+                self._insert_acp_pending_registration(connection, acp_identity, scope=acp_scope,
+                    agent_run_id=run_id, parent_run_id=parent_run_id)
         assert row is not None
         return self._run_row(row)
 
@@ -726,7 +806,9 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         session = _trace(session_id, field="session_id")
         trace = _trace(trace_id, field="trace_id")
         rows = self._execute("""SELECT root_run_id, status, authority_status,
-                terminal_sequence, terminal_event_sha256
+                terminal_sequence, terminal_event_sha256,
+                terminal_acp_ingress_sequence, terminal_acp_ingress_sha256,
+                terminal_unknown_claim_count, terminal_unknown_claims_sha256
             FROM agent_runtime_turns
             WHERE owner_principal=:owner AND workspace_id=:workspace
               AND session_id=:session AND trace_id=:trace
@@ -744,6 +826,10 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                 "authority_status": row["authority_status"],
                 "terminal_sequence": row["terminal_sequence"],
                 "terminal_event_sha256": row["terminal_event_sha256"],
+                "terminal_acp_ingress_sequence": row["terminal_acp_ingress_sequence"],
+                "terminal_acp_ingress_sha256": row["terminal_acp_ingress_sha256"],
+                "terminal_unknown_claim_count": row["terminal_unknown_claim_count"],
+                "terminal_unknown_claims_sha256": row["terminal_unknown_claims_sha256"],
             } for row in rows],
         }
 
@@ -752,6 +838,41 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         suffix = " FOR UPDATE" if for_update else ""
         return fetch_one(connection, """SELECT boot_id, epoch, receipt_json
             FROM agent_runtime_authority_current WHERE authority_key='current'""" + suffix)
+
+    def workspace_agent_admission(self, *, owner_principal: object, workspace_id: object,
+                                  root_run_id: object, session_id: object,
+                                  boot_id: object) -> dict[str, object]:
+        """Read business-root closure before a singleton Adapter uses a slot.
+
+        This is not a capacity lease. The static runner/Adapter supplies that
+        fence; Backend preserves unresolved business roots across process loss.
+        """
+        owner = _principal(owner_principal, field="owner_principal")
+        workspace = _trace(workspace_id, field="workspace_id")
+        session = _trace(session_id, field="session_id")
+        boot = _runtime_boot_id(boot_id)
+        if not isinstance(root_run_id, str) or re.fullmatch(r"[0-9a-f]{32}", root_run_id) is None:
+            raise ValueError("invalid exact root run identity")
+        with self._transaction() as connection:
+            self._lifecycle_lock(connection, "runtime-authority:current")
+            self._require_current_runtime_boot(connection, boot, required=True)
+            self._require_lifecycle_workspace(connection, owner, workspace, terminal_cleanup=False)
+            current = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root",
+                                {"root": root_run_id})
+            if current is not None and (
+                    (current["owner_principal"], current["workspace_id"], current["session_id"])
+                    != (owner, workspace, session)
+                    or current["authority_boot_id"] != boot
+                    or current["status"] != "active" or current["authority_status"] != "active"):
+                raise AgentConflict("candidate root has no current workspace authority")
+            blocked = fetch_one(connection, """SELECT EXISTS (
+                SELECT 1 FROM agent_runtime_turns
+                WHERE workspace_id=:workspace AND root_run_id<>:root
+                  AND (status='active' OR authority_status<>'closed')
+            ) AS blocked""", {"workspace": workspace, "root": root_run_id})
+        return {"schema_version": "byq-workspace-agent-admission.v1", "workspace_id": workspace,
+                "boot_id": boot, "root_run_id": root_run_id,
+                "can_start": not bool(blocked["blocked"])}
 
     def _require_current_runtime_boot(self, connection, trusted_boot_id: str | None,
                                       *, required: bool = False):
@@ -844,6 +965,191 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                 {"boot_id": boot_id, "epoch": epoch, "receipt": encoded, "now": now})
         return receipt
 
+    def transfer_runtime_root_authority(self, root_run_id: object, *, previous_boot_id: object,
+                                        previous_authority_epoch: object, boot_id: object,
+                                        authority_epoch: object, owner_principal: object,
+                                        workspace_id: object, session_id: object,
+                                        trace_id: object) -> dict[str, object]:
+        """Reattach one revoked active root to the current runtime boot.
+
+        Rotation has already drained in-flight Product Agent requests and
+        fenced the old boot. This operation requires the exact recorded old
+        and current boot epochs, the root's original scope, and a root that is
+        still active and revoked under that old boot. Durable call evidence and
+        claims are intentionally untouched: unresolved claims stay unknown and
+        are never replayed here.
+        """
+        if not isinstance(root_run_id, str) or re.fullmatch(r"[0-9a-f]{32}", root_run_id) is None:
+            raise ValueError("invalid exact root run identity")
+        previous_boot_id = _runtime_boot_id(previous_boot_id)
+        boot_id = _runtime_boot_id(boot_id)
+        if previous_boot_id == boot_id:
+            raise ValueError("root authority transfer requires two distinct boots")
+        if type(previous_authority_epoch) is not int or not 1 <= previous_authority_epoch <= 2**63 - 1:
+            raise ValueError("invalid previous runtime authority epoch")
+        if type(authority_epoch) is not int or not 1 <= authority_epoch <= 2**63 - 1:
+            raise ValueError("invalid current runtime authority epoch")
+        owner = _principal(owner_principal, field="owner_principal")
+        workspace = _trace(workspace_id, field="workspace_id")
+        session = _trace(session_id, field="session_id")
+        trace = _trace(trace_id, field="trace_id")
+
+        # Drain current-boot Product Agent requests before moving this root.
+        # This follows rotation's lock order and closes the gap between the
+        # old-boot fence and the new root authority grant.
+        with transaction(self.runtime_authority_guard_engine) as gate_connection:
+            self._lifecycle_lock(gate_connection, "runtime-authority:agent-writers")
+            with self._transaction() as connection:
+                self._lifecycle_lock(connection, "runtime-authority:current")
+                current = self._current_authority_row(connection, for_update=True)
+                if (current is None or current["boot_id"] != boot_id
+                        or current["epoch"] != authority_epoch
+                        or current["receipt_json"].get("boot_id") != boot_id
+                        or current["receipt_json"].get("authority_epoch") != authority_epoch
+                        or current["receipt_json"].get("status") != "current"):
+                    raise AgentConflict("current runtime boot receipt does not match transfer proof")
+
+                previous = fetch_one(connection, """SELECT epoch,receipt_json
+                    FROM agent_runtime_authority_boot_receipts
+                    WHERE boot_id=:boot_id""", {"boot_id": previous_boot_id})
+                if (previous is None or previous["epoch"] != previous_authority_epoch
+                        or previous["receipt_json"].get("schema_version") != "byq-runtime-authority-receipt.v1"
+                        or previous["receipt_json"].get("boot_id") != previous_boot_id
+                        or previous["receipt_json"].get("authority_epoch") != previous_authority_epoch):
+                    raise AgentConflict("previous runtime boot receipt does not match transfer proof")
+
+                self._require_lifecycle_workspace(connection, owner, workspace)
+                self._lifecycle_lock(connection, "root:" + root_run_id)
+                root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:id",
+                                 {"id": root_run_id})
+                if root is None:
+                    raise AgentNotFound("runtime root not found")
+                if (root["owner_principal"], root["workspace_id"], root["session_id"], root["trace_id"]) != (
+                        owner, workspace, session, trace):
+                    raise AgentUnauthorized("runtime root does not match transfer scope")
+
+                receipt = {
+                    "schema_version": "byq-runtime-root-authority-transfer-receipt.v1",
+                    "root_run_id": root_run_id,
+                    "previous_boot_id": previous_boot_id,
+                    "previous_authority_epoch": previous_authority_epoch,
+                    "boot_id": boot_id,
+                    "authority_epoch": authority_epoch,
+                    "status": "transferred",
+                }
+                # Exact retry after commit returns the same proof. These two
+                # fields are written with the authority change, so a root
+                # created directly under this boot cannot claim a transfer.
+                if (root["status"] in {"active", "completed", "failed", "cancelled", "interrupted"}
+                        and root["authority_status"] in {"active", "closed"}
+                        and root["authority_boot_id"] == boot_id
+                        and root.get("previous_authority_boot_id") == previous_boot_id
+                        and root.get("previous_authority_epoch") == previous_authority_epoch):
+                    return receipt
+
+                self._require_current_runtime_boot(connection, boot_id, required=True)
+                if (root["status"] != "active"
+                        or root["authority_status"] != "authority_revoked_unconfirmed"
+                        or root["authority_boot_id"] != previous_boot_id):
+                    raise AgentConflict("runtime root is not revoked under the exact previous boot")
+
+                # An unbound registration has no durable proof tying it to this
+                # root. Do not guess from a shared session or revive it.
+                unbound = fetch_one(connection, """SELECT run_id FROM agent_runs
+                    WHERE owner_principal=:owner AND workspace_id=:workspace
+                      AND session_id=:session AND trace_id=:trace
+                      AND root_run_id IS NULL AND runtime_registration_fingerprint IS NOT NULL
+                      AND status IN ('active','pending_binding')
+                      AND authority_status='authority_revoked_unconfirmed'
+                      AND authority_boot_id=:previous_boot LIMIT 1""",
+                    {"owner": owner, "workspace": workspace, "session": session,
+                     "trace": trace, "previous_boot": previous_boot_id})
+                if unbound is not None:
+                    raise AgentConflict("unbound AgentRun registration prevents root authority transfer")
+
+                acp_registrations = execute(connection, """SELECT * FROM agent_acp_native_agent_registrations
+                    WHERE root_run_id=:root ORDER BY native_agent_session_id FOR UPDATE""",
+                    {"root": root_run_id})
+                if any(row["status"] != "bound" or row["runtime_boot_id"] != previous_boot_id
+                       for row in acp_registrations):
+                    raise AgentConflict("pending or mismatched ACP native registration prevents root authority transfer")
+
+                pending_ingress = fetch_one(connection, """SELECT count(*) AS count
+                    FROM agent_acp_tool_ingress_observations
+                    WHERE root_run_id=:root AND status IN ('pending','unknown')""",
+                    {"root": root_run_id})
+                if pending_ingress["count"]:
+                    raise AgentConflict("pending or unknown ACP tool ingress prevents root authority transfer")
+
+                bindings = execute(connection, """SELECT registration_fingerprint
+                    FROM agent_runtime_registrations WHERE root_run_id=:root
+                    ORDER BY registration_fingerprint""", {"root": root_run_id})
+                for binding in bindings:
+                    self._lifecycle_lock(connection, "registration:" + binding["registration_fingerprint"])
+
+                active_runs = execute(connection, """SELECT run_id,authority_status,authority_boot_id
+                    FROM agent_runs WHERE root_run_id=:root AND status IN ('active','pending_binding')
+                    ORDER BY run_id""", {"root": root_run_id})
+                for run in active_runs:
+                    if (run["authority_status"] != "authority_revoked_unconfirmed"
+                            or run["authority_boot_id"] != previous_boot_id):
+                        raise AgentConflict("bound AgentRun does not match the previous root authority")
+
+                now = _now()
+                updated_root = execute(connection, """UPDATE agent_runtime_turns
+                    SET authority_status='active',authority_boot_id=:boot_id,
+                        previous_authority_boot_id=:previous_boot,
+                        previous_authority_epoch=:previous_epoch,updated_at=:now
+                    WHERE root_run_id=:root AND status='active'
+                      AND authority_status='authority_revoked_unconfirmed'
+                      AND authority_boot_id=:previous_boot RETURNING root_run_id""",
+                    {"boot_id": boot_id, "previous_boot": previous_boot_id,
+                     "previous_epoch": previous_authority_epoch, "now": now,
+                     "root": root_run_id})
+                if len(updated_root) != 1:
+                    raise AgentConflict("runtime root changed during authority transfer")
+                rebound_runs = execute(connection, """UPDATE agent_runs
+                    SET authority_status='active',authority_boot_id=:boot_id,
+                        updated_at=:now,version=version+1
+                    WHERE root_run_id=:root AND status IN ('active','pending_binding')
+                      AND authority_status='authority_revoked_unconfirmed'
+                      AND authority_boot_id=:previous_boot RETURNING run_id""",
+                    {"boot_id": boot_id, "previous_boot": previous_boot_id,
+                     "now": now, "root": root_run_id})
+                if len(rebound_runs) != len(active_runs):
+                    raise AgentConflict("bound AgentRun set changed during authority transfer")
+                for registration in acp_registrations:
+                    identity = {
+                        "root_run_id": root_run_id, "runtime_boot_id": boot_id,
+                        "native_root_session_id": registration["native_root_session_id"],
+                        "native_agent_session_id": registration["native_agent_session_id"],
+                        "native_parent_session_id": registration["native_parent_session_id"],
+                        "origin": registration["origin"], "depth": registration["depth"],
+                    }
+                    scope = {"owner": registration["owner_principal"],
+                        "workspace": registration["workspace_id"],
+                        "actor": registration["actor_principal"], "session": registration["session_id"],
+                        "trace": registration["trace_id"], "generation": registration["dsh_run_id"]}
+                    binding_fields = _acp_binding_fields(identity, scope,
+                        agent_run_id=registration["agent_run_id"],
+                        parent_run_id=registration["parent_run_id"])
+                    bind_receipt = {"schema_version": "byq-acp-agent-bind-receipt.v1",
+                        "root_run_id": root_run_id, "runtime_boot_id": boot_id,
+                        "native_agent_session_id": registration["native_agent_session_id"],
+                        "native_parent_session_id": registration["native_parent_session_id"],
+                        "agent_run_id": registration["agent_run_id"],
+                        "parent_run_id": registration["parent_run_id"],
+                        "origin": registration["origin"], "depth": registration["depth"],
+                        "status": "bound", "binding_sha256": acp_binding_sha256(binding_fields)}
+                    execute(connection, """UPDATE agent_acp_native_agent_registrations
+                        SET runtime_boot_id=:boot,receipt_json=CAST(:receipt AS jsonb),updated_at=:now
+                        WHERE root_run_id=:root AND native_agent_session_id=:native_agent AND status='bound'
+                          AND runtime_boot_id=:previous_boot""",
+                        {"boot": boot_id, "receipt": json.dumps(bind_receipt, allow_nan=False), "now": now,
+                         "root": root_run_id, "native_agent": registration["native_agent_session_id"],
+                         "previous_boot": previous_boot_id})
+                return receipt
+
     def close_runtime_root(self, root_run_id: object, *, boot_id: object, sequence: object,
                            outcome: object, event_sha256: object) -> dict[str, object]:
         """Close exactly the root and terminal event proven by Adapter evidence."""
@@ -873,6 +1179,9 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             authority = self._require_current_runtime_boot(connection, boot_id, required=True)
             if (root["authority_status"] != "active" or root["authority_boot_id"] != authority["boot_id"]):
                 raise AgentConflict("runtime root no longer has current business authority")
+            self._require_judgment_root_result_before_close(connection, root_run_id, outcome)
+            self._require_acp_root_terminal_safe(connection, root_run_id)
+            terminal_evidence = self._acp_terminal_evidence_snapshot(connection, root_run_id)
             registrations = execute(connection, """SELECT registration_fingerprint
                 FROM agent_runtime_registrations WHERE root_run_id=:root
                 ORDER BY registration_fingerprint""", {"root": root_run_id})
@@ -880,9 +1189,17 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                 self._lifecycle_lock(connection, "registration:" + registration["registration_fingerprint"])
             now = _now()
             execute(connection, """UPDATE agent_runtime_turns SET status=:outcome,authority_status='closed',
-                terminal_sequence=:sequence,terminal_event_sha256=:digest,updated_at=:now
+                terminal_sequence=:sequence,terminal_event_sha256=:digest,
+                terminal_acp_ingress_sequence=:ingress_sequence,
+                terminal_acp_ingress_sha256=:ingress_digest,
+                terminal_unknown_claim_count=:unknown_claim_count,
+                terminal_unknown_claims_sha256=:unknown_claims_digest,updated_at=:now
                 WHERE root_run_id=:root AND status='active' AND authority_status='active'""",
                 {"outcome": outcome, "sequence": sequence, "digest": event_sha256,
+                 "ingress_sequence": terminal_evidence["terminal_acp_ingress_sequence"],
+                 "ingress_digest": terminal_evidence["terminal_acp_ingress_sha256"],
+                 "unknown_claim_count": terminal_evidence["terminal_unknown_claim_count"],
+                 "unknown_claims_digest": terminal_evidence["terminal_unknown_claims_sha256"],
                  "now": now, "root": root_run_id})
             execute(connection, """UPDATE agent_runs SET status=:outcome,authority_status='closed',
                 updated_at=:now,version=version+1 WHERE root_run_id=:root
@@ -912,14 +1229,15 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             detail={"root_run_id": root["root_run_id"], "terminal_sequence": root["terminal_sequence"]},
             connection=connection)
 
-    def consume_runtime_lifecycle_event(self, event: object, **context: str) -> dict:
+    def consume_runtime_lifecycle_event(self, event: object, *, _connection=None,
+                                        **context: str) -> dict:
         event = validate_lifecycle_event(event)
         receipt = lifecycle_receipt(event)
         trusted_boot_id = context.get("trusted_boot_id")
         params = {"owner": context["trusted_owner"], "workspace": context["trusted_workspace"],
                   "session": context["trusted_session_id"], "trace": context["trusted_trace_id"],
                   "sequence": receipt["sequence"]}
-        with self._transaction() as connection:
+        with (nullcontext(_connection) if _connection is not None else self._transaction()) as connection:
             self._lifecycle_lock(connection, "runtime-authority:current")
             self._require_lifecycle_workspace(connection, params["owner"], params["workspace"],
                                               terminal_cleanup=event["outcome"] != "active")
@@ -1026,14 +1344,25 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                         raise AgentConflict("runtime terminal evidence conflicts with its original receipt")
                     return dict(root)
                 # Freeze registrations against concurrent start_run inserts.
+                self._require_judgment_root_result_before_close(connection, root_id, outcome)
+                self._require_acp_root_terminal_safe(connection, root_id)
+                terminal_evidence = self._acp_terminal_evidence_snapshot(connection, root_id)
                 bindings = execute(connection, """SELECT registration_fingerprint FROM agent_runtime_registrations
                     WHERE root_run_id=:id ORDER BY registration_fingerprint""", {"id": root_id})
                 for binding in bindings:
                     self._lifecycle_lock(connection, "registration:" + binding["registration_fingerprint"])
                 execute(connection, """UPDATE agent_runtime_turns SET status=:status,authority_status='closed',
-                    terminal_sequence=:sequence,terminal_event_sha256=:digest,updated_at=:now
+                    terminal_sequence=:sequence,terminal_event_sha256=:digest,
+                    terminal_acp_ingress_sequence=:ingress_sequence,
+                    terminal_acp_ingress_sha256=:ingress_digest,
+                    terminal_unknown_claim_count=:unknown_claim_count,
+                    terminal_unknown_claims_sha256=:unknown_claims_digest,updated_at=:now
                     WHERE root_run_id=:id""",
                     {"status": outcome, "sequence": event["sequence"], "digest": lifecycle_receipt(event)["event_sha256"],
+                     "ingress_sequence": terminal_evidence["terminal_acp_ingress_sequence"],
+                     "ingress_digest": terminal_evidence["terminal_acp_ingress_sha256"],
+                     "unknown_claim_count": terminal_evidence["terminal_unknown_claim_count"],
+                     "unknown_claims_digest": terminal_evidence["terminal_unknown_claims_sha256"],
                      "now": _now(), "id": root_id})
                 root = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:id", {"id": root_id})
                 changed = execute(connection, """UPDATE agent_runs SET status=:status,authority_status='closed',
@@ -1084,7 +1413,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             self._check_run_access(row, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
             self._check_agent_run_authority(connection, row, authority, trusted_boot_id)
             self._check_runtime_context(row, trusted_session_id, trusted_dsh_run_id)
-            role = ROLE_BY_ID[row["role_id"]]
+            role = _ALL_ROLE_BY_ID[row["role_id"]]
             index_action = action in {
                 "byq_index_pool_catalog", "byq_index_pool_create", "byq_index_pool_status",
             }
@@ -1196,7 +1525,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
             self._check_run_access(run, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
             self._check_agent_run_authority(connection, run, authority, trusted_boot_id)
             self._check_runtime_context(run, trusted_session_id, trusted_dsh_run_id)
-            role = ROLE_BY_ID[run["role_id"]]
+            role = _ALL_ROLE_BY_ID[run["role_id"]]
             if action not in role.approval_required_actions:
                 raise AgentForbidden("agent action does not require or support this approval boundary")
             if action == "byq_ml_training_create" and run["role_version"] != role.version:

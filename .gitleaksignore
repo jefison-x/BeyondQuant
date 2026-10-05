@@ -27,3 +27,21 @@ df5e8990fb092e0f678ef5f0aa9d59cce5679904:scripts/evidence/h4-strategy-pagination
 # Only these fingerprints are suppressed; other findings remain enforced.
 cdeeb6dbdc497133d20a4bca87a36a98b511e677:services/backend/tests/test_research_plan_continuation.py:generic-api-key:66
 cdeeb6dbdc497133d20a4bca87a36a98b511e677:services/backend/tests/test_research_plan_continuation.py:generic-api-key:102
+
+# ACP special-project synthetic fixtures. These are test doubles, token-format
+# prefixes and fixed synthetic signing/authority keys - not authentication
+# material. Exact historical findings only; no rule is suppressed globally.
+fd544c841d93d2e92f766cc4e7102301d4e79580:services/runtime-adapter/tests/test_research_judgment_acp_identity_key.py:generic-api-key:25
+fd544c841d93d2e92f766cc4e7102301d4e79580:services/mcp/tests/acp-judgment-subset-test.ts:generic-api-key:65
+43c81816d303b10502f460e75a0f49630c40941e:services/gateway/tests/test_acp_judgment_cancel_intent.py:generic-api-key:19
+43c81816d303b10502f460e75a0f49630c40941e:services/gateway/tests/test_acp_judgment_cancel_intent.py:generic-api-key:54
+43c81816d303b10502f460e75a0f49630c40941e:services/gateway/tests/test_acp_judgment_cancel_intent.py:generic-api-key:60
+b8a24f6dd89429aff012d1aeecc11cd83859c1d4:services/runtime-adapter/tests/test_acp_product_slot_runtime.py:generic-api-key:145
+acbfa8994137b62bc4d72899fd974a56e42a57f4:plugins/dsh-byq/runtime/byq-acp-mcp-identity.js:generic-api-key:24
+acbfa8994137b62bc4d72899fd974a56e42a57f4:plugins/dsh-byq/runtime/byq-acp-mcp-identity.test.js:generic-api-key:20
+acbfa8994137b62bc4d72899fd974a56e42a57f4:services/runtime-adapter/tests/test_dsh_acp_compatibility.py:generic-api-key:157
+4f9ab96ee8fb51fcb7ec6f8051f7ff3ac9a67723:services/runtime-adapter/tests/test_acp_completed_root_reuse.py:generic-api-key:118
+8882e39cd2eea54f3c651bf2459a3d59d2b34008:services/runtime-adapter/tests/test_dsh_acp_compatibility.py:generic-api-key:106
+8882e39cd2eea54f3c651bf2459a3d59d2b34008:services/mcp/tests/acp-auth-test.ts:generic-api-key:12
+53751276fd27d0efec62035273d33dd3c09ffcf4:services/mcp/tests/acp-judgment-subset-test.ts:generic-api-key:25
+8882e39cd2eea54f3c651bf2459a3d59d2b34008:services/mcp/tests/acp-ingress-test.ts:generic-api-key:8

@@ -284,7 +284,14 @@ class ProductAgentAuthorityGuard:
             return
 
         headers: dict[str, str] = {}
-        protected = {"x-byq-actor-principal", "x-byq-runtime-boot-id"}
+        protected = {
+            "x-byq-owner-principal", "x-byq-workspace-id", "x-byq-actor-principal",
+            "x-byq-trace-id", "x-byq-session-id", "x-byq-dsh-run-id",
+            "x-byq-runtime-boot-id", "x-byq-root-run-id", "x-byq-acp-observation-id",
+            "x-byq-acp-native-agent-session-id", "x-byq-acp-native-root-session-id",
+            "x-byq-acp-native-parent-session-id", "x-byq-acp-origin", "x-byq-acp-depth",
+            "x-byq-judgment-task-id", "x-byq-judgment-call-identity",
+        }
         duplicate_protected_header = False
         for raw_key, raw_value in scope.get("headers", ()):
             key = raw_key.decode("latin1").lower()
@@ -413,6 +420,17 @@ workspace_runtime_reset_store = WorkspaceRuntimeResetStore.from_env()
 CREDENTIAL_RESOLVER_TOKEN = os.environ.get("BYQ_CREDENTIAL_RESOLVER_TOKEN")
 FEEDBACK_HUB_RELAY_TOKEN = os.environ.get("BYQ_FEEDBACK_HUB_RELAY_TOKEN")
 RUNTIME_AUTHORITY_TOKEN = os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN")
+MCP_BACKEND_PROOF_TOKEN = os.environ.get("BYQ_MCP_BACKEND_PROOF_TOKEN")
+MCP_ACP_JUDGMENT_PROOF_TOKEN = os.environ.get("BYQ_MCP_ACP_JUDGMENT_PROOF_TOKEN")
+GATEWAY_SERVICE_TOKEN = os.environ.get("BYQ_GATEWAY_SERVICE_TOKEN")
+if GATEWAY_SERVICE_TOKEN is not None and len(GATEWAY_SERVICE_TOKEN.encode("utf-8")) < 32:
+    raise RuntimeError("Gateway Backend service credential must be at least 32 UTF-8 bytes")
+if (MCP_ACP_JUDGMENT_PROOF_TOKEN and MCP_ACP_JUDGMENT_PROOF_TOKEN in {
+        MCP_BACKEND_PROOF_TOKEN, RUNTIME_AUTHORITY_TOKEN}):
+    raise RuntimeError("ACP judgment Backend proof credential must be distinct")
+if (GATEWAY_SERVICE_TOKEN and GATEWAY_SERVICE_TOKEN in {
+        MCP_BACKEND_PROOF_TOKEN, RUNTIME_AUTHORITY_TOKEN, MCP_ACP_JUDGMENT_PROOF_TOKEN}):
+    raise RuntimeError("Gateway Backend service credential must be distinct")
 if os.environ.get("BYQ_BOOTSTRAP_ADMIN_USERNAME") and os.environ.get("BYQ_BOOTSTRAP_ADMIN_PASSWORD"):
     user_store.ensure_bootstrap_admin(
         os.environ["BYQ_BOOTSTRAP_ADMIN_USERNAME"],
@@ -626,6 +644,17 @@ def _require_runtime_authority_bearer(request: Request) -> None:
         raise HTTPException(status_code=401, detail="runtime authority service credential required")
 
 
+def _require_gateway_service_bearer(request: Request) -> None:
+    if not GATEWAY_SERVICE_TOKEN:
+        raise HTTPException(status_code=503, detail="Gateway Backend service credential is unavailable")
+    if len(GATEWAY_SERVICE_TOKEN.encode("utf-8")) < 32:
+        raise HTTPException(status_code=503, detail="Gateway Backend service credential is too short")
+    supplied = request.headers.get("authorization", "")
+    expected = f"Bearer {GATEWAY_SERVICE_TOKEN}"
+    if not secrets.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8")):
+        raise HTTPException(status_code=401, detail="Gateway Backend service credential required")
+
+
 def _workspace_runtime_reset_call(call: Callable[[], dict[str, object]]) -> dict[str, object]:
     try:
         return call()
@@ -722,6 +751,38 @@ def close_runtime_authority_root(root_run_id: str, payload: dict[str, Any], requ
         outcome=payload["outcome"], event_sha256=payload["event_sha256"])})
 
 
+@app.get("/internal/runtime-authority/workspaces/{workspace_id}/agent-admission")
+def workspace_agent_admission(workspace_id: str, root_run_id: str, session_id: str,
+                              request: Request) -> dict[str, object]:
+    _require_runtime_authority_bearer(request)
+    return _agent_call(lambda: agent_store.workspace_agent_admission(
+        owner_principal=request.headers.get("x-byq-owner-principal"),
+        workspace_id=workspace_id, root_run_id=root_run_id, session_id=session_id,
+        boot_id=request.headers.get("x-byq-runtime-boot-id")))
+
+
+@app.post("/internal/runtime-authority/roots/{root_run_id}/transfer")
+def transfer_runtime_root_authority(root_run_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    _require_runtime_authority_bearer(request)
+    actor = request.headers.get("x-byq-actor-principal", "")
+    if actor.startswith("byq-product-agent-"):
+        raise HTTPException(status_code=403, detail="runtime root transfer requires private service context")
+    fields = {"schema_version", "previous_boot_id", "previous_authority_epoch", "boot_id", "authority_epoch"}
+    if set(payload) != fields or payload.get("schema_version") != "byq-runtime-root-authority-transfer.v1":
+        raise HTTPException(status_code=422, detail="exact runtime root authority transfer request required")
+    owner = request.headers.get("x-byq-owner-principal")
+    workspace = request.headers.get("x-byq-workspace-id")
+    session = request.headers.get("x-byq-session-id")
+    trace = request.headers.get("x-byq-trace-id")
+    if not all((owner, workspace, session, trace)):
+        raise HTTPException(status_code=401, detail="exact runtime root transfer scope is required")
+    return _agent_call(lambda: {"receipt": agent_store.transfer_runtime_root_authority(
+        root_run_id, previous_boot_id=payload["previous_boot_id"],
+        previous_authority_epoch=payload["previous_authority_epoch"], boot_id=payload["boot_id"],
+        authority_epoch=payload["authority_epoch"], owner_principal=owner,
+        workspace_id=workspace, session_id=session, trace_id=trace)})
+
+
 def _continuation_consumer_context(request: Request) -> dict:
     # This is the existing private Gateway catalog consumer, before a model
     # root exists. MCP action admission below still requires full Agent context.
@@ -796,6 +857,120 @@ def admit_research_judgment_call(task_id: str, payload: dict[str, Any], request:
         raise HTTPException(status_code=409, detail=str(error)) from error
 
 
+def _acp_judgment_scope(request: Request) -> tuple[dict[str, str], str]:
+    owner = request.headers.get("x-byq-owner-principal")
+    workspace = request.headers.get("x-byq-workspace-id")
+    boot_id = request.headers.get("x-byq-runtime-boot-id")
+    if not owner or not workspace or not boot_id:
+        raise HTTPException(status_code=401, detail="trusted owner, Workspace and runtime boot are required")
+    return {"owner_principal": owner, "workspace_id": workspace}, boot_id
+
+
+def _acp_judgment_gateway_user_scope(request: Request) -> dict[str, str]:
+    """Read the authenticated owner identity forwarded by the trusted Gateway."""
+    owner = request.headers.get("x-byq-owner-principal")
+    workspace = request.headers.get("x-byq-workspace-id")
+    actor = request.headers.get("x-byq-actor-principal")
+    if not owner or not workspace or not actor:
+        raise HTTPException(status_code=401, detail="Gateway owner, Workspace and actor are required")
+    if actor != owner:
+        raise HTTPException(status_code=403, detail="ACP judgment cancel intent requires the authenticated task owner")
+    return {"owner_principal": owner, "workspace_id": workspace, "actor_principal": actor}
+
+
+@app.post("/internal/research-judgment/{task_id}/acp-root/begin")
+def begin_acp_research_judgment_root(task_id: str, payload: dict[str, Any], request: Request) -> dict:
+    _require_runtime_authority_bearer(request)
+    from packages.contracts.research_judgment import validate_acp_judgment_root_begin_request
+
+    try:
+        validate_acp_judgment_root_begin_request(payload)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    context, boot_id = _acp_judgment_scope(request)
+    return _research_call(lambda: _agent_call(lambda: research_store.begin_acp_judgment_root(
+        task_id, payload, trusted_context=context, runtime_boot_id=boot_id,
+        agent_store=agent_store)))
+
+
+@app.post("/internal/research-judgment/{task_id}/acp-root/register-agent")
+def register_acp_research_judgment_root_agent(task_id: str, payload: dict[str, Any], request: Request) -> dict:
+    _require_runtime_authority_bearer(request)
+    from packages.contracts.research_judgment import validate_acp_judgment_agent_register_request
+
+    try:
+        validate_acp_judgment_agent_register_request(payload)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    context, boot_id = _acp_judgment_scope(request)
+    return _research_call(lambda: _agent_call(lambda: research_store.register_acp_judgment_root_agent(
+        task_id, payload, trusted_context=context, runtime_boot_id=boot_id,
+        agent_store=agent_store)))
+
+
+@app.post("/internal/research-judgment/{task_id}/acp-root/result")
+def record_acp_research_judgment_root_result(task_id: str, payload: dict[str, Any],
+                                             request: Request) -> dict:
+    _require_runtime_authority_bearer(request)
+    from packages.contracts.research_judgment import validate_acp_judgment_result_request
+
+    try:
+        validate_acp_judgment_result_request(payload)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    context, boot_id = _acp_judgment_scope(request)
+    return _research_call(lambda: _agent_call(lambda: research_store.record_acp_judgment_root_result(
+        task_id, payload, trusted_context=context, runtime_boot_id=boot_id,
+        agent_store=agent_store)))
+
+
+@app.post("/internal/research-judgment/{task_id}/acp-root/settle")
+def settle_acp_research_judgment_root(task_id: str, payload: dict[str, Any],
+                                      request: Request) -> dict:
+    _require_runtime_authority_bearer(request)
+    from .research_judgment import validate_acp_judgment_settlement_request
+
+    try:
+        validate_acp_judgment_settlement_request(payload)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    context, boot_id = _acp_judgment_scope(request)
+    return _research_call(lambda: _agent_call(lambda: research_store.settle_acp_judgment_root(
+        task_id, payload, trusted_context=context, runtime_boot_id=boot_id,
+        agent_store=agent_store)))
+
+
+@app.post("/internal/research-judgment/{task_id}/acp-root/cancel-intent")
+def record_acp_research_judgment_cancel_intent(task_id: str, payload: dict[str, Any],
+                                               request: Request) -> dict:
+    _require_gateway_service_bearer(request)
+    from .research_judgment import validate_acp_judgment_cancel_intent_request
+
+    try:
+        validate_acp_judgment_cancel_intent_request(payload)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    context = _acp_judgment_gateway_user_scope(request)
+    return _research_call(lambda: _agent_call(lambda: research_store.record_acp_judgment_cancel_intent(
+        task_id, payload, trusted_context=context, agent_store=agent_store)))
+
+
+@app.post("/internal/research-judgment/{task_id}/acp-root/status")
+def get_acp_research_judgment_root_status(task_id: str, payload: dict[str, Any],
+                                          request: Request) -> dict:
+    _require_runtime_authority_bearer(request)
+    from packages.contracts.research_judgment import validate_acp_judgment_status_request
+
+    try:
+        validate_acp_judgment_status_request(payload)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    context, boot_id = _acp_judgment_scope(request)
+    return _research_call(lambda: _agent_call(lambda: research_store.get_acp_judgment_root_status(
+        task_id, payload, trusted_context=context, runtime_boot_id=boot_id,
+        agent_store=agent_store)))
+
+
 @app.post('/internal/research-judgment/{task_id}/result')
 def record_research_judgment_result(task_id: str, payload: dict[str, Any], request: Request) -> dict:
     # ADR-0085 P3 private runtime-adapter consumer. ONE atomic named store
@@ -825,6 +1000,100 @@ def consume_domain_call_evidence(conversation_id: str, payload: dict[str, Any], 
         payload["event"], trusted_owner=owner, trusted_workspace=conversation["workspace_id"],
         trusted_session_id=conversation["runtime_session_id"], trusted_trace_id=conversation["trace_id"],
         conversation_id=conversation_id, trusted_boot_id=request.headers.get("x-byq-runtime-boot-id"))})
+
+
+@app.post("/internal/acp/agent-bind")
+def bind_acp_native_agent(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    if (not isinstance(payload, dict) or payload.get("schema_version") != "byq-acp-agent-bind.v1"):
+        raise HTTPException(status_code=422, detail="exact ACP Agent bind request required")
+    scope = _acp_private_scope(request, root_run_id=payload.get("root_run_id"),
+                              runtime_boot_id=payload.get("runtime_boot_id"))
+    return _agent_call(lambda: agent_store.bind_acp_agent(payload, trusted_scope=scope))
+
+
+@app.get("/internal/acp/agent-binding")
+def get_acp_native_agent_binding(request: Request, root_run_id: str,
+                                 native_agent_session_id: str) -> dict[str, object]:
+    scope = _acp_private_scope(request, root_run_id=root_run_id)
+    return _agent_call(lambda: agent_store.get_acp_agent_binding(
+        root_run_id=root_run_id, native_agent_session_id=native_agent_session_id,
+        trusted_scope=scope))
+
+
+@app.post("/internal/acp/domain-call-observe")
+def observe_acp_domain_call(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    if (not isinstance(payload, dict)
+            or payload.get("schema_version") != "byq-acp-domain-call-observe.v1"):
+        raise HTTPException(status_code=422, detail="exact ACP domain call observation required")
+    scope = _acp_private_scope(request, root_run_id=payload.get("root_run_id"),
+                              runtime_boot_id=payload.get("runtime_boot_id"))
+    return _agent_call(lambda: agent_store.observe_acp_domain_call(payload, trusted_scope=scope))
+
+
+@app.get("/internal/acp/domain-call-observation")
+def get_acp_domain_call_observation(request: Request, mcp_request_id: str) -> dict[str, object]:
+    scope = _acp_private_scope(request)
+    return _agent_call(lambda: agent_store.get_acp_domain_call_observation(
+        mcp_request_id=mcp_request_id, trusted_scope=scope))
+
+
+@app.post("/internal/acp/tool-ingress-observe")
+def observe_acp_tool_ingress(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    if (not isinstance(payload, dict)
+            or payload.get("schema_version") != "byq-acp-tool-ingress-observe.v1"):
+        raise HTTPException(status_code=422, detail="exact ACP tool ingress observation required")
+    scope = _acp_private_scope(request, root_run_id=payload.get("root_run_id"),
+                              runtime_boot_id=payload.get("runtime_boot_id"))
+    return _agent_call(lambda: agent_store.observe_acp_tool_ingress(payload, trusted_scope=scope))
+
+
+@app.post("/internal/acp/tool-ingress-abort")
+def abort_acp_tool_ingress(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    if (not isinstance(payload, dict)
+            or payload.get("schema_version") != "byq-acp-tool-ingress-abort.v1"):
+        raise HTTPException(status_code=422, detail="exact ACP tool ingress abort request required")
+    scope = _acp_private_scope(request, root_run_id=payload.get("root_run_id"),
+                              runtime_boot_id=payload.get("runtime_boot_id"))
+    return _agent_call(lambda: agent_store.abort_acp_tool_ingress_before_dispatch(
+        payload, trusted_scope=scope))
+
+
+@app.post("/internal/acp/tool-ingress-settle")
+def settle_acp_tool_ingress(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    if (not isinstance(payload, dict)
+            or payload.get("schema_version") != "byq-acp-tool-ingress-settle.v1"):
+        raise HTTPException(status_code=422, detail="exact ACP tool ingress settlement required")
+    scope = _acp_private_scope(request, root_run_id=payload.get("root_run_id"),
+                              runtime_boot_id=payload.get("runtime_boot_id"))
+    return _agent_call(lambda: agent_store.settle_acp_tool_ingress(payload, trusted_scope=scope))
+
+
+@app.post("/internal/acp/judgment-tool-ingress-observe")
+def observe_acp_judgment_tool_ingress(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    if payload.get("schema_version") != "byq-acp-tool-ingress-observe.v1":
+        raise HTTPException(status_code=422, detail="exact ACP judgment tool observation required")
+    scope = _acp_private_scope(request, root_run_id=payload.get("root_run_id"),
+                               runtime_boot_id=payload.get("runtime_boot_id"), judgment=True)
+    return _agent_call(lambda: agent_store.observe_acp_tool_ingress(payload, trusted_scope=scope))
+
+
+@app.post("/internal/acp/judgment-tool-ingress-abort")
+def abort_acp_judgment_tool_ingress(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    if payload.get("schema_version") != "byq-acp-tool-ingress-abort.v1":
+        raise HTTPException(status_code=422, detail="exact ACP judgment tool abort required")
+    scope = _acp_private_scope(request, root_run_id=payload.get("root_run_id"),
+                               runtime_boot_id=payload.get("runtime_boot_id"), judgment=True)
+    return _agent_call(lambda: agent_store.abort_acp_tool_ingress_before_dispatch(
+        payload, trusted_scope=scope))
+
+
+@app.post("/internal/acp/judgment-tool-ingress-settle")
+def settle_acp_judgment_tool_ingress(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    if payload.get("schema_version") != "byq-acp-tool-ingress-settle.v1":
+        raise HTTPException(status_code=422, detail="exact ACP judgment tool settlement required")
+    scope = _acp_private_scope(request, root_run_id=payload.get("root_run_id"),
+                               runtime_boot_id=payload.get("runtime_boot_id"), judgment=True)
+    return _agent_call(lambda: agent_store.settle_acp_tool_ingress(payload, trusted_scope=scope))
 
 
 @app.patch("/v1/product/conversations/{conversation_id}")
@@ -2128,6 +2397,68 @@ def _required_agent_context(
     return complete if include_workspace else {field: value for field, value in complete.items() if field != "workspace_id"}
 
 
+_ACP_RUN_HEADERS = (
+    "x-byq-acp-native-agent-session-id", "x-byq-acp-native-root-session-id",
+    "x-byq-acp-native-parent-session-id", "x-byq-acp-origin", "x-byq-acp-depth",
+)
+_ACP_SCOPE_HEADERS = (
+    "x-byq-owner-principal", "x-byq-workspace-id", "x-byq-actor-principal",
+    "x-byq-trace-id", "x-byq-session-id", "x-byq-dsh-run-id",
+    "x-byq-runtime-boot-id", "x-byq-root-run-id",
+)
+
+
+def _require_mcp_backend_proof_bearer(request: Request) -> None:
+    if not MCP_BACKEND_PROOF_TOKEN:
+        raise HTTPException(status_code=401, detail="MCP Backend proof credential required")
+    supplied = request.headers.get("authorization", "")
+    expected = f"Bearer {MCP_BACKEND_PROOF_TOKEN}"
+    if not secrets.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8")):
+        raise HTTPException(status_code=401, detail="MCP Backend proof credential required")
+
+
+def _acp_private_scope(request: Request, *, root_run_id: object | None = None,
+                       runtime_boot_id: object | None = None,
+                       judgment: bool = False) -> dict[str, str]:
+    if judgment:
+        if not MCP_ACP_JUDGMENT_PROOF_TOKEN:
+            raise HTTPException(status_code=401, detail="judgment MCP Backend proof credential required")
+        expected = f"Bearer {MCP_ACP_JUDGMENT_PROOF_TOKEN}"
+        supplied = request.headers.get("authorization", "")
+        if not secrets.compare_digest(supplied.encode(), expected.encode()):
+            raise HTTPException(status_code=401, detail="judgment MCP Backend proof credential required")
+    else:
+        _require_mcp_backend_proof_bearer(request)
+    if any(not request.headers.get(name) for name in _ACP_SCOPE_HEADERS):
+        raise HTTPException(status_code=401, detail="exact trusted ACP runtime scope headers are required")
+    context = _required_agent_context(request, include_workspace=True)
+    root_header = request.headers.get("x-byq-root-run-id")
+    boot_header = request.headers.get("x-byq-runtime-boot-id")
+    if (not isinstance(root_header, str) or re.fullmatch(r"[0-9a-f]{32}", root_header) is None
+            or not isinstance(boot_header, str) or re.fullmatch(r"[0-9a-f]{32}", boot_header) is None):
+        raise HTTPException(status_code=422, detail="invalid exact ACP root or boot identity")
+    if root_run_id is not None and root_run_id != root_header:
+        raise HTTPException(status_code=409, detail="ACP root body does not match trusted runtime context")
+    if runtime_boot_id is not None and runtime_boot_id != boot_header:
+        raise HTTPException(status_code=409, detail="ACP boot body does not match trusted runtime context")
+    if context["actor_principal"] != "byq-product-agent-" + context["session_id"]:
+        raise HTTPException(status_code=401, detail="trusted Product Agent actor is required")
+    scope = {"owner": context["owner_principal"], "workspace": context["workspace_id"],
+            "actor": context["actor_principal"], "trace": context["trace_id"],
+            "session": context["session_id"], "generation": context["dsh_run_id"],
+            "boot_id": boot_header, "root": root_header}
+    if judgment:
+        task_id = request.headers.get("x-byq-judgment-task-id")
+        call_identity = request.headers.get("x-byq-judgment-call-identity")
+        if (not isinstance(task_id, str) or re.fullmatch(r"task_[0-9a-f]{32}", task_id) is None
+                or not isinstance(call_identity, str)
+                or re.fullmatch(r"byq-judgment-[0-9a-f]{32}", call_identity) is None):
+            raise HTTPException(status_code=422, detail="exact judgment task and call headers required")
+        scope["judgment_task_id"] = task_id
+        scope["judgment_call_identity"] = call_identity
+    return scope
+
+
 def _strategy_payload(payload: object, allowed: set[str]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("strategy request must be an object")
@@ -2613,7 +2944,8 @@ def _domain_validation_operation(request, payload, context, action, operation):
         trusted_owner=context["owner_principal"], trusted_workspace=context["workspace_id"],
         trusted_session_id=context["session_id"], trusted_trace_id=context["trace_id"],
         trusted_generation=context["dsh_run_id"], trusted_root=request.headers.get("x-byq-root-run-id"),
-        trusted_boot_id=request.headers.get("x-byq-runtime-boot-id")))
+        trusted_boot_id=request.headers.get("x-byq-runtime-boot-id"),
+        trusted_acp_observation_id=request.headers.get("x-byq-acp-observation-id")))
     data = {key: value for key, value in payload.items() if key != "agent_run_id"}
     data["trace_id"] = context["trace_id"]
     result = _agent_call(lambda: agent_store.execute_domain_call(claim, lambda connection: operation(data, connection)))
@@ -4920,10 +5252,40 @@ def get_agent_roles() -> dict[str, object]:
 
 @app.post("/v1/agents/runs", status_code=201)
 def start_agent_run(payload: dict[str, Any], request: Request) -> dict[str, object]:
-    context = _required_agent_context(request, payload)
+    acp_headers_present = any(name in request.headers for name in _ACP_RUN_HEADERS)
+    proof_auth = f"Bearer {MCP_BACKEND_PROOF_TOKEN}" if MCP_BACKEND_PROOF_TOKEN else ""
+    proof_bearer_supplied = bool(proof_auth) and secrets.compare_digest(
+        request.headers.get("authorization", "").encode("utf-8"), proof_auth.encode("utf-8"))
+    if acp_headers_present:
+        _require_mcp_backend_proof_bearer(request)
+        if any(name not in request.headers for name in _ACP_RUN_HEADERS):
+            raise HTTPException(status_code=422, detail="exact ACP native Agent registration headers required")
+        acp_scope = _acp_private_scope(request)
+        context = _required_agent_context(request, payload, include_workspace=True)
+        native_depth = request.headers.get("x-byq-acp-depth")
+        if native_depth not in {"0", "1"}:
+            raise HTTPException(status_code=422, detail="ACP Product delegate depth must be 0 or 1")
+        parent_session = request.headers.get("x-byq-acp-native-parent-session-id")
+        acp_registration = {
+            "root_run_id": request.headers.get("x-byq-root-run-id"),
+            "runtime_boot_id": request.headers.get("x-byq-runtime-boot-id"),
+            "native_root_session_id": request.headers.get("x-byq-acp-native-root-session-id"),
+            "native_agent_session_id": request.headers.get("x-byq-acp-native-agent-session-id"),
+            "native_parent_session_id": parent_session or None,
+            "origin": request.headers.get("x-byq-acp-origin"),
+            "depth": int(native_depth),
+        }
+    else:
+        if proof_bearer_supplied:
+            raise HTTPException(status_code=401, detail="ACP native Agent registration headers are required")
+        context = _required_agent_context(request, payload)
+        acp_registration = None
     request_payload = dict(payload)
     for field, value in context.items():
-        if value is not None:
+        # workspace_id is an authorization-boundary value supplied through the
+        # trusted header and passed separately as trusted_workspace; it is not
+        # a start_run payload field and would otherwise be rejected as unknown.
+        if value is not None and field != "workspace_id":
             request_payload[field] = value
     return _agent_call(lambda: {"run": agent_store.start_run(
         request_payload,
@@ -4931,6 +5293,8 @@ def start_agent_run(payload: dict[str, Any], request: Request) -> dict[str, obje
         trusted_actor=context["actor_principal"],
         trusted_workspace=request.headers.get("x-byq-workspace-id"),
         trusted_boot_id=request.headers.get("x-byq-runtime-boot-id"),
+        trusted_root_run_id=acp_scope["root"] if acp_registration is not None else None,
+        trusted_acp_registration=acp_registration,
         require_runtime_binding=context["actor_principal"] == f"byq-product-agent-{context['session_id']}",
     )})
 

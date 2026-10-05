@@ -1,0 +1,198 @@
+# Dedicated judgment-root overlay for the fixed official ACP release.
+# Configuration-only candidate: never use as the Product default.
+# No global/static MCP discovery client is mounted. The Agent-scoped identity
+# client is the only intended tools/list and tools/call path. The trusted
+# invocation must bind BYQ_MCP_URL to the isolated read-only MCP endpoint.
+# The judgment identity mode exists, but trusted Adapter scope injection,
+# Backend admission and the fixed official runtime composition remain
+# unqualified. This profile stays blocked.
+- id: agent-loop
+  config:
+    maxParallelToolCalls: 1
+- id: session-title-llm
+  disabled: true
+- id: compaction-basic
+  disabled: true
+- id: image-offload
+  disabled: true
+- id: tool-plugin-manager
+  disabled: true
+- id: plugin-manager
+  disabled: true
+- id: config-editor
+  disabled: true
+- id: settings
+  disabled: true
+- id: credentials
+  disabled: true
+- id: deepseek-account
+  disabled: true
+- id: tool-bash
+  disabled: true
+- id: tool-pwsh
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-fs-search
+  disabled: true
+- id: commands
+  disabled: true
+- id: command-feedback
+  disabled: true
+- id: goal
+  disabled: true
+- id: goal-round-driver
+  disabled: true
+- id: command-goal
+  disabled: true
+- id: plan-mode
+  disabled: true
+- id: command-compact
+  disabled: true
+- id: subagent
+  disabled: true
+- id: subagent-spawn-in-process
+  disabled: true
+- id: subagent-fork-in-process
+  disabled: true
+- id: tool-subagent
+  disabled: true
+- id: tool-subagent-control
+  disabled: true
+- id: tool-subagent-list-agents
+  disabled: true
+- id: tool-subagent-fork
+  disabled: true
+- id: ptc-runtime
+  disabled: true
+- id: workflow-ptc
+  disabled: true
+- id: tool-workflow
+  disabled: true
+- id: tool-todo
+  disabled: true
+- id: tool-goal
+  disabled: true
+- id: tool-ralph
+  disabled: true
+- id: spill-local
+  disabled: true
+- id: spill-policy
+  disabled: true
+- id: tool-skill
+  disabled: true
+- id: skill-filesystem
+  disabled: true
+- id: tool-web
+  disabled: true
+- id: web
+  disabled: true
+- id: web-search-deepseek
+  disabled: true
+- id: web-fetch-http
+  disabled: true
+- id: attachment-local
+  disabled: true
+- id: session-telemetry-otel
+  disabled: true
+- id: system-prompt
+  config:
+    personaPrefix: >-
+      You are the BYQ bounded research-judgment root for one already admitted
+      research stage. Use only the isolated read-only BYQ MCP catalog. Do not
+      delegate, create child agents, write records, approve, execute jobs,
+      route work, use local tools, access files, or search the web. Return a
+      bounded judgment or an explicit evidence-insufficient stop. Never invent
+      an object id, idempotency key, approval, next action, or business result.
+    personaSuffix: >-
+      This is a dedicated ACP root, not a child of a Product conversation.
+      The trusted Runtime Adapter owns stage admission, result commit, root
+      closure, and exact terminal acknowledgement.
+- id: llm-deepseek
+  config:
+    apiKeyEnv: DEEPSEEK_API_KEY
+    retryPolicy:
+      mode: normal
+      maxRetries: 0
+- id: llm-deepseek-account
+  disabled: true
+- id: llm-pi-ai
+  config:
+    providers:
+      opencode-go-responses:
+        displayName: OpenCode Go · Responses
+        apiKeyEnv: OPENCODE_API_KEY
+        retryPolicy:
+          mode: normal
+          maxRetries: 0
+        api: openai-responses
+        baseURL: https://opencode.ai/zen/go/v1
+        models:
+          - id: gpt-5.6-luna
+          - id: grok-4.6
+      opencode-go-chat:
+        displayName: OpenCode Go · Chat Completions
+        apiKeyEnv: OPENCODE_API_KEY
+        retryPolicy:
+          mode: normal
+          maxRetries: 0
+        api: openai-completions
+        baseURL: https://opencode.ai/zen/go/v1
+        models:
+          - id: deepseek-v4-flash
+          - id: deepseek-v4.1-flash
+          - id: deepseek-v4-pro
+          - id: glm-5.3
+          - id: kimi-k3
+      opencode-go-messages:
+        displayName: OpenCode Go · Messages
+        apiKeyEnv: OPENCODE_API_KEY
+        retryPolicy:
+          mode: normal
+          maxRetries: 0
+        api: anthropic-messages
+        # The pinned Anthropic SDK appends /v1/messages itself.
+        baseURL: https://opencode.ai/zen/go
+        models:
+          - id: minimax-m3
+          - id: qwen3.8-max
+      opencode-zen-responses:
+        displayName: OpenCode Zen · Responses
+        apiKeyEnv: OPENCODE_API_KEY
+        retryPolicy:
+          mode: normal
+          maxRetries: 0
+        api: openai-responses
+        baseURL: https://opencode.ai/zen/v1
+        models:
+          - id: gpt-5.6-sol
+          - id: gpt-5.6-terra
+          - id: grok-4.6
+      opencode-zen-chat:
+        displayName: OpenCode Zen · Chat Completions
+        apiKeyEnv: OPENCODE_API_KEY
+        retryPolicy:
+          mode: normal
+          maxRetries: 0
+        api: openai-completions
+        baseURL: https://opencode.ai/zen/v1
+        models:
+          - id: deepseek-v4-flash
+          - id: minimax-m3
+      opencode-zen-messages:
+        displayName: OpenCode Zen · Messages
+        apiKeyEnv: OPENCODE_API_KEY
+        retryPolicy:
+          mode: normal
+          maxRetries: 0
+        api: anthropic-messages
+        baseURL: https://opencode.ai/zen
+        models:
+          - id: claude-opus-5
+          - id: claude-sonnet-5
+          - id: qwen3.7-max
+- insert:
+    - id: byq-acp-mcp-identity
+      name: 'file:///opt/byq/runtime/byq-acp-mcp-identity.js'

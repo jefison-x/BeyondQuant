@@ -83,6 +83,8 @@ def test_terminal_close_keeps_exact_same_boot_receipt_fence(monkeypatch):
     assert reads[0][1]["params"]["boot_id"] == BOOT_ID
     assert closes[0][0][0] == "POST"
     assert acknowledgements[0][0][0].endswith("/terminal-receipt")
+    assert acknowledgements[0][1]["timeout"] == main.TRACE_TERMINAL_ACK_TIMEOUT_SECONDS
+    assert acknowledgements[0][1]["timeout"] > 60
     assert len(reads) == len(closes) == 1 and len(acknowledgements) == 2
     assert acknowledgements[0] == acknowledgements[1]
 

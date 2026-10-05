@@ -1323,6 +1323,11 @@ def test_personal_model_binding_is_resolved_directly_without_public_exposure(
                     "provider": "deepseek-official",
                     "model": "deepseek-reasoner",
                     "api_key": "personal-provider-secret",
+                    "profile_id": "profile_1",
+                    "profile_version": 2,
+                    "credential_id": "credential_1",
+                    "credential_version": 3,
+                    "binding_version": 4,
                 }
             }
 
@@ -1342,6 +1347,13 @@ def test_personal_model_binding_is_resolved_directly_without_public_exposure(
     assert config.provider == "deepseek-official"
     assert config.model == "deepseek-reasoner"
     assert config.env["DEEPSEEK_API_KEY"] == "personal-provider-secret"
+    assert {key: adapter._get("s-1").model_resolution[key] for key in (
+        "profile_id", "profile_version", "credential_id",
+        "credential_version", "binding_version")} == {
+            "profile_id": "profile_1", "profile_version": 2,
+            "credential_id": "credential_1", "credential_version": 3,
+            "binding_version": 4,
+        }
     assert "personal-provider-secret" not in str(adapter.readiness())
     assert "personal-provider-secret" not in str(adapter.describe_session(adapter._get("s-1")))
     adapter.release_session("s-1")

@@ -27,7 +27,8 @@ const backend = createServer(async (req, res) => {
   for await (const chunk of req) chunks.push(Buffer.from(chunk));
   const body = JSON.parse(Buffer.concat(chunks).toString());
   assert.equal(req.headers["x-byq-root-run-id"],
-    req.url === "/v1/research/web-evidence-records" ? undefined : root);
+    req.url === "/v1/research/web-evidence-records" ? undefined : root,
+    "legacy BYQ_MCP_TOKEN requests must preserve the admitted root evidence header");
   assert.equal(req.headers["x-byq-actor-principal"], "byq-product-agent-session-wire");
   assert.equal(req.headers["x-byq-dsh-run-id"], "generation-wire");
   assert.equal(req.headers["x-byq-runtime-boot-id"], runtimeBootId);

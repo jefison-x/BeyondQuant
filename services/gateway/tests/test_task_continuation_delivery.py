@@ -278,6 +278,9 @@ def test_eligible_missing_runtime_uses_live_attach_only_and_never_prompts(monkey
         catalog(method, path, principal, workspace, payload))
     monkeypatch.setattr(main, 'trace_store', SimpleNamespace(read=lambda *_: []))
     monkeypatch.setattr(main, '_adapter_post', lost_attach)
+    monkeypatch.setattr(main, '_adapter_get',
+        lambda *args, **kwargs: (_ for _ in ()).throw(HTTPException(status_code=404, detail='no binding')))
+    monkeypatch.setattr(main, '_runtime_root_rows', lambda _session: [{'root_run_id': 'a' * 32}])
 
     with pytest.raises(main.ProductError) as error:
         main._consume_admitted_task_continuation(context)

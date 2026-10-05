@@ -1501,9 +1501,11 @@ class CredentialStore(PgStoreMixin):
         if agent not in _AGENT_IDS:
             raise CredentialNotFound("Agent binding not found")
         row = self._fetch_one(
-            """SELECT b.profile_id, p.provider, p.model, p.temperature,
+            """SELECT b.profile_id, b.version AS binding_version,
+                      p.version AS profile_version, p.provider, p.model, p.temperature,
                       p.reasoning_enabled, p.status AS profile_status,
-                      c.credential_id, c.purpose, c.scope, c.owner_principal,
+                      c.credential_id, c.version AS credential_version,
+                      c.purpose, c.scope, c.owner_principal,
                       c.status AS credential_status, c.envelope_version,
                       c.envelope_key_id, c.envelope_nonce, c.envelope_ciphertext
                FROM agent_model_bindings b
@@ -1564,6 +1566,11 @@ class CredentialStore(PgStoreMixin):
             "temperature": row["temperature"],
             "reasoning_enabled": bool(row["reasoning_enabled"]),
             "api_key": secret,
+            "profile_id": row["profile_id"],
+            "profile_version": row["profile_version"],
+            "credential_id": row["credential_id"],
+            "credential_version": row["credential_version"],
+            "binding_version": row["binding_version"],
         }
 
     def resolve_tushare(self) -> dict[str, object] | None:
