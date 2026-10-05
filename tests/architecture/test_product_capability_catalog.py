@@ -92,7 +92,10 @@ class ProductCapabilityCatalogTests(unittest.TestCase):
         ):
             self.assertNotIn(prohibited, ml_role)
             self.assertNotIn(prohibited, ml_delegate)
-        registration = mcp[mcp.index('"byq_ml_strategy_create"'):mcp.index('"byq_signal_snapshot_get"')]
+        # Bound to the ML tool registration block: the first ACP/action-set
+        # mention of a byq_ml_ name precedes unrelated schemas (e.g. the web
+        # evidence `url:` field), so start at the first ML registration.
+        registration = mcp[mcp.index('"byq_ml_capabilities"'):mcp.index('"byq_signal_snapshot_get"')]
         for prohibited in ("python:", "sql:", "url:", "model_object", "object_reference", "feature_rows"):
             self.assertNotIn(prohibited, registration.lower())
         self.assertIn("the user to a business page", skill)

@@ -596,7 +596,11 @@ def test_product_trace_stream_replays_ordered_byq_events(monkeypatch, tmp_path: 
         trace_id="trace-1",
         principal=main.Principal(subject=main.PRODUCT_PRINCIPAL),
     )
+    session.boot_id = TEST_BOOT_ID
     main.product_sessions.add(session)
+    monkeypatch.setattr(main, "_runtime_authority_snapshot", lambda: {
+        "ready": True, "boot_id": TEST_BOOT_ID, "authority_epoch": 1,
+    })
     store.append(
         {
             "trace_id": "trace-1",
@@ -870,6 +874,11 @@ def test_restore_surfaces_an_interrupted_adapter_session(monkeypatch, tmp_path: 
         raise error
 
     monkeypatch.setattr(main, "_adapter_post", interrupted)
+    # A lost-session conflict now consults the Adapter recovery binding; a
+    # missing binding plus an existing business root proves interruption.
+    monkeypatch.setattr(main, "_adapter_get",
+        lambda *_a, **_k: (_ for _ in ()).throw(main.HTTPException(status_code=404, detail="no binding")))
+    monkeypatch.setattr(main, "_runtime_root_rows", lambda _session: [{"root_run_id": "a" * 32}])
     with pytest.raises(main.ProductError) as raised:
         main._restore_product_session(
             "conversation_1", main.Principal(subject=main.PRODUCT_PRINCIPAL), "workspace_bootstrap_unresolved"

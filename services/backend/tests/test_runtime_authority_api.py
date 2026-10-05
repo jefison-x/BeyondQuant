@@ -241,13 +241,23 @@ def test_runtime_roots_endpoint_is_bearer_protected_and_exactly_scoped(monkeypat
         }
         response = client.get(path, headers=headers)
         assert response.status_code == 200, response.text
+        terminal_facts = store._fetch_one(
+            "SELECT terminal_acp_ingress_sequence, terminal_acp_ingress_sha256, "
+            "terminal_unknown_claim_count, terminal_unknown_claims_sha256 "
+            "FROM agent_runtime_turns WHERE root_run_id=:id", {"id": terminal_root})
         assert response.json() == {
             "schema_version": "byq-business-root-status.v1",
             "roots": [
                 {"root_run_id": active_root, "status": "active", "authority_status": "active",
-                 "terminal_sequence": None, "terminal_event_sha256": None},
+                 "terminal_sequence": None, "terminal_event_sha256": None,
+                 "terminal_acp_ingress_sequence": None, "terminal_acp_ingress_sha256": None,
+                 "terminal_unknown_claim_count": None, "terminal_unknown_claims_sha256": None},
                 {"root_run_id": terminal_root, "status": "completed", "authority_status": "closed",
-                 "terminal_sequence": 9, "terminal_event_sha256": "c" * 64},
+                 "terminal_sequence": 9, "terminal_event_sha256": "c" * 64,
+                 "terminal_acp_ingress_sequence": terminal_facts["terminal_acp_ingress_sequence"],
+                 "terminal_acp_ingress_sha256": terminal_facts["terminal_acp_ingress_sha256"],
+                 "terminal_unknown_claim_count": terminal_facts["terminal_unknown_claim_count"],
+                 "terminal_unknown_claims_sha256": terminal_facts["terminal_unknown_claims_sha256"]},
             ],
         }
         wrong_trace = {**headers, "x-byq-trace-id": "other-roots-trace"}
