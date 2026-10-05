@@ -147,7 +147,7 @@ def _verify_root_directory(path: Path, *, uid: int, gid: int, mode: int) -> None
 
 
 def _minimal_child_environment(env: dict[str, str], home: Path,
-                               session_root: Path) -> dict[str, str]:
+                               session_root: Path, runtime_root: Path) -> dict[str, str]:
     result = {
         "PATH": "/usr/local/bin:/usr/bin:/bin",
         "HOME": str(home),
@@ -159,6 +159,10 @@ def _minimal_child_environment(env: dict[str, str], home: Path,
         "DSH_TELEMETRY_DISABLED": "1",
         "DSH_PERMISSION_MODE": "read-only",
         "DSH_MAX_TOKENS_AS_SUCCESS": "false",
+        # The byq-acp-mcp-identity plugin resolves the official MCP client from
+        # this runner-owned runtime root; the Product env allowlist never
+        # forwards it, so the runner must set it for its own fixed launcher.
+        "BYQ_DSH_RUNTIME_ROOT": str(runtime_root),
     }
     result.update(env)
     for forbidden in (
@@ -388,7 +392,8 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
                              nonce, digest)
                 return
             assert self.server.launcher is not None
-            child_env = _minimal_child_environment(env, cwd, self.server.session_root)
+            child_env = _minimal_child_environment(
+                env, cwd, self.server.session_root, self.server.runtime_root)
             child_command = (
                 "/bin/sh", "-c", 'cd "$DSH_HOME" && exec "$@"', "--",
                 *self.server.launcher,

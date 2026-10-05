@@ -797,7 +797,7 @@ class RuntimeAdapter:
         with self._lock:
             if session_id in self._sessions:
                 raise SessionConflict(f"BYQ session already exists: {session_id}")
-        if self._acp and self._acp_binding_path(session_id).exists():
+        if self._acp and self._acp_binding_path(session_id, workspace_id).exists():
             raise SessionConflict("BYQ session has a persistent ACP recovery binding")
         context = normalize_conversation_context([] if conversation_context is None else conversation_context)
         # DSH session files are private execution state. Give every fresh BYQ
@@ -1790,10 +1790,37 @@ class RuntimeAdapter:
                 "continuity": record.continuity,
             }
 
-    def _acp_binding_path(self, session_id: str) -> Path:
+    def _acp_binding_path(self, session_id: str, workspace_id: str | None = None) -> Path:
         validate_identifier(session_id, field="session_id")
-        directory = contained_session_path(self._session_root, "byq-acp-bindings")
-        return directory / f"{session_id}.json"
+        # ADR-0100: each group's durable recovery bindings live inside that
+        # group's own mounted session volume. The Adapter only mounts the
+        # authenticated Workspace subtree, so a shared parent directory is
+        # neither writable nor persistent.
+        if not self._acp_product_slots:
+            directory = contained_session_path(self._session_root, "byq-acp-bindings")
+            return directory / f"{session_id}.json"
+        configured = self._compatibility.product_slots.configured_workspaces()
+        if workspace_id is not None:
+            base = self._compatibility.session_storage_root(self._session_root, workspace_id)
+            return contained_session_path(base, "byq-acp-bindings") / f"{session_id}.json"
+        # Recovery reads do not carry a workspace before the binding is opened.
+        # The exact session file name is unique per group, so search the
+        # statically configured groups and fail closed if the identity is not
+        # unique or cannot be resolved.
+        found = [
+            contained_session_path(
+                self._compatibility.session_storage_root(self._session_root, candidate),
+                "byq-acp-bindings") / f"{session_id}.json"
+            for candidate in configured
+        ]
+        existing = [path for path in found if path.exists()]
+        if len(existing) > 1:
+            raise SessionConflict("ACP recovery binding is ambiguous across groups")
+        if existing:
+            return existing[0]
+        if len(configured) != 1:
+            raise SessionConflict("ACP recovery binding workspace is ambiguous")
+        return found[0]
 
     def _persist_acp_binding(self, record: RuntimeSession) -> None:
         """Store only the exact root/native binding required by ADR-0093."""
@@ -1831,7 +1858,7 @@ class RuntimeAdapter:
             "cleanup_unconfirmed": record.cleanup_unconfirmed,
             "closed": record.status == SessionStatus.CLOSED,
         }
-        path = self._acp_binding_path(record.session_id)
+        path = self._acp_binding_path(record.session_id, record.workspace_id)
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         payload = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
         lock_path = path.with_suffix(".lock")

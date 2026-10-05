@@ -11,6 +11,11 @@ services:
       - "10005"
       - "10006"
     environment:
+      # ADR-0100 group admission: the trusted Adapter must authenticate its
+      # Backend agent-admission read so an unresolved root keeps the group
+      # fenced across Adapter restarts. Without this the Adapter refuses every
+      # ACP product prompt before the execution slot is contacted.
+      BYQ_RUNTIME_AUTHORITY_TOKEN: ${BYQ_RUNTIME_AUTHORITY_TOKEN:?BYQ_RUNTIME_AUTHORITY_TOKEN must be set for ACP}
       BYQ_DSH_COMPATIBILITY_RELEASE: dsh-v0.2.0-rc.2-acp
       BYQ_DSH_PROCESS_OWNERSHIP: root-turn
       BYQ_DSH_ACP_PROCESS_TRANSPORT: product-slot-v1

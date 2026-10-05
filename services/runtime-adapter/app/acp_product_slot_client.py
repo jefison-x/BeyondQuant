@@ -211,6 +211,11 @@ class ProductSlotRegistry:
         env = os.environ if environ is None else environ
         return cls(environ=env)
 
+    def configured_workspaces(self) -> tuple[str, ...]:
+        """Return the statically configured resource-group identities."""
+        with self._lock:
+            return tuple(sorted(self._bindings))
+
     def assert_workspace(self, workspace_id: str) -> ProductSlotBinding:
         """Return the configured public binding or a sanitized error."""
         with self._lock:
