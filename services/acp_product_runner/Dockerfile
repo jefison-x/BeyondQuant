@@ -65,7 +65,7 @@ RUN test -x /usr/local/bin/node \
     && test -f /opt/dsh-runtime/apps/cli/lib/bin.js \
     && test "$(cat /opt/dsh-runtime/.byq-source-commit)" = 639ed015397290b3745d163aafe02ffee4aa3f84 \
     && test "$(sha256sum /opt/byq/profiles/byq-product.patch.yml | cut -d ' ' -f1)" = \
-       8bd56a0d3120e10c74e0d51eb95adb392232f1535e0aabc61228a72f372a964d \
+       d53c45f3f06fe1d9c0712931ee6cfeba8ccbeea7d7dbeb51ad45e978a21d32ed \
     && chown -R root:root /opt/byq /opt/dsh-runtime \
     && chmod -R a-w /opt/byq /opt/dsh-runtime
 
