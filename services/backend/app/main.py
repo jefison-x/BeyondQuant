@@ -5282,7 +5282,10 @@ def start_agent_run(payload: dict[str, Any], request: Request) -> dict[str, obje
         acp_registration = None
     request_payload = dict(payload)
     for field, value in context.items():
-        if value is not None:
+        # workspace_id is an authorization-boundary value supplied through the
+        # trusted header and passed separately as trusted_workspace; it is not
+        # a start_run payload field and would otherwise be rejected as unknown.
+        if value is not None and field != "workspace_id":
             request_payload[field] = value
     return _agent_call(lambda: {"run": agent_store.start_run(
         request_payload,
