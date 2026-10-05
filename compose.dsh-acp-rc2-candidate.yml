@@ -3,6 +3,13 @@ services:
     build:
       context: .
       dockerfile: services/runtime-adapter/Dockerfile.acp-0.2.0-rc.2-candidate
+    cap_drop:
+      - NET_RAW
+    # Needed only for the runner-control Unix socket. Ordinary Product DSH
+    # children inherit this supplementary group unless the Adapter clears it;
+    # PR_SET_DUMPABLE=0 and a filtered child env remain promotion gates.
+    group_add:
+      - "10005"
     environment:
       BYQ_DSH_COMPATIBILITY_RELEASE: dsh-v0.2.0-rc.2-acp
       BYQ_DSH_PROCESS_OWNERSHIP: root-turn
@@ -13,13 +20,140 @@ services:
       DSH_SESSION_ROOT: /var/lib/byq/dsh-sessions/dsh-v0.2.0-rc.2-acp
       BYQ_MCP_ACP_DISCOVERY_TOKEN: ${BYQ_MCP_ACP_DISCOVERY_TOKEN:?BYQ_MCP_ACP_DISCOVERY_TOKEN must be set for ACP}
       BYQ_MCP_ACP_SIGNING_KEY: ${BYQ_MCP_ACP_SIGNING_KEY:?BYQ_MCP_ACP_SIGNING_KEY must be set for ACP}
+      # The dedicated judgment master is shared only by the trusted Adapter
+      # and its isolated MCP verifier. The Adapter derives a per-root key for
+      # DSH; neither this master nor the runner-control secret enters DSH.
+      BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY: ${BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY:?a dedicated judgment MCP master key is required}
+      BYQ_MCP_ACP_JUDGMENT_URL: http://mcp-acp-judgment:8301/mcp/v1
+      BYQ_ACP_JUDGMENT_RUNNER_SOCKET: /run/byq-acp-runner/control.sock
+      BYQ_ACP_JUDGMENT_RUNNER_CONTROL_SECRET: ${BYQ_ACP_JUDGMENT_RUNNER_CONTROL_SECRET:?a separate runner control secret is required}
+    volumes:
+      - byq_acp_runner_control:/run/byq-acp-runner
+    networks:
+      - byq_product
+      - byq_acp_judgment
+    depends_on:
+      acp-judgment-runner:
+        condition: service_healthy
+      mcp-acp-judgment:
+        condition: service_healthy
+
+  acp-judgment-runner:
+    build:
+      context: .
+      dockerfile: services/acp_judgment_runner/Dockerfile
+    user: "0:0"
+    read_only: true
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - KILL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      BYQ_ACP_JUDGMENT_RUNNER_CONTROL_SECRET: ${BYQ_ACP_JUDGMENT_RUNNER_CONTROL_SECRET:?a separate runner control secret is required}
+    volumes:
+      # The DSH session tree is private to this container. Adapter verifies
+      # the runner-signed cwd and never mounts or reads this volume.
+      - byq_acp_judgment_sessions:/var/lib/byq/acp-judgment-sessions
+      # Scope hashes are runner-only durable no-replay tombstones. They contain
+      # no prompt, env, token or raw scope and are never pruned automatically.
+      - byq_acp_runner_state:/var/lib/byq/acp-runner-state
+      # Adapter reaches the runner through a root-owned socket. UID 10002
+      # requires this GID; the DSH child has no supplementary groups.
+      - byq_acp_runner_control:/run/byq-acp-runner
+    tmpfs:
+      - /tmp:size=32m,mode=1777,noexec,nosuid,nodev
+    networks:
+      - byq_acp_judgment
+    depends_on:
+      mcp-acp-judgment:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - "from pathlib import Path; p=Path('/run/byq-acp-runner/ready'); raise SystemExit(0 if p.is_file() and p.read_bytes()==b'ready\\n' else 1)"
+      interval: 5s
+      timeout: 2s
+      retries: 12
+      start_period: 10s
+
+  mcp-acp-judgment:
+    build:
+      context: .
+      dockerfile: services/mcp/Dockerfile
+    cap_drop:
+      - NET_RAW
+    restart: unless-stopped
+    environment:
+      BYQ_BACKEND_URL: http://backend:8000
+      BYQ_MCP_ACP_JUDGMENT_SUBSET: "1"
+      BYQ_MCP_ACP_JUDGMENT_ADMISSION_ENABLED: "1"
+      BYQ_MCP_ACP_JUDGMENT_PORT: "8301"
+      BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY: ${BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY:?the same dedicated judgment MCP master key is required}
+      BYQ_MCP_ACP_JUDGMENT_PROOF_TOKEN: ${BYQ_MCP_ACP_JUDGMENT_PROOF_TOKEN:?a separate judgment Backend proof token is required}
+    networks:
+      # Only the isolated MCP needs Backend proof/read APIs on byq_product.
+      # Runner and DSH remain on the internal network and cannot route to Backend.
+      - byq_product
+      - byq_acp_judgment
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8301/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 5s
+      timeout: 2s
+      retries: 12
+      start_period: 10s
 
   mcp:
+    cap_drop:
+      - NET_RAW
     environment:
       BYQ_MCP_ACP_DISCOVERY_TOKEN: ${BYQ_MCP_ACP_DISCOVERY_TOKEN:?BYQ_MCP_ACP_DISCOVERY_TOKEN must be set for ACP}
       BYQ_MCP_ACP_SIGNING_KEY: ${BYQ_MCP_ACP_SIGNING_KEY:?BYQ_MCP_ACP_SIGNING_KEY must be set for ACP}
       BYQ_MCP_BACKEND_PROOF_TOKEN: ${BYQ_MCP_BACKEND_PROOF_TOKEN:?BYQ_MCP_BACKEND_PROOF_TOKEN must be set for ACP}
 
   backend:
+    cap_drop:
+      - NET_RAW
     environment:
       BYQ_MCP_BACKEND_PROOF_TOKEN: ${BYQ_MCP_BACKEND_PROOF_TOKEN:?BYQ_MCP_BACKEND_PROOF_TOKEN must be set for ACP}
+      BYQ_MCP_ACP_JUDGMENT_PROOF_TOKEN: ${BYQ_MCP_ACP_JUDGMENT_PROOF_TOKEN:?a separate judgment Backend proof token is required}
+      BYQ_GATEWAY_SERVICE_TOKEN: ${BYQ_GATEWAY_SERVICE_TOKEN:?a dedicated Gateway service token is required}
+
+  gateway:
+    environment:
+      BYQ_GATEWAY_SERVICE_TOKEN: ${BYQ_GATEWAY_SERVICE_TOKEN:?a dedicated Gateway service token is required}
+
+networks:
+  # Internal only. Runner has no product/default bridge and no published port.
+  byq_acp_judgment:
+    name: ${BYQ_ACP_JUDGMENT_NETWORK_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-acp-judgment}
+    driver: bridge
+    internal: true
+
+volumes:
+  # DSH session logs and the private overlay persist here. The Adapter reads
+  # the DSH-owned 0600 root marker from the same path. Do not prune before the
+  # exact Backend result/settlement and root terminal ACK have been reconciled.
+  byq_acp_judgment_sessions:
+    name: ${BYQ_ACP_JUDGMENT_SESSIONS_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-acp-judgment-sessions}
+  # Socket parent is secured root:10005 0710; socket is root:10005 0660.
+  byq_acp_runner_control:
+    name: ${BYQ_ACP_RUNNER_CONTROL_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-acp-runner-control}
+  # Append-only one-shot markers cost at least one filesystem block per run;
+  # at 100k roots expect roughly 400 MiB. Capacity exhaustion fails closed.
+  byq_acp_runner_state:
+    name: ${BYQ_ACP_RUNNER_STATE_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-acp-runner-state}
