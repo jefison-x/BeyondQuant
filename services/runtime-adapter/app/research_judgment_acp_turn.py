@@ -136,16 +136,24 @@ def judgment_proxy_token_env(provider_route: str) -> str:
     raise ResearchJudgmentError("unknown ACP judgment provider route")
 
 
-def judgment_runner_environment(begin: dict, *, mcp_url: str, mcp_product_url: str,
-                                signing_master: str) -> dict:
-    """Derive the closed, nonsecret child environment for one admitted root."""
+def judgment_runner_environment(begin: dict, *, mcp_url: str,
+                                mcp_product_url: str | None, signing_master: str) -> dict:
+    """Derive the closed, nonsecret child environment for one admitted root.
+
+    ``BYQ_MCP_URL`` is the isolated judgment MCP. ``BYQ_MCP_PRODUCT_URL`` is
+    optional; when supplied it must differ from the judgment endpoint (the root
+    identity plugin enforces this). The Product MCP is never rebound here.
+    """
 
     checked = _admitted_begin(begin)
     scope = judgment_runner_scope(checked)
     root = checked["root"]
-    if (not isinstance(mcp_url, str) or not mcp_url
-            or not isinstance(mcp_product_url, str) or not mcp_product_url):
-        raise ResearchJudgmentError("trusted judgment MCP endpoints are required")
+    if not isinstance(mcp_url, str) or not mcp_url:
+        raise ResearchJudgmentError("trusted judgment MCP endpoint is required")
+    if (mcp_product_url is not None
+            and (not isinstance(mcp_product_url, str) or not mcp_product_url
+                 or mcp_product_url == mcp_url)):
+        raise ResearchJudgmentError("distinct trusted Product MCP endpoint is required")
     signing_key = derive_judgment_root_signing_key(signing_master, {
         **scope,
         "owner_principal": root["owner_principal"],
@@ -156,7 +164,6 @@ def judgment_runner_environment(begin: dict, *, mcp_url: str, mcp_product_url: s
     })
     environment = {
         "BYQ_MCP_URL": mcp_url,
-        "BYQ_MCP_PRODUCT_URL": mcp_product_url,
         "BYQ_MCP_ACP_IDENTITY_MODE": JUDGMENT_ROOT_IDENTITY_MODE,
         "BYQ_MCP_ACP_JUDGMENT_TASK_ID": checked["task_id"],
         "BYQ_MCP_ACP_JUDGMENT_CALL_IDENTITY": checked["call_identity"],
@@ -170,6 +177,8 @@ def judgment_runner_environment(begin: dict, *, mcp_url: str, mcp_product_url: s
         "BYQ_DSH_RUN_ID": root["dsh_run_id"],
         "BYQ_ROOT_RUN_ID": root["root_run_id"],
     }
+    if mcp_product_url is not None:
+        environment["BYQ_MCP_PRODUCT_URL"] = mcp_product_url
     if not _JUDGMENT_REQUIRED_ENV <= set(environment) or not set(environment) <= _JUDGMENT_ENV_ALLOWLIST:
         raise ResearchJudgmentError("derived judgment environment is not exact")
     return environment
@@ -184,7 +193,8 @@ def judgment_runner_overlay_b64(profile: AcpJudgmentProviderProfile, *,
     public = profile.public
     overlay = private_provider_overlay(
         route_name=public["provider_route"], model=public["model"],
-        proxy_base_url=proxy_base_url)
+        proxy_base_url=proxy_base_url,
+        max_output_tokens=public["limits"]["max_output_tokens"])
     raw = json.dumps(overlay, sort_keys=True, separators=(",", ":"),
                      ensure_ascii=True, allow_nan=False).encode("utf-8")
     return base64.b64encode(raw).decode("ascii")
@@ -426,7 +436,7 @@ def _digest(value: object) -> str:
 
 
 def build_judgment_runner_start(begin: dict, profile: AcpJudgmentProviderProfile, *,
-                                mcp_url: str, mcp_product_url: str, signing_master: str,
+                                mcp_url: str, mcp_product_url: str | None, signing_master: str,
                                 proxy_base_url: str, proxy_token: str,
                                 session_root: str = DEFAULT_JUDGMENT_SESSION_ROOT) -> JudgmentRunnerStart:
     """Assemble the exact runner START inputs from an admitted root and profile."""

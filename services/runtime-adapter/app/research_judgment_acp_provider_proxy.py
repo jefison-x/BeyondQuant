@@ -440,8 +440,13 @@ class AcpJudgmentProviderProxy:
             raise ValueError("trusted provider model and credential are required")
         frozen = journal.snapshot()
         public = frozen.get("provider_profile") if isinstance(frozen, dict) else None
+        # The listener may be constructed once the provider profile is frozen and
+        # the root admitted (``begun``), because the private overlay it serves is
+        # needed to launch the ACP root before the native Agent is bound. Actual
+        # provider egress is still gated by the journal's ``reserve_provider_attempt``,
+        # which refuses every call until the phase is ``prompt_may_have_dispatched``.
         if (not isinstance(public, dict)
-                or frozen.get("phase") not in {"bound", "prompt_may_have_dispatched"}
+                or frozen.get("phase") not in {"begun", "bound", "prompt_may_have_dispatched"}
                 or public.get("provider_route") != route_name
                 or public.get("model") != model or public.get("limits") != limits):
             raise ValueError("live proxy differs from frozen judgment provider profile")

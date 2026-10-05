@@ -55,7 +55,8 @@ BEGIN = {
 
 def _profile(*, limits=None):
     public = {"provider_route": "deepseek-official", "model": "deepseek-v4-flash",
-              "limits": limits or {"deadline_at_ms": 4_000_000_000_000}}
+              "limits": limits or {"deadline_at_ms": 4_000_000_000_000,
+                                   "max_output_tokens": 8192}}
     return AcpJudgmentProviderProfile(
         json.dumps(public, sort_keys=True).encode(), "upstream-secret")
 

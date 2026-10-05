@@ -146,19 +146,53 @@ def run_acp_judgment_root(task_id: str, request: Request) -> dict:
 
     try:
         require_service_token(request.headers)
-        trusted_context(request.headers)
-        require_attempt(request.headers)
+        identity, trusted_headers = trusted_context(request.headers)
+        attempt = require_attempt(request.headers)
     except BoundaryError as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail) from error
     if re.fullmatch(r"task_[0-9a-f]{32}", task_id) is None:
         raise HTTPException(status_code=422, detail="exact research task identity required")
-    # This route is intentionally unconditional until the exact result, close,
-    # terminal ACK, and crash/lost-response paths are qualified. Do not add a
-    # configurable bypass.
-    raise HTTPException(
-        status_code=503,
-        detail={"code": "research_judgment_acp_lifecycle_unqualified"},
+    # The dedicated ACP judgment lifecycle is opt-in and defaults to protected
+    # until its full lifecycle and isolation qualification passes; the ordinary
+    # Public/Product entry is never enabled by accident.
+    from .research_judgment_entry import (
+        judgment_acp_lifecycle_enabled,
+        run_acp_judgment_root as run_acp_judgment_root_lifecycle,
     )
+
+    if not judgment_acp_lifecycle_enabled(dict(os.environ)):
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "research_judgment_acp_lifecycle_unqualified"},
+        )
+    from .main import adapter
+    from .runtime import RuntimeAuthorityUnavailable
+
+    try:
+        adapter.require_current_backend_authority()
+    except RuntimeAuthorityUnavailable as error:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "runtime_authority_unavailable"},
+        ) from error
+    call_identity = derive_call_identity(task_id, attempt)
+    authority_headers = {
+        **trusted_headers,
+        "authorization": f"Bearer {os.environ.get('BYQ_RUNTIME_AUTHORITY_TOKEN', '')}",
+        "x-byq-runtime-boot-id": adapter.boot_id,
+    }
+    try:
+        return run_acp_judgment_root_lifecycle(
+            task_id=task_id, identity=identity, attempt=attempt,
+            call_identity=call_identity, trusted_headers=authority_headers,
+            environment=dict(os.environ))
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 - fail closed, never leak model payload
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "research_judgment_acp_failed_closed",
+                    "kind": type(exc).__name__}) from exc
 
 
 # Kept importable for the targeted route test without starting a real carrier.

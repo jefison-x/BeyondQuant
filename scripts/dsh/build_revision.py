@@ -23,6 +23,7 @@ RETIRED_SOURCE = "b6c8034ed638447aa1d0ddd82af9738df830bbdf"
 FROZEN_BUILDS = {
     "dsh-0.1.5rc1-post-u8.303": "sha256:f8311ba86c0091b9a6915dd0ca02469056934e50ab9aac1f2806c62cf0927c88",
     "dsh-0.1.5rc1-post-u8.304": "sha256:0b996a908f2f1ab87a35ae9931d34fe7c1ffc0293c0bc4d92deb8ad83c135178",
+    "dsh-0.1.5rc1-post-u8.309": "sha256:bceabd54c04e132a74dc35342c49542231e452f4615b79efe6e577088fef156e",
     "dsh-0.1.5rc1-post-u8.308": "sha256:aa45b6cf241495d2275235fed8826be6a234851dd13324e2acbba3a6eb55c0dd",
     "dsh-0.1.5rc1-post-u8.307": "sha256:4e5556b3ce358d6cdd74720526aca26803e41de641896769d12c8b1f83d8436a",
     "dsh-0.1.5rc1-post-u8.306": "sha256:8af378732207730b09f6c607cb3b0ff2fcbd81f00e41b61c1ecdd3531457e98b",
@@ -171,7 +172,7 @@ def selected_build_id(release):
     if release == "dsh-0.1.1rc1":
         return RETIRED_BUILD  # Historical identity only; never a current build.
     if release in RELEASES:
-        return release + "-post-u8.309"
+        return release + "-post-u8.310"
     if release in HISTORICAL_BUILDS:
         return HISTORICAL_BUILDS[release]
     raise ValueError("unregistered release")

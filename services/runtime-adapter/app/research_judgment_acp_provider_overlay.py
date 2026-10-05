@@ -30,8 +30,14 @@ def valid_local_proxy_bind_host(value: object) -> bool:
 
 
 def private_provider_overlay(*, route_name: str, model: str,
-                             proxy_base_url: str) -> list[dict]:
-    """Return only the selected route with its fixed local proxy endpoint."""
+                             proxy_base_url: str,
+                             max_output_tokens: int | None = None) -> list[dict]:
+    """Return only the selected route with its fixed local proxy endpoint.
+
+    ``max_output_tokens`` caps the per-request declared output the pinned DSH
+    client sends so the dedicated root stays within its named stage budget
+    instead of advertising the model's full context window.
+    """
     route = selected_route(route_name)
     matched = _LOCAL_HTTP.fullmatch(proxy_base_url) if isinstance(proxy_base_url, str) else None
     if (matched is None or not valid_local_proxy_bind_host(matched[1])
@@ -40,17 +46,21 @@ def private_provider_overlay(*, route_name: str, model: str,
             or not isinstance(model, str) or not model
             or len(model) > 128 or any(ord(char) < 32 for char in model)):
         raise ValueError("exact selected ACP proxy route and model are required")
+    if max_output_tokens is not None and (type(max_output_tokens) is not int
+                                          or max_output_tokens <= 0):
+        raise ValueError("exact ACP selected-route output cap is required")
     no_retry = {"mode": "normal", "maxRetries": 0}
+    capped = {} if max_output_tokens is None else {"maxTokens": max_output_tokens}
     if route.name == "deepseek-official":
         return [{"id": "llm-deepseek", "config": {
             "apiKeyEnv": "DEEPSEEK_API_KEY", "baseURL": proxy_base_url,
-            "retryPolicy": no_retry}},
+            "retryPolicy": no_retry, **capped}},
             {"id": "llm-pi-ai", "disabled": True}]
     return [{"id": "llm-deepseek", "disabled": True},
             {"id": "llm-pi-ai", "config": {"providers": {route.name: {
                 "api": _API[route.protocol], "apiKeyEnv": "OPENCODE_API_KEY",
                 "baseURL": proxy_base_url, "retryPolicy": no_retry,
-                "models": [{"id": model}],
+                "models": [{"id": model, **capped}],
             }}}}]
 
 
