@@ -307,3 +307,22 @@ second answer correctly recalled the first token.
 
 Still NOT_RUN: stop/continue, tool-bearing acceptance, delegate identity/tool/
 terminal proof, two configured-group isolation, browser real-model acceptance.
+
+## Fifth pass — read-only tool and stop/continue (real model)
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| Read-only business tool call | PASS | Turn prompt asked for a single `byq_health` call; the Backend logged `POST /internal/acp/tool-ingress-observe 200` and `/tool-ingress-settle 200` during the turn and the answer was `ok`. Tool identity is inferred from the prompt (the ingress body is not logged). |
+| Stop then continue, soft cancel | PASS | `POST /cancel {mode:soft}` returned `cancelling`; the next turn was accepted 202 and answered `AFTER-SOFT`. Events show `session.result.discarded` for the interrupted run, then a fresh `session.started`/`session.result`; the interrupted input was not replayed. |
+| Stop, hard cancel | PASS, fail-closed | `{mode:hard}` returned `interrupted`; the session enters `interrupted` containment and a further turn returns 409 `cannot accept a prompt in state interrupted`. `POST /resume` returns the accepted product message `agent_session_interrupted` (“start a new Agent session … query durable Jobs by job_id”). This is the Accepted interruption-containment behavior, not a defect. |
+| Delegate identity/tool/terminal | NOT_RUN | Requires a delegation-inducing real turn; the historical fixed-source child-evidence projection FAIL remains, so this is not qualified by root reuse or by the tool call above. |
+| Two configured-group isolation | NOT_RUN | Unconfigured-group fail-closed remains PASS; a second static slot was not added. |
+
+Provider usage this pass: approximately five tiny calls (tool turn, two stop
+turns, soft continue); cumulative across the whole acceptance remains far
+below the US$1 cap. Per-call usage is not surfaced by the Product events
+(UNKNOWN).
+
+Remaining NOT_RUN: delegate identity/tool/terminal proof, two configured-group
+isolation, browser real-model acceptance, ACP F6 and the dedicated judgment
+`/acp-root/run`.
