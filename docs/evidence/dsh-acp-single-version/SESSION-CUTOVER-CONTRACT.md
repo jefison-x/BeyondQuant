@@ -1,9 +1,11 @@
 # D3 — SDK → ACP session cutover contract (proposal)
 
-Status: **Proposed, pending maintainer acceptance for the user-visible parts.**
-Fail-closed classification below can proceed; the marked user-visible /
-incompatible parts wait for explicit acceptance. No storage is migrated or
-deleted by this document.
+Status: **Accepted** (2026-10-05; maintainer: "都接受"). The chosen user-visible
+option is the one below: a pre-cutover **completed** SDK conversation may
+continue on ACP with the same public session ID and durable public transcript,
+using a fresh ACP native session built only from verified completed public
+history; no SDK native state is adopted. Fail-closed classification applies; no
+storage is migrated or deleted by this document.
 
 ## Storage facts
 
@@ -46,9 +48,11 @@ all, and on what user-visible basis:
 - Alternative: require a new conversation for pre-cutover sessions (stricter,
   clearly user-visible).
 
-This is a user-visible continuity decision. Work that does not depend on it —
-fail-closed blocking of active/unknown sessions, ended-session rejection,
-builder for the authoritative manifest, F6 and judgment wiring — continues.
+**Accepted (2026-10-05):** the proposed option. A pre-cutover completed SDK
+conversation continues on ACP with the same public session ID and durable public
+transcript, starting a fresh ACP native session supplied only with verified
+completed public history; native-only model context is not carried over. The
+alternative (force a new conversation) is not taken.
 
 ## Required evidence before cutover
 

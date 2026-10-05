@@ -1,9 +1,9 @@
 # ADR-0103 — F6 background continuation on the rc.2 ACP family
 
-- Status: **Proposed** (2026-10-05). Requires maintainer acceptance before the
-  ACP continuation path is enabled; removing the SDK-only
-  `RuntimeAdapter.continuation_qualified` restriction without this contract is
-  not acceptance.
+- Status: **Accepted** (2026-10-05; maintainer: "都接受"). The ACP continuation
+  path may be enabled under this contract; removing the SDK-only
+  `RuntimeAdapter.continuation_qualified` restriction without implementing this
+  contract remains unqualified.
 - Scope: fixed official `dsh-v0.2.0-rc.2` (`639ed015397290b3745d163aafe02ffee4aa3f84`),
   ordinary Product ACP resource group (ADR-0100). Extends ADR-0090
   (continuation request limits) and reuses ADR-0096 (completed-root native
