@@ -1930,9 +1930,14 @@ class RuntimeAdapter:
         cwd = Path(value["cwd"])
         if not cwd.is_absolute() or cwd.resolve() != cwd or not cwd.is_relative_to(self._session_root):
             raise SessionConflict("ACP recovery working directory is invalid")
-        if self._acp_product_slots and not cwd.is_relative_to(
-                self._compatibility.session_storage_root(self._session_root, value["workspace_id"])):
-            raise SessionConflict("ACP recovery working directory belongs to another resource group")
+        if self._acp_product_slots:
+            if not cwd.is_relative_to(
+                    self._compatibility.session_storage_root(self._session_root, value["workspace_id"])):
+                raise SessionConflict("ACP recovery working directory belongs to another resource group")
+            # The binding must live in the resource group it declares; a file
+            # found under a different group's volume is not proof of authority.
+            if path != self._acp_binding_path(session_id, value["workspace_id"]):
+                raise SessionConflict("ACP recovery binding is not in its declared resource group")
         return value
 
     def recovery_binding(self, session_id: str) -> dict[str, Any]:

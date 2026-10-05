@@ -24,7 +24,7 @@ NOT_RUN rows are preserved.
 
 | Input | Identity |
 | --- | --- |
-| Candidate Adapter image (final tested) | `byq-runtime-adapter-acp:qualification-20261005-slot-fix6` = `sha256:0f212f8047f0be51d43f6d8e8a9c8e611f40050e7e05458052bad02d070cdb5f` (supersedes the fix4/fix5 values used earlier in this document) |
+| Candidate Adapter image (final tested) | `byq-runtime-adapter-acp:qualification-20261005-slot-fix7` = `sha256:e6220d077926f128ecbd0c8d2bc25a77635a0c47ef1135c6bebad1492e32cee9` (supersedes fix4/fix5/fix6) |
 | Candidate product runner image (final tested) | `byq-acp-product-runner:qualification-20261005-fix3` = `sha256:67950caf13342de43694db4b18a78dd3047696e92431f0dd2648cd4089dd1dc5` (supersedes fix2) |
 | Isolated Backend (current source) | `sha256:11ec92c381dd9e0a1a5b2b411e9366132c7dd23118458a49f20592f92b3cacd2` |
 | Isolated Gateway (current source) | `sha256:719834a643146f28cab15ce5b328708b8b7f48c11b3c82154b37d0e810101f9c` |
@@ -231,7 +231,7 @@ runner `sha256:67950caf1334…`, Adapter `sha256:c96edc5b71b0…`.
 | --- | --- | --- |
 | Turn 1 normal answer (real model) | PASS | Product chain returned the exact assistant answer `ACP-OK-1` for the prompt “reply with exactly this token”. Route `opencode-go-chat`/`deepseek-v4-flash`, provider 200. |
 | Turn 2 native session reuse (ADR-0096) | FAIL | After the exact terminal ACK and terminal receipt, the second root's `session/resume` returns `-32603 Internal error: session "<id>" is already owned by an active write handle`; the Adapter surfaces 500 and the Gateway 502. Reproduced directly against the fixed DSH: the previous root's write handle is still held, so the new process cannot resume. Binding ends `cleanup_unconfirmed: true`. |
-| Provider usage / cost | BOUNDED | Two billed calls: the 1-token header probe and the Turn 1 answer. Failed attempts (`400 MissingSessionID`, `409`) are unbilled. Exact Turn 1 usage is not surfaced by the Product events, so it is UNKNOWN; total spend is far below the US$1 cap. |
+| Provider usage / cost | PARTIAL | The 1-token header probe returned usage (input 32 / output 1). Turn 1's actual provider request count and usage are not surfaced by the Product events and are UNKNOWN. Failed attempts (`400 MissingSessionID`, `409`) produced no output. See “Cost accounting (exact)” — no billing evidence is available, so total spend is not asserted. |
 | Real browser real-model flow | NOT_RUN | Blocked by the reuse defect for multi-turn; single-turn browser was not separately run. |
 
 ### Stop boundary and minimal decision
@@ -296,9 +296,9 @@ during the failed Turn-2 resume attempt, not by a failed close.
   `DIFFERENT_ROOT=true`, both bindings `native_session_close_confirmed:true`,
   `cleanup_unconfirmed:false`. PASS.
 
-Provider usage: this recovery used 2 billed calls (Turn 1 + Turn 2). Across the
-whole acceptance roughly 4 tiny calls; well inside the US$1 cap. Turn-level
-usage is not surfaced by the Product events (UNKNOWN).
+Provider usage: this recovery submitted 2 user turns (Turn 1 + Turn 2); the
+per-turn actual provider request count and usage are not surfaced by the Product
+events and are UNKNOWN. See “Cost accounting (exact)”.
 
 Duplication check: the Adapter's reuse path sends only the new input
 (`effective_content = content` when `reuse_native`); the raw native-log
@@ -318,10 +318,9 @@ terminal proof, two configured-group isolation, browser real-model acceptance.
 | Delegate identity/tool/terminal | NOT_RUN | Requires a delegation-inducing real turn; the historical fixed-source child-evidence projection FAIL remains, so this is not qualified by root reuse or by the tool call above. |
 | Two configured-group isolation | NOT_RUN | Unconfigured-group fail-closed remains PASS; a second static slot was not added. |
 
-Provider usage this pass: approximately five tiny calls (tool turn, two stop
-turns, soft continue); cumulative across the whole acceptance remains far
-below the US$1 cap. Per-call usage is not surfaced by the Product events
-(UNKNOWN).
+Provider usage this pass: 4 user turns submitted (tool turn, hard-stop turn,
+soft-stop turn, soft continue). Actual provider request counts and usage are not
+surfaced by the Product events and are UNKNOWN. See “Cost accounting (exact)”.
 
 Remaining NOT_RUN: delegate identity/tool/terminal proof, two configured-group
 isolation, browser real-model acceptance, ACP F6 and the dedicated judgment
@@ -370,9 +369,9 @@ answer was appended there rather than a brand-new conversation; no new
 `POST /v1/agent/sessions` occurred. Credit for the browser real-model gate,
 with that boundary recorded.
 
-Provider usage this pass: roughly four tiny calls (delegation turn + browser
-turn); cumulative across the acceptance remains far below the US$1 cap, with
-per-call usage unavailable from the Product events (UNKNOWN).
+Provider usage this pass: 2 user turns submitted (delegation turn + browser
+turn). Actual provider request counts and usage are UNKNOWN from the Product
+events. See “Cost accounting (exact)”.
 
 Remaining NOT_RUN: delegation identity/tool/terminal, concurrent two-user
 real-model turns, ACP F6 and the dedicated judgment `/acp-root/run`.
@@ -409,9 +408,9 @@ registered with the exact native parent (`origin=subagent depth=1`,
 the model reported the child run id and workspace id. Delegation identity,
 tool-call proof and terminal evidence are therefore PASS for this bounded turn.
 
-Provider usage this pass: roughly four tiny calls (one failed pre-fix
-delegation, one successful post-fix delegation); cumulative remains far below
-the US$1 cap.
+Provider usage this pass: 2 user turns submitted (one failed pre-fix
+delegation, one successful post-fix delegation). Actual provider request counts
+and usage are UNKNOWN. See “Cost accounting (exact)”.
 
 ### Concurrent two-user real model (E completeness)
 
@@ -423,8 +422,8 @@ admin turn submitted while workspace 1 was busy returned 409 (same-group busy
 rejected), and the same turn was accepted 202 once the first turn completed
 (retriable). Both users' conversations remained isolated (owner-scoped).
 
-Provider usage: three tiny calls (two concurrent turns, one retry). Cumulative
-across the acceptance remains far below the US$1 cap.
+Provider usage: 3 user turns submitted (two concurrent turns, one retry). Actual
+provider request counts and usage are UNKNOWN. See “Cost accounting (exact)”.
 
 ## Eighth pass — same-model independent auxiliary sessions
 
@@ -484,3 +483,74 @@ Open ADR observations from the review: ADR-0096 reuse and ADR-0094 child
 evidence remain bounded observations, not full ADR qualification; ADR-0100
 required-evidence items 1–3 remain NOT_RUN. Materials are handed back to Codex
 Root for the formal Tester/Reviewer gate. No push, PR, merge or deploy.
+## Ninth pass — review fixes, exception record, and cost accounting
+
+### Special-project process exception (ADR-0101 drafted)
+
+The maintainer explicitly authorized this special project to fill the Tester and
+Reviewer roles with **new independent same-model OpenCode sessions**, with the
+main session as Root, instead of the Clean Break `gpt-6-luna`/max Tester and
+`gpt-6-sol`/medium Reviewer. The exception is scoped to the DSH ACP special
+project only and is drafted as [ADR-0101](../../architecture/adr/ADR-0101-dsh-acp-special-project-same-model-review.md)
+(Proposed). Same model is not same-session self-review: the implementer changes
+code, the Tester verifies behaviour, the Reviewer inspects the diff, and Root
+concludes; neither reviewer modifies implementation. No push/PR/merge/deploy.
+
+### Review-driven fixes
+
+1. **Resume regression tests (keyless).** The compatibility fake now models the
+   official `ResumeSessionResponse` (no `sessionId`) on `session/resume`, so the
+   existing lifecycle test exercises the fixed path; a new unit test checks
+   `_resumed_session_id` (absent → expected, match → expected, conflict → raise,
+   non-dict → raise) and a new integration test proves a conflicting echoed
+   `sessionId` is rejected. `_verify_root_binding`, the native-id match and the
+   durable root marker remain enforced.
+2. **Binding group membership.** `_read_acp_binding` now asserts the located
+   file path equals `_acp_binding_path(session_id, binding.workspace_id)`, so a
+   binding physically written in another group's volume is rejected. Focused
+   tests cover explicit-workspace resolution, cross-group ambiguity fail-closed,
+   and a wrong-group file.
+3. **Multi-group missing binding contract.** With ≥2 configured groups and no
+   on-disk binding the Adapter returns `SessionConflict` (409), not 404. This is
+   fail-closed, reachable only in the uncommitted two-group test topology, and
+   the single-group candidate is unchanged; recorded and covered by the
+   ambiguity test. No public compatibility layer added.
+4. **Runner test reproduction.** The named runner image cannot run pytest (its
+   ENTRYPOINT runs `server.py`; no pytest/pip installed); it is a runtime image,
+   not a test image. Runner `test_server.py` is therefore run in an ephemeral
+   adapter image as `0:0` with the worktree mounted read-only (8/8), and this is
+   recorded as source-logic verification, distinct from final-image runtime
+   behaviour. The production runner image is not expanded to carry pytest.
+
+### `x-opencode-session` semantics
+
+`x-opencode-session` is a **provider routing header**, distinct from the BYQ MCP
+root identity (`BYQ_ROOT_RUN_ID` / the signed per-Agent MCP token). It is set to
+the Adapter-derived stable `BYQ_PROVIDER_SESSION_ID` (uuid5 of the BYQ public
+session) so the OpenCode Go gateway can route efficiently. Whether the provider
+uses it to retain server-side conversation state across BYQ roots is **NOT
+confirmed** by BYQ evidence; the ACP path still restores context natively
+(ADR-0096) and the fresh-native path (ADR-0093) sends only the new prompt. The
+provider-side semantics remain an open gap to confirm before any claim about
+provider-context carry-over; the identity strategy was not changed.
+
+### Cost accounting (exact)
+
+Authorized cap: US$1.00 (maintainer). No billing or usage export was available
+for the Product-path calls.
+
+- **Known actual provider requests with usage evidence:** 1 — the direct
+  OpenCode Go header probe (input 32 / output 1 tokens, HTTP 200).
+- **Product-path user turns submitted:** the evidence records individual turns
+  across the third–seventh passes (normal answer; native-reuse second turn; tool
+  turn; hard-stop, soft-stop and soft-continue; pre/post-fix delegation;
+  concurrent two-user plus retry; browser). The **actual provider request count
+  per turn is not observable** from the Product events and is UNKNOWN; DSH may
+  issue more than one request per turn.
+- **Usage / billing:** UNKNOWN for all Product-path calls; not estimated.
+- **Failed attempts** (`400 MissingSessionID`, `409`, resume/prompt errors)
+  produced no model output and are not billed.
+- Therefore total spend is **not asserted**; the US$1 cap was the authorization
+  ceiling, not a measured amount.
+
+## Tenth pass — frozen HEAD and independent roles pending

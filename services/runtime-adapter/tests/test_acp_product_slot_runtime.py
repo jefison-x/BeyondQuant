@@ -425,3 +425,64 @@ def test_recovered_interrupted_root_keeps_slot_until_exact_terminal_ack(slot_run
         assert workspace not in new_compatibility.product_slots._leases
     finally:
         restarted.close()
+
+
+class _StubSlots:
+    def __init__(self, workspaces: tuple[str, ...]) -> None:
+        self._workspaces = tuple(workspaces)
+
+    def configured_workspaces(self) -> tuple[str, ...]:
+        return self._workspaces
+
+
+class _StubCompat:
+    def __init__(self, workspaces: tuple[str, ...]) -> None:
+        self.product_slots = _StubSlots(workspaces)
+
+    def session_storage_root(self, base: Path, workspace_id: str) -> Path:
+        assert workspace_id in self.product_slots.configured_workspaces()
+        return (base / workspace_id).resolve()
+
+
+def _binding_adapter(tmp_path: Path, workspaces: tuple[str, ...]) -> RuntimeAdapter:
+    adapter = object.__new__(RuntimeAdapter)
+    adapter._acp = True
+    adapter._acp_product_slots = True
+    adapter._session_root = tmp_path
+    adapter._compatibility = _StubCompat(workspaces)
+    return adapter
+
+
+def _valid_binding(session_id: str, workspace_id: str, cwd: Path) -> dict:
+    return {
+        "schema_version": "byq-acp-root-binding.v1", "session_id": session_id,
+        "trace_id": "trace-1", "owner_principal": "owner-1", "workspace_id": workspace_id,
+        "root_run_id": "a" * 32, "native_session_id": "8b90c2b5-3a08-4eae-9fc7-04baf12910de",
+        "runtime_generation": "generation-" + "b" * 32, "model_provider": "deepseek-official",
+        "model_id": "deepseek-v4-flash", "cwd": str(cwd.resolve()),
+        "previous_boot_id": "c" * 32, "previous_authority_epoch": 1, "sequence": 1,
+        "settlement_receipt": None, "domain_call_sequence": 0,
+        "domain_call_drained_sequence": 0, "native_session_close_confirmed": True,
+        "process_exit_confirmed": True, "cleanup_unconfirmed": False, "closed": False,
+    }
+
+
+def test_binding_path_is_group_scoped_and_ambiguity_fails_closed(tmp_path: Path) -> None:
+    adapter = _binding_adapter(tmp_path, ("workspace_a", "workspace_b"))
+    explicit = adapter._acp_binding_path("byq-session-x", "workspace_a")
+    assert explicit == (tmp_path / "workspace_a" / "byq-acp-bindings" / "byq-session-x.json")
+    with pytest.raises(SessionConflict):
+        adapter._acp_binding_path("byq-session-x")
+
+
+def test_read_binding_rejects_file_found_in_another_group(tmp_path: Path) -> None:
+    adapter = _binding_adapter(tmp_path, ("workspace_a", "workspace_b"))
+    session_id = "byq-session-x"
+    cwd_a = tmp_path / "workspace_a" / ("session-" + "d" * 32)
+    value = _valid_binding(session_id, "workspace_a", cwd_a)
+    # A binding physically written into group B while declaring group A.
+    wrong = adapter._acp_binding_path(session_id, "workspace_b")
+    wrong.parent.mkdir(parents=True, exist_ok=True)
+    wrong.write_text(json.dumps(value), encoding="utf-8")
+    with pytest.raises(SessionConflict):
+        adapter._read_acp_binding(session_id)

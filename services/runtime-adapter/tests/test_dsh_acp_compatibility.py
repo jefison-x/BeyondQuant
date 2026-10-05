@@ -11,6 +11,7 @@ from app.compat.dsh_acp import (
     AcpRpcError,
     AcpTransportError,
     DshAcpCompatibility,
+    _resumed_session_id,
 )
 
 
@@ -81,8 +82,17 @@ for line in sys.stdin:
                     "native_root_session_id":session_id, "cwd":params["cwd"]}, output,
                 separators=(",", ":"))
             os.chmod(marker, 0o600)
-        send({"jsonrpc":"2.0", "id":request_id, "result":{
-            "sessionId":session_id, "configOptions":config_options()}})
+            send({"jsonrpc":"2.0", "id":request_id, "result":{
+                "sessionId":session_id, "configOptions":config_options()}})
+        else:
+            # The pinned ACP ResumeSessionResponse has no sessionId. A test may
+            # set ACP_TEST_RESUME_ECHO_SESSION_ID to model a version that echoes
+            # one, to prove a conflicting echo is rejected.
+            result = {"configOptions":config_options()}
+            echoed = os.environ.get("ACP_TEST_RESUME_ECHO_SESSION_ID")
+            if echoed:
+                result["sessionId"] = echoed
+            send({"jsonrpc":"2.0", "id":request_id, "result":result})
     elif method == "session/set_config_option":
         send({"jsonrpc":"2.0", "id":request_id, "result":{"configOptions":config_options()}})
     elif method == "session/prompt":
@@ -719,3 +729,40 @@ def test_continuation_reservation_header_is_optional_and_strict() -> None:
             "BYQ_ROOT_RUN_ID": "invalid-root",
             "BYQ_CONTINUATION_RESERVATION_ID": reservation,
         })
+
+
+def test_resumed_session_id_accepts_official_response_and_rejects_conflict() -> None:
+    """Pinned ResumeSessionResponse has no sessionId; an echoed conflict fails."""
+    expected = "8b90c2b5-3a08-4eae-9fc7-04baf12910de"
+    assert _resumed_session_id({"configOptions": []}, expected=expected) == expected
+    assert _resumed_session_id({"sessionId": expected}, expected=expected) == expected
+    with pytest.raises(AcpTransportError):
+        _resumed_session_id(
+            {"sessionId": "00000000-0000-4000-8000-000000000000"}, expected=expected)
+    with pytest.raises(AcpTransportError):
+        _resumed_session_id(None, expected=expected)
+
+
+def test_resume_rejects_conflicting_echoed_session_id(tmp_path: Path) -> None:
+    capture = tmp_path / "wire.jsonl"
+    compatibility, harness = _harness(tmp_path, capture)
+    try:
+        compatibility.start(harness)
+        native_id = compatibility.create_session(harness)
+        compatibility.close_session(harness, native_id)
+    finally:
+        compatibility.close(harness)
+
+    environment = _identity_environment(
+        capture, boot_id="c" * 32, native_root_session_id=native_id)
+    environment["ACP_TEST_RESUME_ECHO_SESSION_ID"] = "00000000-0000-4000-8000-000000000000"
+    resumed_harness = compatibility.build_harness(
+        provider="deepseek-official", model="deepseek-v4.1-flash",
+        composition=harness.composition, session_root=harness.session_root,
+        runtime_command=harness.runtime_command, environment=environment)
+    try:
+        compatibility.start(resumed_harness)
+        with pytest.raises(AcpTransportError):
+            compatibility.resume_session(resumed_harness, native_id)
+    finally:
+        compatibility.close(resumed_harness)
