@@ -662,7 +662,7 @@ CI gates fixed to reach the component lanes:
   guard-patch trailing-comma assertion.
 - Backend reset fence: the disabled-identity terminal-cleanup allowance now
   includes the four ACP terminal columns, so exact terminal facts for an
-  existing bound root still persist (18 lifecycle tests).
+  existing bound root still persist (the lifecycle file's 23 tests).
 - Runtime-roots projection fixture updated for the ACP terminal fields.
 
 The initially inherited failures were then fixed in a bounded pass:
@@ -675,7 +675,7 @@ The initially inherited failures were then fixed in a bounded pass:
    corrected; the build-revision manifest was regenerated after each source
    edit (revision `post-u8.305`).
 3. Backend: the reset-fence terminal-cleanup allowance now includes the four ACP
-   terminal columns (18 lifecycle tests); the runtime-roots projection fixture
+   terminal columns (the lifecycle file's 23 tests); the runtime-roots projection fixture
    was updated for the ACP fields. Verified against an ephemeral PostgreSQL:
    `test_runtime_authority_api` 5/5 and `test_agent_lifecycle_api` 23/23.
 4. v0.9 evidence provenance: reconciled the recorded digests for the
@@ -686,3 +686,69 @@ Local verification: the full architecture lane (`python3 -m unittest discover
 PASS. **Hosted PR CI result: run 37295954638 all observed checks succeeded
 (PASS)** for head `2af01856`. The Draft PR #386 remains open; no ready-marking,
 merge, release or deploy was performed.
+
+## Thirteenth pass — final independent review, P2 fix, merge preflight
+
+ADR-0101 was **Accepted** by the maintainer on 2026-10-05, scoped exactly to
+the same-model independent Tester/Reviewer role arrangement; no other decision
+in the draft was accepted and no gate is lowered.
+
+Post-review diff under review: `b3c71bfc..07e4c915` (9 commits), then the P2
+fix commits `2d8f594f` and `01becf70`. Two fresh same-model sessions (ADR-0101)
+were run and resumed for the affected parts.
+
+### Independent Tester (ADR-0101 exception)
+
+All seven post-review items PASS: backend reset-fence allowlist keeps its exact
+OLD-active→closed/`sequence>0`/64-hex/`product_conversations` binding and only
+exempts the four terminal-fact columns (backend lifecycle+authority 28/28 on an
+ephemeral PostgreSQL; pre-review file made the 12 disabled-identity cases fail);
+gateway stubs match the real `_runtime_authority_snapshot`/`_product_session`/
+recovery-binding contract (98/98); architecture corrections are false-positive
+narrowings (198 + 926 unittest lane OK); gitleaks 14 exact synthetic
+fingerprints, no global suppression, range `no leaks found`; build revision
+immutable and rollback intact; evidence hashes distinguish current source from
+the historical tested image; worktree↔image identity consistent. The Tester
+independently found the residual dev-path 304 pin, fixed in `01becf70`, and
+re-confirmed PASS.
+
+### Independent Reviewer (ADR-0101 exception)
+
+P2-1 (build-revision split-brain: 305 selected but CI/compose built 304) was
+raised, fixed, and re-confirmed. After the fix, no build/dev/CI/release
+consumer pins a superseded revision; `check(303)/(304)/(305)` PASS with 304
+frozen and its manifest unchanged; SDK default intact and ACP overlay-only; no
+new issue. P3 notes (accepted, no change): the reset-fence exemption does not
+add format/range predicates for the two ACP digests/counts (server-derived and
+re-validated on read; the guard is not the primary integrity boundary); the
+recovery tests stub the ACP-field projection validation; live/injection
+scenarios remain NOT_RUN.
+
+### Root synthesis
+
+Scope (a) **candidate merge keeping SDK default and ACP gated: PASS** — the
+diff does not promote ACP (`compose.yml` default and release selector remain the
+SDK `0.1.5rc1` line; ACP only in `compose.dsh-acp-rc2-candidate.yml`; F6 and
+`/acp-root/run` disabled). Scope (b) **ACP default promotion: NOT SUPPORTED**.
+
+### Current ordinary-ACP gate table (unchanged verdicts)
+
+| Gate | Verdict | Blocks |
+| --- | --- | --- |
+| Normal answer + native reuse (bounded real model) | PASS | — |
+| Soft stop/continue; hard-cancel containment | PASS | — |
+| Ended-session input rejected | PASS | — |
+| Restart persistence | PARTIAL | default promotion, not candidate merge |
+| Two-group isolation (free mechanism + API) | PASS | — |
+| Forged/old-root MCP ingress denied (post-terminal) | PASS | — |
+| Read-only tool ingress settle | PASS | — |
+| Delegation identity + child ingress + parented AgentRun (bounded) | PASS | — |
+| Browser real-model answer (bounded) | PASS | — |
+| ADR-0100 boundary / container-death cleanup / per-group volumes | PASS | — |
+| SDK `0.1.5rc1` rollback retained | PASS | — |
+| Truly delayed old-root while new root active | NOT_RUN | default promotion |
+| Exact ACK/cleanup-loss blocking next turn (live) | NOT_RUN | default promotion |
+| In-flight process fault / connection loss / unknown | NOT_RUN | default promotion |
+| Concurrent two-user real-model / reboot recovery | NOT_RUN | default promotion |
+| Dedicated judgment `/acp-root/run`; ACP F6 | FAIL, disabled | default promotion |
+| Formal Tester/Reviewer role gate | auxiliary only (ADR-0101) | candidate merge review |
