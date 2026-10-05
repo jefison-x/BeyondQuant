@@ -67,14 +67,39 @@ direct IPv4 `1.1.1.1:443` and IPv6 `2606:4700:4700::1111:443` failed
 is a narrow internal-network negative, not the final Compose attachment,
 actual DSH process route, or CONNECT/forwarder qualification.
 
-Proposed ADR-0100 records a concrete control-socket isolation change for the
-same-GID availability failure. It is **not Accepted**; no conflicting
-ordinary Product DSH process-owner implementation or default promotion has
-started. Independent architecture review found the proposal compatible with
+ADR-0100 records a concrete control-socket isolation change for the same-GID
+availability failure. The maintainer accepted it on 2026-10-05; this permits
+bounded implementation, not default promotion. Independent architecture
+review found the proposal compatible with
 the single authority and no-second-harness rules after clarifying its exact
 ADR-0099 amendment, ordinary native-session cutover, judgment-network
 separation and Adapter-side subprocess inventory. This is design review, not
-ADR acceptance or integration qualification.
+integration qualification.
+
+The ADR-0100 concurrency audit found that the judgment runner cannot be
+reused unchanged for ordinary Product roots: its Unix server handles a
+long-lived root inline, and its shared-UID cleanup would mix concurrently
+adopted descendants. A local two-supervisor, double-fork synthetic probe
+showed separate live subreapers adopt their own orphaned descendants and
+stopping one leaves the other alive (**PASS, mechanism only**). The proposed
+Product owner uses a separate supervisor per root, bounded admission and a
+container-wide fail-closed path if any supervisor dies without cleanup proof.
+The latter is **NOT_RUN** in the candidate container; it interrupts every
+active root as unknown and supplies no terminal ACK. The current environment's
+cgroup v2 mount is read-only, so per-root cgroup termination is unavailable
+here. The Product transport, actual Compose namespace/network isolation,
+two-user Product flow and rollback remain **NOT_RUN**.
+Independent review found that container-wide interruption enlarges the
+failure domain beyond the ADR-0100 text already accepted by the maintainer.
+It is now a clearly marked proposed amendment in ADR-0100; no PID1 fallback
+wiring or ACP default promotion may proceed before that decision.
+
+After ordinary DSH moves out of Adapter, its only other application-level
+subprocess launch is the fixed private HTTPS worker for the judgment provider
+proxy. The production command is the installed Python module
+`app.research_judgment_acp_provider_worker`; it accepts bounded JSON over
+stdin and calls a fixed HTTPS transport, without shell or model-supplied
+program execution. This is a source inventory, not a runtime privilege proof.
 
 The earlier authorized OpenCode paid API call was for the old SDK route. No
 new paid provider call has been made for this ACP candidate. No local, mock or

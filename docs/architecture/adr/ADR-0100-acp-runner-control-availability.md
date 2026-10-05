@@ -28,7 +28,7 @@ been removed. Final judgment wiring now needs a runner-signed or
 Backend-bound native-session proof instead of local marker reading. This
 second issue is a separate acceptance requirement.
 
-## Proposed decision
+## Decision
 
 Move ordinary **ACP** DSH processes out of the trusted Adapter container into
 a separate process-owner service. The service runs the same fixed official DSH
@@ -65,6 +65,35 @@ the same native ID/cwd only with the ADR-0096 binding proof preserved by a
 signed or Backend-bound readback. If that proof is unavailable, start a fresh
 native session only after exact closure and use verified public history once;
 do not also restore the old DSH context.
+
+## Proposed amendment — concurrent process ownership (not yet accepted)
+
+This paragraph extends the Accepted decision above. It requires a separate
+maintainer acceptance before the fail-closed fallback is wired or promoted,
+because one supervisor failure would interrupt every active Product root in
+the process-owner container.
+
+The ordinary Product process owner must admit independent root processes
+concurrently within an explicit capacity bound. A separate supervisor process
+must own each admitted root and become a child subreaper before launching its
+fixed DSH command. Its cleanup may reap only descendants adopted by that
+supervisor; shared UID 10002 alone is not root attribution. `session/cancel`
+remains an ACP request, while process termination is a separate transport
+operation.
+
+The process-owner daemon must be PID 1 in its own container PID namespace.
+If a root supervisor dies before proving cleanup, the daemon must exit and
+fail the entire container closed. Every active root then loses transport and
+must remain unknown/fenced until independent Backend reconciliation; the
+daemon cannot issue a clean per-root EXIT or terminal ACK for this fallback.
+The candidate runtime must verify the actual PID namespace and kill behavior.
+Writable per-root cgroups are not assumed by this design.
+
+The alternative is a separately confined process owner for each active root
+(or a verified writable per-root cgroup). That would limit a supervisor crash
+to one root, but requires a new allocation and recovery mechanism and has not
+been qualified. Until one of these containment choices is accepted and
+verified, the ordinary ACP process-owner transport cannot be promoted.
 
 ## Rejected and deferred alternatives
 
