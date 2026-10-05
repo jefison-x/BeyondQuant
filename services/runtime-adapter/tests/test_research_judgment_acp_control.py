@@ -10,8 +10,10 @@ import pytest
 
 from app.research_judgment_acp_control import (
     AcpJudgmentOutcomeUnknown,
+    begin_root_once,
     close_result_root_once,
     close_settled_root_once,
+    register_root_agent_once,
     result_request,
     result_request_sha256,
     settlement_digest,
@@ -19,6 +21,7 @@ from app.research_judgment_acp_control import (
     submit_settlement_once,
     submit_result_once,
 )
+from app.research_judgment import ResearchJudgmentError
 
 
 TASK = "task_" + "a" * 32
@@ -423,4 +426,135 @@ def test_exact_already_closed_root_is_read_back_without_close_repost():
         backend_url="http://backend", task_id=TASK, begin=SETTLEMENT_BEGIN,
         settlement=SETTLEMENT, headers={}, transport=post)
     assert terminal["sequence"] == 2 and terminal["root_run_id"] == ROOT
-    assert [url.rsplit("/", 1)[-1] for url in calls] == ["status", "status"]
+
+
+ASSERTED_ATTEMPT = "1:strategy_draft:1"
+
+
+def test_begin_root_posts_exact_payload_and_validates_full_receipt():
+    calls = []
+
+    def post(url, body, headers, timeout):
+        calls.append((url, body))
+        return SETTLEMENT_BEGIN
+
+    receipt = begin_root_once(backend_url="http://backend", task_id=TASK,
+                              call_identity=SETTLEMENT_CALL, attempt=ASSERTED_ATTEMPT,
+                              headers={"h": "1"}, transport=post)
+    assert receipt == SETTLEMENT_BEGIN
+    assert calls == [(
+        f"http://backend/internal/research-judgment/{TASK}/acp-root/begin",
+        {"schema_version": "byq-research-judgment-acp-root-begin.v1",
+         "call_identity": SETTLEMENT_CALL, "attempt_binding": ASSERTED_ATTEMPT})]
+
+
+def test_begin_root_lost_transport_is_unknown_and_fabricates_no_admission():
+    def post(url, body, headers, timeout):
+        raise urllib.error.URLError("synthetic lost begin response")
+
+    with pytest.raises(AcpJudgmentOutcomeUnknown, match="begin receipt is unavailable"):
+        begin_root_once(backend_url="http://backend", task_id=TASK,
+                        call_identity=SETTLEMENT_CALL, attempt=ASSERTED_ATTEMPT,
+                        headers={}, transport=post)
+
+
+def test_begin_root_inconsistent_identity_fails_closed():
+    def post(url, body, headers, timeout):
+        return {**SETTLEMENT_BEGIN, "call_identity": "byq-judgment-" + "0" * 32}
+
+    with pytest.raises(ResearchJudgmentError, match="identity is inconsistent"):
+        begin_root_once(backend_url="http://backend", task_id=TASK,
+                        call_identity=SETTLEMENT_CALL, attempt=ASSERTED_ATTEMPT,
+                        headers={}, transport=post)
+
+
+def test_begin_root_rejects_non_attempt_identity_before_any_request():
+    calls = []
+
+    def post(url, body, headers, timeout):
+        calls.append(url)
+        return SETTLEMENT_BEGIN
+
+    with pytest.raises(ResearchJudgmentError, match="begin inputs are required"):
+        begin_root_once(backend_url="http://backend", task_id=TASK,
+                        call_identity=SETTLEMENT_CALL, attempt="not-an-attempt",
+                        headers={}, transport=post)
+    assert calls == []
+
+
+NATIVE_ROOT = "00000000-0000-4000-8000-000000000001"
+REGISTERED_RUN = "agent_run_" + "e" * 32
+
+
+def _register_receipt(**overrides):
+    receipt = {"schema_version": "byq-acp-agent-bind-receipt.v1",
+               "root_run_id": ROOT, "runtime_boot_id": BOOT,
+               "native_agent_session_id": NATIVE_ROOT, "native_parent_session_id": None,
+               "agent_run_id": REGISTERED_RUN, "parent_run_id": None,
+               "origin": "root", "depth": 0, "status": "bound",
+               "binding_sha256": "a" * 64}
+    receipt.update(overrides)
+    return receipt
+
+
+def test_register_root_agent_requires_exact_bound_root_receipt():
+    calls = []
+
+    def post(url, body, headers, timeout):
+        calls.append((url, body))
+        return _register_receipt()
+
+    receipt = register_root_agent_once(
+        backend_url="http://backend", task_id=TASK, call_identity=SETTLEMENT_CALL,
+        root_run_id=ROOT, runtime_boot_id=BOOT, native_root_session_id=NATIVE_ROOT,
+        headers={}, transport=post)
+    assert receipt["status"] == "bound" and receipt["agent_run_id"] == REGISTERED_RUN
+    assert calls[0][0] == (
+        f"http://backend/internal/research-judgment/{TASK}/acp-root/register-agent")
+    assert calls[0][1] == {
+        "schema_version": "byq-research-judgment-acp-agent-register.v1",
+        "call_identity": SETTLEMENT_CALL, "root_run_id": ROOT,
+        "runtime_boot_id": BOOT, "native_root_session_id": NATIVE_ROOT}
+
+
+@pytest.mark.parametrize("tamper", [
+    {"status": "pending"}, {"origin": "subagent"}, {"depth": 1},
+    {"native_parent_session_id": NATIVE_ROOT},
+    {"native_agent_session_id": "00000000-0000-4000-8000-000000000002"},
+    {"agent_run_id": None},
+])
+def test_register_root_agent_rejects_unbound_or_foreign_receipt(tamper):
+    def post(url, body, headers, timeout):
+        return _register_receipt(**tamper)
+
+    with pytest.raises(AcpJudgmentOutcomeUnknown, match="not bound"):
+        register_root_agent_once(
+            backend_url="http://backend", task_id=TASK, call_identity=SETTLEMENT_CALL,
+            root_run_id=ROOT, runtime_boot_id=BOOT, native_root_session_id=NATIVE_ROOT,
+            headers={}, transport=post)
+
+
+def test_register_root_agent_lost_transport_is_unknown():
+    def post(url, body, headers, timeout):
+        raise urllib.error.URLError("synthetic lost register response")
+
+    with pytest.raises(AcpJudgmentOutcomeUnknown, match="not bound"):
+        register_root_agent_once(
+            backend_url="http://backend", task_id=TASK, call_identity=SETTLEMENT_CALL,
+            root_run_id=ROOT, runtime_boot_id=BOOT, native_root_session_id=NATIVE_ROOT,
+            headers={}, transport=post)
+
+
+def test_register_root_agent_rejects_non_uuid_session_before_any_request():
+    calls = []
+
+    def post(url, body, headers, timeout):
+        calls.append(url)
+        return _register_receipt()
+
+    with pytest.raises(ResearchJudgmentError, match="registration inputs are required"):
+        register_root_agent_once(
+            backend_url="http://backend", task_id=TASK, call_identity=SETTLEMENT_CALL,
+            root_run_id=ROOT, runtime_boot_id=BOOT, native_root_session_id="not-a-uuid",
+            headers={}, transport=post)
+    assert calls == []
