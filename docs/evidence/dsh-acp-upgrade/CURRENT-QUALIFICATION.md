@@ -17,6 +17,15 @@ matching local images and independent evidence are tracked in
 This does not qualify the dedicated judgment entry, F6, actual Product/browser
 flows, paid provider behavior, release or default ACP promotion.
 
+2026-10-05 integration update: an isolated full Product stack now reaches the
+provider boundary through Gateway/Product API → Backend → Adapter → runner →
+official DSH ACP for one configured workspace, with an invalid credential, exact
+terminal ACK and slot release. Three wiring defects were fixed locally in commit
+`6d8530a2` and rebuilt images were hash-verified. Browser flows, paid model
+acceptance, two-group isolation, dedicated judgment `/acp-root/run` and ACP F6
+remain NOT_RUN; `/acp-root/run` is still disabled. See
+[PRODUCT-INTEGRATION-20261005.md](PRODUCT-INTEGRATION-20261005.md).
+
 | Gate | Result | Evidence and limit |
 | --- | --- | --- |
 | Source identity, isolated base, rollback identity | PASS | See `BASELINE.md`; the existing `0.1.5rc1` image and tracked configuration are retained. No live protected configuration was opened. |
