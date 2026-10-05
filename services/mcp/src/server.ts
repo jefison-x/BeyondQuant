@@ -2063,9 +2063,12 @@ const discoveryOnlyHandler: ParsedFetchHandler = {
     }
     const envelope = body as Record<string, unknown>;
     const method = envelope.method;
-    if (!["initialize", "notifications/initialized", "tools/list"].includes(String(method))) {
+    // `server/discover` is the MCP 2.0 era-negotiation probe. It returns only
+    // protocol capabilities, so the discovery credential must be able to
+    // negotiate before it can list tools. It grants no business tool access.
+    if (!["initialize", "notifications/initialized", "server/discover", "tools/list"].includes(String(method))) {
       return Response.json({ jsonrpc: "2.0", id: envelope.id ?? null,
-        error: { code: -32003, message: "ACP discovery credential only permits tool listing" } }, { status: 403 });
+        error: { code: -32003, message: "ACP discovery credential only permits protocol discovery and tool listing" } }, { status: 403 });
     }
     return observedHandler.fetch(request, { ...options, parsedBody: body });
   },
