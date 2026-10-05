@@ -24,8 +24,8 @@ NOT_RUN rows are preserved.
 
 | Input | Identity |
 | --- | --- |
-| Candidate Adapter image (final tested) | `byq-runtime-adapter-acp:qualification-20261005-slot-fix4` = `sha256:b746add44785d866d7433fc2a8df840cab7a0e816d29bd94658f1f845db781cd` |
-| Candidate product runner image (final tested) | `byq-acp-product-runner:qualification-20261005-fix2` = `sha256:b275a9efb1e77b7709fc877ee996390be7cd9540a7626d7141c6dc6b62ee8beb` |
+| Candidate Adapter image (final tested) | `byq-runtime-adapter-acp:qualification-20261005-slot-fix6` = `sha256:0f212f8047f0be51d43f6d8e8a9c8e611f40050e7e05458052bad02d070cdb5f` (supersedes the fix4/fix5 values used earlier in this document) |
+| Candidate product runner image (final tested) | `byq-acp-product-runner:qualification-20261005-fix3` = `sha256:67950caf13342de43694db4b18a78dd3047696e92431f0dd2648cd4089dd1dc5` (supersedes fix2) |
 | Isolated Backend (current source) | `sha256:11ec92c381dd9e0a1a5b2b411e9366132c7dd23118458a49f20592f92b3cacd2` |
 | Isolated Gateway (current source) | `sha256:719834a643146f28cab15ce5b328708b8b7f48c11b3c82154b37d0e810101f9c` |
 | Isolated MCP (current source) | `sha256:ad1d30db4b05b5db6e1108bd9ddd8c9ea08c8d7c287e3c87fe386c9c8addca40` |
@@ -425,3 +425,62 @@ rejected), and the same turn was accepted 202 once the first turn completed
 
 Provider usage: three tiny calls (two concurrent turns, one retry). Cumulative
 across the acceptance remains far below the US$1 cap.
+
+## Eighth pass — same-model independent auxiliary sessions
+
+Two fresh-context sessions on the same model were run: one auxiliary
+verification and one static code review. They received only the task scope,
+Accepted ADRs, exact HEAD `dab9b04c`, and evidence paths — not the implementer's
+conclusions. Both were restricted to read-only inspection and FREE targeted
+tests; no implementation changes, no paid calls, no full suite. **These are
+explicitly auxiliary and do NOT satisfy the repository's official Tester /
+Reviewer gate.**
+
+Auxiliary verification (free, executable):
+
+- Reproduced the adapter focused suite 29/29 (source mounted read-only, network
+  disabled), MCP `acp-auth-test`/`acp-bridge-test`, and the runner
+  `test_server.py` 8/8 in an adapter image as root (see limitation below).
+- Reproduced the free keyless probes against an isolated `byq-acp-iso` stack:
+  `probe_compat_resume` RESUME_OK, `probe_busy` same-group busy/other-group
+  available, `probe_iso` cross-group `workspace_mismatch` + duplicate-secret
+  refusal + independent execution. Stack torn down; production untouched.
+- Independently checked the ACP SDK `ResumeSessionResponse` schema (no
+  `sessionId`) and DSH `resumeSession` response.
+- Verified worktree↔image sha256 for the changed files and the profile/identity
+  hash chain.
+
+Auxiliary code review (static, no docker): **no P1 found.** It judged the
+concrete fixes targeted and not gate-weakening (terminal ACK, cleanup receipt,
+root-binding marker, tenancy, per-Agent MCP, child env filtering all retained;
+no new harness/scheduler/allocator). Open findings to hand to Root:
+
+1. P2 — this document/`CURRENT-QUALIFICATION.md` recorded stale candidate-input
+   hashes and stale “final tested” image tags. Corrected in the same commit as
+   this section.
+2. P2 — the resume fix (`_resumed_session_id`) has no in-repo regression test;
+   the existing fixture models the old wrong contract (returns `sessionId`).
+   Recommend adding a keyless compatibility test with an omitted-`sessionId`
+   resume reply plus a mismatched-echo negative.
+3. P2 — defense-in-depth: `_read_acp_binding` finds a binding across groups and
+   validates `cwd` against the binding's own `workspace_id`, but does not assert
+   the file's containing group equals that `workspace_id`. Recommend comparing
+   the resolved path to `_acp_binding_path(session_id, value["workspace_id"])`.
+4. P3 — with ≥2 groups and no on-disk binding, recovery now returns 409
+   (`workspace is ambiguous`) instead of 404; fail-closed and harmless, worth a
+   deliberate test/note.
+5. P3 — the diff contains no test changes; the multi-group binding logic and
+   `configured_workspaces()` are unverified by committed tests.
+6. Info — the runner focused tests cannot run in the named runner image (its
+   entrypoint runs `server.py` and it has no pytest); the auxiliary verifier ran
+   them as root in the adapter image instead.
+7. Info — judgment `_ACP_JUDGMENT_ALLOWED_ENV` does not list
+   `BYQ_PROVIDER_SESSION_ID`; `/acp-root/run` is disabled so this is currently
+   unreachable, but reconcile before enabling judgment.
+8. Info — `x-opencode-session` is stable across BYQ roots by design; whether the
+   provider uses it for server-side context carry-over needs explicit proof.
+
+Open ADR observations from the review: ADR-0096 reuse and ADR-0094 child
+evidence remain bounded observations, not full ADR qualification; ADR-0100
+required-evidence items 1–3 remain NOT_RUN. Materials are handed back to Codex
+Root for the formal Tester/Reviewer gate. No push, PR, merge or deploy.

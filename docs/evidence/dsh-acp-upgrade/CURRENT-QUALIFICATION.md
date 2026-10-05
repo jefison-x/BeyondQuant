@@ -184,8 +184,8 @@ not proven.
 | --- | --- |
 | ACP candidate Dockerfile | `8c4337d34a5c4268208a3c6ce7cb21b99afac2d864090c1cad626a722da4b4c4` |
 | Adapter ACP Python lock | `53592f4ad247cff51dd7deff6f8ca1b6230257848a5b1917db2cab9e34d49f3e` |
-| ACP Product profile | `8bd56a0d3120e10c74e0d51eb95adb392232f1535e0aabc61228a72f372a964d` |
-| Profile identity JSON | `3c809e4d387d7fd2918ba7ba86b79518b4d88c25d458b4078e3bd0e68b06d7be` |
+| ACP Product profile | `d53c45f3f06fe1d9c0712931ee6cfeba8ccbeea7d7dbeb51ad45e978a21d32ed` (2026-10-05; was `8bd56a0d…` before the `x-opencode-session` route header) |
+| Profile identity JSON | `a0cfa490bcb8c4a4c0745ae45ec253f929f5eaebfda22d14468e2636d013e59d` (2026-10-05; was `3c809e4d…`) |
 | Fixed release identity JSON | `e8af0d1cabf1cb85db9b57da85ba246e5c9691e77f9428664e6e36a3aea7ec67` |
 
 The fixed Dockerfile checks official commit
