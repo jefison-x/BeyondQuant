@@ -142,8 +142,12 @@ services:
     networks:
       # Only the isolated MCP needs Backend proof/read APIs on byq_product.
       # Runner and DSH remain on the internal network and cannot route to Backend.
-      - byq_product
-      - byq_acp_judgment
+      byq_product: {}
+      byq_acp_judgment:
+        # The service name must resolve on the internal judgment network too, so
+        # the runner's DSH child can mount the Agent-scoped judgment MCP client.
+        aliases:
+          - mcp-acp-judgment
     depends_on:
       backend:
         condition: service_healthy
