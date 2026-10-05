@@ -620,3 +620,22 @@ is stopped with volumes/images retained; the two-group override lives only in
 release or deploy was performed. Next minimal action: appoint the official
 Tester/Reviewer on frozen HEAD (or accept ADR-0101 as the standing special-project
 process) and decide the deferred F6/judgment scope.
+
+## Eleventh pass — ADR-0100 boundary, cleanup and rollback evidence (free)
+
+Ran against the isolated two-group stack; production untouched.
+
+| ADR-0100 requirement | Result | Evidence |
+| --- | --- | --- |
+| Ordinary Product DSH cannot reach the judgment socket/volume/network | PASS | `docker inspect`: `acp-product-runner` joins only the product network and mounts only its product control/sessions/state; `/run/byq-acp-runner` is absent in the product runner; the judgment control dir is `root:10005` mode 0710 and the product runner has no supplementary groups. |
+| Ordinary DSH child runs without the judgment control GID | PASS | Live root child had empty `Groups:`; `server.py` launches the child with `extra_groups=()`. |
+| No model-controlled subprocess in the Adapter slot path | PASS | `compat/acp_slot_transport.py:74` documents no local DSH subprocess/PID; slot mode uses `SlotAcpProcess`. The only `Popen` is the judgment-only fixed provider worker (`sys.executable -m app.research_judgment_acp_provider_worker`), no shell. |
+| Judgment MCP reachable but unauthorized from the product network | PASS | Product runner `fetch http://mcp-acp-judgment:8301/mcp/v1` → HTTP 401 `unauthorized` (judgment credentials required). |
+| Container death terminates the active DSH child; scope not replayed | PASS | Held a keyless root on the product runner (child `node` present), `docker restart` killed the namespace → no child after restart; the durable one-shot scope tombstones remain, so the consumed scope cannot be replayed. |
+| Group volumes not shared across groups | PASS | Each runner mounts only its own workspace session volume; the Adapter mounts both as the trusted authority. |
+| SDK `0.1.5rc1` rollback path still valid | PASS | The retained rollback runtime-adapter reports sdk/runtime `0.1.5rc1`; `compose.yml` still selects the SDK Dockerfile and `dsh-0.1.5rc1` by default, with the ACP candidate only in the overlay; `BASELINE.md` hashes unchanged. |
+
+Remaining NOT_RUN (need a real slow model or multi-round infrastructure): truly
+delayed old-root request arriving while a new root is active, in-flight crash
+recovery mid-turn, delegate parent-ACP child `session/update` projection,
+concurrent two-user reboot recovery, and all judgment/F6 items.
