@@ -1,0 +1,56 @@
+{
+  "schema_version": "byq-dsh-authoritative-version.v1",
+  "release_id": "dsh-v0.2.0-rc.2",
+  "source_commit": "639ed015397290b3745d163aafe02ffee4aa3f84",
+  "pnpm_lock_sha256": "80fe05eae33582ae26839afd05f1965f9b0e4be11034ddf9797af6085d5ba9b1",
+  "roles": {
+    "adapter": "dsh-v0.2.0-rc.2",
+    "ordinary_runner": "dsh-v0.2.0-rc.2",
+    "judgment_runner": "dsh-v0.2.0-rc.2"
+  },
+  "profiles": {
+    "product": {
+      "path": "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-product.patch.yml",
+      "sha256": "d53c45f3f06fe1d9c0712931ee6cfeba8ccbeea7d7dbeb51ad45e978a21d32ed"
+    },
+    "product_identity": {
+      "path": "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-product.identity.json",
+      "sha256": "a0cfa490bcb8c4a4c0745ae45ec253f929f5eaebfda22d14468e2636d013e59d"
+    },
+    "judgment": {
+      "path": "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-research-judgment.patch.yml",
+      "sha256": "92084a92eca42b217992c7f6b7ba129706392bfd5a8a0473077e985bfee72c4e"
+    },
+    "judgment_identity": {
+      "path": "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-research-judgment.identity.json",
+      "sha256": "a74af59a9f7a193a2e3e02ac7638b39199445cbb4a644232e8d9b8a91da22eb9"
+    },
+    "release_identity": {
+      "path": "config/dsh/acp-0.2.0-rc.2.identity.json",
+      "sha256": "e8af0d1cabf1cb85db9b57da85ba246e5c9691e77f9428664e6e36a3aea7ec67"
+    }
+  },
+  "capabilities": {
+    "ordinary_root_reuse": {
+      "adr": "ADR-0096",
+      "evidence": "docs/evidence/dsh-acp-upgrade/PRODUCT-INTEGRATION-20261005.md"
+    },
+    "f6_continuation": {
+      "adr": "ADR-0090 (extension to rc.2 pending)",
+      "evidence": "NOT_RUN"
+    },
+    "judgment_acp_lifecycle": {
+      "adr": "ADR-0097/0098/0099",
+      "evidence": "NOT_RUN"
+    },
+    "interrupted_business_continuation_new_child": {
+      "adr": "ADR-0102",
+      "evidence": "NOT_RUN"
+    }
+  },
+  "rollback": {
+    "release_id": "dsh-0.1.5rc1",
+    "offline_only": true,
+    "note": "Exact old SDK images/config retained as offline operations rollback; not a normal-path fallback."
+  }
+}
