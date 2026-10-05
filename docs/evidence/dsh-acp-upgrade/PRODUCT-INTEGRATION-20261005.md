@@ -326,3 +326,53 @@ below the US$1 cap. Per-call usage is not surfaced by the Product events
 Remaining NOT_RUN: delegate identity/tool/terminal proof, two configured-group
 isolation, browser real-model acceptance, ACP F6 and the dedicated judgment
 `/acp-root/run`.
+
+## Sixth pass — two-group isolation, delegation boundary, browser real model
+
+### Two configured groups (isolated env only)
+
+A test-only override (`/tmp/byq-acp-iso/override-twogroup.yml`, never committed)
+added a second static slot: second workspace `workspace_0c790a0f…` (user
+`isouser`), separate control socket `/run/byq-acp-product-runner-b/control.sock`,
+separate control secret and separate session/state/control volumes. Verified
+keylessly:
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Distinct slots/secrets/volumes | PASS | Rendered config and two distinct sockets; registry refuses two workspaces sharing a control secret. |
+| Cross-group slot borrow | PASS (rejected) | A workspace-1 scope signed for runner-b's secret returns signed reject `workspace_mismatch`. |
+| Same-group busy | PASS | With a workspace-1 lease held, `get_available_binding(ws1)` raises `ProductSlotBusy`; `get_available_binding(ws2)` succeeds. |
+| Independent execution | PASS | A root held on group 1 did not block a second root starting on group 2; both started and closed. |
+| Cross-user history isolation | PASS | `isouser` lists only its own conversations and reading the admin conversation returns 404. |
+
+Not separately run: concurrent real-model turns for both users (would need a
+second paid credential binding); the slot-isolation mechanism and API isolation
+are proven above.
+
+### Delegation identity/tool/terminal
+
+FAIL / implementation gap. One real delegation turn invoked
+`byq_delegate_market_research`; a subagent was created and attempted
+`byq_agent_context`, which the Backend rejected with
+`acp_ingress_observation_unavailable`. The isolated database shows no
+`agent_acp_native_agent_registrations` row for the child, no child
+`agent_acp_tool_ingress_observations` row, and no `agent_runs` row with a
+parent. Child identity, business-tool proof and terminal evidence are
+therefore NOT qualified; this matches the historical ADR-0094 child-evidence
+blocker. The root's own `byq_health` observation is the only ingress row.
+
+### Browser real-model acceptance
+
+PASS, bounded. Playwright-managed Chromium through the frontend (Gateway/
+Product API): the assistant rendered the real model answer `BROWSER-OK` for a
+synthetic prompt. Caveat: the UI restored the most recent conversation, so the
+answer was appended there rather than a brand-new conversation; no new
+`POST /v1/agent/sessions` occurred. Credit for the browser real-model gate,
+with that boundary recorded.
+
+Provider usage this pass: roughly four tiny calls (delegation turn + browser
+turn); cumulative across the acceptance remains far below the US$1 cap, with
+per-call usage unavailable from the Product events (UNKNOWN).
+
+Remaining NOT_RUN: delegation identity/tool/terminal, concurrent two-user
+real-model turns, ACP F6 and the dedicated judgment `/acp-root/run`.
