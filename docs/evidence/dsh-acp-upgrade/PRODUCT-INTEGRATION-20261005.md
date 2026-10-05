@@ -639,3 +639,46 @@ Remaining NOT_RUN (need a real slow model or multi-round infrastructure): truly
 delayed old-root request arriving while a new root is active, in-flight crash
 recovery mid-turn, delegate parent-ACP child `session/update` projection,
 concurrent two-user reboot recovery, and all judgment/F6 items.
+
+## Twelfth pass — push, Draft PR and CI classification
+
+Authorized `push/PR` was exercised: branch `codex/dsh-acp-upgrade` pushed to
+`origin` and **Draft** PR #386 opened against `main`. No merge, ready-marking,
+release or deploy. Worktree verified via `scripts/ci/verify-worktree.py`
+(with `BYQ_ENGINEERING_WORKTREE_ROOT=/home/jefison/.codex/worktrees`).
+
+CI gates fixed to reach the component lanes:
+
+- `gitleaks` on the PR range flagged 14 synthetic ACP test/plugin constants;
+  exact `commit:path:rule:line` fingerprints added to `.gitleaksignore` (no rule
+  suppressed globally). Local gitleaks on the range: `no leaks found`.
+- The immutable SDK build manifest drifted because the ACP changes touch shared
+  adapter/backend/MCP source; minted revision `dsh-0.1.5rc1-post-u8.305`
+  (`Dockerfile.post-u8-305-candidate` + manifest, `selected_build_id` updated,
+  focused test updated).
+- Architecture: documented the implemented `POST
+  /api/product/research/tasks/{task_id}/acp-judgment/cancel-intent` route;
+  corrected the `pnpm install` vs `npm install` false positive and the SDK
+  guard-patch trailing-comma assertion.
+- Backend reset fence: the disabled-identity terminal-cleanup allowance now
+  includes the four ACP terminal columns, so exact terminal facts for an
+  existing bound root still persist (18 lifecycle tests).
+- Runtime-roots projection fixture updated for the ACP terminal fields.
+
+CI remains **red** on failures inherited from the branch's earlier ACP commits
+(not the local fix slice), provisionally:
+
+1. Gateway unit tests tripping the new terminal-evidence `_adapter_get`
+   readback without an adapter stub (`test_product_agent.py` trace-stream and
+   restore; `test_task_continuation_delivery.py` live-attach).
+2. Architecture `test_product_capability_catalog` ML-surface slice now spans an
+   added web-evidence `url:` field; and `test_governance_ci`
+   `test_image_build_failure_never_runs_old_image` whose fake-docker premise
+   predates the added release/promotion/build-revision python gates.
+3. Backend `test_runtime_authority_api.py::test_runtime_roots_endpoint...`
+   (DB-run exact ACP field values).
+
+These need a bounded remediation pass over the branch's stale tests/slices;
+they are not evidence that the ordinary-session fixes are wrong. Maintainer
+decision required: remediate the inherited failures in this PR (or a separate
+bounded PR) vs accept the Draft with documented red CI. No merge/deploy.
