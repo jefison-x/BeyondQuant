@@ -5,8 +5,11 @@ from __future__ import annotations
 import base64
 import json
 import secrets
+from pathlib import Path
 
 import pytest
+
+import app.research_judgment_acp_turn as turn
 
 from app.research_judgment import ResearchJudgmentError
 from app.research_judgment_acp_identity_key import derive_judgment_root_signing_key
@@ -40,6 +43,7 @@ BEGIN = {
     "schema_version": "byq-research-judgment-acp-root-receipt.v1",
     "status": "admitted", "task_id": TASK, "call_identity": CALL,
     "attempt_binding": ATTEMPT,
+    "stage_input": {"allowed_tools": ["byq_agent_context", "byq_research_get"]},
     "root": {
         "root_run_id": "b" * 32, "runtime_boot_id": "c" * 32,
         "authority_epoch": 7, "dsh_run_id": "byqjudg-" + "2" * 32,
@@ -64,7 +68,7 @@ def test_root_prompt_names_only_the_stage_allowed_tools():
     assert "Do not create any subagent" in prompt
     assert '"durable_evidence": {"kind": "none"}' in prompt
     with pytest.raises(ResearchJudgmentError, match="allowed tools"):
-        build_judgment_root_prompt(BEGIN)
+        build_judgment_root_prompt({k: v for k, v in BEGIN.items() if k != "stage_input"})
 
 
 def test_scope_is_exactly_the_six_runner_fields_and_digests():
@@ -147,3 +151,154 @@ def test_build_start_assembles_all_inputs_and_rejects_bad_token():
         build_judgment_runner_start(
             BEGIN, _profile(), mcp_url="http://mcp", mcp_product_url="http://p",
             signing_master=MASTER, proxy_base_url=PROXY_BASE, proxy_token="not-a-token")
+
+
+NATIVE = "00000000-0000-4000-8000-000000000001"
+BINDING = {"schema_version": "byq-acp-agent-bind-receipt.v1", "status": "bound",
+           "root_run_id": "b" * 32, "runtime_boot_id": "c" * 32,
+           "native_agent_session_id": NATIVE, "native_parent_session_id": None,
+           "origin": "root", "depth": 0, "agent_run_id": "agent_run_" + "e" * 32}
+PROFILE_PUBLIC = {"provider_route": "deepseek-official", "model": "deepseek-v4-flash",
+                  "limits": {"deadline_at_ms": 4_000_000_000_000}}
+
+
+class _FakeJournal:
+    def __init__(self, path):
+        self.path = path
+        self.calls = []
+        self.phase = None
+        self.binding = None
+
+    def record_request_start(self, ms):
+        self.calls.append("request_start")
+
+    def record_begin(self, begin):
+        self.calls.append("begin")
+        self.phase = "begun"
+
+    def record_provider_profile(self, profile):
+        self.calls.append("provider_profile")
+
+    def record_binding(self, binding):
+        self.calls.append("binding")
+        self.phase = "bound"
+        self.binding = binding
+
+    def mark_prompt_may_dispatch(self):
+        self.calls.append("mark")
+        self.phase = "prompt_may_have_dispatched"
+
+    def record_result_request(self, request):
+        self.calls.append("result_request")
+        self.phase = "result_prepared"
+
+    def record_result_receipt(self, receipt):
+        self.calls.append("result_receipt")
+
+    def record_terminal_receipt(self, receipt):
+        self.calls.append("terminal_receipt")
+        self.phase = "terminal_closed"
+
+    def snapshot(self):
+        return {"phase": self.phase, "binding": self.binding}
+
+
+class _FakeProxy:
+    base_url = PROXY_BASE
+    local_credential = PROXY_TOKEN
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+
+class _FakeOutput:
+    def __init__(self, result):
+        self._result = result
+
+    def result(self, finish_reason):
+        if self._result is None:
+            raise ResearchJudgmentError("no result")
+        return self._result
+
+
+class _FakeAcp:
+    def __init__(self, *, finish="completed", result=None, fail_open=False,
+                 fail_prompt=False):
+        self.finish = finish
+        self._result = result
+        self.fail_open = fail_open
+        self.fail_prompt = fail_prompt
+        self.closed = False
+
+    def open(self, start):
+        if self.fail_open:
+            raise RuntimeError("synthetic open failure")
+        return NATIVE, "transport"
+
+    def prompt(self, transport, native, prompt):
+        if self.fail_prompt:
+            raise RuntimeError("synthetic prompt failure")
+        return self.finish, _FakeOutput(self._result)
+
+    def close(self, transport):
+        self.closed = True
+        return "sha256:" + "f" * 64
+
+
+def _run(tmp_path, monkeypatch, *, acp, fail_register=False, journal=None):
+    if journal is None:
+        journal = _FakeJournal(tmp_path / "journal.json")
+    journal.path.write_text("{}")
+    monkeypatch.setattr(turn, "build_provider_profile", lambda *a, **k: _profile())
+    monkeypatch.setattr(turn._control, "begin_root_once",
+                        lambda **k: {**BEGIN, "created": True})
+    if fail_register:
+        def _boom(**k):
+            raise RuntimeError("synthetic register failure")
+        monkeypatch.setattr(turn._control, "register_root_agent_once", _boom)
+    else:
+        monkeypatch.setattr(turn._control, "register_root_agent_once", lambda **k: BINDING)
+    monkeypatch.setattr(turn._control, "result_request",
+                        lambda *a, **k: {"sentinel": "result-request"})
+    monkeypatch.setattr(turn._control, "submit_result_once",
+                        lambda **k: {"schema_version": "research-judgment-result-receipt.v1"})
+    monkeypatch.setattr(turn._control, "close_result_root_once",
+                        lambda **k: {"schema_version": "agent-run-lifecycle-receipt.v1"})
+    monkeypatch.setattr(turn._control, "settlement_request",
+                        lambda *a, **k: {"sentinel": "settlement-request"})
+    monkeypatch.setattr(turn._control, "submit_settlement_once",
+                        lambda **k: {"schema_version": "byq-research-judgment-acp-settlement-receipt.v1"})
+    monkeypatch.setattr(turn._control, "close_settled_root_once",
+                        lambda **k: {"schema_version": "agent-run-lifecycle-receipt.v1"})
+    return turn.run_judgment_acp_root(
+        task_id=TASK, call_identity=CALL, attempt=ATTEMPT, journal=journal,
+        resolution={"source": "environment", "model": "deepseek-v4-flash", "api_key": "k"},
+        backend_url="http://backend", trusted_headers={}, proxy_factory=lambda *_: _FakeProxy(),
+        acp=acp, mcp_url="http://mcp", mcp_product_url="http://mp",
+        signing_master=MASTER, now_ms=1_000, timeout=1.0), journal
+
+
+def test_orchestrator_commits_completed_result_in_exact_order(tmp_path, monkeypatch):
+    outcome, journal = _run(tmp_path, monkeypatch, acp=_FakeAcp(
+        finish="completed", result={"proposal": None, "durable_evidence": {"kind": "none"}}))
+    assert outcome["status"] == "completed"
+    assert journal.calls == ["request_start", "begin", "provider_profile", "binding",
+                             "mark", "result_request", "result_receipt", "terminal_receipt"]
+    assert journal.phase == "terminal_closed"
+
+
+def test_orchestrator_settles_never_dispatched_when_registration_fails(tmp_path, monkeypatch):
+    journal = _FakeJournal(tmp_path / "journal.json")
+    with pytest.raises(RuntimeError, match="register failure"):
+        _run(tmp_path, monkeypatch, acp=_FakeAcp(), fail_register=True, journal=journal)
+    # registration failed before the prompt fence; the journal never advanced to mark
+    assert "mark" not in journal.calls
+    assert journal.phase == "begun"
+
+
+def test_orchestrator_settles_outcome_unknown_when_prompt_fails_after_mark(tmp_path, monkeypatch):
+    with pytest.raises(RuntimeError, match="prompt failure"):
+        _run(tmp_path, monkeypatch, acp=_FakeAcp(fail_prompt=True))

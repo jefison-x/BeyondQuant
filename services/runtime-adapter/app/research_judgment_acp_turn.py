@@ -14,15 +14,23 @@ that.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .research_judgment import ResearchJudgmentError
+from . import research_judgment_acp_control as _control
+from .research_judgment_acp_control import AcpJudgmentOutcomeUnknown
 from .research_judgment_acp_identity_key import derive_judgment_root_signing_key
+from .research_judgment_acp_output import AcpJudgmentRootOutput
 from .research_judgment_acp_provider_overlay import private_provider_overlay
-from .research_judgment_acp_provider_profile import AcpJudgmentProviderProfile
+from .research_judgment_acp_provider_profile import (
+    AcpJudgmentProviderProfile,
+    build_provider_profile,
+)
 from .research_judgment_acp_runner_client import scope_digest
 from .research_judgment_boundary import derive_call_identity
 
@@ -189,6 +197,232 @@ def judgment_expected_cwd(scope: dict, *,
     if not isinstance(session_root, str) or not session_root.startswith("/"):
         raise ResearchJudgmentError("judgment session root must be absolute")
     return str(Path(session_root) / scope_digest(scope))
+
+
+JUDGMENT_COMPOSITION_PATH = "/opt/byq/profiles/byq-research-judgment.patch.yml"
+_SETTLEMENT_EVIDENCE_SCHEMA = "byq-research-judgment-acp-settlement-evidence.v1"
+
+
+def process_fence_digest(exit_receipt: object) -> str | None:
+    """Canonical digest of a signed runner EXIT, or None if cleanup is unproven."""
+
+    cleanup = getattr(exit_receipt, "cleanup", None)
+    if cleanup != "proven":
+        return None
+    payload = {
+        "code": getattr(exit_receipt, "code", None),
+        "signal": getattr(exit_receipt, "signal", None),
+        "reason": getattr(exit_receipt, "reason", None),
+        "cleanup": cleanup,
+    }
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                     ensure_ascii=True, allow_nan=False).encode("utf-8")
+    return "sha256:" + hashlib.sha256(raw).hexdigest()
+
+
+def journal_digest(journal) -> str:
+    """Deterministic digest of the durable control journal bytes."""
+
+    return "sha256:" + hashlib.sha256(journal.path.read_bytes()).hexdigest()
+
+
+class IsolatedJudgmentAcpDriver:
+    """Live ACP I/O over the isolated judgment runner.
+
+    This driver owns the runner transport and the ACP client. It is the only
+    place the orchestrator touches the isolated runner; keyless tests inject a
+    fake driver so the sequence can be verified without a live process.
+    """
+
+    def __init__(self, *, runner_client, compatibility, provider: str, model: str,
+                 composition_path: str = JUDGMENT_COMPOSITION_PATH) -> None:
+        self._runner_client = runner_client
+        self._compatibility = compatibility
+        self._provider = provider
+        self._model = model
+        self._composition_path = composition_path
+
+    def open(self, start: JudgmentRunnerStart) -> tuple[str, object]:
+        from .compat.dsh_acp import _session_id
+        from .research_judgment_acp_transport import JudgmentRunnerProcess
+
+        transport = JudgmentRunnerProcess(
+            ("dsh",), Path(start.expected_cwd), start.environment,
+            runner_client=self._runner_client, start=start)
+        transport.start()
+        new = transport.request(
+            "session/new", {"cwd": start.expected_cwd, "mcpServers": []}, timeout=60.0)
+        native = _session_id(new)
+        self._compatibility._select_route(
+            transport, native, new, self._provider, self._model)
+        return native, transport
+
+    def prompt(self, transport: object, native: str, prompt: str):
+        from .compat.dsh_acp import AcpHarness
+
+        harness = AcpHarness(
+            provider=self._provider, model=self._model,
+            composition=Path(self._composition_path),
+            session_root=Path(transport.cwd), runtime_command=(),
+            environment=dict(transport.environment), process=transport)
+        harness.native_session_ids.add(native)
+        output = AcpJudgmentRootOutput(native)
+
+        def on_notification(notification: object) -> None:
+            output.observe(self._compatibility.observe(
+                notification, root_session_id=native))
+
+        prepared = self._compatibility.prepare_prompt(harness, native)
+        finish = self._compatibility.run_prepared_prompt(prepared, prompt, on_notification)
+        return finish, output
+
+    def close(self, transport: object) -> str | None:
+        transport.close()
+        return process_fence_digest(getattr(transport, "_cleanup_exit", None))
+
+
+def run_judgment_acp_root(*, task_id: str, call_identity: str, attempt: str,
+                          journal, resolution: dict, backend_url: str,
+                          trusted_headers: dict, proxy_factory, acp,
+                          mcp_url: str, mcp_product_url: str, signing_master: str,
+                          session_root: str = DEFAULT_JUDGMENT_SESSION_ROOT,
+                          now_ms: int | None = None, timeout: float = 8.0,
+                          begin_fn=None, register_fn=None, transport_http=None,
+                          prompt_builder=build_judgment_root_prompt,
+                          cancel_intent_receipt: dict | None = None) -> dict:
+    """Run one full ADR-0097 judgment ACP root lifecycle and commit its outcome.
+
+    The caller supplies a started provider proxy factory, the live ACP driver and
+    the trusted Backend authority channel. Success commits the exact result and
+    terminal ACK; any failure settles from the durable journal with a proven
+    process fence. The route stays disabled until this lifecycle is qualified.
+    """
+
+    begin_fn = begin_fn or _control.begin_root_once
+    register_fn = register_fn or _control.register_root_agent_once
+    now = int(time.time() * 1000) if now_ms is None else now_ms
+    journal.record_request_start(now)
+    begin = begin_fn(backend_url=backend_url, task_id=task_id,
+                     call_identity=call_identity, attempt=attempt,
+                     headers=trusted_headers, transport=transport_http, timeout=timeout)
+    journal.record_begin(begin)
+    profile = build_provider_profile(begin, resolution, request_started_at_ms=now)
+    journal.record_provider_profile(profile)
+
+    transport = None
+    fence: str | None = None
+    finish: str | None = None
+    output = None
+    native: str | None = None
+    failure: BaseException | None = None
+    with proxy_factory(journal, profile) as proxy:
+        try:
+            start = build_judgment_runner_start(
+                begin, profile, mcp_url=mcp_url, mcp_product_url=mcp_product_url,
+                signing_master=signing_master, proxy_base_url=proxy.base_url,
+                proxy_token=proxy.local_credential, session_root=session_root)
+            native, transport = acp.open(start)
+            binding = register_fn(
+                backend_url=backend_url, task_id=task_id, call_identity=call_identity,
+                root_run_id=start.scope["root_run_id"],
+                runtime_boot_id=start.scope["runtime_boot_id"],
+                native_root_session_id=native, headers=trusted_headers,
+                transport=transport_http, timeout=timeout)
+            journal.record_binding(binding)
+            journal.mark_prompt_may_dispatch()
+            finish, output = acp.prompt(transport, native, prompt_builder(begin))
+        except BaseException as error:  # noqa: BLE001 - re-raised after settlement
+            failure = error
+        finally:
+            if transport is not None:
+                fence = acp.close(transport)
+                transport = None
+
+    if failure is None and finish == "completed" and output is not None:
+        try:
+            result = output.result(finish)
+        except ResearchJudgmentError:
+            result = None
+        if result is not None:
+            return _commit_result(
+                journal=journal, begin=begin, binding=journal.snapshot()["binding"],
+                native=native, result=result, backend_url=backend_url,
+                task_id=task_id, trusted_headers=trusted_headers,
+                transport_http=transport_http, timeout=timeout)
+
+    settlement = _settle(
+        journal=journal, begin=begin, fence=fence, backend_url=backend_url,
+        task_id=task_id, trusted_headers=trusted_headers,
+        transport_http=transport_http, timeout=timeout,
+        cancel_intent_receipt=cancel_intent_receipt)
+    if failure is not None:
+        raise failure
+    return settlement
+
+
+def _commit_result(*, journal, begin, binding, native, result, backend_url,
+                   task_id, trusted_headers, transport_http, timeout) -> dict:
+    request = _control.result_request(task_id, begin, binding, native, result)
+    journal.record_result_request(request)
+    receipt = _control.submit_result_once(
+        backend_url=backend_url, task_id=task_id, request=request,
+        headers=trusted_headers, transport=transport_http, timeout=timeout)
+    journal.record_result_receipt(receipt)
+    terminal = _control.close_result_root_once(
+        backend_url=backend_url, task_id=task_id, result_request=request,
+        headers=trusted_headers, transport=transport_http, timeout=timeout)
+    journal.record_terminal_receipt(terminal)
+    return {"status": "completed", "result_receipt": receipt, "terminal": terminal}
+
+
+def _settle(*, journal, begin, fence, backend_url, task_id, trusted_headers,
+            transport_http, timeout, cancel_intent_receipt) -> dict:
+    snapshot = journal.snapshot() or {}
+    dispatched = snapshot.get("phase") in {
+        "prompt_may_have_dispatched", "result_prepared"}
+    journal_digest_value = journal_digest(journal)
+    if not dispatched:
+        kind, outcome = "never_dispatched", (
+            "cancelled" if cancel_intent_receipt is not None else "failed")
+        provider_attempt, provider_digest = "not_started", None
+    else:
+        if cancel_intent_receipt is not None:
+            raise AcpJudgmentOutcomeUnknown(
+                "cancelled-after-dispatch settlement is not yet qualified")
+        kind, outcome = "outcome_unknown", "interrupted"
+        attempts = snapshot.get("provider_attempts")
+        if isinstance(attempts, list) and attempts:
+            provider_attempt, provider_digest = "may_have_started", _digest(attempts)
+        else:
+            provider_attempt, provider_digest = "not_started", None
+    evidence = {
+        "schema_version": _SETTLEMENT_EVIDENCE_SCHEMA,
+        "journal_status": "available", "journal_sha256": journal_digest_value,
+        "prompt_dispatch": "may_have_dispatched" if dispatched else "not_dispatched",
+        "prompt_sha256": None,
+        "provider_attempt": provider_attempt, "provider_attempt_sha256": provider_digest,
+        "process_fence": "stopped" if fence is not None else "unproven",
+        "process_fence_sha256": fence,
+        "known_usage": {"status": "unknown"},
+        "cancellation_intent_receipt": cancel_intent_receipt,
+    }
+    request = _control.settlement_request(
+        task_id, begin, settlement_kind=kind, terminal_outcome=outcome,
+        durably_recorded_evidence=evidence)
+    receipt = _control.submit_settlement_once(
+        backend_url=backend_url, task_id=task_id, begin=begin, request=request,
+        headers=trusted_headers, transport=transport_http, timeout=timeout)
+    terminal = _control.close_settled_root_once(
+        backend_url=backend_url, task_id=task_id, begin=begin, settlement=request,
+        headers=trusted_headers, transport=transport_http, timeout=timeout)
+    return {"status": "settled", "settlement_kind": kind,
+            "settlement_receipt": receipt, "terminal": terminal}
+
+
+def _digest(value: object) -> str:
+    raw = json.dumps(value, sort_keys=True, separators=(",", ":"),
+                     ensure_ascii=True, allow_nan=False).encode("utf-8")
+    return "sha256:" + hashlib.sha256(raw).hexdigest()
 
 
 def build_judgment_runner_start(begin: dict, profile: AcpJudgmentProviderProfile, *,
