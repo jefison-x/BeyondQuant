@@ -248,3 +248,62 @@ session before the next root resumes, or fall back to the ADR-0093
 fresh-native mapping per root (public completed history only) and defer reuse.
 Until then, multi-turn continuity, stop/continue, tool-bearing acceptance,
 delegate proof and browser real-model acceptance remain NOT_RUN.
+
+## Fourth pass — reuse root cause and minimal fix (option 1)
+
+The maintainer selected option 1: confirm the root cause before fixing. The
+prior “active write handle” wording is superseded; it described a leftover
+process, not the normal path.
+
+### Hypotheses resolved with a keyless two-root probe
+
+`/tmp/byq-acp-iso/probe_lock.py` ran root A (ACP `session/new` → `session/close`
+→ transport close → CANCEL → signed EXIT cleanup=proven) then root B (new
+process, same leaf, `session/resume`):
+
+| Hypothesis | Verdict | Evidence |
+| --- | --- | --- |
+| Old process still alive | NOT the cause | After root A close the runner held no DSH child; the signed `EXIT(code=0, reason=cancelled, cleanup=proven)` was received. |
+| Close/EXIT ordering wrong | NOT the cause | The exact close → CANCEL → EXIT → cleanup sequence ran and root B resumed. |
+| Duplicate open of the same session | NOT the cause | No second `session/new`; the adapter requests one `session/resume` with the exact native id. |
+| Persistent lock after exit | NOT the cause (lock present) | `sessions/<id>/session.lock` persists, but root B resumed successfully with it present. |
+
+**Confirmed root cause (BYQ Adapter bug, not DSH):** the pinned ACP SDK
+`ResumeSessionResponse` schema defines only `modes`/`configOptions`/`_meta`
+(no `sessionId`), and fixed official DSH rc.2 `resumeSession` returns
+`{ configOptions }`. The Adapter's `resume_session` required
+`result["sessionId"]` through `_session_id`, so a valid resume raised
+`AcpTransportError` → HTTP 500 → Gateway 502.
+
+Attribution of the earlier `cleanup_unconfirmed: true`: that binding was the
+Adapter session `byq-session-0139ee2cda9145dbade0825d9d25a776`, root
+`c0a758d0a46040c59c07f2fd28ffa50d` (the successful Turn-1 root); it was written
+during the failed Turn-2 resume attempt, not by a failed close.
+
+### Fix and verification
+
+- Commit `794d90e3`: `resume_session` uses the exact requested native id when
+  the official response omits `sessionId`; an echoed id must still match. The
+  on-disk root-binding marker check (`_verify_root_binding`) and
+  `_select_route` are unchanged, so no gate is weakened. Adapter image
+  `sha256:0f212f8047f0be51d43f6d8e8a9c8e611f40050e7e05458052bad02d070cdb5f`
+  (fix6).
+- Keyless compat probe (`probe_compat_resume.py`) over the real runner: root A
+  create/close then root B `resume_session` returned the exact native id and
+  verified the marker. PASS.
+- Real Product recovery (authorized): Turn 1 answer `ACP-OK-1`; Turn 2 reuse
+  accepted 202 and answered `ACP-OK-1`, `SAME_NATIVE=true`,
+  `DIFFERENT_ROOT=true`, both bindings `native_session_close_confirmed:true`,
+  `cleanup_unconfirmed:false`. PASS.
+
+Provider usage: this recovery used 2 billed calls (Turn 1 + Turn 2). Across the
+whole acceptance roughly 4 tiny calls; well inside the US$1 cap. Turn-level
+usage is not surfaced by the Product events (UNKNOWN).
+
+Duplication check: the Adapter's reuse path sends only the new input
+(`effective_content = content` when `reuse_native`); the raw native-log
+occurrence count is NOT_RUN because no zstd tooling is available locally. The
+second answer correctly recalled the first token.
+
+Still NOT_RUN: stop/continue, tool-bearing acceptance, delegate identity/tool/
+terminal proof, two configured-group isolation, browser real-model acceptance.
