@@ -376,3 +376,52 @@ per-call usage unavailable from the Product events (UNKNOWN).
 
 Remaining NOT_RUN: delegation identity/tool/terminal, concurrent two-user
 real-model turns, ACP F6 and the dedicated judgment `/acp-root/run`.
+
+## Seventh pass — delegation blocker root cause and fix
+
+The sixth-pass delegation FAIL is superseded. Root cause confirmed:
+
+`POST /v1/agents/runs` (ACP branch) built `request_payload` from the context
+returned with `include_workspace=True`, which contains `workspace_id`, but
+`agent_store.start_run` rejects `workspace_id` as an unknown field. Every ACP
+Product `byq_agent_run_start` therefore returned `422 agent_request_invalid`,
+so no root AgentRun was bound; non-bootstrap domain tool ingress and every
+delegation were blocked (the earlier `byq_health` read-only pass worked only
+because it is a bootstrap tool that needs no binding).
+
+Free reproduction against the Backend with an exact ACP registration request:
+
+| Before fix | After fix |
+| --- | --- |
+| `422 {"detail":"agent run request has unknown fields: workspace_id"}` | `409 {"detail":"ACP root is not yet registered by Backend"}` (the expected next check for an unadmitted synthetic root) |
+
+Fix commit `042aeb93`: exclude `workspace_id` from the payload merge; it is an
+authorization-boundary value passed separately as `trusted_workspace`. Backend
+image `byq-acp-iso-backend-v2` =
+`sha256:a736f623f56eca042b8d1029f1b9be1d29398ad70fa7121681983f2e45462556`.
+
+Real delegation re-run (authorized): the coordinator registered
+(`origin=root depth=0`, `status=bound`) and the market-research subagent
+registered with the exact native parent (`origin=subagent depth=1`,
+`native_parent_session_id = root`, `status=bound`). The subagent's
+`byq_agent_context` ingress settled, and the child AgentRun
+(`agent_run_5b69f7…`) is parented to the root AgentRun (`agent_run_a3dcca…`);
+the model reported the child run id and workspace id. Delegation identity,
+tool-call proof and terminal evidence are therefore PASS for this bounded turn.
+
+Provider usage this pass: roughly four tiny calls (one failed pre-fix
+delegation, one successful post-fix delegation); cumulative remains far below
+the US$1 cap.
+
+### Concurrent two-user real model (E completeness)
+
+PASS. With both groups configured and a model binding on each user: admin
+(workspace 1) started a long turn while `isouser` (workspace 2) submitted a
+turn 0.6 s later; the second user's turn was accepted and answered `USER2-OK`
+while workspace 1 was still busy, proving independent group execution. A second
+admin turn submitted while workspace 1 was busy returned 409 (same-group busy
+rejected), and the same turn was accepted 202 once the first turn completed
+(retriable). Both users' conversations remained isolated (owner-scoped).
+
+Provider usage: three tiny calls (two concurrent turns, one retry). Cumulative
+across the acceptance remains far below the US$1 cap.
