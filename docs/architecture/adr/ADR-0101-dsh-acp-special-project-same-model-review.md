@@ -1,8 +1,9 @@
 # ADR-0101 — DSH ACP special project: same-model independent review sessions
 
-- Status: **Proposed** (drafted 2026-10-05). Operative only for the DSH ACP
-  special project, under the maintainer's explicit in-session authorization
-  recorded below; not yet Accepted as a general repository rule.
+- Status: **Accepted** (2026-10-05). The maintainer explicitly accepted the
+  exact decision below for the DSH ACP special project. Acceptance is scoped to
+  the role arrangement only; it does not accept any other part of the draft and
+  does not reduce the test, security, merge or deployment gates.
 - Scope: the BYQ DSH ACP upgrade special project on branch
   `codex/dsh-acp-upgrade`, fixed official `dsh-v0.2.0-rc.2`
   (`639ed015397290b3745d163aafe02ffee4aa3f84`). Does not change the Clean Break
@@ -63,3 +64,12 @@ Maintainer instruction in the DSH ACP special-project session, 2026-10-05:
 "本专项明确允许 OpenCode 使用当前同一个模型，在独立新会话中分别担任 Tester
 和 Reviewer，由主会话担任 Root，替代仓库指定的 Luna max Tester / Sol medium
 Reviewer 模型要求。这是本专项的流程例外，不改变其他项目的规则。"
+
+## Acceptance record (2026-10-05)
+
+The maintainer explicitly accepted exactly this decision: OpenCode may use the
+current same model in two new independent sessions as Tester and Reviewer, with
+the main session as Root, replacing the special-project Luna/Sol model
+requirement. Acceptance is limited to that role arrangement and does not lower
+the testing, security, merge or deployment gates. The draft contains no decision
+beyond that arrangement; no other part is accepted by this record.
