@@ -36,15 +36,15 @@
       "evidence": "docs/evidence/dsh-acp-upgrade/PRODUCT-INTEGRATION-20261005.md"
     },
     "f6_continuation": {
-      "adr": "ADR-0090 (extension to rc.2 pending)",
+      "adr": "ADR-0090 / ADR-0103 (Accepted)",
       "evidence": "NOT_RUN"
     },
     "judgment_acp_lifecycle": {
-      "adr": "ADR-0097/0098/0099",
+      "adr": "ADR-0097/0098/0099 (Accepted)",
       "evidence": "NOT_RUN"
     },
     "interrupted_business_continuation_new_child": {
-      "adr": "ADR-0102",
+      "adr": "ADR-0102 (Accepted)",
       "evidence": "NOT_RUN"
     }
   },
