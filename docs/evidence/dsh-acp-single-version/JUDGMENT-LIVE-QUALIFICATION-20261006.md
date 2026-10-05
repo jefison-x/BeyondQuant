@@ -1,64 +1,63 @@
 # Judgment `/acp-root/run` live qualification (2026-10-06)
 
 Isolated candidate compose project `byq-acpcand` on this host. The running
-production stack (`beyondquant-*`) was not modified, restarted or re-pointed.
-No volume was deleted. One real paid DeepSeek call was made; no retry and no
-model switch.
+production stack (`beyondquant-*`) was not modified. No volume was deleted.
+The dedicated root was exercised end to end against the real provider.
 
-## Environment
+## Real provider requests (honest accounting)
 
-- Candidate services healthy: `postgres`, `backend`, `mcp`,
-  `mcp-acp-judgment`, `acp-product-runner`, `acp-judgment-runner`,
-  `runtime-adapter`, `gateway` (avoids the production port conflict via a
-  candidate-only bind). The adapter binds the judgment-network address
-  `172.27.0.250` so the runner's DSH child can reach the private provider proxy.
-- Synthetic persistent task+plan at `strategy_draft` created through the
-  current Backend store (owner `admin`, admin personal workspace).
-- Route wiring added with an opt-in gate (`BYQ_JUDGMENT_ACP_LIFECYCLE_ENABLED`);
-  the default `/acp-root/run` behavior without the flag remains
-  `503 research_judgment_acp_lifecycle_unqualified`.
-- Runtime authority transfer performed for the exact current Adapter boot.
+Across all diagnostic runs the durable journals record **20 real paid provider
+attempts** (17 roots, some with several tool-use calls): input 11,204 tokens /
+output 9,213 tokens. Every attempt is a single call recorded by the journal's
+pre-dispatch fence; there was no automatic retry and no model switch. Usage is
+the provider-reported value; no unknown-usage estimate is included.
 
-## PASS
+## PASS (localized and fixed)
 
-- Candidate stack build/boot and identity: postgres/backend/mcp/judgment-runner
-  healthy; `healthz` reports `authenticated:true`.
-- Budget cap: the private overlay now sets the pinned `llm-deepseek`
-  `maxTokens` to the stage budget, so the root's declared output is `8192`
-  instead of the model's `256000`; the proxy budget gate accepts the request.
-- Real paid provider call succeeded: `deepseek-official` `/anthropic/v1/messages`
-  returned HTTP 200 with real usage (e.g. input 609 / output 383 tokens; a second
-  run 327). One provider attempt, no retry, no model switch.
-- Fail-closed terminal: when the root did not return a completed closed result,
-  the lifecycle settled `outcome_unknown`/`interrupted` with an exact Backend
-  settlement receipt and terminal ACK, process fence `stopped`.
+1. **Runner → judgment MCP**: with a correctly derived per-root bearer the
+   runner's netns completes `initialize` + `tools/list` and receives exactly the
+   five read-only tools (`byq_agent_context`, `byq_research_get`,
+   `byq_research_stage_input_get`, `byq_backtest_task_get`,
+   `byq_backtest_analysis_get`).
+2. **MCP network alias (fixed)**: the `mcp-acp-judgment` service had **no
+   network alias on the judgment network** (`Aliases: null`), so the runner
+   could not resolve it (`EAI_AGAIN`); it could only be reached by IP. Added the
+   alias on `byq_acp_judgment`.
+3. **Runner child environment (fixed)**: the child env omitted
+   `BYQ_DSH_RUNTIME_ROOT`, so `byq-acp-mcp-identity` failed with
+   `BYQ_ACP_AGENT_IDENTITY_UNAVAILABLE` and never mounted the MCP client. The
+   runner now passes its fixed runtime root to the child.
+4. **Judgment profile (fixed)**: the `byq-acp-mcp-identity` insert lacked
+   `config: {maxDepth: 1}` (present in the Product profile), so the plugin's
+   exact-config check failed. Added it; children remain vetoed in judgment mode.
+5. **Whole-root budget (fixed)**: the provider profile/journal set the
+   whole-root totals to a single call's values, so the second (post-tool) call
+   was rejected as "budget exhausted". Totals now scale by `max_calls`.
+6. After these fixes the provider request carries the five BYQ tools as
+   `mcp__byq__<name>` and the model issues **structured tool calls** (three
+   completed provider calls in one turn), so tools are delivered and the route
+   is tool-call compatible.
 
-## FAIL / blocker (decision point)
+## New blocker (decision point)
 
-- The provider request carried **`tools=None`**: the five read-only judgment
-  tools were not mounted/sent to the model. With no declared tools, the model
-  emitted DeepSeek DSML tool-call markup as plain assistant text instead of a
-  native `tool_use`, so `AcpJudgmentRootOutput` correctly rejected the result and
-  the call settled unknown. The captured assistant text began
-  `I'll gather the bounded read-only context ... <|DSML| calls> <|DSML| invoke
-  name="byq_agent_context"> ...`.
-- Consequence: the dedicated root cannot exercise the five read-only tools yet,
-  so no completed judgment result is produced. The fail-closed behavior is
-  correct; the tool-mount path is the gap.
-- Unresolved cause (needs a decision): the judgment MCP client
-  (`mcp-acp-judgment:8301/mcp/v1`, via the identity plugin) does not appear to
-  attach its tool catalog to the ACP root in this composition. Open options:
-  (a) fix the identity-plugin MCP attach / composition so the five tools are
-  registered on the root; (b) verify the MCP endpoint returns the five tools for
-  the derived per-root bearer; (c) treat the `deepseek-v4-flash` Anthropic
-  Messages DSML behavior as a route incompatibility and select a route/model
-  that returns native tool calls.
+- The turn now fails with `AcpTransportError: ACP update consumer failed`
+  because `AcpJudgmentRootOutput` requires **exactly one** root
+  `assistant.message`. A tool-use turn emits intermediate assistant text plus
+  the final answer (separate messages), so the parser rejects the second
+  message. This is a BYQ-side contract conflict between "exactly one closed
+  root answer" and multi-message tool-use turns, not a route/model problem.
+- Options: (a) let the parser accept the root's final completed answer among
+  several root messages (still rejecting foreign sessions and non-JSON finals);
+  or (b) require the prompt/DSH to suppress intermediate narration so exactly
+  one answer is emitted. Deciding (a) relaxes a documented parser invariant and
+  needs the maintainer's call.
 
 ## NOT_RUN
 
-- Tool allow/deny, zero-child, cancellation, lost-receipt, restart and unknown
-  branches on a completed path.
-- Real Gateway/Product API browser flow (internal call only so far).
+- Tool allow/deny instrumentation, zero-child proof, cancellation, lost-receipt,
+  restart and unknown branches on a completed path.
+- Real Gateway/Product API browser flow (internal call only).
 - F6, single-version default switch, release chain.
 
-No production switch, no release, no deployment.
+No production switch, no release, no deployment. The candidate stack is left
+running for continued acceptance.

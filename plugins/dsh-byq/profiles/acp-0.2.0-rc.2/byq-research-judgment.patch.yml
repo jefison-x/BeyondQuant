@@ -196,3 +196,5 @@
 - insert:
     - id: byq-acp-mcp-identity
       name: 'file:///opt/byq/runtime/byq-acp-mcp-identity.js'
+      config:
+        maxDepth: 1

@@ -681,7 +681,8 @@ def _read_no_new_privs(pid: int) -> bool | None:
 
 
 def _minimal_child_environment(env: dict[str, str], proxy_env: str, proxy_token: str,
-                               home: Path, session_root: Path) -> dict[str, str]:
+                               home: Path, session_root: Path,
+                               runtime_root: Path) -> dict[str, str]:
     result = {
         "PATH": "/usr/local/bin:/usr/bin:/bin",
         "HOME": str(home),
@@ -690,6 +691,10 @@ def _minimal_child_environment(env: dict[str, str], proxy_env: str, proxy_token:
         "TZ": "UTC",
         "DSH_HOME": str(home),
         "DSH_SESSION_ROOT": str(session_root),
+        # The BYQ identity plugin resolves the official @deepseek-ai/dsh-mcp-client
+        # from this fixed runtime root; without it the plugin fails and no
+        # Agent-scoped judgment MCP tools are registered.
+        "BYQ_DSH_RUNTIME_ROOT": str(runtime_root),
         "DSH_TELEMETRY_DISABLED": "1",
         "DSH_PERMISSION_MODE": "read-only",
         "DSH_MAX_TOKENS_AS_SUCCESS": "false",
@@ -741,10 +746,11 @@ class JudgmentRunnerServer(socketserver.UnixStreamServer):
         self.state_uid = os.geteuid() if state_uid is None else state_uid
         self.state_gid = state_gid
         self.launcher = launcher
+        self.runtime_root = Path(runtime_root).resolve()
         if prepare_roots:
             self._prepare_roots()
         if self.launcher is None:
-            self.launcher = _make_launcher(Path(runtime_root), self.profile_patch)
+            self.launcher = _make_launcher(self.runtime_root, self.profile_patch)
         self._clear_ready_file()
         self._remove_stale_socket()
         super().__init__(str(self.socket_path), _RunnerRequestHandler, bind_and_activate=True)
@@ -897,10 +903,12 @@ class _RunnerRequestHandler(socketserver.BaseRequestHandler):
             if not os.path.isfile(command[0]) or not os.access(command[0], os.X_OK):
                 raise OSError("fixed ACP launcher is unavailable")
             child_env = _minimal_child_environment(
-                env, proxy_env, proxy_token, session_dir, self.server.session_root)
+                env, proxy_env, proxy_token, session_dir, self.server.session_root,
+                self.server.runtime_root)
             # The supervisor has no DAC override and cannot chdir into the
             # 0700 DSH-owned leaf. Drop UID first, then let the child enter it.
-            child_command = ("/bin/sh", "-c", 'cd "$DSH_HOME" && exec "$@"',
+            child_command = ("/bin/sh", "-c",
+                             'cd "$DSH_HOME" && exec "$@" 2>/tmp/dsh.stderr.log',
                              "--", *command)
             process = subprocess.Popen(
                 child_command,

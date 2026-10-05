@@ -19,11 +19,11 @@
     },
     "judgment": {
       "path": "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-research-judgment.patch.yml",
-      "sha256": "92084a92eca42b217992c7f6b7ba129706392bfd5a8a0473077e985bfee72c4e"
+      "sha256": "fb83ce61744343441d1502c72ddfad35c44b7a3ab047ac9dc115e1901e1cc99e"
     },
     "judgment_identity": {
       "path": "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-research-judgment.identity.json",
-      "sha256": "a74af59a9f7a193a2e3e02ac7638b39199445cbb4a644232e8d9b8a91da22eb9"
+      "sha256": "10c2ffea694bccf2198ba6ded1c913c1e63fe24559e039ace04f766f408a6547"
     },
     "release_identity": {
       "path": "config/dsh/acp-0.2.0-rc.2.identity.json",

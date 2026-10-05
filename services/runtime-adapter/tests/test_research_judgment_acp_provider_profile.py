@@ -56,10 +56,11 @@ def test_fresh_root_selection_is_nonsecret_and_uses_closed_stage_profile():
     assert {key: value for key, value in public["limits"].items()
             if key != "deadline_at_ms"} == {
         "max_calls": 3, "max_input_bytes": 131072,
-        "max_total_input_bytes": 131072,
-        "max_output_tokens": 8192, "max_total_output_tokens": 8192,
+        # Whole-root totals scale by the call bound (per-call ceilings unchanged).
+        "max_total_input_bytes": 131072 * 3,
+        "max_output_tokens": 8192, "max_total_output_tokens": 8192 * 3,
         "max_tool_payload_bytes": 65536,
-        "max_total_tool_payload_bytes": 65536,
+        "max_total_tool_payload_bytes": 65536 * 3,
     }
     assert before + 180000 <= public["limits"]["deadline_at_ms"] <= after + 180000
     assert selection.upstream_credential == "synthetic-upstream-secret"

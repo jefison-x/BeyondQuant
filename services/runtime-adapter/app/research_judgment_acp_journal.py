@@ -275,14 +275,16 @@ class AcpJudgmentJournal:
             raise ValueError("exact nonsecret ACP provider profile is required")
         limits = _provider_limits(public.get("limits"))
         named = profile_for_stage(public.get("stage"), profile=public.get("budget_profile_id"))
+        # Whole-root totals scale by the call bound; per-call ceilings are unchanged.
+        named_calls = min(named["max_provider_calls"], named["max_attempts"])
         ceiling = {
-            "max_calls": min(named["max_provider_calls"], named["max_attempts"]),
+            "max_calls": named_calls,
             "max_input_bytes": named["max_input_bytes"],
-            "max_total_input_bytes": named["max_input_bytes"],
+            "max_total_input_bytes": named["max_input_bytes"] * named_calls,
             "max_output_tokens": named["max_output_tokens"],
-            "max_total_output_tokens": named["max_output_tokens"],
+            "max_total_output_tokens": named["max_output_tokens"] * named_calls,
             "max_tool_payload_bytes": named["max_tool_payload_bytes"],
-            "max_total_tool_payload_bytes": named["max_tool_payload_bytes"],
+            "max_total_tool_payload_bytes": named["max_tool_payload_bytes"] * named_calls,
         }
         if (any(limits[key] > maximum for key, maximum in ceiling.items())
                 or limits["deadline_at_ms"] > int(time.time() * 1000) + named["deadline_ms"]
