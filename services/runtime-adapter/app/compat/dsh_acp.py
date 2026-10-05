@@ -64,6 +64,7 @@ _ACP_JUDGMENT_FORBIDDEN_ENV = frozenset({
     "BYQ_RUNTIME_AUTHORITY_TOKEN",
     "BYQ_RUNTIME_JUDGMENT_TOKEN",
     "BYQ_ACP_JUDGMENT_RUNNER_CONTROL_SECRET",
+    "BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET",
     "BYQ_GATEWAY_SERVICE_TOKEN",
     "BYQ_CREDENTIAL_RESOLVER_TOKEN",
     "BYQ_PRODUCT_TOKEN",
@@ -89,6 +90,7 @@ _INTERNAL_SERVICE_SECRETS = frozenset({
     "BYQ_RUNTIME_JUDGMENT_TOKEN",
     "BYQ_FEEDBACK_HUB_ADMIN_TOKEN",
     "BYQ_ACP_JUDGMENT_RUNNER_CONTROL_SECRET",
+    "BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET",
     "BYQ_GATEWAY_SERVICE_TOKEN",
     "BYQ_FEEDBACK_HUB_RELAY_TOKEN",
     "BYQ_FEEDBACK_HUB_STATUS_SECRET",
@@ -106,6 +108,29 @@ _FINISH_REASONS = {
     "cancelled": "cancelled",
     "refusal": "failed",
 }
+
+
+def _prepare_private_product_home(home: Path) -> None:
+    """Create the Adapter-owned Product root and scratch directory privately."""
+    try:
+        home.mkdir(parents=True, exist_ok=True, mode=0o700)
+        info = os.lstat(home)
+    except OSError:
+        raise AcpTransportError("ACP workspace session directory is unavailable") from None
+    expected_uid, expected_gid = os.getuid(), os.getgid()
+    if (not stat.S_ISDIR(info.st_mode)
+            or info.st_uid != expected_uid or info.st_gid != expected_gid
+            or stat.S_IMODE(info.st_mode) != 0o700):
+        raise AcpTransportError("ACP workspace session directory permissions are unsafe")
+    try:
+        (home / "tmp").mkdir(exist_ok=True, mode=0o700)
+        tmp_info = os.lstat(home / "tmp")
+    except OSError:
+        raise AcpTransportError("ACP workspace scratch directory is unavailable") from None
+    if (not stat.S_ISDIR(tmp_info.st_mode)
+            or tmp_info.st_uid != expected_uid or tmp_info.st_gid != expected_gid
+            or stat.S_IMODE(tmp_info.st_mode) != 0o700):
+        raise AcpTransportError("ACP workspace scratch directory permissions are unsafe")
 
 
 class AcpTransportError(RuntimeError):
@@ -184,6 +209,9 @@ class _AcpProcess:
             daemon=True,
         )
         self._reader.start()
+        self._initialize()
+
+    def _initialize(self) -> None:
         response = self.request(
             "initialize",
             {
@@ -473,6 +501,7 @@ class AcpHarness:
     provider_proxy_base_url: str | None = None
     provider_local_token: str | None = field(default=None, repr=False)
     process: _AcpProcess | None = field(default=None, repr=False)
+    slot_scope: dict[str, str] | None = field(default=None, repr=False)
     native_session_ids: set[str] = field(default_factory=set, repr=False)
     lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
 
@@ -495,6 +524,34 @@ class DshAcpCompatibility:
     """Compatibility boundary for official ``dsh-v0.2.0-rc.2`` ACP stdio."""
 
     family = "dsh-v0.2.0-rc.2-acp"
+
+    def __init__(self) -> None:
+        mode = os.environ.get("BYQ_DSH_ACP_PROCESS_TRANSPORT", "local")
+        if mode not in {"local", "product-slot-v1"}:
+            raise ValueError("unsupported ACP process transport")
+        self.product_slots = None
+        if mode == "product-slot-v1":
+            from ..acp_product_slot_client import ProductSlotRegistry
+            self.product_slots = ProductSlotRegistry.from_environment()
+
+    def session_storage_root(self, base: Path, workspace_id: str | None) -> Path:
+        if self.product_slots is None:
+            return base
+        self.product_slots.assert_workspace(workspace_id)
+        root = (base / workspace_id).resolve()
+        if not root.is_relative_to(base.resolve()):
+            raise AcpTransportError("ACP resource group storage is not contained")
+        return root
+
+    def acknowledge_slot(self, harness: AcpHarness | None) -> None:
+        if harness is None:
+            return
+        with harness.lock:
+            if self.product_slots is not None and harness.slot_scope is not None:
+                self.product_slots.acknowledge(harness.slot_scope)
+                # Repeated terminal-ACK delivery is a no-op after success.
+                # The live transport keeps its own scope for cleanup receipts.
+                harness.slot_scope = None
 
     def runtime_command(self, runtime_root: Path, node: str) -> tuple[str, ...]:
         """Resolve only a fixed installation-owned launcher, without shell parsing."""
@@ -519,7 +576,17 @@ class DshAcpCompatibility:
         provider_local_token: str | None = None,
     ) -> AcpHarness:
         patch = composition.expanduser().resolve()
-        home = session_root.expanduser().resolve()
+        requested_home = session_root.expanduser()
+        if self.product_slots is not None:
+            try:
+                existing_home = os.lstat(requested_home)
+            except FileNotFoundError:
+                existing_home = None
+            except OSError:
+                raise AcpTransportError("ACP workspace session directory is unavailable") from None
+            if existing_home is not None and stat.S_ISLNK(existing_home.st_mode):
+                raise AcpTransportError("ACP workspace session directory cannot be a symlink")
+        home = requested_home.resolve()
         if not patch.is_file():
             raise FileNotFoundError("candidate DSH ACP composition is unavailable")
         if not runtime_command or any(not isinstance(part, str) or not part for part in runtime_command):
@@ -545,7 +612,10 @@ class DshAcpCompatibility:
                 raise AcpTransportError("private provider patch requires judgment root")
             self._verify_private_provider_patch(private_provider_patch, provider,
                                                 model, provider_proxy_base_url)
-        home.mkdir(parents=True, exist_ok=True)
+        if self.product_slots is None:
+            home.mkdir(parents=True, exist_ok=True)
+        else:
+            _prepare_private_product_home(home)
         return AcpHarness(
             provider=provider,
             model=model,
@@ -626,11 +696,45 @@ class DshAcpCompatibility:
                 "DSH_PERMISSION_MODE": "read-only",
                 "DSH_MAX_TOKENS_AS_SUCCESS": "false",
             })
-            transport = _AcpProcess(tuple(command), harness.session_root, environment)
+            if self.product_slots is not None:
+                if harness.private_provider_patch is not None:
+                    raise AcpTransportError("judgment execution requires its dedicated runner")
+                if harness.composition != Path("/opt/byq/profiles/byq-product.patch.yml"):
+                    raise AcpTransportError("ACP slot requires its fixed Product composition")
+                from .acp_slot_transport import SlotAcpProcess
+                transport = SlotAcpProcess(tuple(command), harness.session_root,
+                    environment, registry=self.product_slots)
+                # Keep the root identity available if START succeeds but ACP
+                # initialization later fails and requires cleanup/ACK recovery.
+                harness.slot_scope = dict(transport.scope)
+            else:
+                transport = _AcpProcess(tuple(command), harness.session_root, environment)
             # Publish the handle before start so any startup failure retains a
             # closeable reference for the Runtime Adapter's fail-closed path.
             harness.process = transport
-            transport.start()
+            try:
+                transport.start()
+            except Exception as error:
+                # A known busy group did not acquire a remote process. Keep
+                # the untouched prepared session retryable without dispatch.
+                if self.product_slots is not None and transport.process is None:
+                    from ..acp_product_slot_client import ProductSlotBusy
+                    if isinstance(error, ProductSlotBusy):
+                        harness.process = None
+                        harness.slot_scope = None
+                    else:
+                        try:
+                            owns_scope = self.product_slots.owns(transport.scope)
+                        except (TypeError, ValueError):
+                            owns_scope = False
+                        if not owns_scope:
+                            # A released pre-dispatch failure is retryable; an
+                            # unresolved dispatched scope remains attached.
+                            harness.process = None
+                            harness.slot_scope = None
+                raise
+            if self.product_slots is not None:
+                harness.slot_scope = dict(transport.scope)
 
     def create_session(self, harness: AcpHarness, *, cwd: Path | str | None = None) -> str:
         transport = self._require_process(harness)
@@ -797,6 +901,11 @@ class DshAcpCompatibility:
         if transport is not None:
             transport.close()
             process = transport.process
+            if process is None and getattr(transport, "no_process_cleanup_complete", False):
+                with harness.lock:
+                    if harness.process is transport:
+                        harness.process = None
+                return
             if process is None or process.poll() is None:
                 raise AcpTransportError("official DSH ACP process exit could not be confirmed")
             with harness.lock:

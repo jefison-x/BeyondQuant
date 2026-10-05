@@ -5,14 +5,17 @@ services:
       dockerfile: services/runtime-adapter/Dockerfile.acp-0.2.0-rc.2-candidate
     cap_drop:
       - NET_RAW
-    # Needed only for the runner-control Unix socket. Ordinary Product DSH
-    # children inherit this supplementary group unless the Adapter clears it;
-    # PR_SET_DUMPABLE=0 and a filtered child env remain promotion gates.
+    # Trusted Adapter controls distinct runner sockets. DSH runs in a separate
+    # container without these supplementary groups or control credentials.
     group_add:
       - "10005"
+      - "10006"
     environment:
       BYQ_DSH_COMPATIBILITY_RELEASE: dsh-v0.2.0-rc.2-acp
       BYQ_DSH_PROCESS_OWNERSHIP: root-turn
+      BYQ_DSH_ACP_PROCESS_TRANSPORT: product-slot-v1
+      BYQ_ACP_PRODUCT_SLOT_BINDINGS: '{"${BYQ_ACP_PRODUCT_WORKSPACE_ID:?a trusted personal workspace binding is required}":{"socket_path":"/run/byq-acp-product-runner/control.sock","control_secret_env":"BYQ_ACP_PRODUCT_SLOT_PRIMARY_SECRET"}}'
+      BYQ_ACP_PRODUCT_SLOT_PRIMARY_SECRET: ${BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET:?a distinct Product runner secret is required}
       BYQ_DSH_RUNTIME_ROOT: /opt/dsh-runtime
       BYQ_DSH_COMPOSITION: /opt/byq/profiles/byq-product.patch.yml
       BYQ_DSH_COMPOSITION_IDENTITY: /opt/byq/profiles/byq-product.identity.json
@@ -29,14 +32,47 @@ services:
       BYQ_ACP_JUDGMENT_RUNNER_CONTROL_SECRET: ${BYQ_ACP_JUDGMENT_RUNNER_CONTROL_SECRET:?a separate runner control secret is required}
     volumes:
       - byq_acp_runner_control:/run/byq-acp-runner
+      - byq_acp_product_control:/run/byq-acp-product-runner
+      - byq_acp_product_sessions:/var/lib/byq/dsh-sessions/dsh-v0.2.0-rc.2-acp/${BYQ_ACP_PRODUCT_WORKSPACE_ID:?a trusted personal workspace binding is required}
     networks:
       - byq_product
       - byq_acp_judgment
     depends_on:
+      acp-product-runner:
+        condition: service_healthy
       acp-judgment-runner:
         condition: service_healthy
       mcp-acp-judgment:
         condition: service_healthy
+
+  # First candidate statically binds ONE personal workspace. Further groups
+  # require distinct services, sockets, secrets and volumes; no auto allocator.
+  acp-product-runner:
+    build:
+      context: .
+      dockerfile: services/acp_product_runner/Dockerfile
+    user: "0:0"
+    read_only: true
+    restart: unless-stopped
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, KILL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      BYQ_ACP_PRODUCT_WORKSPACE_ID: ${BYQ_ACP_PRODUCT_WORKSPACE_ID:?a trusted personal workspace binding is required}
+      BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET: ${BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET:?a distinct Product runner secret is required}
+    volumes:
+      - byq_acp_product_sessions:/var/lib/byq/dsh-sessions/dsh-v0.2.0-rc.2-acp/${BYQ_ACP_PRODUCT_WORKSPACE_ID:?a trusted personal workspace binding is required}
+      - byq_acp_product_state:/var/lib/byq/acp-product-runner-state
+      - byq_acp_product_control:/run/byq-acp-product-runner
+    tmpfs:
+      - /tmp:size=32m,mode=1777,noexec,nosuid,nodev
+    networks: [byq_product]
+    healthcheck:
+      test: [CMD, python3, -c, "import os; from pathlib import Path; p=Path('/run/byq-acp-product-runner/ready'); raise SystemExit(0 if p.is_file() and p.read_text()==os.environ['BYQ_ACP_PRODUCT_WORKSPACE_ID']+'\\n' else 1)"]
+      interval: 5s
+      timeout: 2s
+      retries: 12
+      start_period: 10s
 
   acp-judgment-runner:
     build:
@@ -145,6 +181,12 @@ networks:
     internal: true
 
 volumes:
+  byq_acp_product_sessions:
+    name: ${BYQ_ACP_PRODUCT_SESSIONS_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-acp-product-sessions}
+  byq_acp_product_state:
+    name: ${BYQ_ACP_PRODUCT_STATE_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-acp-product-state}
+  byq_acp_product_control:
+    name: ${BYQ_ACP_PRODUCT_CONTROL_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-beyondquant}-acp-product-control}
   # DSH session logs and the private overlay persist here. The Adapter reads
   # the DSH-owned 0600 root marker from the same path. Do not prune before the
   # exact Backend result/settlement and root terminal ACK have been reconciled.

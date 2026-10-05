@@ -4,6 +4,11 @@
   bounded implementation, not Product qualification or default promotion.
   This expressly amends ADR-0099 Decision 2, which placed only the dedicated
   judgment DSH process in a separate runner container.
+- Accepted simplification (2026-10-05): maintainer: "那就按上面的方法收敛。"
+  One authenticated Workspace owns a resource group; initially that group has
+  one ordinary ACP execution slot. This replaces the unaccepted multi-root
+  supervisor proposal without granting team membership or provisioning
+  features.
 - Scope: fixed official DSH `dsh-v0.2.0-rc.2` candidate only. Keep the
   `0.1.5rc1` image and configuration as the exact rollback path.
 
@@ -56,9 +61,13 @@ The Adapter must not start an ordinary ACP DSH child locally after this
 switch. Keep the existing SDK image/configuration selectable for rollback.
 No Product API or public session identity changes are permitted. A new root
 must still receive a new MCP identity, late requests retain the old root, and
-the next root waits for exact Backend terminal ACK. Mount the existing durable
-ordinary ACP session volume at the same canonical path and with the same DSH
-UID in the new process owner. Cut over only after every old local process is
+the next root waits for exact Backend terminal ACK. Each group mounts its own
+durable ordinary ACP session volume with the same DSH UID. A session's native
+ID and canonical cwd stay stable within that group. Existing ACP candidate
+state outside the configured group is not silently moved or replayed; retain
+it as evidence and require exact closure before any explicit cutover. The
+retained SDK deployment and its old volume remain selectable for rollback.
+Cut over only after every old local process is
 fenced and its root has exact Backend terminal ACK. An active or unknown root
 must remain blocked; never migrate it by replay. For a completed root, resume
 the same native ID/cwd only with the ADR-0096 binding proof preserved by a
@@ -66,34 +75,49 @@ signed or Backend-bound readback. If that proof is unavailable, start a fresh
 native session only after exact closure and use verified public history once;
 do not also restore the old DSH context.
 
-## Proposed amendment — concurrent process ownership (not yet accepted)
+## Accepted simplification — Workspace resource group and one slot
 
-This paragraph extends the Accepted decision above. It requires a separate
-maintainer acceptance before the fail-closed fallback is wired or promoted,
-because one supervisor failure would interrupt every active Product root in
-the process-owner container.
+Use the Backend-authenticated `workspace_id` as the resource-group identity.
+`owner_principal` records the initiating user; it is not the group key. The
+current Backend supports only personal Workspaces. A later team Workspace may
+use this same boundary only after its membership/RBAC contract is implemented;
+this ADR does not add invitations, teams, billing or a tenant control plane.
 
-The ordinary Product process owner must admit independent root processes
-concurrently within an explicit capacity bound. A separate supervisor process
-must own each admitted root and become a child subreaper before launching its
-fixed DSH command. Its cleanup may reap only descendants adopted by that
-supervisor; shared UID 10002 alone is not root attribution. `session/cancel`
-remains an ACP request, while process termination is a separate transport
-operation.
+The existing singleton Adapter selects a statically configured socket and
+separate control secret for the authenticated Workspace. The execution
+container is itself bound to that Workspace and rejects another Workspace,
+arbitrary commands, foreign cwd or authority secrets. Each group has its own
+ordinary native-state volume, control volume and runner tombstones. An
+unconfigured group fails closed; it does not borrow another group's slot.
+Deployment binding belongs to a trusted operator, never the browser or DSH.
 
-The process-owner daemon must be PID 1 in its own container PID namespace.
-If a root supervisor dies before proving cleanup, the daemon must exit and
-fail the entire container closed. Every active root then loses transport and
-must remain unknown/fenced until independent Backend reconciliation; the
-daemon cannot issue a clean per-root EXIT or terminal ACK for this fallback.
-The candidate runtime must verify the actual PID namespace and kill behavior.
-Writable per-root cgroups are not assumed by this design.
+Initially each group has one slot, and each execution container runs at most
+one root at a time. Multiple sessions may be stored without occupying a slot:
+start execution lazily on user input. An occupied group returns the existing
+Product conflict/busy response rather than introducing a queue. Different
+groups execute independently. The Adapter retains occupancy through both the
+exact Backend terminal ACK and confirmed process cleanup, in either order.
+An unknown or lost receipt keeps that group fenced; no prompt is replayed.
+Backend root authority remains the durable business truth across Adapter loss.
 
-The alternative is a separately confined process owner for each active root
-(or a verified writable per-root cgroup). That would limit a supervisor crash
-to one root, but requires a new allocation and recovery mechanism and has not
-been qualified. Until one of these containment choices is accepted and
-verified, the ordinary ACP process-owner transport cannot be promoted.
+Reuse the existing sequential runner's process ownership, bounded relay and
+cleanup. Do not add a supervisor process per root, per-root UID pool, cgroup
+delegation, dynamic container allocator or cross-group scheduler. The runner
+must be PID 1 in its private container PID namespace. On cleanup uncertainty
+or transport loss it retires that slot; daemon death terminates the remaining
+processes in that namespace. Only its one active root is affected, and no
+clean business ACK is inferred from container exit. Actual candidate process
+and container behavior requires focused proof.
+
+Later capacity can be increased by adding statically bound slots to the same
+group. Their routing and storage access still require qualification; changing
+the count alone is not evidence of safe session concurrency. A given native
+session can execute only one root at a time, with ACK before its next input.
+Group persistence is separate from an ephemeral execution container.
+
+The former shared-container, concurrent per-root subreaper/PID1 fallback is
+withdrawn. Its local mechanism probe remains valid historical evidence, but
+it is not an implementation requirement or Product acceptance.
 
 ## Rejected and deferred alternatives
 

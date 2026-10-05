@@ -9,6 +9,14 @@ The isolated BYQ branch is `codex/dsh-acp-upgrade`, based on
 
 ## Contract and implementation gates
 
+2026-10-05 update: the maintainer accepted ADR-0100's Workspace/one-slot
+simplification. The unaccepted concurrent shared-container supervisor proposal
+below is historical. Current narrow implementation, retained failures,
+matching local images and independent evidence are tracked in
+[WORKSPACE-SLOT-CONVERGENCE.md](WORKSPACE-SLOT-CONVERGENCE.md).
+This does not qualify the dedicated judgment entry, F6, actual Product/browser
+flows, paid provider behavior, release or default ACP promotion.
+
 | Gate | Result | Evidence and limit |
 | --- | --- | --- |
 | Source identity, isolated base, rollback identity | PASS | See `BASELINE.md`; the existing `0.1.5rc1` image and tracked configuration are retained. No live protected configuration was opened. |
@@ -165,7 +173,7 @@ not proven.
 
 | Input | SHA-256 |
 | --- | --- |
-| ACP candidate Dockerfile | `d2d02bfdaa1167980d76a57d7583da40d354b76a4035ade8f4bcb43861bfb41c` |
+| ACP candidate Dockerfile | `8c4337d34a5c4268208a3c6ce7cb21b99afac2d864090c1cad626a722da4b4c4` |
 | Adapter ACP Python lock | `53592f4ad247cff51dd7deff6f8ca1b6230257848a5b1917db2cab9e34d49f3e` |
 | ACP Product profile | `8bd56a0d3120e10c74e0d51eb95adb392232f1535e0aabc61228a72f372a964d` |
 | Profile identity JSON | `3c809e4d387d7fd2918ba7ba86b79518b4d88c25d458b4078e3bd0e68b06d7be` |

@@ -397,6 +397,8 @@ class RuntimeAdapter:
             os.environ.get("BYQ_DSH_COMPATIBILITY_RELEASE", "dsh-0.1.2rc1")
         )
         self._acp = self._compatibility.family == "dsh-v0.2.0-rc.2-acp"
+        self._acp_product_slots = (
+            self._acp and getattr(self._compatibility, "product_slots", None) is not None)
         self._sessions: dict[str, RuntimeSession] = {}
         # Lost ACK responses can be retried after a released session is reaped,
         # but this receipt cache never crosses an Adapter boot.
@@ -554,6 +556,36 @@ class RuntimeAdapter:
                 or current.get("boot_id") != self.boot_id):
             raise RuntimeAuthorityUnavailable("Backend runtime authority is not current")
         return current["authority_epoch"]
+
+    def _require_group_admission(self, record: RuntimeSession, root_run_id: str) -> None:
+        """Keep unresolved Backend roots fenced after the slot client restarts."""
+        if not self._acp_product_slots:
+            return
+        token = os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN", "")
+        if not token:
+            raise RuntimeAuthorityUnavailable("workspace Agent authority is unavailable")
+        try:
+            response = httpx.get(
+                f"{self._backend_url.rstrip('/')}/internal/runtime-authority/workspaces/"
+                f"{record.workspace_id}/agent-admission",
+                params={"root_run_id": root_run_id, "session_id": record.session_id},
+                headers={"Authorization": f"Bearer {token}",
+                    "X-BYQ-Owner-Principal": record.owner_principal,
+                    "X-BYQ-Runtime-Boot-ID": self.boot_id}, timeout=2.0)
+            response.raise_for_status()
+            result = response.json()
+        except (httpx.HTTPError, ValueError, TypeError):
+            raise RuntimeAuthorityUnavailable("workspace Agent admission is unavailable") from None
+        if (not isinstance(result, dict) or set(result) != {
+                "schema_version", "workspace_id", "boot_id", "root_run_id", "can_start"}
+                or result["schema_version"] != "byq-workspace-agent-admission.v1"
+                or result["workspace_id"] != record.workspace_id
+                or result["boot_id"] != self.boot_id
+                or result["root_run_id"] != root_run_id
+                or type(result["can_start"]) is not bool):
+            raise RuntimeAuthorityUnavailable("workspace Agent admission is unproven")
+        if not result["can_start"]:
+            raise SessionConflict("workspace has an unsettled Agent turn")
 
     def operations_snapshot(self) -> dict[str, Any]:
         """Return process-local, normalized runtime accounting only."""
@@ -771,7 +803,9 @@ class RuntimeAdapter:
         # DSH session files are private execution state. Give every fresh BYQ
         # session a new native identity; the Adapter never reopens old state.
         runtime_session_id = f"session-{uuid.uuid4().hex}"
-        session_root = contained_session_path(self._session_root, runtime_session_id)
+        storage_root = (self._compatibility.session_storage_root(self._session_root, workspace_id)
+                        if self._acp_product_slots else self._session_root)
+        session_root = contained_session_path(storage_root, runtime_session_id)
         model_resolution = self._resolve_model(
             owner_principal=owner_principal,
             session_id=session_id,
@@ -812,8 +846,11 @@ class RuntimeAdapter:
             self._sessions[session_id] = record
 
         try:
-            self._compatibility.start(harness)
-            if self._acp:
+            # A saved conversation does not reserve an execution container.
+            # The slot candidate creates its native ACP session on first input.
+            if not self._acp_product_slots:
+                self._compatibility.start(harness)
+            if self._acp and not self._acp_product_slots:
                 native_id = self._compatibility.create_session(harness, cwd=session_root)
                 with record.lock:
                     record.runtime_session_id = native_id
@@ -884,6 +921,22 @@ class RuntimeAdapter:
                 raise SessionConflict(
                     f"session {session_id} cannot accept a prompt in state {record.status}"
                 )
+            if self._acp_product_slots and not record.process_used:
+                from .acp_product_slot_client import ProductSlotBusy
+                self._require_group_admission(record, record.process_root_id)
+                try:
+                    self._compatibility.start(record.harness)
+                    record.runtime_session_id = self._compatibility.create_session(
+                        record.harness, cwd=record.recovery_cwd)
+                except ProductSlotBusy:
+                    raise SessionConflict("workspace Agent execution slot is busy") from None
+                except Exception:
+                    if (getattr(record.harness, "process", None) is None
+                            and getattr(record.harness, "slot_scope", None) is None):
+                        raise SessionConflict("workspace Agent execution is unavailable; retry later") from None
+                    record.cleanup_harness = record.harness
+                    record.cleanup_unconfirmed = True
+                    raise SessionConflict("workspace Agent execution requires reconciliation") from None
             # A Gateway-owned projection can refresh a new root without a
             # separate resume race. Omission retains the prepared create/resume
             # context; an explicit empty list intentionally clears it.
@@ -919,18 +972,26 @@ class RuntimeAdapter:
                     while len(record.budget_receipts) > 64:
                         del record.budget_receipts[next(iter(record.budget_receipts))]
                 previous_native_session = record.runtime_session_id
+                if self._acp_product_slots:
+                    from .acp_product_slot_client import ProductSlotBusy
+                    try:
+                        self._compatibility.product_slots.get_available_binding(record.workspace_id)
+                    except ProductSlotBusy:
+                        raise SessionConflict("workspace Agent execution slot is busy") from None
                 private_session = f"root-{uuid.uuid4().hex}"
                 generation = f"generation-{uuid.uuid4().hex}"
                 root_id = uuid.uuid4().hex
+                storage_root = (self._compatibility.session_storage_root(
+                    self._session_root, record.workspace_id)
+                    if self._acp_product_slots else self._session_root)
                 session_root = (Path(record.recovery_cwd) if reuse_native and record.recovery_cwd
-                                else contained_session_path(self._session_root, private_session))
+                                else contained_session_path(storage_root, private_session))
                 if not session_root.resolve().is_relative_to(self._session_root):
                     raise SessionConflict("reused ACP working directory is not contained")
-                if reuse_native:
-                    record.reuse_native_session_ready = False
                 request_gate = None
                 request_proxy = None
                 tool_journal = None
+                self._require_group_admission(record, root_id)
                 if budget is not None:
                     request_gate = build_continuation_request_gate(
                         request_id=budget['reservation_id'],
@@ -978,7 +1039,19 @@ class RuntimeAdapter:
                                 raise SessionConflict("ACP resumed another native session")
                         else:
                             private_session = self._compatibility.create_session(harness, cwd=session_root)
-                    except BaseException:
+                    except BaseException as exc:
+                        from .acp_product_slot_client import ProductSlotBusy
+                        if self._acp_product_slots and (isinstance(exc, ProductSlotBusy)
+                                or (getattr(harness, "process", None) is None
+                                    and getattr(harness, "slot_scope", None) is None)):
+                            # No START was dispatched; restore the settled binding.
+                            record.cleanup_harness = None
+                            record.cleanup_unconfirmed = False
+                            self._persist_acp_binding(record)
+                            message = ("workspace Agent execution slot is busy"
+                                if isinstance(exc, ProductSlotBusy)
+                                else "workspace Agent execution is unavailable; retry later")
+                            raise SessionConflict(message) from None
                         # Do not block on ACP teardown while holding the
                         # RuntimeSession lock. Keep the process handle and
                         # permanently fence this record until cleanup can be
@@ -997,6 +1070,7 @@ class RuntimeAdapter:
                     generation_id=generation,
                 )
                 installed = record.current_generation
+                record.reuse_native_session_ready = False
                 installed.harness = harness
                 record.recovery_cwd = str(session_root)
                 record.settlement_receipt = None
@@ -1384,6 +1458,8 @@ class RuntimeAdapter:
                 # the root admission fence asserted until process exit is
                 # confirmed below; retries can safely resume this sequence.
                 self._persist_acp_binding(record)
+                if self._acp_product_slots:
+                    self._compatibility.acknowledge_slot(record.harness)
             else:
                 record.pending_terminal_receipts.discard(root)
                 self._remember_ack("terminal", record, receipt, terminal_evidence=evidence)
@@ -1827,6 +1903,9 @@ class RuntimeAdapter:
         cwd = Path(value["cwd"])
         if not cwd.is_absolute() or cwd.resolve() != cwd or not cwd.is_relative_to(self._session_root):
             raise SessionConflict("ACP recovery working directory is invalid")
+        if self._acp_product_slots and not cwd.is_relative_to(
+                self._compatibility.session_storage_root(self._session_root, value["workspace_id"])):
+            raise SessionConflict("ACP recovery working directory belongs to another resource group")
         return value
 
     def recovery_binding(self, session_id: str) -> dict[str, Any]:
@@ -1942,6 +2021,7 @@ class RuntimeAdapter:
         record.process_closed = True
         if not settled:
             cwd = Path(binding["cwd"])
+            self._require_group_admission(record, binding["root_run_id"])
             harness = self._build_harness(
                 session_id, cwd, trace_id=record.trace_id,
                 owner_principal=record.owner_principal, workspace_id=record.workspace_id,
@@ -1950,6 +2030,10 @@ class RuntimeAdapter:
                 root_run_id=binding["root_run_id"],
                 native_root_session_id=binding["native_session_id"],
             )
+            if self._acp_product_slots:
+                # The repair process owns a same-root slot until the eventual
+                # exact Backend ACK, even though it closes before publication.
+                record.current_generation.harness = harness
             try:
                 self._compatibility.start(harness)
                 resumed_id = self._compatibility.resume_session(

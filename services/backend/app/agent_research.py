@@ -839,6 +839,41 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         return fetch_one(connection, """SELECT boot_id, epoch, receipt_json
             FROM agent_runtime_authority_current WHERE authority_key='current'""" + suffix)
 
+    def workspace_agent_admission(self, *, owner_principal: object, workspace_id: object,
+                                  root_run_id: object, session_id: object,
+                                  boot_id: object) -> dict[str, object]:
+        """Read business-root closure before a singleton Adapter uses a slot.
+
+        This is not a capacity lease. The static runner/Adapter supplies that
+        fence; Backend preserves unresolved business roots across process loss.
+        """
+        owner = _principal(owner_principal, field="owner_principal")
+        workspace = _trace(workspace_id, field="workspace_id")
+        session = _trace(session_id, field="session_id")
+        boot = _runtime_boot_id(boot_id)
+        if not isinstance(root_run_id, str) or re.fullmatch(r"[0-9a-f]{32}", root_run_id) is None:
+            raise ValueError("invalid exact root run identity")
+        with self._transaction() as connection:
+            self._lifecycle_lock(connection, "runtime-authority:current")
+            self._require_current_runtime_boot(connection, boot, required=True)
+            self._require_lifecycle_workspace(connection, owner, workspace, terminal_cleanup=False)
+            current = fetch_one(connection, "SELECT * FROM agent_runtime_turns WHERE root_run_id=:root",
+                                {"root": root_run_id})
+            if current is not None and (
+                    (current["owner_principal"], current["workspace_id"], current["session_id"])
+                    != (owner, workspace, session)
+                    or current["authority_boot_id"] != boot
+                    or current["status"] != "active" or current["authority_status"] != "active"):
+                raise AgentConflict("candidate root has no current workspace authority")
+            blocked = fetch_one(connection, """SELECT EXISTS (
+                SELECT 1 FROM agent_runtime_turns
+                WHERE workspace_id=:workspace AND root_run_id<>:root
+                  AND (status='active' OR authority_status<>'closed')
+            ) AS blocked""", {"workspace": workspace, "root": root_run_id})
+        return {"schema_version": "byq-workspace-agent-admission.v1", "workspace_id": workspace,
+                "boot_id": boot, "root_run_id": root_run_id,
+                "can_start": not bool(blocked["blocked"])}
+
     def _require_current_runtime_boot(self, connection, trusted_boot_id: str | None,
                                       *, required: bool = False):
         """Fence a runtime mutation to the current Backend-issued boot receipt.

@@ -173,6 +173,8 @@ def submit_prompt(session_id: str, request: PromptRequest) -> dict[str, object]:
             if rejection is not None:
                 raise HTTPException(status_code=503, detail=rejection) from exc
         raise HTTPException(status_code=503, detail="configured model provider is unavailable") from exc
+    except RuntimeAuthorityUnavailable as exc:
+        raise HTTPException(status_code=503, detail="workspace Agent authority is unavailable") from exc
     return {"accepted": True, "session_id": session_id, "run_id": run_id}
 
 

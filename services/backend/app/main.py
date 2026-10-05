@@ -751,6 +751,16 @@ def close_runtime_authority_root(root_run_id: str, payload: dict[str, Any], requ
         outcome=payload["outcome"], event_sha256=payload["event_sha256"])})
 
 
+@app.get("/internal/runtime-authority/workspaces/{workspace_id}/agent-admission")
+def workspace_agent_admission(workspace_id: str, root_run_id: str, session_id: str,
+                              request: Request) -> dict[str, object]:
+    _require_runtime_authority_bearer(request)
+    return _agent_call(lambda: agent_store.workspace_agent_admission(
+        owner_principal=request.headers.get("x-byq-owner-principal"),
+        workspace_id=workspace_id, root_run_id=root_run_id, session_id=session_id,
+        boot_id=request.headers.get("x-byq-runtime-boot-id")))
+
+
 @app.post("/internal/runtime-authority/roots/{root_run_id}/transfer")
 def transfer_runtime_root_authority(root_run_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
     _require_runtime_authority_bearer(request)
