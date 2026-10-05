@@ -268,8 +268,8 @@ def install_reset_guards(connection) -> None:
               AND NEW.status IN ('completed','failed','cancelled','interrupted')
               AND NEW.authority_status='closed' AND NEW.terminal_sequence > 0
               AND NEW.terminal_event_sha256 ~ '^[0-9a-f]{64}$'
-              AND (to_jsonb(NEW)-ARRAY['status','authority_status','updated_at','terminal_sequence','terminal_event_sha256'])=
-                  (to_jsonb(OLD)-ARRAY['status','authority_status','updated_at','terminal_sequence','terminal_event_sha256'])
+              AND (to_jsonb(NEW)-ARRAY['status','authority_status','updated_at','terminal_sequence','terminal_event_sha256','terminal_acp_ingress_sequence','terminal_acp_ingress_sha256','terminal_unknown_claim_count','terminal_unknown_claims_sha256'])=
+                  (to_jsonb(OLD)-ARRAY['status','authority_status','updated_at','terminal_sequence','terminal_event_sha256','terminal_acp_ingress_sequence','terminal_acp_ingress_sha256','terminal_unknown_claim_count','terminal_unknown_claims_sha256'])
               AND EXISTS (SELECT 1 FROM product_conversations c
                 WHERE c.owner_principal=OLD.owner_principal AND c.workspace_id=OLD.workspace_id
                   AND c.runtime_session_id=OLD.session_id AND c.trace_id=OLD.trace_id) THEN RETURN NEW; END IF;
@@ -335,8 +335,8 @@ def install_reset_guards(connection) -> None:
           IF OLD.status='active' AND OLD.authority_status='authority_revoked_unconfirmed'
             AND NEW.status='interrupted' AND NEW.authority_status='closed'
             AND NEW.terminal_sequence IS NULL AND NEW.terminal_event_sha256 IS NULL
-            AND (to_jsonb(NEW)-ARRAY['status','authority_status','updated_at','terminal_sequence','terminal_event_sha256'])=
-                (to_jsonb(OLD)-ARRAY['status','authority_status','updated_at','terminal_sequence','terminal_event_sha256'])
+            AND (to_jsonb(NEW)-ARRAY['status','authority_status','updated_at','terminal_sequence','terminal_event_sha256','terminal_acp_ingress_sequence','terminal_acp_ingress_sha256','terminal_unknown_claim_count','terminal_unknown_claims_sha256'])=
+                (to_jsonb(OLD)-ARRAY['status','authority_status','updated_at','terminal_sequence','terminal_event_sha256','terminal_acp_ingress_sequence','terminal_acp_ingress_sha256','terminal_unknown_claim_count','terminal_unknown_claims_sha256'])
             AND EXISTS (SELECT 1 FROM jsonb_array_elements(workspace_row.reset_sessions_json) value
               WHERE value->>'session_id'=NEW.session_id AND value->>'trace_id'=NEW.trace_id) THEN RETURN NEW; END IF;
         END IF;

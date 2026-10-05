@@ -151,7 +151,9 @@ def test_runtime_roots_projection_filters_in_storage_and_fails_closed_over_limit
         captured["sql"] = sql
         captured["params"] = params
         return [{"root_run_id": "a" * 32, "status": "active", "authority_status": "active",
-                 "terminal_sequence": None, "terminal_event_sha256": None}]
+                 "terminal_sequence": None, "terminal_event_sha256": None,
+                 "terminal_acp_ingress_sequence": None, "terminal_acp_ingress_sha256": None,
+                 "terminal_unknown_claim_count": None, "terminal_unknown_claims_sha256": None}]
 
     monkeypatch.setattr(store, "_execute", fetch)
     result = store.runtime_roots_for_scope(owner_principal="owner", workspace_id="workspace_1",
@@ -163,7 +165,9 @@ def test_runtime_roots_projection_filters_in_storage_and_fails_closed_over_limit
     assert "ORDER BY created_at, root_run_id" in captured["sql"]
     assert result["schema_version"] == "byq-business-root-status.v1"
     assert result["roots"] == [{"root_run_id": "a" * 32, "status": "active", "authority_status": "active",
-                                "terminal_sequence": None, "terminal_event_sha256": None}]
+                                "terminal_sequence": None, "terminal_event_sha256": None,
+                                "terminal_acp_ingress_sequence": None, "terminal_acp_ingress_sha256": None,
+                                "terminal_unknown_claim_count": None, "terminal_unknown_claims_sha256": None}]
 
     monkeypatch.setattr(store, "_execute", lambda _sql, _params: [{}] * 501)
     with pytest.raises(AgentPersistenceError, match="bounded result"):
