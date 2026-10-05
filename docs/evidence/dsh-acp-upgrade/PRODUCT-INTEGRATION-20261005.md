@@ -25,13 +25,13 @@ NOT_RUN rows are preserved.
 | Input | Identity |
 | --- | --- |
 | Candidate Adapter image (final tested) | `byq-runtime-adapter-acp:qualification-20261005-slot-fix7` = `sha256:e6220d077926f128ecbd0c8d2bc25a77635a0c47ef1135c6bebad1492e32cee9` (supersedes fix4/fix5/fix6) |
-| Candidate product runner image (final tested) | `byq-acp-product-runner:qualification-20261005-fix3` = `sha256:67950caf13342de43694db4b18a78dd3047696e92431f0dd2648cd4089dd1dc5` (supersedes fix2) |
+| Candidate product runner image (final tested) | `byq-acp-product-runner:qualification-20261005-fix4` = `sha256:a64b6dce92207af1deb416780ed50729dfa7f24804e6b2002f3dad223511bb5a` (supersedes fix2/fix3) |
 | Isolated Backend (current source) | `sha256:11ec92c381dd9e0a1a5b2b411e9366132c7dd23118458a49f20592f92b3cacd2` |
 | Isolated Gateway (current source) | `sha256:719834a643146f28cab15ce5b328708b8b7f48c11b3c82154b37d0e810101f9c` |
 | Isolated MCP (current source) | `sha256:ad1d30db4b05b5db6e1108bd9ddd8c9ea08c8d7c287e3c87fe386c9c8addca40` |
 | Unchanged judgment runner reference | `byq-acp-judgment-runner:qualification-20261005-final` = `sha256:297130a5c383...` |
-| `services/acp_product_runner/server.py` source and image | `cb5472ecace41c7d8476515ed1d8ccf099418dbe1cb59f0466091e8f046583d8` (read back from image) |
-| `services/runtime-adapter/app/runtime.py` source and image | `bc0f4fc32334725eb5e26550164ff992edf64cddab910ccc8052d75cebf9aa8c` (read back) |
+| `services/acp_product_runner/server.py` source and image | `bb6435dd59200d5f90b487c38aa4f005e8a7505883c5366637f6f89accbc06b6` (read back from `byq-acp-product-runner` fix4; supersedes `cb5472ec…` from fix3) |
+| `services/runtime-adapter/app/runtime.py` source and image | `722bf2d1c90ba03749273f7c378bb1bf7f090c9e524b12aa7edd868d1b546cc1` (read back from Adapter fix7; supersedes the earlier `bc0f4fc3…`) |
 | `services/runtime-adapter/app/acp_product_slot_client.py` source and image | `f4cb84fc5a9c87a9a4f04a088b29d47060562e60a1389dc7641a13c572c1e3b2` (read back) |
 | `plugins/dsh-byq/runtime/byq-acp-mcp-identity.js` source and image | `3e1eaae43319d28d3d908cc55d8cc22eebf9943d49f6645235ef7f8140530ea4` (read back; see stale-image finding) |
 | `compose.dsh-acp-rc2-candidate.yml` | `ffe6614bfd98504c32c6658f49b2c77b95bb40430d92884c6e8110f52652747f` |
@@ -554,3 +554,69 @@ for the Product-path calls.
   ceiling, not a measured amount.
 
 ## Tenth pass — frozen HEAD and independent roles pending
+
+## Root synthesis (same-model process under ADR-0101)
+
+Independent Tester and Reviewer ran as separate same-model sessions on frozen
+HEAD `b3c71bfc`, each with only scope, ADRs, HEAD and evidence paths. Both are
+auxiliary under ADR-0101 and do **not** satisfy the repository's official
+Tester/Reviewer gate.
+
+- Tester: five fixes PASS (adapter resume 72/72 with the official no-`sessionId`
+  reply modeled; binding group checks; runner child env; MCP discovery live
+  200/403; backend payload static), plus free two-group probes. NOT_RUN: paid
+  real-model, browser, delegation, judgment, F6, full CI.
+- Reviewer: no P1; static-review PASS (conditional) for the ordinary single
+  workspace path; gates (authorization, tenancy, terminal ACK, cleanup, marker,
+  per-Agent MCP) not weakened. P2: the evidence recorded a stale `runtime.py`
+  hash / final-image tag — corrected above. P3s: runner child-runtime-root
+  ordering (hardened), 409-vs-404 recovery contract (tested/recorded),
+  coverage-only gaps.
+
+Post-review implementer change (affected part re-verified, not a new design):
+the runner now sets `BYQ_DSH_RUNTIME_ROOT` **after** the allowlisted env merge
+and forbidden pop, so a future allowlist expansion cannot redirect the fixed
+launcher; a focused runner test asserts it and the forbidden authority keys are
+dropped. Running `services/acp_product_runner/tests/test_server.py` → 9/9. The
+post-review change touches only the runner (`byq-acp-product-runner:…-fix4`,
+`bb6435dd…`); the Adapter remains `slot-fix7` (`722bf2d1…`).
+
+### Current gate table — ordinary ACP session scope
+
+| Gate | Verdict | Boundary |
+| --- | --- | --- |
+| A normal answer + second-turn native reuse, same native id, new root, no replay | PASS | Bounded real model, one configured group |
+| B soft stop then continue; hard-cancel interrupted containment | PASS | Real model; hard cancel blocks resume by accepted design |
+| C ended-session input rejected | PASS | Real Product API 404/UI |
+| D restart persistence of binding/slot fence | PARTIAL | Persistence proven; in-flight crash recovery NOT_RUN |
+| E two configured groups: distinct slots/secrets/volumes, busy reject, independent run, cross-user history isolation | PASS | Isolated test topology; committed overlay is single-group |
+| F forged/old-root MCP ingress denied before business handler | PASS | Real MCP→Backend; a genuinely delayed old root after a new root starts NOT_RUN |
+| Read-only tool call observed/settled | PASS | `byq_health`/`byq_agent_context` via Backend ingress |
+| Delegation identity + child tool ingress + parented AgentRun | PASS | Bounded: parent ACP child `session/update` projection not proven |
+| Browser real-model answer rendered via Product API | PASS | Bounded: appended to restored session |
+| SDK 0.1.5rc1 rollback path retained | PASS | No ACP native state converted |
+| Dedicated judgment `/acp-root/run` | FAIL, disabled (deferred) | Unchanged 503 |
+| ACP F6 background continuation | FAIL, disabled (deferred) | SDK-pair gate unchanged |
+| Official independent Tester/Reviewer gate; CI; PR; merge; deploy; release | NOT_RUN | Not exercised |
+
+### Coverage boundaries and remaining gaps
+
+- Real Product API / real model: verified by bounded isolated runs (not paid
+  usage-accounted); browser real model one answer; no full multi-scenario model
+  sweep.
+- Synthetic/keyless probes: adapter/runner/MCP focused suites and the
+  resume/binding/two-group probes.
+- Truly delayed old-root request after a new root starts, in-flight crash
+  recovery, delegate parent-ACP child-call projection, concurrent two-user
+  reboot recovery, and all judgment/F6 items remain NOT_RUN.
+- Formal role checks, promotion and production acceptance are not claimed.
+
+### Rollback and resources
+
+Rollback remains the retained `0.1.5rc1` images/configuration in `BASELINE.md`;
+ACP native state is not an SDK migration format. Isolated project `byq-acp-iso`
+is stopped with volumes/images retained; the two-group override lives only in
+`/tmp`; production `beyondquant-*` was never touched. No push, PR, merge,
+release or deploy was performed. Next minimal action: appoint the official
+Tester/Reviewer on frozen HEAD (or accept ADR-0101 as the standing special-project
+process) and decide the deferred F6/judgment scope.

@@ -159,10 +159,6 @@ def _minimal_child_environment(env: dict[str, str], home: Path,
         "DSH_TELEMETRY_DISABLED": "1",
         "DSH_PERMISSION_MODE": "read-only",
         "DSH_MAX_TOKENS_AS_SUCCESS": "false",
-        # The byq-acp-mcp-identity plugin resolves the official MCP client from
-        # this runner-owned runtime root; the Product env allowlist never
-        # forwards it, so the runner must set it for its own fixed launcher.
-        "BYQ_DSH_RUNTIME_ROOT": str(runtime_root),
     }
     result.update(env)
     for forbidden in (
@@ -181,6 +177,11 @@ def _minimal_child_environment(env: dict[str, str], home: Path,
         "PYTHONPATH", "PYTHONHOME", "LD_PRELOAD", "LD_LIBRARY_PATH",
     ):
         result.pop(forbidden, None)
+    # The byq-acp-mcp-identity plugin resolves the official MCP client from this
+    # runner-owned runtime root. Set it after the allowlisted env merge and the
+    # forbidden pop so no Product-supplied value (present or future allowlist
+    # expansion) can redirect the fixed launcher.
+    result["BYQ_DSH_RUNTIME_ROOT"] = str(runtime_root)
     return result
 
 

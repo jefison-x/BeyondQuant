@@ -428,3 +428,20 @@ def test_unproven_startup_cleanup_retires_the_only_workspace_slot(
         assert not thread.is_alive()
     finally:
         _close_server(server, thread)
+
+
+def test_child_environment_forces_runner_runtime_root_and_drops_authority(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    env = {
+        "BYQ_DSH_RUNTIME_ROOT": "/evil-attacker-root",
+        "BYQ_RUNTIME_AUTHORITY_TOKEN": "authority",
+        "DEEPSEEK_API_KEY_UPSTREAM": "search",
+        "BYQ_WORKSPACE_ID": "workspace-team-a",
+    }
+    child = slot._minimal_child_environment(
+        env, home, tmp_path / "sessions", Path("/opt/dsh-runtime"))
+    assert child["BYQ_DSH_RUNTIME_ROOT"] == "/opt/dsh-runtime"
+    assert "BYQ_RUNTIME_AUTHORITY_TOKEN" not in child
+    assert "DEEPSEEK_API_KEY_UPSTREAM" not in child
+    assert child["BYQ_WORKSPACE_ID"] == "workspace-team-a"
