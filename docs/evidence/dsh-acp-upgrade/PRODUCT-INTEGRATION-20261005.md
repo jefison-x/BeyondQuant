@@ -665,20 +665,24 @@ CI gates fixed to reach the component lanes:
   existing bound root still persist (18 lifecycle tests).
 - Runtime-roots projection fixture updated for the ACP terminal fields.
 
-CI remains **red** on failures inherited from the branch's earlier ACP commits
-(not the local fix slice), provisionally:
+The initially inherited failures were then fixed in a bounded pass:
 
-1. Gateway unit tests tripping the new terminal-evidence `_adapter_get`
-   readback without an adapter stub (`test_product_agent.py` trace-stream and
-   restore; `test_task_continuation_delivery.py` live-attach).
-2. Architecture `test_product_capability_catalog` ML-surface slice now spans an
-   added web-evidence `url:` field; and `test_governance_ci`
-   `test_image_build_failure_never_runs_old_image` whose fake-docker premise
-   predates the added release/promotion/build-revision python gates.
-3. Backend `test_runtime_authority_api.py::test_runtime_roots_endpoint...`
-   (DB-run exact ACP field values).
+1. Gateway tests: stubbed the new terminal-evidence `_adapter_get` readback and
+   the boot-readiness snapshot (trace-stream replay, interrupted restore,
+   continuation live-attach).
+2. Architecture: bounded the product-capability ML-surface slice to the ML
+   registration block; the `pnpm`/`npm` and SDK guard-patch assertions were
+   corrected; the build-revision manifest was regenerated after each source
+   edit (revision `post-u8.305`).
+3. Backend: the reset-fence terminal-cleanup allowance now includes the four ACP
+   terminal columns (18 lifecycle tests); the runtime-roots projection fixture
+   was updated for the ACP fields. Verified against an ephemeral PostgreSQL:
+   `test_runtime_authority_api` 5/5 and `test_agent_lifecycle_api` 23/23.
+4. v0.9 evidence provenance: reconciled the recorded digests for the
+   branch-changed SDK compat module and the chained d15/final-closeout records.
 
-These need a bounded remediation pass over the branch's stale tests/slices;
-they are not evidence that the ordinary-session fixes are wrong. Maintainer
-decision required: remediate the inherited failures in this PR (or a separate
-bounded PR) vs accept the Draft with documented red CI. No merge/deploy.
+Local verification: the full architecture lane (`python3 -m unittest discover
+-s tests -p 'test_*.py'`, 926 tests) passes; gateway 3/3; build_revision check
+PASS. **Hosted PR CI result: run 37295954638 all observed checks succeeded
+(PASS)** for head `2af01856`. The Draft PR #386 remains open; no ready-marking,
+merge, release or deploy was performed.
