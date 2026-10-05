@@ -59,6 +59,23 @@ The isolated BYQ branch is `codex/dsh-acp-upgrade`, based on
 | Real Gateway/Product API browser flow | NOT_RUN | Required because public behavior changes; mock-only tests do not close this gate. |
 | Exact head CI, PR, merge, release images, promote, trusted deployment | NOT_RUN | Qualification gate has not passed. There has been no push, PR, merge or deployment. |
 
+An additional keyless network probe ran the complete local runner image on a
+new Docker `--internal` bridge, without provider credentials or HTTP requests.
+Direct TCP to `api.deepseek.com` and `opencode.ai` failed at DNS (`EAI_AGAIN`);
+direct IPv4 `1.1.1.1:443` and IPv6 `2606:4700:4700::1111:443` failed
+`ENETUNREACH`. Its exact temporary container and network were removed. This
+is a narrow internal-network negative, not the final Compose attachment,
+actual DSH process route, or CONNECT/forwarder qualification.
+
+Proposed ADR-0100 records a concrete control-socket isolation change for the
+same-GID availability failure. It is **not Accepted**; no conflicting
+ordinary Product DSH process-owner implementation or default promotion has
+started. Independent architecture review found the proposal compatible with
+the single authority and no-second-harness rules after clarifying its exact
+ADR-0099 amendment, ordinary native-session cutover, judgment-network
+separation and Adapter-side subprocess inventory. This is design review, not
+ADR acceptance or integration qualification.
+
 The earlier authorized OpenCode paid API call was for the old SDK route. No
 new paid provider call has been made for this ACP candidate. No local, mock or
 synthetic result in this ledger is production acceptance.
