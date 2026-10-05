@@ -244,8 +244,7 @@ class DomainCallEvidenceMixin:
             if unresolved_claims["count"]:
                 raise AgentConflict("unresolved ACP domain call claim prevents root close")
 
-    @staticmethod
-    def _require_judgment_root_result_before_close(connection, root_run_id: str,
+    def _require_judgment_root_result_before_close(self, connection, root_run_id: str,
                                                     outcome: str) -> None:
         """Require the exact result or pre-result settlement before terminal ACK."""
         from .agent_research import AgentConflict
@@ -333,6 +332,14 @@ class DomainCallEvidenceMixin:
                 backend_evidence["terminal_acp_ingress_sequence"] != 0
                 or backend_evidence["terminal_unknown_claim_count"] != 0):
             raise AgentConflict("never_dispatched settlement lacks an empty Backend ingress proof")
+        if binding.get("settlement_kind") == "never_dispatched":
+            current = self._acp_terminal_evidence_snapshot(connection, root_run_id)
+            current_backend_evidence = {
+                "schema_version": "byq-acp-terminal-evidence-snapshot.v1",
+                **current,
+            }
+            if current_backend_evidence != backend_evidence:
+                raise AgentConflict("never_dispatched Backend ingress snapshot changed before root close")
         if binding.get("settlement_kind") == "cancelled_after_dispatch" and (
                 outcome != "cancelled"
                 or evidence.get("cancellation_intent_receipt") is None

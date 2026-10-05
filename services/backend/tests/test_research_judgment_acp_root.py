@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from uuid import uuid4
 
@@ -486,6 +487,66 @@ def test_never_dispatched_settlement_is_idempotent_consumes_call_and_closes_exac
         assert closed["terminal_event_sha256"] == "a" * 64
         assert closed["terminal_acp_ingress_sequence"] == 0
         assert closed["terminal_unknown_claim_count"] == 0
+    finally:
+        _close(catalog, research, agents)
+
+
+def test_never_dispatched_settlement_rejects_late_resolved_ingress_before_close():
+    from app.db import execute
+
+    catalog, research, agents, task, context, headers, plan = _setup("strategy_draft")
+    try:
+        begin = research.begin_acp_judgment_root(
+            task, _begin_request(task, plan), trusted_context=context,
+            runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        settled = research.settle_acp_judgment_root(
+            task, _settlement_request(task, begin, headers), trusted_context=context,
+            runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        root_id = begin["root"]["root_run_id"]
+        late_id = uuid4().hex
+        late_event_sha256 = "d" * 64
+        late_settlement_sha256 = "e" * 64
+        root = agents._fetch_one("""SELECT * FROM agent_runtime_turns WHERE root_run_id=:root""",
+                                 {"root": root_id})
+
+        # Model an already observed and resolved callback arriving after the
+        # pre-result settlement but before root close. Keep it under the same
+        # root transaction lock used by real ACP ingress writes.
+        with agents._transaction() as connection:
+            agents._lifecycle_lock(connection, "runtime-authority:current")
+            agents._lifecycle_lock(connection, "root:" + root_id)
+            execute(connection, """INSERT INTO agent_acp_tool_ingress_observations
+                (mcp_request_id,owner_principal,workspace_id,actor_principal,session_id,trace_id,dsh_run_id,
+                 runtime_boot_id,root_run_id,native_root_session_id,native_agent_session_id,
+                 native_parent_session_id,origin,depth,agent_run_id,tool_name,arguments_sha256,
+                 sequence,event_sha256,status,settlement_json,settled_at,receipt_json)
+                VALUES (:request_id,:owner,:workspace,:actor,:session,:trace,:generation,
+                 :boot,:root,:native,:native,NULL,'root',0,NULL,'byq_agent_context',:arguments_sha256,
+                 1,:event_sha256,'settled',CAST(:settlement AS jsonb),CURRENT_TIMESTAMP,
+                 CAST(:receipt AS jsonb))""", {
+                    "request_id": late_id, "owner": root["owner_principal"],
+                    "workspace": root["workspace_id"], "actor": context["actor_principal"],
+                    "session": root["session_id"], "trace": root["trace_id"],
+                    "generation": begin["root"]["dsh_run_id"],
+                    "boot": headers["x-byq-runtime-boot-id"],
+                    "root": root_id, "native": str(uuid4()),
+                    "arguments_sha256": "f" * 64, "event_sha256": late_event_sha256,
+                    "settlement": json.dumps({"outcome": "settled",
+                        "settlement_sha256": late_settlement_sha256}),
+                    "receipt": json.dumps({"mcp_request_id": late_id}),
+                })
+
+        with pytest.raises(AgentConflict, match="ingress snapshot changed before root close"):
+            agents.close_runtime_root(root_id,
+                boot_id=headers["x-byq-runtime-boot-id"], sequence=2,
+                outcome="failed", event_sha256="a" * 64)
+        status = research.get_acp_judgment_root_status(
+            task, _status_request(begin), trusted_context=context,
+            runtime_boot_id=headers["x-byq-runtime-boot-id"], agent_store=agents)
+        assert status["root_status"] == "active"
+        assert status["terminal_sequence"] is None
+        assert status["settlement_digest"] == settled["settlement_digest"]
+        assert status["terminal_acp_ingress_sequence"] is None
     finally:
         _close(catalog, research, agents)
 
