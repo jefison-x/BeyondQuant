@@ -140,7 +140,7 @@
       "layer": "provenance",
       "modified_in_closeout_commit": true,
       "path": "docs/evidence/d15/d15-superseding/provenance.v1.json",
-      "sha256": "sha256:daf98dda4b6ab148d846cc9e8a7dedbc21fdf8a1aced5e1ecb417c4bc95f298e",
+      "sha256": "sha256:3ecdfe52b69eccb1e44760f5c3f0c25bc87473d47547387695b7e7377893be32",
       "stage": "D15-superseding"
     },
     {
@@ -173,7 +173,7 @@
       "layer": "repo-default-upgrade",
       "modified_in_closeout_commit": true,
       "path": "docs/evidence/v090-dsh-015rc1-default-upgrade/default-upgrade.v1.json",
-      "sha256": "sha256:532e36f9d54ee214b229e323434f8212f0b0328515b0b453cd2e863989c4c6c3",
+      "sha256": "sha256:9b98d9ce908619beae26eb33631a084a6a5a7b9fa0f6d2497b10e0d684745efb",
       "stage": "0.9-closeout"
     }
   ],

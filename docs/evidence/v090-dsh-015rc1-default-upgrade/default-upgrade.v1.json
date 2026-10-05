@@ -11,7 +11,7 @@
     "scripts/ci/local-ci.sh": "sha256:417278c8e11c1714f9108ffb1cddea953959a9a63bb622ad0ede5e8a078320e4",
     "scripts/dsh/build_revision.py": "sha256:d2f56b22b4d9bda3a8aaa7526e1494df5141400a402c06c4e1481ba2c83435fd",
     "services/runtime-adapter/Dockerfile.post-u8-candidate": "sha256:9c7d5c83251779e1e9063caa334c0b9c21c4f9b50ff5ebd34cef57602e96b12e",
-    "services/runtime-adapter/app/compat/__init__.py": "sha256:5b94c6636c3b1ebb11943d1ed19a29a170eaec6138e2752baf764a8e7d882c62",
+    "services/runtime-adapter/app/compat/__init__.py": "sha256:fafa3494fe45eae911d1c62e5fadbe55cf23b7d7c58f92c32095a802c4005f83",
     "services/runtime-adapter/app/compat/dsh_015.py": "sha256:44cf8ed33d2cebcc36e4e8cc05146df87ac45a96857e2f8ecd87c5bccaef60af",
     "services/runtime-adapter/pyproject.toml": "sha256:ddd81cc911b43955bccbd323eca79c14aef223dd99b3304bca9c488cdfe1315a",
     "services/runtime-adapter/requirements.candidate.lock": "sha256:3040ac39eb1ead938b87a59b743ca6b7aa28c61cc880a7ce74451ea1de7e541a"
