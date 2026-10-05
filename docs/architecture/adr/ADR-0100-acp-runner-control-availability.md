@@ -1,8 +1,9 @@
 # ADR-0100 — Isolate ACP runner control from ordinary Product DSH
 
-- Status: **Proposed** (2026-10-05). This is not accepted implementation
-  authority. It expressly amends ADR-0099 Decision 2, which currently places
-  only the dedicated judgment DSH process in a separate runner container.
+- Status: **Accepted** (2026-10-05; maintainer: "接受"). Acceptance permits
+  bounded implementation, not Product qualification or default promotion.
+  This expressly amends ADR-0099 Decision 2, which placed only the dedicated
+  judgment DSH process in a separate runner container.
 - Scope: fixed official DSH `dsh-v0.2.0-rc.2` candidate only. Keep the
   `0.1.5rc1` image and configuration as the exact rollback path.
 
@@ -80,7 +81,7 @@ do not also restore the old DSH context.
 
 ## Required evidence
 
-Before conflicting implementation, the maintainer must accept this ADR.
+The maintainer accepted this ADR before conflicting implementation.
 ADR-0096 requires native ID/cwd proof, not a specific local marker file, so a
 signed or Backend-bound replacement preserving its semantics does not by
 itself require another ADR amendment. A changed public resume contract would.
@@ -103,5 +104,5 @@ Before promotion:
    container mounts/networks, not just Compose text. Continue the separate
    ADR-0099 provider egress and process cleanup gates.
 
-Until accepted and qualified, keep `/internal/runtime/research-judgment/{task_id}/acp-root/run`
+Until qualified, keep `/internal/runtime/research-judgment/{task_id}/acp-root/run`
 at 503, do not default-promote ACP, and do not push a qualification PR.
