@@ -212,3 +212,39 @@ every paid item stays NOT_RUN.
 Normal multi-turn native reuse, stop/continue, tool-bearing acceptance,
 delegate identity/tool/terminal proof, two configured-group isolation
 (unconfigured group is fail-closed), and all paid items.
+
+## Third pass — real model (authorized, cap US$1)
+
+### Route fix required to reach the model
+
+The OpenCode Go API rejects a chat request without an `x-opencode-session`
+header (`400 MissingSessionID`). The Adapter already derives the stable
+`BYQ_PROVIDER_SESSION_ID` for exactly this. Commit `eff70361` adds it as a
+route header on the three `opencode-go-*` routes, updates the composition
+identity hash (`d53c45f3…`) and the runner image assertion. Verified with a
+1-token direct call: no header 400, with header 200 + usage. Rebuilt images:
+runner `sha256:67950caf1334…`, Adapter `sha256:c96edc5b71b0…`.
+
+### Results
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| Turn 1 normal answer (real model) | PASS | Product chain returned the exact assistant answer `ACP-OK-1` for the prompt “reply with exactly this token”. Route `opencode-go-chat`/`deepseek-v4-flash`, provider 200. |
+| Turn 2 native session reuse (ADR-0096) | FAIL | After the exact terminal ACK and terminal receipt, the second root's `session/resume` returns `-32603 Internal error: session "<id>" is already owned by an active write handle`; the Adapter surfaces 500 and the Gateway 502. Reproduced directly against the fixed DSH: the previous root's write handle is still held, so the new process cannot resume. Binding ends `cleanup_unconfirmed: true`. |
+| Provider usage / cost | BOUNDED | Two billed calls: the 1-token header probe and the Turn 1 answer. Failed attempts (`400 MissingSessionID`, `409`) are unbilled. Exact Turn 1 usage is not surfaced by the Product events, so it is UNKNOWN; total spend is far below the US$1 cap. |
+| Real browser real-model flow | NOT_RUN | Blocked by the reuse defect for multi-turn; single-turn browser was not separately run. |
+
+### Stop boundary and minimal decision
+
+The ordinary single-turn path is accepted to the provider. The
+**normal-completion native reuse path (ADR-0096) is not working**: the prior
+DSH process's session write handle survives the signed EXIT, so the fresh
+process cannot `session/resume`. Per the stop rules this is recorded at that
+exact boundary; no speculative fix was applied.
+
+Decision needed: either authorize a focused fix of the normal-completion
+close/lock-release so the previous DSH process truly releases the native
+session before the next root resumes, or fall back to the ADR-0093
+fresh-native mapping per root (public completed history only) and defer reuse.
+Until then, multi-turn continuity, stop/continue, tool-bearing acceptance,
+delegate proof and browser real-model acceptance remain NOT_RUN.
