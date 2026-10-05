@@ -158,3 +158,57 @@ any promotion.
 
 Execution requires explicit confirmation of provider, model, request/output/cost
 caps and the credential version. Until then every paid item stays NOT_RUN.
+
+## Second pass — 2026-10-05 (free work + paid readiness)
+
+### Evidence correction
+
+The prior slice conflated two different probes. They are now separated:
+
+- **Manual ACP driver provider-auth probe** (`/tmp/byq-acp-iso/driver_dsh.py`,
+  run keyless through the real isolated tokens with an invalid DeepSeek key).
+  It proves the ACP composition reaches the provider and that an
+  authentication rejection is classified `turn failed` in 0.28 s. It is **not**
+  a real-model or Product acceptance.
+- **Real Product chain** (Gateway → Product API → Backend → Adapter → runner →
+  official DSH ACP). It proves routing, admission, native session creation,
+  root-binding marker, terminal ACK and slot release. It still did not produce
+  a model answer, so it is not real-model acceptance either.
+
+### New PASS
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| `mcp-byq-discovery` 403 root cause | PASS | `@modelcontextprotocol/client` 2.0.0 negotiates with a `server/discover` probe; the discovery allowlist rejected it 403. Reproduced: `initialize` 200, `server/discover` 403, `tools/list` 200. |
+| Discovery fix, no privilege expansion | PASS | Allowed `server/discover` (protocol capabilities only); execution tool `byq_health` still 403. Commit `e9569272`; MCP image `sha256:a547c6001a6777736a0362d951281083736eb3fe8a803fb5d03bf512386a4063`; `acp-auth-test` and `acp-bridge-test` PASS. DSH stderr no longer lists `mcp-byq-discovery` failure. |
+| Late/foreign old-root MCP request denial (real MCP→Backend chain) | PASS | Correctly signed Product token for (a) a forged unknown root and (b) a real closed terminal root both return `acp_ingress_observation_unavailable` before any business handler. An old or foreign root cannot borrow a new root's permissions. |
+| Unauthorized owner rejected | PASS | Backend workspace-agent-admission: owner `admin` 200 `can_start:true`; `intruder_user` 401 “runtime lifecycle workspace does not match its owner”. |
+| Binding cross-group fail-closed | PASS | With two configured groups and no explicit workspace, `_acp_binding_path` raises `SessionConflict`; an explicit workspace resolves to that group's volume. |
+| Real browser flow (invalid-key model, no billing) | PASS, bounded | Playwright-managed Chromium through the frontend: login, new conversation, send turn (`POST …/turns -> 202`), run-failure rendered, history persisted after reload, session delete 200. Ended-session input is rejected at the Product API (404); the UI starts a new conversation instead. Screenshots and `browser-evidence.json` under `/tmp/byq-acp-iso/`. |
+
+### Paid readiness (no paid call made)
+
+| Item | Observed |
+| --- | --- |
+| Credential source | Local OpenCode saved credential `opencode-go` (key never printed). |
+| BYQ registration | credential `cred_096cfac5e8954abf9e0518d4cfcbf53a` v1, profile `profile_291550f88da64f7f800353d1f1594e57` (`deepseek-v4-flash`), binding `byq-product` v2. |
+| Resolved route | Backend resolver returns `provider=opencode-go-chat`, `model=deepseek-v4-flash`, api_key present (len only). |
+| Route compatibility | `deepseek-v4.1-flash` is not in BYQ's static catalogue and was rejected 422; the supported route is `opencode-go-chat`/`deepseek-v4-flash`. |
+| ≤256 output cap | **Not enforceable** in the ordinary ACP path: `_select_route` does not apply `max_tokens`; the fixed profile sets `maxTokens: 4096`. 256 remains a target, not a hard cap. |
+
+### Proposed paid cap (confirmation required)
+
+Provider `opencode-go`, model `deepseek-v4-flash`, isolated synthetic prompts,
+**≤ 6 actual provider requests total** across the whole acceptance, **≤ 4096
+output tokens/request** (the effective enforced ceiling; 256 not enforceable),
+**cost cap ≤ US$0.05 total**, no retries and no model switch, stop on any
+usage/charge ambiguity. Scenarios: one normal answer, one second turn proving
+native reuse and no duplicated context, one permission-scoped read-only tool
+call, one stop/continue. On confirmation I execute this exact plan; until then
+every paid item stays NOT_RUN.
+
+### Still NOT_RUN
+
+Normal multi-turn native reuse, stop/continue, tool-bearing acceptance,
+delegate identity/tool/terminal proof, two configured-group isolation
+(unconfigured group is fail-closed), and all paid items.
