@@ -770,7 +770,12 @@ class DshAcpCompatibility:
             "cwd": working_directory,
             "mcpServers": [],
         }, timeout=_REQUEST_TIMEOUT_SECONDS)
-        returned_id = _session_id(result, expected=native_session_id)
+        # The pinned ACP contract's ResumeSessionResponse carries only
+        # modes/configOptions, not sessionId (unlike NewSessionResponse). The
+        # requested native id is therefore authoritative here and is proven by
+        # the persisted root binding below; a version that does echo a
+        # sessionId must still match exactly.
+        returned_id = _resumed_session_id(result, expected=native_session_id)
         self._verify_root_binding(harness, returned_id, working_directory,
                                   expected_native_session_id=native_session_id)
         self._select_route(transport, returned_id, result, harness.provider, harness.model)
@@ -1243,6 +1248,20 @@ class DshAcpCompatibility:
             "configId": _MODEL_CONFIG_ID,
             "value": expected,
         }, timeout=_REQUEST_TIMEOUT_SECONDS)
+
+
+def _resumed_session_id(value: object, *, expected: str) -> str:
+    """Resolve the resumed native id under the pinned ACP resume contract.
+
+    ResumeSessionResponse does not define sessionId, so the exact requested id
+    is used when absent; an echoed id must still match it.
+    """
+    if not isinstance(value, dict):
+        raise AcpTransportError("official DSH ACP returned an invalid resume response")
+    echoed = value.get("sessionId")
+    if echoed is not None and echoed != expected:
+        raise AcpTransportError("official DSH ACP resumed a different native session")
+    return expected
 
 
 def _session_id(value: object, *, expected: str | None = None) -> str:
