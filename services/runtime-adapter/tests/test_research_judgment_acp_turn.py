@@ -227,11 +227,12 @@ class _FakeOutput:
 
 class _FakeAcp:
     def __init__(self, *, finish="completed", result=None, fail_open=False,
-                 fail_prompt=False):
+                 fail_prompt=False, fail_close=False):
         self.finish = finish
         self._result = result
         self.fail_open = fail_open
         self.fail_prompt = fail_prompt
+        self.fail_close = fail_close
         self.closed = False
 
     def open(self, start):
@@ -246,10 +247,11 @@ class _FakeAcp:
 
     def close(self, transport):
         self.closed = True
-        return "sha256:" + "f" * 64
+        return None if self.fail_close else "sha256:" + "f" * 64
 
 
-def _run(tmp_path, monkeypatch, *, acp, fail_register=False, journal=None):
+def _run(tmp_path, monkeypatch, *, acp, fail_register=False, journal=None,
+         cancel_intent_receipt=None, captured=None):
     if journal is None:
         journal = _FakeJournal(tmp_path / "journal.json")
     journal.path.write_text("{}")
@@ -268,8 +270,14 @@ def _run(tmp_path, monkeypatch, *, acp, fail_register=False, journal=None):
                         lambda **k: {"schema_version": "research-judgment-result-receipt.v1"})
     monkeypatch.setattr(turn._control, "close_result_root_once",
                         lambda **k: {"schema_version": "agent-run-lifecycle-receipt.v1"})
-    monkeypatch.setattr(turn._control, "settlement_request",
-                        lambda *a, **k: {"sentinel": "settlement-request"})
+    if captured is not None:
+        def _settlement_request(*a, **k):
+            captured.append(k)
+            return {"sentinel": "settlement-request"}
+        monkeypatch.setattr(turn._control, "settlement_request", _settlement_request)
+    else:
+        monkeypatch.setattr(turn._control, "settlement_request",
+                            lambda *a, **k: {"sentinel": "settlement-request"})
     monkeypatch.setattr(turn._control, "submit_settlement_once",
                         lambda **k: {"schema_version": "byq-research-judgment-acp-settlement-receipt.v1"})
     monkeypatch.setattr(turn._control, "close_settled_root_once",
@@ -279,7 +287,8 @@ def _run(tmp_path, monkeypatch, *, acp, fail_register=False, journal=None):
         resolution={"source": "environment", "model": "deepseek-v4-flash", "api_key": "k"},
         backend_url="http://backend", trusted_headers={}, proxy_factory=lambda *_: _FakeProxy(),
         acp=acp, mcp_url="http://mcp", mcp_product_url="http://mp",
-        signing_master=MASTER, now_ms=1_000, timeout=1.0), journal
+        signing_master=MASTER, now_ms=1_000, timeout=1.0,
+        cancel_intent_receipt=cancel_intent_receipt), journal
 
 
 def test_orchestrator_commits_completed_result_in_exact_order(tmp_path, monkeypatch):
@@ -303,3 +312,22 @@ def test_orchestrator_settles_never_dispatched_when_registration_fails(tmp_path,
 def test_orchestrator_settles_outcome_unknown_when_prompt_fails_after_mark(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="prompt failure"):
         _run(tmp_path, monkeypatch, acp=_FakeAcp(fail_prompt=True))
+
+
+def test_orchestrator_settles_cancelled_after_dispatch_with_owner_receipt(tmp_path, monkeypatch):
+    captured = []
+    with pytest.raises(RuntimeError, match="prompt failure"):
+        _run(tmp_path, monkeypatch, acp=_FakeAcp(fail_prompt=True),
+             cancel_intent_receipt={"intent_id": "byqcancel-" + "a" * 32},
+             captured=captured)
+    assert captured and captured[0]["settlement_kind"] == "cancelled_after_dispatch"
+    assert captured[0]["terminal_outcome"] == "cancelled"
+
+
+def test_orchestrator_refuses_cancel_without_a_proven_process_fence(tmp_path, monkeypatch):
+    captured = []
+    with pytest.raises(turn.AcpJudgmentOutcomeUnknown, match="proven process fence"):
+        _run(tmp_path, monkeypatch, acp=_FakeAcp(fail_prompt=True, fail_close=True),
+             cancel_intent_receipt={"intent_id": "byqcancel-" + "a" * 32},
+             captured=captured)
+    assert captured == []

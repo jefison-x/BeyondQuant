@@ -396,15 +396,21 @@ def _settle(*, journal, begin, fence, backend_url, task_id, trusted_headers,
             "cancelled" if cancel_intent_receipt is not None else "failed")
         provider_attempt, provider_digest = "not_started", None
     else:
-        if cancel_intent_receipt is not None:
-            raise AcpJudgmentOutcomeUnknown(
-                "cancelled-after-dispatch settlement is not yet qualified")
-        kind, outcome = "outcome_unknown", "interrupted"
         attempts = snapshot.get("provider_attempts")
         if isinstance(attempts, list) and attempts:
             provider_attempt, provider_digest = "may_have_started", _digest(attempts)
         else:
             provider_attempt, provider_digest = "not_started", None
+        if cancel_intent_receipt is not None:
+            # A cancelled-after-dispatch settlement requires the owner's durable
+            # cancel-intent receipt AND a proven process fence; without the fence
+            # the outcome stays unknown rather than claiming a clean cancel.
+            if fence is None:
+                raise AcpJudgmentOutcomeUnknown(
+                    "cancelled-after-dispatch settlement requires a proven process fence")
+            kind, outcome = "cancelled_after_dispatch", "cancelled"
+        else:
+            kind, outcome = "outcome_unknown", "interrupted"
     evidence = {
         "schema_version": _SETTLEMENT_EVIDENCE_SCHEMA,
         "journal_status": "available", "journal_sha256": journal_digest_value,
