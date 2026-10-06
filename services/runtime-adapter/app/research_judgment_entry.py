@@ -98,7 +98,8 @@ def recover_acp_judgment_root(*, task_id: str, identity: dict, call_identity: st
 
 def run_acp_judgment_root(*, task_id: str, identity: dict, attempt: str,
                           call_identity: str, trusted_headers: dict,
-                          environment: dict, timeout: float = 15.0) -> dict:
+                          environment: dict, timeout: float = 15.0,
+                          cancel_event=None) -> dict:
     """Run one full dedicated ACP judgment root from the trusted Adapter entry.
 
     The caller supplies the authenticated trusted context headers and the runtime
@@ -172,7 +173,7 @@ def run_acp_judgment_root(*, task_id: str, identity: dict, attempt: str,
         trusted_headers=trusted_headers, proxy_factory=proxy_factory,
         acp=acp, mcp_url=mcp_url, mcp_product_url=mcp_product_url,
         signing_master=signing_master, session_root=DEFAULT_JUDGMENT_SESSION_ROOT,
-        timeout=timeout)
+        timeout=timeout, cancel_event=cancel_event)
 
 
 def run_stage_judgment(*, task_id: str, call_identity: str, backend_url: str,

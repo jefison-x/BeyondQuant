@@ -18,8 +18,10 @@ never supply a model result, a next action, an approval or a routing decision.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
+import threading
 import uuid
 from pathlib import Path
 
@@ -133,15 +135,14 @@ def run_judgment(task_id: str, request: Request) -> dict:
 
 
 @router.post("/internal/runtime/research-judgment/{task_id}/acp-root/run")
-def run_acp_judgment_root(task_id: str, request: Request) -> dict:
-    """Fail closed until the dedicated ACP root has a complete terminal path.
+async def run_acp_judgment_root(task_id: str, request: Request) -> dict:
+    """Run the dedicated ACP judgment root, aborting on client disconnect.
 
     ADR-0097 requires persisted Backend root admission and AgentRun registration
     before MCP identity, followed by exact result, close, and terminal ACK. The
-    current Backend slice does not qualify the latter lifecycle yet, so this
-    opt-in route deliberately stops before any Backend request, ACP process, or
-    provider dispatch. The retained ``/run`` SDK route remains available as the
-    rollback path.
+    lifecycle is opt-in and defaults to protected. A client disconnect aborts the
+    live turn (cancel_event), which then settles fail-closed from the durable
+    journal and any owner cancel receipt.
     """
 
     try:
@@ -181,11 +182,23 @@ def run_acp_judgment_root(task_id: str, request: Request) -> dict:
         "authorization": f"Bearer {os.environ.get('BYQ_RUNTIME_AUTHORITY_TOKEN', '')}",
         "x-byq-runtime-boot-id": adapter.boot_id,
     }
-    try:
+    cancel_event = threading.Event()
+
+    def _worker() -> dict:
         return run_acp_judgment_root_lifecycle(
             task_id=task_id, identity=identity, attempt=attempt,
             call_identity=call_identity, trusted_headers=authority_headers,
-            environment=dict(os.environ))
+            environment=dict(os.environ), cancel_event=cancel_event)
+
+    loop = asyncio.get_running_loop()
+    running = loop.run_in_executor(None, _worker)
+    try:
+        while not running.done():
+            if await request.is_disconnected():
+                cancel_event.set()
+                break
+            await asyncio.sleep(0.2)
+        return await running
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001 - fail closed, never leak model payload
