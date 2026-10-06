@@ -112,25 +112,30 @@ _FINISH_REASONS = {
 
 def _prepare_private_product_home(home: Path) -> None:
     """Create the Adapter-owned Product root and scratch directory privately."""
-    try:
-        home.mkdir(parents=True, exist_ok=True, mode=0o700)
-        info = os.lstat(home)
-    except OSError:
-        raise AcpTransportError("ACP workspace session directory is unavailable") from None
     expected_uid, expected_gid = os.getuid(), os.getgid()
-    if (not stat.S_ISDIR(info.st_mode)
-            or info.st_uid != expected_uid or info.st_gid != expected_gid
-            or stat.S_IMODE(info.st_mode) != 0o700):
-        raise AcpTransportError("ACP workspace session directory permissions are unsafe")
-    try:
-        (home / "tmp").mkdir(exist_ok=True, mode=0o700)
-        tmp_info = os.lstat(home / "tmp")
-    except OSError:
-        raise AcpTransportError("ACP workspace scratch directory is unavailable") from None
-    if (not stat.S_ISDIR(tmp_info.st_mode)
-            or tmp_info.st_uid != expected_uid or tmp_info.st_gid != expected_gid
-            or stat.S_IMODE(tmp_info.st_mode) != 0o700):
-        raise AcpTransportError("ACP workspace scratch directory permissions are unsafe")
+
+    def _private_dir(path: Path, unavailable: str, unsafe: str) -> None:
+        try:
+            path.mkdir(parents=True, exist_ok=True, mode=0o700)
+            info = os.lstat(path)
+            # A pre-existing Adapter-owned directory may have been created with a
+            # looser mode by an earlier step; enforce 0700 before use. A directory
+            # owned by another identity still fails closed.
+            if (stat.S_ISDIR(info.st_mode) and info.st_uid == expected_uid
+                    and stat.S_IMODE(info.st_mode) != 0o700):
+                os.chmod(path, 0o700)
+                info = os.lstat(path)
+        except OSError:
+            raise AcpTransportError(unavailable) from None
+        if (not stat.S_ISDIR(info.st_mode)
+                or info.st_uid != expected_uid or info.st_gid != expected_gid
+                or stat.S_IMODE(info.st_mode) != 0o700):
+            raise AcpTransportError(unsafe)
+
+    _private_dir(home, "ACP workspace session directory is unavailable",
+                 "ACP workspace session directory permissions are unsafe")
+    _private_dir(home / "tmp", "ACP workspace scratch directory is unavailable",
+                 "ACP workspace scratch directory permissions are unsafe")
 
 
 class AcpTransportError(RuntimeError):

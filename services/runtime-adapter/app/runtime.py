@@ -921,7 +921,10 @@ class RuntimeAdapter:
                 raise SessionConflict(
                     f"session {session_id} cannot accept a prompt in state {record.status}"
                 )
-            if self._acp_product_slots and not record.process_used:
+            if self._acp_product_slots and not record.process_used and budget is None:
+                # A continuation (budget is not None) starts its own ACP root
+                # below; starting the slot here would hold the workspace lease and
+                # make the continuation's own availability check report busy.
                 from .acp_product_slot_client import ProductSlotBusy
                 self._require_group_admission(record, record.process_root_id)
                 try:
@@ -1019,7 +1022,10 @@ class RuntimeAdapter:
                     raise
                 if self._acp:
                     # Write a durable fail-closed marker before a replacement
-                    # ACP process can own the new root identity.
+                    # ACP process can own the new root identity. The new root and
+                    # its current authority epoch must be bound first.
+                    record.process_root_id = root_id
+                    record.authority_epoch = self.require_current_backend_authority()
                     record.cleanup_harness = harness
                     record.cleanup_unconfirmed = True
                     try:
