@@ -398,7 +398,8 @@ def _commit_result(*, journal, begin, binding, native, result, backend_url,
 
 
 def _settle(*, journal, begin, fence, backend_url, task_id, trusted_headers,
-            transport_http, timeout, cancel_intent_receipt) -> dict:
+            transport_http, timeout, cancel_intent_receipt,
+            close_root: bool = True) -> dict:
     if cancel_intent_receipt is None:
         # The owner's durable cancel intent is recorded by the trusted Backend
         # when the user cancels; read it from the exact status receipt so a
@@ -456,6 +457,13 @@ def _settle(*, journal, begin, fence, backend_url, task_id, trusted_headers,
     receipt = _control.submit_settlement_once(
         backend_url=backend_url, task_id=task_id, begin=begin, request=request,
         headers=trusted_headers, transport=transport_http, timeout=timeout)
+    if not close_root:
+        # A restart cannot prove the original process fence, which the Backend
+        # mandates before close. The settlement is durably recorded and the root
+        # is left active for exact operator reconciliation rather than a claimed
+        # terminal ACK.
+        return {"status": "settled_needs_attention", "settlement_kind": kind,
+                "settlement_receipt": receipt, "terminal": None}
     terminal = _control.close_settled_root_once(
         backend_url=backend_url, task_id=task_id, begin=begin, settlement=request,
         headers=trusted_headers, transport=transport_http, timeout=timeout)
@@ -493,7 +501,8 @@ def recover_judgment_acp_root(*, journal, backend_url: str, task_id: str,
     return _settle(
         journal=journal, begin=begin, fence=None, backend_url=backend_url,
         task_id=task_id, trusted_headers=trusted_headers,
-        transport_http=transport_http, timeout=timeout, cancel_intent_receipt=None)
+        transport_http=transport_http, timeout=timeout, cancel_intent_receipt=None,
+        close_root=False)
 
 
 def _digest(value: object) -> str:

@@ -376,7 +376,10 @@ def test_recover_settles_outcome_unknown_without_replay(tmp_path, monkeypatch):
     monkeypatch.setattr(turn._control, "close_settled_root_once", lambda **k: {"sentinel": "close"})
     out = turn.recover_judgment_acp_root(
         journal=journal, backend_url="http://backend", task_id=TASK, trusted_headers={})
-    assert out["status"] == "settled" and out["settlement_kind"] == "outcome_unknown"
+    # Restart cannot prove the original process fence, so it settles durably and
+    # leaves the root for reconciliation rather than claiming a terminal ACK.
+    assert out["status"] == "settled_needs_attention"
+    assert out["settlement_kind"] == "outcome_unknown" and out["terminal"] is None
     assert captured[0]["settlement_kind"] == "outcome_unknown"
     assert "mark" not in journal.calls  # never re-dispatches a prompt
 
