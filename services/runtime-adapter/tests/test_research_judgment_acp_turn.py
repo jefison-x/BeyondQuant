@@ -324,6 +324,17 @@ def test_orchestrator_settles_cancelled_after_dispatch_with_owner_receipt(tmp_pa
     assert captured[0]["terminal_outcome"] == "cancelled"
 
 
+def test_orchestrator_reads_the_owner_cancel_receipt_from_status(tmp_path, monkeypatch):
+    captured = []
+    receipt = {"schema_version": "byq-research-judgment-acp-cancel-intent-receipt.v1",
+               "intent_id": "byqcancel-" + "a" * 32}
+    monkeypatch.setattr(turn._control, "exact_status",
+                        lambda **k: {"cancellation_intent_receipt": receipt})
+    with pytest.raises(RuntimeError, match="prompt failure"):
+        _run(tmp_path, monkeypatch, acp=_FakeAcp(fail_prompt=True), captured=captured)
+    assert captured and captured[0]["settlement_kind"] == "cancelled_after_dispatch"
+
+
 def test_orchestrator_refuses_cancel_without_a_proven_process_fence(tmp_path, monkeypatch):
     captured = []
     with pytest.raises(turn.AcpJudgmentOutcomeUnknown, match="proven process fence"):

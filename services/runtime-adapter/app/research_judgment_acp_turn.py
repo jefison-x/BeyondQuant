@@ -387,6 +387,22 @@ def _commit_result(*, journal, begin, binding, native, result, backend_url,
 
 def _settle(*, journal, begin, fence, backend_url, task_id, trusted_headers,
             transport_http, timeout, cancel_intent_receipt) -> dict:
+    if cancel_intent_receipt is None:
+        # The owner's durable cancel intent is recorded by the trusted Backend
+        # when the user cancels; read it from the exact status receipt so a
+        # cancelled turn settles cancelled_after_dispatch rather than unknown.
+        try:
+            status = _control.exact_status(
+                backend_url=backend_url, task_id=task_id,
+                call_identity=begin["call_identity"], attempt=begin["attempt_binding"],
+                root_run_id=begin["root"]["root_run_id"],
+                runtime_boot_id=begin["root"]["runtime_boot_id"],
+                headers=trusted_headers, transport=transport_http, timeout=timeout)
+        except AcpJudgmentOutcomeUnknown:
+            status = None
+        candidate = status.get("cancellation_intent_receipt") if isinstance(status, dict) else None
+        if isinstance(candidate, dict):
+            cancel_intent_receipt = candidate
     snapshot = journal.snapshot() or {}
     dispatched = snapshot.get("phase") in {
         "prompt_may_have_dispatched", "result_prepared"}
