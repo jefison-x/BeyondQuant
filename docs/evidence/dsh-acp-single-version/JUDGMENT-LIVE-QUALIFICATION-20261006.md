@@ -124,8 +124,14 @@ receipt (mode 0640, group `byq-acp-control`) before EXIT; the Adapter read and
 verified it for the exact scope (`cleanup=proven`, exact root, runner instance),
 and a wrong-scope scope did not verify.
 
-A live cancel/disconnect during an active turn is wired via a cancel_event
-(abort → settle) but not yet exercised live.
+## PASS — live client disconnect during an active turn
+
+A client that opened the opt-in `/acp-root/run` request and disconnected after
+3s was detected (`request.is_disconnected`), which set a cancel_event and
+aborted the live ACP prompt. The turn settled `outcome_unknown`/`interrupted`
+and the root was closed with the exact terminal ACK (`root_status=interrupted`,
+`root_authority_status=closed`, `terminal_sequence=2`, event hash present). No
+prompt was replayed.
 
 ## NOT_RUN
 
