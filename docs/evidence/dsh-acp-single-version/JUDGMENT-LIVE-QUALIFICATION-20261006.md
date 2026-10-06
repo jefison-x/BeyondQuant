@@ -86,6 +86,26 @@ submitted the result, closed the root and received the exact terminal ACK:
 the model instead returned non-JSON narration the lifecycle correctly settled
 `outcome_unknown` (fail-closed), confirming the no-fallback rule.
 
+## PASS — restart recovery (live, no replay)
+
+A durable journal at `prompt_may_have_dispatched` (with a Backend-admitted root
+and a bound AgentRun, but no committed result) was reconciled through the
+opt-in `/acp-root/recover` route after a restart: HTTP 200,
+`settled_needs_attention`, `settlement_kind=outcome_unknown`,
+`prompt_dispatch=may_have_dispatched`, `process_fence=unproven`, no prompt
+re-dispatch. The durable settlement is recorded and the root is left active for
+exact operator reconciliation.
+
+Contract conflict (decision point): the Backend mandates
+`process_fence="stopped"` before close, which an Adapter restart cannot prove
+(the original runner/DSH process is gone and its signed EXIT was not persisted
+across the crash). Options: (a) accept an `outcome_unknown`/`interrupted` close
+with an unproven fence (weakens the fence guarantee; needs an ADR); (b) leave
+the root `needs_attention` without a terminal ACK (current safe behavior); or
+(c) have the runner persist a signed cleanup receipt the Adapter can read after
+restart. A live cancel/disconnect during an active turn is wired via a
+cancel_event (abort → settle) but not yet exercised live.
+
 ## NOT_RUN
 
 - Tool allow/deny instrumentation, zero-child proof, cancellation, lost-receipt,
