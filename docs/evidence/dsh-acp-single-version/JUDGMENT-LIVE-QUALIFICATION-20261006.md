@@ -6,11 +6,12 @@ The dedicated root was exercised end to end against the real provider.
 
 ## Real provider requests (honest accounting)
 
-Across all diagnostic runs the durable journals record **20 real paid provider
-attempts** (17 roots, some with several tool-use calls): input 11,204 tokens /
-output 9,213 tokens. Every attempt is a single call recorded by the journal's
+Across all diagnostic runs the durable journals record **35 real paid provider
+attempts** (roots with several tool-use calls): input 17,652 tokens / output
+15,320 tokens. Every attempt is a single call recorded by the journal's
 pre-dispatch fence; there was no automatic retry and no model switch. Usage is
-the provider-reported value; no unknown-usage estimate is included.
+the provider-reported value; no unknown-usage estimate is included. The count is
+reconciled request by request from the durable journals, not estimated.
 
 ## PASS (localized and fixed)
 
@@ -38,19 +39,33 @@ the provider-reported value; no unknown-usage estimate is included.
    completed provider calls in one turn), so tools are delivered and the route
    is tool-call compatible.
 
-## New blocker (decision point)
+## Parser contract (maintainer chose option a; bounded)
 
-- The turn now fails with `AcpTransportError: ACP update consumer failed`
-  because `AcpJudgmentRootOutput` requires **exactly one** root
-  `assistant.message`. A tool-use turn emits intermediate assistant text plus
-  the final answer (separate messages), so the parser rejects the second
-  message. This is a BYQ-side contract conflict between "exactly one closed
-  root answer" and multi-message tool-use turns, not a route/model problem.
-- Options: (a) let the parser accept the root's final completed answer among
-  several root messages (still rejecting foreign sessions and non-JSON finals);
-  or (b) require the prompt/DSH to suppress intermediate narration so exactly
-  one answer is emitted. Deciding (a) relaxes a documented parser invariant and
-  needs the maintainer's call.
+`AcpJudgmentRootOutput` now accepts intermediate root `assistant.message`
+observations within one dedicated root turn and validates the **last complete**
+message, only after a nominally completed turn. Preserved gates:
+
+- exact root/session/turn ownership; foreign sessions and child/session outputs
+  are rejected;
+- messages are the official assembled complete messages, never a lone streaming
+  chunk (aggregation tested);
+- the final answer must satisfy the existing strict JSON/schema/field/size rules;
+- an invalid final answer fails directly with no fallback to an earlier valid
+  JSON;
+- cancellation, disconnect, missing completion evidence and post-terminal
+  messages never become a success;
+- intermediate messages are process evidence only; no early result or business
+  action;
+- the exact Backend terminal ACK and cleanup proof remain required.
+
+## PASS — full committed lifecycle
+
+One real turn returned the exact closed JSON
+(`{"proposal": null, "durable_evidence": {"kind": "none"}}`); the lifecycle
+submitted the result, closed the root and received the exact terminal ACK:
+`agent-run-lifecycle-receipt.v1`, sequence 2, with the root and event hash. When
+the model instead returned non-JSON narration the lifecycle correctly settled
+`outcome_unknown` (fail-closed), confirming the no-fallback rule.
 
 ## NOT_RUN
 

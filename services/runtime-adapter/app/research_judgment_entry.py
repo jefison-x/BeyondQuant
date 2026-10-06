@@ -88,10 +88,17 @@ def run_acp_judgment_root(*, task_id: str, identity: dict, attempt: str,
         raise ValueError("dedicated judgment MCP master key is unavailable")
 
     control_root = _judgment_control_root(environment, identity["workspace_id"], task_id)
+    # The journal makes its own authenticated Backend status/result/close calls
+    # through the runtime-authority seam, which also requires the trusted owner /
+    # Workspace / runtime-boot scope headers.
+    journal_headers = {"authorization": f"Bearer {authority_token}"}
+    for name in ("x-byq-owner-principal", "x-byq-workspace-id", "x-byq-runtime-boot-id"):
+        if isinstance(trusted_headers.get(name), str) and trusted_headers[name]:
+            journal_headers[name] = trusted_headers[name]
     journal = AcpJudgmentJournal(
         control_root, task_id, call_identity,
         backend_url=backend_url,
-        authority_headers={"authorization": f"Bearer {authority_token}"})
+        authority_headers=journal_headers)
     resolution = {"source": "environment", "provider": provider, "model": model,
                   "api_key": api_key}
     compatibility = compatibility_for_release(

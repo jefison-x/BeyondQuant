@@ -33,7 +33,13 @@ def _reject_constant(_value: str) -> object:
 
 
 class AcpJudgmentRootOutput:
-    """Capture exactly one root answer after a completed ACP prompt."""
+    """Capture the final closed root answer after a nominally completed ACP prompt.
+
+    A dedicated judgment root that uses its five read-only tools emits
+    intermediate assistant messages within one turn. Only the last COMPLETE root
+    message is accepted, and only after a normal completed turn; intermediate
+    messages are process evidence and never produce a result.
+    """
 
     def __init__(self, native_root_session_id: str) -> None:
         if not isinstance(native_root_session_id, str) or not native_root_session_id:
@@ -63,11 +69,18 @@ class AcpJudgmentRootOutput:
                 self._fail("ACP judgment root start update is invalid")
             self._started = True
         elif observation.kind == "assistant.message":
+            # A tool-use turn may emit intermediate root messages (narration and
+            # tool-call protocol) before the final closed answer. Each observed
+            # message is a COMPLETE message aggregated from official streaming
+            # chunks, never a single chunk. Only the last complete message is a
+            # candidate result, and it is accepted strictly after normal
+            # completion; intermediate messages are process evidence only and
+            # never produce a result or trigger a business action.
             if (not observation.root_session
                     or observation.session_id != self.native_root_session_id
                     or not observation.message_id or not isinstance(observation.answer_text, str)
-                    or not self._started or self._answer is not None or self._ended):
-                self._fail("ACP judgment has no single complete root answer")
+                    or not self._started or self._ended):
+                self._fail("ACP judgment root answer update is invalid")
             if len(observation.answer_text.encode("utf-8")) > _MAX_RESULT_TEXT_BYTES:
                 self._fail("ACP judgment result exceeds its text bound")
             self._answer = observation.answer_text
