@@ -58,6 +58,25 @@ message, only after a nominally completed turn. Preserved gates:
   action;
 - the exact Backend terminal ACK and cleanup proof remain required.
 
+## PASS — tool allow/deny boundary (free probe)
+
+With a correctly derived per-root judgment bearer, `tools/list` returns exactly
+the five read-only tools. `tools/call` for a non-catalog tool
+(`byq_backtest_create`) is refused by the MCP subset with JSON-RPC `-32602`
+("Tool ... not found"). An allowed tool (`byq_research_stage_input_get`) reaches
+the handler but is gated by Backend admission and returns
+`acp_ingress_observation_unavailable` for a bearer with no matching admitted
+root, i.e. denied before any business data. No model call is involved.
+
+## Zero child (structural)
+
+The dedicated composition disables `subagent`, `tool-subagent*`, `tool-fork`,
+and the in-process spawn/fork plugins; the observed model request catalog has no
+child/spawn/fork tool, and `byq-acp-mcp-identity` vetoes any second Agent
+creation for the root lifetime (`judgmentChildCreationVetoed`). A child cannot
+be invoked because no child tool exists and the identity hook fails any second
+agent. Live adversarial forcing of a child attempt remains NOT_RUN.
+
 ## PASS — full committed lifecycle
 
 One real turn returned the exact closed JSON
