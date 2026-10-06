@@ -119,6 +119,11 @@ generation, mac, schema) and corrupt/missing receipts never prove cleanup;
 restart with a verified receipt closes the root, without one stays
 `needs_attention`; the runner writes the receipt atomically and signed.
 
+Live confirmation: after a real turn the runner had persisted the signed
+receipt (mode 0640, group `byq-acp-control`) before EXIT; the Adapter read and
+verified it for the exact scope (`cleanup=proven`, exact root, runner instance),
+and a wrong-scope scope did not verify.
+
 A live cancel/disconnect during an active turn is wired via a cancel_event
 (abort → settle) but not yet exercised live.
 
