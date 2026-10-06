@@ -17,6 +17,7 @@ import re
 import secrets
 import select
 import socket
+import stat
 import struct
 import threading
 import time
@@ -157,6 +158,63 @@ def decode_control_secret(encoded: str) -> bytes:
     if len(raw) < 32:
         raise ValueError("ACP runner control secret is invalid")
     return raw
+
+
+_CLEANUP_RECEIPT_SCHEMA = "byq-acp-judgment-runner-cleanup.v1"
+_CLEANUP_RECEIPT_DIR = "cleanup-receipts"
+_CLEANUP_RECEIPT_KEYS = frozenset({
+    "schema_version", "scope_digest", "task_id", "call_identity", "root_run_id",
+    "runtime_boot_id", "authority_epoch", "runner_instance_id", "code", "signal",
+    "reason", "cleanup", "mac",
+})
+
+
+def read_cleanup_receipt(directory: str | os.PathLike[str], secret: bytes,
+                         scope: Mapping[str, object]) -> dict[str, object] | None:
+    """Return the verified signed cleanup receipt for the exact one-shot scope.
+
+    A missing, corrupt, unsigned, wrong-scope, wrong-runner-instance or
+    non-proven receipt returns ``None`` so cleanup stays unproven.
+    """
+
+    if not isinstance(secret, bytes) or len(secret) < 32:
+        return None
+    checked = _validate_scope(dict(scope))
+    digest = scope_digest(checked)
+    path = Path(directory) / _CLEANUP_RECEIPT_DIR / f"{digest}.json"
+    try:
+        info = os.lstat(path)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > 4096 or info.st_nlink != 1:
+            return None
+        raw = path.read_bytes()
+    except OSError:
+        return None
+    try:
+        value = json.loads(
+            raw.decode("utf-8"), object_pairs_hook=_strict_object,
+            parse_constant=_reject_constant)
+    except (UnicodeError, ValueError, json.JSONDecodeError, RecursionError):
+        return None
+    if not isinstance(value, dict) or set(value) != _CLEANUP_RECEIPT_KEYS:
+        return None
+    mac = value.get("mac")
+    if not isinstance(mac, str) or _HEX64.fullmatch(mac) is None:
+        return None
+    unsigned = {key: item for key, item in value.items() if key != "mac"}
+    if not hmac.compare_digest(sign_runner_reply(unsigned, secret), mac):
+        return None
+    if (unsigned.get("schema_version") != _CLEANUP_RECEIPT_SCHEMA
+            or unsigned.get("scope_digest") != digest
+            or unsigned.get("cleanup") != "proven"
+            or unsigned.get("task_id") != checked["task_id"]
+            or unsigned.get("call_identity") != checked["call_identity"]
+            or unsigned.get("root_run_id") != checked["root_run_id"]
+            or unsigned.get("runtime_boot_id") != checked["runtime_boot_id"]
+            or unsigned.get("authority_epoch") != checked["authority_epoch"]
+            or not isinstance(unsigned.get("runner_instance_id"), str)
+            or _HEX64.fullmatch(unsigned["runner_instance_id"]) is None):
+        return None
+    return value
 
 
 def _validate_scope(raw: object) -> dict[str, object]:
@@ -366,6 +424,11 @@ class RunnerClient:
         if not encoded_secret:
             raise ValueError("ACP runner control secret is unavailable")
         return cls(path, encoded_secret, **kwargs)
+
+    def cleanup_receipt(self, scope: Mapping[str, object]) -> dict[str, object] | None:
+        """Return the verified signed cleanup receipt for the exact scope."""
+        return read_cleanup_receipt(
+            Path(self.socket_path).parent, self._secret, scope)
 
     def start(
         self, *, scope: Mapping[str, object], env: Mapping[str, str],

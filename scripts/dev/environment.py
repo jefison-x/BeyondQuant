@@ -15,7 +15,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-CURRENT_DSH_DOCKERFILE = "services/runtime-adapter/Dockerfile.post-u8-318-candidate"
+CURRENT_DSH_DOCKERFILE = "services/runtime-adapter/Dockerfile.post-u8-319-candidate"
 ENV_FILE = ROOT / ".env.dev"
 TEMPLATE = ROOT / ".env.example"
 VOLUME_SUFFIXES = ("postgres-data", "domain-state", "ml-model-state", "dsh-sessions", "workflow-traces")

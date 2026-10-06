@@ -433,3 +433,19 @@ def test_production_child_identity_defaults_to_dedicated_uid(tmp_path: Path) -> 
         assert server.child_gid == 10002
     finally:
         server.server_close()
+
+
+def test_cleanup_receipt_is_persisted_atomically_and_signed(tmp_path):
+    digest = runner.scope_digest(SCOPE)
+    exit_fields = {"code": 0, "signal": None, "reason": "process_exit",
+                   "cleanup": "proven"}
+    runner._persist_cleanup_receipt(
+        tmp_path, SCOPE, digest, "f" * 64, exit_fields, CONTROL_SECRET, os.getgid())
+    path = tmp_path / "cleanup-receipts" / f"{digest}.json"
+    assert path.is_file()
+    assert not list((tmp_path / "cleanup-receipts").glob("*.tmp"))
+    raw = json.loads(path.read_text())
+    mac = raw.pop("mac")
+    assert runner.sign_runner_reply(raw, CONTROL_SECRET) == mac
+    assert raw["cleanup"] == "proven" and raw["scope_digest"] == digest
+    assert raw["runner_instance_id"] == "f" * 64

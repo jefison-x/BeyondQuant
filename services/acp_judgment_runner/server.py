@@ -712,6 +712,62 @@ def _minimal_child_environment(env: dict[str, str], proxy_env: str, proxy_token:
     return result
 
 
+_CLEANUP_RECEIPT_SCHEMA = "byq-acp-judgment-runner-cleanup.v1"
+_CLEANUP_RECEIPT_DIR = "cleanup-receipts"
+
+
+def _persist_cleanup_receipt(control_dir: Path, scope: dict[str, Any], digest: str,
+                             instance_id: str, exit_fields: dict[str, Any],
+                             secret: bytes, control_gid: int) -> None:
+    """Durably record a proven cleanup before the signed EXIT is sent.
+
+    The receipt binds the exact one-shot scope, the runner instance and the
+    signed exit facts. It is written atomically (temp + fsync + rename + dir
+    fsync) with group-readable mode so the trusted Adapter can verify it after a
+    restart; a write failure must leave cleanup unknown.
+    """
+    payload = {
+        "schema_version": _CLEANUP_RECEIPT_SCHEMA,
+        "scope_digest": digest,
+        "task_id": scope["task_id"],
+        "call_identity": scope["call_identity"],
+        "root_run_id": scope["root_run_id"],
+        "runtime_boot_id": scope["runtime_boot_id"],
+        "authority_epoch": scope["authority_epoch"],
+        "runner_instance_id": instance_id,
+        "code": exit_fields["code"],
+        "signal": exit_fields["signal"],
+        "reason": exit_fields["reason"],
+        "cleanup": "proven",
+    }
+    payload["mac"] = sign_runner_reply(payload, secret)
+    directory = control_dir / _CLEANUP_RECEIPT_DIR
+    directory.mkdir(mode=0o750, parents=True, exist_ok=True)
+    try:
+        os.chown(directory, 0, control_gid)
+    except OSError:
+        pass
+    path = directory / f"{digest}.json"
+    temporary = directory / f".{digest}.{os.urandom(8).hex()}.tmp"
+    fd = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY
+                 | getattr(os, "O_NOFOLLOW", 0), 0o640)
+    try:
+        os.write(fd, canonical_json(payload))
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    try:
+        os.chown(temporary, 0, control_gid)
+    except OSError:
+        pass
+    os.rename(temporary, path)
+    dir_fd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
+
+
 class JudgmentRunnerServer(socketserver.UnixStreamServer):
     """Sequential root-only Unix socket server for one authenticated run."""
 
@@ -734,6 +790,9 @@ class JudgmentRunnerServer(socketserver.UnixStreamServer):
         if not isinstance(secret, bytes) or len(secret) < 32:
             raise ValueError("runner control secret must contain at least 32 bytes")
         self.secret = secret
+        # One opaque identity per runner process; a receipt signed by an earlier
+        # instance never proves a later execution stopped.
+        self.instance_id = os.urandom(32).hex()
         self.state_dir = Path(state_dir)
         self.session_root = Path(session_root)
         self.profile_patch = Path(profile_patch)
@@ -952,7 +1011,7 @@ class _RunnerRequestHandler(socketserver.BaseRequestHandler):
         except OSError:
             _terminate_and_reap(process, child_uid=self.server.child_uid)
             return
-        self._relay(connection, process, deadline, challenge, nonce, digest)
+        self._relay(connection, process, deadline, challenge, nonce, digest, scope)
 
     @staticmethod
     def _reject(connection: socket.socket, code: str, challenge: str,
@@ -968,7 +1027,8 @@ class _RunnerRequestHandler(socketserver.BaseRequestHandler):
             pass
 
     def _relay(self, connection: socket.socket, process: subprocess.Popen[bytes],
-               deadline: float, challenge: str, nonce: str, digest: str) -> None:
+               deadline: float, challenge: str, nonce: str, digest: str,
+               scope: dict[str, Any]) -> None:
         assert process.stdin is not None and process.stdout is not None
         stop = threading.Event()
         output_done = threading.Event()
@@ -1064,6 +1124,18 @@ class _RunnerRequestHandler(socketserver.BaseRequestHandler):
             "reason": reason or "protocol_error",
             "cleanup": cleanup,
         }
+        if cleanup == "proven":
+            # Persist the signed cleanup proof before exposing the EXIT so a
+            # restarted Adapter can prove the fence. A failed write must not
+            # claim proven cleanup.
+            try:
+                _persist_cleanup_receipt(
+                    self.server.socket_path.parent, scope, digest,
+                    self.server.instance_id, exit_payload, self.server.secret,
+                    self.server.control_gid)
+            except (OSError, ValueError, KeyError):
+                cleanup = "unknown"
+                exit_payload["cleanup"] = "unknown"
         if reason != "transport_lost":
             try:
                 exit_payload["mac"] = sign_runner_reply(exit_payload, self.server.secret)

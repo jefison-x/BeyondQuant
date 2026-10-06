@@ -70,15 +70,30 @@ def recover_acp_judgment_root(*, task_id: str, identity: dict, call_identity: st
                               timeout: float = 15.0) -> dict:
     """Reconcile one in-flight dedicated root after a restart without replay."""
 
-    from .research_judgment_acp_turn import recover_judgment_acp_root as _recover
+    from .research_judgment_acp_runner_client import RunnerClient
+    from .research_judgment_acp_turn import (
+        judgment_runner_scope,
+        recover_judgment_acp_root as _recover,
+    )
 
     for field in _REQUIRED_IDENTITY:
         if not isinstance(identity.get(field), str) or not identity[field].strip():
             raise ValueError(f"trusted identity is missing {field}")
     journal, backend_url = _judgment_journal(
         environment, identity, task_id, call_identity, trusted_headers)
+    # Read the runner-persisted signed cleanup receipt for the exact scope; an
+    # absent/invalid receipt leaves the fence unproven (needs_attention).
+    cleanup_receipt = None
+    snapshot = journal.snapshot()
+    if isinstance(snapshot, dict) and isinstance(snapshot.get("begin"), dict):
+        try:
+            cleanup_receipt = RunnerClient.from_environment().cleanup_receipt(
+                judgment_runner_scope(snapshot["begin"]))
+        except (ValueError, OSError):
+            cleanup_receipt = None
     return _recover(journal=journal, backend_url=backend_url, task_id=task_id,
-                    trusted_headers=trusted_headers, timeout=timeout)
+                    trusted_headers=trusted_headers, timeout=timeout,
+                    cleanup_receipt=cleanup_receipt)
 
 
 def run_acp_judgment_root(*, task_id: str, identity: dict, attempt: str,

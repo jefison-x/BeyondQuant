@@ -473,7 +473,8 @@ def _settle(*, journal, begin, fence, backend_url, task_id, trusted_headers,
 
 def recover_judgment_acp_root(*, journal, backend_url: str, task_id: str,
                               trusted_headers: dict, transport_http=None,
-                              timeout: float = 8.0) -> dict:
+                              timeout: float = 8.0,
+                              cleanup_receipt: dict | None = None) -> dict:
     """Reconcile one in-flight root from its durable journal without replay.
 
     A restart never re-dispatches a prompt. A root that reached
@@ -498,11 +499,15 @@ def recover_judgment_acp_root(*, journal, backend_url: str, task_id: str,
     begin = snapshot.get("begin")
     if not isinstance(begin, dict):
         raise AcpJudgmentOutcomeUnknown("durable judgment begin receipt is unavailable")
+    # A verified runner-persisted cleanup receipt proves the original process
+    # fence; only then may the restart close the root. Absent/invalid proof keeps
+    # the root needs_attention with no terminal ACK.
+    fence = _digest(cleanup_receipt) if isinstance(cleanup_receipt, dict) else None
     return _settle(
-        journal=journal, begin=begin, fence=None, backend_url=backend_url,
+        journal=journal, begin=begin, fence=fence, backend_url=backend_url,
         task_id=task_id, trusted_headers=trusted_headers,
         transport_http=transport_http, timeout=timeout, cancel_intent_receipt=None,
-        close_root=False)
+        close_root=fence is not None)
 
 
 def _digest(value: object) -> str:

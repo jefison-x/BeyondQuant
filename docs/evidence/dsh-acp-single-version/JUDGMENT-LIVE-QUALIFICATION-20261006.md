@@ -86,25 +86,41 @@ submitted the result, closed the root and received the exact terminal ACK:
 the model instead returned non-JSON narration the lifecycle correctly settled
 `outcome_unknown` (fail-closed), confirming the no-fallback rule.
 
-## PASS — restart recovery (live, no replay)
+## PASS — 恢复收束分支 (recovery-convergence branch)
 
-A durable journal at `prompt_may_have_dispatched` (with a Backend-admitted root
-and a bound AgentRun, but no committed result) was reconciled through the
-opt-in `/acp-root/recover` route after a restart: HTTP 200,
-`settled_needs_attention`, `settlement_kind=outcome_unknown`,
-`prompt_dispatch=may_have_dispatched`, `process_fence=unproven`, no prompt
-re-dispatch. The durable settlement is recorded and the root is left active for
-exact operator reconciliation.
+This is the journal-based recovery-convergence branch, not full crash recovery.
+A durable journal at `prompt_may_have_dispatched` (Backend-admitted root and
+bound AgentRun, no committed result) was reconciled through the opt-in
+`/acp-root/recover` route after a restart: HTTP 200, no prompt re-dispatch, the
+durable settlement recorded. With no cleanup receipt the root is left
+`needs_attention` (`outcome_unknown`, `process_fence=unproven`); no terminal ACK
+is claimed.
 
-Contract conflict (decision point): the Backend mandates
-`process_fence="stopped"` before close, which an Adapter restart cannot prove
-(the original runner/DSH process is gone and its signed EXIT was not persisted
-across the crash). Options: (a) accept an `outcome_unknown`/`interrupted` close
-with an unproven fence (weakens the fence guarantee; needs an ADR); (b) leave
-the root `needs_attention` without a terminal ACK (current safe behavior); or
-(c) have the runner persist a signed cleanup receipt the Adapter can read after
-restart. A live cancel/disconnect during an active turn is wired via a
-cancel_event (abort → settle) but not yet exercised live.
+## Runner-persisted signed cleanup receipt (option c)
+
+The runner persists a signed cleanup receipt only after the process cleanup is
+proven, atomically (temp + fsync + rename + dir fsync) to
+`/run/byq-acp-runner/cleanup-receipts/<scope_digest>.json`, mode 0640 on the
+shared control volume, before it sends the signed EXIT. A write failure leaves
+cleanup `unknown`. The receipt binds the exact one-shot scope
+(task/call/root/boot/epoch), a per-runner-instance 64-hex identity, and the
+signed exit facts (HMAC with the shared runner control secret).
+
+On restart the Adapter verifies the receipt's signature, schema, exact scope and
+`cleanup=proven`; only a valid receipt proves the fence and permits close. A
+missing/corrupt/wrong-root/wrong-generation/non-proven receipt leaves the fence
+unproven (`needs_attention`, no terminal ACK). The receipt never replaces the
+business result check or the exact Backend ACK; a runner crash before the
+receipt is written is not auto-`stopped` and follows the trusted operator fence
+flow without deleting records or replaying a prompt.
+
+Free fault tests (keyless): valid receipt verifies; tampered (cleanup, root,
+generation, mac, schema) and corrupt/missing receipts never prove cleanup;
+restart with a verified receipt closes the root, without one stays
+`needs_attention`; the runner writes the receipt atomically and signed.
+
+A live cancel/disconnect during an active turn is wired via a cancel_event
+(abort → settle) but not yet exercised live.
 
 ## NOT_RUN
 
