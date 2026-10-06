@@ -289,6 +289,8 @@ class ProductSlotServer(socketserver.UnixStreamServer):
         if not isinstance(workspace_id, str) or _WORKSPACE_ID.fullmatch(workspace_id) is None:
             raise ValueError("Product runner workspace identity is invalid")
         self.secret = secret
+        # One opaque identity per runner process for the signed cleanup receipt.
+        self.instance_id = os.urandom(32).hex()
         self.workspace_id = workspace_id
         self.session_base = Path(session_base)
         self.session_root = self.session_base / workspace_id
@@ -469,7 +471,7 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
             child_env = _minimal_child_environment(
                 env, cwd, self.server.session_root, self.server.runtime_root)
             child_command = (
-                "/bin/sh", "-c", 'cd "$DSH_HOME" && exec "$@" 2>dsh.stderr.log', "--",
+                "/bin/sh", "-c", 'cd "$DSH_HOME" && exec "$@"', "--",
                 *self.server.launcher,
                 *(("--patch", str(cwd / "continuation-guard.patch.json"))
                   if guard is not None else ()),
@@ -529,7 +531,8 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
         relay_state: dict[str, Any] = {
             "cleanup": None, "exit_sent": False, "exit_cleanup": None,
         }
-        self._run_relay(connection, process, deadline, challenge, nonce, digest, relay_state)
+        self._run_relay(connection, process, deadline, challenge, nonce, digest,
+                        relay_state, scope)
         if (relay_state["cleanup"] != "proven" or not relay_state["exit_sent"]
                 or relay_state["exit_cleanup"] != "proven"):
             self.server.retire_requested = True
@@ -590,7 +593,7 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
 
     def _run_relay(self, connection: socket.socket, process: subprocess.Popen[bytes],
                    deadline: float, challenge: str, nonce: str, digest: str,
-                   state: dict[str, Any]) -> None:
+                   state: dict[str, Any], scope: dict[str, str]) -> None:
         """Reuse the reviewed relay while observing whether cleanup and EXIT were proven."""
         original_cleanup = _helpers._terminate_and_reap
         original_send = _helpers._send_json
@@ -610,7 +613,7 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
         _helpers._terminate_and_reap = tracked_cleanup
         _helpers._send_json = tracked_send
         try:
-            self._relay(connection, process, deadline, challenge, nonce, digest)
+            self._relay(connection, process, deadline, challenge, nonce, digest, scope)
         except BaseException:
             try:
                 cleanup = original_cleanup(process, child_uid=self.server.child_uid)
