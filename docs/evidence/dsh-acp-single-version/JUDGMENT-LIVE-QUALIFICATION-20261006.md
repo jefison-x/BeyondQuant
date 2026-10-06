@@ -133,6 +133,15 @@ and the root was closed with the exact terminal ACK (`root_status=interrupted`,
 `root_authority_status=closed`, `terminal_sequence=2`, event hash present). No
 prompt was replayed.
 
+## F6 ACP continuation gate (live)
+
+With `BYQ_F6_EXECUTOR_ENABLED=1` the candidate Runtime Adapter's
+`/internal/runtime/sessions/{id}/continuation-qualification` returned
+`{"qualified": true, "reason": "qualified"}` for a created Product session on
+the pinned rc.2 ACP family. The ACP continuation execution (prompt carrying a
+Backend continuation reservation through the ACP guard patch and product slot)
+remains NOT_RUN.
+
 ## NOT_RUN
 
 - Tool allow/deny instrumentation, zero-child proof, cancellation, lost-receipt,
