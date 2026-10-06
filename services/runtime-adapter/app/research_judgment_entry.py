@@ -47,6 +47,40 @@ def _judgment_control_root(environment: dict, workspace_id: str, task_id: str) -
     return root
 
 
+def _judgment_journal(environment: dict, identity: dict, task_id: str,
+                      call_identity: str, trusted_headers: dict):
+    from .research_judgment_acp_journal import AcpJudgmentJournal
+
+    backend_url = environment.get("BYQ_BACKEND_URL", "http://backend:8000")
+    authority_token = environment.get("BYQ_RUNTIME_AUTHORITY_TOKEN", "")
+    if not authority_token:
+        raise ValueError("runtime authority service credential is unavailable")
+    control_root = _judgment_control_root(environment, identity["workspace_id"], task_id)
+    journal_headers = {"authorization": f"Bearer {authority_token}"}
+    for name in ("x-byq-owner-principal", "x-byq-workspace-id", "x-byq-runtime-boot-id"):
+        if isinstance(trusted_headers.get(name), str) and trusted_headers[name]:
+            journal_headers[name] = trusted_headers[name]
+    return AcpJudgmentJournal(
+        control_root, task_id, call_identity,
+        backend_url=backend_url, authority_headers=journal_headers), backend_url
+
+
+def recover_acp_judgment_root(*, task_id: str, identity: dict, call_identity: str,
+                              trusted_headers: dict, environment: dict,
+                              timeout: float = 15.0) -> dict:
+    """Reconcile one in-flight dedicated root after a restart without replay."""
+
+    from .research_judgment_acp_turn import recover_judgment_acp_root as _recover
+
+    for field in _REQUIRED_IDENTITY:
+        if not isinstance(identity.get(field), str) or not identity[field].strip():
+            raise ValueError(f"trusted identity is missing {field}")
+    journal, backend_url = _judgment_journal(
+        environment, identity, task_id, call_identity, trusted_headers)
+    return _recover(journal=journal, backend_url=backend_url, task_id=task_id,
+                    trusted_headers=trusted_headers, timeout=timeout)
+
+
 def run_acp_judgment_root(*, task_id: str, identity: dict, attempt: str,
                           call_identity: str, trusted_headers: dict,
                           environment: dict, timeout: float = 15.0) -> dict:

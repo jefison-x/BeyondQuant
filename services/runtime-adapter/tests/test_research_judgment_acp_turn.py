@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import secrets
+import threading
 from pathlib import Path
 
 import pytest
@@ -169,6 +170,7 @@ class _FakeJournal:
         self.calls = []
         self.phase = None
         self.binding = None
+        self.begin = None
 
     def record_request_start(self, ms):
         self.calls.append("request_start")
@@ -176,6 +178,7 @@ class _FakeJournal:
     def record_begin(self, begin):
         self.calls.append("begin")
         self.phase = "begun"
+        self.begin = begin
 
     def record_provider_profile(self, profile):
         self.calls.append("provider_profile")
@@ -201,7 +204,7 @@ class _FakeJournal:
         self.phase = "terminal_closed"
 
     def snapshot(self):
-        return {"phase": self.phase, "binding": self.binding}
+        return {"phase": self.phase, "binding": self.binding, "begin": self.begin}
 
 
 class _FakeProxy:
@@ -240,7 +243,9 @@ class _FakeAcp:
             raise RuntimeError("synthetic open failure")
         return NATIVE, "transport"
 
-    def prompt(self, transport, native, prompt):
+    def prompt(self, transport, native, prompt, *, cancel_event=None):
+        if cancel_event is not None and cancel_event.is_set():
+            raise RuntimeError("synthetic cancellation")
         if self.fail_prompt:
             raise RuntimeError("synthetic prompt failure")
         return self.finish, _FakeOutput(self._result)
@@ -251,7 +256,7 @@ class _FakeAcp:
 
 
 def _run(tmp_path, monkeypatch, *, acp, fail_register=False, journal=None,
-         cancel_intent_receipt=None, captured=None):
+         cancel_intent_receipt=None, captured=None, cancel_event=None):
     if journal is None:
         journal = _FakeJournal(tmp_path / "journal.json")
     journal.path.write_text("{}")
@@ -288,7 +293,7 @@ def _run(tmp_path, monkeypatch, *, acp, fail_register=False, journal=None,
         backend_url="http://backend", trusted_headers={}, proxy_factory=lambda *_: _FakeProxy(),
         acp=acp, mcp_url="http://mcp", mcp_product_url="http://mp",
         signing_master=MASTER, now_ms=1_000, timeout=1.0,
-        cancel_intent_receipt=cancel_intent_receipt), journal
+        cancel_intent_receipt=cancel_intent_receipt, cancel_event=cancel_event), journal
 
 
 def test_orchestrator_commits_completed_result_in_exact_order(tmp_path, monkeypatch):
@@ -342,3 +347,57 @@ def test_orchestrator_refuses_cancel_without_a_proven_process_fence(tmp_path, mo
              cancel_intent_receipt={"intent_id": "byqcancel-" + "a" * 32},
              captured=captured)
     assert captured == []
+
+
+def test_cancel_event_aborts_the_live_turn_and_settles_unknown(tmp_path, monkeypatch):
+    event = threading.Event()
+    event.set()
+    captured = []
+    with pytest.raises(RuntimeError, match="synthetic cancellation"):
+        _run(tmp_path, monkeypatch, acp=_FakeAcp(), cancel_event=event, captured=captured)
+    assert captured and captured[0]["settlement_kind"] == "outcome_unknown"
+
+
+def _recovery_journal(tmp_path, phase, begin=None):
+    journal = _FakeJournal(tmp_path / "journal.json")
+    journal.path.write_text("{}")
+    journal.phase = phase
+    journal.begin = begin
+    return journal
+
+
+def test_recover_settles_outcome_unknown_without_replay(tmp_path, monkeypatch):
+    journal = _recovery_journal(tmp_path, "prompt_may_have_dispatched", BEGIN)
+    captured = []
+    monkeypatch.setattr(turn._control, "exact_status", lambda **k: {})
+    monkeypatch.setattr(turn._control, "settlement_request",
+                        lambda *a, **k: captured.append(k) or {"sentinel": "settlement"})
+    monkeypatch.setattr(turn._control, "submit_settlement_once", lambda **k: {"sentinel": "sub"})
+    monkeypatch.setattr(turn._control, "close_settled_root_once", lambda **k: {"sentinel": "close"})
+    out = turn.recover_judgment_acp_root(
+        journal=journal, backend_url="http://backend", task_id=TASK, trusted_headers={})
+    assert out["status"] == "settled" and out["settlement_kind"] == "outcome_unknown"
+    assert captured[0]["settlement_kind"] == "outcome_unknown"
+    assert "mark" not in journal.calls  # never re-dispatches a prompt
+
+
+def test_recover_is_a_noop_for_an_absent_journal(tmp_path):
+    journal = _recovery_journal(tmp_path, None)
+    journal.snapshot = lambda: None
+    assert turn.recover_judgment_acp_root(
+        journal=journal, backend_url="http://backend", task_id=TASK,
+        trusted_headers={})["status"] == "none"
+
+
+def test_recover_is_a_noop_for_an_unprepared_journal(tmp_path):
+    journal = _recovery_journal(tmp_path, "prepared", BEGIN)
+    assert turn.recover_judgment_acp_root(
+        journal=journal, backend_url="http://backend", task_id=TASK,
+        trusted_headers={})["status"] == "not_dispatched"
+
+
+def test_recover_refuses_a_result_prepared_root(tmp_path):
+    journal = _recovery_journal(tmp_path, "result_prepared", BEGIN)
+    with pytest.raises(turn.AcpJudgmentOutcomeUnknown, match="exact Backend reconciliation"):
+        turn.recover_judgment_acp_root(
+            journal=journal, backend_url="http://backend", task_id=TASK, trusted_headers={})

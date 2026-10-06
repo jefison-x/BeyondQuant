@@ -195,5 +195,61 @@ def run_acp_judgment_root(task_id: str, request: Request) -> dict:
                     "kind": type(exc).__name__}) from exc
 
 
+@router.post("/internal/runtime/research-judgment/{task_id}/acp-root/recover")
+def recover_acp_judgment_root(task_id: str, request: Request) -> dict:
+    """Reconcile one in-flight dedicated ACP judgment root after a restart.
+
+    The durable journal decides the outcome; a prompt that may have dispatched
+    is settled ``outcome_unknown`` without replay. Opt-in and authenticated like
+    the run route; the production entry stays protected without the flag.
+    """
+
+    try:
+        require_service_token(request.headers)
+        identity, trusted_headers = trusted_context(request.headers)
+        attempt = require_attempt(request.headers)
+    except BoundaryError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from error
+    if re.fullmatch(r"task_[0-9a-f]{32}", task_id) is None:
+        raise HTTPException(status_code=422, detail="exact research task identity required")
+    from .research_judgment_entry import (
+        judgment_acp_lifecycle_enabled,
+        recover_acp_judgment_root as recover_acp_judgment_root_lifecycle,
+    )
+
+    if not judgment_acp_lifecycle_enabled(dict(os.environ)):
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "research_judgment_acp_lifecycle_unqualified"},
+        )
+    from .main import adapter
+    from .runtime import RuntimeAuthorityUnavailable
+
+    try:
+        adapter.require_current_backend_authority()
+    except RuntimeAuthorityUnavailable as error:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "runtime_authority_unavailable"},
+        ) from error
+    authority_headers = {
+        **trusted_headers,
+        "authorization": f"Bearer {os.environ.get('BYQ_RUNTIME_AUTHORITY_TOKEN', '')}",
+        "x-byq-runtime-boot-id": adapter.boot_id,
+    }
+    try:
+        return recover_acp_judgment_root_lifecycle(
+            task_id=task_id, identity=identity,
+            call_identity=derive_call_identity(task_id, attempt),
+            trusted_headers=authority_headers, environment=dict(os.environ))
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 - fail closed
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "research_judgment_acp_failed_closed",
+                    "kind": type(exc).__name__}) from exc
+
+
 # Kept importable for the targeted route test without starting a real carrier.
 _run_stage_judgment = run_stage_judgment

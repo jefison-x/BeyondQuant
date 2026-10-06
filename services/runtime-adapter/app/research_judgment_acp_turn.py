@@ -267,7 +267,7 @@ class IsolatedJudgmentAcpDriver:
             transport, native, new, self._provider, self._model)
         return native, transport
 
-    def prompt(self, transport: object, native: str, prompt: str):
+    def prompt(self, transport: object, native: str, prompt: str, *, cancel_event=None):
         from .compat.dsh_acp import AcpHarness
 
         harness = AcpHarness(
@@ -278,10 +278,20 @@ class IsolatedJudgmentAcpDriver:
         harness.native_session_ids.add(native)
         output = AcpJudgmentRootOutput(native)
 
+        def cancelled() -> bool:
+            return cancel_event is not None and cancel_event.is_set()
+
         def on_notification(notification: object) -> None:
+            # A client disconnect or owner cancel aborts the live turn; raising
+            # here makes run_prepared_prompt cancel the ACP session and fail
+            # closed, after which the orchestrator settles from the journal.
+            if cancelled():
+                raise ResearchJudgmentError("ACP judgment root prompt was cancelled")
             output.observe(self._compatibility.observe(
                 notification, root_session_id=native))
 
+        if cancelled():
+            raise ResearchJudgmentError("ACP judgment root prompt was cancelled")
         prepared = self._compatibility.prepare_prompt(harness, native)
         finish = self._compatibility.run_prepared_prompt(prepared, prompt, on_notification)
         return finish, output
@@ -299,7 +309,8 @@ def run_judgment_acp_root(*, task_id: str, call_identity: str, attempt: str,
                           now_ms: int | None = None, timeout: float = 8.0,
                           begin_fn=None, register_fn=None, transport_http=None,
                           prompt_builder=build_judgment_root_prompt,
-                          cancel_intent_receipt: dict | None = None) -> dict:
+                          cancel_intent_receipt: dict | None = None,
+                          cancel_event=None) -> dict:
     """Run one full ADR-0097 judgment ACP root lifecycle and commit its outcome.
 
     The caller supplies a started provider proxy factory, the live ACP driver and
@@ -340,7 +351,8 @@ def run_judgment_acp_root(*, task_id: str, call_identity: str, attempt: str,
                 transport=transport_http, timeout=timeout)
             journal.record_binding(binding)
             journal.mark_prompt_may_dispatch()
-            finish, output = acp.prompt(transport, native, prompt_builder(begin))
+            finish, output = acp.prompt(transport, native, prompt_builder(begin),
+                                        cancel_event=cancel_event)
         except BaseException as error:  # noqa: BLE001 - re-raised after settlement
             failure = error
         finally:
@@ -449,6 +461,39 @@ def _settle(*, journal, begin, fence, backend_url, task_id, trusted_headers,
         headers=trusted_headers, transport=transport_http, timeout=timeout)
     return {"status": "settled", "settlement_kind": kind,
             "settlement_receipt": receipt, "terminal": terminal}
+
+
+def recover_judgment_acp_root(*, journal, backend_url: str, task_id: str,
+                              trusted_headers: dict, transport_http=None,
+                              timeout: float = 8.0) -> dict:
+    """Reconcile one in-flight root from its durable journal without replay.
+
+    A restart never re-dispatches a prompt. A root that reached
+    ``prompt_may_have_dispatched`` but has no committed result is settled
+    ``outcome_unknown``/``interrupted`` with an unproven process fence (the
+    original process is gone and cannot be proven from the Adapter). A
+    ``result_prepared`` root is left for exact Backend reconciliation rather
+    than being settled blindly. A terminal or unprepared root is a no-op.
+    """
+
+    snapshot = journal.snapshot()
+    if not isinstance(snapshot, dict):
+        return {"status": "none"}
+    phase = snapshot.get("phase")
+    if phase in {"terminal_closed", "result_committed"}:
+        return {"status": "already_terminal", "phase": phase}
+    if phase == "result_prepared":
+        raise AcpJudgmentOutcomeUnknown(
+            "result-prepared judgment root requires exact Backend reconciliation")
+    if phase != "prompt_may_have_dispatched":
+        return {"status": "not_dispatched", "phase": phase}
+    begin = snapshot.get("begin")
+    if not isinstance(begin, dict):
+        raise AcpJudgmentOutcomeUnknown("durable judgment begin receipt is unavailable")
+    return _settle(
+        journal=journal, begin=begin, fence=None, backend_url=backend_url,
+        task_id=task_id, trusted_headers=trusted_headers,
+        transport_http=transport_http, timeout=timeout, cancel_intent_receipt=None)
 
 
 def _digest(value: object) -> str:
