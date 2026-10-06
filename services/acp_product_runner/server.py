@@ -62,6 +62,79 @@ _RUNNER_REPLY_HMAC_PREFIX = b"byq-acp-runner-reply-v1\0"
 _START_KEYS = frozenset({
     "v", "challenge", "nonce", "scope", "env", "deadline_at_ms", "mac",
 })
+_START_OPTIONAL_KEYS = frozenset({"guard_b64"})
+MAX_GUARD_BYTES = 16_384
+_GUARD_SCHEMA_NAME = "file:///opt/byq/runtime/byq-continuation-budget.js"
+_GUARD_RESERVATION = re.compile(r"continuation_[0-9a-f]{32}\Z")
+
+
+def _strict_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate guard key")
+        value[key] = item
+    return value
+
+
+def _reject_constant(_value):
+    raise ValueError("non-finite guard number")
+
+
+def _validate_guard(encoded: object) -> dict:
+    """Return the exact restricted continuation guard overlay or raise.
+
+    Only a tightening-only patch is accepted: disable the two web tools, cap the
+    DeepSeek output at or below the continuation ceiling, and install the
+    continuation budget guard. Anything else (arbitrary plugin config, extra
+    entries) is refused. The model and browser can never supply this.
+    """
+    if not isinstance(encoded, str) or not encoded \
+            or len(encoded) > ((MAX_GUARD_BYTES + 2) // 3) * 4:
+        raise ProductSlotError("continuation guard is invalid")
+    try:
+        raw = base64.b64decode(encoded.encode("ascii"), validate=True)
+    except (UnicodeError, binascii.Error, ValueError) as exc:
+        raise ProductSlotError("continuation guard is invalid") from exc
+    if len(raw) > MAX_GUARD_BYTES:
+        raise ProductSlotError("continuation guard exceeds its bound")
+    try:
+        value = json.loads(raw.decode("utf-8"), object_pairs_hook=_strict_object,
+                           parse_constant=_reject_constant)
+    except (UnicodeError, ValueError, json.JSONDecodeError, RecursionError) as exc:
+        raise ProductSlotError("continuation guard is invalid") from exc
+    if not isinstance(value, list) or len(value) != 4:
+        raise ProductSlotError("continuation guard is invalid")
+    disable_a, disable_b, cap, insert = value
+    if (not isinstance(disable_a, dict) or set(disable_a) != {"id", "disabled"}
+            or disable_a["id"] != "web-search-deepseek" or disable_a["disabled"] is not True):
+        raise ProductSlotError("continuation guard is invalid")
+    if (not isinstance(disable_b, dict) or set(disable_b) != {"id", "disabled"}
+            or disable_b["id"] != "tool-web" or disable_b["disabled"] is not True):
+        raise ProductSlotError("continuation guard is invalid")
+    if (not isinstance(cap, dict) or set(cap) != {"id", "config"}
+            or cap["id"] != "llm-deepseek" or not isinstance(cap["config"], dict)
+            or set(cap["config"]) != {"maxTokens"}
+            or type(cap["config"]["maxTokens"]) is not int
+            or not 1 <= cap["config"]["maxTokens"] <= 8192):
+        raise ProductSlotError("continuation guard is invalid")
+    if (not isinstance(insert, dict) or set(insert) != {"insert"}
+            or not isinstance(insert["insert"], list) or len(insert["insert"]) != 1):
+        raise ProductSlotError("continuation guard is invalid")
+    entry = insert["insert"][0]
+    if (not isinstance(entry, dict) or set(entry) != {"id", "name", "config"}
+            or entry["id"] != "byq-continuation-budget" or entry["name"] != _GUARD_SCHEMA_NAME
+            or not isinstance(entry["config"], dict)
+            or set(entry["config"]) != {
+                "deadlineEpochMs", "reservationId", "executionProfile", "requestLimits"}
+            or type(entry["config"]["deadlineEpochMs"]) is not int
+            or entry["config"]["deadlineEpochMs"] <= int(time.time() * 1000)
+            or not isinstance(entry["config"]["reservationId"], str)
+            or _GUARD_RESERVATION.fullmatch(entry["config"]["reservationId"]) is None
+            or not isinstance(entry["config"]["executionProfile"], dict)
+            or not isinstance(entry["config"]["requestLimits"], dict)):
+        raise ProductSlotError("continuation guard is invalid")
+    return value
 
 
 def _load_judgment_helpers():
@@ -345,7 +418,7 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
             challenge_reply["mac"] = _reply_mac(challenge_reply, self.server.secret)
             _helpers._send_json(connection, CHALLENGE, challenge_reply)
             value = _helpers._read_json_frame(connection, START)
-            scope, raw_env, deadline, nonce = self._validate_start(
+            scope, raw_env, deadline, nonce, guard = self._validate_start(
                 value, challenge, self.server.secret,
             )
         except (OSError, ProductSlotError, _helpers.ProtocolError,
@@ -396,8 +469,10 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
             child_env = _minimal_child_environment(
                 env, cwd, self.server.session_root, self.server.runtime_root)
             child_command = (
-                "/bin/sh", "-c", 'cd "$DSH_HOME" && exec "$@"', "--",
+                "/bin/sh", "-c", 'cd "$DSH_HOME" && exec "$@" 2>dsh.stderr.log', "--",
                 *self.server.launcher,
+                *(("--patch", str(cwd / "continuation-guard.patch.json"))
+                  if guard is not None else ()),
             )
             process = subprocess.Popen(
                 child_command,
@@ -461,8 +536,9 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
 
     @staticmethod
     def _validate_start(value: dict[str, Any], challenge: str, secret: bytes) -> tuple[
-            dict[str, str], object, float, str]:
-        if set(value) != _START_KEYS or type(value.get("v")) is not int \
+            dict[str, str], object, float, str, dict | None]:
+        if set(value) not in {_START_KEYS, _START_KEYS | _START_OPTIONAL_KEYS} \
+                or type(value.get("v")) is not int \
                 or value["v"] != PROTOCOL_VERSION:
             raise ProductSlotError("START fields are invalid")
         if value.get("challenge") != challenge or _HEX64.fullmatch(challenge) is None:
@@ -484,9 +560,10 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
         expected = _helpers.sign_start_message(unsigned, secret)
         if not hmac.compare_digest(expected, mac):
             raise ProductSlotError("START authentication failed")
+        guard = _validate_guard(value["guard_b64"]) if "guard_b64" in value else None
         return (scope, value.get("env"),
                 time.monotonic() + min(remaining_ms, MAX_RUN_SECONDS * 1000) / 1000.0,
-                nonce)
+                nonce, guard)
 
     def _reject(self, connection: socket.socket, code: str, challenge: str,
                 nonce: str, digest: str) -> None:

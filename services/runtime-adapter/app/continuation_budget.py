@@ -113,6 +113,51 @@ def create_guard_patch(
     return patch, journal
 
 
+def _guard_overlay_bytes(reservation: dict, deadline_epoch_ms: int,
+                         mcp_reservation_id: str) -> bytes:
+    # Canonical JSON is a valid DSH `--patch` document. journalPath is injected by
+    # the trusted runner (it owns the private session directory); the Adapter only
+    # declares the tightening budget/limits. The runner validates this exact shape.
+    config = {
+        'deadlineEpochMs': deadline_epoch_ms,
+        'reservationId': mcp_reservation_id,
+        'executionProfile': reservation['execution_profile'],
+        'requestLimits': reservation['request_limits'],
+    }
+    overlay = [
+        {'id': 'web-search-deepseek', 'disabled': True},
+        {'id': 'tool-web', 'disabled': True},
+        {'id': 'llm-deepseek', 'config': {'maxTokens': CONTINUATION_MAX_OUTPUT_TOKENS}},
+        {'insert': [{'id': 'byq-continuation-budget',
+                     'name': 'file:///opt/byq/runtime/byq-continuation-budget.js',
+                     'config': config}]},
+    ]
+    return json.dumps(overlay, sort_keys=True, separators=(',', ':'),
+                      ensure_ascii=True).encode('utf-8')
+
+
+def create_acp_guard_overlay(
+    reservation: dict, *, deadline_epoch_ms: int, root_run_id: str,
+    mcp_reservation_id: str,
+) -> bytes:
+    """Return ONLY the restricted continuation guard overlay for one ACP root.
+
+    This is a tightening-only patch (disable web tools, cap the DeepSeek output
+    and install the continuation budget guard). The Product runner validates the
+    exact shape before applying it as an additional patch, so neither the model
+    nor a browser can supply arbitrary composition.
+    """
+    if (re.fullmatch(r'[0-9a-f]{32}', root_run_id) is None
+            or reservation.get('reservation_id') != mcp_reservation_id
+            or re.fullmatch(r'continuation_[0-9a-f]{32}', mcp_reservation_id) is None):
+        raise ValueError('ACP continuation MCP identity carrier is unproven')
+    if type(deadline_epoch_ms) is not int or deadline_epoch_ms <= int(time.time() * 1000):
+        raise ValueError('continuation request deadline must be a future epoch millisecond')
+    validate_profile_binding(reservation['execution_profile'])
+    validate_limits(reservation['request_limits'])
+    return _guard_overlay_bytes(reservation, deadline_epoch_ms, mcp_reservation_id)
+
+
 def create_acp_guard_patch(
     source: Path, root: Path, reservation: dict, *, deadline_epoch_ms: int,
     root_run_id: str, mcp_reservation_id: str,

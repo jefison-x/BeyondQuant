@@ -110,32 +110,58 @@ _FINISH_REASONS = {
 }
 
 
+def _write_continuation_guard(home: Path, guard_b64: str) -> None:
+    """Write the Adapter-owned restricted guard patch into its private cwd.
+
+    The Adapter owns the workspace session leaf, so it writes the patch the
+    trusted runner references; the runner independently validates the declared
+    guard shape before use. The journal path is injected here (Adapter-owned).
+    """
+    import base64 as _base64
+
+    try:
+        raw = _base64.b64decode(guard_b64.encode("ascii"), validate=True)
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, ValueError, Exception) as exc:  # noqa: BLE001
+        raise AcpTransportError("ACP continuation guard is invalid") from exc
+    if not isinstance(value, list) or len(value) != 4:
+        raise AcpTransportError("ACP continuation guard is invalid")
+    entry = value[3]["insert"][0]
+    entry["config"] = {**entry["config"],
+                       "journalPath": str(home / "continuation-tool-guard.jsonl")}
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=True).encode("utf-8")
+    path = home / "continuation-guard.patch.json"
+    fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY
+                 | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        os.write(fd, payload)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def _prepare_private_product_home(home: Path) -> None:
     """Create the Adapter-owned Product root and scratch directory privately."""
+    try:
+        home.mkdir(parents=True, exist_ok=True, mode=0o700)
+        info = os.lstat(home)
+    except OSError:
+        raise AcpTransportError("ACP workspace session directory is unavailable") from None
     expected_uid, expected_gid = os.getuid(), os.getgid()
-
-    def _private_dir(path: Path, unavailable: str, unsafe: str) -> None:
-        try:
-            path.mkdir(parents=True, exist_ok=True, mode=0o700)
-            info = os.lstat(path)
-            # A pre-existing Adapter-owned directory may have been created with a
-            # looser mode by an earlier step; enforce 0700 before use. A directory
-            # owned by another identity still fails closed.
-            if (stat.S_ISDIR(info.st_mode) and info.st_uid == expected_uid
-                    and stat.S_IMODE(info.st_mode) != 0o700):
-                os.chmod(path, 0o700)
-                info = os.lstat(path)
-        except OSError:
-            raise AcpTransportError(unavailable) from None
-        if (not stat.S_ISDIR(info.st_mode)
-                or info.st_uid != expected_uid or info.st_gid != expected_gid
-                or stat.S_IMODE(info.st_mode) != 0o700):
-            raise AcpTransportError(unsafe)
-
-    _private_dir(home, "ACP workspace session directory is unavailable",
-                 "ACP workspace session directory permissions are unsafe")
-    _private_dir(home / "tmp", "ACP workspace scratch directory is unavailable",
-                 "ACP workspace scratch directory permissions are unsafe")
+    if (not stat.S_ISDIR(info.st_mode)
+            or info.st_uid != expected_uid or info.st_gid != expected_gid
+            or stat.S_IMODE(info.st_mode) != 0o700):
+        raise AcpTransportError("ACP workspace session directory permissions are unsafe")
+    try:
+        (home / "tmp").mkdir(exist_ok=True, mode=0o700)
+        tmp_info = os.lstat(home / "tmp")
+    except OSError:
+        raise AcpTransportError("ACP workspace scratch directory is unavailable") from None
+    if (not stat.S_ISDIR(tmp_info.st_mode)
+            or tmp_info.st_uid != expected_uid or tmp_info.st_gid != expected_gid
+            or stat.S_IMODE(tmp_info.st_mode) != 0o700):
+        raise AcpTransportError("ACP workspace scratch directory permissions are unsafe")
 
 
 class AcpTransportError(RuntimeError):
@@ -505,6 +531,9 @@ class AcpHarness:
     private_provider_patch: Path | None = None
     provider_proxy_base_url: str | None = None
     provider_local_token: str | None = field(default=None, repr=False)
+    # Restricted continuation guard overlay (base64) applied by the trusted
+    # Product runner as an additional patch; never a model/browser value.
+    continuation_guard_b64: str | None = field(default=None, repr=False)
     process: _AcpProcess | None = field(default=None, repr=False)
     slot_scope: dict[str, str] | None = field(default=None, repr=False)
     native_session_ids: set[str] = field(default_factory=set, repr=False)
@@ -579,6 +608,7 @@ class DshAcpCompatibility:
         private_provider_patch: Path | None = None,
         provider_proxy_base_url: str | None = None,
         provider_local_token: str | None = None,
+        continuation_guard_b64: str | None = None,
     ) -> AcpHarness:
         patch = composition.expanduser().resolve()
         requested_home = session_root.expanduser()
@@ -621,6 +651,8 @@ class DshAcpCompatibility:
             home.mkdir(parents=True, exist_ok=True)
         else:
             _prepare_private_product_home(home)
+            if continuation_guard_b64 is not None:
+                _write_continuation_guard(home, continuation_guard_b64)
         return AcpHarness(
             provider=provider,
             model=model,
@@ -633,6 +665,7 @@ class DshAcpCompatibility:
                                     if private_provider_patch is not None else None),
             provider_proxy_base_url=provider_proxy_base_url,
             provider_local_token=provider_local_token,
+            continuation_guard_b64=continuation_guard_b64,
         )
 
     def start(self, harness: AcpHarness) -> None:
@@ -708,7 +741,8 @@ class DshAcpCompatibility:
                     raise AcpTransportError("ACP slot requires its fixed Product composition")
                 from .acp_slot_transport import SlotAcpProcess
                 transport = SlotAcpProcess(tuple(command), harness.session_root,
-                    environment, registry=self.product_slots)
+                    environment, registry=self.product_slots,
+                    guard_b64=harness.continuation_guard_b64)
                 # Keep the root identity available if START succeeds but ACP
                 # initialization later fails and requires cleanup/ACK recovery.
                 harness.slot_scope = dict(transport.scope)

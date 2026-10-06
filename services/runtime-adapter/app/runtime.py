@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import hashlib
 import fcntl
@@ -50,6 +51,7 @@ from .continuation_budget import (
     validate_reservation,
     create_guard_patch,
     create_acp_guard_patch,
+    create_acp_guard_overlay,
     read_request_guard,
 )
 from .research_request_gate import RequestGateProxy, build_continuation_request_gate
@@ -2400,18 +2402,32 @@ class RuntimeAdapter:
                 raise ModelCredentialUnavailable("selected model provider is unavailable")
         composition = self._composition
         max_tokens = None
+        guard_b64 = None
         if continuation_budget is not None:
             if continuation_proxy_url is None or continuation_deadline_epoch_ms is None:
                 raise ValueError('continuation provider gate is required')
             if self._acp:
                 environment['BYQ_CONTINUATION_RESERVATION_ID'] = continuation_budget['reservation_id']
-                composition, _ = create_acp_guard_patch(
-                    composition, session_root, continuation_budget,
-                    deadline_epoch_ms=continuation_deadline_epoch_ms,
-                    root_run_id=root_run_id,
-                    mcp_reservation_id=environment['BYQ_CONTINUATION_RESERVATION_ID'],
-                )
+                if self._acp_product_slots:
+                    # The Product slot keeps the fixed Product composition; the
+                    # restricted guard is applied by the trusted runner as an
+                    # additional patch (tightening-only).
+                    guard_b64 = base64.b64encode(create_acp_guard_overlay(
+                        continuation_budget,
+                        deadline_epoch_ms=continuation_deadline_epoch_ms,
+                        root_run_id=root_run_id,
+                        mcp_reservation_id=environment['BYQ_CONTINUATION_RESERVATION_ID'],
+                    )).decode('ascii')
+                else:
+                    guard_b64 = None
+                    composition, _ = create_acp_guard_patch(
+                        composition, session_root, continuation_budget,
+                        deadline_epoch_ms=continuation_deadline_epoch_ms,
+                        root_run_id=root_run_id,
+                        mcp_reservation_id=environment['BYQ_CONTINUATION_RESERVATION_ID'],
+                    )
             else:
+                guard_b64 = None
                 composition, _ = create_guard_patch(
                     composition, session_root, continuation_budget,
                     deadline_epoch_ms=continuation_deadline_epoch_ms,
@@ -2435,6 +2451,7 @@ class RuntimeAdapter:
             runtime_command=self.runtime_command,
             environment=environment,
             max_tokens=max_tokens,
+            continuation_guard_b64=guard_b64,
         )
 
     def _resolve_model(

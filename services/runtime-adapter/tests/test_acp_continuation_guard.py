@@ -6,14 +6,15 @@ import time
 
 import pytest
 
-from app.continuation_budget import create_acp_guard_patch
+from app.continuation_budget import create_acp_guard_overlay, create_acp_guard_patch
 
 
 def _reservation():
+    from packages.contracts.continuation_request import profile_binding, request_limits
     return {
         "reservation_id": "continuation_" + "a" * 32,
-        "execution_profile": "continuation-bounded.v1",
-        "request_limits": {"max_tool_calls": 4},
+        "execution_profile": profile_binding(),
+        "request_limits": request_limits(),
     }
 
 
@@ -42,6 +43,23 @@ def test_acp_guard_patch_refuses_mismatched_mcp_carrier(tmp_path):
             source, tmp_path / "s", reservation,
             deadline_epoch_ms=int(time.time() * 1000) + 60_000,
             root_run_id="b" * 32, mcp_reservation_id="continuation_" + "c" * 32)
+
+
+def test_acp_guard_overlay_is_the_exact_restricted_json():
+    import json
+    reservation = _reservation()
+    raw = create_acp_guard_overlay(
+        reservation, deadline_epoch_ms=int(time.time() * 1000) + 60_000,
+        root_run_id="b" * 32, mcp_reservation_id=reservation["reservation_id"])
+    value = json.loads(raw)
+    assert value[0] == {"id": "web-search-deepseek", "disabled": True}
+    assert value[1] == {"id": "tool-web", "disabled": True}
+    assert value[2] == {"id": "llm-deepseek", "config": {"maxTokens": 8192}}
+    entry = value[3]["insert"][0]
+    assert entry["id"] == "byq-continuation-budget"
+    assert entry["name"] == "file:///opt/byq/runtime/byq-continuation-budget.js"
+    assert set(entry["config"]) == {"deadlineEpochMs", "reservationId",
+                                    "executionProfile", "requestLimits"}
 
 
 def test_acp_guard_patch_refuses_expired_deadline(tmp_path):

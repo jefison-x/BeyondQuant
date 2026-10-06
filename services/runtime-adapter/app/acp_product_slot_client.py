@@ -35,6 +35,7 @@ _TEXT = re.compile(r"[A-Za-z0-9_.:-]{1,256}\Z")
 _HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 _CWD_LEAF = re.compile(r"(?:session|root)-[0-9a-f]{32}\Z")
 _PROTOCOL_VERSION = wire.PROTOCOL_VERSION
+MAX_GUARD_BYTES = 16_384
 _PRODUCT_REJECT_CODES = frozenset({
     "workspace_mismatch", "environment_rejected", "scope_consumed",
     "state_unavailable", "deadline_expired", "runner_process_fence_unverified",
@@ -354,6 +355,7 @@ class ProductRunnerClient:
         env: Mapping[str, str],
         deadline_at_ms: int,
         expected_cwd: str,
+        guard_b64: str | None = None,
     ) -> wire.RunnerSession:
         """Reserve before connect, send one signed START, and return ACP relay."""
         checked_scope, digest = _checked_scope(scope)
@@ -406,6 +408,10 @@ class ProductRunnerClient:
                 "env": checked_env,
                 "deadline_at_ms": deadline_at_ms,
             }
+            if guard_b64 is not None:
+                if (not isinstance(guard_b64, str) or len(guard_b64) > ((MAX_GUARD_BYTES + 2) // 3) * 4):
+                    raise ValueError("Product ACP continuation guard is invalid")
+                unsigned_start["guard_b64"] = guard_b64
             signed_start = {
                 **unsigned_start,
                 "mac": wire.sign_runner_start(unsigned_start, binding.secret),
