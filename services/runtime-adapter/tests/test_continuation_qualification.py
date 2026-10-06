@@ -17,6 +17,14 @@ from app import runtime
         ("1", "synthetic", "deepseek-official", "deepseek-v4-flash", "0.1.5rc1", "0.1.2rc1", "dsh-0.1.5", True, False),
         ("1", "synthetic", "deepseek-official", "deepseek-v4-flash", "0.1.5rc1", "0.1.5rc1", "dsh-0.1.2", True, False),
         ("1", "synthetic", "deepseek-official", "deepseek-v4-flash", "0.1.5rc1", "0.1.5rc1", "dsh-0.1.5", False, False),
+        # ADR-0103: the pinned rc.2 ACP family qualifies without the SDK pair,
+        # but still requires the opt-in flag, a credential and the exact route.
+        ("1", "synthetic", "deepseek-official", "deepseek-v4-flash", "0.1.5rc1", "0.1.5rc1", "dsh-v0.2.0-rc.2-acp", True, True),
+        ("0", "synthetic", "deepseek-official", "deepseek-v4-flash", "0.1.5rc1", "0.1.5rc1", "dsh-v0.2.0-rc.2-acp", True, False),
+        ("1", "", "deepseek-official", "deepseek-v4-flash", "0.1.5rc1", "0.1.5rc1", "dsh-v0.2.0-rc.2-acp", True, False),
+        ("1", "synthetic", "other", "deepseek-v4-flash", "0.1.5rc1", "0.1.5rc1", "dsh-v0.2.0-rc.2-acp", True, False),
+        ("1", "synthetic", "deepseek-official", "other", "0.1.5rc1", "0.1.5rc1", "dsh-v0.2.0-rc.2-acp", True, False),
+        ("1", "synthetic", "deepseek-official", "deepseek-v4-flash", "0.1.5rc1", "0.1.5rc1", "dsh-v0.2.0-rc.2-acp", False, False),
     ],
 )
 def test_qualification_is_exact_to_the_pinned_task_ready_profile(

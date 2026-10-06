@@ -2232,6 +2232,19 @@ class RuntimeAdapter:
             return {"receipt": dict(entry["receipt"])}
 
     def continuation_qualified(self, record: RuntimeSession) -> bool:
+        if (os.environ.get('BYQ_F6_EXECUTOR_ENABLED') != '1' or not self._root_scoped
+                or not bool(record.model_resolution.get('api_key'))
+                or not _continuation_route_qualified(
+                    record.model_resolution, self._provider, self._model)):
+            return False
+        family = self._compatibility.family
+        # ADR-0103: the pinned rc.2 ACP family carries its own guard patch and
+        # provider request proxy, so the SDK distribution pair does not apply.
+        # The executor remains opt-in via BYQ_F6_EXECUTOR_ENABLED.
+        if family == 'dsh-v0.2.0-rc.2-acp':
+            return True
+        if family != 'dsh-0.1.5':
+            return False
         try:
             sdk = distribution_version('deepseek-harness-sdk')
             runtime_bin = distribution_version('deepseek-harness-runtime-bin')
@@ -2239,11 +2252,7 @@ class RuntimeAdapter:
             return False
         # ADR-0090 relies on the pinned public tools/pre-execute contract that
         # was inspected and dynamically qualified for the 0.1.5 pair only.
-        exact = sdk == runtime_bin == '0.1.5rc1'
-        return (os.environ.get('BYQ_F6_EXECUTOR_ENABLED') == '1' and self._root_scoped
-            and self._compatibility.family == 'dsh-0.1.5' and exact
-            and bool(record.model_resolution.get('api_key'))
-            and _continuation_route_qualified(record.model_resolution, self._provider, self._model))
+        return sdk == runtime_bin == '0.1.5rc1'
 
     def _close_continuation_proxy(
         self, record: RuntimeSession, generation_id: str, harness: Any,
