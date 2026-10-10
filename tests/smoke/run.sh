@@ -44,7 +44,7 @@ fi
 echo "== ACP Runtime Adapter has only its bounded runner and workspace mounts =="
 runtime_id=$("${compose[@]}" ps -q runtime-adapter)
 workspace_root="$DSH_SESSION_ROOT/$BYQ_ACP_PRODUCT_WORKSPACE_ID"
-actual_mounts=$(docker inspect "$runtime_id" --format '{{range .Mounts}}{{println .Destination}}{{end}}' | sort)
+actual_mounts=$(docker inspect "$runtime_id" --format '{{range .Mounts}}{{println .Destination}}{{end}}' | sed '/^$/d' | sort)
 expected_mounts=$(printf '%s\n' \
   /run/byq-acp-product-runner \
   /run/byq-acp-runner \
@@ -131,7 +131,7 @@ PYCODE
 
 echo "== Product runner uses the workspace-scoped session volume =="
 product_runner_id=$("${compose[@]}" ps -q acp-product-runner)
-product_mounts=$(docker inspect "$product_runner_id" --format '{{range .Mounts}}{{if ne .Type "tmpfs"}}{{println .Destination}}{{end}}{{end}}' | sort)
+product_mounts=$(docker inspect "$product_runner_id" --format '{{range .Mounts}}{{if ne .Type "tmpfs"}}{{println .Destination}}{{end}}{{end}}' | sed '/^$/d' | sort)
 expected_product_mounts=$(printf '%s\n' \
   /run/byq-acp-product-runner \
   /var/lib/byq/acp-product-runner-state \
