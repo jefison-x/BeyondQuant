@@ -1698,5 +1698,27 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertEqual(raw_payload_readers, expected)
 
 
+class Phase48KeylessAcceptanceContract(unittest.TestCase):
+    """The keyless ACP selector is narrower than full ordinary-model Phase 48."""
+
+    def test_keyless_selector_labels_and_default_mode_are_truthful(self) -> None:
+        local_ci = (ROOT / "scripts/ci/local-ci.sh").read_text()
+        self.assertIn("phase48-product-golden.py --keyless-acp", local_ci)
+        self.assertIn("ACP keyless Product/business coherence", local_ci)
+        self.assertNotIn('ok "Phase 48 no-mock two-user Product coherence"', local_ci)
+
+        golden = (ROOT / "scripts/evidence/phase48-product-golden.py").read_text()
+        self.assertIn('arguments == ["--keyless-acp"]', golden)
+        self.assertIn("acp-product-business-coherence.v1", golden)
+        self.assertIn("product model is unavailable", golden)
+        self.assertIn('receipt["observed_public_turn_rejection_503"] = True', golden)
+        self.assertIn('receipt["rejection_reason"] = "NOT_OBSERVED"', golden)
+        self.assertIn("require_observed_public_turn_rejection_503", golden)
+        self.assertIn('receipt["qualified_ordinary_turn"] = "NOT_RUN"', golden)
+        self.assertIn('receipt["full_phase48_acceptance"] = "OPEN"', golden)
+        # Default mode must still require the original accepted turn.
+        self.assertIn('body.get("accepted") is True', golden)
+
+
 if __name__ == "__main__":
     unittest.main()

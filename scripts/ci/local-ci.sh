@@ -822,8 +822,8 @@ PYCODE
       -e BYQ_GOLDEN_OTHER_USERNAME="$BYQ_GOLDEN_OTHER_USERNAME" \
       -e BYQ_GOLDEN_OTHER_PASSWORD="$BYQ_GOLDEN_OTHER_PASSWORD" \
       backend python /tmp/phase48-seed.py \
-    && BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" scripts/evidence/phase48-product-golden.py; then
-    ok "Phase 48 no-mock two-user Product coherence"; else bad "Phase 48 no-mock two-user Product coherence"; fi
+    && BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" scripts/evidence/phase48-product-golden.py --keyless-acp; then
+    ok "ACP keyless Product/business coherence"; else bad "ACP keyless Product/business coherence"; fi
 }
 
 check_f6_chain() {
