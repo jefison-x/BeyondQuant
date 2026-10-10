@@ -6,6 +6,7 @@ from __future__ import annotations
 import http.cookiejar
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -121,25 +122,29 @@ def wait_for_completed_backtest(
     return job
 
 
-def workspace_receipt() -> None:
-    """Emit a read-only receipt binding the authenticated bootstrap owner to CI."""
-    username = os.environ.get("BYQ_GOLDEN_OWNER_USERNAME", "p48-admin")
-    owner = ProductClient(username, os.environ.get("BYQ_GOLDEN_OWNER_PASSWORD", "P48AdminPass123"))
-    session = owner.request("GET", "/api/auth/me")
-    require(session.get("user", {}).get("username") == username,
+def workspace_receipt_payload(
+    username: str,
+    login_user: dict[str, object],
+    login_workspace: dict[str, object],
+    session: dict[str, object],
+) -> dict[str, object]:
+    """Validate Gateway login and flat `/api/auth/me` projections for the same owner."""
+    require(login_user.get("username") == username,
+            "login returned the wrong workspace owner")
+    require(session.get("subject") == username,
             "authenticated session returned the wrong owner")
-    require(session.get("workspace") == owner.workspace,
+    require(session.get("workspace") == login_workspace,
             "authenticated session workspace differs from login")
-    workspace = owner.workspace
+    workspace = login_workspace
     require(
         workspace.get("contract") == "personal-workspace.v1"
         and workspace.get("kind") == "personal"
         and workspace.get("role") == "owner"
         and isinstance(workspace.get("workspace_id"), str)
-        and workspace["workspace_id"].strip(),
+        and re.fullmatch(r"workspace_[0-9a-f]{32}", workspace["workspace_id"]) is not None,
         "owner login did not establish a trusted personal workspace",
     )
-    print(json.dumps({
+    return {
         "schema_version": "byq-ci-acp-workspace-binding.v1",
         "username": username,
         "workspace": {
@@ -148,7 +153,16 @@ def workspace_receipt() -> None:
             "kind": workspace["kind"],
             "role": workspace["role"],
         },
-    }, sort_keys=True))
+    }
+
+
+def workspace_receipt() -> None:
+    """Emit a read-only receipt binding the authenticated bootstrap owner to CI."""
+    username = os.environ.get("BYQ_GOLDEN_OWNER_USERNAME", "p48-admin")
+    owner = ProductClient(username, os.environ.get("BYQ_GOLDEN_OWNER_PASSWORD", "P48AdminPass123"))
+    session = owner.request("GET", "/api/auth/me")
+    receipt = workspace_receipt_payload(username, owner.user, owner.workspace, session)
+    print(json.dumps(receipt, sort_keys=True))
 
 
 def main() -> None:

@@ -1263,6 +1263,7 @@ def test_configured_model_credential_is_scoped_to_the_owned_sdk_environment(
     tmp_path: Path,
 ) -> None:
     FakeHarness.reset()
+    monkeypatch.setenv("BYQ_DSH_PROCESS_OWNERSHIP", "session")
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
     composition = tmp_path / "composition.yml"
     composition.write_text("[]\n", encoding="utf-8")
@@ -1284,6 +1285,7 @@ def test_personal_model_binding_is_resolved_directly_without_public_exposure(
     tmp_path: Path,
 ) -> None:
     FakeHarness.reset()
+    monkeypatch.setenv("BYQ_DSH_PROCESS_OWNERSHIP", "session")
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
     composition = tmp_path / "composition.yml"
     composition.write_text("[]\n", encoding="utf-8")
@@ -1357,6 +1359,7 @@ def test_opencode_personal_key_is_scoped_to_each_reviewed_runtime_route(
     provider: str,
 ) -> None:
     FakeHarness.reset()
+    monkeypatch.setenv("BYQ_DSH_PROCESS_OWNERSHIP", "session")
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
     composition = tmp_path / "composition.yml"
     composition.write_text("[]\n", encoding="utf-8")
@@ -1417,6 +1420,7 @@ def test_broken_personal_resolution_never_falls_back_to_system_key(
     tmp_path: Path,
 ) -> None:
     FakeHarness.reset()
+    monkeypatch.setenv("BYQ_DSH_PROCESS_OWNERSHIP", "session")
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
     composition = tmp_path / "composition.yml"
     composition.write_text("[]\n", encoding="utf-8")

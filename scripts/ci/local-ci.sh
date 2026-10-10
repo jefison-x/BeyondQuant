@@ -76,6 +76,7 @@ fi
 
 PASS=0
 FAIL=0
+CI_BROWSER_READY=0
 # Low-noise, redacted-by-the-caller phase timing. This is measurement only: it
 # never changes selection, ordering or pass/fail, and the next required remote
 # verification produces the baseline without a dedicated Full run. Nested helper
@@ -216,6 +217,22 @@ run_interruptible() {
   fi
   ACTIVE_CHILD_PID=""
   return "$child_status"
+}
+
+prepare_ci_browser() {
+  [ "$CI_BROWSER_READY" -eq 1 ] && return 0
+  local frontend_dir="$REPO_ROOT/apps/frontend"
+  if [ ! -x "$frontend_dir/node_modules/.bin/playwright" ]; then
+    if ! run_interruptible bash -c 'cd "$1" && npm ci --no-audit --no-fund' _ "$frontend_dir"; then
+      bad "locked Playwright dependency installation"
+      return 1
+    fi
+  fi
+  if ! run_interruptible bash -c 'cd "$1" && npx playwright install chromium' _ "$frontend_dir"; then
+    bad "Playwright Chromium installation"
+    return 1
+  fi
+  CI_BROWSER_READY=1
 }
 
 acquire_heavy_capacity() {
@@ -593,7 +610,9 @@ check_gateway() {
   fi
   if run_interruptible docker run --rm --pull=never --name "$CI_GATEWAY_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/gateway:/app" \
+      -v "$REPO_ROOT/scripts/evidence/phase48-product-golden.py:/app/tests/phase48-product-golden.py:ro" \
       -v "$REPO_ROOT/packages:/app/packages" -w /app \
+      -e BYQ_PHASE48_GOLDEN_SCRIPT_PATH=/app/tests/phase48-product-golden.py \
       "$gateway_image" python -m pytest -q -p no:cacheprovider \
       --durations=10 --durations-min=1.0; then
     ok "gateway tests"; else bad "gateway tests"; fi
@@ -778,12 +797,10 @@ PYCODE
   if acp_compose cp scripts/evidence/f2-receipt-seed.py backend:/tmp/f2-receipt-seed.py >/dev/null \
     && acp_compose exec -T -e BYQ_F2_FIXTURE=1 backend python /tmp/f2-receipt-seed.py; then
     ok "F2 original receipt browser fixture"; else bad "F2 original receipt browser fixture"; fi
-  if (
-    cd apps/frontend
-    [ -x node_modules/.bin/playwright ] || npm ci --no-audit --no-fund
-    npx playwright install chromium
-    npm run test:e2e:real -- --output "$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE/real-e2e"
-  ); then
+  if ! prepare_ci_browser; then
+    return
+  fi
+  if ( cd apps/frontend && npm run test:e2e:real -- --output "$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE/real-e2e" ); then
     ok "real Product API browser smoke"; else bad "real Product API browser smoke"; fi
   if BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" \
       scripts/evidence/phase74-product-verification.py "$evidence_dir/phase74-identities.json" \
@@ -835,6 +852,9 @@ check_f6_chain() {
     return
   fi
   ok "F6 offline ACP provider, settlement, and audit contracts"
+  if ! prepare_ci_browser; then
+    return
+  fi
   if ! run_interruptible python3 "$REPO_ROOT/scripts/evidence/acp-f6-release-fixture.py"; then
     bad "F6 ACP Product/Worker background-completion release fixture"
     return
