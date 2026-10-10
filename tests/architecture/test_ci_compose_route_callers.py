@@ -130,6 +130,13 @@ class ComposeRouteCallerFailClosedTests(unittest.TestCase):
         self.assertIn("prepare_ci_compose_env || return 1", source)
         self.assertEqual(source.count("if ! prepare_ci_compose_env; then"), 2)
         self.assertNotIn("\n  prepare_ci_compose_env\n", source)
+        self.assertIn(
+            'run_interruptible python3 "$REPO_ROOT/scripts/dsh/acp_build.py" -- bash ./tests/smoke/run.sh',
+            source,
+        )
+        self.assertIn('phase48-product-golden.py --workspace-receipt', source)
+        self.assertIn("docker inspect \"$container_id\" --format '{{.Image}}'", source)
+        self.assertIn('[ "$running_image" != "$captured_image" ]', source)
 
 
 if __name__ == "__main__":

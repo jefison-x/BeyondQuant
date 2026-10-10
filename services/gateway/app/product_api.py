@@ -2773,8 +2773,13 @@ def _decorate_plugin_center(body: dict[str, object], runtime: dict[str, object])
             and latest_policy_request.get("target_composition_hash") == active_hash
         )
     )
+    release_id = runtime_state.get("release_id")
+    if (runtime_state.get("release_identity") != "matched"
+            or release_id != "dsh-v0.2.0-rc.2"):
+        release_id = None
     body["runtime"] = {
         "status": runtime_state.get("status", "unavailable"),
+        "release_id": release_id,
         "sdk": runtime_state.get("sdk"),
         "runtime_bin": runtime_state.get("runtime_bin"),
         "active_profile": active_profile,

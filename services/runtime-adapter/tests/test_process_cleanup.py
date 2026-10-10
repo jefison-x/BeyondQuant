@@ -189,7 +189,9 @@ def adapter(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> RuntimeAdapter:
     # process ownership has its own fixture that supplies a verified profile.
     monkeypatch.setenv("BYQ_DSH_PROCESS_OWNERSHIP", "session")
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
-    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
+    composition = tmp_path / "composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(composition))
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
     monkeypatch.setenv("BYQ_DSH_RUN_TIMEOUT_SECONDS", "3600")
     monkeypatch.setenv("BYQ_DSH_SUBAGENT_TIMEOUT_SECONDS", "3600")
@@ -1262,7 +1264,9 @@ def test_configured_model_credential_is_scoped_to_the_owned_sdk_environment(
 ) -> None:
     FakeHarness.reset()
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
-    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
+    composition = tmp_path / "composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(composition))
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-provider-secret")
 
@@ -1281,7 +1285,9 @@ def test_personal_model_binding_is_resolved_directly_without_public_exposure(
 ) -> None:
     FakeHarness.reset()
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
-    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
+    composition = tmp_path / "composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(composition))
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
     monkeypatch.setenv("BYQ_BACKEND_URL", "http://backend.test")
     monkeypatch.setenv("BYQ_CREDENTIAL_RESOLVER_TOKEN", "resolver-test-only")
@@ -1352,7 +1358,9 @@ def test_opencode_personal_key_is_scoped_to_each_reviewed_runtime_route(
 ) -> None:
     FakeHarness.reset()
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
-    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
+    composition = tmp_path / "composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(composition))
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
     adapter = RuntimeAdapter(release_compatibility(tmp_path))
     harness = adapter._build_harness(
@@ -1410,7 +1418,9 @@ def test_broken_personal_resolution_never_falls_back_to_system_key(
 ) -> None:
     FakeHarness.reset()
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
-    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
+    composition = tmp_path / "composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(composition))
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
     monkeypatch.setenv("BYQ_CREDENTIAL_RESOLVER_TOKEN", "resolver-test-only")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "system-fallback-must-not-win")

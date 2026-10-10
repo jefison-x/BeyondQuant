@@ -41,22 +41,23 @@ if docker inspect "$sandbox_id" --format '{{range .Config.Env}}{{println .}}{{en
   exit 1
 fi
 
-echo "== Runtime Adapter has only the session persistence mount =="
+echo "== ACP Runtime Adapter has only its bounded runner and workspace mounts =="
 runtime_id=$("${compose[@]}" ps -q runtime-adapter)
-mounts=$(docker inspect "$runtime_id" --format '{{range .Mounts}}{{println .Destination}}{{end}}')
-test "$mounts" = "/var/lib/byq/dsh-sessions"
+workspace_root="$DSH_SESSION_ROOT/$BYQ_ACP_PRODUCT_WORKSPACE_ID"
+actual_mounts=$(docker inspect "$runtime_id" --format '{{range .Mounts}}{{println .Destination}}{{end}}' | sort)
+expected_mounts=$(printf '%s\n' \
+  /run/byq-acp-product-runner \
+  /run/byq-acp-runner \
+  "$workspace_root" | sort)
+test "$actual_mounts" = "$expected_mounts"
+test -n "$BYQ_ACP_PRODUCT_WORKSPACE_ID"
 
 echo "== Runtime Adapter filesystem permissions =="
 "${compose[@]}" exec -T runtime-adapter sh -c \
-  'test -w /var/lib/byq/dsh-sessions && test ! -w /app && test ! -w /opt/byq'
+  "test -w '$workspace_root' && test ! -w /app && test ! -w /opt/byq"
 
-"${compose[@]}" exec -T runtime-adapter python3 - <<'PYCODE'
-import os
-from deepseek_harness_runtime import bundled_runtime_path
-runtime = bundled_runtime_path()
-assert runtime.is_file() and os.access(runtime, os.X_OK)
-assert not os.access(runtime, os.W_OK)
-PYCODE
+"${compose[@]}" exec -T runtime-adapter sh -c \
+  'test -f /opt/dsh-runtime/apps/cli/lib/bin.js && test ! -w /opt/dsh-runtime/apps/cli/lib/bin.js'
 
 echo "== MCP contract and auth wall =="
 contract_workspace="$("${compose[@]}" exec -T backend python - <<'PYCODE'
@@ -108,6 +109,45 @@ assert payload["status"] == "ok"
 assert payload["dsh_runtime_integration"] == "runtime-adapter"
 print(json.dumps(payload, sort_keys=True))
 PY
+
+echo "== ACP Runtime Adapter release readiness =="
+"${compose[@]}" exec -T runtime-adapter python3 - <<'PYCODE'
+import json
+from urllib.request import urlopen
+
+with urlopen("http://127.0.0.1:8400/readyz", timeout=20) as response:
+    readiness = json.load(response)
+assert readiness["runtime_adapter"] == "ready"
+assert readiness["release_id"] == "dsh-v0.2.0-rc.2"
+assert readiness["release_identity"] == "matched"
+assert readiness["sdk"] == "deepseek-harness-sdk==not-applicable"
+assert readiness["runtime_bin"] == "deepseek-harness-runtime-bin==not-applicable"
+assert readiness["composition_hash"].startswith("sha256:")
+serialized_readiness = json.dumps(readiness).lower()
+assert "deepseek_api_key" not in serialized_readiness
+assert "authorization" not in serialized_readiness
+print(json.dumps({key: readiness[key] for key in ("runtime_adapter", "release_id", "release_identity", "sdk", "runtime_bin", "plugin_profile", "composition_hash")}, sort_keys=True))
+PYCODE
+
+echo "== Product runner uses the workspace-scoped session volume =="
+product_runner_id=$("${compose[@]}" ps -q acp-product-runner)
+product_mounts=$(docker inspect "$product_runner_id" --format '{{range .Mounts}}{{if ne .Type "tmpfs"}}{{println .Destination}}{{end}}{{end}}' | sort)
+expected_product_mounts=$(printf '%s\n' \
+  /run/byq-acp-product-runner \
+  /var/lib/byq/acp-product-runner-state \
+  "$workspace_root" | sort)
+test "$product_mounts" = "$expected_product_mounts"
+# Cycle only the idle Product runner before any Product session or user turn. This
+# checks that the current workspace-scoped volume survives a normal runner restart;
+# it does not claim crash recovery or DSH process continuation.
+marker="$workspace_root/.byq-ci-volume-marker-$BYQ_CI_SCOPE"
+marker_value="workspace-volume-$BYQ_CI_SCOPE"
+docker exec "$product_runner_id" sh -c "printf '%s' '$marker_value' > '$marker'"
+"${compose[@]}" restart acp-product-runner >/dev/null
+"${compose[@]}" up -d --pull never --no-build --wait acp-product-runner >/dev/null
+product_runner_id=$("${compose[@]}" ps -q acp-product-runner)
+test "$(docker exec "$product_runner_id" sh -c "cat '$marker'")" = "$marker_value"
+docker exec "$product_runner_id" rm -f "$marker"
 
 echo "== Authenticated Product Agent session and BYQ trace replay =="
 python3 - <<'PY'
@@ -216,81 +256,4 @@ for method, path, payload in routes:
 print("legacy Gateway runtime proxies return 404")
 PY
 
-echo "== Runtime Adapter keyless initialize, lifecycle and release =="
-docker compose exec -T runtime-adapter python3 - <<'PY'
-import json
-import uuid
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
-
-session_id = f"phase6-smoke-{uuid.uuid4().hex}"
-base = "http://127.0.0.1:8400/internal/runtime"
-
-with urlopen("http://127.0.0.1:8400/readyz", timeout=20) as response:
-    readiness = json.load(response)
-assert readiness["sdk"] == "deepseek-harness-sdk==0.1.5rc1"
-assert readiness["runtime_bin"] == "deepseek-harness-runtime-bin==0.1.5rc1"
-assert readiness["plugin_profile"] == "byq-product-candidate"
-assert readiness["enabled_plugin_ids"] == ["compaction", "guard", "web-search"]
-assert readiness["composition_hash"].startswith("sha256:")
-serialized_readiness = json.dumps(readiness).lower()
-assert "deepseek_api_key" not in serialized_readiness
-assert "authorization" not in serialized_readiness
-
-def post(path, payload=None, expected=(200, 201, 202)):
-    body = None if payload is None else json.dumps(payload).encode()
-    request = Request(
-        base + path,
-        data=body,
-        headers={"content-type": "application/json"} if body else {},
-        method="POST",
-    )
-    try:
-        with urlopen(request, timeout=20) as response:
-            assert response.status in expected
-            return response.status, json.load(response)
-    except HTTPError as exc:
-        return exc.code, json.loads(exc.read())
-
-status, created = post("/sessions", {"session_id": session_id, "trace_id": "phase6-smoke-trace",
-                                     "owner_principal": "phase6-smoke-user", "workspace_id": "phase6-smoke-workspace"})
-assert status == 201, (status, created)
-assert created["status"] == "ready"
-assert created["process_ownership"] == "dedicated"
-assert created["persistence"] == "dsh-owned"
-
-duplicate_status, _ = post("/sessions", {"session_id": session_id, "trace_id": "duplicate",
-                                         "owner_principal": "phase6-smoke-user", "workspace_id": "phase6-smoke-workspace"})
-assert duplicate_status == 409
-
-# The enqueue is keyless. If the provider fails immediately, the lifecycle
-# settles to failed/idle and hard cancel correctly returns 409; otherwise the
-# active run is hard-cancelled and the owned process is closed.
-prompt_status, _ = post(f"/sessions/{session_id}/prompt", {"content": "keyless smoke"})
-assert prompt_status == 202
-cancel_status, cancelled = post(f"/sessions/{session_id}/cancel?mode=hard")
-assert cancel_status in (200, 409)
-if cancel_status == 200:
-    assert cancelled["status"] == "interrupted"
-    resume_status, _ = post(f"/sessions/{session_id}/resume")
-    assert resume_status == 409  # Lost process cannot be reconstructed under the old session.
-
-release_status, released = post(f"/sessions/{session_id}/release")
-assert release_status == 200
-assert released["status"] == "closed"
-print(json.dumps({"created": created, "prompt_status": prompt_status, "cancelled": cancelled, "released": released}, sort_keys=True))
-PY
-
-echo "== owned DSH child cleanup =="
-if docker top "$runtime_id" -eo pid,args | grep -E 'deepseek-harness-sdk-runtime-linux-x64|dsh-jsonrpc-agent|packaged-bin.js|/lib/bin.js'; then
-  echo "Released session left an owned DSH runtime process behind" >&2
-  exit 1
-fi
-
-echo "== named session volume survives adapter restart =="
-marker="/var/lib/byq/dsh-sessions/phase6-volume-marker"
-"${compose[@]}" exec -T runtime-adapter sh -c "printf phase6 > '$marker'"
-"${compose[@]}" restart runtime-adapter
-"${compose[@]}" exec -T runtime-adapter sh -c "test \"\$(cat '$marker')\" = phase6"
-
-echo "Product API + direct Runtime Adapter keyless smoke PASS"
+echo "ACP Product API, authenticated workspace, and current release smoke PASS"

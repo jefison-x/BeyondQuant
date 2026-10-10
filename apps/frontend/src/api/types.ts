@@ -730,7 +730,7 @@ export interface PluginCenter {
   requests: PluginChangeRequest[];
   audit: Array<Record<string, unknown>>;
   boundaries: { online_install: false; runtime_mutation: false; secrets_exposed: false };
-  runtime: { status: string; sdk?: string; runtime_bin?: string; active_profile?: string; active_composition_hash?: string; active_plugin_ids: string[]; desired_matches_active_plugins: boolean };
+  runtime: { status: string; release_id?: string | null; sdk?: string; runtime_bin?: string; active_profile?: string; active_composition_hash?: string; active_plugin_ids: string[]; desired_matches_active_plugins: boolean };
   projection_status: "ready" | "partial";
 }
 

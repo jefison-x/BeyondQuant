@@ -701,7 +701,62 @@ check_smoke() {
     bad "isolated compose endpoint discovery"
     return
   fi
-  if run_interruptible ./tests/smoke/run.sh; then ok "full smoke"; else bad "full smoke"; fi
+  local evidence_dir="$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE"
+  mkdir -p "$evidence_dir"
+  local workspace_receipt="$evidence_dir/acp-workspace-binding.json"
+  if ! BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" \
+      scripts/evidence/phase48-product-golden.py --workspace-receipt > "$workspace_receipt"; then
+    bad "authenticated ACP Product workspace receipt"
+    return
+  fi
+  local product_workspace_id
+  if ! product_workspace_id="$(python3 - "$workspace_receipt" "$BYQ_GOLDEN_OWNER_USERNAME" <<'PYCODE'
+import json
+import re
+import sys
+from pathlib import Path
+
+receipt = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+workspace = receipt.get("workspace")
+if (receipt.get("schema_version") != "byq-ci-acp-workspace-binding.v1"
+        or receipt.get("username") != sys.argv[2]
+        or not isinstance(workspace, dict)
+        or workspace.get("contract") != "personal-workspace.v1"
+        or workspace.get("kind") != "personal"
+        or workspace.get("role") != "owner"
+        or not isinstance(workspace.get("workspace_id"), str)
+        or not re.fullmatch(r"workspace_[0-9a-f]{32}", workspace["workspace_id"])):
+    raise SystemExit("workspace receipt failed its binding contract")
+print(workspace["workspace_id"])
+PYCODE
+  )"; then
+    bad "authenticated ACP Product workspace receipt validation"
+    return
+  fi
+  export BYQ_ACP_PRODUCT_WORKSPACE_ID="$product_workspace_id"
+  if ! run_interruptible acp_compose up -d --pull never --no-build --force-recreate --no-deps --wait \
+      acp-product-runner runtime-adapter; then
+    bad "ACP Product workspace runner rebinding"
+    return
+  fi
+  local service captured_image container_id running_image
+  for service in acp-product-runner runtime-adapter; do
+    if ! captured_image="$(ci_image_ref "$service")"; then
+      bad "run-scoped $service image identity was not captured"
+      return
+    fi
+    if ! container_id="$(acp_compose ps -q "$service")" || [ -z "$container_id" ]; then
+      bad "rebound $service container is unavailable"
+      return
+    fi
+    if ! running_image="$(docker inspect "$container_id" --format '{{.Image}}')" \
+        || [ "$running_image" != "$captured_image" ]; then
+      bad "rebound $service does not use its captured run-scoped image"
+      return
+    fi
+  done
+  if run_interruptible python3 "$REPO_ROOT/scripts/dsh/acp_build.py" -- bash ./tests/smoke/run.sh; then
+    ok "full smoke"; else bad "full smoke"; fi
   if acp_compose cp scripts/evidence/phase67-seed.py backend:/tmp/phase67-seed.py >/dev/null \
     && acp_compose exec -T backend python /tmp/phase67-seed.py; then
     ok "Phase 67 validated index fixture"; else bad "Phase 67 validated index fixture"; fi
@@ -730,8 +785,6 @@ check_smoke() {
     npm run test:e2e:real -- --output "$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE/real-e2e"
   ); then
     ok "real Product API browser smoke"; else bad "real Product API browser smoke"; fi
-  local evidence_dir="$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE"
-  mkdir -p "$evidence_dir"
   if BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" \
       scripts/evidence/phase74-product-verification.py "$evidence_dir/phase74-identities.json" \
     && acp_compose restart ml-worker >/dev/null \

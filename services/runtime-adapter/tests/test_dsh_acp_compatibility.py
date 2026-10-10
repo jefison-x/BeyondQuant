@@ -15,6 +15,12 @@ from app.compat.dsh_acp import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _select_stdio_transport_for_stdio_contracts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These cases exercise the dedicated stdio and judgment runner paths."""
+    monkeypatch.setenv("BYQ_DSH_ACP_PROCESS_TRANSPORT", "local")
+
+
 _SERVER = r'''import json, os, sys
 
 capture = os.environ.get("ACP_TEST_CAPTURE", os.path.join(os.environ["DSH_HOME"], "wire.jsonl"))
@@ -149,7 +155,8 @@ def _harness(tmp_path: Path, capture: Path, *, boot_id: str = "b" * 32):
     composition = tmp_path / "composition.yml"
     composition.write_text("[]\n", encoding="utf-8")
     session_root = tmp_path / "sessions" / "root-1"
-    session_root.mkdir(parents=True)
+    session_root.mkdir(parents=True, mode=0o700)
+    session_root.chmod(0o700)
     compatibility = DshAcpCompatibility()
     harness = compatibility.build_harness(
         provider="deepseek-official",
@@ -286,7 +293,8 @@ def test_judgment_identity_mode_is_explicit_and_process_scope_has_only_its_crede
     composition = tmp_path / "judgment-composition.yml"
     composition.write_text("[]\n", encoding="utf-8")
     session_root = tmp_path / "sessions" / "judgment-root"
-    session_root.mkdir(parents=True)
+    session_root.mkdir(parents=True, mode=0o700)
+    session_root.chmod(0o700)
     capture = session_root / "wire.jsonl"
     compatibility = DshAcpCompatibility()
     environment = _judgment_identity_environment()
@@ -521,7 +529,8 @@ def test_judgment_identity_rejects_product_or_stale_credentials_even_when_empty(
     composition = tmp_path / "composition.yml"
     composition.write_text("[]\n", encoding="utf-8")
     session_root = tmp_path / "sessions" / "root-1"
-    session_root.mkdir(parents=True)
+    session_root.mkdir(parents=True, mode=0o700)
+    session_root.chmod(0o700)
     environment = _judgment_identity_environment()
     environment[forbidden_key] = ""
     with pytest.raises(AcpTransportError, match="contains Product credentials"):
@@ -538,7 +547,8 @@ def test_product_identity_cannot_select_the_judgment_root_mode(tmp_path: Path) -
     composition = tmp_path / "composition.yml"
     composition.write_text("[]\n", encoding="utf-8")
     session_root = tmp_path / "sessions" / "root-1"
-    session_root.mkdir(parents=True)
+    session_root.mkdir(parents=True, mode=0o700)
+    session_root.chmod(0o700)
     environment = _identity_environment(capture)
     environment["BYQ_MCP_ACP_IDENTITY_MODE"] = "research-judgment-root-v1"
     with pytest.raises(AcpTransportError, match="Product credentials"):

@@ -161,6 +161,8 @@ def test_acp_recovery_accepts_closed_before_ack_receipt_without_resume_or_replay
     session_root = tmp_path / "sessions"
     cwd = session_root / "byq-acp-workspaces" / session_id
     cwd.mkdir(parents=True)
+    # This settled receipt test exercises local ACP recovery; it does not claim a Product slot binding.
+    monkeypatch.setenv("BYQ_DSH_ACP_PROCESS_TRANSPORT", "local")
     monkeypatch.setenv("BYQ_DSH_PROCESS_OWNERSHIP", "root-turn")
     monkeypatch.setenv("DSH_SESSION_ROOT", str(session_root))
 

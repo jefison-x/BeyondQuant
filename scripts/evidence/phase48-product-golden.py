@@ -6,6 +6,7 @@ from __future__ import annotations
 import http.cookiejar
 import json
 import os
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -120,7 +121,42 @@ def wait_for_completed_backtest(
     return job
 
 
+def workspace_receipt() -> None:
+    """Emit a read-only receipt binding the authenticated bootstrap owner to CI."""
+    username = os.environ.get("BYQ_GOLDEN_OWNER_USERNAME", "p48-admin")
+    owner = ProductClient(username, os.environ.get("BYQ_GOLDEN_OWNER_PASSWORD", "P48AdminPass123"))
+    session = owner.request("GET", "/api/auth/me")
+    require(session.get("user", {}).get("username") == username,
+            "authenticated session returned the wrong owner")
+    require(session.get("workspace") == owner.workspace,
+            "authenticated session workspace differs from login")
+    workspace = owner.workspace
+    require(
+        workspace.get("contract") == "personal-workspace.v1"
+        and workspace.get("kind") == "personal"
+        and workspace.get("role") == "owner"
+        and isinstance(workspace.get("workspace_id"), str)
+        and workspace["workspace_id"].strip(),
+        "owner login did not establish a trusted personal workspace",
+    )
+    print(json.dumps({
+        "schema_version": "byq-ci-acp-workspace-binding.v1",
+        "username": username,
+        "workspace": {
+            "contract": workspace["contract"],
+            "workspace_id": workspace["workspace_id"],
+            "kind": workspace["kind"],
+            "role": workspace["role"],
+        },
+    }, sort_keys=True))
+
+
 def main() -> None:
+    if sys.argv[1:] == ["--workspace-receipt"]:
+        workspace_receipt()
+        return
+    if sys.argv[1:]:
+        raise SystemExit("unsupported phase48-product-golden.py argument")
     owner = ProductClient(
         os.environ.get("BYQ_GOLDEN_OWNER_USERNAME", "p48-admin"),
         os.environ.get("BYQ_GOLDEN_OWNER_PASSWORD", "P48AdminPass123"),

@@ -464,6 +464,32 @@ def run() -> dict:
         prepared_workspace_id = _user_fixture_workspace(user_receipt)
         fixture_env["BYQ_ACP_PRODUCT_WORKSPACE_ID"] = prepared_workspace_id
 
+        # Keep F6 Product data and control volumes separate from the bootstrap
+        # admin workspace. The admin stack is restored after the fixture, so
+        # sharing these names would let the F6 user overwrite admin slot state.
+        product_volume_keys = (
+            "BYQ_ACP_PRODUCT_SESSIONS_VOLUME_NAME",
+            "BYQ_ACP_PRODUCT_STATE_VOLUME_NAME",
+            "BYQ_ACP_PRODUCT_CONTROL_VOLUME_NAME",
+        )
+        expected_admin_volume_names = (
+            project + "-acp-product-sessions",
+            project + "-acp-product-state",
+            project + "-acp-product-control",
+        )
+        _require(tuple(base_env.get(key) for key in product_volume_keys)
+                 == expected_admin_volume_names,
+                 "admin_product_volume_binding_invalid")
+        f6_volume_names = (
+            project + "-f6-acp-product-sessions",
+            project + "-f6-acp-product-state",
+            project + "-f6-acp-product-control",
+        )
+        _require(len(set(f6_volume_names)) == 3
+                 and set(f6_volume_names).isdisjoint(expected_admin_volume_names),
+                 "f6_product_volume_binding_invalid")
+        fixture_env.update(dict(zip(product_volume_keys, f6_volume_names, strict=True)))
+
         # This F6 opt-in is scoped to the run Compose project. All three DSH
         # roles and every product image stay pinned to the captured batch.
         touched = True

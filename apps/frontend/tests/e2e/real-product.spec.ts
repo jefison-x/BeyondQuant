@@ -608,8 +608,8 @@ test("real Product API My Space credential, binding, policy, and asset import fl
   const settingsNavigation = page.getByRole("navigation", { name: "系统设置导航" });
   await settingsNavigation.getByRole("button", { name: /数据库/ }).click();
   await expect(page.getByRole("dialog").getByText("byq_domain", { exact: true })).toBeVisible();
-  await settingsNavigation.getByRole("button", { name: /运行时/ }).click();
-  await expect(page.getByText("deepseek-harness-sdk==0.1.5rc1", { exact: true })).toBeVisible();
+  await settingsNavigation.getByRole("button", { name: /Plugin Center/ }).click();
+  await expect(page.getByText("dsh-v0.2.0-rc.2", { exact: true })).toBeVisible();
 
   expect([...unexpectedOrigins]).toEqual([]);
   expect(serverErrors).toEqual([]);

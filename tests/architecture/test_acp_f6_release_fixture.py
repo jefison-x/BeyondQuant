@@ -132,11 +132,23 @@ class AcpF6ReleaseFixtureTests(unittest.TestCase):
             "BYQ_CI_SCOPE": scope,
             "BYQ_F6_EXECUTOR_ENABLED": "0",
             "BYQ_ACP_PRODUCT_WORKSPACE_ID": "workspace_" + "b" * 32,
+            "BYQ_ACP_PRODUCT_SESSIONS_VOLUME_NAME": project + "-acp-product-sessions",
+            "BYQ_ACP_PRODUCT_STATE_VOLUME_NAME": project + "-acp-product-state",
+            "BYQ_ACP_PRODUCT_CONTROL_VOLUME_NAME": project + "-acp-product-control",
         }
         events = []
 
+        volume_keys = (
+            "BYQ_ACP_PRODUCT_SESSIONS_VOLUME_NAME",
+            "BYQ_ACP_PRODUCT_STATE_VOLUME_NAME",
+            "BYQ_ACP_PRODUCT_CONTROL_VOLUME_NAME",
+        )
+
         def fake_compose(_files, env, _project, *args, **_kwargs):
-            events.append((args, env.get("BYQ_ACP_PRODUCT_WORKSPACE_ID")))
+            events.append((args, {
+                "workspace": env.get("BYQ_ACP_PRODUCT_WORKSPACE_ID"),
+                "volumes": tuple(env.get(key) for key in volume_keys),
+            }))
             if args[0] == "exec" and "/tmp/f6-chain-fixture.py" in args:
                 return json.dumps({"owner": "f6-chain-user", "workspace_id": workspace})
             return ""
@@ -155,17 +167,35 @@ class AcpF6ReleaseFixtureTests(unittest.TestCase):
                 self.fixture.run()
         self.assertEqual(raised.exception.category, "stop_after_wiring")
         self.assertEqual([event[0][0] for event in events[:2]], ["cp", "exec"])
+        admin_volumes = tuple(environment[key] for key in volume_keys)
+        self.assertEqual(events[0][1]["volumes"], admin_volumes)
+        self.assertEqual(events[1][1]["volumes"], admin_volumes)
         starts = [event for event in events if event[0][0] == "up"]
         self.assertEqual(len(starts), 3)
         self.assertEqual(starts[0][0][-1], "acp-product-runner")
-        self.assertEqual(starts[0][1], workspace)
-        self.assertEqual(starts[1][1], workspace)
+        self.assertEqual(starts[0][1]["workspace"], workspace)
+        self.assertEqual(starts[1][1]["workspace"], workspace)
+        f6_volumes = starts[0][1]["volumes"]
+        self.assertEqual(f6_volumes, (
+            project + "-f6-acp-product-sessions",
+            project + "-f6-acp-product-state",
+            project + "-f6-acp-product-control",
+        ))
+        self.assertEqual(len(set(f6_volumes)), 3)
+        self.assertTrue(set(f6_volumes).isdisjoint(admin_volumes))
+        cleanup_source = (ROOT / "scripts/ci/cleanup-resources.sh").read_text(encoding="utf-8")
+        for suffix in ("sessions", "state", "control"):
+            self.assertIn(f'"$PROJECT-f6-acp-product-{suffix}"', cleanup_source)
+        self.assertIn('resource_is_scope_owned "$kind" "$resource" || return 0', cleanup_source)
+        self.assertEqual(starts[1][1]["volumes"], f6_volumes)
         copies = [index for index, event in enumerate(events) if event[0][0] == "cp"]
         self.assertEqual(len(copies), 2)
         self.assertLess(events.index(starts[1]), copies[1])
         self.assertEqual(events[copies[1]][0][-1], "backend:/tmp/f6-chain-fixture.py")
-        self.assertEqual(events[copies[1]][1], workspace)
-        self.assertEqual(starts[2][1], environment["BYQ_ACP_PRODUCT_WORKSPACE_ID"])
+        self.assertEqual(events[copies[1]][1]["workspace"], workspace)
+        self.assertEqual(events[copies[1]][1]["volumes"], f6_volumes)
+        self.assertEqual(starts[2][1]["workspace"], environment["BYQ_ACP_PRODUCT_WORKSPACE_ID"])
+        self.assertEqual(starts[2][1]["volumes"], admin_volumes)
         self.assertIn("acp-product-runner", starts[2][0])
         with self.assertRaises(self.fixture.FixtureFailure):
             self.fixture._user_fixture_workspace({"owner": "f6-chain-user",
