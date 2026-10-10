@@ -1219,7 +1219,26 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("acp_compose port frontend 80", local_ci)
         self.assertIn("acp_compose port gateway 8100", local_ci)
         self.assertIn("npm run test:e2e:real", local_ci)
-        self.assertIn("[ -x node_modules/.bin/playwright ] || npm ci", local_ci)
+        browser_helper = local_ci.split("\nprepare_ci_browser() {", 1)[1].split("\n}", 1)[0]
+        self.assertIn('[ "$CI_BROWSER_READY" -eq 1 ] && return 0', browser_helper)
+        self.assertIn('[ ! -x "$frontend_dir/node_modules/.bin/playwright" ]', browser_helper)
+        self.assertIn("npm ci --no-audit --no-fund", browser_helper)
+        self.assertIn("npx playwright install chromium", browser_helper)
+        self.assertIn('bad "locked Playwright dependency installation"', browser_helper)
+        self.assertIn('bad "Playwright Chromium installation"', browser_helper)
+        self.assertIn("CI_BROWSER_READY=1", browser_helper)
+
+        smoke = local_ci.split("\ncheck_smoke() {", 1)[1].split("\ncheck_f6_chain() {", 1)[0]
+        self.assertLess(smoke.index("if ! prepare_ci_browser; then"), smoke.index("npm run test:e2e:real"))
+        f6 = local_ci.split("\ncheck_f6_chain() {", 1)[1].split("\ncheck_dsh_web() {", 1)[0]
+        self.assertLess(
+            f6.index('ok "F6 offline ACP provider, settlement, and audit contracts"'),
+            f6.index("if ! prepare_ci_browser; then"),
+        )
+        self.assertLess(
+            f6.index("if ! prepare_ci_browser; then"),
+            f6.index('scripts/evidence/acp-f6-release-fixture.py'),
+        )
         cleanup = (ROOT / "scripts/ci/cleanup-resources.sh").read_text()
         self.assertIn("down --remove-orphans", cleanup)
         self.assertNotIn("--profile feedback-publisher", cleanup)
