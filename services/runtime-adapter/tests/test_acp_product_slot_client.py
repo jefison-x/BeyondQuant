@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import base64
+import importlib.util
 import json
+import os
+from pathlib import Path
 import socketserver
 import threading
 import time
@@ -290,3 +293,45 @@ def test_pre_dispatch_connect_failure_releases_lease_for_retry(tmp_path):
     assert not registry.owns(scope)
     registry.reserve(scope)
     assert registry.owns(scope)
+
+
+def test_from_environment_still_fails_closed_without_product_bindings(monkeypatch):
+    monkeypatch.delenv(product.PRODUCT_BINDINGS_ENV, raising=False)
+    with pytest.raises(ValueError, match="Product ACP slot bindings are unavailable"):
+        product.ProductSlotRegistry.from_environment()
+
+
+def test_pytest_collection_bootstrap_restores_environment_and_preserves_bindings(monkeypatch):
+    conftest_path = Path(__file__).with_name("conftest.py")
+    spec = importlib.util.spec_from_file_location("runtime_adapter_conftest_under_test", conftest_path)
+    assert spec is not None and spec.loader is not None
+    bootstrap = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bootstrap)
+
+    transport_name = "BYQ_DSH_ACP_PROCESS_TRANSPORT"
+    bindings_name = product.PRODUCT_BINDINGS_ENV
+    monkeypatch.setenv(transport_name, "product-slot-v1")
+    monkeypatch.delenv(bindings_name, raising=False)
+    before = dict(os.environ)
+
+    bootstrap.pytest_configure(None)
+    configured = json.loads(os.environ[bindings_name])
+    assert list(configured) == ["byq-pytest-workspace"]
+    binding = configured["byq-pytest-workspace"]
+    assert binding["socket_path"].startswith("/tmp/byq-product-slot-pytest-")
+    assert binding["socket_path"].endswith(".sock")
+    secret_value = os.environ[binding["control_secret_env"]]
+    decoded_secret = base64.urlsafe_b64decode(secret_value + "=" * (-len(secret_value) % 4))
+    assert len(decoded_secret) == 32
+    assert os.environ[transport_name] == "product-slot-v1"
+
+    bootstrap.pytest_unconfigure(None)
+    assert dict(os.environ) == before
+
+    provided_invalid_bindings = "not-json; preserve-me"
+    monkeypatch.setenv(bindings_name, provided_invalid_bindings)
+    before_provided = dict(os.environ)
+    bootstrap.pytest_configure(None)
+    assert os.environ[bindings_name] == provided_invalid_bindings
+    bootstrap.pytest_unconfigure(None)
+    assert dict(os.environ) == before_provided

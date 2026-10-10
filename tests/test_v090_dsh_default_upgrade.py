@@ -20,6 +20,7 @@ SNAPSHOT_FILES = {
     "config/dsh/generated/deployment.identity.json": "promotion-snapshot.identity.json",
     "services/runtime-adapter/Dockerfile.post-u8-candidate": "promotion-snapshot.Dockerfile",
     "scripts/dsh/build_revision.py": "promotion-snapshot.build_revision.py",
+    "services/runtime-adapter/app/compat/__init__.py": "promotion-snapshot.compat-init.py",
 }
 
 
@@ -82,15 +83,6 @@ class DefaultUpgradeEvidenceTests(unittest.TestCase):
                 # The 0.9 promotion recorded this digest but did not archive
                 # the CI script; Clean Break necessarily changes the live script.
                 self.assertRegex(digest, r"^sha256:[0-9a-f]{64}$")
-                continue
-            if relative == "services/runtime-adapter/app/compat/__init__.py":
-                # This recorded digest was reconciled against this exact Git
-                # commit; replay its blob, never a moving ref or live source.
-                from scripts.dsh.historical_inputs import read_blob
-                source = read_blob(
-                    "2af01856fbcfa4f1be37c0a9cd5cd8a713fd9864", relative
-                )
-                self.assertEqual(digest, "sha256:" + hashlib.sha256(source).hexdigest(), relative)
                 continue
             source = (EVIDENCE / SNAPSHOT_FILES[relative]
                       if relative in SNAPSHOT_FILES else ROOT / relative)

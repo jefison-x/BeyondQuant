@@ -1662,7 +1662,7 @@ class ReleasePipelineTests(unittest.TestCase):
         self.assertIn(
             'scripts/release/requirements.release-runner.lock', steps[installs[0]]['run'])
 
-    def test_ci_architecture_lane_installs_pinned_offline_compose_parser(self):
+    def test_ci_architecture_and_integration_lanes_install_pinned_offline_compose_parser(self):
         # The ci-selfhosted architecture lane runs
         # `python3 -m unittest discover -s tests -p 'test_*.py'`, which imports
         # tests/architecture/test_dsh_authoritative_build.py and
@@ -1684,9 +1684,11 @@ class ReleasePipelineTests(unittest.TestCase):
         self.assertLess(setup, install, names)
         self.assertLess(install, profile, names)
         step = steps[install]
-        # Only the architecture lane's discovered tests import yaml on the host,
-        # so the install is precisely scoped to that lane.
-        self.assertEqual(step.get('if'), "matrix.lane == 'architecture'", step)
+        # The integration lane also runs the host-side F6 fixture, which parses
+        # the captured Compose topology with the same pinned PyYAML dependency.
+        self.assertEqual(
+            step.get('if'),
+            "matrix.lane == 'architecture' || matrix.lane == 'integration'", step)
         for option in ('--require-hashes', '--only-binary=:all:', '--no-deps'):
             self.assertIn(option, step['run'])
         self.assertIn(

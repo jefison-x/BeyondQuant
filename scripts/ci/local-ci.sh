@@ -688,6 +688,10 @@ check_smoke() {
     bad "isolated compose route selection"
     return 1
   fi
+  if ! run_interruptible acp_compose pull postgres; then
+    bad "isolated compose Postgres image pull"
+    return 1
+  fi
   if ! run_interruptible acp_compose up -d --pull never --no-build --wait; then
     acp_compose logs --no-color || true
     bad "isolated compose startup"

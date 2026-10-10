@@ -9,9 +9,11 @@ volume-owned epoch record from that identity.
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 from pathlib import Path
+import secrets
 
 import pytest
 
@@ -51,3 +53,54 @@ def allow_current_runtime_authority(monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(adapter, "require_current_backend_authority", lambda: None)
 
     return allow
+
+_PRODUCT_SLOT_TRANSPORT_ENV = "BYQ_DSH_ACP_PROCESS_TRANSPORT"
+_PRODUCT_SLOT_BINDINGS_ENV = "BYQ_ACP_PRODUCT_SLOT_BINDINGS"
+_PRODUCT_SLOT_SECRET_PREFIX = "BYQ_ACP_PRODUCT_SLOT_TEST_"
+_product_slot_env_restore: dict[str, str | None] | None = None
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Supply offline synthetic Product bindings before test-module collection."""
+
+    del config
+    global _product_slot_env_restore
+    if (_product_slot_env_restore is not None
+            or os.environ.get(_PRODUCT_SLOT_TRANSPORT_ENV) != "product-slot-v1"
+            or _PRODUCT_SLOT_BINDINGS_ENV in os.environ):
+        return
+
+    token = secrets.token_hex(8).upper()
+    secret_name = f"{_PRODUCT_SLOT_SECRET_PREFIX}{token}_SECRET"
+    while secret_name in os.environ:
+        token = secrets.token_hex(8).upper()
+        secret_name = f"{_PRODUCT_SLOT_SECRET_PREFIX}{token}_SECRET"
+    secret_value = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("ascii").rstrip("=")
+    binding_value = json.dumps({
+        "byq-pytest-workspace": {
+            "socket_path": f"/tmp/byq-product-slot-pytest-{token.lower()}.sock",
+            "control_secret_env": secret_name,
+        },
+    }, sort_keys=True, separators=(",", ":"))
+
+    _product_slot_env_restore = {
+        _PRODUCT_SLOT_BINDINGS_ENV: os.environ.get(_PRODUCT_SLOT_BINDINGS_ENV),
+        secret_name: os.environ.get(secret_name),
+    }
+    os.environ[_PRODUCT_SLOT_BINDINGS_ENV] = binding_value
+    os.environ[secret_name] = secret_value
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    """Restore exactly the environment values supplied by this test hook."""
+
+    del config
+    global _product_slot_env_restore
+    if _product_slot_env_restore is None:
+        return
+    for name, previous in _product_slot_env_restore.items():
+        if previous is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = previous
+    _product_slot_env_restore = None
