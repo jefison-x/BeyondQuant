@@ -66,6 +66,20 @@ def test_widened_or_non_exact_json_never_becomes_a_result(text):
         output.result("completed")
 
 
+def test_completed_turn_with_a_forbidden_proposal_routing_field_never_commits():
+    # Exact fixture10 window: the model returned exact top-level JSON with a
+    # proposal carrying a forbidden routing field, so the proposal is invalid
+    # and no result is committed (the root settles outcome_unknown fail-closed).
+    proposal = {**_proposal(), "next_action": "execute"}
+    output = AcpJudgmentRootOutput(NATIVE)
+    output.observe(_start())
+    output.observe(_answer(json.dumps(
+        {"proposal": proposal, "durable_evidence": {"kind": "none"}})))
+    output.observe(_end())
+    with pytest.raises(ResearchJudgmentError, match="proposal is invalid"):
+        output.result("completed")
+
+
 def test_cancel_unknown_or_missing_terminal_cannot_commit():
     for finish, terminal in (("cancelled", "cancelled"), ("failed", "failed"),
                              ("completed", None)):

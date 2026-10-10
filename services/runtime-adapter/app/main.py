@@ -318,9 +318,9 @@ def cancel_session(session_id: str, mode: str = Query("hard")) -> dict[str, obje
 
 
 @app.post("/internal/runtime/sessions/{session_id}/release")
-def release_session(session_id: str) -> dict[str, object]:
+def release_session(session_id: str, preserve_conversation: bool = Query(False)) -> dict[str, object]:
     try:
-        return adapter.release_session(session_id)
+        return adapter.release_session(session_id, preserve_conversation=preserve_conversation)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except SessionConflict as exc:

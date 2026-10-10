@@ -857,6 +857,54 @@ def admit_research_judgment_call(task_id: str, payload: dict[str, Any], request:
         raise HTTPException(status_code=409, detail=str(error)) from error
 
 
+@app.post('/internal/research-judgment/{task_id}/stage-claim')
+def claim_research_judgment_stage(task_id: str, payload: dict[str, Any], request: Request) -> dict:
+    # ADR-0107 judgment-only consumer lease. The claim never authorizes a
+    # dispatch and never creates a model-call admission; it is unknown-safe
+    # (a possibly-dispatched or non-admitted call is never re-claimable). A real
+    # runtime-authority service bearer is required (never just an x-byq-* header).
+    _require_runtime_authority_bearer(request)
+    context = _continuation_consumer_context(request)
+    call_identity = request.headers.get('x-byq-judgment-call-identity', '')
+    return _research_call(lambda: research_store.claim_judgment_stage_call(
+        task_id, call_identity, payload, trusted_context=context))
+
+
+@app.get('/internal/research-judgment/stages')
+def list_research_judgment_stages(request: Request) -> dict:
+    # ADR-0107 consumer selection (READ-ONLY): tasks whose current plan stage is
+    # a judgment stage. This global list is service-only (runtime-authority
+    # bearer) and deliberately tenant-agnostic; it is never exposed to an
+    # ordinary Product caller and needs no per-tenant context.
+    _require_runtime_authority_bearer(request)
+    return _research_call(lambda: {'stages': research_store.list_judgment_turn_tasks()})
+
+
+@app.post('/internal/research-judgment/{task_id}/stage-dispatch-intent')
+def record_research_judgment_dispatch_intent(task_id: str, payload: dict[str, Any],
+                                             request: Request) -> dict:
+    # ADR-0107: persist the dispatch-intent BEFORE the consumer sends the Adapter
+    # run request; only the live lease owner may persist it, so an expired owner
+    # cannot late-start a run. A real runtime-authority service bearer is required.
+    _require_runtime_authority_bearer(request)
+    context = _continuation_consumer_context(request)
+    call_identity = request.headers.get('x-byq-judgment-call-identity', '')
+    return _research_call(lambda: research_store.record_judgment_dispatch_intent(
+        task_id, call_identity, payload, trusted_context=context))
+
+
+@app.get('/internal/research-judgment/{task_id}/dispatch')
+def research_judgment_dispatch_descriptor(task_id: str, request: Request) -> dict:
+    # ADR-0107: the real business gate before any dispatch. The consumer must read
+    # this bounded descriptor (task status/approval/version/stage) and only
+    # dispatch when kind == "judgment_turn"; the SQL stage whitelist alone is not
+    # authorization. Service-only (runtime-authority bearer).
+    _require_runtime_authority_bearer(request)
+    context = _continuation_consumer_context(request)
+    return _research_call(lambda: research_store.plan_continuation_dispatch(
+        task_id, trusted_context=context))
+
+
 def _acp_judgment_scope(request: Request) -> tuple[dict[str, str], str]:
     owner = request.headers.get("x-byq-owner-principal")
     workspace = request.headers.get("x-byq-workspace-id")
@@ -1066,6 +1114,53 @@ def settle_acp_tool_ingress(payload: dict[str, Any], request: Request) -> dict[s
     scope = _acp_private_scope(request, root_run_id=payload.get("root_run_id"),
                               runtime_boot_id=payload.get("runtime_boot_id"))
     return _agent_call(lambda: agent_store.settle_acp_tool_ingress(payload, trusted_scope=scope))
+
+
+@app.post("/internal/acp/agent-authorize")
+def authorize_acp_agent_tool(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    """Authorize one exact observed ACP ingress with a narrow durable denial receipt."""
+    scope = _acp_private_scope(request)
+    if any(name not in request.headers for name in _ACP_RUN_HEADERS):
+        raise HTTPException(status_code=401, detail="exact trusted ACP native Agent headers are required")
+    depth_value = request.headers.get("x-byq-acp-depth")
+    if depth_value not in {"0", "1"}:
+        raise HTTPException(status_code=422, detail="invalid exact ACP Agent depth")
+    trusted_identity = {
+        "root_run_id": scope["root"],
+        "runtime_boot_id": scope["boot_id"],
+        "native_root_session_id": request.headers.get("x-byq-acp-native-root-session-id"),
+        "native_agent_session_id": request.headers.get("x-byq-acp-native-agent-session-id"),
+        "native_parent_session_id": request.headers.get("x-byq-acp-native-parent-session-id") or None,
+        "origin": request.headers.get("x-byq-acp-origin"),
+        "depth": int(depth_value),
+    }
+
+    def operation() -> dict[str, object]:
+        result = agent_store.authorize_acp_agent_tool(payload, trusted_scope=scope,
+            trusted_identity=trusted_identity)
+        if result["status"] == "denied":
+            return result
+        effective = user_policy_store.evaluate_authorization(scope["owner"], result["authorization"])
+        if effective.get("decision") == "policy_denied":
+            agent_store.record_audit(
+                {
+                    "run_id": result["authorization"].get("run_id"),
+                    "action": "policy.enforce",
+                    "outcome": "denied",
+                    "resource_type": payload["arguments"].get("resource_type"),
+                    "resource_id": payload["arguments"].get("resource_id"),
+                    "detail": {
+                        "domain_action": payload["arguments"].get("action"),
+                        "policy_rule_id": effective.get("policy_rule_id"),
+                    },
+                },
+                trusted_owner=scope["owner"],
+                trusted_actor=scope["actor"],
+            )
+            raise HTTPException(status_code=403, detail="authorization denied by user policy")
+        return {"status": "ok", "authorization": effective}
+
+    return _agent_call(operation)
 
 
 @app.post("/internal/acp/judgment-tool-ingress-observe")
@@ -2646,11 +2741,25 @@ def revoke_research_continuation_permission(task_id: str, payload: dict[str, Any
 
 @app.get("/v1/research/tasks/{task_id}/execution-plan")
 def get_research_execution_plan(task_id: str, request: Request) -> dict[str, object]:
-    # ADR-0085 P1 exposes ONLY a read-only plan projection. Plan create/advance
-    # is an internal reducer/store seam, never an agent-facing write route: a
-    # model must not choose workflow next_state.
+    # Read-only plan projection. ADR-0108 adds exactly one foreground write
+    # surface (POST, below) that reuses the closed store seam with owner/workspace
+    # from the trusted context. Plan ADVANCE remains an internal reducer seam, so
+    # a model still cannot choose workflow next_state.
     context = _required_agent_context(request, include_workspace=True)
     return _research_call(lambda: research_store.get_execution_plan(task_id, trusted_context=context))
+
+
+@app.post("/v1/research/tasks/{task_id}/execution-plan", status_code=201)
+def create_research_execution_plan(task_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    # ADR-0108 foreground Product plan creation (maintainer-accepted). Owner and
+    # workspace are derived from the trusted context (never caller-supplied); the
+    # caller supplies only the closed create request (idempotency key + explicit
+    # domain references). `create_execution_plan` rejects a continuation grant,
+    # foreign references, a caller-forged conversation and idempotency conflicts;
+    # the plan result transaction remains the unique advance.
+    context = _required_agent_context(request, include_workspace=True)
+    return _research_call(lambda: research_store.create_execution_plan(
+        task_id, payload, trusted_context=context))
 
 
 @app.get("/v1/research/tasks/{task_id}/stage-input")

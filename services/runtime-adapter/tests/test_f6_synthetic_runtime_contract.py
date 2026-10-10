@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import base64
 import copy
 import hashlib
 import json
@@ -34,6 +35,7 @@ from tests.f6_synthetic_runtime import (
     _authorize,
     _background_scope,
     _diagnostic_rejection_code,
+    _guard_pins_local_proxy,
     _instruction_stages,
     _normalize_tool_result,
     _selected_instruction,
@@ -912,6 +914,10 @@ def _backend_instruction_parts(node: ast.AST) -> list[tuple[str, object]]:
             and node.value.id == "task" and isinstance(node.slice, ast.Constant)
             and node.slice.value == "task_id"):
         return [("task_id", None)]
+    if (isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name)
+            and node.value.id == "event" and isinstance(node.slice, ast.Constant)
+            and node.slice.value == "identity"):
+        return [("signal_job_id", None)]
     if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
             and node.func.id == "task_id_from_signal_job" and len(node.args) == 1
             and not node.keywords and isinstance(node.args[0], ast.Subscript)
@@ -939,21 +945,24 @@ def _backend_background_instruction(task_id: str, event: dict[str, Any]) -> str:
     if len(assignments) != 1:
         raise AssertionError("Backend task-ready instruction assignment is not unique")
     parts = _backend_instruction_parts(assignments[0].value)
-    expected_kinds = ["literal", "task_id", "literal", "backtest_task_id", "literal", "ready_signal"]
+    expected_kinds = ["literal", "task_id", "literal", "signal_job_id", "literal", "backtest_task_id", "literal", "ready_signal"]
     if [kind for kind, _value in parts] != expected_kinds:
         raise AssertionError("Backend task-ready instruction AST changed shape")
     expected_literals = [
         ("BYQ trusted read-only task-ready follow-up for exact task ",
-         ". Use only byq_research_get to read this exact ResearchTask and byq_backtest_task_get "
+         ". First call byq_agent_run_start with role_id \"quant_orchestrator\" and idempotency key \"task-ready-run-"),
+        ("\" to bind this turn. Then follow the existing role contract: call byq_agent_authorize with action exactly \"byq_research_get\" before byq_research_get and with action exactly \"byq_backtest_task_get\" before byq_backtest_task_get, and byq_agent_audit with the same exact action and bounded outcome after each read. "
+         "Use byq_research_get to read this exact ResearchTask and byq_backtest_task_get "
          "to read the exact BacktestTask linked to the completed ready signal below. "
-         "Exact BacktestTask ID: "),
+         "Exact BacktestTask ID: ",),
         (". Do not create or update domain objects, request approvals, execute jobs, browse the web, "
          "delegate, or access another task. Summarize only facts returned by these exact read tools. "
          "Ready signal: ",),
     ]
     if (parts[0][1] != expected_literals[0][0]
             or parts[2][1] != expected_literals[0][1]
-            or parts[4][1] != expected_literals[1][0]):
+            or parts[4][1] != expected_literals[1][0]
+            or parts[6][1] != expected_literals[2][0]):
         raise AssertionError("Backend task-ready instruction text changed")
     identity = event.get("identity")
     signal_match = re.fullmatch(r"signaljob_([0-9a-f]{32})", identity) if isinstance(identity, str) else None
@@ -963,6 +972,7 @@ def _backend_background_instruction(task_id: str, event: dict[str, Any]) -> str:
     rendered = []
     replacements = {
         "task_id": task_id,
+        "signal_job_id": identity,
         "backtest_task_id": "backtesttask_" + signal_match.group(1),
         "ready_signal": ready_signal,
     }
@@ -1098,7 +1108,7 @@ def _drive_selected_provider_turn(stage: str, prompt: str, messages: list[dict[s
             expected_key = {
                 "fg1": "f6-ci-fg1-agent-run",
                 "fg2": "f6-ci-fg2-agent-run",
-                "background": "f6-ci-bg-agent-run",
+                "background": "task-ready-run-signaljob_" + "5" * 32,
             }[stage]
             assert action[1].get("idempotency_key") == expected_key
         _append_provider_tool_result(messages, stage, prompt, action, step)
@@ -1128,15 +1138,15 @@ def test_synthetic_runtime_requires_all_three_ci_only_guard_values():
         "COMPOSE_PROJECT_NAME": expected_project,
         "BYQ_F6_CI_PROJECT": expected_project,
         "BYQ_F6_SYNTHETIC_RUNTIME": "1",
-        "DEEPSEEK_API_KEY": "f6-synthetic-only",
+        "OPENCODE_API_KEY": "f6-synthetic-only",
     }) == expected_project
     for invalid in (
         {"COMPOSE_PROJECT_NAME": expected_project, "BYQ_F6_CI_PROJECT": expected_project,
          "BYQ_F6_SYNTHETIC_RUNTIME": "1"},
         {"COMPOSE_PROJECT_NAME": expected_project, "BYQ_F6_CI_PROJECT": "other-project",
-         "BYQ_F6_SYNTHETIC_RUNTIME": "1", "DEEPSEEK_API_KEY": "f6-synthetic-only"},
+         "BYQ_F6_SYNTHETIC_RUNTIME": "1", "OPENCODE_API_KEY": "f6-synthetic-only"},
         {"COMPOSE_PROJECT_NAME": "production", "BYQ_F6_CI_PROJECT": "production",
-         "BYQ_F6_SYNTHETIC_RUNTIME": "1", "DEEPSEEK_API_KEY": "f6-synthetic-only"},
+         "BYQ_F6_SYNTHETIC_RUNTIME": "1", "OPENCODE_API_KEY": "f6-synthetic-only"},
     ):
         with pytest.raises(F6FixtureRejected):
             validate_environment(invalid)
@@ -1188,7 +1198,7 @@ def test_provider_rejects_malformed_or_ambiguous_single_line_backend_instruction
     if mutation == "newline":
         prompt = prompt.replace("task_" + "1" * 32 + ". ", "task_" + "1" * 32 + ".\n", 1)
     elif mutation == "changed_clause":
-        prompt = prompt.replace("Use only byq_research_get", "Use byq_research_get", 1)
+        prompt = prompt.replace('action exactly "byq_research_get"', 'action "byq_research_get"', 1)
     elif mutation == "duplicate_marker":
         prompt += " " + "BYQ trusted read-only task-ready follow-up for exact task " + "task_" + "1" * 32 + "."
     elif mutation == "wrong_backtest":
@@ -1350,6 +1360,34 @@ def test_native_four_message_projection_drives_full_fg1_fg2_and_background_turns
     _drive_provider_turn("background", public_history=fg1_history + fg2_history,
                          provider_messages=live_messages,
                          supplemental_user_contexts=[runtime_context, skill_catalog])
+
+
+def test_native_empty_skill_catalog_update_is_supplemental_after_background_instruction():
+    # Captured from the native rc.2 session after the background user message.
+    empty_update = (
+        "<system-reminder>\n"
+        "The available skill catalog changed. This complete catalog replaces every earlier available-skills list in this session:\n\n"
+        "<available_skills>\n"
+        "</available_skills>\n\n"
+        "No skills are currently available through the `skill` tool. Do not use names from earlier skill catalogs.\n"
+        "A user may still invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool for it.\n"
+        "</system-reminder>"
+    )
+    prompt = _prompt_for("background")
+    messages = [
+        {"role": "system", "content": "Pinned native system message."},
+        {"role": "user", "content": prompt},
+        {"role": "user", "content": _native_runtime_snapshot()},
+        {"role": "user", "content": empty_update},
+    ]
+    assert _selected_instruction(messages) == ("background", prompt, 1)
+    action = next_action({"messages": messages, "tools": _provider_tools()})
+    assert action is not None and action[0] == "mcp__byq__" + BG_SEQUENCE[0]
+    for changed in (empty_update.replace("changed.", "was changed.", 1),
+                    empty_update.replace("<available_skills>\n", "<available_skills>\n<available_skills>\n", 1),
+                    empty_update.replace("</system-reminder>", "</system-reminder-approx>", 1)):
+        with pytest.raises(F6FixtureRejected, match="provider_current_user_instruction_missing"):
+            _selected_instruction([messages[0], messages[1], {"role": "user", "content": changed}])
 
 
 @pytest.mark.parametrize("context_kind", ["runtime_marker", "catalog_marker", "rehydration_marker"])
@@ -1665,23 +1703,28 @@ def test_foreground_routes_only_its_child_to_provider_and_background_keeps_proxy
 
     class FakeCompatibility:
         def build_harness(self, *, provider, model, composition, session_root,
-                          runtime_command, environment, max_tokens=None):
+                          runtime_command, environment, max_tokens=None,
+                          continuation_guard_b64=None):
             return {"provider": provider, "model": model, "composition": composition,
                     "session_root": session_root, "runtime_command": runtime_command,
-                    "environment": dict(environment), "max_tokens": max_tokens}
+                    "environment": dict(environment), "max_tokens": max_tokens,
+                    "continuation_guard_b64": continuation_guard_b64}
 
     class FakeRuntimeAdapter:
         def _build_harness(self, *, continuation_budget=None, continuation_proxy_url=None,
                            continuation_deadline_epoch_ms=None):
             environment = {"BYQ_MCP_URL": "http://mcp:8300"}
             max_tokens = None
+            guard_b64 = None
             if continuation_budget is not None:
-                environment["DEEPSEEK_BASE_URL"] = continuation_proxy_url
+                guard_b64 = base64.b64encode(json.dumps([
+                    {"id": "llm-pi-ai", "config": {"providers": {"opencode-go-chat": {
+                        "baseURL": continuation_proxy_url}}}}]).encode()).decode()
                 max_tokens = 8192
             return self._compatibility.build_harness(
-                provider="deepseek-official", model="deepseek-v4-flash", composition="patch",
+                provider="opencode-go-chat", model="deepseek-v4.1-flash", composition="patch",
                 session_root="root", runtime_command=("dsh",), environment=environment,
-                max_tokens=max_tokens)
+                max_tokens=max_tokens, continuation_guard_b64=guard_b64)
 
     fake_runtime = types.ModuleType("app.runtime")
     fake_runtime.RequestGateProxy = FakeProxy
@@ -1702,8 +1745,8 @@ def test_foreground_routes_only_its_child_to_provider_and_background_keeps_proxy
     background = adapter._build_harness(
         continuation_budget={"reservation_id": "continuation-exact"},
         continuation_proxy_url=proxy_url, continuation_deadline_epoch_ms=1000)
-    assert background["environment"]["DEEPSEEK_BASE_URL"] == proxy_url
-    assert background["environment"]["DEEPSEEK_BASE_URL"] != provider_url
+    assert _guard_pins_local_proxy(background["continuation_guard_b64"], proxy_url)
+    assert not _guard_pins_local_proxy(background["continuation_guard_b64"], provider_url)
     assert background["max_tokens"] == 8192
 
     with pytest.raises(F6FixtureRejected, match="background_request_gate_proxy_not_preserved"):

@@ -49,7 +49,12 @@ read-only answer, do not query an audit merely to reconstruct interrupted tool
 evidence; use only evidence present in the current conversation.
 
 The authorization `action` is always the exact MCP tool name you will call;
-never invent aliases such as `market_daily.read`. Audit every distinct authorized
+never invent aliases such as `market_daily.read`. Use `byq_research_get`, never `research_task_read`,
+for reading a research task. Authorization must precede the matching tool call.
+DSH delegation tools such as `byq_delegate_market_research` are not BYQ domain
+authorization actions: delegation is checked by the role catalogue's `delegate_to`
+and the child's own AgentRun registration. Do not ask `byq_agent_authorize` for
+those DSH-local tools. A denied action must not execute or be retried under an alias. Audit every distinct authorized
 domain action separately with its actual success or failure. Authorization is not a
 successful domain result, and one later audit must not be described as covering
 several unaudited calls.

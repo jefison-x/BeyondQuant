@@ -1,0 +1,133 @@
+{
+  "verdict": "PASS",
+  "tests": {
+    "label": "pytest",
+    "argv": [
+      "python3",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "tests/test_current_build_revision.py",
+      "tests/test_dsh_build_revision.py"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 2.087,
+    "stdout": ".......                                                                  [100%]\n7 passed in 1.35s\n",
+    "stderr": ""
+  },
+  "py_compile": {
+    "label": "py_compile",
+    "argv": [
+      "python3",
+      "-m",
+      "py_compile",
+      "scripts/dsh/build_revision.py",
+      "tests/test_current_build_revision.py",
+      "tests/test_dsh_build_revision.py"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.119,
+    "stdout": "",
+    "stderr": ""
+  },
+  "diff_check": {
+    "label": "diff_check",
+    "argv": [
+      "git",
+      "diff",
+      "--check",
+      "--",
+      "scripts/dsh/build_revision.py",
+      "tests/test_current_build_revision.py",
+      "tests/test_dsh_build_revision.py"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.003,
+    "stdout": "",
+    "stderr": ""
+  },
+  "source_before": {
+    "scripts/dsh/build_revision.py": "b978e65c3faedc4a8c6b933ec773f2467cd296ad850c187ad07a06af8ddaa2bc",
+    "tests/test_current_build_revision.py": "69be7f7e31e66840f959d4b85250e9b8f9c14b15298d4ba1074578fb4829aed4",
+    "tests/test_dsh_build_revision.py": "61e70e5033d8860b50dbc3c58aa4024cf65ee845df8c87cd5145005214b4faec"
+  },
+  "source_after": {
+    "scripts/dsh/build_revision.py": "b978e65c3faedc4a8c6b933ec773f2467cd296ad850c187ad07a06af8ddaa2bc",
+    "tests/test_current_build_revision.py": "69be7f7e31e66840f959d4b85250e9b8f9c14b15298d4ba1074578fb4829aed4",
+    "tests/test_dsh_build_revision.py": "61e70e5033d8860b50dbc3c58aa4024cf65ee845df8c87cd5145005214b4faec"
+  },
+  "source_stable": true,
+  "artifact_pre": {
+    "config/dsh/builds/dsh-0.1.5rc1-post-u8.322.json": {
+      "sha256": "ee97823eb01251c48f99a0b7d2a1d5b50debba6f1f9533e39c47862eedce90cc",
+      "head_blob": "b8690e7aa99b4581bd1535e4f767efefacec996c"
+    },
+    "services/runtime-adapter/Dockerfile.post-u8-322-candidate": {
+      "sha256": "dc87eeb772d37fafd29fd4c38d81475cffe1549bd767419f766307cc9d36bfa5",
+      "head_blob": "1ff393f28b728630dfb0204f6f1a8a5b9ccff807"
+    }
+  },
+  "artifact_post": {
+    "config/dsh/builds/dsh-0.1.5rc1-post-u8.322.json": {
+      "sha256": "ee97823eb01251c48f99a0b7d2a1d5b50debba6f1f9533e39c47862eedce90cc",
+      "head_blob": "b8690e7aa99b4581bd1535e4f767efefacec996c",
+      "status": ""
+    },
+    "services/runtime-adapter/Dockerfile.post-u8-322-candidate": {
+      "sha256": "dc87eeb772d37fafd29fd4c38d81475cffe1549bd767419f766307cc9d36bfa5",
+      "head_blob": "1ff393f28b728630dfb0204f6f1a8a5b9ccff807",
+      "status": ""
+    }
+  },
+  "artifact_stable": true,
+  "untracked_candidate_pre": {
+    "config/dsh/builds/dsh-0.1.5rc1-post-u8.323.json": {
+      "exists": true,
+      "sha256": "693836b7678f2b551d404500771b4628d1729718375e714ed80de5eaea3045a1",
+      "status": "?? config/dsh/builds/dsh-0.1.5rc1-post-u8.323.json"
+    },
+    "config/dsh/builds/dsh-0.1.5rc1-post-u8.324.json": {
+      "exists": true,
+      "sha256": "e99ba23f715501a3247d6351aa8966ced7d4d2a2516c9d2f346ead98681ae070",
+      "status": "?? config/dsh/builds/dsh-0.1.5rc1-post-u8.324.json"
+    },
+    "services/runtime-adapter/Dockerfile.post-u8-323-candidate": {
+      "exists": true,
+      "sha256": "ec1c42f36b46c674966482cda1ff7cdb33f1d2879f627366f67469a437a6c100",
+      "status": "?? services/runtime-adapter/Dockerfile.post-u8-323-candidate"
+    },
+    "services/runtime-adapter/Dockerfile.post-u8-324-candidate": {
+      "exists": true,
+      "sha256": "01f7c4baa236fcf6fbc7f0d983919ba576004f0eda4bb5d660c95eaf74c5fa41",
+      "status": "?? services/runtime-adapter/Dockerfile.post-u8-324-candidate"
+    }
+  },
+  "untracked_candidate_post": {
+    "config/dsh/builds/dsh-0.1.5rc1-post-u8.323.json": {
+      "exists": true,
+      "sha256": "693836b7678f2b551d404500771b4628d1729718375e714ed80de5eaea3045a1",
+      "status": "?? config/dsh/builds/dsh-0.1.5rc1-post-u8.323.json"
+    },
+    "config/dsh/builds/dsh-0.1.5rc1-post-u8.324.json": {
+      "exists": true,
+      "sha256": "e99ba23f715501a3247d6351aa8966ced7d4d2a2516c9d2f346ead98681ae070",
+      "status": "?? config/dsh/builds/dsh-0.1.5rc1-post-u8.324.json"
+    },
+    "services/runtime-adapter/Dockerfile.post-u8-323-candidate": {
+      "exists": true,
+      "sha256": "ec1c42f36b46c674966482cda1ff7cdb33f1d2879f627366f67469a437a6c100",
+      "status": "?? services/runtime-adapter/Dockerfile.post-u8-323-candidate"
+    },
+    "services/runtime-adapter/Dockerfile.post-u8-324-candidate": {
+      "exists": true,
+      "sha256": "01f7c4baa236fcf6fbc7f0d983919ba576004f0eda4bb5d660c95eaf74c5fa41",
+      "status": "?? services/runtime-adapter/Dockerfile.post-u8-324-candidate"
+    }
+  },
+  "untracked_candidates_stable": true,
+  "head": "2d5810973240c5d7692569319c2b5ab337ae2082",
+  "scope": "two requested test modules only; no Docker/build/provider/network/F6",
+  "audit_note": "Initial summary predicate mistakenly required porcelain status to equal literal ??; captured pre/post statuses are identical ?? <path>, with all files present and hashes unchanged. Corrected from stored pre/post evidence; no test rerun."
+}

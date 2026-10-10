@@ -1026,6 +1026,21 @@ class _RunnerRequestHandler(socketserver.BaseRequestHandler):
         except OSError:
             pass
 
+    def _persist_cleanup_proof(self, scope: dict[str, Any], digest: str,
+                               exit_payload: dict[str, Any]) -> None:
+        """Persist the signed proven-cleanup receipt for the exact one-shot scope.
+
+        Judgment default: binds the strict judgment scope contract. The Product
+        runner overrides this with its own closed Product scope contract. Each
+        runner persists only its own scope shape; neither forges the other's
+        fields, makes fields optional, or skips persistence to claim proven.
+        A raised error leaves cleanup unknown at the caller.
+        """
+        _persist_cleanup_receipt(
+            self.server.socket_path.parent, scope, digest,
+            self.server.instance_id, exit_payload, self.server.secret,
+            self.server.control_gid)
+
     def _relay(self, connection: socket.socket, process: subprocess.Popen[bytes],
                deadline: float, challenge: str, nonce: str, digest: str,
                scope: dict[str, Any]) -> None:
@@ -1129,10 +1144,7 @@ class _RunnerRequestHandler(socketserver.BaseRequestHandler):
             # restarted Adapter can prove the fence. A failed write must not
             # claim proven cleanup.
             try:
-                _persist_cleanup_receipt(
-                    self.server.socket_path.parent, scope, digest,
-                    self.server.instance_id, exit_payload, self.server.secret,
-                    self.server.control_gid)
+                self._persist_cleanup_proof(scope, digest, exit_payload)
             except (OSError, ValueError, KeyError):
                 cleanup = "unknown"
                 exit_payload["cleanup"] = "unknown"

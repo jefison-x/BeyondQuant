@@ -1,0 +1,188 @@
+{
+  "bootstrap_services": {
+    "backend": {
+      "build_configured": false,
+      "environment_key_names_only": [
+        "BYQ_BACKTEST_OBJECT_ROOT",
+        "BYQ_BOOTSTRAP_ADMIN_PASSWORD",
+        "BYQ_BOOTSTRAP_ADMIN_USERNAME",
+        "BYQ_CREDENTIAL_ACTIVE_KEY_ID",
+        "BYQ_CREDENTIAL_KEYRING",
+        "BYQ_CREDENTIAL_RESOLVER_TOKEN",
+        "BYQ_DATABASE_URL",
+        "BYQ_ENGINEERING_WORKTREE_ROOT",
+        "BYQ_F6_EXECUTOR_ENABLED",
+        "BYQ_FEEDBACK_HUB_ALLOW_HTTP",
+        "BYQ_FEEDBACK_HUB_RELAY_TOKEN",
+        "BYQ_GATEWAY_SERVICE_TOKEN",
+        "BYQ_ML_OBJECT_ROOT",
+        "BYQ_PLUGIN_DEPLOYMENT_TOKEN",
+        "BYQ_PLUGIN_REGISTRY_PATH",
+        "BYQ_RUNTIME_AUTHORITY_TOKEN",
+        "BYQ_WEB_EVIDENCE_PROVENANCE_POLICY",
+        "TUSHARE_API_URL",
+        "TUSHARE_TOKEN"
+      ],
+      "image": "sha256:753662c496721f9cb3b411850351ba1ddfb08ec6661e7fe8716710c33661b281",
+      "mounts": [
+        {
+          "source": "byq_domain_state",
+          "target": "/var/lib/byq/domain",
+          "type": "volume"
+        },
+        {
+          "source": "byq_ml_model_state",
+          "target": "/var/lib/byq/ml-objects",
+          "type": "volume"
+        }
+      ],
+      "networks": [
+        "byq_product"
+      ],
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "protocol": "tcp",
+          "published": "0",
+          "target": 8000
+        }
+      ]
+    },
+    "gateway": {
+      "build_configured": false,
+      "environment_key_names_only": [
+        "BYQ_BACKEND_URL",
+        "BYQ_F6_EXECUTOR_ENABLED",
+        "BYQ_GATEWAY_SERVICE_TOKEN",
+        "BYQ_PRODUCT_PRINCIPAL",
+        "BYQ_PRODUCT_TOKEN",
+        "BYQ_RUNTIME_AUTHORITY_TOKEN",
+        "BYQ_WORKFLOW_TRACE_ROOT"
+      ],
+      "image": "sha256:b40114c4aa71f0904726a74873ef672836ecf93ff1ac817cb31d007523e0b043",
+      "mounts": [
+        {
+          "source": "byq_workflow_traces",
+          "target": "/var/lib/byq/workflow-traces",
+          "type": "volume"
+        }
+      ],
+      "networks": [
+        "byq_product"
+      ],
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "protocol": "tcp",
+          "published": "0",
+          "target": 8100
+        }
+      ]
+    },
+    "postgres": {
+      "build_configured": false,
+      "environment_key_names_only": [
+        "POSTGRES_DB",
+        "POSTGRES_PASSWORD",
+        "POSTGRES_USER"
+      ],
+      "image": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+      "mounts": [
+        {
+          "source": "byq_postgres_data",
+          "target": "/var/lib/postgresql/data",
+          "type": "volume"
+        },
+        {
+          "read_only": true,
+          "source": "/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/infra/postgres/init",
+          "target": "/docker-entrypoint-initdb.d",
+          "type": "bind"
+        }
+      ],
+      "networks": [
+        "byq_product"
+      ],
+      "ports": []
+    }
+  },
+  "bootstrap_start_targets": [
+    "postgres",
+    "backend",
+    "gateway"
+  ],
+  "candidate_workspace_binding_present": false,
+  "compose_files": [
+    "compose.yml",
+    "compose.dev.yml",
+    "compose.bootstrap.images.yml"
+  ],
+  "configured_services": [
+    "backend",
+    "backtest-worker",
+    "data-worker",
+    "factor-worker",
+    "feedback-hub-relay",
+    "frontend",
+    "gateway",
+    "mcp",
+    "ml-worker",
+    "optimization-worker",
+    "postgres",
+    "runtime-adapter",
+    "signal-sandbox",
+    "signal-worker"
+  ],
+  "external_model_and_data_keys_empty": {
+    "DEEPSEEK_API_KEY": true,
+    "OPENCODE_API_KEY": true,
+    "TUSHARE_TOKEN": true
+  },
+  "forwarded_host_environment_key_names": [
+    "HOME",
+    "PATH",
+    "XDG_RUNTIME_DIR"
+  ],
+  "network_resource_names_and_external_flags": {
+    "byq_product": {
+      "external": false,
+      "name": "byq-dev-c89ff732f2-product"
+    },
+    "byq_signal_sandbox": {
+      "external": false,
+      "name": "byq-dev-c89ff732f2-signal-sandbox"
+    }
+  },
+  "raw_compose_config_or_environment_values_written": false,
+  "removed_host_environment_prefixes": [
+    "BYQ_",
+    "POSTGRES_",
+    "COMPOSE_",
+    "DEEPSEEK_",
+    "OPENCODE_",
+    "TUSHARE_"
+  ],
+  "scope": "byq-dev-c89ff732f2",
+  "volume_resource_names_and_external_flags": {
+    "byq_domain_state": {
+      "external": false,
+      "name": "byq-dev-c89ff732f2-domain-state"
+    },
+    "byq_dsh_sessions": {
+      "external": false,
+      "name": "byq-dev-c89ff732f2-dsh-sessions"
+    },
+    "byq_ml_model_state": {
+      "external": false,
+      "name": "byq-dev-c89ff732f2-ml-model-state"
+    },
+    "byq_postgres_data": {
+      "external": false,
+      "name": "byq-dev-c89ff732f2-postgres-data"
+    },
+    "byq_workflow_traces": {
+      "external": false,
+      "name": "byq-dev-c89ff732f2-workflow-traces"
+    }
+  }
+}

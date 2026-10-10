@@ -1,0 +1,61 @@
+{
+  "image_id": "sha256:1041f5fa002ebd24f7ff77f49fcbdad1af74c6d717f6176b52252c42b9d968cd",
+  "checks": {
+    "/opt/byq/acp_judgment_runner/server.py": {
+      "source": "services/acp_judgment_runner/server.py",
+      "image_sha256": "93be62febb0dfad151af6cbbb09bf04890aa6cae27a15cc59f4f0a320fc2a3c8",
+      "source_sha256": "93be62febb0dfad151af6cbbb09bf04890aa6cae27a15cc59f4f0a320fc2a3c8",
+      "matches": true
+    },
+    "/opt/byq/profiles/byq-research-judgment.patch.yml": {
+      "source": "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-research-judgment.patch.yml",
+      "image_sha256": "fb83ce61744343441d1502c72ddfad35c44b7a3ab047ac9dc115e1901e1cc99e",
+      "source_sha256": "fb83ce61744343441d1502c72ddfad35c44b7a3ab047ac9dc115e1901e1cc99e",
+      "matches": true
+    },
+    "/opt/byq/profiles/byq-research-judgment.identity.json": {
+      "source": "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-research-judgment.identity.json",
+      "image_sha256": "10c2ffea694bccf2198ba6ded1c913c1e63fe24559e039ace04f766f408a6547",
+      "source_sha256": "10c2ffea694bccf2198ba6ded1c913c1e63fe24559e039ace04f766f408a6547",
+      "matches": true
+    },
+    "/opt/byq/runtime/package.json": {
+      "source": "plugins/dsh-byq/runtime/package.json",
+      "image_sha256": "4279ea1e6a2409c5ee98eb72dd769139dee4f76a2d47fa6db6eecbf2d81f857e",
+      "source_sha256": "4279ea1e6a2409c5ee98eb72dd769139dee4f76a2d47fa6db6eecbf2d81f857e",
+      "matches": true
+    },
+    "/opt/byq/runtime/byq-acp-mcp-identity.js": {
+      "source": "plugins/dsh-byq/runtime/byq-acp-mcp-identity.js",
+      "image_sha256": "3e1eaae43319d28d3d908cc55d8cc22eebf9943d49f6645235ef7f8140530ea4",
+      "source_sha256": "3e1eaae43319d28d3d908cc55d8cc22eebf9943d49f6645235ef7f8140530ea4",
+      "matches": true
+    },
+    "/opt/byq/runtime/byq-continuation-budget.js": {
+      "source": "plugins/dsh-byq/runtime/byq-continuation-budget.js",
+      "image_sha256": "892e42d6dcb982a6bcdfd6fc3d183b912a5909cae7dd3e4dd672de91236ee50a",
+      "source_sha256": "892e42d6dcb982a6bcdfd6fc3d183b912a5909cae7dd3e4dd672de91236ee50a",
+      "matches": true
+    },
+    "/opt/byq/runtime/byq-runtime-time-context.js": {
+      "source": "plugins/dsh-byq/runtime/byq-runtime-time-context.js",
+      "image_sha256": "fe18a15e6f35a0b42e185599db24854cc24cbdd4a793af43656651ee0663be72",
+      "source_sha256": "fe18a15e6f35a0b42e185599db24854cc24cbdd4a793af43656651ee0663be72",
+      "matches": true
+    },
+    "/opt/dsh-runtime/.byq-source-commit": {
+      "actual": "639ed015397290b3745d163aafe02ffee4aa3f84",
+      "expected": "639ed015397290b3745d163aafe02ffee4aa3f84",
+      "matches": true
+    },
+    "/opt/dsh-runtime/pnpm-lock.yaml": {
+      "actual": "80fe05eae33582ae26839afd05f1965f9b0e4be11034ddf9797af6085d5ba9b1",
+      "expected": "80fe05eae33582ae26839afd05f1965f9b0e4be11034ddf9797af6085d5ba9b1",
+      "matches": true
+    }
+  },
+  "all_checks_match": true,
+  "container_started": false,
+  "temporary_container_removed": true,
+  "provider_calls": 0
+}

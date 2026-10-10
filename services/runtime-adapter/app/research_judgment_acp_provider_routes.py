@@ -22,6 +22,8 @@ class AcpProviderRouteRejected(ValueError):
 
 LOCAL_TOKEN_PREFIX = "byq-acp-proxy-"
 _LOCAL_TOKEN = re.compile(r"byq-acp-proxy-[A-Za-z0-9_-]{43}\Z")
+_OPENCODE_SESSION = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z")
 
 
 def valid_local_provider_token(value: object) -> bool:
@@ -151,4 +153,15 @@ def admit_provider_request(
         forwarded["authorization"] = "Bearer " + upstream_credential
     if "accept" in normalized:
         forwarded["accept"] = normalized["accept"]
+    # Forward the client User-Agent: the OpenCode Go edge rejects a missing or
+    # default-library User-Agent before dispatch (the ordinary gate forwards it
+    # too). No header VALUE is ever stored or logged.
+    if "user-agent" in normalized:
+        forwarded["user-agent"] = normalized["user-agent"]
+    # The OpenCode routes require the exact x-opencode-session routing header;
+    # it is derived server-side by the Adapter and only validated here.
+    if "x-opencode-session" in normalized:
+        if _OPENCODE_SESSION.fullmatch(normalized["x-opencode-session"]) is None:
+            raise AcpProviderRouteRejected("ACP OpenCode session header is invalid")
+        forwarded["x-opencode-session"] = normalized["x-opencode-session"]
     return route.upstream_url, forwarded

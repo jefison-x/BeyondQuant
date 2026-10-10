@@ -602,6 +602,19 @@ def product_research_execution_plan(task_id: str, request: Request) -> dict[str,
                             headers=_trusted_agent_headers(request))
 
 
+@router.post("/research/tasks/{task_id}/execution-plan", status_code=201)
+async def product_create_research_execution_plan(task_id: str, request: Request) -> dict[str, object]:
+    # ADR-0108 foreground Product research-plan creation. Owner and workspace are
+    # derived from the durable user identity (`_trusted_agent_headers`), never the
+    # browser body; the body is only the closed create request (idempotency key +
+    # explicit domain references). No new MCP write tool, no generalized task
+    # system. A background continuation grant cannot authorize this.
+    _product_principal(request)
+    payload = await request.json()
+    return _backend_request("POST", f"/v1/research/tasks/{quote(task_id, safe='')}/execution-plan",
+                            payload=payload, headers=_trusted_agent_headers(request))
+
+
 @router.get("/research/tasks")
 def product_research_tasks(request: Request) -> dict[str, object]:
     _product_principal(request)

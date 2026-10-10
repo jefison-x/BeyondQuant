@@ -1,8 +1,17 @@
 services:
   runtime-adapter:
     build:
-      context: .
-      dockerfile: services/runtime-adapter/Dockerfile.acp-0.2.0-rc.2-candidate
+      args:
+        BYQ_DSH_BUILD_RELEASE_ID: ${BYQ_DSH_BUILD_RELEASE_ID-}
+        BYQ_DSH_BUILD_SOURCE_COMMIT: ${BYQ_DSH_BUILD_SOURCE_COMMIT-}
+        BYQ_DSH_BUILD_PNPM_LOCK_SHA256: ${BYQ_DSH_BUILD_PNPM_LOCK_SHA256-}
+        BYQ_DSH_BUILD_COMPATIBILITY_FAMILY: ${BYQ_DSH_BUILD_COMPATIBILITY_FAMILY-}
+        BYQ_DSH_BUILD_PROFILE_PATH: ${BYQ_DSH_BUILD_ADAPTER_PROFILE_PATH-}
+        BYQ_DSH_BUILD_PROFILE_SHA256: ${BYQ_DSH_BUILD_ADAPTER_PROFILE_SHA256-}
+        BYQ_DSH_BUILD_PROFILE_IDENTITY_PATH: ${BYQ_DSH_BUILD_ADAPTER_PROFILE_IDENTITY_PATH-}
+        BYQ_DSH_BUILD_PROFILE_IDENTITY_SHA256: ${BYQ_DSH_BUILD_ADAPTER_PROFILE_IDENTITY_SHA256-}
+        BYQ_DSH_BUILD_RELEASE_IDENTITY_PATH: ${BYQ_DSH_BUILD_ADAPTER_RELEASE_IDENTITY_PATH-}
+        BYQ_DSH_BUILD_RELEASE_IDENTITY_SHA256: ${BYQ_DSH_BUILD_ADAPTER_RELEASE_IDENTITY_SHA256-}
     cap_drop:
       - NET_RAW
     # Trusted Adapter controls distinct runner sockets. DSH runs in a separate
@@ -16,16 +25,26 @@ services:
       # fenced across Adapter restarts. Without this the Adapter refuses every
       # ACP product prompt before the execution slot is contacted.
       BYQ_RUNTIME_AUTHORITY_TOKEN: ${BYQ_RUNTIME_AUTHORITY_TOKEN:?BYQ_RUNTIME_AUTHORITY_TOKEN must be set for ACP}
-      BYQ_DSH_COMPATIBILITY_RELEASE: dsh-v0.2.0-rc.2-acp
+      # Base Compose explicitly injects these values, so the candidate overlay
+      # must replace them with the authoritative resolver output as well.
+      BYQ_DSH_COMPATIBILITY_RELEASE: ${BYQ_DSH_BUILD_COMPATIBILITY_FAMILY:?ACP resolver compatibility family is required}
+      DSH_SESSION_ROOT: ${BYQ_DSH_BUILD_SESSION_ROOT:?ACP resolver session root is required}
+      # ADR-0107: the consumer and trusted Adapter share this entry token.
+      # Activation remains explicit; no judgment is dispatched by default.
+      BYQ_RUNTIME_JUDGMENT_TOKEN: ${BYQ_RUNTIME_JUDGMENT_TOKEN:?judgment token required}
+      BYQ_JUDGMENT_ACP_LIFECYCLE_ENABLED: ${BYQ_JUDGMENT_ACP_LIFECYCLE_ENABLED:-0}
       BYQ_DSH_PROCESS_OWNERSHIP: root-turn
       BYQ_DSH_ACP_PROCESS_TRANSPORT: product-slot-v1
       BYQ_ACP_PRODUCT_SLOT_BINDINGS: '{"${BYQ_ACP_PRODUCT_WORKSPACE_ID:?a trusted personal workspace binding is required}":{"socket_path":"/run/byq-acp-product-runner/control.sock","control_secret_env":"BYQ_ACP_PRODUCT_SLOT_PRIMARY_SECRET"}}'
       BYQ_ACP_PRODUCT_SLOT_PRIMARY_SECRET: ${BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET:?a distinct Product runner secret is required}
       BYQ_DSH_RUNTIME_ROOT: /opt/dsh-runtime
+      # The ACP product slot runs the DSH child in a separate container, so the
+      # budget continuation proxy must advertise an address the child can reach.
+      # This service name resolves to the Adapter's product-network IPv4.
+      BYQ_CONTINUATION_PROXY_ADVERTISE_HOST: runtime-adapter
       BYQ_DSH_COMPOSITION: /opt/byq/profiles/byq-product.patch.yml
       BYQ_DSH_COMPOSITION_IDENTITY: /opt/byq/profiles/byq-product.identity.json
       BYQ_DSH_RELEASE_IDENTITY: /opt/byq/releases/deployment.identity.json
-      DSH_SESSION_ROOT: /var/lib/byq/dsh-sessions/dsh-v0.2.0-rc.2-acp
       BYQ_MCP_ACP_DISCOVERY_TOKEN: ${BYQ_MCP_ACP_DISCOVERY_TOKEN:?BYQ_MCP_ACP_DISCOVERY_TOKEN must be set for ACP}
       BYQ_MCP_ACP_SIGNING_KEY: ${BYQ_MCP_ACP_SIGNING_KEY:?BYQ_MCP_ACP_SIGNING_KEY must be set for ACP}
       # The dedicated judgment master is shared only by the trusted Adapter
@@ -38,7 +57,9 @@ services:
     volumes:
       - byq_acp_runner_control:/run/byq-acp-runner
       - byq_acp_product_control:/run/byq-acp-product-runner
-      - byq_acp_product_sessions:/var/lib/byq/dsh-sessions/dsh-v0.2.0-rc.2-acp/${BYQ_ACP_PRODUCT_WORKSPACE_ID:?a trusted personal workspace binding is required}
+      - type: volume
+        source: byq_acp_product_sessions
+        target: ${BYQ_DSH_BUILD_SESSION_ROOT:?ACP resolver session root is required}/${BYQ_ACP_PRODUCT_WORKSPACE_ID:?a trusted personal workspace binding is required}
     networks:
       - byq_product
       - byq_acp_judgment
@@ -56,6 +77,17 @@ services:
     build:
       context: .
       dockerfile: services/acp_product_runner/Dockerfile
+      args:
+        BYQ_DSH_BUILD_RELEASE_ID: ${BYQ_DSH_BUILD_RELEASE_ID-}
+        BYQ_DSH_BUILD_SOURCE_COMMIT: ${BYQ_DSH_BUILD_SOURCE_COMMIT-}
+        BYQ_DSH_BUILD_PNPM_LOCK_SHA256: ${BYQ_DSH_BUILD_PNPM_LOCK_SHA256-}
+        BYQ_DSH_BUILD_COMPATIBILITY_FAMILY: ${BYQ_DSH_BUILD_COMPATIBILITY_FAMILY-}
+        BYQ_DSH_BUILD_PROFILE_PATH: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_PATH-}
+        BYQ_DSH_BUILD_PROFILE_SHA256: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_SHA256-}
+        BYQ_DSH_BUILD_PROFILE_IDENTITY_PATH: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_IDENTITY_PATH-}
+        BYQ_DSH_BUILD_PROFILE_IDENTITY_SHA256: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_IDENTITY_SHA256-}
+        BYQ_DSH_BUILD_RELEASE_IDENTITY_PATH: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_RELEASE_IDENTITY_PATH-}
+        BYQ_DSH_BUILD_RELEASE_IDENTITY_SHA256: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_RELEASE_IDENTITY_SHA256-}
     user: "0:0"
     read_only: true
     restart: unless-stopped
@@ -66,7 +98,9 @@ services:
       BYQ_ACP_PRODUCT_WORKSPACE_ID: ${BYQ_ACP_PRODUCT_WORKSPACE_ID:?a trusted personal workspace binding is required}
       BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET: ${BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET:?a distinct Product runner secret is required}
     volumes:
-      - byq_acp_product_sessions:/var/lib/byq/dsh-sessions/dsh-v0.2.0-rc.2-acp/${BYQ_ACP_PRODUCT_WORKSPACE_ID:?a trusted personal workspace binding is required}
+      - type: volume
+        source: byq_acp_product_sessions
+        target: ${BYQ_DSH_BUILD_SESSION_ROOT:?ACP resolver session root is required}/${BYQ_ACP_PRODUCT_WORKSPACE_ID:?a trusted personal workspace binding is required}
       - byq_acp_product_state:/var/lib/byq/acp-product-runner-state
       - byq_acp_product_control:/run/byq-acp-product-runner
     tmpfs:
@@ -83,6 +117,15 @@ services:
     build:
       context: .
       dockerfile: services/acp_judgment_runner/Dockerfile
+      args:
+        BYQ_DSH_BUILD_RELEASE_ID: ${BYQ_DSH_BUILD_RELEASE_ID-}
+        BYQ_DSH_BUILD_SOURCE_COMMIT: ${BYQ_DSH_BUILD_SOURCE_COMMIT-}
+        BYQ_DSH_BUILD_PNPM_LOCK_SHA256: ${BYQ_DSH_BUILD_PNPM_LOCK_SHA256-}
+        BYQ_DSH_BUILD_COMPATIBILITY_FAMILY: ${BYQ_DSH_BUILD_COMPATIBILITY_FAMILY-}
+        BYQ_DSH_BUILD_PROFILE_PATH: ${BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_PATH-}
+        BYQ_DSH_BUILD_PROFILE_SHA256: ${BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_SHA256-}
+        BYQ_DSH_BUILD_PROFILE_IDENTITY_PATH: ${BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_IDENTITY_PATH-}
+        BYQ_DSH_BUILD_PROFILE_IDENTITY_SHA256: ${BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_IDENTITY_SHA256-}
     user: "0:0"
     read_only: true
     restart: unless-stopped
@@ -181,6 +224,38 @@ services:
   gateway:
     environment:
       BYQ_GATEWAY_SERVICE_TOKEN: ${BYQ_GATEWAY_SERVICE_TOKEN:?a dedicated Gateway service token is required}
+
+  # ADR-0107 judgment-only consumer. A per-domain worker in the existing worker
+  # pattern (bounded poll loop) that selects a judgment_turn stage, claims its
+  # exact attempt, records a once dispatch-intent, calls the Adapter judgment
+  # route, and reads the exact Backend status receipt. It never advances the plan
+  # and never re-runs a possibly-dispatched judgment. Candidate only; not a
+  # production default. Service credentials are the runtime-authority and
+  # judgment bearers; the exact runtime boot is fetched at runtime.
+  judgment-consumer:
+    build:
+      context: .
+      dockerfile: workers/judgment/Dockerfile
+    restart: unless-stopped
+    environment:
+      BYQ_BACKEND_URL: http://backend:8000
+      BYQ_RUNTIME_ADAPTER_URL: http://runtime-adapter:8400
+      BYQ_RUNTIME_AUTHORITY_TOKEN: ${BYQ_RUNTIME_AUTHORITY_TOKEN:?BYQ_RUNTIME_AUTHORITY_TOKEN must be set for ACP}
+      BYQ_RUNTIME_JUDGMENT_TOKEN: ${BYQ_RUNTIME_JUDGMENT_TOKEN:?judgment token required}
+      BYQ_JUDGMENT_POLL_SECONDS: ${BYQ_JUDGMENT_POLL_SECONDS:-2}
+    depends_on:
+      backend:
+        condition: service_healthy
+      runtime-adapter:
+        condition: service_healthy
+    networks:
+      - byq_product
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 64
+    mem_limit: 512m
 
 networks:
   # Internal only. Runner has no product/default bridge and no published port.

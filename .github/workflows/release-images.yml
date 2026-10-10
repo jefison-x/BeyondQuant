@@ -55,6 +55,12 @@ jobs:
         with:
           python-version: '3.13'
 
+      - name: Install pinned offline Compose parser
+        run: |
+          python3 -m pip install --disable-pip-version-check --no-deps \
+            --only-binary=:all: --require-hashes \
+            -r scripts/release/requirements.release-runner.lock
+
       - name: Set up bounded Buildx cache builder
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
         with:
@@ -156,6 +162,15 @@ jobs:
         with:
           name: tested-release-images
           path: .ci-artifacts/release-images
+      - name: Set up Python toolchain
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+      - name: Install pinned offline Compose parser
+        run: |
+          python3 -m pip install --disable-pip-version-check --no-deps \
+            --only-binary=:all: --require-hashes \
+            -r scripts/release/requirements.release-runner.lock
       - name: Install verified SBOM tool
         run: |
           curl --fail --silent --show-error --location --retry 3 https://github.com/anchore/syft/releases/download/v1.51.1/syft_1.51.1_linux_amd64.tar.gz -o "$RUNNER_TEMP/syft.tar.gz"

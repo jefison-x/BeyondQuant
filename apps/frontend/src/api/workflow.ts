@@ -116,7 +116,7 @@ export function workflowOutcomes(events: WorkflowTraceEvent[], sessionId: string
     seen.add(event.sequence);
     const code = typeof event.payload.code === "string" ? event.payload.code : "";
     const message = event.kind === "session.cancelled"
-      ? "本轮已取消。已提交的业务任务请查看其实际状态，取消对话不代表撤销业务操作。"
+      ? "本轮已取消。已提交的业务任务请先核对实际状态，取消对话不代表撤销业务操作。接续子助手工作时会新建子助手，不会恢复原实例，也不会自动重做原任务。"
       : event.kind === "session.result.discarded"
         ? "本轮迟到结果未被采纳。已提交的业务任务请查看其实际状态。"
         : Object.hasOwn(FAILURE_MESSAGES, code) ? FAILURE_MESSAGES[code]!

@@ -40,6 +40,10 @@ from packages.contracts.continuation_request import (
     validate_profile_binding,
     validate_request_usage,
 )
+from packages.contracts.product_turn_request import (
+    validate_product_turn_limits,
+    validate_product_turn_profile,
+)
 
 PERSONA_TOOL = "byq_research_judgment_turn"
 JOURNAL_SCHEMA = "research-request-gate-journal.v1"
@@ -89,7 +93,8 @@ def _tool_payload_bytes(parsed: dict) -> int:
 # is no repository/SDK evidence for ``x-api-key``, so it is NOT forwarded. BYQ
 # product/internal tokens (``x-byq-*``), cookies and hop-by-hop headers are never
 # forwarded, and no header VALUE is ever written to a receipt, log or evidence.
-_FORWARDED_REQUEST_HEADERS = ("authorization", "content-type", "accept")
+_FORWARDED_REQUEST_HEADERS = ("authorization", "content-type", "accept",
+                              "x-opencode-session", "user-agent")
 
 _DECLARED_OUTPUT_FIELDS = ("max_tokens", "max_completion_tokens", "max_output_tokens")
 
@@ -226,10 +231,20 @@ class ResearchRequestGate:
                  monotonic=time.monotonic, wall=time.time) -> None:
         self._monotonic = monotonic
         self._wall = wall
-        self.execution_profile = (validate_profile_binding(execution_profile)
-                                  if execution_profile is not None else None)
+        # ADR-0106: the gate also serves the ordinary Product path under the
+        # independent `product-turn.v1` profile. Both modes use the same
+        # request-scoped cap decision; only the accepted profile/limits differ.
+        self.product_turn = False
+        self.execution_profile = None
+        if execution_profile is not None:
+            try:
+                self.execution_profile = validate_profile_binding(execution_profile)
+            except ValueError:
+                self.execution_profile = validate_product_turn_profile(execution_profile)
+                self.product_turn = True
         self.continuation_mode = self.execution_profile is not None
-        self.limits = (validate_continuation_limits(limits) if self.continuation_mode else limits)
+        self.limits = (validate_product_turn_limits(limits) if self.product_turn
+                       else validate_continuation_limits(limits) if self.continuation_mode else limits)
         self.request_id = request_id
         self._journal = journal
         self._lock = threading.Lock()
@@ -281,6 +296,18 @@ class ResearchRequestGate:
         with self._lock:
             return any(row.get("phase") == "rejected" or
                        (row.get("phase") == "completed" and not row.get("forwarded", True))
+                       for row in self._receipts)
+
+    def has_unknown_outcome(self) -> bool:
+        """Whether a dispatched request has an unprovable outbound result.
+
+        ADR-0105 §5: an unprovable outbound result keeps the execution receipt
+        unresolved (`outcome_unknown`), distinct from a known redirect or
+        output-limit block whose result is provable.
+        """
+        with self._lock:
+            return any(row.get("phase") == "completed"
+                       and row.get("reason") == "provider_outcome_unknown"
                        for row in self._receipts)
 
     def remaining_seconds(self) -> float:
@@ -871,12 +898,21 @@ class _GateProxyHandler(BaseHTTPRequestHandler):
 class RequestGateProxy:
     """One request-scoped proxy whose active sockets the owner can close."""
 
-    def __init__(self, gate: ResearchRequestGate, upstream: str) -> None:
-        if gate.continuation_mode and upstream.rstrip("/") != "https://api.deepseek.com":
-            raise ValueError("continuation provider must be the official DeepSeek endpoint")
+    def __init__(self, gate: ResearchRequestGate, upstream: str, *,
+                 bind_host: str = "127.0.0.1", advertise_host: str | None = None) -> None:
+        if gate.continuation_mode:
+            from packages.contracts.continuation_request import UPSTREAM_BASE_URL
+            allowed_upstreams = {"https://api.deepseek.com", UPSTREAM_BASE_URL.rstrip("/")}
+            if upstream.rstrip("/") not in allowed_upstreams:
+                raise ValueError("continuation provider is not a qualified endpoint")
+        # The ACP product slot runs the DSH child in a separate container, so the
+        # loopback address is not reachable from that child. Callers may bind a
+        # routable interface and advertise the address the child must use.
+        self._advertise_host = advertise_host or (
+            "127.0.0.1" if bind_host in {"127.0.0.1", "localhost"} else bind_host)
         self._gate = gate
         self._upstream = upstream.rstrip("/")
-        self._server = ThreadingHTTPServer(("127.0.0.1", 0), _GateProxyHandler)
+        self._server = ThreadingHTTPServer((bind_host, 0), _GateProxyHandler)
         self._server.daemon_threads = True
         self._server.gate = gate  # type: ignore[attr-defined]
         self._server.upstream = self._upstream  # type: ignore[attr-defined]
@@ -891,8 +927,8 @@ class RequestGateProxy:
 
     @property
     def base_url(self) -> str:
-        host, port = self._server.server_address[:2]
-        return f"http://{host}:{port}"
+        _host, port = self._server.server_address[:2]
+        return f"http://{self._advertise_host}:{port}"
 
     def _register_client(self, connection: socket.socket) -> None:
         with self._active_lock:

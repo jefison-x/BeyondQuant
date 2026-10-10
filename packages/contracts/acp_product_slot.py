@@ -41,6 +41,10 @@ PRODUCT_ENV_REQUIRED = frozenset({
 })
 PRODUCT_ENV_OPTIONAL = frozenset({
     "BYQ_NATIVE_ROOT_SESSION_ID", "DEEPSEEK_API_KEY", "OPENCODE_API_KEY",
+    # Non-secret reservation carrier for a background continuation root. It is
+    # the trusted task-bound identity the MCP server uses to advertise only the
+    # tools that exact reservation may call; never a caller-selected value.
+    "BYQ_CONTINUATION_RESERVATION_ID",
 })
 PRODUCT_ENV_ALLOWLIST = PRODUCT_ENV_REQUIRED | PRODUCT_ENV_OPTIONAL
 
@@ -118,6 +122,9 @@ def validate_product_environment(
     provider_keys = {key for key in ("DEEPSEEK_API_KEY", "OPENCODE_API_KEY") if key in env}
     if len(provider_keys) != 1:
         raise ProductSlotContractError("Product ACP requires exactly one selected provider key")
+    reservation = env.get("BYQ_CONTINUATION_RESERVATION_ID")
+    if reservation is not None and re.fullmatch(r"continuation_[0-9a-f]{32}", reservation) is None:
+        raise ProductSlotContractError("Product ACP continuation reservation is invalid")
     endpoint = urlsplit(env["BYQ_MCP_URL"])
     if (endpoint.scheme not in {"http", "https"} or not endpoint.hostname
             or endpoint.username is not None or endpoint.password is not None

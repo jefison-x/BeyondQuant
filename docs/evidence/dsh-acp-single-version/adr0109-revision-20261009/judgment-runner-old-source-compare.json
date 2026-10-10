@@ -1,0 +1,61 @@
+{
+  "all_checks_match": false,
+  "container_created_stopped_never_started": true,
+  "file_checks": {
+    "byq-acp-mcp-identity.js": {
+      "image_sha256": "3e1eaae43319d28d3d908cc55d8cc22eebf9943d49f6645235ef7f8140530ea4",
+      "matches": true,
+      "source": "plugins/dsh-byq/runtime/byq-acp-mcp-identity.js",
+      "source_sha256": "3e1eaae43319d28d3d908cc55d8cc22eebf9943d49f6645235ef7f8140530ea4"
+    },
+    "byq-continuation-budget.js": {
+      "image_sha256": "66c5112d249da0ee1d140ebc0d609a2bb2606a0c550aed38a09ff6fc8b2cb816",
+      "matches": false,
+      "source": "plugins/dsh-byq/runtime/byq-continuation-budget.js",
+      "source_sha256": "892e42d6dcb982a6bcdfd6fc3d183b912a5909cae7dd3e4dd672de91236ee50a"
+    },
+    "byq-research-judgment.identity.json": {
+      "image_sha256": "10c2ffea694bccf2198ba6ded1c913c1e63fe24559e039ace04f766f408a6547",
+      "matches": true,
+      "source": "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-research-judgment.identity.json",
+      "source_sha256": "10c2ffea694bccf2198ba6ded1c913c1e63fe24559e039ace04f766f408a6547"
+    },
+    "byq-research-judgment.patch.yml": {
+      "image_sha256": "fb83ce61744343441d1502c72ddfad35c44b7a3ab047ac9dc115e1901e1cc99e",
+      "matches": true,
+      "source": "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-research-judgment.patch.yml",
+      "source_sha256": "fb83ce61744343441d1502c72ddfad35c44b7a3ab047ac9dc115e1901e1cc99e"
+    },
+    "byq-runtime-time-context.js": {
+      "image_sha256": "fe18a15e6f35a0b42e185599db24854cc24cbdd4a793af43656651ee0663be72",
+      "matches": true,
+      "source": "plugins/dsh-byq/runtime/byq-runtime-time-context.js",
+      "source_sha256": "fe18a15e6f35a0b42e185599db24854cc24cbdd4a793af43656651ee0663be72"
+    },
+    "official_commit": {
+      "expected": "639ed015397290b3745d163aafe02ffee4aa3f84",
+      "image_value": "639ed015397290b3745d163aafe02ffee4aa3f84",
+      "matches": true
+    },
+    "official_lock": {
+      "expected": "80fe05eae33582ae26839afd05f1965f9b0e4be11034ddf9797af6085d5ba9b1",
+      "image_sha256": "80fe05eae33582ae26839afd05f1965f9b0e4be11034ddf9797af6085d5ba9b1",
+      "matches": true
+    },
+    "package.json": {
+      "image_sha256": "4279ea1e6a2409c5ee98eb72dd769139dee4f76a2d47fa6db6eecbf2d81f857e",
+      "matches": true,
+      "source": "plugins/dsh-byq/runtime/package.json",
+      "source_sha256": "4279ea1e6a2409c5ee98eb72dd769139dee4f76a2d47fa6db6eecbf2d81f857e"
+    },
+    "server.py": {
+      "image_sha256": "64048a5b0d398a4cc4ca2ee219dccc16927632579c4dd1e9ad63a2d489afed17",
+      "matches": false,
+      "source": "services/acp_judgment_runner/server.py",
+      "source_sha256": "93be62febb0dfad151af6cbbb09bf04890aa6cae27a15cc59f4f0a320fc2a3c8"
+    }
+  },
+  "image_config_json_or_environment_read": false,
+  "image_id": "sha256:6592810009079dff51f42bf87f56076e84ae665eaf5a2f722b1b57ccb4b7666c",
+  "network": "none"
+}

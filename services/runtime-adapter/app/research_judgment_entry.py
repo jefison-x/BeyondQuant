@@ -1,14 +1,8 @@
-"""ADR-0085 P4: the minimal trusted internal entry for one bounded judgment turn.
+"""Trusted Runtime Adapter entry points for research judgment.
 
-This is the only production caller of ``run_bounded_research_judgment``. The
-Runtime Adapter derives every identity/tool/URL/header/call value server-side and
-never accepts a model result, a next action, an approval, an idempotency key or a
-routing decision from the caller. The flow is exactly:
-
-    admit (Backend) -> real DSH bounded turn (DshBoundedTurnRunner)
-    -> closed result -> atomic Backend result
-
-It adds no generic plan/event/proposal write route and no second harness.
+The dedicated ACP root owns the production lifecycle path. The older bounded
+Python-SDK helper remains separate and is no longer dispatched by the HTTP API.
+No generic plan/event/proposal write route or second harness is added.
 """
 
 from __future__ import annotations
@@ -31,6 +25,24 @@ def judgment_acp_lifecycle_enabled(environment: dict | None = None) -> bool:
 
     env = os.environ if environment is None else environment
     return env.get(_JUDGMENT_ENABLE_ENV) == "1"
+
+
+def judgment_provider_resolution(environment: dict) -> tuple[str, str, str]:
+    """Resolve (provider, model, api_key) from the exact selected provider route.
+
+    ADR-0105: the credential env is selected by the resolved provider route
+    (OpenCode Go/Zen vs DeepSeek official); the entry must never assume
+    DeepSeek. A missing credential for the selected route fails closed.
+    """
+
+    from .research_judgment_acp_turn import judgment_proxy_token_env
+
+    provider = environment.get("BYQ_DSH_PROVIDER", "deepseek-official")
+    model = environment.get("BYQ_DSH_MODEL", "deepseek-v4-flash")
+    api_key = environment.get(judgment_proxy_token_env(provider), "")
+    if not api_key:
+        raise ValueError("selected provider credential is unavailable")
+    return provider, model, api_key
 
 
 def _judgment_control_root(environment: dict, workspace_id: str, task_id: str) -> Path:
@@ -107,7 +119,7 @@ def run_acp_judgment_root(*, task_id: str, identity: dict, attempt: str,
     server-side here; no model value is accepted.
     """
 
-    from .compat import compatibility_for_release
+    from .compat import ACP_COMPATIBILITY_FAMILY, compatibility_for_release
     from .research_judgment_acp_journal import AcpJudgmentJournal
     from .research_judgment_acp_provider_proxy import AcpJudgmentProviderProxy
     from .research_judgment_acp_runner_client import RunnerClient
@@ -124,11 +136,7 @@ def run_acp_judgment_root(*, task_id: str, identity: dict, attempt: str,
     authority_token = environment.get("BYQ_RUNTIME_AUTHORITY_TOKEN", "")
     if not authority_token:
         raise ValueError("runtime authority service credential is unavailable")
-    provider = environment.get("BYQ_DSH_PROVIDER", "deepseek-official")
-    model = environment.get("BYQ_DSH_MODEL", "deepseek-v4-flash")
-    api_key = environment.get("DEEPSEEK_API_KEY", "")
-    if not api_key:
-        raise ValueError("selected provider credential is unavailable")
+    provider, model, api_key = judgment_provider_resolution(environment)
     mcp_url = environment.get("BYQ_MCP_ACP_JUDGMENT_URL", "")
     if not mcp_url:
         raise ValueError("isolated judgment MCP endpoint is unavailable")
@@ -151,8 +159,9 @@ def run_acp_judgment_root(*, task_id: str, identity: dict, attempt: str,
         authority_headers=journal_headers)
     resolution = {"source": "environment", "provider": provider, "model": model,
                   "api_key": api_key}
-    compatibility = compatibility_for_release(
-        environment.get("BYQ_DSH_COMPATIBILITY_RELEASE", "dsh-v0.2.0-rc.2-acp"))
+    # Dedicated judgment always uses the one authoritative ACP family. It does
+    # not inherit the Product selector environment or fall back to the SDK path.
+    compatibility = compatibility_for_release(ACP_COMPATIBILITY_FAMILY)
     runner_client = RunnerClient.from_environment()
     acp = IsolatedJudgmentAcpDriver(
         runner_client=runner_client, compatibility=compatibility,

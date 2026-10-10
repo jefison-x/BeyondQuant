@@ -1,0 +1,126 @@
+{
+  "build": {
+    "build_log_sha256": "05ad94c8dacc15e9ba96841934f075b2e82d56a90af1c339575187ee111e7216",
+    "dockerfile_sha256": "1721eb5501aff402f892a794e60eab26364591a022dd094288061d4c4bda65ba",
+    "exit_code": 0,
+    "image_id": "sha256:693c7bfd2f0dd64c45fc84d7f950886ddfe6294783e62977afb2eb5ed666b0dd",
+    "input_sha256": "caf1af29fc4cb64c9a56c8ce43c398ee83c9f50f8ec4de6c383adf2061b7de06",
+    "result_sha256": "1afacf1d780da78e72d2300065a88c5ef02a39c667fb0f21e33e1c5b84e8c2a0"
+  },
+  "checks": {
+    "both_python_sdk_distributions_absent": true,
+    "build_succeeded": true,
+    "controller_root_and_dsh_user_10002": true,
+    "dockerfile_matches_build_input": true,
+    "exact_image_id": true,
+    "independent_output_matches_existing_root_receipt": true,
+    "no_model_calls": true,
+    "official_source_commit": true,
+    "official_source_commit_matches_current_manifest": true,
+    "pnpm_lock_matches_build_input_and_current_manifest": true,
+    "probe_ast_checks_each_sdk_distribution_separately": true,
+    "probe_ast_contains_no_process_or_network_start": true,
+    "product_identity_matches_worktree": true,
+    "product_profile_matches_worktree": true,
+    "product_server_matches_worktree": true,
+    "release_identity_matches_worktree": true,
+    "supervisor_server_matches_worktree": true
+  },
+  "current_worktree_authoritative_manifest": {
+    "pnpm_lock_sha256": "80fe05eae33582ae26839afd05f1965f9b0e4be11034ddf9797af6085d5ba9b1",
+    "release_id": "dsh-v0.2.0-rc.2",
+    "sha256": "f8b3a222aced5b95cfda1d5d59c2de122c2a3527021f64eff67c5c9e49deafac",
+    "source_commit": "639ed015397290b3745d163aafe02ffee4aa3f84"
+  },
+  "current_worktree_hashes": {
+    "config/dsh/acp-0.2.0-rc.2.identity.json": "e8af0d1cabf1cb85db9b57da85ba246e5c9691e77f9428664e6e36a3aea7ec67",
+    "config/dsh/acp/authoritative.json": "f8b3a222aced5b95cfda1d5d59c2de122c2a3527021f64eff67c5c9e49deafac",
+    "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-product.identity.json": "f009d2bc2392966ba08464774a01c2db49bfe7d0c2adeb6f1107c3fd7bd401b9",
+    "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-product.patch.yml": "39d0d9f25c2490e6ef0ca65d7b88dadc69739812a438c692fc63f894073c81a1",
+    "services/acp_judgment_runner/server.py": "93be62febb0dfad151af6cbbb09bf04890aa6cae27a15cc59f4f0a320fc2a3c8",
+    "services/acp_product_runner/Dockerfile": "1721eb5501aff402f892a794e60eab26364591a022dd094288061d4c4bda65ba",
+    "services/acp_product_runner/server.py": "abc8992083bca202d4e66354f254fb1ea095cd409b62fcbdc2d3b2e6b6912f31",
+    "services/runtime-adapter/requirements.acp-candidate.lock": "53592f4ad247cff51dd7deff6f8ca1b6230257848a5b1917db2cab9e34d49f3e"
+  },
+  "limitations": [
+    "The child UID/GID is verified from the image user database and Dockerfile architecture; this probe intentionally did not spawn a DSH process to observe its runtime credentials.",
+    "No live service, ACP session, provider, or model was started; this is artifact identity evidence, not Product integration or release qualification."
+  ],
+  "probe": {
+    "command_flags": [
+      "--pull=never",
+      "--network none",
+      "--read-only",
+      "--cap-drop ALL",
+      "--security-opt no-new-privileges"
+    ],
+    "independent_container_exit_code": 0,
+    "independent_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "independent_stdout_path": "/tmp/byq-acp-authoritative-real-build-20261009/ordinary-runner-independent-probe.stdout.json",
+    "independent_stdout_sha256": "e12e2ae4faf384b550035230ae20a0f1b3139c96423a0531e036d28c5a8b4824",
+    "path": "/tmp/byq-acp-authoritative-real-build-20261009/ordinary-runner-readonly-probe.py",
+    "previous_root_precheck_sha256": "5fa9c5f3d7117ad418cc55da12f42ea673c413a3fa41011af4e1b3ba13dbc6b2",
+    "previous_root_receipt_sha256": "e12e2ae4faf384b550035230ae20a0f1b3139c96423a0531e036d28c5a8b4824",
+    "probe_output": {
+      "checks": {
+        "child_uid_gid": true,
+        "lock": true,
+        "no_python_sdk": true,
+        "profiles": true,
+        "source": true
+      },
+      "controller_probe_uid": 0,
+      "dsh_child_user_uid": 10002,
+      "files": {
+        "cli_sha256": "1a03dee18683483ff6a1b27b2a1e650230da6bcca9a0f55f7d81b3308c3f307f",
+        "pnpm_lock_sha256": "80fe05eae33582ae26839afd05f1965f9b0e4be11034ddf9797af6085d5ba9b1",
+        "product_identity_sha256": "f009d2bc2392966ba08464774a01c2db49bfe7d0c2adeb6f1107c3fd7bd401b9",
+        "product_profile_sha256": "39d0d9f25c2490e6ef0ca65d7b88dadc69739812a438c692fc63f894073c81a1",
+        "product_server_sha256": "abc8992083bca202d4e66354f254fb1ea095cd409b62fcbdc2d3b2e6b6912f31",
+        "release_identity_sha256": "e8af0d1cabf1cb85db9b57da85ba246e5c9691e77f9428664e6e36a3aea7ec67",
+        "source_stamp": "639ed015397290b3745d163aafe02ffee4aa3f84",
+        "supervisor_server_sha256": "93be62febb0dfad151af6cbbb09bf04890aa6cae27a15cc59f4f0a320fc2a3c8"
+      },
+      "model_calls": 0,
+      "python_distributions": [],
+      "python_sdk": {
+        "deepseek-harness-runtime-bin": {
+          "installed": false
+        },
+        "deepseek-harness-sdk": {
+          "installed": false
+        }
+      },
+      "python_version": "3.11.2",
+      "scope": "read-only artifact identity; controller and DSH are not started",
+      "status": "PASS"
+    },
+    "sha256": "c4c2cb2883f2fce1e015f5349e02110f62018c041d82b24bd9e876e45a071074"
+  },
+  "probe_ast_review": {
+    "checks": {
+      "controller_uid_read": false,
+      "dsh_child_uid_gid_lookup": true,
+      "no_process_or_network_start_calls": true,
+      "sdk_names_independent": true
+    },
+    "does_not_start_app_or_dsh": true,
+    "imports": [
+      "hashlib",
+      "importlib.metadata",
+      "json",
+      "os",
+      "pathlib",
+      "platform",
+      "pwd"
+    ],
+    "sdk_loop_checks_exact_names_separately": [
+      "deepseek-harness-sdk",
+      "deepseek-harness-runtime-bin"
+    ]
+  },
+  "regressions": "None; no source files were changed.",
+  "schema_version": "byq-ordinary-acp-runner-independent-readonly-qualification.v1",
+  "scope": "Bounded immutable artifact identity recheck only; the controller and DSH were not started.",
+  "status": "PASS"
+}

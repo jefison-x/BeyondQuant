@@ -11,6 +11,8 @@ from pathlib import Path
 from .research_judgment_acp_provider_routes import selected_route
 
 _LOCAL_HTTP = re.compile(r"http://([0-9.]+):([1-9][0-9]{0,4})(/[^?#]*)?\Z")
+_OPENCODE_SESSION = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z")
 _ALLOWED_BIND_NETWORKS = tuple(ipaddress.ip_network(value) for value in (
     "127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
 _API = {"chat": "openai-completions", "responses": "openai-responses",
@@ -31,7 +33,8 @@ def valid_local_proxy_bind_host(value: object) -> bool:
 
 def private_provider_overlay(*, route_name: str, model: str,
                              proxy_base_url: str,
-                             max_output_tokens: int | None = None) -> list[dict]:
+                             max_output_tokens: int | None = None,
+                             provider_session_id: str | None = None) -> list[dict]:
     """Return only the selected route with its fixed local proxy endpoint.
 
     ``max_output_tokens`` caps the per-request declared output the pinned DSH
@@ -56,19 +59,35 @@ def private_provider_overlay(*, route_name: str, model: str,
             "apiKeyEnv": "DEEPSEEK_API_KEY", "baseURL": proxy_base_url,
             "retryPolicy": no_retry, **capped}},
             {"id": "llm-pi-ai", "disabled": True}]
-    return [{"id": "llm-deepseek", "disabled": True},
-            {"id": "llm-pi-ai", "config": {"providers": {route.name: {
-                "api": _API[route.protocol], "apiKeyEnv": "OPENCODE_API_KEY",
-                "baseURL": proxy_base_url, "retryPolicy": no_retry,
-                "models": [{"id": model, **capped}],
-            }}}}]
+    # Keep llm-deepseek ACTIVE (output-capped) for every selected route: the
+    # pinned DSH `session/new` requires a registered adapter for the profile's
+    # default provider, and disabling it makes session/new fail with an internal
+    # error. No DeepSeek credential is present, so no request can reach it; the
+    # selected route below is the only route the session model uses.
+    # The OpenCode routes require the exact `x-opencode-session` routing header
+    # (the upstream rejects a request without it); when supplied it is derived
+    # server-side and carried on the route config.
+    route_config: dict = {
+        "api": _API[route.protocol], "apiKeyEnv": "OPENCODE_API_KEY",
+        "baseURL": proxy_base_url, "retryPolicy": no_retry,
+        "models": [{"id": model, **capped}],
+    }
+    if provider_session_id is not None:
+        if (not isinstance(provider_session_id, str)
+                or _OPENCODE_SESSION.fullmatch(provider_session_id) is None):
+            raise ValueError("exact OpenCode provider session identity is required")
+        route_config["headers"] = {"x-opencode-session": provider_session_id}
+    return [{"id": "llm-deepseek", "config": dict(capped)},
+            {"id": "llm-pi-ai", "config": {"providers": {route.name: route_config}}}]
 
 
 def write_private_provider_overlay(directory: Path, *, route_name: str,
-                                   model: str, proxy_base_url: str) -> Path:
+                                   model: str, proxy_base_url: str,
+                                   provider_session_id: str | None = None) -> Path:
     """Write the nonsecret private overlay once; never replace a running one."""
     overlay = private_provider_overlay(route_name=route_name, model=model,
-                                       proxy_base_url=proxy_base_url)
+                                       proxy_base_url=proxy_base_url,
+                                       provider_session_id=provider_session_id)
     directory = Path(directory)
     info = os.stat(directory, follow_symlinks=False)
     if not directory.is_dir() or info.st_uid != os.geteuid() or info.st_mode & 0o077:

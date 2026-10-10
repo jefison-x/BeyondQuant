@@ -15,22 +15,42 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-CURRENT_DSH_DOCKERFILE = "services/runtime-adapter/Dockerfile.post-u8-322-candidate"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.dsh.acp_build import build_environment
+from scripts.dsh.authoritative_version import load_authoritative_version
+
 ENV_FILE = ROOT / ".env.dev"
 TEMPLATE = ROOT / ".env.example"
-VOLUME_SUFFIXES = ("postgres-data", "domain-state", "ml-model-state", "dsh-sessions", "workflow-traces")
-NETWORK_SUFFIXES = ("product", "signal-sandbox")
+VOLUME_SUFFIXES = (
+    "postgres-data", "domain-state", "ml-model-state", "dsh-sessions",
+    "workflow-traces", "acp-product-sessions", "acp-product-state",
+    "acp-product-control", "acp-judgment-sessions", "acp-runner-control",
+    "acp-runner-state",
+)
+PRESERVED_VOLUME_SUFFIXES = ("dsh-sessions",)
+NETWORK_SUFFIXES = ("product", "signal-sandbox", "acp-judgment")
 SERVICES = {
     "core": ("postgres", "backend", "mcp", "runtime-adapter", "gateway"),
     "research": ("postgres", "backend", "mcp", "runtime-adapter", "gateway", "data-worker", "factor-worker"),
     "backtest": ("postgres", "backend", "mcp", "runtime-adapter", "gateway", "signal-sandbox", "signal-worker", "backtest-worker", "optimization-worker", "factor-worker"),
     "ml": ("postgres", "backend", "mcp", "runtime-adapter", "gateway", "ml-worker"),
-    "full": ("postgres", "backend", "mcp", "runtime-adapter", "gateway", "data-worker", "signal-sandbox", "signal-worker", "backtest-worker", "optimization-worker", "factor-worker", "ml-worker", "frontend"),
+    "full": ("postgres", "backend", "mcp", "runtime-adapter", "gateway", "data-worker", "signal-sandbox", "signal-worker", "backtest-worker", "optimization-worker", "factor-worker", "ml-worker", "frontend", "judgment-consumer"),
+}
+KNOWN_SERVICES = {service for group in SERVICES.values() for service in group} | {
+    "acp-product-runner", "acp-judgment-runner", "mcp-acp-judgment",
+    "judgment-consumer", "feedback-hub-relay",
 }
 FORBIDDEN_OVERRIDES = (
     "BYQ_POSTGRES_VOLUME_NAME", "BYQ_DOMAIN_VOLUME_NAME", "BYQ_ML_MODEL_VOLUME_NAME",
     "BYQ_DSH_SESSIONS_VOLUME_NAME", "BYQ_WORKFLOW_TRACES_VOLUME_NAME",
     "BYQ_PRODUCT_NETWORK_NAME", "BYQ_SIGNAL_SANDBOX_NETWORK_NAME",
+    "BYQ_ACP_PRODUCT_SESSIONS_VOLUME_NAME", "BYQ_ACP_PRODUCT_STATE_VOLUME_NAME",
+    "BYQ_ACP_PRODUCT_CONTROL_VOLUME_NAME", "BYQ_ACP_JUDGMENT_SESSIONS_VOLUME_NAME",
+    "BYQ_ACP_RUNNER_CONTROL_VOLUME_NAME", "BYQ_ACP_RUNNER_STATE_VOLUME_NAME",
+    "BYQ_ACP_JUDGMENT_NETWORK_NAME", "BYQ_DSH_RUNTIME_DOCKERFILE",
+    "BYQ_DSH_PROVIDER", "BYQ_DSH_MODEL",
 )
 
 
@@ -60,7 +80,7 @@ def read_env(path: Path) -> dict[str, str]:
     return values
 
 
-def local_env() -> dict[str, str]:
+def local_env(*, require_workspace: bool = True) -> dict[str, str]:
     if ENV_FILE.is_symlink() or not ENV_FILE.is_file():
         raise DevError("run make dev-init to create this worktree's .env.dev")
     mode = stat.S_IMODE(ENV_FILE.stat().st_mode)
@@ -80,9 +100,26 @@ def local_env() -> dict[str, str]:
     expected_db_url = f"postgresql+psycopg://{user}:{password}@postgres:5432/{db}"
     if values.get("BYQ_DATABASE_URL") != expected_db_url:
         raise DevError("dev database URL must target this Compose project's PostgreSQL")
-    for key in ("BYQ_MCP_TOKEN", "BYQ_PRODUCT_TOKEN", "BYQ_RUNTIME_AUTHORITY_TOKEN", "POSTGRES_PASSWORD", "BYQ_BOOTSTRAP_ADMIN_PASSWORD", "BYQ_CREDENTIAL_KEYRING"):
+    required = (
+        "BYQ_MCP_TOKEN", "BYQ_PRODUCT_TOKEN", "BYQ_RUNTIME_AUTHORITY_TOKEN",
+        "BYQ_RUNTIME_JUDGMENT_TOKEN", "BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET",
+        "BYQ_ACP_JUDGMENT_RUNNER_CONTROL_SECRET", "BYQ_MCP_ACP_DISCOVERY_TOKEN",
+        "BYQ_MCP_ACP_SIGNING_KEY", "BYQ_MCP_BACKEND_PROOF_TOKEN",
+        "BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY", "BYQ_MCP_ACP_JUDGMENT_PROOF_TOKEN",
+        "BYQ_GATEWAY_SERVICE_TOKEN", "POSTGRES_PASSWORD",
+        "BYQ_BOOTSTRAP_ADMIN_PASSWORD", "BYQ_CREDENTIAL_KEYRING",
+    )
+    for key in required:
         if not values.get(key):
             raise DevError(f"missing required local configuration: {key}")
+    workspace_id = values.get("BYQ_ACP_PRODUCT_WORKSPACE_ID", "")
+    if workspace_id and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", workspace_id):
+        raise DevError("BYQ_ACP_PRODUCT_WORKSPACE_ID is not a valid explicit Workspace identifier")
+    if require_workspace and not workspace_id:
+        raise DevError(
+            "a trusted personal Workspace binding is required; set BYQ_ACP_PRODUCT_WORKSPACE_ID "
+            "in this worktree's private .env.dev before starting ACP"
+        )
     return values
 
 
@@ -93,7 +130,13 @@ def child_env(values: dict[str, str]) -> dict[str, str]:
 
 
 def compose_args(*parts: str) -> list[str]:
-    return ["docker", "compose", "--project-name", scope(), "--env-file", str(ENV_FILE), "-f", str(ROOT / "compose.yml"), "-f", str(ROOT / "compose.dev.yml"), *parts]
+    return [
+        sys.executable, str(ROOT / "scripts/dsh/acp_build.py"), "--", "docker", "compose",
+        "--project-name", scope(), "--env-file", str(ENV_FILE),
+        "-f", str(ROOT / "compose.yml"),
+        "-f", str(ROOT / "compose.override.yml"),
+        "-f", str(ROOT / "compose.dev.yml"), *parts,
+    ]
 
 
 def call(args: list[str], values: dict[str, str], *, capture: bool = False) -> subprocess.CompletedProcess[str]:
@@ -101,23 +144,89 @@ def call(args: list[str], values: dict[str, str], *, capture: bool = False) -> s
 
 
 def validated_config(values: dict[str, str]) -> None:
+    selection = load_authoritative_version(ROOT)
+    resolved = build_environment(selection)
+    release_id = str(selection["release_id"])
+    if not release_id.startswith("dsh-v"):
+        raise DevError("authoritative DSH release cannot select a Runtime Adapter Dockerfile")
+    version = release_id[len("dsh-v"):]
+    expected_dockerfile = f"services/runtime-adapter/Dockerfile.acp-{version}-candidate"
     result = call(compose_args("config", "--format", "json"), values, capture=True)
     if result.returncode:
-        raise DevError("Compose configuration failed; check .env.dev and templates without printing secrets")
+        raise DevError("Compose configuration failed; check .env.dev without printing secrets")
     try:
         config = json.loads(result.stdout)
-        dockerfile = config["services"]["runtime-adapter"]["build"]["dockerfile"]
+        services = config["services"]
+        runtime = services["runtime-adapter"]
+        dockerfile = runtime["build"]["dockerfile"]
+        runtime_environment = runtime["environment"]
+        runtime_volumes = runtime.get("volumes") or []
+        product_runner = services["acp-product-runner"]
+        runner_environment = product_runner["environment"]
+        runner_volumes = product_runner.get("volumes") or []
     except (ValueError, KeyError, TypeError) as exc:
-        raise DevError("Compose configuration lacks the Runtime Adapter build") from exc
-    if dockerfile != CURRENT_DSH_DOCKERFILE:
+        raise DevError("Compose configuration lacks the ACP Runtime Adapter or runner") from exc
+    if dockerfile != expected_dockerfile:
         raise DevError("Compose selected a stale Runtime Adapter build")
+    if runtime_environment.get("BYQ_DSH_COMPATIBILITY_RELEASE") != selection["compatibility_family"]:
+        raise DevError("Compose selected a non-authoritative DSH compatibility family")
+    if runtime_environment.get("DSH_SESSION_ROOT") != resolved["BYQ_DSH_BUILD_SESSION_ROOT"]:
+        raise DevError("Compose selected a non-authoritative DSH session root")
+    if (
+        runtime_environment.get("BYQ_DSH_PROVIDER") != "opencode-go-chat"
+        or runtime_environment.get("BYQ_DSH_MODEL") != "deepseek-v4.1-flash"
+    ):
+        raise DevError("Compose selected an unqualified normal Product model route")
+
+    workspace_id = values["BYQ_ACP_PRODUCT_WORKSPACE_ID"]
+    expected_mount = f"{resolved['BYQ_DSH_BUILD_SESSION_ROOT']}/{workspace_id}"
+
+    def has_workspace_mount(mounts: list[dict[str, object]]) -> bool:
+        return any(
+            mount.get("source") == "byq_acp_product_sessions"
+            and mount.get("target") == expected_mount
+            for mount in mounts
+            if isinstance(mount, dict)
+        )
+
+    if any(
+        isinstance(mount, dict)
+        and (mount.get("source") == "byq_dsh_sessions"
+             or mount.get("target") == "/var/lib/byq/dsh-sessions")
+        for mount in runtime_volumes
+    ):
+        raise DevError("ACP Runtime Adapter still mounts the legacy SDK session volume")
+    if not has_workspace_mount(runtime_volumes) or not has_workspace_mount(runner_volumes):
+        raise DevError("ACP Adapter and Product runner must share the explicit Workspace session leaf")
+    if runner_environment.get("BYQ_ACP_PRODUCT_WORKSPACE_ID") != workspace_id:
+        raise DevError("ACP Product runner Workspace differs from the explicit binding")
+    try:
+        bindings = json.loads(runtime_environment["BYQ_ACP_PRODUCT_SLOT_BINDINGS"])
+    except (KeyError, ValueError, TypeError) as exc:
+        raise DevError("ACP Product slot binding is invalid") from exc
+    if not isinstance(bindings, dict) or set(bindings) != {workspace_id} or bindings[workspace_id] != {
+        "socket_path": "/run/byq-acp-product-runner/control.sock",
+        "control_secret_env": "BYQ_ACP_PRODUCT_SLOT_PRIMARY_SECRET",
+    }:
+        raise DevError("ACP Product slot must remain bound to one explicit Workspace and runner")
+
+
+def _print_workspace_binding_steps() -> None:
+    print("ACP Workspace binding is unset; services remain fail-closed.")
+    print("1. Complete normal BYQ user and personal Workspace onboarding for this dev database; this initializer does not create identities.")
+    print("2. In that authenticated Gateway session, read your workspace_id from GET /api/auth/me; do not use a service token or another database ID.")
+    print("3. Set BYQ_ACP_PRODUCT_WORKSPACE_ID in this worktree's private .env.dev, then run make dev-init and make dev-start.")
+    print("If this database has no authenticated personal Workspace yet, onboarding is NOT_RUN and ACP remains unavailable.")
 
 
 def init() -> None:
     if ENV_FILE.exists() or ENV_FILE.is_symlink():
-        values = local_env()
-        validated_config(values)
-        print(f"Existing isolated dev config verified: {scope()}")
+        values = local_env(require_workspace=False)
+        if values.get("BYQ_ACP_PRODUCT_WORKSPACE_ID"):
+            validated_config(values)
+            print(f"Existing isolated dev config verified: {scope()}")
+        else:
+            _print_workspace_binding_steps()
         return
     template = TEMPLATE.read_text()
     base = read_env(TEMPLATE)
@@ -132,6 +241,15 @@ def init() -> None:
         "BYQ_MCP_TOKEN": secrets.token_hex(32),
         "BYQ_PRODUCT_TOKEN": secrets.token_hex(32),
         "BYQ_RUNTIME_AUTHORITY_TOKEN": secrets.token_hex(32),
+        "BYQ_RUNTIME_JUDGMENT_TOKEN": secrets.token_hex(32),
+        "BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET": secrets.token_hex(32),
+        "BYQ_ACP_JUDGMENT_RUNNER_CONTROL_SECRET": secrets.token_hex(32),
+        "BYQ_MCP_ACP_DISCOVERY_TOKEN": secrets.token_hex(32),
+        "BYQ_MCP_ACP_SIGNING_KEY": secrets.token_hex(32),
+        "BYQ_MCP_BACKEND_PROOF_TOKEN": secrets.token_hex(32),
+        "BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY": secrets.token_hex(32),
+        "BYQ_MCP_ACP_JUDGMENT_PROOF_TOKEN": secrets.token_hex(32),
+        "BYQ_GATEWAY_SERVICE_TOKEN": secrets.token_hex(32),
         "BYQ_CREDENTIAL_RESOLVER_TOKEN": secrets.token_hex(32),
         "BYQ_PLUGIN_DEPLOYMENT_TOKEN": secrets.token_hex(32),
         "BYQ_FEEDBACK_HUB_RELAY_TOKEN": secrets.token_hex(32),
@@ -159,12 +277,15 @@ def init() -> None:
     try:
         with os.fdopen(fd, "w") as f:
             f.write("\n".join(lines) + "\n")
-        values = local_env()
-        validated_config(values)
+        values = local_env(require_workspace=False)
+        if values.get("BYQ_ACP_PRODUCT_WORKSPACE_ID"):
+            validated_config(values)
     except Exception:
         ENV_FILE.unlink(missing_ok=True)
         raise
     print(f"Created isolated dev config: {scope()}")
+    if not values.get("BYQ_ACP_PRODUCT_WORKSPACE_ID"):
+        _print_workspace_binding_steps()
 
 
 def docker_json(args: list[str], values: dict[str], *, absent_ok: bool = False):
@@ -194,7 +315,7 @@ def inventory(values: dict[str, str]) -> dict[str, list[str]]:
         details = docker_json(["inspect", *containers], values)
         for obj in details:
             labels = obj.get("Config", {}).get("Labels") or {}
-            if labels.get("com.docker.compose.project") != project or labels.get("com.docker.compose.service") not in {s for group in SERVICES.values() for s in group}:
+            if labels.get("com.docker.compose.project") != project or labels.get("com.docker.compose.service") not in KNOWN_SERVICES:
                 raise DevError("unrecognized project container")
             if not obj.get("Name", "").startswith(f"/{project}-"):
                 raise DevError("unrecognized project container name")
@@ -208,14 +329,16 @@ def inventory(values: dict[str, str]) -> dict[str, list[str]]:
     expected_volumes = [f"{project}-{suffix}" for suffix in VOLUME_SUFFIXES]
     expected_networks = [f"{project}-{suffix}" for suffix in NETWORK_SUFFIXES]
     volumes: list[str] = []
+    preserved_volumes: list[str] = []
     networks: list[str] = []
+    protected_names = {f"{project}-{suffix}" for suffix in PRESERVED_VOLUME_SUFFIXES}
     for name in expected_volumes:
         details = docker_json(["volume", "inspect", name], values, absent_ok=True)
         if details:
             obj = details[0]
             if obj.get("Name") != name or (obj.get("Labels") or {}).get("com.docker.compose.project") != project:
                 raise DevError("unowned project volume")
-            volumes.append(name)
+            (preserved_volumes if name in protected_names else volumes).append(name)
     for name in expected_networks:
         details = docker_json(["network", "inspect", name], values, absent_ok=True)
         if details:
@@ -228,7 +351,10 @@ def inventory(values: dict[str, str]) -> dict[str, list[str]]:
         listed = docker_lines([kind, "ls", *fmt, "--filter", f"label=com.docker.compose.project={project}"], values)
         if set(listed) - allowed:
             raise DevError(f"unexpected project {kind}")
-    return {"containers": containers, "volumes": volumes, "networks": networks}
+    return {
+        "containers": containers, "volumes": volumes,
+        "preserved_volumes": preserved_volumes, "networks": networks,
+    }
 
 
 def clean(values: dict[str, str], apply: bool) -> None:
@@ -247,9 +373,9 @@ def clean(values: dict[str, str], apply: bool) -> None:
             if call(["docker", "volume", "rm", name], values, capture=True).returncode:
                 raise DevError("project volume removal failed")
     remaining = inventory(values)
-    if any(remaining.values()):
+    if any(remaining[key] for key in ("containers", "volumes", "networks")):
         raise DevError("project resources remain after cleanup")
-    print("Isolated development resources removed; .env.dev and images retained")
+    print("Isolated development resources removed; legacy SDK session volume, .env.dev and images retained")
 
 
 def reset(values: dict[str, str], *, runtime_only: bool = False) -> None:
@@ -273,7 +399,7 @@ def reset(values: dict[str, str], *, runtime_only: bool = False) -> None:
             raise DevError("workspace object cleanup failed; rerun to recover orphaned objects")
     if call(compose_args("down", "--remove-orphans"), values).returncode:
         raise DevError("isolated services could not stop before runtime volume cleanup")
-    for suffix in ("dsh-sessions", "workflow-traces"):
+    for suffix in ("workflow-traces",):
         name = f"{scope()}-{suffix}"
         obj = docker_json(["volume", "inspect", name], values, absent_ok=True)
         if obj is None:

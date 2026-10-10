@@ -1,0 +1,128 @@
+{
+  "app_copy_mounts": {
+    "packages/contracts": "/app/packages/contracts",
+    "packages/operations": "/app/packages/operations",
+    "services/runtime-adapter/app": "/app/app",
+    "services/runtime-adapter/tests": "/app/tests"
+  },
+  "execution_count": 33,
+  "guard_3_nodes": [
+    "tests/test_process_secrecy.py::test_default_acp_startup_guard_blocks_same_uid_environment_inspection",
+    "tests/test_sdk_compatibility.py::test_runtime_adapter_rejects_explicit_legacy_selector[dsh-0.1.2rc1]",
+    "tests/test_sdk_compatibility.py::test_runtime_adapter_rejects_explicit_legacy_selector[dsh-0.1.5rc1]"
+  ],
+  "image_id": "sha256:42525c14f2453174814441e07f234b34a48015543cba2491d3845a7ae496e343",
+  "result": {
+    "executed": 33,
+    "failed": 0,
+    "not_run": 0,
+    "passed": 33,
+    "status": "PASS",
+    "unique_nodes": 31,
+    "warnings": "DeprecationWarnings from Starlette anyio BlockingPortal alias and FastAPI on_event; no test failures."
+  },
+  "results": [
+    {
+      "exit_code": 0,
+      "label": "runtime-30",
+      "log": "/tmp/byq-runtime-only-single-version-20261009-prechange/test-logs/independent-runtime-30.log",
+      "log_sha256": "61afdd5ad8f1365cdbdae46681ae10b8fdb270787d4d3e1f343e68a167cb6843",
+      "node_count": 30,
+      "node_ids": [
+        "tests/test_candidate_selector.py::test_authoritative_acp_family_selects_the_acp_compatibility",
+        "tests/test_candidate_selector.py::test_sdk_releases_are_not_online_compatibility_choices[dsh-0.1.2rc1]",
+        "tests/test_candidate_selector.py::test_sdk_releases_are_not_online_compatibility_choices[dsh-0.1.5rc1]",
+        "tests/test_candidate_selector.py::test_unknown_release_fails_closed",
+        "tests/test_sdk_compatibility.py::test_runtime_adapter_rejects_explicit_legacy_selector[dsh-0.1.2rc1]",
+        "tests/test_sdk_compatibility.py::test_runtime_adapter_rejects_explicit_legacy_selector[dsh-0.1.5rc1]",
+        "tests/test_sdk_compatibility.py::test_default_runtime_uses_acp_without_sdk_distribution",
+        "tests/test_plugin_identity.py::test_readiness_reports_only_generated_plugin_identity",
+        "tests/test_plugin_identity.py::test_invalid_plugin_identity_fails_closed",
+        "tests/test_plugin_identity.py::test_acp_release_identity_is_verified_without_python_sdk_metadata",
+        "tests/test_continuation_qualification.py::test_continuation_qualification_requires_fixed_acp_and_existing_business_gates[1-synthetic-opencode-go-chat-deepseek-v4.1-flash-dsh-v0.2.0-rc.2-acp-True-True]",
+        "tests/test_continuation_qualification.py::test_continuation_qualification_requires_fixed_acp_and_existing_business_gates[0-synthetic-opencode-go-chat-deepseek-v4.1-flash-dsh-v0.2.0-rc.2-acp-True-False]",
+        "tests/test_continuation_qualification.py::test_continuation_qualification_requires_fixed_acp_and_existing_business_gates[1--opencode-go-chat-deepseek-v4.1-flash-dsh-v0.2.0-rc.2-acp-True-False]",
+        "tests/test_continuation_qualification.py::test_continuation_qualification_requires_fixed_acp_and_existing_business_gates[1-synthetic-other-deepseek-v4.1-flash-dsh-v0.2.0-rc.2-acp-True-False]",
+        "tests/test_continuation_qualification.py::test_continuation_qualification_requires_fixed_acp_and_existing_business_gates[1-synthetic-opencode-go-chat-other-dsh-v0.2.0-rc.2-acp-True-False]",
+        "tests/test_continuation_qualification.py::test_continuation_qualification_requires_fixed_acp_and_existing_business_gates[1-synthetic-deepseek-official-deepseek-v4.1-flash-dsh-v0.2.0-rc.2-acp-True-False]",
+        "tests/test_continuation_qualification.py::test_continuation_qualification_requires_fixed_acp_and_existing_business_gates[1-synthetic-opencode-go-chat-deepseek-v4.1-flash-dsh-v0.2.0-rc.2-acp-False-False]",
+        "tests/test_continuation_qualification.py::test_continuation_qualification_requires_fixed_acp_and_existing_business_gates[1-synthetic-opencode-go-chat-deepseek-v4.1-flash-dsh-0.1.5-True-False]",
+        "tests/test_continuation_qualification.py::test_continuation_qualification_requires_fixed_acp_and_existing_business_gates[1-synthetic-opencode-go-chat-deepseek-v4.1-flash-dsh-0.1.2-True-False]",
+        "tests/test_research_judgment_api.py::test_healthz_reports_the_authenticated_entry",
+        "tests/test_research_judgment_api.py::test_legacy_sdk_route_authenticates_then_returns_replacement_without_dispatch",
+        "tests/test_research_judgment_api.py::test_no_credentials_can_never_reach_admission_or_the_model",
+        "tests/test_research_judgment_api.py::test_forged_service_token_is_rejected",
+        "tests/test_research_judgment_api.py::test_disabled_entry_fails_closed",
+        "tests/test_research_judgment_api.py::test_authenticated_but_incomplete_context_is_rejected",
+        "tests/test_research_judgment_api.py::test_missing_attempt_binding_is_rejected",
+        "tests/test_research_judgment_api.py::test_non_task_identity_is_rejected_after_authentication",
+        "tests/test_research_judgment_api.py::test_dedicated_judgment_uses_fixed_acp_family_despite_legacy_env",
+        "tests/test_research_judgment_api.py::test_unqualified_acp_root_stays_disabled_before_backend_or_model_dispatch",
+        "tests/test_research_judgment_api.py::test_acp_root_route_requires_runtime_authentication_and_exact_task"
+      ]
+    },
+    {
+      "exit_code": 0,
+      "label": "guard-3",
+      "log": "/tmp/byq-runtime-only-single-version-20261009-prechange/test-logs/independent-guard-3.log",
+      "log_sha256": "05f7f7d7e74af6e23fe4984046332ed347e22cf50f99a33856b9d2f589167249",
+      "node_count": 3,
+      "node_ids": [
+        "tests/test_process_secrecy.py::test_default_acp_startup_guard_blocks_same_uid_environment_inspection",
+        "tests/test_sdk_compatibility.py::test_runtime_adapter_rejects_explicit_legacy_selector[dsh-0.1.2rc1]",
+        "tests/test_sdk_compatibility.py::test_runtime_adapter_rejects_explicit_legacy_selector[dsh-0.1.5rc1]"
+      ]
+    }
+  ],
+  "runtime_30_nodes_sha256": "2dc078a66550fc9fe307033d3edb8bc5832471c2f3155be86da3c66f47b6d13b",
+  "schema_version": "byq-runtime-focused-independent-qualification.v1",
+  "source_snapshot": {
+    "additional_runtime_source_hashes": {
+      "services/runtime-adapter/app/compat/dsh_acp.py": "89ecbab92a9f78243cb4c44476a4a58012bed0bc23a2f978da9742e4603e1f4f",
+      "services/runtime-adapter/app/continuation_budget.py": "c5478316d8c9aef38e18699db121f9b1eb017692afc1b14abae73b7991bc3971",
+      "services/runtime-adapter/app/main.py": "44484f2840e9c0651cb62d870697efb45947dd5e09a107581ed007451b3572d0"
+    },
+    "mounted_python_tree_hashes": {
+      "packages/contracts": {
+        "python_file_count": 21,
+        "sha256": "5f47efb40a03583fd7b2b6c6fc9798913b4e1cb23b17d0e7df52c04c8190ce1d"
+      },
+      "packages/operations": {
+        "python_file_count": 1,
+        "sha256": "fa75f895b2de3658efb3565a624c9b8d5347cfc420705b17c09886c11ddba90c"
+      },
+      "services/runtime-adapter/app": {
+        "python_file_count": 35,
+        "sha256": "2bb763dd38f01b5ba3b8125ecc5376fb2079714d4919b8e915259f40ac504122"
+      },
+      "services/runtime-adapter/tests": {
+        "python_file_count": 67,
+        "sha256": "b511122d1378af45de03756b4f68121d8620762f118e8a77ccfb3f2a7137639c"
+      }
+    },
+    "provided_freeze_hashes": {
+      "services/runtime-adapter/app/compat/__init__.py": "4af2542e82af06ef3935e89a38fcfa7e6e0de2b1890de753702329eb173ca569",
+      "services/runtime-adapter/app/process_secrecy.py": "94fabdebcd05b10c4706bff4e9be935d20a93135994d12c30a5abca75cd97d44",
+      "services/runtime-adapter/app/research_judgment_api.py": "2c575eed87f40d6d1159d9f78234045a0991e6fdf9e913e512a4e388d89627f2",
+      "services/runtime-adapter/app/runtime.py": "972f0dd9715f5a2e6292fc9207181d2a7b9f1fb457a08605ae2ee38d4734ec2e"
+    },
+    "selected_test_file_hashes": {
+      "services/runtime-adapter/tests/test_candidate_selector.py": "e66f1818d3e76878d3e8deb58e43cd8af90a257d40ff0ec06c2938e721041deb",
+      "services/runtime-adapter/tests/test_continuation_qualification.py": "04211814c4fcfead4381fe4474d4a00fab3e50907d38378125d8f7cc14f46176",
+      "services/runtime-adapter/tests/test_plugin_identity.py": "175c9892000029bb7fe0308eb113c093a10e2b3ae529d1d25522a5ab47911956",
+      "services/runtime-adapter/tests/test_process_secrecy.py": "a98b78fb08f376270c8948047f1cf839c61748cd74e4ddf00c667f4b82534466",
+      "services/runtime-adapter/tests/test_research_judgment_api.py": "cda85ce87fdfabcf03d095169fdd2001f7f5a271f33b461f616464dbd226aed4",
+      "services/runtime-adapter/tests/test_sdk_compatibility.py": "e3d4426fe228daa75a7b1c6eb57c5ffb14d8de39b7290ddd49293aaebd0f9443"
+    }
+  },
+  "static_path_copy_check": {
+    "dockerfile_copy_app": "COPY services/runtime-adapter/app ./app",
+    "dockerfile_copy_contracts": "COPY packages/contracts ./packages/contracts",
+    "dockerfile_copy_operations": "COPY packages/operations ./packages/operations",
+    "mounts_match_app_contracts_operations_copy_targets": true,
+    "no_session_volume_or_runtime_service_mounted": true,
+    "tests": "not included in final Dockerfile; mounted from candidate worktree read-only at /app/tests for this focused run"
+  },
+  "test_run_mode": "two isolated Docker runs; network none; rootfs read-only; cap-drop ALL; no-new-privileges; tmpfs /tmp; source bind mounts read-only; no session volume; no model/API service started",
+  "unique_node_count": 31
+}

@@ -73,11 +73,15 @@ def validate_reservation(value: object, *, owner: str, workspace: str) -> dict:
 
 def create_guard_patch(
     source: Path, root: Path, reservation: dict, *, deadline_epoch_ms: int,
+    proxy_base_url: str,
 ) -> tuple[Path, Path]:
     """Create private DSH config carrying the exact profile and tool journal."""
 
     if type(deadline_epoch_ms) is not int or deadline_epoch_ms <= int(time.time() * 1000):
         raise ValueError('continuation request deadline must be a future epoch millisecond')
+    matched = re.fullmatch(r"http://([0-9.]+):([1-9][0-9]{0,4})", proxy_base_url or "")
+    if matched is None or not _valid_local_proxy_host(matched[1]) or int(matched[2]) > 65535:
+        raise ValueError('exact local continuation proxy address is required')
     root.mkdir(parents=True, exist_ok=True)
     journal = root / 'continuation-tool-guard.jsonl'
     patch = root / 'continuation.yml'
@@ -90,8 +94,17 @@ def create_guard_patch(
     }
     # All network-capable tools are removed at composition level too; the
     # public DSH pre-execute hook below remains the authoritative dispatch fence.
+    # ADR-0105: the selected OpenCode Go chat route's baseURL is pinned to the
+    # private continuation proxy so the request cannot bypass the budget gate.
     overlay = '\n- id: web-search-deepseek\n  disabled: true\n- id: tool-web\n  disabled: true\n'
-    overlay += '- id: llm-deepseek\n  config:\n    maxTokens: ' + str(CONTINUATION_MAX_OUTPUT_TOKENS) + '\n'
+    overlay += '- id: llm-deepseek\n  disabled: true\n'
+    overlay += ('- id: llm-pi-ai\n  config:\n    providers:\n      opencode-go-chat:\n'
+                '        api: openai-completions\n'
+                '        apiKeyEnv: OPENCODE_API_KEY\n'
+                '        baseURL: ' + json.dumps(proxy_base_url) + '\n'
+                '        retryPolicy:\n          mode: normal\n          maxRetries: 0\n'
+                '        models:\n          - id: deepseek-v4.1-flash\n'
+                '            maxTokens: ' + str(CONTINUATION_MAX_OUTPUT_TOKENS) + '\n')
     overlay += "- insert:\n    - id: byq-continuation-budget\n      name: 'file:///opt/byq/runtime/byq-continuation-budget.js'\n      config:\n"
     overlay += ''.join(
         f'        {key}: {json.dumps(value, separators=(",", ":"))}\n'
@@ -114,10 +127,23 @@ def create_guard_patch(
 
 
 def _guard_overlay_bytes(reservation: dict, deadline_epoch_ms: int,
-                         mcp_reservation_id: str) -> bytes:
+                         mcp_reservation_id: str, proxy_base_url: str,
+                         provider_session_id: str) -> bytes:
     # Canonical JSON is a valid DSH `--patch` document. journalPath is injected by
     # the trusted runner (it owns the private session directory); the Adapter only
-    # declares the tightening budget/limits. The runner validates this exact shape.
+    # declares the tightening route pin, budget and limits. The runner validates
+    # this exact shape and the local proxy address. ADR-0105: the selected
+    # OpenCode Go chat route's baseURL is pinned to the private continuation proxy
+    # so the outbound request can never reach the provider directly.
+    matched = re.fullmatch(r"http://([0-9.]+):([1-9][0-9]{0,4})", proxy_base_url or "")
+    if matched is None or not _valid_local_proxy_host(matched[1]) or int(matched[2]) > 65535:
+        raise ValueError('exact local continuation proxy address is required')
+    # The OpenCode Go API requires the route's x-opencode-session header. The
+    # profile sets it from BYQ_PROVIDER_SESSION_ID; this overlay replaces the
+    # provider config, so it must carry the same resolved value or the request is
+    # rejected 400 MissingSessionID before dispatch.
+    if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", provider_session_id or "") is None:
+        raise ValueError('exact provider session identity is required')
     config = {
         'deadlineEpochMs': deadline_epoch_ms,
         'reservationId': mcp_reservation_id,
@@ -127,7 +153,20 @@ def _guard_overlay_bytes(reservation: dict, deadline_epoch_ms: int,
     overlay = [
         {'id': 'web-search-deepseek', 'disabled': True},
         {'id': 'tool-web', 'disabled': True},
+        # ADR-0105: keep llm-deepseek ACTIVE because DSH session/new requires a
+        # registered adapter for the profile's default provider, but cap its
+        # output; the selected OpenCode route below is the only route the pinned
+        # session model uses, and no DeepSeek credential is present.
         {'id': 'llm-deepseek', 'config': {'maxTokens': CONTINUATION_MAX_OUTPUT_TOKENS}},
+        {'id': 'llm-pi-ai', 'config': {'providers': {'opencode-go-chat': {
+            'api': 'openai-completions',
+            'apiKeyEnv': 'OPENCODE_API_KEY',
+            'baseURL': proxy_base_url,
+            'retryPolicy': {'mode': 'normal', 'maxRetries': 0},
+            'headers': {'x-opencode-session': provider_session_id},
+            'models': [{'id': 'deepseek-v4.1-flash',
+                        'maxTokens': CONTINUATION_MAX_OUTPUT_TOKENS}],
+        }}}},
         {'insert': [{'id': 'byq-continuation-budget',
                      'name': 'file:///opt/byq/runtime/byq-continuation-budget.js',
                      'config': config}]},
@@ -136,9 +175,21 @@ def _guard_overlay_bytes(reservation: dict, deadline_epoch_ms: int,
                       ensure_ascii=True).encode('utf-8')
 
 
+def _valid_local_proxy_host(value: str) -> bool:
+    import ipaddress
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    return (isinstance(address, ipaddress.IPv4Address)
+            and any(address in network for network in (
+                ipaddress.ip_network("127.0.0.0/8"), ipaddress.ip_network("10.0.0.0/8"),
+                ipaddress.ip_network("172.16.0.0/12"), ipaddress.ip_network("192.168.0.0/16"))))
+
+
 def create_acp_guard_overlay(
     reservation: dict, *, deadline_epoch_ms: int, root_run_id: str,
-    mcp_reservation_id: str,
+    mcp_reservation_id: str, proxy_base_url: str, provider_session_id: str,
 ) -> bytes:
     """Return ONLY the restricted continuation guard overlay for one ACP root.
 
@@ -155,12 +206,83 @@ def create_acp_guard_overlay(
         raise ValueError('continuation request deadline must be a future epoch millisecond')
     validate_profile_binding(reservation['execution_profile'])
     validate_limits(reservation['request_limits'])
-    return _guard_overlay_bytes(reservation, deadline_epoch_ms, mcp_reservation_id)
+    return _guard_overlay_bytes(reservation, deadline_epoch_ms, mcp_reservation_id,
+                                proxy_base_url, provider_session_id)
+
+
+# ADR-0106: ordinary Product ACP provider egress pin. Closed single-route overlay:
+# it binds ONLY the authorized OpenCode Go chat route / `deepseek-v4.1-flash` to
+# the local budget proxy and installs NO continuation reservation and NO tool
+# allowlist. Other provider routes are NOT registered here (explicitly
+# unqualified; no silent provider/model switch). Web tools are left unchanged
+# (ordinary Product behavior); disabling them is an isolated-acceptance-only
+# choice, never a default Product change.
+from packages.contracts.product_turn_request import (
+    PRODUCT_TURN_LIMITS,
+    PRODUCT_TURN_MODEL,
+    PRODUCT_TURN_PROFILE_ID,
+    PRODUCT_TURN_PROFILE_SHA256,
+    PRODUCT_TURN_PROFILE_VERSION,
+    PRODUCT_TURN_PROVIDER,
+    PRODUCT_TURN_UPSTREAM_BASE_URL,
+)
+
+
+def create_acp_product_budget_overlay(*, proxy_base_url: str, provider_session_id: str,
+                                      provider: str, model: str) -> bytes:
+    """ADR-0106 closed route-only overlay for one ordinary Product ACP root.
+
+    Binds exactly the resolved provider/model (`opencode-go-chat` /
+    `deepseek-v4.1-flash`) to the local budget proxy. Any other provider/model is
+    refused (no silent switch); other routes are not registered. No continuation
+    reservation and no tool allowlist; the ordinary MCP tool authority is
+    unchanged and the web tools are untouched.
+    """
+    if provider != PRODUCT_TURN_PROVIDER or model != PRODUCT_TURN_MODEL:
+        raise ValueError('ordinary product-turn provider/model is not qualified')
+    matched = re.fullmatch(r"http://([0-9.]+):([1-9][0-9]{0,4})", proxy_base_url or "")
+    if matched is None or not _valid_local_proxy_host(matched[1]) or int(matched[2]) > 65535:
+        raise ValueError('exact local product-turn proxy address is required')
+    if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    provider_session_id or "") is None:
+        raise ValueError('exact provider session identity is required')
+    providers = {
+        PRODUCT_TURN_PROVIDER: {
+            'api': 'openai-completions', 'apiKeyEnv': 'OPENCODE_API_KEY',
+            'baseURL': proxy_base_url,
+            'retryPolicy': {'mode': 'normal', 'maxRetries': 0},
+            'headers': {'x-opencode-session': provider_session_id},
+            'models': [{'id': PRODUCT_TURN_MODEL,
+                        'maxTokens': PRODUCT_TURN_LIMITS['max_output_tokens']}],
+        },
+    }
+    overlay = [
+        {'id': 'llm-pi-ai', 'config': {'providers': providers}},
+        # ADR-0106 count-only tool guard: an explicit product-turn.v1 identity
+        # (never inferred from a missing continuation reservation). The Adapter
+        # injects the journal path; the guard counts every tool call and blocks
+        # the seventeenth. No tool allowlist and no web-tool change.
+        {'insert': [{
+            'id': 'byq-continuation-budget',
+            'name': 'file:///opt/byq/runtime/byq-continuation-budget.js',
+            'config': {
+                'guardMode': 'count-only',
+                'deadlineEpochMs': int(time.time() * 1000) + PRODUCT_TURN_LIMITS['deadline_ms'],
+                'executionProfile': {
+                    'profile_id': PRODUCT_TURN_PROFILE_ID,
+                    'profile_version': PRODUCT_TURN_PROFILE_VERSION,
+                    'profile_sha256': PRODUCT_TURN_PROFILE_SHA256,
+                },
+                'requestLimits': dict(PRODUCT_TURN_LIMITS),
+            },
+        }]},
+    ]
+    return json.dumps(overlay, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode('utf-8')
 
 
 def create_acp_guard_patch(
     source: Path, root: Path, reservation: dict, *, deadline_epoch_ms: int,
-    root_run_id: str, mcp_reservation_id: str,
+    root_run_id: str, mcp_reservation_id: str, proxy_base_url: str,
 ) -> tuple[Path, Path]:
     """Compose the existing DSH guard for one ACP process and exact MCP carrier.
 
@@ -175,9 +297,12 @@ def create_acp_guard_patch(
         raise ValueError('ACP continuation MCP identity carrier is unproven')
     if type(deadline_epoch_ms) is not int or deadline_epoch_ms <= int(time.time() * 1000):
         raise ValueError('continuation request deadline must be a future epoch millisecond')
+    matched = re.fullmatch(r"http://([0-9.]+):([1-9][0-9]{0,4})", proxy_base_url or "")
+    if matched is None or not _valid_local_proxy_host(matched[1]) or int(matched[2]) > 65535:
+        raise ValueError('exact local continuation proxy address is required')
     root.mkdir(parents=True, exist_ok=True)
-    journal = root / 'continuation-tool-guard.jsonl'
-    patch = root / 'continuation.yml'
+    journal = root / f'continuation-tool-guard-{root_run_id}.jsonl'
+    patch = root / f'continuation-{root_run_id}.yml'
     config = {
         'deadlineEpochMs': deadline_epoch_ms,
         'journalPath': str(journal),
@@ -186,7 +311,14 @@ def create_acp_guard_patch(
         'requestLimits': reservation['request_limits'],
     }
     overlay = '\n- id: web-search-deepseek\n  disabled: true\n- id: tool-web\n  disabled: true\n'
-    overlay += '- id: llm-deepseek\n  config:\n    maxTokens: ' + str(CONTINUATION_MAX_OUTPUT_TOKENS) + '\n'
+    overlay += '- id: llm-deepseek\n  disabled: true\n'
+    overlay += ('- id: llm-pi-ai\n  config:\n    providers:\n      opencode-go-chat:\n'
+                '        api: openai-completions\n'
+                '        apiKeyEnv: OPENCODE_API_KEY\n'
+                '        baseURL: ' + json.dumps(proxy_base_url) + '\n'
+                '        retryPolicy:\n          mode: normal\n          maxRetries: 0\n'
+                '        models:\n          - id: deepseek-v4.1-flash\n'
+                '            maxTokens: ' + str(CONTINUATION_MAX_OUTPUT_TOKENS) + '\n')
     overlay += "- insert:\n    - id: byq-continuation-budget\n      name: 'file:///opt/byq/runtime/byq-continuation-budget.js'\n      config:\n"
     overlay += ''.join(f'        {key}: {json.dumps(value, separators=(",", ":"))}\n'
                        for key, value in config.items())

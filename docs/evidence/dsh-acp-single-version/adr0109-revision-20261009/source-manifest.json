@@ -1,0 +1,22 @@
+[
+  {
+    "path": "docs/architecture/adr/ADR-0109-acp-authorization-denial-receipt.md",
+    "before_sha256": "1398ccfe32ff58b3c16b2484fb224e86c3a9daab2830b105f5d06a40ba824338",
+    "after_sha256": "a4affb9a04ffe322038dccb134ac05bdad0738cec48f7f6d66d91cf692521dfb"
+  },
+  {
+    "path": "docs/contracts/acp-authorization-denial-receipt.v1.md",
+    "before_sha256": "cea6ac08208e3c8e0277e287d0ba9cfae02f99cca39f236388af183bca9ca356",
+    "after_sha256": "8da5639167892ebbdd53476519ff45c556bd3cb2a60821627719a61ca898e2aa"
+  },
+  {
+    "path": "docs/evidence/dsh-acp-single-version/adr0109-20261008/ADR-0109-LOSS-REVISION-PROPOSED.md",
+    "before_sha256": "7b9148419eff0095f1a775147821d7c12ad1a61533c39b044a76acb738a02b14",
+    "after_sha256": "6f52e688085488104fdf6197e78de391fee1b9fd0597f9c3e7cdd21e2ee20c85"
+  },
+  {
+    "path": "services/backend/tests/test_acp_domain_call_proof.py",
+    "before_sha256": "f106f77e85761dedce26892065385e48da1d4043664bc563629db5ca92190cce",
+    "after_sha256": "fb16ea94356c823dab95b5de25f95b6dcd1e2414b00b21e0995a333f1847025a"
+  }
+]

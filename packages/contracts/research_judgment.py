@@ -435,6 +435,29 @@ def validate_acp_judgment_root_begin_request(value: object) -> dict[str, str]:
     return value
 
 
+JUDGMENT_STAGE_CLAIM_SCHEMA_VERSION = "byq-research-judgment-stage-claim.v1"
+_CLAIM_OWNER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
+
+
+def validate_judgment_stage_claim_request(value: object) -> dict:
+    """Closed trusted request for one judgment-consumer claim/lease.
+
+    The consumer supplies only its bounded worker identity and a lease; the
+    task/call identity and the current plan are resolved server-side. A claim
+    never authorizes a dispatch by itself.
+    """
+
+    fields = {"schema_version", "claim_owner", "lease_seconds"}
+    if (not isinstance(value, dict) or set(value) != fields
+            or value.get("schema_version") != JUDGMENT_STAGE_CLAIM_SCHEMA_VERSION
+            or not isinstance(value.get("claim_owner"), str)
+            or _CLAIM_OWNER.fullmatch(value["claim_owner"]) is None
+            or type(value.get("lease_seconds")) is not int
+            or not 1 <= value["lease_seconds"] <= 3600):
+        raise ValueError("exact judgment stage claim request required")
+    return value
+
+
 def validate_acp_judgment_agent_register_request(value: object) -> dict[str, str]:
     """Closed trusted request to register the native root Agent for one call."""
 

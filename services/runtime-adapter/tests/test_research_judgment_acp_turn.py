@@ -123,8 +123,27 @@ def test_proxy_token_env_is_single_provider_credential():
         judgment_proxy_token_env("openai-direct")
 
 
+def test_entry_provider_resolution_selects_the_selected_route_credential():
+    from app.research_judgment_entry import judgment_provider_resolution
+
+    assert judgment_provider_resolution({
+        "BYQ_DSH_PROVIDER": "opencode-go-chat", "BYQ_DSH_MODEL": "deepseek-v4.1-flash",
+        "OPENCODE_API_KEY": "open-k",
+    }) == ("opencode-go-chat", "deepseek-v4.1-flash", "open-k")
+    assert judgment_provider_resolution({
+        "BYQ_DSH_PROVIDER": "deepseek-official", "DEEPSEEK_API_KEY": "ds-k",
+    })[2] == "ds-k"
+    # The selected OpenCode route must never accept the DeepSeek credential.
+    with pytest.raises(ValueError, match="credential"):
+        judgment_provider_resolution({
+            "BYQ_DSH_PROVIDER": "opencode-go-chat", "DEEPSEEK_API_KEY": "ds-k",
+        })
+
+
 def test_overlay_is_the_single_selected_route_bound_to_the_proxy():
-    encoded = judgment_runner_overlay_b64(_profile(), proxy_base_url=PROXY_BASE)
+    encoded = judgment_runner_overlay_b64(
+        _profile(), proxy_base_url=PROXY_BASE,
+        provider_session_id="11111111-2222-4333-8444-555555555555")
     overlay = json.loads(base64.b64decode(encoded))
     assert isinstance(overlay, list) and overlay
     deepseek = next(item for item in overlay if item["id"] == "llm-deepseek")
@@ -132,6 +151,35 @@ def test_overlay_is_the_single_selected_route_bound_to_the_proxy():
     assert deepseek["config"]["retryPolicy"] == {"mode": "normal", "maxRetries": 0}
     assert deepseek["config"]["apiKeyEnv"] == "DEEPSEEK_API_KEY"
     assert {"id": "llm-pi-ai", "disabled": True} in overlay
+
+
+def test_open_start_failure_is_wrapped_with_the_proven_fence(monkeypatch):
+    import types
+
+    import app.research_judgment_acp_transport as transport_mod
+
+    closed = {"n": 0}
+
+    class FakeTransport:
+        def __init__(self, *args, **kwargs):
+            self._cleanup_exit = types.SimpleNamespace(
+                cleanup="proven", code=0, signal=None, reason="cancelled")
+
+        def start(self):
+            raise RuntimeError("synthetic ACP initialize failure")
+
+        def close(self):
+            closed["n"] += 1
+
+    monkeypatch.setattr(transport_mod, "JudgmentRunnerProcess", FakeTransport)
+    driver = turn.IsolatedJudgmentAcpDriver(
+        runner_client=None, compatibility=object(),
+        provider="opencode-go-chat", model="deepseek-v4.1-flash")
+    start = types.SimpleNamespace(expected_cwd="/tmp/judgment-root", environment={})
+    with pytest.raises(turn.JudgmentRootOpenFailed) as excinfo:
+        driver.open(start)
+    assert excinfo.value.fence is not None
+    assert closed["n"] == 1
 
 
 def test_expected_cwd_is_the_scope_digest_leaf():
@@ -171,6 +219,7 @@ class _FakeJournal:
         self.phase = None
         self.binding = None
         self.begin = None
+        self.turn_diagnostics = []
 
     def record_request_start(self, ms):
         self.calls.append("request_start")
@@ -191,6 +240,13 @@ class _FakeJournal:
     def mark_prompt_may_dispatch(self):
         self.calls.append("mark")
         self.phase = "prompt_may_have_dispatched"
+
+    def record_turn_outcome(self, *, finish, error, result_failure, dsh_stop_reason=None):
+        # Recorded separately so the exact ordered ``calls`` assertion is unchanged.
+        self.turn_diagnostics.append({"finish": finish, "error": error,
+                                      "result_failure": result_failure,
+                                      "dsh_stop_reason": dsh_stop_reason})
+        return {"phase": self.phase, "turn_diagnostic": self.turn_diagnostics[-1]}
 
     def record_result_request(self, request):
         self.calls.append("result_request")
@@ -230,15 +286,20 @@ class _FakeOutput:
 
 class _FakeAcp:
     def __init__(self, *, finish="completed", result=None, fail_open=False,
-                 fail_prompt=False, fail_close=False):
+                 fail_open_fence=None, fail_prompt=False, fail_close=False):
         self.finish = finish
         self._result = result
         self.fail_open = fail_open
+        self.fail_open_fence = fail_open_fence
         self.fail_prompt = fail_prompt
         self.fail_close = fail_close
         self.closed = False
 
     def open(self, start):
+        if self.fail_open_fence is not None:
+            # A post-start failure (e.g. session/new) that still proved cleanup.
+            raise turn.JudgmentRootOpenFailed(
+                "synthetic post-start open failure", fence=self.fail_open_fence)
         if self.fail_open:
             raise RuntimeError("synthetic open failure")
         return NATIVE, "transport"
@@ -312,6 +373,25 @@ def test_orchestrator_settles_never_dispatched_when_registration_fails(tmp_path,
     # registration failed before the prompt fence; the journal never advanced to mark
     assert "mark" not in journal.calls
     assert journal.phase == "begun"
+
+
+def test_orchestrator_settles_never_dispatched_with_proven_fence_after_open_failure(tmp_path, monkeypatch):
+    # ADR-0098: a post-start open failure (e.g. session/new) must not mask the
+    # original error; the root settles never_dispatched with the proven runner
+    # fence instead of failing the no-dispatch evidence check.
+    captured = []
+    journal = _FakeJournal(tmp_path / "journal.json")
+    fence = "sha256:" + "f" * 64
+    with pytest.raises(turn.JudgmentRootOpenFailed):
+        _run(tmp_path, monkeypatch, acp=_FakeAcp(fail_open_fence=fence),
+             journal=journal, captured=captured)
+    assert journal.phase == "begun"
+    assert captured, "settlement evidence was not built"
+    evidence = captured[-1]["durably_recorded_evidence"]
+    assert evidence["prompt_dispatch"] == "not_dispatched"
+    assert evidence["provider_attempt"] == "not_started"
+    assert evidence["process_fence"] == "stopped"
+    assert evidence["process_fence_sha256"] == fence
 
 
 def test_orchestrator_settles_outcome_unknown_when_prompt_fails_after_mark(tmp_path, monkeypatch):
@@ -404,3 +484,63 @@ def test_recover_refuses_a_result_prepared_root(tmp_path):
     with pytest.raises(turn.AcpJudgmentOutcomeUnknown, match="exact Backend reconciliation"):
         turn.recover_judgment_acp_root(
             journal=journal, backend_url="http://backend", task_id=TASK, trusted_headers={})
+
+
+def test_orchestrator_records_a_completed_valid_result_diagnostic(tmp_path, monkeypatch):
+    outcome, journal = _run(tmp_path, monkeypatch, acp=_FakeAcp(
+        finish="completed", result={"proposal": None, "durable_evidence": {"kind": "none"}}))
+    assert outcome["status"] == "completed"
+    assert journal.turn_diagnostics[-1] == {
+        "finish": "completed", "error": None, "result_failure": "none",
+        "dsh_stop_reason": None}
+
+
+def test_orchestrator_records_a_completed_invalid_result_diagnostic(tmp_path, monkeypatch):
+    # finish=completed but the result fails validation -> no commit, category recorded.
+    outcome, journal = _run(tmp_path, monkeypatch,
+                            acp=_FakeAcp(finish="completed", result=None))
+    assert outcome["status"] == "settled"
+    assert journal.turn_diagnostics[-1] == {
+        "finish": "completed", "error": None, "result_failure": "validation_rejected",
+        "dsh_stop_reason": None}
+
+
+def test_orchestrator_records_a_cancelled_finish_diagnostic(tmp_path, monkeypatch):
+    _, journal = _run(tmp_path, monkeypatch, acp=_FakeAcp(finish="cancelled", result=None))
+    assert journal.turn_diagnostics[-1]["finish"] == "cancelled"
+    assert journal.turn_diagnostics[-1]["result_failure"] == "unavailable"
+
+
+def test_orchestrator_records_a_prompt_exception_diagnostic(tmp_path, monkeypatch):
+    journal = _FakeJournal(tmp_path / "journal.json")
+    with pytest.raises(RuntimeError, match="prompt failure"):
+        _run(tmp_path, monkeypatch, acp=_FakeAcp(fail_prompt=True), journal=journal)
+    diagnostic = journal.turn_diagnostics[-1]
+    assert diagnostic["finish"] is None
+    assert type(diagnostic["error"]).__name__ == "RuntimeError"
+    assert diagnostic["result_failure"] == "unavailable"
+    assert diagnostic["dsh_stop_reason"] is None
+
+
+class _DiskFailureJournal(_FakeJournal):
+    def record_turn_outcome(self, **kwargs):
+        raise OSError("synthetic optional diagnostic disk failure")
+
+
+def test_diagnostic_write_failure_does_not_block_the_result_commit(tmp_path, monkeypatch):
+    journal = _DiskFailureJournal(tmp_path / "journal.json")
+    outcome, _ = _run(
+        tmp_path, monkeypatch, journal=journal,
+        acp=_FakeAcp(finish="completed",
+                     result={"proposal": None, "durable_evidence": {"kind": "none"}}))
+    assert outcome["status"] == "completed"
+    assert "result_receipt" in journal.calls and "terminal_receipt" in journal.calls
+
+
+def test_diagnostic_write_failure_does_not_block_the_settlement(tmp_path, monkeypatch):
+    journal = _DiskFailureJournal(tmp_path / "journal.json")
+    captured = []
+    with pytest.raises(RuntimeError, match="prompt failure"):
+        _run(tmp_path, monkeypatch, journal=journal,
+             acp=_FakeAcp(fail_prompt=True), captured=captured)
+    assert captured and captured[-1]["settlement_kind"] == "outcome_unknown"

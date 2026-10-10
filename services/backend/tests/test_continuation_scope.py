@@ -134,6 +134,26 @@ def test_scope_rejects_same_owner_other_task_and_cross_conversation(monkeypatch,
         close_fixture(fixture)
 
 
+def test_scope_rejects_forged_reservation_and_cross_owner(monkeypatch, tmp_path):
+    fixture, receipt = setup(monkeypatch, tmp_path)
+    store, task, context = fixture['store'], fixture['payload']['task_id'], fixture['context']
+    call = {'tool': 'byq_research_get',
+        'arguments': {'entity_type': 'research_task', 'entity_id': task}, 'root_run_id': '4' * 32}
+    try:
+        # Legit control: the exact reservation/owner admits the exact read.
+        assert authorize(store, receipt['reservation_id'], call, context)['admitted'] is True
+        # Forged reservation: a syntactically valid id with no durable receipt.
+        forged = 'continuation_' + '9' * 32
+        with pytest.raises(ValueError, match='reservation is unavailable'):
+            authorize(store, forged, call, context)
+        # Cross-user: the same reservation under a different owner principal.
+        other = {**context, 'owner_principal': 'other-owner'}
+        with pytest.raises(ValueError, match='reservation is unavailable'):
+            authorize(store, receipt['reservation_id'], call, other)
+    finally:
+        close_fixture(fixture)
+
+
 def test_revocation_refuses_new_domain_admission_without_erasing_request_identity(monkeypatch, tmp_path):
     fixture, receipt = setup(monkeypatch, tmp_path)
     store, task, context = fixture['store'], fixture['payload']['task_id'], fixture['context']

@@ -25,6 +25,54 @@ PR 的完整套件分任务并行执行；主线不因合并再次触发 Full。
 
 ## 构建发布
 
+### 受测镜像在不同 Docker 存储之间交接
+
+新的内部交接收据使用 `byq-release-images.v2`。`captured_image_id` 保存 qualify
+实际捕获的 Docker 存储 ID；`image_id` 保存归档 config 原始字节的 SHA-256。
+两者可能不同。归档独立保存并验证 manifest、按顺序排列的层 digest/size/diffID
+和平台，不能把本地 ID 当作已发布的 registry digest。外部 `byq-release.v2`
+和 DSH identity 的 `image_id` 使用 canonical config digest。
+
+export 校验原受测镜像与归档内容；publish 在 load 前校验收据、完整归档和精确
+标签绑定，load 后核对全部服务标签、store ID、RootFS 和平台，再运行 syft/push。
+经典存储加载后 ID 必须等于 config hash；containerd ID 必须绑定已验证的归档
+manifest 和 Descriptor。纯传统归档不能仅凭 RootFS 相等认定未知 manifest ID。
+ACP 单镜像候选的三个角色共享一次 SBOM/push，默认路由仍由实际 Compose 声明决定。
+
+已有 v1 内部收据必须证明记录 ID 等于归档 config 的实际 hash；现代 classic save
+即使同时带 OCI layout 也按字节验证，不能只按布局猜测 ID。Docker/OCI 兼容视图
+必须逐标签指向相同 config 和有序层。外部层 URL、缺失 descriptor 内容、未知
+元数据和不一致身份会拒绝，不会在 publish 中重建或补下载。
+
+[Moby save](https://github.com/moby/moby/blob/v28.5.2/image/tarexport/save.go)
+可能保留 pulled layer 压缩 descriptor 而导出原始 DiffID 层；此类缺失 descriptor
+payload 的归档目前不支持。真实 hosted Docker store/export 仍须验证。
+[Docker CLI manifest 类型](https://github.com/docker/cli/blob/v29.0.0/cli/manifest/types/types.go)
+使用 `Descriptor.digest` / `Descriptor.platform`；registry readback 必须核对
+config/platform，存在 Raw 时同时核对原始 manifest hash。
+
+本地证明与限制见 [2026-10-10 交接身份证据](../evidence/dsh-acp-single-version/acp-release-store-identity-20261010/RESULT.md)。
+源码测试、真实本地归档、跨 daemon load 与 hosted registry 验收分别记录；任一项
+尚未执行不能由另一项替代。
+
+### 外部发布清单版本
+
+当前 17 服务发布清单使用 **`byq-release.v2`**，明确包含
+`acp_image_topology` 和 `dsh_identity`；per-role 和 single-image 拓扑均用 v2。
+它与内部镜像归档收据 `byq-release-images.v2` 是两个独立合同，DSH identity
+的版本不变。发布脚本生成 v2，验证、digest overlay 和推广使用同一严格校验器。
+
+旧 13 服务 `byq-release.v1` 及误标为 v1 的新清单，在读取 SBOM、验证签名、
+访问 GitHub、拉取/推广镜像或生成操作输出之前拒绝。未知版本同样拒绝。
+不要手改已签清单的版本名或补写 ACP 字段；这样不能证明旧制品具备新身份。
+实际历史签名制品的操作兼容性仍 **OPEN / NOT_RUN**，本次不引入迁移路径。
+
+`scripts/v090/final_closeout/observer.py` 的 v1 检查属于冻结的 0.9 历史证据，
+不作为当前发布检测或准入工具。当前准入由 `scripts/release/manifest.py`
+核对完整 v2 清单、SBOM、签名工作流和成功的 trusted-main 发布运行。
+
+本地源码验证见 [外部清单 v2 证据](../evidence/dsh-acp-single-version/acp-public-manifest-v2-20261010/RESULT.md)。
+
 ### 一次最终 Full 的调度规则
 
 默认只执行：**PR 按影响检查 → 合并 → Release Images（最终 Full + 发布受测镜像）

@@ -1,0 +1,110 @@
+[
+  {
+    "Containers": "0",
+    "CreatedAt": "2026-10-10 07:32:11 +0800 CST",
+    "CreatedSince": "2 hours ago",
+    "Digest": "<none>",
+    "ID": "sha256:15cdf5f97009e21af50c3cfd87d2f8d42af91e8ccaa2a82d57966bc4c2fbc6f5",
+    "Repository": "byq-acp-unified",
+    "SharedSize": "N/A",
+    "Size": "3.62GB",
+    "Tag": "cur-2d581097-20261010-retryfix",
+    "UniqueSize": "N/A"
+  },
+  {
+    "Containers": "1",
+    "CreatedAt": "2026-10-09 08:36:46 +0800 CST",
+    "CreatedSince": "25 hours ago",
+    "Digest": "<none>",
+    "ID": "sha256:42525c14f2453174814441e07f234b34a48015543cba2491d3845a7ae496e343",
+    "Repository": "byq-acp-release-intent-c89ff732f2",
+    "SharedSize": "N/A",
+    "Size": "6.52GB",
+    "Tag": "runtime",
+    "UniqueSize": "N/A"
+  },
+  {
+    "Containers": "1",
+    "CreatedAt": "2026-10-09 06:12:09 +0800 CST",
+    "CreatedSince": "27 hours ago",
+    "Digest": "<none>",
+    "ID": "sha256:1041f5fa002ebd24f7ff77f49fcbdad1af74c6d717f6176b52252c42b9d968cd",
+    "Repository": "byq-acp-adr0109-judgment-runner",
+    "SharedSize": "N/A",
+    "Size": "6.39GB",
+    "Tag": "20261009",
+    "UniqueSize": "N/A"
+  },
+  {
+    "Containers": "0",
+    "CreatedAt": "2026-10-09 05:44:08 +0800 CST",
+    "CreatedSince": "28 hours ago",
+    "Digest": "<none>",
+    "ID": "sha256:0effdb8bae2b27c06e127185016bc97c34eb494ae8c1990872e7785abac80b8c",
+    "Repository": "byq-acp-adr0109-adapter",
+    "SharedSize": "N/A",
+    "Size": "6.52GB",
+    "Tag": "20261009",
+    "UniqueSize": "N/A"
+  },
+  {
+    "Containers": "1",
+    "CreatedAt": "2026-10-09 05:42:45 +0800 CST",
+    "CreatedSince": "28 hours ago",
+    "Digest": "<none>",
+    "ID": "sha256:6ddceb4fd7a65ac5dabe57d87ba7b7710e3d60d0d27bafad6a7c91371fd7743a",
+    "Repository": "byq-acp-adr0109-product-runner",
+    "SharedSize": "N/A",
+    "Size": "6.39GB",
+    "Tag": "20261009",
+    "UniqueSize": "N/A"
+  },
+  {
+    "Containers": "0",
+    "CreatedAt": "2026-10-08 21:11:54 +0800 CST",
+    "CreatedSince": "36 hours ago",
+    "Digest": "<none>",
+    "ID": "sha256:dfb6d627c563252a826595c09c8f4b394a3370596bdeded4318c28f3dde444f1",
+    "Repository": "byq-acpf6-runtime-adapter",
+    "SharedSize": "N/A",
+    "Size": "6.51GB",
+    "Tag": "latest",
+    "UniqueSize": "N/A"
+  },
+  {
+    "Containers": "0",
+    "CreatedAt": "2026-10-08 21:01:50 +0800 CST",
+    "CreatedSince": "36 hours ago",
+    "Digest": "<none>",
+    "ID": "sha256:4a52d4ed982b216e6874ddd8c6aa27c92809d1f60e59e3719865a4122aea35e8",
+    "Repository": "byq-acpf6-acp-product-runner",
+    "SharedSize": "N/A",
+    "Size": "6.39GB",
+    "Tag": "latest",
+    "UniqueSize": "N/A"
+  },
+  {
+    "Containers": "0",
+    "CreatedAt": "2026-10-06 09:24:11 +0800 CST",
+    "CreatedSince": "4 days ago",
+    "Digest": "<none>",
+    "ID": "sha256:6592810009079dff51f42bf87f56076e84ae665eaf5a2f722b1b57ccb4b7666c",
+    "Repository": "byq-acpcand-acp-judgment-runner",
+    "SharedSize": "N/A",
+    "Size": "6.39GB",
+    "Tag": "latest",
+    "UniqueSize": "N/A"
+  },
+  {
+    "Containers": "0",
+    "CreatedAt": "2026-10-06 09:24:11 +0800 CST",
+    "CreatedSince": "4 days ago",
+    "Digest": "<none>",
+    "ID": "sha256:6592810009079dff51f42bf87f56076e84ae665eaf5a2f722b1b57ccb4b7666c",
+    "Repository": "byq-acpf6-acp-judgment-runner",
+    "SharedSize": "N/A",
+    "Size": "6.39GB",
+    "Tag": "latest",
+    "UniqueSize": "N/A"
+  }
+]

@@ -21,6 +21,7 @@ RETIRED_SOURCE = "b6c8034ed638447aa1d0ddd82af9738df830bbdf"
 # They are historical evidence only; current source changes get a new immutable
 # Dockerfile and manifest.
 FROZEN_BUILDS = {
+    "dsh-0.1.5rc1-post-u8.322": "sha256:ee97823eb01251c48f99a0b7d2a1d5b50debba6f1f9533e39c47862eedce90cc",
     "dsh-0.1.5rc1-post-u8.303": "sha256:f8311ba86c0091b9a6915dd0ca02469056934e50ab9aac1f2806c62cf0927c88",
     "dsh-0.1.5rc1-post-u8.304": "sha256:0b996a908f2f1ab87a35ae9931d34fe7c1ffc0293c0bc4d92deb8ad83c135178",
     "dsh-0.1.5rc1-post-u8.321": "sha256:3d8496f87686e114b32f86f6c2fd864787cd2d3e2d0176acdc36208dc511d470",
@@ -183,7 +184,9 @@ def digest(path):
 def selected_build_id(release):
     if release == "dsh-0.1.1rc1":
         return RETIRED_BUILD  # Historical identity only; never a current build.
-    if release in RELEASES:
+    if release == "dsh-0.1.5rc1":
+        # Historical SDK identity only. Current ACP source is not qualified by
+        # the frozen 0.1.5 SDK manifest and must not be rendered as its successor.
         return release + "-post-u8.322"
     if release in HISTORICAL_BUILDS:
         return HISTORICAL_BUILDS[release]

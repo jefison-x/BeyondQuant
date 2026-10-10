@@ -138,7 +138,7 @@ class ProxyDiagnostics(unittest.TestCase):
         self.assertEqual(seen,[("http://127.0.0.1:32100/api/auth/me",2)])
         self.assertIsNone(module.NoRedirect().redirect_request(None,None,None,None,None,None))
 
-    def test_four_sampling_points_and_driver_collector_failure_do_not_replay(self):
+    def test_driver_proxy_samples_and_release_fixture_evidence_order_do_not_replay(self):
         source=ROOT/"scripts/evidence/f6-chain-verification.py"
         tree=ast.parse(source.read_text())
         helper=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=="_proxy_diagnostic")
@@ -156,8 +156,18 @@ class ProxyDiagnostics(unittest.TestCase):
         sampling=[n.args[0].value for n in ast.walk(tree) if isinstance(n,ast.Call) and isinstance(n.func,ast.Name)
                   and n.func.id=="_proxy_diagnostic"]
         self.assertEqual(sampling,["before_restart","after_restart"])
+        fixture=(ROOT/"scripts/evidence/acp-f6-release-fixture.py").read_text()
         shell=(ROOT/"scripts/ci/local-ci.sh").read_text()
-        self.assertLess(shell.index("--stage before_browser"),shell.index("npx playwright test --config playwright.f6.config.ts"))
-        self.assertLess(shell.index("--stage after_browser"),shell.index("  if restore_f6_runtime; then"))
+        self.assertIn('run_interruptible python3 "$REPO_ROOT/scripts/evidence/acp-f6-release-fixture.py"',shell)
+        self.assertIn('str(ROOT / "scripts/evidence/f6-chain-verification.py")',fixture)
+        auth_preflight=fixture.index("_auth_preflight(project, frontend, evidence_dir, fixture_env)")
+        driver_call=fixture.index('_run([sys.executable, str(ROOT / "scripts/evidence/f6-chain-verification.py")')
+        validation_call=fixture.index("primary, closeout = _validate_f6_evidence")
+        provider_diagnostics=fixture.index("provider_report = _provider_diagnostics(fixture_env, project)")
+        browser_evidence=fixture.index("browser_result = _playwright(")
+        self.assertLess(auth_preflight,driver_call)
+        self.assertLess(driver_call,validation_call)
+        self.assertLess(validation_call,provider_diagnostics)
+        self.assertLess(provider_diagnostics,browser_evidence)
 
 if __name__=="__main__":unittest.main()

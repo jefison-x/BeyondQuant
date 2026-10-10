@@ -1,0 +1,30 @@
+{
+  "schema": "acp-public-manifest-v2-independent-review.v1",
+  "scope": "Read-only review of three frozen release source files, image-release runbook, and prior local architecture reconciliation",
+  "source_sha256": {
+    "scripts/release/images.py": "dc68c24fd4436b0ddeee89b7e7486e8ec1894d3bcc2fb5faee37a9e257f6b783",
+    "scripts/release/manifest.py": "1a93db2e32893d8db0b3d9a937f6b4acb1dfc906a81da0e295feb38808129a62",
+    "tests/architecture/test_release_pipeline.py": "737cb82fe711b6a3ecc41e6604de1a0e26a882e443fc903a1547c55c9a8a54fb"
+  },
+  "verdict": {
+    "functional": "PASS limited to v2 source contract and fail-closed rejection of v1/unknown schemas",
+    "tests": "PASS combined local method coverage; no single green module invocation",
+    "clean_break_architecture": "PASS limited; no privilege, topology, Product DSH, or legacy migration change",
+    "overall_release_adoption": "NOT_READY"
+  },
+  "findings": [],
+  "evidence": [
+    "scripts/release/images.py:57,1287 emits byq-release.v2",
+    "scripts/release/manifest.py:35-47 validates exact v2 schema, fields, topology and 17 services before SBOM/attestation/API/Docker/output",
+    "tests/architecture/test_release_pipeline.py:980-1015 covers exact seven-key historical 13-service v1, mislabeled 17-service v1 and unknown version rejection before external actions",
+    "/tmp/acp-public-manifest-v2-test-20261010/result.json: two filtered-PATH module attempts each 51 passed, 1 skipped, 1 failed, 23 subtests; two affected methods later passed under normal PATH; source unchanged; compile/diff checks pass",
+    "docs/operations/image-release.md:58-74 separates public v2 from internal handoff v2, keeps old v1 unsupported and historical observer frozen",
+    "docs/evidence/dsh-acp-single-version/acp-current-architecture-20261010/RESULT.md:20-30 retains first 1011-test FAIL, selected 19 PASS, combined local coverage only"
+  ],
+  "limits": [
+    "Old signed 13-service byq-release.v1 operator use remains OPEN; this slice intentionally rejects it without migration",
+    "The first current-source architecture discovery remains FAIL; exact 19-case recheck supplies combined local coverage, not one green Full/hosted/adopting-commit run",
+    "Hosted Docker export, real registry/attestation, and default single-image adoption remain NOT_RUN",
+    "No Docker daemon, build, registry, provider, F6, or full-suite operation was performed by this reviewer"
+  ]
+}

@@ -18,6 +18,7 @@ import hashlib
 import json
 import re
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -185,7 +186,8 @@ def judgment_runner_environment(begin: dict, *, mcp_url: str,
 
 
 def judgment_runner_overlay_b64(profile: AcpJudgmentProviderProfile, *,
-                                proxy_base_url: str) -> str:
+                                proxy_base_url: str,
+                                provider_session_id: str) -> str:
     """Encode the single-route private provider overlay from a built profile."""
 
     if not isinstance(profile, AcpJudgmentProviderProfile):
@@ -194,7 +196,8 @@ def judgment_runner_overlay_b64(profile: AcpJudgmentProviderProfile, *,
     overlay = private_provider_overlay(
         route_name=public["provider_route"], model=public["model"],
         proxy_base_url=proxy_base_url,
-        max_output_tokens=public["limits"]["max_output_tokens"])
+        max_output_tokens=public["limits"]["max_output_tokens"],
+        provider_session_id=provider_session_id)
     raw = json.dumps(overlay, sort_keys=True, separators=(",", ":"),
                      ensure_ascii=True, allow_nan=False).encode("utf-8")
     return base64.b64encode(raw).decode("ascii")
@@ -236,6 +239,20 @@ def journal_digest(journal) -> str:
     return "sha256:" + hashlib.sha256(journal.path.read_bytes()).hexdigest()
 
 
+class JudgmentRootOpenFailed(ResearchJudgmentError):
+    """A judgment root failed after its runner process had started.
+
+    Carries the proven process fence (the runner cleanup-receipt digest) when the
+    transport could be closed, so a never-dispatched settlement can prove the
+    exact no-dispatch/cleanup state instead of masking the original error and
+    failing the ``never-dispatched`` evidence check.
+    """
+
+    def __init__(self, message: str, *, fence: str | None = None) -> None:
+        super().__init__(message)
+        self.fence = fence
+
+
 class IsolatedJudgmentAcpDriver:
     """Live ACP I/O over the isolated judgment runner.
 
@@ -259,12 +276,25 @@ class IsolatedJudgmentAcpDriver:
         transport = JudgmentRunnerProcess(
             ("dsh",), Path(start.expected_cwd), start.environment,
             runner_client=self._runner_client, start=start)
-        transport.start()
-        new = transport.request(
-            "session/new", {"cwd": start.expected_cwd, "mcpServers": []}, timeout=60.0)
-        native = _session_id(new)
-        self._compatibility._select_route(
-            transport, native, new, self._provider, self._model)
+        try:
+            transport.start()
+            new = transport.request(
+                "session/new", {"cwd": start.expected_cwd, "mcpServers": []}, timeout=60.0)
+            native = _session_id(new)
+            self._compatibility._select_route(
+                transport, native, new, self._provider, self._model)
+        except BaseException as error:
+            # Never leak a started runner: close it and surface the proven fence
+            # so the orchestrator can settle a never-dispatched root exactly.
+            # This covers the ACP initialize handshake as well as session/new.
+            fence = None
+            try:
+                fence = self.close(transport)
+            except BaseException:
+                fence = None
+            raise JudgmentRootOpenFailed(
+                "judgment root open failed after its runner process started",
+                fence=fence) from error
         return native, transport
 
     def prompt(self, transport: object, native: str, prompt: str, *, cancel_event=None):
@@ -355,23 +385,34 @@ def run_judgment_acp_root(*, task_id: str, call_identity: str, attempt: str,
                                         cancel_event=cancel_event)
         except BaseException as error:  # noqa: BLE001 - re-raised after settlement
             failure = error
+            # A post-start open failure carries the proven runner fence so the
+            # never-dispatched settlement below can prove exact cleanup.
+            if isinstance(error, JudgmentRootOpenFailed) and error.fence is not None:
+                fence = error.fence
         finally:
             if transport is not None:
                 fence = acp.close(transport)
                 transport = None
 
+    result_failure = "unavailable"
     if failure is None and finish == "completed" and output is not None:
         try:
             result = output.result(finish)
         except ResearchJudgmentError:
-            result = None
+            result, result_failure = None, "validation_rejected"
+        else:
+            result_failure = "none" if result is not None else "missing_result"
         if result is not None:
+            _record_turn_diagnostic(journal, finish=finish, error=None,
+                                    result_failure="none")
             return _commit_result(
                 journal=journal, begin=begin, binding=journal.snapshot()["binding"],
                 native=native, result=result, backend_url=backend_url,
                 task_id=task_id, trusted_headers=trusted_headers,
                 transport_http=transport_http, timeout=timeout)
 
+    _record_turn_diagnostic(journal, finish=finish, error=failure,
+                            result_failure=result_failure)
     settlement = _settle(
         journal=journal, begin=begin, fence=fence, backend_url=backend_url,
         task_id=task_id, trusted_headers=trusted_headers,
@@ -380,6 +421,21 @@ def run_judgment_acp_root(*, task_id: str, call_identity: str, attempt: str,
     if failure is not None:
         raise failure
     return settlement
+
+
+def _record_turn_diagnostic(journal, *, finish: object, error: BaseException | None,
+                            result_failure: object) -> None:
+    """Best-effort bounded turn diagnostic; never changes settlement/ACK."""
+
+    try:
+        journal.record_turn_outcome(finish=finish, error=error,
+                                    result_failure=result_failure, dsh_stop_reason=None)
+    except Exception:
+        # The diagnostic seam is optional and best-effort. Any ordinary failure
+        # (including an OSError from the optional journal write) must never alter
+        # the security settlement, ACK or recovery path. KeyboardInterrupt and
+        # SystemExit are BaseException and deliberately still propagate.
+        pass
 
 
 def _commit_result(*, journal, begin, binding, native, result, backend_url,
@@ -532,6 +588,11 @@ def build_judgment_runner_start(begin: dict, profile: AcpJudgmentProviderProfile
     if type(deadline_at_ms) is not int or deadline_at_ms <= 0:
         raise ResearchJudgmentError("ACP judgment provider deadline is invalid")
     scope = judgment_runner_scope(begin)
+    # The OpenCode route requires the exact routing header; derive it
+    # server-side from the root's own session identity (never a model value).
+    provider_session_id = str(uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        "beyondquant:provider-session:" + begin["root"]["session_id"]))
     return JudgmentRunnerStart(
         scope=scope,
         environment=judgment_runner_environment(
@@ -539,7 +600,9 @@ def build_judgment_runner_start(begin: dict, profile: AcpJudgmentProviderProfile
             signing_master=signing_master),
         proxy_token_env=judgment_proxy_token_env(public["provider_route"]),
         proxy_token=proxy_token,
-        overlay_b64=judgment_runner_overlay_b64(profile, proxy_base_url=proxy_base_url),
+        overlay_b64=judgment_runner_overlay_b64(
+            profile, proxy_base_url=proxy_base_url,
+            provider_session_id=provider_session_id),
         expected_cwd=judgment_expected_cwd(scope, session_root=session_root),
         deadline_at_ms=deadline_at_ms,
     )

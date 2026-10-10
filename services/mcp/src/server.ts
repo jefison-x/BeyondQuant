@@ -25,10 +25,12 @@ import {
   addAcpObservationHeader,
   abortAcpToolIngressBeforeDispatch,
   bindAcpAgentRun,
+  fetchAcpAgentAuthorize,
   getAcpAgentBindingStatus,
   observeAcpDomainCall,
   observeAcpToolIngress,
   settleAcpToolIngress,
+  type AcpAuthorizationDenialReceipt,
   type AcpToolIngressOutcome,
 } from "./acp-bridge.js";
 
@@ -61,6 +63,8 @@ import {
   fetchByqAgentAudit,
   fetchByqAgentAuditGet,
   fetchByqAgentAuthorize,
+  acpAgentAuthorizationDenied,
+  acpAgentAuthorizationSuccess,
   fetchByqAgentRoles,
   fetchByqAgentRunStart,
   isValidRuntimeBootId,
@@ -1054,6 +1058,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
                 return acpBridgeUnavailable("acp_ingress_observation_unavailable");
               }
               let handlerResult: unknown;
+              let refusalReceipt: AcpAuthorizationDenialReceipt | undefined;
               try {
                 if (judgmentCall) {
                   const callContext = { ...trustedContext, [privateObservationId]: ingress.mcp_request_id };
@@ -1069,15 +1074,29 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
                     handlerResult = await (callback as (...args: unknown[]) => unknown)(
                       toolArgs, callContext, ...callArgs.slice(2));
                   }
+                } else if (auth.kind === "acp-agent" && name === "byq_agent_authorize") {
+                  const authorization = await fetchAcpAgentAuthorize(BACKEND_URL, ingressProof,
+                    auth.claims, ingress, ingressArgs);
+                  if (!authorization) {
+                    handlerResult = acpBridgeUnavailable("acp_authorization_outcome_unknown");
+                  } else if (authorization.status === "denied") {
+                    // Keep the Backend receipt private; it is used only for the
+                    // exact negative settlement below, never returned to DSH.
+                    refusalReceipt = authorization.refusal_receipt;
+                    handlerResult = acpAgentAuthorizationDenied();
+                  } else {
+                    handlerResult = acpAgentAuthorizationSuccess(authorization.authorization);
+                  }
                 } else {
                   handlerResult = await (callback as (...args: unknown[]) => unknown)(...callArgs);
                 }
               } catch {
                 handlerResult = acpBridgeUnavailable("acp_handler_outcome_unknown");
               }
-              const outcome = classifyAcpToolCompletion(name, handlerResult);
+              const outcome: AcpToolIngressOutcome = refusalReceipt
+                ? "denied" : classifyAcpToolCompletion(name, handlerResult);
               const settlement = await settleAcpToolIngress(
-                BACKEND_URL, ingressProof, auth.claims, ingress, outcome);
+                BACKEND_URL, ingressProof, auth.claims, ingress, outcome, fetch, refusalReceipt);
               if (!settlement) return acpBridgeUnavailable("acp_ingress_settlement_unknown");
               return handlerResult;
             }
@@ -2084,6 +2103,17 @@ const continuationHandler = continuationAdmission(observedHandler, async (reserv
   const value = await response.json() as Record<string, unknown>;
   return value.schema_version === 'continuation-action-admission.v1' && value.admitted === true
     && value.reservation_id === reservation;
+}, (request) => {
+  // The ACP bearer is authoritative for the root run: the DSH MCP client mounts
+  // its signed per-Agent identity as the Authorization header and never sends a
+  // trusted x-byq-root-run-id header, so reading only the header would send an
+  // empty root_run_id and the Backend would reject every admission. Fall back to
+  // the header only for the non-ACP caller that still presents it.
+  const identity = bearerIdentity({ request });
+  if (identity !== undefined && (identity.kind === 'acp-agent' || identity.kind === 'acp-judgment-root')) {
+    return identity.claims.root_run_id;
+  }
+  return request.headers.get('x-byq-root-run-id') ?? '';
 });
 const requestGateHandler: ParsedFetchHandler = {
   fetch(request, options) {

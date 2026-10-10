@@ -7,6 +7,7 @@ No model/provider credential or raw prompt/result is written to logs.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -16,6 +17,7 @@ import threading
 import time
 from contextvars import ContextVar
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 
 
@@ -49,7 +51,9 @@ _SKILL_CATALOG_FOOTER = (
 _BACKGROUND_INSTRUCTION_PREFIX = "BYQ trusted read-only task-ready follow-up for exact task "
 _BACKGROUND_INSTRUCTION_TEMPLATE = (
     _BACKGROUND_INSTRUCTION_PREFIX + "{task_id}. "
-    "Use only byq_research_get to read this exact ResearchTask and byq_backtest_task_get "
+    'First call byq_agent_run_start with role_id "quant_orchestrator" and idempotency key "task-ready-run-{signal_job_id}" to bind this turn. '
+    'Then follow the existing role contract: call byq_agent_authorize with action exactly "byq_research_get" before byq_research_get and with action exactly "byq_backtest_task_get" before byq_backtest_task_get, and byq_agent_audit with the same exact action and bounded outcome after each read. '
+    "Use byq_research_get to read this exact ResearchTask and byq_backtest_task_get "
     "to read the exact BacktestTask linked to the completed ready signal below. "
     "Exact BacktestTask ID: {backtest_task_id}. "
     "Do not create or update domain objects, request approvals, execute jobs, browse the web, "
@@ -64,6 +68,16 @@ DIAGNOSTIC_OUTCOMES = frozenset({
     "response_written", "fixture_rejected", "request_rejected", "handler_error",
 })
 DIAGNOSTIC_RESPONSE_KINDS = frozenset({"tool_call", "completion", "none"})
+_SKILL_CATALOG_EMPTY_UPDATE = (
+    "<system-reminder>\n"
+    "The available skill catalog changed. This complete catalog replaces every earlier available-skills list in this session:\n\n"
+    "<available_skills>\n"
+    "</available_skills>\n\n"
+    "No skills are currently available through the `skill` tool. Do not use names from earlier skill catalogs.\n"
+    "A user may still invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool for it.\n"
+    "</system-reminder>"
+)
+
 
 FG1_SEQUENCE = (
     "byq_agent_run_start",
@@ -247,7 +261,7 @@ def validate_environment(environment: dict[str, str] | None = None) -> str:
         raise F6FixtureRejected("isolated_ci_project_required")
     if env.get("BYQ_F6_SYNTHETIC_RUNTIME") != "1":
         raise F6FixtureRejected("synthetic_runtime_flag_required")
-    if env.get("DEEPSEEK_API_KEY") != "f6-synthetic-only":
+    if env.get("OPENCODE_API_KEY") != "f6-synthetic-only":
         raise F6FixtureRejected("synthetic_provider_marker_required")
     return project
 
@@ -278,6 +292,10 @@ def _has_instruction_marker(text: str) -> bool:
 
 
 def _is_skill_catalog(text: str) -> bool:
+    # Native DSH may append this exact empty update after the current user
+    # instruction. It is supplemental context, never a replacement prompt.
+    if text == _SKILL_CATALOG_EMPTY_UPDATE:
+        return True
     if (not text.startswith(_SKILL_CATALOG_HEADER) or not text.endswith(_SKILL_CATALOG_FOOTER)
             or text.count("<system-reminder>") != 1 or text.count("</system-reminder>") != 1
             or text.count("<available_skills>") != 1 or text.count("</available_skills>") != 1):
@@ -398,15 +416,27 @@ def _json_line(prompt: str, name: str) -> dict[str, Any]:
 
 
 def _background_scope(prompt: str) -> dict[str, str]:
-    before_task, remainder = _BACKGROUND_INSTRUCTION_TEMPLATE.split("{task_id}", 1)
-    after_task, remainder = remainder.split("{backtest_task_id}", 1)
-    after_backtest, after_signal = remainder.split("{ready_signal}", 1)
-    pattern = (
-        re.escape(before_task) + r"(?P<task_id>task_[0-9a-f]{32})" + re.escape(after_task)
-        + r"(?P<backtest_task_id>backtesttask_[0-9a-f]{32})" + re.escape(after_backtest)
-        + r"(?P<ready_signal>\{[^\r\n]+\})" + re.escape(after_signal)
-    )
-    match = re.fullmatch(pattern, prompt)
+    placeholders = {
+        "{task_id}": ("task_id", r"task_[0-9a-f]{32}"),
+        "{signal_job_id}": ("signal_job_id", r"signaljob_[0-9a-f]{32}"),
+        "{backtest_task_id}": ("backtest_task_id", r"backtesttask_[0-9a-f]{32}"),
+        "{ready_signal}": ("ready_signal", r"\{[^\r\n]+\}"),
+    }
+    seen: set[str] = set()
+    pattern_parts: list[str] = []
+    for piece in re.split(r"(\{task_id\}|\{signal_job_id\}|\{backtest_task_id\}|\{ready_signal\})",
+                          _BACKGROUND_INSTRUCTION_TEMPLATE):
+        entry = placeholders.get(piece)
+        if entry is None:
+            pattern_parts.append(re.escape(piece))
+            continue
+        name, inner = entry
+        if name in seen:
+            pattern_parts.append(f"(?P={name})")
+        else:
+            seen.add(name)
+            pattern_parts.append(f"(?P<{name}>{inner})")
+    match = re.fullmatch("".join(pattern_parts), prompt)
     if match is None:
         raise F6FixtureRejected("background_scope_missing")
     task_id = match.group("task_id")
@@ -425,6 +455,7 @@ def _background_scope(prompt: str) -> dict[str, str]:
     derived = "backtesttask_" + job_match.group(1) if job_match else None
     if (not TASK_PATTERN.fullmatch(task_id)
             or not BACKTEST_TASK_PATTERN.fullmatch(backtest_task_id)
+            or match.group("signal_job_id") != job_id
             or derived != backtest_task_id
             or event.get("kind") != "signal_producer_jobs"
             or event.get("status") != "completed"
@@ -717,7 +748,7 @@ def _fg2_arguments(index: int, prompt: str, records: list[dict[str, Any]]) -> di
 def _bg_arguments(index: int, scope: dict[str, str], records: list[dict[str, Any]]) -> dict[str, Any]:
     run_id = _run_id(records) if index >= 1 else None
     if index == 0:
-        return {"role_id": "quant_orchestrator", "idempotency_key": "f6-ci-bg-agent-run"}
+        return {"role_id": "quant_orchestrator", "idempotency_key": "task-ready-run-" + scope["signal_job_id"]}
     if index == 1:
         return {"run_id": run_id, "action": "byq_research_get",
                 "resource_type": "research_task", "resource_id": scope["task_id"]}
@@ -933,6 +964,37 @@ def _sse_completion(body: dict[str, Any], action: tuple[str, dict[str, Any]] | N
             + "data: [DONE]\n\n").encode("utf-8")
 
 
+def _route_foreground_composition_to_loopback(kwargs: dict, loopback_url: str) -> None:
+    composition = kwargs.get("composition")
+    session_root = kwargs.get("session_root")
+    if not isinstance(composition, Path) or not composition.is_file() or session_root is None:
+        return
+    text = composition.read_text(encoding="utf-8")
+    if "https://opencode.ai/zen/go/v1" not in text:
+        return
+    target = Path(session_root) / "synthetic-provider-composition.yml"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text.replace("https://opencode.ai/zen/go/v1", loopback_url), encoding="utf-8")
+    kwargs["composition"] = target
+
+
+def _guard_pins_local_proxy(guard_b64: Any, proxy_url: str) -> bool:
+    if not isinstance(guard_b64, str) or not guard_b64:
+        return False
+    try:
+        overlay = json.loads(base64.b64decode(guard_b64))
+    except Exception:
+        return False
+    if not isinstance(overlay, list):
+        return False
+    for entry in overlay:
+        if (isinstance(entry, dict) and entry.get("id") == "llm-pi-ai"
+                and isinstance(entry.get("config"), dict)):
+            chat = entry["config"].get("providers", {}).get("opencode-go-chat")
+            return isinstance(chat, dict) and chat.get("baseURL") == proxy_url
+    return False
+
+
 def _install_f6_provider_routes(loopback_url: str) -> None:
     import app.runtime as runtime_module
 
@@ -944,7 +1006,7 @@ def _install_f6_provider_routes(loopback_url: str) -> None:
 
     def init_with_local_upstream(self: Any, gate: object, upstream: str) -> None:
         original_init(self, gate, upstream)
-        if upstream.rstrip("/") != "https://api.deepseek.com":
+        if upstream.rstrip("/") not in {"https://api.deepseek.com", "https://opencode.ai/zen/go/v1"}:
             raise F6FixtureRejected("continuation_proxy_official_upstream_required")
         # Preserve the actual RequestGateProxy, request gate, handler and journal;
         # only replace its official network destination with this test process.
@@ -979,9 +1041,13 @@ def _install_f6_provider_routes(loopback_url: str) -> None:
             if continuation_enabled or max_tokens is not None or "DEEPSEEK_BASE_URL" in environment:
                 raise F6FixtureRejected("foreground_request_gate_state_invalid")
             routed_environment["DEEPSEEK_BASE_URL"] = loopback_url
+            _route_foreground_composition_to_loopback(kwargs, loopback_url)
         else:
+            # ADR-0105: the background OpenCode chat route's baseURL is pinned in
+            # the runner-applied guard overlay, not in the child environment.
             if (not continuation_enabled or max_tokens is None
-                    or environment.get("DEEPSEEK_BASE_URL") != continuation_proxy_url
+                    or not _guard_pins_local_proxy(kwargs.get("continuation_guard_b64"),
+                                                   continuation_proxy_url)
                     or continuation_proxy_url == loopback_url):
                 raise F6FixtureRejected("background_request_gate_proxy_not_preserved")
         kwargs["environment"] = routed_environment

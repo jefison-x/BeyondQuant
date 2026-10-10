@@ -65,7 +65,8 @@ fi
 MANIFEST="$MANIFEST_DIR/image-ids.env"
 
 export COMPOSE_PROJECT_NAME="$PROJECT"
-export COMPOSE_FILE="$REPO_ROOT/compose.yml"
+export BYQ_CI_SCOPE="$SCOPE"
+export COMPOSE_FILE="$REPO_ROOT/compose.yml:$REPO_ROOT/compose.override.yml"
 export COMPOSE_DISABLE_ENV_FILE=1 COMPOSE_ENV_FILES=/dev/null COMPOSE_PROFILES=""
 export BYQ_MCP_TOKEN=ci-mcp-test-only BYQ_PRODUCT_TOKEN=ci-product-test-only
 export BYQ_POSTGRES_VOLUME_EXTERNAL=false
@@ -76,15 +77,33 @@ export BYQ_DOMAIN_VOLUME_NAME="byq-ci-domain-$SCOPE"
 export BYQ_ML_MODEL_VOLUME_NAME="byq-ci-ml-model-$SCOPE"
 export BYQ_DSH_SESSIONS_VOLUME_NAME="byq-ci-dsh-sessions-$SCOPE"
 export BYQ_WORKFLOW_TRACES_VOLUME_NAME="byq-ci-workflow-traces-$SCOPE"
+export BYQ_ACP_JUDGMENT_NETWORK_NAME="$PROJECT-acp-judgment"
+export BYQ_ACP_PRODUCT_SESSIONS_VOLUME_NAME="$PROJECT-acp-product-sessions"
+export BYQ_ACP_PRODUCT_STATE_VOLUME_NAME="$PROJECT-acp-product-state"
+export BYQ_ACP_PRODUCT_CONTROL_VOLUME_NAME="$PROJECT-acp-product-control"
+export BYQ_ACP_JUDGMENT_SESSIONS_VOLUME_NAME="$PROJECT-acp-judgment-sessions"
+export BYQ_ACP_RUNNER_CONTROL_VOLUME_NAME="$PROJECT-acp-runner-control"
+export BYQ_ACP_RUNNER_STATE_VOLUME_NAME="$PROJECT-acp-runner-state"
 
-image_resources=(backend gateway runtime-adapter mcp frontend data-worker backtest-worker factor-worker optimization-worker \
-  signal-worker ml-worker \
-  signal-sandbox feedback-hub-relay dsh runtime-candidate)
-network_resources=("$BYQ_PRODUCT_NETWORK_NAME" "$BYQ_SIGNAL_SANDBOX_NETWORK_NAME")
+image_service_list="$(PYTHONPATH="$REPO_ROOT/scripts/release:$REPO_ROOT" python3 -c \
+  'import images; assert len(images.SERVICES) == 17 and len(set(images.SERVICES)) == 17; print("\n".join(images.SERVICES))')" || {
+  echo "CI cleanup cannot load the canonical 17-service release set" >&2
+  exit 2
+}
+mapfile -t image_resources <<< "$image_service_list"
+# The captured-ID allowlist is the same canonical 17-service set used by the
+# release exporter. Old isolated SDK candidate tags remain cleanup-only.
+legacy_image_resources=(dsh runtime-candidate)
+tag_resources=("${image_resources[@]}" "${legacy_image_resources[@]}")
+network_resources=("$BYQ_PRODUCT_NETWORK_NAME" "$BYQ_SIGNAL_SANDBOX_NETWORK_NAME" \
+  "$BYQ_ACP_JUDGMENT_NETWORK_NAME")
 [ "$KEEP_POSTGRES" -eq 1 ] || network_resources+=("$PG_NET")
 volume_resources=("$BYQ_POSTGRES_VOLUME_NAME" "$BYQ_DOMAIN_VOLUME_NAME" "$BYQ_ML_MODEL_VOLUME_NAME" \
-  "$BYQ_DSH_SESSIONS_VOLUME_NAME" "$BYQ_WORKFLOW_TRACES_VOLUME_NAME" "$RUNTIME_CANDIDATE_VOL" \
-  "$RUNTIME_BASELINE_BENCH_VOL" "$RUNTIME_CANDIDATE_BENCH_VOL")
+  "$BYQ_DSH_SESSIONS_VOLUME_NAME" "$BYQ_WORKFLOW_TRACES_VOLUME_NAME" \
+  "$BYQ_ACP_PRODUCT_SESSIONS_VOLUME_NAME" "$BYQ_ACP_PRODUCT_STATE_VOLUME_NAME" \
+  "$BYQ_ACP_PRODUCT_CONTROL_VOLUME_NAME" "$BYQ_ACP_JUDGMENT_SESSIONS_VOLUME_NAME" \
+  "$BYQ_ACP_RUNNER_CONTROL_VOLUME_NAME" "$BYQ_ACP_RUNNER_STATE_VOLUME_NAME" \
+  "$RUNTIME_CANDIDATE_VOL" "$RUNTIME_BASELINE_BENCH_VOL" "$RUNTIME_CANDIDATE_BENCH_VOL")
 [ "$KEEP_POSTGRES" -eq 1 ] || volume_resources+=("$PG_VOL")
 
 manifest_ids=()
@@ -144,25 +163,110 @@ load_manifest_ids() {
     manifest_ids+=("$image_id")
     manifest_services+=("$service")
   done < "$MANIFEST"
+  # Release scopes always run the one full trusted-main batch. Component CI
+  # scopes may carry a smaller captured subset, but release cleanup rejects
+  # both missing and additional service identities before deleting captured IDs.
+  if [[ "$SCOPE" == *-release ]]; then
+    if [ "${#manifest_services[@]}" -ne "${#image_resources[@]}" ]; then
+      echo "CI cleanup release manifest is not the full canonical service set" >&2
+      manifest_ids=(); manifest_state="invalid"; return 1
+    fi
+    for known in "${image_resources[@]}"; do
+      seen=0
+      for service in "${manifest_services[@]}"; do
+        if [ "$service" = "$known" ]; then seen=1; break; fi
+      done
+      if [ "$seen" -ne 1 ]; then
+        echo "CI cleanup release manifest is missing service '$known'" >&2
+        manifest_ids=(); manifest_state="invalid"; return 1
+      fi
+    done
+  fi
   return 0
 }
 
-# 0 when the image exists and carries at least one repo tag NOT owned by this
-# scope. Such an image is shared with another scope and must never be deleted.
-# Ownership is an exact `$PROJECT-<service>` match, never a prefix, so a scope
-# name that is a prefix of another cannot misclassify a foreign tag as ours.
-image_has_foreign_tag() {
-  local image_id="$1" tag service ours
-  docker image inspect "$image_id" >/dev/null 2>&1 || return 1
+# Tri-state classification of an image id's references. A query failure is NOT
+# the same as a proven foreign reference, so the two must never collapse into
+# one return code:
+#   0 = a foreign/shared reference is PROVEN -> retaining is safe and successful
+#   1 = references are readable and exclusive to this scope -> safe to delete
+#   2 = metadata is UNREADABLE -> cannot prove exclusive -> retain AND fail
+# RepoDigests are conservatively treated as shared references; only RepoTags
+# have the exact project/service ownership check below.
+image_has_foreign_reference() {
+  local image_id="$1" tag digest service ours tags_output digests_output
+  if ! docker image inspect "$image_id" >/dev/null 2>&1; then
+    echo "CI cleanup cannot inspect image $image_id; retaining it" >&2
+    return 2
+  fi
+  if ! tags_output="$(docker image inspect "$image_id" \
+      --format '{{range .RepoTags}}{{println .}}{{end}}' 2>/dev/null)"; then
+    echo "CI cleanup cannot read RepoTags for $image_id; retaining image" >&2
+    return 2
+  fi
   while IFS= read -r tag; do
     [ -z "$tag" ] && continue
     ours=0
-    for service in "${image_resources[@]}"; do
+    for service in "${tag_resources[@]}"; do
       if [ "$tag" = "$PROJECT-$service" ]; then ours=1; break; fi
     done
     [ "$ours" -eq 1 ] || return 0
-  done < <(docker image inspect "$image_id" --format '{{range .RepoTags}}{{println .}}{{end}}' 2>/dev/null || true)
+  done <<< "$tags_output"
+  if ! digests_output="$(docker image inspect "$image_id" \
+      --format '{{range .RepoDigests}}{{println .}}{{end}}' 2>/dev/null)"; then
+    echo "CI cleanup cannot read RepoDigests for $image_id; retaining image" >&2
+    return 2
+  fi
+  while IFS= read -r digest; do
+    [ -z "$digest" ] || return 0
+  done <<< "$digests_output"
   return 1
+}
+
+# Capture the tri-state above into $image_reference_state without tripping
+# `set -e` and without letting a bare `!`/`||` collapse state 2 into the success
+# state 0. A query failure (2) must stay distinguishable at every call site.
+image_reference_state=0
+classify_image_reference() {
+  image_reference_state=0
+  image_has_foreign_reference "$1" || image_reference_state=$?
+  return 0
+}
+
+# Tri-state presence probe for a captured manifest image id. The exit status of
+# a plain `docker image inspect <id>` cannot distinguish a genuinely absent image
+# from a daemon/query error, so a failed inspect is NEVER taken as proof of
+# absence. It is cross-checked against the full, untruncated image listing:
+#   0 = image PROVEN absent (listing succeeded and does not contain the exact id)
+#   1 = image PROVEN present (plain inspect succeeded)
+#   2 = presence UNKNOWN (any query failure, or inspect failed while the id is
+#       still listed, so its references cannot be read)
+# Only state 0 may be treated as "already gone". State 2 must be retained and
+# must make verification fail; it is never absence and never a proven shared
+# reference. The RepoTags/RepoDigests classification is a separate query inside
+# image_has_foreign_reference whose failure is likewise state 2, so a failing
+# second inspect can never be mistaken for a clean/deletable id.
+image_presence_state=2
+image_presence_probe() {
+  local image_id="$1" listing listing_id
+  if docker image inspect "$image_id" >/dev/null 2>&1; then
+    image_presence_state=1
+    return 0
+  fi
+  image_presence_state=2
+  if ! listing="$(docker image ls --all --no-trunc --format '{{.ID}}' 2>/dev/null)"; then
+    return 0
+  fi
+  while IFS= read -r listing_id; do
+    if [ "$listing_id" = "$image_id" ]; then
+      # inspect failed but the image is still listed: references are unreadable
+      # -> UNKNOWN, never "absent".
+      image_presence_state=2
+      return 0
+    fi
+  done <<< "$listing"
+  image_presence_state=0
+  return 0
 }
 
 # Remove the exact manifest image ids: only images that are dangling (tag already
@@ -175,12 +279,52 @@ remove_manifest_images() {
     [ -z "$image_id" ] && continue
     case " $seen " in *" $image_id "*) continue ;; esac
     seen="$seen $image_id"
-    docker image inspect "$image_id" >/dev/null 2>&1 || continue
-    if image_has_foreign_tag "$image_id"; then
-      continue
-    fi
+    # Only a proven-present id is a deletion candidate. A proven-absent id
+    # (state 0) needs no action, and an unreadable presence query (state 2) must
+    # retain the image; the verification pass below fails closed for state 2.
+    image_presence_probe "$image_id"
+    case "$image_presence_state" in
+      1) ;;
+      *) continue ;;
+    esac
+    classify_image_reference "$image_id"
+    # Only a proven-exclusive id (state 1) may be removed. State 0 (proven
+    # shared) and state 2 (unreadable metadata) both retain the image.
+    case "$image_reference_state" in
+      1) ;;
+      *) continue ;;
+    esac
     docker image rm "$image_id" >/dev/null 2>&1 || true
   done
+}
+
+resource_is_scope_owned() {
+  local kind="$1" resource="$2" project_label scope_label
+  project_label="$(docker "$kind" inspect "$resource" \
+    --format '{{ index .Labels "com.docker.compose.project" }}' 2>/dev/null || true)"
+  scope_label="$(docker "$kind" inspect "$resource" \
+    --format '{{ index .Labels "byq.ci.scope" }}' 2>/dev/null || true)"
+  [ "$project_label" = "$PROJECT" ] || [ "$scope_label" = "$SCOPE" ]
+}
+
+remove_scoped_resource() {
+  local kind="$1" resource="$2"
+  docker "$kind" inspect "$resource" >/dev/null 2>&1 || return 0
+  resource_is_scope_owned "$kind" "$resource" || return 0
+  docker "$kind" rm "$resource" >/dev/null 2>&1 || true
+}
+
+compose_down_best_effort() {
+  # Use the same merged ACP Compose entry point as build/test CI when its
+  # required application settings are available. Release cleanup runs in a
+  # fresh job without those secrets, so the exact label/name cleanup below is
+  # authoritative and must still run if Compose interpolation fails.
+  (
+    cd "$REPO_ROOT"
+    python3 "$REPO_ROOT/scripts/dsh/acp_build.py" -- docker compose \
+      -f "$REPO_ROOT/compose.yml" -f "$REPO_ROOT/compose.override.yml" \
+      down --remove-orphans
+  ) >/dev/null 2>&1 || true
 }
 
 cleanup_exact_resources() {
@@ -195,36 +339,51 @@ cleanup_exact_resources() {
       "$MCP_SERVER" "$RUNTIME_CANDIDATE_TEST" \
       >/dev/null 2>&1 || true
   fi
-  (
-    cd "$REPO_ROOT"
-    docker compose down --rmi local -v --remove-orphans >/dev/null 2>&1 || true
-  )
+  compose_down_best_effort
+  # Compose may fail before it can resolve ACP configuration in the standalone
+  # cleanup job. Remove only containers carrying this exact Compose project
+  # label; no resource name/prefix scan or global prune is used.
+  ids="$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT")"
+  if [ -n "$ids" ]; then
+    docker rm -f $ids >/dev/null 2>&1 || true
+  fi
   # Component-only runs never create Compose containers; remove their exact tags too.
-  for service in "${image_resources[@]}"; do
+  for service in "${tag_resources[@]}"; do
     docker image rm "$PROJECT-$service" >/dev/null 2>&1 || true
   done
   # With the exact tags gone, remove the exact captured ids (dangling residue).
   remove_manifest_images
-  docker volume rm "$RUNTIME_CANDIDATE_VOL" "$RUNTIME_BASELINE_BENCH_VOL" \
-    "$RUNTIME_CANDIDATE_BENCH_VOL" >/dev/null 2>&1 || true
+  for resource in "${volume_resources[@]}"; do
+    remove_scoped_resource volume "$resource"
+  done
+  for resource in "${network_resources[@]}"; do
+    remove_scoped_resource network "$resource"
+  done
   docker rm -f "$BACKEND" >/dev/null 2>&1 || true
-  if [ "$KEEP_POSTGRES" -eq 0 ]; then
-    docker rm -f "$PG" >/dev/null 2>&1 || true
-    docker volume rm "$PG_VOL" >/dev/null 2>&1 || true
-    docker network rm "$PG_NET" >/dev/null 2>&1 || true
-  fi
+  [ "$KEEP_POSTGRES" -eq 1 ] || docker rm -f "$PG" >/dev/null 2>&1 || true
 }
 
 scoped_resources_exist() {
   local service resource image_id
-  for service in "${image_resources[@]}"; do
+  for service in "${tag_resources[@]}"; do
     docker image inspect "$PROJECT-$service" >/dev/null 2>&1 && return 0
   done
   if [ "$manifest_state" = "valid" ]; then
     for image_id in "${manifest_ids[@]}"; do
       [ -z "$image_id" ] && continue
-      docker image inspect "$image_id" >/dev/null 2>&1 || continue
-      image_has_foreign_tag "$image_id" || return 0
+      image_presence_probe "$image_id"
+      case "$image_presence_state" in
+        0) continue ;;   # proven absent -> not scope residue, keep scanning
+        2) return 0 ;;   # unknown presence -> cannot claim stable absence
+      esac
+      classify_image_reference "$image_id"
+      # state 0 = proven shared -> not scope residue, keep scanning.
+      # state 1 (exclusive) and state 2 (unreadable) both mean the id still
+      # exists as residue and cleanup cannot claim stable absence.
+      if [ "$image_reference_state" -eq 0 ]; then
+        continue
+      fi
+      return 0
     done
   fi
   [ "$KEEP_POSTGRES" -eq 1 ] || [ -z "$(docker ps -aq --filter "label=byq.ci.scope=$SCOPE")" ] || return 0
@@ -271,7 +430,7 @@ if [ "$manifest_state" = "invalid" ]; then
   echo "CI cleanup verification failed: invalid image-id manifest: $MANIFEST" >&2
   failures=$((failures + 1))
 fi
-for service in "${image_resources[@]}"; do
+for service in "${tag_resources[@]}"; do
   if docker image inspect "$PROJECT-$service" >/dev/null 2>&1; then
     echo "CI cleanup verification failed: image tag remains: $PROJECT-$service" >&2
     failures=$((failures + 1))
@@ -280,13 +439,36 @@ done
 if [ "$manifest_state" = "valid" ]; then
   for image_id in "${manifest_ids[@]}"; do
     [ -z "$image_id" ] && continue
-    docker image inspect "$image_id" >/dev/null 2>&1 || continue
-    if image_has_foreign_tag "$image_id"; then
-      retained_shared_ids+=("$image_id")
-      continue
-    fi
-    echo "CI cleanup verification failed: manifest image id remains: $image_id" >&2
-    failures=$((failures + 1))
+    image_presence_probe "$image_id"
+    case "$image_presence_state" in
+      0) continue ;;   # proven absent: nothing to verify for this id
+      2)
+        # Presence itself is unknown: the id could not be proven absent OR
+        # present. Retain the image AND the manifest and fail; never "verified".
+        echo "CI cleanup verification failed: cannot determine presence of manifest image id: $image_id" >&2
+        failures=$((failures + 1))
+        continue
+        ;;
+    esac
+    classify_image_reference "$image_id"
+    case "$image_reference_state" in
+      0)
+        # Proven shared reference: safe retention, not a verification failure.
+        retained_shared_ids+=("$image_id")
+        continue
+        ;;
+      2)
+        # Unreadable metadata: the id could not be proven exclusive. Retain the
+        # image AND the manifest and fail verification; never report "verified".
+        echo "CI cleanup verification failed: cannot read reference metadata for retained manifest image id: $image_id" >&2
+        failures=$((failures + 1))
+        continue
+        ;;
+      *)
+        echo "CI cleanup verification failed: manifest image id remains: $image_id" >&2
+        failures=$((failures + 1))
+        ;;
+    esac
   done
 fi
 if [ "$KEEP_POSTGRES" -eq 0 ] && [ -n "$(docker ps -aq --filter "label=byq.ci.scope=$SCOPE")" ]; then

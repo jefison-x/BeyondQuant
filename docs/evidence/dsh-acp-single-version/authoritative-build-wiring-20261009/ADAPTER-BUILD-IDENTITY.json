@@ -1,0 +1,180 @@
+{
+  "build": {
+    "build_log_sha256": "72671f2384611445bab3cb53d89f2900f96cfabb2bba5963d25d0fd0f7af1b1a",
+    "dockerfile_sha256": "82b6953f39cfd2264bc9da163840754b1451c9034efb9532f7211aaef03f4df5",
+    "exit_code": 0,
+    "expected_compatibility_family": "dsh-v0.2.0-rc.2-acp",
+    "expected_pnpm_lock_sha256": "80fe05eae33582ae26839afd05f1965f9b0e4be11034ddf9797af6085d5ba9b1",
+    "expected_source_commit": "639ed015397290b3745d163aafe02ffee4aa3f84",
+    "image_id": "sha256:9112eb955ff4bb0465bf9b98e70d0b107a74ad36541d16f7ee4330d869db6d4f",
+    "input_path": "/tmp/byq-acp-authoritative-real-build-20261009/adapter-input.json",
+    "input_sha256": "f34960b4a5f36a67c9f87b28163707c8ca12417bf13fcec77aab1bf37317e694",
+    "receipt_path": "/tmp/byq-acp-authoritative-real-build-20261009/adapter-result.json",
+    "receipt_sha256": "e088fdae5e69dea3c3b140879ddf9a67a54e1b3b4dad6710ae302ec2259fcdef",
+    "selection": {
+      "compatibility_family": "dsh-v0.2.0-rc.2-acp",
+      "pnpm_lock_sha256": "80fe05eae33582ae26839afd05f1965f9b0e4be11034ddf9797af6085d5ba9b1",
+      "profiles": {
+        "judgment": {
+          "path": "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-research-judgment.patch.yml",
+          "sha256": "fb83ce61744343441d1502c72ddfad35c44b7a3ab047ac9dc115e1901e1cc99e"
+        },
+        "judgment_identity": {
+          "path": "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-research-judgment.identity.json",
+          "sha256": "10c2ffea694bccf2198ba6ded1c913c1e63fe24559e039ace04f766f408a6547"
+        },
+        "product": {
+          "path": "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-product.patch.yml",
+          "sha256": "39d0d9f25c2490e6ef0ca65d7b88dadc69739812a438c692fc63f894073c81a1"
+        },
+        "product_identity": {
+          "path": "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-product.identity.json",
+          "sha256": "f009d2bc2392966ba08464774a01c2db49bfe7d0c2adeb6f1107c3fd7bd401b9"
+        },
+        "release_identity": {
+          "path": "config/dsh/acp-0.2.0-rc.2.identity.json",
+          "sha256": "e8af0d1cabf1cb85db9b57da85ba246e5c9691e77f9428664e6e36a3aea7ec67"
+        }
+      },
+      "release_id": "dsh-v0.2.0-rc.2",
+      "roles": {
+        "adapter": "dsh-v0.2.0-rc.2",
+        "judgment_runner": "dsh-v0.2.0-rc.2",
+        "ordinary_runner": "dsh-v0.2.0-rc.2"
+      },
+      "schema_version": "byq-dsh-authoritative-version.v1",
+      "sdk_online_fallback": false,
+      "source_commit": "639ed015397290b3745d163aafe02ffee4aa3f84"
+    }
+  },
+  "comparison": {
+    "baked_runtime_py_sha256": "34c43fe443203df0ea31b0b208546770f98485251c6e1bcf0c163ad7fc5f2747",
+    "baked_runtime_source_matches_current_worktree": false,
+    "current_worktree_runtime_py_sha256": "972f0dd9715f5a2e6292fc9207181d2a7b9f1fb457a08605ae2ee38d4734ec2e",
+    "dockerfile_matches_build_input": true,
+    "image_is_current_runtime_source_qualified": false
+  },
+  "current_worktree_snapshot": {
+    "app_python_tree": {
+      "python_file_count": 35,
+      "sha256": "2bb763dd38f01b5ba3b8125ecc5376fb2079714d4919b8e915259f40ac504122"
+    },
+    "config/dsh/acp/authoritative.json": "f8b3a222aced5b95cfda1d5d59c2de122c2a3527021f64eff67c5c9e49deafac",
+    "services/runtime-adapter/Dockerfile.acp-0.2.0-rc.2-candidate": "82b6953f39cfd2264bc9da163840754b1451c9034efb9532f7211aaef03f4df5",
+    "services/runtime-adapter/app/compat/dsh_acp.py": "89ecbab92a9f78243cb4c44476a4a58012bed0bc23a2f978da9742e4603e1f4f",
+    "services/runtime-adapter/app/runtime.py": "972f0dd9715f5a2e6292fc9207181d2a7b9f1fb457a08605ae2ee38d4734ec2e",
+    "services/runtime-adapter/requirements.acp-candidate.lock": "53592f4ad247cff51dd7deff6f8ca1b6230257848a5b1917db2cab9e34d49f3e"
+  },
+  "image": {
+    "architecture": "amd64",
+    "config_user": "byq",
+    "created": "2026-10-09T10:03:41.949899836+08:00",
+    "image_id": "sha256:9112eb955ff4bb0465bf9b98e70d0b107a74ad36541d16f7ee4330d869db6d4f",
+    "inspect_source": "docker image inspect read-only",
+    "os": "linux",
+    "rootfs_layers": 19
+  },
+  "probe": {
+    "checks": {
+      "cli_exists": true,
+      "compatibility_family": true,
+      "official_source_stamp": true,
+      "pnpm_lock": true,
+      "product_profile_bundle": true,
+      "python_freeze": true,
+      "python_requirements_lock": true,
+      "python_sdk_absent": true,
+      "release_id": true,
+      "release_identity": true,
+      "session_root": true,
+      "uid_10002": true
+    },
+    "command": "docker run --rm --pull=never --network none --read-only --cap-drop ALL --security-opt no-new-privileges --mount readonly probe.py --entrypoint /opt/byq-venv/bin/python <image> /tmp/readonly-image-probe.py",
+    "identity": {
+      "app_compat_dsh_acp_py_sha256": "89ecbab92a9f78243cb4c44476a4a58012bed0bc23a2f978da9742e4603e1f4f",
+      "app_python_file_count": 35,
+      "app_python_tree_sha256": "b71c5741020222f4ddcd925307b5ce7bf8ec2e0747dc95db3207df453bafaf9a",
+      "app_runtime_py_sha256": "34c43fe443203df0ea31b0b208546770f98485251c6e1bcf0c163ad7fc5f2747",
+      "cli_exists": true,
+      "cli_path": "/opt/dsh-runtime/apps/cli/lib/bin.js",
+      "compatibility_family": "dsh-v0.2.0-rc.2-acp",
+      "gid": 10002,
+      "pnpm_lock_sha256": "80fe05eae33582ae26839afd05f1965f9b0e4be11034ddf9797af6085d5ba9b1",
+      "product_identity_sha256": "f009d2bc2392966ba08464774a01c2db49bfe7d0c2adeb6f1107c3fd7bd401b9",
+      "product_profile_sha256": "39d0d9f25c2490e6ef0ca65d7b88dadc69739812a438c692fc63f894073c81a1",
+      "python_executable": "/opt/byq-venv/bin/python",
+      "python_requirements_lock_sha256": "53592f4ad247cff51dd7deff6f8ca1b6230257848a5b1917db2cab9e34d49f3e",
+      "python_sdk_distributions": {},
+      "python_sdk_distributions_absent": true,
+      "release_id_from_identity": "dsh-v0.2.0-rc.2",
+      "release_identity_sha256": "e8af0d1cabf1cb85db9b57da85ba246e5c9691e77f9428664e6e36a3aea7ec67",
+      "session_root": "/var/lib/byq/dsh-sessions/dsh-v0.2.0-rc.2-acp",
+      "source_commit_stamp": "639ed015397290b3745d163aafe02ffee4aa3f84",
+      "source_commit_stamp_sha256": "cbc3e0967a38594c578aa682932dc6b341e1dd73a4315e38f8940dc1cb7cf601",
+      "uid": 10002,
+      "user": "byq"
+    },
+    "pip_freeze": {
+      "packages": [
+        "PyYAML==6.0.3",
+        "Pygments==2.21.0",
+        "annotated-types==0.8.0",
+        "anyio==4.15.1",
+        "certifi==2026.7.22",
+        "click==8.5.0",
+        "fastapi==0.116.1",
+        "h11==0.16.0",
+        "httpcore==1.0.9",
+        "httptools==0.8.0",
+        "httpx==0.28.1",
+        "idna==3.20",
+        "iniconfig==2.3.1",
+        "packaging==26.3",
+        "pip==23.0.1",
+        "pluggy==1.6.0",
+        "pydantic==2.13.5",
+        "pydantic_core==2.46.5",
+        "pytest==9.0.3",
+        "python-dotenv==1.2.4",
+        "setuptools==66.1.1",
+        "starlette==0.47.3",
+        "typing-inspection==0.4.4",
+        "typing_extensions==4.16.0",
+        "uvicorn==0.35.0",
+        "uvloop==0.23.0",
+        "watchfiles==1.3.0",
+        "websockets==17.2"
+      ],
+      "returncode": 0,
+      "stderr_present": true
+    },
+    "probe_output_path": "/tmp/byq-acp-authoritative-real-build-20261009/readonly-image-probe.json",
+    "probe_output_sha256": "8c5fd92d8266a15e0dd3127fc5dc5d699ab9ca3edc83268db391aec68dfaeee3",
+    "probe_script_sha256": "5beb3af601e6bb27c8d74b6257c3eba84df4fdaea53708b10ad7fd75f2535b94"
+  },
+  "result": {
+    "all_container_identity_checks": {
+      "cli_exists": true,
+      "compatibility_family": true,
+      "official_source_stamp": true,
+      "pnpm_lock": true,
+      "product_profile_bundle": true,
+      "python_freeze": true,
+      "python_requirements_lock": true,
+      "python_sdk_absent": true,
+      "release_id": true,
+      "release_identity": true,
+      "session_root": true,
+      "uid_10002": true
+    },
+    "bounded_artifact_identity": "PASS",
+    "limitations": [
+      "This image is frozen before the runtime-selector-retirement changes. Its baked app/app/runtime.py SHA differs from the current worktree SHA, so it is not qualification evidence for the current runtime source or the revised process-privacy default.",
+      "No Uvicorn or process runner was started; no Product/API/browser flow, DSH session lifecycle, real model, or full Release was tested.",
+      "Full Release: NOT_RUN."
+    ],
+    "regressions_introduced": "None; this was an immutable read-only inspection and made no product-source changes."
+  },
+  "schema_version": "byq-dsh-acp-adapter-readonly-image-qualification.v1",
+  "scope": "Immutable image identity and baked dependency/profile inspection only; no app startup, no service recreation, no model call."
+}

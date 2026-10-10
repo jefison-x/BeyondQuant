@@ -42,15 +42,15 @@ def test_legacy_delete_session_route_is_not_registered(monkeypatch):
 def test_release_session_keeps_exact_session_and_error_status(monkeypatch, error, status):
     calls = []
 
-    def reject_release(session_id):
-        calls.append(session_id)
+    def reject_release(session_id, *, preserve_conversation=False):
+        calls.append((session_id, preserve_conversation))
         raise error
 
     monkeypatch.setattr(main.adapter, "release_session", reject_release)
     response = TestClient(main.app).post("/internal/runtime/sessions/exact-runtime-session/release")
 
     assert response.status_code == status
-    assert calls == ["exact-runtime-session"]
+    assert calls == [("exact-runtime-session", False)]
 
 
 def test_runtime_maintenance_blocks_admission_but_keeps_release_and_events(monkeypatch, tmp_path: Path):
@@ -70,13 +70,14 @@ def test_runtime_maintenance_blocks_admission_but_keeps_release_and_events(monke
         assert str(gate) not in response.text
     released_sessions = []
     monkeypatch.setattr(main.adapter, "release_session",
-                        lambda session_id: released_sessions.append(session_id) or {
+                        lambda session_id, *, preserve_conversation=False: released_sessions.append(
+                            (session_id, preserve_conversation)) or {
                             "status": "closed", "session_id": session_id,
                         })
     response = client.post("/internal/runtime/sessions/synthetic/release")
     assert response.status_code == 200
     assert response.json() == {"status": "closed", "session_id": "synthetic"}
-    assert released_sessions == ["synthetic"]
+    assert released_sessions == [("synthetic", False)]
     assert client.get("/healthz").status_code == 200
     subscriber = queue.Queue()
     subscriber.put({"type": "run.completed", "sequence": 1})

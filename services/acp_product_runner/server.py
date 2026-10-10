@@ -66,6 +66,26 @@ _START_OPTIONAL_KEYS = frozenset({"guard_b64"})
 MAX_GUARD_BYTES = 16_384
 _GUARD_SCHEMA_NAME = "file:///opt/byq/runtime/byq-continuation-budget.js"
 _GUARD_RESERVATION = re.compile(r"continuation_[0-9a-f]{32}\Z")
+# Product-scope cleanup proof, distinct from the judgment receipt contract.
+_PRODUCT_CLEANUP_RECEIPT_SCHEMA = "byq-acp-product-runner-cleanup.v1"
+_CLEANUP_RECEIPT_DIR = "cleanup-receipts"
+
+
+def _valid_local_proxy_url(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    matched = re.fullmatch(r"http://([0-9.]+):([1-9][0-9]{0,4})", value)
+    if matched is None or int(matched[2]) > 65535:
+        return False
+    import ipaddress
+    try:
+        address = ipaddress.ip_address(matched[1])
+    except ValueError:
+        return False
+    return (isinstance(address, ipaddress.IPv4Address)
+            and any(address in network for network in (
+                ipaddress.ip_network("127.0.0.0/8"), ipaddress.ip_network("10.0.0.0/8"),
+                ipaddress.ip_network("172.16.0.0/12"), ipaddress.ip_network("192.168.0.0/16"))))
 
 
 def _strict_object(pairs):
@@ -103,20 +123,99 @@ def _validate_guard(encoded: object) -> dict:
                            parse_constant=_reject_constant)
     except (UnicodeError, ValueError, json.JSONDecodeError, RecursionError) as exc:
         raise ProductSlotError("continuation guard is invalid") from exc
-    if not isinstance(value, list) or len(value) != 4:
+    if isinstance(value, list) and len(value) == 2 and isinstance(value[0], dict) \
+            and value[0].get("id") == "llm-pi-ai":
+        # ADR-0106 ordinary Product overlay: exactly one closed Go chat route
+        # pinned to the local budget proxy plus the count-only tool guard. Other
+        # provider routes are not registered and no web tool is changed.
+        route = value[0]
+        route_config = route.get("config") if set(route) == {"id", "config"} else None
+        providers = route_config.get("providers") if isinstance(route_config, dict) else None
+        chat = providers.get("opencode-go-chat") if isinstance(providers, dict) else None
+        if (not isinstance(providers, dict) or set(providers) != {"opencode-go-chat"}
+                or not isinstance(chat, dict)
+                or set(chat) != {"api", "apiKeyEnv", "baseURL", "retryPolicy", "headers", "models"}
+                or chat.get("api") != "openai-completions"
+                or chat.get("apiKeyEnv") != "OPENCODE_API_KEY"
+                or not _valid_local_proxy_url(chat.get("baseURL"))
+                or chat.get("retryPolicy") != {"mode": "normal", "maxRetries": 0}
+                or not isinstance(chat.get("headers"), dict)
+                or set(chat["headers"]) != {"x-opencode-session"}
+                or not isinstance(chat["headers"]["x-opencode-session"], str)
+                or re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                                chat["headers"]["x-opencode-session"]) is None
+                or not isinstance(chat.get("models"), list) or len(chat["models"]) != 1
+                or chat["models"][0].get("id") != "deepseek-v4.1-flash"):
+            raise ProductSlotError("product-turn route overlay is invalid")
+        from packages.contracts.product_turn_request import PRODUCT_TURN_LIMITS
+        insert = value[1]
+        entry = (insert.get("insert") if isinstance(insert, dict) and set(insert) == {"insert"}
+                 else None)
+        guard_config = (entry[0].get("config")
+                        if isinstance(entry, list) and len(entry) == 1
+                        and isinstance(entry[0], dict)
+                        and set(entry[0]) == {"id", "name", "config"} else None)
+        profile = (guard_config.get("executionProfile")
+                   if isinstance(guard_config, dict) else None)
+        limits = (guard_config.get("requestLimits")
+                  if isinstance(guard_config, dict) else None)
+        if (not isinstance(entry, list) or len(entry) != 1
+                or entry[0].get("id") != "byq-continuation-budget"
+                or entry[0].get("name") != "file:///opt/byq/runtime/byq-continuation-budget.js"
+                or not isinstance(guard_config, dict)
+                # The Adapter sends the PRE-injection overlay: exactly the closed
+                # identity + limits, and NEVER a journalPath. The trusted Adapter
+                # injects journalPath into the on-disk patch from the
+                # workspace-bound session home; a frame-supplied path is refused
+                # (set equality), so no caller can choose where the guard writes.
+                or set(guard_config) != {"guardMode", "deadlineEpochMs", "executionProfile",
+                                         "requestLimits"}
+                or guard_config.get("guardMode") != "count-only"
+                or type(guard_config.get("deadlineEpochMs")) is not int
+                or guard_config["deadlineEpochMs"] <= 0
+                or not isinstance(profile, dict)
+                or set(profile) != {"profile_id", "profile_version", "profile_sha256"}
+                or profile.get("profile_id") != "product-turn.v1"
+                or profile.get("profile_version") != 1
+                or not isinstance(profile.get("profile_sha256"), str)
+                or re.fullmatch(r"[a-f0-9]{64}", profile["profile_sha256"]) is None
+                or not isinstance(limits, dict) or limits != PRODUCT_TURN_LIMITS):
+            raise ProductSlotError("product-turn tool guard is invalid")
+        return value
+    if not isinstance(value, list) or len(value) != 5:
         raise ProductSlotError("continuation guard is invalid")
-    disable_a, disable_b, cap, insert = value
+    disable_a, disable_b, disable_ds, route, insert = value
     if (not isinstance(disable_a, dict) or set(disable_a) != {"id", "disabled"}
             or disable_a["id"] != "web-search-deepseek" or disable_a["disabled"] is not True):
         raise ProductSlotError("continuation guard is invalid")
     if (not isinstance(disable_b, dict) or set(disable_b) != {"id", "disabled"}
             or disable_b["id"] != "tool-web" or disable_b["disabled"] is not True):
         raise ProductSlotError("continuation guard is invalid")
-    if (not isinstance(cap, dict) or set(cap) != {"id", "config"}
-            or cap["id"] != "llm-deepseek" or not isinstance(cap["config"], dict)
-            or set(cap["config"]) != {"maxTokens"}
-            or type(cap["config"]["maxTokens"]) is not int
-            or not 1 <= cap["config"]["maxTokens"] <= 8192):
+    if (not isinstance(disable_ds, dict) or set(disable_ds) != {"id", "config"}
+            or disable_ds["id"] != "llm-deepseek" or not isinstance(disable_ds["config"], dict)
+            or set(disable_ds["config"]) != {"maxTokens"}
+            or type(disable_ds["config"]["maxTokens"]) is not int
+            or not 1 <= disable_ds["config"]["maxTokens"] <= 8192):
+        raise ProductSlotError("continuation guard is invalid")
+    providers = (route.get("config", {}).get("providers")
+                 if isinstance(route, dict) and set(route) == {"id", "config"} else None)
+    chat = providers.get("opencode-go-chat") if isinstance(providers, dict) else None
+    if (route.get("id") != "llm-pi-ai" or not isinstance(providers, dict)
+            or set(providers) != {"opencode-go-chat"} or not isinstance(chat, dict)
+            or set(chat) != {"api", "apiKeyEnv", "baseURL", "retryPolicy", "headers", "models"}
+            or chat.get("api") != "openai-completions"
+            or chat.get("apiKeyEnv") != "OPENCODE_API_KEY"
+            or not _valid_local_proxy_url(chat.get("baseURL"))
+            or chat.get("retryPolicy") != {"mode": "normal", "maxRetries": 0}
+            or not isinstance(chat.get("headers"), dict)
+            or set(chat["headers"]) != {"x-opencode-session"}
+            or not isinstance(chat["headers"]["x-opencode-session"], str)
+            or re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                            chat["headers"]["x-opencode-session"]) is None
+            or not isinstance(chat.get("models"), list) or len(chat["models"]) != 1
+            or chat["models"][0].get("id") != "deepseek-v4.1-flash"
+            or type(chat["models"][0].get("maxTokens")) is not int
+            or not 1 <= chat["models"][0]["maxTokens"] <= 8192):
         raise ProductSlotError("continuation guard is invalid")
     if (not isinstance(insert, dict) or set(insert) != {"insert"}
             or not isinstance(insert["insert"], list) or len(insert["insert"]) != 1):
@@ -188,6 +287,65 @@ def _decode_secret(value: str) -> bytes:
     if len(secret) < 32:
         raise RuntimeError("Product runner control secret is too short")
     return secret
+
+
+def _persist_product_cleanup_receipt(control_dir: Path, scope: dict[str, Any],
+                                     digest: str, instance_id: str,
+                                     exit_fields: dict[str, Any], secret: bytes,
+                                     control_gid: int) -> None:
+    """Durably record the signed proven-cleanup receipt for a Product scope.
+
+    Binds the complete Product scope (workspace/owner/session/trace/root/boot/
+    generation/cwd), the exact scope digest, the runner instance and the real
+    cleanup result. Written atomically (temp + fsync + rename + dir fsync) and
+    signed with the runner reply MAC. Any failure must leave cleanup unknown.
+    """
+    checked = validate_product_scope(scope)
+    if product_scope_digest(checked) != digest:
+        raise ValueError("Product cleanup scope digest is invalid")
+    payload = {
+        "schema_version": _PRODUCT_CLEANUP_RECEIPT_SCHEMA,
+        "scope_digest": digest,
+        "workspace_id": checked["workspace_id"],
+        "owner_principal": checked["owner_principal"],
+        "session_id": checked["session_id"],
+        "trace_id": checked["trace_id"],
+        "root_run_id": checked["root_run_id"],
+        "runtime_boot_id": checked["runtime_boot_id"],
+        "generation_id": checked["generation_id"],
+        "cwd_leaf": checked["cwd_leaf"],
+        "runner_instance_id": instance_id,
+        "code": exit_fields["code"],
+        "signal": exit_fields["signal"],
+        "reason": exit_fields["reason"],
+        "cleanup": "proven",
+    }
+    payload["mac"] = _reply_mac(payload, secret)
+    directory = Path(control_dir) / _CLEANUP_RECEIPT_DIR
+    directory.mkdir(mode=0o750, parents=True, exist_ok=True)
+    try:
+        os.chown(directory, 0, control_gid)
+    except OSError:
+        pass
+    path = directory / f"{digest}.json"
+    temporary = directory / f".{digest}.{os.urandom(8).hex()}.tmp"
+    fd = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY
+                 | getattr(os, "O_NOFOLLOW", 0), 0o640)
+    try:
+        os.write(fd, canonical_product_json(payload))
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    try:
+        os.chown(temporary, 0, control_gid)
+    except OSError:
+        pass
+    os.rename(temporary, path)
+    dir_fd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
 
 
 def _canonical_directory(path: Path) -> Path:
@@ -580,6 +738,14 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
         except OSError:
             pass
 
+    def _persist_cleanup_proof(self, scope: dict[str, Any], digest: str,
+                               exit_payload: dict[str, Any]) -> None:
+        """Persist the Product-scope cleanup proof (override of the shared hook)."""
+        _persist_product_cleanup_receipt(
+            self.server.socket_path.parent, scope, digest,
+            self.server.instance_id, exit_payload, self.server.secret,
+            self.server.control_gid)
+
     def _prepare_cwd(self, cwd: Path) -> None:
         if cwd.parent != self.server.session_root or cwd.name in {"", ".", ".."}:
             raise OSError("Product ACP cwd is outside the workspace root")
@@ -604,11 +770,15 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
             return result
 
         def tracked_send(sock: socket.socket, frame_type: int, value: dict[str, Any]):
-            result = original_send(sock, frame_type, value)
             if frame_type == EXIT:
                 state["exit_sent"] = True
                 state["exit_cleanup"] = value.get("cleanup")
-            return result
+                if value.get("cleanup") != "proven":
+                    # Retire the only workspace slot BEFORE the client observes an
+                    # unproven EXIT, so no new root can be admitted for an
+                    # unconfirmed cleanup (deterministic, not a post-relay race).
+                    self.server.retire_requested = True
+            return original_send(sock, frame_type, value)
 
         _helpers._terminate_and_reap = tracked_cleanup
         _helpers._send_json = tracked_send

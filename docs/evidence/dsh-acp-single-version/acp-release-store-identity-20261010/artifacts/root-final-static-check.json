@@ -1,0 +1,13 @@
+{
+  "git_diff_check_exit": 0,
+  "source_hashes": {
+    "scripts/release/images.py": "789bdc48c10b3f9d0ad9d8209335c26af631293e7ff57aba2e3262ff4a02f559",
+    "tests/architecture/test_release_pipeline.py": "bf5db954f7602454ebf35d8738654c8a8927f9446ef629d4cbc8ad852ae2c507"
+  },
+  "final_tester_receipt_sha256": "9b33b844b4295571be22e1b12686f054dd2f39b9ce46e8c1a78f8c40fcd5a46f",
+  "doc_hashes": {
+    "docs/evidence/dsh-acp-single-version/acp-release-store-identity-20261010/RESULT.md": "87646d0285e95620b52cb6be1cd87e938452f2ed78d959d4cf80da2a9eca3e8e",
+    "docs/operations/image-release.md": "e8c4b5f6b2df45ac83e5bcdf4c24538da504ce1a0af8d1f1b2b011a7b14af5eb",
+    "docs/evidence/dsh-acp-upgrade/CURRENT-QUALIFICATION.md": "512fd5831a2082bc9bebe9c9b51210a35bf8f2d7bc3ce839e8fa32558aad3c96"
+  }
+}

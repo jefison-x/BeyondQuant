@@ -1,0 +1,25 @@
+{
+  "id": "b7395956180505b4d574e4cafbf6f08c90a06522772c55021da51b7f5ea41a30",
+  "name": "/wizardly_leakey",
+  "image": "sha256:75efbf28af6da160b6cdb72e65bec30fc0970e5207010ea5c7afe316908a109d",
+  "state": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": true,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 137,
+    "Error": "",
+    "StartedAt": "2026-10-09T14:41:44.781502365Z",
+    "FinishedAt": "2026-10-09T14:46:06.830876969Z"
+  },
+  "mounts": [],
+  "labels": {},
+  "cmd": [
+    "/bin/sh",
+    "-c",
+    "corepack pnpm install --frozen-lockfile     && corepack pnpm run build:native-system     && corepack pnpm run build:lib:host"
+  ]
+}

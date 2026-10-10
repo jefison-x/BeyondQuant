@@ -9,27 +9,34 @@ from scripts.dsh import build_revision as builds
 
 
 class BuildRevisionTests(unittest.TestCase):
-    def test_current_revision_binds_history_without_replacing_it(self):
-        for release in sorted(builds.RELEASES):
-            value = builds.render(builds.selected_build_id(release))
-            self.assertEqual(builds.check(value["build_id"]), value)
-            self.assertEqual(builds.validate(value), value)
-            descriptor = builds.ROOT / "config/dsh/releases" / f"{release}.json"
-            historical = json.loads(descriptor.read_text())
-            self.assertEqual(value["release_descriptor_hash"], builds.digest(descriptor))
-            self.assertEqual(value["dockerfile"], builds.identity(value["build_id"])[1])
-            self.assertIn("services/runtime-adapter/Dockerfile.post-u8-candidate", historical["build_inputs"])
-            self.assertNotIn(value["dockerfile"], historical["build_inputs"])
-            self.assertIn("packages/operations/admission.py", value["inputs"])
-            self.assertIn("services/runtime-adapter/app/main.py", value["inputs"])
-            self.assertIn("services/gateway/app/main.py", value["inputs"])
-            for path in ("workers/data/worker.py", "workers/ml/worker.py",
-                         "services/signal-sandbox/runner.py", "infra/postgres/init/10-byq-databases.sql",
-                         "scripts/ci/cleanup-resources.sh", "tests/test_dsh_build_revision.py",
-                         "services/runtime-adapter/tests/test_dsh015_foreground_child_process.py",
-                         "apps/frontend/vitest.config.ts", ".github/workflows/ci-selfhosted.yml",
-                         "docs/contracts/product-api.openapi.yaml"):
-                self.assertIn(path, value["inputs"])
+    def test_sdk_322_is_a_frozen_identity_not_current_sdk_qualification(self):
+        build_id = builds.selected_build_id("dsh-0.1.5rc1")
+        self.assertEqual(build_id, "dsh-0.1.5rc1-post-u8.322")
+        stored = builds.check(build_id)
+        rendered = builds.render(build_id)
+        self.assertEqual(builds.validate(rendered), rendered)
+        self.assertNotEqual(rendered, stored)
+        self.assertEqual(builds.digest(builds.BUILDS / f"{build_id}.json"),
+                         "sha256:ee97823eb01251c48f99a0b7d2a1d5b50debba6f1f9533e39c47862eedce90cc")
+        self.assertEqual(builds.digest(builds.ROOT / builds.identity(build_id)[1]),
+                         "sha256:dc87eeb772d37fafd29fd4c38d81475cffe1549bd767419f766307cc9d36bfa5")
+        descriptor = builds.ROOT / "config/dsh/releases/dsh-0.1.5rc1.json"
+        self.assertEqual(stored["release_descriptor_hash"], builds.digest(descriptor))
+        self.assertEqual(rendered["release_descriptor_hash"], builds.digest(descriptor))
+        self.assertEqual(stored["dockerfile"], "services/runtime-adapter/Dockerfile.post-u8-322-candidate")
+        self.assertEqual(rendered["dockerfile"], builds.identity(build_id)[1])
+        historical = json.loads(descriptor.read_text())
+        self.assertIn("services/runtime-adapter/Dockerfile.post-u8-candidate", historical["build_inputs"])
+        self.assertNotIn(rendered["dockerfile"], historical["build_inputs"])
+        for path in ("packages/operations/admission.py", "services/runtime-adapter/app/main.py",
+                     "services/gateway/app/main.py", "workers/data/worker.py",
+                     "workers/ml/worker.py", "services/signal-sandbox/runner.py",
+                     "infra/postgres/init/10-byq-databases.sql", "scripts/ci/cleanup-resources.sh",
+                     "tests/test_dsh_build_revision.py",
+                     "services/runtime-adapter/tests/test_dsh015_foreground_child_process.py",
+                     "apps/frontend/vitest.config.ts", ".github/workflows/ci-selfhosted.yml",
+                     "docs/contracts/product-api.openapi.yaml"):
+            self.assertIn(path, rendered["inputs"])
 
     def test_previous_and_current_post_u8_builds_keep_distinct_dockerfiles(self):
         frozen = "dsh-0.1.5rc1-post-u8.215"
@@ -58,6 +65,7 @@ class BuildRevisionTests(unittest.TestCase):
         self.assertEqual(current, "dsh-0.1.5rc1-post-u8.322")
         self.assertEqual(builds.identity(current)[1],
                          "services/runtime-adapter/Dockerfile.post-u8-322-candidate")
+        self.assertEqual(builds.check(current)["build_id"], current)
         self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.303")["build_id"],
                          "dsh-0.1.5rc1-post-u8.303")
         self.assertEqual(builds.check("dsh-0.1.5rc1-post-u8.302")["build_id"],

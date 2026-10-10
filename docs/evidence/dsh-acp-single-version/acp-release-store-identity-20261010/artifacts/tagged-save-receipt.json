@@ -1,0 +1,11 @@
+{
+  "schema": "byq-local-store-tag-save-probe.v1",
+  "tag": "byq-acp-unified:cur-2d581097-20261010-retryfix",
+  "expected_image_id": "sha256:15cdf5f97009e21af50c3cfd87d2f8d42af91e8ccaa2a82d57966bc4c2fbc6f5",
+  "exit_code": 0,
+  "elapsed_seconds": 10.78,
+  "archive_size_bytes": 806270464,
+  "registry_calls": 0,
+  "container_starts": 0,
+  "identity_unchanged": true
+}

@@ -128,7 +128,7 @@ def _identity_environment(
         "ACP_TEST_ENV_CAPTURE": str(capture.with_name(capture.name + ".env")),
         "BYQ_MCP_URL": "http://mcp.test/mcp/v1",
         "BYQ_MCP_ACP_DISCOVERY_TOKEN": "synthetic-discovery-only-token",
-        "BYQ_MCP_ACP_SIGNING_KEY": "synthetic-signing-key-0123456789abcdef",
+        "BYQ_MCP_ACP_SIGNING_KEY": "synthetic-signing-key-0123456789abcdef",  # gitleaks:allow — fixed synthetic test key
         "BYQ_MCP_TOKEN": "test-only-token",
         "BYQ_MCP_BACKEND_PROOF_TOKEN": "test-only-backend-proof-token",
         "BYQ_RUNTIME_BOOT_ID": boot_id,
@@ -173,7 +173,7 @@ def _judgment_identity_environment() -> dict[str, str]:
         "BYQ_MCP_ACP_IDENTITY_MODE": "research-judgment-root-v1",
         "BYQ_MCP_ACP_JUDGMENT_TASK_ID": "task_" + "a" * 32,
         "BYQ_MCP_ACP_JUDGMENT_CALL_IDENTITY": "byq-judgment-" + "b" * 32,
-        "BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY": "synthetic-judgment-signing-key-0123456789",
+        "BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY": "synthetic-judgment-signing-key-0123456789",  # gitleaks:allow — fixed synthetic test key
         "BYQ_RUNTIME_BOOT_ID": "b" * 32,
         "BYQ_OWNER_PRINCIPAL": "owner-1",
         "BYQ_WORKSPACE_ID": "workspace-1",
@@ -193,8 +193,8 @@ def _judgment_private_patch(tmp_path: Path, provider: str, model: str):
     directory = tmp_path / "private"
     directory.mkdir(mode=0o700, exist_ok=True)
     base = "http://127.0.0.1:43210" + selected_route(provider).local_base_path
-    patch = write_private_provider_overlay(directory, route_name=provider,
-                                           model=model, proxy_base_url=base)
+    patch = write_private_provider_overlay(
+        directory, route_name=provider, model=model, proxy_base_url=base)
     return patch, base
 
 

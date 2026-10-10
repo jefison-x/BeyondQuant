@@ -3,11 +3,13 @@ from __future__ import annotations
 import base64
 import json
 import hashlib
+import hmac
 import fcntl
 import os
 import queue
 import re
 import secrets
+import stat
 import shutil
 import tempfile
 import threading
@@ -16,7 +18,6 @@ import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from importlib.metadata import PackageNotFoundError, version as distribution_version
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -38,13 +39,17 @@ from packages.contracts import session_failure_containment as containment_contra
 from packages.contracts.continuation_request import (
     ALLOWED_MODEL as CONTINUATION_MODEL,
     ALLOWED_PROVIDER as CONTINUATION_PROVIDER,
+    UPSTREAM_BASE_URL as CONTINUATION_UPSTREAM,
     exceeded_request_limits,
 )
 
 from .contracts import WorkflowTraceEvent, make_workflow_trace_event
 from .child_lease import ChildLease
 from .normalization import close_public_activities
-from .compat import RuntimeCompatibility, RuntimeObservation, compatibility_for_release
+from .compat import (
+    ACP_COMPATIBILITY_FAMILY, RuntimeCompatibility, RuntimeObservation,
+    compatibility_for_release,
+)
 from .identifiers import contained_session_path, validate_identifier
 from .continuation_budget import (
     CONTINUATION_MAX_OUTPUT_TOKENS,
@@ -52,8 +57,11 @@ from .continuation_budget import (
     create_guard_patch,
     create_acp_guard_patch,
     create_acp_guard_overlay,
+    create_acp_product_budget_overlay,
     read_request_guard,
 )
+from packages.contracts.product_turn_request import product_turn_limits, product_turn_profile
+from .continuation_budget import PRODUCT_TURN_PROVIDER, PRODUCT_TURN_MODEL
 from .research_request_gate import RequestGateProxy, build_continuation_request_gate
 from .normalization import NormalizationState, normalize_runtime_observation
 
@@ -103,12 +111,43 @@ _OPENCODE_PROVIDERS = frozenset({
 # used for background continuation. The Backend resolver has already enforced an
 # active credential and a discovered/supported model, so the adapter only has to
 # reject unknown routes here.
+def _continuation_proxy_advertise_host() -> str:
+    """Address the DSH child (in the runner container) must use to reach the proxy.
+
+    The ACP product slot runs the DSH child in a separate container, so the
+    Adapter's loopback address is not reachable. Prefer an explicit deployment
+    address; otherwise advertise the Adapter's own routable IPv4.
+    """
+    import socket as _socket
+    configured = os.environ.get("BYQ_CONTINUATION_PROXY_ADVERTISE_HOST")
+    candidates: list[str] = []
+    if isinstance(configured, str) and configured.strip():
+        candidates.append(configured.strip())
+    candidates.append(_socket.gethostname())
+    for candidate in candidates:
+        try:
+            resolved = _socket.gethostbyname(candidate)
+        except OSError:
+            continue
+        if resolved:
+            return resolved
+    return "127.0.0.1"
+
+
 def _continuation_route_qualified(model_resolution: dict, provider: str, model: str) -> bool:
     """ADR-0090 grants one exact provider/model pair for this request profile."""
 
     resolved_provider = str(model_resolution.get("provider") or provider)
     resolved_model = model_resolution.get("model", model)
     return resolved_provider == CONTINUATION_PROVIDER and resolved_model == CONTINUATION_MODEL
+
+
+def _root_journal_path(session_root: Path, stem: str, root_run_id: str) -> Path:
+    """Bind a DSH guard/provider journal to exactly one fresh BYQ root."""
+
+    if re.fullmatch(r"[0-9a-f]{32}", root_run_id) is None:
+        raise SessionConflict("ACP root journal identity is invalid")
+    return session_root / f"{stem}-{root_run_id}.jsonl"
 
 
 class SessionStatus:
@@ -223,6 +262,10 @@ class RuntimeSession:
     # Advances only after Backend returns the exact receipt for each row.
     domain_call_drained_sequence: int = 0
     release_finalized: bool = False
+    # Public conversation termination is distinct from releasing this
+    # Adapter-owned process. It is persisted only by the explicit release
+    # intent; ordinary idle cleanup may preserve the Product conversation.
+    conversation_ended: bool = False
     # Continuation settlement facts outlive an execution generation, but only
     # for this live Adapter session; missing sessions reconcile as unknown.
     budget_receipts: dict[str, dict] = field(default_factory=dict, repr=False)
@@ -387,7 +430,7 @@ class RuntimeSession:
 
 
 class RuntimeAdapter:
-    """Own one official DSH SDK subprocess per active BYQ session.
+    """Own one official DSH ACP subprocess per active BYQ session.
 
     An owned process makes hard cancellation and failure isolation explicit: hard
     cancel closes the owned process, while soft cancel marks only the current
@@ -395,10 +438,15 @@ class RuntimeAdapter:
     """
 
     def __init__(self, compatibility: RuntimeCompatibility | None = None) -> None:
-        self._compatibility = compatibility or compatibility_for_release(
-            os.environ.get("BYQ_DSH_COMPATIBILITY_RELEASE", "dsh-0.1.2rc1")
-        )
-        self._acp = self._compatibility.family == "dsh-v0.2.0-rc.2-acp"
+        if compatibility is None:
+            release = os.environ.get(
+                "BYQ_DSH_COMPATIBILITY_RELEASE", ACP_COMPATIBILITY_FAMILY)
+            self._compatibility = compatibility_for_release(release)
+        else:
+            # Explicit injection remains available to isolated synthetic tests;
+            # production startup never selects a compatibility by test injection.
+            self._compatibility = compatibility
+        self._acp = self._compatibility.family == ACP_COMPATIBILITY_FAMILY
         self._acp_product_slots = (
             self._acp and getattr(self._compatibility, "product_slots", None) is not None)
         self._sessions: dict[str, RuntimeSession] = {}
@@ -444,7 +492,12 @@ class RuntimeAdapter:
         ).expanduser().resolve()
         self._provider = os.environ.get("BYQ_DSH_PROVIDER", "deepseek-official")
         self._model = os.environ.get("BYQ_DSH_MODEL", "deepseek-v4-flash")
-        self._model_api_key = os.environ.get("DEEPSEEK_API_KEY")
+        # The fallback credential follows the selected runtime provider so an
+        # OpenCode route never receives the DeepSeek key (and vice versa).
+        if self._provider in _OPENCODE_PROVIDERS:
+            self._model_api_key = os.environ.get("OPENCODE_API_KEY")
+        else:
+            self._model_api_key = os.environ.get("DEEPSEEK_API_KEY")
         self._backend_url = os.environ.get("BYQ_BACKEND_URL", "http://backend:8000")
         # Process identity is deliberately ephemeral: all Adapter instances in
         # this OS process share it, while a new process gets a fresh 128-bit token.
@@ -483,8 +536,8 @@ class RuntimeAdapter:
         composition_identity = self._safe_composition_identity()
         release_identity = self._safe_release_identity()
         adapter_status = (
-            "ready" if release_identity["status"] == "matched"
-            and (not self._acp or composition_identity["composition_hash"] != "unavailable")
+            "ready" if self._acp and release_identity["status"] == "matched"
+            and composition_identity["composition_hash"] != "unavailable"
             else "release-identity-mismatch"
         )
         return {
@@ -607,7 +660,7 @@ class RuntimeAdapter:
             "schema_version": "runtime-operations.v1",
             "runtime": {
                 "status": (
-                    "ready" if release_identity["status"] == "matched"
+                    "ready" if self._acp and release_identity["status"] == "matched"
                     else "release-identity-mismatch"
                 ),
                 "sdk": f"deepseek-harness-sdk=={release_identity['installed_sdk']}",
@@ -677,53 +730,31 @@ class RuntimeAdapter:
         return {"profile": profile, "composition_hash": digest, "enabled_plugin_ids": plugin_ids}
 
     def _safe_release_identity(self) -> dict[str, str]:
-        """Match deployment-controlled identity to installed distribution metadata."""
+        """Match the installed ACP source and lock to its deployment identity."""
 
-        if self._acp:
-            fallback = {"release_id": "dsh-v0.2.0-rc.2", "installed_sdk": "not-applicable",
-                        "installed_runtime_bin": "not-applicable", "status": "unavailable"}
-            try:
-                value = json.loads(self._release_identity.read_text(encoding="utf-8"))
-                lock_hash = hashlib.sha256((self._runtime_root / "pnpm-lock.yaml").read_bytes()).hexdigest()
-            except (OSError, ValueError):
-                return fallback
-            if (not isinstance(value, dict)
-                    or value.get("schema_version") != "dsh-acp-deployment-identity.v1"
-                    or value.get("source_commit") != "639ed015397290b3745d163aafe02ffee4aa3f84"
-                    or value.get("pnpm_lock_sha256") != lock_hash
-                    or not (self._runtime_root / "apps/cli/lib/bin.js").is_file()):
-                return fallback
-            return {**fallback, "status": "matched"}
-
-        try:
-            installed_sdk = distribution_version("deepseek-harness-sdk")
-            installed_runtime = distribution_version("deepseek-harness-runtime-bin")
-        except PackageNotFoundError:
-            installed_sdk = installed_runtime = "unknown"
         fallback = {
-            "release_id": "unknown",
-            "installed_sdk": installed_sdk,
-            "installed_runtime_bin": installed_runtime,
+            "release_id": "dsh-v0.2.0-rc.2" if self._acp else "unknown",
+            "installed_sdk": "not-applicable",
+            "installed_runtime_bin": "not-applicable",
             "status": "unavailable",
         }
+        if not self._acp:
+            return fallback
         try:
             value = json.loads(self._release_identity.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+            lock_hash = hashlib.sha256(
+                (self._runtime_root / "pnpm-lock.yaml").read_bytes()
+            ).hexdigest()
+        except (OSError, ValueError):
             return fallback
-        if not isinstance(value, dict) or value.get("schema_version") != "dsh-deployment-identity.v1":
+        if (not isinstance(value, dict)
+                or value.get("schema_version") != "dsh-acp-deployment-identity.v1"
+                or value.get("release_id") != "dsh-v0.2.0-rc.2"
+                or value.get("source_commit") != "639ed015397290b3745d163aafe02ffee4aa3f84"
+                or value.get("pnpm_lock_sha256") != lock_hash
+                or not (self._runtime_root / "apps/cli/lib/bin.js").is_file()):
             return fallback
-        release_id = value.get("default_release")
-        expected = value.get("python")
-        if not isinstance(release_id, str) or re.fullmatch(r"dsh-\d+\.\d+\.\d+rc\d+", release_id) is None:
-            return fallback
-        if not isinstance(expected, dict):
-            return fallback
-        matches = expected.get("sdk") == installed_sdk and expected.get("runtime_bin") == installed_runtime
-        return {
-            **fallback,
-            "release_id": release_id,
-            "status": "matched" if matches else "mismatch",
-        }
+        return {**fallback, "status": "matched"}
 
     @staticmethod
     def _terminal_fenced(record: RuntimeSession, generation_id: str, executor_epoch: int) -> bool:
@@ -889,6 +920,7 @@ class RuntimeAdapter:
                         session_id=record.session_id,
                         trace_id=record.trace_id,
                     )
+        first_lazy_prestart_binding = False
         with record.lock:
             identity_content = content if continuation_budget is None else json.dumps(
                 {'content': content, 'reservation': continuation_budget}, sort_keys=True, separators=(',', ':'))
@@ -924,24 +956,158 @@ class RuntimeAdapter:
                     f"session {session_id} cannot accept a prompt in state {record.status}"
                 )
             if self._acp_product_slots and not record.process_used and budget is None:
-                # A continuation (budget is not None) starts its own ACP root
-                # below; starting the slot here would hold the workspace lease and
-                # make the continuation's own availability check report busy.
-                from .acp_product_slot_client import ProductSlotBusy
-                self._require_group_admission(record, record.process_root_id)
+                # ADR-0106: the first ordinary submit starts the ACP product slot.
+                # The create_session harness carries no provider budget. This ACP
+                # candidate qualifies ONLY the OpenCode Go / `deepseek-v4.1-flash`
+                # route; any other resolved model is rejected BEFORE any proxy or
+                # process start (no unbudgeted egress, no silent switch). Any
+                # failure (including group admission/start) closes the proxy.
+                first_provider = str(record.model_resolution.get('provider') or self._provider)
+                first_model = str(record.model_resolution.get('model') or self._model)
+                first_proxy = None
+                no_start_proven = False
+                start_invoked = False
+                prestart_binding_attempted = False
+                prestart_binding_sha256 = None
                 try:
-                    self._compatibility.start(record.harness)
-                    record.runtime_session_id = self._compatibility.create_session(
-                        record.harness, cwd=record.recovery_cwd)
-                except ProductSlotBusy:
-                    raise SessionConflict("workspace Agent execution slot is busy") from None
-                except Exception:
-                    if (getattr(record.harness, "process", None) is None
-                            and getattr(record.harness, "slot_scope", None) is None):
-                        raise SessionConflict("workspace Agent execution is unavailable; retry later") from None
+                    if (first_provider != PRODUCT_TURN_PROVIDER
+                            or first_model != PRODUCT_TURN_MODEL):
+                        raise ModelCredentialUnavailable(
+                            "ordinary ACP Product model is not qualified (NOT_QUALIFIED)")
+                    first_gate = build_continuation_request_gate(
+                        request_id='product-turn-' + record.runtime_generation,
+                        execution_profile=product_turn_profile(),
+                        limits=product_turn_limits(),
+                        journal=_root_journal_path(
+                            Path(record.recovery_cwd), 'product-turn-provider-request',
+                            record.process_root_id),
+                    )
+                    first_proxy = RequestGateProxy(
+                        first_gate, CONTINUATION_UPSTREAM, bind_host="0.0.0.0",
+                        advertise_host=_continuation_proxy_advertise_host())
+                    first_proxy.__enter__()
+                    first_overlay = base64.b64encode(create_acp_product_budget_overlay(
+                        proxy_base_url=first_proxy.base_url,
+                        provider_session_id=str(uuid.uuid5(uuid.NAMESPACE_URL,
+                            "beyondquant:provider-session:" + record.session_id)),
+                        provider=first_provider, model=first_model)).decode('ascii')
+                    record.harness = self._build_harness(
+                        record.session_id, Path(record.recovery_cwd), trace_id=record.trace_id,
+                        owner_principal=record.owner_principal, workspace_id=record.workspace_id,
+                        model_resolution=record.model_resolution,
+                        runtime_generation=record.runtime_generation,
+                        root_run_id=record.process_root_id,
+                        continuation_proxy_url=first_proxy.base_url,
+                        continuation_deadline_epoch_ms=int(
+                            time.time() * 1000 + first_gate.remaining_seconds() * 1000),
+                        product_turn_overlay_b64=first_overlay)
+                    record.continuation_request_gate = first_gate
+                    record.continuation_request_proxy = first_proxy
+                    # Bind the first lazy Product root to the current Backend
+                    # authority before START. Unknown start outcomes must be
+                    # recoverable from this exact durable root binding.
+                    no_start_proven = True
+                    record.authority_epoch = self.require_current_backend_authority()
                     record.cleanup_harness = record.harness
                     record.cleanup_unconfirmed = True
-                    raise SessionConflict("workspace Agent execution requires reconciliation") from None
+                    prestart_binding_attempted = True
+                    first_lazy_prestart_binding = True
+                    prestart_binding_sha256 = self._persist_acp_binding(record)
+                    # A continuation (budget is not None) starts its own ACP root
+                    # below; starting the slot here would hold the workspace lease
+                    # and make the continuation's availability check report busy.
+                    from .acp_product_slot_client import ProductSlotBusy
+                    try:
+                        self._require_group_admission(record, record.process_root_id)
+                    except BaseException:
+                        # Admission rejection is a positive proof that start() was
+                        # never invoked for this prepared root.
+                        no_start_proven = True
+                        raise
+                    no_start_proven = False
+                    start_invoked = True
+                    try:
+                        self._compatibility.start(record.harness)
+                    except ProductSlotBusy:
+                        if (getattr(record.harness, "process", None) is None
+                                and getattr(record.harness, "slot_scope", None) is None):
+                            no_start_proven = True
+                            raise SessionConflict(
+                                "workspace Agent execution slot is busy") from None
+                        record.cleanup_harness = record.harness
+                        record.cleanup_unconfirmed = True
+                        raise SessionConflict(
+                            "workspace Agent execution requires reconciliation") from None
+                    except Exception:
+                        if (getattr(record.harness, "process", None) is None
+                                and getattr(record.harness, "slot_scope", None) is None):
+                            no_start_proven = True
+                            raise SessionConflict(
+                                "workspace Agent execution is unavailable; retry later") from None
+                        record.cleanup_harness = record.harness
+                        record.cleanup_unconfirmed = True
+                        raise SessionConflict(
+                            "workspace Agent execution requires reconciliation") from None
+                    # create_session can execute ACP requests; every failure from
+                    # this point is ambiguous and must retain the prepared guard.
+                    record.runtime_session_id = self._compatibility.create_session(
+                        record.harness, cwd=record.recovery_cwd)
+                except BaseException:
+                    close_failed = False
+                    if first_proxy is not None:
+                        try:
+                            first_proxy.close()
+                        except BaseException:
+                            close_failed = True
+                    record.continuation_request_gate = None
+                    record.continuation_request_proxy = None
+                    if close_failed:
+                        no_start_proven = False
+                    if no_start_proven and not close_failed:
+                        try:
+                            from .compat.dsh_acp import retire_prepared_guard_patch
+                            prepared_digest = getattr(
+                                record.harness, "prepared_guard_sha256", None)
+                            if not isinstance(prepared_digest, str):
+                                raise SessionConflict(
+                                    "ACP prepared guard identity is unavailable")
+                            retire_prepared_guard_patch(
+                                Path(record.harness.session_root),
+                                expected_root_id=record.process_root_id,
+                                expected_sha256=prepared_digest,
+                            )
+                        except BaseException:
+                            record.cleanup_harness = record.harness
+                            record.cleanup_unconfirmed = True
+                            raise SessionConflict(
+                                "workspace Agent execution requires reconciliation") from None
+                        if prestart_binding_attempted:
+                            # A failed write has an unknown durable outcome. Do
+                            # not infer safety from a missing file or replace a
+                            # possibly foreign marker; keep this record fenced.
+                            if not isinstance(prestart_binding_sha256, str):
+                                record.cleanup_harness = record.harness
+                                record.cleanup_unconfirmed = True
+                                raise SessionConflict(
+                                    "workspace Agent execution requires reconciliation") from None
+                            try:
+                                self._remove_prestart_acp_binding(
+                                    record, expected_sha256=prestart_binding_sha256)
+                            except BaseException:
+                                record.cleanup_harness = record.harness
+                                record.cleanup_unconfirmed = True
+                                raise SessionConflict(
+                                    "workspace Agent execution requires reconciliation") from None
+                            record.cleanup_harness = None
+                            record.cleanup_unconfirmed = False
+                    elif start_invoked or close_failed:
+                        # START, create_session, or proxy-close uncertainty may
+                        # require reconciliation before another attempt.
+                        record.cleanup_harness = record.harness
+                        record.cleanup_unconfirmed = True
+                        raise SessionConflict(
+                            "workspace Agent execution requires reconciliation") from None
+                    raise
             # A Gateway-owned projection can refresh a new root without a
             # separate resume race. Omission retains the prepared create/resume
             # context; an explicit empty list intentionally clears it.
@@ -950,7 +1116,7 @@ class RuntimeAdapter:
                 context = normalize_conversation_context(conversation_context)
             reuse_native = bool(
                 self._acp and self._root_scoped and record.process_used
-                and record.reuse_native_session_ready and budget is None
+                and record.reuse_native_session_ready
             )
             # A resumed ACP root already owns the complete native history.
             # Reinjecting Gateway's public projection would duplicate turns.
@@ -977,6 +1143,7 @@ class RuntimeAdapter:
                     while len(record.budget_receipts) > 64:
                         del record.budget_receipts[next(iter(record.budget_receipts))]
                 previous_native_session = record.runtime_session_id
+                previous_process_root_id = record.process_root_id
                 if self._acp_product_slots:
                     from .acp_product_slot_client import ProductSlotBusy
                     try:
@@ -993,21 +1160,74 @@ class RuntimeAdapter:
                                 else contained_session_path(storage_root, private_session))
                 if not session_root.resolve().is_relative_to(self._session_root):
                     raise SessionConflict("reused ACP working directory is not contained")
+                if self._acp_product_slots and reuse_native:
+                    # The fixed runner patch is invocation configuration, not
+                    # persistent DSH state. Rotate it only after the exact ACK
+                    # and process/native close gate above has made this root
+                    # reusable. Failure is fail-closed before a new runner starts.
+                    from .compat.dsh_acp import archive_previous_continuation_guard_patch
+                    archive_previous_continuation_guard_patch(
+                        session_root, previous_root_id=previous_process_root_id,
+                    )
                 request_gate = None
                 request_proxy = None
                 tool_journal = None
+                product_turn_overlay_b64 = None
                 self._require_group_admission(record, root_id)
-                if budget is not None:
-                    request_gate = build_continuation_request_gate(
-                        request_id=budget['reservation_id'],
-                        execution_profile=budget['execution_profile'],
-                        limits=budget['request_limits'],
-                        journal=session_root / 'continuation-provider-request.jsonl',
-                    )
-                    request_proxy = RequestGateProxy(request_gate, 'https://api.deepseek.com')
-                    request_proxy.__enter__()
-                    tool_journal = session_root / 'continuation-tool-guard.jsonl'
                 try:
+                    if budget is not None:
+                        request_gate = build_continuation_request_gate(
+                            request_id=budget['reservation_id'],
+                            execution_profile=budget['execution_profile'],
+                            limits=budget['request_limits'],
+                            journal=(_root_journal_path(
+                                session_root, 'continuation-provider-request', root_id)
+                                if self._acp else
+                                session_root / 'continuation-provider-request.jsonl'),
+                        )
+                        request_proxy = RequestGateProxy(
+                            request_gate, CONTINUATION_UPSTREAM,
+                            bind_host="0.0.0.0" if self._acp_product_slots else "127.0.0.1",
+                            advertise_host=(_continuation_proxy_advertise_host()
+                                            if self._acp_product_slots else None),
+                        )
+                        request_proxy.__enter__()
+                        tool_journal = (_root_journal_path(
+                            session_root, 'continuation-tool-guard', root_id)
+                            if self._acp else
+                            session_root / 'continuation-tool-guard.jsonl')
+                    elif self._acp and self._acp_product_slots:
+                        # ADR-0106: this ACP candidate qualifies ONLY the OpenCode Go
+                        # / `deepseek-v4.1-flash` route; any other resolved model is
+                        # rejected before any proxy is created (no unbudgeted egress,
+                        # no silent switch). All construction stays inside this try so
+                        # a failure closes an opened proxy.
+                        runtime_provider = str(record.model_resolution.get('provider') or self._provider)
+                        runtime_model = str(record.model_resolution.get('model') or self._model)
+                        if (runtime_provider != PRODUCT_TURN_PROVIDER
+                                or runtime_model != PRODUCT_TURN_MODEL):
+                            raise ModelCredentialUnavailable(
+                                "ordinary ACP Product model is not qualified (NOT_QUALIFIED)")
+                        product_provider_session_id = str(uuid.uuid5(uuid.NAMESPACE_URL,
+                            "beyondquant:provider-session:" + record.session_id))
+                        request_gate = build_continuation_request_gate(
+                            request_id='product-turn-' + generation,
+                            execution_profile=product_turn_profile(),
+                            limits=product_turn_limits(),
+                            journal=_root_journal_path(
+                                session_root, 'product-turn-provider-request', root_id),
+                        )
+                        request_proxy = RequestGateProxy(
+                            request_gate, CONTINUATION_UPSTREAM,
+                            bind_host="0.0.0.0",
+                            advertise_host=_continuation_proxy_advertise_host(),
+                        )
+                        request_proxy.__enter__()
+                        product_turn_overlay_b64 = base64.b64encode(
+                            create_acp_product_budget_overlay(
+                                proxy_base_url=request_proxy.base_url,
+                                provider_session_id=product_provider_session_id,
+                                provider=runtime_provider, model=runtime_model)).decode('ascii')
                     harness = self._build_harness(record.session_id, session_root,
                         trace_id=record.trace_id, owner_principal=record.owner_principal,
                         workspace_id=record.workspace_id, model_resolution=record.model_resolution,
@@ -1017,6 +1237,7 @@ class RuntimeAdapter:
                             int(time.time() * 1000 + request_gate.remaining_seconds() * 1000)
                             if request_gate is not None else None
                         ),
+                        product_turn_overlay_b64=product_turn_overlay_b64,
                         native_root_session_id=(previous_native_session if reuse_native else None))
                 except BaseException:
                     if request_proxy is not None:
@@ -1110,12 +1331,25 @@ class RuntimeAdapter:
                 record.prompt_idempotency[idempotency_key] = (identity_content, run.run_id)
             try:
                 if self._acp:
-                    record.authority_epoch = self.require_current_backend_authority()
+                    if not first_lazy_prestart_binding:
+                        record.authority_epoch = self.require_current_backend_authority()
+                    if first_lazy_prestart_binding:
+                        # The durable cleanup fence stays set until the accepted
+                        # root binding replaces it with the now-active root.
+                        record.cleanup_unconfirmed = False
+                        record.cleanup_harness = None
                     self._persist_acp_binding(record)
                 self._emit(record, "session.started", "runtime-adapter", {"run_id": run.run_id})
             except BaseException:
                 record.active_run = None
                 record.status = SessionStatus.FAILED
+                if first_lazy_prestart_binding:
+                    record.cleanup_harness = record.harness
+                    record.cleanup_unconfirmed = True
+                    try:
+                        self._persist_acp_binding(record)
+                    except BaseException:
+                        pass
                 if idempotency_key:
                     record.prompt_idempotency.pop(idempotency_key, None)
                 self._close_continuation_proxy(record, record.runtime_generation, record.harness)
@@ -1322,6 +1556,10 @@ class RuntimeAdapter:
             else:
                 run.hard_cancelled = True
                 run.watchdog_stop.set()
+                # Gateway projects a hard cancel as a public conversation end.
+                # Persist that decision with the exact terminal ACK; an idle
+                # release intent must never reopen this conversation.
+                record.conversation_ended = True
                 record.interrupted_run_id = run.run_id
                 record.status = SessionStatus.INTERRUPTED
                 # The owned process is closed synchronously below. Detach the
@@ -1477,6 +1715,9 @@ class RuntimeAdapter:
             with record.lock:
                 record.pending_terminal_receipts.discard(root)
                 self._remember_ack("terminal", record, receipt, terminal_evidence=evidence)
+                record.reuse_native_session_ready = self._acp_native_reuse_is_proven(
+                    record, root, receipt,
+                )
                 # Close proof may have been unavailable for an interrupted or
                 # failed process, but the exact Backend receipt is still
                 # durably acknowledged after process cleanup completes.
@@ -1486,6 +1727,45 @@ class RuntimeAdapter:
                     record.reuse_native_session_ready = False
         self._maybe_reap_released(record)
         return acknowledged
+
+    def _acp_native_reuse_is_proven(
+        self, record: RuntimeSession, root_run_id: str, receipt: object,
+    ) -> bool:
+        """Require terminal ACK, close/drain proof and known completion to reuse."""
+
+        generation = record.current_generation
+        if (generation is None or generation.process_root_id != root_run_id
+                or record.settlement_receipt != receipt
+                or record.terminal_receipts.get(root_run_id) != receipt
+                or record.pending_terminal_receipts
+                or not generation.native_session_close_confirmed
+                or not generation.process_closed or not generation.process_exit_confirmed
+                or generation.process_closing or not generation.continuation_proxy_closed
+                or record.status != SessionStatus.IDLE
+                or record.release_finalized or not record.recovery_cwd
+                or record.domain_call_drained_sequence != record.domain_call_sequence):
+            return False
+        terminal_success = any(
+            event.get("kind") == "session.result"
+            and isinstance(event.get("payload"), dict)
+            and event["payload"].get("run_id") == root_run_id
+            for event in record.history
+        )
+        cancelled = any(
+            event.get("kind") in {"session.cancelled", "session.result.discarded"}
+            and isinstance(event.get("payload"), dict)
+            and event["payload"].get("run_id") == root_run_id
+            for event in record.history
+        )
+        if not terminal_success or cancelled:
+            return False
+        if generation.continuation_budget is not None:
+            budget_receipt = self._budget_receipt(record)
+            if (budget_receipt.get("status") != "settled"
+                    or budget_receipt.get("outcome") != "completed"
+                    or budget_receipt.get("run_id") != root_run_id):
+                return False
+        return True
 
     def _close_acp_after_terminal_ack(
         self, record: RuntimeSession, root_run_id: str, receipt: object,
@@ -1568,28 +1848,11 @@ class RuntimeAdapter:
                     generation.process_closed = True
                     generation.process_exit_confirmed = True
                     generation.process_closing = False
-                    terminal_success = any(
-                        event.get("kind") == "session.result"
-                        and isinstance(event.get("payload"), dict)
-                        and event["payload"].get("run_id") == root_run_id
-                        for event in record.history
-                    )
-                    cancelled = any(
-                        event.get("kind") in {"session.cancelled", "session.result.discarded"}
-                        and isinstance(event.get("payload"), dict)
-                        and event["payload"].get("run_id") == root_run_id
-                        for event in record.history
-                    )
                     generation.process_exit_confirmed = True
-                    record.reuse_native_session_ready = bool(
-                        native_closed and generation.process_exit_confirmed
-                        and terminal_success and not cancelled
-                        and record.status == SessionStatus.IDLE
-                        and not record.release_finalized
-                        and record.domain_call_drained_sequence == record.domain_call_sequence
-                        and generation.continuation_budget is None
-                        and record.recovery_cwd
-                    )
+                    # Exact ACK is being processed by the caller; budget
+                    # settlement cannot be proven until its pending marker is
+                    # cleared there. Reuse is decided only after that step.
+                    record.reuse_native_session_ready = False
                 try:
                     self._persist_acp_binding(record)
                 except Exception:
@@ -1703,7 +1966,9 @@ class RuntimeAdapter:
                 raise SessionConflict(SESSION_LOST_DETAIL)
             raise SessionConflict(f"session {session_id} cannot be resumed")
 
-    def release_session(self, session_id: str) -> dict[str, Any]:
+    def release_session(
+        self, session_id: str, *, preserve_conversation: bool = False,
+    ) -> dict[str, Any]:
         record = self._get(session_id)
         with record.lock:
             # Creation/resumption publishes the record before SDK initialize
@@ -1717,8 +1982,12 @@ class RuntimeAdapter:
                 raise SessionConflict("Backend terminal receipt must be acknowledged before ACP release")
             if record.cleanup_unconfirmed:
                 raise SessionConflict("previous ACP root startup cleanup is unconfirmed")
+            if record.conversation_ended and preserve_conversation:
+                raise SessionConflict("BYQ session was ended")
             if record.continuation_budget:
                 self._budget_receipt(record)
+            if not preserve_conversation:
+                record.conversation_ended = True
             record.status = SessionStatus.CLOSED
         try:
             with record.lock:
@@ -1830,8 +2099,8 @@ class RuntimeAdapter:
             raise SessionConflict("ACP recovery binding workspace is ambiguous")
         return found[0]
 
-    def _persist_acp_binding(self, record: RuntimeSession) -> None:
-        """Store only the exact root/native binding required by ADR-0093."""
+    def _persist_acp_binding(self, record: RuntimeSession) -> str | None:
+        """Store the exact root/native binding; return its persisted payload digest."""
 
         if not self._acp:
             return
@@ -1864,7 +2133,7 @@ class RuntimeAdapter:
             "process_exit_confirmed": bool(
                 record.current_generation and record.current_generation.process_exit_confirmed),
             "cleanup_unconfirmed": record.cleanup_unconfirmed,
-            "closed": record.status == SessionStatus.CLOSED,
+            "closed": record.conversation_ended,
         }
         path = self._acp_binding_path(record.session_id, record.workspace_id)
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -1894,6 +2163,110 @@ class RuntimeAdapter:
             finally:
                 if temporary is not None:
                     temporary.unlink(missing_ok=True)
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
+        return hashlib.sha256(payload).hexdigest()
+
+    def _remove_prestart_acp_binding(
+        self, record: RuntimeSession, *, expected_sha256: str,
+    ) -> None:
+        """Remove only this exact first-root fence after proven no-START."""
+
+        if (not self._acp_product_slots
+                or re.fullmatch(r"[0-9a-f]{64}", expected_sha256) is None
+                or record.authority_epoch is None
+                or record.process_used or record.active_run is not None
+                or not record.cleanup_unconfirmed or record.cleanup_harness is not record.harness
+                or record.terminal_receipts or record.pending_terminal_receipts
+                or record.settlement_receipt is not None or record.conversation_ended):
+            raise SessionConflict("ACP prepared root binding is not removable")
+        path = self._acp_binding_path(record.session_id, record.workspace_id)
+        lock_path = path.with_suffix(".lock")
+        lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT
+                          | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            if self.require_current_backend_authority() != record.authority_epoch:
+                raise SessionConflict("ACP prepared binding writer lost Backend authority")
+            try:
+                before = os.lstat(path)
+            except OSError:
+                raise SessionConflict("ACP prepared root binding is unavailable") from None
+            if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid()
+                    or before.st_gid != os.getgid() or stat.S_IMODE(before.st_mode) != 0o600
+                    or before.st_nlink != 1):
+                raise SessionConflict("ACP prepared root binding is unsafe")
+            try:
+                binding_fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+                try:
+                    opened = os.fstat(binding_fd)
+                    if (not stat.S_ISREG(opened.st_mode) or opened.st_dev != before.st_dev
+                            or opened.st_ino != before.st_ino or opened.st_nlink != 1
+                            or opened.st_uid != os.getuid() or opened.st_gid != os.getgid()
+                            or stat.S_IMODE(opened.st_mode) != 0o600):
+                        raise SessionConflict("ACP prepared root binding is unsafe")
+                    chunks = bytearray()
+                    while len(chunks) <= 1024 * 1024:
+                        chunk = os.read(binding_fd, min(65536, 1024 * 1024 + 1 - len(chunks)))
+                        if not chunk:
+                            break
+                        chunks.extend(chunk)
+                    if len(chunks) != before.st_size or len(chunks) > 1024 * 1024:
+                        raise SessionConflict("ACP prepared root binding is unsafe")
+                finally:
+                    os.close(binding_fd)
+            except OSError:
+                raise SessionConflict("ACP prepared root binding is unavailable") from None
+            raw = bytes(chunks)
+            if not hmac.compare_digest(hashlib.sha256(raw).hexdigest(), expected_sha256):
+                raise SessionConflict("ACP prepared root binding changed")
+            try:
+                value = json.loads(raw.decode("utf-8"))
+            except (UnicodeError, ValueError):
+                raise SessionConflict("ACP prepared root binding is invalid") from None
+            if (not isinstance(value, dict)
+                    or value.get("schema_version") != "byq-acp-root-binding.v1"
+                    or value.get("session_id") != record.session_id
+                    or value.get("trace_id") != record.trace_id
+                    or value.get("owner_principal") != record.owner_principal
+                    or value.get("workspace_id") != record.workspace_id
+                    or value.get("root_run_id") != record.process_root_id
+                    or value.get("native_session_id") != record.runtime_session_id
+                    or value.get("runtime_generation") != record.runtime_generation
+                    or value.get("model_provider") != str(
+                        record.model_resolution.get("provider") or self._provider)
+                    or value.get("model_id") != str(
+                        record.model_resolution.get("model") or self._model)
+                    or value.get("cwd") != str(Path(record.recovery_cwd).resolve())
+                    or value.get("previous_boot_id") != record.boot_id
+                    or value.get("previous_authority_epoch") != record.authority_epoch
+                    or value.get("sequence") != record.sequence
+                    or value.get("settlement_receipt") is not None
+                    or value.get("domain_call_sequence") != record.domain_call_sequence
+                    or value.get("domain_call_drained_sequence") != record.domain_call_drained_sequence
+                    or value.get("native_session_close_confirmed") is not False
+                    or value.get("process_exit_confirmed") is not False
+                    or value.get("cleanup_unconfirmed") is not True
+                    or value.get("closed") is not False):
+                raise SessionConflict("ACP prepared root binding is not an empty pre-START fence")
+            after = os.lstat(path)
+            if (after.st_dev != before.st_dev or after.st_ino != before.st_ino
+                    or after.st_nlink != 1 or after.st_size != before.st_size):
+                raise SessionConflict("ACP prepared root binding changed")
+            if self.require_current_backend_authority() != record.authority_epoch:
+                raise SessionConflict("ACP prepared binding writer lost Backend authority")
+            os.unlink(path)
+            directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+            try:
+                os.lstat(path)
+            except FileNotFoundError:
+                return
+            raise SessionConflict("ACP prepared root binding was not removed")
         finally:
             fcntl.flock(lock_fd, fcntl.LOCK_UN)
             os.close(lock_fd)
@@ -2245,22 +2618,10 @@ class RuntimeAdapter:
                 or not _continuation_route_qualified(
                     record.model_resolution, self._provider, self._model)):
             return False
-        family = self._compatibility.family
-        # ADR-0103: the pinned rc.2 ACP family carries its own guard patch and
-        # provider request proxy, so the SDK distribution pair does not apply.
-        # The executor remains opt-in via BYQ_F6_EXECUTOR_ENABLED.
-        if family == 'dsh-v0.2.0-rc.2-acp':
-            return True
-        if family != 'dsh-0.1.5':
-            return False
-        try:
-            sdk = distribution_version('deepseek-harness-sdk')
-            runtime_bin = distribution_version('deepseek-harness-runtime-bin')
-        except PackageNotFoundError:
-            return False
-        # ADR-0090 relies on the pinned public tools/pre-execute contract that
-        # was inspected and dynamically qualified for the 0.1.5 pair only.
-        return sdk == runtime_bin == '0.1.5rc1'
+        # ADR-0103: only the fixed ACP family has the root guard and request
+        # proxy contract. Keep the existing opt-in and BYQ route/credential gates
+        # above; no Python SDK version can qualify this online continuation path.
+        return self._compatibility.family == ACP_COMPATIBILITY_FAMILY
 
     def _close_continuation_proxy(
         self, record: RuntimeSession, generation_id: str, harness: Any,
@@ -2291,6 +2652,20 @@ class RuntimeAdapter:
                     'run_id': record.budget_run_id}
         if (not record.process_closed or record.process_closing
                 or not record.continuation_proxy_closed):
+            return {'reservation_id': reservation_id, 'status': 'outcome_unknown'}
+        # ADR-0105 §5: an execution receipt may close only when every business
+        # call is reconciled and the exact Backend terminal ACK is present. A
+        # hard cancel or watchdog can set process_closed without either, so
+        # require them explicitly here and stay outcome_unknown otherwise.
+        if (record.domain_call_drained_sequence != record.domain_call_sequence
+                or record.pending_terminal_receipts
+                or (self._acp and (
+                    not isinstance(record.settlement_receipt, dict)
+                    or record.settlement_receipt.get('root_run_id') != record.budget_run_id))):
+            return {'reservation_id': reservation_id, 'status': 'outcome_unknown'}
+        # ADR-0105 §5: an unprovable outbound result keeps the execution receipt
+        # unresolved; it must never settle as a known outcome.
+        if record.continuation_request_gate is not None and record.continuation_request_gate.has_unknown_outcome():
             return {'reservation_id': reservation_id, 'status': 'outcome_unknown'}
         try:
             tool_receipt = read_request_guard(record.budget_journal, reservation, terminal=True)
@@ -2347,6 +2722,7 @@ class RuntimeAdapter:
         continuation_budget: dict | None = None,
         continuation_proxy_url: str | None = None,
         continuation_deadline_epoch_ms: int | None = None,
+        product_turn_overlay_b64: str | None = None,
     ) -> Any:
         if self._root_scoped and re.fullmatch(r"[0-9a-f]{32}", root_run_id) is None:
             raise ValueError("root-scoped process requires a reserved root identity")
@@ -2417,6 +2793,8 @@ class RuntimeAdapter:
                         deadline_epoch_ms=continuation_deadline_epoch_ms,
                         root_run_id=root_run_id,
                         mcp_reservation_id=environment['BYQ_CONTINUATION_RESERVATION_ID'],
+                        proxy_base_url=continuation_proxy_url,
+                        provider_session_id=environment['BYQ_PROVIDER_SESSION_ID'],
                     )).decode('ascii')
                 else:
                     guard_b64 = None
@@ -2425,12 +2803,14 @@ class RuntimeAdapter:
                         deadline_epoch_ms=continuation_deadline_epoch_ms,
                         root_run_id=root_run_id,
                         mcp_reservation_id=environment['BYQ_CONTINUATION_RESERVATION_ID'],
+                        proxy_base_url=continuation_proxy_url,
                     )
             else:
                 guard_b64 = None
                 composition, _ = create_guard_patch(
                     composition, session_root, continuation_budget,
                     deadline_epoch_ms=continuation_deadline_epoch_ms,
+                    proxy_base_url=continuation_proxy_url,
                 )
             # The request proxy is the only provider egress for this exact route.
             # The per-call output declaration is a safety ceiling, never a usage
@@ -2440,9 +2820,19 @@ class RuntimeAdapter:
             runtime_model = str(model_resolution.get('model') or self._model)
             if runtime_provider != CONTINUATION_PROVIDER or runtime_model != CONTINUATION_MODEL:
                 raise ValueError('selected continuation model is unqualified')
-            environment['DEEPSEEK_BASE_URL'] = continuation_proxy_url
+            if runtime_provider == 'deepseek-official':
+                # Legacy direct-route continuation (disabled under ADR-0105).
+                environment['DEEPSEEK_BASE_URL'] = continuation_proxy_url
+            # ADR-0105: the selected OpenCode Go chat route reads baseURL from the
+            # runner-applied guard overlay, which pins it to this same local proxy.
             environment['DEEPSEEK_SEARCH_BASE_URL'] = ''
             environment['DEEPSEEK_SEARCH_API_KEY'] = ''
+        elif product_turn_overlay_b64 is not None:
+            # ADR-0106: ordinary Product route-only overlay. No continuation
+            # reservation and no tool allowlist; the ordinary MCP tool authority
+            # is unchanged.
+            guard_b64 = product_turn_overlay_b64
+            max_tokens = product_turn_limits()['max_output_tokens']
         return self._compatibility.build_harness(
             provider=str(model_resolution.get("provider") or self._provider),
             model=str(model_resolution.get("model") or self._model),

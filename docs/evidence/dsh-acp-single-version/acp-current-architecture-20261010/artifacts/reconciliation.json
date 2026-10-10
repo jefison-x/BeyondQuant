@@ -1,0 +1,30 @@
+{
+  "schema": "acp-current-architecture-reconciliation.v1",
+  "head": "2d5810973240c5d7692569319c2b5ab337ae2082",
+  "source_manifest_sha256": "a8ba138b9e64f7bb518f453f08f4745acc3fc42b924a47b6e12b1b38c11f6fbf",
+  "source_files": 1901,
+  "first_discovery": {
+    "status": "FAIL",
+    "tests": 1011,
+    "passed": 981,
+    "skipped": 11,
+    "errors": 18,
+    "failures": 1
+  },
+  "selected_recheck": {
+    "status": "PASS",
+    "tests": 19,
+    "passed": 19,
+    "source_unchanged": true
+  },
+  "combined_local_coverage": {
+    "passed": 1000,
+    "skipped": 11,
+    "status": "LOCAL_COVERAGE_ONLY"
+  },
+  "single_green_full_run": "NOT_RUN",
+  "adopting_commit_architecture": "NOT_RUN",
+  "hosted_ci": "NOT_RUN",
+  "root": "LIMITED_PASS_LOCAL_COVERAGE_ONLY",
+  "independent_reviewer": "PASS_BOUNDARY_REVIEW"
+}

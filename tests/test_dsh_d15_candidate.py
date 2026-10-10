@@ -87,32 +87,39 @@ class D15CandidateTests(unittest.TestCase):
         self.assertIsNone(candidate_registry.compatibility_selector(ROLLBACK))
 
     def test_promoted_default_selector_dependency_and_rollback_are_registered(self) -> None:
+        # These candidate declarations are preserved historical evidence. The
+        # active online default is checked by the ACP authoritative resolver.
         deployment = json.loads((ROOT / "config/dsh/deployment.json").read_text())
         self.assertEqual(deployment["default_release"], CANDIDATE)
         self.assertEqual(deployment["candidate_releases"], [ROLLBACK])
-        compose = (ROOT / "compose.yml").read_text()
-        self.assertIn("BYQ_DSH_COMPATIBILITY_RELEASE:-dsh-0.1.5rc1", compose)
-        self.assertNotIn("BYQ_DSH_COMPATIBILITY_RELEASE:-dsh-0.1.2rc1", compose)
-        dockerfile = (ROOT / "services/runtime-adapter/Dockerfile.post-u8-candidate").read_text()
-        self.assertIn("BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1", dockerfile)
-        self.assertNotIn("BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.2rc1", dockerfile)
-        pyproject = (ROOT / "services/runtime-adapter/pyproject.toml").read_text()
-        self.assertIn('"deepseek-harness-sdk==0.1.5rc1"', pyproject)
-        self.assertIn('"deepseek-harness-runtime-bin==0.1.5rc1"', pyproject)
-        # The promoted release is registered; the prior default is retained as
-        # the rollback candidate descriptor.
         self.assertTrue((ROOT / "config/dsh/releases" / f"{CANDIDATE}.json").exists())
         self.assertTrue((ROOT / "config/dsh/releases" / f"{ROLLBACK}.json").exists())
+        from scripts.dsh.authoritative_version import load_authoritative_version
+        current = load_authoritative_version(ROOT)
+        self.assertEqual(current["release_id"], "dsh-v0.2.0-rc.2")
+        self.assertEqual(current["compatibility_family"], "dsh-v0.2.0-rc.2-acp")
 
     def test_compat_boundary_exposes_candidate_without_wiring_native_adoption(self) -> None:
-        compat = (ROOT / "services/runtime-adapter/app/compat/__init__.py").read_text()
+        # Replay the D15-era source at its promotion commit. The current online
+        # selector separately rejects both historical SDK selectors.
+        from scripts.dsh.historical_inputs import read_blob
+        compat = read_blob(
+            "8a4e4fe41771a25c472fa24195aedccf3f53a6a8",
+            "services/runtime-adapter/app/compat/__init__.py",
+        ).decode()
         self.assertIn('if release == "dsh-0.1.2rc1"', compat)
         self.assertIn('if release == "dsh-0.1.5rc1"', compat)
-        candidate_module = (
-            ROOT / "services/runtime-adapter/app/compat/dsh_015.py"
-        ).read_text()
+        candidate_module = read_blob(
+            "8a4e4fe41771a25c472fa24195aedccf3f53a6a8",
+            "services/runtime-adapter/app/compat/dsh_015.py",
+        ).decode()
         self.assertIn("class Dsh015Compatibility", candidate_module)
         self.assertIn('family = "dsh-0.1.5"', candidate_module)
+        from scripts.dsh.authoritative_version import load_authoritative_version
+        self.assertEqual(
+            load_authoritative_version(ROOT)["compatibility_family"],
+            "dsh-v0.2.0-rc.2-acp",
+        )
 
     def test_ledger_covers_interfaces_with_consistent_counts(self) -> None:
         ledger = json.loads(LEDGER.read_text())

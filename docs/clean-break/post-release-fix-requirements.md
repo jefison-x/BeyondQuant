@@ -9,6 +9,8 @@
 该一次性账号操作不等于实现以下 R4 产品功能，密码和认证备份不进入 Git。
 不改变 Phase17 状态，不启动下一阶段，不表示 R1–R4 整体或全链路验收、部署 PASS。
 
+> ACP 专项合同澄清（2026-10-09）：按 Accepted ADR-0093/0096，正常回合结束、ACP 会话关闭、Adapter 空闲释放或进程关闭都不等于结束 BYQ 公开会话。公开结束由 BYQ 持久状态或精确归属的硬取消决定；未知业务结果和旧 root 精确 ACK 屏障仍保留。下述将正常 idle release 的 `session.closed` 视为终态的旧验收是历史行为证据，不是 ACP 接续的验收标准；不得据此禁止正常下一回合。原失败与历史测试记录保留，当前修复见 `docs/evidence/dsh-acp-single-version/public-release-contract-20261009/RESULT.md`。
+
 ## 待办总表
 
 | 编号 | 需求 | 状态与证据 |

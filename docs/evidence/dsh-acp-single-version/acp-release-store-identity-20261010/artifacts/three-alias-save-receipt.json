@@ -1,0 +1,22 @@
+{
+  "schema": "byq-local-store-alias-save.v1",
+  "image_id": "sha256:15cdf5f97009e21af50c3cfd87d2f8d42af91e8ccaa2a82d57966bc4c2fbc6f5",
+  "aliases": [
+    "byq-acp-release-store-proof-20261010-adapter:tested",
+    "byq-acp-release-store-proof-20261010-ordinary:tested",
+    "byq-acp-release-store-proof-20261010-judgment:tested"
+  ],
+  "purpose": "verify one immutable ACP image exports three distinct role tags; no registry/container operations",
+  "created": [
+    "byq-acp-release-store-proof-20261010-adapter:tested",
+    "byq-acp-release-store-proof-20261010-ordinary:tested",
+    "byq-acp-release-store-proof-20261010-judgment:tested"
+  ],
+  "cleanup_errors": [],
+  "save_exit_code": 0,
+  "elapsed_seconds": 10.43,
+  "archive_size_bytes": 806271488,
+  "original_container_ids_images_unchanged": true,
+  "original_image_preserved": true,
+  "aliases_absent": true
+}

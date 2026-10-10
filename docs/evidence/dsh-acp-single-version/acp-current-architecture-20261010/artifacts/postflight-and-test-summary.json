@@ -1,0 +1,360 @@
+{
+  "environment": {
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "cwd": "/home/jefison/projects/.byq-worktrees/dsh-acp-single-version",
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+    "python": "3.14.4 (main, Aug 20 2026, 10:41:58) [GCC 15.2.0]"
+  },
+  "git_after": {
+    "branch": "codex/dsh-acp-single-version",
+    "dirty_entry_count": 154,
+    "dirty_paths_excluding_receipts_and_evidence_logs": [
+      " M .env.example",
+      " M .github/workflows/ci-selfhosted.yml",
+      " M .github/workflows/release-images.yml",
+      " M .gitleaks.toml",
+      " M Makefile",
+      " M apps/frontend/src/api/workflow.ts",
+      " M compose.dev.yml",
+      " M compose.dsh-acp-rc2-candidate.yml",
+      " M compose.override.yml",
+      " M compose.yml",
+      " M config/dsh/acp/authoritative.json",
+      " M docs/architecture/adr/ADR-0105-acp-continuation-opencode-v4-1-flash.md",
+      " M docs/architecture/adr/README.md",
+      " M docs/clean-break/post-release-fix-requirements.md",
+      " M docs/contracts/product-api.openapi.yaml",
+      " M docs/legal/python-dependency-inventory.json",
+      " M docs/operations/image-release.md",
+      " M packages/contracts/acp_product_slot.py",
+      " M packages/contracts/continuation_request.py",
+      " M packages/contracts/research_execution_plan.py",
+      " M packages/contracts/research_judgment.py",
+      " M plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-product.identity.json",
+      " M plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-product.patch.yml",
+      " M plugins/dsh-byq/runtime/byq-continuation-budget.js",
+      " M plugins/dsh-byq/runtime/byq-continuation-budget.test.js",
+      " M plugins/dsh-byq/skills/byq-role-contracts/SKILL.md",
+      " M scripts/ci/cleanup-resources.sh",
+      " M scripts/ci/local-ci.sh",
+      " M scripts/dev/environment.py",
+      " M scripts/dsh/build_revision.py",
+      " M scripts/evidence/f6-chain-fixture.py",
+      " M scripts/evidence/f6-chain-verification.py",
+      " M scripts/release/images.py",
+      " M scripts/release/manifest.py",
+      " M scripts/v090/composite_research/run_regression.py",
+      " M scripts/v090/dsh_default_upgrade/verify.py",
+      " M services/acp_judgment_runner/Dockerfile",
+      " M services/acp_judgment_runner/server.py",
+      " M services/acp_product_runner/Dockerfile",
+      " M services/acp_product_runner/server.py",
+      " M services/acp_product_runner/tests/test_server.py",
+      " M services/backend/app/agent_research.py",
+      " M services/backend/app/domain_call_admission.py",
+      " M services/backend/app/main.py",
+      " M services/backend/app/research_continuation.py",
+      " M services/backend/app/research_execution_plan.py",
+      " M services/backend/app/research_judgment.py",
+      " M services/backend/tests/test_acp_domain_call_proof.py",
+      " M services/backend/tests/test_continuation_scope.py",
+      " M services/backend/tests/test_research_execution_plan_api.py",
+      " M services/backend/tests/test_research_execution_plan_store.py",
+      " M services/backend/tests/test_research_judgment_acp_root.py",
+      " M services/gateway/app/main.py",
+      " M services/gateway/app/product_api.py",
+      " M services/gateway/tests/test_execution_plan_projection.py",
+      " M services/gateway/tests/test_product_agent.py",
+      " M services/mcp/src/acp-bridge.ts",
+      " M services/mcp/src/agent.ts",
+      " M services/mcp/src/continuation-admission.ts",
+      " M services/mcp/src/server.ts",
+      " M services/mcp/tests/acp-bridge-test.ts",
+      " M services/mcp/tests/acp-ingress-test.ts",
+      " M services/mcp/tests/continuation-admission-test.ts",
+      " M services/runtime-adapter/Dockerfile.acp-0.2.0-rc.2-candidate",
+      " M services/runtime-adapter/app/compat/__init__.py",
+      " M services/runtime-adapter/app/compat/dsh_012.py",
+      " M services/runtime-adapter/app/compat/dsh_acp.py",
+      " M services/runtime-adapter/app/continuation_budget.py",
+      " M services/runtime-adapter/app/main.py",
+      " M services/runtime-adapter/app/process_secrecy.py",
+      " M services/runtime-adapter/app/research_judgment_acp_journal.py",
+      " M services/runtime-adapter/app/research_judgment_acp_provider_overlay.py",
+      " M services/runtime-adapter/app/research_judgment_acp_provider_proxy.py",
+      " M services/runtime-adapter/app/research_judgment_acp_provider_routes.py",
+      " M services/runtime-adapter/app/research_judgment_acp_turn.py",
+      " M services/runtime-adapter/app/research_judgment_api.py",
+      " M services/runtime-adapter/app/research_judgment_entry.py",
+      " M services/runtime-adapter/app/research_request_gate.py",
+      " M services/runtime-adapter/app/runtime.py",
+      " M services/runtime-adapter/tests/f6_synthetic_runtime.py",
+      " M services/runtime-adapter/tests/test_acp_completed_root_reuse.py",
+      " M services/runtime-adapter/tests/test_acp_continuation_guard.py",
+      " M services/runtime-adapter/tests/test_acp_product_slot_runtime.py",
+      " M services/runtime-adapter/tests/test_business_recovery.py",
+      " M services/runtime-adapter/tests/test_candidate_selector.py",
+      " M services/runtime-adapter/tests/test_chat_admission.py",
+      " M services/runtime-adapter/tests/test_continuation_budget_process.py",
+      " M services/runtime-adapter/tests/test_continuation_profile.py",
+      " M services/runtime-adapter/tests/test_continuation_qualification.py",
+      " M services/runtime-adapter/tests/test_dsh_012_real_process.py",
+      " M services/runtime-adapter/tests/test_dsh_acp_compatibility.py",
+      " M services/runtime-adapter/tests/test_f6_synthetic_runtime_contract.py",
+      " M services/runtime-adapter/tests/test_normalization.py",
+      " M services/runtime-adapter/tests/test_plugin_identity.py",
+      " M services/runtime-adapter/tests/test_prepared_prompt_lifecycle.py",
+      " M services/runtime-adapter/tests/test_process_cleanup.py",
+      " M services/runtime-adapter/tests/test_process_secrecy.py",
+      " M services/runtime-adapter/tests/test_research_judgment_acp_journal.py",
+      " M services/runtime-adapter/tests/test_research_judgment_acp_output.py",
+      " M services/runtime-adapter/tests/test_research_judgment_acp_provider_overlay.py",
+      " M services/runtime-adapter/tests/test_research_judgment_acp_provider_proxy.py",
+      " M services/runtime-adapter/tests/test_research_judgment_acp_provider_routes.py",
+      " M services/runtime-adapter/tests/test_research_judgment_acp_turn.py",
+      " M services/runtime-adapter/tests/test_research_judgment_api.py",
+      " M services/runtime-adapter/tests/test_research_request_gate.py",
+      " M services/runtime-adapter/tests/test_root_process_lifecycle.py",
+      " M services/runtime-adapter/tests/test_sdk_compatibility.py",
+      " M tests/architecture/test_acp_authoritative_version.py",
+      " M tests/architecture/test_architecture.py",
+      " M tests/architecture/test_governance_ci.py",
+      " M tests/architecture/test_release_pipeline.py",
+      " M tests/ci/fake_docker.py",
+      " M tests/dev/test_environment.py",
+      " M tests/test_ci_cleanup_image_ids.py",
+      " M tests/test_ci_run_scoped_image_reference.py",
+      " M tests/test_current_build_revision.py",
+      " M tests/test_dsh_build_revision.py",
+      " M tests/test_dsh_d15_candidate.py",
+      " M tests/test_dsh_retirement.py",
+      " M tests/test_f6_proxy_diagnostics.py",
+      " M tests/test_v090_dsh_default_upgrade.py",
+      "?? compose.dsh-acp-single-image-candidate.yml",
+      "?? config/dsh/builds/dsh-0.1.5rc1-post-u8.323.json",
+      "?? config/dsh/builds/dsh-0.1.5rc1-post-u8.324.json",
+      "?? docs/architecture/adr/ADR-0106-ordinary-acp-product-provider-budget.md",
+      "?? docs/architecture/adr/ADR-0107-product-acp-judgment-dispatch-trigger.md",
+      "?? docs/architecture/adr/ADR-0108-product-research-plan-creation-entry.md",
+      "?? docs/architecture/adr/ADR-0110-acp-single-image-three-role-topology.md",
+      "?? packages/contracts/product_turn_request.py",
+      "?? scripts/dsh/acp_build.py",
+      "?? scripts/dsh/authoritative_version.py",
+      "?? scripts/evidence/acp-f6-release-fixture.py",
+      "?? scripts/evidence/acp-f6-runtime-entrypoint.py",
+      "?? scripts/evidence/acp-late-root-mcp-backend-probe.py",
+      "?? scripts/release/requirements.release-runner.lock",
+      "?? services/acp_unified/Dockerfile",
+      "?? services/acp_unified/entrypoint.sh",
+      "?? services/acp_unified/tests/test_entrypoint.sh",
+      "?? services/acp_unified/tests/test_single_image_contract.py",
+      "?? services/backend/tests/test_judgment_consumer.py",
+      "?? services/mcp/tests/acp-late-root-http-test.ts",
+      "?? services/runtime-adapter/Dockerfile.post-u8-323-candidate",
+      "?? services/runtime-adapter/Dockerfile.post-u8-324-candidate",
+      "?? services/runtime-adapter/backend/research_continuation.py",
+      "?? services/runtime-adapter/boot_diag.py",
+      "?? services/runtime-adapter/tests/runtime_test_support.py",
+      "?? services/runtime-adapter/tests/test_acp_prepared_guard_retirement.py",
+      "?? services/runtime-adapter/tests/test_product_turn_budget.py",
+      "?? tests/architecture/test_acp_f6_release_fixture.py",
+      "?? tests/architecture/test_ci_compose_route_callers.py",
+      "?? tests/architecture/test_dsh_authoritative_build.py",
+      "?? tests/architecture/test_dsh_authoritative_version.py",
+      "?? workers/judgment/Dockerfile",
+      "?? workers/judgment/worker.py"
+    ],
+    "head": "2d5810973240c5d7692569319c2b5ab337ae2082",
+    "raw_status_entry_count": 470
+  },
+  "limits": [
+    "single required discovery run only",
+    "no build/integration/F6/model/Docker/network command was started"
+  ],
+  "source_inputs_after": {
+    "bytes": 52760541,
+    "changed_or_added_or_removed_paths": [],
+    "file_count": 1901,
+    "manifest": "source-inputs-after.jsonl",
+    "manifest_sha256": "a8ba138b9e64f7bb518f453f08f4745acc3fc42b924a47b6e12b1b38c11f6fbf",
+    "same_as_before": true
+  },
+  "unittest": {
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-p",
+      "test_*.py"
+    ],
+    "elapsed_seconds": 36.991,
+    "error_sections": 18,
+    "exit_code": 1,
+    "failure_sections": 1,
+    "raw_output": "unittest.raw.txt",
+    "sections": [
+      {
+        "diagnostic": [
+          "OSError",
+          "[Errno 30] Read-only file system: '/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/image-ids.env'"
+        ],
+        "kind": "ERROR",
+        "test": "test_dot_scope_is_rejected_and_cannot_read_an_escaped_manifest (test_ci_cleanup_image_ids.CleanupImageIdTests.test_dot_scope_is_rejected_and_cannot_read_an_escaped_manifest)"
+      },
+      {
+        "diagnostic": [
+          "OSError",
+          "[Errno 30] Read-only file system: '/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/image-ids.env'"
+        ],
+        "kind": "ERROR",
+        "test": "test_dotdot_scope_is_rejected_and_cannot_read_an_escaped_manifest (test_ci_cleanup_image_ids.CleanupImageIdTests.test_dotdot_scope_is_rejected_and_cannot_read_an_escaped_manifest)"
+      },
+      {
+        "diagnostic": [
+          "OSError",
+          "[Errno 30] Read-only file system: '/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/cleanupids-testduplicatemanifestidsareremovedonce'"
+        ],
+        "kind": "ERROR",
+        "test": "test_duplicate_manifest_ids_are_removed_once (test_ci_cleanup_image_ids.CleanupImageIdTests.test_duplicate_manifest_ids_are_removed_once)"
+      },
+      {
+        "diagnostic": [
+          "OSError",
+          "[Errno 30] Read-only file system: '/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/cleanupids-testduplicatemanifestservicefailsclosedandidsnotdeleted'"
+        ],
+        "kind": "ERROR",
+        "test": "test_duplicate_manifest_service_fails_closed_and_ids_not_deleted (test_ci_cleanup_image_ids.CleanupImageIdTests.test_duplicate_manifest_service_fails_closed_and_ids_not_deleted)"
+      },
+      {
+        "diagnostic": [
+          "OSError",
+          "[Errno 30] Read-only file system: '/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/cleanupids-testexacttagandexactidarebothremoved'"
+        ],
+        "kind": "ERROR",
+        "test": "test_exact_tag_and_exact_id_are_both_removed (test_ci_cleanup_image_ids.CleanupImageIdTests.test_exact_tag_and_exact_id_are_both_removed)"
+      },
+      {
+        "diagnostic": [
+          "OSError",
+          "[Errno 30] Read-only file system: '/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/cleanupids-otherscope'"
+        ],
+        "kind": "ERROR",
+        "test": "test_foreign_scope_manifest_is_not_read (test_ci_cleanup_image_ids.CleanupImageIdTests.test_foreign_scope_manifest_is_not_read)"
+      },
+      {
+        "diagnostic": [
+          "OSError",
+          "[Errno 30] Read-only file system: '/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/cleanupids-testimagelistqueryfailureisunknownandfailsclosed'"
+        ],
+        "kind": "ERROR",
+        "test": "test_image_list_query_failure_is_unknown_and_fails_closed (test_ci_cleanup_image_ids.CleanupImageIdTests.test_image_list_query_failure_is_unknown_and_fails_closed)"
+      },
+      {
+        "diagnostic": [
+          "OSError",
+          "[Errno 30] Read-only file system: '/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/cleanupids-testinvalidmanifestvaluefailsclosedneverfedtodocker'"
+        ],
+        "kind": "ERROR",
+        "test": "test_invalid_manifest_value_fails_closed_never_fed_to_docker (test_ci_cleanup_image_ids.CleanupImageIdTests.test_invalid_manifest_value_fails_closed_never_fed_to_docker)"
+      },
+      {
+        "diagnostic": [
+          "OSError",
+          "[Errno 30] Read-only file system: '/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/cleanupids-testlosttagwithpresentidisremovedandverified'"
+        ],
+        "kind": "ERROR",
+        "test": "test_lost_tag_with_present_id_is_removed_and_verified (test_ci_cleanup_image_ids.CleanupImageIdTests.test_lost_tag_with_present_id_is_removed_and_verified)"
+      },
+      {
+        "diagnostic": [
+          "OSError",
+          "[Errno 30] Read-only file system: '/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/cleanupids-testmalformedmanifestlinefailsclosed'"
+        ],
+        "kind": "ERROR",
+        "test": "test_malformed_manifest_line_fails_closed (test_ci_cleanup_image_ids.CleanupImageIdTests.test_malformed_manifest_line_fails_closed)"
+      },
+      {
+        "diagnostic": [
+          "OSError",
+          "[Errno 30] Read-only file system: '/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/cleanupids-testmissingmanifestidisabsentandverified'"
+        ],
+        "kind": "ERROR",
+        "test": "test_missing_manifest_id_is_absent_and_verified (test_ci_cleanup_image_ids.CleanupImageIdTests.test_missing_manifest_id_is_absent_and_verified)"
+      },
+      {
+        "diagnostic": [
+          "OSError",
+          "[Errno 30] Read-only file system: '/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/cleanupids-testphase11workerservicesareallowedandforeigntagispreserved'"
+        ],
+        "kind": "ERROR",
+        "test": "test_phase11_worker_services_are_allowed_and_foreign_tag_is_preserved (test_ci_cleanup_image_ids.CleanupImageIdTests.test_phase11_worker_services_are_allowed_and_foreign_tag_is_preserved)"
+      },
+      {
+        "diagnostic": [
+          "OSError",
+          "[Errno 30] Read-only file system: '/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/cleanupids-testplaininspectfailureonexistingidfailsclosed'"
+        ],
+        "kind": "ERROR",
+        "test": "test_plain_inspect_failure_on_existing_id_fails_closed (test_ci_cleanup_image_ids.CleanupImageIdTests.test_plain_inspect_failure_on_existing_id_fails_closed)"
+      },
+      {
+        "diagnostic": [
+          "OSError",
+          "[Errno 30] Read-only file system: '/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/cleanupids-testrepodigestlistingfailureconservativelyretains'"
+        ],
+        "kind": "ERROR",
+        "test": "test_repo_digest_listing_failure_conservatively_retains (test_ci_cleanup_image_ids.CleanupImageIdTests.test_repo_digest_listing_failure_conservatively_retains)"
+      },
+      {
+        "diagnostic": [
+          "OSError",
+          "[Errno 30] Read-only file system: '/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/cleanupids-testrepodigestreferenceisconservativelyretained'"
+        ],
+        "kind": "ERROR",
+        "test": "test_repo_digest_reference_is_conservatively_retained (test_ci_cleanup_image_ids.CleanupImageIdTests.test_repo_digest_reference_is_conservatively_retained)"
+      },
+      {
+        "diagnostic": [
+          "OSError",
+          "[Errno 30] Read-only file system: '/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/cleanupids-testrepotaglistingfailureconservativelyretains'"
+        ],
+        "kind": "ERROR",
+        "test": "test_repo_tag_listing_failure_conservatively_retains (test_ci_cleanup_image_ids.CleanupImageIdTests.test_repo_tag_listing_failure_conservatively_retains)"
+      },
+      {
+        "diagnostic": [
+          "OSError",
+          "[Errno 30] Read-only file system: '/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/cleanupids-testsharedforeigntagimageisneverdeleted'"
+        ],
+        "kind": "ERROR",
+        "test": "test_shared_foreign_tag_image_is_never_deleted (test_ci_cleanup_image_ids.CleanupImageIdTests.test_shared_foreign_tag_image_is_never_deleted)"
+      },
+      {
+        "diagnostic": [
+          "OSError",
+          "[Errno 30] Read-only file system: '/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/cleanupids-testunknownmanifestservicefailsclosedandidnotdeleted'"
+        ],
+        "kind": "ERROR",
+        "test": "test_unknown_manifest_service_fails_closed_and_id_not_deleted (test_ci_cleanup_image_ids.CleanupImageIdTests.test_unknown_manifest_service_fails_closed_and_id_not_deleted)"
+      },
+      {
+        "diagnostic": [
+          "AssertionError",
+          "2 != 0 : [d15-3] browser-disconnect: generation=survives lost_run=false persisted=true native_resume=true"
+        ],
+        "kind": "FAIL",
+        "test": "test_live_harness_matches_committed_evidence (test_dsh_d15_3_native_resume.D15LiveHarnessTests.test_live_harness_matches_committed_evidence)"
+      }
+    ],
+    "summary_line": "FAILED (failures=1, errors=18, skipped=11)",
+    "test_count": 1011
+  },
+  "worktree": "/home/jefison/projects/.byq-worktrees/dsh-acp-single-version",
+  "worktree_verification_after": {
+    "exit_code": 0,
+    "output": "isolated worktree verified\n"
+  }
+}

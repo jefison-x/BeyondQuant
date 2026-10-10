@@ -1,0 +1,7 @@
+# New-child continuation explanation: actual browser
+
+Independent Tester: PASS at 1440×1000 and 390×844 against the rebuilt local frontend, durable test user and same public conversation. Exact normalized cancellation warning and persisted latest reply (workflow sequence53, exact original Job/Task) are visible. Input remains usable, ended banner absent, private `session.closed` hidden. Product API original Job remains completed/attempt1 and its key/input/artifact are unchanged.
+
+82 HTTP requests, all GET; zero foreign request, write request, page error or browser-initiated model action. Only Gateway/Product API is accessed by the browser. Browser storage/auth credentials remain private. Screenshots and selected result are included; private script/source and original failed-attempt SHA256s are recorded in browser-private-provenance.json.
+
+Three earlier attempts remain FAIL: sandbox browser startup before page access, then early visibility and asynchronous-loading assertions. The final observer waits for actual persisted response and normalized warning before scrolling/visibility checking. No extra model input or business operation was submitted. Independent Reviewer checked the one-string source diff, matching built asset and browser request, actual four screenshots, result and GET-only observer: bounded functional/test/architecture PASS. Root gives bounded UI PASS. The separate strict single-read FAIL remains unchanged.

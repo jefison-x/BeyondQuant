@@ -282,8 +282,9 @@ def main() -> None:
     if action == "user":
         from tests.workspace_helpers import trusted_agent_context
 
-        trusted_agent_context(OWNER)
-        print(json.dumps({"owner": OWNER}, sort_keys=True))
+        context = trusted_agent_context(OWNER)
+        workspace_id = context["x-byq-workspace-id"]
+        print(json.dumps({"owner": OWNER, "workspace_id": workspace_id}, sort_keys=True))
         return
     if action == "audit":
         payload = json.load(sys.stdin)

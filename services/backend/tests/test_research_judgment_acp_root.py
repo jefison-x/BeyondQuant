@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from uuid import uuid4
 
 import pytest
@@ -1119,3 +1120,169 @@ def test_judgment_ingress_routes_require_distinct_proof_and_exact_task_call(oper
                                  "judgment_call_identity": call})]
     assert client.post("/internal/acp/tool-ingress-" + operation,
                        headers=headers, json=body).status_code == 401
+
+
+def _insert_judgment_root(research, *, task, context, headers, plan, call_identity, status):
+    research._execute(
+        """INSERT INTO research_judgment_stage_calls
+        (task_id, call_identity, plan_version, stage, call_index, status, admitted_at)
+        VALUES (:task, :identity, :plan, :stage, 1, 'admitted', now())""",
+        {"task": task, "identity": call_identity, "plan": plan["plan_version"],
+         "stage": plan["stage"]})
+    research._execute(
+        """INSERT INTO research_judgment_acp_roots
+        (task_id, call_identity, root_run_id, owner_principal, workspace_id, actor_principal,
+         session_id, trace_id, runtime_boot_id, authority_epoch, dsh_run_id, plan_version,
+         stage, call_index, iteration, status, native_root_session_id, agent_run_id,
+         begin_receipt_json, created_at, updated_at)
+        VALUES (:task,:identity,:root,:owner,:workspace,:actor,:session,:trace,:boot,1,
+         :dsh,:plan,:stage,1,1,:status,:native,:run,'{}',now(),now())""",
+        {"task": task, "identity": call_identity, "root": "a" * 32,
+         "owner": context["owner_principal"], "workspace": context["workspace_id"],
+         "actor": f"byq-product-agent-{headers['x-byq-session-id']}",
+         "session": headers["x-byq-session-id"], "trace": headers["x-byq-trace-id"],
+         "boot": headers["x-byq-runtime-boot-id"], "dsh": "byqjudg-" + "b" * 32,
+         "plan": plan["plan_version"], "stage": plan["stage"], "status": status,
+         "native": "00000000-0000-4000-8000-000000000001" if status == "agent_bound" else None,
+         "run": ("agent_run_" + "c" * 32) if status == "agent_bound" else None})
+
+
+def test_judgment_stage_claim_is_leased_and_unknown_safe():
+    catalog, research, agents, task, context, headers, plan = _setup()
+    try:
+        request = _begin_request(task, plan)
+        call_identity = request["call_identity"]
+
+        def claim(owner: str, identity: str = call_identity) -> dict:
+            return research.claim_judgment_stage_call(
+                task, identity,
+                {"schema_version": "byq-research-judgment-stage-claim.v1",
+                 "claim_owner": owner, "lease_seconds": 300},
+                trusted_context=context)
+
+        # Pre-begin: the claim is keyed on the current plan attempt and persists once.
+        first = claim("worker-a")
+        assert first["claimed"] is True and first["reconcile_only"] is False
+        assert first["claim_attempt"] == 1
+        # a live lease cannot be stolen by a different owner
+        assert claim("worker-b") == {"claimed": False, "reason": "lease_held"}
+        # the same owner may renew (same attempt, persisted once, attempt counter bumped)
+        renewed = claim("worker-a")
+        assert renewed["claimed"] is True and renewed["claim_attempt"] == 2
+        # a claim for a stale/forged attempt identity is refused
+        with pytest.raises(InvalidTransition, match="current plan attempt"):
+            claim("worker-a", "byq-judgment-" + "0" * 32)
+
+        # ANY existing root (even root_created) is NOT affirmative no-dispatch
+        # evidence -> read-only reconcile only, never re-run.
+        _insert_judgment_root(research, task=task, context=context, headers=headers,
+                              plan=plan, call_identity=call_identity, status="root_created")
+        created = claim("worker-a")
+        assert created == {"claimed": False, "reconcile_only": True,
+                           "reason": "root_exists", "root_status": "root_created"}
+        research._execute(
+            "UPDATE research_judgment_acp_roots SET status='agent_bound' "
+            "WHERE task_id=:t AND call_identity=:c", {"t": task, "c": call_identity})
+        bound = claim("worker-a")
+        assert bound["reconcile_only"] is True and bound["root_status"] == "agent_bound"
+    finally:
+        _close(research, agents, catalog)
+
+
+def test_judgment_stage_claim_lease_expiry_is_reclaimable_but_never_after_a_root():
+    catalog, research, agents, task, context, headers, plan = _setup()
+    try:
+        request = _begin_request(task, plan)
+        call_identity = request["call_identity"]
+
+        def claim(owner: str) -> dict:
+            return research.claim_judgment_stage_call(
+                task, call_identity,
+                {"schema_version": "byq-research-judgment-stage-claim.v1",
+                 "claim_owner": owner, "lease_seconds": 1},
+                trusted_context=context)
+
+        assert claim("worker-a")["claimed"] is True
+        time.sleep(2)  # the lease expires
+        # a free/expired lease with NO root is reclaimable by another owner
+        assert claim("worker-b")["claimed"] is True
+        # a lost begin response (root_created) after an expired lease -> reconcile only
+        _insert_judgment_root(research, task=task, context=context, headers=headers,
+                              plan=plan, call_identity=call_identity, status="root_created")
+        late = claim("worker-c")
+        assert late["claimed"] is False and late["reconcile_only"] is True
+        assert late["reason"] == "root_exists"
+    finally:
+        _close(research, agents, catalog)
+
+
+def test_dispatch_intent_requires_the_live_lease_owner():
+    catalog, research, agents, task, context, headers, plan = _setup()
+    try:
+        request = _begin_request(task, plan)
+        call_identity = request["call_identity"]
+
+        def payload(owner: str, lease: int = 300) -> dict:
+            return {"schema_version": "byq-research-judgment-stage-claim.v1",
+                    "claim_owner": owner, "lease_seconds": lease}
+
+        research.claim_judgment_stage_call(task, call_identity, payload("worker-a"),
+                                           trusted_context=context)
+        # a different owner cannot persist a dispatch-intent
+        denied = research.record_judgment_dispatch_intent(
+            task, call_identity, payload("worker-b"), trusted_context=context)
+        assert denied == {"intent": False, "reason": "lease_not_held_or_intent_exists"}
+        # the live owner can persist it once
+        granted = research.record_judgment_dispatch_intent(
+            task, call_identity, payload("worker-a"), trusted_context=context)
+        assert granted["intent"] is True and granted["claim_owner"] == "worker-a"
+        # the intent is ONCE: a repeated same-owner intent is refused
+        again = research.record_judgment_dispatch_intent(
+            task, call_identity, payload("worker-a"), trusted_context=context)
+        assert again == {"intent": False, "reason": "lease_not_held_or_intent_exists"}
+        # an existing intent makes a fresh claim reconcile-only, never re-run
+        reclaimed = research.claim_judgment_stage_call(
+            task, call_identity, payload("worker-a"), trusted_context=context)
+        assert reclaimed["claimed"] is False and reclaimed["reconcile_only"] is True
+        assert reclaimed["reason"] == "dispatch_intent_exists"
+    finally:
+        _close(research, agents, catalog)
+
+
+def test_list_judgment_turn_tasks_selects_the_judgment_stage():
+    catalog, research, agents, task, context, headers, plan = _setup()
+    try:
+        rows = research.list_judgment_turn_tasks()
+        match = [row for row in rows if row["task_id"] == task]
+        assert len(match) == 1
+        assert match[0]["stage"] == "strategy_draft"
+        assert match[0]["plan_version"] == plan["plan_version"]
+        assert match[0]["owner_principal"] == context["owner_principal"]
+    finally:
+        _close(research, agents, catalog)
+
+
+def test_dispatch_intent_is_refused_after_the_lease_expires():
+    catalog, research, agents, task, context, headers, plan = _setup()
+    try:
+        request = _begin_request(task, plan)
+        call_identity = request["call_identity"]
+
+        def payload(owner: str, lease: int = 1) -> dict:
+            return {"schema_version": "byq-research-judgment-stage-claim.v1",
+                    "claim_owner": owner, "lease_seconds": lease}
+
+        assert research.claim_judgment_stage_call(
+            task, call_identity, payload("worker-a"), trusted_context=context)["claimed"] is True
+        time.sleep(2)  # the lease expires
+        # the expired same-owner intent is refused (claim_lease_until > now() fails)
+        expired = research.record_judgment_dispatch_intent(
+            task, call_identity, payload("worker-a"), trusted_context=context)
+        assert expired == {"intent": False, "reason": "lease_not_held_or_intent_exists"}
+        # a fresh owner can re-claim and then persist the intent once
+        assert research.claim_judgment_stage_call(
+            task, call_identity, payload("worker-b"), trusted_context=context)["claimed"] is True
+        assert research.record_judgment_dispatch_intent(
+            task, call_identity, payload("worker-b"), trusted_context=context)["intent"] is True
+    finally:
+        _close(research, agents, catalog)

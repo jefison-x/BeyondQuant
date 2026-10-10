@@ -1,0 +1,50 @@
+{
+  "classic_moby_fixture_review": {
+    "current_source_tested": true,
+    "focused_negative_cases": "mismatched LayerSources descriptor; unreferenced non-Moby payload; missing referenced Parent metadata",
+    "genuine_docker_generated_classic_archive": "NOT_RUN",
+    "models": "synthetic Moby v28 dual OCI and Docker compatibility archive: OCI index, canonical config, uncompressed OCI tar layer, manifest.json RepoTags/Layers/LayerSources/Parent, repositories metadata, and legacy metadata blobs"
+  },
+  "failures": [],
+  "large_archive_currency": {
+    "current_images_py_sha256": "789bdc48c10b3f9d0ad9d8209335c26af631293e7ff57aba2e3262ff4a02f559",
+    "current_source_real_large_archive_validation": "NOT_RUN",
+    "previous_images_py_sha256": "d09debdb38f972e911cde4c96bb603080b3c760ea3858014a3a19fb570675fb1",
+    "previous_real_three_alias_archive_proof": "/tmp/acp-release-store-identity-20261010-independent/three-alias-archive-proof.json",
+    "reused_without_rereading": true
+  },
+  "limited_verdict": "PASS",
+  "product_files_modified_by_tester": false,
+  "schema": "acp-release-store-final-tester-assessment.v1",
+  "source_freeze": {
+    "after": {
+      "scripts/release/images.py": "789bdc48c10b3f9d0ad9d8209335c26af631293e7ff57aba2e3262ff4a02f559",
+      "tests/architecture/test_release_pipeline.py": "bf5db954f7602454ebf35d8738654c8a8927f9446ef629d4cbc8ad852ae2c507"
+    },
+    "before": {
+      "scripts/release/images.py": "789bdc48c10b3f9d0ad9d8209335c26af631293e7ff57aba2e3262ff4a02f559",
+      "tests/architecture/test_release_pipeline.py": "bf5db954f7602454ebf35d8738654c8a8927f9446ef629d4cbc8ad852ae2c507"
+    },
+    "unchanged": true
+  },
+  "static_checks": {
+    "git_diff_check_exit": 0,
+    "py_compile_exit": 0
+  },
+  "test_result": {
+    "command": [
+      "python3",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "--basetemp",
+      "/tmp/acp-release-store-identity-20261010-independent-final/pytest-tmp",
+      "tests/architecture/test_release_pipeline.py"
+    ],
+    "elapsed_seconds": 2.077,
+    "exit_code": 0,
+    "summary": "52 passed, 21 subtests passed in 1.32s"
+  }
+}

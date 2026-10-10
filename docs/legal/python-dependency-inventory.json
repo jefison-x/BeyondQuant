@@ -133,6 +133,26 @@
       "requirement": "uvicorn[standard]==0.35.0"
     },
     {
+      "source": "services/acp_unified/Dockerfile",
+      "group": "build-declaration",
+      "requirement": "fastapi==0.116.1"
+    },
+    {
+      "source": "services/acp_unified/Dockerfile",
+      "group": "build-declaration",
+      "requirement": "httpx==0.28.1"
+    },
+    {
+      "source": "services/acp_unified/Dockerfile",
+      "group": "build-declaration",
+      "requirement": "pytest==9.0.3"
+    },
+    {
+      "source": "services/acp_unified/Dockerfile",
+      "group": "build-declaration",
+      "requirement": "uvicorn[standard]==0.35.0"
+    },
+    {
       "source": "workers/ml/Dockerfile",
       "group": "build-declaration",
       "requirement": "lightgbm==4.7.0"

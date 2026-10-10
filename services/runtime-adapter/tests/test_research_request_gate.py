@@ -290,6 +290,8 @@ def test_forwarded_headers_allowlist_excludes_internal_and_hop_by_hop():
         "Authorization": "Bearer test-secret",
         "content-type": "application/json",
         "Accept": "text/event-stream",
+        "x-opencode-session": "provider-session-id",
+        "User-Agent": "dsh-client/1.0",
         "x-byq-internal-token": "should-not-leak",
         "x-byq-runtime-judgment-token": "should-not-leak",
         "cookie": "session=should-not-leak",
@@ -298,7 +300,9 @@ def test_forwarded_headers_allowlist_excludes_internal_and_hop_by_hop():
     })
     assert forwarded == {"authorization": "Bearer test-secret",
                          "content-type": "application/json",
-                         "accept": "text/event-stream"}
+                         "accept": "text/event-stream",
+                         "x-opencode-session": "provider-session-id",
+                         "user-agent": "dsh-client/1.0"}
 
 
 def test_proxy_forwards_only_allowlisted_provider_headers(tmp_path):
@@ -309,6 +313,8 @@ def test_proxy_forwards_only_allowlisted_provider_headers(tmp_path):
         assert _post(proxy, _root_body(), headers={
             "Authorization": "Bearer test-secret-value",
             "Accept": "text/event-stream",
+            "User-Agent": "dsh-client/1.0",
+            "x-opencode-session": "123e4567-e89b-42d3-a456-426614174000",
             "x-byq-internal-token": "should-not-leak",
             "cookie": "session=should-not-leak",
             "connection": "keep-alive"}) == 200
@@ -317,6 +323,11 @@ def test_proxy_forwards_only_allowlisted_provider_headers(tmp_path):
     headers = _Upstream.last_headers
     assert headers.get("authorization") == "Bearer test-secret-value"
     assert headers.get("accept") == "text/event-stream"
+    # The DSH client's User-Agent and provider-session header are preserved
+    # end-to-end through the proxy, so the real provider receives the client's UA
+    # and the exact x-opencode-session routing identity (not urllib's default).
+    assert headers.get("user-agent") == "dsh-client/1.0"
+    assert headers.get("x-opencode-session") == "123e4567-e89b-42d3-a456-426614174000"
     # The client's internal token and cookie are never forwarded, and the
     # client's hop-by-hop connection value is not propagated.
     assert "x-byq-internal-token" not in headers

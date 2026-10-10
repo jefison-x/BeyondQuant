@@ -6,17 +6,16 @@ import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from importlib.metadata import version
 
 import pytest
-from deepseek_harness.errors import JsonRpcError, TransportClosedError
 
 from app.runtime import RuntimeAdapter, SessionStatus
 from pathlib import Path
+from .runtime_test_support import installed_sdk_version
 
 
 pytestmark = pytest.mark.skipif(
-    version("deepseek-harness-sdk") != "0.1.5rc1"
+    installed_sdk_version() != "0.1.5rc1"
     or os.environ.get("BYQ_DSH_REAL_PROCESS_TEST") != "1",
     reason="requires the isolated 0.1.5 default stack and real BYQ MCP",
 )
@@ -231,6 +230,8 @@ def test_official_registration_notification_has_exact_request_identity(monkeypat
 def test_candidate_mcp_auth_failure_blocks_initialization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from deepseek_harness.errors import JsonRpcError, TransportClosedError
+
     sentinel = "u4-invalid-mcp-token-must-not-leak"
     monkeypatch.setenv("BYQ_MCP_TOKEN", sentinel)
     adapter = RuntimeAdapter()

@@ -12,19 +12,25 @@ PROFILE_VERSION = 1
 PERMISSION_SCHEMA_VERSION = 'task-continuation-permission.v2'
 RESERVATION_SCHEMA_VERSION = 'task-continuation-reservation.v2'
 USAGE_SCHEMA_VERSION = 'continuation-request-usage.v1'
-ALLOWED_PROVIDER = 'deepseek-official'
-ALLOWED_MODEL = 'deepseek-v4-flash'
+# ADR-0105: F6 continuation runs on OpenCode Go's OpenAI-compatible Chat route.
+ALLOWED_PROVIDER = 'opencode-go-chat'
+ALLOWED_MODEL = 'deepseek-v4.1-flash'
+# Exact upstream target; the local proxy forwards the route request here and the
+# DSH route baseURL is pinned to the proxy, so the path is never double-joined.
+UPSTREAM_BASE_URL = 'https://opencode.ai/zen/go/v1'
+UPSTREAM_REQUEST_TARGET = '/chat/completions'
 ALLOWED_DOMAIN_TOOLS = frozenset({'byq_research_get', 'byq_backtest_task_get'})
 ALLOWED_HARNESS_TOOLS = frozenset({'byq_agent_run_start', 'byq_agent_authorize', 'byq_agent_audit'})
 _LIMITS = {
     'max_provider_calls': 16, 'max_attempts': 16, 'max_concurrent': 1,
     'max_input_bytes': 262144, 'max_total_input_bytes': 4194304,
     'max_output_tokens': 8192, 'max_total_output_tokens': 131072,
-    'max_tool_payload_bytes': 65536, 'max_total_tool_payload_bytes': 1048576,
+    'max_tool_payload_bytes': 131072, 'max_total_tool_payload_bytes': 1048576,
     'max_tool_calls': 16, 'deadline_ms': 180000,
 }
 _PROFILE = {'profile_id': PROFILE_ID, 'profile_version': PROFILE_VERSION,
             'provider': ALLOWED_PROVIDER, 'model': ALLOWED_MODEL, 'request_limits': _LIMITS,
+            'upstream_base_url': UPSTREAM_BASE_URL, 'upstream_request_target': UPSTREAM_REQUEST_TARGET,
             'allowed_tools': sorted(ALLOWED_DOMAIN_TOOLS | ALLOWED_HARNESS_TOOLS)}
 PROFILE_SHA256 = hashlib.sha256(json.dumps(_PROFILE, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 

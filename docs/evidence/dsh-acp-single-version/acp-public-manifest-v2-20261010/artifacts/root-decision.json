@@ -1,0 +1,25 @@
+{
+  "schema": "acp-public-manifest-v2-root-decision.v1",
+  "decision": "LIMITED_PASS",
+  "head": "2d5810973240c5d7692569319c2b5ab337ae2082",
+  "source_hashes": {
+    "scripts/release/images.py": "dc68c24fd4436b0ddeee89b7e7486e8ec1894d3bcc2fb5faee37a9e257f6b783",
+    "scripts/release/manifest.py": "1a93db2e32893d8db0b3d9a937f6b4acb1dfc906a81da0e295feb38808129a62",
+    "tests/architecture/test_release_pipeline.py": "737cb82fe711b6a3ecc41e6604de1a0e26a882e443fc903a1547c55c9a8a54fb"
+  },
+  "independent_tester": "LIMITED_PASS_COMPOSITE_COVERAGE",
+  "tests": 53,
+  "subtests": 23,
+  "single_green_module_run": "NOT_RUN",
+  "independent_reviewer": "LIMITED_PASS_NO_P1_P2",
+  "root_diff_check": "PASS",
+  "worktree_verification": "PASS",
+  "architecture_before_v2": "COMPOSITE_LOCAL_COVERAGE_ONLY",
+  "architecture_first_discovery": "FAIL_RETAINED",
+  "adopting_commit_architecture": "NOT_RUN",
+  "hosted_full_registry_attestation": "NOT_RUN",
+  "historical_signed_manifest_operation": "OPEN_NOT_RUN",
+  "default_adoption_deployment": "NOT_RUN",
+  "overall": "NOT_READY",
+  "scope": "Three release source/test files and runbook; earlier image/F6 reused; no resource operation beyond static compose parsing"
+}

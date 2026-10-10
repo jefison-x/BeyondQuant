@@ -9,12 +9,10 @@ same-UID ptrace-style inspection before a Product DSH process is launched.
 from __future__ import annotations
 
 import ctypes
-import os
 import sys
 
 _PR_SET_DUMPABLE = 4
 _PR_GET_DUMPABLE = 3
-_ACP_RELEASE = "dsh-v0.2.0-rc.2-acp"
 
 
 def require_private_process() -> None:
@@ -29,5 +27,10 @@ def require_private_process() -> None:
 
 
 def guard_candidate_adapter_process() -> None:
-    if os.environ.get("BYQ_DSH_COMPATIBILITY_RELEASE") == _ACP_RELEASE:
-        require_private_process()
+    """Protect the fixed ACP Adapter process before constructing services.
+
+    The normal ACP family is the default, so requiring an explicit selector
+    here would leave the default startup path inspectable. Legacy selectors
+    fail closed in RuntimeAdapter; they must not bypass this startup guard.
+    """
+    require_private_process()

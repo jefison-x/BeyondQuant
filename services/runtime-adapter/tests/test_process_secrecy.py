@@ -11,14 +11,15 @@ import pytest
 
 @pytest.mark.skipif(sys.platform != "linux" or not os.path.isdir("/proc"),
                     reason="Linux procfs is required")
-def test_candidate_process_guard_blocks_same_uid_environment_inspection():
+def test_default_acp_startup_guard_blocks_same_uid_environment_inspection():
     env = {**os.environ, "BYQ_SYNTHETIC_SECRET_PROBE": "only-a-local-test"}
+    env.pop("BYQ_DSH_COMPATIBILITY_RELEASE", None)
     sentinel = b"BYQ_SYNTHETIC_SECRET_PROBE=only-a-local-test"
 
     def start(guard: bool) -> subprocess.Popen[str]:
         command = (
-            "from app.process_secrecy import require_private_process; "
-            + ("require_private_process(); " if guard else "")
+            "from app.process_secrecy import guard_candidate_adapter_process; "
+            + ("guard_candidate_adapter_process(); " if guard else "")
             + "print('ready', flush=True); import time; time.sleep(5)"
         )
         child = subprocess.Popen(

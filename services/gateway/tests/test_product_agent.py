@@ -63,6 +63,262 @@ def test_active_catalog_status_requires_a_current_live_adapter_binding(monkeypat
     assert status()["conversation"]["status"] == "unknown"
 
 
+def test_hard_end_event_overrides_active_binding_but_normal_release_does_not(monkeypatch, tmp_path):
+    monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
+    store = TraceStore(tmp_path)
+    monkeypatch.setattr(main, "trace_store", store)
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    monkeypatch.setattr(main, "_adapter_containment", lambda _session_id: None)
+    monkeypatch.setattr(main, "_runtime_authority_snapshot", lambda: {
+        "ready": True, "boot_id": "b" * 32, "authority_epoch": 7,
+    })
+    monkeypatch.setattr(main, "_adapter_authority", lambda: {"boot_id": "b" * 32})
+    monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda *_a, **_k: {
+        "schema_version": main.RUNTIME_AUTHORITY_CURRENT_SCHEMA,
+        "boot_id": "b" * 32, "authority_epoch": 7, "status": "current",
+    })
+    conversation = {
+        "conversation_id": "conversation_1", "runtime_session_id": "runtime_1",
+        "trace_id": "trace_1", "title": "研究", "status": "active",
+    }
+    monkeypatch.setattr(main, "_catalog_request", lambda *_a, **_k: {
+        "conversation": conversation, "messages": [],
+    })
+    client = TestClient(main.app)
+    session = main.ProductSession("conversation_1", "runtime_1", "trace_1",
+                                  main.Principal(subject=main.PRODUCT_PRINCIPAL))
+    session.boot_id = "b" * 32
+    main.product_sessions.add(session)
+
+    def append(sequence, kind, payload):
+        store.append({"session_id": "runtime_1", "trace_id": "trace_1", "sequence": sequence,
+                      "timestamp": "2026-10-07T00:00:00Z", "source": "runtime-adapter",
+                      "kind": kind, "payload": payload})
+
+    def status():
+        response = client.get("/v1/agent/sessions/conversation_1",
+                              headers={"Authorization": f"Bearer {TOKEN}"})
+        assert response.status_code == 200
+        return response.json()["conversation"]["status"]
+
+    assert status() == "active"
+    # A normal result and a soft cancel do not end the conversation.
+    append(1, "session.result", {})
+    append(2, "session.cancelled", {"mode": "soft"})
+    assert status() == "active"
+    # Adapter idle release follows an acknowledged root but does not end the
+    # durable BYQ conversation or its normal next-turn contract.
+    append(3, "session.closed", {"reason": "released"})
+    assert status() == "active"
+    # Adapter shutdown after a fault is also not a user-visible conversation end.
+    append(4, "session.closed", {"reason": "adapter-shutdown"})
+    assert status() == "active"
+    # A hard cancel still overrides the still-matching live binding.
+    append(5, "session.cancelled", {"mode": "hard"})
+    assert status() == "cancelled"
+    replay = client.get("/v1/agent/sessions/conversation_1",
+                        headers={"Authorization": f"Bearer {TOKEN}"})
+    assert replay.status_code == 200
+    assert replay.json()["conversation"]["status"] == "cancelled"
+    assert replay.json()["events"][-1]["kind"] == "session.cancelled"
+    monkeypatch.setattr(main, "_schedule_idle_release", lambda *_a, **_k: None)
+    store.close("runtime_1")
+    stream = client.get("/v1/workflows/conversation_1/events",
+                        headers={"Authorization": f"Bearer {TOKEN}"})
+    assert stream.status_code == 200
+    assert "session.closed" not in stream.text
+    assert stream.text.count("session.cancelled") == 2  # soft and exact-owned hard cancel
+
+
+@pytest.mark.parametrize("conversation_status", ["active", "archived"])
+def test_runtime_close_and_untrusted_terminal_events_are_hidden_from_history_and_live_stream(
+    monkeypatch, tmp_path, conversation_status,
+):
+    monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
+    store = TraceStore(tmp_path)
+    monkeypatch.setattr(main, "trace_store", store)
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    monkeypatch.setattr(main, "_recovery_authority", lambda *_a, **_k: {})
+    monkeypatch.setattr(main, "_verified_public_runtime_boot", lambda: None)
+    conversation = {
+        "conversation_id": "conversation_1", "runtime_session_id": "runtime_1",
+        "trace_id": "trace_1", "title": "研究", "status": conversation_status,
+    }
+    monkeypatch.setattr(main, "_catalog_request", lambda *_a, **_k: {
+        "conversation": conversation, "messages": [],
+    })
+    store.append({"session_id": "runtime_1", "trace_id": "trace_1", "sequence": 1,
+                  "timestamp": "2026-10-07T00:00:00Z", "source": "runtime-adapter",
+                  "kind": "session.result", "payload": {"run_id": "a" * 32}})
+    released = {"session_id": "runtime_1", "trace_id": "trace_1", "sequence": 2,
+                "timestamp": "2026-10-07T00:00:01Z", "source": "runtime-adapter",
+                "kind": "session.closed", "payload": {"reason": "released"}}
+    store.append(released)
+    store.append({**released, "sequence": 3, "payload": {"reason": "adapter-shutdown"}})
+    store.append({**released, "sequence": 4, "trace_id": "another_trace"})
+    store.append({**released, "sequence": 5, "source": "dsh"})
+    store.append({"session_id": "runtime_1", "trace_id": "another_trace", "sequence": 6,
+                  "timestamp": "2026-10-07T00:00:02Z", "source": "runtime-adapter",
+                  "kind": "session.cancelled", "payload": {"mode": "hard"}})
+    store.append({"session_id": "runtime_1", "trace_id": "trace_1", "sequence": 7,
+                  "timestamp": "2026-10-07T00:00:03Z", "source": "dsh",
+                  "kind": "session.cancelled", "payload": {"mode": "hard"}})
+
+    client = TestClient(main.app)
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    replay = client.get("/v1/agent/sessions/conversation_1", headers=headers)
+    assert replay.status_code == 200
+    replay_body = replay.json()
+    assert replay_body["conversation"]["status"] == (
+        "unknown" if conversation_status == "active" else "archived"
+    )
+    assert [event["kind"] for event in replay_body["events"]] == ["session.result"]
+    assert replay_body["containment"]["status"] == "completed"
+
+    session = main.ProductSession(
+        "conversation_1", "runtime_1", "trace_1", main.Principal(subject=main.PRODUCT_PRINCIPAL),
+    )
+    monkeypatch.setattr(main, "_product_session", lambda *_a, **_k: session)
+    monkeypatch.setattr(main, "_schedule_idle_release", lambda *_a, **_k: None)
+    monkeypatch.setattr(main, "_catalog_request", lambda *_a, **_k: {
+        "conversation": conversation,
+    })
+    store.close("runtime_1")
+    stream = client.get("/v1/workflows/conversation_1/events", headers=headers)
+    assert stream.status_code == 200
+    assert "session.result" in stream.text
+    assert "session.closed" not in stream.text
+    assert "session.cancelled" not in stream.text
+
+
+def test_durable_conversation_close_keeps_runtime_close_events_terminal(monkeypatch, tmp_path):
+    monkeypatch.setattr(main, "PRODUCT_TOKEN", TOKEN)
+    store = TraceStore(tmp_path)
+    monkeypatch.setattr(main, "trace_store", store)
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    monkeypatch.setattr(main, "_recovery_authority", lambda *_a, **_k: {})
+    monkeypatch.setattr(main, "_verified_public_runtime_boot", lambda: None)
+    conversation = {
+        "conversation_id": "conversation_1", "runtime_session_id": "runtime_1",
+        "trace_id": "trace_1", "title": "研究", "status": "closed",
+    }
+    monkeypatch.setattr(main, "_catalog_request", lambda *_a, **_k: {
+        "conversation": conversation, "messages": [],
+    })
+    store.append({"session_id": "runtime_1", "trace_id": "trace_1", "sequence": 1,
+                  "timestamp": "2026-10-07T00:00:00Z", "source": "runtime-adapter",
+                  "kind": "session.closed", "payload": {"reason": "released"}})
+    store.append({"session_id": "runtime_1", "trace_id": "trace_1", "sequence": 2,
+                  "timestamp": "2026-10-07T00:00:01Z", "source": "runtime-adapter",
+                  "kind": "session.closed", "payload": {"reason": "adapter-shutdown"}})
+    store.append({"session_id": "runtime_1", "trace_id": "another_trace", "sequence": 3,
+                  "timestamp": "2026-10-07T00:00:02Z", "source": "dsh",
+                  "kind": "session.closed", "payload": {"reason": "released"}})
+
+    response = TestClient(main.app).get(
+        "/v1/agent/sessions/conversation_1", headers={"Authorization": f"Bearer {TOKEN}"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["conversation"]["status"] == "closed"
+    assert [event["kind"] for event in body["events"]] == ["session.closed", "session.closed"]
+
+    session = main.ProductSession(
+        "conversation_1", "runtime_1", "trace_1", main.Principal(subject=main.PRODUCT_PRINCIPAL),
+    )
+    monkeypatch.setattr(main, "_product_session", lambda *_a, **_k: session)
+    monkeypatch.setattr(main, "_schedule_idle_release", lambda *_a, **_k: None)
+    store.close("runtime_1")
+    stream = TestClient(main.app).get(
+        "/v1/workflows/conversation_1/events", headers={"Authorization": f"Bearer {TOKEN}"},
+    )
+    assert stream.status_code == 200
+    assert stream.text.count("session.closed") == 2
+
+
+@pytest.mark.parametrize("close_reason", ["released", "adapter-shutdown"])
+def test_runtime_close_does_not_bypass_old_root_ack_before_next_turn(monkeypatch, tmp_path, close_reason):
+    principal = main.Principal(subject="alice")
+    released_store = TraceStore(tmp_path)
+    released_store.append({"session_id": "runtime_1", "trace_id": "trace_1", "sequence": 1,
+                           "timestamp": "2026-10-07T00:00:00Z", "source": "runtime-adapter",
+                           "kind": "session.result", "payload": {"run_id": "a" * 32}})
+    released_store.append({"session_id": "runtime_1", "trace_id": "trace_1", "sequence": 2,
+                           "timestamp": "2026-10-07T00:00:01Z", "source": "runtime-adapter",
+                           "kind": "session.closed", "payload": {"reason": close_reason}})
+    monkeypatch.setattr(main, "trace_store", released_store)
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    restored = main.ProductSession("conversation_1", "runtime_1", "trace_1", principal,
+                                   workspace_id="workspace_1", boot_id=TEST_BOOT_ID)
+    restore_calls = []
+    monkeypatch.setattr(main, "_trusted_request_identity", lambda _request: (principal, "workspace_1"))
+    monkeypatch.setattr(main, "_restore_product_session",
+                        lambda *args, **kwargs: restore_calls.append((args, kwargs)) or restored)
+    monkeypatch.setattr(main, "_require_session_runtime_authority", lambda _session: TEST_BOOT_ID)
+    monkeypatch.setattr(main, "_runtime_conversation_payload", lambda *_a, **_k: {"conversation_context": []})
+    monkeypatch.setattr(main, "_catalog_request", lambda *_a, **_k: {
+        "message": {"message_id": "message-stable-123"},
+    })
+    monkeypatch.setattr(main, "time", type("Clock", (), {"sleep": staticmethod(lambda _delay: None)})())
+
+    attempts = []
+    acknowledged = False
+
+    def adapter_post(path, *, payload=None, **_kwargs):
+        nonlocal acknowledged
+        assert path == "/internal/runtime/sessions/runtime_1/prompt"
+        attempts.append(payload)
+        if not acknowledged:
+            error = main.HTTPException(status_code=409, detail="runtime session is not available")
+            error.adapter_conflict_detail = "previous turn domain cleanup is not yet acknowledged"
+            acknowledged = True
+            raise error
+        return {"accepted": True, "run_id": "new-root-run"}
+
+    monkeypatch.setattr(main, "_adapter_post", adapter_post)
+    result = main.submit_product_turn(
+        "conversation_1", main.ProductPromptRequest(content="next question"), Request({"type": "http"}),
+    )
+
+    assert len(restore_calls) == 1
+    assert result["accepted"] is True
+    assert [attempt["idempotency_key"] for attempt in attempts] == [
+        "message-stable-123", "message-stable-123",
+    ]
+
+
+def test_hard_terminal_helper_rejects_untrusted_and_missing_identity():
+    # A raw model event, a non-dict payload and a missing trace identity are not evidence.
+    events = [
+        {"session_id": "runtime_1", "trace_id": "trace_1", "sequence": 1, "source": "model",
+         "kind": "session.closed", "payload": {}},
+        {"session_id": "runtime_1", "trace_id": "trace_1", "sequence": 2, "source": "runtime-adapter",
+         "kind": "session.cancelled", "payload": "hard"},
+        {"session_id": "runtime_1", "sequence": 3, "source": "runtime-adapter",
+         "kind": "session.closed", "payload": {}},
+    ]
+    assert main._conversation_hard_terminal(events, "runtime_1", "trace_1") is None
+    # A missing trace identity is not evidence even with a trusted source.
+    assert main._conversation_hard_terminal(events, "runtime_1", "") is None
+    # Exact identity + trusted source + a hard cancel is a terminal.
+    assert main._conversation_hard_terminal(
+        [{"session_id": "runtime_1", "trace_id": "trace_1", "sequence": 1,
+          "source": "runtime-adapter", "kind": "session.cancelled", "payload": {"mode": "hard"}}],
+        "runtime_1", "trace_1") == "cancelled"
+    assert main._conversation_hard_terminal(
+        [{"session_id": "runtime_1", "trace_id": "trace_1", "sequence": 1,
+          "source": "runtime-adapter", "kind": "session.closed", "payload": {"reason": "released"}}],
+        "runtime_1", "trace_1") is None
+    assert main._conversation_hard_terminal(
+        [{"session_id": "runtime_1", "trace_id": "trace_1", "sequence": 1,
+          "source": "runtime-adapter", "kind": "session.closed", "payload": {"reason": "adapter-shutdown"}}],
+        "runtime_1", "trace_1") is None
+    assert main._conversation_hard_terminal(
+        [{"session_id": "runtime_1", "trace_id": "trace_1", "sequence": 1,
+          "source": "runtime-adapter", "kind": "session.closed", "payload": {"reason": "adapter-shutdown"}}],
+        "runtime_1", "trace_1", "closed") == "closed"
+
+
 def authorize_runtime_session(monkeypatch, session):
     session.boot_id = TEST_BOOT_ID
     monkeypatch.setattr(main, "_runtime_authority_snapshot", lambda: {
@@ -821,7 +1077,14 @@ def test_disconnected_public_stream_releases_idle_runtime(monkeypatch) -> None:
     monkeypatch.setattr(main, "product_sessions", registry)
     monkeypatch.setattr(main, "RUNTIME_SESSION_IDLE_SECONDS", 0.01)
     released = threading.Event()
-    monkeypatch.setattr(main, "_adapter_post", lambda _path, **_kwargs: released.set() or {"status": "closed"})
+    release_paths: list[str] = []
+
+    def release(path, **_kwargs):
+        release_paths.append(path)
+        released.set()
+        return {"status": "closed"}
+
+    monkeypatch.setattr(main, "_adapter_post", release)
     session = main.ProductSession(
         conversation_id="conversation_idle", session_id="runtime-idle", trace_id="trace-idle",
         principal=main.Principal(subject=main.PRODUCT_PRINCIPAL),
@@ -832,7 +1095,61 @@ def test_disconnected_public_stream_releases_idle_runtime(monkeypatch) -> None:
     main._schedule_idle_release(session)
 
     assert released.wait(timeout=1.0)
+    assert release_paths == [
+        "/internal/runtime/sessions/runtime-idle/release?preserve_conversation=true",
+    ]
     assert registry.find_owned(session.conversation_id, session.principal) is None
+
+
+@pytest.mark.parametrize(
+    ("kind", "event_trace_id", "source", "payload", "expected_release_path"),
+    [
+        ("session.cancelled", "trace-idle", "runtime-adapter", {"mode": "hard"},
+         "/internal/runtime/sessions/runtime-idle/release"),
+        ("session.cancelled", "other-trace", "runtime-adapter", {"mode": "hard"},
+         "/internal/runtime/sessions/runtime-idle/release?preserve_conversation=true"),
+        ("session.cancelled", "trace-idle", "dsh", {"mode": "hard"},
+         "/internal/runtime/sessions/runtime-idle/release?preserve_conversation=true"),
+        ("session.closed", "trace-idle", "runtime-adapter", {"reason": "released"},
+         "/internal/runtime/sessions/runtime-idle/release?preserve_conversation=true"),
+        ("session.closed", "other-trace", "runtime-adapter", {"reason": "adapter-shutdown"},
+         "/internal/runtime/sessions/runtime-idle/release?preserve_conversation=true"),
+    ],
+)
+def test_idle_release_uses_bare_cleanup_only_for_exact_owned_hard_cancel(
+    monkeypatch, tmp_path: Path, kind: str, event_trace_id: str, source: str, payload: dict,
+    expected_release_path: str,
+) -> None:
+    registry = main.ProductSessionRegistry()
+    monkeypatch.setattr(main, "product_sessions", registry)
+    monkeypatch.setattr(main, "RUNTIME_SESSION_IDLE_SECONDS", 0.01)
+    store = TraceStore(tmp_path)
+    monkeypatch.setattr(main, "trace_store", store)
+    store.append({
+        "session_id": "runtime-idle", "trace_id": event_trace_id, "sequence": 1,
+        "timestamp": "2026-10-09T00:00:00Z", "source": source,
+        "kind": kind, "payload": payload,
+    })
+    released = threading.Event()
+    release_paths: list[str] = []
+
+    def release(path, **_kwargs):
+        release_paths.append(path)
+        released.set()
+        return {"status": "closed"}
+
+    monkeypatch.setattr(main, "_adapter_post", release)
+    session = main.ProductSession(
+        conversation_id="conversation_idle", session_id="runtime-idle", trace_id="trace-idle",
+        principal=main.Principal(subject=main.PRODUCT_PRINCIPAL),
+    )
+    registry.add(session)
+    registry.begin_stream(session)
+
+    main._schedule_idle_release(session)
+
+    assert released.wait(timeout=1.0)
+    assert release_paths == [expected_release_path]
 
 
 def test_restore_accepts_an_adapter_session_that_survived_gateway_restart(monkeypatch, tmp_path: Path) -> None:

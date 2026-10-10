@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
-const signingKey = "integration-acp-signing-key-with-at-least-32-bytes";
+const signingKey = "integration-acp-signing-key-with-at-least-32-bytes"; // gitleaks:allow — fixed synthetic test key
 const legacyToken = "synthetic-legacy-mcp-token";
 const discoveryToken = "synthetic-acp-discovery-token";
 const backendProof = "synthetic-backend-proof-token";
@@ -36,6 +36,19 @@ function acpBearer(): string {
   return `byq-acp-v1.${payload.toString("base64url")}.${signature.toString("base64url")}`;
 }
 
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonical(record[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function sha256(value: unknown): string {
+  return createHash("sha256").update(canonical(value), "ascii").digest("hex");
+}
+
 const runId = "agent_run_" + "c".repeat(32);
 const bindReceipt = {
   schema_version: "byq-acp-agent-bind-receipt.v1",
@@ -56,9 +69,11 @@ let ingressMode: "valid" | "invalid" = "valid";
 let bindingStatus: "pending" | "bound" = "bound";
 let domainMode: "success" | "reject422" | "conflict409" | "timeout" = "success";
 let settlementMode: "valid" | "invalid" = "valid";
+let authorizationDenialMode: "valid" | "missing" | "ok" = "valid";
 let rootBound = false;
 let ingressSequence = 0;
 const settlements: Array<Record<string, unknown>> = [];
+const observedIngress = new Map<string, { receipt: Record<string, unknown>; arguments: Record<string, unknown> }>();
 const backend = createServer(async (req, res) => {
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(Buffer.from(chunk));
@@ -94,14 +109,62 @@ const backend = createServer(async (req, res) => {
     assert.equal(typeof body?.tool_name, "string");
     assert.ok(body?.arguments && typeof body.arguments === "object");
     const bootstrap = ["byq_health", "byq_agent_roles", "byq_agent_context"].includes(String(body?.tool_name));
-    send(200, { schema_version: "byq-acp-tool-ingress-receipt.v1",
+    const receipt = { schema_version: "byq-acp-tool-ingress-receipt.v1",
       mcp_request_id: ingressMode === "invalid" ? "f".repeat(32) : body?.mcp_request_id,
       root_run_id: claims.root_run_id, runtime_boot_id: claims.runtime_boot_id,
       native_root_session_id: claims.native_root_session_id,
       native_agent_session_id: claims.native_agent_session_id, native_parent_session_id: null,
       origin: "root", depth: 0, tool_name: body?.tool_name,
       agent_run_id: rootBound ? runId : (bootstrap ? null : runId),
-      sequence: ++ingressSequence, event_sha256: "a".repeat(64) });
+      sequence: ++ingressSequence, event_sha256: "a".repeat(64) };
+    observedIngress.set(String(body?.mcp_request_id), {
+      receipt, arguments: body?.arguments as Record<string, unknown>,
+    });
+    send(200, receipt);
+    return;
+  }
+
+  if (req.url === "/internal/acp/agent-authorize") {
+    assert.equal(req.method, "POST");
+    assert.equal(entry.headers.get("authorization"), `Bearer ${backendProof}`);
+    assert.equal(entry.headers.get("x-byq-owner-principal"), claims.owner_principal);
+    assert.equal(entry.headers.get("x-byq-root-run-id"), claims.root_run_id);
+    assert.equal(entry.headers.get("x-byq-runtime-boot-id"), claims.runtime_boot_id);
+    assert.equal(entry.headers.get("x-byq-acp-native-agent-session-id"), claims.native_agent_session_id);
+    assert.equal(entry.headers.get("x-byq-acp-native-root-session-id"), claims.native_root_session_id);
+    assert.equal(entry.headers.get("x-byq-acp-origin"), "root");
+    assert.equal(entry.headers.get("x-byq-acp-depth"), "0");
+    assert.deepEqual(body && Object.keys(body).sort(), ["arguments", "mcp_request_id", "schema_version"]);
+    assert.equal(body?.schema_version, "byq-acp-agent-authorize.v1");
+    const observed = observedIngress.get(String(body?.mcp_request_id));
+    assert.ok(observed, "private authorization must refer to a previously persisted ingress");
+    assert.equal(observed.receipt.tool_name, "byq_agent_authorize");
+    assert.equal(observed.receipt.agent_run_id,
+      (body?.arguments as Record<string, unknown>).run_id,
+      "the authorization AgentRun must be the AgentRun bound to this native Agent ingress");
+    assert.deepEqual(body?.arguments, observed.arguments,
+      "Backend authorization input must match the exact observed arguments");
+    const authorization = { authorized: authorizationDenialMode === "ok",
+      decision: authorizationDenialMode === "ok" ? "allowed" : "denied",
+      run_id: runId, role_id: "market_researcher",
+      action: (body?.arguments as Record<string, unknown>).action };
+    if (authorizationDenialMode === "missing") {
+      send(200, { status: "denied", authorization });
+      return;
+    }
+    if (authorizationDenialMode === "ok") {
+      send(200, { status: "ok", authorization });
+      return;
+    }
+    const refusalBase = { schema_version: "byq-acp-authorization-denial-receipt.v1",
+      mcp_request_id: body?.mcp_request_id, root_run_id: observed.receipt.root_run_id,
+      runtime_boot_id: observed.receipt.runtime_boot_id,
+      native_agent_session_id: observed.receipt.native_agent_session_id,
+      agent_run_id: observed.receipt.agent_run_id, tool_name: "byq_agent_authorize",
+      arguments_sha256: sha256(observed.arguments), event_sha256: observed.receipt.event_sha256,
+      reason: "role_tool_not_allowed", outcome: "denied", audit_id: "agent_audit_" + "8".repeat(32) };
+    const refusalReceipt = { ...refusalBase, receipt_sha256: sha256(refusalBase) };
+    send(200, { status: "denied", authorization, refusal_receipt: refusalReceipt });
     return;
   }
 
@@ -139,14 +202,36 @@ const backend = createServer(async (req, res) => {
     assert.match(String(body?.mcp_request_id), /^[0-9a-f]{32}$/);
     assert.ok(Number.isSafeInteger(body?.sequence) && Number(body?.sequence) > 0);
     assert.match(String(body?.event_sha256), /^[0-9a-f]{64}$/);
-    assert.ok(["settled", "unknown"].includes(String(body?.outcome)));
+    assert.ok(["settled", "unknown", "denied"].includes(String(body?.outcome)));
+    if (body?.outcome === "denied") {
+      assert.ok(body.refusal_receipt && typeof body.refusal_receipt === "object",
+        "denied settlement requires the private exact Backend refusal receipt");
+      const refusalReceipt = body.refusal_receipt as Record<string, unknown>;
+      assert.equal(refusalReceipt.mcp_request_id, body.mcp_request_id);
+      assert.equal(refusalReceipt.event_sha256, body.event_sha256);
+    } else {
+      assert.equal(body?.refusal_receipt, undefined,
+        "existing settled and unknown requests retain their previous closed shape");
+    }
     settlements.push(body!);
-    send(200, { schema_version: "byq-acp-tool-ingress-settle-receipt.v1",
+    const commonReceipt = { schema_version: "byq-acp-tool-ingress-settle-receipt.v1",
       mcp_request_id: body?.mcp_request_id, root_run_id: claims.root_run_id,
       runtime_boot_id: claims.runtime_boot_id, native_agent_session_id: claims.native_agent_session_id,
       tool_name: body?.tool_name, sequence: body?.sequence,
       event_sha256: settlementMode === "invalid" ? "f".repeat(64) : body?.event_sha256,
-      outcome: body?.outcome, settlement_sha256: "9".repeat(64) });
+      outcome: body?.outcome };
+    if (body?.outcome === "denied") {
+      const refusalReceipt = body.refusal_receipt as Record<string, unknown>;
+      const refusalReceiptSha = String(refusalReceipt.receipt_sha256);
+      const settlementFields = { mcp_request_id: body.mcp_request_id, root_run_id: body.root_run_id,
+        runtime_boot_id: body.runtime_boot_id, native_agent_session_id: body.native_agent_session_id,
+        tool_name: body.tool_name, sequence: body.sequence, event_sha256: body.event_sha256,
+        outcome: "denied", refusal_receipt_sha256: refusalReceiptSha };
+      send(200, { ...commonReceipt, refusal_receipt_sha256: refusalReceiptSha,
+        settlement_sha256: sha256(settlementFields) });
+    } else {
+      send(200, { ...commonReceipt, settlement_sha256: "9".repeat(64) });
+    }
     return;
   }
 
@@ -326,6 +411,70 @@ try {
   assert.equal(requests.filter(request => request.path === "/internal/acp/tool-ingress-observe"
     && request.body?.tool_name === "byq_agent_run_start").length, 0,
   "AgentRun start uses pending-to-bound registration instead of generic tool ingress");
+
+  const deniedAuthorizationArgs = { run_id: runId, action: "byq_ml_training_create" };
+  const deniedAuthorization = await acp.value.callTool({ name: "byq_agent_authorize",
+    arguments: deniedAuthorizationArgs });
+  assert.equal(deniedAuthorization.isError, true,
+    "a proved role refusal remains a model-visible authorization error");
+  const deniedAuthorizationText = deniedAuthorization.content.find(item => item.type === "text");
+  assert.ok(deniedAuthorizationText && deniedAuthorizationText.type === "text");
+  const deniedAuthorizationPayload = JSON.parse(deniedAuthorizationText.text) as Record<string, unknown>;
+  assert.deepEqual(deniedAuthorizationPayload.backend,
+    { status: "agent_forbidden", http_status: 403 },
+    "the existing public tool error shape is preserved");
+  assert.equal(JSON.stringify(deniedAuthorizationPayload).includes("refusal_receipt"), false,
+    "the private proof is never exposed to the model");
+  const deniedPrivateRequest = requests.slice().reverse().find(request =>
+    request.path === "/internal/acp/agent-authorize");
+  assert.ok(deniedPrivateRequest?.body);
+  const deniedRequestId = String(deniedPrivateRequest.body.mcp_request_id);
+  const deniedIngressIndex = requests.findIndex(request => request.path === "/internal/acp/tool-ingress-observe"
+    && request.body?.mcp_request_id === deniedRequestId);
+  const deniedPrivateIndex = requests.findIndex(request => request.path === "/internal/acp/agent-authorize"
+    && request.body?.mcp_request_id === deniedRequestId);
+  assert.ok(deniedIngressIndex >= 0 && deniedPrivateIndex > deniedIngressIndex,
+    "the trusted authorization endpoint runs only after the exact ingress was observed");
+  assert.equal(requests.filter(request => request.path === "/v1/agents/authorize").length, 0,
+    "ordinary ACP authorization never falls back to the public endpoint");
+  assert.equal(settlements.find(entry => entry.mcp_request_id === deniedRequestId)?.outcome, "denied",
+    "a valid receipt is followed by the exact negative Backend settlement ACK");
+
+  authorizationDenialMode = "ok";
+  const allowedAuthorizationArgs = { run_id: runId, action: "byq_research_get" };
+  const allowedAuthorization = await acp.value.callTool({ name: "byq_agent_authorize",
+    arguments: allowedAuthorizationArgs });
+  assert.equal(allowedAuthorization.isError, false,
+    "a normal authorization query remains a successful MCP result");
+  const allowedAuthorizationText = allowedAuthorization.content.find(item => item.type === "text");
+  assert.ok(allowedAuthorizationText && allowedAuthorizationText.type === "text");
+  const allowedAuthorizationPayload = JSON.parse(allowedAuthorizationText.text) as Record<string, unknown>;
+  assert.equal(allowedAuthorizationPayload.status, "ok");
+  assert.deepEqual(allowedAuthorizationPayload.authorization, { authorized: true,
+    decision: "allowed", run_id: runId, role_id: "market_researcher", action: "byq_research_get" });
+  const allowedIngress = requests.slice().reverse().find(request =>
+    request.path === "/internal/acp/tool-ingress-observe"
+      && (request.body?.arguments as Record<string, unknown> | undefined)?.action === "byq_research_get");
+  assert.ok(allowedIngress?.body);
+  assert.equal(settlements.find(entry => entry.mcp_request_id === allowedIngress.body?.mcp_request_id)?.outcome,
+    "settled", "the existing successful authorization query keeps its normal settled state");
+
+  authorizationDenialMode = "missing";
+  const unprovedAuthorization = await acp.value.callTool({ name: "byq_agent_authorize",
+    arguments: { ...deniedAuthorizationArgs, action: "byq_backtest_task_execute" } });
+  assert.equal(unprovedAuthorization.isError, true);
+  const unprovedText = unprovedAuthorization.content.find(item => item.type === "text");
+  assert.ok(unprovedText && unprovedText.type === "text");
+  assert.equal((JSON.parse(unprovedText.text) as { backend?: { status?: unknown } }).backend?.status,
+    "acp_authorization_outcome_unknown",
+    "a 200 denial without its exact durable refusal receipt remains unknown");
+  const unprovedIngress = requests.slice().reverse().find(request =>
+    request.path === "/internal/acp/tool-ingress-observe"
+      && (request.body?.arguments as Record<string, unknown> | undefined)?.action === "byq_backtest_task_execute");
+  assert.ok(unprovedIngress?.body);
+  assert.equal(settlements.find(entry => entry.mcp_request_id === unprovedIngress.body?.mcp_request_id)?.outcome,
+    "unknown", "missing refusal evidence cannot be promoted to a known denial");
+  authorizationDenialMode = "valid";
 
   const genericCountBeforeLocalCall = requests.filter(request => request.path === "/internal/acp/tool-ingress-observe").length;
   const localCard = await acp.value.callTool({ name: "byq_workflow_card_propose", arguments: {

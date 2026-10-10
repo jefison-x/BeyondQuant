@@ -1,0 +1,37 @@
+{
+  "completed_at_utc": "2026-10-10T00:34:34.209610+00:00",
+  "command": [
+    "python3",
+    "-m",
+    "pytest",
+    "-q",
+    "tests/architecture/test_release_pipeline.py"
+  ],
+  "pytest_exit_code": 0,
+  "pytest_summary": "50 passed, 21 subtests passed in 0.78s",
+  "source_before": {
+    "scripts/release/images.py": "d09debdb38f972e911cde4c96bb603080b3c760ea3858014a3a19fb570675fb1",
+    "tests/architecture/test_release_pipeline.py": "0a73af02a57016851dda91fc8d92247f3044a84bcd82ca97978be5778d5c218c"
+  },
+  "source_after": {
+    "scripts/release/images.py": "d09debdb38f972e911cde4c96bb603080b3c760ea3858014a3a19fb570675fb1",
+    "tests/architecture/test_release_pipeline.py": "0a73af02a57016851dda91fc8d92247f3044a84bcd82ca97978be5778d5c218c"
+  },
+  "source_unchanged": true,
+  "diff_check_exit_code": 0,
+  "diff_check_stdout": "",
+  "diff_check_stderr": "",
+  "py_compile": "PASS",
+  "compiled": [
+    {
+      "source": "scripts/release/images.py",
+      "output": "/tmp/acp-release-store-identity-20261010-independent/pycompile-0.pyc",
+      "size": 77443
+    },
+    {
+      "source": "tests/architecture/test_release_pipeline.py",
+      "output": "/tmp/acp-release-store-identity-20261010-independent/pycompile-1.pyc",
+      "size": 150658
+    }
+  ]
+}

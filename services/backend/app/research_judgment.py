@@ -35,6 +35,7 @@ import hashlib
 import json
 import re
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from .db import execute, fetch_one
 from packages.contracts.research_execution_plan import (
@@ -96,6 +97,30 @@ SCHEMA_DDL: list[str] = [
     """,
     """CREATE INDEX IF NOT EXISTS research_judgment_stage_calls_scope
         ON research_judgment_stage_calls(task_id, plan_version, stage)""",
+    # ADR-0107 judgment-only consumer claim/lease. A dedicated additive table
+    # keyed by the exact (task_id, call_identity) attempt, created BEFORE the
+    # ACP root begin (the begin itself creates the stage-call row). Additive and
+    # reversible; no existing column is changed and no real-fixture row is touched.
+    """
+    CREATE TABLE IF NOT EXISTS research_judgment_consumer_claims (
+        task_id TEXT NOT NULL,
+        call_identity TEXT NOT NULL,
+        claim_owner TEXT NOT NULL,
+        claim_lease_until TIMESTAMPTZ NOT NULL,
+        claim_attempt INTEGER NOT NULL,
+        claimed_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL,
+        PRIMARY KEY (task_id, call_identity)
+    )
+    """,
+    """CREATE INDEX IF NOT EXISTS research_judgment_consumer_claims_lease
+        ON research_judgment_consumer_claims(claim_lease_until)""",
+    # Dispatch-intent: persisted BEFORE the consumer sends the Adapter run HTTP
+    # request, so a lease that expired (or was stolen) cannot late-start a run.
+    "ALTER TABLE research_judgment_consumer_claims "
+    "ADD COLUMN IF NOT EXISTS dispatch_intent_at TIMESTAMPTZ",
+    "ALTER TABLE research_judgment_consumer_claims "
+    "ADD COLUMN IF NOT EXISTS dispatch_intent_owner TEXT",
     """
     CREATE TABLE IF NOT EXISTS research_judgment_acp_roots (
         task_id TEXT NOT NULL,
@@ -814,6 +839,146 @@ class ResearchJudgmentMixin:
             admission["status"] = "admitted"
             admission["created"] = True
             return admission
+
+    def claim_judgment_stage_call(self, task_id: str, call_identity: str, payload: object, *,
+                                  trusted_context: dict) -> dict:
+        """Claim one current judgment attempt for a consumer lease (ADR-0107).
+
+        The claim is keyed by the exact ``(task_id, call_identity)`` attempt and is
+        created BEFORE the ACP root begin (the begin itself creates the stage-call
+        row). It is a consumer lease only: it never authorizes a dispatch and never
+        creates a model-call admission. Unknown-safe: a call whose ACP root is
+        already ``agent_bound`` (the prompt may have dispatched) is never
+        re-claimable, even after its lease expires.
+        """
+
+        from .research import InvalidTransition, ResearchNotFound
+        from packages.contracts.research_judgment import (
+            attempt_binding,
+            validate_call_identity,
+            validate_judgment_stage_claim_request,
+        )
+
+        request = validate_judgment_stage_claim_request(payload)
+        call_identity = validate_call_identity(call_identity)
+        claim_owner = str(request["claim_owner"])
+        lease_seconds = int(request["lease_seconds"])
+        with self._transaction() as connection:
+            task = self._plan_task(connection, task_id, trusted_context, lock=True)
+            plan_row = self._load_current_plan(connection, task["task_id"], lock=True)
+            if plan_row is None:
+                raise ResearchNotFound("research execution plan not found")
+            plan = validate_plan(plan_row["plan"])
+            stage = self._require_model_stage(plan["stage"])
+            binding = attempt_binding(plan["plan_version"], stage, plan["iteration"])
+            expected = "byq-judgment-" + hashlib.sha256(
+                f"{task['task_id']}:{binding}".encode("utf-8")).hexdigest()[:32]
+            if call_identity != expected:
+                raise InvalidTransition(
+                    "judgment stage claim does not match the current plan attempt")
+            root = fetch_one(connection, """SELECT status FROM research_judgment_acp_roots
+                WHERE task_id = :task AND call_identity = :identity""",
+                {"task": task["task_id"], "identity": call_identity})
+            if root is not None:
+                # ANY existing root (root_created OR agent_bound) is NOT affirmative
+                # no-dispatch evidence: the begin response may have been lost and a
+                # runner may already have started. Read-only reconcile only; never
+                # re-run. Only a durable journal + cleanup proof could assert
+                # no-dispatch (ADR-0107); absent that, stay needs_attention.
+                return {"claimed": False, "reconcile_only": True,
+                        "reason": "root_exists", "root_status": root["status"]}
+            prior = fetch_one(connection, """SELECT dispatch_intent_at, claim_owner
+                FROM research_judgment_consumer_claims
+                WHERE task_id = :task AND call_identity = :identity""",
+                {"task": task["task_id"], "identity": call_identity})
+            if prior is not None and prior["dispatch_intent_at"] is not None:
+                # A dispatch-intent already exists: the Adapter run may be in flight
+                # (the root is not yet begun) or already returned. The intent is
+                # ONCE and never re-issued -> read-only reconcile, never re-dispatch.
+                return {"claimed": False, "reconcile_only": True,
+                        "reason": "dispatch_intent_exists",
+                        "claim_owner": prior["claim_owner"]}
+            now = datetime.now(timezone.utc)
+            expires = now + timedelta(seconds=lease_seconds)
+            # Atomic single-owner claim. The conflict guard admits only a free or
+            # expired lease, or the same owner; a live foreign lease yields no row.
+            claimed = fetch_one(connection, """INSERT INTO research_judgment_consumer_claims
+                (task_id, call_identity, claim_owner, claim_lease_until, claim_attempt,
+                 claimed_at, updated_at)
+                VALUES (:task, :identity, :owner, :until, 1, :now, :now)
+                ON CONFLICT (task_id, call_identity) DO UPDATE
+                    SET claim_owner = :owner, claim_lease_until = :until,
+                        claim_attempt = research_judgment_consumer_claims.claim_attempt + 1,
+                        updated_at = :now
+                    WHERE research_judgment_consumer_claims.claim_lease_until <= now()
+                       OR research_judgment_consumer_claims.claim_owner = :owner
+                RETURNING claim_attempt, claim_lease_until""",
+                {"task": task["task_id"], "identity": call_identity, "owner": claim_owner,
+                 "until": expires, "now": now})
+            if claimed is None:
+                return {"claimed": False, "reason": "lease_held"}
+            return {"claimed": True, "reconcile_only": False, "call_identity": call_identity,
+                    "plan_version": int(plan["plan_version"]), "stage": stage,
+                    "iteration": int(plan["iteration"]), "claim_owner": claim_owner,
+                    "claim_attempt": int(claimed["claim_attempt"]),
+                    "claim_lease_until": expires.isoformat()}
+
+    def record_judgment_dispatch_intent(self, task_id: str, call_identity: str, payload: object, *,
+                                        trusted_context: dict) -> dict:
+        """Atomically verify the consumer lease and persist a dispatch-intent.
+
+        Called BEFORE the consumer sends the Adapter run request. Only the live
+        lease owner may persist the intent; an expired or stolen lease is refused
+        so an expired owner cannot late-start a run.
+        """
+
+        from packages.contracts.research_judgment import (
+            validate_call_identity,
+            validate_judgment_stage_claim_request,
+        )
+
+        request = validate_judgment_stage_claim_request(payload)
+        call_identity = validate_call_identity(call_identity)
+        claim_owner = str(request["claim_owner"])
+        lease_seconds = int(request["lease_seconds"])
+        with self._transaction() as connection:
+            self._plan_task(connection, task_id, trusted_context, lock=True)
+            now = datetime.now(timezone.utc)
+            expires = now + timedelta(seconds=lease_seconds)
+            updated = fetch_one(connection, """UPDATE research_judgment_consumer_claims
+                SET dispatch_intent_at = :now, dispatch_intent_owner = :owner,
+                    claim_lease_until = :until, updated_at = :now
+                WHERE task_id = :task AND call_identity = :identity
+                  AND claim_owner = :owner AND claim_lease_until > now()
+                  AND dispatch_intent_at IS NULL
+                RETURNING claim_attempt""",
+                {"task": task_id, "identity": call_identity, "owner": claim_owner,
+                 "until": expires, "now": now})
+            if updated is None:
+                # Either a dispatch-intent already exists (once, never re-issued) or
+                # this owner no longer holds a live lease.
+                return {"intent": False, "reason": "lease_not_held_or_intent_exists"}
+            return {"intent": True, "call_identity": call_identity, "claim_owner": claim_owner,
+                    "claim_attempt": int(updated["claim_attempt"]),
+                    "dispatch_intent_at": now.isoformat()}
+
+    def list_judgment_turn_tasks(self) -> list[dict]:
+        """Consumer selection: tasks whose current plan stage is a judgment stage.
+
+        READ-ONLY. The consumer then derives the exact attempt/call identity and
+        claims it; this method never advances a plan or admits a call.
+        """
+
+        from packages.contracts.research_judgment import JUDGMENT_STAGES
+
+        with self._transaction() as connection:
+            return execute(connection, """SELECT p.task_id, p.owner_principal, p.workspace_id,
+                p.conversation_id, p.plan_version, p.task_version, p.stage, p.iteration,
+                p.updated_at, c.runtime_session_id AS session_id, c.trace_id AS trace_id
+                FROM research_execution_plans p
+                JOIN product_conversations c ON c.conversation_id = p.conversation_id
+                WHERE p.stage = ANY(string_to_array(:stages, ','))
+                ORDER BY p.updated_at""", {"stages": ",".join(sorted(JUDGMENT_STAGES))})
 
     # ------------------------------------------------------------------ #
     # Atomic trusted result operation

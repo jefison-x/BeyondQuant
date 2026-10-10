@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import type { AcpAgentClaims, AcpJudgmentRootClaims } from "./acp-auth.js";
 
@@ -7,6 +7,7 @@ const RUN_ID = /^agent_run_[0-9a-f]{32}$/;
 const ROOT_ID = /^[0-9a-f]{32}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const MCP_REQUEST_ID = /^[0-9a-f]{32}$/;
+const AUDIT_ID = /^agent_audit_[0-9a-f]{32}$/;
 const BOOTSTRAP_INGRESS_TOOLS = new Set(["byq_health", "byq_agent_roles", "byq_agent_context"]);
 const ROOT_REGISTRATION_RETRY_DELAYS_MS = [100, 250, 500] as const;
 const ROOT_NOT_REGISTERED_DETAIL = "ACP root is not yet registered by Backend";
@@ -49,7 +50,7 @@ export type AcpToolIngressReceipt = {
   event_sha256: string;
 };
 
-export type AcpToolIngressOutcome = "settled" | "unknown";
+export type AcpToolIngressOutcome = "settled" | "unknown" | "denied";
 
 export type AcpToolIngressAbortReceipt = {
   schema_version: "byq-acp-tool-ingress-abort-receipt.v1";
@@ -80,7 +81,29 @@ export type AcpToolIngressSettlementReceipt = {
   event_sha256: string;
   outcome: AcpToolIngressOutcome;
   settlement_sha256: string;
+  refusal_receipt_sha256?: string;
 };
+
+export type AcpAuthorizationDenialReceipt = {
+  schema_version: "byq-acp-authorization-denial-receipt.v1";
+  mcp_request_id: string;
+  root_run_id: string;
+  runtime_boot_id: string;
+  native_agent_session_id: string;
+  agent_run_id: string;
+  tool_name: "byq_agent_authorize";
+  arguments_sha256: string;
+  event_sha256: string;
+  reason: "role_tool_not_allowed";
+  outcome: "denied";
+  audit_id: string;
+  receipt_sha256: string;
+};
+
+export type AcpAgentAuthorizationResponse =
+  | { status: "ok"; authorization: Record<string, unknown> }
+  | { status: "denied"; authorization: Record<string, unknown>;
+      refusal_receipt: AcpAuthorizationDenialReceipt };
 
 export type AcpAgentBindingStatus =
   | { schema_version: "byq-acp-agent-binding-status.v1"; root_run_id: string;
@@ -102,6 +125,74 @@ function hasExactKeys(value: Record<string, unknown>, expected: readonly string[
   const keys = Object.keys(value).sort();
   const sorted = [...expected].sort();
   return keys.length === sorted.length && keys.every((key, index) => key === sorted[index]);
+}
+
+/** Canonical JSON compatible with Backend acp_binding_sha256 for bounded ACP identities. */
+function canonicalAcpJson(value: unknown): string | undefined {
+  if (value === null) return "null";
+  if (typeof value === "string") {
+    return JSON.stringify(value).replace(/[\u007f-\uffff]/g, (character) => {
+      let escaped = "";
+      for (let index = 0; index < character.length; index += 1) {
+        escaped += `\\u${character.charCodeAt(index).toString(16).padStart(4, "0")}`;
+      }
+      return escaped;
+    });
+  }
+  if (typeof value === "boolean") return value ? "true" : "false";
+  // Authorization arguments have only string values. Safe integers are also
+  // supported for receipt fields without risking Python/JavaScript float drift.
+  if (typeof value === "number") return Number.isSafeInteger(value) ? String(value) : undefined;
+  if (Array.isArray(value)) {
+    const children = value.map(canonicalAcpJson);
+    return children.some((child) => child === undefined) ? undefined : `[${children.join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const keys = Object.keys(record).sort();
+    const entries: string[] = [];
+    for (const key of keys) {
+      const child = canonicalAcpJson(record[key]);
+      const canonicalKey = canonicalAcpJson(key);
+      if (child === undefined || canonicalKey === undefined) return undefined;
+      entries.push(`${canonicalKey}:${child}`);
+    }
+    return `{${entries.join(",")}}`;
+  }
+  return undefined;
+}
+
+function canonicalAcpSha256(value: unknown): string | undefined {
+  const canonical = canonicalAcpJson(value);
+  return canonical === undefined ? undefined : createHash("sha256").update(canonical, "ascii").digest("hex");
+}
+
+function denialReceiptMatches(value: unknown, claims: AcpAgentClaims, ingress: AcpToolIngressReceipt,
+  args?: Record<string, unknown>): value is AcpAuthorizationDenialReceipt {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const receipt = value as Record<string, unknown>;
+  if (!hasExactKeys(receipt, ["schema_version", "mcp_request_id", "root_run_id", "runtime_boot_id",
+    "native_agent_session_id", "agent_run_id", "tool_name", "arguments_sha256", "event_sha256",
+    "reason", "outcome", "audit_id", "receipt_sha256"])) return false;
+  const { receipt_sha256: suppliedHash, ...base } = receipt;
+  const expectedHash = canonicalAcpSha256(base);
+  return receipt.schema_version === "byq-acp-authorization-denial-receipt.v1"
+    && receipt.mcp_request_id === ingress.mcp_request_id && MCP_REQUEST_ID.test(String(receipt.mcp_request_id))
+    && receipt.root_run_id === claims.root_run_id && receipt.root_run_id === ingress.root_run_id
+    && ROOT_ID.test(String(receipt.root_run_id))
+    && receipt.runtime_boot_id === claims.runtime_boot_id && receipt.runtime_boot_id === ingress.runtime_boot_id
+    && receipt.native_agent_session_id === claims.native_agent_session_id
+    && receipt.native_agent_session_id === ingress.native_agent_session_id
+    && receipt.agent_run_id === ingress.agent_run_id && typeof receipt.agent_run_id === "string"
+    && RUN_ID.test(receipt.agent_run_id)
+    && receipt.tool_name === "byq_agent_authorize" && ingress.tool_name === "byq_agent_authorize"
+    && typeof receipt.arguments_sha256 === "string" && SHA256.test(receipt.arguments_sha256)
+    && (!args || (args.run_id === ingress.agent_run_id
+      && canonicalAcpSha256(args) === receipt.arguments_sha256))
+    && receipt.event_sha256 === ingress.event_sha256 && SHA256.test(String(receipt.event_sha256))
+    && receipt.reason === "role_tool_not_allowed" && receipt.outcome === "denied"
+    && typeof receipt.audit_id === "string" && AUDIT_ID.test(receipt.audit_id)
+    && typeof suppliedHash === "string" && SHA256.test(suppliedHash) && suppliedHash === expectedHash;
 }
 
 function scopeHeaders(claims: AcpIngressClaims, proofToken: string): Headers {
@@ -322,6 +413,62 @@ export async function observeAcpToolIngress(
   }
 }
 
+/** Use the trusted ACP authorization path tied to one already-observed ingress. */
+export async function fetchAcpAgentAuthorize(
+  backendUrl: string,
+  proofToken: string,
+  claims: AcpAgentClaims,
+  ingress: AcpToolIngressReceipt,
+  args: Record<string, unknown>,
+  fetcher: Fetcher = fetch,
+): Promise<AcpAgentAuthorizationResponse | undefined> {
+  const allowedArgumentKeys = new Set(["run_id", "action", "resource_type", "resource_id"]);
+  const argsValid = Object.keys(args).every((key) => allowedArgumentKeys.has(key))
+    && typeof args.run_id === "string" && RUN_ID.test(args.run_id)
+    && typeof args.action === "string"
+    && (args.resource_type === undefined || typeof args.resource_type === "string")
+    && (args.resource_id === undefined || typeof args.resource_id === "string");
+  if (!argsValid || args.run_id !== ingress.agent_run_id || ingress.agent_run_id === null
+    || claims.aud !== "byq-product-mcp" || ingress.tool_name !== "byq_agent_authorize"
+    || ingress.root_run_id !== claims.root_run_id || ingress.runtime_boot_id !== claims.runtime_boot_id
+    || ingress.native_root_session_id !== claims.native_root_session_id
+    || ingress.native_agent_session_id !== claims.native_agent_session_id
+    || ingress.native_parent_session_id !== claims.native_parent_session_id
+    || ingress.origin !== claims.origin || ingress.depth !== claims.depth) return undefined;
+
+  const headers = scopeHeaders(claims, proofToken);
+  nativeHeaders(claims, headers);
+  const body = { schema_version: "byq-acp-agent-authorize.v1",
+    mcp_request_id: ingress.mcp_request_id, arguments: args };
+  try {
+    const response = await fetcher(`${backendUrl}/internal/acp/agent-authorize`, {
+      method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
+    });
+    if (response.status !== 200) {
+      try { await response.body?.cancel(); } catch { /* status alone is not authorization proof */ }
+      return undefined;
+    }
+    const payload = await jsonObject(response);
+    if (!payload || !payload.authorization || typeof payload.authorization !== "object"
+      || Array.isArray(payload.authorization)) return undefined;
+    const authorization = payload.authorization as Record<string, unknown>;
+    if (authorization.run_id !== args.run_id || authorization.action !== args.action) return undefined;
+    if (payload.status === "ok" && hasExactKeys(payload, ["status", "authorization"])) {
+      return { status: "ok", authorization };
+    }
+    if (payload.status === "denied" && hasExactKeys(payload, ["status", "authorization", "refusal_receipt"])
+      && hasExactKeys(authorization, ["authorized", "decision", "run_id", "role_id", "action"])
+      && authorization.authorized === false && authorization.decision === "denied"
+      && typeof authorization.role_id === "string" && authorization.role_id.length > 0
+      && denialReceiptMatches(payload.refusal_receipt, claims, ingress, args)) {
+      return { status: "denied", authorization, refusal_receipt: payload.refusal_receipt };
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** This may only be called after observe yielded no valid receipt and before handler entry. */
 export async function abortAcpToolIngressBeforeDispatch(
   backendUrl: string,
@@ -382,7 +529,11 @@ export async function settleAcpToolIngress(
   ingress: AcpToolIngressReceipt,
   outcome: AcpToolIngressOutcome,
   fetcher: Fetcher = fetch,
+  refusalReceipt?: AcpAuthorizationDenialReceipt,
 ): Promise<AcpToolIngressSettlementReceipt | undefined> {
+  if ((outcome === "denied") !== Boolean(refusalReceipt)) return undefined;
+  if (refusalReceipt && (claims.aud !== "byq-product-mcp"
+    || !denialReceiptMatches(refusalReceipt, claims, ingress))) return undefined;
   const headers = scopeHeaders(claims, proofToken);
   const body = {
     schema_version: "byq-acp-tool-ingress-settle.v1",
@@ -398,15 +549,17 @@ export async function settleAcpToolIngress(
     sequence: ingress.sequence,
     event_sha256: ingress.event_sha256,
     outcome,
+    ...(refusalReceipt ? { refusal_receipt: refusalReceipt } : {}),
   };
   try {
     const response = await fetcher(`${backendUrl}${ingressPath(claims, "settle")}`, {
       method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
     });
     const payload = await jsonObject(response);
-    if (!payload || !hasExactKeys(payload, ["schema_version", "mcp_request_id", "root_run_id",
+    const expectedReceiptFields = ["schema_version", "mcp_request_id", "root_run_id",
       "runtime_boot_id", "native_agent_session_id", "tool_name", "sequence", "event_sha256",
-      "outcome", "settlement_sha256"])) return undefined;
+      "outcome", "settlement_sha256", ...(refusalReceipt ? ["refusal_receipt_sha256"] : [])];
+    if (!payload || !hasExactKeys(payload, expectedReceiptFields)) return undefined;
     const receipt = payload as unknown as AcpToolIngressSettlementReceipt;
     const valid = receipt.schema_version === "byq-acp-tool-ingress-settle-receipt.v1"
       && receipt.mcp_request_id === ingress.mcp_request_id
@@ -417,6 +570,20 @@ export async function settleAcpToolIngress(
       && receipt.sequence === ingress.sequence
       && receipt.event_sha256 === ingress.event_sha256
       && receipt.outcome === outcome
+      && (refusalReceipt
+        ? receipt.refusal_receipt_sha256 === refusalReceipt.receipt_sha256
+          && receipt.settlement_sha256 === canonicalAcpSha256({
+            mcp_request_id: ingress.mcp_request_id,
+            root_run_id: ingress.root_run_id,
+            runtime_boot_id: ingress.runtime_boot_id,
+            native_agent_session_id: ingress.native_agent_session_id,
+            tool_name: ingress.tool_name,
+            sequence: ingress.sequence,
+            event_sha256: ingress.event_sha256,
+            outcome: "denied",
+            refusal_receipt_sha256: refusalReceipt.receipt_sha256,
+          })
+        : receipt.refusal_receipt_sha256 === undefined)
       && MCP_REQUEST_ID.test(receipt.mcp_request_id)
       && ROOT_ID.test(receipt.root_run_id)
       && Number.isSafeInteger(receipt.sequence) && receipt.sequence > 0
