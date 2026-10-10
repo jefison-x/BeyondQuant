@@ -21,3 +21,18 @@ condition = "AND"
 paths = ['''^services/gateway/tests/test_product_api\.py$''']
 regexTarget = "secret"
 regexes = ['''^optimization-key-1$''']
+
+# Source identity digests in five fixed ACP evidence JSON files are SHA-256
+# readbacks, not credentials. Both the exact path and 64-hex shape must match.
+[[rules.allowlists]]
+description = "Exact ACP source hash readback evidence"
+condition = "AND"
+paths = [
+  '''^docs/evidence/dsh-acp-single-version/runtime-single-version-retirement-20261009/source-hashes\.json$''',
+  '''^docs/evidence/dsh-acp-single-version/runtime-single-version-retirement-20261009/independent-runtime-focused-summary\.json$''',
+  '''^docs/evidence/dsh-acp-single-version/adr0109-revision-20261009/image-source-readback\.json$''',
+  '''^docs/evidence/dsh-acp-single-version/acp-current-real-archive-20261010/artifacts/proof-before-cleanup\.json$''',
+  '''^docs/evidence/dsh-acp-single-version/acp-current-real-archive-20261010/artifacts/result\.json$''',
+]
+regexTarget = "secret"
+regexes = ['''^[0-9a-f]{64}$''']

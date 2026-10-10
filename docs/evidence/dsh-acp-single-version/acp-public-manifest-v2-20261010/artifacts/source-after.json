@@ -1,0 +1,6 @@
+{
+  "scripts/release/images.py": "dc68c24fd4436b0ddeee89b7e7486e8ec1894d3bcc2fb5faee37a9e257f6b783",
+  "scripts/release/manifest.py": "1a93db2e32893d8db0b3d9a937f6b4acb1dfc906a81da0e295feb38808129a62",
+  "tests/architecture/test_release_pipeline.py": "737cb82fe711b6a3ecc41e6604de1a0e26a882e443fc903a1547c55c9a8a54fb",
+  "docs/operations/image-release.md": "79667b5a5da0392c160f006d86c93fd36bc8e3ac8a0fcceb57adeb2785f33da3"
+}

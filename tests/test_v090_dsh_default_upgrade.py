@@ -20,6 +20,7 @@ SNAPSHOT_FILES = {
     "config/dsh/generated/deployment.identity.json": "promotion-snapshot.identity.json",
     "services/runtime-adapter/Dockerfile.post-u8-candidate": "promotion-snapshot.Dockerfile",
     "scripts/dsh/build_revision.py": "promotion-snapshot.build_revision.py",
+    "services/runtime-adapter/app/compat/__init__.py": "promotion-snapshot.compat-init.py",
 }
 
 

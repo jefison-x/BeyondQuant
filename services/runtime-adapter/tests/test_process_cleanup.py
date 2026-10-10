@@ -4,18 +4,20 @@ import threading
 import json
 import hashlib
 import time
-from importlib.metadata import version
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from deepseek_harness import Notification
 
 import app.runtime as runtime_module
+from app.compat.types import RuntimeObservation
 from app.identifiers import MAX_IDENTIFIER_LENGTH
 from app.runtime import (
     ModelCredentialUnavailable, RuntimeAdapter, SESSION_FAILED_DETAIL,
     SESSION_LOST_DETAIL, SessionConflict, SessionStatus,
+)
+from .runtime_test_support import (
+    FakeCompatibility, NotificationDTO as Notification, installed_sdk_version,
 )
 
 
@@ -174,16 +176,9 @@ def test_lost_resume_does_not_start_or_mutate_session(adapter, lost_state):
 
 
 def release_compatibility(tmp_path: Path) -> object:
-    from app.compat.dsh_012 import Dsh012Compatibility
-
     executable = tmp_path / "candidate-dsh"
     executable.write_text("candidate", encoding="utf-8")
-    composition = tmp_path / "composition.yml"
-    composition.write_text("candidate", encoding="utf-8")
-    return Dsh012Compatibility(
-        harness_factory=FakeHarness,
-        runtime_path_factory=lambda: executable,
-    )
+    return FakeCompatibility(executable)
 
 
 @pytest.fixture
@@ -194,7 +189,9 @@ def adapter(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> RuntimeAdapter:
     # process ownership has its own fixture that supplies a verified profile.
     monkeypatch.setenv("BYQ_DSH_PROCESS_OWNERSHIP", "session")
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
-    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
+    composition = tmp_path / "composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(composition))
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
     monkeypatch.setenv("BYQ_DSH_RUN_TIMEOUT_SECONDS", "3600")
     monkeypatch.setenv("BYQ_DSH_SUBAGENT_TIMEOUT_SECONDS", "3600")
@@ -268,8 +265,6 @@ def test_prompt_rejects_invalid_context_before_claiming_root(adapter):
 
 
 def test_registration_observation_uses_captured_turn_without_exposing_arguments(adapter: RuntimeAdapter):
-    if version("deepseek-harness-sdk") != "0.1.5rc1":
-        pytest.skip("requires qualified 0.1.5 notification carrier")
     from packages.contracts.agent_run_lifecycle import registration_fingerprint
 
     try:
@@ -277,11 +272,9 @@ def test_registration_observation_uses_captured_turn_without_exposing_arguments(
         root_id = adapter.submit_prompt("binding", "synthetic registration")
         record = adapter._get("binding")
         run = record.active_run
-        notice = Notification(method="session.event", payload={"sessionId": record.runtime_session_id,
-            "event": {"type": "tool/call", "seq": 1, "data": {
-                "callId": "register", "name": "mcp__byq__byq_agent_run_start",
-                "arguments": json.dumps({"idempotency_key": "private-registration-key", "role_id": "quant_orchestrator"}),
-            }}})
+        notice = RuntimeObservation(kind="tool.call", session_id=record.runtime_session_id,
+            root_session=True, runtime_activity=True, event_sequence=1, call_id="register",
+            tool_name="mcp__byq__byq_agent_run_start", registration_key="private-registration-key")
         for _ in range(2):
             adapter._on_notification(record, notice, source_run=run, source_runtime_session_id=record.runtime_session_id)
         bindings = [item for item in record.history if item["kind"] == "agent.run.registration"]
@@ -587,11 +580,11 @@ def test_lifecycle_has_single_active_prompt_and_duplicate_create_is_explicit(ada
 def test_prompt_idempotency_returns_the_original_run_without_reexecution(adapter: RuntimeAdapter) -> None:
     adapter.create_session("s-idempotent", "t-idempotent")
     first_run = adapter.submit_prompt(
-        "s-idempotent", "continue approval", idempotency_key="approval-continuation-1",
+        "s-idempotent", "continue approval", idempotency_key="approval-continuation-1",  # gitleaks:allow -- fixed synthetic business idempotency fixture
     )
     assert FakeHarness.run_started.wait(timeout=1.0)
     assert adapter.submit_prompt(
-        "s-idempotent", "continue approval", idempotency_key="approval-continuation-1",
+        "s-idempotent", "continue approval", idempotency_key="approval-continuation-1",  # gitleaks:allow -- fixed synthetic business idempotency fixture
     ) == first_run
     digest = hashlib.sha256(b"continue approval").hexdigest()
     receipt = adapter.reconcile_prompt("s-idempotent", "approval-continuation-1", digest)
@@ -602,13 +595,13 @@ def test_prompt_idempotency_returns_the_original_run_without_reexecution(adapter
         adapter.reconcile_prompt("s-idempotent", "approval-continuation-1", "0" * 64)
     with pytest.raises(SessionConflict, match="reused"):
         adapter.submit_prompt(
-            "s-idempotent", "different continuation", idempotency_key="approval-continuation-1",
+            "s-idempotent", "different continuation", idempotency_key="approval-continuation-1",  # gitleaks:allow -- fixed synthetic business idempotency fixture
         )
 
     FakeHarness.allow_run.set()
     wait_for_status(adapter, "s-idempotent", SessionStatus.IDLE)
     assert adapter.submit_prompt(
-        "s-idempotent", "continue approval", idempotency_key="approval-continuation-1",
+        "s-idempotent", "continue approval", idempotency_key="approval-continuation-1",  # gitleaks:allow -- fixed synthetic business idempotency fixture
     ) == first_run
     adapter.release_session("s-idempotent")
     adapter.create_session("s-idempotent", "t-recreated")
@@ -1218,24 +1211,11 @@ def test_existing_prompt_receipt_precedes_missing_credential_rejection(adapter: 
 def test_operations_snapshot_normalizes_and_deduplicates_dsh_usage(adapter: RuntimeAdapter) -> None:
     adapter.create_session("s-1", "t-1")
     record = adapter._get("s-1")
-    notification = Notification(
-        method="session.event",
-        payload={
-            "sessionId": record.runtime_session_id,
-            "event": {
-                "type": "assistant/message",
-                "data": {
-                    "message": {"id": "message-usage-1", "content": []},
-                    "usage": {
-                        "inputTokens": 100,
-                        "outputTokens": 20,
-                        "cacheReadTokens": 30,
-                        "cacheWriteTokens": 5,
-                        "reasoningTokens": 10,
-                    },
-                    "private": {"apiKey": "must-not-escape"},
-                },
-            },
+    notification = RuntimeObservation(
+        kind="assistant.message", session_id=record.runtime_session_id, root_session=True,
+        message_id="message-usage-1", usage={
+            "input_tokens": 100, "output_tokens": 20, "cache_read_tokens": 30,
+            "cache_write_tokens": 5, "reasoning_tokens": 10,
         },
     )
     adapter._on_notification(record, notification)
@@ -1254,7 +1234,7 @@ def test_operations_snapshot_normalizes_and_deduplicates_dsh_usage(adapter: Runt
         "source": "normalized_dsh_token_usage",
     }
     assert snapshot["raw_dsh_events"] is False
-    assert "must-not-escape" not in str(snapshot)
+    assert "message-usage-1" not in str(snapshot)
     adapter.release_session("s-1")
 
 
@@ -1283,8 +1263,11 @@ def test_configured_model_credential_is_scoped_to_the_owned_sdk_environment(
     tmp_path: Path,
 ) -> None:
     FakeHarness.reset()
+    monkeypatch.setenv("BYQ_DSH_PROCESS_OWNERSHIP", "session")
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
-    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
+    composition = tmp_path / "composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(composition))
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-provider-secret")
 
@@ -1302,8 +1285,11 @@ def test_personal_model_binding_is_resolved_directly_without_public_exposure(
     tmp_path: Path,
 ) -> None:
     FakeHarness.reset()
+    monkeypatch.setenv("BYQ_DSH_PROCESS_OWNERSHIP", "session")
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
-    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
+    composition = tmp_path / "composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(composition))
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
     monkeypatch.setenv("BYQ_BACKEND_URL", "http://backend.test")
     monkeypatch.setenv("BYQ_CREDENTIAL_RESOLVER_TOKEN", "resolver-test-only")
@@ -1373,8 +1359,11 @@ def test_opencode_personal_key_is_scoped_to_each_reviewed_runtime_route(
     provider: str,
 ) -> None:
     FakeHarness.reset()
+    monkeypatch.setenv("BYQ_DSH_PROCESS_OWNERSHIP", "session")
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
-    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
+    composition = tmp_path / "composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(composition))
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
     adapter = RuntimeAdapter(release_compatibility(tmp_path))
     harness = adapter._build_harness(
@@ -1431,8 +1420,11 @@ def test_broken_personal_resolution_never_falls_back_to_system_key(
     tmp_path: Path,
 ) -> None:
     FakeHarness.reset()
+    monkeypatch.setenv("BYQ_DSH_PROCESS_OWNERSHIP", "session")
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
-    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
+    composition = tmp_path / "composition.yml"
+    composition.write_text("[]\n", encoding="utf-8")
+    monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(composition))
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
     monkeypatch.setenv("BYQ_CREDENTIAL_RESOLVER_TOKEN", "resolver-test-only")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "system-fallback-must-not-win")

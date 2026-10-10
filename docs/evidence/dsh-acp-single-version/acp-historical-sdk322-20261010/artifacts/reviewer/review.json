@@ -1,0 +1,43 @@
+{
+  "scope": "Three-file historical SDK 322 identity correction, compared with /tmp/acp-historical-sdk322-backup-20261010",
+  "functional": "PASS_LIMITED",
+  "tests": "PASS_LIMITED",
+  "clean_break_architecture": "PASS_LIMITED",
+  "blocking_findings": [],
+  "nonblocking_findings": [
+    {
+      "severity": "P3",
+      "path": "tests/test_current_build_revision.py",
+      "lines": "278-283",
+      "detail": "The same COPY assertion is duplicated. It does not weaken the frozen manifest and Dockerfile byte-hash assertions."
+    }
+  ],
+  "source_sha256": {
+    "scripts/dsh/build_revision.py": "b978e65c3faedc4a8c6b933ec773f2467cd296ad850c187ad07a06af8ddaa2bc",
+    "tests/test_current_build_revision.py": "69be7f7e31e66840f959d4b85250e9b8f9c14b15298d4ba1074578fb4829aed4",
+    "tests/test_dsh_build_revision.py": "61e70e5033d8860b50dbc3c58aa4024cf65ee845df8c87cd5145005214b4faec"
+  },
+  "verified_frozen_bytes": {
+    "config/dsh/builds/dsh-0.1.5rc1-post-u8.322.json": "ee97823eb01251c48f99a0b7d2a1d5b50debba6f1f9533e39c47862eedce90cc",
+    "services/runtime-adapter/Dockerfile.post-u8-322-candidate": "dc87eeb772d37fafd29fd4c38d81475cffe1549bd767419f766307cc9d36bfa5"
+  },
+  "tester_receipt": {
+    "path": "/tmp/acp-historical-sdk322-test-20261010/result.json",
+    "pytest_methods_passed": 7,
+    "pytest_exit_code": 0,
+    "py_compile_exit_code": 0,
+    "git_diff_check_exit_code": 0,
+    "source_before_after_equal": true,
+    "frozen_322_head_bytes_unchanged": true,
+    "four_untracked_323_324_candidates_unchanged": true,
+    "summary_correction": "Initial FAIL only compared full git porcelain strings (?? <path>) to literal ??. Pre/post values already matched exactly; final PASS recalculated from saved data without rerunning tests."
+  },
+  "reasoning": [
+    "Only untracked SDK 323 frozen registration was removed and dsh-0.1.5rc1 selected historical build changed from unqualified 324 to exact frozen 322; no Product runtime selector changed.",
+    "Tests distinguish a structurally valid current-tree render from the frozen stored 322 manifest and do not claim current ACP source is SDK-qualified.",
+    "The three changed files are absent from the current unified-image 91-input map; ACP release and resolver paths do not call build_revision.",
+    "Historical v090 default-upgrade verification remains relevant to frozen promotion snapshots after ACP source cutover; this slice does not justify excluding it.",
+    "No duplicate DSH capability, live runtime, agent compute, event-as-state, job/artifact bypass, migration shim, or Product privilege expansion was introduced."
+  ],
+  "not_run": ["reviewer did not execute tests, Docker or F6", "current ACP image rebuild is not indicated by these three source paths", "no full architecture or hosted CI rerun"]
+}

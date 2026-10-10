@@ -66,6 +66,40 @@ def test_exact_selected_route_maps_only_its_protocol_path(name, target, upstream
         UPSTREAM if protocol == "messages" else "Bearer " + UPSTREAM)
 
 
+def test_chat_forwards_the_client_user_agent_but_no_internal_headers():
+    # The OpenCode Go edge rejects a missing/default-library User-Agent, so the
+    # exact route helper must forward the DSH client's User-Agent (and nothing
+    # else internal).
+    route = selected_route("opencode-go-chat")
+    url, headers = admit_provider_request(
+        route, target="/v1/chat/completions", selected_model="selected-model",
+        local_credential=LOCAL, upstream_credential=UPSTREAM,
+        headers={"content-type": "application/json", "authorization": "Bearer " + LOCAL,
+                 "user-agent": "deepseek-harness/0.2.0-rc.2", "x-byq-secret": "must-not-forward"},
+        body=_body("chat"))
+    assert headers["user-agent"] == "deepseek-harness/0.2.0-rc.2"
+    assert "x-byq-secret" not in headers
+
+
+def test_chat_forwards_the_opencode_session_header_and_rejects_a_bad_one():
+    route = selected_route("opencode-go-chat")
+    session = "11111111-2222-4333-8444-555555555555"
+    _, headers = admit_provider_request(
+        route, target="/v1/chat/completions", selected_model="selected-model",
+        local_credential=LOCAL, upstream_credential=UPSTREAM,
+        headers={"content-type": "application/json", "authorization": "Bearer " + LOCAL,
+                 "x-opencode-session": session},
+        body=_body("chat"))
+    assert headers["x-opencode-session"] == session
+    with pytest.raises(AcpProviderRouteRejected, match="session"):
+        admit_provider_request(
+            route, target="/v1/chat/completions", selected_model="selected-model",
+            local_credential=LOCAL, upstream_credential=UPSTREAM,
+            headers={"content-type": "application/json", "authorization": "Bearer " + LOCAL,
+                     "x-opencode-session": "not-a-uuid"},
+            body=_body("chat"))
+
+
 @pytest.mark.parametrize("name", ["opencode-unknown", "deepseek-account", "opencode-"])
 def test_unselected_route_rejected(name):
     with pytest.raises(AcpProviderRouteRejected, match="unselected"):

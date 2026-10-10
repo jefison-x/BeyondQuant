@@ -13,7 +13,7 @@ export const PROFILE_LIMITS = Object.freeze({
   max_total_input_bytes: 4194304,
   max_output_tokens: 8192,
   max_total_output_tokens: 131072,
-  max_tool_payload_bytes: 65536,
+  max_tool_payload_bytes: 131072,
   max_total_tool_payload_bytes: 1048576,
   max_tool_calls: 16,
   deadline_ms: 180000,
@@ -34,18 +34,59 @@ const TOOL_LIMIT = PROFILE_LIMITS.max_tool_calls;
 const MAX_JOURNAL_BYTES = 128 * 1024;
 const ALLOWED = new Set(ALLOWED_TOOL_NAMES);
 
+// ADR-0106 ordinary Product count-only guard. This is an explicit, closed
+// profile: a missing continuation reservationId never relaxes the strict
+// continuation guard above; count-only is selected only by `guardMode`.
+export const PRODUCT_TURN_LIMITS = Object.freeze({
+  max_provider_calls: 16,
+  max_attempts: 16,
+  max_concurrent: 1,
+  max_input_bytes: 262144,
+  max_total_input_bytes: 4194304,
+  max_output_tokens: 8192,
+  max_total_output_tokens: 131072,
+  max_tool_payload_bytes: 131072,
+  max_total_tool_payload_bytes: 1048576,
+  max_tool_calls: 16,
+  deadline_ms: 180000,
+});
+const PRODUCT_TURN_PROFILE_ID = 'product-turn.v1';
+const PRODUCT_TURN_PROFILE_VERSION = 1;
+const COUNT_ONLY_SCHEMA = 'product-turn-tool-guard.v1';
+const COUNT_ONLY = 'count-only';
+
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function sameClosedLimits(value) {
-  if (!isRecord(value) || Object.keys(value).length !== Object.keys(PROFILE_LIMITS).length) return false;
-  return Object.entries(PROFILE_LIMITS).every(([name, limit]) =>
+function sameClosedLimits(value, expected = PROFILE_LIMITS) {
+  if (!isRecord(value) || Object.keys(value).length !== Object.keys(expected).length) return false;
+  return Object.entries(expected).every(([name, limit]) =>
     Number.isSafeInteger(value[name]) && value[name] === limit);
 }
 
 function validateConfig(config) {
-  if (!isRecord(config)
+  if (!isRecord(config)) throw new Error('BYQ_CONTINUATION_GUARD_INVALID');
+  if (config.guardMode === COUNT_ONLY) {
+    // ADR-0106 count-only: explicit product-turn.v1 identity/limits, no
+    // reservationId. A missing reservationId is not a downgrade signal.
+    if (Object.keys(config).sort().join(',')
+        !== 'deadlineEpochMs,executionProfile,guardMode,journalPath,requestLimits'
+        || 'reservationId' in config
+        || typeof config.journalPath !== 'string' || !config.journalPath.startsWith('/')
+        || !Number.isSafeInteger(config.deadlineEpochMs) || config.deadlineEpochMs <= 0
+        || !isRecord(config.executionProfile)
+        || Object.keys(config.executionProfile).sort().join(',') !== 'profile_id,profile_sha256,profile_version'
+        || config.executionProfile.profile_id !== PRODUCT_TURN_PROFILE_ID
+        || config.executionProfile.profile_version !== PRODUCT_TURN_PROFILE_VERSION
+        || typeof config.executionProfile.profile_sha256 !== 'string'
+        || !/^[a-f0-9]{64}$/.test(config.executionProfile.profile_sha256)
+        || !sameClosedLimits(config.requestLimits, PRODUCT_TURN_LIMITS)) {
+      throw new Error('BYQ_PRODUCT_TURN_GUARD_INVALID');
+    }
+    return;
+  }
+  if ('guardMode' in config
       || Object.keys(config).sort().join(',') !== 'deadlineEpochMs,executionProfile,journalPath,requestLimits,reservationId'
       || typeof config.journalPath !== 'string' || !config.journalPath.startsWith('/')
       || typeof config.reservationId !== 'string'
@@ -62,6 +103,10 @@ function validateConfig(config) {
   }
 }
 
+function isCountOnly(config) {
+  return config.guardMode === COUNT_ONLY;
+}
+
 /** Pure pre-dispatch guard shared with focused offline tests. */
 export function createToolGuard(config, append, cancelAgents = () => {}, now = () => Date.now()) {
   validateConfig(config);
@@ -72,6 +117,9 @@ export function createToolGuard(config, append, cancelAgents = () => {}, now = (
   let stopped = false;
   let blockedReason = null;
   const agents = new Set();
+  const countOnly = isCountOnly(config);
+  const identity = () => (countOnly ? {} : { reservation_id: config.reservationId });
+  const toolLimit = countOnly ? config.requestLimits.max_tool_calls : TOOL_LIMIT;
 
   const cancel = () => {
     for (const agent of agents) {
@@ -84,7 +132,7 @@ export function createToolGuard(config, append, cancelAgents = () => {}, now = (
       stopped = true;
       blockedReason = reason;
       try {
-        append({ phase: 'blocked', reservation_id: config.reservationId,
+        append({ phase: 'blocked', ...identity(),
           blocked_reason: reason, tool_name: toolName });
       } catch { /* original block remains fail-closed */ }
       cancel();
@@ -99,14 +147,14 @@ export function createToolGuard(config, append, cancelAgents = () => {}, now = (
       if (stopped) return { kind: 'deny', reason: blockedReason };
       if (exec?.signal?.aborted) return block('BYQ_CONTINUATION_CANCELLED', toolName);
       if (now() >= config.deadlineEpochMs) return block('BYQ_CONTINUATION_DEADLINE_EXCEEDED', toolName);
-      if (!ALLOWED.has(toolName)) return block('BYQ_CONTINUATION_TOOL_UNQUALIFIED', toolName);
-      if (calls >= TOOL_LIMIT) return block('BYQ_CONTINUATION_TOOL_LIMIT', toolName);
+      if (!countOnly && !ALLOWED.has(toolName)) return block('BYQ_CONTINUATION_TOOL_UNQUALIFIED', toolName);
+      if (calls >= toolLimit) return block('BYQ_CONTINUATION_TOOL_LIMIT', toolName);
       const ordinal = calls + 1;
       try {
         // Durable intent precedes DSH dispatch. The plugin is inserted at the
         // root composition (untagged/global listener), so one in-memory count
         // covers root and child agents in this single owned process.
-        append({ phase: 'tool', reservation_id: config.reservationId,
+        append({ phase: 'tool', ...identity(),
           call: ordinal, tool_name: toolName });
       } catch {
         return block('BYQ_CONTINUATION_TOOL_STORAGE_FAILED', toolName);
@@ -159,13 +207,20 @@ export function apply(ctx, config) {
   };
   try {
     const append = row => appendJsonl(fd, row);
-    const header = {
-      schema_version: JOURNAL_SCHEMA,
-      reservation_id: config.reservationId,
-      execution_profile: config.executionProfile,
-      request_limits: config.requestLimits,
-      ready: true,
-    };
+    const header = isCountOnly(config)
+      ? {
+          schema_version: COUNT_ONLY_SCHEMA,
+          execution_profile: config.executionProfile,
+          request_limits: config.requestLimits,
+          ready: true,
+        }
+      : {
+          schema_version: JOURNAL_SCHEMA,
+          reservation_id: config.reservationId,
+          execution_profile: config.executionProfile,
+          request_limits: config.requestLimits,
+          ready: true,
+        };
     const restrictAgentCatalog = ({ agent }) => {
       const agentTools = agent?.ctx?.tools;
       if (!agent || !agentTools || typeof agentTools.restrict !== 'function'
@@ -176,19 +231,36 @@ export function apply(ctx, config) {
       // process-global restriction is rejected by the pinned runtime and would
       // affect unrelated Agents, so install it synchronously for every fully
       // configured Agent before `agent/session-start` starts the driver.
-      const release = agentTools.restrict({ allow: [...ALLOWED_TOOL_NAMES] });
+      let release;
+      try {
+        // Preferred: keep only the exact allowed tool set. This is exact when
+        // the BYQ MCP tools are registered in the global catalog (SDK/non-ACP
+        // product root).
+        release = agentTools.restrict({ allow: [...ALLOWED_TOOL_NAMES] });
+      } catch (error) {
+        if (!/unknown global tool/.test(String(error?.message ?? ''))) throw error;
+        // ADR-0085: the pinned DSH restrict() can only name global tools, and a
+        // restriction filters only what a scope INHERITS (never its own layer).
+        // Under the ACP product slot the BYQ MCP tools are Agent-scoped, so
+        // restrict the inherited global catalog to nothing. The Agent-scoped
+        // MCP tools stay visible but every call is still denied unless the
+        // mandatory tools/pre-execute guard admits it and Backend authorizes it.
+        release = agentTools.restrict({ allow: [] });
+      }
       if (typeof release !== 'function') {
         throw new Error('BYQ_CONTINUATION_TOOL_RESTRICTION_UNQUALIFIED');
       }
       agentRestrictionReleases.set(agent, release);
     };
-    ctx.on('agent/created', restrictAgentCatalog);
-    ctx.on('agent/disposed', ({ agent }) => {
-      // DSH unwinds that Agent's scoped registrations before this event.
-      // Drop our reference; the returned disposer remains available for
-      // process-level cleanup if the Agent is still live when the plugin ends.
-      agentRestrictionReleases.delete(agent);
-    });
+    if (!isCountOnly(config)) {
+      ctx.on('agent/created', restrictAgentCatalog);
+      ctx.on('agent/disposed', ({ agent }) => {
+        // DSH unwinds that Agent's scoped registrations before this event.
+        // Drop our reference; the returned disposer remains available for
+        // process-level cleanup if the Agent is still live when the plugin ends.
+        agentRestrictionReleases.delete(agent);
+      });
+    }
     const guard = createToolGuard(config, append);
     ctx.effect(() => () => {
       close();

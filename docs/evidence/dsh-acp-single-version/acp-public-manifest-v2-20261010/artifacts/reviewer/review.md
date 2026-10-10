@@ -1,0 +1,9 @@
+# Independent review: external release manifest v2
+
+**Functional PASS; Tests PASS as combined local coverage; Clean Break Architecture PASS**, each limited to the frozen source slice. No new P1/P2 finding. Overall release and single-image adoption remain **NOT_READY**.
+
+`images.py:57,1287` emits `byq-release.v2`. `manifest.py:35-47` requires that version together with the exact current fields and 17 services. The validator runs before SBOM reads, GitHub attestation/API calls, Docker operations, promotion, or overlay output. The existing identity, digest, topology, and SBOM checks remain in place. No Product runtime, privileges, Compose default, or historical observer changed.
+
+The test at `test_release_pipeline.py:980-1015` uses the HEAD-shaped seven-key, 13-service v1 manifest, a mislabeled 17-service v1 manifest, and an unknown version. All are rejected before external actions; current per-role and single-image v2 fixtures validate. The independent receipt `/tmp/acp-public-manifest-v2-test-20261010/result.json` records two filtered-PATH module runs, each **51 passed, 1 skipped, 1 failed, 23 subtests passed**. Missing `bash`, then `cat`, caused the classifier failure. Under normal PATH, the classifier and config-only Compose test both passed. Frozen source hashes match before and after; compilation and scoped diff checks passed. This is **53 methods plus 23 subtests of combined local coverage**, not a single green module run.
+
+`docs/operations/image-release.md:58-74` correctly distinguishes the public v2 schema from the internal image handoff v2, states that old signed v1 artifacts are unsupported, and leaves the v090 observer as historical evidence. `acp-current-architecture-20261010/RESULT.md:20-30` preserves the failed first discovery and labels the same-source 19-case recheck as local coverage only. Adopting-commit architecture, hosted Full CI, registry publication, and historical v1 operator compatibility remain open or not run.

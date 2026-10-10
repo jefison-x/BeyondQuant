@@ -14,7 +14,8 @@ def test_plugin_projection_only_marks_runtime_reported_identity_active() -> None
     runtime = {"runtime": {"status": "ready", "plugin_profile": "research",
         "composition_hash": "sha256:" + "a" * 64, "enabled_plugin_ids": ["guard"],
         "model_credentials": "resolver", "sdk": "deepseek-harness-sdk==0.1.1rc1",
-        "runtime_bin": "deepseek-harness-runtime-bin==0.1.1rc1"}}
+        "runtime_bin": "deepseek-harness-runtime-bin==0.1.1rc1",
+        "release_id": "dsh-v0.2.0-rc.2", "release_identity": "matched"}}
     result = _decorate_plugin_center(backend, runtime)
     assert result["plugins"][0]["active"] is True
     assert result["plugins"][1]["active"] is False
@@ -22,6 +23,7 @@ def test_plugin_projection_only_marks_runtime_reported_identity_active() -> None
     # projected as configured unless readiness reports a real configured key.
     assert result["plugins"][1]["credential_configured"] is False
     assert result["runtime"]["desired_matches_active_plugins"] is False
+    assert result["runtime"]["release_id"] == "dsh-v0.2.0-rc.2"
 
 
 def test_unavailable_runtime_never_fabricates_active_state() -> None:
@@ -29,3 +31,12 @@ def test_unavailable_runtime_never_fabricates_active_state() -> None:
                                      {"runtime": {"status": "unavailable"}})
     assert result["plugins"][0]["active"] is False
     assert result["projection_status"] == "partial"
+
+
+def test_unmatched_runtime_release_identity_is_not_projected() -> None:
+    result = _decorate_plugin_center(
+        {"policy": {"enabled_plugin_ids": []}, "plugins": []},
+        {"runtime": {"status": "ready", "release_id": "dsh-v999.0.0",
+                      "release_identity": "mismatch"}},
+    )
+    assert result["runtime"]["release_id"] is None

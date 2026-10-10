@@ -350,10 +350,17 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotRegex(compose, r"(?m)^  dsh:")
         self.assertIn("byq_dsh_sessions:", compose)
         runtime = service_block("runtime-adapter")
-        self.assertIn("byq_dsh_sessions:/var/lib/byq/dsh-sessions", runtime)
+        # The legacy SDK session volume stays declared for the offline rollback
+        # route, but the ACP base runtime-adapter does not mount it: its session
+        # root is resolver-fed and the role mounts live in the ACP candidate
+        # overlay (compose.dsh-acp-rc2-candidate.yml).
+        self.assertNotIn("byq_dsh_sessions:/var/lib/byq/dsh-sessions", runtime)
+        self.assertIn(
+            "DSH_SESSION_ROOT: ${BYQ_DSH_BUILD_SESSION_ROOT:?ACP resolver is required}",
+            runtime,
+        )
+        self.assertNotIn("volumes:", runtime)
         self.assertNotIn("/app", runtime)
-        self.assertNotIn("/opt/dsh-runtime", runtime.split("volumes:", 1)[-1])
-        self.assertNotIn("/opt/byq", runtime.split("volumes:", 1)[-1])
 
     def test_dsh_web_is_diagnostic_profile_only(self) -> None:
         diagnostic = (ROOT / "compose.dsh-web.yml").read_text()
@@ -716,8 +723,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         gateway = service_block("gateway")
         runtime = service_block("runtime-adapter")
         self.assertIn("BYQ_PRODUCT_TOKEN", gateway)
+        self.assertNotIn("OPENCODE_API_KEY", gateway)
         self.assertNotIn("DEEPSEEK_API_KEY", gateway)
-        self.assertIn("DEEPSEEK_API_KEY", runtime)
+        self.assertIn("OPENCODE_API_KEY", runtime)
+        self.assertNotIn("DEEPSEEK_API_KEY", runtime)
         self.assertNotIn("BYQ_PRODUCT_TOKEN", runtime)
         self.assertIn("byq_workflow_traces", compose)
 
@@ -849,21 +858,25 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         )
         self.assertEqual(documented, implemented)
 
-    def test_adr0085_p1_execution_plan_surface_is_read_only(self) -> None:
+    def test_adr0108_execution_plan_surface_is_foreground_create_plus_read(self) -> None:
         # ADR-0085 P1 ships contract, persistence/CAS, an internal store seam and
-        # a read-only Product projection. A plan write route (create/advance/
-        # legacy) would let a model choose workflow next_state, so it MUST NOT
-        # exist on the Gateway/Product or agent-facing Backend surface.
+        # a read-only Product projection. ADR-0108 adds EXACTLY ONE foreground
+        # write surface (POST create, owner/workspace from the trusted context,
+        # closed create request). Plan ADVANCE remains an internal reducer seam,
+        # so a model still cannot choose workflow next_state: no advance/legacy
+        # route may exist on the Gateway/Product or agent-facing Backend surface.
         product_api = (ROOT / "services/gateway/app/product_api.py").read_text()
         self.assertEqual(
             re.findall(r'(?m)^@router\.(get|post|put|delete)\("([^"]*execution-plan[^"]*)"',
                        product_api),
-            [("get", "/research/tasks/{task_id}/execution-plan")],
+            [("get", "/research/tasks/{task_id}/execution-plan"),
+             ("post", "/research/tasks/{task_id}/execution-plan")],
         )
         backend = (ROOT / "services/backend/app/main.py").read_text()
         self.assertEqual(
             re.findall(r'(?m)^@app\.(get|post|put|delete)\("([^"]*execution-plan[^"]*)"', backend),
-            [("get", "/v1/research/tasks/{task_id}/execution-plan")],
+            [("get", "/v1/research/tasks/{task_id}/execution-plan"),
+             ("post", "/v1/research/tasks/{task_id}/execution-plan")],
         )
         openapi = (ROOT / "docs/contracts/product-api.openapi.yaml").read_text()
         self.assertIn("/api/product/research/tasks/{task_id}/execution-plan:", openapi)
@@ -1146,7 +1159,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             local_ci,
         )
         self.assertIn("BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml", local_ci)
-        self.assertIn("Dockerfile.post-u8-305-candidate", local_ci)
+        self.assertIn("scripts/dsh/acp_build.py", local_ci)
         self.assertNotIn("CI_PG_NET=byq_product", local_ci)
         self.assertNotIn("npm run build >/tmp/byq-mcp-build.log 2>&1", local_ci)
 
@@ -1203,12 +1216,31 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn('COMPOSE_PROJECT_NAME="byq-ci-stack-$BYQ_CI_SCOPE"', local_ci)
         self.assertIn('BYQ_FRONTEND_BIND="${BYQ_CI_FRONTEND_BIND:-127.0.0.1:0}"', local_ci)
         self.assertIn('BYQ_GATEWAY_BIND="${BYQ_CI_GATEWAY_BIND:-127.0.0.1:0}"', local_ci)
-        self.assertIn("docker compose port frontend 80", local_ci)
-        self.assertIn("docker compose port gateway 8100", local_ci)
+        self.assertIn("acp_compose port frontend 80", local_ci)
+        self.assertIn("acp_compose port gateway 8100", local_ci)
         self.assertIn("npm run test:e2e:real", local_ci)
-        self.assertIn("[ -x node_modules/.bin/playwright ] || npm ci", local_ci)
+        browser_helper = local_ci.split("\nprepare_ci_browser() {", 1)[1].split("\n}", 1)[0]
+        self.assertIn('[ "$CI_BROWSER_READY" -eq 1 ] && return 0', browser_helper)
+        self.assertIn('[ ! -x "$frontend_dir/node_modules/.bin/playwright" ]', browser_helper)
+        self.assertIn("npm ci --no-audit --no-fund", browser_helper)
+        self.assertIn("npx playwright install chromium", browser_helper)
+        self.assertIn('bad "locked Playwright dependency installation"', browser_helper)
+        self.assertIn('bad "Playwright Chromium installation"', browser_helper)
+        self.assertIn("CI_BROWSER_READY=1", browser_helper)
+
+        smoke = local_ci.split("\ncheck_smoke() {", 1)[1].split("\ncheck_f6_chain() {", 1)[0]
+        self.assertLess(smoke.index("if ! prepare_ci_browser; then"), smoke.index("npm run test:e2e:real"))
+        f6 = local_ci.split("\ncheck_f6_chain() {", 1)[1].split("\ncheck_dsh_web() {", 1)[0]
+        self.assertLess(
+            f6.index('ok "F6 offline ACP provider, settlement, and audit contracts"'),
+            f6.index("if ! prepare_ci_browser; then"),
+        )
+        self.assertLess(
+            f6.index("if ! prepare_ci_browser; then"),
+            f6.index('scripts/evidence/acp-f6-release-fixture.py'),
+        )
         cleanup = (ROOT / "scripts/ci/cleanup-resources.sh").read_text()
-        self.assertIn("docker compose down --rmi local -v --remove-orphans", cleanup)
+        self.assertIn("down --remove-orphans", cleanup)
         self.assertNotIn("--profile feedback-publisher", cleanup)
 
     def test_postgres_memory_baseline_is_bounded_and_configurable(self) -> None:
@@ -1316,7 +1348,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("runtime_command=self.runtime_command", adapter)
         self.assertIn("composition = self._composition", adapter)
         self.assertIn("composition=composition", adapter)
-        self.assertRegex(adapter, r"create_guard_patch\(\s*composition, session_root, continuation_budget,\s*deadline_epoch_ms=continuation_deadline_epoch_ms,?\s*\)")
+        self.assertRegex(adapter, r"create_guard_patch\(\s*composition, session_root, continuation_budget,\s*deadline_epoch_ms=continuation_deadline_epoch_ms,\s*proxy_base_url=continuation_proxy_url,?\s*\)")
         # ADR-0077: the guard requires the per-request output cap, so a
         # continuation harness must carry the reserved cap to the SDK for the
         # active route, not only the official deepseek adapter overlay.
@@ -1664,6 +1696,28 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         expected = ["compat/dsh_012.py"]
         self.assertEqual(sdk_imports, expected)
         self.assertEqual(raw_payload_readers, expected)
+
+
+class Phase48KeylessAcceptanceContract(unittest.TestCase):
+    """The keyless ACP selector is narrower than full ordinary-model Phase 48."""
+
+    def test_keyless_selector_labels_and_default_mode_are_truthful(self) -> None:
+        local_ci = (ROOT / "scripts/ci/local-ci.sh").read_text()
+        self.assertIn("phase48-product-golden.py --keyless-acp", local_ci)
+        self.assertIn("ACP keyless Product/business coherence", local_ci)
+        self.assertNotIn('ok "Phase 48 no-mock two-user Product coherence"', local_ci)
+
+        golden = (ROOT / "scripts/evidence/phase48-product-golden.py").read_text()
+        self.assertIn('arguments == ["--keyless-acp"]', golden)
+        self.assertIn("acp-product-business-coherence.v1", golden)
+        self.assertIn("product model is unavailable", golden)
+        self.assertIn('receipt["observed_public_turn_rejection_503"] = True', golden)
+        self.assertIn('receipt["rejection_reason"] = "NOT_OBSERVED"', golden)
+        self.assertIn("require_observed_public_turn_rejection_503", golden)
+        self.assertIn('receipt["qualified_ordinary_turn"] = "NOT_RUN"', golden)
+        self.assertIn('receipt["full_phase48_acceptance"] = "OPEN"', golden)
+        # Default mode must still require the original accepted turn.
+        self.assertIn('body.get("accepted") is True', golden)
 
 
 if __name__ == "__main__":

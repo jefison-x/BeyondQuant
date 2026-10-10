@@ -6,6 +6,8 @@ from __future__ import annotations
 import http.cookiejar
 import json
 import os
+import re
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -86,6 +88,32 @@ def require(condition: object, message: str) -> None:
         raise AssertionError(message)
 
 
+def require_accepted_turn(body: object) -> None:
+    """Default mode: the ordinary turn response must report accepted is True."""
+    require(isinstance(body, dict) and body.get("accepted") is True,
+            "conversation turn was not accepted")
+
+
+def require_observed_public_turn_rejection_503(body: object) -> None:
+    """Keyless CI: the public Product turn returns HTTP 503 with the normalized
+    detail "product model is unavailable". The public surface does not prove the
+    actual runtime rejection branch or that no provider activity occurred; the
+    accepted field must be absent or the literal False only."""
+    require(isinstance(body, dict), f"keyless turn rejection body is not an object: {body!r}")
+    require(body.get("detail") == "product model is unavailable",
+            f"keyless turn did not return the public model-unavailable 503: {body!r}")
+    require(body.get("accepted", False) is False, "keyless turn must not be accepted")
+
+
+def require_single_persisted_user_turn(replay: object, content: str) -> None:
+    """Gateway persists the user message before admission: require the exact one."""
+    messages = replay.get("messages") if isinstance(replay, dict) else None
+    require(isinstance(messages, list), "conversation replay has no message list")
+    user_messages = [m for m in messages if isinstance(m, dict) and m.get("role") == "user"]
+    require(len(user_messages) == 1, "expected exactly one persisted user message")
+    require(user_messages[0].get("content") == content, "persisted user message content mismatch")
+
+
 def wait_for_completed_backtest(
     owner: ProductClient, job_id: str, initial_job: dict[str, object],
 ) -> dict[str, object]:
@@ -120,7 +148,58 @@ def wait_for_completed_backtest(
     return job
 
 
+def workspace_receipt_payload(
+    username: str,
+    login_user: dict[str, object],
+    login_workspace: dict[str, object],
+    session: dict[str, object],
+) -> dict[str, object]:
+    """Validate Gateway login and flat `/api/auth/me` projections for the same owner."""
+    require(login_user.get("username") == username,
+            "login returned the wrong workspace owner")
+    require(session.get("subject") == username,
+            "authenticated session returned the wrong owner")
+    require(session.get("workspace") == login_workspace,
+            "authenticated session workspace differs from login")
+    workspace = login_workspace
+    require(
+        workspace.get("contract") == "personal-workspace.v1"
+        and workspace.get("kind") == "personal"
+        and workspace.get("role") == "owner"
+        and isinstance(workspace.get("workspace_id"), str)
+        and re.fullmatch(r"workspace_[0-9a-f]{32}", workspace["workspace_id"]) is not None,
+        "owner login did not establish a trusted personal workspace",
+    )
+    return {
+        "schema_version": "byq-ci-acp-workspace-binding.v1",
+        "username": username,
+        "workspace": {
+            "contract": workspace["contract"],
+            "workspace_id": workspace["workspace_id"],
+            "kind": workspace["kind"],
+            "role": workspace["role"],
+        },
+    }
+
+
+def workspace_receipt() -> None:
+    """Emit a read-only receipt binding the authenticated bootstrap owner to CI."""
+    username = os.environ.get("BYQ_GOLDEN_OWNER_USERNAME", "p48-admin")
+    owner = ProductClient(username, os.environ.get("BYQ_GOLDEN_OWNER_PASSWORD", "P48AdminPass123"))
+    session = owner.request("GET", "/api/auth/me")
+    receipt = workspace_receipt_payload(username, owner.user, owner.workspace, session)
+    print(json.dumps(receipt, sort_keys=True))
+
+
 def main() -> None:
+    arguments = sys.argv[1:]
+    if arguments == ["--workspace-receipt"]:
+        workspace_receipt()
+        return
+    # Unknown arguments fail closed before any login or Product call.
+    keyless_acp = arguments == ["--keyless-acp"]
+    if arguments and not keyless_acp:
+        raise SystemExit("unsupported phase48-product-golden.py argument")
     owner = ProductClient(
         os.environ.get("BYQ_GOLDEN_OWNER_USERNAME", "p48-admin"),
         os.environ.get("BYQ_GOLDEN_OWNER_PASSWORD", "P48AdminPass123"),
@@ -205,17 +284,25 @@ def main() -> None:
 
     conversation = owner.request("POST", "/v1/agent/sessions")
     session_id = str(conversation["session_id"])
-    turn = owner.request(
-        "POST",
-        f"/v1/agent/sessions/{urllib.parse.quote(session_id)}/turns",
-        {"content": "记录 Phase 48 连续投研旅程，并保持所有操作可审计。"},
-    )
-    require(turn.get("accepted") is True, "conversation turn was not accepted")
+    turn_content = "记录 Phase 48 连续投研旅程，并保持所有操作可审计。"
+    turn_path = f"/v1/agent/sessions/{urllib.parse.quote(session_id)}/turns"
+    if keyless_acp:
+        # Keyless ACP contract: the seeded legacy DeepSeek profile (provider
+        # "deepseek", model "deepseek-v4-flash") is outside the ADR-0106 static
+        # qualified-route policy. The Gateway normalizes all Adapter 503 (authority,
+        # resolver, key and route issues alike) to the public detail below, so the
+        # public 503 does not prove the actual runtime rejection branch or that no
+        # provider activity occurred.
+        turn = owner.request("POST", turn_path, {"content": turn_content}, expected_status=503)
+        require_observed_public_turn_rejection_503(turn)
+    else:
+        turn = owner.request("POST", turn_path, {"content": turn_content})
+        require_accepted_turn(turn)
     title = f"Phase 48 golden conversation {suffix}"
     owner.request("PATCH", f"/v1/agent/sessions/{session_id}", {"title": title, "pinned": True})
     replay = owner.request("GET", f"/v1/agent/sessions/{session_id}")
     require(replay["conversation"].get("title") == title, "conversation title was not restored")
-    require(any(message.get("content", "").startswith("记录 Phase 48") for message in replay["messages"]), "user turn was not durable")
+    require_single_persisted_user_turn(replay, turn_content)
     other.request("GET", f"/v1/agent/sessions/{session_id}", expected_status=404)
     owner.request("PATCH", f"/v1/agent/sessions/{session_id}", {"status": "archived"})
     archived = owner.request("GET", "/v1/agent/sessions?status=archived")
@@ -417,9 +504,7 @@ def main() -> None:
         "browser workspace header changed the trusted workspace",
     )
 
-    print(
-        json.dumps(
-            {
+    receipt: dict[str, object] = {
                 "schema_version": "phase-52-personal-workspace-closure-v1",
                 "status": "passed",
                 "product_origin": ORIGIN,
@@ -448,12 +533,16 @@ def main() -> None:
                     "other_workspace_id": other.workspace["workspace_id"],
                 },
                 "secondary_user": {"owner_resources_hidden": True, "admin_status": 403, "appearance_version": 0},
-            },
-            ensure_ascii=False,
-            indent=2,
-            sort_keys=True,
-        )
-    )
+    }
+    if keyless_acp:
+        receipt["schema_version"] = "acp-product-business-coherence.v1"
+        receipt["mode"] = "keyless-acp"
+        receipt["conversation"]["turn_accepted"] = False
+        receipt["observed_public_turn_rejection_503"] = True
+        receipt["rejection_reason"] = "NOT_OBSERVED"
+        receipt["qualified_ordinary_turn"] = "NOT_RUN"
+        receipt["full_phase48_acceptance"] = "OPEN"
+    print(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":

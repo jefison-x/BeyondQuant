@@ -5,7 +5,9 @@ type Handler = { fetch(request: Request, options?: { parsedBody?: unknown }): Pr
 type Call = { tool: string; arguments: Record<string, unknown>; root_run_id: string };
 
 export function continuationAdmission(handler: Handler,
-  admit: (reservation: string, call: Call, request: Request) => Promise<boolean>): Handler {
+  admit: (reservation: string, call: Call, request: Request) => Promise<boolean>,
+  authenticatedRootRunId: (request: Request) => string =
+    (request) => request.headers.get('x-byq-root-run-id') ?? ''): Handler {
   return { async fetch(request, options) {
     const reservation = request.headers.get('x-byq-continuation-reservation');
     if (reservation === null) return handler.fetch(request, options);
@@ -22,10 +24,13 @@ export function continuationAdmission(handler: Handler,
       if (params && typeof params.name === 'string' && args && typeof args === 'object'
         && !Array.isArray(args)) {
         allowed = await admit(reservation, { tool: params.name, arguments: args as Record<string, unknown>,
-          root_run_id: request.headers.get('x-byq-root-run-id') ?? '' }, request);
+          root_run_id: authenticatedRootRunId(request) }, request);
       }
     } catch { /* No evidence is not permission; never replay an admission. */ }
-    if (!allowed) return Response.json({ jsonrpc: '2.0', id: envelope.id ?? null, result: { isError: true,
+    // The 2026-07-28 revision requires the resultType discriminator on every
+    // result; this constructed envelope bypasses the SDK codec, so it must set it
+    // itself or a modern client rejects the blocker as an invalid result.
+    if (!allowed) return Response.json({ jsonrpc: '2.0', id: envelope.id ?? null, result: { resultType: 'complete', isError: true,
       content: [{ type: 'text', text: JSON.stringify({ status: 'blocked',
         reason: 'continuation_action_not_admitted', message: 'This background action is outside the active original-task permission. Stop and report the blocker; do not switch tasks or approve it yourself.' }) }] } });
     return handler.fetch(request, { ...options, parsedBody: body });

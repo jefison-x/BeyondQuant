@@ -26,6 +26,18 @@ export type AgentResult = {
 function result(payload: unknown, isError: boolean): AgentResult {
   return { content: [{ type: "text", text: JSON.stringify(payload) }], isError };
 }
+
+/** Keep the public MCP result shape stable when ACP uses its private authorize route. */
+export function acpAgentAuthorizationSuccess(authorization: Record<string, unknown>): AgentResult {
+  return result({ service: "beyondquant-mcp", status: "ok", authorization }, false);
+}
+
+/** The trusted negative receipt is deliberately not exposed in model-visible tool output. */
+export function acpAgentAuthorizationDenied(): AgentResult {
+  return result({ service: "beyondquant-mcp", status: "error",
+    backend: { status: "agent_forbidden", http_status: 403 } }, true);
+}
+
 function errorStatus(status: number): string {
   if (status === 401) return "agent_unauthorized";
   if (status === 403) return "agent_forbidden";

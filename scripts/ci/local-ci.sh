@@ -76,6 +76,7 @@ fi
 
 PASS=0
 FAIL=0
+CI_BROWSER_READY=0
 # Low-noise, redacted-by-the-caller phase timing. This is measurement only: it
 # never changes selection, ordering or pass/fail, and the next required remote
 # verification produces the baseline without a dedicated Full run. Nested helper
@@ -174,10 +175,7 @@ CI_BACKEND_TEST="byq-ci-backend-test-$BYQ_CI_SCOPE"
 CI_GATEWAY_TEST="byq-ci-gateway-test-$BYQ_CI_SCOPE"
 CI_RUNTIME_TEST="byq-ci-runtime-test-$BYQ_CI_SCOPE"
 CI_MCP_TEST="byq-ci-mcp-test-$BYQ_CI_SCOPE"
-CI_MCP_SERVER="byq-ci-mcp-server-$BYQ_CI_SCOPE"
-CI_CANDIDATE_TEST="byq-ci-runtime-candidate-test-$BYQ_CI_SCOPE"
-CI_CANDIDATE_VOL="byq-ci-runtime-candidate-data-$BYQ_CI_SCOPE"
-CI_CANDIDATE_BENCH_VOL="byq-ci-runtime-candidate-bench-$BYQ_CI_SCOPE"
+CI_COMPOSE_FILES=()
 RESOURCES_TOUCHED=0
 ACTIVE_CHILD_PID=""
 HEAVY_LOCK_HELD=0
@@ -219,6 +217,22 @@ run_interruptible() {
   fi
   ACTIVE_CHILD_PID=""
   return "$child_status"
+}
+
+prepare_ci_browser() {
+  [ "$CI_BROWSER_READY" -eq 1 ] && return 0
+  local frontend_dir="$REPO_ROOT/apps/frontend"
+  if [ ! -x "$frontend_dir/node_modules/.bin/playwright" ]; then
+    if ! run_interruptible bash -c 'cd "$1" && npm ci --no-audit --no-fund' _ "$frontend_dir"; then
+      bad "locked Playwright dependency installation"
+      return 1
+    fi
+  fi
+  if ! run_interruptible bash -c 'cd "$1" && npx playwright install chromium' _ "$frontend_dir"; then
+    bad "Playwright Chromium installation"
+    return 1
+  fi
+  CI_BROWSER_READY=1
 }
 
 acquire_heavy_capacity() {
@@ -264,6 +278,8 @@ ensure_ci_backend() {
   RESOURCES_TOUCHED=1
   if ! docker inspect "$CI_BACKEND" >/dev/null 2>&1; then
     printf '\n==> backend: starting live MCP contract dependency (%s)\n' "$CI_BACKEND"
+    local backend_image
+    backend_image="$(ci_image_ref backend)" || return 1
     docker run -d --pull=never --name "$CI_BACKEND" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET" --network-alias backend \
       -e BYQ_DATABASE_URL="postgresql+psycopg://byq_test:byq-test-dev@$CI_PG:5432/byq_domain_test" \
       -e PYTHONDONTWRITEBYTECODE=1 \
@@ -271,7 +287,7 @@ ensure_ci_backend() {
       -v "$REPO_ROOT/plugins/dsh-byq/registry:/app/plugin-registry:ro" \
       -e BYQ_WEB_EVIDENCE_PROVENANCE_POLICY=/opt/byq-evidence/web-evidence-provenance.json \
       -v "$REPO_ROOT/config/dsh/generated/web-evidence-provenance.json:/opt/byq-evidence/web-evidence-provenance.json:ro" \
-      "$(ci_image_ref backend)" >/dev/null
+      "$backend_image" >/dev/null
   fi
   for _ in $(seq 1 30); do
     docker exec "$CI_BACKEND" python -c \
@@ -282,29 +298,66 @@ ensure_ci_backend() {
   docker logs "$CI_BACKEND" >&2 || true
   return 1
 }
-ensure_ci_mcp() {
-  ensure_clean_postgres || return 1
-  ensure_ci_backend || return 1
-  RESOURCES_TOUCHED=1
-  if ! docker inspect "$CI_MCP_SERVER" >/dev/null 2>&1; then
-    docker run -d --pull=never --name "$CI_MCP_SERVER" --label "byq.ci.scope=$BYQ_CI_SCOPE" \
-      --network "$CI_PG_NET" --network-alias mcp \
-      -e BYQ_MCP_TOKEN=ci-mcp-test-only -e BYQ_BACKEND_URL=http://backend:8000 \
-      -e BYQ_WEB_EVIDENCE_PROVENANCE_POLICY=/app/dsh-0.1.2rc1.web-evidence-provenance.json \
-      "$(ci_image_ref mcp)" >/dev/null
-  fi
-  for _ in $(seq 1 30); do
-    docker exec "$CI_MCP_SERVER" node -e \
-      "fetch('http://127.0.0.1:8300/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" \
-      >/dev/null 2>&1 && return 0
-    sleep 1
-  done
-  docker logs "$CI_MCP_SERVER" >&2 || true
-  return 1
+acp_compose_route_files() {
+  # ADR-0110: the single checked-in Compose route selection lives in
+  # scripts/release/images.py (ACP_COMPOSE_ROUTE), shared with the release
+  # export. The shell never hard-codes a fallback route.
+  python3 "$REPO_ROOT/scripts/release/images.py" route
 }
+
+set_ci_compose_files() {
+  local route
+  if ! route="$(acp_compose_route_files)"; then
+    echo "ACP Compose route selection failed; no fallback route is permitted" >&2
+    return 1
+  fi
+  if [ -z "$route" ]; then
+    echo "ACP Compose route selection was empty; no fallback route is permitted" >&2
+    return 1
+  fi
+  local -a files=()
+  local line
+  while IFS= read -r line; do
+    # Only absolute, ordered, non-blank route entries from the CLI are accepted.
+    # A malformed/blank/relative entry fails closed instead of being dropped.
+    if [ -z "$line" ]; then
+      echo "ACP Compose route selection contained a blank entry; no fallback route is permitted" >&2
+      return 1
+    fi
+    case "$line" in
+      /*) ;;
+      *)
+        echo "ACP Compose route selection entry is not absolute ($line); no fallback route is permitted" >&2
+        return 1
+        ;;
+    esac
+    files+=("$line")
+  done <<< "$route"
+  if [ "${#files[@]}" -eq 0 ]; then
+    echo "ACP Compose route selection was empty; no fallback route is permitted" >&2
+    return 1
+  fi
+  CI_COMPOSE_FILES=("${files[@]}")
+  local joined
+  joined="$(IFS=:; printf '%s' "${CI_COMPOSE_FILES[*]}")"
+  export COMPOSE_FILE="$joined"
+}
+
+acp_compose() {
+  local -a compose_args=()
+  local file
+  for file in "${CI_COMPOSE_FILES[@]}"; do compose_args+=(-f "$file"); done
+  python3 "$REPO_ROOT/scripts/dsh/acp_build.py" -- docker compose "${compose_args[@]}" "$@"
+}
+
+release_image_services() {
+  python3 -c 'import sys; sys.path.insert(0, "scripts/release"); import images; print("\n".join(images.SERVICES))'
+}
+
 prepare_ci_compose_env() {
-  # Never load the operator's .env/override or inherit production credentials.
-  export COMPOSE_FILE="$REPO_ROOT/compose.yml"
+  # Every CI Compose command uses the managed ACP base+override entry point.
+  # The helper resolves ACP build selectors and clears ambient DSH build inputs.
+  set_ci_compose_files || return 1
   export COMPOSE_DISABLE_ENV_FILE=1 COMPOSE_ENV_FILES=/dev/null COMPOSE_PROFILES=""
   export COMPOSE_PROJECT_NAME="byq-ci-stack-$BYQ_CI_SCOPE"
   export BYQ_PRODUCT_NETWORK_NAME="byq-ci-product-$BYQ_CI_SCOPE"
@@ -314,6 +367,13 @@ prepare_ci_compose_env() {
   export BYQ_ML_MODEL_VOLUME_NAME="byq-ci-ml-model-$BYQ_CI_SCOPE"
   export BYQ_DSH_SESSIONS_VOLUME_NAME="byq-ci-dsh-sessions-$BYQ_CI_SCOPE"
   export BYQ_WORKFLOW_TRACES_VOLUME_NAME="byq-ci-workflow-traces-$BYQ_CI_SCOPE"
+  export BYQ_ACP_JUDGMENT_NETWORK_NAME="$COMPOSE_PROJECT_NAME-acp-judgment"
+  export BYQ_ACP_PRODUCT_SESSIONS_VOLUME_NAME="$COMPOSE_PROJECT_NAME-acp-product-sessions"
+  export BYQ_ACP_PRODUCT_STATE_VOLUME_NAME="$COMPOSE_PROJECT_NAME-acp-product-state"
+  export BYQ_ACP_PRODUCT_CONTROL_VOLUME_NAME="$COMPOSE_PROJECT_NAME-acp-product-control"
+  export BYQ_ACP_JUDGMENT_SESSIONS_VOLUME_NAME="$COMPOSE_PROJECT_NAME-acp-judgment-sessions"
+  export BYQ_ACP_RUNNER_CONTROL_VOLUME_NAME="$COMPOSE_PROJECT_NAME-acp-runner-control"
+  export BYQ_ACP_RUNNER_STATE_VOLUME_NAME="$COMPOSE_PROJECT_NAME-acp-runner-state"
   # An empty host-port asks Docker to allocate an available loopback port.
   # Explicit bindings remain available for local debugging.
   export BYQ_FRONTEND_BIND="${BYQ_CI_FRONTEND_BIND:-127.0.0.1:0}"
@@ -323,19 +383,36 @@ prepare_ci_compose_env() {
   export BYQ_DATABASE_URL=postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain
   export BYQ_MCP_TOKEN=ci-mcp-test-only BYQ_PRODUCT_TOKEN=ci-product-test-only
   export BYQ_RUNTIME_AUTHORITY_TOKEN=ci-runtime-authority-test-only
+  export BYQ_RUNTIME_JUDGMENT_TOKEN=ci-runtime-judgment-test-only
   export BYQ_CREDENTIAL_KEYRING='{"ci-v1":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}'
   export BYQ_CREDENTIAL_ACTIVE_KEY_ID=ci-v1
   export BYQ_CREDENTIAL_RESOLVER_TOKEN=ci-credential-resolver-test-only
   export BYQ_PLUGIN_DEPLOYMENT_TOKEN=ci-plugin-test-only
   export BYQ_FEEDBACK_HUB_RELAY_TOKEN=ci-relay-test-only
-  export DEEPSEEK_API_KEY="" TUSHARE_TOKEN="" BYQ_FEEDBACK_GITHUB_TOKEN=""
+  export DEEPSEEK_API_KEY="" OPENCODE_API_KEY="" TUSHARE_TOKEN="" BYQ_FEEDBACK_GITHUB_TOKEN=""
   export BYQ_FEEDBACK_HUB_URL=""
-  # ADR-0069: daily suites use the supported bundled runtime only.
-  # Archived rollback images are never rebuilt or executed by routine CI.
-  export BYQ_DSH_RUNTIME_DOCKERFILE=services/runtime-adapter/Dockerfile.post-u8-305-candidate
-  export BYQ_DSH_COMPATIBILITY_RELEASE=dsh-0.1.5rc1
+  # Fixed test-only inputs for the merged ACP Compose configuration.
+  export BYQ_ACP_PRODUCT_WORKSPACE_ID="${BYQ_CI_ACP_WORKSPACE_ID:-workspace_ciacp000000000000000000000000000}"
+  export BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET=ci-acp-product-runner-secret-000000000000000000000000000000
+  export BYQ_MCP_ACP_DISCOVERY_TOKEN=ci-acp-discovery-token-000000000000000000000000000000000
+  export BYQ_MCP_ACP_SIGNING_KEY=ci-acp-signing-key-00000000000000000000000000000000000
+  export BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY=ci-acp-judgment-signing-key-000000000000000000000000000
+  export BYQ_ACP_JUDGMENT_RUNNER_CONTROL_SECRET=ci-acp-judgment-runner-secret-000000000000000000000000000000
+  export BYQ_MCP_ACP_JUDGMENT_PROOF_TOKEN=ci-acp-judgment-proof-token-0000000000000000000000000000000
+  export BYQ_MCP_BACKEND_PROOF_TOKEN=ci-mcp-backend-proof-token-0000000000000000000000000000000
+  export BYQ_GATEWAY_SERVICE_TOKEN=ci-gateway-service-token-00000000000000000000000000000000
+  export BYQ_DSH_PROVIDER=opencode-go-chat BYQ_DSH_MODEL=deepseek-v4.1-flash
+  # F6 is opt-in and is enabled only by the scoped ACP release fixture below.
+  export BYQ_F6_EXECUTOR_ENABLED=0
+  # ADR-0110: the ACP release topology is derived from the single checked-in
+  # Compose route (images.py ACP_COMPOSE_ROUTE) selected by
+  # set_ci_compose_files, never from an ambient selector. The operative route
+  # declares three per-role builds; equal local image ids never promote the
+  # export to single-image.
+  # SDK rollback artifacts remain offline-only; ambient selectors cannot choose
+  # a legacy runtime Dockerfile, compatibility release or session root.
+  unset BYQ_DSH_RUNTIME_DOCKERFILE BYQ_DSH_COMPATIBILITY_RELEASE BYQ_DSH_SESSION_ROOT DSH_SESSION_ROOT
   export BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml
-  export BYQ_DSH_SESSION_ROOT=/var/lib/byq/dsh-sessions/dsh-0.1.5rc1
   export BYQ_WEB_EVIDENCE_PROVENANCE_POLICY=/app/qualified-web-evidence-provenance.json
   export BYQ_PLUGIN_REGISTRY_PATH=/app/plugin-registry/product-plugins.json
   export BYQ_BOOTSTRAP_ADMIN_USERNAME="${BYQ_CI_BOOTSTRAP_ADMIN_USERNAME:-ci-admin}"
@@ -354,17 +431,21 @@ ci_image() {
 }
 
 # Immutable image ids captured once, immediately after the run-scoped build.
-# Later container runs prefer these over the mutable run-scoped tag, and every
-# such run uses --pull=never: a missing image fails closed instead of silently
-# resolving a stale image from a registry.
+# Later container runs must reference these captured ids: a missing id is a hard
+# failure, never a silent fallback to the mutable run-scoped tag, and every
+# run-scoped run uses --pull=never so it can never resolve a stale registry image.
+# Because a "$(ci_image_ref ...)" substitution used as a Docker argument does not
+# propagate failure to the enclosing command, callers MUST capture the id with
+# explicit failure propagation (see the check_* functions) before running Docker.
 declare -A CI_IMAGE_IDS=()
 ci_image_ref() {
-  local service="$1"
-  if [ -n "${CI_IMAGE_IDS[$service]:-}" ]; then
-    printf '%s' "${CI_IMAGE_IDS[$service]}"
-  else
-    printf '%s' "$(ci_image "$service")"
+  local service="$1" image_id
+  image_id="${CI_IMAGE_IDS[$service]:-}"
+  if [ -z "$image_id" ]; then
+    printf 'run-scoped image id for %s was not captured; refusing a mutable tag\n' "$service" >&2
+    return 1
   fi
+  printf '%s' "$image_id"
 }
 
 # Run/attempt-scoped manifest of the exact captured image ids, consumed by the
@@ -376,12 +457,18 @@ ci_image_manifest_path() {
 
 build_test_images() {
   local services=() service image_id manifest tmp
+  # These checks validate archived SDK rollback metadata/projections offline;
+  # they do not select an SDK build or qualify the ACP image batch.
   python3 scripts/dsh/release.py check --historical-inputs || return 1
   python3 scripts/dsh/promotion.py check || return 1
-  python3 -c 'from scripts.dsh import build_revision as b; [b.check(b.selected_build_id(r)) for r in sorted(b.RELEASES)]' || return 1
-  prepare_ci_compose_env
+  # Explicit propagation: errexit is suppressed while main runs this function
+  # under `if !`, so a bare call could ignore a route failure and reach Docker.
+  prepare_ci_compose_env || return 1
   if [ "$WITH_SMOKE" -eq 1 ] || [ "$WITH_DSH_WEB" -eq 1 ]; then
-    services=(backend gateway runtime-adapter mcp frontend data-worker backtest-worker factor-worker optimization-worker signal-worker ml-worker signal-sandbox feedback-hub-relay)
+    local service_list
+    service_list="$(release_image_services)" || return 1
+    mapfile -t services <<< "$service_list"
+    [ "${#services[@]}" -eq 17 ] || return 1
   else
     if want backend || want mcp || want runtime; then services+=(backend); fi
     if want gateway; then services+=(gateway); fi
@@ -393,9 +480,10 @@ build_test_images() {
   RESOURCES_TOUCHED=1
   acquire_heavy_capacity || return 1
   if [ "${BYQ_CI_GHA_CACHE:-0}" = 1 ]; then
-    run_interruptible python3 scripts/ci/build-images.py "${services[@]}" || return 1
+    run_interruptible python3 "$REPO_ROOT/scripts/dsh/acp_build.py" -- \
+      python3 "$REPO_ROOT/scripts/ci/build-images.py" "${services[@]}" || return 1
   else
-    run_interruptible docker compose build "${services[@]}" || return 1
+    run_interruptible acp_compose build "${services[@]}" || return 1
   fi
   for service in "${services[@]}"; do
     printf '    image identity -> service=%s tag=%s id=' "$service" "$(ci_image "$service")"
@@ -414,8 +502,8 @@ build_test_images() {
 }
 resolve_ci_compose_urls() {
   local frontend_address gateway_address
-  frontend_address="$(docker compose port frontend 80)"
-  gateway_address="$(docker compose port gateway 8100)"
+  frontend_address="$(acp_compose port frontend 80)"
+  gateway_address="$(acp_compose port gateway 8100)"
   test -n "$frontend_address"
   test -n "$gateway_address"
   export BYQ_REAL_BASE_URL="http://$frontend_address"
@@ -462,12 +550,17 @@ check_backend() {
   step "backend: pytest against clean postgres"
   ensure_clean_postgres || { bad "clean postgres"; return; }
   RESOURCES_TOUCHED=1
+  local backend_image
+  if ! backend_image="$(ci_image_ref backend)"; then
+    bad "run-scoped backend image id was not captured; refusing a mutable tag"
+    return
+  fi
   # Every test module runs once. Three independent databases keep committed
   # writes and schema resets isolated while allowing the complete suite to run
   # concurrently on the same exact Backend image.
   if run_interruptible python3 scripts/ci/run_backend_shards.py \
       --repo-root "$REPO_ROOT" --scope "$BYQ_CI_SCOPE" --network "$CI_PG_NET" \
-      --postgres "$CI_PG" --image "$(ci_image_ref backend)"; then
+      --postgres "$CI_PG" --image "$backend_image"; then
     ok "backend tests"; else bad "backend tests"; fi
   # Deferred-reset isolation regression: the same schema-isolation tests run in
   # a fixed-seed shuffled order, proving per-test cleanup is order-independent.
@@ -477,7 +570,7 @@ check_backend() {
       -v "$REPO_ROOT/services/backend:/app" -w /app \
       -v "$REPO_ROOT/workers:/app/workers:ro" \
       -v "$REPO_ROOT/plugins/dsh-byq/registry:/app/plugin-registry:ro" \
-      "$(ci_image_ref backend)" python -m pytest -q -p no:cacheprovider \
+      "$backend_image" python -m pytest -q -p no:cacheprovider \
       tests/test_schema_isolation.py; then
     ok "backend schema isolation (shuffled)"; else bad "backend schema isolation (shuffled)"; fi
   if [ -d "$REPO_ROOT/workers/feedback-hub-relay/tests" ]; then
@@ -485,7 +578,7 @@ check_backend() {
         -e PYTHONDONTWRITEBYTECODE=1 -v "$REPO_ROOT/workers/feedback-hub-relay:/relay:ro" -w /relay \
         -v "$REPO_ROOT/workers/feedback_http_deadline.py:/opt/byq-worker-http/feedback_http_deadline.py:ro" \
         -e PYTHONPATH=/opt/byq-worker-http:/app \
-        "$(ci_image_ref backend)" python -m pytest -q -p no:cacheprovider tests; then
+        "$backend_image" python -m pytest -q -p no:cacheprovider tests; then
       ok "feedback hub relay tests"; else bad "feedback hub relay tests"; fi
   fi
 }
@@ -510,95 +603,47 @@ check_cloudflare_feedback_hub() {
 check_gateway() {
   step "gateway: pytest (mocked backend)"
   RESOURCES_TOUCHED=1
-  if run_interruptible docker run --rm --name "$CI_GATEWAY_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" -e PYTHONDONTWRITEBYTECODE=1 \
+  local gateway_image
+  if ! gateway_image="$(ci_image_ref gateway)"; then
+    bad "run-scoped gateway image id was not captured; refusing a mutable tag"
+    return
+  fi
+  if run_interruptible docker run --rm --pull=never --name "$CI_GATEWAY_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$REPO_ROOT/services/gateway:/app" \
+      -v "$REPO_ROOT/scripts/evidence/phase48-product-golden.py:/app/tests/phase48-product-golden.py:ro" \
       -v "$REPO_ROOT/packages:/app/packages" -w /app \
-      "$(ci_image gateway)" python -m pytest -q -p no:cacheprovider \
+      -e BYQ_PHASE48_GOLDEN_SCRIPT_PATH=/app/tests/phase48-product-golden.py \
+      "$gateway_image" python -m pytest -q -p no:cacheprovider \
       --durations=10 --durations-min=1.0; then
     ok "gateway tests"; else bad "gateway tests"; fi
 }
 
 check_runtime() {
   step "runtime-adapter: pytest"
-  if run_interruptible docker run --rm --label "byq.ci.scope=$BYQ_CI_SCOPE" --network none \
+  local mcp_image runtime_image
+  if ! mcp_image="$(ci_image_ref mcp)"; then
+    bad "run-scoped mcp image id was not captured; refusing a mutable tag"
+    return
+  fi
+  if run_interruptible docker run --rm --pull=never --label "byq.ci.scope=$BYQ_CI_SCOPE" --network none \
       -v "$REPO_ROOT/plugins/dsh-byq/runtime:/opt/byq/runtime:ro" \
-      "$(ci_image mcp)" sh -ec 'node --test /opt/byq/runtime/*.test.js'; then
+      "$mcp_image" sh -ec 'node --test /opt/byq/runtime/*.test.js'; then
     ok "runtime helper contracts"; else bad "runtime helper contracts"; fi
+  if ! runtime_image="$(ci_image_ref runtime-adapter)"; then
+    bad "run-scoped runtime-adapter image id was not captured; refusing a mutable tag"
+    return
+  fi
   RESOURCES_TOUCHED=1
-  if run_interruptible docker run --rm --name "$CI_RUNTIME_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" -e PYTHONDONTWRITEBYTECODE=1 \
+  if run_interruptible docker run --rm --pull=never --name "$CI_RUNTIME_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network none -e PYTHONDONTWRITEBYTECODE=1 \
       -e BYQ_F6_BACKEND_SOURCE_PATH=/app/backend/research_continuation.py \
       -v "$REPO_ROOT/services/backend/app/research_continuation.py:/app/backend/research_continuation.py:ro" \
       -v "$REPO_ROOT/services/runtime-adapter:/app" \
       -v "$REPO_ROOT/packages:/app/packages" -w /app \
       -v "$REPO_ROOT/plugins/dsh-byq/runtime:/opt/byq/runtime:ro" \
       -v "$REPO_ROOT/plugins/dsh-byq/skills:/opt/dsh/bundles/dsh-byq/skills:ro" \
-      -e BYQ_DSH_PROCESS_OWNERSHIP=session \
-      "$(ci_image runtime-adapter)" python3 -m pytest -q -p no:cacheprovider \
+      --entrypoint /opt/byq-venv/bin/python3 "$runtime_image" -m pytest -q -p no:cacheprovider \
       --durations=10 --durations-min=1.0; then
     ok "runtime-adapter tests"; else bad "runtime-adapter tests"; fi
-}
-
-check_dsh_candidate() {
-  step "runtime-adapter: real 0.1.5rc1 candidate qualification"
-  local benchmark_dir="$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE"
-  mkdir -p "$benchmark_dir"
-  ensure_ci_mcp || { bad "candidate live MCP dependency"; return; }
-  RESOURCES_TOUCHED=1
-  candidate_image="$(ci_image runtime-candidate)"
-  if ! docker image tag "$(ci_image runtime-adapter)" "$candidate_image"; then
-    bad "candidate image build"; return
-  fi
-  printf '    candidate image identity -> tag=%s id=' "$candidate_image"
-  docker image inspect "$candidate_image" --format '{{.Id}}' || { bad "candidate image identity"; return; }
-  if ! run_interruptible docker run --rm --label "byq.ci.scope=$BYQ_CI_SCOPE" --network none "$candidate_image" \
-      python3 -c 'from pathlib import Path; assert not Path("/app/tests").exists(); assert not list(Path("/opt/byq/runtime").glob("*.test.js")); assert not Path("/app/app/compat/dsh_011.py").exists()'; then
-    bad "production runtime contains retired implementation or tests"; return
-  fi
-  for volume in "$CI_CANDIDATE_VOL" "$CI_CANDIDATE_BENCH_VOL"; do
-    docker volume create --label "byq.ci.scope=$BYQ_CI_SCOPE" "$volume" >/dev/null
-  done
-  common=(--rm --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET"
-    -e BYQ_MCP_TOKEN=ci-mcp-test-only -e BYQ_MCP_URL="http://$CI_MCP_SERVER:8300/mcp/v1"
-    -e BYQ_OWNER_PRINCIPAL=ci-candidate -e BYQ_ACTOR_PRINCIPAL=ci-candidate
-    -e BYQ_WORKSPACE_ID=ci-candidate -e PYTHONDONTWRITEBYTECODE=1
-    -v "$REPO_ROOT/services/runtime-adapter/tests:/app/tests:ro")
-  # Compatibility unit fixtures explicitly exercise session mode; root-mode
-  # tests opt into their independently verified profile. Real candidate
-  # journeys below retain the image's actual root-turn default.
-  if ! run_interruptible docker run --name "$CI_CANDIDATE_TEST" "${common[@]}" \
-      -e BYQ_DSH_PROCESS_OWNERSHIP=session -e BYQ_DOMAIN_CALL_WIRE_TEST=1 \
-      -e BYQ_F6_BACKEND_SOURCE_PATH=/app/backend/research_continuation.py \
-      -v "$REPO_ROOT/services/backend/app/research_continuation.py:/app/backend/research_continuation.py:ro" \
-      -e BYQ_ROOT_PROFILE_ROOT=/qualification-root-profiles \
-      -v "$REPO_ROOT/plugins/dsh-byq/profiles/root-scoped:/qualification-root-profiles:ro" \
-      -v "$CI_CANDIDATE_VOL:/var/lib/byq/dsh-sessions" "$candidate_image" \
-      python3 -m pytest -q -p no:cacheprovider /app/tests; then
-    bad "candidate complete unit and root wire suite"; return
-  fi
-  if ! run_interruptible docker run --rm --label "byq.ci.scope=$BYQ_CI_SCOPE" --network none \
-      -e PYTHONDONTWRITEBYTECODE=1 -e BYQ_BUDGET_SEMANTICS_TEST=1 \
-      -v "$REPO_ROOT/services/runtime-adapter/tests:/app/tests:ro" "$candidate_image" \
-      python3 -m pytest -q -p no:cacheprovider /app/tests/test_continuation_budget_process.py; then
-    bad "candidate continuation budget and restart qualification"; return
-  fi
-  if ! run_interruptible docker run --name "$CI_CANDIDATE_TEST" "${common[@]}" \
-      -e BYQ_DSH_REAL_PROCESS_TEST=1 -v "$CI_CANDIDATE_VOL:/var/lib/byq/dsh-sessions" \
-      -v "$REPO_ROOT/tests/dsh_upgrade:/qualification:ro" "$candidate_image" \
-      python3 -m pytest -q -p no:cacheprovider \
-      /app/tests/test_dsh_012_real_process.py \
-      /app/tests/test_dsh015_foreground_child_process.py \
-      /qualification/test_candidate_journeys.py; then
-    bad "candidate real-process/delegate journeys"; return
-  fi
-  if ! run_interruptible docker run --name "$CI_CANDIDATE_TEST" "${common[@]}" \
-      -e BYQ_DSH_REAL_PROCESS_TEST=1 -v "$CI_CANDIDATE_BENCH_VOL:/var/lib/byq/dsh-sessions" \
-      -v "$REPO_ROOT/tests/dsh_upgrade:/qualification:ro" "$candidate_image" \
-      python3 /qualification/runtime_benchmark.py > "$benchmark_dir/candidate-benchmark.json"; then
-    cat "$benchmark_dir/candidate-benchmark.json" >&2
-    bad "candidate lifecycle benchmark"; return
-  fi
-  cat "$benchmark_dir/candidate-benchmark.json"
-  ok "candidate real-process, five delegates and supported-runtime lifecycle benchmark"
 }
 
 check_mcp() {
@@ -607,15 +652,19 @@ check_mcp() {
   ensure_ci_backend || { bad "live backend for MCP"; return; }
   # A successful domain write needs a real isolated user/workspace, not the
   # deliberately invalid identities used by the original read/error-only tests.
-  local contract_workspace
+  local contract_workspace mcp_image
   if ! contract_workspace="$(docker exec "$CI_BACKEND" python -c 'from tests.workspace_helpers import trusted_agent_context; print(trusted_agent_context("mcp-contract")["x-byq-workspace-id"])')"; then
     bad "MCP workspace fixture"; return
+  fi
+  if ! mcp_image="$(ci_image_ref mcp)"; then
+    bad "run-scoped mcp image id was not captured; refusing a mutable tag"
+    return
   fi
   # Mount only sources so the image's complete node_modules/dist stay intact;
   # run as root so tsc can rewrite /app/dist; start the MCP server in-container
   # because the contract test connects to a live 127.0.0.1:8300 endpoint.
   RESOURCES_TOUCHED=1
-  if run_interruptible docker run --rm --name "$CI_MCP_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET" -u 0 \
+  if run_interruptible docker run --rm --pull=never --name "$CI_MCP_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" --network "$CI_PG_NET" -u 0 \
       -e BYQ_MCP_TOKEN=ci-phase5-test-only \
       -e BYQ_BACKEND_URL=http://backend:8000 \
       -e MCP_URL=http://127.0.0.1:8300/mcp/v1 \
@@ -625,7 +674,7 @@ check_mcp() {
       -v "$REPO_ROOT/services/mcp/tests:/app/tests" \
       -v "$REPO_ROOT/services/mcp/package.json:/app/package.json" \
       -v "$REPO_ROOT/services/mcp/tsconfig.json:/app/tsconfig.json" \
-      -w /app "$(ci_image mcp)" \
+      -w /app "$mcp_image" \
       sh -ec 'npm run build; node dist/src/server.js >/tmp/byq-mcp-server.log 2>&1 & server_pid=$!; trap "kill $server_pid >/dev/null 2>&1 || true" EXIT; sleep 3; npm run test:component'; then
     ok "mcp tests"; else bad "mcp tests"; fi
 }
@@ -654,9 +703,16 @@ check_smoke() {
     bad "heavy-CI resource preflight/lock"
     return
   fi
-  prepare_ci_compose_env
-  if ! run_interruptible docker compose up -d --no-build --wait; then
-    docker compose logs --no-color || true
+  if ! prepare_ci_compose_env; then
+    bad "isolated compose route selection"
+    return 1
+  fi
+  if ! run_interruptible acp_compose pull postgres; then
+    bad "isolated compose Postgres image pull"
+    return 1
+  fi
+  if ! run_interruptible acp_compose up -d --pull never --no-build --wait; then
+    acp_compose logs --no-color || true
     bad "isolated compose startup"
     return
   fi
@@ -664,70 +720,125 @@ check_smoke() {
     bad "isolated compose endpoint discovery"
     return
   fi
-  if run_interruptible ./tests/smoke/run.sh; then ok "full smoke"; else bad "full smoke"; fi
-  if docker compose cp scripts/evidence/phase67-seed.py backend:/tmp/phase67-seed.py >/dev/null \
-    && docker compose exec -T backend python /tmp/phase67-seed.py; then
-    ok "Phase 67 validated index fixture"; else bad "Phase 67 validated index fixture"; fi
-  if docker compose cp scripts/evidence/phase70-seed.py backend:/tmp/phase70-seed.py >/dev/null \
-    && docker compose exec -T backend python /tmp/phase70-seed.py; then
-    ok "Phase 70 multi-index catalogue fixture"; else bad "Phase 70 multi-index catalogue fixture"; fi
-  if docker compose cp scripts/evidence/phase68-seed.py backend:/tmp/phase68-seed.py >/dev/null \
-    && docker compose exec -T backend python /tmp/phase68-seed.py; then
-    ok "Phase 68 dynamic inputs fixture"; else bad "Phase 68 dynamic inputs fixture"; fi
-  if docker compose cp scripts/evidence/phase74-seed.py backend:/tmp/phase74-seed.py >/dev/null \
-    && docker compose exec -T backend python /tmp/phase74-seed.py; then
-    ok "Phase 74 LightGBM fixture"; else bad "Phase 74 LightGBM fixture"; fi
-  if docker compose cp scripts/evidence/workspace-reset-browser-seed.py backend:/tmp/workspace-reset-browser-seed.py >/dev/null \
-    && docker compose exec -T -e BYQ_RESET_BROWSER_FIXTURE=1 backend python /tmp/workspace-reset-browser-seed.py; then
-    ok "ordinary-user successful Reset browser fixture"; else bad "ordinary-user successful Reset browser fixture"; fi
-  if docker compose cp scripts/evidence/f6-permission-seed.py backend:/tmp/f6-permission-seed.py >/dev/null \
-    && docker compose exec -T -e BYQ_F6_FIXTURE=1 backend python /tmp/f6-permission-seed.py; then
-    ok "F6 bound-task permission fixture"; else bad "F6 bound-task permission fixture"; fi
-  if docker compose cp scripts/evidence/f2-receipt-seed.py backend:/tmp/f2-receipt-seed.py >/dev/null \
-    && docker compose exec -T -e BYQ_F2_FIXTURE=1 backend python /tmp/f2-receipt-seed.py; then
-    ok "F2 original receipt browser fixture"; else bad "F2 original receipt browser fixture"; fi
-  if (
-    cd apps/frontend
-    [ -x node_modules/.bin/playwright ] || npm ci --no-audit --no-fund
-    npx playwright install chromium
-    npm run test:e2e:real -- --output "$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE/real-e2e"
-  ); then
-    ok "real Product API browser smoke"; else bad "real Product API browser smoke"; fi
   local evidence_dir="$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE"
   mkdir -p "$evidence_dir"
+  local workspace_receipt="$evidence_dir/acp-workspace-binding.json"
+  if ! BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" \
+      scripts/evidence/phase48-product-golden.py --workspace-receipt > "$workspace_receipt"; then
+    bad "authenticated ACP Product workspace receipt"
+    return
+  fi
+  local product_workspace_id
+  if ! product_workspace_id="$(python3 - "$workspace_receipt" "$BYQ_GOLDEN_OWNER_USERNAME" <<'PYCODE'
+import json
+import re
+import sys
+from pathlib import Path
+
+receipt = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+workspace = receipt.get("workspace")
+if (receipt.get("schema_version") != "byq-ci-acp-workspace-binding.v1"
+        or receipt.get("username") != sys.argv[2]
+        or not isinstance(workspace, dict)
+        or workspace.get("contract") != "personal-workspace.v1"
+        or workspace.get("kind") != "personal"
+        or workspace.get("role") != "owner"
+        or not isinstance(workspace.get("workspace_id"), str)
+        or not re.fullmatch(r"workspace_[0-9a-f]{32}", workspace["workspace_id"])):
+    raise SystemExit("workspace receipt failed its binding contract")
+print(workspace["workspace_id"])
+PYCODE
+  )"; then
+    bad "authenticated ACP Product workspace receipt validation"
+    return
+  fi
+  export BYQ_ACP_PRODUCT_WORKSPACE_ID="$product_workspace_id"
+  if ! run_interruptible acp_compose up -d --pull never --no-build --force-recreate --no-deps --wait \
+      acp-product-runner runtime-adapter; then
+    bad "ACP Product workspace runner rebinding"
+    return
+  fi
+  local service captured_image container_id running_image
+  for service in acp-product-runner runtime-adapter; do
+    if ! captured_image="$(ci_image_ref "$service")"; then
+      bad "run-scoped $service image identity was not captured"
+      return
+    fi
+    if ! container_id="$(acp_compose ps -q "$service")" || [ -z "$container_id" ]; then
+      bad "rebound $service container is unavailable"
+      return
+    fi
+    if ! running_image="$(docker inspect "$container_id" --format '{{.Image}}')" \
+        || [ "$running_image" != "$captured_image" ]; then
+      bad "rebound $service does not use its captured run-scoped image"
+      return
+    fi
+  done
+  if run_interruptible python3 "$REPO_ROOT/scripts/dsh/acp_build.py" -- bash ./tests/smoke/run.sh; then
+    ok "full smoke"; else bad "full smoke"; fi
+  if acp_compose cp scripts/evidence/phase67-seed.py backend:/tmp/phase67-seed.py >/dev/null \
+    && acp_compose exec -T backend python /tmp/phase67-seed.py; then
+    ok "Phase 67 validated index fixture"; else bad "Phase 67 validated index fixture"; fi
+  if acp_compose cp scripts/evidence/phase70-seed.py backend:/tmp/phase70-seed.py >/dev/null \
+    && acp_compose exec -T backend python /tmp/phase70-seed.py; then
+    ok "Phase 70 multi-index catalogue fixture"; else bad "Phase 70 multi-index catalogue fixture"; fi
+  if acp_compose cp scripts/evidence/phase68-seed.py backend:/tmp/phase68-seed.py >/dev/null \
+    && acp_compose exec -T backend python /tmp/phase68-seed.py; then
+    ok "Phase 68 dynamic inputs fixture"; else bad "Phase 68 dynamic inputs fixture"; fi
+  if acp_compose cp scripts/evidence/phase74-seed.py backend:/tmp/phase74-seed.py >/dev/null \
+    && acp_compose exec -T backend python /tmp/phase74-seed.py; then
+    ok "Phase 74 LightGBM fixture"; else bad "Phase 74 LightGBM fixture"; fi
+  if acp_compose cp scripts/evidence/workspace-reset-browser-seed.py backend:/tmp/workspace-reset-browser-seed.py >/dev/null \
+    && acp_compose exec -T -e BYQ_RESET_BROWSER_FIXTURE=1 backend python /tmp/workspace-reset-browser-seed.py; then
+    ok "ordinary-user successful Reset browser fixture"; else bad "ordinary-user successful Reset browser fixture"; fi
+  if acp_compose cp scripts/evidence/f6-permission-seed.py backend:/tmp/f6-permission-seed.py >/dev/null \
+    && acp_compose exec -T -e BYQ_F6_FIXTURE=1 backend python /tmp/f6-permission-seed.py; then
+    ok "F6 bound-task permission fixture"; else bad "F6 bound-task permission fixture"; fi
+  if acp_compose cp scripts/evidence/f2-receipt-seed.py backend:/tmp/f2-receipt-seed.py >/dev/null \
+    && acp_compose exec -T -e BYQ_F2_FIXTURE=1 backend python /tmp/f2-receipt-seed.py; then
+    ok "F2 original receipt browser fixture"; else bad "F2 original receipt browser fixture"; fi
+  if ! prepare_ci_browser; then
+    return
+  fi
+  if ( cd apps/frontend && npm run test:e2e:real -- --output "$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE/real-e2e" ); then
+    ok "real Product API browser smoke"; else bad "real Product API browser smoke"; fi
   if BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" \
       scripts/evidence/phase74-product-verification.py "$evidence_dir/phase74-identities.json" \
-    && docker compose restart ml-worker >/dev/null \
-    && docker compose up -d --no-build --wait ml-worker >/dev/null \
+    && acp_compose restart ml-worker >/dev/null \
+    && acp_compose up -d --pull never --no-build --wait ml-worker >/dev/null \
     && BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" \
       scripts/evidence/phase74-product-verification.py --verify "$evidence_dir/phase74-identities.json"; then
     ok "Phase 74 restart persistence and two-user isolation"; else bad "Phase 74 restart persistence and two-user isolation"; fi
   if BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" \
       scripts/evidence/phase90-feedback-verification.py "$evidence_dir/phase90-feedback.json" \
-    && docker compose restart backend >/dev/null \
-    && docker compose up -d --no-build --wait backend >/dev/null \
+    && acp_compose restart backend >/dev/null \
+    && acp_compose up -d --pull never --no-build --wait backend >/dev/null \
     && wait_for_product_ready \
     && BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" \
       scripts/evidence/phase90-feedback-verification.py --verify "$evidence_dir/phase90-feedback.json"; then
     ok "Phase 90 feedback restart persistence and two-user isolation"; else bad "Phase 90 feedback restart persistence and two-user isolation"; fi
-  if docker compose cp scripts/evidence/phase48-seed.py backend:/tmp/phase48-seed.py >/dev/null \
-    && docker compose exec -T \
+  if acp_compose cp scripts/evidence/phase48-seed.py backend:/tmp/phase48-seed.py >/dev/null \
+    && acp_compose exec -T \
       -e BYQ_GOLDEN_OTHER_USERNAME="$BYQ_GOLDEN_OTHER_USERNAME" \
       -e BYQ_GOLDEN_OTHER_PASSWORD="$BYQ_GOLDEN_OTHER_PASSWORD" \
       backend python /tmp/phase48-seed.py \
-    && BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" scripts/evidence/phase48-product-golden.py; then
-    ok "Phase 48 no-mock two-user Product coherence"; else bad "Phase 48 no-mock two-user Product coherence"; fi
+    && BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" scripts/evidence/phase48-product-golden.py --keyless-acp; then
+    ok "ACP keyless Product/business coherence"; else bad "ACP keyless Product/business coherence"; fi
 }
 
 check_f6_chain() {
-  step "F6: keyless 2-foreground plus read-only continuation and durable signal result"
+  step "F6: ACP Product/Worker background-completion release fixture"
   local expected_project="byq-ci-stack-$BYQ_CI_SCOPE"
   if [[ "${COMPOSE_PROJECT_NAME:-}" != "$expected_project" ]]; then
     bad "F6 current scoped Compose project guard"
     return
   fi
-  local f6_test_image="$(ci_image runtime-adapter)"
-  if ! run_interruptible docker run --rm --name "$CI_RUNTIME_TEST" --label "byq.ci.scope=$BYQ_CI_SCOPE" \
+  local f6_test_image
+  if ! f6_test_image="$(ci_image_ref runtime-adapter)"; then
+    bad "run-scoped runtime-adapter image id was not captured; refusing a mutable tag"
+    return
+  fi
+  if ! run_interruptible docker run --rm --pull=never --label "byq.ci.scope=$BYQ_CI_SCOPE" \
       --network none -e PYTHONDONTWRITEBYTECODE=1 \
       -e BYQ_F6_DRIVER_PATH=/app/tests/f6-chain-verification.py \
       -e BYQ_F6_FIXTURE_PATH=/app/tests/f6-chain-fixture.py \
@@ -736,137 +847,40 @@ check_f6_chain() {
       -v "$REPO_ROOT/services/runtime-adapter:/app" -v "$REPO_ROOT/packages:/app/packages" -w /app \
       -v "$REPO_ROOT/scripts/evidence/f6-chain-verification.py:/app/tests/f6-chain-verification.py:ro" \
       -v "$REPO_ROOT/scripts/evidence/f6-chain-fixture.py:/app/tests/f6-chain-fixture.py:ro" \
-      "$f6_test_image" python3 -m pytest -q -p no:cacheprovider tests/test_f6_synthetic_runtime_contract.py; then
-    bad "F6 offline provider, settlement, and audit contracts"
+      --entrypoint /opt/byq-venv/bin/python3 "$f6_test_image" -m pytest -q -p no:cacheprovider tests/test_f6_synthetic_runtime_contract.py; then
+    bad "F6 offline ACP provider, settlement, and audit contracts"
     return
   fi
-  ok "F6 offline provider, settlement, and audit contracts"
-  local override="$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE/f6-compose.json"
-  local original_compose="$COMPOSE_FILE"
-  local evidence_dir="$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE"
-  local f6_evidence="$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE/f6-current-$(date +%s)-$$.json"
-  local f6_stack_touched=0
-  mkdir -p "$evidence_dir"
-  restore_f6_runtime() {
-    if [[ "${COMPOSE_PROJECT_NAME:-}" != "$expected_project" ]]; then
-      bad "F6 current scoped Compose project guard during restore"
-      return 1
-    fi
-    if (( f6_stack_touched )); then
-      # Capture only the fixture's closed diagnostic schema before replacement.
-      # Missing/partial records never prove that a model or business call did not run.
-      if ! run_interruptible python3 "$REPO_ROOT/scripts/ci/f6-provider-diagnostics.py" --project "$expected_project"; then
-        printf '%s\n' 'F6 provider diagnostics: collector did not complete; calls and outcomes remain unknown'
-      fi
-      if ! run_interruptible python3 "$REPO_ROOT/scripts/ci/f6-provider-diagnostics.py" --project "$expected_project" --runtime-terminal; then
-        printf '%s\n' 'F6 runtime diagnostics: collector did not complete; terminal and settlement remain unknown'
-      fi
-    fi
-    export COMPOSE_FILE="$original_compose"
-    if (( f6_stack_touched )); then
-      if ! run_interruptible docker compose up -d --no-build --no-deps --force-recreate --wait \
-          backend runtime-adapter gateway frontend; then
-        bad "F6 synthetic executor disabled and candidate services restored"
-        return 1
-      fi
-      f6_stack_touched=0
-    fi
-    return 0
-  }
-  F6_CANDIDATE_IMAGE="$(ci_image runtime-candidate)" F6_TESTS_SOURCE="$REPO_ROOT/services/runtime-adapter/tests" \
-    F6_CI_PROJECT="$COMPOSE_PROJECT_NAME" python3 - "$override" <<'PYCODE'
-import json, os, sys
-value = {'services': {
-  'runtime-adapter': {'image': os.environ['F6_CANDIDATE_IMAGE'],
-    'volumes': [{'type': 'bind', 'source': os.environ['F6_TESTS_SOURCE'], 'target': '/app/tests', 'read_only': True}],
-    'command': ['python3', '-m', 'tests.f6_synthetic_runtime'], 'environment': {
-      'BYQ_F6_EXECUTOR_ENABLED': '1', 'BYQ_F6_SYNTHETIC_RUNTIME': '1', 'DEEPSEEK_API_KEY': 'f6-synthetic-only',
-      'COMPOSE_PROJECT_NAME': os.environ['F6_CI_PROJECT'], 'BYQ_F6_CI_PROJECT': os.environ['F6_CI_PROJECT'],
-      'BYQ_DSH_COMPATIBILITY_RELEASE': 'dsh-0.1.5rc1', 'BYQ_DSH_PROCESS_OWNERSHIP': 'root-turn',
-      'BYQ_DSH_COMPOSITION': '/opt/byq/profiles/byq-product.patch.yml',
-      'BYQ_DSH_COMPOSITION_IDENTITY': '/opt/byq/profiles/byq-product.identity.json',
-      'DSH_SESSION_ROOT': '/var/lib/byq/dsh-sessions/f6-qualification'}},
-  'gateway': {'environment': {'BYQ_F6_EXECUTOR_ENABLED': '1'}},
-  'backend': {'environment': {'BYQ_F6_EXECUTOR_ENABLED': '1'}},
-}}
-with open(sys.argv[1], 'w') as stream: json.dump(value, stream)
-PYCODE
-  export COMPOSE_FILE="$REPO_ROOT/compose.yml:$override"
-  f6_stack_touched=1
-  if ! run_interruptible docker compose up -d --no-build --no-deps --force-recreate --wait backend runtime-adapter gateway frontend; then
-    bad "F6 isolated candidate stack"
-    restore_f6_runtime || true
+  ok "F6 offline ACP provider, settlement, and audit contracts"
+  if ! prepare_ci_browser; then
     return
   fi
-  if ! resolve_ci_compose_urls; then
-    bad "F6 endpoint discovery"
-    restore_f6_runtime || true
+  if ! run_interruptible python3 "$REPO_ROOT/scripts/evidence/acp-f6-release-fixture.py"; then
+    bad "F6 ACP Product/Worker background-completion release fixture"
     return
   fi
-  # Check the exact browser account before any F6 Agent turn or Job. The
-  # driver's existing idempotent user fixture then reads this confirmed user.
-  if ! (docker compose cp scripts/evidence/f6-chain-fixture.py backend:/tmp/f6-chain-fixture.py >/dev/null \
-    && run_interruptible timeout --signal=TERM --kill-after=5s 30s \
-      docker compose exec -T -e BYQ_F6_FIXTURE=1 \
-      -e COMPOSE_PROJECT_NAME="$expected_project" -e BYQ_F6_CI_PROJECT="$expected_project" \
-      backend python /tmp/f6-chain-fixture.py user); then
-    bad "F6 isolated browser user preparation"
-    restore_f6_runtime || true
-    return
-  fi
-  local f6_auth_dir="$evidence_dir/f6-auth-$(date +%s)-$$"
-  mkdir -p "$f6_auth_dir"
-  if run_interruptible env -i PATH="$PATH" HOME="$HOME" \
-      PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-}" \
-      COMPOSE_PROJECT_NAME="$expected_project" BYQ_F6_AUTH_CI_PROJECT="$expected_project" \
-      BYQ_REAL_BASE_URL="$BYQ_REAL_BASE_URL" BYQ_F6_AUTH_EVIDENCE_DIR="$f6_auth_dir" \
-      BYQ_E2E_ADMIN_USERNAME=f6-chain-user BYQ_E2E_ADMIN_PASSWORD=test-password-123 \
-      timeout --signal=TERM --kill-after=9s 50s node apps/frontend/tests/e2e/f6-auth-preflight.mjs; then
-    ok "F6 browser login, exact identity and logout before Agent or Job"
-  else
-    bad "F6 browser auth preflight; Agent and Job NOT_STARTED"
-    restore_f6_runtime || true
-    return
-  fi
-  # Prior golden journeys intentionally replace their own market/security
-  # fixtures. Restore the complete F6 input scope before this independent chain.
-  if docker compose cp scripts/evidence/phase74-seed.py backend:/tmp/f6-market-seed.py >/dev/null \
-    && docker compose exec -T backend python /tmp/f6-market-seed.py \
-    && docker compose cp scripts/evidence/f6-chain-fixture.py backend:/tmp/f6-chain-fixture.py >/dev/null \
-    && BYQ_F6_EVIDENCE_PATH="$f6_evidence" BYQ_GOLDEN_ORIGIN="$BYQ_SMOKE_GATEWAY_URL" \
-       run_interruptible python3 scripts/evidence/f6-chain-verification.py; then
-    ok "F6 exact foreground writes, durable Worker result, and structured read-only settlement"
-  else
-    bad "F6 real-domain chain and Gateway restart"
-    restore_f6_runtime || true
-    return
-  fi
-  run_interruptible python3 "$REPO_ROOT/scripts/ci/f6-proxy-diagnostics.py" --project "$expected_project" --stage before_browser || true
-  if (cd apps/frontend && BYQ_F6_EVIDENCE_PATH="$f6_evidence" npx playwright test --config playwright.f6.config.ts \
-      --output "$REPO_ROOT/.ci-artifacts/$BYQ_CI_SCOPE/f6-browser"); then
-    ok "F6 current read-only answer, settled request, and same durable Job Product API browser"
-  else
-    bad "F6 current read-only answer, settled request, and same durable Job Product API browser"
-  fi
-  run_interruptible python3 "$REPO_ROOT/scripts/ci/f6-proxy-diagnostics.py" --project "$expected_project" --stage after_browser || true
-  if restore_f6_runtime; then
-    ok "F6 synthetic executor disabled and candidate services restored"
-  fi
+  ok "F6 ACP Product/Worker background-completion release fixture"
 }
 
 check_dsh_web() {
   step "dsh-web: diagnostic profile"
   RESOURCES_TOUCHED=1
-  prepare_ci_compose_env
+  if ! prepare_ci_compose_env; then
+    bad "dsh-web compose route selection"
+    return 1
+  fi
+  CI_COMPOSE_FILES+=("$REPO_ROOT/compose.dsh-web.yml")
+  COMPOSE_FILE="$(IFS=:; printf '%s' "${CI_COMPOSE_FILES[*]}")"
+  export COMPOSE_FILE
   if ! acquire_heavy_capacity; then
     bad "heavy-CI resource preflight/lock"
     return
   fi
-  if ! run_interruptible docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web build dsh; then
+  if ! run_interruptible acp_compose --profile dsh-web build dsh; then
     bad "dsh-web build; stale fallback forbidden"
     return
   fi
-  if ! run_interruptible docker compose -f compose.yml -f compose.dsh-web.yml --profile dsh-web up -d --no-build --wait; then
+  if ! run_interruptible acp_compose --profile dsh-web up -d --pull never --no-build --wait; then
     bad "dsh-web startup"
     return
   fi
@@ -904,7 +918,6 @@ if want backend; then
 fi
 want gateway && check_gateway
 want runtime && check_runtime
-if [ "$integration" = yes ] && { want runtime || [ "$INTEGRATION_ONLY" -eq 1 ]; }; then check_dsh_candidate; fi
 want mcp && check_mcp
 want frontend && check_frontend
 [ "$WITH_SMOKE" -eq 1 ] && check_smoke

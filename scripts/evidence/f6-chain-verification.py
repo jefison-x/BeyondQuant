@@ -79,9 +79,27 @@ class EvidenceError(RuntimeError):
 
 
 class HttpFailure(EvidenceError):
-    def __init__(self, status: int) -> None:
+    def __init__(self, status: int, public_reason: str | None = None) -> None:
         super().__init__("http_status_" + str(status))
         self.status = status
+        self.public_reason = public_reason
+
+
+def _product_session_public_error_reason(response: object) -> str:
+    """Classify only exact public Gateway messages; never persist response text."""
+    try:
+        body = json.loads(response.read(2048))
+    except Exception:
+        # A failed read (including http.client.IncompleteRead) must not escape
+        # the HTTPError path and drop the mutation's unknown-outcome marker.
+        return "unclassified"
+    detail = body.get("detail") if isinstance(body, dict) else None
+    return {
+        "Agent runtime authority is not ready": "runtime_authority_not_ready",
+        "runtime adapter unavailable": "runtime_adapter_unavailable",
+        "product model is unavailable": "product_model_unavailable",
+        "runtime adapter rejected the request": "runtime_adapter_rejected",
+    }.get(detail, "unclassified") if isinstance(detail, str) else "unclassified"
 
 
 def require(condition: bool, category: str) -> None:
@@ -169,6 +187,8 @@ def _post_once(client, label: str, path: str, payload: object, *, expected: int 
     try:
         result = client("POST", path, payload, expected=expected, headers=headers, timeout=timeout)
     except EvidenceError as error:
+        if label == "product_session_create" and isinstance(error, HttpFailure):
+            state["product_session_public_error_reason"] = error.public_reason or "unclassified"
         if not isinstance(error, HttpFailure) or error.status >= 500:
             state["uncertain_actions"].append(label)
         raise
@@ -209,6 +229,22 @@ def _compose_once(label: str, *args: str, timeout: int = 45) -> str:
     except EvidenceError:
         state["uncertain_actions"].append(label)
         raise
+
+
+def _fixture_workspace(prepared_id: str | None, product_slot_id: str | None,
+                       create_user) -> str:
+    """Use the release fixture's prepared user without another write."""
+    if prepared_id is not None:
+        workspace_id = identifier(prepared_id, re.compile(r"workspace_[0-9a-f]{32}\Z"),
+                                  "test_user_workspace_invalid")
+        require(workspace_id == product_slot_id, "test_user_product_slot_mismatch")
+        return workspace_id
+    fixture_result = create_user()
+    require(isinstance(fixture_result, dict) and set(fixture_result) == {"owner", "workspace_id"}
+            and fixture_result["owner"] == "f6-chain-user", "test_user_fixture_invalid")
+    return identifier(fixture_result["workspace_id"],
+                      re.compile(r"workspace_[0-9a-f]{32}\Z"),
+                      "test_user_workspace_invalid")
 
 
 F6_OBSERVER_STAGES = frozenset({
@@ -371,6 +407,7 @@ def _write_evidence(*, suffix: str = "") -> str:
         "scope": "keyless DSH-to-BYQ-MCP/domain/signal-Worker wiring; synthetic Provider; not model-quality evidence",
         "last_confirmed_stage": state["stage"],
         "failure_category": state.get("failure_category"),
+        "product_session_public_error_reason": state.get("product_session_public_error_reason"),
         "failure_reconciliation_mode": state.get("failure_reconciliation_mode"),
         "mutation_attempts": list(state["mutation_attempts"]),
         "uncertain_actions": list(state["uncertain_actions"]),
@@ -1325,7 +1362,9 @@ def call(method: str, path: str, payload: object = None, *, expected: int = 200,
                 raise HttpFailure(response.status)
             body = response.read()
     except urllib.error.HTTPError as error:
-        raise HttpFailure(int(error.code)) from None
+        reason = (_product_session_public_error_reason(error)
+                  if method == "POST" and path == "/v1/agent/sessions" else None)
+        raise HttpFailure(int(error.code), reason) from None
     except (urllib.error.URLError, TimeoutError, OSError):
         raise EvidenceError("http_transport_or_read_outcome_unknown") from None
     try:
@@ -1349,6 +1388,7 @@ state: dict[str, object] = {
     "grant_idempotency_key": None, "revoke_attempted": False,
     "worker_cleanup_attempted": False,
     "primary_evidence_written": False, "failure_observation": None,
+    "product_session_public_error_reason": None,
 }
 worker_start_attempted = False
 worker_stopped_at_start = False
@@ -1360,18 +1400,24 @@ try:
     worker_stopped_at_start = True
 
     state["stage"] = "prepare_only_test_user"
-    state["mutation_attempts"].append("isolated_ci_user_fixture")
-    try:
-        completed = subprocess.run(
-            ["docker", "compose", "exec", "-T", "-e", "BYQ_F6_FIXTURE=1",
-             "-e", "COMPOSE_PROJECT_NAME=" + project, "-e", "BYQ_F6_CI_PROJECT=" + project, "backend",
-             "python", "/tmp/f6-chain-fixture.py", "user"],
-            input="", text=True, capture_output=True, check=True, timeout=30)
-        fixture_result = json.loads(completed.stdout)
-    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError, TypeError):
-        state["uncertain_actions"].append("isolated_ci_user_fixture")
-        raise EvidenceError("isolated_ci_user_fixture_outcome_unknown") from None
-    require(fixture_result == {"owner": "f6-chain-user"}, "test_user_fixture_invalid")
+
+    def create_test_user():
+        state["mutation_attempts"].append("isolated_ci_user_fixture")
+        try:
+            completed = subprocess.run(
+                ["docker", "compose", "exec", "-T", "-e", "BYQ_F6_FIXTURE=1",
+                 "-e", "COMPOSE_PROJECT_NAME=" + project, "-e", "BYQ_F6_CI_PROJECT=" + project, "backend",
+                 "python", "/tmp/f6-chain-fixture.py", "user"],
+                input="", text=True, capture_output=True, check=True, timeout=30)
+            return json.loads(completed.stdout)
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError, TypeError):
+            state["uncertain_actions"].append("isolated_ci_user_fixture")
+            raise EvidenceError("isolated_ci_user_fixture_outcome_unknown") from None
+
+    fixture_workspace_id = _fixture_workspace(
+        os.environ.get("BYQ_F6_PREPARED_WORKSPACE_ID"),
+        os.environ.get("BYQ_ACP_PRODUCT_WORKSPACE_ID"), create_test_user)
+    state["identities"]["workspace_id"] = fixture_workspace_id
 
     state["stage"] = "product_login_and_original_session"
     _post_once(call, "product_login", "/api/product/auth/login",
@@ -1431,8 +1477,7 @@ try:
     require(isinstance(task, dict) and task.get("task_id") == task_id
             and task.get("owner_principal") == "f6-chain-user"
             and task.get("conversation_id") == session_id and task.get("trace_id") == trace_id
-            and isinstance(task.get("workspace_id"), str)
-            and task["workspace_id"].startswith("workspace_"),
+            and task.get("workspace_id") == fixture_workspace_id,
             "research_task_original_conversation_identity_invalid")
     require(task.get("status") in {"planned", "running"}, "research_task_status_invalid")
     state["identities"]["workspace_id"] = task["workspace_id"]
@@ -1816,6 +1861,7 @@ try:
                       "task_id": task_id, "backtest_task_id": backtest_task_id,
                       "signal_job_id": signal_job_id,
                       "signal_snapshot_artifact_id": state["identities"]["signal_snapshot_artifact_id"]}), flush=True)
+    _write_evidence()
 except EvidenceError as error:
     state["failure_category"] = error.category
     state["failure_reconciliation_mode"] = _failure_reconciliation_mode()

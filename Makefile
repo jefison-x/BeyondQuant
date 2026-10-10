@@ -1,4 +1,4 @@
-COMPOSE ?= docker compose
+COMPOSE ?= python3 scripts/dsh/acp_build.py -- docker compose
 
 .PHONY: build up down ps logs smoke test dsh-config local-ci
 
@@ -29,7 +29,7 @@ test:
 	$(COMPOSE) exec -T mcp npm test
 
 dsh-config:
-	$(COMPOSE) run --rm dsh dsh --profile byq --dump-config
+	python3 scripts/dsh/authoritative_version.py
 
 local-ci:
 	./scripts/ci/local-ci.sh

@@ -1,0 +1,8 @@
+{
+  "git_diff_check_exit": 0,
+  "qualified_images_preserved": true,
+  "business_containers_preserved": true,
+  "root": "PASS limited exact cleanup",
+  "listing_large_unique_count": 8,
+  "remaining_above_6GB_unique_count": 7
+}

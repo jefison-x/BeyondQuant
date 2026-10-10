@@ -90,6 +90,7 @@ onMounted(load);
       <el-card shadow="never" class="identity">
         <template #header><strong>Runtime 与组合身份</strong></template>
         <dl class="identity-grid">
+          <div><dt>Runtime release</dt><dd>{{ data.runtime.release_id ?? "不可用" }}</dd></div>
           <div><dt>DSH SDK</dt><dd>{{ data.runtime.sdk ?? data.runtime_baseline.python_sdk }}</dd></div>
           <div><dt>runtime-bin</dt><dd>{{ data.runtime.runtime_bin ?? data.runtime_baseline.runtime_bin }}</dd></div>
           <div><dt>Active profile</dt><dd>{{ data.runtime.active_profile ?? "不可用" }}</dd></div>

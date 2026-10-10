@@ -1,0 +1,189 @@
+{
+  "schema": "acp-release-store-exact-tar-cleanup.v1",
+  "time_utc": "2026-10-10T00:50:25.473604+00:00",
+  "scope": "only three root-created temporary docker-save tar files; no Docker mutation",
+  "disk_available_before_bytes": 64612347904,
+  "original_services_before": [
+    {
+      "id": "1cf72e7d81ee2822f1cdee844f2d221f3759762bb76d4df285a01e77dbef9cf3",
+      "image": "sha256:753662c496721f9cb3b411850351ba1ddfb08ec6661e7fe8716710c33661b281",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "218a819bea26c8ee64237ea1e278df628b439ae4c997c24200de4f87bc827109",
+      "image": "sha256:96e8ae88c0771f4f8979011093acd7fb15f17d368df8cf6653987faa68ccd28b",
+      "running": false,
+      "health": null
+    },
+    {
+      "id": "349add0580d6bcc398cfef4c218cc663f219f0497bc5c00555d6c45bfb22827e",
+      "image": "sha256:0980003d2c9c632598e51434257f7c631ddcd3bb11d8ddbd915b3a84fe577b8b",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "62e730d502790b7c2e4a175b7f2e820039c6b3d02f22321eee8adc2605cab6d7",
+      "image": "sha256:da1dd0985aca895e4f50527946ce38061093d9fe5e7725e5f4c0c4aefd96a14d",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "6a0a2a1a2bd37c29a375408fb5137ce5cb6b6f0eca9d4be8e53889fa8130ccce",
+      "image": "sha256:1041f5fa002ebd24f7ff77f49fcbdad1af74c6d717f6176b52252c42b9d968cd",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "78e18620e473477ace8ebde91dedaa3ade094565916f3b93ae2fafa7f67c8e80",
+      "image": "sha256:fd7f77ff6a5fc89937553f7a3f8a2921180af2aad58f7775157fff159590d8c6",
+      "running": false,
+      "health": "unhealthy"
+    },
+    {
+      "id": "8a26ab52c64dd9d023bad9242b0069aacfe1a1e035d6c8c36a930de06e947526",
+      "image": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "a9d2764a5f5554259bb5c1b28f86c08c57347c8d96cf04d90d4ec4d5bea8e1c4",
+      "image": "sha256:6ddceb4fd7a65ac5dabe57d87ba7b7710e3d60d0d27bafad6a7c91371fd7743a",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "ad8593ec338a0107d62cf40c0122ae02b0b2c9af852f80781131b345b3b4a12b",
+      "image": "sha256:69e51f987f1f57bf42618bb40d8ff8b17bd78aa1170eea73c026a8a6a40a609b",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "bc4458e17b604a87bfe591a1eb2e58662593b7967c04bc46c6b07d3ac3a1767e",
+      "image": "sha256:0e1793f0fe39bc008c15b0187337bdd9fdbcc27849335dac76567527c5d6c9a9",
+      "running": false,
+      "health": null
+    },
+    {
+      "id": "cbfc859750e683b166aa23c6613b3b4aed5102fda111a3fdbadcaeb8b357ab0c",
+      "image": "sha256:0980003d2c9c632598e51434257f7c631ddcd3bb11d8ddbd915b3a84fe577b8b",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "e16031e60b6c824101434e5d052c82e10eb4be3f9c7fcbe0644f7ffbe65c0387",
+      "image": "sha256:42525c14f2453174814441e07f234b34a48015543cba2491d3845a7ae496e343",
+      "running": true,
+      "health": "healthy"
+    }
+  ],
+  "files": [
+    {
+      "path": "/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/acp-release-store-identity-20261010/single-image.tar",
+      "size_bytes": 806270464,
+      "sha256": "sha256:9a2e354a4ac1b86693580946fcb18239dd15136107806943f698314206995ea6",
+      "device": 2050,
+      "inode": 8800032,
+      "mtime_ns": 1791591464773033822,
+      "absent_after": true
+    },
+    {
+      "path": "/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/acp-release-store-identity-20261010/tagged-image.tar",
+      "size_bytes": 806270464,
+      "sha256": "sha256:c616306c7be8dd91ac677663bd7546e361827043eb8640eea36d03d682bff972",
+      "device": 2050,
+      "inode": 8800039,
+      "mtime_ns": 1791591885937043803,
+      "absent_after": true
+    },
+    {
+      "path": "/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/acp-release-store-identity-20261010/three-alias-image.tar",
+      "size_bytes": 806271488,
+      "sha256": "sha256:ddc2fbdd457507bb9d86b167b9e4bb0c564c76fee1977385b86cab3a54c98b9d",
+      "device": 2050,
+      "inode": 8800043,
+      "mtime_ns": 1791592357666735847,
+      "absent_after": true
+    }
+  ],
+  "preflight_history": "Initial assertion required all project containers running; read-only inventory found the existing 9 healthy plus 3 stopped project containers. No files had been deleted. Corrected guard checks exact recorded 9 active IDs and preserves all 12 project states.",
+  "original_services_after": [
+    {
+      "id": "1cf72e7d81ee2822f1cdee844f2d221f3759762bb76d4df285a01e77dbef9cf3",
+      "image": "sha256:753662c496721f9cb3b411850351ba1ddfb08ec6661e7fe8716710c33661b281",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "218a819bea26c8ee64237ea1e278df628b439ae4c997c24200de4f87bc827109",
+      "image": "sha256:96e8ae88c0771f4f8979011093acd7fb15f17d368df8cf6653987faa68ccd28b",
+      "running": false,
+      "health": null
+    },
+    {
+      "id": "349add0580d6bcc398cfef4c218cc663f219f0497bc5c00555d6c45bfb22827e",
+      "image": "sha256:0980003d2c9c632598e51434257f7c631ddcd3bb11d8ddbd915b3a84fe577b8b",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "62e730d502790b7c2e4a175b7f2e820039c6b3d02f22321eee8adc2605cab6d7",
+      "image": "sha256:da1dd0985aca895e4f50527946ce38061093d9fe5e7725e5f4c0c4aefd96a14d",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "6a0a2a1a2bd37c29a375408fb5137ce5cb6b6f0eca9d4be8e53889fa8130ccce",
+      "image": "sha256:1041f5fa002ebd24f7ff77f49fcbdad1af74c6d717f6176b52252c42b9d968cd",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "78e18620e473477ace8ebde91dedaa3ade094565916f3b93ae2fafa7f67c8e80",
+      "image": "sha256:fd7f77ff6a5fc89937553f7a3f8a2921180af2aad58f7775157fff159590d8c6",
+      "running": false,
+      "health": "unhealthy"
+    },
+    {
+      "id": "8a26ab52c64dd9d023bad9242b0069aacfe1a1e035d6c8c36a930de06e947526",
+      "image": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "a9d2764a5f5554259bb5c1b28f86c08c57347c8d96cf04d90d4ec4d5bea8e1c4",
+      "image": "sha256:6ddceb4fd7a65ac5dabe57d87ba7b7710e3d60d0d27bafad6a7c91371fd7743a",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "ad8593ec338a0107d62cf40c0122ae02b0b2c9af852f80781131b345b3b4a12b",
+      "image": "sha256:69e51f987f1f57bf42618bb40d8ff8b17bd78aa1170eea73c026a8a6a40a609b",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "bc4458e17b604a87bfe591a1eb2e58662593b7967c04bc46c6b07d3ac3a1767e",
+      "image": "sha256:0e1793f0fe39bc008c15b0187337bdd9fdbcc27849335dac76567527c5d6c9a9",
+      "running": false,
+      "health": null
+    },
+    {
+      "id": "cbfc859750e683b166aa23c6613b3b4aed5102fda111a3fdbadcaeb8b357ab0c",
+      "image": "sha256:0980003d2c9c632598e51434257f7c631ddcd3bb11d8ddbd915b3a84fe577b8b",
+      "running": true,
+      "health": "healthy"
+    },
+    {
+      "id": "e16031e60b6c824101434e5d052c82e10eb4be3f9c7fcbe0644f7ffbe65c0387",
+      "image": "sha256:42525c14f2453174814441e07f234b34a48015543cba2491d3845a7ae496e343",
+      "running": true,
+      "health": "healthy"
+    }
+  ],
+  "original_services_unchanged": true,
+  "qualified_image_preserved": true,
+  "disk_available_after_bytes": 67031171072,
+  "removed_file_bytes": 2418812416,
+  "status": "PASS"
+}

@@ -997,6 +997,59 @@ class DomainCallEvidenceMixin:
             "event_sha256": row["event_sha256"], "outcome": "aborted_before_dispatch"}
         return {**base, "abort_sha256": acp_binding_sha256(base)}
 
+    def _verify_acp_authorization_denial_receipt(self, connection, receipt: object,
+                                                ingress: dict) -> dict:
+        """Verify a role-denial receipt against its exact ingress and durable audit row."""
+        from .agent_research import AgentConflict
+
+        fields = {"schema_version", "mcp_request_id", "root_run_id", "runtime_boot_id",
+            "native_agent_session_id", "agent_run_id", "tool_name", "arguments_sha256",
+            "event_sha256", "reason", "outcome", "audit_id", "receipt_sha256"}
+        if not isinstance(receipt, dict) or set(receipt) != fields:
+            raise AgentConflict("ACP authorization denial receipt is not a closed exact object")
+        expected = {"schema_version": "byq-acp-authorization-denial-receipt.v1",
+            "mcp_request_id": ingress["mcp_request_id"], "root_run_id": ingress["root_run_id"],
+            "runtime_boot_id": ingress["runtime_boot_id"],
+            "native_agent_session_id": ingress["native_agent_session_id"],
+            "agent_run_id": ingress["agent_run_id"], "tool_name": "byq_agent_authorize",
+            "arguments_sha256": ingress["arguments_sha256"], "event_sha256": ingress["event_sha256"],
+            "reason": "role_tool_not_allowed", "outcome": "denied"}
+        if (not expected["agent_run_id"]
+                or any(receipt.get(key) != value for key, value in expected.items())
+                or not isinstance(receipt.get("audit_id"), str)
+                or re.fullmatch(r"agent_audit_[0-9a-f]{32}", receipt["audit_id"]) is None
+                or not isinstance(receipt.get("receipt_sha256"), str)
+                or _ACP_SHA256.fullmatch(receipt["receipt_sha256"]) is None):
+            raise AgentConflict("ACP authorization denial receipt does not match its exact ingress")
+        expected_hash = acp_binding_sha256({key: value for key, value in receipt.items()
+            if key != "receipt_sha256"})
+        if receipt["receipt_sha256"] != expected_hash:
+            raise AgentConflict("ACP authorization denial receipt hash is invalid")
+        audit = fetch_one(connection, """SELECT * FROM agent_audit
+            WHERE audit_id=:audit_id FOR SHARE""", {"audit_id": receipt["audit_id"]})
+        if audit is None:
+            raise AgentConflict("ACP authorization denial audit is not durable")
+        detail = audit.get("detail_json") or {}
+        binding = detail.get("acp_control") if isinstance(detail, dict) else None
+        binding_expected = {key: expected[key] for key in (
+            "mcp_request_id", "root_run_id", "runtime_boot_id", "native_agent_session_id",
+            "agent_run_id", "tool_name", "arguments_sha256", "event_sha256")}
+        result = binding.get("result") if isinstance(binding, dict) else None
+        if (audit["run_id"] != ingress["agent_run_id"]
+                or audit["owner_principal"] != ingress["owner_principal"]
+                or audit["actor_principal"] != ingress["actor_principal"]
+                or audit["outcome"] != "denied"
+                or audit["action"] != (result.get("action") if isinstance(result, dict) else None)
+                or detail.get("reason") != "role_tool_not_allowed"
+                or not isinstance(binding, dict)
+                or any(binding.get(key) != value for key, value in binding_expected.items())
+                or binding.get("refusal_receipt") != receipt
+                or not isinstance(result, dict)
+                or result.get("authorized") is not False
+                or result.get("decision") != "denied"):
+            raise AgentConflict("ACP authorization denial audit does not bind the exact receipt")
+        return receipt
+
     def settle_acp_tool_ingress(self, payload: object, *, trusted_scope: dict) -> dict:
         """Close one exact MCP dispatch receipt without classifying business success."""
         from .agent_research import AgentConflict, AgentNotFound, AgentUnauthorized, _runtime_boot_id
@@ -1004,8 +1057,11 @@ class DomainCallEvidenceMixin:
         fields = {"schema_version", "mcp_request_id", "root_run_id", "runtime_boot_id",
                   "native_root_session_id", "native_agent_session_id", "native_parent_session_id",
                   "origin", "depth", "tool_name", "sequence", "event_sha256", "outcome"}
-        if (not isinstance(payload, dict) or set(payload) != fields
-                or payload.get("schema_version") != "byq-acp-tool-ingress-settle.v1"):
+        if not isinstance(payload, dict) or payload.get("schema_version") != "byq-acp-tool-ingress-settle.v1":
+            raise ValueError("exact ACP tool ingress settlement required")
+        outcome = payload.get("outcome")
+        expected_fields = fields | ({"refusal_receipt"} if outcome == "denied" else set())
+        if set(payload) != expected_fields:
             raise ValueError("exact ACP tool ingress settlement required")
         request_id = payload["mcp_request_id"]
         if not isinstance(request_id, str) or _ACP_REQUEST_ID.fullmatch(request_id) is None:
@@ -1022,9 +1078,8 @@ class DomainCallEvidenceMixin:
         event_sha256 = payload["event_sha256"]
         if not isinstance(event_sha256, str) or _ACP_SHA256.fullmatch(event_sha256) is None:
             raise ValueError("event_sha256 must be 64 lowercase hexadecimal characters")
-        outcome = payload["outcome"]
-        if outcome not in {"settled", "unknown"}:
-            raise ValueError("ACP tool ingress outcome must be settled or unknown")
+        if outcome not in {"settled", "unknown", "denied"}:
+            raise ValueError("ACP tool ingress outcome must be settled, denied, or unknown")
         if (identity["root_run_id"] != trusted_scope["root"]
                 or identity["runtime_boot_id"] != trusted_scope["boot_id"]):
             raise AgentUnauthorized("ACP tool ingress settlement does not match trusted runtime scope")
@@ -1054,9 +1109,20 @@ class DomainCallEvidenceMixin:
                 "tool_name": tool_name, "sequence": sequence, "event_sha256": event_sha256}
             if any(row.get(key) != value for key, value in expected.items()):
                 raise AgentConflict("ACP tool ingress settlement does not match the exact receipt")
+            if row["status"] == "unknown" and outcome == "denied":
+                raise AgentConflict("unknown ACP tool ingress cannot be rewritten as a known denial")
+            denial_receipt = None
+            if outcome == "denied":
+                if tool_name != "byq_agent_authorize":
+                    raise AgentConflict("known denial settlement is limited to Agent authorization")
+                denial_receipt = self._verify_acp_authorization_denial_receipt(
+                    connection, payload["refusal_receipt"], row)
             if row["status"] in {"settled", "unknown"}:
-                if (row["status"] != outcome or row["settlement_json"] is None
-                        or row["settlement_json"].get("outcome") != outcome):
+                if (row["status"] != ("settled" if outcome == "denied" else outcome)
+                        or row["settlement_json"] is None
+                        or row["settlement_json"].get("outcome") != outcome
+                        or (outcome == "denied" and row["settlement_json"].get("refusal_receipt_sha256")
+                            != denial_receipt["receipt_sha256"])):
                     raise AgentConflict("ACP tool ingress settlement outcome is already fixed")
                 return row["settlement_json"]
             root = fetch_one(connection, """SELECT status,authority_status,authority_boot_id
@@ -1064,20 +1130,26 @@ class DomainCallEvidenceMixin:
             if (root is None or root["status"] != "active" or root["authority_status"] != "active"
                     or root["authority_boot_id"] != identity["runtime_boot_id"]):
                 raise AgentConflict("ACP tool ingress cannot settle after root authority closes")
-            settlement_sha256 = acp_binding_sha256({"mcp_request_id": request_id,
+            settlement_payload = {"mcp_request_id": request_id,
                 "root_run_id": identity["root_run_id"], "runtime_boot_id": identity["runtime_boot_id"],
                 "native_agent_session_id": identity["native_agent_session_id"], "tool_name": tool_name,
-                "sequence": sequence, "event_sha256": event_sha256, "outcome": outcome})
+                "sequence": sequence, "event_sha256": event_sha256, "outcome": outcome}
+            if denial_receipt is not None:
+                settlement_payload["refusal_receipt_sha256"] = denial_receipt["receipt_sha256"]
+            settlement_sha256 = acp_binding_sha256(settlement_payload)
             receipt = {"schema_version": "byq-acp-tool-ingress-settle-receipt.v1",
                 "mcp_request_id": request_id, "root_run_id": identity["root_run_id"],
                 "runtime_boot_id": identity["runtime_boot_id"],
                 "native_agent_session_id": identity["native_agent_session_id"],
                 "tool_name": tool_name, "sequence": sequence, "event_sha256": event_sha256,
                 "outcome": outcome, "settlement_sha256": settlement_sha256}
+            if denial_receipt is not None:
+                receipt["refusal_receipt_sha256"] = denial_receipt["receipt_sha256"]
+            stored_status = "settled" if outcome == "denied" else outcome
             execute(connection, """UPDATE agent_acp_tool_ingress_observations
-                SET status=:outcome,settlement_json=CAST(:settlement AS jsonb),settled_at=CURRENT_TIMESTAMP
+                SET status=:status,settlement_json=CAST(:settlement AS jsonb),settled_at=CURRENT_TIMESTAMP
                 WHERE mcp_request_id=:id AND status='pending'""",
-                {"outcome": outcome, "settlement": json.dumps(receipt, allow_nan=False), "id": request_id})
+                {"status": stored_status, "settlement": json.dumps(receipt, allow_nan=False), "id": request_id})
             return receipt
 
     def _acp_terminal_evidence_snapshot(self, connection, root_run_id: str) -> dict[str, object]:

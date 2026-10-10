@@ -1,15 +1,15 @@
 import hashlib
 import json
 import threading
-from importlib.metadata import version
 from types import SimpleNamespace
 
 import pytest
-from deepseek_harness import Notification
 
 from packages.contracts.domain_call_admission import call_evidence_receipt
+from app.compat.types import RuntimeObservation
 from app.runtime import RuntimeAdapter, SessionConflict, SessionStatus
 from .test_process_cleanup import adapter, FakeHarness, wait_for_status
+from .runtime_test_support import NotificationDTO as Notification, installed_sdk_version
 
 
 @pytest.fixture
@@ -100,7 +100,7 @@ def test_root_mode_rejects_mismatched_profile(root_adapter, monkeypatch, tmp_pat
 
 
 def test_domain_observation_is_private_in_memory_and_exactly_root_scoped(root_adapter, monkeypatch):
-    if version("deepseek-harness-sdk") != "0.1.5rc1":
+    if installed_sdk_version() != "0.1.5rc1":
         pytest.skip("domain observations are qualified on the pinned 0.1.5 carrier")
     runtime = root_adapter
     context = {"session_id": "private-calls", "trace_id": "private-trace", "owner": "alice", "workspace_id": "workspace_alice"}
@@ -189,8 +189,6 @@ def test_domain_observation_is_private_in_memory_and_exactly_root_scoped(root_ad
 
 
 def test_unproven_call_stops_only_its_owned_root(root_adapter, monkeypatch):
-    if version("deepseek-harness-sdk") != "0.1.5rc1":
-        pytest.skip("closed admission stop qualified on 0.1.5 only")
     runtime = root_adapter
     # Each process needs its own completion signal: the ordinary single-session
     # fixture's class-wide Event makes closing Alice also finish Bob spuriously.
@@ -213,9 +211,10 @@ def test_unproven_call_stops_only_its_owned_root(root_adapter, monkeypatch):
         runtime.submit_prompt(owner, "synthetic separate owner")
     alice, bob = runtime._get("alice"), runtime._get("bob")
     old_run, bob_run = alice.active_run, bob.active_run
-    notice = Notification(method="session.event", payload={"sessionId": alice.runtime_session_id,
-        "event": {"type": "tool/call", "seq": 1, "data": {"callId": "missing-reference", "name": "mcp__byq__byq_strategy_validate",
-            "arguments": json.dumps({"task_id": "unproven", "strategy": {}})}}})
+    notice = RuntimeObservation(kind="tool.call", session_id=alice.runtime_session_id,
+        root_session=True, runtime_activity=True, event_sequence=1, call_id="missing-reference",
+        tool_name="mcp__byq__byq_strategy_validate",
+        domain_arguments={"task_id": "unproven", "strategy": {}})
     runtime._on_notification(alice, notice, source_run=old_run, source_runtime_session_id=alice.runtime_session_id)
     wait_for_status(runtime, "alice", SessionStatus.FAILED)
     assert bob.active_run is bob_run and bob.status == SessionStatus.RUNNING

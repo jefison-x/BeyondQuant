@@ -1,0 +1,5 @@
+COMMAND: ['python3', '-m', 'py_compile', 'scripts/dsh/build_revision.py', 'tests/test_current_build_revision.py', 'tests/test_dsh_build_revision.py']
+EXIT: 0
+STDOUT:
+
+STDERR:

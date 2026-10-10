@@ -68,7 +68,12 @@ class Dsh012Compatibility:
         self, *, provider: str, model: str, composition: Path, session_root: Path,
         runtime_command: tuple[str, ...], environment: dict[str, str],
         max_tokens: int | None = None,
+        continuation_guard_b64: str | None = None,
     ) -> Any:
+        # The non-ACP SDK has no Product slot runner and therefore no restricted
+        # continuation guard overlay; only the token-budget guard patch applies.
+        if continuation_guard_b64 is not None:
+            raise ValueError("non-ACP DSH harness cannot carry a Product slot guard")
         patch = composition.expanduser().resolve()
         home = session_root.expanduser().resolve()
         if not patch.is_file():

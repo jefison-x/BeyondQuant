@@ -1,20 +1,27 @@
-"""Selector: the promoted 0.1.5 default and the retained 0.1.2 rollback."""
+"""Only the manifest-selected ACP family is selectable online."""
 
-from app.compat import compatibility_for_release
+import pytest
 
-
-def test_retained_rollback_selects_the_012_boundary() -> None:
-    assert compatibility_for_release("dsh-0.1.2rc1").family == "dsh-0.1.2"
+from app.compat import ACP_COMPATIBILITY_FAMILY, compatibility_for_release
 
 
-def test_promoted_default_selects_the_015_boundary() -> None:
-    assert compatibility_for_release("dsh-0.1.5rc1").family == "dsh-0.1.5"
+def test_authoritative_acp_family_selects_the_acp_compatibility(monkeypatch) -> None:
+    class SyntheticAcpCompatibility:
+        family = ACP_COMPATIBILITY_FAMILY
+
+    from app.compat import dsh_acp
+    monkeypatch.setattr(dsh_acp, "DshAcpCompatibility", SyntheticAcpCompatibility)
+    compatibility = compatibility_for_release(ACP_COMPATIBILITY_FAMILY)
+    assert isinstance(compatibility, SyntheticAcpCompatibility)
+    assert compatibility.family == ACP_COMPATIBILITY_FAMILY
+
+
+@pytest.mark.parametrize("legacy_release", ["dsh-0.1.2rc1", "dsh-0.1.5rc1"])
+def test_sdk_releases_are_not_online_compatibility_choices(legacy_release: str) -> None:
+    with pytest.raises(ValueError, match="unsupported DSH compatibility release"):
+        compatibility_for_release(legacy_release)
 
 
 def test_unknown_release_fails_closed() -> None:
-    try:
-        compatibility_for_release("dsh-0.1.5-rc.2")
-    except ValueError as error:
-        assert "unsupported DSH compatibility release" in str(error)
-    else:
-        raise AssertionError("unqualified npm-only release must not resolve")
+    with pytest.raises(ValueError, match="unsupported DSH compatibility release"):
+        compatibility_for_release("dsh-v0.2.0-rc.2")

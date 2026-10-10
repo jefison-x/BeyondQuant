@@ -431,6 +431,19 @@ def _reject_secret_keys(value: object) -> None:
             _reject_secret_keys(nested)
 
 
+def _reject_reserved_acp_control(value: object) -> None:
+    """Keep durable ACP proof metadata writable only by trusted private paths."""
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            normalized = "".join(character for character in str(key).lower() if character.isalnum())
+            if normalized == "acpcontrol":
+                raise ValueError("agent audit detail contains reserved ACP control evidence")
+            _reject_reserved_acp_control(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            _reject_reserved_acp_control(nested)
+
+
 def _hash(value: object) -> str:
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
@@ -1389,9 +1402,10 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
                     or root["authority_boot_id"] != authority["boot_id"]):
                 raise AgentForbidden("agent run root no longer has current business authority")
 
-    def authorize(self, payload: object, *, trusted_owner: str | None = None, trusted_actor: str | None = None,
-                  trusted_session_id: str | None = None, trusted_dsh_run_id: str | None = None,
-                  trusted_boot_id: str | None = None) -> dict[str, object]:
+    def _authorize_agent_action_in_transaction(self, connection: Any, payload: object, *,
+            trusted_owner: str | None, trusted_actor: str | None, trusted_session_id: str | None,
+            trusted_dsh_run_id: str | None, trusted_boot_id: str | None
+    ) -> tuple[dict[str, object], dict[str, Any], bool]:
         if not isinstance(payload, dict):
             raise ValueError("agent authorization request must be an object")
         allowed = {"run_id", "action", "resource_type", "resource_id"}
@@ -1404,57 +1418,207 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         resource_id = payload.get("resource_id")
         if trusted_boot_id is not None:
             trusted_boot_id = _runtime_boot_id(trusted_boot_id)
+        self._lifecycle_lock(connection, "runtime-authority:current")
+        authority = self._require_current_runtime_boot(connection, trusted_boot_id)
+        row = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id = :run_id FOR SHARE", {"run_id": run_id})
+        if row is None:
+            raise AgentNotFound("agent run not found")
+        self._check_run_access(row, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
+        self._check_agent_run_authority(connection, row, authority, trusted_boot_id)
+        self._check_runtime_context(row, trusted_session_id, trusted_dsh_run_id)
+        role = _ALL_ROLE_BY_ID[row["role_id"]]
+        index_action = action in {
+            "byq_index_pool_catalog", "byq_index_pool_create", "byq_index_pool_status",
+        }
+        factor_job_action = action == "byq_factor_job_cancel"
+        data_demand_action = action == "byq_data_demand_cancel"
+        optimization_action = action in {
+            "byq_optimization_submit", "byq_optimization_get", "byq_optimization_cancel",
+        }
+        backtest_auto_action = action in {
+            "byq_backtest_task_create", "byq_backtest_task_execute",
+        }
+        orchestrator_analysis_action = (
+            row["role_id"] == "quant_orchestrator"
+            and action == "byq_backtest_analysis_get"
+        )
+        ml_training_create_action = action == "byq_ml_training_create"
+        if (action not in role.allowed_tools
+                or (index_action and row["role_version"] not in {"2.1.0", "2.2.0", "2.3.0", "2.4.0", "2.5.0"})
+                or (factor_job_action and row["role_version"] != role.version)
+                or (data_demand_action and row["role_version"] != role.version)
+                or (optimization_action and row["role_version"] != role.version)
+                or (backtest_auto_action and row["role_version"] != role.version)
+                or (orchestrator_analysis_action and row["role_version"] != role.version)
+                or (ml_training_create_action and row["role_version"] != role.version)):
+            return ({"authorized": False, "decision": "denied", "run_id": run_id,
+                "role_id": row["role_id"], "action": action},
+                {"run": row, "action": action, "resource_type": resource_type,
+                 "resource_id": resource_id}, True)
+        policy_level = approval_level_for_tool(action, known_tools=role.allowed_tools)
+        requires_approval = action in role.approval_required_actions
+        result = {
+            "authorized": not requires_approval,
+            "decision": "approval_required" if requires_approval else "allowed",
+            "approval_level": policy_level,
+            "run_id": run_id,
+            "role_id": row["role_id"],
+            "action": action,
+        }
+        return result, {"run": row, "action": action, "resource_type": resource_type,
+            "resource_id": resource_id}, False
+
+    def authorize(self, payload: object, *, trusted_owner: str | None = None, trusted_actor: str | None = None,
+                  trusted_session_id: str | None = None, trusted_dsh_run_id: str | None = None,
+                  trusted_boot_id: str | None = None) -> dict[str, object]:
+        with self._transaction() as connection:
+            result, context, denied = self._authorize_agent_action_in_transaction(connection, payload,
+                trusted_owner=trusted_owner, trusted_actor=trusted_actor,
+                trusted_session_id=trusted_session_id, trusted_dsh_run_id=trusted_dsh_run_id,
+                trusted_boot_id=trusted_boot_id)
+            self._record_audit_row(context["run"], action=context["action"],
+                outcome=("denied" if denied else
+                    ("approval_required" if result["decision"] == "approval_required" else "authorized")),
+                resource_type=context["resource_type"], resource_id=context["resource_id"],
+                detail={"reason": "role_tool_not_allowed"} if denied else result,
+                connection=connection)
+            if denied:
+                raise AgentForbidden("agent role is not authorized for this domain action")
+        return result
+
+    def authorize_acp_agent_tool(self, payload: object, *, trusted_scope: dict,
+                                 trusted_identity: dict) -> dict[str, object]:
+        """Authorize one observed ACP ingress and persist an exact role-denial receipt."""
+        from .domain_call_admission import _canonical_acp_arguments, acp_binding_sha256
+
+        fields = {"schema_version", "mcp_request_id", "arguments"}
+        if (not isinstance(payload, dict) or set(payload) != fields
+                or payload.get("schema_version") != "byq-acp-agent-authorize.v1"):
+            raise ValueError("exact ACP Agent authorization request required")
+        request_id = payload["mcp_request_id"]
+        if not isinstance(request_id, str) or re.fullmatch(r"[0-9a-f]{32}", request_id) is None:
+            raise ValueError("mcp_request_id must be 32 lowercase hexadecimal characters")
+        arguments = payload["arguments"]
+        arguments_sha256, _ = _canonical_acp_arguments(arguments)
+        identity = self._normalize_acp_agent_identity(trusted_identity)
+        if (identity["root_run_id"] != trusted_scope["root"]
+                or identity["runtime_boot_id"] != trusted_scope["boot_id"]):
+            raise AgentUnauthorized("ACP authorization identity does not match trusted runtime scope")
+        scope = {"owner": trusted_scope["owner"], "workspace": trusted_scope["workspace"],
+            "actor": trusted_scope["actor"], "session": trusted_scope["session"],
+            "trace": trusted_scope["trace"], "generation": trusted_scope["generation"]}
+
         with self._transaction() as connection:
             self._lifecycle_lock(connection, "runtime-authority:current")
-            authority = self._require_current_runtime_boot(connection, trusted_boot_id)
-            row = fetch_one(connection, "SELECT * FROM agent_runs WHERE run_id = :run_id", {"run_id": run_id})
-            if row is None:
-                raise AgentNotFound("agent run not found")
-            self._check_run_access(row, trusted_owner=trusted_owner, trusted_actor=trusted_actor)
-            self._check_agent_run_authority(connection, row, authority, trusted_boot_id)
-            self._check_runtime_context(row, trusted_session_id, trusted_dsh_run_id)
-            role = _ALL_ROLE_BY_ID[row["role_id"]]
-            index_action = action in {
-                "byq_index_pool_catalog", "byq_index_pool_create", "byq_index_pool_status",
-            }
-            factor_job_action = action == "byq_factor_job_cancel"
-            data_demand_action = action == "byq_data_demand_cancel"
-            optimization_action = action in {
-                "byq_optimization_submit", "byq_optimization_get", "byq_optimization_cancel",
-            }
-            backtest_auto_action = action in {
-                "byq_backtest_task_create", "byq_backtest_task_execute",
-            }
-            orchestrator_analysis_action = (
-                row["role_id"] == "quant_orchestrator"
-                and action == "byq_backtest_analysis_get"
-            )
-            ml_training_create_action = action == "byq_ml_training_create"
-            if (action not in role.allowed_tools
-                    or (index_action and row["role_version"] not in {"2.1.0", "2.2.0", "2.3.0", "2.4.0", "2.5.0"})
-                    or (factor_job_action and row["role_version"] != role.version)
-                    or (data_demand_action and row["role_version"] != role.version)
-                    or (optimization_action and row["role_version"] != role.version)
-                    or (backtest_auto_action and row["role_version"] != role.version)
-                    or (orchestrator_analysis_action and row["role_version"] != role.version)
-                    or (ml_training_create_action and row["role_version"] != role.version)):
-                self._record_audit_row(row, action=action, outcome="denied", resource_type=resource_type,
-                    resource_id=resource_id, detail={"reason": "role_tool_not_allowed"}, connection=connection)
-                raise AgentForbidden("agent role is not authorized for this domain action")
-            policy_level = approval_level_for_tool(action, known_tools=role.allowed_tools)
-            requires_approval = action in role.approval_required_actions
-            result = {
-                "authorized": not requires_approval,
-                "decision": "approval_required" if requires_approval else "allowed",
-                "approval_level": policy_level,
-                "run_id": run_id,
-                "role_id": row["role_id"],
-                "action": action,
-            }
-            self._record_audit_row(row, action=action,
-                outcome="approval_required" if requires_approval else "authorized",
-                resource_type=resource_type, resource_id=resource_id, detail=result, connection=connection)
-        return result
+            self._require_lifecycle_workspace(connection, scope["owner"], scope["workspace"])
+            self._require_current_acp_boot(connection, identity["runtime_boot_id"])
+            self._lifecycle_lock(connection, "acp-mcp-request:" + request_id)
+            self._lifecycle_lock(connection, "root:" + identity["root_run_id"])
+            root = fetch_one(connection, """SELECT * FROM agent_runtime_turns
+                WHERE root_run_id=:root FOR UPDATE""", {"root": identity["root_run_id"]})
+            if root is None or any(root.get(key) != value for key, value in {
+                    "owner_principal": scope["owner"], "workspace_id": scope["workspace"],
+                    "session_id": scope["session"], "trace_id": scope["trace"]}.items()):
+                raise AgentNotFound("ACP authorization root not found")
+            if (root["status"] != "active" or root.get("authority_status", "active") != "active"
+                    or root.get("authority_boot_id") != identity["runtime_boot_id"]):
+                raise AgentConflict("ACP authorization root is not active under current Backend authority")
+            self._require_judgment_tool_scope(connection, identity, trusted_scope,
+                "byq_agent_authorize", arguments, new_dispatch=False)
+            ingress = fetch_one(connection, """SELECT * FROM agent_acp_tool_ingress_observations
+                WHERE mcp_request_id=:id FOR UPDATE""", {"id": request_id})
+            if ingress is None:
+                raise AgentNotFound("ACP tool ingress receipt not found")
+            if ingress["status"] == "unknown":
+                raise AgentConflict("unknown ACP tool ingress cannot receive authorization proof")
+            expected = {"owner_principal": scope["owner"], "workspace_id": scope["workspace"],
+                "actor_principal": scope["actor"], "session_id": scope["session"],
+                "trace_id": scope["trace"], "dsh_run_id": scope["generation"],
+                "root_run_id": identity["root_run_id"], "runtime_boot_id": identity["runtime_boot_id"],
+                "native_root_session_id": identity["native_root_session_id"],
+                "native_agent_session_id": identity["native_agent_session_id"],
+                "native_parent_session_id": identity["native_parent_session_id"],
+                "origin": identity["origin"], "depth": identity["depth"],
+                "tool_name": "byq_agent_authorize", "arguments_sha256": arguments_sha256}
+            if any(ingress.get(key) != value for key, value in expected.items()):
+                raise AgentConflict("ACP authorization does not match the exact observed request identity or input")
+            agent_run_id = self._acp_tool_ingress_agent_run(connection, identity, scope,
+                "byq_agent_authorize", bootstrap=False)
+            if not agent_run_id or ingress.get("agent_run_id") != agent_run_id:
+                raise AgentConflict("ACP authorization ingress does not match its bound native AgentRun")
+            if arguments.get("run_id") != agent_run_id:
+                raise AgentConflict("ACP authorization run_id does not match native AgentRun")
+
+            prior = fetch_one(connection, """SELECT audit_id,run_id,owner_principal,actor_principal,
+                    action,outcome,detail_json FROM agent_audit
+                WHERE run_id=:run AND detail_json->'acp_control'->>'mcp_request_id'=:request
+                ORDER BY created_at DESC LIMIT 1 FOR SHARE""",
+                {"run": agent_run_id, "request": request_id})
+            if prior is not None:
+                detail = prior.get("detail_json") or {}
+                binding = detail.get("acp_control") if isinstance(detail, dict) else None
+                expected_binding = {"mcp_request_id": request_id, "root_run_id": identity["root_run_id"],
+                    "runtime_boot_id": identity["runtime_boot_id"],
+                    "native_root_session_id": identity["native_root_session_id"],
+                    "native_agent_session_id": identity["native_agent_session_id"],
+                    "native_parent_session_id": identity["native_parent_session_id"],
+                    "origin": identity["origin"], "depth": identity["depth"],
+                    "agent_run_id": agent_run_id, "tool_name": "byq_agent_authorize",
+                    "arguments_sha256": arguments_sha256, "event_sha256": ingress["event_sha256"]}
+                if (not isinstance(binding, dict) or any(binding.get(key) != value
+                        for key, value in expected_binding.items())
+                        or prior["owner_principal"] != scope["owner"]
+                        or prior["actor_principal"] != scope["actor"]
+                        or prior["action"] != arguments.get("action")):
+                    raise AgentConflict("stored ACP authorization result does not match the exact request")
+                result = binding.get("result")
+                if prior["outcome"] == "denied" and detail.get("reason") == "role_tool_not_allowed":
+                    refusal = binding.get("refusal_receipt")
+                    self._verify_acp_authorization_denial_receipt(connection, refusal, ingress)
+                    return {"status": "denied", "authorization": result, "refusal_receipt": refusal}
+                if prior["outcome"] in {"authorized", "approval_required"} and isinstance(result, dict):
+                    if ingress["status"] == "settled" and (ingress.get("settlement_json") or {}).get("outcome") != "settled":
+                        raise AgentConflict("ACP authorization result conflicts with settled ingress outcome")
+                    return {"status": "ok", "authorization": result}
+                raise AgentConflict("stored ACP authorization audit is not an exact role result")
+            if ingress["status"] != "pending":
+                raise AgentConflict("ACP authorization ingress is already settled without its exact audit result")
+
+            result, context, denied = self._authorize_agent_action_in_transaction(connection, arguments,
+                trusted_owner=scope["owner"], trusted_actor=scope["actor"],
+                trusted_session_id=scope["session"], trusted_dsh_run_id=scope["generation"],
+                trusted_boot_id=identity["runtime_boot_id"])
+            binding = {"mcp_request_id": request_id, "root_run_id": identity["root_run_id"],
+                "runtime_boot_id": identity["runtime_boot_id"],
+                "native_root_session_id": identity["native_root_session_id"],
+                "native_agent_session_id": identity["native_agent_session_id"],
+                "native_parent_session_id": identity["native_parent_session_id"],
+                "origin": identity["origin"], "depth": identity["depth"],
+                "agent_run_id": agent_run_id, "tool_name": "byq_agent_authorize",
+                "arguments_sha256": arguments_sha256, "event_sha256": ingress["event_sha256"],
+                "result": result}
+            if denied:
+                audit_id = _new_id("agent_audit")
+                refusal_base = {"schema_version": "byq-acp-authorization-denial-receipt.v1",
+                    "mcp_request_id": request_id, "root_run_id": identity["root_run_id"],
+                    "runtime_boot_id": identity["runtime_boot_id"],
+                    "native_agent_session_id": identity["native_agent_session_id"],
+                    "agent_run_id": agent_run_id, "tool_name": "byq_agent_authorize",
+                    "arguments_sha256": arguments_sha256, "event_sha256": ingress["event_sha256"],
+                    "reason": "role_tool_not_allowed", "outcome": "denied", "audit_id": audit_id}
+                refusal = {**refusal_base, "receipt_sha256": acp_binding_sha256(refusal_base)}
+                binding["refusal_receipt"] = refusal
+                self._record_audit_row(context["run"], action=context["action"], outcome="denied",
+                    resource_type=context["resource_type"], resource_id=context["resource_id"],
+                    detail={"reason": "role_tool_not_allowed", "acp_control": binding},
+                    connection=connection, audit_id=audit_id)
+                return {"status": "denied", "authorization": result, "refusal_receipt": refusal}
+            self._record_audit_row(context["run"], action=context["action"],
+                outcome=("approval_required" if result["decision"] == "approval_required" else "authorized"),
+                resource_type=context["resource_type"],
+                resource_id=context["resource_id"], detail={"acp_control": binding},
+                connection=connection)
+            return {"status": "ok", "authorization": result}
 
     def record_audit(self, payload: object, *, trusted_owner: str | None = None, trusted_actor: str | None = None) -> dict[str, object]:
         if not isinstance(payload, dict):
@@ -1467,6 +1631,7 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         action = _text(payload.get("action"), field="action", max_length=128)
         outcome = _text(payload.get("outcome"), field="outcome", max_length=64)
         detail, _ = _json_object(payload.get("detail", {}), field="detail")
+        _reject_reserved_acp_control(detail)
         row = self._fetch_one("SELECT * FROM agent_runs WHERE run_id = :run_id", {"run_id": run_id})
         if row is None:
             raise AgentNotFound("agent run not found")
@@ -2110,13 +2275,13 @@ class AgentResearchStore(DomainCallEvidenceMixin, PgStoreMixin):
         if row["status"] != "active" or row.get("authority_status", "active") != "active":
             raise AgentForbidden("agent run is not active")
 
-    def _record_audit_row(self, run: dict[str, Any], *, action: object, outcome: object, resource_type: object, resource_id: object, detail: object, connection: Any = None) -> dict[str, object]:
+    def _record_audit_row(self, run: dict[str, Any], *, action: object, outcome: object, resource_type: object, resource_id: object, detail: object, connection: Any = None, audit_id: str | None = None) -> dict[str, object]:
         action_text = _text(action, field="action", max_length=128)
         outcome_text = _text(outcome, field="outcome", max_length=64)
         resource_type_text = _text(resource_type, field="resource_type", max_length=64) if resource_type is not None else None
         resource_id_text = _text(resource_id, field="resource_id", max_length=128) if resource_id is not None else None
         detail_value, _ = _json_object(detail, field="detail")
-        audit_id = _new_id("agent_audit")
+        audit_id = audit_id or _new_id("agent_audit")
         created_at = _now()
         params = {
             "audit_id": audit_id,

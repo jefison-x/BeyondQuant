@@ -1,0 +1,6 @@
+{
+  "chunk_id": "58911a",
+  "wall_time_seconds": 22.828,
+  "exit_code": 0,
+  "output": "{\"status\": \"PASS\", \"source_sha256_before\": \"dc68c24fd4436b0ddeee89b7e7486e8ec1894d3bcc2fb5faee37a9e257f6b783\", \"source_sha256_after\": \"dc68c24fd4436b0ddeee89b7e7486e8ec1894d3bcc2fb5faee37a9e257f6b783\", \"archive\": {\"path\": \"/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/acp-current-real-archive-20261010-v2-6e43b1/three-alias-image.tar\", \"size_bytes\": 806272000, \"sha256\": \"e435117fad3db1b7d65d116a9156cf533a506952aeb5465b20eb0dac3117b37f\", \"save_elapsed_seconds\": 13.077, \"hash_chunk_bytes\": 1048576}, \"parser_elapsed_seconds\": 8.468, \"max_rss_kib\": 425180, \"preservation_check\": \"PASS\", \"error\": null, \"cleanup_errors\": [], \"fallback_receipt\": null, \"fallback_error\": null}"
+}

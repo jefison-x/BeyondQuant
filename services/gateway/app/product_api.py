@@ -602,6 +602,19 @@ def product_research_execution_plan(task_id: str, request: Request) -> dict[str,
                             headers=_trusted_agent_headers(request))
 
 
+@router.post("/research/tasks/{task_id}/execution-plan", status_code=201)
+async def product_create_research_execution_plan(task_id: str, request: Request) -> dict[str, object]:
+    # ADR-0108 foreground Product research-plan creation. Owner and workspace are
+    # derived from the durable user identity (`_trusted_agent_headers`), never the
+    # browser body; the body is only the closed create request (idempotency key +
+    # explicit domain references). No new MCP write tool, no generalized task
+    # system. A background continuation grant cannot authorize this.
+    _product_principal(request)
+    payload = await request.json()
+    return _backend_request("POST", f"/v1/research/tasks/{quote(task_id, safe='')}/execution-plan",
+                            payload=payload, headers=_trusted_agent_headers(request))
+
+
 @router.get("/research/tasks")
 def product_research_tasks(request: Request) -> dict[str, object]:
     _product_principal(request)
@@ -2760,8 +2773,13 @@ def _decorate_plugin_center(body: dict[str, object], runtime: dict[str, object])
             and latest_policy_request.get("target_composition_hash") == active_hash
         )
     )
+    release_id = runtime_state.get("release_id")
+    if (runtime_state.get("release_identity") != "matched"
+            or release_id != "dsh-v0.2.0-rc.2"):
+        release_id = None
     body["runtime"] = {
         "status": runtime_state.get("status", "unavailable"),
+        "release_id": release_id,
         "sdk": runtime_state.get("sdk"),
         "runtime_bin": runtime_state.get("runtime_bin"),
         "active_profile": active_profile,

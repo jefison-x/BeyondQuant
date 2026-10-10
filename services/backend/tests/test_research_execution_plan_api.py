@@ -1,8 +1,10 @@
-"""ADR-0085 P1 Backend read-only execution-plan API tests.
+"""ADR-0085 P1 / ADR-0108 Backend execution-plan API tests.
 
-The only agent-facing surface is ``GET /v1/research/tasks/{task_id}/execution-plan``.
-There is deliberately no plan write route. These exercise the real FastAPI app
-against isolated PostgreSQL.
+The read surface is ``GET /v1/research/tasks/{task_id}/execution-plan``. ADR-0108
+adds exactly one foreground write surface, ``POST /v1/research/tasks/{task_id}/
+execution-plan``, which accepts only the trusted owner/workspace context plus the
+closed create request; it is not an arbitrary plan/proposal write. These exercise
+the real FastAPI app against isolated PostgreSQL.
 """
 
 import os
@@ -155,14 +157,53 @@ def test_get_stage_input_requires_trusted_context(monkeypatch):
         store.close()
 
 
-def test_execution_plan_has_no_write_route(monkeypatch):
-    store, task, context = _setup("plan-api-write", "plan-api-w-s", "plan-api-w-t", with_plan=True)
+def test_execution_plan_create_is_foreground_only(monkeypatch):
+    # ADR-0108 adds one foreground Product create route. It requires the trusted
+    # context and the closed create request; it is not an arbitrary write, and
+    # PUT/DELETE stay absent.
+    store, task, context = _setup("plan-api-fg", "plan-api-fg-s", "plan-api-fg-t", with_plan=False)
     client = _client(monkeypatch, store)
     headers = {"x-byq-" + key.replace("_", "-"): value for key, value in context.items()}
     try:
         path = f"/v1/research/tasks/{task}/execution-plan"
-        assert client.post(path, headers=headers, json={}).status_code in {404, 405}
+        # Trusted context + closed create request -> exactly one plan.
+        assert client.post(path, headers=headers, json={"idempotency_key": "fg-api-1"}).status_code == 201
+        # An exact replay is idempotent.
+        assert client.post(path, headers=headers, json={"idempotency_key": "fg-api-1"}).status_code == 201
+        # A second, different key cannot add a second plan.
+        assert client.post(path, headers=headers, json={"idempotency_key": "fg-api-2"}).status_code == 409
+        # No trusted context -> 401.
+        assert client.post(path, json={"idempotency_key": "fg-api-3"}).status_code == 401
+        # The closed create request refuses an unknown field.
+        assert client.post(path, headers=headers,
+                           json={"idempotency_key": "fg-api-4", "owner_principal": "x"}).status_code == 422
+        # No arbitrary update/delete route exists.
         assert client.put(path, headers=headers, json={}).status_code in {404, 405}
         assert client.delete(path, headers=headers).status_code in {404, 405}
+    finally:
+        store.close()
+
+
+def test_execution_plan_create_rejects_a_continuation_consumer_identity(monkeypatch):
+    # ADR-0108 foreground-only, proven at the HTTP entry: the create route
+    # requires the FULL trusted agent context. A background continuation-consumer
+    # identity (owner + actor + workspace only, no runtime session/trace) cannot
+    # create a plan, so a continuation grant is never accepted as a foreground
+    # creator even though the store seam itself defaults require_active_grant=False.
+    store, task, context = _setup("plan-api-cont", "plan-api-cont-s", "plan-api-cont-t",
+                                  with_plan=False)
+    client = _client(monkeypatch, store)
+    consumer_headers = {
+        "x-byq-owner-principal": context["owner_principal"],
+        "x-byq-actor-principal": context["owner_principal"],
+        "x-byq-workspace-id": context["workspace_id"],
+    }
+    headers = {"x-byq-" + key.replace("_", "-"): value for key, value in context.items()}
+    try:
+        path = f"/v1/research/tasks/{task}/execution-plan"
+        assert client.post(path, headers=consumer_headers,
+                           json={"idempotency_key": "cont-1"}).status_code == 401
+        # The refusal left no plan behind.
+        assert client.get(path, headers=headers).status_code == 404
     finally:
         store.close()

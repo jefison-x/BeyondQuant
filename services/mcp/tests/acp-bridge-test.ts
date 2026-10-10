@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import {
   acpAgentRunRegistrationFetcher,
   addAcpObservationHeader,
   abortAcpToolIngressBeforeDispatch,
   bindAcpAgentRun,
+  fetchAcpAgentAuthorize,
   getAcpAgentBindingStatus,
   observeAcpDomainCall,
   observeAcpToolIngress,
@@ -46,6 +48,17 @@ const judgmentClaims: AcpJudgmentRootClaims = {
 };
 const validRunId = "agent_run_" + "c".repeat(32);
 const validParentRunId = "agent_run_" + "d".repeat(32);
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonical(record[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+function sha256(value: unknown): string {
+  return createHash("sha256").update(canonical(value), "ascii").digest("hex");
+}
 
 const actionArgs = { task_id: "task_1", agent_run_id: "untrusted-run", strategy: { script: "synthetic" } };
 let observeCalls = 0;
@@ -104,6 +117,112 @@ assert.ok(ingress);
 assert.equal(ingressCalls, 1);
 assert.equal(ingress.schema_version, "byq-acp-tool-ingress-receipt.v1");
 assert.equal(ingress.native_agent_session_id, claims.native_agent_session_id);
+
+const authorizationArgs = { run_id: validRunId, action: "byq_ml_training_create" };
+const authorizationIngress = await observeAcpToolIngress("http://backend", proof, claims,
+  "byq_agent_authorize", authorizationArgs, async (_input, init) => {
+    const request = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return Response.json({ schema_version: "byq-acp-tool-ingress-receipt.v1",
+      mcp_request_id: request.mcp_request_id, root_run_id: claims.root_run_id,
+      runtime_boot_id: claims.runtime_boot_id, native_root_session_id: claims.native_root_session_id,
+      native_agent_session_id: claims.native_agent_session_id, native_parent_session_id: null,
+      origin: "root", depth: 0, tool_name: "byq_agent_authorize", agent_run_id: validRunId,
+      sequence: 7, event_sha256: "7".repeat(64) });
+  });
+assert.ok(authorizationIngress);
+const refusalBase = { schema_version: "byq-acp-authorization-denial-receipt.v1",
+  mcp_request_id: authorizationIngress.mcp_request_id, root_run_id: claims.root_run_id,
+  runtime_boot_id: claims.runtime_boot_id, native_agent_session_id: claims.native_agent_session_id,
+  agent_run_id: validRunId, tool_name: "byq_agent_authorize",
+  arguments_sha256: sha256(authorizationArgs), event_sha256: authorizationIngress.event_sha256,
+  reason: "role_tool_not_allowed", outcome: "denied", audit_id: "agent_audit_" + "8".repeat(32) } as const;
+const refusalReceipt = { ...refusalBase, receipt_sha256: sha256(refusalBase) };
+const authorizationResponse = await fetchAcpAgentAuthorize("http://backend", proof, claims,
+  authorizationIngress, authorizationArgs, async (input, init) => {
+    assert.equal(String(input), "http://backend/internal/acp/agent-authorize");
+    assert.equal(init?.method, "POST");
+    const headers = new Headers(init?.headers);
+    assert.equal(headers.get("authorization"), `Bearer ${proof}`);
+    assert.equal(headers.get("x-byq-root-run-id"), claims.root_run_id);
+    assert.equal(headers.get("x-byq-runtime-boot-id"), claims.runtime_boot_id);
+    assert.equal(headers.get("x-byq-acp-native-agent-session-id"), claims.native_agent_session_id);
+    assert.equal(headers.get("x-byq-acp-native-root-session-id"), claims.native_root_session_id);
+    assert.equal(headers.get("x-byq-acp-origin"), "root");
+    assert.equal(headers.get("x-byq-acp-depth"), "0");
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    assert.deepEqual(body, { schema_version: "byq-acp-agent-authorize.v1",
+      mcp_request_id: authorizationIngress.mcp_request_id, arguments: authorizationArgs });
+    return Response.json({ status: "denied", authorization: { authorized: false,
+      decision: "denied", run_id: validRunId, role_id: "market_researcher",
+      action: authorizationArgs.action }, refusal_receipt: refusalReceipt });
+  });
+assert.equal(authorizationResponse?.status, "denied");
+assert.deepEqual(authorizationResponse?.status === "denied" ? authorizationResponse.refusal_receipt : undefined,
+  refusalReceipt, "the trusted denial receipt is returned only to the internal caller after exact validation");
+
+const denialSettlementHash = sha256({ mcp_request_id: authorizationIngress.mcp_request_id,
+  root_run_id: authorizationIngress.root_run_id, runtime_boot_id: authorizationIngress.runtime_boot_id,
+  native_agent_session_id: authorizationIngress.native_agent_session_id,
+  tool_name: authorizationIngress.tool_name, sequence: authorizationIngress.sequence,
+  event_sha256: authorizationIngress.event_sha256, outcome: "denied",
+  refusal_receipt_sha256: refusalReceipt.receipt_sha256 });
+const denialSettlement = await settleAcpToolIngress("http://backend", proof, claims,
+  authorizationIngress, "denied", async (input, init) => {
+    assert.equal(String(input), "http://backend/internal/acp/tool-ingress-settle");
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    assert.equal(body.outcome, "denied");
+    assert.deepEqual(body.refusal_receipt, refusalReceipt,
+      "denial settlement carries the exact receipt, not model-authored arguments as proof");
+    return Response.json({ schema_version: "byq-acp-tool-ingress-settle-receipt.v1",
+      mcp_request_id: authorizationIngress.mcp_request_id, root_run_id: claims.root_run_id,
+      runtime_boot_id: claims.runtime_boot_id, native_agent_session_id: claims.native_agent_session_id,
+      tool_name: authorizationIngress.tool_name, sequence: authorizationIngress.sequence,
+      event_sha256: authorizationIngress.event_sha256, outcome: "denied",
+      refusal_receipt_sha256: refusalReceipt.receipt_sha256,
+      settlement_sha256: denialSettlementHash });
+  }, refusalReceipt);
+assert.equal(denialSettlement?.outcome, "denied",
+  "the MCP accepts only Backend's exact negative settlement receipt");
+const lostDenialSettlement = await settleAcpToolIngress("http://backend", proof, claims,
+  authorizationIngress, "denied", async () => Response.json({ schema_version: "byq-acp-tool-ingress-settle-receipt.v1",
+    mcp_request_id: authorizationIngress.mcp_request_id, root_run_id: claims.root_run_id,
+    runtime_boot_id: claims.runtime_boot_id, native_agent_session_id: claims.native_agent_session_id,
+    tool_name: authorizationIngress.tool_name, sequence: authorizationIngress.sequence,
+    event_sha256: "f".repeat(64), outcome: "denied",
+    refusal_receipt_sha256: refusalReceipt.receipt_sha256, settlement_sha256: denialSettlementHash }),
+  refusalReceipt);
+assert.equal(lostDenialSettlement, undefined,
+  "a mismatched negative ACK cannot release the model-visible refusal");
+let noProofSettlementCalls = 0;
+assert.equal(await settleAcpToolIngress("http://backend", proof, claims, authorizationIngress,
+  "denied", async () => { noProofSettlementCalls += 1; return Response.json({}); }), undefined);
+assert.equal(noProofSettlementCalls, 0, "denied settlement cannot be sent without a validated refusal receipt");
+const invalidDenial = await fetchAcpAgentAuthorize("http://backend", proof, claims,
+  authorizationIngress, { ...authorizationArgs, action: "different_action" },
+  async () => Response.json({ status: "denied", authorization: { authorized: false,
+    decision: "denied", run_id: validRunId, role_id: "market_researcher", action: "different_action" },
+    refusal_receipt: refusalReceipt }));
+assert.equal(invalidDenial, undefined, "changed authorization input cannot reuse a prior denial receipt");
+const allowedAuthorization = await fetchAcpAgentAuthorize("http://backend", proof, claims,
+  authorizationIngress, authorizationArgs, async () => Response.json({ status: "ok",
+    authorization: { authorized: true, decision: "allowed", run_id: validRunId,
+      role_id: "quant_orchestrator", action: authorizationArgs.action } }));
+assert.deepEqual(allowedAuthorization, { status: "ok", authorization: {
+  authorized: true, decision: "allowed", run_id: validRunId,
+  role_id: "quant_orchestrator", action: authorizationArgs.action,
+} }, "normal authorization keeps the existing success payload");
+let non200AuthorizationCalls = 0;
+const non200Authorization = await fetchAcpAgentAuthorize("http://backend", proof, claims,
+  authorizationIngress, authorizationArgs, async () => {
+    non200AuthorizationCalls += 1;
+    return Response.json({ status: "ok", authorization: {
+      authorized: true, decision: "allowed", run_id: validRunId,
+      role_id: "quant_orchestrator", action: authorizationArgs.action,
+    } }, { status: 201 });
+  });
+assert.equal(non200Authorization, undefined,
+  "a body with the correct shape cannot replace the private endpoint's exact HTTP 200 requirement");
+assert.equal(non200AuthorizationCalls, 1, "a non-200 authorization response is not retried");
 const judgmentIngress = await observeAcpToolIngress("http://backend", judgmentProof, judgmentClaims,
   "byq_research_stage_input_get", { task_id: judgmentClaims.task_id }, async (input, init) => {
     assert.equal(String(input), "http://backend/internal/acp/judgment-tool-ingress-observe");

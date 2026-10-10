@@ -563,6 +563,81 @@ def exact_status(*, backend_url: str, task_id: str, call_identity: str,
     return status
 
 
+_BEGIN_REQUEST_SCHEMA = "byq-research-judgment-acp-root-begin.v1"
+_AGENT_REGISTER_REQUEST_SCHEMA = "byq-research-judgment-acp-agent-register.v1"
+_AGENT_BIND_RECEIPT_SCHEMA = "byq-acp-agent-bind-receipt.v1"
+_ATTEMPT = re.compile(r"^[0-9]+:[a-z_]+:[0-9]+$")
+
+
+def begin_root_once(*, backend_url: str, task_id: str, call_identity: str,
+                    attempt: str, headers: dict, transport=None,
+                    timeout: float = 8.0) -> dict:
+    """Admit one exact ACP judgment root and validate its complete begin receipt.
+
+    A transport failure is an unknown outcome (never a fabricated admission). A
+    present but inconsistent receipt fails closed as a hard error. This helper
+    performs no model/provider call.
+    """
+
+    if (not _matches(_TASK_ID, task_id) or not _matches(_CALL_ID, call_identity)
+            or not _matches(_ATTEMPT, attempt)):
+        raise ResearchJudgmentError("exact ACP judgment begin inputs are required")
+    payload = {"schema_version": _BEGIN_REQUEST_SCHEMA,
+               "call_identity": call_identity, "attempt_binding": attempt}
+    post = transport or _http_post
+    receipt = _post_once(
+        post, f"{backend_url}/internal/research-judgment/{task_id}/acp-root/begin",
+        payload, headers, timeout)
+    if receipt is None:
+        raise AcpJudgmentOutcomeUnknown("ACP judgment begin receipt is unavailable")
+    if (receipt.get("call_identity") != call_identity
+            or receipt.get("attempt_binding") != attempt):
+        raise ResearchJudgmentError("ACP judgment begin receipt identity is inconsistent")
+    _validate_settlement_begin(task_id, receipt)
+    return receipt
+
+
+def register_root_agent_once(*, backend_url: str, task_id: str, call_identity: str,
+                             root_run_id: str, runtime_boot_id: str,
+                             native_root_session_id: str, headers: dict,
+                             transport=None, timeout: float = 8.0) -> dict:
+    """Register the fixed native root AgentRun and require its bound receipt.
+
+    The receipt must bind the exact root/boot/session as a depth-0 ``root`` origin
+    with a durable ``agent_run_`` identity. A transport failure or any mismatch is
+    an unknown outcome: MCP identity must never be derived from an unproven
+    registration.
+    """
+
+    if (not _matches(_TASK_ID, task_id) or not _matches(_CALL_ID, call_identity)
+            or not _matches(_ROOT_ID, root_run_id)
+            or not _matches(_ROOT_ID, runtime_boot_id)
+            or not _matches(_NATIVE_SESSION_ID, native_root_session_id)):
+        raise ResearchJudgmentError(
+            "exact ACP judgment Agent registration inputs are required")
+    payload = {"schema_version": _AGENT_REGISTER_REQUEST_SCHEMA,
+               "call_identity": call_identity, "root_run_id": root_run_id,
+               "runtime_boot_id": runtime_boot_id,
+               "native_root_session_id": native_root_session_id}
+    post = transport or _http_post
+    receipt = _post_once(
+        post,
+        f"{backend_url}/internal/research-judgment/{task_id}/acp-root/register-agent",
+        payload, headers, timeout)
+    if (not isinstance(receipt, dict)
+            or receipt.get("schema_version") != _AGENT_BIND_RECEIPT_SCHEMA
+            or receipt.get("status") != "bound"
+            or receipt.get("root_run_id") != root_run_id
+            or receipt.get("runtime_boot_id") != runtime_boot_id
+            or receipt.get("native_agent_session_id") != native_root_session_id
+            or receipt.get("native_parent_session_id") is not None
+            or receipt.get("origin") != "root"
+            or receipt.get("depth") != 0
+            or not _matches(_AGENT_RUN_ID, receipt.get("agent_run_id"))):
+        raise AcpJudgmentOutcomeUnknown("ACP judgment Agent registration is not bound")
+    return receipt
+
+
 def submit_result_once(*, backend_url: str, task_id: str, request: dict,
                        headers: dict, transport=None, timeout: float = 8.0) -> dict:
     """Post once, then require exact committed readback even if response was lost."""

@@ -56,6 +56,10 @@ class CleanupImageIdTests(unittest.TestCase):
         shutil.copyfile(FAKE_DOCKER, shim)
         shim.chmod(0o755)
         self.state = Path(self.tmp.name) / "state"
+        self.digests = Path(self.tmp.name) / "digests"
+        self.fail_inspect = ""
+        self.fail_plain_inspect = ""
+        self.fail_ls = ""
         self.log = Path(self.tmp.name) / "docker.log"
         self.log.write_text("", encoding="utf-8")
         self.scope = "cleanupids-" + self._testMethodName.replace("_", "")
@@ -72,6 +76,10 @@ class CleanupImageIdTests(unittest.TestCase):
             "PATH": f"{self.bin}:{os.environ['PATH']}",
             "FAKE_DOCKER_STATE": str(self.state),
             "FAKE_DOCKER_LOG": str(self.log),
+            "FAKE_DOCKER_DIGESTS": str(self.digests),
+            "FAKE_DOCKER_FAIL_INSPECT": self.fail_inspect,
+            "FAKE_DOCKER_FAIL_PLAIN_INSPECT": self.fail_plain_inspect,
+            "FAKE_DOCKER_FAIL_LS": self.fail_ls,
             "BYQ_CI_CLEANUP_MAX_ATTEMPTS": "4",
             "BYQ_CI_CLEANUP_RETRY_SECONDS": "0",
         }
@@ -249,6 +257,98 @@ class CleanupImageIdTests(unittest.TestCase):
         self.assertNotIn(f"image rm {ID_B}", self._log())
         self.assertIn(ID_A, self._images())
         self.assertIn(ID_B, self._images())
+
+    # --------------------------------- defect 3: unreadable reference fail-closed
+    def test_repo_digest_reference_is_conservatively_retained(self) -> None:
+        # A RepoDigest means the image is addressable by another reference that
+        # cleanup cannot prove it owns, so it must never be deleted.
+        tag = f"byq-ci-stack-{self.scope}-backend"
+        self.state.write_text(f"{ID_A}\t{tag}\n", encoding="utf-8")
+        self.digests.write_text(f"{ID_A}\trepo@sha256:{'d' * 64}\n", encoding="utf-8")
+        self._write_manifest(f"backend={ID_A}\n")
+        result = self._run()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(ID_A, self._images(), "an image carrying a RepoDigest must be retained")
+        self.assertNotIn(f"image rm {ID_A}", self._log())
+        self.assertIn("retained shared image id", result.stdout)
+
+    def test_repo_tag_listing_failure_conservatively_retains(self) -> None:
+        # Dangling id (no tag): normally deletable. If the RepoTags listing
+        # inspect fails, deletion cannot be proven safe: the image must be
+        # retained, the id must NOT be misread as a proven shared reference,
+        # and verification must fail closed instead of reporting success.
+        self.state.write_text(f"{ID_A}\t\n", encoding="utf-8")
+        self._write_manifest(f"backend={ID_A}\n")
+        self.fail_inspect = "RepoTags"
+        result = self._run()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(ID_A, self._images(), "unreadable RepoTags must never authorize deletion")
+        self.assertNotIn(f"image rm {ID_A}", self._log())
+        self.assertIn("RepoTags", result.stderr)
+        self.assertIn("verification failed", result.stderr)
+        self.assertNotIn("CI cleanup verified", result.stdout)
+        self.assertTrue(self.manifest.exists(), "unreadable metadata must keep the manifest for retry")
+
+    def test_repo_digest_listing_failure_conservatively_retains(self) -> None:
+        # Own-tag-only id: normally deletable. If the RepoDigests listing
+        # inspect fails, a hidden shared digest cannot be ruled out: retain the
+        # image and fail verification instead of emitting a clean "verified".
+        tag = f"byq-ci-stack-{self.scope}-backend"
+        self.state.write_text(f"{ID_A}\t{tag}\n", encoding="utf-8")
+        self._write_manifest(f"backend={ID_A}\n")
+        self.fail_inspect = "RepoDigests"
+        result = self._run()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(ID_A, self._images(), "unreadable RepoDigests must never authorize deletion")
+        self.assertNotIn(f"image rm {ID_A}", self._log())
+        self.assertIn("RepoDigests", result.stderr)
+        self.assertIn("verification failed", result.stderr)
+        self.assertNotIn("CI cleanup verified", result.stdout)
+        self.assertTrue(self.manifest.exists(), "unreadable metadata must keep the manifest for retry")
+
+    # ---------------------- defect 4: presence query fail-closed, absent positive
+    def test_missing_manifest_id_is_absent_and_verified(self) -> None:
+        # The captured id was already deleted. A successful image listing that
+        # does not contain the exact id PROVES absence, so cleanup must finish
+        # normally, retire the manifest and report verified.
+        self._write_manifest(f"backend={ID_A}\n")  # ID_A is absent from state
+        result = self._run()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn(ID_A, self._images())
+        self.assertNotIn(f"image rm {ID_A}", self._log())
+        self.assertIn("CI cleanup verified", result.stdout)
+        self.assertFalse(self.manifest.exists())
+
+    def test_plain_inspect_failure_on_existing_id_fails_closed(self) -> None:
+        # The captured id is still present but the plain existence inspect fails
+        # (daemon/query error). The image listing still lists the id, so presence
+        # is UNKNOWN: the id must NOT be removed, the manifest must be retained,
+        # and cleanup must fail instead of reporting success.
+        self.state.write_text(f"{ID_A}\t\n", encoding="utf-8")
+        self._write_manifest(f"backend={ID_A}\n")
+        self.fail_plain_inspect = ID_A
+        result = self._run()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(ID_A, self._images(), "unknown presence must never authorize deletion")
+        self.assertNotIn(f"image rm {ID_A}", self._log())
+        self.assertIn("verification failed", result.stderr)
+        self.assertNotIn("CI cleanup verified", result.stdout)
+        self.assertTrue(self.manifest.exists(), "unknown presence must keep the manifest for retry")
+
+    def test_image_list_query_failure_is_unknown_and_fails_closed(self) -> None:
+        # Both the existence inspect AND the listing cross-check fail, so absence
+        # can never be proven: retain the image and manifest and fail closed.
+        self.state.write_text(f"{ID_A}\t\n", encoding="utf-8")
+        self._write_manifest(f"backend={ID_A}\n")
+        self.fail_plain_inspect = ID_A
+        self.fail_ls = "1"
+        result = self._run()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(ID_A, self._images(), "an unreadable listing must never prove absence")
+        self.assertNotIn(f"image rm {ID_A}", self._log())
+        self.assertIn("verification failed", result.stderr)
+        self.assertNotIn("CI cleanup verified", result.stdout)
+        self.assertTrue(self.manifest.exists(), "unknown presence must keep the manifest for retry")
 
 
 if __name__ == "__main__":

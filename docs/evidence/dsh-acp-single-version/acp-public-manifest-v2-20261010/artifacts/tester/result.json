@@ -1,0 +1,67 @@
+{
+  "aggregate_coverage": "The module was not green in a single invocation; 51 module tests passed in filtered-PATH attempts, and the two environment-affected methods both passed individually under normal PATH. No full module rerun was performed.",
+  "completed_at_epoch": 1791597842.8837705,
+  "expected_source": {
+    "scripts/release/images.py": "dc68c24fd4436b0ddeee89b7e7486e8ec1894d3bcc2fb5faee37a9e257f6b783",
+    "scripts/release/manifest.py": "1a93db2e32893d8db0b3d9a937f6b4acb1dfc906a81da0e295feb38808129a62",
+    "tests/architecture/test_release_pipeline.py": "737cb82fe711b6a3ecc41e6604de1a0e26a882e443fc903a1547c55c9a8a54fb"
+  },
+  "git_head": "2d5810973240c5d7692569319c2b5ab337ae2082",
+  "limits": [
+    "no full architecture suite",
+    "no F6/build/provider/network",
+    "only Docker action was authorized config-only Compose parsing; no daemon/build/container/resource operation",
+    "no product source edits"
+  ],
+  "schema": "acp-public-manifest-v2-test-result.v1",
+  "source_after": {
+    "scripts/release/images.py": "dc68c24fd4436b0ddeee89b7e7486e8ec1894d3bcc2fb5faee37a9e257f6b783",
+    "scripts/release/manifest.py": "1a93db2e32893d8db0b3d9a937f6b4acb1dfc906a81da0e295feb38808129a62",
+    "tests/architecture/test_release_pipeline.py": "737cb82fe711b6a3ecc41e6604de1a0e26a882e443fc903a1547c55c9a8a54fb"
+  },
+  "source_before": {
+    "scripts/release/images.py": "dc68c24fd4436b0ddeee89b7e7486e8ec1894d3bcc2fb5faee37a9e257f6b783",
+    "scripts/release/manifest.py": "1a93db2e32893d8db0b3d9a937f6b4acb1dfc906a81da0e295feb38808129a62",
+    "tests/architecture/test_release_pipeline.py": "737cb82fe711b6a3ecc41e6604de1a0e26a882e443fc903a1547c55c9a8a54fb"
+  },
+  "source_freeze_match": true,
+  "source_unchanged": true,
+  "static_checks": {
+    "git_diff_check_exit_code": 0,
+    "git_diff_check_output": "",
+    "py_compile_exit_code": 0,
+    "py_compile_output": ""
+  },
+  "test_attempts": [
+    {
+      "name": "initial module with Docker hidden to honor no-Docker boundary",
+      "raw": "pytest.raw.txt",
+      "result": "FAIL due missing bash in intentionally filtered PATH; 51 passed, 1 skipped, 1 failed; 23 subtests"
+    },
+    {
+      "name": "module retry with bash but still Docker hidden",
+      "raw": "pytest.retry.raw.txt",
+      "result": "FAIL because classifier script also needs cat in PATH; 51 passed, 1 skipped, 1 failed; 23 subtests"
+    },
+    {
+      "command": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "--basetemp",
+        "/tmp/acp-public-manifest-v2-test-20261010/pytest-tmp-two",
+        "tests/architecture/test_release_pipeline.py::ReleasePipelineTests::test_plan_full_and_docs_use_the_same_classifier",
+        "tests/architecture/test_release_pipeline.py::ReleasePipelineTests::test_release_batch_matches_default_acp_compose_config"
+      ],
+      "elapsed_seconds": 0.23,
+      "exit_code": 0,
+      "name": "only the two affected test methods under normal PATH",
+      "passed": 2,
+      "raw": "two-cases.raw.txt",
+      "scope": "classifier case and config-only docker compose config parser; no build/start/daemon resource operation",
+      "skipped": 0
+    }
+  ],
+  "worktree": "/home/jefison/projects/.byq-worktrees/dsh-acp-single-version"
+}

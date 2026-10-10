@@ -3,7 +3,7 @@
   "profile": "byq-research-judgment-acp-0.2.0-rc.2",
   "release_id": "dsh-v0.2.0-rc.2",
   "source_commit": "639ed015397290b3745d163aafe02ffee4aa3f84",
-  "composition_hash": "sha256:92084a92eca42b217992c7f6b7ba129706392bfd5a8a0473077e985bfee72c4e",
+  "composition_hash": "sha256:fb83ce61744343441d1502c72ddfad35c44b7a3ab047ac9dc115e1901e1cc99e",
   "enabled_plugin_ids": [
     "acp",
     "acp-app-startup",

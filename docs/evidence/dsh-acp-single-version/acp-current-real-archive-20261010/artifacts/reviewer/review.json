@@ -1,0 +1,43 @@
+{
+  "scope": "Final-source local Docker save of the retained ACP unified image under three temporary aliases; independent read-only review of existing receipts",
+  "functional": "PASS_LIMITED",
+  "tests": "PASS_LIMITED",
+  "clean_break_architecture": "PASS_LIMITED",
+  "blocking_findings": [],
+  "evidence": {
+    "script_sha256": "1c775ba1dedd2c6a372e039e815e9b5911130085b5dd1797b42bc82fc3f5b89b",
+    "images_py_sha256": "dc68c24fd4436b0ddeee89b7e7486e8ec1894d3bcc2fb5faee37a9e257f6b783",
+    "archive_size_bytes": 806272000,
+    "archive_sha256": "e435117fad3db1b7d65d116a9156cf533a506952aeb5465b20eb0dac3117b37f",
+    "manifest_id": "sha256:15cdf5f97009e21af50c3cfd87d2f8d42af91e8ccaa2a82d57966bc4c2fbc6f5",
+    "config_id": "sha256:a2ba7f82b86233338f1f2a49932f52bec6325f41e9b6b7842515d74f7a132ec3",
+    "three_aliases_same_binding": true,
+    "layer_count_each": 28,
+    "source_input_keys_before_after": 91,
+    "containers_before_after": 26,
+    "running_containers_before_after": 8,
+    "preserved_image_tags_before_after": 15,
+    "alias_cleanup_verified": 3,
+    "archive_removed_after_fsynced_hash_receipt": true,
+    "cleanup_errors": 0,
+    "tester_independent_checks_passed": 13,
+    "original_tool_result_chunk_id": "58911a",
+    "original_tool_exit_code": 0,
+    "original_tool_stdout_matches_result": true
+  },
+  "evidence_paths": [
+    "/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/acp-current-real-archive-20261010-v2-6e43b1/result.json",
+    "/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/acp-current-real-archive-20261010-v2-6e43b1/proof-before-cleanup.json",
+    "/tmp/acp-current-real-archive-test-20261010/independent-audit.json",
+    "/tmp/acp-current-real-archive-test-20261010/execution-tool-result.json",
+    "/tmp/acp-current-real-archive-20261010.py"
+  ],
+  "not_run": [
+    "full 17-service images.export",
+    "docker load into a different image store",
+    "hosted runner qualification",
+    "registry push, read-back, signature, SBOM and publication",
+    "F6 or business provider rerun"
+  ],
+  "qualification_note": "The image archive was deleted after its SHA-256 was recorded in a file- and directory-fsynced pre-cleanup receipt. The reviewer did not reread the deleted tar or run Docker. The saved original tool result records exit code 0 and stdout matching the final receipt; the reviewer verified correspondence but did not independently replay execution."
+}

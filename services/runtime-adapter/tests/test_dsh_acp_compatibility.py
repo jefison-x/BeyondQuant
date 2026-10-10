@@ -15,6 +15,12 @@ from app.compat.dsh_acp import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _select_stdio_transport_for_stdio_contracts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These cases exercise the dedicated stdio and judgment runner paths."""
+    monkeypatch.setenv("BYQ_DSH_ACP_PROCESS_TRANSPORT", "local")
+
+
 _SERVER = r'''import json, os, sys
 
 capture = os.environ.get("ACP_TEST_CAPTURE", os.path.join(os.environ["DSH_HOME"], "wire.jsonl"))
@@ -128,7 +134,7 @@ def _identity_environment(
         "ACP_TEST_ENV_CAPTURE": str(capture.with_name(capture.name + ".env")),
         "BYQ_MCP_URL": "http://mcp.test/mcp/v1",
         "BYQ_MCP_ACP_DISCOVERY_TOKEN": "synthetic-discovery-only-token",
-        "BYQ_MCP_ACP_SIGNING_KEY": "synthetic-signing-key-0123456789abcdef",
+        "BYQ_MCP_ACP_SIGNING_KEY": "synthetic-signing-key-0123456789abcdef",  # gitleaks:allow — fixed synthetic test key
         "BYQ_MCP_TOKEN": "test-only-token",
         "BYQ_MCP_BACKEND_PROOF_TOKEN": "test-only-backend-proof-token",
         "BYQ_RUNTIME_BOOT_ID": boot_id,
@@ -149,7 +155,8 @@ def _harness(tmp_path: Path, capture: Path, *, boot_id: str = "b" * 32):
     composition = tmp_path / "composition.yml"
     composition.write_text("[]\n", encoding="utf-8")
     session_root = tmp_path / "sessions" / "root-1"
-    session_root.mkdir(parents=True)
+    session_root.mkdir(parents=True, mode=0o700)
+    session_root.chmod(0o700)
     compatibility = DshAcpCompatibility()
     harness = compatibility.build_harness(
         provider="deepseek-official",
@@ -173,7 +180,7 @@ def _judgment_identity_environment() -> dict[str, str]:
         "BYQ_MCP_ACP_IDENTITY_MODE": "research-judgment-root-v1",
         "BYQ_MCP_ACP_JUDGMENT_TASK_ID": "task_" + "a" * 32,
         "BYQ_MCP_ACP_JUDGMENT_CALL_IDENTITY": "byq-judgment-" + "b" * 32,
-        "BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY": "synthetic-judgment-signing-key-0123456789",
+        "BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY": "synthetic-judgment-signing-key-0123456789",  # gitleaks:allow — fixed synthetic test key
         "BYQ_RUNTIME_BOOT_ID": "b" * 32,
         "BYQ_OWNER_PRINCIPAL": "owner-1",
         "BYQ_WORKSPACE_ID": "workspace-1",
@@ -193,8 +200,8 @@ def _judgment_private_patch(tmp_path: Path, provider: str, model: str):
     directory = tmp_path / "private"
     directory.mkdir(mode=0o700, exist_ok=True)
     base = "http://127.0.0.1:43210" + selected_route(provider).local_base_path
-    patch = write_private_provider_overlay(directory, route_name=provider,
-                                           model=model, proxy_base_url=base)
+    patch = write_private_provider_overlay(
+        directory, route_name=provider, model=model, proxy_base_url=base)
     return patch, base
 
 
@@ -286,7 +293,8 @@ def test_judgment_identity_mode_is_explicit_and_process_scope_has_only_its_crede
     composition = tmp_path / "judgment-composition.yml"
     composition.write_text("[]\n", encoding="utf-8")
     session_root = tmp_path / "sessions" / "judgment-root"
-    session_root.mkdir(parents=True)
+    session_root.mkdir(parents=True, mode=0o700)
+    session_root.chmod(0o700)
     capture = session_root / "wire.jsonl"
     compatibility = DshAcpCompatibility()
     environment = _judgment_identity_environment()
@@ -521,7 +529,8 @@ def test_judgment_identity_rejects_product_or_stale_credentials_even_when_empty(
     composition = tmp_path / "composition.yml"
     composition.write_text("[]\n", encoding="utf-8")
     session_root = tmp_path / "sessions" / "root-1"
-    session_root.mkdir(parents=True)
+    session_root.mkdir(parents=True, mode=0o700)
+    session_root.chmod(0o700)
     environment = _judgment_identity_environment()
     environment[forbidden_key] = ""
     with pytest.raises(AcpTransportError, match="contains Product credentials"):
@@ -538,7 +547,8 @@ def test_product_identity_cannot_select_the_judgment_root_mode(tmp_path: Path) -
     composition = tmp_path / "composition.yml"
     composition.write_text("[]\n", encoding="utf-8")
     session_root = tmp_path / "sessions" / "root-1"
-    session_root.mkdir(parents=True)
+    session_root.mkdir(parents=True, mode=0o700)
+    session_root.chmod(0o700)
     environment = _identity_environment(capture)
     environment["BYQ_MCP_ACP_IDENTITY_MODE"] = "research-judgment-root-v1"
     with pytest.raises(AcpTransportError, match="Product credentials"):

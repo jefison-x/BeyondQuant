@@ -1,0 +1,168 @@
+# BYQ ACP single-image candidate overlay (evaluation only; NOT auto-loaded).
+#
+# Purpose: demonstrate that one image can serve the adapter / product / judgment
+# roles while every per-service boundary below stays identical to the accepted
+# compose.dsh-acp-rc2-candidate.yml (user, caps, read_only, no-new-privileges,
+# networks, volumes/sockets, per-role secrets and env). Only the build is shared:
+# all three services build the same unified Dockerfile and reference one image
+# tag, so a single build yields one image digest for all three roles.
+#
+# This file is additive and is not included by compose.override.yml. Adopting it
+# in the real release lane is gated on an Accepted ADR and updated container
+# topology / build-identity contract tests.
+
+x-acp-unified-build: &acp-unified-build
+  context: .
+  dockerfile: services/acp_unified/Dockerfile
+  args:
+    BYQ_DSH_BUILD_RELEASE_ID: ${BYQ_DSH_BUILD_RELEASE_ID-}
+    BYQ_DSH_BUILD_SOURCE_COMMIT: ${BYQ_DSH_BUILD_SOURCE_COMMIT-}
+    BYQ_DSH_BUILD_PNPM_LOCK_SHA256: ${BYQ_DSH_BUILD_PNPM_LOCK_SHA256-}
+    BYQ_DSH_BUILD_COMPATIBILITY_FAMILY: ${BYQ_DSH_BUILD_COMPATIBILITY_FAMILY-}
+    BYQ_DSH_BUILD_ADAPTER_PROFILE_PATH: ${BYQ_DSH_BUILD_ADAPTER_PROFILE_PATH-}
+    BYQ_DSH_BUILD_ADAPTER_PROFILE_SHA256: ${BYQ_DSH_BUILD_ADAPTER_PROFILE_SHA256-}
+    BYQ_DSH_BUILD_ADAPTER_PROFILE_IDENTITY_PATH: ${BYQ_DSH_BUILD_ADAPTER_PROFILE_IDENTITY_PATH-}
+    BYQ_DSH_BUILD_ADAPTER_PROFILE_IDENTITY_SHA256: ${BYQ_DSH_BUILD_ADAPTER_PROFILE_IDENTITY_SHA256-}
+    BYQ_DSH_BUILD_ADAPTER_RELEASE_IDENTITY_PATH: ${BYQ_DSH_BUILD_ADAPTER_RELEASE_IDENTITY_PATH-}
+    BYQ_DSH_BUILD_ADAPTER_RELEASE_IDENTITY_SHA256: ${BYQ_DSH_BUILD_ADAPTER_RELEASE_IDENTITY_SHA256-}
+    BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_PATH: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_PATH-}
+    BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_SHA256: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_SHA256-}
+    BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_IDENTITY_PATH: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_IDENTITY_PATH-}
+    BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_IDENTITY_SHA256: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_IDENTITY_SHA256-}
+    BYQ_DSH_BUILD_ORDINARY_RUNNER_RELEASE_IDENTITY_PATH: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_RELEASE_IDENTITY_PATH-}
+    BYQ_DSH_BUILD_ORDINARY_RUNNER_RELEASE_IDENTITY_SHA256: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_RELEASE_IDENTITY_SHA256-}
+    BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_PATH: ${BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_PATH-}
+    BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_SHA256: ${BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_SHA256-}
+    BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_IDENTITY_PATH: ${BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_IDENTITY_PATH-}
+    BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_IDENTITY_SHA256: ${BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_IDENTITY_SHA256-}
+
+services:
+  runtime-adapter:
+    image: ${BYQ_ACP_UNIFIED_IMAGE:-byq-acp-unified:candidate}
+    build: *acp-unified-build
+    cap_drop:
+      - NET_RAW
+    group_add:
+      - "10005"
+      - "10006"
+    user: "10002:10002"
+    environment:
+      BYQ_ACP_ROLE: adapter
+      BYQ_RUNTIME_AUTHORITY_TOKEN: ${BYQ_RUNTIME_AUTHORITY_TOKEN:?BYQ_RUNTIME_AUTHORITY_TOKEN must be set for ACP}
+      BYQ_DSH_COMPATIBILITY_RELEASE: ${BYQ_DSH_BUILD_COMPATIBILITY_FAMILY:?ACP resolver compatibility family is required}
+      DSH_SESSION_ROOT: ${BYQ_DSH_BUILD_SESSION_ROOT:?ACP resolver session root is required}
+      BYQ_RUNTIME_JUDGMENT_TOKEN: ${BYQ_RUNTIME_JUDGMENT_TOKEN:?judgment token required}
+      BYQ_JUDGMENT_ACP_LIFECYCLE_ENABLED: ${BYQ_JUDGMENT_ACP_LIFECYCLE_ENABLED:-0}
+      BYQ_DSH_PROCESS_OWNERSHIP: root-turn
+      BYQ_DSH_ACP_PROCESS_TRANSPORT: product-slot-v1
+      BYQ_ACP_PRODUCT_SLOT_BINDINGS: '{"${BYQ_ACP_PRODUCT_WORKSPACE_ID:?a trusted personal workspace binding is required}":{"socket_path":"/run/byq-acp-product-runner/control.sock","control_secret_env":"BYQ_ACP_PRODUCT_SLOT_PRIMARY_SECRET"}}'
+      BYQ_ACP_PRODUCT_SLOT_PRIMARY_SECRET: ${BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET:?a distinct Product runner secret is required}
+      BYQ_DSH_RUNTIME_ROOT: /opt/dsh-runtime
+      BYQ_CONTINUATION_PROXY_ADVERTISE_HOST: runtime-adapter
+      BYQ_DSH_COMPOSITION: /opt/byq/profiles/byq-product.patch.yml
+      BYQ_DSH_COMPOSITION_IDENTITY: /opt/byq/profiles/byq-product.identity.json
+      BYQ_DSH_RELEASE_IDENTITY: /opt/byq/releases/deployment.identity.json
+      BYQ_MCP_ACP_DISCOVERY_TOKEN: ${BYQ_MCP_ACP_DISCOVERY_TOKEN:?BYQ_MCP_ACP_DISCOVERY_TOKEN must be set for ACP}
+      BYQ_MCP_ACP_SIGNING_KEY: ${BYQ_MCP_ACP_SIGNING_KEY:?BYQ_MCP_ACP_SIGNING_KEY must be set for ACP}
+      BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY: ${BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY:?a dedicated judgment MCP master key is required}
+      BYQ_MCP_ACP_JUDGMENT_URL: http://mcp-acp-judgment:8301/mcp/v1
+      BYQ_ACP_JUDGMENT_RUNNER_SOCKET: /run/byq-acp-runner/control.sock
+      BYQ_ACP_JUDGMENT_RUNNER_CONTROL_SECRET: ${BYQ_ACP_JUDGMENT_RUNNER_CONTROL_SECRET:?a separate runner control secret is required}
+    volumes:
+      - byq_acp_runner_control:/run/byq-acp-runner
+      - byq_acp_product_control:/run/byq-acp-product-runner
+      - type: volume
+        source: byq_acp_product_sessions
+        target: ${BYQ_DSH_BUILD_SESSION_ROOT:?ACP resolver session root is required}/${BYQ_ACP_PRODUCT_WORKSPACE_ID:?a trusted personal workspace binding is required}
+    networks:
+      - byq_product
+      - byq_acp_judgment
+
+  acp-product-runner:
+    image: ${BYQ_ACP_UNIFIED_IMAGE:-byq-acp-unified:candidate}
+    build: *acp-unified-build
+    user: "0:0"
+    read_only: true
+    restart: unless-stopped
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, KILL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      BYQ_ACP_ROLE: product
+      BYQ_DSH_PROCESS_OWNERSHIP: workspace-slot
+      BYQ_DSH_COMPOSITION: /opt/byq/profiles/byq-product.patch.yml
+      BYQ_DSH_COMPOSITION_IDENTITY: /opt/byq/profiles/byq-product.identity.json
+      BYQ_DSH_RELEASE_IDENTITY: /opt/byq/releases/deployment.identity.json
+      DSH_MAX_TOKENS_AS_SUCCESS: "false"
+      BYQ_ACP_PRODUCT_WORKSPACE_ID: ${BYQ_ACP_PRODUCT_WORKSPACE_ID:?a trusted personal workspace binding is required}
+      BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET: ${BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET:?a distinct Product runner secret is required}
+    volumes:
+      - type: volume
+        source: byq_acp_product_sessions
+        target: ${BYQ_DSH_BUILD_SESSION_ROOT:?ACP resolver session root is required}/${BYQ_ACP_PRODUCT_WORKSPACE_ID:?a trusted personal workspace binding is required}
+      - byq_acp_product_state:/var/lib/byq/acp-product-runner-state
+      - byq_acp_product_control:/run/byq-acp-product-runner
+    tmpfs:
+      - /tmp:size=32m,mode=1777,noexec,nosuid,nodev
+    networks: [byq_product]
+    healthcheck:
+      test: [CMD, python3, -c, "import os; from pathlib import Path; p=Path('/run/byq-acp-product-runner/ready'); raise SystemExit(0 if p.is_file() and p.read_text()==os.environ['BYQ_ACP_PRODUCT_WORKSPACE_ID']+'\\n' else 1)"]
+      interval: 5s
+      timeout: 2s
+      retries: 12
+      start_period: 10s
+
+  acp-judgment-runner:
+    image: ${BYQ_ACP_UNIFIED_IMAGE:-byq-acp-unified:candidate}
+    build: *acp-unified-build
+    user: "0:0"
+    read_only: true
+    restart: unless-stopped
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, KILL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      BYQ_ACP_ROLE: judgment
+      DSH_MAX_TOKENS_AS_SUCCESS: "false"
+      BYQ_ACP_JUDGMENT_RUNNER_CONTROL_SECRET: ${BYQ_ACP_JUDGMENT_RUNNER_CONTROL_SECRET:?a separate runner control secret is required}
+    volumes:
+      - byq_acp_judgment_sessions:/var/lib/byq/acp-judgment-sessions
+      - byq_acp_runner_state:/var/lib/byq/acp-runner-state
+      - byq_acp_runner_control:/run/byq-acp-runner
+    tmpfs:
+      - /tmp:size=32m,mode=1777,noexec,nosuid,nodev
+    networks:
+      - byq_acp_judgment
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - "from pathlib import Path; p=Path('/run/byq-acp-runner/ready'); raise SystemExit(0 if p.is_file() and p.read_bytes()==b'ready\\n' else 1)"
+      interval: 5s
+      timeout: 2s
+      retries: 12
+      start_period: 10s
+
+networks:
+  byq_product:
+    name: ${BYQ_ACP_SINGLE_IMAGE_PRODUCT_NETWORK_NAME:-beyondquant-single-image-product}
+    driver: bridge
+  byq_acp_judgment:
+    name: ${BYQ_ACP_SINGLE_IMAGE_JUDGMENT_NETWORK_NAME:-beyondquant-single-image-acp-judgment}
+    driver: bridge
+    internal: true
+
+volumes:
+  byq_acp_product_sessions:
+    name: ${BYQ_ACP_SINGLE_IMAGE_PRODUCT_SESSIONS_VOLUME_NAME:-beyondquant-single-image-acp-product-sessions}
+  byq_acp_product_state:
+    name: ${BYQ_ACP_SINGLE_IMAGE_PRODUCT_STATE_VOLUME_NAME:-beyondquant-single-image-acp-product-state}
+  byq_acp_product_control:
+    name: ${BYQ_ACP_SINGLE_IMAGE_PRODUCT_CONTROL_VOLUME_NAME:-beyondquant-single-image-acp-product-control}
+  byq_acp_judgment_sessions:
+    name: ${BYQ_ACP_SINGLE_IMAGE_JUDGMENT_SESSIONS_VOLUME_NAME:-beyondquant-single-image-acp-judgment-sessions}
+  byq_acp_runner_control:
+    name: ${BYQ_ACP_SINGLE_IMAGE_RUNNER_CONTROL_VOLUME_NAME:-beyondquant-single-image-acp-runner-control}
+  byq_acp_runner_state:
+    name: ${BYQ_ACP_SINGLE_IMAGE_RUNNER_STATE_VOLUME_NAME:-beyondquant-single-image-acp-runner-state}

@@ -1,0 +1,17 @@
+{
+  "decision": "LIMITED_PASS",
+  "scope": "final-source real three-alias archive/parser/source binding",
+  "source_sha256": "dc68c24fd4436b0ddeee89b7e7486e8ec1894d3bcc2fb5faee37a9e257f6b783",
+  "script_sha256": "1c775ba1dedd2c6a372e039e815e9b5911130085b5dd1797b42bc82fc3f5b89b",
+  "archive_sha256": "e435117fad3db1b7d65d116a9156cf533a506952aeb5465b20eb0dac3117b37f",
+  "script_receipt_status": "PASS",
+  "tester_reported_exec_exit_code": 0,
+  "original_exec_return_independently_saved": true,
+  "reviewer": "LIMITED_PASS_NO_P1_P2",
+  "source_inputs": 91,
+  "full_17_export": "NOT_RUN",
+  "cross_store_load": "NOT_RUN",
+  "hosted_registry_attestation": "NOT_RUN",
+  "single_image_default_adoption_deployment": "NOT_RUN",
+  "overall": "NOT_READY"
+}

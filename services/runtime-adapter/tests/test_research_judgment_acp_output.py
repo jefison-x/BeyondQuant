@@ -66,6 +66,20 @@ def test_widened_or_non_exact_json_never_becomes_a_result(text):
         output.result("completed")
 
 
+def test_completed_turn_with_a_forbidden_proposal_routing_field_never_commits():
+    # Exact fixture10 window: the model returned exact top-level JSON with a
+    # proposal carrying a forbidden routing field, so the proposal is invalid
+    # and no result is committed (the root settles outcome_unknown fail-closed).
+    proposal = {**_proposal(), "next_action": "execute"}
+    output = AcpJudgmentRootOutput(NATIVE)
+    output.observe(_start())
+    output.observe(_answer(json.dumps(
+        {"proposal": proposal, "durable_evidence": {"kind": "none"}})))
+    output.observe(_end())
+    with pytest.raises(ResearchJudgmentError, match="proposal is invalid"):
+        output.result("completed")
+
+
 def test_cancel_unknown_or_missing_terminal_cannot_commit():
     for finish, terminal in (("cancelled", "cancelled"), ("failed", "failed"),
                              ("completed", None)):
@@ -78,19 +92,64 @@ def test_cancel_unknown_or_missing_terminal_cannot_commit():
             output.result(finish)
 
 
-def test_second_answer_or_child_activity_fails_before_result():
+def test_tool_use_turn_accepts_the_last_complete_root_answer():
     output = AcpJudgmentRootOutput(NATIVE)
+    final = {"proposal": _proposal(), "durable_evidence": {"kind": "none"}}
+    output.observe(_start())
+    # Intermediate narration and tool protocol are process evidence only.
+    output.observe(_answer("I'll gather the bounded read-only context."))
+    output.observe(RuntimeObservation(kind="tool.call", session_id=NATIVE,
+                                      root_session=True, runtime_activity=True))
+    output.observe(RuntimeObservation(kind="tool.result", session_id=NATIVE,
+                                      root_session=True, runtime_activity=True))
+    output.observe(_answer(json.dumps(final)))
+    output.observe(_end())
+    assert output.result("completed") == final
+
+
+def test_multiple_root_messages_use_the_last_and_child_is_rejected():
+    output = AcpJudgmentRootOutput(NATIVE)
+    final = {"proposal": None, "durable_evidence": {"kind": "none"}}
     output.observe(_start())
     output.observe(_answer('{"proposal":null,"durable_evidence":{"kind":"none"}}'))
-    with pytest.raises(ResearchJudgmentError, match="single complete root answer"):
-        output.observe(_answer('{"proposal":null,"durable_evidence":{"kind":"none"}}'))
-    with pytest.raises(ResearchJudgmentError, match="did not return a completed"):
-        output.result("completed")
+    # A later complete root message replaces the candidate; the last one wins.
+    output.observe(_answer(json.dumps(final)))
+    output.observe(_end())
+    assert output.result("completed") == final
     child_output = AcpJudgmentRootOutput(NATIVE)
     child = RuntimeObservation(kind="private.activity", session_id="other-child",
                                root_session=False, runtime_activity=True)
     with pytest.raises(ResearchJudgmentError, match="foreign session"):
         child_output.observe(child)
+
+
+def test_last_message_invalid_json_never_falls_back_to_an_earlier_valid_one():
+    output = AcpJudgmentRootOutput(NATIVE)
+    output.observe(_start())
+    output.observe(_answer('{"proposal":null,"durable_evidence":{"kind":"none"}}'))
+    output.observe(_answer("I could not produce a bounded judgment."))
+    output.observe(_end())
+    with pytest.raises(ResearchJudgmentError):
+        output.result("completed")
+
+
+def test_message_after_terminal_is_not_accepted():
+    output = AcpJudgmentRootOutput(NATIVE)
+    output.observe(_start())
+    output.observe(_answer('{"proposal":null,"durable_evidence":{"kind":"none"}}'))
+    output.observe(_end())
+    with pytest.raises(ResearchJudgmentError, match="answer update is invalid"):
+        output.observe(_answer('{"proposal":null,"durable_evidence":{"kind":"none"}}'))
+    with pytest.raises(ResearchJudgmentError, match="did not return a completed"):
+        output.result("completed")
+
+
+def test_intermediate_messages_without_normal_completion_never_commit():
+    output = AcpJudgmentRootOutput(NATIVE)
+    output.observe(_start())
+    output.observe(_answer("I'll gather the bounded read-only context."))
+    with pytest.raises(ResearchJudgmentError, match="did not return a completed"):
+        output.result("completed")
 
 
 def test_ignored_update_with_foreign_session_still_fails_closed():
@@ -119,7 +178,7 @@ def test_oversized_answer_is_rejected_before_json_parse():
 
 def test_answer_before_root_start_irrevocably_fails():
     output = AcpJudgmentRootOutput(NATIVE)
-    with pytest.raises(ResearchJudgmentError, match="single complete root answer"):
+    with pytest.raises(ResearchJudgmentError, match="answer update is invalid"):
         output.observe(_answer('{"proposal":null,"durable_evidence":{"kind":"none"}}'))
     with pytest.raises(ResearchJudgmentError, match="did not return a completed"):
         output.result("completed")

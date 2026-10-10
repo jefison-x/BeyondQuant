@@ -1,0 +1,19 @@
+# Authoritative ACP build wiring — 2026-10-09
+
+Tester / independent Reviewer / Root bounded PASS for source and Compose configuration. Actual complete-image build is running separately; no built-image or default-promotion PASS is claimed here.
+
+The strict authoritative manifest resolver now supplies the three candidate Docker build roles, exact official release/commit/lock, compatibility family and profile/identity hashes. Each Dockerfile checks the copied manifest context before cloning the official source and verifies the installed identity/profile hashes. Caller-supplied build selectors are replaced by validated values. Runtime authentication environment remains separate.
+
+Independent offline evidence: initial resolver/build suite 11 PASS; after the merged Compose bug was corrected, only the affected three tests reran, 3 PASS. Worker final focused suite 13 PASS. Copied build context validated for three roles and rejected tampered values. Shell syntax and diff checks passed. See INDEPENDENT-COMPOSE.md for exact source hashes and the final three-test commands.
+
+The first candidate-overlay draft relied on Docker ENV while base Compose explicitly injected the SDK family. Review caught this before startup; the corrected overlay explicitly requires resolver ACP family/session root and rejects missing helper values. This failure/fix is retained in private snapshots. Existing qualification wrapper was backed up and changed to invoke the same resolver command environment before using the overlay. Its config-only test passed with the current pinned images; no model was submitted by that check.
+
+This slice changes only explicit ACP candidate build consumers and one candidate CI build command. Default runtime/Compose/dev/CI and trusted-main Release consumers are not yet qualified or fully migrated. Candidate has 18 Compose services; the current default Release image list does not yet cover all candidate roles. Full image source/dependency identity, tested-batch release mapping, runtime cutover and offline rollback still require their own gates. No push, main modification, merge, release/tag or deployment occurred.
+
+## Complete official Adapter source build follow-up
+
+Complete fixed official build exit0; independent read-only Tester/Reviewer/Root bounded artifact-identity PASS for image `sha256:9112eb955ff4bb0465bf9b98e70d0b107a74ad36541d16f7ee4330d869db6d4f`. Actual source stamp, frozen pnpm lock, installed Product/deployment profiles, CLI, UID/GID10002, absence of Python DSH SDK distributions and dependency freeze match. See ADAPTER-BUILD-IDENTITY.json. It contains frozen pre-retirement Runtime source34c43, different from current972f0; this does **not** qualify the new Runtime source or Full Release. A first no-network observer failed by reading a build-stage-only manifest path; corrected final-image file checks used the build receipt and actual installed hashes. Original failure is retained privately.
+
+## Complete official Product runner follow-up
+
+Complete fixed official Product runner build exit0, image `sha256:693c7bfd2f0dd64c45fc84d7f950886ddfe6294783e62977afb2eb5ed666b0dd`. Root and independent Tester read-only artifact checks PASS: official source/lock/Product/deployment profile hashes, both runner server hashes match current source, two Python SDK distribution names are each independently absent, controller inspection UID0 and configured DSH child UID/GID10002. The observer did not start a controller, DSH or model; configured child identity is not an actual child launch proof. No-network/RO/cap-drop/no-new-privileges output matched exactly across inspectors. Judgment runner complete build remains NOT_RUN for the new build wiring; current Runtime-source image and Full tested-batch qualification remain NOT_RUN. Existing paid acceptance is not rerun here.

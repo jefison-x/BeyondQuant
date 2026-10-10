@@ -118,7 +118,8 @@ def _observe_tool(store: AgentResearchStore, ctx: dict[str, str], identity: dict
 
 
 def _settle_tool(store: AgentResearchStore, ctx: dict[str, str], identity: dict[str, object],
-                 receipt: dict[str, object], outcome: str = "settled") -> dict:
+                 receipt: dict[str, object], outcome: str = "settled",
+                 refusal_receipt: dict[str, object] | None = None) -> dict:
     body = {"schema_version": "byq-acp-tool-ingress-settle.v1",
         "mcp_request_id": receipt["mcp_request_id"], "root_run_id": receipt["root_run_id"],
         "runtime_boot_id": receipt["runtime_boot_id"],
@@ -126,7 +127,370 @@ def _settle_tool(store: AgentResearchStore, ctx: dict[str, str], identity: dict[
             "native_parent_session_id", "origin", "depth")},
         "tool_name": receipt["tool_name"], "sequence": receipt["sequence"],
         "event_sha256": receipt["event_sha256"], "outcome": outcome}
+    if outcome == "denied":
+        body["refusal_receipt"] = refusal_receipt
     return store.settle_acp_tool_ingress(body, trusted_scope=_scope(ctx, identity["root_run_id"]))
+
+
+def _authorize_tool(store: AgentResearchStore, ctx: dict[str, str], identity: dict[str, object],
+                    observed: dict[str, object], arguments: dict[str, object]) -> dict:
+    native_identity = {key: identity[key] for key in ("root_run_id", "runtime_boot_id",
+        "native_root_session_id", "native_agent_session_id", "native_parent_session_id", "origin", "depth")}
+    return store.authorize_acp_agent_tool({"schema_version": "byq-acp-agent-authorize.v1",
+        "mcp_request_id": observed["mcp_request_id"], "arguments": arguments},
+        trusted_scope=_scope(ctx, identity["root_run_id"]), trusted_identity=native_identity)
+
+
+def test_acp_role_denial_receipt_is_durable_idempotent_and_terminally_settled():
+    ctx = _context("authorize-denial")
+    store = AgentResearchStore()
+    try:
+        authority = store.rotate_runtime_authority(uuid4().hex)
+        ctx["x-byq-runtime-boot-id"] = authority["boot_id"]
+        root_native = str(uuid4())
+        root, root_identity = _open_root(store, ctx, f"acp-root-{uuid4().hex}", root_native)
+        _bind(store, ctx, root_identity)
+        arguments = {"run_id": root_identity["agent_run_id"],
+            "action": "byq_ml_training_create", "resource_type": "training_run",
+            "resource_id": "training-never-created"}
+        observed = _observe_tool(store, ctx, root_identity, "byq_agent_authorize", arguments)
+
+        with pytest.raises(ValueError, match="reserved ACP control evidence"):
+            store.record_audit({"run_id": root_identity["agent_run_id"], "action": "forged",
+                "outcome": "denied", "detail": {"nested": {"acp_control": {
+                    "mcp_request_id": observed["mcp_request_id"]}}}},
+                trusted_owner=ctx["x-byq-owner-principal"], trusted_actor=ctx["x-byq-actor-principal"])
+        assert store._fetch_one("SELECT count(*) AS n FROM agent_audit WHERE run_id=:run AND action='forged'",
+            {"run": root_identity["agent_run_id"]})["n"] == 0
+
+        result = _authorize_tool(store, ctx, root_identity, observed, arguments)
+        assert set(result) == {"status", "authorization", "refusal_receipt"}
+        assert result["status"] == "denied"
+        assert result["authorization"] == {"authorized": False, "decision": "denied",
+            "run_id": root_identity["agent_run_id"], "role_id": "quant_orchestrator",
+            "action": "byq_ml_training_create"}
+        refusal = result["refusal_receipt"]
+        assert set(refusal) == {"schema_version", "mcp_request_id", "root_run_id",
+            "runtime_boot_id", "native_agent_session_id", "agent_run_id", "tool_name",
+            "arguments_sha256", "event_sha256", "reason", "outcome", "audit_id", "receipt_sha256"}
+        assert refusal["schema_version"] == "byq-acp-authorization-denial-receipt.v1"
+        assert refusal["mcp_request_id"] == observed["mcp_request_id"]
+        assert refusal["root_run_id"] == root
+        assert refusal["native_agent_session_id"] == root_native
+        assert refusal["agent_run_id"] == root_identity["agent_run_id"]
+        assert refusal["tool_name"] == "byq_agent_authorize"
+        assert refusal["reason"] == "role_tool_not_allowed" and refusal["outcome"] == "denied"
+        assert refusal["receipt_sha256"] == acp_binding_sha256({
+            key: value for key, value in refusal.items() if key != "receipt_sha256"})
+
+        audit = store._fetch_one("SELECT * FROM agent_audit WHERE audit_id=:id",
+            {"id": refusal["audit_id"]})
+        assert audit["run_id"] == root_identity["agent_run_id"]
+        assert audit["outcome"] == "denied"
+        assert audit["detail_json"]["reason"] == "role_tool_not_allowed"
+        assert audit["detail_json"]["acp_control"]["refusal_receipt"] == refusal
+        assert _authorize_tool(store, ctx, root_identity, observed, arguments) == result
+        assert store._fetch_one("SELECT count(*) AS n FROM agent_audit WHERE detail_json->'acp_control'->>'mcp_request_id'=:id",
+            {"id": observed["mcp_request_id"]})["n"] == 1
+        assert store._fetch_one("SELECT count(*) AS n FROM agent_approvals")["n"] == 0
+
+        settled = _settle_tool(store, ctx, root_identity, observed, "denied", refusal)
+        assert settled["outcome"] == "denied"
+        assert settled["refusal_receipt_sha256"] == refusal["receipt_sha256"]
+        assert _settle_tool(store, ctx, root_identity, observed, "denied", refusal) == settled
+        with pytest.raises(AgentConflict, match="already fixed"):
+            _settle_tool(store, ctx, root_identity, observed, "settled")
+        ingress = store._fetch_one("SELECT status,settlement_json FROM agent_acp_tool_ingress_observations WHERE mcp_request_id=:id",
+            {"id": observed["mcp_request_id"]})
+        assert ingress["status"] == "settled"
+        assert ingress["settlement_json"] == settled
+        assert store._fetch_one("SELECT count(*) AS n FROM agent_domain_call_claims WHERE root_run_id=:root",
+            {"root": root})["n"] == 0
+
+        terminal = {"schema_version": "agent-run-lifecycle.v1", "root_run_id": root,
+            "sequence": 2, "outcome": "completed"}
+        store.consume_runtime_lifecycle_event(terminal,
+            trusted_owner=ctx["x-byq-owner-principal"], trusted_workspace=ctx["x-byq-workspace-id"],
+            trusted_session_id=ctx["x-byq-session-id"], trusted_trace_id=ctx["x-byq-trace-id"],
+            trusted_boot_id=authority["boot_id"])
+        root_row = store._fetch_one("SELECT status,terminal_acp_ingress_sequence,terminal_acp_ingress_sha256 FROM agent_runtime_turns WHERE root_run_id=:root",
+            {"root": root})
+        assert root_row["status"] == "completed"
+        assert root_row["terminal_acp_ingress_sequence"] == 1
+        assert root_row["terminal_acp_ingress_sha256"] == acp_binding_sha256({
+            "schema_version": "byq-acp-root-ingress-cursor.v1", "root_run_id": root,
+            "sequence": 1, "events": [{"sequence": 1, "event_sha256": observed["event_sha256"],
+                "kind": "tool_ingress", "status": "settled", "outcome": "denied",
+                "settlement_sha256": settled["settlement_sha256"]}],
+        })
+        with pytest.raises(AgentConflict, match="not active under current Backend authority"):
+            _authorize_tool(store, ctx, root_identity, observed, arguments)
+        store.rotate_runtime_authority(uuid4().hex)
+        with pytest.raises(AgentConflict, match="no longer current Backend authority"):
+            _authorize_tool(store, ctx, root_identity, observed, arguments)
+        assert store._fetch_one("SELECT status,settlement_json->>'outcome' AS outcome FROM agent_acp_tool_ingress_observations WHERE mcp_request_id=:id",
+            {"id": observed["mcp_request_id"]}) == {"status": "settled", "outcome": "denied"}
+    finally:
+        store.close()
+
+
+def test_acp_lost_denial_settlement_ack_closes_root_child_with_exact_terminal_cursor(monkeypatch):
+    """A Backend commit may close after a lost settlement ACK, with exact root/child evidence."""
+    from fastapi.testclient import TestClient
+    from app import main
+
+    ctx = _context("lost-denial-settlement-ack")
+    store = AgentResearchStore()
+    monkeypatch.setattr(main, "agent_store", store)
+    monkeypatch.setattr(main, "RUNTIME_AUTHORITY_TOKEN", "test-runtime-authority")
+    try:
+        authority = store.rotate_runtime_authority(uuid4().hex)
+        ctx["x-byq-runtime-boot-id"] = authority["boot_id"]
+        root_native = str(uuid4())
+        root, root_identity = _open_root(store, ctx, f"lost-denial-root-{uuid4().hex}", root_native)
+        _bind(store, ctx, root_identity)
+        child = _child(store, ctx, root, root_native, f"lost-denial-child-{uuid4().hex}")
+        _bind(store, ctx, child)
+
+        ingress_by_agent = []
+        for identity in (root_identity, child):
+            arguments = {"run_id": identity["agent_run_id"], "action": "byq_ml_training_create",
+                "resource_type": "training_run", "resource_id": f"denied-{identity['agent_run_id']}"}
+            ingress = _observe_tool(store, ctx, identity, "byq_agent_authorize", arguments)
+            authorization = _authorize_tool(store, ctx, identity, ingress, arguments)
+            assert authorization["status"] == "denied"
+            assert authorization["refusal_receipt"]["agent_run_id"] == identity["agent_run_id"]
+
+            # Model a lost Backend HTTP response by discarding the Store return after its commit.
+            # The real MCP lost-response behavior is covered by the earlier bridge evidence in
+            # docs/evidence/dsh-acp-single-version/adr0109-20261008/tester-bridge.log and
+            # tester-ledger.json; this test does not rerun MCP or claim its local unknown state.
+            _settle_tool(store, ctx, identity, ingress, "denied", authorization["refusal_receipt"])
+            ingress_by_agent.append((identity, ingress, authorization["refusal_receipt"]))
+
+        persisted = store._execute("""SELECT sequence,event_sha256,agent_run_id,native_agent_session_id,
+                status,settlement_json FROM agent_acp_tool_ingress_observations
+            WHERE root_run_id=:root ORDER BY sequence""", {"root": root})
+        assert len(persisted) == 2
+        assert [row["agent_run_id"] for row in persisted] == [
+            root_identity["agent_run_id"], child["agent_run_id"]]
+        assert [row["native_agent_session_id"] for row in persisted] == [
+            root_native, child["native_agent_session_id"]]
+        assert all(row["status"] == "settled" for row in persisted)
+        for row, (identity, ingress, refusal) in zip(persisted, ingress_by_agent):
+            settlement_payload = {"mcp_request_id": ingress["mcp_request_id"], "root_run_id": root,
+                "runtime_boot_id": authority["boot_id"],
+                "native_agent_session_id": identity["native_agent_session_id"],
+                "tool_name": "byq_agent_authorize", "sequence": ingress["sequence"],
+                "event_sha256": ingress["event_sha256"], "outcome": "denied",
+                "refusal_receipt_sha256": refusal["receipt_sha256"]}
+            expected_settlement = {"schema_version": "byq-acp-tool-ingress-settle-receipt.v1",
+                **settlement_payload, "settlement_sha256": acp_binding_sha256(settlement_payload)}
+            assert row["settlement_json"] == expected_settlement
+        assert store._fetch_one("SELECT count(*) AS n FROM agent_domain_call_claims WHERE root_run_id=:root",
+            {"root": root})["n"] == 0
+
+        cursor_events = [{"sequence": row["sequence"], "event_sha256": row["event_sha256"],
+            "kind": "tool_ingress", "status": row["status"],
+            "outcome": row["settlement_json"]["outcome"],
+            "settlement_sha256": row["settlement_json"]["settlement_sha256"]} for row in persisted]
+        expected_cursor_sha256 = acp_binding_sha256({
+            "schema_version": "byq-acp-root-ingress-cursor.v1", "root_run_id": root,
+            "sequence": len(persisted), "events": cursor_events})
+
+        client = TestClient(main.app)
+        close_body = {"schema_version": "byq-runtime-root-close.v1", "boot_id": authority["boot_id"],
+            "sequence": 2, "outcome": "interrupted", "event_sha256": "a" * 64}
+        close_headers = {"Authorization": "Bearer test-runtime-authority"}
+        close_response = client.post(f"/internal/runtime-authority/roots/{root}/close",
+            headers=close_headers, json=close_body)
+        assert close_response.status_code == 200, close_response.text
+        close_receipt = {"schema_version": "agent-run-lifecycle-receipt.v1", "sequence": 2,
+            "root_run_id": root, "event_sha256": "a" * 64}
+        assert close_response.json() == {"receipt": close_receipt}
+        # Exact terminal retry must return the same ACK, and Backend readback must expose
+        # the cursor containing both durable denied settlements.
+        assert client.post(f"/internal/runtime-authority/roots/{root}/close",
+            headers=close_headers, json=close_body).json() == {"receipt": close_receipt}
+        root_row = store._fetch_one("""SELECT status,authority_status,terminal_sequence,
+                terminal_event_sha256,terminal_acp_ingress_sequence,terminal_acp_ingress_sha256,
+                terminal_unknown_claim_count FROM agent_runtime_turns WHERE root_run_id=:root""",
+            {"root": root})
+        assert root_row == {"status": "interrupted", "authority_status": "closed",
+            "terminal_sequence": 2, "terminal_event_sha256": "a" * 64,
+            "terminal_acp_ingress_sequence": 2,
+            "terminal_acp_ingress_sha256": expected_cursor_sha256,
+            "terminal_unknown_claim_count": 0}
+        readback = client.get(f"/internal/runtime-authority/sessions/{ctx['x-byq-session-id']}/roots",
+            headers={**close_headers, "x-byq-owner-principal": ctx["x-byq-owner-principal"],
+                "x-byq-workspace-id": ctx["x-byq-workspace-id"],
+                "x-byq-trace-id": ctx["x-byq-trace-id"]})
+        assert readback.status_code == 200, readback.text
+        projected = next(item for item in readback.json()["roots"] if item["root_run_id"] == root)
+        assert projected["status"] == "interrupted"
+        assert projected["terminal_acp_ingress_sequence"] == 2
+        assert projected["terminal_acp_ingress_sha256"] == expected_cursor_sha256
+        # This is Backend terminal evidence only; adapter process-cleanup proof remains a separate gate.
+    finally:
+        store.close()
+
+
+def test_acp_lost_authorization_response_unknown_still_fences_close_and_new_root(monkeypatch):
+    """An unknown authorization response stays immutable and blocks the Workspace slot."""
+    from fastapi.testclient import TestClient
+    from app import main
+
+    ctx = _context("lost-denial-authorization-response")
+    store = AgentResearchStore()
+    main_token = "test-runtime-authority-unknown"
+    try:
+        authority = store.rotate_runtime_authority(uuid4().hex)
+        ctx["x-byq-runtime-boot-id"] = authority["boot_id"]
+        root_native = str(uuid4())
+        root, identity = _open_root(store, ctx, f"lost-auth-root-{uuid4().hex}", root_native)
+        _bind(store, ctx, identity)
+        arguments = {"run_id": identity["agent_run_id"], "action": "byq_ml_training_create",
+            "resource_type": "training_run", "resource_id": "lost-authorization-response"}
+        ingress = _observe_tool(store, ctx, identity, "byq_agent_authorize", arguments)
+
+        # Model the previously observed bridge case: Backend commits the denial audit,
+        # but the authorization HTTP response is lost before MCP can settle it as denied.
+        # See tester-bridge.log; this Store-only test does not rerun MCP.
+        _authorize_tool(store, ctx, identity, ingress, arguments)
+        unknown = _settle_tool(store, ctx, identity, ingress, "unknown")
+        assert unknown["outcome"] == "unknown"
+        stored_before = store._fetch_one("""SELECT status,settlement_json FROM agent_acp_tool_ingress_observations
+            WHERE mcp_request_id=:id""", {"id": ingress["mcp_request_id"]})
+        assert stored_before == {"status": "unknown", "settlement_json": unknown}
+        with pytest.raises(AgentConflict, match="unknown ACP tool ingress cannot receive authorization proof"):
+            _authorize_tool(store, ctx, identity, ingress, arguments)
+        with pytest.raises(AgentConflict, match="unknown ACP tool ingress cannot be rewritten"):
+            _settle_tool(store, ctx, identity, ingress, "denied", {})
+
+        monkeypatch.setattr(main, "agent_store", store)
+        monkeypatch.setattr(main, "RUNTIME_AUTHORITY_TOKEN", main_token)
+        close_response = TestClient(main.app).post(
+            f"/internal/runtime-authority/roots/{root}/close",
+            headers={"Authorization": f"Bearer {main_token}"},
+            json={"schema_version": "byq-runtime-root-close.v1", "boot_id": authority["boot_id"],
+                "sequence": 2, "outcome": "interrupted", "event_sha256": "b" * 64})
+        assert close_response.status_code == 409
+        assert close_response.json() == {"detail": "pending or unknown ACP tool ingress prevents root close"}
+        admission = store.workspace_agent_admission(
+            owner_principal=ctx["x-byq-owner-principal"], workspace_id=ctx["x-byq-workspace-id"],
+            root_run_id=uuid4().hex, session_id=ctx["x-byq-session-id"], boot_id=authority["boot_id"])
+        assert admission["can_start"] is False
+        stored_after = store._fetch_one("""SELECT status,settlement_json FROM agent_acp_tool_ingress_observations
+            WHERE mcp_request_id=:id""", {"id": ingress["mcp_request_id"]})
+        assert stored_after == stored_before
+        assert store._fetch_one("SELECT status FROM agent_runtime_turns WHERE root_run_id=:root",
+            {"root": root})["status"] == "active"
+    finally:
+        store.close()
+
+
+def test_acp_authorization_refuses_sibling_changed_input_and_unknown_ingress():
+    ctx = _context("authorize-isolation")
+    store = AgentResearchStore()
+    try:
+        authority = store.rotate_runtime_authority(uuid4().hex)
+        ctx["x-byq-runtime-boot-id"] = authority["boot_id"]
+        root_native = str(uuid4())
+        root, root_identity = _open_root(store, ctx, f"acp-root-{uuid4().hex}", root_native)
+        _bind(store, ctx, root_identity)
+        child_a = _child(store, ctx, root, root_native, f"acp-child-{uuid4().hex}")
+        _bind(store, ctx, child_a)
+        child_b = _child(store, ctx, root, root_native, f"acp-child-{uuid4().hex}")
+        _bind(store, ctx, child_b)
+        arguments = {"run_id": child_a["agent_run_id"], "action": "byq_strategy_approve",
+            "resource_type": "strategy_version", "resource_id": "strategy-never-approved"}
+        observed = _observe_tool(store, ctx, child_a, "byq_agent_authorize", arguments)
+
+        with pytest.raises(AgentConflict, match="exact observed request identity or input"):
+            _authorize_tool(store, ctx, child_b, observed, arguments)
+        changed = {**arguments, "resource_id": "changed-input"}
+        with pytest.raises(AgentConflict, match="exact observed request identity or input"):
+            _authorize_tool(store, ctx, child_a, observed, changed)
+        mismatched_run_arguments = {**arguments, "run_id": child_b["agent_run_id"]}
+        mismatched_run = _observe_tool(store, ctx, child_a,
+            "byq_agent_authorize", mismatched_run_arguments)
+        with pytest.raises(AgentConflict, match="run_id does not match native AgentRun"):
+            _authorize_tool(store, ctx, child_a, mismatched_run, mismatched_run_arguments)
+        assert store._fetch_one("SELECT count(*) AS n FROM agent_audit WHERE detail_json->'acp_control'->>'mcp_request_id'=:id",
+            {"id": observed["mcp_request_id"]})["n"] == 0
+        assert store._fetch_one("SELECT count(*) AS n FROM agent_audit WHERE detail_json->'acp_control'->>'mcp_request_id'=:id",
+            {"id": mismatched_run["mcp_request_id"]})["n"] == 0
+
+        unknown_arguments = {"run_id": root_identity["agent_run_id"],
+            "action": "byq_ml_training_create", "resource_type": "training_run",
+            "resource_id": "unknown-result"}
+        unknown = _observe_tool(store, ctx, root_identity, "byq_agent_authorize", unknown_arguments)
+        _settle_tool(store, ctx, root_identity, unknown, "unknown")
+        with pytest.raises(AgentConflict, match="unknown ACP tool ingress cannot receive authorization proof"):
+            _authorize_tool(store, ctx, root_identity, unknown, unknown_arguments)
+        with pytest.raises(AgentConflict, match="unknown ACP tool ingress cannot be rewritten"):
+            _settle_tool(store, ctx, root_identity, unknown, "denied", {})
+        assert store._fetch_one("SELECT status,settlement_json->>'outcome' AS outcome FROM agent_acp_tool_ingress_observations WHERE mcp_request_id=:id",
+            {"id": unknown["mcp_request_id"]}) == {"status": "unknown", "outcome": "unknown"}
+        assert store._fetch_one("SELECT count(*) AS n FROM agent_audit WHERE detail_json->'acp_control'->>'mcp_request_id'=:id",
+            {"id": unknown["mcp_request_id"]})["n"] == 0
+    finally:
+        store.close()
+
+
+def test_acp_authorize_private_endpoint_requires_trusted_native_identity(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    monkeypatch.setattr(main, "MCP_BACKEND_PROOF_TOKEN", "test-acp-backend-proof")
+    store = main.agent_store
+    ctx = _context("authorize-private-api")
+    authority = store.rotate_runtime_authority(uuid4().hex)
+    ctx["x-byq-runtime-boot-id"] = authority["boot_id"]
+    root_native = str(uuid4())
+    root, identity = _open_root(store, ctx, f"acp-root-{uuid4().hex}", root_native)
+    _bind(store, ctx, identity)
+    arguments = {"run_id": identity["agent_run_id"], "action": "byq_ml_training_create",
+        "resource_type": "training_run", "resource_id": "endpoint-denial"}
+    observed = _observe_tool(store, ctx, identity, "byq_agent_authorize", arguments)
+    payload = {"schema_version": "byq-acp-agent-authorize.v1",
+        "mcp_request_id": observed["mcp_request_id"], "arguments": arguments}
+    headers = {**ctx, "Authorization": "Bearer test-acp-backend-proof",
+        "x-byq-root-run-id": root,
+        "x-byq-acp-native-root-session-id": root_native,
+        "x-byq-acp-native-agent-session-id": root_native,
+        "x-byq-acp-native-parent-session-id": "",
+        "x-byq-acp-origin": "root", "x-byq-acp-depth": "0"}
+    client = TestClient(main.app)
+    missing = dict(headers)
+    missing.pop("x-byq-acp-depth")
+    assert client.post("/internal/acp/agent-authorize", headers=missing, json=payload).status_code == 401
+    response = client.post("/internal/acp/agent-authorize", headers=headers, json=payload)
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "denied"
+    assert response.json()["refusal_receipt"]["root_run_id"] == root
+    assert response.json()["refusal_receipt"]["native_agent_session_id"] == root_native
+
+    policy_arguments = {"run_id": identity["agent_run_id"], "action": "byq_factor_compute",
+        "resource_type": "factor", "resource_id": "policy-denied-factor"}
+    policy_ingress = _observe_tool(store, ctx, identity, "byq_agent_authorize", policy_arguments)
+    policy_payload = {"schema_version": "byq-acp-agent-authorize.v1",
+        "mcp_request_id": policy_ingress["mcp_request_id"], "arguments": policy_arguments}
+    monkeypatch.setattr(main.user_policy_store, "evaluate_authorization", lambda _owner, authorization: {
+        **authorization, "authorized": False, "decision": "policy_denied", "policy_rule_id": "test-rule"})
+    policy_response = client.post("/internal/acp/agent-authorize", headers=headers, json=policy_payload)
+    assert policy_response.status_code == 403
+    assert policy_response.json() == {"detail": "authorization denied by user policy"}
+    ingress_row = store._fetch_one("SELECT status,settlement_json FROM agent_acp_tool_ingress_observations WHERE mcp_request_id=:id",
+        {"id": policy_ingress["mcp_request_id"]})
+    assert ingress_row == {"status": "pending", "settlement_json": None}
+    policy_audit = store._fetch_one("SELECT outcome,detail_json FROM agent_audit WHERE run_id=:run AND action='policy.enforce' ORDER BY created_at DESC LIMIT 1",
+        {"run": identity["agent_run_id"]})
+    assert policy_audit == {"outcome": "denied", "detail_json": {
+        "domain_action": "byq_factor_compute", "policy_rule_id": "test-rule"}}
+    # The public Product endpoint retains its existing 403 contract and has no ACP receipt.
+    public = client.post("/v1/agents/authorize", headers=ctx, json=arguments)
+    assert public.status_code == 403
 
 
 def _abort_tool(store: AgentResearchStore, ctx: dict[str, str], identity: dict[str, object],

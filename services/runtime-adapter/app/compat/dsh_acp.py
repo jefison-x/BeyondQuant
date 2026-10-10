@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import hmac
+import hashlib
 import os
 import queue
 import re
@@ -102,12 +103,439 @@ _INTERNAL_SERVICE_SECRETS = frozenset({
     "TUSHARE_TOKEN",
 })
 _NATIVE_SESSION_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+# ADR-0106: the ordinary Product provider session id is a UUIDv5 (any version),
+# matching the trusted product runner's permissive UUID check.
+_PROVIDER_SESSION_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _FINISH_REASONS = {
     "end_turn": "completed",
     "max_tokens": "max_tokens",
     "cancelled": "cancelled",
     "refusal": "failed",
 }
+
+
+def _write_continuation_guard(home: Path, guard_b64: str, *, root_run_id: str) -> str:
+    """Write the Adapter-owned restricted guard patch into its private cwd.
+
+    The Adapter owns the workspace session leaf, so it writes the patch the
+    trusted runner references; the runner independently validates the declared
+    guard shape before use. The per-root journal path is injected here
+    (Adapter-owned); root identity is never accepted from the overlay.
+    """
+    import base64 as _base64
+
+    home = _verify_private_product_home(home)
+    if re.fullmatch(r"[0-9a-f]{32}", root_run_id) is None:
+        raise AcpTransportError("ACP continuation guard root identity is invalid")
+    try:
+        raw = _base64.b64decode(guard_b64.encode("ascii"), validate=True)
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, ValueError, Exception) as exc:  # noqa: BLE001
+        raise AcpTransportError("ACP continuation guard is invalid") from exc
+    if not isinstance(value, list) or len(value) not in {2, 5}:
+        raise AcpTransportError("ACP continuation guard is invalid")
+    if len(value) == 2:
+        # ADR-0106 ordinary Product overlay: the single closed Go chat route plus
+        # the count-only tool guard. The exact shape must match the trusted
+        # product runner's `_validate_guard`; non-dict members are rejected
+        # before any attribute access so no non-contract exception can escape.
+        import ipaddress as _ipaddress
+
+        route = value[0]
+        if not isinstance(route, dict) or set(route) != {"id", "config"} \
+                or route.get("id") != "llm-pi-ai":
+            raise AcpTransportError("ACP product-turn guard is invalid")
+        config = route.get("config")
+        providers = config.get("providers") if isinstance(config, dict) else None
+        chat = providers.get("opencode-go-chat") if isinstance(providers, dict) else None
+        headers = chat.get("headers") if isinstance(chat, dict) else None
+        models = chat.get("models") if isinstance(chat, dict) else None
+        first_model = models[0] if isinstance(models, list) and len(models) == 1 else None
+        base_url = chat.get("baseURL") if isinstance(chat, dict) else None
+        matched = re.fullmatch(r"http://([0-9.]+):([1-9][0-9]{0,4})", base_url) \
+            if isinstance(base_url, str) else None
+        local = False
+        if matched is not None:
+            try:
+                address = _ipaddress.ip_address(matched[1])
+                local = (isinstance(address, _ipaddress.IPv4Address)
+                         and any(address in network for network in (
+                             _ipaddress.ip_network("127.0.0.0/8"),
+                             _ipaddress.ip_network("10.0.0.0/8"),
+                             _ipaddress.ip_network("172.16.0.0/12"),
+                             _ipaddress.ip_network("192.168.0.0/16"))))
+            except ValueError:
+                local = False
+        if (not isinstance(providers, dict) or set(providers) != {"opencode-go-chat"}
+                or not isinstance(chat, dict)
+                or set(chat) != {"api", "apiKeyEnv", "baseURL", "retryPolicy", "headers", "models"}
+                or chat.get("api") != "openai-completions"
+                or chat.get("apiKeyEnv") != "OPENCODE_API_KEY"
+                or chat.get("retryPolicy") != {"mode": "normal", "maxRetries": 0}
+                or not isinstance(headers, dict) or set(headers) != {"x-opencode-session"}
+                or not isinstance(headers["x-opencode-session"], str)
+                or _PROVIDER_SESSION_RE.fullmatch(headers["x-opencode-session"]) is None
+                or not isinstance(first_model, dict) or first_model.get("id") != "deepseek-v4.1-flash"
+                or matched is None or not local or int(matched[2]) > 65535):
+            raise AcpTransportError("ACP product-turn guard is invalid")
+        insert = value[1]
+        entry = (insert.get("insert") if isinstance(insert, dict) and set(insert) == {"insert"}
+                 else None)
+        guard_config = (entry[0].get("config")
+                        if isinstance(entry, list) and len(entry) == 1
+                        and isinstance(entry[0], dict)
+                        and set(entry[0]) == {"id", "name", "config"} else None)
+        profile = (guard_config.get("executionProfile")
+                   if isinstance(guard_config, dict) else None)
+        if (not isinstance(entry, list) or len(entry) != 1
+                or entry[0].get("id") != "byq-continuation-budget"
+                or entry[0].get("name") != "file:///opt/byq/runtime/byq-continuation-budget.js"
+                or not isinstance(guard_config, dict)
+                or set(guard_config) != {"guardMode", "deadlineEpochMs",
+                                         "executionProfile", "requestLimits"}
+                or guard_config.get("guardMode") != "count-only"
+                or type(guard_config.get("deadlineEpochMs")) is not int
+                or guard_config["deadlineEpochMs"] <= 0
+                or not isinstance(profile, dict)
+                or set(profile) != {"profile_id", "profile_version", "profile_sha256"}
+                or profile.get("profile_id") != "product-turn.v1"
+                or profile.get("profile_version") != 1
+                or not isinstance(profile.get("profile_sha256"), str)
+                or re.fullmatch(r"[a-f0-9]{64}", profile["profile_sha256"]) is None
+                or not isinstance(guard_config.get("requestLimits"), dict)):
+            raise AcpTransportError("ACP product-turn guard is invalid")
+        entry[0]["config"] = {**guard_config,
+                              "journalPath": str(
+                                  home / f"product-turn-tool-guard-{root_run_id}.jsonl")}
+        payload = json.dumps(value, sort_keys=True, separators=(",", ":"),
+                             ensure_ascii=True).encode("utf-8")
+        _create_guard_patch_exclusive(home, payload)
+        return hashlib.sha256(payload).hexdigest()
+    route = value[3]
+    config = route.get("config") if isinstance(route, dict) else None
+    providers = config.get("providers") if isinstance(config, dict) else None
+    chat = providers.get("opencode-go-chat") if isinstance(providers, dict) else None
+    if (not isinstance(route, dict) or route.get("id") != "llm-pi-ai" or not isinstance(providers, dict)
+            or set(providers) != {"opencode-go-chat"} or not isinstance(chat, dict)
+            or chat.get("api") != "openai-completions"
+            or chat.get("apiKeyEnv") != "OPENCODE_API_KEY"
+            or not isinstance(chat.get("baseURL"), str)
+            or not chat["baseURL"].startswith("http://")):
+        raise AcpTransportError("ACP continuation guard is invalid")
+    entry = value[4]["insert"][0]
+    entry["config"] = {**entry["config"],
+                       "journalPath": str(
+                           home / f"continuation-tool-guard-{root_run_id}.jsonl")}
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=True).encode("utf-8")
+    _create_guard_patch_exclusive(home, payload)
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _verify_private_product_home(home: Path) -> Path:
+    """Return a real private DSH home or fail closed before any patch write."""
+
+    try:
+        absolute = home.absolute()
+        info = os.lstat(absolute)
+        resolved = absolute.resolve(strict=True)
+    except OSError:
+        raise AcpTransportError("ACP workspace session directory is unavailable") from None
+    if (resolved != absolute or not stat.S_ISDIR(info.st_mode)
+            or info.st_uid != os.getuid() or info.st_gid != os.getgid()
+            or stat.S_IMODE(info.st_mode) != 0o700):
+        raise AcpTransportError("ACP workspace session directory permissions are unsafe")
+    return resolved
+
+
+def _create_guard_patch_exclusive(home: Path, payload: bytes) -> None:
+    """Create a complete fixed-name runner patch without replacing stale state."""
+
+    path = home / "continuation-guard.patch.json"
+    fd = -1
+    created_info = None
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY
+                     | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        created_info = os.fstat(fd)
+        remaining = memoryview(payload)
+        while remaining:
+            written = os.write(fd, remaining)
+            if written <= 0:
+                raise OSError("short ACP patch write")
+            remaining = remaining[written:]
+        os.fsync(fd)
+        os.close(fd)
+        fd = -1
+        _fsync_private_directory(home)
+    except OSError:
+        if fd >= 0:
+            try:
+                created_info = os.fstat(fd)
+                os.close(fd)
+            except OSError:
+                pass
+        if created_info is not None:
+            try:
+                info = os.lstat(path)
+                if (stat.S_ISREG(info.st_mode) and info.st_dev == created_info.st_dev
+                        and info.st_ino == created_info.st_ino and info.st_uid == os.getuid()
+                        and info.st_gid == os.getgid()
+                        and stat.S_IMODE(info.st_mode) == 0o600):
+                    path.unlink()
+            except OSError:
+                pass
+        raise AcpTransportError("ACP continuation guard patch could not be written") from None
+
+
+def _read_private_guard_patch(
+    path: Path, home: Path, *, expected_links: int = 1,
+) -> tuple[os.stat_result, bytes, str]:
+    """Read a single-link private patch and identify its injected root journal."""
+
+    try:
+        before = os.lstat(path)
+        if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid()
+                or before.st_gid != os.getgid() or stat.S_IMODE(before.st_mode) != 0o600
+                or before.st_nlink != expected_links
+                or before.st_size <= 0 or before.st_size > 1024 * 1024):
+            raise ValueError
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            opened = os.fstat(fd)
+            if (not stat.S_ISREG(opened.st_mode) or opened.st_dev != before.st_dev
+                    or opened.st_ino != before.st_ino or opened.st_uid != os.getuid()
+                    or opened.st_gid != os.getgid() or stat.S_IMODE(opened.st_mode) != 0o600
+                    or opened.st_nlink != expected_links or opened.st_size != before.st_size):
+                raise ValueError
+            raw = bytearray()
+            while len(raw) <= 1024 * 1024:
+                chunk = os.read(fd, min(65536, 1024 * 1024 + 1 - len(raw)))
+                if not chunk:
+                    break
+                raw.extend(chunk)
+            if len(raw) != before.st_size or len(raw) > 1024 * 1024:
+                raise ValueError
+        finally:
+            os.close(fd)
+        value = json.loads(raw.decode("utf-8"))
+        if not isinstance(value, list) or len(value) not in {2, 5}:
+            raise ValueError
+        guard = value[1] if len(value) == 2 else value[4]
+        insert = guard.get("insert") if isinstance(guard, dict) else None
+        entry = insert[0] if isinstance(insert, list) and len(insert) == 1 else None
+        config = entry.get("config") if isinstance(entry, dict) else None
+        journal = config.get("journalPath") if isinstance(config, dict) else None
+        if not isinstance(journal, str):
+            raise ValueError
+        journal_path = Path(journal)
+        match = re.fullmatch(
+            r"(?:product-turn|continuation)-tool-guard-([0-9a-f]{32})\.jsonl",
+            journal_path.name,
+        )
+        if match is None or journal_path.parent != home:
+            raise ValueError
+        after = os.lstat(path)
+        if (after.st_dev != before.st_dev or after.st_ino != before.st_ino
+                or after.st_nlink != expected_links
+                or after.st_size != before.st_size or not stat.S_ISREG(after.st_mode)):
+            raise ValueError
+        return before, bytes(raw), match.group(1)
+    except (OSError, UnicodeError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        raise AcpTransportError("ACP continuation guard archive is unsafe") from None
+
+
+def _fsync_private_directory(home: Path) -> None:
+    fd = os.open(home, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def retire_prepared_guard_patch(
+    home: Path, *, expected_root_id: str, expected_sha256: str,
+) -> None:
+    """Retire only the exact prepared guard after a proven no-START outcome.
+
+    Archives are unique per root and content digest. The hard-link transition is
+    recoverable after a crash, and never replaces an existing archive.
+    """
+
+    if (re.fullmatch(r"[0-9a-f]{32}", expected_root_id) is None
+            or re.fullmatch(r"[0-9a-f]{64}", expected_sha256) is None):
+        raise AcpTransportError("ACP prepared guard identity is invalid")
+    home = _verify_private_product_home(home)
+    source = home / "continuation-guard.patch.json"
+    archive = home / (
+        f"continuation-guard.prepared-{expected_root_id}-{expected_sha256}.patch.json")
+
+    try:
+        source_info = os.lstat(source)
+    except FileNotFoundError:
+        archived, raw, root_id = _read_private_guard_patch(archive, home)
+        if (root_id != expected_root_id
+                or not hmac.compare_digest(hashlib.sha256(raw).hexdigest(), expected_sha256)
+                or archived.st_nlink != 1):
+            raise AcpTransportError("ACP prepared guard archive does not match") from None
+        return
+    except OSError:
+        raise AcpTransportError("ACP prepared guard cannot be retired") from None
+
+    links = source_info.st_nlink
+    if links not in {1, 2}:
+        raise AcpTransportError("ACP prepared guard has unsafe link count")
+    source_stat, raw, root_id = _read_private_guard_patch(
+        source, home, expected_links=links)
+    if (root_id != expected_root_id
+            or not hmac.compare_digest(hashlib.sha256(raw).hexdigest(), expected_sha256)):
+        raise AcpTransportError("ACP prepared guard changed before retirement")
+
+    try:
+        archive_info = os.lstat(archive)
+    except FileNotFoundError:
+        archive_info = None
+    except OSError:
+        raise AcpTransportError("ACP prepared guard archive is unsafe") from None
+
+    if links == 1:
+        if archive_info is not None:
+            raise AcpTransportError("ACP prepared guard archive already exists")
+        try:
+            os.link(source, archive, follow_symlinks=False)
+            archived, archived_raw, archived_root = _read_private_guard_patch(
+                archive, home, expected_links=2)
+            current, current_raw, current_root = _read_private_guard_patch(
+                source, home, expected_links=2)
+            if (archived_root != expected_root_id or current_root != expected_root_id
+                    or archived.st_dev != source_stat.st_dev
+                    or archived.st_ino != source_stat.st_ino
+                    or current.st_dev != source_stat.st_dev
+                    or current.st_ino != source_stat.st_ino
+                    or archived_raw != raw or current_raw != raw):
+                raise AcpTransportError("ACP prepared guard archive is unsafe")
+            _fsync_private_directory(home)
+            os.unlink(source)
+            _fsync_private_directory(home)
+            final, final_raw, final_root = _read_private_guard_patch(archive, home)
+            if (final_root != expected_root_id or final.st_nlink != 1
+                    or final_raw != raw):
+                raise AcpTransportError("ACP prepared guard archive is unsafe")
+        except AcpTransportError:
+            raise
+        except OSError:
+            raise AcpTransportError("ACP prepared guard cannot be retired") from None
+        return
+
+    # nlink=2 is accepted only for the crash window after linking the exact
+    # archive but before unlinking the source. Both names must be the same inode.
+    if archive_info is None:
+        raise AcpTransportError("ACP prepared guard link recovery is incomplete")
+    archived, archived_raw, archived_root = _read_private_guard_patch(
+        archive, home, expected_links=2)
+    current, current_raw, current_root = _read_private_guard_patch(
+        source, home, expected_links=2)
+    if (archived_root != expected_root_id or current_root != expected_root_id
+            or archived.st_dev != current.st_dev or archived.st_ino != current.st_ino
+            or archived_raw != raw or current_raw != raw):
+        raise AcpTransportError("ACP prepared guard archive is unsafe")
+    try:
+        os.unlink(source)
+        _fsync_private_directory(home)
+        final, final_raw, final_root = _read_private_guard_patch(archive, home)
+        if final_root != expected_root_id or final.st_nlink != 1 or final_raw != raw:
+            raise AcpTransportError("ACP prepared guard archive is unsafe")
+    except AcpTransportError:
+        raise
+    except OSError:
+        raise AcpTransportError("ACP prepared guard cannot be retired") from None
+
+
+def archive_previous_continuation_guard_patch(home: Path, *, previous_root_id: str) -> None:
+    """Archive the exact exited root's fixed runner patch before a reused-root rebuild.
+
+    The filename remains fixed because the trusted runner validates and reads
+    that path. RuntimeAdapter calls this only after exact terminal ACK, native
+    close, process exit, and call-drain proof. Archives are configuration
+    history, never business evidence. A retry accepts only this root's archive
+    or the same-inode link/unlink crash window.
+    """
+
+    if re.fullmatch(r"[0-9a-f]{32}", previous_root_id) is None:
+        raise AcpTransportError("ACP continuation guard root identity is invalid")
+    home = _verify_private_product_home(home)
+    source = home / "continuation-guard.patch.json"
+    archive = home / f"continuation-guard.closed-{previous_root_id}.patch.json"
+    try:
+        source_info = os.lstat(source)
+    except FileNotFoundError:
+        # A prior preparation may already have archived this exact root before
+        # failing to build its replacement. Retry only with that exact archive.
+        _stat, _raw, archived_root_id = _read_private_guard_patch(archive, home)
+        if archived_root_id != previous_root_id:
+            raise AcpTransportError("ACP continuation guard archive root mismatch") from None
+        return
+    except OSError:
+        raise AcpTransportError("ACP continuation guard cannot be rotated") from None
+
+    if source_info.st_nlink == 1:
+        _source_stat, _raw, source_root_id = _read_private_guard_patch(source, home)
+        if source_root_id != previous_root_id:
+            raise AcpTransportError("ACP continuation guard root mismatch")
+        try:
+            os.lstat(archive)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            raise AcpTransportError("ACP continuation guard archive is unsafe") from None
+        else:
+            # A different archive inode with the same root identity is not a
+            # retry of the link/unlink transition and must never be replaced.
+            raise AcpTransportError("ACP continuation guard archive already exists")
+        try:
+            os.link(source, archive, follow_symlinks=False)
+            linked, _linked_raw, linked_root_id = _read_private_guard_patch(
+                archive, home, expected_links=2)
+            current, _current_raw, current_root_id = _read_private_guard_patch(
+                source, home, expected_links=2)
+            if (linked_root_id != previous_root_id or current_root_id != previous_root_id
+                    or linked.st_dev != current.st_dev or linked.st_ino != current.st_ino):
+                raise AcpTransportError("ACP continuation guard archive is unsafe")
+            _fsync_private_directory(home)
+            os.unlink(source)
+            _fsync_private_directory(home)
+            archived, _archived_raw, archived_root_id = _read_private_guard_patch(archive, home)
+            if archived_root_id != previous_root_id or archived.st_nlink != 1:
+                raise AcpTransportError("ACP continuation guard archive root mismatch")
+        except AcpTransportError:
+            raise
+        except OSError:
+            raise AcpTransportError("ACP continuation guard cannot be rotated") from None
+        return
+
+    if source_info.st_nlink != 2:
+        raise AcpTransportError("ACP continuation guard archive is unsafe")
+    # The only accepted two-link state is a crash after link() and before
+    # unlink(), with the exact expected archive name pointing at the same inode.
+    current, _current_raw, current_root_id = _read_private_guard_patch(
+        source, home, expected_links=2)
+    if current_root_id != previous_root_id:
+        raise AcpTransportError("ACP continuation guard root mismatch")
+    archived, _archived_raw, archived_root_id = _read_private_guard_patch(
+        archive, home, expected_links=2)
+    if (archived_root_id != previous_root_id or archived.st_dev != current.st_dev
+            or archived.st_ino != current.st_ino):
+        raise AcpTransportError("ACP continuation guard archive is unsafe")
+    try:
+        os.unlink(source)
+        _fsync_private_directory(home)
+        archived, _archived_raw, archived_root_id = _read_private_guard_patch(archive, home)
+        if archived_root_id != previous_root_id or archived.st_nlink != 1:
+            raise AcpTransportError("ACP continuation guard archive root mismatch")
+    except AcpTransportError:
+        raise
+    except OSError:
+        raise AcpTransportError("ACP continuation guard cannot be rotated") from None
 
 
 def _prepare_private_product_home(home: Path) -> None:
@@ -500,6 +928,10 @@ class AcpHarness:
     private_provider_patch: Path | None = None
     provider_proxy_base_url: str | None = None
     provider_local_token: str | None = field(default=None, repr=False)
+    # Restricted continuation guard overlay (base64) applied by the trusted
+    # Product runner as an additional patch; never a model/browser value.
+    continuation_guard_b64: str | None = field(default=None, repr=False)
+    prepared_guard_sha256: str | None = field(default=None, repr=False)
     process: _AcpProcess | None = field(default=None, repr=False)
     slot_scope: dict[str, str] | None = field(default=None, repr=False)
     native_session_ids: set[str] = field(default_factory=set, repr=False)
@@ -574,6 +1006,7 @@ class DshAcpCompatibility:
         private_provider_patch: Path | None = None,
         provider_proxy_base_url: str | None = None,
         provider_local_token: str | None = None,
+        continuation_guard_b64: str | None = None,
     ) -> AcpHarness:
         patch = composition.expanduser().resolve()
         requested_home = session_root.expanduser()
@@ -616,6 +1049,13 @@ class DshAcpCompatibility:
             home.mkdir(parents=True, exist_ok=True)
         else:
             _prepare_private_product_home(home)
+            if continuation_guard_b64 is not None:
+                prepared_guard_sha256 = _write_continuation_guard(
+                    home, continuation_guard_b64,
+                    root_run_id=environment.get("BYQ_ROOT_RUN_ID", ""),
+                )
+            else:
+                prepared_guard_sha256 = None
         return AcpHarness(
             provider=provider,
             model=model,
@@ -628,6 +1068,9 @@ class DshAcpCompatibility:
                                     if private_provider_patch is not None else None),
             provider_proxy_base_url=provider_proxy_base_url,
             provider_local_token=provider_local_token,
+            continuation_guard_b64=continuation_guard_b64,
+            prepared_guard_sha256=(prepared_guard_sha256
+                                   if self.product_slots is not None else None),
         )
 
     def start(self, harness: AcpHarness) -> None:
@@ -703,7 +1146,8 @@ class DshAcpCompatibility:
                     raise AcpTransportError("ACP slot requires its fixed Product composition")
                 from .acp_slot_transport import SlotAcpProcess
                 transport = SlotAcpProcess(tuple(command), harness.session_root,
-                    environment, registry=self.product_slots)
+                    environment, registry=self.product_slots,
+                    guard_b64=harness.continuation_guard_b64)
                 # Keep the root identity available if START succeeds but ACP
                 # initialization later fails and requires cleanup/ACK recovery.
                 harness.slot_scope = dict(transport.scope)

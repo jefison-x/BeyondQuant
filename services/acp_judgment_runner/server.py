@@ -681,7 +681,8 @@ def _read_no_new_privs(pid: int) -> bool | None:
 
 
 def _minimal_child_environment(env: dict[str, str], proxy_env: str, proxy_token: str,
-                               home: Path, session_root: Path) -> dict[str, str]:
+                               home: Path, session_root: Path,
+                               runtime_root: Path) -> dict[str, str]:
     result = {
         "PATH": "/usr/local/bin:/usr/bin:/bin",
         "HOME": str(home),
@@ -690,6 +691,10 @@ def _minimal_child_environment(env: dict[str, str], proxy_env: str, proxy_token:
         "TZ": "UTC",
         "DSH_HOME": str(home),
         "DSH_SESSION_ROOT": str(session_root),
+        # The BYQ identity plugin resolves the official @deepseek-ai/dsh-mcp-client
+        # from this fixed runtime root; without it the plugin fails and no
+        # Agent-scoped judgment MCP tools are registered.
+        "BYQ_DSH_RUNTIME_ROOT": str(runtime_root),
         "DSH_TELEMETRY_DISABLED": "1",
         "DSH_PERMISSION_MODE": "read-only",
         "DSH_MAX_TOKENS_AS_SUCCESS": "false",
@@ -705,6 +710,62 @@ def _minimal_child_environment(env: dict[str, str], proxy_env: str, proxy_token:
     ):
         result.pop(forbidden, None)
     return result
+
+
+_CLEANUP_RECEIPT_SCHEMA = "byq-acp-judgment-runner-cleanup.v1"
+_CLEANUP_RECEIPT_DIR = "cleanup-receipts"
+
+
+def _persist_cleanup_receipt(control_dir: Path, scope: dict[str, Any], digest: str,
+                             instance_id: str, exit_fields: dict[str, Any],
+                             secret: bytes, control_gid: int) -> None:
+    """Durably record a proven cleanup before the signed EXIT is sent.
+
+    The receipt binds the exact one-shot scope, the runner instance and the
+    signed exit facts. It is written atomically (temp + fsync + rename + dir
+    fsync) with group-readable mode so the trusted Adapter can verify it after a
+    restart; a write failure must leave cleanup unknown.
+    """
+    payload = {
+        "schema_version": _CLEANUP_RECEIPT_SCHEMA,
+        "scope_digest": digest,
+        "task_id": scope["task_id"],
+        "call_identity": scope["call_identity"],
+        "root_run_id": scope["root_run_id"],
+        "runtime_boot_id": scope["runtime_boot_id"],
+        "authority_epoch": scope["authority_epoch"],
+        "runner_instance_id": instance_id,
+        "code": exit_fields["code"],
+        "signal": exit_fields["signal"],
+        "reason": exit_fields["reason"],
+        "cleanup": "proven",
+    }
+    payload["mac"] = sign_runner_reply(payload, secret)
+    directory = control_dir / _CLEANUP_RECEIPT_DIR
+    directory.mkdir(mode=0o750, parents=True, exist_ok=True)
+    try:
+        os.chown(directory, 0, control_gid)
+    except OSError:
+        pass
+    path = directory / f"{digest}.json"
+    temporary = directory / f".{digest}.{os.urandom(8).hex()}.tmp"
+    fd = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY
+                 | getattr(os, "O_NOFOLLOW", 0), 0o640)
+    try:
+        os.write(fd, canonical_json(payload))
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    try:
+        os.chown(temporary, 0, control_gid)
+    except OSError:
+        pass
+    os.rename(temporary, path)
+    dir_fd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(dir_fd)
+    finally:
+        os.close(dir_fd)
 
 
 class JudgmentRunnerServer(socketserver.UnixStreamServer):
@@ -729,6 +790,9 @@ class JudgmentRunnerServer(socketserver.UnixStreamServer):
         if not isinstance(secret, bytes) or len(secret) < 32:
             raise ValueError("runner control secret must contain at least 32 bytes")
         self.secret = secret
+        # One opaque identity per runner process; a receipt signed by an earlier
+        # instance never proves a later execution stopped.
+        self.instance_id = os.urandom(32).hex()
         self.state_dir = Path(state_dir)
         self.session_root = Path(session_root)
         self.profile_patch = Path(profile_patch)
@@ -741,10 +805,11 @@ class JudgmentRunnerServer(socketserver.UnixStreamServer):
         self.state_uid = os.geteuid() if state_uid is None else state_uid
         self.state_gid = state_gid
         self.launcher = launcher
+        self.runtime_root = Path(runtime_root).resolve()
         if prepare_roots:
             self._prepare_roots()
         if self.launcher is None:
-            self.launcher = _make_launcher(Path(runtime_root), self.profile_patch)
+            self.launcher = _make_launcher(self.runtime_root, self.profile_patch)
         self._clear_ready_file()
         self._remove_stale_socket()
         super().__init__(str(self.socket_path), _RunnerRequestHandler, bind_and_activate=True)
@@ -897,10 +962,12 @@ class _RunnerRequestHandler(socketserver.BaseRequestHandler):
             if not os.path.isfile(command[0]) or not os.access(command[0], os.X_OK):
                 raise OSError("fixed ACP launcher is unavailable")
             child_env = _minimal_child_environment(
-                env, proxy_env, proxy_token, session_dir, self.server.session_root)
+                env, proxy_env, proxy_token, session_dir, self.server.session_root,
+                self.server.runtime_root)
             # The supervisor has no DAC override and cannot chdir into the
             # 0700 DSH-owned leaf. Drop UID first, then let the child enter it.
-            child_command = ("/bin/sh", "-c", 'cd "$DSH_HOME" && exec "$@"',
+            child_command = ("/bin/sh", "-c",
+                             'cd "$DSH_HOME" && exec "$@" 2>/tmp/dsh.stderr.log',
                              "--", *command)
             process = subprocess.Popen(
                 child_command,
@@ -944,7 +1011,7 @@ class _RunnerRequestHandler(socketserver.BaseRequestHandler):
         except OSError:
             _terminate_and_reap(process, child_uid=self.server.child_uid)
             return
-        self._relay(connection, process, deadline, challenge, nonce, digest)
+        self._relay(connection, process, deadline, challenge, nonce, digest, scope)
 
     @staticmethod
     def _reject(connection: socket.socket, code: str, challenge: str,
@@ -959,8 +1026,24 @@ class _RunnerRequestHandler(socketserver.BaseRequestHandler):
         except OSError:
             pass
 
+    def _persist_cleanup_proof(self, scope: dict[str, Any], digest: str,
+                               exit_payload: dict[str, Any]) -> None:
+        """Persist the signed proven-cleanup receipt for the exact one-shot scope.
+
+        Judgment default: binds the strict judgment scope contract. The Product
+        runner overrides this with its own closed Product scope contract. Each
+        runner persists only its own scope shape; neither forges the other's
+        fields, makes fields optional, or skips persistence to claim proven.
+        A raised error leaves cleanup unknown at the caller.
+        """
+        _persist_cleanup_receipt(
+            self.server.socket_path.parent, scope, digest,
+            self.server.instance_id, exit_payload, self.server.secret,
+            self.server.control_gid)
+
     def _relay(self, connection: socket.socket, process: subprocess.Popen[bytes],
-               deadline: float, challenge: str, nonce: str, digest: str) -> None:
+               deadline: float, challenge: str, nonce: str, digest: str,
+               scope: dict[str, Any]) -> None:
         assert process.stdin is not None and process.stdout is not None
         stop = threading.Event()
         output_done = threading.Event()
@@ -1056,6 +1139,15 @@ class _RunnerRequestHandler(socketserver.BaseRequestHandler):
             "reason": reason or "protocol_error",
             "cleanup": cleanup,
         }
+        if cleanup == "proven":
+            # Persist the signed cleanup proof before exposing the EXIT so a
+            # restarted Adapter can prove the fence. A failed write must not
+            # claim proven cleanup.
+            try:
+                self._persist_cleanup_proof(scope, digest, exit_payload)
+            except (OSError, ValueError, KeyError):
+                cleanup = "unknown"
+                exit_payload["cleanup"] = "unknown"
         if reason != "transport_lost":
             try:
                 exit_payload["mac"] = sign_runner_reply(exit_payload, self.server.secret)

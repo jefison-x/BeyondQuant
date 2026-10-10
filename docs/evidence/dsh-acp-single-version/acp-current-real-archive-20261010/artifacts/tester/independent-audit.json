@@ -1,0 +1,161 @@
+{
+  "verdict": "PASS",
+  "evaluated_receipt": "/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/acp-current-real-archive-20261010-v2-6e43b1/result.json",
+  "pre_cleanup_hash_receipt": "/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/acp-current-real-archive-20261010-v2-6e43b1/proof-before-cleanup.json",
+  "checks": {
+    "script_sha256": {
+      "pass": true,
+      "detail": "1c775ba1dedd2c6a372e039e815e9b5911130085b5dd1797b42bc82fc3f5b89b"
+    },
+    "final_status": {
+      "pass": true,
+      "detail": "PASS"
+    },
+    "durable_pre_cleanup_archive_hash": {
+      "pass": true,
+      "detail": {
+        "path": "/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/acp-current-real-archive-20261010-v2-6e43b1/three-alias-image.tar",
+        "size_bytes": 806272000,
+        "sha256": "e435117fad3db1b7d65d116a9156cf533a506952aeb5465b20eb0dac3117b37f",
+        "save_elapsed_seconds": 13.077,
+        "hash_chunk_bytes": 1048576
+      }
+    },
+    "archive_removed_only_after_receipt": {
+      "pass": true,
+      "detail": {
+        "flag": true,
+        "exists": false
+      }
+    },
+    "source_hashes": {
+      "pass": true,
+      "detail": null
+    },
+    "91_image_inputs_unchanged": {
+      "pass": true,
+      "detail": {
+        "before_count": 91,
+        "after_count": 91
+      }
+    },
+    "container_baseline_preserved": {
+      "pass": true,
+      "detail": {
+        "before_count": 26,
+        "before_running": 8,
+        "after_count": 26,
+        "after_running": 8
+      }
+    },
+    "14_support_plus_candidate_image_preserved": {
+      "pass": true,
+      "detail": {
+        "before_tags": 15,
+        "after_tags": 15
+      }
+    },
+    "three_exact_aliases_cleaned": {
+      "pass": true,
+      "detail": [
+        {
+          "tag": "byq-acp-archive-proof:acp-current-real-archive-20261010-v2-6e43b1-judgment",
+          "command": [
+            "docker",
+            "image",
+            "rm",
+            "byq-acp-archive-proof:acp-current-real-archive-20261010-v2-6e43b1-judgment"
+          ],
+          "exit_code": 0,
+          "verified_absent": true,
+          "output": "Untagged: byq-acp-archive-proof:acp-current-real-archive-20261010-v2-6e43b1-judgment"
+        },
+        {
+          "tag": "byq-acp-archive-proof:acp-current-real-archive-20261010-v2-6e43b1-product",
+          "command": [
+            "docker",
+            "image",
+            "rm",
+            "byq-acp-archive-proof:acp-current-real-archive-20261010-v2-6e43b1-product"
+          ],
+          "exit_code": 0,
+          "verified_absent": true,
+          "output": "Untagged: byq-acp-archive-proof:acp-current-real-archive-20261010-v2-6e43b1-product"
+        },
+        {
+          "tag": "byq-acp-archive-proof:acp-current-real-archive-20261010-v2-6e43b1-adapter",
+          "command": [
+            "docker",
+            "image",
+            "rm",
+            "byq-acp-archive-proof:acp-current-real-archive-20261010-v2-6e43b1-adapter"
+          ],
+          "exit_code": 0,
+          "verified_absent": true,
+          "output": "Untagged: byq-acp-archive-proof:acp-current-real-archive-20261010-v2-6e43b1-adapter"
+        }
+      ]
+    },
+    "three_aliases_one_image": {
+      "pass": true,
+      "detail": {
+        "tags": 3,
+        "config": "sha256:a2ba7f82b86233338f1f2a49932f52bec6325f41e9b6b7842515d74f7a132ec3",
+        "manifest": "sha256:15cdf5f97009e21af50c3cfd87d2f8d42af91e8ccaa2a82d57966bc4c2fbc6f5"
+      }
+    },
+    "28_ordered_layers_and_source_diffids": {
+      "pass": true,
+      "detail": {
+        "counts": {
+          "byq-acp-archive-proof:acp-current-real-archive-20261010-v2-6e43b1-adapter": {
+            "layer_digests": 28,
+            "layer_sizes": 28,
+            "rootfs_diff_ids": 28
+          },
+          "byq-acp-archive-proof:acp-current-real-archive-20261010-v2-6e43b1-product": {
+            "layer_digests": 28,
+            "layer_sizes": 28,
+            "rootfs_diff_ids": 28
+          },
+          "byq-acp-archive-proof:acp-current-real-archive-20261010-v2-6e43b1-judgment": {
+            "layer_digests": 28,
+            "layer_sizes": 28,
+            "rootfs_diff_ids": 28
+          }
+        }
+      }
+    },
+    "no_cleanup_errors": {
+      "pass": true,
+      "detail": null
+    },
+    "scope_boundaries": {
+      "pass": true,
+      "detail": {
+        "tags": 3,
+        "unique_images": 1,
+        "ordered_layers": 28,
+        "canonical_config": "sha256:a2ba7f82b86233338f1f2a49932f52bec6325f41e9b6b7842515d74f7a132ec3",
+        "captured_manifest": "sha256:15cdf5f97009e21af50c3cfd87d2f8d42af91e8ccaa2a82d57966bc4c2fbc6f5",
+        "source_inspection_and_archive": "PASS",
+        "all_three_bindings_equal": true,
+        "docker_load": "NOT_RUN",
+        "full_17_service_export": "NOT_RUN",
+        "registry_attestation": "NOT_RUN"
+      }
+    }
+  },
+  "archive": {
+    "path": "/home/jefison/projects/.byq-worktrees/dsh-acp-single-version/.ci-artifacts/acp-current-real-archive-20261010-v2-6e43b1/three-alias-image.tar",
+    "size_bytes": 806272000,
+    "sha256": "e435117fad3db1b7d65d116a9156cf533a506952aeb5465b20eb0dac3117b37f",
+    "save_elapsed_seconds": 13.077,
+    "hash_chunk_bytes": 1048576
+  },
+  "elapsed_seconds": 22.839,
+  "parser_seconds": 8.468,
+  "save_seconds": 13.077,
+  "max_rss_kib": 425180,
+  "scope": "real docker save and source/archive identity validation; no load, full 17-service export, registry attestation, F6, or publication"
+}

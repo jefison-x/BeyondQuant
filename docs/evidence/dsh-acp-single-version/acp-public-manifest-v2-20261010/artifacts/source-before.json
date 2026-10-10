@@ -1,0 +1,5 @@
+{
+  "scripts/release/images.py": "789bdc48c10b3f9d0ad9d8209335c26af631293e7ff57aba2e3262ff4a02f559",
+  "scripts/release/manifest.py": "568e4e7dd966b6e9dfeb782bbffba96fd957208ae0d5bb89eca036d54d36ec76",
+  "tests/architecture/test_release_pipeline.py": "bf5db954f7602454ebf35d8738654c8a8927f9446ef629d4cbc8ad852ae2c507"
+}

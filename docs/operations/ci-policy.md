@@ -42,6 +42,22 @@ not start PostgreSQL or Compose unless they modify the real Product journey or a
 Unknown source paths fail closed to Integration. `scripts/ci/classify-changes.sh` is the executable
 source of truth and has architecture tests for representative routes.
 
+## ACP ordinary-turn acceptance separation
+
+The keyless ACP Product/business coherence check
+(`phase48-product-golden.py --keyless-acp`) verifies the real Product/business
+journey plus the observed public turn rejection: the seeded legacy DeepSeek
+profile is outside the ADR-0106 static qualified-route policy, and the Gateway
+normalizes all Adapter 503 (authority, resolver, key and route issues alike) to
+the public detail "product model is unavailable". The public 503 therefore does
+not prove the actual runtime rejection branch or that no provider activity
+occurred. It is a **narrower** check and is **not** the full ordinary-model Phase
+48 acceptance: a real accepted ordinary turn, its terminal ACK/cleanup and a
+complete no-mock Phase 48 remain a separate **OPEN/NOT_RUN** gate. Reuse accepted
+evidence only at its original source/image/stack scope. PR CI never receives real
+provider secrets and adds no phase-advance, release, merge or deployment
+authority.
+
 ## Pull request and merge policy
 
 - Pull requests run the risk-selected profile.

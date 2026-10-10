@@ -1,0 +1,2248 @@
+[
+  {
+    "id": "sha256:15cdf5f97009e21af50c3cfd87d2f8d42af91e8ccaa2a82d57966bc4c2fbc6f5",
+    "listing": [
+      {
+        "Repository": "byq-acp-unified",
+        "Tag": "cur-2d581097-20261010-retryfix",
+        "Size": "3.62GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [
+      "byq-acp-unified:cur-2d581097-20261010-retryfix"
+    ],
+    "digests": [
+      "byq-acp-unified@sha256:15cdf5f97009e21af50c3cfd87d2f8d42af91e8ccaa2a82d57966bc4c2fbc6f5"
+    ],
+    "content_size_bytes": 806240209,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": null
+  },
+  {
+    "id": "sha256:7f2e51483b0f1657a808ffc90c22581f94b38554287cae66330a03c8bf38cd02",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "7.47GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1650718337,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:c8e06a432765c13b9b616d796d4296bb75bd9c317030bb5417404240fa810ed6"
+  },
+  {
+    "id": "sha256:c8e06a432765c13b9b616d796d4296bb75bd9c317030bb5417404240fa810ed6",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "4.45GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1004943905,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:a952bf838c492b69c2accd02f9abbc33afe7324dcffb55317c0ce978f59386c1"
+  },
+  {
+    "id": "sha256:a952bf838c492b69c2accd02f9abbc33afe7324dcffb55317c0ce978f59386c1",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "4.45GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1004941234,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:75efbf28af6da160b6cdb72e65bec30fc0970e5207010ea5c7afe316908a109d"
+  },
+  {
+    "id": "sha256:e5d092555093453c04aec6f9efc6527d6e2bbd1bb62e993fa29ca8f1788b647b",
+    "listing": [
+      {
+        "Repository": "byq-acp-unified",
+        "Tag": "candidate",
+        "Size": "3.62GB",
+        "Containers": "0"
+      },
+      {
+        "Repository": "byq-acp-unified",
+        "Tag": "uidfix-candidate",
+        "Size": "3.62GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [
+      "byq-acp-unified:candidate",
+      "byq-acp-unified:uidfix-candidate"
+    ],
+    "digests": [
+      "byq-acp-unified@sha256:e5d092555093453c04aec6f9efc6527d6e2bbd1bb62e993fa29ca8f1788b647b"
+    ],
+    "content_size_bytes": 806307573,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:fed14cfb61f5ac59cef91d0f2fc19d37b37fecc198ea3e646c7cb47c165cf377"
+  },
+  {
+    "id": "sha256:fed14cfb61f5ac59cef91d0f2fc19d37b37fecc198ea3e646c7cb47c165cf377",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.62GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 806307415,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:9144c128cb5bdeda8baae2517b974b26a11ea2c3c5269a31e74dd308b379fa0a"
+  },
+  {
+    "id": "sha256:9144c128cb5bdeda8baae2517b974b26a11ea2c3c5269a31e74dd308b379fa0a",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.62GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 806307306,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:9e76a9539b3ad036f976520d246af89ab5fbfcd2a88a2cac6afbe0000d8d679c"
+  },
+  {
+    "id": "sha256:9e76a9539b3ad036f976520d246af89ab5fbfcd2a88a2cac6afbe0000d8d679c",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.62GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 806307181,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:566f6bf1098200e63ecc4eb1035d451a38b4523f4cc838c3dfe73f57162bd3af"
+  },
+  {
+    "id": "sha256:566f6bf1098200e63ecc4eb1035d451a38b4523f4cc838c3dfe73f57162bd3af",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.62GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 806055833,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:047a15cd49cab2f395fc797b640ce2f40367c6530d586c27b35a26ceda64f456"
+  },
+  {
+    "id": "sha256:047a15cd49cab2f395fc797b640ce2f40367c6530d586c27b35a26ceda64f456",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.62GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 806052627,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:1093c487a9be14dddfbb365682b407e33e3782ddaaa8e2606d213c1852a54121"
+  },
+  {
+    "id": "sha256:1093c487a9be14dddfbb365682b407e33e3782ddaaa8e2606d213c1852a54121",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.62GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 806049115,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:516148b1bdc429e238befe1c9be9d2d2730d7ddd79e7447e1adaf86b76a31c6e"
+  },
+  {
+    "id": "sha256:ca5f8504c71071b654aaa4c801b4e576d30f735d31832c4217b1f1eb2aa8afd6",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "7.47GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1650641947,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:72842e52b5b05264f60aeb8b3a9f457e2854c8c390bdf0fa65251552a653fc63"
+  },
+  {
+    "id": "sha256:72842e52b5b05264f60aeb8b3a9f457e2854c8c390bdf0fa65251552a653fc63",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "4.45GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1004871400,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:2488744a6b1c1baade285466e9256914f96a997393b8ade1fd1e849b4e144754"
+  },
+  {
+    "id": "sha256:2488744a6b1c1baade285466e9256914f96a997393b8ade1fd1e849b4e144754",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "4.45GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1004868727,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:1febfd871d860d077b8d14c5f39291fc02fb828b6a46353755aecfc477d0768c"
+  },
+  {
+    "id": "sha256:4254b93aa37cfe49449914fa8db1d495d3a6be16ad790e38c1e63b8106ba6640",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402789365,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:bf868ebebc8156f4486335574fe1858cf474a1c804c95a467816bd77962bb62a"
+  },
+  {
+    "id": "sha256:bf868ebebc8156f4486335574fe1858cf474a1c804c95a467816bd77962bb62a",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402789231,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:fc62083e0ba2f6425443e1f68ded043eb1bc7de32ec66ee1e8054e4963662a4d"
+  },
+  {
+    "id": "sha256:fc62083e0ba2f6425443e1f68ded043eb1bc7de32ec66ee1e8054e4963662a4d",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402775799,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:40d8dcd1cf9355bec86b86b19f87ce39b7fd9fffb66714bde6c25e081a1764ad"
+  },
+  {
+    "id": "sha256:40d8dcd1cf9355bec86b86b19f87ce39b7fd9fffb66714bde6c25e081a1764ad",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 756994929,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:09f36de6e188710e155f276944d24658fa2f06d2803af8d72b9c758124b3a608"
+  },
+  {
+    "id": "sha256:09f36de6e188710e155f276944d24658fa2f06d2803af8d72b9c758124b3a608",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 756983687,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:72abde0d50be6c4ec0e60f9caffb8d200564238526fa9880a5aae2db6265af8b"
+  },
+  {
+    "id": "sha256:72abde0d50be6c4ec0e60f9caffb8d200564238526fa9880a5aae2db6265af8b",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 756981741,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:791b3e954047fc849e69b20570742f784badc232ebd760196289e3c9c83481df"
+  },
+  {
+    "id": "sha256:791b3e954047fc849e69b20570742f784badc232ebd760196289e3c9c83481df",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 756979493,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:07b6ecfb37c078543bda7dbd2ac745b9b5996676d60dfc84296496584a1828ff"
+  },
+  {
+    "id": "sha256:f48910ade70db43064563d07969a77455ea03d23dcbdc4543c416d5d896a20eb",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.51GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1431167604,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:be3f76ca3139a8af6e21d77346a7333d6bce49bfcbfa854b3fefd161add504d0"
+  },
+  {
+    "id": "sha256:be3f76ca3139a8af6e21d77346a7333d6bce49bfcbfa854b3fefd161add504d0",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.51GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1431167479,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:05aee6aa89996496a0d1c3619cfc7a313a8848abc775ca0063ffeaf834034f8c"
+  },
+  {
+    "id": "sha256:05aee6aa89996496a0d1c3619cfc7a313a8848abc775ca0063ffeaf834034f8c",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785176912,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:00e1e563d76415df27fe516e4b1c931f0f7c7dd14bd50f9815d7a0c4ac065ab4"
+  },
+  {
+    "id": "sha256:00e1e563d76415df27fe516e4b1c931f0f7c7dd14bd50f9815d7a0c4ac065ab4",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785175346,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:2380c6fa9302179257ac9230950c52282b3ef8ce300ed76c18eff7632187b750"
+  },
+  {
+    "id": "sha256:2380c6fa9302179257ac9230950c52282b3ef8ce300ed76c18eff7632187b750",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785153428,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:ae043d19cc7f2a0598cf2df9ef3a3e1edf4198293be74e11f4f6d346d3132cf0"
+  },
+  {
+    "id": "sha256:ae043d19cc7f2a0598cf2df9ef3a3e1edf4198293be74e11f4f6d346d3132cf0",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785142188,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:abddbd37b01061dbeef3f0dfce5f0cb06bb3365a3cf8be42ed89ac76dc35cf21"
+  },
+  {
+    "id": "sha256:abddbd37b01061dbeef3f0dfce5f0cb06bb3365a3cf8be42ed89ac76dc35cf21",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785141342,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:02abf7dd44fc3f81e780715dd1c8c611f572ad254477740572dca3c2b60b0e0e"
+  },
+  {
+    "id": "sha256:02abf7dd44fc3f81e780715dd1c8c611f572ad254477740572dca3c2b60b0e0e",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785140392,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:94166e1bae0b3b3c509e9df721c0c05c7efe763cfb67f21dc3532d52746e138e"
+  },
+  {
+    "id": "sha256:94166e1bae0b3b3c509e9df721c0c05c7efe763cfb67f21dc3532d52746e138e",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785134146,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:0b2d6f35bee8100840faaf266d358ef223482735c97beb670f5b12a728632ad9"
+  },
+  {
+    "id": "sha256:0b2d6f35bee8100840faaf266d358ef223482735c97beb670f5b12a728632ad9",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785132774,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:7fcd085c701f72c18478cb0922524a41e0bba37ebf01dc4d2efd39b115917615"
+  },
+  {
+    "id": "sha256:7fcd085c701f72c18478cb0922524a41e0bba37ebf01dc4d2efd39b115917615",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785075956,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:aeb47357cb739667d64885709ac30c68f2cc2b7c65efe839b43de7c4201b9fd8"
+  },
+  {
+    "id": "sha256:693c7bfd2f0dd64c45fc84d7f950886ddfe6294783e62977afb2eb5ed666b0dd",
+    "listing": [
+      {
+        "Repository": "byq-acp-authoritative-product-runner",
+        "Tag": "20261009",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [
+      "byq-acp-authoritative-product-runner:20261009"
+    ],
+    "digests": [
+      "byq-acp-authoritative-product-runner@sha256:693c7bfd2f0dd64c45fc84d7f950886ddfe6294783e62977afb2eb5ed666b0dd"
+    ],
+    "content_size_bytes": 1402889778,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:6192845c93fc717948a036804c7f5fb9313cef594d295e1314655b77148068a0"
+  },
+  {
+    "id": "sha256:6192845c93fc717948a036804c7f5fb9313cef594d295e1314655b77148068a0",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402889596,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:686afd2772c6ccad4578f5ba1abbe2e478b387887457dc8f5b5b07767f27c5ea"
+  },
+  {
+    "id": "sha256:686afd2772c6ccad4578f5ba1abbe2e478b387887457dc8f5b5b07767f27c5ea",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402889467,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:26cf35c36859ec86854862758d1796dcef3bd7c3367963d4844200a70a49460f"
+  },
+  {
+    "id": "sha256:26cf35c36859ec86854862758d1796dcef3bd7c3367963d4844200a70a49460f",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 757076243,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:eb254d128027ab3e1cd2a4fd2f56776dfff219d016a8a677c8528bc32201d4bc"
+  },
+  {
+    "id": "sha256:eb254d128027ab3e1cd2a4fd2f56776dfff219d016a8a677c8528bc32201d4bc",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 757074354,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:8e9d4d09974cc9ade95a491744635a98f7b2d257db6097ad1afa0b8547c598ac"
+  },
+  {
+    "id": "sha256:8e9d4d09974cc9ade95a491744635a98f7b2d257db6097ad1afa0b8547c598ac",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 757071156,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:4fde088030a8335c3a75904b80c9f3b8fd7fadcf0d0fc3b6f80b262f40df0e06"
+  },
+  {
+    "id": "sha256:4fde088030a8335c3a75904b80c9f3b8fd7fadcf0d0fc3b6f80b262f40df0e06",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 757060549,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:225dcd1539dae162fa8210a1ad09974a482890ef3a5df88339d191122d425e89"
+  },
+  {
+    "id": "sha256:225dcd1539dae162fa8210a1ad09974a482890ef3a5df88339d191122d425e89",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 757047114,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:3844d5ce1ad2e797e62eed83925ff948de43d11967c36fe9446f50ed6c62dc59"
+  },
+  {
+    "id": "sha256:3844d5ce1ad2e797e62eed83925ff948de43d11967c36fe9446f50ed6c62dc59",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 757025195,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:e47e14251e534346b5a4bf459376f1257c5ac9ecbe2c58561e54c8d1db0e4a2b"
+  },
+  {
+    "id": "sha256:e47e14251e534346b5a4bf459376f1257c5ac9ecbe2c58561e54c8d1db0e4a2b",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 757013947,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:133d922374dd6012ace670d8e8aeaf05ad8583b99992001fdafa8456cbb118aa"
+  },
+  {
+    "id": "sha256:133d922374dd6012ace670d8e8aeaf05ad8583b99992001fdafa8456cbb118aa",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 757013095,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:93a4d8b98de160acc1d7552f54aacdd3c76e0eef1b9feb91a6589acd6fa6a6cd"
+  },
+  {
+    "id": "sha256:93a4d8b98de160acc1d7552f54aacdd3c76e0eef1b9feb91a6589acd6fa6a6cd",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 757012140,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:bb51b1a2e7c8078153bdae8f3008eafcbb4ceca3c2ea039ac0e9d35ffe8fcb97"
+  },
+  {
+    "id": "sha256:bb51b1a2e7c8078153bdae8f3008eafcbb4ceca3c2ea039ac0e9d35ffe8fcb97",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 757005884,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:089e55a93609613e01f30deffec391fb0239abf23f6b919ab67fd8f7c2019dfd"
+  },
+  {
+    "id": "sha256:9112eb955ff4bb0465bf9b98e70d0b107a74ad36541d16f7ee4330d869db6d4f",
+    "listing": [
+      {
+        "Repository": "byq-acp-authoritative-adapter",
+        "Tag": "20261009",
+        "Size": "6.51GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [
+      "byq-acp-authoritative-adapter:20261009"
+    ],
+    "digests": [
+      "byq-acp-authoritative-adapter@sha256:9112eb955ff4bb0465bf9b98e70d0b107a74ad36541d16f7ee4330d869db6d4f"
+    ],
+    "content_size_bytes": 1431179452,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:cba1ea2025325fd7f5d28cecb21925d678b816906b185d4eda3b064d332f3528"
+  },
+  {
+    "id": "sha256:cba1ea2025325fd7f5d28cecb21925d678b816906b185d4eda3b064d332f3528",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.51GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1431179218,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:04199e00a13723cae7c4e55d3752808a3cff53c2460811d7f8a5702b80307606"
+  },
+  {
+    "id": "sha256:04199e00a13723cae7c4e55d3752808a3cff53c2460811d7f8a5702b80307606",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.51GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1431179093,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:21d6d9f6c84d58543b6ac903f8091769cecd69802df2d9c94bda63cde762118e"
+  },
+  {
+    "id": "sha256:21d6d9f6c84d58543b6ac903f8091769cecd69802df2d9c94bda63cde762118e",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785178277,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:8c0d1cd87cd4480a4de270e242d271441f9149ecc97d55226c29bee49f9d6628"
+  },
+  {
+    "id": "sha256:8c0d1cd87cd4480a4de270e242d271441f9149ecc97d55226c29bee49f9d6628",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785176711,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:d672c5d95027ce4db045df58120596fd8b76cfb85d73ca6dd9c8ad688890620d"
+  },
+  {
+    "id": "sha256:d672c5d95027ce4db045df58120596fd8b76cfb85d73ca6dd9c8ad688890620d",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785154792,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:c7a6bff0e7ce4b36417fc4c5a363476b8a16ba25b890c8ab6673662bc14a7bc9"
+  },
+  {
+    "id": "sha256:c7a6bff0e7ce4b36417fc4c5a363476b8a16ba25b890c8ab6673662bc14a7bc9",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785143554,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:0fd730a521a60e515c3149667c7ef951e2c19d1cc431238222cd75c98486f75b"
+  },
+  {
+    "id": "sha256:0fd730a521a60e515c3149667c7ef951e2c19d1cc431238222cd75c98486f75b",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785142708,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:dfea1ab5bc67fa1775483d802b35edbce52876a16097829fe561e7cd6409fe34"
+  },
+  {
+    "id": "sha256:dfea1ab5bc67fa1775483d802b35edbce52876a16097829fe561e7cd6409fe34",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785141758,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:065ab15000646c8b263a08d936981f24fc788f23188c35886af4ecb7823d19a0"
+  },
+  {
+    "id": "sha256:065ab15000646c8b263a08d936981f24fc788f23188c35886af4ecb7823d19a0",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785135513,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:cae10ed297470e115e7ba05cbad65e40c8bb433648b4df0850ec9a69e423665f"
+  },
+  {
+    "id": "sha256:cae10ed297470e115e7ba05cbad65e40c8bb433648b4df0850ec9a69e423665f",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785134141,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:95c084eeecce0feb4f6f168201d03068b07747a5ee2fd12ba7d6a365b915d745"
+  },
+  {
+    "id": "sha256:95c084eeecce0feb4f6f168201d03068b07747a5ee2fd12ba7d6a365b915d745",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785077323,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:aeb47357cb739667d64885709ac30c68f2cc2b7c65efe839b43de7c4201b9fd8"
+  },
+  {
+    "id": "sha256:aeb47357cb739667d64885709ac30c68f2cc2b7c65efe839b43de7c4201b9fd8",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.48GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 784929050,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:68f527f17ec7900de32c77f790845f58a3821544b8e157e816bfaf3899825ae8"
+  },
+  {
+    "id": "sha256:42525c14f2453174814441e07f234b34a48015543cba2491d3845a7ae496e343",
+    "listing": [
+      {
+        "Repository": "byq-acp-release-intent-c89ff732f2",
+        "Tag": "runtime",
+        "Size": "6.52GB",
+        "Containers": "1"
+      }
+    ],
+    "tags": [
+      "byq-acp-release-intent-c89ff732f2:runtime"
+    ],
+    "digests": [
+      "byq-acp-release-intent-c89ff732f2@sha256:42525c14f2453174814441e07f234b34a48015543cba2491d3845a7ae496e343"
+    ],
+    "content_size_bytes": 1431736269,
+    "references": [
+      {
+        "id": "e16031e60b6c824101434e5d052c82e10eb4be3f9c7fcbe0644f7ffbe65c0387",
+        "name": "/byq-dev-c89ff732f2-runtime-adapter-1",
+        "running": true
+      }
+    ],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:0effdb8bae2b27c06e127185016bc97c34eb494ae8c1990872e7785abac80b8c"
+  },
+  {
+    "id": "sha256:935a71872e0ed2931f45ce011dcff1c147cc19b271e3641bd1488f5118930bd5",
+    "listing": [
+      {
+        "Repository": "byq-acp-native-reuse-c89ff732f2",
+        "Tag": "current",
+        "Size": "6.52GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [
+      "byq-acp-native-reuse-c89ff732f2:current"
+    ],
+    "digests": [
+      "byq-acp-native-reuse-c89ff732f2@sha256:935a71872e0ed2931f45ce011dcff1c147cc19b271e3641bd1488f5118930bd5"
+    ],
+    "content_size_bytes": 1431736034,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:0effdb8bae2b27c06e127185016bc97c34eb494ae8c1990872e7785abac80b8c"
+  },
+  {
+    "id": "sha256:1041f5fa002ebd24f7ff77f49fcbdad1af74c6d717f6176b52252c42b9d968cd",
+    "listing": [
+      {
+        "Repository": "byq-acp-adr0109-judgment-runner",
+        "Tag": "20261009",
+        "Size": "6.39GB",
+        "Containers": "1"
+      }
+    ],
+    "tags": [
+      "byq-acp-adr0109-judgment-runner:20261009"
+    ],
+    "digests": [
+      "byq-acp-adr0109-judgment-runner@sha256:1041f5fa002ebd24f7ff77f49fcbdad1af74c6d717f6176b52252c42b9d968cd"
+    ],
+    "content_size_bytes": 1402764110,
+    "references": [
+      {
+        "id": "6a0a2a1a2bd37c29a375408fb5137ce5cb6b6f0eca9d4be8e53889fa8130ccce",
+        "name": "/byq-dev-c89ff732f2-acp-judgment-runner-1",
+        "running": true
+      }
+    ],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:d1eabcd96cc71dae85251c4e45b5c19539ab8ea22c3f00846ce9b37bd00cd1a1"
+  },
+  {
+    "id": "sha256:d1eabcd96cc71dae85251c4e45b5c19539ab8ea22c3f00846ce9b37bd00cd1a1",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402763963,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:f7de5ab33274d42e8b42291e1a52815c67f331672e0142174f0cd6eec678eac8"
+  },
+  {
+    "id": "sha256:f7de5ab33274d42e8b42291e1a52815c67f331672e0142174f0cd6eec678eac8",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402763770,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:6ea1c3d4eb56f8f4711e23bc788a8f27f2494b1b0a271a7574755fae3bf04758"
+  },
+  {
+    "id": "sha256:6ea1c3d4eb56f8f4711e23bc788a8f27f2494b1b0a271a7574755fae3bf04758",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402763599,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:3d780053f51e84016de6ef1b974bcdd2472b984413716314ca3772822939c6fe"
+  },
+  {
+    "id": "sha256:3d780053f51e84016de6ef1b974bcdd2472b984413716314ca3772822939c6fe",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402763487,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:1185aec0922645fc24c49d66d910106f503de9e1c0dc1509a4503cd5ef47a66c"
+  },
+  {
+    "id": "sha256:1185aec0922645fc24c49d66d910106f503de9e1c0dc1509a4503cd5ef47a66c",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402736966,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:36d05049c269e08f2bb1135aa97d9912867aead6f9ea3b648c424de94cde0404"
+  },
+  {
+    "id": "sha256:36d05049c269e08f2bb1135aa97d9912867aead6f9ea3b648c424de94cde0404",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402725699,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:7601312cd2366758dbbbd7755249c9ab55b1ef6e93d1eeb216343ccd7c23ee3e"
+  },
+  {
+    "id": "sha256:7601312cd2366758dbbbd7755249c9ab55b1ef6e93d1eeb216343ccd7c23ee3e",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402723735,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:dc1a81499c935bfc9f059ac820cad535b6dd1f4c8b7c23d11d57ec9ef0ea595f"
+  },
+  {
+    "id": "sha256:dc1a81499c935bfc9f059ac820cad535b6dd1f4c8b7c23d11d57ec9ef0ea595f",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402721466,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:88c7f86f6d00b9f3a6f8902a0db2c72610ac541742fd21b529f97fe1069a6f16"
+  },
+  {
+    "id": "sha256:88c7f86f6d00b9f3a6f8902a0db2c72610ac541742fd21b529f97fe1069a6f16",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402708013,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:6592810009079dff51f42bf87f56076e84ae665eaf5a2f722b1b57ccb4b7666c"
+  },
+  {
+    "id": "sha256:0effdb8bae2b27c06e127185016bc97c34eb494ae8c1990872e7785abac80b8c",
+    "listing": [
+      {
+        "Repository": "byq-acp-adr0109-adapter",
+        "Tag": "20261009",
+        "Size": "6.52GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [
+      "byq-acp-adr0109-adapter:20261009"
+    ],
+    "digests": [
+      "byq-acp-adr0109-adapter@sha256:0effdb8bae2b27c06e127185016bc97c34eb494ae8c1990872e7785abac80b8c"
+    ],
+    "content_size_bytes": 1431587927,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:01b7960d288cd8d666a94ff2ada6278e970ada68a232153d55e6081639f3bb9e"
+  },
+  {
+    "id": "sha256:01b7960d288cd8d666a94ff2ada6278e970ada68a232153d55e6081639f3bb9e",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.52GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1431587507,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:d417998341c23616fd9dc9e2d87d2d02298b7b36b41f73d8df95bd6955d40dda"
+  },
+  {
+    "id": "sha256:d417998341c23616fd9dc9e2d87d2d02298b7b36b41f73d8df95bd6955d40dda",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.52GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1431587396,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:9b3134bd6c40aaecec9327ebf66dde29af7ae522352f7a1113b6d064adcacd43"
+  },
+  {
+    "id": "sha256:9b3134bd6c40aaecec9327ebf66dde29af7ae522352f7a1113b6d064adcacd43",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.52GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1431348268,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:0130795262755300e0e1b18963b4f077dd77a8fe38674d654d476af06eaf2d1f"
+  },
+  {
+    "id": "sha256:0130795262755300e0e1b18963b4f077dd77a8fe38674d654d476af06eaf2d1f",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.51GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1431342342,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:178419ef1d04468384c77a290b99a20304ed4879483aad9906a600be131ab8ab"
+  },
+  {
+    "id": "sha256:6ddceb4fd7a65ac5dabe57d87ba7b7710e3d60d0d27bafad6a7c91371fd7743a",
+    "listing": [
+      {
+        "Repository": "byq-acp-adr0109-product-runner",
+        "Tag": "20261009",
+        "Size": "6.39GB",
+        "Containers": "1"
+      }
+    ],
+    "tags": [
+      "byq-acp-adr0109-product-runner:20261009"
+    ],
+    "digests": [
+      "byq-acp-adr0109-product-runner@sha256:6ddceb4fd7a65ac5dabe57d87ba7b7710e3d60d0d27bafad6a7c91371fd7743a"
+    ],
+    "content_size_bytes": 1402940014,
+    "references": [
+      {
+        "id": "a9d2764a5f5554259bb5c1b28f86c08c57347c8d96cf04d90d4ec4d5bea8e1c4",
+        "name": "/byq-dev-c89ff732f2-acp-product-runner-1",
+        "running": true
+      }
+    ],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:e5b1637ab2d54ef7f5edd9d8987efd5dec1f27ae57f9f3459dc8b5ebf2995084"
+  },
+  {
+    "id": "sha256:178419ef1d04468384c77a290b99a20304ed4879483aad9906a600be131ab8ab",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.51GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1431331092,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:fb813a4758992fec74cde7592aa016a655d44d264497f3c12797bd252d7b4197"
+  },
+  {
+    "id": "sha256:e5b1637ab2d54ef7f5edd9d8987efd5dec1f27ae57f9f3459dc8b5ebf2995084",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402939594,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:6ce926eaf9cf847305a069287fde2b2cf42da83ef409e8605a47d238fb93cd83"
+  },
+  {
+    "id": "sha256:fb813a4758992fec74cde7592aa016a655d44d264497f3c12797bd252d7b4197",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.51GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1431330135,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:a3d85c96386a4387b2e6011b88071ff2b40bc83df72f09185444bdb4a8460582"
+  },
+  {
+    "id": "sha256:6ce926eaf9cf847305a069287fde2b2cf42da83ef409e8605a47d238fb93cd83",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402887695,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:7b3273ad55c48ed203bcf40fa661df5173ef675e6165f65ad0804f43aa3f9067"
+  },
+  {
+    "id": "sha256:a3d85c96386a4387b2e6011b88071ff2b40bc83df72f09185444bdb4a8460582",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.51GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1431323878,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:384b5bce70083789a0200ab6c931e36cae5f8de1112825ee5b5308029674e927"
+  },
+  {
+    "id": "sha256:7b3273ad55c48ed203bcf40fa661df5173ef675e6165f65ad0804f43aa3f9067",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402883546,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:33bbcbdfffb9d19e420e4e38c9fed3dc4274801a3cffb22b2aacafb943adda26"
+  },
+  {
+    "id": "sha256:384b5bce70083789a0200ab6c931e36cae5f8de1112825ee5b5308029674e927",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.51GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1431322495,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:0af95c0d4053b42578ee249769226f76d547a2b42e4b00e665b430019c67aa50"
+  },
+  {
+    "id": "sha256:33bbcbdfffb9d19e420e4e38c9fed3dc4274801a3cffb22b2aacafb943adda26",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402872925,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:57aa52653547dcecd408d9959e38df9f3634e65165766d152b7c0835694c74e9"
+  },
+  {
+    "id": "sha256:0af95c0d4053b42578ee249769226f76d547a2b42e4b00e665b430019c67aa50",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.51GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1431265659,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:5ff505bb8b004381c1b1d7ddcd9624d80713df6623d7515f531f5bfcaacf7565"
+  },
+  {
+    "id": "sha256:57aa52653547dcecd408d9959e38df9f3634e65165766d152b7c0835694c74e9",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402859480,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:18e9c774e6259489877ea890a5ca060ca47862ee3b32ed6d59856376861971f6"
+  },
+  {
+    "id": "sha256:18e9c774e6259489877ea890a5ca060ca47862ee3b32ed6d59856376861971f6",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402853556,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:d8229da9d610e4a0745ce14351c8bb94aad88f4485a1dd2358cb9190e53295be"
+  },
+  {
+    "id": "sha256:5ff505bb8b004381c1b1d7ddcd9624d80713df6623d7515f531f5bfcaacf7565",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.51GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1431120125,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:dfb6d627c563252a826595c09c8f4b394a3370596bdeded4318c28f3dde444f1"
+  },
+  {
+    "id": "sha256:d8229da9d610e4a0745ce14351c8bb94aad88f4485a1dd2358cb9190e53295be",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402852591,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:4a52d4ed982b216e6874ddd8c6aa27c92809d1f60e59e3719865a4122aea35e8"
+  },
+  {
+    "id": "sha256:dfb6d627c563252a826595c09c8f4b394a3370596bdeded4318c28f3dde444f1",
+    "listing": [
+      {
+        "Repository": "byq-acpf6-runtime-adapter",
+        "Tag": "latest",
+        "Size": "6.51GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [
+      "byq-acpf6-runtime-adapter:latest"
+    ],
+    "digests": [
+      "byq-acpf6-runtime-adapter@sha256:dfb6d627c563252a826595c09c8f4b394a3370596bdeded4318c28f3dde444f1"
+    ],
+    "content_size_bytes": 1431120011,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:37f9b5e8161df2e9b9cc2e019083c6bdfe8c99edb65dd733d510c14f25d3c68c"
+  },
+  {
+    "id": "sha256:37f9b5e8161df2e9b9cc2e019083c6bdfe8c99edb65dd733d510c14f25d3c68c",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.51GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1431119777,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:e8e88c69f700de5d48f5f1a33eeb56b1d9657fafebbb4fbe3a9573eeb4de0b3a"
+  },
+  {
+    "id": "sha256:e8e88c69f700de5d48f5f1a33eeb56b1d9657fafebbb4fbe3a9573eeb4de0b3a",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.51GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1431119652,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:ce9017ff9c4a9e608ff1bbb4c87b1b1c86cacfbac269e68a602d7bccb69bc161"
+  },
+  {
+    "id": "sha256:ce9017ff9c4a9e608ff1bbb4c87b1b1c86cacfbac269e68a602d7bccb69bc161",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785124045,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:3871001b30711b434451abdee117a20bec097a366df657b689730bc84c3c95ba"
+  },
+  {
+    "id": "sha256:3871001b30711b434451abdee117a20bec097a366df657b689730bc84c3c95ba",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785102299,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:7d67b5ae13ce80825ed152b7a21a2f29ee9cad6cc14aed461a4848879a3047fc"
+  },
+  {
+    "id": "sha256:7d67b5ae13ce80825ed152b7a21a2f29ee9cad6cc14aed461a4848879a3047fc",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785091059,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:44887f8445cd6a0209077bd85f98c06a109793791a08799ee340b48cdd27a167"
+  },
+  {
+    "id": "sha256:44887f8445cd6a0209077bd85f98c06a109793791a08799ee340b48cdd27a167",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785090211,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:42e54cd0910a2c011b62a0ef84b9a61ea9448bf099d6c7d0cac1aca634b7ba81"
+  },
+  {
+    "id": "sha256:42e54cd0910a2c011b62a0ef84b9a61ea9448bf099d6c7d0cac1aca634b7ba81",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785089260,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:7bf88b24533070f75cb32b292b93de4ab20c8753149c359b05300426fcbc24d5"
+  },
+  {
+    "id": "sha256:7bf88b24533070f75cb32b292b93de4ab20c8753149c359b05300426fcbc24d5",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785083272,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:8bc53d3c5107a38898a564d0bcb2b7900271b799730dcc726e76a0a391167bd1"
+  },
+  {
+    "id": "sha256:8bc53d3c5107a38898a564d0bcb2b7900271b799730dcc726e76a0a391167bd1",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785081898,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:efce3d5f7c0333728c9ae5a76891eb9a3a250ee32ce4afb1f4a07eae234476e4"
+  },
+  {
+    "id": "sha256:efce3d5f7c0333728c9ae5a76891eb9a3a250ee32ce4afb1f4a07eae234476e4",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.49GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 785025081,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:0813ac2b5a1f03b7872913b74afd729f6ccb341c51f2467e7fc9f7c7713636c2"
+  },
+  {
+    "id": "sha256:4a52d4ed982b216e6874ddd8c6aa27c92809d1f60e59e3719865a4122aea35e8",
+    "listing": [
+      {
+        "Repository": "byq-acpf6-acp-product-runner",
+        "Tag": "latest",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [
+      "byq-acpf6-acp-product-runner:latest"
+    ],
+    "digests": [
+      "byq-acpf6-acp-product-runner@sha256:4a52d4ed982b216e6874ddd8c6aa27c92809d1f60e59e3719865a4122aea35e8"
+    ],
+    "content_size_bytes": 1402846334,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:a1b686b51cfe0d0e1537fcb806daee9db42866ac76c81636cce009de688889a7"
+  },
+  {
+    "id": "sha256:a1b686b51cfe0d0e1537fcb806daee9db42866ac76c81636cce009de688889a7",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402846152,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:5cff2905f30299adf955f2cfe3eb142f9617daa4cf2825438dd578f47327d30e"
+  },
+  {
+    "id": "sha256:5cff2905f30299adf955f2cfe3eb142f9617daa4cf2825438dd578f47327d30e",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402846023,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:00f82e78c36fd48864660d369a2320b9edca8e0cd6557eb1e1d1a124496cd878"
+  },
+  {
+    "id": "sha256:00f82e78c36fd48864660d369a2320b9edca8e0cd6557eb1e1d1a124496cd878",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 757048740,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:d0a75a4d4faf46557e4d32aeda5546a5c756971862889a3d15c5bd88e8a2d221"
+  },
+  {
+    "id": "sha256:d0a75a4d4faf46557e4d32aeda5546a5c756971862889a3d15c5bd88e8a2d221",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 757046852,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:7f7cb44d38609fb426c5f8d95ada1dcb3fe715daf4f9073ccfe6b4121a3482b7"
+  },
+  {
+    "id": "sha256:7f7cb44d38609fb426c5f8d95ada1dcb3fe715daf4f9073ccfe6b4121a3482b7",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 757043652,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:2405f60714fa630181e8f94f3b0b813ee3b992496f7026b33466da0c162aacc6"
+  },
+  {
+    "id": "sha256:2405f60714fa630181e8f94f3b0b813ee3b992496f7026b33466da0c162aacc6",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 757033041,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:cbb21155c8e44dd9531686862126a9dff2fd6cd401bdbcaed2e38f61d709cfbc"
+  },
+  {
+    "id": "sha256:cbb21155c8e44dd9531686862126a9dff2fd6cd401bdbcaed2e38f61d709cfbc",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 757019605,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:e236028d7adac69f0ea676ae8609dab4d21eed94d6659538427f3f8daf62f0f3"
+  },
+  {
+    "id": "sha256:e236028d7adac69f0ea676ae8609dab4d21eed94d6659538427f3f8daf62f0f3",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 756997859,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:56f6342565ce5c33b2f3c3f96ca3719e9e3bc758c1cbd2c87c6ba679309b92be"
+  },
+  {
+    "id": "sha256:56f6342565ce5c33b2f3c3f96ca3719e9e3bc758c1cbd2c87c6ba679309b92be",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 756986611,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:1218ee056910f0e8bcffdd4a7886a5e215802044c4af04bc36802413cedb09a9"
+  },
+  {
+    "id": "sha256:1218ee056910f0e8bcffdd4a7886a5e215802044c4af04bc36802413cedb09a9",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 756985757,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:7f60a650f75cbdd1063ebdd51e02eb40cf4d8d7bf1cac8482e7d59e1bfd0a2ad"
+  },
+  {
+    "id": "sha256:7f60a650f75cbdd1063ebdd51e02eb40cf4d8d7bf1cac8482e7d59e1bfd0a2ad",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "3.36GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 756984800,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": "sha256:72d62c33df8defc0e872e1d981f92089e2e10af007cd4eda6860176b12eeba9e"
+  },
+  {
+    "id": "sha256:c324ef803409c0a38e9c34b68bcc847942614eb1e907d13ac2b0a30952b1b0b9",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.51GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1431015580,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": null
+  },
+  {
+    "id": "sha256:3da73530d1ec4caf720c9d27caefbec228b2dc405b3570ba9f12f001f6cd58b2",
+    "listing": [
+      {
+        "Repository": "<none>",
+        "Tag": "<none>",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [],
+    "digests": [],
+    "content_size_bytes": 1402748105,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": null
+  },
+  {
+    "id": "sha256:6592810009079dff51f42bf87f56076e84ae665eaf5a2f722b1b57ccb4b7666c",
+    "listing": [
+      {
+        "Repository": "byq-acpcand-acp-judgment-runner",
+        "Tag": "latest",
+        "Size": "6.39GB",
+        "Containers": "0"
+      },
+      {
+        "Repository": "byq-acpf6-acp-judgment-runner",
+        "Tag": "latest",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [
+      "byq-acpcand-acp-judgment-runner:latest",
+      "byq-acpf6-acp-judgment-runner:latest"
+    ],
+    "digests": [
+      "byq-acpcand-acp-judgment-runner@sha256:6592810009079dff51f42bf87f56076e84ae665eaf5a2f722b1b57ccb4b7666c",
+      "byq-acpf6-acp-judgment-runner@sha256:6592810009079dff51f42bf87f56076e84ae665eaf5a2f722b1b57ccb4b7666c"
+    ],
+    "content_size_bytes": 1402708407,
+    "references": [],
+    "decision": "PRESERVE container/qualified image or ancestor",
+    "parent": null
+  },
+  {
+    "id": "sha256:67950caf13342de43694db4b18a78dd3047696e92431f0dd2648cd4089dd1dc5",
+    "listing": [
+      {
+        "Repository": "byq-acp-product-runner",
+        "Tag": "qualification-20261005-fix3",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [
+      "byq-acp-product-runner:qualification-20261005-fix3"
+    ],
+    "digests": [
+      "byq-acp-product-runner@sha256:67950caf13342de43694db4b18a78dd3047696e92431f0dd2648cd4089dd1dc5"
+    ],
+    "content_size_bytes": 1402838800,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:081c131c16c3d652e16c7a8e5092d0e0147560e02286792fe267083a05320e39"
+  },
+  {
+    "id": "sha256:6722c919993d35201249a0eecf80b5bda3f4be7122a356876e2493dc2f318dca",
+    "listing": [
+      {
+        "Repository": "byq-acp-product-runner",
+        "Tag": "qualification-20261005-final",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [
+      "byq-acp-product-runner:qualification-20261005-final"
+    ],
+    "digests": [
+      "byq-acp-product-runner@sha256:6722c919993d35201249a0eecf80b5bda3f4be7122a356876e2493dc2f318dca"
+    ],
+    "content_size_bytes": 1402857450,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:e194988d582e3e6f81ced106cdf7136dd848fd1eaf36a5c4488181050f0ebc25"
+  },
+  {
+    "id": "sha256:de094b9c628308744f3544cdebf0bf9c69838864f61c2b345b57a829d09dbe5a",
+    "listing": [
+      {
+        "Repository": "byq-runtime-adapter-acp",
+        "Tag": "qualification-20261005-slot",
+        "Size": "6.51GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [
+      "byq-runtime-adapter-acp:qualification-20261005-slot"
+    ],
+    "digests": [
+      "byq-runtime-adapter-acp@sha256:de094b9c628308744f3544cdebf0bf9c69838864f61c2b345b57a829d09dbe5a"
+    ],
+    "content_size_bytes": 1431306867,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:8ddf0b3ba93625951e029e47c259cf5ebd994a9f24474a89e635dd7febcd7dbf"
+  },
+  {
+    "id": "sha256:fe3dbfe9ec438f9982a649fbf519ac646115dafce00bf3d061a939a057a1a998",
+    "listing": [
+      {
+        "Repository": "byq-acp-product-runner",
+        "Tag": "qualification-20261005",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [
+      "byq-acp-product-runner:qualification-20261005"
+    ],
+    "digests": [
+      "byq-acp-product-runner@sha256:fe3dbfe9ec438f9982a649fbf519ac646115dafce00bf3d061a939a057a1a998"
+    ],
+    "content_size_bytes": 1402838417,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:f546b0549a3806c9951c206a6c71a650c79d5f8ab1d05bc9814cd00abb3de68f"
+  },
+  {
+    "id": "sha256:297130a5c38316957a5f039504b03d97826a46c25c50d2d4ed78ea865159f020",
+    "listing": [
+      {
+        "Repository": "byq-acp-judgment-runner",
+        "Tag": "qualification-20261005-final",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [
+      "byq-acp-judgment-runner:qualification-20261005-final"
+    ],
+    "digests": [
+      "byq-acp-judgment-runner@sha256:297130a5c38316957a5f039504b03d97826a46c25c50d2d4ed78ea865159f020"
+    ],
+    "content_size_bytes": 1402788234,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:06dc4bd6fe41019dc5b73eec35b7037d0ecc4c3046c64b73a92ca8b2ca2a1562"
+  },
+  {
+    "id": "sha256:415fb220fcdfaba4aa3259b75447d519139b1e9bf979ba26f21a594305f17732",
+    "listing": [
+      {
+        "Repository": "byq-acp-judgment-runner",
+        "Tag": "qualification-20261005-fix1",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [
+      "byq-acp-judgment-runner:qualification-20261005-fix1"
+    ],
+    "digests": [
+      "byq-acp-judgment-runner@sha256:415fb220fcdfaba4aa3259b75447d519139b1e9bf979ba26f21a594305f17732"
+    ],
+    "content_size_bytes": 1402793033,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:fa3408a013d5d02188ac93df722a69d50a2921ad0dcaea5f9261f9857ace65d6"
+  },
+  {
+    "id": "sha256:7e055e6f27bcbde9c1e3a8d79ec206099ccc18e8f29d66b2c763f118a876570f",
+    "listing": [
+      {
+        "Repository": "byq-acp-judgment-runner",
+        "Tag": "qualification-20261005",
+        "Size": "6.39GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [
+      "byq-acp-judgment-runner:qualification-20261005"
+    ],
+    "digests": [
+      "byq-acp-judgment-runner@sha256:7e055e6f27bcbde9c1e3a8d79ec206099ccc18e8f29d66b2c763f118a876570f"
+    ],
+    "content_size_bytes": 1402792733,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:a8b117baa8ecd2c92aa5b4ac4ce499fa8933e3b0f69a0540e9b63a10dc84e9e3"
+  },
+  {
+    "id": "sha256:c47224ea3138db3cdf91d9bfeccd944ecf36585aae278d1deda5a3e9514cdf8f",
+    "listing": [
+      {
+        "Repository": "byq-acp-official-dsh",
+        "Tag": "qualification-20261005",
+        "Size": "4.38GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [
+      "byq-acp-official-dsh:qualification-20261005"
+    ],
+    "digests": [
+      "byq-acp-official-dsh@sha256:c47224ea3138db3cdf91d9bfeccd944ecf36585aae278d1deda5a3e9514cdf8f"
+    ],
+    "content_size_bytes": 993505416,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:f96db953aa03a2366b0fcc0595f1ab15266292d9d789ee46251df01fbf152838"
+  },
+  {
+    "id": "sha256:f600f4eb348542b96d9e0c64243edc47ee37c8f8f509200c8099da9d658aa2ba",
+    "listing": [
+      {
+        "Repository": "byq-runtime-adapter-acp",
+        "Tag": "qualification-20261004",
+        "Size": "6.51GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [
+      "byq-runtime-adapter-acp:qualification-20261004"
+    ],
+    "digests": [
+      "byq-runtime-adapter-acp@sha256:f600f4eb348542b96d9e0c64243edc47ee37c8f8f509200c8099da9d658aa2ba"
+    ],
+    "content_size_bytes": 1430951403,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:922e61c0fea487bda0654d85d3306cb30d35eb78403e4070b88323bca44b934a"
+  },
+  {
+    "id": "sha256:16b5238ddded2c04ae9ac66812b391e4991122ceb1ef94b7ba8fbd90dd3e3437",
+    "listing": [
+      {
+        "Repository": "byq-dsh-acp-rc2",
+        "Tag": "local",
+        "Size": "6.51GB",
+        "Containers": "0"
+      }
+    ],
+    "tags": [
+      "byq-dsh-acp-rc2:local"
+    ],
+    "digests": [
+      "byq-dsh-acp-rc2@sha256:16b5238ddded2c04ae9ac66812b391e4991122ceb1ef94b7ba8fbd90dd3e3437"
+    ],
+    "content_size_bytes": 1430939146,
+    "references": [],
+    "decision": "DELETE obsolete unreferenced ACP/build image",
+    "parent": "sha256:1228b86e67cf3486745a15eb8c055cbdce93c462d087e47f22e31f618313b0c9"
+  }
+]

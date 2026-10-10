@@ -14,11 +14,14 @@ stage/action transitions and approval/reference/postcondition shapes):
   a second object (at-most-once business idempotency).
 
 These methods are an INTERNAL Backend seam for the ADR-0085 deterministic
-reducer. They are deliberately NOT exposed as agent-facing HTTP/MCP write routes:
-a model or ordinary agent must never submit ``next_stage``/``status`` and act as
-the workflow Router. P1 ships the contract, persistence/CAS and this seam; P2
-wires the authoritative approval/data-ready/backtest/user-resume/recovery events
-into the reducer, which derives the next state server-side.
+reducer. Plan advance and proposal commit are deliberately NOT exposed as
+agent-facing HTTP/MCP write routes: a model or ordinary agent must never submit
+``next_stage``/``status`` and act as the workflow Router. ADR-0108 adds exactly
+ONE foreground write surface, ``POST /v1/research/tasks/{task_id}/execution-plan``
+(owner/workspace derived from the trusted context, closed create request only),
+which reuses ``create_execution_plan``. P2 wires the authoritative
+approval/data-ready/backtest/user-resume/recovery events into the reducer, which
+derives the next state server-side.
 """
 
 from __future__ import annotations
@@ -31,9 +34,32 @@ from packages.contracts.research_execution_plan import (
     advance,
     new_plan,
     validate_plan,
+    validate_references,
 )
 
 _KEY_MAX = 128
+
+# Directly-verifiable plan reference kinds. Each maps to (table, key column,
+# scope columns, required artifact kind or None). The scope columns are compared
+# to the bound task's owner/workspace/task, so a foreign or nonexistent object is
+# refused instead of being trusted from the payload. Kinds with no verifiable
+# first-class row (e.g. ``backtest_task``, a derived view of a signal job) are
+# deliberately absent and therefore refused at creation; their objects only
+# appear through validated plan advances.
+_REFERENCE_TABLES: dict[str, tuple[str, str, tuple[str, ...], str | None]] = {
+    "research_task": ("research_tasks", "task_id", ("owner_principal", "workspace_id"), None),
+    "conversation": ("product_conversations", "conversation_id", ("owner_principal", "workspace_id"), None),
+    "strategy_version": ("artifacts", "artifact_id", ("owner_principal", "workspace_id", "task_id"), "strategy_version"),
+    "strategy_approval": ("artifacts", "artifact_id", ("owner_principal", "workspace_id", "task_id"), "strategy_approval"),
+    "signal_snapshot": ("artifacts", "artifact_id", ("owner_principal", "workspace_id", "task_id"), "signal_snapshot"),
+    "backtest_result": ("artifacts", "artifact_id", ("owner_principal", "workspace_id", "task_id"), "backtest_result"),
+    "ml_prediction": ("artifacts", "artifact_id", ("owner_principal", "workspace_id", "task_id"), "ml_prediction_snapshot"),
+    "stock_pool_snapshot": ("stock_pool_snapshots", "snapshot_id", ("workspace_id",), None),
+    "signal_producer_job": ("signal_producer_jobs", "job_id", ("owner_principal", "workspace_id", "task_id"), None),
+    "backtest_job": ("backtest_jobs", "job_id", ("owner_principal", "workspace_id", "task_id"), None),
+    "paper_account": ("paper_accounts", "account_id", ("owner_principal", "workspace_id"), None),
+}
+
 
 
 SCHEMA_DDL: list[str] = [
@@ -181,6 +207,54 @@ class ResearchExecutionPlanMixin:
             raise ValueError("research execution plan requires the bound conversation")
         return conversation_id
 
+    @staticmethod
+    def _validate_create_references(connection, task: dict, references: dict) -> dict:
+        """Bind and resolve every create reference to a real, owner-scoped row.
+
+        The closed payload shape is not proof of existence, ownership or binding.
+        The plan is bound to EXACTLY this task and its conversation, so the bound
+        values are injected and a same-owner sibling task/conversation is refused.
+        Every remaining reference must resolve to a first-class row whose
+        owner/workspace (and task, where the row carries one) match the bound
+        task; a foreign, nonexistent or unverifiable reference fails closed. The
+        returned mapping is the effective reference set stored with the plan.
+        """
+
+        from .research import ResearchNotFound
+
+        effective = dict(references)
+        for kind, identity in (("research_task", task["task_id"]),
+                               ("conversation", task["conversation_id"])):
+            bound = {kind: identity}
+            supplied = effective.get(kind)
+            if supplied is not None and supplied != bound:
+                raise ResearchNotFound(
+                    "research execution plan reference is not bound to this task")
+            effective[kind] = bound
+        validate_references(effective)
+        for kind, reference in effective.items():
+            target = _REFERENCE_TABLES.get(kind)
+            if target is None:
+                raise ResearchNotFound(
+                    "research execution plan reference is not verifiable at creation")
+            table, key_column, scope_columns, required_kind = target
+            clauses = [f"{key_column} = :identity"]
+            params: dict[str, object] = {"identity": reference[kind]}
+            for column in scope_columns:
+                clauses.append(f"{column} = :{column}")
+                params[column] = task[column]
+            if required_kind is not None:
+                clauses.append("kind = :required_kind")
+                params["required_kind"] = required_kind
+            row = fetch_one(
+                connection,
+                f"SELECT {key_column} FROM {table} WHERE {' AND '.join(clauses)}",
+                params,
+            )
+            if row is None:
+                raise ResearchNotFound("research execution plan reference not found")
+        return effective
+
     def _load_current_plan(self, connection, task_id: str, *, lock: bool):
         clause = "FOR UPDATE" if lock else ""
         return fetch_one(connection,
@@ -202,16 +276,23 @@ class ResearchExecutionPlanMixin:
                 raise InvalidTransition(
                     "execution plan references must be provided by the foreground caller")
             conversation_id = self._require_conversation(task)
-            if task["status"] in {"completed", "failed", "cancelled"}:
-                raise InvalidTransition("a terminal research task cannot start an execution plan")
-            references = request.get("references")
             request_hash = _request_hash(task["task_id"], request)
+            # An exact key+body replay returns the CURRENT plan projection and
+            # writes no second plan, even after the task has since become
+            # terminal: idempotency is a property of the immutable task id and the
+            # caller's request, not of the mutable task status. The projection may
+            # already reflect later advances; it is not an immutable creation
+            # receipt. A NEW create on a task with no plan is refused once terminal.
             existing = self._load_current_plan(connection, task["task_id"], lock=True)
             if existing is not None:
                 if (existing["idempotency_key"] == request["idempotency_key"]
                         and existing["request_hash"] == request_hash):
                     return project_execution_plan(existing["plan"])
                 raise IdempotencyConflict("a current research execution plan already exists for this task")
+            if task["status"] in {"completed", "failed", "cancelled"}:
+                raise InvalidTransition("a terminal research task cannot start an execution plan")
+            references = self._validate_create_references(
+                connection, task, request.get("references") or {})
             plan = new_plan(
                 task_id=task["task_id"], owner_principal=task["owner_principal"],
                 workspace_id=task["workspace_id"], conversation_id=conversation_id,

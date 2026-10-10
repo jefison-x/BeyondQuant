@@ -39,6 +39,7 @@ from .pooled_http import pooled_http as httpx
 from .user_session import SESSION_COOKIE, ProductAuthError, resolve_principal, resolve_user
 from .trace_store import TraceConflict, TraceStore
 from .session_containment import (
+    _owned as containment_owned,
     containment_match,
     preservation_projection,
     project_containment,
@@ -1174,7 +1175,13 @@ def _schedule_idle_release(session: ProductSession, generation: int | None = Non
         if not product_sessions.claim_idle_release(session, generation):
             return
         try:
-            _adapter_post(f"/internal/runtime/sessions/{session.session_id}/release", timeout=5.0)
+            release_path = f"/internal/runtime/sessions/{session.session_id}/release"
+            hard_terminal = _conversation_hard_terminal(
+                trace_store.read(session.session_id), session.session_id, session.trace_id,
+            )
+            if hard_terminal is None:
+                release_path += "?preserve_conversation=true"
+            _adapter_post(release_path, timeout=5.0)
         except HTTPException as exc:
             if exc.status_code == 404:
                 product_sessions.remove_owned(session.conversation_id, session.principal)
@@ -2406,12 +2413,94 @@ def _verified_public_runtime_boot() -> str | None:
     return adapter_boot if adapter_boot == cached["boot_id"] else None
 
 
+def _conversation_hard_terminal(events: object, runtime_session_id: str,
+                                trace_id: str, conversation_status: object = None) -> str | None:
+    """Project only a durable conversation end or a normalized hard cancel.
+
+    Reuses the ``session_containment`` ownership rules: an event must match the
+    exact ``runtime_session_id`` and ``trace_id`` and carry a normalized
+    ``runtime-adapter``/``byq-domain`` source. A missing identifier, a raw DSH
+    event or a raw model event is never a source. ADR-0093 requires BYQ's durable
+    closed state to end a conversation; no ``session.closed`` trace event alone
+    proves it. A normal ``session.result`` or a soft cancel does not end a
+    conversation; a hard cancel remains terminal.
+    """
+    if conversation_status == "closed":
+        return "closed"
+    if not runtime_session_id or not trace_id:
+        return None
+    terminal: str | None = None
+    for event in containment_owned(events, runtime_session_id, trace_id):
+        kind = event.get("kind")
+        if kind == "session.cancelled":
+            payload = event.get("payload")
+            if isinstance(payload, dict) and payload.get("mode") == "hard":
+                terminal = "cancelled"
+    return terminal
+
+
+def _conversation_public_trace_events(
+    events: object, runtime_session_id: str, trace_id: str, conversation_status: object,
+) -> list[dict]:
+    """Project close events only when the owner-scoped catalog proves an end.
+
+    Runtime teardown events are not BYQ conversation lifecycle evidence. In an
+    active or archived conversation, hide every ``session.closed`` event,
+    including events with a mismatched identity or raw DSH source, because the
+    browser treats this kind as terminal. A durable catalog close may retain
+    only a close event bound to this exact runtime session and trace from a
+    normalized BYQ source. Hard-cancel events also require that exact ownership
+    and source binding because the browser treats them as terminal directly.
+    """
+    if not isinstance(events, list):
+        return []
+    if not isinstance(conversation_status, str) or conversation_status not in {"active", "archived", "closed"}:
+        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid status")
+
+    def is_public(event: object) -> bool:
+        if not isinstance(event, dict):
+            return True
+        owned = (
+            event.get("session_id") == runtime_session_id
+            and event.get("trace_id") == trace_id
+            and event.get("source") in {"runtime-adapter", "byq-domain"}
+        )
+        if event.get("kind") == "session.closed":
+            return conversation_status == "closed" and owned
+        if event.get("kind") == "session.cancelled":
+            payload = event.get("payload")
+            if isinstance(payload, dict) and payload.get("mode") == "hard":
+                return owned
+        return True
+
+    return [event for event in events if is_public(event)]
+
+
+def _conversation_status_for_runtime_session(session: ProductSession) -> object:
+    """Read the current owner-scoped BYQ status before projecting a live release event."""
+    body = _catalog_request(
+        "GET", f"/v1/product/conversations/{session.conversation_id}",
+        session.principal, session.workspace_id,
+    )
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
+    conversation = body.get("conversation")
+    if (not isinstance(conversation, dict)
+            or conversation.get("conversation_id") != session.conversation_id
+            or conversation.get("runtime_session_id") != session.session_id
+            or conversation.get("trace_id") != session.trace_id):
+        raise HTTPException(status_code=502, detail="conversation catalog returned an invalid response")
+    return conversation.get("status")
+
+
 def _public_conversation_status(conversation: dict, principal: Principal,
-                                verified_boot: str | None) -> str:
+                                verified_boot: str | None, hard_terminal: str | None = None) -> str:
     """Only a verified current Adapter binding can support an active claim."""
     stored = conversation.get("status")
     if stored != "active":
         return str(stored or "unknown")
+    if hard_terminal is not None:
+        return hard_terminal
     live = product_sessions.find_owned(str(conversation.get("conversation_id") or ""), principal)
     if (live is not None and not live.released
             and live.session_id == conversation.get("runtime_session_id")
@@ -2442,20 +2531,28 @@ def list_product_sessions(
     )
     conversations = catalog.get("conversations", [])
     verified_boot = _verified_public_runtime_boot()
-    return {"sessions": [
-        {
+    sessions = []
+    for item in conversations:
+        if not isinstance(item, dict):
+            continue
+        hard_terminal = None
+        if item.get("status") == "active":
+            hard_terminal = _conversation_hard_terminal(
+                trace_store.read(str(item.get("runtime_session_id") or "")),
+                str(item.get("runtime_session_id") or ""), str(item.get("trace_id") or ""),
+                item.get("status"))
+        sessions.append({
             "session_id": item["conversation_id"],
             "trace_id": item["trace_id"],
             "title": item["title"],
-            "status": _public_conversation_status(item, principal, verified_boot),
+            "status": _public_conversation_status(item, principal, verified_boot, hard_terminal),
             "pinned": item["pinned"],
             "message_count": item["message_count"],
             "last_message_preview": item["last_message_preview"],
             "created_at": item["created_at"],
             "updated_at": item["updated_at"],
-        }
-        for item in conversations if isinstance(item, dict)
-    ], "total": catalog.get("total", 0), "limit": catalog.get("limit", limit), "offset": catalog.get("offset", offset)}
+        })
+    return {"sessions": sessions, "total": catalog.get("total", 0), "limit": catalog.get("limit", limit), "offset": catalog.get("offset", offset)}
 
 
 @app.get("/v1/agent/sessions/{session_id}")
@@ -2473,16 +2570,23 @@ def get_product_session(session_id: str, request: Request) -> dict[str, object]:
         for item in messages if isinstance(item, dict) and item.get("role") == "assistant"
         and isinstance(item.get("workflow_sequence"), int)
     } if isinstance(messages, list) else set()
+    raw_events = trace_store.read(runtime_session_id)
+    projected_events = _conversation_public_trace_events(
+        raw_events, runtime_session_id, str(conversation.get("trace_id") or ""), conversation.get("status"))
     events = [
         {**event, "session_id": session_id}
-        for event in trace_store.read(runtime_session_id)
+        for event in projected_events
         if event["kind"] != "agent.output.delta" or event["sequence"] not in persisted_answer_sequences
     ]
     public = {
         "session_id": session_id,
         "trace_id": conversation.get("trace_id"),
         "title": conversation.get("title"),
-        "status": _public_conversation_status(conversation, principal, verified_boot),
+        "status": _public_conversation_status(
+            conversation, principal, verified_boot,
+            _conversation_hard_terminal(
+                raw_events, runtime_session_id, str(conversation.get("trace_id") or ""),
+                conversation.get("status"))),
         "pinned": conversation.get("pinned"),
         "message_count": conversation.get("message_count"),
         "last_message_preview": conversation.get("last_message_preview"),
@@ -2497,7 +2601,7 @@ def get_product_session(session_id: str, request: Request) -> dict[str, object]:
         principal_subject=principal.subject,
         workspace_id=workspace_id,
         conversation=conversation,
-        events=trace_store.read(runtime_session_id),
+        events=projected_events,
     )
     if public["status"] == "unknown" and containment["status"] == "active":
         containment = {**containment, "status": "unknown"}
@@ -2810,6 +2914,22 @@ def product_workflow_events(
                 if event is None:
                     yield b": heartbeat\n\n"
                     continue
+                payload = event.get("payload")
+                hard_cancel = (
+                    event.get("kind") == "session.cancelled"
+                    and isinstance(payload, dict) and payload.get("mode") == "hard"
+                )
+                if event.get("kind") == "session.closed" or hard_cancel:
+                    # Runtime teardown (release or adapter shutdown) is not a
+                    # BYQ conversation end. Consult durable status for close;
+                    # hard cancels still require exact normalized ownership.
+                    conversation_status = (
+                        _conversation_status_for_runtime_session(session)
+                        if event.get("kind") == "session.closed" else "active"
+                    )
+                    if not _conversation_public_trace_events(
+                            [event], session.session_id, session.trace_id, conversation_status):
+                        continue
                 public_event = {**event, "session_id": session.conversation_id}
                 yield (
                     f"id: {public_event['sequence']}\n"

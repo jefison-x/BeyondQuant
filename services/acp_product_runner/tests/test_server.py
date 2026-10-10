@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+import json
 import os
 import socket
 import stat
@@ -372,6 +373,77 @@ def test_workspace_cwd_is_canonical_and_group_specific(tmp_path: Path,
         _close_server(server, thread)
 
 
+def test_product_scope_cleanup_receipt_is_persisted_atomically_and_signed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_popen_for_current_uid(monkeypatch)
+    server, thread = _server(tmp_path, ECHO_CODE)
+    try:
+        scope = _scope()
+        cwd = server.session_root / scope["cwd_leaf"]
+        _adapter_prepare_cwd(cwd)
+        _cancel_root(tmp_path / "control" / "control.sock", scope, cwd)
+        digest = product_scope_digest(scope)
+        directory = tmp_path / "control" / "cleanup-receipts"
+        path = directory / f"{digest}.json"
+        assert path.is_file()
+        assert not list(directory.glob("*.tmp"))
+        raw = json.loads(path.read_text())
+        mac = raw.pop("mac")
+        assert slot._helpers.sign_runner_reply(raw, SECRET) == mac
+        # Closed key set: the Product receipt binds only its own scope contract
+        # and never forges judgment fields (task_id/call_identity/authority_epoch).
+        assert set(raw) == {
+            "schema_version", "scope_digest", "workspace_id", "owner_principal",
+            "session_id", "trace_id", "root_run_id", "runtime_boot_id",
+            "generation_id", "cwd_leaf", "runner_instance_id", "code", "signal",
+            "reason", "cleanup",
+        }
+        assert raw["schema_version"] == slot._PRODUCT_CLEANUP_RECEIPT_SCHEMA
+        assert raw["scope_digest"] == digest
+        assert raw["cleanup"] == "proven"
+        assert raw["workspace_id"] == scope["workspace_id"]
+        assert raw["owner_principal"] == scope["owner_principal"]
+        assert raw["session_id"] == scope["session_id"]
+        assert raw["trace_id"] == scope["trace_id"]
+        assert raw["root_run_id"] == scope["root_run_id"]
+        assert raw["runtime_boot_id"] == scope["runtime_boot_id"]
+        assert raw["generation_id"] == scope["generation_id"]
+        assert raw["cwd_leaf"] == scope["cwd_leaf"]
+        assert raw["runner_instance_id"] == server.instance_id
+        assert raw["code"] is None or type(raw["code"]) is int
+        assert raw["signal"] is None or type(raw["signal"]) is int
+        assert raw["reason"] in {"cancelled", "process_exit"}
+    finally:
+        _close_server(server, thread)
+
+
+def test_cleanup_receipt_write_failure_keeps_cleanup_unknown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_popen_for_current_uid(monkeypatch)
+
+    def fail_write(*args: object, **kwargs: object) -> None:
+        raise OSError("synthetic cleanup receipt write failure")
+
+    monkeypatch.setattr(slot, "_persist_product_cleanup_receipt", fail_write)
+    server, thread = _server(tmp_path, ECHO_CODE)
+    try:
+        scope = _scope()
+        cwd = server.session_root / scope["cwd_leaf"]
+        _adapter_prepare_cwd(cwd)
+        _cancel_root(tmp_path / "control" / "control.sock", scope, cwd,
+                     expected_cleanup="unknown")
+        assert server.retire_requested is True
+        # A failed write must leave no proven receipt behind.
+        directory = tmp_path / "control" / "cleanup-receipts"
+        assert not directory.exists() or not list(directory.glob("*.json"))
+        thread.join(timeout=3)
+        assert not thread.is_alive()
+    finally:
+        _close_server(server, thread)
+
+
 def test_relay_unknown_exit_retires_the_only_workspace_slot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -445,3 +517,102 @@ def test_child_environment_forces_runner_runtime_root_and_drops_authority(tmp_pa
     assert "BYQ_RUNTIME_AUTHORITY_TOKEN" not in child
     assert "DEEPSEEK_API_KEY_UPSTREAM" not in child
     assert child["BYQ_WORKSPACE_ID"] == "workspace-team-a"
+
+
+def _guard_overlay_b64(*, headers):
+    import base64
+    from packages.contracts.continuation_request import profile_binding, request_limits
+    chat = {
+        "api": "openai-completions",
+        "apiKeyEnv": "OPENCODE_API_KEY",
+        "baseURL": "http://172.31.7.9:41337",
+        "retryPolicy": {"mode": "normal", "maxRetries": 0},
+        "models": [{"id": "deepseek-v4.1-flash", "maxTokens": 8192}],
+    }
+    if headers is not None:
+        chat["headers"] = headers
+    overlay = [
+        {"id": "web-search-deepseek", "disabled": True},
+        {"id": "tool-web", "disabled": True},
+        {"id": "llm-deepseek", "config": {"maxTokens": 8192}},
+        {"id": "llm-pi-ai", "config": {"providers": {"opencode-go-chat": chat}}},
+        {"insert": [{"id": "byq-continuation-budget",
+                     "name": "file:///opt/byq/runtime/byq-continuation-budget.js",
+                     "config": {"deadlineEpochMs": int(time.time() * 1000) + 60_000,
+                                "reservationId": "continuation_" + "a" * 32,
+                                "executionProfile": profile_binding(),
+                                "requestLimits": request_limits()}}]},
+    ]
+    return base64.b64encode(json.dumps(
+        overlay, sort_keys=True, separators=(",", ":")).encode()).decode()
+
+
+def test_validate_guard_requires_the_exact_route_session_header():
+    # The trusted runner must accept the exact generated shape, including the
+    # x-opencode-session route header (ADR-0105), and reject a missing or altered
+    # header, so the OpenCode Go route can never be dispatched without its
+    # session identity or with an arbitrary header.
+    accepted = slot._validate_guard(_guard_overlay_b64(
+        headers={"x-opencode-session": "123e4567-e89b-42d3-a456-426614174000"}))
+    assert isinstance(accepted, list) and len(accepted) == 5
+    with pytest.raises(slot.ProductSlotError):
+        slot._validate_guard(_guard_overlay_b64(headers=None))
+    with pytest.raises(slot.ProductSlotError):
+        slot._validate_guard(_guard_overlay_b64(headers={"x-other": "value"}))
+    with pytest.raises(slot.ProductSlotError):
+        slot._validate_guard(_guard_overlay_b64(headers={"x-opencode-session": "not-a-uuid"}))
+
+
+def test_validate_guard_accepts_the_ordinary_count_only_product_turn_overlay():
+    import base64
+
+    from packages.contracts.product_turn_request import (
+        PRODUCT_TURN_LIMITS, PRODUCT_TURN_PROFILE_ID, PRODUCT_TURN_PROFILE_SHA256,
+        PRODUCT_TURN_PROFILE_VERSION)
+
+    def encode(value):
+        return base64.b64encode(json.dumps(
+            value, sort_keys=True, separators=(",", ":")).encode()).decode()
+
+    chat = {
+        "api": "openai-completions",
+        "apiKeyEnv": "OPENCODE_API_KEY",
+        "baseURL": "http://172.31.7.9:41337",
+        "retryPolicy": {"mode": "normal", "maxRetries": 0},
+        "headers": {"x-opencode-session": "123e4567-e89b-42d3-a456-426614174000"},
+        "models": [{"id": "deepseek-v4.1-flash", "maxTokens": 8192}],
+    }
+    guard_config = {
+        "guardMode": "count-only",
+        "deadlineEpochMs": int(time.time() * 1000) + 60_000,
+        "executionProfile": {"profile_id": PRODUCT_TURN_PROFILE_ID,
+                             "profile_version": PRODUCT_TURN_PROFILE_VERSION,
+                             "profile_sha256": PRODUCT_TURN_PROFILE_SHA256},
+        "requestLimits": dict(PRODUCT_TURN_LIMITS),
+    }
+    # This is the exact PRE-injection overlay that
+    # `app.continuation_budget.create_acp_product_budget_overlay` sends in the
+    # START frame: closed identity + limits, and NO journalPath. The trusted
+    # Adapter injects journalPath into the on-disk patch from the
+    # workspace-bound session home after the frame is validated.
+    overlay = [
+        {"id": "llm-pi-ai", "config": {"providers": {"opencode-go-chat": chat}}},
+        {"insert": [{"id": "byq-continuation-budget",
+                     "name": "file:///opt/byq/runtime/byq-continuation-budget.js",
+                     "config": guard_config}]},
+    ]
+    accepted = slot._validate_guard(encode(overlay))
+    assert isinstance(accepted, list) and len(accepted) == 2
+    # A frame-supplied journalPath (arbitrary absolute path), a continuation
+    # reservation, a widened limit, or a foreign profile is refused.
+    for mutate in (
+        lambda value: value[1]["insert"][0]["config"].update(
+            {"journalPath": "/tmp/product-turn-tool-guard.jsonl"}),
+        lambda value: value[1]["insert"][0]["config"].update({"reservationId": "continuation_" + "a" * 32}),
+        lambda value: value[1]["insert"][0]["config"]["requestLimits"].update({"max_tool_calls": 17}),
+        lambda value: value[1]["insert"][0]["config"]["executionProfile"].update({"profile_id": "task-ready-read.v1"}),
+    ):
+        bad = json.loads(json.dumps(overlay))
+        mutate(bad)
+        with pytest.raises(slot.ProductSlotError):
+            slot._validate_guard(encode(bad))

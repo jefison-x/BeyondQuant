@@ -1,0 +1,6 @@
+{
+  "original_preserved": true,
+  "source": "Serialized output of the actual tools.exec_command return object surfaced by the prior functions.exec call.",
+  "command": "python3 /tmp/acp-current-real-archive-20261010.py",
+  "note": "This is the original exec_command result as surfaced in the tool output; it was not reconstructed from the script's result.json. No command was rerun."
+}

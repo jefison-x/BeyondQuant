@@ -2,22 +2,16 @@ import json
 
 import pytest
 
-from deepseek_harness import Notification
-
-from app.compat.dsh_012 import Dsh012Compatibility
+from app.compat.types import RuntimeObservation, RuntimeToolResult
 from app.normalization import NormalizationState, normalize_runtime_observation
 
 
-compatibility = Dsh012Compatibility()
-
-
 def test_batched_tool_results_close_each_exact_activity() -> None:
-    adapter = Dsh012Compatibility()
     state = NormalizationState()
 
     def project(kind: str, data: dict, sequence: int):
         return normalize_runtime_observation(
-            adapter.observe(notify(kind, data), root_session_id="s-1"),
+            notify(kind, data),
             trace_id="t-1", session_id="s-1", sequence=sequence, state=state,
         )
 
@@ -102,16 +96,72 @@ def test_next_turn_does_not_forget_a_tool_with_no_result() -> None:
     assert [item["sequence"] for item in next_turn] == [5, 6]
 
 
-def notify(event_type: str, data: dict | None = None) -> Notification:
-    return Notification(
-        method="session.event",
-        payload={"sessionId": "s-1", "event": {"type": event_type, "data": data or {}}},
-    )
+def notify(event_type: str, data: dict | None = None) -> RuntimeObservation:
+    """Build bounded observations directly; ACP wire decoding is tested elsewhere."""
+    selected = data or {}
+    common = {"session_id": "s-1", "root_session": True}
+    if event_type == "turn/start":
+        return RuntimeObservation(kind="turn.start", runtime_activity=True, **common)
+    if event_type == "turn/end":
+        reason = selected.get("reason")
+        value = reason.get("kind") if isinstance(reason, dict) else None
+        terminal = "completed" if value == "completed" else "cancelled" if value == "aborted" else "failed"
+        return RuntimeObservation(kind="turn.end", runtime_activity=True,
+                                  terminal_reason=terminal, **common)
+    if event_type == "assistant/chunk":
+        return RuntimeObservation(kind="private.activity", runtime_activity=False, **common)
+    if event_type == "assistant/message":
+        message = selected.get("message")
+        content = message.get("content") if isinstance(message, dict) else selected.get("content")
+        has_tool_call = any(isinstance(block, dict) and block.get("type") == "tool-call"
+                            for block in content or [])
+        text = "".join(block.get("text", "") for block in content or []
+                       if isinstance(block, dict) and block.get("type") == "text"
+                       and isinstance(block.get("text"), str)).strip()
+        message_id = message.get("id") if isinstance(message, dict) else selected.get("messageId")
+        return RuntimeObservation(kind="assistant.message", runtime_activity=True,
+                                  answer_text=None if has_tool_call else text or None,
+                                  message_id=message_id, **common)
+    if event_type == "tool/call":
+        call_id, name = selected.get("callId"), selected.get("name")
+        valid = isinstance(call_id, str) and bool(call_id) and isinstance(name, str) and bool(name)
+        return RuntimeObservation(kind="tool.call" if valid else "ignored",
+                                  runtime_activity=valid, call_id=call_id if valid else None,
+                                  tool_name=name if valid else None, **common)
+    if event_type == "tool/result":
+        message = selected.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        results = []
+        for block in content or []:
+            if not isinstance(block, dict) or block.get("type") != "tool-result":
+                continue
+            call_id = block.get("toolCallId")
+            if not isinstance(call_id, str) or not call_id:
+                continue
+            result = None
+            for item in block.get("content", []):
+                if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("text"), str):
+                    try:
+                        candidate = json.loads(item["text"])
+                    except ValueError:
+                        continue
+                    if isinstance(candidate, dict):
+                        result = candidate
+                        break
+            results.append(RuntimeToolResult(call_id, block.get("isError") is True, result))
+        if not results:
+            return RuntimeObservation(kind="ignored", **common)
+        return RuntimeObservation(kind="tool.result", runtime_activity=True,
+                                  call_id=results[0].call_id,
+                                  tool_failed=results[0].failed, tool_result=results[0].result,
+                                  completed_call_ids=tuple(item.call_id for item in results),
+                                  tool_results=tuple(results), **common)
+    return RuntimeObservation(kind="ignored", **common)
 
 
-def normalize(notification: Notification, state: NormalizationState | None = None):
+def normalize(notification: RuntimeObservation, state: NormalizationState | None = None):
     return normalize_runtime_observation(
-        compatibility.observe(notification, root_session_id="s-1"),
+        notification,
         trace_id="t-1",
         session_id="s-1",
         sequence=4,
@@ -121,7 +171,8 @@ def normalize(notification: Notification, state: NormalizationState | None = Non
 
 def test_session_status_is_a_byq_owned_event() -> None:
     events = normalize(
-        Notification(method="session.status", payload={"sessionId": "s-1", "status": "idle"})
+        RuntimeObservation(kind="session.status", session_id="s-1", root_session=True,
+                           status="idle")
     )
 
     assert len(events) == 1
@@ -138,13 +189,8 @@ def test_session_status_is_a_byq_owned_event() -> None:
 
 def test_resumed_runtime_identity_is_correlated_to_the_stable_byq_session() -> None:
     events = normalize_runtime_observation(
-        compatibility.observe(
-            Notification(
-                method="session.status",
-                payload={"sessionId": "s-1-resume-private", "status": "idle"},
-            ),
-            root_session_id="s-1-resume-private",
-        ),
+        RuntimeObservation(kind="session.status", session_id="s-1-resume-private",
+                           root_session=True, status="idle"),
         trace_id="t-1",
         session_id="s-1",
         sequence=5,

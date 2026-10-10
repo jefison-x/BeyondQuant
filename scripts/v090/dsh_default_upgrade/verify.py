@@ -24,6 +24,8 @@ RELEASES = ROOT / "config/dsh/releases"
 GENERATED = ROOT / "config/dsh/generated"
 SNAPSHOT_DIR: Path | None = None
 SNAPSHOT_FILES = {
+    # Replay the promotion-time selector. The live Compose file now routes ACP.
+    "compose.yml": "promotion-snapshot.compose.yml",
     "config/dsh/releases/dsh-0.1.5rc1.json": "promotion-snapshot.release.json",
     "config/dsh/generated/deployment.identity.json": "promotion-snapshot.identity.json",
     "services/runtime-adapter/Dockerfile.post-u8-candidate": "promotion-snapshot.Dockerfile",

@@ -481,3 +481,81 @@ def test_provider_completion_at_deadline_is_unknown(tmp_path):
     with pytest.raises(AcpJudgmentOutcomeUnknown, match="previous provider attempt is unknown"):
         journal.reserve_provider_attempt(route="opencode-go-chat", body=b"second",
                                          declared_output_tokens=16, limits=limits, now_ms=1002)
+
+
+def test_turn_diagnostic_error_name_and_code_are_a_closed_allowlist():
+    # A short dynamic class/code name can itself carry a secret, so only exact
+    # known class names and the closed runner REJECT code enum may survive.
+    from app.research_judgment_acp_journal import _bounded_error_class, _bounded_error_code
+    fake = type("FAKE_SECRET_123", (Exception,), {})()
+    fake.code = "FAKE_SECRET_123"
+    assert _bounded_error_class(fake) is None
+    assert _bounded_error_code(fake) is None
+
+    known = type("AcpJudgmentOutcomeUnknown", (Exception,), {})()
+    assert _bounded_error_class(known) == "outcome_unknown"
+
+    mapped = type("RunnerRejected", (Exception,), {})()
+    mapped.code = "scope_consumed"
+    assert _bounded_error_class(mapped) == "runner_rejected"
+    assert _bounded_error_code(mapped) == "scope_consumed"
+    mapped.code = "FAKE_SECRET_123"
+    assert _bounded_error_code(mapped) is None
+
+
+def test_turn_diagnostic_code_enum_stays_in_sync_with_runner_reject_codes():
+    from app.research_judgment_acp_journal import _TURN_ERROR_CODES
+    from app.research_judgment_acp_runner_client import _REJECT_CODES
+    assert _TURN_ERROR_CODES == _REJECT_CODES
+
+
+def test_turn_diagnostic_never_persists_a_dynamic_class_or_code_name(tmp_path):
+    journal, _, _ = _journal(tmp_path)
+    journal.record_begin(BEGIN)
+    fake = type("FAKE_SECRET_123", (Exception,), {})()
+    fake.code = "FAKE_SECRET_123"
+    diagnostic = journal.record_turn_outcome(
+        finish="completed", error=fake, result_failure="none")["turn_diagnostic"]
+    assert diagnostic["error_class"] is None
+    assert diagnostic["error_code"] is None
+    assert b"FAKE_SECRET_123" not in journal.path.read_bytes()
+
+
+def test_turn_diagnostic_is_admitted_before_settlement_and_then_immutable(tmp_path):
+    journal, _, _ = _journal(tmp_path)
+    journal.record_begin(BEGIN)
+    result = journal.record_turn_outcome(
+        finish="completed", error=None, result_failure="none")
+    assert result["turn_diagnostic"]["finish"] == "completed"
+    again = journal.record_turn_outcome(
+        finish="cancelled", error=None, result_failure="none")
+    assert again["turn_diagnostic"]["finish"] == "completed"
+
+
+def test_turn_diagnostic_is_refused_after_settlement_without_touching_sealed_bytes(tmp_path):
+    journal, current, _ = _journal(tmp_path)
+    journal.record_request_start(int(time.time() * 1000))
+    journal.record_begin(BEGIN)
+    journal.record_binding(BINDING)
+    _freeze_fixture_profile(journal, _small_limits())
+    journal.mark_prompt_may_dispatch()
+    _complete_provider(journal)
+    request = result_request(TASK, BEGIN, BINDING, NATIVE,
+                             {"durable_evidence": {"kind": "none"}})
+    journal.record_result_request(request)
+    current["status"] = _status(request)
+    journal.record_result_receipt(RESULT_RECEIPT)
+    assert journal.snapshot()["phase"] == "result_committed"
+    sealed = journal.path.read_bytes()
+    with pytest.raises(AcpJudgmentOutcomeUnknown, match="pre-settlement"):
+        journal.record_turn_outcome(finish="completed", error=None, result_failure="none")
+    assert journal.path.read_bytes() == sealed
+    assert "turn_diagnostic" not in journal.snapshot()
+
+    current["status"] = _status(request, closed=True)
+    journal.record_terminal_receipt(TERMINAL)
+    assert journal.snapshot()["phase"] == "terminal_closed"
+    sealed = journal.path.read_bytes()
+    with pytest.raises(AcpJudgmentOutcomeUnknown, match="pre-settlement"):
+        journal.record_turn_outcome(finish="completed", error=None, result_failure="none")
+    assert journal.path.read_bytes() == sealed

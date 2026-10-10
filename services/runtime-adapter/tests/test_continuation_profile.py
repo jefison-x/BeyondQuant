@@ -40,7 +40,7 @@ def _reservation(**changes):
 
 def _provider_body(**changes):
     value = {
-        "model": "deepseek-v4-flash",
+        "model": "deepseek-v4.1-flash",
         "max_tokens": 8,
         "messages": [{"role": "user", "content": "synthetic only"}],
     }
@@ -87,15 +87,20 @@ def test_guard_patch_binds_v2_identity_and_has_no_token_limit(tmp_path):
     )
     deadline_epoch_ms = int(time.time() * 1000) + request_limits()["deadline_ms"]
     patch, journal = create_guard_patch(
-        composition, tmp_path / "private", _reservation(), deadline_epoch_ms=deadline_epoch_ms)
+        composition, tmp_path / "private", _reservation(), deadline_epoch_ms=deadline_epoch_ms,
+        proxy_base_url="http://172.31.7.9:41337")
     text = patch.read_text(encoding="utf-8")
     assert PROFILE_ID in text
     assert "task-continuation-reservation.v2" not in text  # the config carries only the binding
     assert "tokenLimit" not in text and "token_limit" not in text
     assert "max_tool_calls" in text
+    assert '"max_tool_payload_bytes":131072' in text
+    assert profile_binding()["profile_sha256"] in text
     assert str(deadline_epoch_ms) in text
     assert journal.name == "continuation-tool-guard.jsonl"
     assert "X-BYQ-Continuation-Reservation" in text
+    assert "http://172.31.7.9:41337" in text
+    assert "deepseek-v4.1-flash" in text
 
 
 def test_watchdog_wait_tracks_deadline_without_one_second_slack():
@@ -188,6 +193,86 @@ def test_oversized_ingress_is_refused_before_provider_call_and_not_charged_as_ac
     assert gate.has_blocked_request()
 
 
+def _tools_with_payload_bytes(target: int):
+    from app.research_request_gate import _tool_payload_bytes
+    base = [{"type": "function", "function": {"name": "mcp__byq__byq_research_get", "description": ""}}]
+    pad = target - _tool_payload_bytes({"tools": base})
+    assert pad >= 0, (target, _tool_payload_bytes({"tools": base}))
+    return [{"type": "function", "function": {
+        "name": "mcp__byq__byq_research_get", "description": "d" * pad}}]
+
+
+def _body_with_input_bytes(target: int):
+    base = len(_provider_body(messages=[{"role": "user", "content": ""}]))
+    return _provider_body(messages=[{"role": "user", "content": "x" * (target - base)}])
+
+
+def test_amended_tool_payload_cap_boundary_admits_real_catalog_and_refuses_over_cap():
+    # ADR-0105 §4 amended (2026-10-07): only max_tool_payload_bytes 65536 -> 131072.
+    limits = request_limits()
+    assert limits["max_tool_payload_bytes"] == 131072
+    assert limits["max_total_tool_payload_bytes"] == 1048576
+    assert limits["max_input_bytes"] == 262144
+    # The real Product ACP model-visible catalog (91 tools) measured 78827 bytes at
+    # the gate: over the old 65536 cap, within the amended 131072 cap.
+    assert 65536 < 78827 <= limits["max_tool_payload_bytes"]
+
+    gate = _gate()
+    for target in (65537, 78827, 131072):
+        receipt = gate.before_request(_provider_body(tools=_tools_with_payload_bytes(target)))
+        assert receipt["admitted"] is True and receipt["tool_payload_bytes"] == target
+        gate.complete(receipt, status=200, body=_usage_body())
+
+    with pytest.raises(RequestGateBlocked, match="tool_payload_limit"):
+        _gate().before_request(_provider_body(tools=_tools_with_payload_bytes(131073)))
+
+    # Per-call input cap 262144: 262145 is refused before any provider call.
+    with pytest.raises(RequestGateBlocked, match="input_bytes_limit"):
+        _gate().before_request(_body_with_input_bytes(262145))
+
+    # Cumulative tool payload cap 1048576: eight full requests fit, the ninth is refused.
+    cumulative = _gate()
+    for _ in range(8):
+        receipt = cumulative.before_request(_provider_body(tools=_tools_with_payload_bytes(131072)))
+        cumulative.complete(receipt, status=200, body=_usage_body())
+    with pytest.raises(RequestGateBlocked, match="total_tool_payload_limit"):
+        cumulative.before_request(_provider_body(tools=_tools_with_payload_bytes(131072)))
+
+
+def test_over_cap_tool_payload_is_blocked_before_any_upstream_post():
+    captured = []
+
+    class Provider(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            captured.append(json.loads(self.rfile.read(int(self.headers.get("content-length", "0")))))
+            body = b"{}"
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    provider = ThreadingHTTPServer(("127.0.0.1", 0), Provider)
+    provider_thread = threading.Thread(target=provider.serve_forever, daemon=True)
+    provider_thread.start()
+    proxy = RequestGateProxy(_gate(), "https://api.deepseek.com")
+    proxy._server.upstream = f"http://127.0.0.1:{provider.server_port}"
+    proxy.__enter__()
+    try:
+        blocked = httpx.post(proxy.base_url + "/chat/completions",
+            content=_provider_body(tools=_tools_with_payload_bytes(131073)), timeout=3)
+        assert blocked.status_code == 429
+        assert captured == []  # no egress: refused before any upstream post
+    finally:
+        proxy.close()
+        provider.shutdown()
+        provider.server_close()
+        provider_thread.join(timeout=2)
+
+
 
 def test_loopback_proxy_counts_retry_and_compaction_posts_at_the_http_boundary(monkeypatch):
     from app import research_request_gate as gate_module
@@ -243,7 +328,7 @@ def test_loopback_proxy_counts_retry_and_compaction_posts_at_the_http_boundary(m
             messages = ([{"role": "user", "content": "full context " + ("history " * 100)}]
                 if index % 2 == 0 else [{"role": "user", "content": "compacted summary"}])
             value = {
-                "model": "deepseek-v4-flash", "max_tokens": 8192,
+                "model": "deepseek-v4.1-flash", "max_tokens": 8192,
                 "messages": messages, "tools": [{"type": "function", "function": {
                     "name": "mcp__byq__byq_research_get",
                     "parameters": {"type": "object", "properties": {"task_id": {"type": "string"}}},
@@ -447,11 +532,11 @@ def test_continuation_proxy_rejects_redirect_without_following_or_forwarding_loc
     provider_thread.start()
     gate = _gate()
     try:
-        with pytest.raises(ValueError, match="official DeepSeek"):
+        with pytest.raises(ValueError, match="qualified endpoint"):
             RequestGateProxy(gate, f"http://127.0.0.1:{provider.server_port}")
         with RequestGateProxy(gate, f"https://api.deepseek.com") as proxy:
             # The test may point only this local fixture at a local fake upstream;
-            # production construction is separately locked to api.deepseek.com.
+            # production construction is locked to the qualified endpoints.
             proxy._upstream = f"http://127.0.0.1:{provider.server_port}"
             proxy._server.upstream = proxy._upstream
             response = httpx.post(proxy.base_url + "/chat/completions", content=_provider_body(), timeout=3)
@@ -526,3 +611,68 @@ def test_slow_trickle_is_cut_off_by_total_deadline_and_proxy_close_is_bounded():
         provider.shutdown()
         provider.server_close()
         provider_thread.join(timeout=2)
+
+
+def _closed_continuation_record(tmp_path, monkeypatch):
+    """A closed ACP continuation record with exact ACK + reconciled business calls."""
+    from app.runtime import RuntimeAdapter, RuntimeGeneration, RuntimeSession
+    from app.compat import compatibility_for_release
+    from app.research_request_gate import build_continuation_request_gate
+
+    monkeypatch.setenv("BYQ_DSH_ACP_PROCESS_TRANSPORT", "local")
+    adapter = RuntimeAdapter(compatibility_for_release("dsh-v0.2.0-rc.2-acp"))
+    reservation = _reservation()
+    journal = tmp_path / "continuation-tool-guard.jsonl"
+    journal.write_text(json.dumps({
+        "schema_version": "continuation-tool-guard.v1",
+        "reservation_id": reservation["reservation_id"],
+        "execution_profile": reservation["execution_profile"],
+        "request_limits": reservation["request_limits"], "ready": True}) + "\n")
+    gate = build_continuation_request_gate(
+        request_id=reservation["reservation_id"],
+        execution_profile=reservation["execution_profile"],
+        limits=reservation["request_limits"])
+    gate.before_request(_provider_body())
+    root = "b" * 32
+    generation = RuntimeGeneration(
+        generation_id="generation-" + "c" * 32, session_id="sess",
+        native_session_id="native", process_closed=True, process_closing=False,
+        continuation_budget=reservation, budget_journal=journal, budget_run_id=root,
+        continuation_request_gate=gate, continuation_proxy_closed=True)
+    record = RuntimeSession(
+        session_id="sess", trace_id="trace", boot_id="d" * 32,
+        current_generation=generation, domain_call_sequence=1,
+        domain_call_drained_sequence=1, settlement_receipt={"root_run_id": root},
+        history=[{"kind": "session.result", "payload": {"run_id": root}}])
+    return adapter, record, root
+
+
+def test_budget_receipt_closes_only_with_drain_and_exact_root_ack(tmp_path, monkeypatch):
+    """ADR-0105 §5: process_closed alone must not close the execution receipt."""
+    adapter, record, root = _closed_continuation_record(tmp_path, monkeypatch)
+    # Positive: stopped execution + reconciled business calls + exact ACK -> settled.
+    assert adapter._budget_receipt(record)["status"] == "settled"
+    # Counter-example 1: process closed but no exact Backend terminal ACK.
+    record.budget_receipts.clear()
+    record.settlement_receipt = None
+    assert adapter._budget_receipt(record)["status"] == "outcome_unknown"
+    # Counter-example 2: an ACK for a different root must not close this root.
+    record.budget_receipts.clear()
+    record.settlement_receipt = {"root_run_id": "e" * 32}
+    assert adapter._budget_receipt(record)["status"] == "outcome_unknown"
+    # Counter-example 3: an unreconciled business call keeps it unresolved.
+    record.budget_receipts.clear()
+    record.settlement_receipt = {"root_run_id": root}
+    record.domain_call_drained_sequence = 0
+    assert adapter._budget_receipt(record)["status"] == "outcome_unknown"
+    # Counter-example 4: a pending terminal receipt keeps it unresolved.
+    record.budget_receipts.clear()
+    record.domain_call_drained_sequence = 1
+    record.pending_terminal_receipts.add(root)
+    assert adapter._budget_receipt(record)["status"] == "outcome_unknown"
+    # Counter-example 5: an unprovable outbound result keeps it unresolved.
+    record.budget_receipts.clear()
+    record.pending_terminal_receipts.clear()
+    record.continuation_request_gate._receipts.append(
+        {"phase": "completed", "forwarded": False, "reason": "provider_outcome_unknown"})
+    assert adapter._budget_receipt(record)["status"] == "outcome_unknown"

@@ -3,6 +3,7 @@ import importlib.util
 import json
 from pathlib import Path
 import stat
+import sys
 from subprocess import CompletedProcess
 import tempfile
 import unittest
@@ -20,14 +21,82 @@ class DevEnvironmentTests(unittest.TestCase):
             self.assertIn("backtest-worker", env.SERVICES[profile])
             self.assertIn("optimization-worker", env.SERVICES[profile])
 
-    def test_compose_config_requires_current_adapter_build(self):
-        payload = {"services": {"runtime-adapter": {"build": {"dockerfile": env.CURRENT_DSH_DOCKERFILE}}}}
+    def test_compose_config_requires_authoritative_acp_build_and_workspace_mount(self):
+        selection = env.load_authoritative_version(env.ROOT)
+        resolved = env.build_environment(selection)
+        workspace = "workspace_test000000000000000000000000000"
+        leaf = f"{resolved['BYQ_DSH_BUILD_SESSION_ROOT']}/{workspace}"
+        dockerfile = f"services/runtime-adapter/Dockerfile.acp-{selection['release_id'].removeprefix('dsh-v')}-candidate"
+        mount = {"source": "byq_acp_product_sessions", "target": leaf}
+        payload = {"services": {
+            "runtime-adapter": {
+                "build": {"dockerfile": dockerfile},
+                "environment": {
+                    "BYQ_DSH_COMPATIBILITY_RELEASE": selection["compatibility_family"],
+                    "DSH_SESSION_ROOT": resolved["BYQ_DSH_BUILD_SESSION_ROOT"],
+                    "BYQ_DSH_PROVIDER": "opencode-go-chat",
+                    "BYQ_DSH_MODEL": "deepseek-v4.1-flash",
+                    "BYQ_ACP_PRODUCT_SLOT_BINDINGS": json.dumps({workspace: {
+                        "socket_path": "/run/byq-acp-product-runner/control.sock",
+                        "control_secret_env": "BYQ_ACP_PRODUCT_SLOT_PRIMARY_SECRET",
+                    }}),
+                },
+                "volumes": [mount],
+            },
+            "acp-product-runner": {
+                "environment": {"BYQ_ACP_PRODUCT_WORKSPACE_ID": workspace},
+                "volumes": [mount],
+            },
+        }}
+        values = {"BYQ_ACP_PRODUCT_WORKSPACE_ID": workspace}
         with patch.object(env, "call", return_value=CompletedProcess([], 0, json.dumps(payload), "")):
-            env.validated_config({})
+            env.validated_config(values)
         payload["services"]["runtime-adapter"]["build"]["dockerfile"] = "services/runtime-adapter/Dockerfile.post-u8-candidate"
         with patch.object(env, "call", return_value=CompletedProcess([], 0, json.dumps(payload), "")):
             with self.assertRaisesRegex(env.DevError, "stale Runtime Adapter"):
-                env.validated_config({})
+                env.validated_config(values)
+
+    def test_managed_dev_compose_uses_the_resolver_and_shared_default_overlay(self):
+        args = env.compose_args("config")
+        self.assertEqual(args[:4], [sys.executable, str(env.ROOT / "scripts/dsh/acp_build.py"), "--", "docker"])
+        base = str(env.ROOT / "compose.yml")
+        override = str(env.ROOT / "compose.override.yml")
+        dev = str(env.ROOT / "compose.dev.yml")
+        self.assertIn(base, args)
+        self.assertIn(override, args)
+        self.assertIn(dev, args)
+        self.assertLess(args.index(base), args.index(override))
+        self.assertLess(args.index(override), args.index(dev))
+
+    def test_workspace_binding_is_explicit_and_required_for_start(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / ".env.dev"
+            scope = env.scope()
+            values = {
+                "BYQ_DEV_SCOPE": scope, "COMPOSE_PROJECT_NAME": scope,
+                "POSTGRES_USER": "byq_app", "POSTGRES_DB": "byq_domain",
+                "POSTGRES_PASSWORD": "opaque-db-password",
+                "BYQ_DATABASE_URL": "postgresql+psycopg://byq_app:opaque-db-password@postgres:5432/byq_domain",
+            }
+            for key in (
+                "BYQ_MCP_TOKEN", "BYQ_PRODUCT_TOKEN", "BYQ_RUNTIME_AUTHORITY_TOKEN",
+                "BYQ_RUNTIME_JUDGMENT_TOKEN", "BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET",
+                "BYQ_ACP_JUDGMENT_RUNNER_CONTROL_SECRET", "BYQ_MCP_ACP_DISCOVERY_TOKEN",
+                "BYQ_MCP_ACP_SIGNING_KEY", "BYQ_MCP_BACKEND_PROOF_TOKEN",
+                "BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY", "BYQ_MCP_ACP_JUDGMENT_PROOF_TOKEN",
+                "BYQ_GATEWAY_SERVICE_TOKEN", "BYQ_BOOTSTRAP_ADMIN_PASSWORD",
+                "BYQ_CREDENTIAL_KEYRING",
+            ):
+                values[key] = "opaque-test-value"
+            path.write_text("".join(f"{key}={value}\n" for key, value in values.items()))
+            path.chmod(0o600)
+            with patch.object(env, "ENV_FILE", path):
+                with self.assertRaisesRegex(env.DevError, "trusted personal Workspace binding"):
+                    env.local_env()
+                optional = env.local_env(require_workspace=False)
+                self.assertEqual(optional.get("BYQ_ACP_PRODUCT_WORKSPACE_ID", ""), "")
+                path.write_text(path.read_text() + "BYQ_ACP_PRODUCT_WORKSPACE_ID=workspace_owned123\n")
+                self.assertEqual(env.local_env()["BYQ_ACP_PRODUCT_WORKSPACE_ID"], "workspace_owned123")
 
     def test_worktree_scope_is_deterministic_and_distinct(self):
         with patch.object(env, "ROOT", Path("/tmp/worktree-a")):
@@ -90,16 +159,34 @@ class DevEnvironmentTests(unittest.TestCase):
             with patch.object(env, "ROOT", root), patch.object(env, "TEMPLATE", template), \
                  patch.object(env, "ENV_FILE", config), patch.object(env, "validated_config"):
                 env.init()
-                values = env.local_env()
+                values = env.local_env(require_workspace=False)
                 self.assertEqual(stat.S_IMODE(config.stat().st_mode), 0o600)
                 self.assertEqual(values["COMPOSE_PROJECT_NAME"], env.scope())
                 self.assertIn("@postgres:5432/byq_domain", values["BYQ_DATABASE_URL"])
                 self.assertNotEqual(values["BYQ_PRODUCT_TOKEN"], "dev-product-token-change-me")
+                self.assertTrue(values["BYQ_RUNTIME_JUDGMENT_TOKEN"])
+                self.assertTrue(values["BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET"])
+                self.assertEqual(values.get("BYQ_ACP_PRODUCT_WORKSPACE_ID", ""), "")
                 self.assertNotIn("BYQ_FEEDBACK_PUBLISHER_TOKEN", values)
                 self.assertIn("BYQ_FEEDBACK_HUB_RELAY_TOKEN", values)
                 before = config.read_bytes()
                 env.init()
                 self.assertEqual(config.read_bytes(), before)
+
+    def test_clean_preserves_legacy_sdk_session_volume(self):
+        project = env.scope()
+        legacy = f"{project}-dsh-sessions"
+        targets = {"containers": [], "volumes": [f"{project}-domain-state"],
+                   "preserved_volumes": [legacy], "networks": []}
+        remaining = {"containers": [], "volumes": [], "preserved_volumes": [legacy], "networks": []}
+        with patch.object(env, "inventory", side_effect=[targets, remaining]), \
+             patch.object(env, "call", return_value=CompletedProcess([], 0, "", "")) as call, \
+             patch.object(env, "docker_lines", return_value=[]), \
+             patch.object(env, "docker_json", return_value=[{"Labels": {"com.docker.compose.project": project}}]):
+            env.clean({}, True)
+        commands = [item.args[0] for item in call.call_args_list]
+        self.assertIn(["docker", "volume", "rm", f"{project}-domain-state"], commands)
+        self.assertNotIn(["docker", "volume", "rm", legacy], commands)
 
     def test_docker_unavailable_is_not_reported_as_missing(self):
         from subprocess import CompletedProcess
@@ -121,13 +208,11 @@ class DevEnvironmentTests(unittest.TestCase):
             with self.assertRaisesRegex(env.DevError, "unowned project volume"):
                 env.inventory({})
 
-    def test_reset_stops_writers_before_workspace_cleanup_and_only_removes_owned_runtime_volumes(self):
+    def test_reset_preserves_legacy_sdk_sessions_and_only_cleans_trace_volume(self):
         project = env.scope()
-        owned = {"Name": f"{project}-dsh-sessions",
-                 "Labels": {"com.docker.compose.project": project}}
         with patch.object(env, "inventory", return_value={"containers": [], "volumes": [], "networks": []}), \
              patch.object(env, "call", return_value=CompletedProcess([], 0, "", "")) as call, \
-             patch.object(env, "docker_json", side_effect=[[owned], None]), \
+             patch.object(env, "docker_json", return_value=None) as inspect, \
              patch.object(env, "docker_lines", return_value=[]):
             env.reset({"BYQ_DEV_SCOPE": project})
         commands = [item.args[0] for item in call.call_args_list]
@@ -136,13 +221,14 @@ class DevEnvironmentTests(unittest.TestCase):
         self.assertIn("app.workspace_reset_cli", commands[3])
         self.assertIn("workspace-reset-gc", commands[4])
         self.assertEqual(commands[5][-2:], ["down", "--remove-orphans"])
-        self.assertEqual(commands[6], ["docker", "volume", "rm", f"{project}-dsh-sessions"])
-        self.assertIn("gateway", commands[7])
-        self.assertFalse(any("postgres-data" in " ".join(command) for command in commands))
+        self.assertIn("gateway", commands[6])
+        self.assertFalse(any("volume rm" in " ".join(command) for command in commands))
+        self.assertFalse(any("dsh-sessions" in " ".join(command) for command in commands))
+        self.assertTrue(inspect.called)
 
     def test_reset_rejects_unowned_runtime_volume_before_removal(self):
         project = env.scope()
-        unowned = {"Name": f"{project}-dsh-sessions",
+        unowned = {"Name": f"{project}-workflow-traces",
                    "Labels": {"com.docker.compose.project": "another-project"}}
         with patch.object(env, "inventory", return_value={"containers": [], "volumes": [], "networks": []}), \
              patch.object(env, "call", return_value=CompletedProcess([], 0, "", "")), \

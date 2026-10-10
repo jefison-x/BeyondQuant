@@ -89,9 +89,10 @@ class _SlotHandle:
 
 
 class SlotAcpProcess(_AcpProcess):
-    def __init__(self, command, cwd, environment, *, registry) -> None:
+    def __init__(self, command, cwd, environment, *, registry, guard_b64=None) -> None:
         super().__init__(command, cwd, environment)
         self.registry = registry
+        self.guard_b64 = guard_b64
         self.scope: dict[str, str] = {
             "workspace_id": environment.get("BYQ_WORKSPACE_ID", ""),
             "owner_principal": environment.get("BYQ_OWNER_PRINCIPAL", ""),
@@ -121,6 +122,7 @@ class SlotAcpProcess(_AcpProcess):
                 scope=self.scope, env=child_env,
                 deadline_at_ms=int(time.time() * 1000) + 3_600_000,
                 expected_cwd=str(self.cwd),
+                guard_b64=self.guard_b64,
             )
         except Exception as error:
             try:

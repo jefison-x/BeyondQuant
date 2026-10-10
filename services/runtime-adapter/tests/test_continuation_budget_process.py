@@ -159,6 +159,9 @@ def _configure_runtime(tmp_path, monkeypatch, mcp, provider):
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
     monkeypatch.setenv("BYQ_DSH_RUNTIME_ROOT", str(tmp_path / "runtime"))
     monkeypatch.setenv("BYQ_F6_EXECUTOR_ENABLED", "1")
+    # ADR-0105 pins the continuation route to OpenCode Go chat.
+    monkeypatch.setenv("BYQ_DSH_PROVIDER", "opencode-go-chat")
+    monkeypatch.setenv("BYQ_DSH_MODEL", "deepseek-v4.1-flash")
     monkeypatch.setenv("BYQ_MCP_URL", f"http://127.0.0.1:{mcp.server_port}/mcp/v1")
     monkeypatch.setenv("BYQ_MCP_TOKEN", "synthetic-only")
     monkeypatch.setenv("BYQ_OWNER_PRINCIPAL", "synthetic-owner")
@@ -167,14 +170,14 @@ def _configure_runtime(tmp_path, monkeypatch, mcp, provider):
     from app import runtime as runtime_module
     original_init = runtime_module.RequestGateProxy.__init__
 
-    def loopback_upstream(self, gate, upstream):
-        original_init(self, gate, upstream)
+    def loopback_upstream(self, gate, upstream, **kwargs):
+        original_init(self, gate, upstream, **kwargs)
         # Test-only loopback seam after production's official-origin check.
         self._server.upstream = f"http://127.0.0.1:{provider.server_port}"
 
     monkeypatch.setattr(runtime_module.RequestGateProxy, "__init__", loopback_upstream)
     monkeypatch.setattr(runtime_module.RuntimeAdapter, "_resolve_model", lambda self, **kwargs: {
-        "provider": "deepseek-official", "model": "deepseek-v4-flash", "api_key": "synthetic-only"})
+        "provider": "opencode-go-chat", "model": "deepseek-v4.1-flash", "api_key": "synthetic-only"})
     adapter = runtime_module.RuntimeAdapter()
     adapter._test_sdk_events = []
     adapter._test_sdk_exception = None

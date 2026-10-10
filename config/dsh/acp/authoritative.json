@@ -1,0 +1,56 @@
+{
+  "schema_version": "byq-dsh-authoritative-version.v1",
+  "release_id": "dsh-v0.2.0-rc.2",
+  "source_commit": "639ed015397290b3745d163aafe02ffee4aa3f84",
+  "pnpm_lock_sha256": "80fe05eae33582ae26839afd05f1965f9b0e4be11034ddf9797af6085d5ba9b1",
+  "roles": {
+    "adapter": "dsh-v0.2.0-rc.2",
+    "ordinary_runner": "dsh-v0.2.0-rc.2",
+    "judgment_runner": "dsh-v0.2.0-rc.2"
+  },
+  "profiles": {
+    "product": {
+      "path": "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-product.patch.yml",
+      "sha256": "39d0d9f25c2490e6ef0ca65d7b88dadc69739812a438c692fc63f894073c81a1"
+    },
+    "product_identity": {
+      "path": "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-product.identity.json",
+      "sha256": "f009d2bc2392966ba08464774a01c2db49bfe7d0c2adeb6f1107c3fd7bd401b9"
+    },
+    "judgment": {
+      "path": "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-research-judgment.patch.yml",
+      "sha256": "fb83ce61744343441d1502c72ddfad35c44b7a3ab047ac9dc115e1901e1cc99e"
+    },
+    "judgment_identity": {
+      "path": "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-research-judgment.identity.json",
+      "sha256": "10c2ffea694bccf2198ba6ded1c913c1e63fe24559e039ace04f766f408a6547"
+    },
+    "release_identity": {
+      "path": "config/dsh/acp-0.2.0-rc.2.identity.json",
+      "sha256": "e8af0d1cabf1cb85db9b57da85ba246e5c9691e77f9428664e6e36a3aea7ec67"
+    }
+  },
+  "capabilities": {
+    "ordinary_root_reuse": {
+      "adr": "ADR-0096",
+      "evidence": "docs/evidence/dsh-acp-upgrade/PRODUCT-INTEGRATION-20261005.md"
+    },
+    "f6_continuation": {
+      "adr": "ADR-0090 / ADR-0103 (Accepted)",
+      "evidence": "NOT_RUN"
+    },
+    "judgment_acp_lifecycle": {
+      "adr": "ADR-0097/0098/0099 (Accepted)",
+      "evidence": "NOT_RUN"
+    },
+    "interrupted_business_continuation_new_child": {
+      "adr": "ADR-0102 (Accepted)",
+      "evidence": "NOT_RUN"
+    }
+  },
+  "rollback": {
+    "release_id": "dsh-0.1.5rc1",
+    "offline_only": true,
+    "note": "Exact old SDK images/config retained as offline operations rollback; not a normal-path fallback."
+  }
+}

@@ -1,0 +1,9 @@
+# Completed native session with per-root budget rotation — 2026-10-09
+
+**Tester / independent Reviewer / Root: PASS, bounded isolated candidate. Real Gateway/Product same-native background continuation remains NOT_RUN for this repair.**
+
+The prior real execution failed ADR-0103 because every budgeted root forced a fresh native session. The repair permits normal → background → normal → background to resume the same native session only after exact same-root terminal ACK, native close, process exit, proxy close, domain-call drain and completed non-cancelled result. Budgeted roots additionally require settled/completed receipt bound to that exact root. Unknown, needs_attention, cancellation and close failure cannot obtain reuse readiness.
+
+Provider and tool guard journals now belong to the new root. The fixed runner patch rotates only after the old root's close proof, using contained private files, exact root binding, no-overwrite archival, fsync and exact inode checks. Rotation failures stop before dispatch. Two links are accepted solely for the same-inode link/unlink interruption window, never as business or process cleanup proof. Native DSH history and files are not rewritten. BYQ does not reinject public history on healthy native resume.
+
+Worker and independent Tester each ran the same 17 focused tests in the existing candidate image without network, with read-only app/tests/packages and temporary scratch space. Root verified current source hashes against the local build snapshot and read existing candidate home/patch metadata: the actual Adapter uid/gid own 0700 homes and 0600 single-link patch files, satisfying the new file preflight. This verifies the implementation's local prerequisites, not real official DSH guard reload on native resume. The old real execution and observer failures remain preserved separately.

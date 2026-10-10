@@ -1,7 +1,9 @@
 """ADR-0085 P1 persistence tests: one-current-plan and task/plan CAS.
 
 These exercise the INTERNAL Backend store seam used by the deterministic
-reducer. There is no agent-facing HTTP/MCP write route for a plan.
+reducer. Plan ADVANCE remains an internal seam; ADR-0108 adds exactly one
+foreground create entry (``POST /v1/research/tasks/{task_id}/execution-plan``)
+that reuses ``create_execution_plan``.
 """
 
 import os
@@ -89,6 +91,117 @@ def test_create_and_get_is_one_current_plan_per_task():
                                            trusted_context=context) == plan
         with pytest.raises(IdempotencyConflict):
             store.create_execution_plan(task, {"idempotency_key": "plan-2"}, trusted_context=context)
+    finally:
+        store.close()
+
+
+def test_create_plan_is_foreground_only_and_owner_scoped():
+    # ADR-0108: the foreground create entry accepts only the trusted owner/workspace
+    # context plus the closed create request; a continuation grant and a foreign
+    # owner context cannot create a plan.
+    store, task, context = _setup()
+    try:
+        plan = store.create_execution_plan(task, {"idempotency_key": "fg-1"},
+                                           trusted_context=context)
+        assert plan["plan_version"] == 1 and plan["task_version"] == 1
+        assert store.create_execution_plan(task, {"idempotency_key": "fg-1"},
+                                           trusted_context=context) == plan
+        with pytest.raises(InvalidTransition, match="continuation permission"):
+            store.create_execution_plan(task, {"idempotency_key": "fg-2"},
+                                        trusted_context=context, require_active_grant=True)
+        foreign = dict(context)
+        foreign["owner_principal"] = "foreign-user"
+        with pytest.raises(ResearchNotFound):
+            store.create_execution_plan(task, {"idempotency_key": "fg-3"},
+                                        trusted_context=foreign)
+    finally:
+        store.close()
+
+
+def test_create_plan_refuses_nonexistent_and_foreign_references():
+    # ADR-0108: a closed payload shape is not proof of existence or ownership.
+    # Every create reference must resolve to a real, owner-scoped domain row
+    # inside the create transaction; foreign, nonexistent and unverifiable
+    # references all fail closed and leave no plan behind.
+    store, task, context = _setup()
+    other, other_task, _ = _setup(owner="plan-intruder", session="plan-session-x",
+                                  trace="plan-trace-x")
+    try:
+        with pytest.raises(ResearchNotFound):
+            store.create_execution_plan(
+                task, {"idempotency_key": "ref-missing",
+                       "references": {"strategy_version": {"strategy_version": "artifact_" + "0" * 32}}},
+                trusted_context=context)
+        with pytest.raises(ResearchNotFound):
+            store.create_execution_plan(
+                task, {"idempotency_key": "ref-foreign",
+                       "references": {"research_task": {"research_task": other_task}}},
+                trusted_context=context)
+        with pytest.raises(ResearchNotFound):
+            store.create_execution_plan(
+                task, {"idempotency_key": "ref-unverifiable",
+                       "references": {"backtest_task": {"backtest_task": "backtesttask_" + "0" * 32}}},
+                trusted_context=context)
+        with pytest.raises(ResearchNotFound):
+            store.get_execution_plan(task, trusted_context=context)
+    finally:
+        store.close()
+        other.close()
+
+
+def test_create_plan_refuses_a_same_owner_sibling_task_or_conversation():
+    # ADR-0108: the plan is bound to EXACTLY this task and its conversation. A
+    # same-owner, same-workspace sibling task/conversation must not be
+    # substituted, even though both pass owner/workspace scoping.
+    store, task, context = _setup()
+    owner = context["owner_principal"]
+    session, trace = "plan-sibling-session", "plan-sibling-trace"
+    sibling_headers = trusted_agent_context(owner, session_id=session, trace_id=trace)
+    sibling_context = {key.removeprefix("x-byq-").replace("-", "_"): value
+                       for key, value in sibling_headers.items()}
+    catalog = ConversationCatalogStore()
+    catalog.create(owner, session, trace)
+    catalog.close()
+    try:
+        sibling_task = store.create_task(
+            {"owner_principal": owner, "title": "Sibling", "objective": "Sibling",
+             "trace_id": trace, "idempotency_key": f"{owner}-sibling-task"},
+            trusted_context=sibling_context)["task_id"]
+        sibling_conversation = store._fetch_one(
+            "SELECT conversation_id FROM research_tasks WHERE task_id = :t",
+            {"t": sibling_task})["conversation_id"]
+        with pytest.raises(ResearchNotFound):
+            store.create_execution_plan(
+                task, {"idempotency_key": "sibling-task-ref",
+                       "references": {"research_task": {"research_task": sibling_task}}},
+                trusted_context=context)
+        with pytest.raises(ResearchNotFound):
+            store.create_execution_plan(
+                task, {"idempotency_key": "sibling-conv-ref",
+                       "references": {"conversation": {"conversation": sibling_conversation}}},
+                trusted_context=context)
+        with pytest.raises(ResearchNotFound):
+            store.get_execution_plan(task, trusted_context=context)
+    finally:
+        store.close()
+
+
+def test_create_replay_after_terminal_task_returns_the_current_projection():
+    # ADR-0108: an exact key+body replay returns the CURRENT plan projection even
+    # after the task has since become terminal (idempotency depends on the
+    # immutable task id and request, not the mutable task status), and writes no
+    # second plan. A different key on a task that already has a plan is a
+    # conflict, not a new creation.
+    store, task, context = _setup()
+    try:
+        plan = store.create_execution_plan(task, {"idempotency_key": "term-1"},
+                                           trusted_context=context)
+        store.transition("research_task", task, "cancelled", "term-cancel")
+        assert store.create_execution_plan(task, {"idempotency_key": "term-1"},
+                                           trusted_context=context) == plan
+        with pytest.raises(IdempotencyConflict):
+            store.create_execution_plan(task, {"idempotency_key": "term-2"},
+                                        trusted_context=context)
     finally:
         store.close()
 

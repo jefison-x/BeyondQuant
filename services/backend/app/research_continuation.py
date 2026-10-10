@@ -702,7 +702,9 @@ class ResearchContinuationMixin:
                     if profiled:
                         instruction = (
                             'BYQ trusted read-only task-ready follow-up for exact task ' + task['task_id'] + '. '
-                            'Use only byq_research_get to read this exact ResearchTask and byq_backtest_task_get '
+                            'First call byq_agent_run_start with role_id "quant_orchestrator" and idempotency key "task-ready-run-' + event['identity'] + '" to bind this turn. '
+                            'Then follow the existing role contract: call byq_agent_authorize with action exactly "byq_research_get" before byq_research_get and with action exactly "byq_backtest_task_get" before byq_backtest_task_get, and byq_agent_audit with the same exact action and bounded outcome after each read. '
+                            'Use byq_research_get to read this exact ResearchTask and byq_backtest_task_get '
                             'to read the exact BacktestTask linked to the completed ready signal below. '
                             'Exact BacktestTask ID: ' + task_id_from_signal_job(event['identity']) + '. '
                             'Do not create or update domain objects, request approvals, execute jobs, browse the web, '

@@ -115,7 +115,7 @@ def acp_adapter(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> RuntimeAdapt
     monkeypatch.setenv("BYQ_DSH_COMPOSITION", str(tmp_path / "composition.yml"))
     monkeypatch.setenv("DSH_SESSION_ROOT", str(tmp_path / "sessions"))
     monkeypatch.setenv("BYQ_MCP_ACP_DISCOVERY_TOKEN", "test-discovery-token")
-    monkeypatch.setenv("BYQ_MCP_ACP_SIGNING_KEY", "test-signing-key-0123456789abcdef")
+    monkeypatch.setenv("BYQ_MCP_ACP_SIGNING_KEY", "test-signing-key-0123456789abcdef")  # gitleaks:allow — fixed synthetic test key
     (tmp_path / "composition.yml").write_text("[]\n", encoding="utf-8")
     runtime = RuntimeAdapter(compatibility)
     runtime.require_current_backend_authority = lambda: 7
@@ -276,6 +276,115 @@ def test_failed_resume_persists_fence_and_restart_cannot_recover_promptable_sess
             restarted.submit_prompt("reuse-session", "not admitted")
     finally:
         restarted.close()
+
+
+def test_idle_release_preserves_settled_public_session_without_native_resume(acp_adapter):
+    runtime = acp_adapter
+    compat = runtime._compatibility
+    record, root, receipt = _create_and_complete(runtime, compat)
+    old_native_id = record.runtime_session_id
+
+    assert runtime.acknowledge_terminal("reuse-session", receipt) == {"receipt": receipt}
+    runtime.release_session("reuse-session", preserve_conversation=True)
+    binding = runtime._read_acp_binding("reuse-session")
+    assert binding["closed"] is False
+    assert binding["settlement_receipt"] == receipt
+    assert binding["root_run_id"] == root
+
+    restarted = RuntimeAdapter(compat)
+    restarted.require_current_backend_authority = lambda: 8
+    compat.runtime = restarted
+    try:
+        recovery = restarted.recovery_binding("reuse-session")
+        assert recovery["state"] == "settled"
+        assert recovery["settlement_receipt"] == receipt
+        recovered = restarted.recover_acp_session(
+            "reuse-session", receipt, recovery["sequence"],
+        )
+        assert recovered["status"] == SessionStatus.IDLE
+        assert recovered["resumed_from_run_id"] is None
+        assert not compat.resumed
+
+        restarted.submit_prompt(
+            "reuse-session", "next user input",
+            conversation_context=[
+                {"role": "user", "content": "first"},
+                {"role": "assistant", "content": "completed answer"},
+            ],
+        )
+        _wait_for_status(restarted, SessionStatus.IDLE)
+        assert not compat.resumed
+        assert compat.created[-1][1] != old_native_id
+        fresh_prompt = compat.harnesses[-1].prompts[0]
+        assert fresh_prompt.count("[BYQ_CONVERSATION_REHYDRATION]") == 1
+        assert fresh_prompt.count('"completed answer"') == 1
+        assert fresh_prompt.count("next user input") == 1
+    finally:
+        restarted.close()
+
+
+def test_preserve_release_requires_ack_and_cannot_reopen_ended_binding(acp_adapter, monkeypatch):
+    runtime = acp_adapter
+    record, _root, receipt = _create_and_complete(runtime, runtime._compatibility)
+
+    with pytest.raises(SessionConflict, match="Backend terminal receipt must be acknowledged"):
+        runtime.release_session("reuse-session", preserve_conversation=True)
+    unsettled = runtime._read_acp_binding("reuse-session")
+    assert unsettled["closed"] is False
+    assert unsettled["settlement_receipt"] is None
+
+    assert runtime.acknowledge_terminal("reuse-session", receipt) == {"receipt": receipt}
+    # Retain the ended Adapter record to exercise a repeated internal request;
+    # the preserve intent must not rewrite an already ended binding as open.
+    monkeypatch.setattr(runtime, "_maybe_reap_released", lambda _record: False)
+    runtime.release_session("reuse-session")
+    ended = runtime._read_acp_binding("reuse-session")
+    assert ended["closed"] is True
+    with pytest.raises(SessionConflict, match="BYQ session was ended"):
+        runtime.release_session("reuse-session", preserve_conversation=True)
+    assert runtime._read_acp_binding("reuse-session")["closed"] is True
+
+    restarted = RuntimeAdapter(runtime._compatibility)
+    restarted.require_current_backend_authority = lambda: 8
+    try:
+        with pytest.raises(SessionConflict, match="BYQ session was ended"):
+            restarted.recovery_binding("reuse-session")
+        with pytest.raises(SessionConflict, match="BYQ session was ended"):
+            restarted.recover_acp_session("reuse-session", receipt, record.sequence)
+        assert "reuse-session" not in restarted._sessions
+        assert not runtime._compatibility.resumed
+    finally:
+        restarted.close()
+
+
+def test_hard_cancel_cannot_be_overridden_by_preserve_release(acp_adapter, monkeypatch):
+    runtime = acp_adapter
+    compat = runtime._compatibility
+    runtime.create_session("reuse-session", "reuse-trace", "alice", "workspace_alice")
+    compat.block_prompt = True
+    root = runtime.submit_prompt("reuse-session", "cancel this root")
+    assert compat.prompt_started.wait(1)
+
+    original_close = compat.close
+
+    def close_and_unblock(harness):
+        compat.allow_prompt_return.set()
+        original_close(harness)
+
+    monkeypatch.setattr(compat, "close", close_and_unblock)
+    runtime.cancel_session("reuse-session", "hard")
+    record = runtime._get("reuse-session")
+    assert record.conversation_ended is True
+    receipt = record.terminal_receipts[root]
+
+    with pytest.raises(SessionConflict, match="Backend terminal receipt must be acknowledged"):
+        runtime.release_session("reuse-session", preserve_conversation=True)
+
+    assert runtime.acknowledge_terminal("reuse-session", receipt) == {"receipt": receipt}
+    binding = runtime._read_acp_binding("reuse-session")
+    assert binding["closed"] is True
+    with pytest.raises(SessionConflict, match="BYQ session was ended"):
+        runtime.release_session("reuse-session", preserve_conversation=True)
 
 
 def test_shutdown_attempts_cleanup_harness_when_primary_process_close_fails(acp_adapter):

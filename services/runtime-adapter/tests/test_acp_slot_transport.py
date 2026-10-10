@@ -133,7 +133,7 @@ def _fake_client(monkeypatch, registry, session=None, *, failure=None):
         def __init__(self, actual_registry):
             assert actual_registry is registry
 
-        def start(self, *, scope, env, deadline_at_ms, expected_cwd):
+        def start(self, *, scope, env, deadline_at_ms, expected_cwd, guard_b64=None):
             assert env["BYQ_WORKSPACE_ID"] == SCOPE["workspace_id"]
             assert deadline_at_ms > 0
             assert Path(expected_cwd).name == SCOPE["cwd_leaf"]

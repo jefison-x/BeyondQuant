@@ -164,6 +164,23 @@ paths:
       summary: 只读返回当前 research-execution-plan.v1 的有界 Product 投影；不暴露内部幂等键或身份，不授予执行能力。
       security: [{sessionCookie: []}]
       responses: *okResponses
+    post:
+      summary: ADR-0108 前台创建研究执行计划；owner/workspace 取自可信用户会话，body 仅提供闭合 create 请求（幂等键与显式领域引用），不授予模型工作流选择权。
+      security: [{sessionCookie: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [idempotency_key]
+              properties:
+                idempotency_key: {type: string, minLength: 1, maxLength: 128}
+                iteration: {type: integer, minimum: 1, maximum: 3}
+                references: {type: object, additionalProperties: true}
+                last_progress_identity: {type: string, pattern: "^sha256:[0-9a-f]{64}$"}
+      responses: *createdResponses
   /api/product/research/tasks/{task_id}/continuation-permission:
     parameters:
       - {name: task_id, in: path, required: true, schema: {type: string}}

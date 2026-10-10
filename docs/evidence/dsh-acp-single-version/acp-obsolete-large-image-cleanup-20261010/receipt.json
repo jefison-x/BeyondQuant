@@ -1,0 +1,1261 @@
+{
+  "schema": "acp-obsolete-large-image-cleanup.v1",
+  "time_utc": "2026-10-10T01:12:15.014174+00:00",
+  "disk_before_bytes": 67029262336,
+  "containers_before": [
+    {
+      "id": "1cf72e7d81ee2822f1cdee844f2d221f3759762bb76d4df285a01e77dbef9cf3",
+      "image": "sha256:753662c496721f9cb3b411850351ba1ddfb08ec6661e7fe8716710c33661b281",
+      "running": true,
+      "health": "healthy",
+      "name": "/byq-dev-c89ff732f2-backend-1"
+    },
+    {
+      "id": "218a819bea26c8ee64237ea1e278df628b439ae4c997c24200de4f87bc827109",
+      "image": "sha256:96e8ae88c0771f4f8979011093acd7fb15f17d368df8cf6653987faa68ccd28b",
+      "running": false,
+      "health": null,
+      "name": "/byq-dev-c89ff732f2-data-worker-1"
+    },
+    {
+      "id": "28ecb971e07586b7f2e641ec80cc134a0ec30ab3ecdc3f203a8335639282d795",
+      "image": "sha256:b27fe2cbf785e94177a3cc9570707df273e7ca0a0c0d8172abe2596130b6b56d",
+      "running": false,
+      "health": null,
+      "name": "/beyondquant-backtest-worker-1"
+    },
+    {
+      "id": "349add0580d6bcc398cfef4c218cc663f219f0497bc5c00555d6c45bfb22827e",
+      "image": "sha256:0980003d2c9c632598e51434257f7c631ddcd3bb11d8ddbd915b3a84fe577b8b",
+      "running": true,
+      "health": "healthy",
+      "name": "/byq-dev-c89ff732f2-mcp-1"
+    },
+    {
+      "id": "519f58509f0715070df6edec02e7e0d802c1618bbd4cc111e1fdff7cd161a9ef",
+      "image": "sha256:567905564e9658f611565e77652127292f792e8d364a845c56228d1199c20549",
+      "running": false,
+      "health": "unhealthy",
+      "name": "/beyondquant-feedback-hub-relay-1"
+    },
+    {
+      "id": "62e730d502790b7c2e4a175b7f2e820039c6b3d02f22321eee8adc2605cab6d7",
+      "image": "sha256:da1dd0985aca895e4f50527946ce38061093d9fe5e7725e5f4c0c4aefd96a14d",
+      "running": true,
+      "health": "healthy",
+      "name": "/byq-dev-c89ff732f2-frontend-1"
+    },
+    {
+      "id": "6812ddbcd64e00eec4d44496f187fa252e084881b653d568dcecc94c9956650e",
+      "image": "sha256:345ab96e23dba7c4c5cf3608a463f558a61d5822637694b706a75e01382ad44f",
+      "running": false,
+      "health": "unhealthy",
+      "name": "/beyondquant-gateway-1"
+    },
+    {
+      "id": "6a0a2a1a2bd37c29a375408fb5137ce5cb6b6f0eca9d4be8e53889fa8130ccce",
+      "image": "sha256:1041f5fa002ebd24f7ff77f49fcbdad1af74c6d717f6176b52252c42b9d968cd",
+      "running": true,
+      "health": "healthy",
+      "name": "/byq-dev-c89ff732f2-acp-judgment-runner-1"
+    },
+    {
+      "id": "6f1a3996df4e933822ca7125b6b94b1e6ce9b8498efdf1d30f3b15ea555f26cc",
+      "image": "sha256:ffb1f5f80e9352686c0b7d73a3ec44631896bb101f7dc58e65a59eabd8ab5534",
+      "running": false,
+      "health": "unhealthy",
+      "name": "/beyondquant-backend-1"
+    },
+    {
+      "id": "78e18620e473477ace8ebde91dedaa3ade094565916f3b93ae2fafa7f67c8e80",
+      "image": "sha256:fd7f77ff6a5fc89937553f7a3f8a2921180af2aad58f7775157fff159590d8c6",
+      "running": false,
+      "health": "unhealthy",
+      "name": "/byq-dev-c89ff732f2-signal-sandbox-1"
+    },
+    {
+      "id": "7b94b6efc8cccb52102eff16b91f618a4d88671920b5235fcebb30909e2cca8e",
+      "image": "sha256:23758ef19f90fb5ab50855720354205621404024779b3f22695f232d38239f72",
+      "running": false,
+      "health": "unhealthy",
+      "name": "/beyondquant-ml-worker-1"
+    },
+    {
+      "id": "8a26ab52c64dd9d023bad9242b0069aacfe1a1e035d6c8c36a930de06e947526",
+      "image": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+      "running": true,
+      "health": "healthy",
+      "name": "/byq-dev-c89ff732f2-postgres-1"
+    },
+    {
+      "id": "957d439bec8b59dcb9f26cda27d49e0c50ea25cb0e931e66564f45326a9be729",
+      "image": "sha256:49df4322826510354b1c69c68a69a6e092bfdd95dc298fe92c0ee9d05017142f",
+      "running": false,
+      "health": null,
+      "name": "/beyondquant-factor-worker-1"
+    },
+    {
+      "id": "a0143c948f71d87c007e875f62e3829e58a46036d3a27bd404e93f6b53713030",
+      "image": "sha256:28405e03c305a507fc4b0a632cbad0c52667ffa166bb3c552f6d5f8774be2757",
+      "running": false,
+      "health": "unhealthy",
+      "name": "/beyondquant-frontend-1"
+    },
+    {
+      "id": "a0e9a2d0e0d16c39f56ff5d32848f8e3af252828233c7ec7804c526009ce4d18",
+      "image": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+      "running": false,
+      "health": "unhealthy",
+      "name": "/beyondquant-postgres-1"
+    },
+    {
+      "id": "a9d2764a5f5554259bb5c1b28f86c08c57347c8d96cf04d90d4ec4d5bea8e1c4",
+      "image": "sha256:6ddceb4fd7a65ac5dabe57d87ba7b7710e3d60d0d27bafad6a7c91371fd7743a",
+      "running": true,
+      "health": "healthy",
+      "name": "/byq-dev-c89ff732f2-acp-product-runner-1"
+    },
+    {
+      "id": "ad8593ec338a0107d62cf40c0122ae02b0b2c9af852f80781131b345b3b4a12b",
+      "image": "sha256:69e51f987f1f57bf42618bb40d8ff8b17bd78aa1170eea73c026a8a6a40a609b",
+      "running": true,
+      "health": "healthy",
+      "name": "/byq-dev-c89ff732f2-gateway-1"
+    },
+    {
+      "id": "afee16cb8f75fbdbf8c67773f87ad98505b3e51bbcf710ab42c68a923eb24755",
+      "image": "sha256:1b6cb6377ca4fd9aa0a3a1442e490a333c575733fb650969dafe690e5fe73bb5",
+      "running": false,
+      "health": "unhealthy",
+      "name": "/beyondquant-signal-sandbox-1"
+    },
+    {
+      "id": "b7395956180505b4d574e4cafbf6f08c90a06522772c55021da51b7f5ea41a30",
+      "image": "sha256:75efbf28af6da160b6cdb72e65bec30fc0970e5207010ea5c7afe316908a109d",
+      "running": false,
+      "health": null,
+      "name": "/wizardly_leakey"
+    },
+    {
+      "id": "bc4458e17b604a87bfe591a1eb2e58662593b7967c04bc46c6b07d3ac3a1767e",
+      "image": "sha256:0e1793f0fe39bc008c15b0187337bdd9fdbcc27849335dac76567527c5d6c9a9",
+      "running": false,
+      "health": null,
+      "name": "/byq-dev-c89ff732f2-signal-worker-1"
+    },
+    {
+      "id": "c458afb2619321deea0a7b4953632bf8fabfb8b19825a236c37d713e6544f46d",
+      "image": "sha256:a43443e9a75a8ff19a2dfc0d8624ecb4bb726279d024946e93d3dfe06474bdbe",
+      "running": false,
+      "health": null,
+      "name": "/beyondquant-data-worker-1"
+    },
+    {
+      "id": "c729754593214c3fe12e1636b651cbe30d89789d9c3550158346d056de45a0e7",
+      "image": "sha256:35ecf87648e7762aa02c65fe2f7e57a1a32b01b67c7812276af41d7bd59588a1",
+      "running": false,
+      "health": null,
+      "name": "/beyondquant-signal-worker-1"
+    },
+    {
+      "id": "cbfc859750e683b166aa23c6613b3b4aed5102fda111a3fdbadcaeb8b357ab0c",
+      "image": "sha256:0980003d2c9c632598e51434257f7c631ddcd3bb11d8ddbd915b3a84fe577b8b",
+      "running": true,
+      "health": "healthy",
+      "name": "/byq-dev-c89ff732f2-mcp-acp-judgment-1"
+    },
+    {
+      "id": "e16031e60b6c824101434e5d052c82e10eb4be3f9c7fcbe0644f7ffbe65c0387",
+      "image": "sha256:42525c14f2453174814441e07f234b34a48015543cba2491d3845a7ae496e343",
+      "running": true,
+      "health": "healthy",
+      "name": "/byq-dev-c89ff732f2-runtime-adapter-1"
+    },
+    {
+      "id": "e203d5266af0e3f4b1144579ed617e7d1ce5deb82ce0affae2f19db60a89c404",
+      "image": "sha256:968aef621c15fee97457ecd72962f91aaabba65cee350a05075c6420d6351bd0",
+      "running": false,
+      "health": "unhealthy",
+      "name": "/beyondquant-runtime-adapter-1"
+    },
+    {
+      "id": "e660bcb90ccb01418d5e034e9674627f1bca9b3213a7ebfb420bd73030d84d79",
+      "image": "sha256:b740f5cd0c0e5f545fc7045643c0f2e31750c114d8b774f0eecc9ef3f31a739b",
+      "running": false,
+      "health": null,
+      "name": "/beyondquant-optimization-worker-1"
+    },
+    {
+      "id": "fac2df56ce25f4b470caeef1957d1d4fcade43f4c9f78329480ddcf1f6c9c699",
+      "image": "sha256:f0ba2eb7f1de492645529d6ffc70590733d2c9fb16af4e0ddcc9e5820397da7f",
+      "running": false,
+      "health": "unhealthy",
+      "name": "/beyondquant-mcp-1"
+    }
+  ],
+  "qualified_tags": {
+    "byq-acp-qualified-batch:acpunified-20261010-c42f17-backend": "sha256:33575f9cc1cbea7ab051e8dfaba23d1053faef1f3b42fbcb272da202b46a8ad3",
+    "byq-acp-qualified-batch:acpunified-20261010-c42f17-gateway": "sha256:8b18265b1a438dcec8c2cbbe0b9466b91769c98d062866072aa31efec691f64a",
+    "byq-acp-qualified-batch:acpunified-20261010-c42f17-mcp": "sha256:db66291977a32d51530095f8164a231212ebdd142d3ac582e02cab412606463f",
+    "byq-acp-qualified-batch:acpunified-20261010-c42f17-frontend": "sha256:89dcbe08d1ebca8c6164a0b3b9e9684929bf32907e9f82552f36f98cf9135418",
+    "byq-acp-qualified-batch:acpunified-20261010-c42f17-data-worker": "sha256:ed109ab7d50ba407a7f108cfd61ee0d3dec85ccadefc9c15cc16e79b22238fc1",
+    "byq-acp-qualified-batch:acpunified-20261010-c42f17-backtest-worker": "sha256:7774212593a8ce60d65793e818ac825da1fcf2464fdf5a3da8a6039a3c4acc96",
+    "byq-acp-qualified-batch:acpunified-20261010-c42f17-factor-worker": "sha256:6c67495c291cfa08fa0e2d2c4cdd94ae255e92359ac9bdcc0d43369caaa10642",
+    "byq-acp-qualified-batch:acpunified-20261010-c42f17-optimization-worker": "sha256:099a1722f703ceee4b603859b58311fbaa9af5fcd8bc3910219fa352c7f70e87",
+    "byq-acp-qualified-batch:acpunified-20261010-c42f17-signal-worker": "sha256:553c93dfc0587fa9b0bfef941bc9b692b790c7b534e3ea6bbcf88c7d78854cfb",
+    "byq-acp-qualified-batch:acpunified-20261010-c42f17-ml-worker": "sha256:5955ca41918754861bf2a8d5ba5d6df20f5c4a3eb8ae11929c571c7b34e74824",
+    "byq-acp-qualified-batch:acpunified-20261010-c42f17-signal-sandbox": "sha256:22bd3f7c5ab3d48d555afc5ef7a9a48e2136e9fea1a6f7f52ebb43143fd7a604",
+    "byq-acp-qualified-batch:acpunified-20261010-c42f17-feedback-hub-relay": "sha256:3af57b533cebb703ef52cc3b4e6d97c209427106b90f33bac741ea06d64caa2d",
+    "byq-acp-qualified-batch:acpunified-20261010-c42f17-mcp-acp-judgment": "sha256:3d89a327594f493e8d974bf0f387b9ad7c1fb7257fd6ae3ac1be1cd75547ee9e",
+    "byq-acp-qualified-batch:acpunified-20261010-c42f17-judgment-consumer": "sha256:64b7b23a9838715478affa617bc53c1360f3a20da5d86d62bd9c95e62e071179",
+    "byq-acp-unified:cur-2d581097-20261010-retryfix": "sha256:15cdf5f97009e21af50c3cfd87d2f8d42af91e8ccaa2a82d57966bc4c2fbc6f5"
+  },
+  "actions": [
+    {
+      "argv": [
+        "docker",
+        "container",
+        "rm",
+        "b7395956180505b4d574e4cafbf6f08c90a06522772c55021da51b7f5ea41a30"
+      ],
+      "exit_code": 0,
+      "stdout": "b7395956180505b4d574e4cafbf6f08c90a06522772c55021da51b7f5ea41a30\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "byq-acp-native-reuse-c89ff732f2:current"
+      ],
+      "exit_code": 0,
+      "stdout": "Untagged: byq-acp-native-reuse-c89ff732f2:current\nDeleted: sha256:935a71872e0ed2931f45ce011dcff1c147cc19b271e3641bd1488f5118930bd5\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "byq-acp-authoritative-adapter:20261009"
+      ],
+      "exit_code": 0,
+      "stdout": "Untagged: byq-acp-authoritative-adapter:20261009\nDeleted: sha256:9112eb955ff4bb0465bf9b98e70d0b107a74ad36541d16f7ee4330d869db6d4f\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:f48910ade70db43064563d07969a77455ea03d23dcbdc4543c416d5d896a20eb"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:f48910ade70db43064563d07969a77455ea03d23dcbdc4543c416d5d896a20eb\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:cba1ea2025325fd7f5d28cecb21925d678b816906b185d4eda3b064d332f3528"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:cba1ea2025325fd7f5d28cecb21925d678b816906b185d4eda3b064d332f3528\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:be3f76ca3139a8af6e21d77346a7333d6bce49bfcbfa854b3fefd161add504d0"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:be3f76ca3139a8af6e21d77346a7333d6bce49bfcbfa854b3fefd161add504d0\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:04199e00a13723cae7c4e55d3752808a3cff53c2460811d7f8a5702b80307606"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:04199e00a13723cae7c4e55d3752808a3cff53c2460811d7f8a5702b80307606\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:05aee6aa89996496a0d1c3619cfc7a313a8848abc775ca0063ffeaf834034f8c"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:05aee6aa89996496a0d1c3619cfc7a313a8848abc775ca0063ffeaf834034f8c\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "byq-acp-authoritative-product-runner:20261009"
+      ],
+      "exit_code": 0,
+      "stdout": "Untagged: byq-acp-authoritative-product-runner:20261009\nDeleted: sha256:693c7bfd2f0dd64c45fc84d7f950886ddfe6294783e62977afb2eb5ed666b0dd\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:21d6d9f6c84d58543b6ac903f8091769cecd69802df2d9c94bda63cde762118e"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:21d6d9f6c84d58543b6ac903f8091769cecd69802df2d9c94bda63cde762118e\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:00e1e563d76415df27fe516e4b1c931f0f7c7dd14bd50f9815d7a0c4ac065ab4"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:00e1e563d76415df27fe516e4b1c931f0f7c7dd14bd50f9815d7a0c4ac065ab4\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:6192845c93fc717948a036804c7f5fb9313cef594d295e1314655b77148068a0"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:6192845c93fc717948a036804c7f5fb9313cef594d295e1314655b77148068a0\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:8c0d1cd87cd4480a4de270e242d271441f9149ecc97d55226c29bee49f9d6628"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:8c0d1cd87cd4480a4de270e242d271441f9149ecc97d55226c29bee49f9d6628\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:2380c6fa9302179257ac9230950c52282b3ef8ce300ed76c18eff7632187b750"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:2380c6fa9302179257ac9230950c52282b3ef8ce300ed76c18eff7632187b750\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:686afd2772c6ccad4578f5ba1abbe2e478b387887457dc8f5b5b07767f27c5ea"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:686afd2772c6ccad4578f5ba1abbe2e478b387887457dc8f5b5b07767f27c5ea\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:d672c5d95027ce4db045df58120596fd8b76cfb85d73ca6dd9c8ad688890620d"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:d672c5d95027ce4db045df58120596fd8b76cfb85d73ca6dd9c8ad688890620d\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:ae043d19cc7f2a0598cf2df9ef3a3e1edf4198293be74e11f4f6d346d3132cf0"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:ae043d19cc7f2a0598cf2df9ef3a3e1edf4198293be74e11f4f6d346d3132cf0\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:26cf35c36859ec86854862758d1796dcef3bd7c3367963d4844200a70a49460f"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:26cf35c36859ec86854862758d1796dcef3bd7c3367963d4844200a70a49460f\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:c7a6bff0e7ce4b36417fc4c5a363476b8a16ba25b890c8ab6673662bc14a7bc9"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:c7a6bff0e7ce4b36417fc4c5a363476b8a16ba25b890c8ab6673662bc14a7bc9\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:7f2e51483b0f1657a808ffc90c22581f94b38554287cae66330a03c8bf38cd02"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:7f2e51483b0f1657a808ffc90c22581f94b38554287cae66330a03c8bf38cd02\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:ca5f8504c71071b654aaa4c801b4e576d30f735d31832c4217b1f1eb2aa8afd6"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:ca5f8504c71071b654aaa4c801b4e576d30f735d31832c4217b1f1eb2aa8afd6\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:abddbd37b01061dbeef3f0dfce5f0cb06bb3365a3cf8be42ed89ac76dc35cf21"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:abddbd37b01061dbeef3f0dfce5f0cb06bb3365a3cf8be42ed89ac76dc35cf21\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:eb254d128027ab3e1cd2a4fd2f56776dfff219d016a8a677c8528bc32201d4bc"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:eb254d128027ab3e1cd2a4fd2f56776dfff219d016a8a677c8528bc32201d4bc\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:0fd730a521a60e515c3149667c7ef951e2c19d1cc431238222cd75c98486f75b"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:0fd730a521a60e515c3149667c7ef951e2c19d1cc431238222cd75c98486f75b\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:c8e06a432765c13b9b616d796d4296bb75bd9c317030bb5417404240fa810ed6"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:c8e06a432765c13b9b616d796d4296bb75bd9c317030bb5417404240fa810ed6\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:72842e52b5b05264f60aeb8b3a9f457e2854c8c390bdf0fa65251552a653fc63"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:72842e52b5b05264f60aeb8b3a9f457e2854c8c390bdf0fa65251552a653fc63\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:02abf7dd44fc3f81e780715dd1c8c611f572ad254477740572dca3c2b60b0e0e"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:02abf7dd44fc3f81e780715dd1c8c611f572ad254477740572dca3c2b60b0e0e\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:8e9d4d09974cc9ade95a491744635a98f7b2d257db6097ad1afa0b8547c598ac"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:8e9d4d09974cc9ade95a491744635a98f7b2d257db6097ad1afa0b8547c598ac\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:dfea1ab5bc67fa1775483d802b35edbce52876a16097829fe561e7cd6409fe34"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:dfea1ab5bc67fa1775483d802b35edbce52876a16097829fe561e7cd6409fe34\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:a952bf838c492b69c2accd02f9abbc33afe7324dcffb55317c0ce978f59386c1"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:a952bf838c492b69c2accd02f9abbc33afe7324dcffb55317c0ce978f59386c1\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:2488744a6b1c1baade285466e9256914f96a997393b8ade1fd1e849b4e144754"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:2488744a6b1c1baade285466e9256914f96a997393b8ade1fd1e849b4e144754\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:94166e1bae0b3b3c509e9df721c0c05c7efe763cfb67f21dc3532d52746e138e"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:94166e1bae0b3b3c509e9df721c0c05c7efe763cfb67f21dc3532d52746e138e\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:4fde088030a8335c3a75904b80c9f3b8fd7fadcf0d0fc3b6f80b262f40df0e06"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:4fde088030a8335c3a75904b80c9f3b8fd7fadcf0d0fc3b6f80b262f40df0e06\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:065ab15000646c8b263a08d936981f24fc788f23188c35886af4ecb7823d19a0"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:065ab15000646c8b263a08d936981f24fc788f23188c35886af4ecb7823d19a0\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:0b2d6f35bee8100840faaf266d358ef223482735c97beb670f5b12a728632ad9"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:0b2d6f35bee8100840faaf266d358ef223482735c97beb670f5b12a728632ad9\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:225dcd1539dae162fa8210a1ad09974a482890ef3a5df88339d191122d425e89"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:225dcd1539dae162fa8210a1ad09974a482890ef3a5df88339d191122d425e89\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:cae10ed297470e115e7ba05cbad65e40c8bb433648b4df0850ec9a69e423665f"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:cae10ed297470e115e7ba05cbad65e40c8bb433648b4df0850ec9a69e423665f\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:4254b93aa37cfe49449914fa8db1d495d3a6be16ad790e38c1e63b8106ba6640"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:4254b93aa37cfe49449914fa8db1d495d3a6be16ad790e38c1e63b8106ba6640\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:7fcd085c701f72c18478cb0922524a41e0bba37ebf01dc4d2efd39b115917615"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:7fcd085c701f72c18478cb0922524a41e0bba37ebf01dc4d2efd39b115917615\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:3844d5ce1ad2e797e62eed83925ff948de43d11967c36fe9446f50ed6c62dc59"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:3844d5ce1ad2e797e62eed83925ff948de43d11967c36fe9446f50ed6c62dc59\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:95c084eeecce0feb4f6f168201d03068b07747a5ee2fd12ba7d6a365b915d745"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:95c084eeecce0feb4f6f168201d03068b07747a5ee2fd12ba7d6a365b915d745\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:bf868ebebc8156f4486335574fe1858cf474a1c804c95a467816bd77962bb62a"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:bf868ebebc8156f4486335574fe1858cf474a1c804c95a467816bd77962bb62a\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:e47e14251e534346b5a4bf459376f1257c5ac9ecbe2c58561e54c8d1db0e4a2b"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:e47e14251e534346b5a4bf459376f1257c5ac9ecbe2c58561e54c8d1db0e4a2b\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:aeb47357cb739667d64885709ac30c68f2cc2b7c65efe839b43de7c4201b9fd8"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:aeb47357cb739667d64885709ac30c68f2cc2b7c65efe839b43de7c4201b9fd8\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "byq-acp-unified:candidate",
+        "byq-acp-unified:uidfix-candidate"
+      ],
+      "exit_code": 0,
+      "stdout": "Untagged: byq-acp-unified:candidate\nUntagged: byq-acp-unified:uidfix-candidate\nDeleted: sha256:e5d092555093453c04aec6f9efc6527d6e2bbd1bb62e993fa29ca8f1788b647b\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:fc62083e0ba2f6425443e1f68ded043eb1bc7de32ec66ee1e8054e4963662a4d"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:fc62083e0ba2f6425443e1f68ded043eb1bc7de32ec66ee1e8054e4963662a4d\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:133d922374dd6012ace670d8e8aeaf05ad8583b99992001fdafa8456cbb118aa"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:133d922374dd6012ace670d8e8aeaf05ad8583b99992001fdafa8456cbb118aa\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:fed14cfb61f5ac59cef91d0f2fc19d37b37fecc198ea3e646c7cb47c165cf377"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:fed14cfb61f5ac59cef91d0f2fc19d37b37fecc198ea3e646c7cb47c165cf377\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:40d8dcd1cf9355bec86b86b19f87ce39b7fd9fffb66714bde6c25e081a1764ad"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:40d8dcd1cf9355bec86b86b19f87ce39b7fd9fffb66714bde6c25e081a1764ad\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:93a4d8b98de160acc1d7552f54aacdd3c76e0eef1b9feb91a6589acd6fa6a6cd"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:93a4d8b98de160acc1d7552f54aacdd3c76e0eef1b9feb91a6589acd6fa6a6cd\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:9144c128cb5bdeda8baae2517b974b26a11ea2c3c5269a31e74dd308b379fa0a"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:9144c128cb5bdeda8baae2517b974b26a11ea2c3c5269a31e74dd308b379fa0a\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:09f36de6e188710e155f276944d24658fa2f06d2803af8d72b9c758124b3a608"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:09f36de6e188710e155f276944d24658fa2f06d2803af8d72b9c758124b3a608\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:bb51b1a2e7c8078153bdae8f3008eafcbb4ceca3c2ea039ac0e9d35ffe8fcb97"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:bb51b1a2e7c8078153bdae8f3008eafcbb4ceca3c2ea039ac0e9d35ffe8fcb97\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:9e76a9539b3ad036f976520d246af89ab5fbfcd2a88a2cac6afbe0000d8d679c"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:9e76a9539b3ad036f976520d246af89ab5fbfcd2a88a2cac6afbe0000d8d679c\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:72abde0d50be6c4ec0e60f9caffb8d200564238526fa9880a5aae2db6265af8b"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:72abde0d50be6c4ec0e60f9caffb8d200564238526fa9880a5aae2db6265af8b\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:566f6bf1098200e63ecc4eb1035d451a38b4523f4cc838c3dfe73f57162bd3af"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:566f6bf1098200e63ecc4eb1035d451a38b4523f4cc838c3dfe73f57162bd3af\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:791b3e954047fc849e69b20570742f784badc232ebd760196289e3c9c83481df"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:791b3e954047fc849e69b20570742f784badc232ebd760196289e3c9c83481df\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:047a15cd49cab2f395fc797b640ce2f40367c6530d586c27b35a26ceda64f456"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:047a15cd49cab2f395fc797b640ce2f40367c6530d586c27b35a26ceda64f456\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:1093c487a9be14dddfbb365682b407e33e3782ddaaa8e2606d213c1852a54121"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:1093c487a9be14dddfbb365682b407e33e3782ddaaa8e2606d213c1852a54121\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "byq-acp-product-runner:qualification-20261005-fix3"
+      ],
+      "exit_code": 0,
+      "stdout": "Untagged: byq-acp-product-runner:qualification-20261005-fix3\nDeleted: sha256:67950caf13342de43694db4b18a78dd3047696e92431f0dd2648cd4089dd1dc5\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "byq-acp-product-runner:qualification-20261005-final"
+      ],
+      "exit_code": 0,
+      "stdout": "Untagged: byq-acp-product-runner:qualification-20261005-final\nDeleted: sha256:6722c919993d35201249a0eecf80b5bda3f4be7122a356876e2493dc2f318dca\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "byq-runtime-adapter-acp:qualification-20261005-slot"
+      ],
+      "exit_code": 0,
+      "stdout": "Untagged: byq-runtime-adapter-acp:qualification-20261005-slot\nDeleted: sha256:de094b9c628308744f3544cdebf0bf9c69838864f61c2b345b57a829d09dbe5a\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "byq-acp-product-runner:qualification-20261005"
+      ],
+      "exit_code": 0,
+      "stdout": "Untagged: byq-acp-product-runner:qualification-20261005\nDeleted: sha256:fe3dbfe9ec438f9982a649fbf519ac646115dafce00bf3d061a939a057a1a998\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "byq-acp-judgment-runner:qualification-20261005-final"
+      ],
+      "exit_code": 0,
+      "stdout": "Untagged: byq-acp-judgment-runner:qualification-20261005-final\nDeleted: sha256:297130a5c38316957a5f039504b03d97826a46c25c50d2d4ed78ea865159f020\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "byq-acp-judgment-runner:qualification-20261005-fix1"
+      ],
+      "exit_code": 0,
+      "stdout": "Untagged: byq-acp-judgment-runner:qualification-20261005-fix1\nDeleted: sha256:415fb220fcdfaba4aa3259b75447d519139b1e9bf979ba26f21a594305f17732\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "byq-acp-judgment-runner:qualification-20261005"
+      ],
+      "exit_code": 0,
+      "stdout": "Untagged: byq-acp-judgment-runner:qualification-20261005\nDeleted: sha256:7e055e6f27bcbde9c1e3a8d79ec206099ccc18e8f29d66b2c763f118a876570f\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "byq-acp-official-dsh:qualification-20261005"
+      ],
+      "exit_code": 0,
+      "stdout": "Untagged: byq-acp-official-dsh:qualification-20261005\nDeleted: sha256:c47224ea3138db3cdf91d9bfeccd944ecf36585aae278d1deda5a3e9514cdf8f\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "byq-runtime-adapter-acp:qualification-20261004"
+      ],
+      "exit_code": 0,
+      "stdout": "Untagged: byq-runtime-adapter-acp:qualification-20261004\nDeleted: sha256:f600f4eb348542b96d9e0c64243edc47ee37c8f8f509200c8099da9d658aa2ba\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "byq-dsh-acp-rc2:local"
+      ],
+      "exit_code": 0,
+      "stdout": "Untagged: byq-dsh-acp-rc2:local\nDeleted: sha256:16b5238ddded2c04ae9ac66812b391e4991122ceb1ef94b7ba8fbd90dd3e3437\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:c324ef803409c0a38e9c34b68bcc847942614eb1e907d13ac2b0a30952b1b0b9"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:c324ef803409c0a38e9c34b68bcc847942614eb1e907d13ac2b0a30952b1b0b9\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "image",
+        "rm",
+        "sha256:3da73530d1ec4caf720c9d27caefbec228b2dc405b3570ba9f12f001f6cd58b2"
+      ],
+      "exit_code": 0,
+      "stdout": "Deleted: sha256:3da73530d1ec4caf720c9d27caefbec228b2dc405b3570ba9f12f001f6cd58b2\n",
+      "stderr": ""
+    }
+  ],
+  "plan_count": 125,
+  "scope": "70 exact unused large ACP/build images plus one stopped mount-free OOM build container; no force/prune/volume/config mutation",
+  "target_ids_remaining": [],
+  "target_ids_absent": [
+    "sha256:7f2e51483b0f1657a808ffc90c22581f94b38554287cae66330a03c8bf38cd02",
+    "sha256:c8e06a432765c13b9b616d796d4296bb75bd9c317030bb5417404240fa810ed6",
+    "sha256:a952bf838c492b69c2accd02f9abbc33afe7324dcffb55317c0ce978f59386c1",
+    "sha256:e5d092555093453c04aec6f9efc6527d6e2bbd1bb62e993fa29ca8f1788b647b",
+    "sha256:fed14cfb61f5ac59cef91d0f2fc19d37b37fecc198ea3e646c7cb47c165cf377",
+    "sha256:9144c128cb5bdeda8baae2517b974b26a11ea2c3c5269a31e74dd308b379fa0a",
+    "sha256:9e76a9539b3ad036f976520d246af89ab5fbfcd2a88a2cac6afbe0000d8d679c",
+    "sha256:566f6bf1098200e63ecc4eb1035d451a38b4523f4cc838c3dfe73f57162bd3af",
+    "sha256:047a15cd49cab2f395fc797b640ce2f40367c6530d586c27b35a26ceda64f456",
+    "sha256:1093c487a9be14dddfbb365682b407e33e3782ddaaa8e2606d213c1852a54121",
+    "sha256:ca5f8504c71071b654aaa4c801b4e576d30f735d31832c4217b1f1eb2aa8afd6",
+    "sha256:72842e52b5b05264f60aeb8b3a9f457e2854c8c390bdf0fa65251552a653fc63",
+    "sha256:2488744a6b1c1baade285466e9256914f96a997393b8ade1fd1e849b4e144754",
+    "sha256:4254b93aa37cfe49449914fa8db1d495d3a6be16ad790e38c1e63b8106ba6640",
+    "sha256:bf868ebebc8156f4486335574fe1858cf474a1c804c95a467816bd77962bb62a",
+    "sha256:fc62083e0ba2f6425443e1f68ded043eb1bc7de32ec66ee1e8054e4963662a4d",
+    "sha256:40d8dcd1cf9355bec86b86b19f87ce39b7fd9fffb66714bde6c25e081a1764ad",
+    "sha256:09f36de6e188710e155f276944d24658fa2f06d2803af8d72b9c758124b3a608",
+    "sha256:72abde0d50be6c4ec0e60f9caffb8d200564238526fa9880a5aae2db6265af8b",
+    "sha256:791b3e954047fc849e69b20570742f784badc232ebd760196289e3c9c83481df",
+    "sha256:f48910ade70db43064563d07969a77455ea03d23dcbdc4543c416d5d896a20eb",
+    "sha256:be3f76ca3139a8af6e21d77346a7333d6bce49bfcbfa854b3fefd161add504d0",
+    "sha256:05aee6aa89996496a0d1c3619cfc7a313a8848abc775ca0063ffeaf834034f8c",
+    "sha256:00e1e563d76415df27fe516e4b1c931f0f7c7dd14bd50f9815d7a0c4ac065ab4",
+    "sha256:2380c6fa9302179257ac9230950c52282b3ef8ce300ed76c18eff7632187b750",
+    "sha256:ae043d19cc7f2a0598cf2df9ef3a3e1edf4198293be74e11f4f6d346d3132cf0",
+    "sha256:abddbd37b01061dbeef3f0dfce5f0cb06bb3365a3cf8be42ed89ac76dc35cf21",
+    "sha256:02abf7dd44fc3f81e780715dd1c8c611f572ad254477740572dca3c2b60b0e0e",
+    "sha256:94166e1bae0b3b3c509e9df721c0c05c7efe763cfb67f21dc3532d52746e138e",
+    "sha256:0b2d6f35bee8100840faaf266d358ef223482735c97beb670f5b12a728632ad9",
+    "sha256:7fcd085c701f72c18478cb0922524a41e0bba37ebf01dc4d2efd39b115917615",
+    "sha256:693c7bfd2f0dd64c45fc84d7f950886ddfe6294783e62977afb2eb5ed666b0dd",
+    "sha256:6192845c93fc717948a036804c7f5fb9313cef594d295e1314655b77148068a0",
+    "sha256:686afd2772c6ccad4578f5ba1abbe2e478b387887457dc8f5b5b07767f27c5ea",
+    "sha256:26cf35c36859ec86854862758d1796dcef3bd7c3367963d4844200a70a49460f",
+    "sha256:eb254d128027ab3e1cd2a4fd2f56776dfff219d016a8a677c8528bc32201d4bc",
+    "sha256:8e9d4d09974cc9ade95a491744635a98f7b2d257db6097ad1afa0b8547c598ac",
+    "sha256:4fde088030a8335c3a75904b80c9f3b8fd7fadcf0d0fc3b6f80b262f40df0e06",
+    "sha256:225dcd1539dae162fa8210a1ad09974a482890ef3a5df88339d191122d425e89",
+    "sha256:3844d5ce1ad2e797e62eed83925ff948de43d11967c36fe9446f50ed6c62dc59",
+    "sha256:e47e14251e534346b5a4bf459376f1257c5ac9ecbe2c58561e54c8d1db0e4a2b",
+    "sha256:133d922374dd6012ace670d8e8aeaf05ad8583b99992001fdafa8456cbb118aa",
+    "sha256:93a4d8b98de160acc1d7552f54aacdd3c76e0eef1b9feb91a6589acd6fa6a6cd",
+    "sha256:bb51b1a2e7c8078153bdae8f3008eafcbb4ceca3c2ea039ac0e9d35ffe8fcb97",
+    "sha256:9112eb955ff4bb0465bf9b98e70d0b107a74ad36541d16f7ee4330d869db6d4f",
+    "sha256:cba1ea2025325fd7f5d28cecb21925d678b816906b185d4eda3b064d332f3528",
+    "sha256:04199e00a13723cae7c4e55d3752808a3cff53c2460811d7f8a5702b80307606",
+    "sha256:21d6d9f6c84d58543b6ac903f8091769cecd69802df2d9c94bda63cde762118e",
+    "sha256:8c0d1cd87cd4480a4de270e242d271441f9149ecc97d55226c29bee49f9d6628",
+    "sha256:d672c5d95027ce4db045df58120596fd8b76cfb85d73ca6dd9c8ad688890620d",
+    "sha256:c7a6bff0e7ce4b36417fc4c5a363476b8a16ba25b890c8ab6673662bc14a7bc9",
+    "sha256:0fd730a521a60e515c3149667c7ef951e2c19d1cc431238222cd75c98486f75b",
+    "sha256:dfea1ab5bc67fa1775483d802b35edbce52876a16097829fe561e7cd6409fe34",
+    "sha256:065ab15000646c8b263a08d936981f24fc788f23188c35886af4ecb7823d19a0",
+    "sha256:cae10ed297470e115e7ba05cbad65e40c8bb433648b4df0850ec9a69e423665f",
+    "sha256:95c084eeecce0feb4f6f168201d03068b07747a5ee2fd12ba7d6a365b915d745",
+    "sha256:aeb47357cb739667d64885709ac30c68f2cc2b7c65efe839b43de7c4201b9fd8",
+    "sha256:935a71872e0ed2931f45ce011dcff1c147cc19b271e3641bd1488f5118930bd5",
+    "sha256:c324ef803409c0a38e9c34b68bcc847942614eb1e907d13ac2b0a30952b1b0b9",
+    "sha256:3da73530d1ec4caf720c9d27caefbec228b2dc405b3570ba9f12f001f6cd58b2",
+    "sha256:67950caf13342de43694db4b18a78dd3047696e92431f0dd2648cd4089dd1dc5",
+    "sha256:6722c919993d35201249a0eecf80b5bda3f4be7122a356876e2493dc2f318dca",
+    "sha256:de094b9c628308744f3544cdebf0bf9c69838864f61c2b345b57a829d09dbe5a",
+    "sha256:fe3dbfe9ec438f9982a649fbf519ac646115dafce00bf3d061a939a057a1a998",
+    "sha256:297130a5c38316957a5f039504b03d97826a46c25c50d2d4ed78ea865159f020",
+    "sha256:415fb220fcdfaba4aa3259b75447d519139b1e9bf979ba26f21a594305f17732",
+    "sha256:7e055e6f27bcbde9c1e3a8d79ec206099ccc18e8f29d66b2c763f118a876570f",
+    "sha256:c47224ea3138db3cdf91d9bfeccd944ecf36585aae278d1deda5a3e9514cdf8f",
+    "sha256:f600f4eb348542b96d9e0c64243edc47ee37c8f8f509200c8099da9d658aa2ba",
+    "sha256:16b5238ddded2c04ae9ac66812b391e4991122ceb1ef94b7ba8fbd90dd3e3437"
+  ],
+  "containers_after": [
+    {
+      "id": "1cf72e7d81ee2822f1cdee844f2d221f3759762bb76d4df285a01e77dbef9cf3",
+      "image": "sha256:753662c496721f9cb3b411850351ba1ddfb08ec6661e7fe8716710c33661b281",
+      "running": true,
+      "health": "healthy",
+      "name": "/byq-dev-c89ff732f2-backend-1"
+    },
+    {
+      "id": "218a819bea26c8ee64237ea1e278df628b439ae4c997c24200de4f87bc827109",
+      "image": "sha256:96e8ae88c0771f4f8979011093acd7fb15f17d368df8cf6653987faa68ccd28b",
+      "running": false,
+      "health": null,
+      "name": "/byq-dev-c89ff732f2-data-worker-1"
+    },
+    {
+      "id": "28ecb971e07586b7f2e641ec80cc134a0ec30ab3ecdc3f203a8335639282d795",
+      "image": "sha256:b27fe2cbf785e94177a3cc9570707df273e7ca0a0c0d8172abe2596130b6b56d",
+      "running": false,
+      "health": null,
+      "name": "/beyondquant-backtest-worker-1"
+    },
+    {
+      "id": "349add0580d6bcc398cfef4c218cc663f219f0497bc5c00555d6c45bfb22827e",
+      "image": "sha256:0980003d2c9c632598e51434257f7c631ddcd3bb11d8ddbd915b3a84fe577b8b",
+      "running": true,
+      "health": "healthy",
+      "name": "/byq-dev-c89ff732f2-mcp-1"
+    },
+    {
+      "id": "519f58509f0715070df6edec02e7e0d802c1618bbd4cc111e1fdff7cd161a9ef",
+      "image": "sha256:567905564e9658f611565e77652127292f792e8d364a845c56228d1199c20549",
+      "running": false,
+      "health": "unhealthy",
+      "name": "/beyondquant-feedback-hub-relay-1"
+    },
+    {
+      "id": "62e730d502790b7c2e4a175b7f2e820039c6b3d02f22321eee8adc2605cab6d7",
+      "image": "sha256:da1dd0985aca895e4f50527946ce38061093d9fe5e7725e5f4c0c4aefd96a14d",
+      "running": true,
+      "health": "healthy",
+      "name": "/byq-dev-c89ff732f2-frontend-1"
+    },
+    {
+      "id": "6812ddbcd64e00eec4d44496f187fa252e084881b653d568dcecc94c9956650e",
+      "image": "sha256:345ab96e23dba7c4c5cf3608a463f558a61d5822637694b706a75e01382ad44f",
+      "running": false,
+      "health": "unhealthy",
+      "name": "/beyondquant-gateway-1"
+    },
+    {
+      "id": "6a0a2a1a2bd37c29a375408fb5137ce5cb6b6f0eca9d4be8e53889fa8130ccce",
+      "image": "sha256:1041f5fa002ebd24f7ff77f49fcbdad1af74c6d717f6176b52252c42b9d968cd",
+      "running": true,
+      "health": "healthy",
+      "name": "/byq-dev-c89ff732f2-acp-judgment-runner-1"
+    },
+    {
+      "id": "6f1a3996df4e933822ca7125b6b94b1e6ce9b8498efdf1d30f3b15ea555f26cc",
+      "image": "sha256:ffb1f5f80e9352686c0b7d73a3ec44631896bb101f7dc58e65a59eabd8ab5534",
+      "running": false,
+      "health": "unhealthy",
+      "name": "/beyondquant-backend-1"
+    },
+    {
+      "id": "78e18620e473477ace8ebde91dedaa3ade094565916f3b93ae2fafa7f67c8e80",
+      "image": "sha256:fd7f77ff6a5fc89937553f7a3f8a2921180af2aad58f7775157fff159590d8c6",
+      "running": false,
+      "health": "unhealthy",
+      "name": "/byq-dev-c89ff732f2-signal-sandbox-1"
+    },
+    {
+      "id": "7b94b6efc8cccb52102eff16b91f618a4d88671920b5235fcebb30909e2cca8e",
+      "image": "sha256:23758ef19f90fb5ab50855720354205621404024779b3f22695f232d38239f72",
+      "running": false,
+      "health": "unhealthy",
+      "name": "/beyondquant-ml-worker-1"
+    },
+    {
+      "id": "8a26ab52c64dd9d023bad9242b0069aacfe1a1e035d6c8c36a930de06e947526",
+      "image": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+      "running": true,
+      "health": "healthy",
+      "name": "/byq-dev-c89ff732f2-postgres-1"
+    },
+    {
+      "id": "957d439bec8b59dcb9f26cda27d49e0c50ea25cb0e931e66564f45326a9be729",
+      "image": "sha256:49df4322826510354b1c69c68a69a6e092bfdd95dc298fe92c0ee9d05017142f",
+      "running": false,
+      "health": null,
+      "name": "/beyondquant-factor-worker-1"
+    },
+    {
+      "id": "a0143c948f71d87c007e875f62e3829e58a46036d3a27bd404e93f6b53713030",
+      "image": "sha256:28405e03c305a507fc4b0a632cbad0c52667ffa166bb3c552f6d5f8774be2757",
+      "running": false,
+      "health": "unhealthy",
+      "name": "/beyondquant-frontend-1"
+    },
+    {
+      "id": "a0e9a2d0e0d16c39f56ff5d32848f8e3af252828233c7ec7804c526009ce4d18",
+      "image": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+      "running": false,
+      "health": "unhealthy",
+      "name": "/beyondquant-postgres-1"
+    },
+    {
+      "id": "a9d2764a5f5554259bb5c1b28f86c08c57347c8d96cf04d90d4ec4d5bea8e1c4",
+      "image": "sha256:6ddceb4fd7a65ac5dabe57d87ba7b7710e3d60d0d27bafad6a7c91371fd7743a",
+      "running": true,
+      "health": "healthy",
+      "name": "/byq-dev-c89ff732f2-acp-product-runner-1"
+    },
+    {
+      "id": "ad8593ec338a0107d62cf40c0122ae02b0b2c9af852f80781131b345b3b4a12b",
+      "image": "sha256:69e51f987f1f57bf42618bb40d8ff8b17bd78aa1170eea73c026a8a6a40a609b",
+      "running": true,
+      "health": "healthy",
+      "name": "/byq-dev-c89ff732f2-gateway-1"
+    },
+    {
+      "id": "afee16cb8f75fbdbf8c67773f87ad98505b3e51bbcf710ab42c68a923eb24755",
+      "image": "sha256:1b6cb6377ca4fd9aa0a3a1442e490a333c575733fb650969dafe690e5fe73bb5",
+      "running": false,
+      "health": "unhealthy",
+      "name": "/beyondquant-signal-sandbox-1"
+    },
+    {
+      "id": "bc4458e17b604a87bfe591a1eb2e58662593b7967c04bc46c6b07d3ac3a1767e",
+      "image": "sha256:0e1793f0fe39bc008c15b0187337bdd9fdbcc27849335dac76567527c5d6c9a9",
+      "running": false,
+      "health": null,
+      "name": "/byq-dev-c89ff732f2-signal-worker-1"
+    },
+    {
+      "id": "c458afb2619321deea0a7b4953632bf8fabfb8b19825a236c37d713e6544f46d",
+      "image": "sha256:a43443e9a75a8ff19a2dfc0d8624ecb4bb726279d024946e93d3dfe06474bdbe",
+      "running": false,
+      "health": null,
+      "name": "/beyondquant-data-worker-1"
+    },
+    {
+      "id": "c729754593214c3fe12e1636b651cbe30d89789d9c3550158346d056de45a0e7",
+      "image": "sha256:35ecf87648e7762aa02c65fe2f7e57a1a32b01b67c7812276af41d7bd59588a1",
+      "running": false,
+      "health": null,
+      "name": "/beyondquant-signal-worker-1"
+    },
+    {
+      "id": "cbfc859750e683b166aa23c6613b3b4aed5102fda111a3fdbadcaeb8b357ab0c",
+      "image": "sha256:0980003d2c9c632598e51434257f7c631ddcd3bb11d8ddbd915b3a84fe577b8b",
+      "running": true,
+      "health": "healthy",
+      "name": "/byq-dev-c89ff732f2-mcp-acp-judgment-1"
+    },
+    {
+      "id": "e16031e60b6c824101434e5d052c82e10eb4be3f9c7fcbe0644f7ffbe65c0387",
+      "image": "sha256:42525c14f2453174814441e07f234b34a48015543cba2491d3845a7ae496e343",
+      "running": true,
+      "health": "healthy",
+      "name": "/byq-dev-c89ff732f2-runtime-adapter-1"
+    },
+    {
+      "id": "e203d5266af0e3f4b1144579ed617e7d1ce5deb82ce0affae2f19db60a89c404",
+      "image": "sha256:968aef621c15fee97457ecd72962f91aaabba65cee350a05075c6420d6351bd0",
+      "running": false,
+      "health": "unhealthy",
+      "name": "/beyondquant-runtime-adapter-1"
+    },
+    {
+      "id": "e660bcb90ccb01418d5e034e9674627f1bca9b3213a7ebfb420bd73030d84d79",
+      "image": "sha256:b740f5cd0c0e5f545fc7045643c0f2e31750c114d8b774f0eecc9ef3f31a739b",
+      "running": false,
+      "health": null,
+      "name": "/beyondquant-optimization-worker-1"
+    },
+    {
+      "id": "fac2df56ce25f4b470caeef1957d1d4fcade43f4c9f78329480ddcf1f6c9c699",
+      "image": "sha256:f0ba2eb7f1de492645529d6ffc70590733d2c9fb16af4e0ddcc9e5820397da7f",
+      "running": false,
+      "health": "unhealthy",
+      "name": "/beyondquant-mcp-1"
+    }
+  ],
+  "containers_preserved": true,
+  "qualified_images_preserved": true,
+  "disk_after_bytes": 150320320512,
+  "disk_delta_bytes": 83291058176,
+  "status": "PASS"
+}

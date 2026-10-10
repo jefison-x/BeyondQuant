@@ -131,14 +131,19 @@ def build_provider_profile(begin: dict, resolution: dict, *,
         started_at_ms=request_started_at_ms)
     if budget["deadline_at_ms"] <= now_ms:
         raise ValueError("judgment provider deadline expired during admission")
+    # A named stage budget bounds one provider request; the dedicated ACP root
+    # legitimately issues up to max_calls requests in one turn (initial answer
+    # plus post-tool continuation). The whole-root totals therefore scale by the
+    # call bound; the per-call and per-request ceilings are unchanged.
+    max_calls = min(budget["max_provider_calls"], budget["max_attempts"])
     limits = _provider_limits({
-        "max_calls": min(budget["max_provider_calls"], budget["max_attempts"]),
+        "max_calls": max_calls,
         "max_input_bytes": budget["max_input_bytes"],
-        "max_total_input_bytes": budget["max_input_bytes"],
+        "max_total_input_bytes": budget["max_input_bytes"] * max_calls,
         "max_output_tokens": budget["max_output_tokens"],
-        "max_total_output_tokens": budget["max_output_tokens"],
+        "max_total_output_tokens": budget["max_output_tokens"] * max_calls,
         "max_tool_payload_bytes": budget["max_tool_payload_bytes"],
-        "max_total_tool_payload_bytes": budget["max_tool_payload_bytes"],
+        "max_total_tool_payload_bytes": budget["max_tool_payload_bytes"] * max_calls,
         "deadline_at_ms": budget["deadline_at_ms"],
     })
     public = {

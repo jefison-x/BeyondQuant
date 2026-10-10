@@ -419,6 +419,17 @@ def _validate_references(value: object) -> None:
             raise ValueError("research execution plan reference id is invalid")
 
 
+def validate_references(value: object) -> None:
+    """Public closed-shape check for plan references.
+
+    The store calls this before its ownership/existence resolution so a malformed
+    reference fails closed before any query, while ``validate_plan`` keeps using
+    the same private implementation.
+    """
+
+    _validate_references(value)
+
+
 def _validate_prerequisites(value: object) -> None:
     if not isinstance(value, list) or any(item not in PREREQUISITES for item in value):
         raise ValueError("research execution plan prerequisites are not closed enum values")

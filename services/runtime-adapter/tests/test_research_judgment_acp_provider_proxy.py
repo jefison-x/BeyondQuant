@@ -134,7 +134,8 @@ def test_all_selected_proxy_routes_use_exact_upstream_and_headers(tmp_path, rout
         assert journal.snapshot()["provider_attempts"][0]["phase"] == "may_have_dispatched"
         assert url == route.upstream_url
         assert set(headers) <= {"content-type", "accept", "authorization",
-                                "x-api-key", "anthropic-version"}
+                                "x-api-key", "anthropic-version", "user-agent",
+                                "x-opencode-session"}
         assert proxy.local_credential not in str(headers)
         assert headers.get("x-api-key", headers.get("authorization")) == (
             "synthetic-key" if route.protocol == "messages" else "Bearer synthetic-key")
@@ -199,7 +200,8 @@ def test_proxy_factory_uses_one_durable_profile_and_keeps_real_key_local(tmp_pat
         assert proxy.limits == limits
         assert proxy.credential == "synthetic-key"
         assert proxy.local_credential != "synthetic-key"
-        overlay_path = proxy.write_private_overlay(private)
+        overlay_path = proxy.write_private_overlay(
+            private, provider_session_id="11111111-2222-4333-8444-555555555555")
         overlay = overlay_path.read_text()
         assert proxy.base_url in overlay
         assert "synthetic-model" in overlay

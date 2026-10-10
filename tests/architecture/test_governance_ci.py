@@ -1,12 +1,34 @@
 import importlib.util
+import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
+import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def cleanup_script_sandbox(root):
+    (root / "scripts/ci").mkdir(parents=True)
+    (root / "scripts/release").mkdir(parents=True)
+    (root / "scripts/dsh").mkdir(parents=True)
+    shutil.copy2(ROOT / "scripts/ci/cleanup-resources.sh", root / "scripts/ci/cleanup-resources.sh")
+    shutil.copy2(ROOT / "scripts/release/images.py", root / "scripts/release/images.py")
+    shutil.copy2(ROOT / "scripts/dsh/authoritative_version.py",
+                  root / "scripts/dsh/authoritative_version.py")
+    shutil.copy2(ROOT / "scripts/dsh/acp_build.py", root / "scripts/dsh/acp_build.py")
+    for relative in ("config/dsh/acp/authoritative.json", "config/dsh/acp-0.2.0-rc.2.identity.json"):
+        destination = root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / relative, destination)
+    profiles = root / "plugins/dsh-byq/profiles/acp-0.2.0-rc.2"
+    profiles.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(ROOT / "plugins/dsh-byq/profiles/acp-0.2.0-rc.2", profiles)
+    return root / "scripts/ci/cleanup-resources.sh"
 
 
 def module(name):
@@ -118,6 +140,304 @@ esac
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertGreaterEqual(int(state.read_text()), 4)
 
+    def test_release_cleanup_accepts_only_the_canonical_full_captured_batch(self):
+        import sys
+        sys.path.insert(0, str(ROOT / "scripts/release"))
+        import images
+
+        sandbox_parent = Path(tempfile.mkdtemp())
+        sandbox = sandbox_parent / "repo"
+        cleanup_script = cleanup_script_sandbox(sandbox)
+        scope = f"cleanup-release-{uuid.uuid4().hex}-release"
+        folder = sandbox / ".ci-artifacts" / scope
+        folder.mkdir(parents=True)
+        manifest = folder / "image-ids.env"
+        docker_dir = sandbox_parent / "fakebin"
+        docker_dir.mkdir()
+        docker = docker_dir / "docker"
+        docker.write_text('''#!/bin/bash
+case "$*" in
+  info) exit 0;;
+  "image inspect "*) exit 1;;
+  "ps "*) exit 0;;
+  "network inspect "*|"volume inspect "*) exit 1;;
+  *) exit 0;;
+esac
+''')
+        docker.chmod(0o755)
+        env = {**os.environ, "PATH": f"{docker_dir}:{os.environ['PATH']}",
+               "BYQ_CI_CLEANUP_RETRY_SECONDS": "0", "BYQ_CI_CLEANUP_MAX_ATTEMPTS": "2"}
+        try:
+            manifest.write_text(''.join(
+                f"{service}=sha256:{index + 1:064x}\n"
+                for index, service in enumerate(images.SERVICES)
+            ))
+            accepted = subprocess.run(
+                [str(cleanup_script), f"--scope={scope}", "--verify-only", "--quiet"],
+                capture_output=True, text=True, env=env,
+            )
+            self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+            self.assertFalse(manifest.exists())
+
+            folder.mkdir(parents=True, exist_ok=True)
+            manifest.write_text(f"backend=sha256:{'1' * 64}\n")
+            incomplete = subprocess.run(
+                [str(cleanup_script), f"--scope={scope}", "--verify-only", "--quiet"],
+                capture_output=True, text=True, env=env,
+            )
+            self.assertEqual(incomplete.returncode, 1)
+            self.assertIn("full canonical service set", incomplete.stderr)
+            self.assertTrue(manifest.exists())
+
+            unknown_scope = f"cleanup-unknown-{uuid.uuid4().hex}-release"
+            unknown_dir = sandbox / ".ci-artifacts" / unknown_scope
+            unknown_dir.mkdir(parents=True)
+            unknown_manifest = unknown_dir / "image-ids.env"
+            unknown_manifest.write_text(f"not-authorized=sha256:{'2' * 64}\n")
+            unknown = subprocess.run(
+                [str(cleanup_script), f"--scope={unknown_scope}", "--verify-only", "--quiet"],
+                capture_output=True, text=True, env=env,
+            )
+            self.assertEqual(unknown.returncode, 1)
+            self.assertIn("not a run-scoped service", unknown.stderr)
+            self.assertTrue(unknown_manifest.exists())
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+            if 'unknown_dir' in locals():
+                shutil.rmtree(unknown_dir, ignore_errors=True)
+            shutil.rmtree(docker_dir, ignore_errors=True)
+            shutil.rmtree(sandbox_parent, ignore_errors=True)
+
+    def test_cleanup_removes_only_scoped_tag_and_retains_foreign_image_reference(self):
+        import sys
+        sys.path.insert(0, str(ROOT / "scripts/release"))
+        import images
+
+        scope = f"cleanup-shared-{uuid.uuid4().hex}"
+        service = "acp-product-runner"
+        image_id = "sha256:" + "a" * 64
+        sandbox_parent = Path(tempfile.mkdtemp())
+        sandbox = sandbox_parent / "repo"
+        cleanup_script = cleanup_script_sandbox(sandbox)
+        manifest_dir = sandbox / ".ci-artifacts" / scope
+        manifest_dir.mkdir(parents=True)
+        manifest = manifest_dir / "image-ids.env"
+        manifest.write_text(f"{service}={image_id}\n")
+        docker_dir = sandbox_parent / "fakebin"
+        docker_dir.mkdir()
+        docker = docker_dir / "docker"
+        state = docker_dir / "state"
+        calls = docker_dir / "calls"
+        project_tag = f"byq-ci-stack-{scope}-{service}"
+        docker.write_text(f'''#!/bin/bash
+printf '%s\\n' "$*" >> "$FAKE_CALLS"
+if [ "$1" = info ]; then exit 0; fi
+if [ "$1" = ps ]; then exit 0; fi
+if [ "$1" = image ] && [ "$2" = inspect ]; then
+  if [ "$3" = "{project_tag}" ]; then test ! -f "$FAKE_STATE"; exit $?; fi
+  if [ "$3" = "{image_id}" ]; then
+    if [ "$4" = --format ]; then echo 'ghcr.io/other/beyondquant/acp-product-runner:retained'; fi
+    exit 0
+  fi
+  exit 1
+fi
+if [ "$1" = image ] && [ "$2" = rm ]; then
+  if [ "$3" = "{project_tag}" ]; then touch "$FAKE_STATE"; exit 0; fi
+  if [ "$3" = "{image_id}" ]; then echo unsafe-id-removal >> "$FAKE_CALLS"; exit 91; fi
+  exit 0
+fi
+case "$*" in
+  "network inspect "*|"volume inspect "*) exit 1;;
+  *) exit 0;;
+esac
+''')
+        docker.chmod(0o755)
+        try:
+            result = subprocess.run(
+                [str(cleanup_script), f"--scope={scope}", "--quiet"],
+                capture_output=True, text=True,
+                env={**os.environ, "PATH": f"{docker_dir}:{os.environ['PATH']}",
+                     "FAKE_STATE": str(state), "FAKE_CALLS": str(calls),
+                     "BYQ_CI_CLEANUP_RETRY_SECONDS": "0", "BYQ_CI_CLEANUP_MAX_ATTEMPTS": "3"},
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            output = calls.read_text()
+            self.assertIn(f"image rm {project_tag}", output)
+            self.assertNotIn("image rm " + image_id, output)
+            self.assertNotIn("system prune", output)
+            self.assertNotIn("image prune", output)
+            self.assertFalse(manifest.exists())
+        finally:
+            shutil.rmtree(manifest_dir, ignore_errors=True)
+            shutil.rmtree(docker_dir, ignore_errors=True)
+            shutil.rmtree(sandbox_parent, ignore_errors=True)
+
+    def test_cleanup_retains_captured_image_with_repo_digest_reference(self):
+        scope = f"cleanup-digest-{uuid.uuid4().hex}"
+        service = "acp-product-runner"
+        image_id = "sha256:" + "b" * 64
+        sandbox_parent = Path(tempfile.mkdtemp())
+        sandbox = sandbox_parent / "repo"
+        cleanup_script = cleanup_script_sandbox(sandbox)
+        manifest_dir = sandbox / ".ci-artifacts" / scope
+        manifest_dir.mkdir(parents=True)
+        manifest = manifest_dir / "image-ids.env"
+        manifest.write_text(f"{service}={image_id}\n")
+        docker_dir = sandbox_parent / "fakebin"
+        docker_dir.mkdir()
+        docker = docker_dir / "docker"
+        calls = docker_dir / "calls"
+        project_tag = f"byq-ci-stack-{scope}-{service}"
+        docker.write_text(f'''#!/bin/bash
+printf '%s\\n' "$*" >> "$FAKE_CALLS"
+if [ "$1" = info ] || [ "$1" = ps ]; then exit 0; fi
+if [ "$1" = image ] && [ "$2" = inspect ]; then
+  if [ "$3" = "{image_id}" ]; then
+    if [ "$4" = --format ] && [[ "$5" == *RepoDigests* ]]; then
+      echo 'ghcr.io/beyondquant/acp-product-runner@sha256:{'c' * 64}'
+    fi
+    exit 0
+  fi
+  if [ "$3" = "{project_tag}" ]; then exit 1; fi
+  exit 1
+fi
+if [ "$1" = image ] && [ "$2" = rm ]; then
+  if [ "$3" = "{image_id}" ]; then echo unsafe-id-removal >> "$FAKE_CALLS"; exit 91; fi
+  exit 0
+fi
+if [ "$1" = network ] || [ "$1" = volume ]; then exit 1; fi
+exit 0
+''')
+        docker.chmod(0o755)
+        try:
+            result = subprocess.run(
+                [str(cleanup_script), f"--scope={scope}", "--quiet"],
+                capture_output=True, text=True,
+                env={**os.environ, "PATH": f"{docker_dir}:{os.environ['PATH']}",
+                     "FAKE_CALLS": str(calls), "BYQ_CI_CLEANUP_RETRY_SECONDS": "0",
+                     "BYQ_CI_CLEANUP_MAX_ATTEMPTS": "1"},
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr + calls.read_text())
+            output = calls.read_text()
+            self.assertIn(f"image rm {project_tag}", output)
+            self.assertNotIn("image rm " + image_id, output)
+            self.assertFalse(manifest.exists())
+            self.assertNotIn("system prune", output)
+            self.assertNotIn("image prune", output)
+        finally:
+            shutil.rmtree(manifest_dir, ignore_errors=True)
+            shutil.rmtree(docker_dir, ignore_errors=True)
+            shutil.rmtree(sandbox_parent, ignore_errors=True)
+
+    def test_cleanup_removes_acp_resources_after_compose_config_failure_and_honors_keep_postgres(self):
+        sandbox_parent = Path(tempfile.mkdtemp())
+        sandbox = sandbox_parent / "repo"
+        cleanup_script = cleanup_script_sandbox(sandbox)
+        docker_dir = sandbox_parent / "fakebin"
+        docker_dir.mkdir()
+        docker = docker_dir / "docker"
+        state = docker_dir / "resources.json"
+        calls = docker_dir / "calls"
+        docker.write_text('''#!/usr/bin/env python3
+import json, os, pathlib, sys
+args = sys.argv[1:]
+with open(os.environ["FAKE_CALLS"], "a") as stream:
+    stream.write(" ".join(args) + "\\n")
+if args == ["info"]:
+    raise SystemExit(0)
+if args[:1] == ["compose"]:
+    print("missing required Compose application settings", file=sys.stderr)
+    raise SystemExit(19)
+if args[:1] == ["ps"]:
+    raise SystemExit(0)
+if args[:2] == ["image", "inspect"]:
+    raise SystemExit(1)
+if args[:2] == ["image", "rm"]:
+    raise SystemExit(0)
+if args[0] in ("network", "volume") and args[1] == "inspect":
+    resource = args[2]
+    data = json.loads(pathlib.Path(os.environ["FAKE_STATE"]).read_text())
+    owner = data[args[0]].get(resource)
+    if owner is None:
+        raise SystemExit(1)
+    if "--format" in args:
+        template = args[args.index("--format") + 1]
+        if "com.docker.compose.project" in template and owner == "project":
+            print(os.environ["COMPOSE_PROJECT_NAME"])
+        elif "byq.ci.scope" in template and owner == "scope":
+            print(os.environ["BYQ_CI_SCOPE"])
+    raise SystemExit(0)
+if args[0] in ("network", "volume") and args[1] == "rm":
+    data = json.loads(pathlib.Path(os.environ["FAKE_STATE"]).read_text())
+    for resource in args[2:]:
+        if data[args[0]].get(resource) not in ("project", "scope"):
+            raise SystemExit(2)
+        del data[args[0]][resource]
+    pathlib.Path(os.environ["FAKE_STATE"]).write_text(json.dumps(data))
+    raise SystemExit(0)
+raise SystemExit(0)
+''')
+        docker.chmod(0o755)
+        try:
+            for keep_postgres in (False, True):
+                scope = f"cleanup-acp-{uuid.uuid4().hex}"
+                project = f"byq-ci-stack-{scope}"
+                networks = {
+                    f"byq-ci-product-{scope}": "project",
+                    f"byq-ci-signal-sandbox-{scope}": "project",
+                    f"{project}-acp-judgment": "project",
+                    f"byq-ci-network-{scope}": "scope",
+                }
+                volumes = {
+                    f"byq-ci-postgres-{scope}": "project",
+                    f"byq-ci-domain-{scope}": "project",
+                    f"byq-ci-ml-model-{scope}": "project",
+                    f"byq-ci-dsh-sessions-{scope}": "project",
+                    f"byq-ci-workflow-traces-{scope}": "project",
+                    f"{project}-acp-product-sessions": "project",
+                    f"{project}-acp-product-state": "project",
+                    f"{project}-acp-product-control": "project",
+                    f"{project}-acp-judgment-sessions": "project",
+                    f"{project}-acp-runner-control": "project",
+                    f"{project}-acp-runner-state": "project",
+                    f"byq-ci-postgres-data-{scope}": "scope",
+                }
+                state.write_text(json.dumps({"network": networks, "volume": volumes}))
+                env = {**os.environ, "PATH": f"{docker_dir}:{os.environ['PATH']}",
+                       "FAKE_STATE": str(state), "FAKE_CALLS": str(calls),
+                       "BYQ_CI_CLEANUP_RETRY_SECONDS": "0",
+                       "BYQ_CI_CLEANUP_MAX_ATTEMPTS": "1"}
+                args = [str(cleanup_script), f"--scope={scope}", "--quiet"]
+                if keep_postgres:
+                    args.append("--keep-postgres")
+                result = subprocess.run(args, capture_output=True, text=True, env=env)
+                self.assertEqual(result.returncode, 0,
+                                 result.stdout + result.stderr + calls.read_text() + state.read_text())
+                remaining = json.loads(state.read_text())
+                acp_network = f"{project}-acp-judgment"
+                acp_volumes = {f"{project}-acp-{name}" for name in (
+                    "product-sessions", "product-state", "product-control",
+                    "judgment-sessions", "runner-control", "runner-state",
+                )}
+                self.assertNotIn(acp_network, remaining["network"])
+                self.assertTrue(acp_volumes.isdisjoint(remaining["volume"]))
+                if keep_postgres:
+                    self.assertIn(f"byq-ci-network-{scope}", remaining["network"])
+                    self.assertIn(f"byq-ci-postgres-data-{scope}", remaining["volume"])
+                else:
+                    self.assertNotIn(f"byq-ci-network-{scope}", remaining["network"])
+                    self.assertNotIn(f"byq-ci-postgres-data-{scope}", remaining["volume"])
+                output = calls.read_text()
+                self.assertIn(
+                    f"compose -f {sandbox}/compose.yml -f {sandbox}/compose.override.yml down --remove-orphans",
+                    output,
+                )
+                self.assertNotIn("system prune", output)
+                self.assertNotIn("volume prune", output)
+        finally:
+            shutil.rmtree(docker_dir, ignore_errors=True)
+            shutil.rmtree(sandbox_parent, ignore_errors=True)
+
     def test_image_build_failure_never_runs_old_image(self):
         with tempfile.TemporaryDirectory() as temp:
             folder = Path(temp)
@@ -144,17 +464,34 @@ check_runtime
         command = '''source scripts/ci/local-ci.sh
 prepare_ci_compose_env
 test "$(ci_image runtime-adapter)" = "byq-ci-stack-fake-env-contract-runtime-adapter"
-test "$COMPOSE_FILE" = "$REPO_ROOT/compose.yml"
+test "$COMPOSE_FILE" = "$REPO_ROOT/compose.yml:$REPO_ROOT/compose.override.yml"
 test "$COMPOSE_DISABLE_ENV_FILE" = 1
 test "$BYQ_POSTGRES_VOLUME_EXTERNAL" = false
 test "$BYQ_DATABASE_URL" = postgresql+psycopg://byq_app:byq-app-dev@postgres:5432/byq_domain
-test -z "$DEEPSEEK_API_KEY$TUSHARE_TOKEN$BYQ_FEEDBACK_GITHUB_TOKEN$BYQ_FEEDBACK_HUB_URL"
+test "$BYQ_F6_EXECUTOR_ENABLED" = 0
+test -z "$DEEPSEEK_API_KEY$OPENCODE_API_KEY$TUSHARE_TOKEN$BYQ_FEEDBACK_GITHUB_TOKEN$BYQ_FEEDBACK_HUB_URL"
+test -z "${BYQ_DSH_RUNTIME_DOCKERFILE:-}${BYQ_DSH_COMPATIBILITY_RELEASE:-}${BYQ_DSH_SESSION_ROOT:-}${DSH_SESSION_ROOT:-}"
+test "$BYQ_DSH_PROVIDER" = opencode-go-chat
+test "$BYQ_DSH_MODEL" = deepseek-v4.1-flash
+test "$BYQ_ACP_JUDGMENT_NETWORK_NAME" = "byq-ci-stack-fake-env-contract-acp-judgment"
+test "$BYQ_ACP_PRODUCT_SESSIONS_VOLUME_NAME" = "byq-ci-stack-fake-env-contract-acp-product-sessions"
+test "$BYQ_ACP_PRODUCT_STATE_VOLUME_NAME" = "byq-ci-stack-fake-env-contract-acp-product-state"
+test "$BYQ_ACP_PRODUCT_CONTROL_VOLUME_NAME" = "byq-ci-stack-fake-env-contract-acp-product-control"
+test "$BYQ_ACP_JUDGMENT_SESSIONS_VOLUME_NAME" = "byq-ci-stack-fake-env-contract-acp-judgment-sessions"
+test "$BYQ_ACP_RUNNER_CONTROL_VOLUME_NAME" = "byq-ci-stack-fake-env-contract-acp-runner-control"
+test "$BYQ_ACP_RUNNER_STATE_VOLUME_NAME" = "byq-ci-stack-fake-env-contract-acp-runner-state"
 '''
         result = subprocess.run(["bash", "-c", command], cwd=ROOT, capture_output=True, text=True,
             env={**os.environ, "BYQ_CI_SCOPE": "fake-env-contract", "BYQ_DATABASE_URL": "PRODUCTION",
-                 "DEEPSEEK_API_KEY": "private", "TUSHARE_TOKEN": "private",
+                 "DEEPSEEK_API_KEY": "private", "OPENCODE_API_KEY": "private", "TUSHARE_TOKEN": "private",
                  "BYQ_FEEDBACK_GITHUB_TOKEN": "private", "BYQ_FEEDBACK_HUB_URL": "https://production.invalid",
-                 "COMPOSE_FILE": "production.yml", "BYQ_POSTGRES_VOLUME_EXTERNAL": "true"})
+                 "COMPOSE_FILE": "production.yml", "BYQ_POSTGRES_VOLUME_EXTERNAL": "true",
+                 "BYQ_F6_EXECUTOR_ENABLED": "1",
+                 "BYQ_DSH_RUNTIME_DOCKERFILE": "old-sdk.Dockerfile",
+                 "BYQ_DSH_COMPATIBILITY_RELEASE": "old-sdk-release",
+                 "BYQ_DSH_SESSION_ROOT": "/old-sdk/sessions", "DSH_SESSION_ROOT": "/old-sdk/sessions",
+                 "BYQ_ACP_JUDGMENT_NETWORK_NAME": "foreign-network",
+                 "BYQ_ACP_PRODUCT_SESSIONS_VOLUME_NAME": "foreign-volume"})
         self.assertEqual(result.returncode, 0, result.stderr)
         source = (ROOT / "scripts/ci/local-ci.sh").read_text()
         for service in ("backend", "gateway", "runtime-adapter", "mcp"):
@@ -164,6 +501,71 @@ test -z "$DEEPSEEK_API_KEY$TUSHARE_TOKEN$BYQ_FEEDBACK_GITHUB_TOKEN$BYQ_FEEDBACK_
                 f"run-scoped image reference missing for {service}")
             self.assertNotIn(f"beyondquant-{service}", source)
         self.assertIn("--no-build --wait", source)
+
+    def test_compose_route_is_shared_checked_in_source_and_fails_closed(self):
+        # ADR-0110: the ordered Compose route is the single checked-in selection
+        # in scripts/release/images.py, consumed by the CI shell. A missing or
+        # empty selection must abort, never fall back to a hard-coded route.
+        expected = os.pathsep.join((
+            str(ROOT / "compose.yml"), str(ROOT / "compose.override.yml")))
+        positive = '''source scripts/ci/local-ci.sh
+set_ci_compose_files
+test "$COMPOSE_FILE" = "$EXPECTED_ROUTE"
+test "${#CI_COMPOSE_FILES[@]}" -eq 2
+'''
+        result = subprocess.run(["bash", "-c", positive], cwd=ROOT, capture_output=True,
+            text=True, env={**os.environ, "EXPECTED_ROUTE": expected,
+                            "BYQ_CI_SCOPE": "route-shared-contract"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for body in ('acp_compose_route_files() { return 7; }',
+                     'acp_compose_route_files() { printf ""; }'):
+            negative = f'''source scripts/ci/local-ci.sh
+{body}
+COMPOSE_FILE="sentinel"
+if set_ci_compose_files; then exit 9; fi
+test "$COMPOSE_FILE" = "sentinel"
+'''
+            result = subprocess.run(["bash", "-c", negative], cwd=ROOT, capture_output=True,
+                text=True, env={**os.environ, "BYQ_CI_SCOPE": "route-shared-contract"})
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("no fallback route is permitted", result.stderr)
+        source = (ROOT / "scripts/ci/local-ci.sh").read_text()
+        self.assertNotIn(
+            'CI_COMPOSE_FILES=("$REPO_ROOT/compose.yml" "$REPO_ROOT/compose.override.yml")',
+            source)
+        self.assertIn('scripts/release/images.py" route', source)
+
+    def test_f6_release_lane_fails_closed_when_captured_batch_is_missing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            command_log = Path(temp) / "commands.txt"
+            command = '''source scripts/ci/local-ci.sh
+export COMPOSE_PROJECT_NAME="byq-ci-stack-$BYQ_CI_SCOPE"
+CI_IMAGE_IDS[runtime-adapter]=sha256:captured-acp-image
+run_interruptible() {
+  printf '%q ' "$@" >> "$FAKE_COMMANDS"
+  printf '\\n' >> "$FAKE_COMMANDS"
+  if [[ "$1" == docker ]]; then return 0; fi
+  "$@"
+}
+check_f6_chain
+test "$FAIL" -eq 1
+'''
+            result = subprocess.run(["bash", "-c", command], cwd=ROOT, capture_output=True, text=True,
+                env={**os.environ, "BYQ_CI_SCOPE": "f6-offline-" + uuid.uuid4().hex[:12],
+                     "COMPOSE_FILE": os.pathsep.join((str(ROOT / "compose.yml"),
+                                                       str(ROOT / "compose.override.yml"))),
+                     "BYQ_F6_EXECUTOR_ENABLED": "0",
+                     "FAKE_COMMANDS": str(command_log)})
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("F6 ACP Product/Worker background-completion release fixture", result.stdout)
+            self.assertIn("[FAIL] F6 ACP Product/Worker background-completion release fixture", result.stdout)
+            self.assertIn("ACP F6 release fixture failed closed: captured_image_manifest_invalid", result.stderr)
+            calls = command_log.read_text()
+            self.assertIn("sha256:captured-acp-image", calls)
+            self.assertIn("--network none", calls)
+            self.assertIn("scripts/evidence/acp-f6-release-fixture.py", calls)
+            self.assertNotIn("runtime-candidate", calls)
+            self.assertNotIn("docker compose", calls)
 
     def test_merge_preflight_fails_closed(self):
         evaluate = module("check-github-gates").evaluate

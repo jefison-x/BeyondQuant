@@ -21,8 +21,26 @@ RETIRED_SOURCE = "b6c8034ed638447aa1d0ddd82af9738df830bbdf"
 # They are historical evidence only; current source changes get a new immutable
 # Dockerfile and manifest.
 FROZEN_BUILDS = {
+    "dsh-0.1.5rc1-post-u8.322": "sha256:ee97823eb01251c48f99a0b7d2a1d5b50debba6f1f9533e39c47862eedce90cc",
     "dsh-0.1.5rc1-post-u8.303": "sha256:f8311ba86c0091b9a6915dd0ca02469056934e50ab9aac1f2806c62cf0927c88",
     "dsh-0.1.5rc1-post-u8.304": "sha256:0b996a908f2f1ab87a35ae9931d34fe7c1ffc0293c0bc4d92deb8ad83c135178",
+    "dsh-0.1.5rc1-post-u8.321": "sha256:3d8496f87686e114b32f86f6c2fd864787cd2d3e2d0176acdc36208dc511d470",
+    "dsh-0.1.5rc1-post-u8.320": "sha256:9a77db123554ca2656650a62d3c7de79fbdfbe1a10f4f92c80525a27d068a4f4",
+    "dsh-0.1.5rc1-post-u8.319": "sha256:02b32cb2ec84ef3ee23350d3ad83d6a3381c9571e003535000f67f6403052518",
+    "dsh-0.1.5rc1-post-u8.318": "sha256:2dbe83dd21c630b17e0dcf5fe1be330aa01b3fb73a960f6087eccfaa8cc1932c",
+    "dsh-0.1.5rc1-post-u8.317": "sha256:82ffc76987bd447220b9a1f3d7b83777602b24affca3a6a3de116f2886e7474d",
+    "dsh-0.1.5rc1-post-u8.316": "sha256:21e76cd321e9b44f51162d13e7cd9d964804c64c2610d2d4dcba349ddcd06e09",
+    "dsh-0.1.5rc1-post-u8.315": "sha256:ba3c92c7edab39070a9a984bee08c600d7d36ab461ed871f787f77f308be59c6",
+    "dsh-0.1.5rc1-post-u8.314": "sha256:50edfe5fbac842ee312812755952d009f51ffc016cd0feba455a5438c9803100",
+    "dsh-0.1.5rc1-post-u8.313": "sha256:150c48859bfdcb992a6ca972ffb5ae8ca7705e63aa39a9ffd5726f758178a1d5",
+    "dsh-0.1.5rc1-post-u8.312": "sha256:891707390e397e73d140d7d14d06363a9a229e551fdee78abf965290ca73b615",
+    "dsh-0.1.5rc1-post-u8.311": "sha256:85de015898f16233d333e31be3f9c8969551cc14c4956a2c7bf6c38b61621ee5",
+    "dsh-0.1.5rc1-post-u8.310": "sha256:318df8fea96c7b7165696e1a9ddbf93601ac6f35fb4e4aebe305320fcf1889b5",
+    "dsh-0.1.5rc1-post-u8.309": "sha256:bceabd54c04e132a74dc35342c49542231e452f4615b79efe6e577088fef156e",
+    "dsh-0.1.5rc1-post-u8.308": "sha256:aa45b6cf241495d2275235fed8826be6a234851dd13324e2acbba3a6eb55c0dd",
+    "dsh-0.1.5rc1-post-u8.307": "sha256:4e5556b3ce358d6cdd74720526aca26803e41de641896769d12c8b1f83d8436a",
+    "dsh-0.1.5rc1-post-u8.306": "sha256:8af378732207730b09f6c607cb3b0ff2fcbd81f00e41b61c1ecdd3531457e98b",
+    "dsh-0.1.5rc1-post-u8.305": "sha256:4f55a9bc6131286f23cfb4596c1750b24b97267c768b3a5936f2824a0ebd4ce1",
     "dsh-0.1.5rc1-post-u8.302": "sha256:5a4ad7135ae45e62a9c535f4173cb5016e5a64e417f85bf714cf31eb83e1f0be",
     "dsh-0.1.5rc1-post-u8.301": "sha256:39d37727635d1b1df2242649ea9bf339ae6738a92171a8d4efb0060f8d07151c",
     "dsh-0.1.5rc1-post-u8.300": "sha256:a2a896ab3e0a0c63c22e19e240aebc92ac010d177c734fb94bfaaa4e49756248",
@@ -166,8 +184,10 @@ def digest(path):
 def selected_build_id(release):
     if release == "dsh-0.1.1rc1":
         return RETIRED_BUILD  # Historical identity only; never a current build.
-    if release in RELEASES:
-        return release + "-post-u8.305"
+    if release == "dsh-0.1.5rc1":
+        # Historical SDK identity only. Current ACP source is not qualified by
+        # the frozen 0.1.5 SDK manifest and must not be rendered as its successor.
+        return release + "-post-u8.322"
     if release in HISTORICAL_BUILDS:
         return HISTORICAL_BUILDS[release]
     raise ValueError("unregistered release")

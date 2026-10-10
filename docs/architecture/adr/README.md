@@ -26,6 +26,12 @@ by the maintainer on 2026-10-03 for conversation feedback and Cloudflare Hub as
 the sole review path. Real Product API browser acceptance, the release-time
 legacy-feedback preflight, and deployment remain separate gates.
 
+[ADR-0110](ADR-0110-acp-single-image-three-role-topology.md) is **Accepted**
+by the maintainer on 2026-10-09 for one ACP image shared by adapter, product
+and judgment containers, including the independent per-role image-upgrade
+tradeoff. Its implementation and qualification gates remain open; acceptance
+does not authorize publication or deployment.
+
 ## Historical ADR index (non-normative)
 
 Architecture Decision Record（ADR）记录改变或澄清持久系统边界的决策。以下边界的

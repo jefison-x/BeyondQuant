@@ -68,6 +68,67 @@ def _contains_secret(value: object, secret: str) -> bool:
     return False
 
 
+# Bounded, redacted turn diagnostics: closed enums and fixed categories only.
+# They never carry prompt/provider content, transcripts, tokens or credentials.
+# A dynamic exception class name or code is itself untrusted and could carry a
+# secret, so only these exact fixed names/codes may ever be persisted.
+_TURN_FINISH = frozenset({"completed", "cancelled", "interrupted", "failed", "aborted", "unknown"})
+_TURN_RESULT_FAILURE = frozenset({"none", "validation_rejected", "missing_result", "unavailable"})
+_TURN_STOP_REASON = frozenset({"unknown", "end_turn", "cancelled", "deadline", "budget",
+                               "provider_error", "process_fence"})
+# Exact known judgment exception class names -> fixed non-secret category. Every
+# other class name maps to None rather than being echoed into the journal.
+_TURN_ERROR_CLASSES = {
+    "ResearchJudgmentError": "judgment_error",
+    "ResearchJudgmentInProgress": "judgment_in_progress",
+    "AcpJudgmentOutcomeUnknown": "outcome_unknown",
+    "JudgmentRootOpenFailed": "root_open_failed",
+    "RunnerClientError": "runner_client_error",
+    "RunnerCleanupUnknown": "runner_cleanup_unknown",
+    "RunnerRejected": "runner_rejected",
+    "RunnerStartupRejected": "runner_startup_rejected",
+    "AcpProviderRouteRejected": "provider_route_rejected",
+    "TimeoutError": "timeout",
+    "OSError": "os_error",
+}
+# The only stable error ``code`` attribute in the judgment path is the closed ACP
+# runner REJECT code enum (mirrors runner_client._REJECT_CODES); any other value
+# is dropped rather than persisted.
+_TURN_ERROR_CODES = frozenset({
+    "scope_consumed", "state_unavailable", "deadline_expired", "launch_failed",
+})
+
+
+def _bounded_finish(value: object) -> str:
+    return value if isinstance(value, str) and value in _TURN_FINISH else "unknown"
+
+
+def _bounded_result_failure(value: object) -> str:
+    return value if isinstance(value, str) and value in _TURN_RESULT_FAILURE else "unknown"
+
+
+def _bounded_stop_reason(value: object) -> str:
+    # Only an official ACP stop reason may be recorded; anything else is unknown.
+    return value if isinstance(value, str) and value in _TURN_STOP_REASON else "unknown"
+
+
+def _bounded_error_class(error: object) -> str | None:
+    # Only an exact known class name maps to its fixed category. A dynamic class
+    # name is never echoed, so it cannot carry a secret into the journal.
+    if not isinstance(error, BaseException):
+        return None
+    return _TURN_ERROR_CLASSES.get(type(error).__name__)
+
+
+def _bounded_error_code(error: object) -> str | None:
+    # Only the closed runner REJECT code enum is persisted; never an arbitrary
+    # code, message, prompt or provider body.
+    if not isinstance(error, BaseException):
+        return None
+    code = getattr(error, "code", None)
+    return code if isinstance(code, str) and code in _TURN_ERROR_CODES else None
+
+
 class AcpJudgmentJournal:
     """One exact task/call journal, locked across concurrent Adapter requests."""
 
@@ -275,14 +336,16 @@ class AcpJudgmentJournal:
             raise ValueError("exact nonsecret ACP provider profile is required")
         limits = _provider_limits(public.get("limits"))
         named = profile_for_stage(public.get("stage"), profile=public.get("budget_profile_id"))
+        # Whole-root totals scale by the call bound; per-call ceilings are unchanged.
+        named_calls = min(named["max_provider_calls"], named["max_attempts"])
         ceiling = {
-            "max_calls": min(named["max_provider_calls"], named["max_attempts"]),
+            "max_calls": named_calls,
             "max_input_bytes": named["max_input_bytes"],
-            "max_total_input_bytes": named["max_input_bytes"],
+            "max_total_input_bytes": named["max_input_bytes"] * named_calls,
             "max_output_tokens": named["max_output_tokens"],
-            "max_total_output_tokens": named["max_output_tokens"],
+            "max_total_output_tokens": named["max_output_tokens"] * named_calls,
             "max_tool_payload_bytes": named["max_tool_payload_bytes"],
-            "max_total_tool_payload_bytes": named["max_tool_payload_bytes"],
+            "max_total_tool_payload_bytes": named["max_tool_payload_bytes"] * named_calls,
         }
         if (any(limits[key] > maximum for key, maximum in ceiling.items())
                 or limits["deadline_at_ms"] > int(time.time() * 1000) + named["deadline_ms"]
@@ -333,6 +396,46 @@ class AcpJudgmentJournal:
             if value.get("provider_profile") is None:
                 raise AcpJudgmentOutcomeUnknown("judgment provider profile is not frozen")
             value = {**value, "phase": "prompt_may_have_dispatched"}
+            self._write(value)
+            return value
+
+        return self._locked(save)
+
+    def record_turn_outcome(self, *, finish: object, error: BaseException | None,
+                            result_failure: object,
+                            dsh_stop_reason: object = None) -> dict:
+        """Record a bounded, redacted turn diagnostic exactly once.
+
+        Records only the ACP finish enum, a bounded exception class/stable code,
+        the result-validation failure category and (only when an official event
+        supplied it) the DSH stop reason. It never records prompt/provider
+        content, transcripts, tokens or credentials, and it does not alter the
+        security settlement/ACK, retry or recovery contracts.
+        """
+
+        diagnostic = {
+            "schema_version": "byq-acp-judgment-turn-diagnostic.v1",
+            "finish": _bounded_finish(finish),
+            "error_class": _bounded_error_class(error),
+            "error_code": _bounded_error_code(error),
+            "result_validation_failure": _bounded_result_failure(result_failure),
+            "dsh_stop_reason": _bounded_stop_reason(dsh_stop_reason),
+        }
+
+        def save(value):
+            if value is None or value.get("phase") not in {
+                    "begun", "bound", "prompt_may_have_dispatched", "result_prepared"}:
+                # Diagnostics are admissible only before the result is committed.
+                # Appending one to an already-committed or closed journal would
+                # change its sealed bytes.
+                raise AcpJudgmentOutcomeUnknown(
+                    "judgment turn diagnostic requires a pre-settlement root")
+            existing = value.get("turn_diagnostic")
+            if existing is not None:
+                # A diagnostic is immutable once recorded; a later write may not
+                # rewrite it (no replay of an already-settled turn).
+                return value
+            value = {**value, "turn_diagnostic": diagnostic}
             self._write(value)
             return value
 

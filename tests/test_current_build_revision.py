@@ -1,14 +1,7 @@
-"""Current immutable build revision is complete; the frozen previous one is intact.
+"""The selected SDK build identity remains bound to its frozen historical bytes.
 
-This is the independent CURRENT-build test that decouples the historical
-``test_v090_*`` evidence tests from the mutable current artifact identity
-(ADR-0084 evidence-reuse / historical-fact principle). It proves:
-
-* the currently selected build manifest renders exactly from the current tree
-  (no drift), so the current artifact identity is complete;
-* the runtime Dockerfile embeds exactly the selected manifest;
-* the immediately previous frozen manifest is byte-identical to its committed
-  ``origin/main`` content and was NOT rewritten.
+The old SDK manifest is retained for historical reference only. Its frozen
+identity does not qualify changed current ACP source.
 """
 
 from __future__ import annotations
@@ -247,19 +240,34 @@ FROZEN_ARTIFACTS = {
         "services/runtime-adapter/Dockerfile.post-u8-280-candidate",
         "828b58684ae05f50f5e74995352ef30bc16295ce0740c44020426ca2f1c0d947",
         "10ca3f61094d9816981672fff14bff2ee574d4ad9b2bf848b02603548902f5a2"),
+    # Exact tracked SDK 322 bytes from baseline 2d581097; 324 is an untracked
+    # candidate with no immutable source commit and is not claimed as qualified.
+    "dsh-0.1.5rc1-post-u8.322": (
+        "services/runtime-adapter/Dockerfile.post-u8-322-candidate",
+        "ee97823eb01251c48f99a0b7d2a1d5b50debba6f1f9533e39c47862eedce90cc",
+        "dc87eeb772d37fafd29fd4c38d81475cffe1549bd767419f766307cc9d36bfa5"),
 }
 
 
 class CurrentBuildRevisionTests(unittest.TestCase):
-    def test_selected_build_renders_exactly_from_the_current_tree(self) -> None:
+    def test_selected_sdk_identity_is_the_exact_frozen_322_artifact(self) -> None:
         from scripts.dsh import build_revision as builds
 
         selected = builds.selected_build_id("dsh-0.1.5rc1")
-        self.assertRegex(selected, r"^dsh-0\.1\.5rc1-post-u8\.\d+$")
+        self.assertEqual(selected, "dsh-0.1.5rc1-post-u8.322")
         manifest = ROOT / "config/dsh/builds" / f"{selected}.json"
-        self.assertTrue(manifest.is_file(), selected)
-        # Fail closed on any drift: the manifest must render exactly now.
-        self.assertEqual(builds.check(selected), builds.render(selected))
+        dockerfile = ROOT / "services/runtime-adapter/Dockerfile.post-u8-322-candidate"
+        self.assertEqual(hashlib.sha256(manifest.read_bytes()).hexdigest(),
+                         "ee97823eb01251c48f99a0b7d2a1d5b50debba6f1f9533e39c47862eedce90cc")
+        self.assertEqual(hashlib.sha256(dockerfile.read_bytes()).hexdigest(),
+                         "dc87eeb772d37fafd29fd4c38d81475cffe1549bd767419f766307cc9d36bfa5")
+        stored = builds.check(selected)
+        self.assertEqual(stored["build_id"], selected)
+        # A render from today's ACP source can be structurally valid, but it is
+        # not the frozen historical artifact and does not qualify that SDK.
+        rendered = builds.render(selected)
+        self.assertEqual(builds.validate(rendered), rendered)
+        self.assertNotEqual(rendered, stored)
 
     def test_runtime_dockerfile_embeds_exactly_the_selected_manifest(self) -> None:
         from scripts.dsh import build_revision as builds
@@ -270,10 +278,11 @@ class CurrentBuildRevisionTests(unittest.TestCase):
         self.assertIn(
             f"COPY config/dsh/builds/{selected}.json /opt/byq/builds/build.identity.json",
             dockerfile)
-        previous = ROOT / "services/runtime-adapter/Dockerfile.post-u8-277-candidate"
-        expected = previous.read_text().replace(
-            "dsh-0.1.5rc1-post-u8.277.json", f"{selected}.json")
-        self.assertEqual(dockerfile, expected)
+        self.assertIn(
+            f"COPY config/dsh/builds/{selected}.json /opt/byq/builds/build.identity.json",
+            dockerfile)
+        self.assertEqual(hashlib.sha256(dockerfile_path.read_bytes()).hexdigest(),
+                         FROZEN_ARTIFACTS[selected][2])
 
     def test_frozen_build_manifests_and_dockerfiles_are_not_rewritten(self) -> None:
         for build_id, (dockerfile, manifest_sha256, dockerfile_sha256) in FROZEN_ARTIFACTS.items():

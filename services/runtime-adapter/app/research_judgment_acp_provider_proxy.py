@@ -440,8 +440,13 @@ class AcpJudgmentProviderProxy:
             raise ValueError("trusted provider model and credential are required")
         frozen = journal.snapshot()
         public = frozen.get("provider_profile") if isinstance(frozen, dict) else None
+        # The listener may be constructed once the provider profile is frozen and
+        # the root admitted (``begun``), because the private overlay it serves is
+        # needed to launch the ACP root before the native Agent is bound. Actual
+        # provider egress is still gated by the journal's ``reserve_provider_attempt``,
+        # which refuses every call until the phase is ``prompt_may_have_dispatched``.
         if (not isinstance(public, dict)
-                or frozen.get("phase") not in {"bound", "prompt_may_have_dispatched"}
+                or frozen.get("phase") not in {"begun", "bound", "prompt_may_have_dispatched"}
                 or public.get("provider_route") != route_name
                 or public.get("model") != model or public.get("limits") != limits):
             raise ValueError("live proxy differs from frozen judgment provider profile")
@@ -509,7 +514,8 @@ class AcpJudgmentProviderProxy:
         host, port = self._server.server_address[:2]
         return f"http://{host}:{port}{self.route.local_base_path}"
 
-    def write_private_overlay(self, directory: Path) -> Path:
+    def write_private_overlay(self, directory: Path, *,
+                              provider_session_id: str | None = None) -> Path:
         """Derive the last-layer DSH route from this running proxy instance."""
         from .research_judgment_acp_provider_overlay import write_private_provider_overlay
 
@@ -519,7 +525,7 @@ class AcpJudgmentProviderProxy:
                 raise ValueError("running ACP provider proxy is required")
             return write_private_provider_overlay(
                 directory, route_name=self.route.name, model=self.model,
-                proxy_base_url=self.base_url)
+                proxy_base_url=self.base_url, provider_session_id=provider_session_id)
 
     def __enter__(self):
         with self._close_lock:

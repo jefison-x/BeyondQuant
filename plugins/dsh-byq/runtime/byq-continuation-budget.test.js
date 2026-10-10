@@ -4,6 +4,7 @@ import { readFileSync, unlinkSync } from 'node:fs';
 import {
   ALLOWED_TOOL_NAMES,
   PROFILE_LIMITS,
+  PRODUCT_TURN_LIMITS,
   createToolGuard,
   inject,
   apply,
@@ -32,7 +33,7 @@ test('profile limits and DSH plugin dependencies are closed request scope', () =
     max_total_input_bytes: 4194304,
     max_output_tokens: 8192,
     max_total_output_tokens: 131072,
-    max_tool_payload_bytes: 65536,
+    max_tool_payload_bytes: 131072,
     max_total_tool_payload_bytes: 1048576,
     max_tool_calls: 16,
     deadline_ms: 180000,
@@ -118,6 +119,28 @@ test('journal failure denies and cancels rather than dispatching or replaying', 
 });
 
 
+test('ADR-0085: Agent-scoped MCP tools fall back to an empty global restriction', () => {
+  const hooks = new Map();
+  const ctx = {
+    effect: () => {},
+    on: (event, hook) => hooks.set(event, hook),
+  };
+  const runtimeConfig = { ...config, journalPath: `/tmp/byq-continuation-fallback-${process.pid}.jsonl` };
+  apply(ctx, runtimeConfig);
+  const calls = [];
+  const agent = { name: 'acp-root', cancel() {} };
+  agent.ctx = { tools: { restrict: filter => {
+    calls.push(filter);
+    if (filter.allow !== undefined && filter.allow.length > 0) {
+      throw new Error('tools.restrict() names unknown global tool "mcp__byq__byq_research_get"; known global tools: byq_delegate_market_research');
+    }
+    return () => {};
+  } } };
+  assert.equal(hooks.get('agent/created')({ agent }), undefined);
+  assert.deepEqual(calls, [{ allow: [...ALLOWED_TOOL_NAMES] }, { allow: [] }]);
+});
+
+
 test('production plugin restricts each published Agent scope and keeps one shared dispatch cap', async () => {
   const hooks = new Map();
   const effects = [];
@@ -183,5 +206,49 @@ test('v1 money grants and widened or malformed profile carriers fail closed', ()
     { ...config, reservationId: 'not-a-v2-id' },
   ]) {
     assert.throws(() => createToolGuard(invalid, () => {}), /GUARD_INVALID/);
+  }
+});
+
+const countOnlyConfig = {
+  guardMode: 'count-only',
+  deadlineEpochMs: Date.now() + PRODUCT_TURN_LIMITS.deadline_ms,
+  journalPath: '/private/request/product-turn-tool-guard.jsonl',
+  executionProfile: {
+    profile_id: 'product-turn.v1',
+    profile_version: 1,
+    profile_sha256: 'b'.repeat(64),
+  },
+  requestLimits: { ...PRODUCT_TURN_LIMITS },
+};
+
+test('ADR-0106 count-only counts every tool (generic included) and blocks the seventeenth', () => {
+  const rows = [];
+  const guard = createToolGuard(countOnlyConfig, row => rows.push(row));
+  for (let index = 0; index < 16; index += 1) {
+    assert.equal(guard.beforeExecute({ name: 'generic_tool', agent: { cancel: () => {} } }).kind, 'allow');
+  }
+  assert.deepEqual(guard.beforeExecute({ name: 'generic_tool' }),
+    { kind: 'deny', reason: 'BYQ_CONTINUATION_TOOL_LIMIT' });
+  assert.equal(guard.calls, 16);
+  // Count-only rows carry no continuation reservation identity.
+  assert.ok(rows.every(row => !('reservation_id' in row)));
+  assert.deepEqual(rows.at(-1), {
+    phase: 'blocked', blocked_reason: 'BYQ_CONTINUATION_TOOL_LIMIT', tool_name: 'generic_tool',
+  });
+});
+
+test('count-only requires an explicit product-turn.v1 identity and never downgrades', () => {
+  // A missing reservationId without guardMode stays the strict continuation guard.
+  assert.throws(() => createToolGuard({ ...config, reservationId: undefined }, () => {}), /GUARD_INVALID/);
+  const { reservationId: _dropped, ...noReservation } = config;
+  assert.throws(() => createToolGuard(noReservation, () => {}), /GUARD_INVALID/);
+  for (const invalid of [
+    { ...countOnlyConfig, reservationId },
+    { ...countOnlyConfig, requestLimits: { ...countOnlyConfig.requestLimits, max_tool_calls: 17 } },
+    { ...countOnlyConfig, executionProfile: { ...countOnlyConfig.executionProfile, profile_id: 'other.v1' } },
+    { ...countOnlyConfig, executionProfile: { ...countOnlyConfig.executionProfile, profile_version: 2 } },
+    { ...countOnlyConfig, executionProfile: { ...countOnlyConfig.executionProfile, profile_sha256: 'bad' } },
+  ]) {
+    assert.throws(() => createToolGuard(invalid, () => {}), /PRODUCT_TURN_GUARD_INVALID/);
   }
 });

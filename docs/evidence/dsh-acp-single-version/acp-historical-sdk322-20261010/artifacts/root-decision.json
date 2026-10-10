@@ -1,0 +1,16 @@
+{
+  "decision": "LIMITED_PASS",
+  "scope": "three-file historical SDK 322 identity and tests",
+  "source_sha256": {
+    "scripts/dsh/build_revision.py": "b978e65c3faedc4a8c6b933ec773f2467cd296ad850c187ad07a06af8ddaa2bc",
+    "tests/test_current_build_revision.py": "69be7f7e31e66840f959d4b85250e9b8f9c14b15298d4ba1074578fb4829aed4",
+    "tests/test_dsh_build_revision.py": "61e70e5033d8860b50dbc3c58aa4024cf65ee845df8c87cd5145005214b4faec"
+  },
+  "tester": "7_PASS",
+  "reviewer": "PASS_LIMITED_NO_P1_P2",
+  "tracked_322_bytes": "UNCHANGED_FROM_HEAD",
+  "untracked_323_324": "PRESERVED_LOCALLY_NOT_SELECTED",
+  "unified_image_inputs_affected": 0,
+  "current_sdk_qualification": "NOT_CLAIMED",
+  "overall_adoption_release": "NOT_READY"
+}
