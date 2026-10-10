@@ -60,23 +60,72 @@ echo "== Runtime Adapter filesystem permissions =="
   'test -f /opt/dsh-runtime/apps/cli/lib/bin.js && test ! -w /opt/dsh-runtime/apps/cli/lib/bin.js'
 
 echo "== MCP contract and auth wall =="
-contract_workspace="$("${compose[@]}" exec -T backend python - <<'PYCODE'
-from app.conversation_catalog import ConversationCatalogStore
-from tests.workspace_helpers import trusted_product_agent_context
+# Establish the Gateway runtime authority BEFORE any MCP seed/write. The
+# trusted_product_agent_context helper falls back to a synthetic "f"*32 boot when
+# no current Backend authority exists, while MCP binds the real Adapter boot; that
+# mismatch is a fixture hazard. Require real Gateway readiness first.
+python3 - <<'PY'
+import json
+import os
+from urllib.error import HTTPError
+from urllib.request import urlopen
 
-# The contract client uses a Product Agent identity. Research writes must bind
-# its original owner/workspace/session/trace conversation, just as production.
-headers = trusted_product_agent_context(
-    "mcp-contract", actor="byq-product-agent-session_mcp_contract",
-    session_id="session_mcp_contract", trace_id="trace_mcp_contract",
-)
-catalog = ConversationCatalogStore()
+gateway = os.environ.get("BYQ_SMOKE_GATEWAY_URL", "http://127.0.0.1:8100")
 try:
-    conversation = catalog.create("mcp-contract", headers["x-byq-session-id"], headers["x-byq-trace-id"])
-    assert conversation["workspace_id"] == headers["x-byq-workspace-id"]
+    with urlopen(gateway + "/agent-readyz", timeout=10) as response:
+        payload = json.load(response)
+        status = response.status
+except HTTPError as exc:
+    raise SystemExit(f"smoke: Gateway /agent-readyz failed: HTTP {exc.code}") from exc
+except (OSError, ValueError) as exc:
+    raise SystemExit(f"smoke: Gateway /agent-readyz unavailable or malformed: {exc}") from exc
+if status != 200 or payload.get("service") != "byq-gateway" or payload.get("status") != "ready":
+    raise SystemExit(f"smoke: Gateway /agent-readyz not ready: {payload!r}")
+PY
+
+contract_workspace="$("${compose[@]}" exec -T backend python - <<'PYCODE'
+import re
+
+from app.agent_research import AgentResearchStore
+from app.conversation_catalog import ConversationCatalogStore
+from tests.workspace_helpers import trusted_agent_context
+
+# Require an already-established current Backend runtime authority and pin its
+# exact 32-hex boot. This seed never writes an authority: it uses
+# trusted_agent_context (no runtime-authority side effects) and sets the boot
+# header itself, so the synthetic "f"*32 fallback can never be installed here.
+store = AgentResearchStore()
+try:
+    current = store.current_runtime_authority()
+    if (not isinstance(current, dict)
+            or not isinstance(current.get("boot_id"), str)
+            or not re.fullmatch(r"[0-9a-f]{32}", current["boot_id"])):
+        raise SystemExit("smoke: current Backend runtime authority is absent or invalid before MCP seed")
+
+    # The contract client uses a Product Agent identity. Research writes must bind
+    # its original owner/workspace/session/trace conversation, just as production.
+    headers = trusted_agent_context(
+        "mcp-contract", actor="byq-product-agent-session_mcp_contract",
+        session_id="session_mcp_contract", trace_id="trace_mcp_contract",
+    )
+    if headers["x-byq-actor-principal"] != "byq-product-agent-session_mcp_contract":
+        raise SystemExit("smoke: MCP contract actor is not the expected Product Agent")
+    headers["x-byq-runtime-boot-id"] = current["boot_id"]
+
+    # Re-read immediately before the write; fail closed if the boot changed.
+    confirm = store.current_runtime_authority()
+    if not isinstance(confirm, dict) or confirm.get("boot_id") != current["boot_id"]:
+        raise SystemExit("smoke: runtime authority changed before the MCP seed write")
+
+    catalog = ConversationCatalogStore()
+    try:
+        conversation = catalog.create("mcp-contract", headers["x-byq-session-id"], headers["x-byq-trace-id"])
+        assert conversation["workspace_id"] == headers["x-byq-workspace-id"]
+    finally:
+        catalog.close()
+    print(headers["x-byq-workspace-id"])
 finally:
-    catalog.close()
-print(headers["x-byq-workspace-id"])
+    store.close()
 PYCODE
 )"
 "${compose[@]}" exec -T \
