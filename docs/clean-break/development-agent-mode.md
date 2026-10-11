@@ -13,13 +13,20 @@ Reference studied: [GPT6-SolMedium-LunaMax profile](https://github.com/donvito/c
 | Role | Model / effort | Work | Output |
 |---|---|---|---|
 | Root | `gpt-6-sol` / `medium` | Architecture owner; scope, risks, boundaries, phase acceptance | Explicit PASS/FAIL and next gate |
-| Explorer | `gpt-6-luna` / `max` | Read-only bounded code/ownership investigation | Findings, evidence, paths, duplication, risks |
-| Worker | `gpt-6-luna` / `max` | One assigned subsystem and writer | Diff, tests, risks |
-| Researcher | `gpt-6-luna` / `max` | Necessary DSH/API/dependency facts | Primary sources, versions, implications |
-| Tester | `gpt-6-luna` / `max` | Focused test execution | PASS/FAIL, commands, failures |
+| Explorer | OpenCode service | Read-only bounded code/ownership investigation | Findings, evidence, paths, duplication, risks |
+| Worker | OpenCode service | One assigned subsystem and writer | Diff, tests, risks |
+| Researcher | OpenCode service | Necessary DSH/API/dependency facts | Primary sources, versions, implications |
+| Tester | OpenCode service | Focused test execution | PASS/FAIL, commands, failures |
 | Reviewer | `gpt-6-sol` / `medium` | Independently inspect actual diff, interfaces, schema and tests | Functional, Tests, Architecture PASS/FAIL |
 
-The configured ceiling is four *subagents* (Root is separate). Normal use is one or two Luna agents; independent read-only investigations can fill the ceiling. This particular hosted session exposes only four total concurrency slots, so it can run Root plus three subagents. A small task stays with Root. One subsystem has one writer, and concurrent writers must have nonoverlapping ownership or isolated worktrees. Reviewer must not rely on Worker summaries. Root issues the final phase acceptance.
+Engineering tasks use native `opencode serve` plus `opencode run --attach`
+with an explicit `--dir` and `--session`. Reuse the same session for the same
+task, and separate unrelated tasks. Luna is a fallback on explicit user request
+or after an explained OpenCode failure. See the default in [AGENTS.md](../../AGENTS.md).
+The local service is managed with `systemctl --user start byq-opencode.service`;
+credentials remain in the private user environment file, outside Git.
+
+The configured ceiling is four *subagents* (Root is separate). Normal use is one or two agents; independent read-only investigations can fill the ceiling. This particular hosted session exposes only four total concurrency slots, so it can run Root plus three subagents. A small task stays with Root. One subsystem has one writer, and concurrent writers must have nonoverlapping ownership or isolated worktrees. Reviewer must not rely on Worker summaries. Root issues the final phase acceptance.
 
 Every delegation states files/subsystem, task, forbidden interfaces, acceptance criteria and tests. Every phase follows investigation or implementation → Tester → independent Sol Reviewer → Root PASS. The reviewer checks security, correctness, regressions and Clean Break violations: duplicate owner, thick adapter, compatibility shim, DSH capability duplication, event as state, Agent-owned long compute, Job/Artifact bypass, old migration burden and development tooling in product code.
 

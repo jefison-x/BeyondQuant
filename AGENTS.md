@@ -157,13 +157,30 @@ with `git rev-parse origin/main` after synchronizing `main`. An Accepted ADR
 and the current phase acceptance criteria are required before moving to the
 next phase.
 
+## Engineering OpenCode default
+
+New BYQ engineering chats use the native OpenCode service. Root coordinates;
+OpenCode handles bounded investigation, implementation and tests in isolated
+worktrees. Use `opencode run --attach http://127.0.0.1:4096 --dir <worktree>
+--session <session-id> --model opencode-go/deepseek-v4.1-flash "<task>"`.
+For a new task, run without `--session` and with `--format json` to create a
+session; record the actual session ID returned by OpenCode. Reuse that exact
+ID for subsequent turns of the same task; use a separate session for a new task. Do not use global `--continue`. Load service authentication from the
+private `~/.local/state/byq-oc/server.env` into the command environment without
+printing its contents; keep credentials outside Git.
+Luna is used only on explicit user request or after an explained OpenCode failure.
+Keep independent Sol review and the existing authorization and merge gates.
+These defaults apply when a new chat loads this checkout's updated `AGENTS.md`;
+existing worktrees must first receive the updated instructions.
+
 ## Clean Break development program
 
 The explicitly requested BYQ 0.10 Clean Break is tracked in
 [`docs/clean-break/`](docs/clean-break/README.md). Its project Codex defaults
 and role duties are in [development-agent-mode.md](docs/clean-break/development-agent-mode.md).
-Use Sol medium as Root/architecture owner, Luna max for bounded Explorer,
+Use Sol medium as Root/architecture owner, OpenCode for bounded Explorer,
 Worker, Researcher and Tester tasks, and an independent Sol medium Reviewer.
+Luna max is retained only as the fallback described above.
 Use at most four subagents, usually one or two; assign one writer per subsystem.
 Each phase ends with Tester, independent Reviewer and Root PASS before the next
 phase. Keep Engineering tools and MCP separate from Product DSH and BYQ MCP.
