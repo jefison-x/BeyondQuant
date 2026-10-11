@@ -29,8 +29,10 @@ legacy-feedback preflight, and deployment remain separate gates.
 [ADR-0110](ADR-0110-acp-single-image-three-role-topology.md) is **Accepted**
 by the maintainer on 2026-10-09 for one ACP image shared by adapter, product
 and judgment containers, including the independent per-role image-upgrade
-tradeoff. Its implementation and qualification gates remain open; acceptance
-does not authorize publication or deployment.
+tradeoff. The default Compose/CI/release source route now declares this
+single-image topology (source adoption, 2026-10-11); the registry-digest,
+live-boot, BuildKit, F6, Full CI, publication and deployment gates remain open,
+and acceptance does not authorize publication or deployment.
 
 ## Historical ADR index (non-normative)
 

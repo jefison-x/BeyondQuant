@@ -110,21 +110,31 @@ class DshAuthoritativeBuildTests(unittest.TestCase):
             "BYQ_DSH_BUILD_COMPATIBILITY_FAMILY",
         ):
             self.assertIn(f"{name}: ${{{name}-}}", compose)
+        # ADR-0110 adoption: the default route passes the resolver-fed role
+        # artifacts directly to the one unified build (no per-role generic
+        # remapping). The unified Dockerfile verifies all three roles.
         for role, (_, _, release_identity) in ROLE_ARTIFACTS.items():
             prefix = ROLE_ENV_PREFIX[role]
-            mappings = (
-                ("BYQ_DSH_BUILD_PROFILE_PATH", f"{prefix}_PROFILE_PATH"),
-                ("BYQ_DSH_BUILD_PROFILE_SHA256", f"{prefix}_PROFILE_SHA256"),
-                ("BYQ_DSH_BUILD_PROFILE_IDENTITY_PATH", f"{prefix}_PROFILE_IDENTITY_PATH"),
-                ("BYQ_DSH_BUILD_PROFILE_IDENTITY_SHA256", f"{prefix}_PROFILE_IDENTITY_SHA256"),
+            arguments = (
+                f"{prefix}_PROFILE_PATH",
+                f"{prefix}_PROFILE_SHA256",
+                f"{prefix}_PROFILE_IDENTITY_PATH",
+                f"{prefix}_PROFILE_IDENTITY_SHA256",
             )
             if release_identity:
-                mappings += (
-                    ("BYQ_DSH_BUILD_RELEASE_IDENTITY_PATH", f"{prefix}_RELEASE_IDENTITY_PATH"),
-                    ("BYQ_DSH_BUILD_RELEASE_IDENTITY_SHA256", f"{prefix}_RELEASE_IDENTITY_SHA256"),
+                arguments += (
+                    f"{prefix}_RELEASE_IDENTITY_PATH",
+                    f"{prefix}_RELEASE_IDENTITY_SHA256",
                 )
-            for argument, environment in mappings:
-                self.assertIn(f"{argument}: ${{{environment}-}}", compose)
+            for argument in arguments:
+                self.assertIn(f"{argument}: ${{{argument}-}}", compose)
+        self.assertIn("dockerfile: services/acp_unified/Dockerfile", compose)
+        self.assertEqual(compose.count("build: *acp-unified-build"), 3)
+        self.assertEqual(
+            compose.count("image: ${COMPOSE_PROJECT_NAME:-beyondquant}-acp-unified"), 3
+        )
+        for role in ("adapter", "product", "judgment"):
+            self.assertIn(f"BYQ_ACP_ROLE: {role}", compose)
 
         for role, dockerfile_path in DOCKERFILES.items():
             source = dockerfile_path.read_text()
@@ -182,19 +192,33 @@ class DshAuthoritativeBuildTests(unittest.TestCase):
         # one build (the unified Dockerfile) and one image expression, so one
         # build yields one image id shared by all three roles. Role selection is
         # a runtime parameter (BYQ_ACP_ROLE), not a distinct artifact.
-        overlay = yaml.safe_load(UNIFIED_OVERLAY.read_text(encoding="utf-8"))
-        services = overlay["services"]
-        self.assertEqual(set(services), set(ACP_ROLE_SERVICES))
-        images = {name: services[name]["image"] for name in ACP_ROLE_SERVICES}
-        self.assertEqual(len(set(images.values())), 1, images)
-        builds = [services[name].get("build") for name in ACP_ROLE_SERVICES]
-        self.assertTrue(all(isinstance(build, dict) for build in builds), builds)
-        self.assertEqual(
-            {build["dockerfile"] for build in builds},
-            {"services/acp_unified/Dockerfile"},
-        )
-        for build in builds:
-            self.assertEqual(build["context"], ".")
+        #
+        # The adopted default route is compose.dsh-acp-rc2-candidate.yml; the
+        # additive candidate overlay stays a separate isolated evaluation file.
+        for source in (
+            ROOT / "compose.dsh-acp-rc2-candidate.yml",
+            UNIFIED_OVERLAY,
+        ):
+            with self.subTest(route=source.name):
+                overlay = yaml.safe_load(source.read_text(encoding="utf-8"))
+                services = overlay["services"]
+                self.assertTrue(set(ACP_ROLE_SERVICES) <= set(services))
+                images = {name: services[name]["image"] for name in ACP_ROLE_SERVICES}
+                self.assertEqual(len(set(images.values())), 1, images)
+                builds = [services[name].get("build") for name in ACP_ROLE_SERVICES]
+                self.assertTrue(all(isinstance(build, dict) for build in builds), builds)
+                self.assertEqual(
+                    {build["dockerfile"] for build in builds},
+                    {"services/acp_unified/Dockerfile"},
+                )
+                for build in builds:
+                    self.assertEqual(build["context"], ".")
+                # ADR-0110: the one shared image is only valid when all three
+                # role services declare the exact same build (context/args/etc.).
+                self.assertTrue(
+                    all(build == builds[0] for build in builds),
+                    "the three single-image ACP builds must be identical",
+                )
 
         # The one unified Dockerfile verifies ALL THREE roles before any clone
         # and reads the build identity back from the resolver, never from a
@@ -317,10 +341,23 @@ class DshAuthoritativeBuildTests(unittest.TestCase):
         self.assertEqual(sum("build" in service for service in services.values()), 17)
         family = self.selection["compatibility_family"]
         session_root = f"/var/lib/byq/dsh-sessions/{family}"
-        expected_dockerfile = f"services/runtime-adapter/Dockerfile.acp-{self.selection['release_id'].removeprefix('dsh-v')}-candidate"
+        # ADR-0110 adoption: the default route is the one unified build; the
+        # three ACP role services share its Dockerfile and image reference.
+        expected_dockerfile = "services/acp_unified/Dockerfile"
         runtime = services["runtime-adapter"]
         runtime_environment = runtime["environment"]
         self.assertEqual(runtime["build"]["dockerfile"], expected_dockerfile)
+        acp_images = {
+            services[name]["image"]
+            for name in ("runtime-adapter", "acp-product-runner", "acp-judgment-runner")
+        }
+        self.assertEqual(len(acp_images), 1, acp_images)
+        self.assertEqual(
+            {services[name]["build"]["dockerfile"] for name in
+             ("runtime-adapter", "acp-product-runner", "acp-judgment-runner")},
+            {expected_dockerfile},
+        )
+        self.assertEqual(runtime_environment["BYQ_ACP_ROLE"], "adapter")
         self.assertEqual(runtime_environment["BYQ_DSH_COMPATIBILITY_RELEASE"], family)
         self.assertEqual(runtime_environment["DSH_SESSION_ROOT"], session_root)
         self.assertEqual(runtime_environment["BYQ_DSH_PROVIDER"], "opencode-go-chat")

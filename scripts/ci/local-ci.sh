@@ -305,6 +305,17 @@ acp_compose_route_files() {
   python3 "$REPO_ROOT/scripts/release/images.py" route
 }
 
+acp_route_topology() {
+  # ADR-0110: the topology is derived from the single checked-in Compose route,
+  # never from an ambient selector or from whether a role tag already exists.
+  python3 "$REPO_ROOT/scripts/release/images.py" topology
+}
+
+acp_unified_image_tag() {
+  # The run-scoped project tag the default single-image route declares.
+  python3 "$REPO_ROOT/scripts/release/images.py" acp-image
+}
+
 set_ci_compose_files() {
   local route
   if ! route="$(acp_compose_route_files)"; then
@@ -406,9 +417,9 @@ prepare_ci_compose_env() {
   export BYQ_F6_EXECUTOR_ENABLED=0
   # ADR-0110: the ACP release topology is derived from the single checked-in
   # Compose route (images.py ACP_COMPOSE_ROUTE) selected by
-  # set_ci_compose_files, never from an ambient selector. The operative route
-  # declares three per-role builds; equal local image ids never promote the
-  # export to single-image.
+  # set_ci_compose_files, never from an ambient selector. The adopted default
+  # route declares one shared unified build/image; build_test_images builds it
+  # once and aliases the one image to the three role tags.
   # SDK rollback artifacts remain offline-only; ambient selectors cannot choose
   # a legacy runtime Dockerfile, compatibility release or session root.
   unset BYQ_DSH_RUNTIME_DOCKERFILE BYQ_DSH_COMPATIBILITY_RELEASE BYQ_DSH_SESSION_ROOT DSH_SESSION_ROOT
@@ -456,7 +467,8 @@ ci_image_manifest_path() {
 }
 
 build_test_images() {
-  local services=() service image_id manifest tmp
+  local services=() build_services=() filtered=() service image_id manifest tmp
+  local acp_topology="" acp_unified_image="" acp_shared_id="" acp_role_in_services=0
   # These checks validate archived SDK rollback metadata/projections offline;
   # they do not select an SDK build or qualify the ACP image batch.
   python3 scripts/dsh/release.py check --historical-inputs || return 1
@@ -476,18 +488,73 @@ build_test_images() {
     if want mcp || want runtime; then services+=(mcp); fi
   fi
   [ "${#services[@]}" -gt 0 ] || return 0
+  build_services=("${services[@]}")
+  # ADR-0110: the topology is derived from the single checked-in Compose route,
+  # never from an ambient selector and never from whether a role tag already
+  # exists. A missing or unknown topology fails closed; per-role compatibility
+  # is only decided by the explicit actual route.
+  for service in "${services[@]}"; do
+    case "$service" in
+      runtime-adapter|acp-product-runner|acp-judgment-runner) acp_role_in_services=1 ;;
+    esac
+  done
+  if [ "$acp_role_in_services" -eq 1 ]; then
+    acp_topology="$(acp_route_topology)" || return 1
+    case "$acp_topology" in
+      single-image|per-role-image) ;;
+      *)
+        echo "ACP Compose topology is missing or unknown: '${acp_topology}'" >&2
+        return 1 ;;
+    esac
+    if [ "$acp_topology" = "single-image" ]; then
+      acp_unified_image="$(acp_unified_image_tag)" || return 1
+      # One ACP build: runtime-adapter is the single build target; the two extra
+      # role services are never built independently under one shared image.
+      for service in "${build_services[@]}"; do
+        case "$service" in
+          acp-product-runner|acp-judgment-runner) continue ;;
+        esac
+        filtered+=("$service")
+      done
+      build_services=("${filtered[@]}")
+    fi
+  fi
   step "build: selected run-scoped images (cache allowed, stale fallback forbidden)"
   RESOURCES_TOUCHED=1
   acquire_heavy_capacity || return 1
   if [ "${BYQ_CI_GHA_CACHE:-0}" = 1 ]; then
     run_interruptible python3 "$REPO_ROOT/scripts/dsh/acp_build.py" -- \
-      python3 "$REPO_ROOT/scripts/ci/build-images.py" "${services[@]}" || return 1
+      python3 "$REPO_ROOT/scripts/ci/build-images.py" "${build_services[@]}" || return 1
   else
-    run_interruptible acp_compose build "${services[@]}" || return 1
+    run_interruptible acp_compose build "${build_services[@]}" || return 1
+  fi
+  if [ "$acp_role_in_services" -eq 1 ] && [ "$acp_topology" = "single-image" ]; then
+    # Capture THIS run's built shared immutable id, then unconditionally alias
+    # that exact immutable id to every requested role's run-scoped tag. The tag
+    # source is the captured id, never the mutable unified tag, so a tag replaced
+    # between inspect and alias can never redirect the role tags. A pre-existing
+    # role tag is never trusted: the capture below asserts every role equals the
+    # shared id.
+    acp_shared_id="$(docker image inspect "$acp_unified_image" --format '{{.Id}}')" || return 1
+    for service in "${services[@]}"; do
+      case "$service" in
+        runtime-adapter|acp-product-runner|acp-judgment-runner)
+          docker tag "$acp_shared_id" "$(ci_image "$service")" || return 1 ;;
+      esac
+    done
   fi
   for service in "${services[@]}"; do
     printf '    image identity -> service=%s tag=%s id=' "$service" "$(ci_image "$service")"
     image_id="$(docker image inspect "$(ci_image "$service")" --format '{{.Id}}')" || return 1
+    if [ "$acp_topology" = "single-image" ]; then
+      case "$service" in
+        runtime-adapter|acp-product-runner|acp-judgment-runner)
+          if [ "$image_id" != "$acp_shared_id" ]; then
+            echo "ACP role $service captured $image_id, not the built shared image $acp_shared_id" >&2
+            return 1
+          fi ;;
+      esac
+    fi
     CI_IMAGE_IDS["$service"]="$image_id"
     printf '%s\n' "$image_id"
   done

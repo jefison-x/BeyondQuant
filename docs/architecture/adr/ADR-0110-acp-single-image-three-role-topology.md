@@ -226,3 +226,48 @@ does not claim the candidate image is qualified or waive any gate.
   request an explicit, separate waiver for a gate that cannot be met.
 - Decide any adapter `no-new-privileges` addition separately; it is absent
   from the current service declaration and is not part of this decision.
+
+## Source adoption record (2026-10-11)
+
+The default Compose/CI/release source route now declares the single-image
+topology: `compose.dsh-acp-rc2-candidate.yml` (included by
+`compose.override.yml`) builds the one `services/acp_unified/Dockerfile` for the
+adapter / product / judgment services under one run-scoped project image tag and
+dispatches the role at runtime by the fail-closed `BYQ_ACP_ROLE` parameter. Every
+per-service runtime boundary (user, caps, `read_only`, `no-new-privileges`,
+networks, volumes/sockets and per-role secrets) and the formal resource names
+are unchanged. The additive `compose.dsh-acp-single-image-candidate.yml` remains
+a separate isolated evaluation overlay, and the three per-role Dockerfiles remain
+in the tree. The release/CI lane derives the topology from the single checked-in
+Compose route (`scripts/release/images.py`), builds the ACP image once and aliases
+that one image to the three role tags so per-service capture stays exact; there is
+no ambient topology selector.
+
+This record is **source adoption only**. It does **not** claim that any registry
+digest was published or bound, that three live containers shared one digest, that
+the BuildKit path or the full DSH three-role boot was re-run, or that hosted CI,
+F6, the 17-image release batch, publication, promotion or deployment passed.
+Those remain the separate adoption gates above and are exercised by the release
+and deployment lanes, not by this source change.
+
+### Operator environment delta for a published unified image
+
+The published unified image bakes no role-specific process ownership, transport,
+composition/profile or `DSH_MAX_TOKENS_AS_SUCCESS` value. A constrained operator
+overlay for the digest-pinned unified image must therefore supply the role
+dispatch and the role environment the accepted per-role images used to bake. The
+required non-secret delta (names and literal non-secret values only; existing
+per-role secrets remain operator-supplied by reference and no secret value is
+recorded here):
+
+- `runtime-adapter`: `BYQ_ACP_ROLE=adapter`.
+- `acp-product-runner`: `BYQ_ACP_ROLE=product`,
+  `BYQ_DSH_PROCESS_OWNERSHIP=workspace-slot`,
+  `BYQ_DSH_COMPOSITION=/opt/byq/profiles/byq-product.patch.yml`,
+  `BYQ_DSH_COMPOSITION_IDENTITY=/opt/byq/profiles/byq-product.identity.json`,
+  `BYQ_DSH_RELEASE_IDENTITY=/opt/byq/releases/deployment.identity.json`,
+  `DSH_MAX_TOKENS_AS_SUCCESS=false`.
+- `acp-judgment-runner`: `BYQ_ACP_ROLE=judgment`, `DSH_MAX_TOKENS_AS_SUCCESS=false`.
+
+Resolving this delta in the production overlay is a deployment-lane gate and is
+**not** part of this source change.

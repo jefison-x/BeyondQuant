@@ -1,12 +1,16 @@
 COMPOSE ?= python3 scripts/dsh/acp_build.py -- docker compose
+# ADR-0110: the ACP roles share one image, so build/up go through the canonical
+# helper (one shared ACP build, then --no-build) instead of a plain
+# `compose build`/`up --build` that would build the same tag three times.
+ACP_COMPOSE ?= python3 scripts/dev/acp_compose.py --compose-command '$(COMPOSE)'
 
 .PHONY: build up down ps logs smoke test dsh-config local-ci
 
 build:
-	$(COMPOSE) build
+	$(ACP_COMPOSE) build
 
 up:
-	$(COMPOSE) up -d
+	$(ACP_COMPOSE) up
 
 down:
 	$(COMPOSE) down
@@ -18,11 +22,11 @@ logs:
 	$(COMPOSE) logs --tail=200
 
 smoke:
-	$(COMPOSE) up -d --wait
+	$(ACP_COMPOSE) up
 	./tests/smoke/run.sh
 
 test:
-	$(COMPOSE) up -d --wait
+	$(ACP_COMPOSE) up
 	python3 -m unittest discover -s tests -p 'test_*.py'
 	$(COMPOSE) exec -T backend python -m pytest -q -p no:cacheprovider
 	$(COMPOSE) exec -T gateway python -m pytest -q -p no:cacheprovider

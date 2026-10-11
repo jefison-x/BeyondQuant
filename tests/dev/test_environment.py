@@ -15,6 +15,36 @@ env = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(env)
 
 
+def acp_config() -> dict:
+    """Minimal merged Compose config for the single-image ACP route."""
+    unified = "services/acp_unified/Dockerfile"
+    roles = {
+        "runtime-adapter": "adapter",
+        "acp-product-runner": "product",
+        "acp-judgment-runner": "judgment",
+    }
+    services = {
+        name: {
+            "image": "byq-dev-test-acp-unified",
+            "build": {"dockerfile": unified},
+            "environment": {"BYQ_ACP_ROLE": role},
+        }
+        for name, role in roles.items()
+    }
+    services["runtime-adapter"]["depends_on"] = {
+        "acp-product-runner": {}, "acp-judgment-runner": {}, "mcp-acp-judgment": {},
+    }
+    services["mcp-acp-judgment"] = {"build": {"dockerfile": "services/mcp/Dockerfile"}}
+    for name, dockerfile in (
+        ("backend", "services/backend/Dockerfile"),
+        ("mcp", "services/mcp/Dockerfile"),
+        ("gateway", "services/gateway/Dockerfile"),
+    ):
+        services[name] = {"build": {"dockerfile": dockerfile}}
+    services["postgres"] = {"image": "postgres:16-alpine"}
+    return {"services": services}
+
+
 class DevEnvironmentTests(unittest.TestCase):
     def test_backtest_profiles_include_the_optimization_worker(self):
         for profile in ("backtest", "full"):
@@ -26,12 +56,15 @@ class DevEnvironmentTests(unittest.TestCase):
         resolved = env.build_environment(selection)
         workspace = "workspace_test000000000000000000000000000"
         leaf = f"{resolved['BYQ_DSH_BUILD_SESSION_ROOT']}/{workspace}"
-        dockerfile = f"services/runtime-adapter/Dockerfile.acp-{selection['release_id'].removeprefix('dsh-v')}-candidate"
+        unified = "services/acp_unified/Dockerfile"
+        image = "byq-dev-test-acp-unified"
         mount = {"source": "byq_acp_product_sessions", "target": leaf}
         payload = {"services": {
             "runtime-adapter": {
-                "build": {"dockerfile": dockerfile},
+                "build": {"dockerfile": unified},
+                "image": image,
                 "environment": {
+                    "BYQ_ACP_ROLE": "adapter",
                     "BYQ_DSH_COMPATIBILITY_RELEASE": selection["compatibility_family"],
                     "DSH_SESSION_ROOT": resolved["BYQ_DSH_BUILD_SESSION_ROOT"],
                     "BYQ_DSH_PROVIDER": "opencode-go-chat",
@@ -44,16 +77,32 @@ class DevEnvironmentTests(unittest.TestCase):
                 "volumes": [mount],
             },
             "acp-product-runner": {
-                "environment": {"BYQ_ACP_PRODUCT_WORKSPACE_ID": workspace},
+                "build": {"dockerfile": unified},
+                "image": image,
+                "environment": {"BYQ_ACP_ROLE": "product", "BYQ_ACP_PRODUCT_WORKSPACE_ID": workspace},
                 "volumes": [mount],
+            },
+            "acp-judgment-runner": {
+                "build": {"dockerfile": unified},
+                "image": image,
+                "environment": {"BYQ_ACP_ROLE": "judgment"},
             },
         }}
         values = {"BYQ_ACP_PRODUCT_WORKSPACE_ID": workspace}
         with patch.object(env, "call", return_value=CompletedProcess([], 0, json.dumps(payload), "")):
             env.validated_config(values)
-        payload["services"]["runtime-adapter"]["build"]["dockerfile"] = "services/runtime-adapter/Dockerfile.post-u8-candidate"
+        # A per-role stale Dockerfile that is shared by all three role services
+        # still derives single-image, so the per-service Dockerfile check must
+        # reject it as a stale ACP role build.
+        for name in ("runtime-adapter", "acp-product-runner", "acp-judgment-runner"):
+            payload["services"][name]["build"]["dockerfile"] = "services/runtime-adapter/Dockerfile.post-u8-candidate"
         with patch.object(env, "call", return_value=CompletedProcess([], 0, json.dumps(payload), "")):
-            with self.assertRaisesRegex(env.DevError, "stale Runtime Adapter"):
+            with self.assertRaisesRegex(env.DevError, "stale ACP role build"):
+                env.validated_config(values)
+        # A divergent build (partial share) fails closed as an invalid topology.
+        payload["services"]["acp-judgment-runner"]["build"]["dockerfile"] = unified
+        with patch.object(env, "call", return_value=CompletedProcess([], 0, json.dumps(payload), "")):
+            with self.assertRaisesRegex(env.DevError, "topology is invalid"):
                 env.validated_config(values)
 
     def test_managed_dev_compose_uses_the_resolver_and_shared_default_overlay(self):
@@ -214,14 +263,20 @@ class DevEnvironmentTests(unittest.TestCase):
              patch.object(env, "call", return_value=CompletedProcess([], 0, "", "")) as call, \
              patch.object(env, "docker_json", return_value=None) as inspect, \
              patch.object(env, "docker_lines", return_value=[]):
-            env.reset({"BYQ_DEV_SCOPE": project})
+            env.reset({"BYQ_DEV_SCOPE": project}, acp_config())
         commands = [item.args[0] for item in call.call_args_list]
         self.assertEqual(commands[0][-2:], ["down", "--remove-orphans"])
         self.assertIn("postgres", commands[1])
         self.assertIn("app.workspace_reset_cli", commands[3])
         self.assertIn("workspace-reset-gc", commands[4])
         self.assertEqual(commands[5][-2:], ["down", "--remove-orphans"])
-        self.assertIn("gateway", commands[6])
+        # ADR-0110: one canonical ACP build target, then a --no-build start.
+        self.assertIn("build", commands[6])
+        self.assertIn("runtime-adapter", commands[6])
+        self.assertNotIn("acp-product-runner", commands[6])
+        self.assertNotIn("acp-judgment-runner", commands[6])
+        self.assertIn("--no-build", commands[7])
+        self.assertIn("gateway", commands[7])
         self.assertFalse(any("volume rm" in " ".join(command) for command in commands))
         self.assertFalse(any("dsh-sessions" in " ".join(command) for command in commands))
         self.assertTrue(inspect.called)
@@ -234,15 +289,16 @@ class DevEnvironmentTests(unittest.TestCase):
              patch.object(env, "call", return_value=CompletedProcess([], 0, "", "")), \
              patch.object(env, "docker_json", return_value=[unowned]):
             with self.assertRaisesRegex(env.DevError, "not owned"):
-                env.reset({"BYQ_DEV_SCOPE": project})
+                env.reset({"BYQ_DEV_SCOPE": project}, acp_config())
 
     def test_runtime_only_reset_never_calls_workspace_cleanup(self):
         with patch.object(env, "inventory", return_value={"containers": [], "volumes": [], "networks": []}), \
              patch.object(env, "call", return_value=CompletedProcess([], 0, "", "")) as call, \
              patch.object(env, "docker_json", return_value=None):
-            env.reset({"BYQ_DEV_SCOPE": env.scope()}, runtime_only=True)
+            env.reset({"BYQ_DEV_SCOPE": env.scope()}, acp_config(), runtime_only=True)
         commands = [item.args[0] for item in call.call_args_list]
-        self.assertEqual(len(commands), 4)
+        # down, up postgres, down, canonical ACP build, --no-build start.
+        self.assertEqual(len(commands), 5)
         self.assertFalse(any("app.workspace_reset_cli" in command for command in commands))
 
     def test_workspace_reset_failure_leaves_runtime_volumes_untouched(self):
@@ -252,7 +308,7 @@ class DevEnvironmentTests(unittest.TestCase):
              patch.object(env, "call", side_effect=calls) as call, \
              patch.object(env, "docker_json") as inspect:
             with self.assertRaisesRegex(env.DevError, "workspace reset failed"):
-                env.reset({"BYQ_DEV_SCOPE": env.scope()})
+                env.reset({"BYQ_DEV_SCOPE": env.scope()}, acp_config())
         inspect.assert_not_called()
         self.assertEqual(len(call.call_args_list), 4)
 
@@ -263,7 +319,7 @@ class DevEnvironmentTests(unittest.TestCase):
              patch.object(env, "call", side_effect=calls) as call, \
              patch.object(env, "docker_json") as inspect:
             with self.assertRaisesRegex(env.DevError, "object cleanup failed"):
-                env.reset({"BYQ_DEV_SCOPE": env.scope()})
+                env.reset({"BYQ_DEV_SCOPE": env.scope()}, acp_config())
         inspect.assert_not_called()
         self.assertEqual(len(call.call_args_list), 5)
 

@@ -19,13 +19,31 @@ sys.path.insert(0, str(ROOT / 'scripts/release'))
 import images
 import manifest
 
-# ADR-0110: the additive single-image candidate overlay shares one Dockerfile
-# and one image reference across the three ACP roles. It is not auto-loaded by
-# the checked-in route; a caller selects it explicitly, as Compose would.
+# ADR-0110 adoption: the default checked-in route is now single-image. The
+# additive candidate overlay still shares one Dockerfile/image and stays an
+# isolated evaluation file. The three per-role Dockerfiles remain in the tree,
+# so a synthetic per-role Compose route still derives the legacy per-role
+# topology for the negative/rollback fixtures below.
 ACP_UNIFIED_COMPOSE_ROUTE = (
     ROOT / 'compose.yml',
     ROOT / 'compose.dsh-acp-single-image-candidate.yml',
 )
+PER_ROLE_DOCKERFILES = {
+    'runtime-adapter': 'services/runtime-adapter/Dockerfile.acp-0.2.0-rc.2-candidate',
+    'acp-product-runner': 'services/acp_product_runner/Dockerfile',
+    'acp-judgment-runner': 'services/acp_judgment_runner/Dockerfile',
+}
+
+
+def write_per_role_route(directory):
+    """Write a synthetic legacy per-role Compose route (three role Dockerfiles)."""
+    import yaml
+    path = Path(directory) / 'compose.per-role.yml'
+    path.write_text(yaml.safe_dump({'services': {
+        service: {'build': {'context': '.', 'dockerfile': dockerfile}}
+        for service, dockerfile in PER_ROLE_DOCKERFILES.items()
+    }}))
+    return path
 
 
 def synthetic_layer():
@@ -871,17 +889,23 @@ class ReleasePipelineTests(unittest.TestCase):
                 images.load_authoritative_version(ROOT), partial)
 
     def test_acp_topology_is_derived_from_the_checked_in_compose_route(self):
-        # The operative checked-in route declares three distinct per-role builds.
+        # The adopted default checked-in route declares one unified build/image.
         self.assertEqual(
-            images.acp_image_topology_from_compose(), images.ACP_PER_ROLE_IMAGE)
+            images.acp_image_topology_from_compose(), images.ACP_SINGLE_IMAGE)
         self.assertIn('compose.dsh-acp-rc2-candidate.yml',
                       (ROOT / 'compose.override.yml').read_text())
-        # The additive candidate overlay shares one Dockerfile and one image
-        # reference, so deriving from that Compose declaration selects the
-        # future single-image route.
+        # The additive candidate overlay is also single-image.
         self.assertEqual(
             images.acp_image_topology_from_compose(ACP_UNIFIED_COMPOSE_ROUTE),
             images.ACP_SINGLE_IMAGE)
+        # A synthetic per-role route still derives the legacy per-role topology,
+        # so the per-role path and its fail-closed fixtures are preserved.
+        import tempfile
+        with tempfile.TemporaryDirectory() as temp:
+            route = write_per_role_route(temp)
+            self.assertEqual(
+                images.acp_image_topology_from_compose([route]),
+                images.ACP_PER_ROLE_IMAGE)
         # No ambient topology selector remains in the CI lane; the route is the
         # Compose declaration, not an environment variable.
         source = (ROOT / 'scripts/ci/local-ci.sh').read_text()
@@ -915,6 +939,16 @@ class ReleasePipelineTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 images.acp_image_topology_from_compose([route])
 
+            # One shared Dockerfile and image are not enough: a divergent build
+            # declaration (context/args) would build different images under one
+            # tag, so it fails closed.
+            divergent = copy.deepcopy(shared)
+            divergent['runtime-adapter']['build']['args'] = {'BYQ_DSH_BUILD_RELEASE_ID': 'x'}
+            route = temp / 'divergent-args.yml'
+            route.write_text(yaml.safe_dump({'services': divergent}))
+            with self.assertRaises(ValueError):
+                images.acp_image_topology_from_compose([route])
+
             route = temp / 'unified.yml'
             route.write_text(yaml.safe_dump({'services': shared}))
             self.assertEqual(
@@ -935,9 +969,26 @@ class ReleasePipelineTests(unittest.TestCase):
         # so the shared selection and the static qualification cannot drift.
         self.assertEqual(
             images.acp_image_topology_from_compose(images.acp_compose_route_files()),
-            images.ACP_PER_ROLE_IMAGE)
+            images.ACP_SINGLE_IMAGE)
+        # The CLI also exposes the derived topology and the run-scoped unified
+        # image tag the release lane aliases to the three role tags.
+        topology = subprocess.check_output(
+            [sys.executable, str(ROOT / 'scripts/release/images.py'), 'topology'],
+            cwd=ROOT, text=True).strip()
+        self.assertEqual(topology, images.ACP_SINGLE_IMAGE)
+        tag = subprocess.check_output(
+            [sys.executable, str(ROOT / 'scripts/release/images.py'), 'acp-image'],
+            cwd=ROOT, text=True, env={**os.environ,
+                                      'COMPOSE_PROJECT_NAME': 'byq-ci-stack-demo'}).strip()
+        self.assertEqual(tag, 'byq-ci-stack-demo-acp-unified')
+        self.assertEqual(images.acp_unified_image_tag('byq-ci-stack-demo'), tag)
+        for invalid in ('', '.', '..', 'bad/name'):
+            with self.assertRaises(ValueError):
+                images.acp_unified_image_tag(invalid)
         source = (ROOT / 'scripts/ci/local-ci.sh').read_text()
         self.assertIn('scripts/release/images.py" route', source)
+        self.assertIn('scripts/release/images.py" topology', source)
+        self.assertIn('scripts/release/images.py" acp-image', source)
         self.assertNotIn(
             'CI_COMPOSE_FILES=("$REPO_ROOT/compose.yml" "$REPO_ROOT/compose.override.yml")',
             source,
@@ -960,11 +1011,11 @@ class ReleasePipelineTests(unittest.TestCase):
                 [str(ROOT / 'compose.yml'), str(ROOT / 'compose.override.yml')],
             )
 
-    def test_future_unified_route_requires_explicit_selection_and_qualification(self):
-        # The unified single-image route is never the default: it is selectable
-        # only by naming the checked-in candidate overlay explicitly, and only
-        # when that declaration statically qualifies (one shared Dockerfile and
-        # one shared image reference across the three roles).
+    def test_unified_route_is_default_and_per_role_route_is_legacy(self):
+        # ADR-0110 adoption: the unified single-image route is now the default
+        # checked-in route. The additive candidate overlay remains selectable as
+        # an isolated evaluation file, and a synthetic per-role route still
+        # derives the legacy per-role topology (kept for rollback/negatives).
         files = images.acp_compose_route_files(ACP_UNIFIED_COMPOSE_ROUTE)
         self.assertEqual(
             files,
@@ -973,9 +1024,14 @@ class ReleasePipelineTests(unittest.TestCase):
         )
         self.assertEqual(
             images.acp_image_topology_from_compose(files), images.ACP_SINGLE_IMAGE)
-        # The default route stays per-role: no default unified promotion.
         self.assertEqual(
-            images.acp_image_topology_from_compose(), images.ACP_PER_ROLE_IMAGE)
+            images.acp_image_topology_from_compose(), images.ACP_SINGLE_IMAGE)
+        import tempfile
+        with tempfile.TemporaryDirectory() as temp:
+            route = write_per_role_route(temp)
+            self.assertEqual(
+                images.acp_image_topology_from_compose([route]),
+                images.ACP_PER_ROLE_IMAGE)
 
     def test_public_release_manifest_v2_rejects_v1_and_unknown_before_external_actions(self):
         import tempfile
@@ -1151,15 +1207,16 @@ class ReleasePipelineTests(unittest.TestCase):
                 os.chdir(previous)
 
     def test_export_rejects_aliased_ids_under_per_role_route_ignoring_ambient_selector(self):
-        # ADR-0110: the operative checked-in Compose route is three per-role
-        # images. An ambient BYQ_ACP_IMAGE_TOPOLOGY=single-image must NOT select
-        # the topology. If a triple tag alias makes all three role ids equal
-        # while the per-role route is declared, export must fail closed before
-        # any tag or save, never silently promoting the release.
+        # ADR-0110: a legacy per-role Compose route is three per-role images. An
+        # ambient BYQ_ACP_IMAGE_TOPOLOGY=single-image must NOT select the
+        # topology. If a triple tag alias makes all three role ids equal while
+        # the per-role route is declared, export must fail closed before any tag
+        # or save, never silently promoting the release.
         import tempfile
         scope = 'release-export-triple-alias'
         ids = image_ids()
         with tempfile.TemporaryDirectory() as temp:
+            per_role_route = write_per_role_route(temp)
             previous = os.getcwd()
             os.chdir(temp)
             try:
@@ -1177,20 +1234,21 @@ class ReleasePipelineTests(unittest.TestCase):
                                              'BYQ_CI_SCOPE': scope,
                                              'BYQ_ACP_IMAGE_TOPOLOGY': images.ACP_SINGLE_IMAGE}):
                     with self.assertRaisesRegex(ValueError, 'selected.*release topology'):
-                        images.export(directory)
+                        images.export(directory, compose_files=[per_role_route])
                 self.assertFalse(directory.exists())
                 self.assertEqual(calls, [])
             finally:
                 os.chdir(previous)
 
     def test_export_accepts_all_distinct_per_role_rollback_route(self):
-        # The operative three-image rollback route stays valid: three distinct
-        # per-role ids under the checked-in per-role Compose route export.
+        # The legacy three-image rollback route stays valid: three distinct
+        # per-role ids under an explicit per-role Compose route export.
         import tempfile
         sha = 'a' * 40
         scope = 'release-export-per-role'
         ids = distinct_image_ids()
         with tempfile.TemporaryDirectory() as temp:
+            per_role_route = write_per_role_route(temp)
             previous = os.getcwd()
             os.chdir(temp)
             try:
@@ -1217,7 +1275,7 @@ class ReleasePipelineTests(unittest.TestCase):
                      patch.object(images.subprocess, 'run', side_effect=run), \
                      patch.dict(os.environ, {'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '1',
                                              'BYQ_CI_SCOPE': scope}):
-                    images.export(directory)
+                    images.export(directory, compose_files=[per_role_route])
                 receipt = json.loads((directory / 'receipt.json').read_text())
                 images.validate(receipt, sha, '123-1')
                 self.assertEqual(
@@ -1561,11 +1619,12 @@ class ReleasePipelineTests(unittest.TestCase):
                 os.chdir(previous)
 
     def test_publish_binds_receipt_topology_to_checked_in_route_without_ambient_selector(self):
-        # The checked-in route is per-role; a receipt that records single-image
-        # must fail closed before any image command, even if an ambient selector
-        # claims single-image. The binding reads ACP_COMPOSE_ROUTE, not the env.
+        # The checked-in route is single-image; a receipt that records the
+        # legacy per-role topology must fail closed before any image command,
+        # even if an ambient selector claims per-role. The binding reads
+        # ACP_COMPOSE_ROUTE, not the env.
         import tempfile
-        receipt = receipt_fixture(topology=images.ACP_SINGLE_IMAGE)
+        receipt = receipt_fixture(topology=images.ACP_PER_ROLE_IMAGE)
         calls = []
 
         def run(args, **kwargs):
@@ -1684,11 +1743,10 @@ class ReleasePipelineTests(unittest.TestCase):
         self.assertLess(setup, install, names)
         self.assertLess(install, profile, names)
         step = steps[install]
-        # The integration lane also runs the host-side F6 fixture, which parses
-        # the captured Compose topology with the same pinned PyYAML dependency.
-        self.assertEqual(
-            step.get('if'),
-            "matrix.lane == 'architecture' || matrix.lane == 'integration'", step)
+        # Every lane that derives the ACP topology from the checked-in Compose
+        # route (and the integration lane's host-side F6 fixture) needs the same
+        # pinned PyYAML; only the docs lane builds nothing.
+        self.assertEqual(step.get('if'), "matrix.lane != 'docs'", step)
         for option in ('--require-hashes', '--only-binary=:all:', '--no-deps'):
             self.assertIn(option, step['run'])
         self.assertIn(
@@ -1745,7 +1803,7 @@ class ReleasePipelineTests(unittest.TestCase):
         self.assertIn('scripts/dsh/release.py check --historical-inputs', source)
         self.assertIn('scripts/dsh/promotion.py check', source)
         self.assertNotIn('build_revision as b', source)
-        self.assertIn('python3 "$REPO_ROOT/scripts/ci/build-images.py" "${services[@]}"', source)
+        self.assertIn('python3 "$REPO_ROOT/scripts/ci/build-images.py" "${build_services[@]}"', source)
         self.assertIn('acp_compose build', source)
         self.assertIn('release_image_services', source)
         self.assertIn('scripts/dsh/acp_build.py', source)

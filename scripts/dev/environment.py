@@ -20,6 +20,13 @@ if str(ROOT) not in sys.path:
 
 from scripts.dsh.acp_build import build_environment
 from scripts.dsh.authoritative_version import load_authoritative_version
+from scripts.dev.acp_compose import (
+    ACP_ROLE_SERVICES,
+    SINGLE_IMAGE,
+    ComposeError,
+    acp_topology,
+    build_targets,
+)
 
 ENV_FILE = ROOT / ".env.dev"
 TEMPLATE = ROOT / ".env.example"
@@ -143,14 +150,23 @@ def call(args: list[str], values: dict[str, str], *, capture: bool = False) -> s
     return subprocess.run(args, cwd=ROOT, env=child_env(values), text=True, capture_output=capture, check=False)
 
 
-def validated_config(values: dict[str, str]) -> None:
+def start_profile(values: dict[str, str], config: dict, services: list[str]) -> None:
+    """ADR-0110: build the one shared ACP image once, then start with --no-build.
+
+    A plain ``up --build`` would try to build the shared ACP tag three times and
+    fail, so the selected services and their dependency closure are built first
+    (one canonical ACP target) and the start uses ``--no-build``.
+    """
+    targets = build_targets(config, services)
+    if targets and call(compose_args("build", *targets), values).returncode:
+        raise DevError("isolated dev images failed to build")
+    if call(compose_args("up", "-d", "--wait", "--no-build", *services), values).returncode:
+        raise DevError("isolated dev services failed to start")
+
+
+def validated_config(values: dict[str, str]) -> dict:
     selection = load_authoritative_version(ROOT)
     resolved = build_environment(selection)
-    release_id = str(selection["release_id"])
-    if not release_id.startswith("dsh-v"):
-        raise DevError("authoritative DSH release cannot select a Runtime Adapter Dockerfile")
-    version = release_id[len("dsh-v"):]
-    expected_dockerfile = f"services/runtime-adapter/Dockerfile.acp-{version}-candidate"
     result = call(compose_args("config", "--format", "json"), values, capture=True)
     if result.returncode:
         raise DevError("Compose configuration failed; check .env.dev without printing secrets")
@@ -158,16 +174,33 @@ def validated_config(values: dict[str, str]) -> None:
         config = json.loads(result.stdout)
         services = config["services"]
         runtime = services["runtime-adapter"]
-        dockerfile = runtime["build"]["dockerfile"]
         runtime_environment = runtime["environment"]
         runtime_volumes = runtime.get("volumes") or []
         product_runner = services["acp-product-runner"]
         runner_environment = product_runner["environment"]
         runner_volumes = product_runner.get("volumes") or []
     except (ValueError, KeyError, TypeError) as exc:
-        raise DevError("Compose configuration lacks the ACP Runtime Adapter or runner") from exc
-    if dockerfile != expected_dockerfile:
-        raise DevError("Compose selected a stale Runtime Adapter build")
+        raise DevError("Compose configuration lacks the ACP role services") from exc
+    # ADR-0110: the three ACP role services must be one unified build/image and
+    # dispatch their role at runtime by BYQ_ACP_ROLE. A stale per-role Dockerfile
+    # or a divergent build/image fails closed.
+    try:
+        topology = acp_topology(config)
+    except ComposeError as exc:
+        raise DevError(f"ACP Compose topology is invalid: {exc}") from exc
+    if topology != SINGLE_IMAGE:
+        raise DevError("Compose did not select the unified ACP single-image build")
+    expected_roles = {
+        "runtime-adapter": "adapter",
+        "acp-product-runner": "product",
+        "acp-judgment-runner": "judgment",
+    }
+    for service in ACP_ROLE_SERVICES:
+        build = services[service].get("build") or {}
+        if build.get("dockerfile") != "services/acp_unified/Dockerfile":
+            raise DevError("Compose selected a stale ACP role build")
+        if services[service]["environment"].get("BYQ_ACP_ROLE") != expected_roles[service]:
+            raise DevError("Compose ACP role dispatch is missing or wrong")
     if runtime_environment.get("BYQ_DSH_COMPATIBILITY_RELEASE") != selection["compatibility_family"]:
         raise DevError("Compose selected a non-authoritative DSH compatibility family")
     if runtime_environment.get("DSH_SESSION_ROOT") != resolved["BYQ_DSH_BUILD_SESSION_ROOT"]:
@@ -209,6 +242,7 @@ def validated_config(values: dict[str, str]) -> None:
         "control_secret_env": "BYQ_ACP_PRODUCT_SLOT_PRIMARY_SECRET",
     }:
         raise DevError("ACP Product slot must remain bound to one explicit Workspace and runner")
+    return config
 
 
 def _print_workspace_binding_steps() -> None:
@@ -378,7 +412,7 @@ def clean(values: dict[str, str], apply: bool) -> None:
     print("Isolated development resources removed; legacy SDK session volume, .env.dev and images retained")
 
 
-def reset(values: dict[str, str], *, runtime_only: bool = False) -> None:
+def reset(values: dict[str, str], config: dict, *, runtime_only: bool = False) -> None:
     """Reset only this worktree's disposable runtime and Workspace data."""
     inventory(values)  # Verify every existing resource belongs to this project.
     if call(compose_args("down", "--remove-orphans"), values).returncode:
@@ -410,8 +444,8 @@ def reset(values: dict[str, str], *, runtime_only: bool = False) -> None:
             raise DevError("runtime volume still has a container reference")
         if call(["docker", "volume", "rm", name], values, capture=True).returncode:
             raise DevError("isolated runtime volume removal failed")
-    if call(compose_args("up", "-d", "--wait", "--build", *SERVICES["core"]), values).returncode:
-        raise DevError("isolated core services could not restart after reset")
+    # ADR-0110: build the one shared ACP image once, then start with --no-build.
+    start_profile(values, config, list(SERVICES["core"]))
     print(f"Reset isolated development {'runtime' if runtime_only else 'runtime and Workspaces'}: {scope()}")
 
 
@@ -432,10 +466,9 @@ def main() -> int:
             init()
             return 0
         values = local_env()
-        validated_config(values)
+        config = validated_config(values)
         if args.command == "start":
-            if call(compose_args("up", "-d", "--wait", "--build", *SERVICES[args.profile]), values).returncode:
-                raise DevError("isolated dev services failed to start")
+            start_profile(values, config, list(SERVICES[args.profile]))
             print(f"Started {scope()} profile {args.profile}")
         elif args.command == "stop":
             if call(compose_args("stop"), values).returncode:
@@ -444,7 +477,7 @@ def main() -> int:
         elif args.command == "clean":
             clean(values, args.apply)
         elif args.command in ("reset", "reset-runtime"):
-            reset(values, runtime_only=args.command == "reset-runtime")
+            reset(values, config, runtime_only=args.command == "reset-runtime")
         elif args.command == "seed":
             inventory(values)
             seed_source = ROOT / "scripts/dev/seed_backend.py"
