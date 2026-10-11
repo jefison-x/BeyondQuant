@@ -177,6 +177,60 @@ class CleanupImageIdTests(unittest.TestCase):
         self.assertNotIn(f"image rm {ID_A}", self._log())
         self.assertIn("retained shared image id", result.stdout)
 
+    def test_scope_shared_unified_tag_is_removed(self) -> None:
+        # ADR-0110: the single-image route builds one ACP image under this
+        # scope's own project tag "$PROJECT-acp-unified". It is this scope's
+        # residue, so both the shared tag and the captured id are removed.
+        unified = f"byq-ci-stack-{self.scope}-acp-unified"
+        self.state.write_text(f"{ID_A}\t{unified}\n", encoding="utf-8")
+        self._write_manifest(f"runtime-adapter={ID_A}\n")
+        result = self._run()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn(ID_A, self._images(), "scope shared image must be removed")
+        log = self._log()
+        self.assertIn(f"image rm {unified}", log)
+        self.assertIn(f"image rm {ID_A}", log)
+        self.assertFalse(self.manifest.exists())
+
+    def test_foreign_scope_shared_unified_tag_is_preserved(self) -> None:
+        # A foreign scope's unified tag is never this scope's residue and must
+        # never be deleted.
+        foreign = "byq-ci-stack-otherscope-acp-unified"
+        self.state.write_text(f"{ID_A}\t{foreign}\n", encoding="utf-8")
+        self._write_manifest(f"runtime-adapter={ID_A}\n")
+        result = self._run()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self._images().get(ID_A), [foreign], "foreign tag must survive")
+        self.assertNotIn(f"image rm {ID_A}", self._log())
+        self.assertIn("retained shared image id", result.stdout)
+
+    def test_single_image_role_aliases_and_shared_tag_removed_once(self) -> None:
+        # ADR-0110: one shared ACP image is aliased to the three role tags plus
+        # the run-scoped unified tag. Cleanup removes every own tag and the one
+        # captured id exactly once (same-id dedup), then retires the manifest.
+        project = f"byq-ci-stack-{self.scope}"
+        tags = [
+            f"{project}-runtime-adapter",
+            f"{project}-acp-product-runner",
+            f"{project}-acp-judgment-runner",
+            f"{project}-acp-unified",
+        ]
+        self.state.write_text(f"{ID_A}\t{','.join(tags)}\n", encoding="utf-8")
+        self._write_manifest(
+            f"runtime-adapter={ID_A}\n"
+            f"acp-product-runner={ID_A}\n"
+            f"acp-judgment-runner={ID_A}\n"
+        )
+        result = self._run()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn(ID_A, self._images())
+        log = self._log()
+        for tag in tags:
+            self.assertIn(f"image rm {tag}", log)
+        self.assertEqual(log.count(f"image rm {ID_A}"), 1, log)
+        self.assertFalse(self.manifest.exists())
+        self._assert_no_global_prune()
+
     def test_invalid_manifest_value_fails_closed_never_fed_to_docker(self) -> None:
         self.state.write_text(f"{ID_A}\t\n", encoding="utf-8")
         self._write_manifest("backend=not-an-image-id\n")

@@ -37,21 +37,48 @@ ACP_ROLE_SERVICES = (
 ACP_SINGLE_IMAGE = 'single-image'
 ACP_PER_ROLE_IMAGE = 'per-role-image'
 ACP_ROLE_IMAGE_TOPOLOGIES = (ACP_SINGLE_IMAGE, ACP_PER_ROLE_IMAGE)
-# ADR-0110: under the explicitly selected single-image topology the three ACP
-# role services are one build and publish once to one candidate repository with
-# one SBOM. The default per-role route never references this repository, so a
-# per-role release is not silently rewritten to the unified artifact.
+# ADR-0110: under the single-image topology the three ACP role services are one
+# build and publish once to one candidate repository with one SBOM. A legacy
+# per-role route never references this repository, so a per-role release is not
+# silently rewritten to the unified artifact.
 ACP_UNIFIED_SERVICE = 'acp-unified'
 ACP_UNIFIED_REPOSITORY = f'ghcr.io/jefison-x/beyondquant/{ACP_UNIFIED_SERVICE}'
 ACP_UNIFIED_SBOM = f'{ACP_UNIFIED_SERVICE}.spdx.json'
+# ADR-0110: the adopted single-image route builds exactly this Dockerfile and
+# dispatches each role at runtime through the fail-closed BYQ_ACP_ROLE
+# parameter. The merged-config helper requires both, so an unknown shared
+# Dockerfile or a missing/incorrect role mapping fails closed instead of being
+# accepted as the single-image topology.
+ACP_UNIFIED_DOCKERFILE = 'services/acp_unified/Dockerfile'
+ACP_ROLE_ENVIRONMENT = {
+    'runtime-adapter': 'adapter',
+    'acp-product-runner': 'product',
+    'acp-judgment-runner': 'judgment',
+}
+# ADR-0110 adoption: the default Compose route declares the one unified image as
+# a run-scoped project tag (`<COMPOSE_PROJECT_NAME>-acp-unified`). The release
+# lane builds that one image and aliases it to the three role service tags, so
+# per-service capture stays exact while one build still yields one image.
+ACP_UNIFIED_IMAGE_SUFFIX = ACP_UNIFIED_SERVICE
 # ADR-0110: the expected release topology is derived from the checked-in Compose
 # route that the release lane actually builds, never from an ambient selector.
-# The operative route is compose.yml + compose.override.yml (which includes the
-# three per-role ACP builds); the future single-image route is selected only by
-# a Compose declaration whose three ACP services truly share one build/image.
+# The adopted default route is compose.yml + compose.override.yml (which
+# includes compose.dsh-acp-rc2-candidate.yml), whose three ACP services share
+# one unified build and one image reference. A per-role route is still derived
+# when a Compose declaration declares three distinct role Dockerfiles.
 ACP_COMPOSE_ROUTE = ('compose.yml', 'compose.override.yml')
 DIGEST = re.compile(r'sha256:[0-9a-f]{64}')
 SCOPE = re.compile(r'[A-Za-z0-9_.-]+')
+
+
+def acp_unified_image_tag(project):
+    """Return the run-scoped project tag the default route declares for the one
+    ACP image (`<project>-acp-unified`). It must match the Compose ``image:``
+    value so the release lane aliases the one built image to the role tags."""
+    if (not isinstance(project, str) or project in ('.', '..')
+            or not SCOPE.fullmatch(project)):
+        raise ValueError('invalid Compose project name for the unified ACP image tag')
+    return f'{project}-{ACP_UNIFIED_IMAGE_SUFFIX}'
 HANDOFF_V1 = 'byq-release-images.v1'
 HANDOFF_V2 = 'byq-release-images.v2'
 PUBLIC_MANIFEST_V2 = 'byq-release.v2'
@@ -108,9 +135,9 @@ def acp_compose_route_files(compose_route=None):
     ADR-0110: ``ACP_COMPOSE_ROUTE`` is the single checked-in authority for the
     release/CI Compose lane. The CI shell reads it through ``images.py route`` so
     the Compose build commands and the release export cannot drift apart. The
-    selection is never read from the environment; a future unified route must be
-    edited into ``ACP_COMPOSE_ROUTE`` and pass the topology derivation. A missing
-    or unreadable route file fails closed with no fallback.
+    selection is never read from the environment; a route change must be edited
+    into ``ACP_COMPOSE_ROUTE`` and pass the topology derivation. A missing or
+    unreadable route file fails closed with no fallback.
     """
     if compose_route is None:
         route = ACP_COMPOSE_ROUTE
@@ -189,15 +216,52 @@ def _merge_build_declaration(current, declared):
     return dict(declared)
 
 
+def classify_acp_topology(builds, images):
+    """Pure classification of the three ACP role build/image declarations.
+
+    ADR-0110: the one central classification is shared by the raw-route reader
+    (``acp_image_topology_from_compose``) and the merged-config helper
+    (``scripts/dev/acp_compose.py``), so the two derivations cannot drift.
+
+    ``builds`` maps each role service to its effective merged ``build``
+    declaration (or ``None``); ``images`` maps each role service to its image
+    reference (or ``None``). The single-image topology requires one shared
+    Dockerfile, one shared image reference AND one identical effective build
+    declaration (context, args, target, ...), so a divergent context/args cannot
+    masquerade as one shared image. Three distinct Dockerfiles are the operative
+    per-role topology. Any partial or inconsistent declaration fails closed.
+    """
+    if set(builds) != set(ACP_ROLE_SERVICES) or set(images) != set(ACP_ROLE_SERVICES):
+        raise ValueError('ACP topology must declare exactly the three role services')
+    dockerfiles = {
+        service: (build.get('dockerfile') if isinstance(build, dict) else None)
+        for service, build in builds.items()
+    }
+    if any(value is None for value in dockerfiles.values()):
+        raise ValueError('selected ACP Compose route does not declare three buildable role services')
+    if len(set(dockerfiles.values())) == 1:
+        if any(image is None for image in images.values()) or len(set(images.values())) != 1:
+            raise ValueError('shared ACP Dockerfile must also share one image reference')
+        # The one shared image is only valid when the three role services also
+        # declare the exact same effective build declaration (context, args,
+        # target, ...). A divergent declaration would produce three different
+        # images under one tag, so it fails closed instead of being treated as
+        # single-image.
+        reference_build = builds[ACP_ROLE_SERVICES[0]]
+        if any(builds[service] != reference_build for service in ACP_ROLE_SERVICES):
+            raise ValueError('shared ACP Dockerfile must also share one identical build declaration')
+        return ACP_SINGLE_IMAGE
+    if len(set(dockerfiles.values())) == len(ACP_ROLE_SERVICES):
+        return ACP_PER_ROLE_IMAGE
+    raise ValueError('selected ACP Compose route partially shares the role build')
+
+
 def acp_image_topology_from_compose(compose_files=None):
     """Derive the expected ACP topology from the selected Compose declaration.
 
     ADR-0110: the expected topology is read from the actual checked-in Compose
-    build declaration rather than an ambient selector. A route whose three ACP
-    services declare one shared Dockerfile AND one shared image reference is the
-    single-image route; three distinct Dockerfiles are the operative per-role
-    route. Any partial or inconsistent declaration fails closed, and equal local
-    image ids alone never select single-image.
+    build declaration rather than an ambient selector, and classified by the one
+    shared pure function. Equal local image ids alone never select single-image.
     """
     builds = {service: None for service in ACP_ROLE_SERVICES}
     images = {service: None for service in ACP_ROLE_SERVICES}
@@ -213,19 +277,7 @@ def acp_image_topology_from_compose(compose_files=None):
                 builds[service] = _merge_build_declaration(builds[service], entry['build'])
             if 'image' in entry:
                 images[service] = entry['image']
-    dockerfiles = {}
-    for service in ACP_ROLE_SERVICES:
-        build = builds[service]
-        dockerfiles[service] = build.get('dockerfile') if isinstance(build, dict) else None
-    if any(value is None for value in dockerfiles.values()):
-        raise ValueError('selected ACP Compose route does not declare three buildable role services')
-    if len(set(dockerfiles.values())) == 1:
-        if any(image is None for image in images.values()) or len(set(images.values())) != 1:
-            raise ValueError('shared ACP Dockerfile must also share one image reference')
-        return ACP_SINGLE_IMAGE
-    if len(set(dockerfiles.values())) == len(ACP_ROLE_SERVICES):
-        return ACP_PER_ROLE_IMAGE
-    raise ValueError('selected ACP Compose route partially shares the role build')
+    return classify_acp_topology(builds, images)
 
 
 def observe_acp_image_binding(image_ids):
@@ -1328,7 +1380,7 @@ def publish(directory, migration):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('action', choices=('route', 'export', 'publish'))
+    parser.add_argument('action', choices=('route', 'topology', 'acp-image', 'export', 'publish'))
     parser.add_argument('--directory', type=Path, default=Path('.ci-artifacts/release-images'))
     parser.add_argument('--migration', choices=('none', 'forward-compatible', 'operator-required'), default='operator-required')
     args = parser.parse_args()
@@ -1337,6 +1389,18 @@ if __name__ == '__main__':
             print('\n'.join(acp_compose_route_files()))
         except ValueError as exc:
             print(f'ACP Compose route selection failed: {exc}', file=sys.stderr)
+            raise SystemExit(2)
+    elif args.action == 'topology':
+        try:
+            print(acp_image_topology_from_compose())
+        except ValueError as exc:
+            print(f'ACP Compose topology derivation failed: {exc}', file=sys.stderr)
+            raise SystemExit(2)
+    elif args.action == 'acp-image':
+        try:
+            print(acp_unified_image_tag(os.environ.get('COMPOSE_PROJECT_NAME', 'beyondquant')))
+        except ValueError as exc:
+            print(f'ACP unified image tag resolution failed: {exc}', file=sys.stderr)
             raise SystemExit(2)
     elif args.action == 'export':
         export(args.directory)

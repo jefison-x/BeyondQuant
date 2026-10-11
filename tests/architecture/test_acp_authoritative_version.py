@@ -81,16 +81,33 @@ class AcpAuthoritativeVersionTests(unittest.TestCase):
     def test_single_image_topology_builds_the_three_roles_from_one_dockerfile(self) -> None:
         # ADR-0110: one build (unified Dockerfile) and one shared image
         # expression for the adapter / ordinary-runner / judgment-runner roles.
-        overlay = yaml.safe_load(
+        roles = {"runtime-adapter", "acp-product-runner", "acp-judgment-runner"}
+        # The adopted default route is compose.dsh-acp-rc2-candidate.yml and
+        # declares the run-scoped project image tag for all three roles.
+        default = yaml.safe_load(
+            (ROOT / "compose.dsh-acp-rc2-candidate.yml").read_text(encoding="utf-8")
+        )["services"]
+        self.assertTrue(roles <= set(default))
+        self.assertEqual(
+            {default[service]["build"]["dockerfile"] for service in roles},
+            {"services/acp_unified/Dockerfile"},
+        )
+        self.assertEqual(
+            {default[service]["image"] for service in roles},
+            {"${COMPOSE_PROJECT_NAME:-beyondquant}-acp-unified"},
+        )
+        self.assertEqual(
+            {default[service]["environment"]["BYQ_ACP_ROLE"] for service in roles},
+            {"adapter", "product", "judgment"},
+        )
+        # The additive candidate overlay stays isolated and single-image.
+        candidate = yaml.safe_load(
             (ROOT / "compose.dsh-acp-single-image-candidate.yml").read_text(
                 encoding="utf-8"
             )
         )
-        services = overlay["services"]
-        self.assertEqual(
-            set(services),
-            {"runtime-adapter", "acp-product-runner", "acp-judgment-runner"},
-        )
+        services = candidate["services"]
+        self.assertEqual(set(services), roles)
         self.assertEqual(
             {service["build"]["dockerfile"] for service in services.values()},
             {"services/acp_unified/Dockerfile"},

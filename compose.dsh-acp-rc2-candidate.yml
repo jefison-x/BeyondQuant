@@ -1,17 +1,41 @@
+# ADR-0110 adoption: the adapter / product / judgment roles are one build and
+# one image reference. The three ACP services below declare the same unified
+# Dockerfile build and the same run-scoped project image tag, so one build
+# yields one image for all three roles; the role is chosen at runtime by the
+# fail-closed BYQ_ACP_ROLE parameter. Every per-service runtime boundary
+# (user, caps, read_only, no-new-privileges, networks, volumes/sockets,
+# per-role secrets) stays declared here exactly as the accepted per-role
+# topology. The additive compose.dsh-acp-single-image-candidate.yml remains a
+# separate isolated evaluation overlay and is not part of this default route.
+x-acp-unified-build: &acp-unified-build
+  context: .
+  dockerfile: services/acp_unified/Dockerfile
+  args:
+    BYQ_DSH_BUILD_RELEASE_ID: ${BYQ_DSH_BUILD_RELEASE_ID-}
+    BYQ_DSH_BUILD_SOURCE_COMMIT: ${BYQ_DSH_BUILD_SOURCE_COMMIT-}
+    BYQ_DSH_BUILD_PNPM_LOCK_SHA256: ${BYQ_DSH_BUILD_PNPM_LOCK_SHA256-}
+    BYQ_DSH_BUILD_COMPATIBILITY_FAMILY: ${BYQ_DSH_BUILD_COMPATIBILITY_FAMILY-}
+    BYQ_DSH_BUILD_ADAPTER_PROFILE_PATH: ${BYQ_DSH_BUILD_ADAPTER_PROFILE_PATH-}
+    BYQ_DSH_BUILD_ADAPTER_PROFILE_SHA256: ${BYQ_DSH_BUILD_ADAPTER_PROFILE_SHA256-}
+    BYQ_DSH_BUILD_ADAPTER_PROFILE_IDENTITY_PATH: ${BYQ_DSH_BUILD_ADAPTER_PROFILE_IDENTITY_PATH-}
+    BYQ_DSH_BUILD_ADAPTER_PROFILE_IDENTITY_SHA256: ${BYQ_DSH_BUILD_ADAPTER_PROFILE_IDENTITY_SHA256-}
+    BYQ_DSH_BUILD_ADAPTER_RELEASE_IDENTITY_PATH: ${BYQ_DSH_BUILD_ADAPTER_RELEASE_IDENTITY_PATH-}
+    BYQ_DSH_BUILD_ADAPTER_RELEASE_IDENTITY_SHA256: ${BYQ_DSH_BUILD_ADAPTER_RELEASE_IDENTITY_SHA256-}
+    BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_PATH: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_PATH-}
+    BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_SHA256: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_SHA256-}
+    BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_IDENTITY_PATH: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_IDENTITY_PATH-}
+    BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_IDENTITY_SHA256: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_IDENTITY_SHA256-}
+    BYQ_DSH_BUILD_ORDINARY_RUNNER_RELEASE_IDENTITY_PATH: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_RELEASE_IDENTITY_PATH-}
+    BYQ_DSH_BUILD_ORDINARY_RUNNER_RELEASE_IDENTITY_SHA256: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_RELEASE_IDENTITY_SHA256-}
+    BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_PATH: ${BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_PATH-}
+    BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_SHA256: ${BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_SHA256-}
+    BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_IDENTITY_PATH: ${BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_IDENTITY_PATH-}
+    BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_IDENTITY_SHA256: ${BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_IDENTITY_SHA256-}
+
 services:
   runtime-adapter:
-    build:
-      args:
-        BYQ_DSH_BUILD_RELEASE_ID: ${BYQ_DSH_BUILD_RELEASE_ID-}
-        BYQ_DSH_BUILD_SOURCE_COMMIT: ${BYQ_DSH_BUILD_SOURCE_COMMIT-}
-        BYQ_DSH_BUILD_PNPM_LOCK_SHA256: ${BYQ_DSH_BUILD_PNPM_LOCK_SHA256-}
-        BYQ_DSH_BUILD_COMPATIBILITY_FAMILY: ${BYQ_DSH_BUILD_COMPATIBILITY_FAMILY-}
-        BYQ_DSH_BUILD_PROFILE_PATH: ${BYQ_DSH_BUILD_ADAPTER_PROFILE_PATH-}
-        BYQ_DSH_BUILD_PROFILE_SHA256: ${BYQ_DSH_BUILD_ADAPTER_PROFILE_SHA256-}
-        BYQ_DSH_BUILD_PROFILE_IDENTITY_PATH: ${BYQ_DSH_BUILD_ADAPTER_PROFILE_IDENTITY_PATH-}
-        BYQ_DSH_BUILD_PROFILE_IDENTITY_SHA256: ${BYQ_DSH_BUILD_ADAPTER_PROFILE_IDENTITY_SHA256-}
-        BYQ_DSH_BUILD_RELEASE_IDENTITY_PATH: ${BYQ_DSH_BUILD_ADAPTER_RELEASE_IDENTITY_PATH-}
-        BYQ_DSH_BUILD_RELEASE_IDENTITY_SHA256: ${BYQ_DSH_BUILD_ADAPTER_RELEASE_IDENTITY_SHA256-}
+    image: ${COMPOSE_PROJECT_NAME:-beyondquant}-acp-unified
+    build: *acp-unified-build
     cap_drop:
       - NET_RAW
     # Trusted Adapter controls distinct runner sockets. DSH runs in a separate
@@ -20,6 +44,8 @@ services:
       - "10005"
       - "10006"
     environment:
+      # ADR-0110: fail-closed runtime role dispatch for the shared image.
+      BYQ_ACP_ROLE: adapter
       # ADR-0100 group admission: the trusted Adapter must authenticate its
       # Backend agent-admission read so an unresolved root keeps the group
       # fenced across Adapter restarts. Without this the Adapter refuses every
@@ -74,20 +100,8 @@ services:
   # First candidate statically binds ONE personal workspace. Further groups
   # require distinct services, sockets, secrets and volumes; no auto allocator.
   acp-product-runner:
-    build:
-      context: .
-      dockerfile: services/acp_product_runner/Dockerfile
-      args:
-        BYQ_DSH_BUILD_RELEASE_ID: ${BYQ_DSH_BUILD_RELEASE_ID-}
-        BYQ_DSH_BUILD_SOURCE_COMMIT: ${BYQ_DSH_BUILD_SOURCE_COMMIT-}
-        BYQ_DSH_BUILD_PNPM_LOCK_SHA256: ${BYQ_DSH_BUILD_PNPM_LOCK_SHA256-}
-        BYQ_DSH_BUILD_COMPATIBILITY_FAMILY: ${BYQ_DSH_BUILD_COMPATIBILITY_FAMILY-}
-        BYQ_DSH_BUILD_PROFILE_PATH: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_PATH-}
-        BYQ_DSH_BUILD_PROFILE_SHA256: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_SHA256-}
-        BYQ_DSH_BUILD_PROFILE_IDENTITY_PATH: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_IDENTITY_PATH-}
-        BYQ_DSH_BUILD_PROFILE_IDENTITY_SHA256: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_PROFILE_IDENTITY_SHA256-}
-        BYQ_DSH_BUILD_RELEASE_IDENTITY_PATH: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_RELEASE_IDENTITY_PATH-}
-        BYQ_DSH_BUILD_RELEASE_IDENTITY_SHA256: ${BYQ_DSH_BUILD_ORDINARY_RUNNER_RELEASE_IDENTITY_SHA256-}
+    image: ${COMPOSE_PROJECT_NAME:-beyondquant}-acp-unified
+    build: *acp-unified-build
     user: "0:0"
     read_only: true
     restart: unless-stopped
@@ -95,6 +109,16 @@ services:
     cap_add: [CHOWN, SETGID, SETUID, KILL]
     security_opt: ["no-new-privileges:true"]
     environment:
+      # ADR-0110: the unified image bakes no role-specific process ownership,
+      # transport, composition/profile or DSH_MAX_TOKENS_AS_SUCCESS value, so
+      # Compose supplies this role's exact values here (as the accepted per-role
+      # image used to bake).
+      BYQ_ACP_ROLE: product
+      BYQ_DSH_PROCESS_OWNERSHIP: workspace-slot
+      BYQ_DSH_COMPOSITION: /opt/byq/profiles/byq-product.patch.yml
+      BYQ_DSH_COMPOSITION_IDENTITY: /opt/byq/profiles/byq-product.identity.json
+      BYQ_DSH_RELEASE_IDENTITY: /opt/byq/releases/deployment.identity.json
+      DSH_MAX_TOKENS_AS_SUCCESS: "false"
       BYQ_ACP_PRODUCT_WORKSPACE_ID: ${BYQ_ACP_PRODUCT_WORKSPACE_ID:?a trusted personal workspace binding is required}
       BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET: ${BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET:?a distinct Product runner secret is required}
     volumes:
@@ -114,18 +138,8 @@ services:
       start_period: 10s
 
   acp-judgment-runner:
-    build:
-      context: .
-      dockerfile: services/acp_judgment_runner/Dockerfile
-      args:
-        BYQ_DSH_BUILD_RELEASE_ID: ${BYQ_DSH_BUILD_RELEASE_ID-}
-        BYQ_DSH_BUILD_SOURCE_COMMIT: ${BYQ_DSH_BUILD_SOURCE_COMMIT-}
-        BYQ_DSH_BUILD_PNPM_LOCK_SHA256: ${BYQ_DSH_BUILD_PNPM_LOCK_SHA256-}
-        BYQ_DSH_BUILD_COMPATIBILITY_FAMILY: ${BYQ_DSH_BUILD_COMPATIBILITY_FAMILY-}
-        BYQ_DSH_BUILD_PROFILE_PATH: ${BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_PATH-}
-        BYQ_DSH_BUILD_PROFILE_SHA256: ${BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_SHA256-}
-        BYQ_DSH_BUILD_PROFILE_IDENTITY_PATH: ${BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_IDENTITY_PATH-}
-        BYQ_DSH_BUILD_PROFILE_IDENTITY_SHA256: ${BYQ_DSH_BUILD_JUDGMENT_RUNNER_PROFILE_IDENTITY_SHA256-}
+    image: ${COMPOSE_PROJECT_NAME:-beyondquant}-acp-unified
+    build: *acp-unified-build
     user: "0:0"
     read_only: true
     restart: unless-stopped
@@ -139,6 +153,10 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
+      # ADR-0110: role dispatch and the judgment role's token-success policy are
+      # supplied by Compose because the unified image bakes neither.
+      BYQ_ACP_ROLE: judgment
+      DSH_MAX_TOKENS_AS_SUCCESS: "false"
       BYQ_ACP_JUDGMENT_RUNNER_CONTROL_SECRET: ${BYQ_ACP_JUDGMENT_RUNNER_CONTROL_SECRET:?a separate runner control secret is required}
     volumes:
       # The DSH session tree is private to this container. Adapter verifies

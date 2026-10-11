@@ -37,7 +37,14 @@ export 校验原受测镜像与归档内容；publish 在 load 前校验收据�
 标签绑定，load 后核对全部服务标签、store ID、RootFS 和平台，再运行 syft/push。
 经典存储加载后 ID 必须等于 config hash；containerd ID 必须绑定已验证的归档
 manifest 和 Descriptor。纯传统归档不能仅凭 RootFS 相等认定未知 manifest ID。
-ACP 单镜像候选的三个角色共享一次 SBOM/push，默认路由仍由实际 Compose 声明决定。
+默认路由（`compose.yml` + `compose.override.yml`，含
+`compose.dsh-acp-rc2-candidate.yml`）现按 ADR-0110 声明单镜像：三个 ACP 角色
+共用 `services/acp_unified/Dockerfile` 与同一个 run-scoped 项目镜像 tag，运行期由
+`BYQ_ACP_ROLE` fail-closed 派发；发布/CI 只构建该 ACP 镜像一次，并把它 alias 到三个
+角色的 run-scoped tag，使各 service 的 capture 仍精确。拓扑由唯一 checked-in
+Compose 路由（`scripts/release/images.py`）导出，没有 ambient selector。三个角色因此
+共享一次 SBOM/push。此为源码采纳，不代表已发布 registry digest、已部署或 hosted CI
+已通过；那些仍由发布/部署通道独立验证。
 
 已有 v1 内部收据必须证明记录 ID 等于归档 config 的实际 hash；现代 classic save
 即使同时带 OCI layout 也按字节验证，不能只按布局猜测 ID。Docker/OCI 兼容视图

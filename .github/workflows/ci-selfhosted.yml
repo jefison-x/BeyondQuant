@@ -113,10 +113,12 @@ jobs:
         # The architecture lane's `unittest discover -s tests` imports
         # tests/architecture/test_dsh_authoritative_build.py and
         # test_acp_authoritative_version.py, which `import yaml` at module top
-        # level; a fresh runner has Python 3.13 but no PyYAML. The integration
-        # lane's host-side F6 fixture also parses the captured Compose topology.
-        # Share the one release lock file rather than declaring a second pin.
-        if: matrix.lane == 'architecture' || matrix.lane == 'integration'
+        # level; a fresh runner has Python 3.13 but no PyYAML. Every lane that
+        # builds images also derives the ACP topology from the checked-in Compose
+        # route (ADR-0110) and the integration lane's host-side F6 fixture parses
+        # the captured Compose topology. Share the one release lock file rather
+        # than declaring a second pin; the docs lane builds nothing.
+        if: matrix.lane != 'docs'
         run: |
           python3 -m pip install --disable-pip-version-check --no-deps \
             --only-binary=:all: --require-hashes \

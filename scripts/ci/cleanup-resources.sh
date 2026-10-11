@@ -94,7 +94,12 @@ mapfile -t image_resources <<< "$image_service_list"
 # The captured-ID allowlist is the same canonical 17-service set used by the
 # release exporter. Old isolated SDK candidate tags remain cleanup-only.
 legacy_image_resources=(dsh runtime-candidate)
-tag_resources=("${image_resources[@]}" "${legacy_image_resources[@]}")
+# ADR-0110: the single-image route builds one ACP image under the run-scoped
+# project tag "$PROJECT-acp-unified". It is this scope's own shared tag, so it
+# is recognized and removed here; a foreign scope's tag is never touched.
+shared_image_resources=(acp-unified)
+tag_resources=("${image_resources[@]}" "${legacy_image_resources[@]}" \
+  "${shared_image_resources[@]}")
 network_resources=("$BYQ_PRODUCT_NETWORK_NAME" "$BYQ_SIGNAL_SANDBOX_NETWORK_NAME" \
   "$BYQ_ACP_JUDGMENT_NETWORK_NAME")
 [ "$KEEP_POSTGRES" -eq 1 ] || network_resources+=("$PG_NET")
