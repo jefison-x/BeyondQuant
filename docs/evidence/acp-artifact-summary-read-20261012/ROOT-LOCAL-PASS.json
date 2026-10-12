@@ -1,0 +1,38 @@
+{
+  "created_utc": "2026-10-12T14:52:12.157406+00:00",
+  "verdict": "PASS_LOCAL_SCOPED",
+  "source_base": "ad5f7df1ad18e54dd0d9860d424241297187eef8",
+  "branch": "codex/acp-artifact-summary-read",
+  "source_sha256": {
+    "services/mcp/src/research.ts": "a11329dc3f57233db1909a2c2d76894d0f81a0c32e2f1a5699275e871039498a",
+    "services/mcp/tests/research-test.ts": "0e9a8547ddd71e433c1c9eac657a82a03c0aecfcc96cd0e2fd6ff19e4e196184",
+    "services/mcp/tests/research-watch-test.ts": "d75caf5365c050c9073ff70f2c8395cb6037257a6ab64057cb09c3858b20105c"
+  },
+  "commands": [
+    "npm run build",
+    "node dist/tests/research-test.js",
+    "node dist/tests/research-watch-test.js",
+    "node dist/tests/backtest-identity-test.js"
+  ],
+  "commands_exit_codes": {
+    "npm run build": 0,
+    "node dist/tests/research-test.js": 0,
+    "node dist/tests/research-watch-test.js": 0,
+    "node dist/tests/backtest-identity-test.js": 0
+  },
+  "log_sha256": {
+    "build.log": "2f5d2797f38038198611eb83bf7d712e41c8496ca07d15fe553a0311270d6da8",
+    "research-test.log": "5ef04844c6d502d328efcf6bb1ed6729d4d937ef4e5634b1926b405011697e14",
+    "research-watch-test.log": "88afffbde1c192a5d4aeebf0441be87809a829740450b1ac857856e5c6c37fa3",
+    "backtest-identity-test.log": "9b083cd0d3c312a1dfcc1b85b9ee4585f23b4ceaf747d0105c35edeec54098b5"
+  },
+  "independent_review": "Sol soft_real_reviewer PASS, source and log hashes verified",
+  "control": "one build and three suites; Root inspected each exit before next",
+  "previous_batch": "FAIL_CONTROL preserved",
+  "dev_check": "PASS_ROOT_COMMAND_RECEIPT",
+  "product_inputs": 0,
+  "jobs": 0,
+  "image": "NOT_RUN",
+  "real_product": "NOT_RUN",
+  "production": "NOT_RUN"
+}

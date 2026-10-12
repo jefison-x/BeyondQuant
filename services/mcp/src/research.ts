@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { safeRequestValidation } from "./request-validation.js";
 import { bindActiveWebEvidenceProducer } from "./web-evidence-provenance.js";
+import { fetchByqSignalSnapshotGet } from "./backtest.js";
 
 import { isWriteRequest, unknownWriteResult } from "./write-outcome.js";
 
@@ -205,11 +206,183 @@ export function fetchByqResearchTaskCreate(
   return watchedResearchCreate(backendUrl, 'research_task', "/v1/research/tasks", request, fetcher);
 }
 
-export async function fetchByqResearchGet(
+const ARTIFACT_STATUSES = ["draft", "validated", "superseded"];
+const CONTENT_SHA256_PATTERN = /^[a-f0-9]{64}$/;
+const SIGNAL_SUMMARY_SCHEMA_VERSION = "signal-snapshot-summary.v1";
+const MAX_MCP_PAYLOAD_BYTES = 64 * 1024;
+// The Backend summary carries exactly these four top-level fields.
+const SIGNAL_SUMMARY_TOP_LEVEL_KEYS = new Set([
+  "schema_version", "artifact", "snapshot", "diagnostic_samples",
+]);
+// Raw execution/panel field names (plus the raw `content` body) that must never
+// reach a Product Agent. The Backend bounded projection already excludes them;
+// enforcing the same closed set here keeps the MCP boundary fail-closed.
+const FORBIDDEN_SIGNAL_SUMMARY_FIELDS = new Set([
+  "content", "bars_frame", "bars", "signals", "corporate_actions", "benchmark",
+  "symbols", "symbol_index", "date_index", "columns", "research_bars", "script",
+]);
+// Mirrors FORBIDDEN_STRATEGY_FIELDS in
+// packages/contracts/signal_snapshot_summary.py: the summary's
+// snapshot.strategy block may carry identity only, never the frozen executable
+// payload.
+const FORBIDDEN_STRATEGY_FIELDS = new Set(["script", "snapshot", "parameters", "source"]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function invalidResearchResponse(): ByqResearchResult {
+  return result({ service: "beyondquant-mcp", status: "error", backend: { status: "invalid_response" } }, true);
+}
+
+function parseResultPayload(response: ByqResearchResult): Record<string, unknown> | undefined {
+  try {
+    const value = JSON.parse(response.content[0]?.text ?? "{}");
+    return isRecord(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function containsForbiddenSignalSummaryField(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(containsForbiddenSignalSummaryField);
+  if (!isRecord(value)) return false;
+  for (const [key, item] of Object.entries(value)) {
+    if (FORBIDDEN_SIGNAL_SUMMARY_FIELDS.has(key) || containsForbiddenSignalSummaryField(item)) return true;
+  }
+  return false;
+}
+
+function boundedResultPayload(payload: Record<string, unknown>): ByqResearchResult {
+  // The whole Product-Agent payload (identity, wrapper and summary) must stay
+  // within the 64 KiB bound, not just the nested summary.
+  if (Buffer.byteLength(JSON.stringify(payload), "utf8") > MAX_MCP_PAYLOAD_BYTES) {
+    return invalidResearchResponse();
+  }
+  return result(payload, false);
+}
+
+function hasExactSignalSummaryKeys(summary: Record<string, unknown>): boolean {
+  const keys = Object.keys(summary);
+  return keys.length === SIGNAL_SUMMARY_TOP_LEVEL_KEYS.size
+    && keys.every((key) => SIGNAL_SUMMARY_TOP_LEVEL_KEYS.has(key));
+}
+
+type ArtifactReference = {
+  artifactId: string;
+  type: string;
+  status: string;
+  contentSha256: string;
+  ownerPrincipal?: unknown;
+  workspaceId?: unknown;
+};
+
+// The reference contract is strictly typed: project_artifact always carries a
+// non-empty `type` plus validation.status/content_sha256. A projection without
+// that typed contract is rejected; there is no legacy fallback to the raw row.
+async function fetchArtifactReference(
+  backendUrl: string,
+  artifactId: string,
+  fetcher: Fetcher,
+): Promise<{ reference?: ArtifactReference; error?: ByqResearchResult }> {
+  const response = await requestResearch(
+    backendUrl,
+    `/v1/research/artifacts/${encodeURIComponent(artifactId)}/reference`,
+    { method: "GET" },
+    fetcher,
+  );
+  if (response.isError) return { error: response };
+  const projection = parseResultPayload(response);
+  const validation = projection?.validation;
+  if (!projection
+      || projection.artifact_id !== artifactId
+      || typeof projection.type !== "string" || !projection.type.trim()
+      || !isRecord(validation)
+      || typeof validation.status !== "string" || !ARTIFACT_STATUSES.includes(validation.status)
+      || typeof validation.content_sha256 !== "string" || !CONTENT_SHA256_PATTERN.test(validation.content_sha256)) {
+    return { error: invalidResearchResponse() };
+  }
+  return { reference: {
+    artifactId,
+    type: projection.type,
+    status: validation.status,
+    contentSha256: validation.content_sha256,
+    ownerPrincipal: projection.owner_principal,
+    workspaceId: projection.workspace_id,
+  } };
+}
+
+type SignalSnapshotReadExpectation = {
+  artifactId: string;
+  contentSha256: string;
+  status: string;
+  taskId?: string;
+  ownerPrincipal?: unknown;
+  workspaceId?: unknown;
+};
+
+type BoundedSignalSnapshot = {
+  artifactId: string;
+  taskId: unknown;
+  kind: string;
+  status: string;
+  contentSha256: string;
+  summary: Record<string, unknown>;
+};
+
+async function readBoundedSignalSnapshot(
+  backendUrl: string,
+  expected: SignalSnapshotReadExpectation,
+  fetcher: Fetcher,
+): Promise<{ value?: BoundedSignalSnapshot; error?: ByqResearchResult }> {
+  const response = await fetchByqSignalSnapshotGet(backendUrl, expected.artifactId, fetcher);
+  if (response.isError) return { error: response };
+  const payload = parseResultPayload(response);
+  const summary = payload?.summary;
+  if (!isRecord(summary)
+      || !hasExactSignalSummaryKeys(summary)
+      || containsForbiddenSignalSummaryField(summary)) {
+    return { error: invalidResearchResponse() };
+  }
+  const snapshot = summary.snapshot;
+  const diagnosticSamples = summary.diagnostic_samples;
+  const integrity = isRecord(snapshot) ? snapshot.integrity : undefined;
+  const strategy = isRecord(snapshot) ? snapshot.strategy : undefined;
+  const artifact = summary.artifact;
+  if (!isRecord(snapshot)
+      || !isRecord(diagnosticSamples)
+      || !isRecord(integrity)
+      || integrity.content_sha256 !== expected.contentSha256
+      || !isRecord(strategy)
+      || Object.keys(strategy).some((key) => FORBIDDEN_STRATEGY_FIELDS.has(key))
+      || !isRecord(artifact)
+      || summary.schema_version !== SIGNAL_SUMMARY_SCHEMA_VERSION
+      || artifact.artifact_id !== expected.artifactId
+      || artifact.kind !== "signal_snapshot"
+      || artifact.content_sha256 !== expected.contentSha256
+      || artifact.status !== expected.status
+      || (expected.taskId !== undefined && artifact.task_id !== expected.taskId)
+      || (expected.ownerPrincipal !== undefined && artifact.owner_principal !== undefined
+          && artifact.owner_principal !== expected.ownerPrincipal)
+      || (expected.workspaceId !== undefined && artifact.workspace_id !== undefined
+          && artifact.workspace_id !== expected.workspaceId)) {
+    return { error: invalidResearchResponse() };
+  }
+  return { value: {
+    artifactId: expected.artifactId,
+    taskId: artifact.task_id ?? null,
+    kind: "signal_snapshot",
+    status: expected.status,
+    contentSha256: expected.contentSha256,
+    summary,
+  } };
+}
+
+async function requestResearchEntity(
   backendUrl: string,
   entityType: ResearchEntityType,
   entityId: string,
-  fetcher: Fetcher = fetch,
+  fetcher: Fetcher,
 ): Promise<ByqResearchResult> {
   const response = await requestResearch(
     backendUrl,
@@ -218,12 +391,64 @@ export async function fetchByqResearchGet(
     fetcher,
   );
   if (response.isError) return response;
-  const value = JSON.parse(response.content[0]?.text ?? '{}');
+  const value = parseResultPayload(response);
   const key = {research_task:'task_id',experiment:'experiment_id',artifact:'artifact_id'}[entityType];
-  if (value[key] !== entityId) {
-    return result({service:'beyondquant-mcp',status:'error',backend:{status:'invalid_response'}},true);
-  }
+  if (!value || value[key] !== entityId) return invalidResearchResponse();
   return response;
+}
+
+// A non-signal Artifact keeps the original full-row read, but the raw row must
+// still agree with the typed reference so a non-signal reference cannot hand
+// back a raw signal_snapshot body.
+async function readTypedArtifactRow(
+  backendUrl: string,
+  reference: ArtifactReference,
+  fetcher: Fetcher,
+): Promise<ByqResearchResult> {
+  const raw = await requestResearchEntity(backendUrl, "artifact", reference.artifactId, fetcher);
+  if (raw.isError) return raw;
+  const value = parseResultPayload(raw);
+  if (!value || value.kind !== reference.type) return invalidResearchResponse();
+  return raw;
+}
+
+function signalSnapshotPayload(value: BoundedSignalSnapshot): Record<string, unknown> {
+  // Fixed, closed signal shape: no reference metadata/ref/owner/workspace is
+  // ever forwarded, so a poisoned reference projection cannot reach the Agent.
+  return {
+    service: "beyondquant-mcp",
+    status: value.status,
+    artifact_id: value.artifactId,
+    task_id: value.taskId,
+    kind: value.kind,
+    content_sha256: value.contentSha256,
+    summary: value.summary,
+  };
+}
+
+export async function fetchByqResearchGet(
+  backendUrl: string,
+  entityType: ResearchEntityType,
+  entityId: string,
+  fetcher: Fetcher = fetch,
+): Promise<ByqResearchResult> {
+  if (entityType !== "artifact") return requestResearchEntity(backendUrl, entityType, entityId, fetcher);
+  // The typed reference decides the true artifact type before any raw read. A
+  // signal_snapshot is only ever returned as a bounded safe summary; a
+  // reference failure never falls back to the raw artifact row.
+  const reference = await fetchArtifactReference(backendUrl, entityId, fetcher);
+  if (reference.error) return reference.error;
+  const ref = reference.reference!;
+  if (ref.type !== "signal_snapshot") return readTypedArtifactRow(backendUrl, ref, fetcher);
+  const snapshot = await readBoundedSignalSnapshot(backendUrl, {
+    artifactId: ref.artifactId,
+    contentSha256: ref.contentSha256,
+    status: ref.status,
+    ownerPrincipal: ref.ownerPrincipal,
+    workspaceId: ref.workspaceId,
+  }, fetcher);
+  if (snapshot.error) return snapshot.error;
+  return boundedResultPayload(signalSnapshotPayload(snapshot.value!));
 }
 
 export function fetchByqResearchTransition(
@@ -385,6 +610,49 @@ export async function fetchByqResearchLookup(
     idempotency_key: payload.idempotency_key, status: "outcome_unknown", retryable: false,
     next_action: "Preserve the original request identity. Query this same key later within the task budget; do not repeat the write or infer absence from a list.",
   }, false);
+  if (request.entity_type === "artifact") {
+    // The confirmed entity is a raw Artifact row. The typed reference decides
+    // the true type, and the raw row must agree on identity, parent task, kind,
+    // hash and status. A missing/wrong kind or any mismatch fails closed; the
+    // raw row is never returned for a signal_snapshot.
+    const entity = payload.entity as Record<string, unknown>;
+    const reference = await fetchArtifactReference(backendUrl, entity[entityKey] as string, fetcher);
+    if (reference.error) return reference.error;
+    const ref = reference.reference!;
+    if (entity.artifact_id !== ref.artifactId
+        || entity.task_id !== request.task_id
+        || entity.kind !== ref.type
+        || entity.status !== ref.status
+        || entity.content_sha256 !== ref.contentSha256) {
+      return invalidResearchResponse();
+    }
+    if (ref.type !== "signal_snapshot") return response;
+    const snapshot = await readBoundedSignalSnapshot(backendUrl, {
+      artifactId: ref.artifactId,
+      contentSha256: ref.contentSha256,
+      status: ref.status,
+      taskId: request.task_id,
+      ownerPrincipal: ref.ownerPrincipal,
+      workspaceId: ref.workspaceId,
+    }, fetcher);
+    if (snapshot.error) return snapshot.error;
+    const value = snapshot.value!;
+    return boundedResultPayload({
+      service: "beyondquant-mcp",
+      schema_version: payload.schema_version,
+      entity_type: payload.entity_type,
+      idempotency_key: payload.idempotency_key,
+      status: payload.status,
+      entity: {
+        artifact_id: value.artifactId,
+        task_id: value.taskId,
+        kind: value.kind,
+        status: value.status,
+        content_sha256: value.contentSha256,
+        summary: value.summary,
+      },
+    });
+  }
   return response;
 }
 

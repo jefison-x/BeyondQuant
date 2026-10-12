@@ -1,0 +1,19 @@
+{
+  "created_utc": "2026-10-12T14:44:27.773014+00:00",
+  "source_base": "ad5f7df1ad18e54dd0d9860d424241297187eef8",
+  "native_oc_session": "ses_ecf95347bffer2mY0gdEsvSbCq",
+  "reviewer": "independent Sol soft_real_reviewer",
+  "functional": "FAIL",
+  "architecture": "FAIL",
+  "tests": "NOT_RUN",
+  "issues": [
+    "Signal response forwards arbitrary reference metadata/ref and unknown owner/workspace",
+    "Summary omits required top-level records and nested integrity hash agreement",
+    "Strategy parameters/source/snapshot are not rejected"
+  ],
+  "action": "source-only corrections, then independent static re-review before new Root-controlled focused batch",
+  "first_batch_fail_control_preserved": true,
+  "product_inputs": 0,
+  "jobs": 0,
+  "production_mutation": false
+}
