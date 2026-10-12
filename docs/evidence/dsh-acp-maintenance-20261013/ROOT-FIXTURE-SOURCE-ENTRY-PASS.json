@@ -1,0 +1,19 @@
+{
+  "base_head": "753315a93e3ab011d27dbe37f55e04cc452a86e6",
+  "source_entry": "PASS",
+  "Tests": "NOT_RUN",
+  "reviewer": "independent Sol candidate_source_reviewer",
+  "Root": "PASS for bounded offline entry only",
+  "fixture_sha256": "3b72b8a39eebc4053c77345b3ce85a75c18215af32d3b22c5e293ed3bc97e159",
+  "prior_actual": "FAIL preserved: missing typed Artifact reference fixture; commands1-6 scoped PASS retained,7 FAIL,8-10 NOT_RUN",
+  "repair": "Exact typed reference then matching report row; strict reconciliation query; no application logic or authority change",
+  "next_batch": {
+    "commands_max": 5,
+    "total_seconds": 300,
+    "each_seconds": 70,
+    "Product_model_calls": 0,
+    "Jobs": 0,
+    "stop": "first unexpected failure"
+  },
+  "collector_fault": "Prior fault path PASS reused only, not an exact revised-file execution result"
+}

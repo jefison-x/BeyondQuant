@@ -1,0 +1,20 @@
+{
+  "utc": "2026-10-12T22:39:39.861239+00:00",
+  "root_verdict": "FAIL_STOP_PRESERVED",
+  "source_head": "753315a93e3ab011d27dbe37f55e04cc452a86e6",
+  "native_oc_session": "ses_ecdbbe7b7ffeWqju5Uo7UWC5vt",
+  "batch": "10 offline commands admitted,7 executed,6PASS1FAIL",
+  "first_failure": "state-notes normal fixture Artifact query expected success, actual isError true; typed reference route absent",
+  "substitute_mcp_tool_calls_before_failure": 37,
+  "cleanup": "child exitCode0/backend closed/cleanupErrors empty",
+  "remaining_commands": "NOT_RUN profile architecture/profile resolver/devcheck",
+  "models_product": 0,
+  "jobs": 0,
+  "production_operations": 0,
+  "decision": "no retry; complete all remaining test-fixture interface audit before source-only correction and new admission",
+  "logs_sha256": {
+    "state-notes.stderr": "b92970941ea68331ca48fa95d856d13a4410b6bf2ef94fbc481ec103f5891a65",
+    "state-notes.stdout": "8a05dea80ff0d62faa22623a89e2ff9b8ff890dedaedf76b3af293108c516f58",
+    "state-notes.command.json": "7e5f7b83af36973a4f321e2ceec2a2682c7e6b7b98904af830892e52fe0eec05"
+  }
+}

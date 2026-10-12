@@ -37,6 +37,7 @@ const researchTaskId = "task_" + "d".repeat(32);
 const otherResearchTaskId = "task_" + "9".repeat(32);
 const experimentId = "experiment_" + "d".repeat(32);
 const artifactId = "artifact_" + "d".repeat(32);
+const artifactContentSha256 = "f".repeat(64);
 const watchId = "researchwatch_" + "f".repeat(32);
 const originalKey = "original/key &中文";
 const backendExecutionNote = "BACKEND_EXECUTION_NOTE_MUST_NOT_PASS";
@@ -78,7 +79,7 @@ let researchHandoff: Record<string, unknown> | null = {
 let researchBodyOverride: "array" | "empty" | null = null;
 let researchReconcile: Record<string, unknown> | null = null;
 
-type Entry = { method: string; path: string; headers: Headers; body?: Record<string, unknown> };
+type Entry = { method: string; path: string; search: string; headers: Headers; body?: Record<string, unknown> };
 const requestLog: Entry[] = [];
 const unexpected: string[] = [];
 let acpSequence = 0;
@@ -129,7 +130,8 @@ async function handleBackendRequest(req: IncomingMessage, res: ServerResponse): 
   for await (const chunk of req) chunks.push(Buffer.from(chunk));
   const raw = Buffer.concat(chunks).toString("utf8");
   const body = raw ? JSON.parse(raw) as Record<string, unknown> : undefined;
-  const path = new URL(req.url ?? "/", "http://localhost").pathname;
+  const requestUrl = new URL(req.url ?? "/", "http://localhost");
+  const path = requestUrl.pathname;
   if (firstFixtureError) {
     rejectFixtureResponse(res);
     return;
@@ -138,7 +140,7 @@ async function handleBackendRequest(req: IncomingMessage, res: ServerResponse): 
     throw collectorFaultError;
   }
   const headers = new Headers(req.headers as Record<string, string>);
-  requestLog.push({ method: req.method ?? "", path, headers, body });
+  requestLog.push({ method: req.method ?? "", path, search: requestUrl.search, headers, body });
   const send = (status: number, value: unknown) => {
     if (firstFixtureError) {
       rejectFixtureResponse(res);
@@ -227,6 +229,9 @@ async function handleBackendRequest(req: IncomingMessage, res: ServerResponse): 
       blockers: backtestBlockers } });
   }
   if (path === "/v1/research/backtest-tasks/reconcile" && req.method === "GET" && backtestReconcile) {
+    assert.deepEqual([...requestUrl.searchParams.entries()], [
+      ["task_id", researchTaskId], ["idempotency_key", originalKey],
+    ], "backtest-task reconciliation accepts only its exact task and request key");
     return send(200, backtestReconcile);
   }
   if (path === `/v1/research/tasks/${researchTaskId}` && req.method === "GET") {
@@ -240,10 +245,20 @@ async function handleBackendRequest(req: IncomingMessage, res: ServerResponse): 
   if (path === `/v1/research/experiments/${experimentId}` && req.method === "GET") {
     return send(200, { experiment_id: experimentId, status: "running", task_id: researchTaskId });
   }
+  if (path === `/v1/research/artifacts/${artifactId}/reference` && req.method === "GET") {
+    return send(200, { artifact_id: artifactId, type: "report",
+      owner_principal: claims.owner_principal, workspace_id: claims.workspace_id,
+      validation: { status: "validated", content_sha256: artifactContentSha256 } });
+  }
   if (path === `/v1/research/artifacts/${artifactId}` && req.method === "GET") {
-    return send(200, { artifact_id: artifactId, task_id: researchTaskId, kind: "report" });
+    return send(200, { artifact_id: artifactId, task_id: researchTaskId, kind: "report",
+      status: "validated", content_sha256: artifactContentSha256,
+      owner_principal: claims.owner_principal, workspace_id: claims.workspace_id });
   }
   if (path === "/v1/research/submissions/reconcile" && req.method === "GET" && researchReconcile) {
+    assert.deepEqual([...requestUrl.searchParams.entries()], [
+      ["entity_type", "research_task"], ["idempotency_key", originalKey],
+    ], "research-task reconciliation accepts only its exact entity type and request key");
     return send(200, researchReconcile);
   }
   if (path === `/v1/research/submission-watches/${watchId}` && req.method === "GET") {
@@ -564,11 +579,34 @@ try {
     researchId = researchTaskId;
 
     // L23 experiment/artifact reads cannot acquire task handoff or notes.
-    for (const [type, id] of [["experiment", experimentId], ["artifact", artifactId]] as const) {
-      reply = await call("byq_research_get", { entity_type: type, entity_id: id });
-      assert.equal(reply.isError, false);
-      assert.ok(!("execution_note" in reply.value) && !("continuation_note" in reply.value) && !("handoff" in reply.value));
-    }
+    before = requestLog.length;
+    reply = await call("byq_research_get", { entity_type: "experiment", entity_id: experimentId });
+    assert.equal(reply.isError, false);
+    assert.deepEqual(requestLog.slice(before).map(entry => [entry.method, entry.path, entry.search]), [
+      ["GET", `/v1/research/experiments/${experimentId}`, ""],
+    ]);
+    assert.ok(!("execution_note" in reply.value) && !("continuation_note" in reply.value) && !("handoff" in reply.value));
+
+    before = requestLog.length;
+    reply = await call("byq_research_get", { entity_type: "artifact", entity_id: artifactId });
+    assert.equal(reply.isError, false);
+    assert.equal(reply.value.artifact_id, artifactId);
+    assert.equal(reply.value.task_id, researchTaskId);
+    assert.equal(reply.value.kind, "report");
+    assert.equal(reply.value.status, "validated");
+    assert.equal(reply.value.content_sha256, artifactContentSha256);
+    assert.equal(reply.value.owner_principal, claims.owner_principal);
+    assert.equal(reply.value.workspace_id, claims.workspace_id);
+    assert.ok(!("execution_note" in reply.value) && !("continuation_note" in reply.value)
+      && !("handoff" in reply.value) && !("task_note" in reply.value) && !("task_notes" in reply.value));
+    const artifactReads = requestLog.slice(before);
+    assert.deepEqual(artifactReads.map(entry => [entry.method, entry.path, entry.search]), [
+      ["GET", `/v1/research/artifacts/${artifactId}/reference`, ""],
+      ["GET", `/v1/research/artifacts/${artifactId}`, ""],
+    ], "non-signal Artifact must resolve typed reference before exactly one raw read");
+    assert.equal(artifactReads.some(entry => entry.method === "POST"), false);
+    assert.equal(artifactReads.some(entry => entry.path.includes("/summary")), false);
+    assert.equal(artifactReads.some(entry => entry.path.startsWith("/v1/research/signal-snapshots/")), false);
 
     // L24-L25 research key reconciliation.
     researchReconcile = { schema_version: "research-submission-reconciliation.v1", entity_type: "research_task",
