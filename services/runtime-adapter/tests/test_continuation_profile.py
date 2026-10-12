@@ -415,6 +415,81 @@ def test_unknown_provider_transport_result_blocks_any_second_external_post():
         provider_thread.join(timeout=2)
 
 
+def test_completion_journal_failure_preserves_unknown_outcome_not_known_block(monkeypatch):
+    """A failed durable completion row must keep the root unresolved (unknown).
+
+    The provider may have executed, but its completion receipt was not persisted,
+    so neither a known completion nor a "known blocked" outcome may be claimed.
+    """
+
+    gate = _gate()
+    real = gate._write_journal
+    calls = {"n": 0}
+
+    def flaky(receipt):
+        calls["n"] += 1
+        if calls["n"] >= 2:  # admitted write (#1) ok; completion write (#2) fails
+            raise RequestGateBlocked("storage_failed")
+        return real(receipt)
+
+    monkeypatch.setattr(gate, "_write_journal", flaky)
+    receipt = gate.before_request(_provider_body())
+    with pytest.raises(RequestGateBlocked, match="storage_failed"):
+        gate.complete(receipt, status=200, body=_usage_body(input_tokens=12, output_tokens=4))
+    assert gate.journal_failed is True
+    assert gate.has_unknown_outcome() is True
+    # Must not be reported as a known blocked request.
+    assert gate.has_blocked_request() is False
+    usage = gate.request_usage(tool_calls=0)
+    assert usage["admission_usage"]["provider_calls"] == 1
+    assert usage["actual_usage"]["usage_source"] == "unknown"
+    assert usage["actual_usage"]["completeness"] == "unknown"
+
+
+def test_journal_failure_distinguishes_predispatch_from_dispatched(monkeypatch):
+    """Pre-dispatch storage failure is a known refusal; dispatched completion
+    persistence failure is an unknown provider outcome. The two must not be
+    conflated, and no phantom provider call may be counted."""
+
+    # Pre-dispatch: the admission row write fails before any provider call.
+    gate = _gate()
+
+    def fail_first(receipt):
+        raise RequestGateBlocked("storage_failed")
+
+    monkeypatch.setattr(gate, "_write_journal", fail_first)
+    with pytest.raises(RequestGateBlocked, match="storage_failed"):
+        gate.before_request(_provider_body())
+    assert gate.journal_failed is True
+    assert gate.has_unknown_outcome() is False  # known refusal, never unknown
+    assert gate.has_blocked_request() is True
+    usage = gate.request_usage(tool_calls=0)
+    assert usage["admission_usage"]["provider_calls"] == 0  # no phantom call
+    assert usage["actual_usage"]["usage_source"] == "no_provider_calls"
+
+    # Dispatched: the completion row write fails after the provider call.
+    gate2 = _gate()
+    real2 = gate2._write_journal
+    calls = {"n": 0}
+
+    def fail_second(receipt):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise RequestGateBlocked("storage_failed")
+        return real2(receipt)
+
+    monkeypatch.setattr(gate2, "_write_journal", fail_second)
+    receipt = gate2.before_request(_provider_body())
+    with pytest.raises(RequestGateBlocked, match="storage_failed"):
+        gate2.complete(receipt, status=200, body=_usage_body())
+    assert gate2.journal_failed is True
+    assert gate2.has_unknown_outcome() is True  # unknown provider outcome
+    usage2 = gate2.request_usage(tool_calls=0)
+    assert usage2["admission_usage"]["provider_calls"] == 1
+    assert usage2["actual_usage"]["usage_source"] == "unknown"
+    assert usage2["actual_usage"]["completeness"] == "unknown"
+
+
 def test_closing_proxy_interrupts_an_active_slow_upstream_and_client():
     provider_started = threading.Event()
     provider_closed = threading.Event()
@@ -613,7 +688,7 @@ def test_slow_trickle_is_cut_off_by_total_deadline_and_proxy_close_is_bounded():
         provider_thread.join(timeout=2)
 
 
-def _closed_continuation_record(tmp_path, monkeypatch):
+def _closed_continuation_record(tmp_path, monkeypatch, gate=None):
     """A closed ACP continuation record with exact ACK + reconciled business calls."""
     from app.runtime import RuntimeAdapter, RuntimeGeneration, RuntimeSession
     from app.compat import compatibility_for_release
@@ -628,11 +703,16 @@ def _closed_continuation_record(tmp_path, monkeypatch):
         "reservation_id": reservation["reservation_id"],
         "execution_profile": reservation["execution_profile"],
         "request_limits": reservation["request_limits"], "ready": True}) + "\n")
-    gate = build_continuation_request_gate(
-        request_id=reservation["reservation_id"],
-        execution_profile=reservation["execution_profile"],
-        limits=reservation["request_limits"])
-    gate.before_request(_provider_body())
+    if gate is None:
+        gate = build_continuation_request_gate(
+            request_id=reservation["reservation_id"],
+            execution_profile=reservation["execution_profile"],
+            limits=reservation["request_limits"],
+            journal=tmp_path / "continuation-provider-request.jsonl")
+        receipt = gate.before_request(_provider_body())
+        gate.complete(receipt, status=200, body=_usage_body())
+        # The production proxy close seals the gate via release_waiters().
+        gate.release_waiters()
     root = "b" * 32
     generation = RuntimeGeneration(
         generation_id="generation-" + "c" * 32, session_id="sess",
@@ -676,3 +756,148 @@ def test_budget_receipt_closes_only_with_drain_and_exact_root_ack(tmp_path, monk
     record.continuation_request_gate._receipts.append(
         {"phase": "completed", "forwarded": False, "reason": "provider_outcome_unknown"})
     assert adapter._budget_receipt(record)["status"] == "outcome_unknown"
+    # Counter-example 6: a failed durable completion journal keeps it unresolved:
+    # provider outcome/usage must stay unknown, never a known settled/blocked result.
+    adapter2, record2, _root2 = _closed_continuation_record(tmp_path, monkeypatch)
+    assert adapter2._budget_receipt(record2)["status"] == "settled"
+    record2.budget_receipts.clear()
+    assert record2.continuation_request_gate.has_unknown_outcome() is False
+    record2.continuation_request_gate._journal_failed = True
+    record2.continuation_request_gate._outcome_unknown = True
+    assert record2.continuation_request_gate.has_unknown_outcome() is True
+    assert adapter2._budget_receipt(record2)["status"] == "outcome_unknown"
+    usage = record2.continuation_request_gate.request_usage(tool_calls=0)
+    assert usage["actual_usage"]["completeness"] == "unknown"
+
+
+def test_budget_receipt_predispatch_journal_failure_is_known_needs_attention(tmp_path, monkeypatch):
+    """Contrast with the completion-failure outcome_unknown case.
+
+    A PRE-dispatch journal failure is a known rejection (no provider POST was
+    issued) and must settle as needs_attention, never as a known completion and
+    never as an unknown provider outcome.
+    """
+
+    from app.research_request_gate import build_continuation_request_gate
+    from packages.contracts.continuation_request import profile_binding, request_limits
+
+    reservation = _reservation()
+    gate = build_continuation_request_gate(
+        request_id=reservation["reservation_id"],
+        execution_profile=profile_binding(), limits=request_limits(),
+        journal=tmp_path / "predispatch-provider-request.jsonl")
+
+    def fail_write(receipt):
+        raise RequestGateBlocked("storage_failed")
+
+    monkeypatch.setattr(gate, "_write_journal", fail_write)
+    with pytest.raises(RequestGateBlocked, match="storage_failed"):
+        gate.before_request(_provider_body())
+    gate.release_waiters()  # production proxy close seals the gate
+    assert gate.has_unknown_outcome() is False
+    assert gate.has_blocked_request() is True
+    assert gate.settlement_state() == "known_blocked"
+    adapter, record, _root = _closed_continuation_record(tmp_path, monkeypatch, gate=gate)
+    receipt = adapter._budget_receipt(record)
+    assert receipt["status"] == "settled"
+    assert receipt["outcome"] == "needs_attention"
+    assert receipt["request_usage"]["actual_usage"]["usage_source"] == "no_provider_calls"
+
+
+def test_budget_receipt_unpaired_admitted_request_is_outcome_unknown(tmp_path, monkeypatch):
+    """An admitted request with no completion must not settle the F6 receipt."""
+
+    from app.research_request_gate import build_continuation_request_gate
+    from packages.contracts.continuation_request import profile_binding, request_limits
+
+    reservation = _reservation()
+    gate = build_continuation_request_gate(
+        request_id=reservation["reservation_id"],
+        execution_profile=profile_binding(), limits=request_limits(),
+        journal=tmp_path / "unpaired-provider-request.jsonl")
+    gate.before_request(_provider_body())  # admitted, never completed
+    gate.release_waiters()
+    assert gate.settlement_state() == "unknown_or_unpaired"
+    adapter, record, _root = _closed_continuation_record(tmp_path, monkeypatch, gate=gate)
+    assert adapter._budget_receipt(record)["status"] == "outcome_unknown"
+
+
+def test_budget_receipt_known_nonforwarded_completion_is_needs_attention(tmp_path, monkeypatch):
+    """A provably non-forwarded completion is known (needs_attention), not unknown."""
+
+    from app.research_request_gate import build_continuation_request_gate
+    from packages.contracts.continuation_request import profile_binding, request_limits
+
+    reservation = _reservation()
+    gate = build_continuation_request_gate(
+        request_id=reservation["reservation_id"],
+        execution_profile=profile_binding(), limits=request_limits(),
+        journal=tmp_path / "nonforwarded-provider-request.jsonl")
+    receipt = gate.before_request(_provider_body())  # declared max_tokens 8
+    gate.complete(receipt, status=200, body=_usage_body(output_tokens=9))
+    gate.release_waiters()
+    assert gate.settlement_state() == "known_blocked"
+    adapter, record, _root = _closed_continuation_record(tmp_path, monkeypatch, gate=gate)
+    settlement = adapter._budget_receipt(record)
+    assert settlement["status"] == "settled"
+    assert settlement["outcome"] == "needs_attention"
+
+
+def test_terminal_projection_reports_real_gate_receipt_reasons(tmp_path, monkeypatch):
+    """F6 terminal projection derives gate_reason from real-shape gate receipts.
+
+    A fail-closed client disconnect (phase=aborted) and a pre-dispatch
+    storage_failed rejection must both surface their true reason; the
+    collector's hand-built finished rows cannot prove this path.
+    """
+
+    from tests.f6_runtime_diagnostics import terminal_projection
+    from app.runtime import RuntimeGeneration, RuntimeSession
+
+    def record_for(gate):
+        reservation = _reservation()
+        journal = tmp_path / "continuation-tool-guard.jsonl"
+        journal.write_text(json.dumps({
+            "schema_version": "continuation-tool-guard.v1",
+            "reservation_id": reservation["reservation_id"],
+            "execution_profile": reservation["execution_profile"],
+            "request_limits": reservation["request_limits"], "ready": True}) + "\n")
+        run_id = "b" * 32
+        session_id = "byq-session-" + "a" * 32
+        generation = RuntimeGeneration(
+            generation_id="generation-" + "c" * 32, session_id=session_id,
+            native_session_id="native", process_closed=True, process_closing=False,
+            continuation_budget=reservation, budget_journal=journal, budget_run_id=run_id,
+            continuation_request_gate=gate, continuation_proxy_closed=True)
+        return RuntimeSession(
+            session_id=session_id, trace_id="trace", boot_id="d" * 32,
+            current_generation=generation, domain_call_sequence=1,
+            domain_call_drained_sequence=1, settlement_receipt={"root_run_id": run_id},
+            history=[{"kind": "session.result", "payload": {"run_id": run_id}}]), run_id
+
+    # Fail-closed disconnect FIRST, then a normal completion: without the
+    # selection change the projection would fall back to the last completed row
+    # (within_request_budget) and never surface the disconnect.
+    gate = _gate()
+    with pytest.raises(RequestGateBlocked, match="client_disconnected"):
+        gate.before_request(_provider_body(), abort_if=lambda: False)
+    receipt_a = gate.before_request(_provider_body())
+    gate.complete(receipt_a, status=200, body=_usage_body())
+    assert [row["phase"] for row in gate.receipts()] == ["aborted", "admitted", "completed"]
+    record, run_id = record_for(gate)
+    row = terminal_projection(None, record, run_id, "completed")
+    assert row is not None and row["gate_reason"] == "client_disconnected"
+
+    # Real rejected storage_failed row produced by the gate's failed journal write.
+    gate2 = _gate()
+
+    def fail_write(receipt):
+        raise RequestGateBlocked("storage_failed")
+
+    monkeypatch.setattr(gate2, "_write_journal", fail_write)
+    with pytest.raises(RequestGateBlocked, match="storage_failed"):
+        gate2.before_request(_provider_body())
+    assert [row["phase"] for row in gate2.receipts()] == ["rejected"]
+    record2, run_id2 = record_for(gate2)
+    row2 = terminal_projection(None, record2, run_id2, "completed")
+    assert row2 is not None and row2["gate_reason"] == "storage_failed"

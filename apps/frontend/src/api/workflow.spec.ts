@@ -60,6 +60,18 @@ describe("workflow projections", () => {
     }
   });
 
+  it("permits an explicit new instruction after a known budget exhaustion without a blind retry", () => {
+    const events = [event(1, "session.started", {}),
+      event(2, "session.failed", { code: "budget-exhausted", retryable: false })];
+    const message = workflowOutcomes(events, "session-1")[0].message;
+    expect(message).toContain("预算");
+    expect(message).toContain("明确重述");
+    expect(message).not.toContain("直接重试");
+    expect(workflowRunState(events)).toEqual(expect.objectContaining({
+      running: false, failed: true, retryable: false, failureCode: "budget-exhausted",
+    }));
+  });
+
   it("folds cards by stable identity and highest revision", () => {
     const common = {
       schema_version: "workflow-card.v1",

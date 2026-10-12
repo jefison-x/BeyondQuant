@@ -440,7 +440,9 @@ def test_unknown_f6_provider_result_does_not_inherit_previous_native_reuse_readi
     unknown_receipt = record.terminal_receipts[unknown_root]
     gate = record.continuation_request_gate
     assert gate is not None
-    gate.has_unknown_outcome = lambda: True
+    with gate._lock:
+        gate._outcome_unknown = True
+    assert gate.settlement_state() == "unknown_or_unpaired"
 
     # The user-visible root may complete, but a provider-side unknown is a
     # separate fail-closed fact and cannot inherit the preceding root's reuse.
@@ -982,7 +984,11 @@ def test_ordinary_submit_loopback_gate_cap_posts0_and_root_journal(slot_runtime,
     }
     try:
         _create(runtime, "ord-loopback", "workspace_slot_a")
-        _run_to_idle(runtime, "ord-loopback", "hello")
+        root = runtime.submit_prompt("ord-loopback", "hello", conversation_context=[])
+        # A request refused by a known ADR-0106 budget limit is a fully known
+        # budget exhaustion: the failed root is still truthfully failed, but the
+        # live conversation stays promptable for an explicit new instruction.
+        _wait_status(runtime, "ord-loopback", SessionStatus.IDLE)
     finally:
         upstream.shutdown()
         upstream.server_close()
@@ -992,12 +998,69 @@ def test_ordinary_submit_loopback_gate_cap_posts0_and_root_journal(slot_runtime,
     # Root journal association: the product-turn request journal was written for
     # this exact root.
     record = runtime._get("ord-loopback")
+    assert record.status == SessionStatus.IDLE
     journal = Path(record.recovery_cwd) / (
         f"product-turn-provider-request-{record.process_root_id}.jsonl")
     assert journal.is_file()
     rows = [json.loads(line) for line in journal.read_text().splitlines() if line.strip()]
     assert any(row.get("phase") == "rejected" and row.get("reason") == "tool_payload_limit"
                for row in rows)
+    gate = record.continuation_request_gate
+    assert gate is not None
+    assert gate.settlement_state() == "known_blocked"
+    assert gate.known_budget_block_reason() == "tool_payload_limit"
+    terminal = [event for event in record.history
+                if event["kind"] in {"session.result", "session.failed"}]
+    assert [event["kind"] for event in terminal] == ["session.failed"]
+    assert terminal[0]["payload"]["run_id"] == root
+    assert terminal[0]["payload"]["code"] == "budget-exhausted"
+    assert terminal[0]["payload"]["retryable"] is False
+    # Exact ACK + proven cleanup still close the failed root.
+    receipt = record.terminal_receipts[root]
+    assert runtime.acknowledge_terminal("ord-loopback", receipt) == {"receipt": receipt}
+    assert not record.reuse_native_session_ready
+
+
+def test_ordinary_acp_product_slot_fails_closed_when_provider_gate_is_missing(slot_runtime):
+    """The ACP Product slot cannot publish a completed root without its gate."""
+
+    runtime, compatibility, _registry_value = slot_runtime
+    compatibility.block_prompt = True
+    _create(runtime, "ord-missing-gate", "workspace_slot_a")
+    root = runtime.submit_prompt("ord-missing-gate", "hello", conversation_context=[])
+    assert compatibility.prompt_started.wait(timeout=1.0)
+    record = runtime._get("ord-missing-gate")
+    with record.lock:
+        run = record.active_run
+        assert run is not None
+        generation = record.current_generation
+        assert generation is not None
+        assert generation.continuation_request_gate is not None
+        assert generation.continuation_request_proxy is not None
+        # Model a missing runtime gate while keeping the real proxy available to
+        # the terminal cleanup path; the closed proxy flag must not replace the
+        # required gate receipt.
+        generation.continuation_request_gate = None
+
+    try:
+        compatibility.allow_prompt_return.set()
+        assert run.watchdog_stop.wait(timeout=3.0), "prompt worker did not finish"
+        with record.lock:
+            assert record.active_run is None
+            assert record.status == SessionStatus.FAILED
+            assert generation.continuation_proxy_closed is True
+            assert generation.state == "failed"
+            terminal = [event for event in record.history
+                        if event["kind"] in {"session.result", "session.failed"}]
+            assert [event["kind"] for event in terminal] == ["session.failed"]
+            assert terminal[0]["payload"]["run_id"] == root
+            assert terminal[0]["payload"]["code"] == "model-run-failed"
+            assert terminal[0]["payload"]["retryable"] is False
+    finally:
+        compatibility.allow_prompt_return.set()
+        assert run.watchdog_stop.wait(timeout=3.0), "prompt worker leaked after gate removal"
+        with record.lock:
+            assert record.active_run is None
 
 
 def test_ordinary_submit_loopback_gate_unknown_blocks_next_http(slot_runtime, monkeypatch):
@@ -1060,7 +1123,10 @@ def test_ordinary_submit_loopback_gate_unknown_blocks_next_http(slot_runtime, mo
     }
     try:
         _create(runtime, "ord-unknown", "workspace_slot_a")
-        _run_to_idle(runtime, "ord-unknown", "hello")
+        root = runtime.submit_prompt("ord-unknown", "hello", conversation_context=[])
+        # ADR-0106 §4: an unknown provider outcome fails the root closed instead
+        # of reporting a successful turn before the outcome is accounted.
+        _wait_status(runtime, "ord-unknown", SessionStatus.FAILED)
     finally:
         upstream.shutdown()
         upstream.server_close()
@@ -1069,3 +1135,421 @@ def test_ordinary_submit_loopback_gate_unknown_blocks_next_http(slot_runtime, mo
     # no further upstream post.
     assert disconnect_posts == [1]
     assert statuses[-1] == 429
+    record = runtime._get("ord-unknown")
+    terminal = [event for event in record.history
+                if event["kind"] in {"session.result", "session.failed"}]
+    assert [event["kind"] for event in terminal] == ["session.failed"]
+    assert terminal[0]["payload"]["run_id"] == root
+    # An unprovable provider outcome never qualifies as a known budget block:
+    # the root stays failed and fenced (no conversation reopening).
+    assert record.status == SessionStatus.FAILED
+    assert terminal[0]["payload"]["code"] == "model-run-failed"
+    assert terminal[0]["payload"]["retryable"] is False
+
+
+def _inject_gate_rejection(gate, reason: str) -> None:
+    """Synthetic known/unknown block on the real request-scoped gate.
+
+    No provider request is dispatched; this records one pre-dispatch refusal so
+    the terminal decision classifies the real sealed gate.
+    """
+
+    with gate._lock:
+        gate._receipts.append({
+            "schema_version": "continuation-request-gate.v1",
+            "request_id": gate.request_id,
+            "phase": "rejected", "admitted": False, "reason": reason,
+            "input_bytes": 1, "at_ms": 1,
+        })
+
+
+def test_known_budget_block_keeps_conversation_promptable_and_never_reuses_failed_native(slot_runtime):
+    runtime, compatibility, _registry_value = slot_runtime
+    workspace = "workspace_slot_a"
+    compatibility.block_prompt = True
+    _create(runtime, "ord-budget", workspace)
+    first_root = runtime.submit_prompt(
+        "ord-budget", "first explicit instruction", conversation_context=[])
+    assert compatibility.prompt_started.wait(timeout=1.0)
+    record = runtime._get("ord-budget")
+    with record.lock:
+        gate = record.current_generation.continuation_request_gate
+    assert gate is not None
+    first_harness = compatibility.harnesses[-1]
+    first_native = record.runtime_session_id
+    _inject_gate_rejection(gate, "total_tool_payload_limit")
+    compatibility.allow_prompt_return.set()
+    _wait_status(runtime, "ord-budget", SessionStatus.IDLE)
+
+    # Root outcome is truthfully failed; the conversation stays promptable.
+    assert record.status == SessionStatus.IDLE
+    assert gate.settlement_state() == "known_blocked"
+    assert gate.known_budget_block_reason() == "total_tool_payload_limit"
+    terminal = [event for event in record.history
+                if event["kind"] in {"session.result", "session.failed"}]
+    assert [event["kind"] for event in terminal] == ["session.failed"]
+    assert terminal[0]["payload"]["code"] == "budget-exhausted"
+    # The failed turn itself is never retryable/replayed; only an explicit new
+    # user instruction is accepted.
+    assert terminal[0]["payload"]["retryable"] is False
+
+    # Until the exact terminal ACK + proven cleanup, a new root is fenced.
+    with pytest.raises(SessionConflict, match="not yet acknowledged"):
+        runtime.submit_prompt("ord-budget", "second explicit instruction", conversation_context=[])
+    assert record.process_root_id == first_root
+
+    runtime.acknowledge_terminal("ord-budget", record.terminal_receipts[first_root])
+    assert not record.reuse_native_session_ready
+
+    # An explicit new instruction is admitted as a fresh root with a fresh native
+    # session, new generation and its own gate; the failed turn is never replayed.
+    compatibility.block_prompt = False
+    compatibility.prompt_started.clear()
+    second_root = runtime.submit_prompt(
+        "ord-budget", "second explicit instruction", conversation_context=[])
+    _wait_status(runtime, "ord-budget", SessionStatus.IDLE)
+    second_harness = compatibility.successful_starts[-1]
+    assert second_root != first_root
+    assert compatibility.resumed == []
+    assert second_harness is not first_harness
+    assert second_harness.environment["BYQ_ROOT_RUN_ID"] == second_root
+    assert second_harness.environment["BYQ_DSH_RUN_ID"] != first_harness.environment["BYQ_DSH_RUN_ID"]
+    assert second_harness.prompts == ["second explicit instruction"]
+    assert record.process_root_id == second_root
+    assert record.runtime_session_id != first_native
+    assert record.continuation_request_gate is not gate
+    runtime.acknowledge_terminal("ord-budget", record.terminal_receipts[second_root])
+
+
+@pytest.mark.parametrize("reason", ["storage_failed", "cancelled", "model_route_unqualified",
+                                    "provider_outcome_unknown"])
+def test_non_budget_refusal_stays_failed_and_fenced(slot_runtime, reason):
+    runtime, compatibility, _registry_value = slot_runtime
+    workspace = "workspace_slot_a"
+    compatibility.block_prompt = True
+    _create(runtime, "ord-refused", workspace)
+    root = runtime.submit_prompt("ord-refused", "first", conversation_context=[])
+    assert compatibility.prompt_started.wait(timeout=1.0)
+    record = runtime._get("ord-refused")
+    with record.lock:
+        gate = record.current_generation.continuation_request_gate
+    assert gate is not None
+    _inject_gate_rejection(gate, reason)
+    if reason == "storage_failed":
+        with gate._lock:
+            gate._journal_failed = True
+    if reason == "provider_outcome_unknown":
+        with gate._lock:
+            gate._outcome_unknown = True
+    compatibility.allow_prompt_return.set()
+    _wait_status(runtime, "ord-refused", SessionStatus.FAILED)
+    assert record.status == SessionStatus.FAILED
+    assert gate.known_budget_block_reason() is None
+    terminal = [event for event in record.history
+                if event["kind"] in {"session.result", "session.failed"}]
+    assert [event["kind"] for event in terminal] == ["session.failed"]
+    assert terminal[0]["payload"]["code"] == "model-run-failed"
+    assert terminal[0]["payload"]["retryable"] is False
+    assert record.process_root_id == root
+
+
+def test_known_budget_block_requires_a_closed_proxy(slot_runtime, monkeypatch):
+    # If the provider proxy close is unconfirmed, the known budget block must NOT
+    # reopen the conversation: the root stays failed and fenced.
+    runtime, compatibility, _registry_value = slot_runtime
+    from app import runtime as runtime_module
+
+    captured = {}
+    original_proxy_cls = runtime_module.RequestGateProxy
+
+    class Spy(original_proxy_cls):
+        def __init__(self, *args, **kwargs):
+            captured["proxy"] = self
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(runtime_module, "RequestGateProxy", Spy)
+    compatibility.block_prompt = True
+    _create(runtime, "ord-budget-noclose", "workspace_slot_a")
+    root = runtime.submit_prompt("ord-budget-noclose", "first", conversation_context=[])
+    assert compatibility.prompt_started.wait(timeout=1.0)
+    record = runtime._get("ord-budget-noclose")
+    with record.lock:
+        gate = record.current_generation.continuation_request_gate
+    assert gate is not None
+    _inject_gate_rejection(gate, "total_tool_payload_limit")
+    proxy = captured["proxy"]
+    original_close = proxy.close
+
+    def failing_close():
+        # Fail exactly once so the runtime records an unconfirmed close; later
+        # cleanup (ACK path / fixture teardown) uses the real close.
+        proxy.close = original_close
+        raise RuntimeError("synthetic proxy close failure")
+
+    proxy.close = failing_close
+    compatibility.allow_prompt_return.set()
+    _wait_status(runtime, "ord-budget-noclose", SessionStatus.FAILED)
+    assert record.status == SessionStatus.FAILED
+    assert record.current_generation.continuation_proxy_closed is False
+    terminal = [event for event in record.history
+                if event["kind"] in {"session.result", "session.failed"}]
+    assert [event["kind"] for event in terminal] == ["session.failed"]
+    assert terminal[0]["payload"]["code"] == "model-run-failed"
+    assert terminal[0]["payload"]["retryable"] is False
+    # Admission stays fenced until the exact terminal ACK.
+    with pytest.raises(SessionConflict, match="not yet acknowledged"):
+        runtime.submit_prompt("ord-budget-noclose", "second", conversation_context=[])
+    assert record.process_root_id == root
+
+
+def test_postdispatch_unforwarded_deadline_stays_failed(slot_runtime):
+    # A dispatched request whose completion was not forwarded (deadline_exceeded
+    # can arise post-dispatch) is a broader case than this slice's pre-dispatch
+    # refusal and must never reopen the conversation.
+    runtime, compatibility, _registry_value = slot_runtime
+    compatibility.block_prompt = True
+    _create(runtime, "ord-post-deadline", "workspace_slot_a")
+    root = runtime.submit_prompt("ord-post-deadline", "first", conversation_context=[])
+    assert compatibility.prompt_started.wait(timeout=1.0)
+    record = runtime._get("ord-post-deadline")
+    with record.lock:
+        gate = record.current_generation.continuation_request_gate
+    assert gate is not None
+    with gate._lock:
+        gate._receipts.extend([
+            {"schema_version": "continuation-request-gate.v1",
+             "request_id": gate.request_id,
+             "phase": "admitted", "admitted": True, "call": 1, "attempt": 1},
+            {"schema_version": "continuation-request-gate.v1",
+             "request_id": gate.request_id,
+             "phase": "completed", "admitted": True, "call": 1, "attempt": 1,
+             "forwarded": False, "reason": "deadline_exceeded", "status": 200},
+        ])
+        gate._provider_calls = 1
+        gate._attempts = 1
+    compatibility.allow_prompt_return.set()
+    _wait_status(runtime, "ord-post-deadline", SessionStatus.FAILED)
+    assert record.status == SessionStatus.FAILED
+    assert gate.known_budget_block_reason() is None
+    terminal = [event for event in record.history
+                if event["kind"] in {"session.result", "session.failed"}]
+    assert [event["kind"] for event in terminal] == ["session.failed"]
+    assert terminal[0]["payload"]["code"] == "model-run-failed"
+    assert terminal[0]["payload"]["retryable"] is False
+    assert record.process_root_id == root
+
+
+# --------------------------------------------------------------------------- #
+# Exception-path known budget block (retained actual batch1 signature)
+# --------------------------------------------------------------------------- #
+
+_BATCH1_JOURNAL_FIXTURE = (
+    Path(__file__).with_name("fixtures") / "dsh_batch1_known_budget_journal.jsonl"
+)
+
+
+def _capture_gate(runtime_module, monkeypatch, *, fail_proxy_close: bool = False) -> dict:
+    captured: dict = {"state": {"fail": fail_proxy_close}}
+    original = runtime_module.RequestGateProxy
+
+    class Spy(original):
+        def __init__(self, gate, *args, **kwargs):
+            captured["gate"] = gate
+            captured["proxy"] = self
+            super().__init__(gate, *args, **kwargs)
+            if fail_proxy_close:
+                real_close = self.close
+                state = captured["state"]
+
+                def close() -> None:
+                    if state["fail"]:
+                        raise RuntimeError("synthetic proxy close failure")
+                    real_close()
+
+                self.close = close
+
+    monkeypatch.setattr(runtime_module, "RequestGateProxy", Spy)
+    return captured
+
+
+def _batch1_receipts(request_id: str) -> list[dict]:
+    rows = [json.loads(line) for line in _BATCH1_JOURNAL_FIXTURE.read_text().splitlines()
+            if line.strip()]
+    for row in rows:
+        row["request_id"] = request_id
+    return rows
+
+
+def _arm_batch1_gate(gate) -> None:
+    rows = _batch1_receipts(gate.request_id)
+    with gate._lock:
+        gate._receipts = rows
+        gate._provider_calls = sum(1 for row in rows if row.get("phase") == "completed")
+        gate._attempts = gate._provider_calls
+
+
+def _submit_raising_acp_error(runtime, compatibility, monkeypatch, session, *,
+                              fail_proxy_close: bool = False, arm_gate=None, arm_run=None) -> dict:
+    """Drive the real exception branch with the retained batch1 AcpRpcError signature."""
+
+    from app import runtime as runtime_module
+    from app.compat.dsh_acp import AcpRpcError
+
+    captured = _capture_gate(runtime_module, monkeypatch, fail_proxy_close=fail_proxy_close)
+
+    def raising_run(prepared, content, _on_notification):
+        gate = captured["gate"]
+        _arm_batch1_gate(gate)
+        if arm_gate is not None:
+            arm_gate(gate)
+        if arm_run is not None:
+            arm_run(runtime._get(session))
+        compatibility.prompt_started.set()
+        raise AcpRpcError("session/prompt", -32000)
+
+    monkeypatch.setattr(compatibility, "run_prepared_prompt", raising_run)
+    _create(runtime, session, "workspace_slot_a")
+    runtime.submit_prompt(session, "first explicit instruction", conversation_context=[])
+    assert compatibility.prompt_started.wait(timeout=1.0)
+    return captured
+
+
+def _terminal_payloads(record) -> list[dict]:
+    return [event["payload"] for event in record.history
+            if event["kind"] in {"session.result", "session.failed"}]
+
+
+def test_known_budget_exception_path_reopens_conversation(slot_runtime, monkeypatch):
+    runtime, compatibility, _registry_value = slot_runtime
+    original_run = compatibility.run_prepared_prompt
+    _submit_raising_acp_error(runtime, compatibility, monkeypatch, "ord-exc-budget")
+    _wait_status(runtime, "ord-exc-budget", SessionStatus.IDLE)
+    record = runtime._get("ord-exc-budget")
+    first_root = record.process_root_id
+    assert record.status == SessionStatus.IDLE
+    payloads = _terminal_payloads(record)
+    assert len(payloads) == 1
+    assert payloads[0]["code"] == "budget-exhausted"
+    assert payloads[0]["retryable"] is False
+    assert payloads[0]["error"] == "AcpRpcError"
+    assert payloads[0]["run_id"] == first_root
+
+    # Old root stays failed; exact ACK + cleanup fence the next root.
+    with pytest.raises(SessionConflict, match="not yet acknowledged"):
+        runtime.submit_prompt("ord-exc-budget", "second explicit instruction", conversation_context=[])
+    runtime.acknowledge_terminal("ord-exc-budget", record.terminal_receipts[first_root])
+    assert not record.reuse_native_session_ready
+
+    # A fresh native new root is admitted; the failed input is never replayed.
+    monkeypatch.setattr(compatibility, "run_prepared_prompt", original_run)
+    compatibility.prompt_started.clear()
+    second_root = runtime.submit_prompt(
+        "ord-exc-budget", "second explicit instruction", conversation_context=[])
+    _wait_status(runtime, "ord-exc-budget", SessionStatus.IDLE)
+    assert second_root != first_root
+    assert compatibility.resumed == []
+    assert compatibility.successful_starts[-1].prompts == ["second explicit instruction"]
+    runtime.acknowledge_terminal("ord-exc-budget", record.terminal_receipts[second_root])
+
+
+def test_exception_path_unknown_outcome_stays_failed(slot_runtime, monkeypatch):
+    runtime, compatibility, _registry_value = slot_runtime
+
+    def arm_gate(gate):
+        with gate._lock:
+            gate._outcome_unknown = True
+
+    _submit_raising_acp_error(runtime, compatibility, monkeypatch, "ord-exc-unknown",
+                              arm_gate=arm_gate)
+    _wait_status(runtime, "ord-exc-unknown", SessionStatus.FAILED)
+    record = runtime._get("ord-exc-unknown")
+    assert record.status == SessionStatus.FAILED
+    payloads = _terminal_payloads(record)
+    assert len(payloads) == 1
+    assert payloads[0].get("code") != "budget-exhausted"
+    assert payloads[0]["error"] == "AcpRpcError"
+
+
+def test_exception_path_storage_failure_stays_failed(slot_runtime, monkeypatch):
+    runtime, compatibility, _registry_value = slot_runtime
+
+    def arm_gate(gate):
+        with gate._lock:
+            gate._journal_failed = True
+
+    _submit_raising_acp_error(runtime, compatibility, monkeypatch, "ord-exc-storage",
+                              arm_gate=arm_gate)
+    _wait_status(runtime, "ord-exc-storage", SessionStatus.FAILED)
+    record = runtime._get("ord-exc-storage")
+    assert record.status == SessionStatus.FAILED
+    assert _terminal_payloads(record)[0].get("code") != "budget-exhausted"
+
+
+def test_exception_path_domain_stop_stays_failed(slot_runtime, monkeypatch):
+    runtime, compatibility, _registry_value = slot_runtime
+
+    def arm_run(record):
+        record.active_run.domain_stop_code = "synthetic-domain-stop"
+
+    _submit_raising_acp_error(runtime, compatibility, monkeypatch, "ord-exc-domain",
+                              arm_run=arm_run)
+    _wait_status(runtime, "ord-exc-domain", SessionStatus.FAILED)
+    record = runtime._get("ord-exc-domain")
+    assert record.status == SessionStatus.FAILED
+    assert _terminal_payloads(record)[0].get("code") != "budget-exhausted"
+
+
+def test_exception_path_unconfirmed_proxy_close_stays_failed(slot_runtime, monkeypatch):
+    runtime, compatibility, _registry_value = slot_runtime
+    captured = _submit_raising_acp_error(runtime, compatibility, monkeypatch, "ord-exc-noclose",
+                                         fail_proxy_close=True)
+    try:
+        _wait_status(runtime, "ord-exc-noclose", SessionStatus.FAILED)
+        record = runtime._get("ord-exc-noclose")
+        assert record.status == SessionStatus.FAILED
+        assert record.current_generation.continuation_proxy_closed is False
+        assert _terminal_payloads(record)[0].get("code") != "budget-exhausted"
+    finally:
+        captured["state"]["fail"] = False
+
+
+def test_private_predicate_rejects_non_ordinary_and_fenced_scopes(slot_runtime):
+    from types import SimpleNamespace
+
+    from app.research_request_gate import ResearchRequestGate
+    from packages.contracts.product_turn_request import product_turn_limits, product_turn_profile
+
+    runtime, _compatibility, _registry_value = slot_runtime
+    gate = ResearchRequestGate(product_turn_limits(), execution_profile=product_turn_profile(),
+                               request_id="product-turn-predicate")
+    with gate._lock:
+        gate._receipts = [{
+            "schema_version": "continuation-request-gate.v1",
+            "request_id": "product-turn-predicate", "phase": "rejected",
+            "admitted": False, "reason": "total_tool_payload_limit",
+        }]
+        gate._gate_closed = True
+    generation = SimpleNamespace(generation_id="gen-a", continuation_proxy_closed=True)
+    run = SimpleNamespace(domain_stop_code=None)
+    ok_record = SimpleNamespace(current_generation=generation, continuation_request_gate=gate,
+                                continuation_budget=None)
+    assert runtime._known_ordinary_budget_block(ok_record, "gen-a", run) is True
+    # F6 continuation budget is not the ordinary path.
+    assert runtime._known_ordinary_budget_block(
+        SimpleNamespace(current_generation=generation, continuation_request_gate=gate,
+                        continuation_budget={"reservation_id": "r"}), "gen-a", run) is False
+    # Unconfirmed proxy close.
+    assert runtime._known_ordinary_budget_block(
+        SimpleNamespace(current_generation=SimpleNamespace(generation_id="gen-a",
+                                                           continuation_proxy_closed=False),
+                        continuation_request_gate=gate, continuation_budget=None),
+        "gen-a", run) is False
+    # Domain stop.
+    assert runtime._known_ordinary_budget_block(
+        ok_record, "gen-a", SimpleNamespace(domain_stop_code="x")) is False
+    # Stale generation.
+    assert runtime._known_ordinary_budget_block(ok_record, "gen-b", run) is False
+    # Missing gate.
+    assert runtime._known_ordinary_budget_block(
+        SimpleNamespace(current_generation=generation, continuation_request_gate=None,
+                        continuation_budget=None), "gen-a", run) is False

@@ -101,7 +101,8 @@ const FAILURE_MESSAGES: Record<string, string> = {
   "runtime-no-progress-timeout": "本轮在较长时间内没有形成可展示的结论，系统为避免持续占用已停止。已完成的读取步骤仍保留，可以直接重试。",
   "runtime-run-timeout": "本轮总处理时间超过运行上限，系统已停止任务。对话内容已保留，可以直接重试或缩小分析范围。",
   "runtime-subagent-timeout": "本轮专项分析超过等待上限，系统已停止任务。对话内容已保留，可以直接重试。",
-  "model-run-failed": "模型服务本轮未能完成回答。对话内容已保留，可以直接重试；若持续失败，请联系管理员。",
+  "model-run-failed": "模型服务本轮未能完成回答。对话内容已保留；请新建会话继续，若持续失败请联系管理员。",
+  "budget-exhausted": "本轮已达到模型预算上限，系统已停止本轮且不会自动重试。对话仍可继续；请明确重述要执行的具体指令后再次发送。",
 };
 
 /** Historical outcomes are operational records, never assistant answers or commands. */

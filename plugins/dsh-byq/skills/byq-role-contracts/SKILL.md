@@ -30,17 +30,25 @@ original submission never happened. Do not recreate a task with a new key merely
 because its original receipt is missing. This read-only discovery does not grant
 background continuation or restore a terminal Agent run's authorization.
 
-Use the specialized DSH delegation tools for focused work. Start a BYQ agent
-run before domain work, then call `byq_agent_authorize` before a domain action
-and `byq_agent_audit` with the bounded outcome afterward.
+Use the specialized DSH delegation tools for focused work. Before the first DSH
+delegation of a turn (and before any BYQ business tool), the coordinator first
+calls `byq_agent_run_start` with role_id `quant_orchestrator` and a stable
+idempotency key and confirms this turn's root AgentRun receipt is active with
+its native binding confirmed (a pending_binding receipt is not enough), so the
+root's signed native AgentRun binding exists before any delegate child spawns;
+only after that bound and active binding does it spawn the child. A turn with no
+BYQ business tool and no DSH delegation needs no registration. Then call `byq_agent_authorize` before a domain action and
+`byq_agent_audit` with the bounded outcome afterward.
 
 Registration may return `pending_binding`; it is not an active authorization.
 For pending or unknown registration outcomes, query `byq_agent_run_start` with
 `receipt_only=true` and the ORIGINAL idempotency key. This mode is read-only.
 Never replace the key or start another run to evade a pending/unknown receipt.
 If it remains pending, report the wait and stop; do not poll indefinitely.
-Each new runtime turn needs its own registration; a previous terminal run cannot
-authorize new work. Domain jobs and approvals remain independent of run closure.
+Only a pending or unknown outcome of the same attempt reuses its ORIGINAL key via
+`receipt_only=true`; a new runtime turn needs its own new registration key, and a
+previous terminal run (and its key) cannot authorize or bind new work. Domain
+jobs and approvals remain independent of run closure.
 
 A DSH runtime session identifier such as `byq-session-*` is not a BYQ Agent
 run identifier. Only the `agent_run_*` value returned by
@@ -54,7 +62,9 @@ for reading a research task. Authorization must precede the matching tool call.
 DSH delegation tools such as `byq_delegate_market_research` are not BYQ domain
 authorization actions: delegation is checked by the role catalogue's `delegate_to`
 and the child's own AgentRun registration. Do not ask `byq_agent_authorize` for
-those DSH-local tools. A denied action must not execute or be retried under an alias. Audit every distinct authorized
+those DSH-local tools. This does not exempt the coordinator's own parent
+`byq_agent_run_start` before delegating: the child's parent comes from the
+existing signed native lineage, never a guessed parent id. A denied action must not execute or be retried under an alias. Audit every distinct authorized
 domain action separately with its actual success or failure. Authorization is not a
 successful domain result, and one later audit must not be described as covering
 several unaudited calls.

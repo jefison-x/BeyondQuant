@@ -146,6 +146,24 @@ class AcpAuthoritativeVersionTests(unittest.TestCase):
         identity = json.loads(PRODUCT_IDENTITY.read_text(encoding="utf-8"))
         self.assertEqual(identity["composition_hash"], "sha256:" + _sha256(PRODUCT_PATCH))
 
+    def test_ordinary_business_delegates_are_foreground_one_shot(self) -> None:
+        # ADR-0082/0094 child-lifecycle fallback: every ordinary Product business
+        # delegate runs foreground/one-shot so a single-turn delegation awaits its
+        # child and returns the result, instead of defaulting to continuable
+        # background and ending the root before the child completes. The bounded
+        # read-only research-judgment role keeps the same foreground policy, and
+        # no delegate may remain continuable in this profile.
+        text = PRODUCT_PATCH.read_text(encoding="utf-8")
+        for tool_id in DELEGATE_CHILD_ROLES:
+            block = text.split(f"- id: {tool_id}", 1)[1].split("    - id: ", 1)[0]
+            self.assertIn("enableRunInBackground: false", block, tool_id)
+            self.assertIn("backgroundMode: one-shot", block, tool_id)
+            self.assertNotIn("continuable", block, tool_id)
+        self.assertNotIn("backgroundMode: continuable", text)
+        judgment = text.split("- id: research-judgment-turn", 1)[1]
+        self.assertIn("enableRunInBackground: false", judgment)
+        self.assertIn("backgroundMode: one-shot", judgment)
+
 
 if __name__ == "__main__":
     unittest.main()

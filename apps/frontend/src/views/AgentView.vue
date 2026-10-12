@@ -51,6 +51,11 @@ let lastStreamEventAt = 0;
 const terminalSessionId = ref("");
 const terminalSessionMessage = "该会话已结束。历史消息仍可查看；请新建会话继续。";
 const terminalSessionCodes = new Set(["agent_session_interrupted", "agent_session_failed"]);
+// A known, fully-settled model-budget exhaustion closes the failed root but
+// leaves the live conversation promptable. The browser must not treat it as a
+// terminal session and must not attempt a failed-run resume; an explicit new
+// user instruction is submitted directly as a fresh root.
+const budgetExhaustedCode = "budget-exhausted";
 
 const activeSession = computed(() => agent.sessions.find((item) => item.session_id === agent.activeSessionId));
 const userDisplayName = computed(() => auth.user?.display_name?.trim() || "我");
@@ -392,7 +397,9 @@ async function send(value = prompt.value) {
   try {
     if (!agent.activeSessionId) await persistNewSession();
     pendingSession = agent.activeSessionId;
-    if (replayRun.value.failed) await resumeSession(agent.activeSessionId, auth.token);
+    if (replayRun.value.failed && replayRun.value.failureCode !== budgetExhaustedCode) {
+      await resumeSession(agent.activeSessionId, auth.token);
+    }
     pendingMessage = { role: "user", text: content, createdAt: new Date().toISOString() };
     agent.addMessage(pendingMessage);
     localRunStartedAt.value = new Date().toISOString();

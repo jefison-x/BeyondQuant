@@ -206,6 +206,110 @@ export function fetchByqResearchTaskCreate(
   return watchedResearchCreate(backendUrl, 'research_task', "/v1/research/tasks", request, fetcher);
 }
 
+const RESEARCH_EXECUTION_NOTE =
+  "Business task status and handoff describe current state, not permission. This query grants no execution permission; follow the current trusted Root instruction and obtain required authorization before any allowed action.";
+
+// Fixed bounded explanations selected only from a legal handoff state/reason
+// pair. Maps are own-entry lookups, so hostile keys such as __proto__,
+// constructor or toString are never treated as facts. Missing, malformed,
+// foreign-ID or contradictory state/reason yields no note instead of copying
+// arbitrary handoff or error prose into instructions.
+const RESEARCH_HANDOFF_STATE_NOTES = new Map<string, string>([
+  ["waiting_job", "Task is waiting on an existing Domain Job. This query does not advance or resume it."],
+  ["waiting_approval", "An approval is pending. Request that human approval outside this query; this query does not grant it."],
+  ["approval_continuation_queued", "Approval continuation is queued. This query does not dispatch or resume it."],
+  ["continuation_queued", "Continuation is queued. This query does not dispatch or resume it."],
+  ["completed", "This reports a confirmed task status; validate same-task evidence before claiming completion."],
+  ["failed", "This reports the task status; this query does not change or retry it."],
+  ["cancelled", "This reports the task status; this query does not change or resume it."],
+]);
+
+const RESEARCH_HANDOFF_REASON_NOTES = new Map<string, string>([
+  ["completion_evidence_missing", "Completion evidence is missing. Reconcile existing same-task evidence; this query does not replay or complete work."],
+  ["evidence_limit_reached", "Referenced evidence exceeded the bounded snapshot. Reconcile with the existing receipts; this query does not replay writes."],
+  ["continuation_result_unconfirmed", "A continuation result is unconfirmed. Inspect the existing receipts; this query does not replay it."],
+  ["approval_binding_invalid", "An approval binding is invalid. Reconcile existing approval references; this query does not re-approve."],
+  ["approval_continuation_unconfirmed", "An approval continuation is unconfirmed. Inspect the existing receipts; this query does not resubmit it."],
+  ["task_execution_unconfirmed", "Task execution is unconfirmed. This query does not prove, resume, or attribute execution."],
+  ["conversation_binding_missing", "The conversation binding is missing. This query does not repair or recreate it."],
+  ["no_registered_executor", "No registered executor is available. This query does not register or start one."],
+  ["permission_missing", "A required permission is missing. This query does not grant it."],
+  ["permission_revoked", "A required permission was revoked. This query does not restore it."],
+  ["permission_expired", "A required permission expired. This query does not renew it."],
+]);
+
+// Legal state/reason pair sets derived from the actual Backend projection.
+const RESEARCH_NULL_REASON_STATES = new Set([
+  "waiting_job", "waiting_approval", "approval_continuation_queued",
+  "continuation_queued", "completed", "failed", "cancelled",
+]);
+const RESEARCH_PERMISSION_REASONS = new Set(["permission_missing", "permission_revoked", "permission_expired"]);
+const RESEARCH_RECONCILE_REASONS = new Set([
+  "completion_evidence_missing", "evidence_limit_reached", "continuation_result_unconfirmed",
+  "approval_binding_invalid", "approval_continuation_unconfirmed",
+  "permission_missing", "permission_revoked", "permission_expired",
+]);
+const RESEARCH_BLOCKED_REASONS = new Set(["conversation_binding_missing", "no_registered_executor"]);
+
+function researchContinuationNote(value: Record<string, unknown>, taskId: string): string | undefined {
+  const handoff = value.handoff;
+  if (handoff === null || typeof handoff !== "object" || Array.isArray(handoff)) return undefined;
+  const entry = handoff as Record<string, unknown>;
+  if (entry.schema_version !== "research-task-handoff.v1") return undefined;
+  if (entry.task_id !== taskId) return undefined;
+  const state = typeof entry.state === "string" ? entry.state : undefined;
+  if (state === undefined) return undefined;
+  // A legal reason is a string or null; any other type is malformed.
+  const rawReason = entry.reason;
+  if (rawReason !== null && typeof rawReason !== "string") return undefined;
+  const reason: string | null = typeof rawReason === "string" ? rawReason : null;
+  if (RESEARCH_NULL_REASON_STATES.has(state)) {
+    return reason === null ? RESEARCH_HANDOFF_STATE_NOTES.get(state) : undefined;
+  }
+  if (state === "conversation_active") {
+    return reason === "task_execution_unconfirmed" ? RESEARCH_HANDOFF_REASON_NOTES.get(reason) : undefined;
+  }
+  if (state === "needs_permission") {
+    return reason !== null && RESEARCH_PERMISSION_REASONS.has(reason)
+      ? RESEARCH_HANDOFF_REASON_NOTES.get(reason) : undefined;
+  }
+  if (state === "needs_reconciliation") {
+    return reason !== null && RESEARCH_RECONCILE_REASONS.has(reason)
+      ? RESEARCH_HANDOFF_REASON_NOTES.get(reason) : undefined;
+  }
+  if (state === "blocked") {
+    return reason !== null && RESEARCH_BLOCKED_REASONS.has(reason)
+      ? RESEARCH_HANDOFF_REASON_NOTES.get(reason) : undefined;
+  }
+  return undefined;
+}
+
+// Notes attach only to a successful exact research_task entity_id GET whose
+// parsed task identity matches the requested id. The byq_research_get watch
+// branch returns its validated watch envelope directly and never reaches this
+// helper; only the existing watchedResearchCreate confirmed-registration reread
+// reuses this entity GET and therefore receives the same notes.
+function withResearchTaskNotes(response: ByqResearchResult, taskId: string): ByqResearchResult {
+  if (response.isError) return response;
+  const text = response.content[0]?.text;
+  if (typeof text !== "string") return response;
+  let payload: unknown;
+  try { payload = JSON.parse(text); } catch { return response; }
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return response;
+  const record = payload as Record<string, unknown>;
+  if (record.task_id !== taskId) return response;
+  const note = researchContinuationNote(record, taskId);
+  // Reserve continuation_note for this fixed whitelist. Never pass through a
+  // Backend value when handoff is absent, malformed or bound to another task.
+  const safeRecord = { ...record };
+  delete safeRecord.continuation_note;
+  return result({
+    ...safeRecord,
+    execution_note: RESEARCH_EXECUTION_NOTE,
+    ...(note ? { continuation_note: note } : {}),
+  }, false);
+}
+
 const ARTIFACT_STATUSES = ["draft", "validated", "superseded"];
 const CONTENT_SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const SIGNAL_SUMMARY_SCHEMA_VERSION = "signal-snapshot-summary.v1";
@@ -432,6 +536,10 @@ export async function fetchByqResearchGet(
   entityId: string,
   fetcher: Fetcher = fetch,
 ): Promise<ByqResearchResult> {
+  if (entityType === "research_task") {
+    const response = await requestResearchEntity(backendUrl, entityType, entityId, fetcher);
+    return withResearchTaskNotes(response, entityId);
+  }
   if (entityType !== "artifact") return requestResearchEntity(backendUrl, entityType, entityId, fetcher);
   // The typed reference decides the true artifact type before any raw read. A
   // signal_snapshot is only ever returned as a bounded safe summary; a

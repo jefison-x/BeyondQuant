@@ -1480,6 +1480,194 @@ def test_soft_cancel_is_scoped_to_current_run_and_returns_to_idle(adapter: Runti
     adapter.release_session("s-1")
 
 
+def test_soft_cancel_fails_closed_the_request_gate(adapter: RuntimeAdapter) -> None:
+    from app.research_request_gate import ResearchRequestGate
+    from packages.contracts.product_turn_request import product_turn_limits, product_turn_profile
+
+    adapter.create_session("s-gate", "t-gate")
+    adapter.submit_prompt("s-gate", "first")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+    record = adapter._get("s-gate")
+    gate = ResearchRequestGate(
+        product_turn_limits(), execution_profile=product_turn_profile(),
+        request_id="product-turn-test")
+    record.current_generation.continuation_request_gate = gate
+    assert gate.cancelled is False
+    assert adapter.cancel_session("s-gate", "soft")["status"] == SessionStatus.CANCELLING
+    # A soft cancel must fail-closed the provider gate so a request already
+    # serialized on the single upstream slot cannot dispatch after the cancel.
+    assert gate.cancelled is True
+    FakeHarness.allow_run.set()
+    wait_for_status(adapter, "s-gate", SessionStatus.IDLE)
+    adapter.release_session("s-gate")
+
+
+def test_soft_cancel_commits_gate_cancel_in_same_lock_as_cancelling(adapter: RuntimeAdapter) -> None:
+    """Controlled interleaving: A completes exactly at the soft-cancel boundary.
+
+    The queued B must still be refused, proving CANCELLING and gate.cancel take
+    effect in one record.lock critical section (no window where a freed slot is
+    dispatched after the cancel is committed).
+    """
+
+    from app.research_request_gate import ResearchRequestGate, RequestGateBlocked
+    from packages.contracts.product_turn_request import product_turn_limits, product_turn_profile
+
+    adapter.create_session("s-gate", "t-gate")
+    adapter.submit_prompt("s-gate", "first")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+    record = adapter._get("s-gate")
+    gate = ResearchRequestGate(
+        product_turn_limits(), execution_profile=product_turn_profile(),
+        request_id="product-turn-test")
+    record.current_generation.continuation_request_gate = gate
+    body = json.dumps({"model": "deepseek-v4.1-flash", "max_tokens": 8,
+                       "messages": [{"role": "user", "content": "synthetic"}]},
+                      separators=(",", ":")).encode()
+    receipt_a = gate.before_request(body)  # A owns the single slot
+    assert receipt_a["admitted"] is True
+    outcome: dict = {}
+
+    def wait_b() -> None:
+        try:
+            gate.before_request(body)
+            outcome["b"] = "admitted"
+        except RequestGateBlocked as error:
+            outcome["b"] = error.reason
+
+    waiter = threading.Thread(target=wait_b, daemon=True)
+    waiter.start()
+    deadline = time.monotonic() + 3
+    while gate.waiting == 0 and time.monotonic() < deadline:
+        time.sleep(0.005)
+    assert gate.waiting == 1  # B is queued at the gate
+
+    real_lock = record.lock
+    fired = {"once": False}
+
+    class _BoundaryLock:
+        """RLock-compatible wrapper; fires once when the outermost holder exits."""
+
+        def __init__(self, real_lock: object) -> None:
+            self._real = real_lock
+            self._depth = 0
+
+        def __enter__(self) -> "_BoundaryLock":
+            self._real.acquire()
+            self._depth += 1
+            return self
+
+        def __exit__(self, *exc: object) -> bool:
+            self._depth -= 1
+            if self._depth == 0 and not fired["once"]:
+                fired["once"] = True
+                # A completes exactly at the cancel boundary, freeing the slot
+                # and waking B. The commit must already be in effect.
+                gate.complete(receipt_a, status=200,
+                              body=b'{"usage":{"prompt_tokens":1,"completion_tokens":1}}')
+                boundary = time.monotonic() + 3
+                while outcome.get("b") is None and time.monotonic() < boundary:
+                    time.sleep(0.005)
+            self._real.release()
+            return False
+
+    record.lock = _BoundaryLock(real_lock)
+    try:
+        assert adapter.cancel_session("s-gate", "soft")["status"] == SessionStatus.CANCELLING
+    finally:
+        record.lock = real_lock
+    waiter.join(5)
+    assert not waiter.is_alive()
+    assert outcome["b"] == "cancelled"
+    admitted = [row for row in gate.receipts() if row.get("phase") == "admitted"]
+    assert len(admitted) == 1  # only A was ever admitted -> zero new upstream POST
+    FakeHarness.allow_run.set()
+    wait_for_status(adapter, "s-gate", SessionStatus.IDLE)
+    adapter.release_session("s-gate")
+
+
+def test_hard_cancel_commits_gate_cancel_in_same_lock_as_interrupted(adapter: RuntimeAdapter) -> None:
+    """Controlled interleaving: A completes exactly at the hard-cancel boundary.
+
+    The queued B must still be refused, proving INTERRUPTED and gate.cancel take
+    effect in one record.lock critical section (no window where a freed slot is
+    dispatched before the proxy/process close).
+    """
+
+    from app.research_request_gate import ResearchRequestGate, RequestGateBlocked
+    from packages.contracts.product_turn_request import product_turn_limits, product_turn_profile
+
+    adapter.create_session("s-hard", "t-hard")
+    adapter.submit_prompt("s-hard", "first")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+    record = adapter._get("s-hard")
+    gate = ResearchRequestGate(
+        product_turn_limits(), execution_profile=product_turn_profile(),
+        request_id="product-turn-test")
+    record.current_generation.continuation_request_gate = gate
+    body = json.dumps({"model": "deepseek-v4.1-flash", "max_tokens": 8,
+                       "messages": [{"role": "user", "content": "synthetic"}]},
+                      separators=(",", ":")).encode()
+    receipt_a = gate.before_request(body)  # A owns the single slot
+    assert receipt_a["admitted"] is True
+    outcome: dict = {}
+
+    def wait_b() -> None:
+        try:
+            gate.before_request(body)
+            outcome["b"] = "admitted"
+        except RequestGateBlocked as error:
+            outcome["b"] = error.reason
+
+    waiter = threading.Thread(target=wait_b, daemon=True)
+    waiter.start()
+    deadline = time.monotonic() + 3
+    while gate.waiting == 0 and time.monotonic() < deadline:
+        time.sleep(0.005)
+    assert gate.waiting == 1  # B is queued at the gate
+
+    real_lock = record.lock
+    fired = {"once": False}
+
+    class _BoundaryLock:
+        def __init__(self, real_lock: object) -> None:
+            self._real = real_lock
+            self._depth = 0
+
+        def __enter__(self) -> "_BoundaryLock":
+            self._real.acquire()
+            self._depth += 1
+            return self
+
+        def __exit__(self, *exc: object) -> bool:
+            self._depth -= 1
+            if self._depth == 0 and not fired["once"]:
+                fired["once"] = True
+                # A completes exactly at the cancel boundary, freeing the slot
+                # and waking B. The hard-cancel commit must already be in effect.
+                gate.complete(receipt_a, status=200,
+                              body=b'{"usage":{"prompt_tokens":1,"completion_tokens":1}}')
+                boundary = time.monotonic() + 3
+                while outcome.get("b") is None and time.monotonic() < boundary:
+                    time.sleep(0.005)
+            self._real.release()
+            return False
+
+    record.lock = _BoundaryLock(real_lock)
+    try:
+        status = adapter.cancel_session("s-hard", "hard")["status"]
+    finally:
+        record.lock = real_lock
+    assert status == SessionStatus.INTERRUPTED
+    assert gate.cancelled is True
+    waiter.join(5)
+    assert not waiter.is_alive()
+    assert outcome["b"] == "cancelled"
+    admitted = [row for row in gate.receipts() if row.get("phase") == "admitted"]
+    assert len(admitted) == 1  # only A was ever admitted -> zero new upstream POST
+    adapter.close()
+
+
 @pytest.mark.parametrize(
     "value",
     ["../escape", "/absolute", "", "a" * (MAX_IDENTIFIER_LENGTH + 1), "has space", "ümlaut"],

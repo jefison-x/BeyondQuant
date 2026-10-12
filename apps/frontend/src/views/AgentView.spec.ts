@@ -297,6 +297,35 @@ describe("AgentView", () => {
     wrapper.unmount();
   });
 
+  it("permits an explicit new instruction after a known budget exhaustion without a failed-run resume", async () => {
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const view = wrapper.vm as unknown as {
+      prompt: string;
+      send: () => Promise<void>;
+      handleEvent: (event: Record<string, unknown>, generation: number) => void;
+    };
+
+    view.prompt = "第一次请求";
+    await view.send();
+    view.handleEvent({
+      trace_id: "trace-1", session_id: "session-1", sequence: 2,
+      timestamp: "2026-08-28T00:00:02Z", kind: "session.failed", source: "runtime-adapter",
+      payload: { code: "budget-exhausted", retryable: false },
+    }, 1);
+    await flushPromises();
+
+    expect(wrapper.find(".assistant-processing").exists()).toBe(false);
+    expect(wrapper.find(".composer-stop").exists()).toBe(false);
+
+    view.prompt = "第二次明确指令";
+    await view.send();
+    expect(resumeSession).not.toHaveBeenCalled();
+    expect(submitTurn).toHaveBeenLastCalledWith("session-1", "第二次明确指令", "");
+    expect(wrapper.text()).not.toContain("请新建会话继续");
+    wrapper.unmount();
+  });
+
   it("does not duplicate output when replay overlaps the live stream", async () => {
     const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
     await flushPromises();

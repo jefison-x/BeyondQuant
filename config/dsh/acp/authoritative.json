@@ -11,11 +11,11 @@
   "profiles": {
     "product": {
       "path": "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-product.patch.yml",
-      "sha256": "39d0d9f25c2490e6ef0ca65d7b88dadc69739812a438c692fc63f894073c81a1"
+      "sha256": "10396c708651b24e3012df51e13cbb0e1eaf8178cda9547c91d682c189eacd45"
     },
     "product_identity": {
       "path": "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-product.identity.json",
-      "sha256": "f009d2bc2392966ba08464774a01c2db49bfe7d0c2adeb6f1107c3fd7bd401b9"
+      "sha256": "0e1f5494f99b4fba433f5f86653b6848377372c7308561bceaaddc3ea3f2f69b"
     },
     "judgment": {
       "path": "plugins/dsh-byq/profiles/acp-0.2.0-rc.2/byq-research-judgment.patch.yml",

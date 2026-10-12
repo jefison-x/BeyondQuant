@@ -62,7 +62,10 @@ from .continuation_budget import (
 )
 from packages.contracts.product_turn_request import product_turn_limits, product_turn_profile
 from .continuation_budget import PRODUCT_TURN_PROVIDER, PRODUCT_TURN_MODEL
-from .research_request_gate import RequestGateProxy, build_continuation_request_gate
+from .research_request_gate import (
+    KNOWN_BLOCKED, SETTLED_OK, UNKNOWN_OR_UNPAIRED,
+    RequestGateProxy, build_continuation_request_gate,
+)
 from .normalization import NormalizationState, normalize_runtime_observation
 
 
@@ -778,6 +781,35 @@ class RuntimeAdapter:
             return True
         return False
 
+    def _known_ordinary_budget_block(
+        self, record: RuntimeSession, generation_id: str, run: ActiveRun,
+    ) -> bool:
+        """One strict predicate for a known ordinary Product pre-dispatch budget block.
+
+        True only for the ordinary ACP Product path (no F6 continuation budget)
+        when the exact current generation's provider proxy is provably closed, no
+        domain stop occurred, and the sealed request gate's ONLY refusals are
+        ADR-0106 pre-dispatch budget limits. It never bypasses the
+        storage/unknown/unpaired/process fence and never inspects ``_cancelled``
+        (a budget rejection itself sets it). Callers must hold ``record.lock``.
+        """
+
+        if not (self._acp_product_slots and record.continuation_budget is None):
+            return False
+        generation = record.current_generation
+        if (generation is None or generation.generation_id != generation_id
+                or generation.continuation_proxy_closed is not True):
+            return False
+        if run.domain_stop_code:
+            return False
+        gate = record.continuation_request_gate
+        if gate is None:
+            return False
+        try:
+            return gate.known_budget_block_reason() is not None
+        except Exception:  # noqa: BLE001 — damaged receipts fail closed
+            return False
+
     def _close_generation(self, record: RuntimeSession, generation_id: str, state: str) -> None:
         """Update the active generation state after a fenced terminal."""
 
@@ -1469,6 +1501,21 @@ class RuntimeAdapter:
                     record.status = SessionStatus.IDLE
                     self._emit(record, "session.result.discarded", "runtime-adapter", {"reason": "soft-cancelled", "run_id": run.run_id})
                     return
+                if self._known_ordinary_budget_block(record, generation_id, run):
+                    # The exception was raised under a known, fully-settled
+                    # ordinary Product pre-dispatch budget refusal (the retained
+                    # batch1 AcpRpcError signature). The root stays truthfully
+                    # failed, the original error is retained, and the live
+                    # conversation stays promptable for an explicit new
+                    # instruction. The failed turn is never replayed and no
+                    # native/child state is reused.
+                    run.model_failure_code = 'budget-exhausted'
+                    record.status = SessionStatus.IDLE
+                    self._emit(record, "session.failed", "runtime-adapter", {
+                        "error": type(exc).__name__, "code": "budget-exhausted",
+                        "retryable": False, "run_id": run.run_id})
+                    self._close_generation(record, generation_id, "budget_exhausted")
+                    return
                 record.status = SessionStatus.FAILED
                 self._emit(record, "session.failed", "runtime-adapter", {"error": type(exc).__name__, "run_id": run.run_id})
                 self._close_generation(record, generation_id, "failed")
@@ -1512,8 +1559,53 @@ class RuntimeAdapter:
                 if budget_blocked:
                     run.model_failure_code = 'model-run-failed'
                     run.model_failure_retryable = False
-            if finish_reason != "completed" or run.domain_stop_code or budget_blocked:
-                record.status = SessionStatus.FAILED
+            # Terminal provider settlement: a returned SDK call is a successful
+            # root only when the request-scoped provider gate is provably
+            # settled. The proxy close above only seals the gate; it neither
+            # joins an in-flight handler nor proves that every admitted request
+            # has a unique matching forwarded completion. The classification is
+            # evaluated atomically (one gate lock) so a late receipt cannot slip
+            # between separate checks. A physical settlement failure closes the
+            # generation `failed`, distinct from a provider-budget exhaustion.
+            settlement_failed = False
+            settlement_gate = record.continuation_request_gate
+            settlement_required = (
+                self._acp_product_slots
+                or record.continuation_budget is not None
+                or settlement_gate is not None
+            )
+            proxy_closed = False
+            if settlement_required:
+                generation = record.current_generation
+                proxy_closed = (generation is not None
+                                and generation.continuation_proxy_closed is True)
+                try:
+                    settlement_state = (settlement_gate.settlement_state()
+                                        if settlement_gate is not None
+                                        else UNKNOWN_OR_UNPAIRED)
+                except Exception:  # noqa: BLE001 — damaged receipts fail closed
+                    settlement_state = UNKNOWN_OR_UNPAIRED
+                if not proxy_closed or settlement_state != SETTLED_OK:
+                    settlement_failed = True
+                    run.model_failure_code = 'model-run-failed'
+                    run.model_failure_retryable = False
+            # A known sealed ordinary Product budget exhaustion keeps the root
+            # truthfully failed but leaves the live conversation promptable for an
+            # explicit new instruction (Clean Break ADR-002: a failed turn may be
+            # followed by an explicit new user instruction; the failed turn is
+            # never replayed). The single strict predicate also governs the
+            # exception terminal below. Unknown/unpaired, storage/journal failure,
+            # cancellation, invalid-route/auth, client disconnect, post-dispatch
+            # provider anomalies and unconfirmed proxy close never qualify.
+            known_budget_block = self._known_ordinary_budget_block(record, generation_id, run)
+            if (finish_reason != "completed" or run.domain_stop_code
+                    or budget_blocked or settlement_failed):
+                reopen_for_new_instruction = known_budget_block and not budget_blocked
+                if reopen_for_new_instruction:
+                    run.model_failure_code = 'budget-exhausted'
+                    record.status = SessionStatus.IDLE
+                else:
+                    record.status = SessionStatus.FAILED
                 self._emit(
                     record,
                     "session.failed",
@@ -1525,7 +1617,8 @@ class RuntimeAdapter:
                 # ADR-0085 P0: a failed/budget-exhausted terminal updates the
                 # active generation state with the accurate outcome.
                 self._close_generation(
-                    record, generation_id, "budget_exhausted" if budget_blocked else "failed")
+                    record, generation_id,
+                    "budget_exhausted" if (budget_blocked or known_budget_block) else "failed")
             else:
                 record.status = SessionStatus.IDLE
                 self._emit(
@@ -1553,9 +1646,27 @@ class RuntimeAdapter:
                 record.status = SessionStatus.CANCELLING
                 cancelled_harness = record.harness
                 cancelled_native_session = record.runtime_session_id
+                # Commit the CANCELLING state and fail-close the request-scoped
+                # provider gate in the SAME record.lock critical section, so a
+                # request already serialized on the single upstream slot cannot
+                # be dispatched in a window after CANCELLING is marked. The lock
+                # order is record.lock -> gate lock; the gate never acquires
+                # record.lock, so this cannot deadlock.
+                cancelled_gate = record.continuation_request_gate
+                if cancelled_gate is not None:
+                    cancelled_gate.cancel()
             else:
                 run.hard_cancelled = True
                 run.watchdog_stop.set()
+                # Commit the INTERRUPTED state and fail-close the request-scoped
+                # provider gate in the SAME record.lock critical section, so a
+                # request queued on the single upstream slot cannot be dispatched
+                # in the window before the proxy/process close below (which only
+                # runs after this lock is released). Lock order is
+                # record.lock -> gate lock; the gate never acquires record.lock.
+                cancelled_gate = record.continuation_request_gate
+                if cancelled_gate is not None:
+                    cancelled_gate.cancel()
                 # Gateway projects a hard cancel as a public conversation end.
                 # Persist that decision with the exact terminal ACK; an idle
                 # release intent must never reopen this conversation.
@@ -2663,21 +2774,30 @@ class RuntimeAdapter:
                     not isinstance(record.settlement_receipt, dict)
                     or record.settlement_receipt.get('root_run_id') != record.budget_run_id))):
             return {'reservation_id': reservation_id, 'status': 'outcome_unknown'}
-        # ADR-0105 §5: an unprovable outbound result keeps the execution receipt
-        # unresolved; it must never settle as a known outcome.
-        if record.continuation_request_gate is not None and record.continuation_request_gate.has_unknown_outcome():
+        # ADR-0105 §5: an unprovable outbound result or an admitted request with
+        # no unique matching completion keeps the execution receipt unresolved;
+        # it must never settle as a known outcome. The same atomic
+        # classification used for the terminal decision is reused here so an
+        # in-flight/unpaired request not yet written as unknown cannot settle.
+        gate = record.continuation_request_gate
+        if gate is None:
             return {'reservation_id': reservation_id, 'status': 'outcome_unknown'}
         try:
+            state = gate.settlement_state()
+        except Exception:  # noqa: BLE001 — damaged receipts stay unresolved
+            return {'reservation_id': reservation_id, 'status': 'outcome_unknown'}
+        if state == UNKNOWN_OR_UNPAIRED:
+            return {'reservation_id': reservation_id, 'status': 'outcome_unknown'}
+        gate_blocked = state == KNOWN_BLOCKED
+        try:
             tool_receipt = read_request_guard(record.budget_journal, reservation, terminal=True)
-            gate = record.continuation_request_gate
-            if gate is None:
-                raise ValueError('continuation provider gate is missing')
             request_usage = gate.request_usage(tool_calls=tool_receipt['tool_calls'])
             violations = exceeded_request_limits(request_usage)
             completed = any(event['kind'] == 'session.result'
                 and event['payload'].get('run_id') == record.budget_run_id for event in record.history)
             needs_attention = bool(
-                not completed or tool_receipt['blocked_reason'] or gate.has_blocked_request() or violations
+                not completed or tool_receipt['blocked_reason'] or gate_blocked
+                or violations
             )
             receipt = {
                 'reservation_id': reservation_id,
