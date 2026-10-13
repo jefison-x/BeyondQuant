@@ -33,7 +33,7 @@ _DELEGATE_SOURCE_SHA256 = "26a1e804aab4c6f9cb53a670c63b817fc8d9409569e6d68eda6fd
 _PRODUCT_RUNNER_SOURCE_SHA256 = "abc8992083bca202d4e66354f254fb1ea095cd409b62fcbdc2d3b2e6b6912f31"
 _OUTCOME = "byq-acp-foreground-child-observer.v1"
 _BATCH_SECONDS = 240
-_NATIVE_READER_SHA256 = "bdbb671b8bbae65641ab04faa9094b5bec711264b48a80b4c961c7a0f938ac8e"
+_NATIVE_READER_SHA256 = "bb9de5ea6017c5c19a747c84742322a64fd7cceee734ec1b90fd8484e818775d"
 _MAX_SAFE_SEQUENCE = (1 << 53) - 1
 _ROOT_CALLS = ("byq_agent_run_start", "byq_delegate_market_research")
 _CHILD_CALLS = (
@@ -256,7 +256,7 @@ def _validate_provider_journal(raw: bytes, root: str, generation: str) -> dict:
 
 
 def _native_reader_source() -> str:
-    return r'''import ctypes,hashlib,json,os,pathlib,re,stat,sys
+    return r'''import ctypes,hashlib,json,math,os,pathlib,re,stat,sys
 cwd=pathlib.Path(sys.argv[1]); workspace,root_id,child_id,marker,root_run,child_run,producer=sys.argv[2:]
 if os.geteuid()!=10002 or os.getegid()!=10002: raise SystemExit("native_reader_identity_mismatch")
 if not cwd.is_absolute() or cwd.resolve()!=cwd or not cwd.is_relative_to(pathlib.Path("/var/lib/byq/dsh-sessions/dsh-v0.2.0-rc.2-acp")/workspace): raise SystemExit("native_cwd_scope_invalid")
@@ -278,7 +278,27 @@ def pairs(items):
   if k in d: raise ValueError("duplicate")
   d[k]=v
  return d
+def json_int(raw):
+ if raw=="-0": return NegativeZero(0)
+ return int(raw)
+class NegativeZero(int): pass
 def canonical(v): return json.dumps(v,sort_keys=True,separators=(",",":"),ensure_ascii=True,allow_nan=False).encode("ascii")
+def numeric_integer(v,nonnegative=False,reject_negative_zero=True):
+ if type(v) is bool: return False
+ if type(v) is int:
+  if abs(v)>9007199254740991: return False
+ elif type(v) is NegativeZero:
+  if reject_negative_zero: return False
+ elif type(v) is float:
+  if not math.isfinite(v) or not v.is_integer() or abs(v)>9007199254740991: return False
+  if reject_negative_zero and v==0 and math.copysign(1.0,v)<0: return False
+ else: return False
+ if nonnegative and v<0: return False
+ return True
+def safe_int(v,nonnegative=False): return numeric_integer(v,nonnegative,True)
+def header_int(v,nonnegative=False): return numeric_integer(v,nonnegative,False)
+KNOWN_TYPES={"agent-preset/selected","agent/inbox/spliced","approval/asked","approval/decided","approval/policy","assistant/attempt","assistant/message","command/done","command/run","compaction/end","compaction/prune","compaction/start","compaction/summary","deliverables/presented","developer/message","feedback/message-delete","feedback/message-put","feedback/record","goal/change","hook/invoked","hook/result","image/offload","llm/retry","llm/retry-started","model/selection","permission/preset","plan/mode","request/context","request/header","sandbox/mode","schedule/change","session-log-deepseek/delivery-accepted","session/end-seed","session/title","session/title-llm-request","step/end","step/start","subagent/catalog","subagent/descriptor","subagent/model-selection-policy","system/message","team/member","team/message/delivered","team/message/queued","team/task","todo/write","tool-workflow/agent-end","tool-workflow/agent-start","tool-workflow/run-end","tool-workflow/run-start","tool/call","tool/ptc-dispatch","tool/ptc-dispatch-start","tool/result","turn/end","turn/start","user/message","web/deepseek-search-llm-request","workspace/changes"}
+SURFACE_TYPES={"system/message","developer/message","user/message","assistant/message","tool/result"}
 def sha(v): return hashlib.sha256(v).hexdigest()
 class IB(ctypes.Structure): _fields_=[("src",ctypes.c_void_p),("size",ctypes.c_size_t),("pos",ctypes.c_size_t)]
 class OB(ctypes.Structure): _fields_=[("dst",ctypes.c_void_p),("size",ctypes.c_size_t),("pos",ctypes.c_size_t)]
@@ -323,19 +343,71 @@ def safe_file(native):
       if not line: continue
       records+=1
       if records>100000: raise ValueError("native_record_count_oversize")
-      row=json.loads(line.decode("utf-8"),object_pairs_hook=pairs,parse_constant=lambda _: (_ for _ in ()).throw(ValueError("constant")))
+      row=json.loads(line.decode("utf-8"),object_pairs_hook=pairs,parse_int=json_int,parse_constant=lambda _: (_ for _ in ()).throw(ValueError("constant")))
       if records==1: header=row; continue
       if not isinstance(row,dict): raise ValueError("native_event_invalid")
-      seq=row.get("seq"); typ=row.get("type"); data=row.get("data")
-      if type(seq) is not int or seq<0 or seq>9007199254740991 or not isinstance(typ,str) or not isinstance(data,dict): raise ValueError("native_event_invalid")
-      if typ=="user/message" and isinstance(data.get("source"),dict) and data["source"].get("kind")=="user":
-       content=data.get("content")
-       if not isinstance(content,list): raise ValueError("native_user_content_invalid")
-       text="".join(part.get("text","") for part in content if isinstance(part,dict) and part.get("type")=="text" and isinstance(part.get("text"),str))
-       users.append({"seq":seq,"sha256":sha(text.encode()),"marker_present":marker in text})
+      allowed={"type","seq","time","data","surfaceOp","sourceEventSeqs","ignorable"}
+      seq=row.get("seq"); typ=row.get("type"); data=row.get("data"); event_index=records-2
+      if (set(row)-allowed or not safe_int(seq,True) or seq!=event_index
+          or not header_int(row.get("time")) or "data" not in row
+          or ("ignorable" in row and row["ignorable"] is not True)
+          or not isinstance(typ,str) or not typ): raise ValueError("native_event_invalid")
+      seq=int(seq)
+      if typ not in KNOWN_TYPES:
+       if row.get("ignorable") is True: continue
+       raise ValueError("native_event_invalid")
+      surface=typ in SURFACE_TYPES
+      if surface:
+       op=row.get("surfaceOp")
+       if op=="append": pass
+       elif (isinstance(op,dict) and set(op)=={"op","startSeq","endSeq"} and op.get("op")=="replace"
+             and safe_int(op.get("startSeq"),True) and safe_int(op.get("endSeq"),True)
+             and op["startSeq"]<=op["endSeq"]<seq):
+        pass
+       else: raise ValueError("native_surface_metadata_invalid")
+       refs=row.get("sourceEventSeqs")
+       if typ=="assistant/message" and refs is not None: raise ValueError("native_surface_metadata_invalid")
+       if refs is not None and (not isinstance(refs,list) or not refs
+            or any(not safe_int(ref,True) or ref>=seq for ref in refs)
+            or len(refs)!=len(set(refs))):
+        raise ValueError("native_surface_metadata_invalid")
+      elif "surfaceOp" in row or "sourceEventSeqs" in row: raise ValueError("native_surface_metadata_invalid")
+      if not isinstance(data,dict):
+       if typ in SURFACE_TYPES or typ in {"assistant/attempt","tool/call","request/header"}: raise ValueError("native_event_invalid")
+       continue
+      if typ=="assistant/attempt" and (not safe_int(data.get("turn"),True)
+          or not safe_int(data.get("step"),True) or not isinstance(data.get("stream"),list)):
+       raise ValueError("native_assistant_lifecycle_invalid")
+      if typ in SURFACE_TYPES:
+       msg=data if typ=="user/message" else data.get("message")
+       expected_role={"system/message":"system","developer/message":"developer","user/message":"user","assistant/message":"assistant","tool/result":"tool"}[typ]
+       src=msg.get("source") if isinstance(msg,dict) else None
+       content=msg.get("content") if isinstance(msg,dict) else None
+       if (not isinstance(msg,dict) or not isinstance(msg.get("id"),str) or not msg["id"]
+           or msg.get("role")!=expected_role or not isinstance(src,dict)
+           or not isinstance(src.get("kind"),str) or not src["kind"] or not isinstance(content,list)):
+        raise ValueError("native_message_invalid")
+       if typ=="user/message":
+        text="".join(part.get("text","") for part in content if isinstance(part,dict) and part.get("type")=="text" and isinstance(part.get("text"),str))
+        users.append({"seq":seq,"source_kind":src["kind"],"sha256":sha(text.encode()),"marker_present":marker in text})
+       if typ!="developer/message" and any(isinstance(part,dict) and part.get("type") in {"tool-addition","tool-removal"} for part in content):
+        raise ValueError("native_non_developer_tool_change_invalid")
+       if typ=="system/message" and src.get("kind")!="system-prompt": raise ValueError("native_message_source_invalid")
+       if typ=="developer/message":
+        changes=[part for part in content if isinstance(part,dict) and part.get("type") in {"tool-addition","tool-removal"}]
+        if changes and any(not isinstance(part.get("toolName"),str) or not part["toolName"] or (part.get("type")=="tool-addition" and "tool" in part) for part in changes): raise ValueError("native_developer_message_invalid")
+        if (any(part.get("type")=="tool-addition" for part in changes) and not safe_int(data.get("headerSeq"),True)) or (not any(part.get("type")=="tool-addition" for part in changes) and "headerSeq" in data): raise ValueError("native_developer_message_invalid")
+       if typ=="assistant/message":
+        if src.get("kind")!="model" or not isinstance(src.get("provider"),str) or not src["provider"] or not isinstance(src.get("model"),str) or not src["model"]:
+         raise ValueError("native_assistant_source_invalid")
+        if not safe_int(data.get("turn"),True) or not safe_int(data.get("step"),True) or not isinstance(data.get("stream"),list): raise ValueError("native_assistant_lifecycle_invalid")
+       if typ=="tool/result":
+        cid=src.get("callId")
+        if (src.get("kind")!="tool" or not isinstance(cid,str) or not cid or msg.get("toolCallId")!=cid
+            or ("isError" in msg and type(msg["isError"]) is not bool)):
+         raise ValueError("native_tool_result_message_invalid")
+        if "error" in data and msg.get("isError",False) is not True: raise ValueError("native_tool_result_message_invalid")
       if typ=="assistant/message":
-       msg=data.get("message"); content=msg.get("content") if isinstance(msg,dict) else None
-       if not isinstance(content,list): raise ValueError("native_assistant_content_invalid")
        for block in content:
         if isinstance(block,dict) and block.get("type")=="tool-call":
          cid=block.get("id"); name=block.get("name"); args=block.get("arguments")
@@ -349,7 +421,7 @@ def safe_file(native):
          elif native==child_id and short=="byq_market_session_context": valid=(args=={})
          elif native==child_id and short=="byq_agent_audit": valid=(args.get("run_id")==child_run and args.get("action")=="byq_market_session_context" and isinstance(args.get("outcome"),str) and set(args) in ({"run_id","action","outcome"},{"run_id","action","outcome","detail"}))
          audit_outcome_sha=sha(args["outcome"].encode()) if native==child_id and short=="byq_agent_audit" and isinstance(args.get("outcome"),str) else None
-         calls[cid]={"call_id":cid,"tool_name":name,"arguments_sha256":sha(canonical(args)),"arguments_contract_valid":valid,"assistant_sequence":seq,"call_sequence":None,"result_sequence":None,"result_sha256":None,"result_error":None,"audit_outcome_sha256":audit_outcome_sha,"delegate_kind":None,"delegate_run_id_sha256":None,"delegate_output_sha256":None,"delegate_output_type":None,"delegate_output_count":None}
+         calls[cid]={"call_id":cid,"tool_name":name,"arguments_sha256":sha(canonical(args)),"arguments_contract_valid":valid,"assistant_sequence":seq,"_turn":data["turn"],"_step":data["step"],"call_sequence":None,"result_sequence":None,"result_sha256":None,"result_error":None,"audit_outcome_sha256":audit_outcome_sha,"delegate_kind":None,"delegate_run_id_sha256":None,"delegate_output_sha256":None,"delegate_output_type":None,"delegate_output_count":None}
       elif typ=="tool/call":
        cid=data.get("callId"); call=calls.get(cid)
        if call is None or call["call_sequence"] is not None: raise ValueError("native_tool_call_event_unmatched")
@@ -362,16 +434,13 @@ def safe_file(native):
        msg=data.get("message"); src=msg.get("source") if isinstance(msg,dict) else None
        cid=src.get("callId") if isinstance(src,dict) else None; call=calls.get(cid)
        if call is None or call["result_sequence"] is not None: raise ValueError("native_tool_result_unmatched")
-       content=msg.get("content")
-       result_blocks=[block for block in content if isinstance(block,dict) and block.get("type")=="tool-result"] if isinstance(content,list) else []
-       if len(result_blocks)!=1 or result_blocks[0].get("toolCallId")!=cid: raise ValueError("native_tool_result_id_mismatch")
-       result_block=result_blocks[0]
+       if (not safe_int(data.get("turn"),True) or not safe_int(data.get("step"),True)
+           or data.get("turn")!=call["_turn"] or data.get("step")!=call["_step"]): raise ValueError("native_tool_result_lifecycle_mismatch")
        call["result_sequence"]=seq; call["result_sha256"]=sha(canonical(msg))
-       if type(result_block.get("isError",False)) is not bool: raise ValueError("native_tool_result_error_flag_invalid")
-       call["result_error"]=result_block.get("isError",False)
+       call["result_error"]=msg.get("isError",False)
        if call["tool_name"].removeprefix("mcp__byq__")=="byq_delegate_market_research":
         pieces=[]
-        for part in result_block.get("content",[]):
+        for part in msg.get("content",[]):
          if isinstance(part,dict) and part.get("type")=="text" and isinstance(part.get("text"),str): pieces.append(part["text"])
         result=json.loads("".join(pieces),object_pairs_hook=pairs)
         if not isinstance(result,dict) or set(result)!={"kind","runId","output"} or result.get("kind")!="foreground" or not isinstance(result.get("runId"),str) or not result["runId"]: raise ValueError("native_delegate_result_invalid")
@@ -386,19 +455,23 @@ def safe_file(native):
   lib.ZSTD_freeDStream(stream); after=os.fstat(fd); os.close(fd)
  after_path=os.lstat(p)
  if stamp(before)!=stamp(after) or stamp(before)!=stamp(after_path) or compressed!=before.st_size: raise ValueError("native_file_changed")
- required={"type","version","id","createdAt","isSeeded","delegationDepth"}; allowed=required|{"cwd","parentSession","origin","agentPreset"}
- if (not isinstance(header,dict) or not required<=set(header) or not set(header)<=allowed
-  or header.get("type")!="session" or type(header.get("version")) is not int or header["version"]!=4
-  or header.get("id")!=native or type(header.get("createdAt")) is not int
-  or type(header.get("isSeeded")) is not bool or type(header.get("delegationDepth")) is not int): raise ValueError("native_header_invalid")
- if header.get("parentSession") is not None and not isinstance(header.get("parentSession"),str): raise ValueError("native_header_invalid")
- return {"header":{"id":native,"version":4,"origin":header.get("origin"),"parentSession":header.get("parentSession"),"delegationDepth":header["delegationDepth"]},"relative_path":str(p.relative_to(cwd)),"compressed_sha256":digest.hexdigest(),"compressed_bytes":compressed,"user_inputs":users,"calls":list(calls.values())}
+ required={"type","version","id","createdAt","isSeeded"}
+ if (not isinstance(header,dict) or not required<=set(header) or "seedLength" in header
+  or header.get("type")!="session" or not header_int(header.get("version"),True) or header["version"]!=4
+  or header.get("id")!=native or not header_int(header.get("createdAt"),True)
+  or type(header.get("isSeeded")) is not bool
+  or ("cwd" in header and (not isinstance(header["cwd"],str) or not header["cwd"].startswith("/")))
+  or ("parentSession" in header and not isinstance(header["parentSession"],str))
+  or ("origin" in header and header["origin"]!="subagent")
+  or ("delegationDepth" in header and not header_int(header["delegationDepth"],True))
+  or ("agentPreset" in header and not isinstance(header["agentPreset"],str))): raise ValueError("native_header_invalid")
+ return {"header":{"id":native,"version":4,"origin":header.get("origin"),"parentSession":header.get("parentSession"),"delegationDepth":int(header.get("delegationDepth",0))},"relative_path":str(p.relative_to(cwd)),"compressed_sha256":digest.hexdigest(),"compressed_bytes":compressed,"user_inputs":users,"calls":[{k:v for k,v in call.items() if not k.startswith("_")} for call in calls.values()]}
 try:
  if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{7,127}",workspace): raise ValueError("native_workspace_invalid")
  if not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",root_id) or not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",child_id) or root_id==child_id: raise ValueError("native_session_identity_invalid")
  root=safe_file(root_id); child=safe_file(child_id)
  if root["header"]["id"]!=root_id or child["header"]["id"]!=child_id: raise ValueError("native_header_id_mismatch")
- if root["header"]["delegationDepth"]!=0 or child["header"]["origin"]!="subagent" or child["header"]["parentSession"]!=root_id or child["header"]["delegationDepth"]!=1: raise ValueError("native_child_lineage_mismatch")
+ if root["header"]["origin"]=="subagent" or root["header"]["parentSession"] is not None or root["header"]["delegationDepth"]!=0 or child["header"]["origin"]!="subagent" or child["header"]["parentSession"]!=root_id or child["header"]["delegationDepth"]!=1: raise ValueError("native_child_lineage_mismatch")
  print(json.dumps({"schema_version":"byq-acp-native-foreground-child.v1","producer_source_sha256":producer,"root":root,"child":child},sort_keys=True,separators=(",",":")))
 except Exception as exc:
  print("NATIVE_CHILD_STOP:"+(str(exc) if str(exc).startswith("native_") else "native_child_invalid"),file=sys.stderr); sys.exit(2)'''
@@ -469,8 +542,9 @@ def _read_native(out: Path, runner_id: str, cwd: str, workspace: str, root_nativ
                 or type(header.get("delegationDepth")) is not int):
             raise Stop("native_child_projection_header_invalid")
         for row in inputs:
-            if (not isinstance(row, dict) or set(row) != {"seq", "sha256", "marker_present"}
+            if (not isinstance(row, dict) or set(row) != {"seq", "source_kind", "sha256", "marker_present"}
                     or type(row.get("seq")) is not int or not 0 <= row["seq"] <= _MAX_SAFE_SEQUENCE
+                    or not isinstance(row.get("source_kind"), str) or not row["source_kind"]
                     or not isinstance(row.get("sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", row["sha256"])
                     or type(row.get("marker_present")) is not bool):
                 raise Stop("native_child_projection_input_invalid")
@@ -523,6 +597,8 @@ def _check_tool_chain(projection: dict, backend: dict, marker: str) -> dict:
     if (len(projection["root"].get("user_inputs", [])) != 1
             or len(projection["child"].get("user_inputs", [])) != 1):
         raise Stop("native_root_child_prompt_count_invalid")
+    if projection["root"]["user_inputs"][0].get("source_kind") != "user":
+        raise Stop("native_root_human_input_source_invalid")
     wanted_root, wanted_child = set(_ROOT_CALLS), set(_CHILD_CALLS)
     root_names = [call.get("tool_name", "").removeprefix("mcp__byq__") for call in root_calls]
     child_names = [call.get("tool_name", "").removeprefix("mcp__byq__") for call in child_calls]

@@ -56,9 +56,9 @@ _REAL_SUBPROCESS_RUN = subprocess.run
 EXPECTED_DELEGATE_PACKAGE_SHA = "6eef1eabfac0b93fc49b4f51df855cd45aa83ec29db9ea22905814b0c27ad018"
 EXPECTED_DELEGATE_SOURCE_SHA = "26a1e804aab4c6f9cb53a670c63b817fc8d9409569e6d68eda6fda33b966a840"
 EXPECTED_RUNNER_SOURCE_SHA = "abc8992083bca202d4e66354f254fb1ea095cd409b62fcbdc2d3b2e6b6912f31"
-EXPECTED_NATIVE_READER_SHA = "bdbb671b8bbae65641ab04faa9094b5bec711264b48a80b4c961c7a0f938ac8e"
+EXPECTED_NATIVE_READER_SHA = "bb9de5ea6017c5c19a747c84742322a64fd7cceee734ec1b90fd8484e818775d"
 EXPECTED_SCOPE_SCHEMA = "byq-acp-child-scope-read.v1"
-EXPECTED_CAPTURE_SOURCE_SHA = "d13a2f459ec5ec9ea38662bbe49fe154d99e8aabf8ccb64cec91c9f2bc7498d1"
+EXPECTED_CAPTURE_SOURCE_SHA = "317d31134c07a23a091e897e9a42d1f7f2ee8b1957e55b1b33ac8f8690813d69"
 
 
 class _Response:
@@ -97,7 +97,8 @@ def _session(native_id: str, depth: int, origin=None, parent=None, *, input_seq=
                           f"{native_id}/session.v4.jsonl.zstd"),
         "compressed_sha256": "c" * 64,
         "compressed_bytes": 100,
-        "user_inputs": [{"seq": input_seq, "sha256": "d" * 64, "marker_present": True}],
+        "user_inputs": [{"seq": input_seq, "source_kind": "user",
+                         "sha256": "d" * 64, "marker_present": True}],
         "calls": [] if calls is None else calls,
     }
 
@@ -148,7 +149,7 @@ def _provider_journal(rows):
 class _WholeEntryFixture:
     """Synthetic HTTP/process/filesystem transport for the real three-stage CLI."""
 
-    def __init__(self, *, failure=None, completed_binding=True, sequence_start=1):
+    def __init__(self, *, failure=None, completed_binding=True, sequence_start=0):
         self.failure = failure
         self.completed_binding = completed_binding
         self.sequence_start = sequence_start
@@ -271,12 +272,15 @@ class _WholeEntryFixture:
                 "source": "runtime-adapter", "payload": {"run_id": root}}
 
     def _write_native(self, path, native_id, child):
+        # These are hand-built source-conforming JSONL fixtures, not output
+        # claimed to have been emitted by the SDK serializer.
         if child:
             header = {"type": "session", "version": 4, "id": native_id,
                       "createdAt": 1781308800000, "isSeeded": False,
-                      "delegationDepth": 1, "origin": "subagent", "parentSession": ROOT_NATIVE}
-            if self.failure == "native_header_extra":
-                header["unrecognized_optional_mix"] = True
+                      "cwd": str(self.cwd), "delegationDepth": 1,
+                      "origin": "subagent", "parentSession": ROOT_NATIVE}
+            if self.failure == "native_header_seed_length":
+                header["seedLength"] = 1
             calls = [
                 ("byq_agent_run_start", {"role_id": "market_researcher",
                     "parent_run_id": "e" * 32 if self.failure == "native_bad_call_parent" else ROOT_RUN}, "{}"),
@@ -287,43 +291,102 @@ class _WholeEntryFixture:
             ]
         else:
             header = {"type": "session", "version": 4, "id": native_id,
-                      "createdAt": 1781308800000, "isSeeded": False, "delegationDepth": 0}
+                      "createdAt": 1781308800000, "isSeeded": False,
+                      "cwd": str(self.cwd), "delegationDepth": 0,
+                      "fixtureExtension": "allowed-by-official-header-validator"}
             calls = [
                 ("byq_agent_run_start", {"role_id": "quant_orchestrator", "parent_run_id": None}, "{}"),
                 ("byq_delegate_market_research", {"description": MARKER, "prompt": MARKER},
                  json.dumps({"kind": "foreground", "runId": "dsh-child-session",
                              "output": {"summary": "synthetic"}}, separators=(",", ":"))),
             ]
+        timestamp = 1781308800000
         rows = [header, {"type": "user/message", "seq": self.sequence_start,
-                "data": {"source": {"kind": "user"}, "content": [{"type": "text", "text": MARKER}]}}]
+                "time": timestamp, "surfaceOp": "append",
+                "data": {"id": f"user-{native_id}", "role": "user",
+                         "source": {"kind": "subagent" if child else "user"},
+                         "content": [{"type": "text", "text": MARKER}]}}]
         sequence = self.sequence_start + 1
+        if not child and self.failure == "native_developer_removal_missing_name":
+            rows.append({"type": "developer/message", "seq": sequence,
+                "time": timestamp + sequence, "surfaceOp": "append",
+                "data": {"message": {"id": f"developer-{native_id}", "role": "developer",
+                    "source": {"kind": "configuration"},
+                    "content": [{"type": "tool-removal"}]}}})
+            sequence += 1
         for index, (name, arguments, result_text) in enumerate(calls, 1):
             call_id = f"call-{native_id[:4]}-{index}"
             # The delegate is a local DSH tool exposed under its actual short
             # name; only BYQ MCP tools carry the mcp__byq__ namespace.
             tool_name = (name if name == "byq_delegate_market_research"
                          else "mcp__byq__" + name)
+            turn, step = 1, index
             rows.append({"type": "assistant/message", "seq": sequence,
-                "data": {"message": {"content": [{"type": "tool-call", "id": call_id,
-                    "name": tool_name, "arguments": arguments}]}}})
+                "time": timestamp + sequence, "surfaceOp": "append",
+                "data": {"turn": turn, "step": step, "stream": [],
+                    "message": {"id": f"assistant-{native_id}-{index}", "role": "assistant",
+                        "source": {"kind": "model", "provider": "synthetic-provider",
+                                   "model": "synthetic-model"},
+                        "content": [{"type": "tool-call", "id": call_id,
+                            "name": tool_name, "arguments": arguments}]}}})
             sequence += 1
             rows.append({"type": "tool/call", "seq": sequence,
-                "data": {"callId": call_id, "name": tool_name, "arguments": arguments}})
+                "time": timestamp + sequence,
+                "data": {"callId": call_id, "name": tool_name,
+                         "arguments": arguments, "turn": turn, "step": step}})
             sequence += 1
             rows.append({"type": "tool/result", "seq": sequence,
-                "data": {"message": {"source": {"callId": call_id}, "content": [
-                    {"type": "tool-result", "toolCallId": call_id, "isError": False,
-                     "content": [{"type": "text", "text": result_text}]}]}}})
+                "time": timestamp + sequence, "surfaceOp": "append",
+                "data": {"turn": turn, "step": step,
+                    "message": {"id": f"tool-{native_id}-{index}", "role": "tool",
+                        "toolCallId": call_id, "isError": False,
+                        "source": {"kind": "tool", "callId": call_id},
+                        "content": [{"type": "text", "text": result_text}]}}})
             sequence += 1
         if self.failure in {"native_event_seq_negative", "native_event_seq_bool",
                             "native_event_seq_oversafe"} and native_id == self.native_root:
             rows[1]["seq"] = {"native_event_seq_negative": -1,
                               "native_event_seq_bool": True,
                               "native_event_seq_oversafe": (1 << 53)}[self.failure]
-        elif self.failure == "native_call_sequence_not_after_assistant" and native_id == self.native_root:
+        elif self.failure == "native_event_seq_duplicate_call" and native_id == self.native_root:
             rows[3]["seq"] = rows[2]["seq"]
-        elif self.failure == "native_result_sequence_not_after_call" and native_id == self.native_root:
+        elif self.failure == "native_event_seq_duplicate_result" and native_id == self.native_root:
             rows[4]["seq"] = rows[3]["seq"]
+        elif self.failure == "native_event_time_missing" and native_id == self.native_root:
+            del rows[1]["time"]
+        elif self.failure == "native_event_unknown_field" and native_id == self.native_root:
+            rows[1]["unexpected"] = True
+        elif self.failure == "native_user_message_missing_id" and native_id == self.native_root:
+            del rows[1]["data"]["id"]
+        elif self.failure == "native_assistant_provider_missing" and native_id == self.native_root:
+            del rows[2]["data"]["message"]["source"]["provider"]
+        elif self.failure == "native_assistant_lifecycle_missing" and native_id == self.native_root:
+            del rows[2]["data"]["stream"]
+        elif self.failure == "native_result_top_level_id_mismatch" and native_id == self.native_root:
+            rows[4]["data"]["message"]["toolCallId"] = "unmatched-tool-call"
+        elif self.failure == "native_result_source_id_mismatch" and native_id == self.native_root:
+            rows[4]["data"]["message"]["source"]["callId"] = "unmatched-tool-call"
+        elif self.failure == "native_result_role_wrong" and native_id == self.native_root:
+            rows[4]["data"]["message"]["role"] = "assistant"
+        elif self.failure == "native_result_source_kind_wrong" and native_id == self.native_root:
+            rows[4]["data"]["message"]["source"]["kind"] = "model"
+        elif self.failure == "native_result_error" and native_id == self.native_root:
+            rows[4]["data"]["message"]["isError"] = True
+            rows[4]["data"]["error"] = {
+                "name": "ToolOutcomeUnknownError", "code": "TOOL_OUTCOME_UNKNOWN"}
+        elif self.failure == "native_result_error_flag_false" and native_id == self.native_root:
+            rows[4]["data"]["error"] = {
+                "name": "ToolOutcomeUnknownError", "code": "TOOL_OUTCOME_UNKNOWN"}
+        elif self.failure == "native_non_developer_tool_change" and native_id == self.native_root:
+            rows[2]["data"]["message"]["content"].append({
+                "type": "tool-removal", "toolName": "synthetic_tool"})
+        elif self.failure == "native_unknown_ignorable" and native_id == self.native_root:
+            for row in rows[1:]:
+                row["seq"] += 1
+            rows.insert(1, {"type": "future/event", "seq": 0,
+                "time": timestamp - 1, "ignorable": True,
+                "surfaceOp": {"opaque": ["future", "surface"]},
+                "sourceEventSeqs": {"opaque": True}, "data": ["opaque"]})
         raw = ("\n".join(json.dumps(row, separators=(",", ":")) for row in rows) + "\n").encode()
         lib = ctypes.CDLL("libzstd.so.1")
         lib.ZSTD_compressBound.argtypes = [ctypes.c_size_t]
@@ -1144,6 +1207,8 @@ class ForegroundChildWholeMainContractTests(unittest.TestCase):
         backend = json.loads((out / "commands/child-backend-scope.stdout.raw").read_bytes())
         self.assertEqual(native["root"]["header"]["id"], ROOT_NATIVE)
         self.assertEqual(native["child"]["header"]["id"], CHILD_NATIVE)
+        self.assertEqual(native["root"]["user_inputs"][0]["source_kind"], "user")
+        self.assertEqual(native["child"]["user_inputs"][0]["source_kind"], "subagent")
         self.assertEqual(len(native["root"]["calls"]), 2)
         self.assertEqual(len(native["child"]["calls"]), 4)
         audits = backend["audits"]
@@ -1175,6 +1240,18 @@ class ForegroundChildWholeMainContractTests(unittest.TestCase):
                                 < call["result_sequence"] for call in session["calls"]))
         self._assert_all_success_command_receipts(out, fixture)
 
+    def test_real_main_skips_unknown_ignorable_event_with_opaque_metadata(self):
+        fixture = _WholeEntryFixture(failure="native_unknown_ignorable")
+        self.addCleanup(fixture.cleanup)
+        out = self.root / "unknown-ignorable-native-event"
+        capture_rc = self._run_preflight_and_child(fixture, out)
+        self.assertEqual(capture_rc[0], 0, capture_rc[2])
+        self.assertTrue((out / "checkpoint-child-pass.json").is_file())
+        projection = json.loads((out / "native-child-projection.json").read_text())
+        self.assertEqual(projection["root"]["user_inputs"][0]["seq"], 1)
+        self.assertEqual(projection["child"]["user_inputs"][0]["seq"], 0)
+        self._assert_all_success_command_receipts(out, fixture)
+
     def test_real_main_accepts_close_runtime_root_without_terminal_binding_audits(self):
         fixture = _WholeEntryFixture(completed_binding=False)
         self.addCleanup(fixture.cleanup)
@@ -1201,13 +1278,26 @@ class ForegroundChildWholeMainContractTests(unittest.TestCase):
                                       "native-child-projection", 2),
             "native_event_seq_oversafe": ("native-child-projection_process_failed",
                                           "native-child-projection", 2),
-            "native_call_sequence_not_after_assistant": (
-                "native_tool_call_result_not_complete", "native-child-projection", 0),
-            "native_result_sequence_not_after_call": (
-                "native_tool_call_result_not_complete", "native-child-projection", 0),
+            "native_event_seq_duplicate_call": (
+                "native-child-projection_process_failed", "native-child-projection", 2),
+            "native_event_seq_duplicate_result": (
+                "native-child-projection_process_failed", "native-child-projection", 2),
+            "native_event_time_missing": ("native-child-projection_process_failed", "native-child-projection", 2),
+            "native_event_unknown_field": ("native-child-projection_process_failed", "native-child-projection", 2),
+            "native_user_message_missing_id": ("native-child-projection_process_failed", "native-child-projection", 2),
+            "native_assistant_provider_missing": ("native-child-projection_process_failed", "native-child-projection", 2),
+            "native_assistant_lifecycle_missing": ("native-child-projection_process_failed", "native-child-projection", 2),
+            "native_result_top_level_id_mismatch": ("native-child-projection_process_failed", "native-child-projection", 2),
+            "native_result_source_id_mismatch": ("native-child-projection_process_failed", "native-child-projection", 2),
+            "native_result_role_wrong": ("native-child-projection_process_failed", "native-child-projection", 2),
+            "native_result_source_kind_wrong": ("native-child-projection_process_failed", "native-child-projection", 2),
+            "native_result_error": ("native_tool_call_result_not_complete", "native-child-projection", 0),
+            "native_result_error_flag_false": ("native-child-projection_process_failed", "native-child-projection", 2),
+            "native_non_developer_tool_change": ("native-child-projection_process_failed", "native-child-projection", 2),
+            "native_developer_removal_missing_name": ("native-child-projection_process_failed", "native-child-projection", 2),
             "reader_uid_wrong": ("native-child-projection_process_failed", "native-child-projection", 1),
             "reader_gid_wrong": ("native-child-projection_process_failed", "native-child-projection", 1),
-            "native_header_extra": ("native-child-projection_process_failed", "native-child-projection", 2),
+            "native_header_seed_length": ("native-child-projection_process_failed", "native-child-projection", 2),
             "source_native": ("native-child-projection_process_failed", "native-child-projection", 1),
             "foreign_root": ("workflow_root_identity_mismatch", None, None),
             "delivery_stale": ("answer_delivery_not_up_to_date", None, None),
@@ -1230,7 +1320,7 @@ class ForegroundChildWholeMainContractTests(unittest.TestCase):
             "audit_native_unknown": ("backend_child_audit_mismatch", "child-backend-scope", 0),
         }
         no_later_receipts = {
-            "native_header_extra": ("commands/product-tool-guard.json",
+            "native_header_seed_length": ("commands/product-tool-guard.json",
                                      "commands/signed-product-cleanup.json",
                                      "commands/gateway-terminal-ack-log.json"),
             "native_bad_call_parent": ("commands/product-tool-guard.json",
@@ -1245,12 +1335,38 @@ class ForegroundChildWholeMainContractTests(unittest.TestCase):
             "native_event_seq_oversafe": ("commands/product-tool-guard.json",
                                           "commands/signed-product-cleanup.json",
                                           "commands/gateway-terminal-ack-log.json"),
-            "native_call_sequence_not_after_assistant": (
+            "native_event_seq_duplicate_call": (
                 "commands/product-tool-guard.json", "commands/signed-product-cleanup.json",
                 "commands/gateway-terminal-ack-log.json"),
-            "native_result_sequence_not_after_call": (
+            "native_event_seq_duplicate_result": (
                 "commands/product-tool-guard.json", "commands/signed-product-cleanup.json",
                 "commands/gateway-terminal-ack-log.json"),
+            "native_event_time_missing": ("commands/product-tool-guard.json", "commands/signed-product-cleanup.json",
+                                           "commands/gateway-terminal-ack-log.json"),
+            "native_event_unknown_field": ("commands/product-tool-guard.json", "commands/signed-product-cleanup.json",
+                                            "commands/gateway-terminal-ack-log.json"),
+            "native_user_message_missing_id": ("commands/product-tool-guard.json", "commands/signed-product-cleanup.json",
+                                                "commands/gateway-terminal-ack-log.json"),
+            "native_assistant_provider_missing": ("commands/product-tool-guard.json", "commands/signed-product-cleanup.json",
+                                                "commands/gateway-terminal-ack-log.json"),
+            "native_assistant_lifecycle_missing": ("commands/product-tool-guard.json", "commands/signed-product-cleanup.json",
+                                                   "commands/gateway-terminal-ack-log.json"),
+            "native_result_top_level_id_mismatch": ("commands/product-tool-guard.json", "commands/signed-product-cleanup.json",
+                                                     "commands/gateway-terminal-ack-log.json"),
+            "native_result_source_id_mismatch": ("commands/product-tool-guard.json", "commands/signed-product-cleanup.json",
+                                                  "commands/gateway-terminal-ack-log.json"),
+            "native_result_role_wrong": ("commands/product-tool-guard.json", "commands/signed-product-cleanup.json",
+                                          "commands/gateway-terminal-ack-log.json"),
+            "native_result_source_kind_wrong": ("commands/product-tool-guard.json", "commands/signed-product-cleanup.json",
+                                                 "commands/gateway-terminal-ack-log.json"),
+            "native_result_error": ("commands/product-tool-guard.json", "commands/signed-product-cleanup.json",
+                                     "commands/gateway-terminal-ack-log.json"),
+            "native_result_error_flag_false": ("commands/product-tool-guard.json", "commands/signed-product-cleanup.json",
+                                                "commands/gateway-terminal-ack-log.json"),
+            "native_non_developer_tool_change": ("commands/product-tool-guard.json", "commands/signed-product-cleanup.json",
+                                                  "commands/gateway-terminal-ack-log.json"),
+            "native_developer_removal_missing_name": ("commands/product-tool-guard.json", "commands/signed-product-cleanup.json",
+                                                       "commands/gateway-terminal-ack-log.json"),
             "reader_uid_wrong": ("commands/product-tool-guard.json",
                                  "commands/signed-product-cleanup.json",
                                  "commands/gateway-terminal-ack-log.json"),
@@ -1339,33 +1455,49 @@ class ForegroundChildWholeMainContractTests(unittest.TestCase):
                     self.assertEqual(receipt["returncode"], 1)
                     self.assertEqual(json.loads(stop_path.read_text())["reason"],
                                      "native-child-projection_process_failed")
-                elif failure == "native_header_extra":
+                elif failure == "native_header_seed_length":
                     raw_stderr = (out / "commands/native-child-projection.stderr.raw").read_bytes()
                     self.assertEqual(raw_stderr, b"NATIVE_CHILD_STOP:native_header_invalid\n")
                     self.assertEqual(receipt["returncode"], 2)
                     self.assertEqual(json.loads(stop_path.read_text())["reason"],
                                      "native-child-projection_process_failed")
                 elif failure in {"native_event_seq_negative", "native_event_seq_bool",
-                                 "native_event_seq_oversafe"}:
+                                 "native_event_seq_oversafe", "native_event_seq_duplicate_call",
+                                 "native_event_seq_duplicate_result", "native_event_time_missing",
+                                 "native_event_unknown_field", "native_user_message_missing_id",
+                                 "native_assistant_provider_missing", "native_assistant_lifecycle_missing",
+                                 "native_result_top_level_id_mismatch", "native_result_source_id_mismatch",
+                                 "native_result_role_wrong", "native_result_source_kind_wrong",
+                                 "native_result_error_flag_false", "native_non_developer_tool_change",
+                                 "native_developer_removal_missing_name"}:
                     raw_stdout = (out / "commands/native-child-projection.stdout.raw").read_bytes()
                     raw_stderr = (out / "commands/native-child-projection.stderr.raw").read_bytes()
                     self.assertEqual(raw_stdout, b"")
-                    self.assertEqual(raw_stderr, b"NATIVE_CHILD_STOP:native_event_invalid\n")
+                    expected_native_error = {
+                        "native_user_message_missing_id": "native_message_invalid",
+                        "native_assistant_provider_missing": "native_assistant_source_invalid",
+                        "native_assistant_lifecycle_missing": "native_assistant_lifecycle_invalid",
+                        "native_result_top_level_id_mismatch": "native_tool_result_message_invalid",
+                        "native_result_source_id_mismatch": "native_tool_result_message_invalid",
+                        "native_result_role_wrong": "native_message_invalid",
+                        "native_result_source_kind_wrong": "native_tool_result_message_invalid",
+                        "native_result_error_flag_false": "native_tool_result_message_invalid",
+                        "native_non_developer_tool_change": "native_non_developer_tool_change_invalid",
+                        "native_developer_removal_missing_name": "native_developer_message_invalid",
+                    }.get(failure, "native_event_invalid")
+                    self.assertEqual(raw_stderr, f"NATIVE_CHILD_STOP:{expected_native_error}\n".encode())
                     self.assertEqual(receipt["returncode"], 2)
                     self.assertEqual(json.loads(stop_path.read_text())["reason"],
                                      "native-child-projection_process_failed")
-                elif failure in {"native_call_sequence_not_after_assistant",
-                                 "native_result_sequence_not_after_call"}:
-                    projection = json.loads(
-                        (out / "commands/native-child-projection.stdout.raw").read_bytes())
-                    first = projection["root"]["calls"][0]
+                elif failure == "native_result_error":
+                    raw_projection_path = out / "commands/native-child-projection.stdout.raw"
+                    raw_projection = raw_projection_path.read_bytes()
+                    self.assertEqual(hashlib.sha256(raw_projection).hexdigest(),
+                                     receipt["stdout_sha256"])
+                    projection = json.loads(raw_projection)
+                    self.assertTrue(projection["root"]["calls"][0]["result_error"])
                     self.assertEqual(receipt["returncode"], 0)
-                    if failure == "native_call_sequence_not_after_assistant":
-                        self.assertEqual(first["assistant_sequence"], first["call_sequence"])
-                    else:
-                        self.assertEqual(first["call_sequence"], first["result_sequence"])
-                    self.assertEqual(json.loads(stop_path.read_text())["reason"],
-                                     "native_tool_call_result_not_complete")
+                    self.assertFalse((out / "native-child-projection.json").exists())
                 elif failure == "cleanup_scope":
                     cleanup = json.loads((out / "commands/signed-product-cleanup.stdout.raw").read_bytes())
                     self.assertEqual(cleanup["exact_scope"]["session_id"], "wrong-session")

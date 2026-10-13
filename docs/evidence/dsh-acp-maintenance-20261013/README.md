@@ -41,6 +41,8 @@
 | 原生零序号首记录定位与统一修补 | PASS 首记录诊断 / 离线限定 | 一次独立102ms只读确认Root记录2仅因合法seq0被拒（模型/Job0）；统一producer与host各序号为非负safe integer，严格工具相对顺序保留。8项定向及29项停止场景一次通过（2654ms）经Sol→Root，修正读取器实采仍NOT_RUN；旧真实FAIL不覆盖。见ROOT-NATIVE-FIRST-EVENT-DIAGNOSIS-PASS.json、ROOT-NATIVE-SEQUENCE-OFFLINE-PASS.json |
 | 已有单子 Agent 文件独立读取 caller | PASS 离线限定 | 完整caller五项一次181ms通过Sol→Root；源码两次Stop类HOLD及原始roots形状HOLD保留。只证明入口与当时reader/fixture，官方消息格式尚有缺口；见ROOT-EXISTING-CHILD-CALLER-OFFLINE-PASS.json |
 | 已有单子 Agent 文件独立读取 V1 | FAIL_OBSERVER_STOP | 一次171ms读取在native_tool_result_id_mismatch停止，仅HEAD/before inspect/native exec执行，after及chain NOT_RUN，模型/Job/API/DB0。官方源码已确认观察器及fixture的嵌套工具结果格式与当前SDK不符；实际错误行未观察，不重试，先统一消息合同。见ROOT-EXISTING-CHILD-NATIVE-READ-V1-FAIL-STOP.json |
+| 官方原生消息合同统一修补 V1 | FAIL_STOP 替身 | 三项pure PASS，第四fixture构造因header cwd直接用了Path而ERROR，后四项和42场景NOT_RUN；零真实IO/模型/Job。停止后完整审计JSON/路径/压缩/transport类型边界；见ROOT-NATIVE-CONTRACT-OFFLINE-V1-FAIL-STOP.json |
+| 官方原生消息合同统一修补 | PASS 离线限定 | 新V2五项WholeMain及42停止场景一次3047ms通过Sol→Root，V1前三pure PASS分开复用。统一tool结果顶层ID/error、message role/source、seq/time、opaque事件及header/developer合同；不声称SDK serializer输出、完整surface folding或实采PASS。见ROOT-NATIVE-CONTRACT-OFFLINE-PASS.json |
 | 两用户、自然迟到旧请求、业务结果 unknown、进程丢失 | NOT_RUN 当前补缺批次 | 保留旧限定证据，逐片补缺；不自动重放未知业务结果 |
 | 远程 CI / 推送 / 合并 / 生产部署 | NOT_RUN | 不以本地、合成或隔离更新证明生产资格 |
 
