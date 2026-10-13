@@ -217,6 +217,23 @@ class ProductSlotRegistry:
         with self._lock:
             return tuple(sorted(self._bindings))
 
+    def operations_counts(self) -> dict[str, int | str]:
+        """Return anonymous process-local lease counts for operations views."""
+        with self._lock:
+            leases = tuple(self._leases.values())
+            return {
+                "configured": len(self._bindings),
+                "held": len(leases),
+                "awaiting_backend_ack": sum(
+                    not lease.backend_acknowledged for lease in leases
+                ),
+                "awaiting_cleanup": sum(
+                    not lease.cleanup_proven for lease in leases
+                ),
+                "scope": "adapter_process_lifetime",
+                "source": "live_product_slot_registry",
+            }
+
     def assert_workspace(self, workspace_id: str) -> ProductSlotBinding:
         """Return the configured public binding or a sanitized error."""
         with self._lock:

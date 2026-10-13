@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from threading import Barrier
 
 import pytest
@@ -539,6 +540,11 @@ def test_operations_projection_is_admin_only_and_aggregates_normalized_runtime(m
         "runtime": {"status": "ready", "sdk": "deepseek-harness-sdk==0.1.1rc1"},
         "sessions": {"active": 1, "active_prompts": 0, "status_counts": {"idle": 1}},
         "usage": {"total_tokens": 125, "model_calls": 1},
+        "product_slot_leases": {
+            "configured": 2, "held": 0, "awaiting_backend_ack": 0,
+            "awaiting_cleanup": 0, "scope": "adapter_process_lifetime",
+            "source": "live_product_slot_registry",
+        },
         "raw_dsh_events": False,
     }))
     client = TestClient(main.app)
@@ -547,6 +553,7 @@ def test_operations_projection_is_admin_only_and_aggregates_normalized_runtime(m
     body = response.json()
     assert body["services"]["runtime_adapter"] == "ready"
     assert body["runtime"]["usage"]["total_tokens"] == 125
+    assert body["runtime"]["product_slot_leases"]["held"] == 0
     assert body["cache"]["redis"] == "not_used"
     assert "api_key" not in response.text.lower()
 
@@ -556,6 +563,20 @@ def test_operations_projection_is_admin_only_and_aggregates_normalized_runtime(m
     denied = client.get("/api/product/operations/status")
     assert denied.status_code == 403
     assert denied.json()["error"]["code"] == "product_forbidden"
+
+
+def test_plugin_projection_omits_aggregate_product_slot_counts() -> None:
+    projection = product_api._decorate_plugin_center(
+        {"plugins": [{"id": "test-plugin"}], "policy": {}},
+        {
+            "runtime": {"status": "ready", "enabled_plugin_ids": [],
+                        "model_credentials": "missing"},
+            "product_slot_leases": {"configured": 2, "held": 1},
+        },
+    )
+    assert "product_slot_leases" not in projection
+    assert "product_slot_leases" not in projection["runtime"]
+    assert "product_slot_leases" not in json.dumps(projection)
 
 
 def test_operations_status_without_browser_session_returns_401(monkeypatch) -> None:

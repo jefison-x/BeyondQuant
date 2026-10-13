@@ -1,0 +1,35 @@
+{
+  "verdict": "PASS containment",
+  "units": [
+    "byq-opencode-monitor.timer",
+    "byq-opencode-review.timer"
+  ],
+  "before": {
+    "byq-opencode-monitor.timer": {
+      "ActiveState": "active",
+      "SubState": "waiting"
+    },
+    "byq-opencode-review.timer": {
+      "ActiveState": "active",
+      "SubState": "waiting"
+    }
+  },
+  "after": {
+    "byq-opencode-monitor.timer": {
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    },
+    "byq-opencode-review.timer": {
+      "ActiveState": "inactive",
+      "SubState": "dead"
+    }
+  },
+  "native_service": {
+    "ActiveState": "active",
+    "SubState": "running"
+  },
+  "reason": "read-only Sol source audit found automatic old engineering thread queueing; prevent new autonomous OC task dispatch during credential incident",
+  "state_files_deleted": false,
+  "production_changes": 0,
+  "restart_gate": "explicit safe workflow re-admission; no automatic restart now"
+}

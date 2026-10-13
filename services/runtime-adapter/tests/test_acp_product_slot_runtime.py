@@ -202,6 +202,33 @@ def slot_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         runtime.close()
 
 
+def test_operations_snapshot_uses_live_registry_and_omits_unconfigured_registry(
+        slot_runtime):
+    runtime, compatibility, registry = slot_runtime
+    scope = _scope("workspace_slot_a", "a")
+    assert compatibility.product_slots is registry
+    registry.reserve(scope)
+    snapshot = runtime.operations_snapshot()
+    assert snapshot["product_slot_leases"] == {
+        "configured": 2,
+        "held": 1,
+        "awaiting_backend_ack": 1,
+        "awaiting_cleanup": 1,
+        "scope": "adapter_process_lifetime",
+        "source": "live_product_slot_registry",
+    }
+    assert "workspace_slot_a" not in json.dumps(snapshot)
+    assert "BYQ_ACP_PRODUCT_SLOT_TEST" not in json.dumps(snapshot)
+    assert registry.owns(scope)
+
+    unconfigured = RuntimeAdapter(FakeAcpCompatibility())
+    try:
+        unconfigured_snapshot = unconfigured.operations_snapshot()
+        assert "product_slot_leases" not in unconfigured_snapshot
+    finally:
+        unconfigured.close()
+
+
 def _create(runtime: RuntimeAdapter, session_id: str, workspace: str) -> None:
     runtime.create_session(
         session_id, f"trace-{session_id}", "slot-owner", workspace,

@@ -659,7 +659,7 @@ class RuntimeAdapter:
                 active_prompts += int(record.active_run is not None)
         composition_identity = self._safe_composition_identity()
         release_identity = self._safe_release_identity()
-        return {
+        snapshot = {
             "schema_version": "runtime-operations.v1",
             "runtime": {
                 "status": (
@@ -700,6 +700,10 @@ class RuntimeAdapter:
             },
             "raw_dsh_events": False,
         }
+        product_slots = getattr(self._compatibility, "product_slots", None)
+        if self._acp and product_slots is not None:
+            snapshot["product_slot_leases"] = product_slots.operations_counts()
+        return snapshot
 
     def _safe_composition_identity(self) -> dict[str, Any]:
         """Load only the public, secret-free generated composition identity."""

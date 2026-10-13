@@ -1,0 +1,23 @@
+{
+  "date": "2026-10-13",
+  "source_commit": "55033eb0937665bf1d19f848de1f185353f7dbc0",
+  "result": "PASS_SOURCE_METHOD_ONLY",
+  "independent_sol_reviewer": "/root/manual_result_reviewer",
+  "root_result": "PASS_SOURCE_METHOD_ONLY",
+  "reuse_receipt_sha256": {
+    "facts-after.command.json": "593df8f4d4a9e975fc378fd84400c446db2ab00ec8a3fb32a59aa8e8e521df29",
+    "jobs-after.command.json": "5e5c07ef76ed27cb772c0f89e9a773e077df903e4c3481e9772e0f45d3bda0c9",
+    "facts-after.stdout": "5b968219e3a06c4a0bc8270367cc58c67ca317d2140ff770252877d0aeaeb36f",
+    "jobs-after.stdout": "84ab3a392d2120260fdfbacb008ba302d0942746295d55478183d613bba24efd"
+  },
+  "next_method": [
+    "persist inventory checkpoint first",
+    "pin exact current PostgreSQL container ID and reuse successful argv byte-for-byte",
+    "persist each new exit code/stdout/stderr before assertions",
+    "roots.open must be zero, exact existing completed Job/Task/Artifact facts unchanged, nine Job counts unchanged",
+    "any failed query/null/value change stops batch; no business retry or model probe"
+  ],
+  "failure_preserved": "ROOT-TWO-USER-LIVE-PREFLIGHT-FAIL-STOP.json",
+  "tests_after_failure": "NOT_RUN",
+  "scope": "DB-side idle-observer method only; runner lease, identity, mounts and live isolation still separate unverified checks"
+}

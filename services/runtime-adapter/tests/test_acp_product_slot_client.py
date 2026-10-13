@@ -258,6 +258,56 @@ def test_slot_waits_for_both_cleanup_and_backend_ack_in_either_order(tmp_path):
     registry.reserve(first)
 
 
+def test_operations_counts_follow_ack_and_cleanup_fences_in_both_orders(tmp_path):
+    registry, _, _ = _registry(tmp_path)
+    first = _scope("workspace-a", "a")
+    second = _scope("workspace-b", "d")
+    expected_keys = {
+        "configured", "held", "awaiting_backend_ack", "awaiting_cleanup",
+        "scope", "source",
+    }
+
+    def counts(held, awaiting_ack, awaiting_cleanup):
+        value = registry.operations_counts()
+        assert set(value) == expected_keys
+        assert value == {
+            "configured": 2,
+            "held": held,
+            "awaiting_backend_ack": awaiting_ack,
+            "awaiting_cleanup": awaiting_cleanup,
+            "scope": "adapter_process_lifetime",
+            "source": "live_product_slot_registry",
+        }
+
+    counts(0, 0, 0)
+    registry.reserve(first)
+    counts(1, 1, 1)
+    registry.acknowledge(first)
+    counts(1, 0, 1)
+    registry.cleanup(first, wire.RunnerExit(0, None, "process_exit", "proven"))
+    counts(0, 0, 0)
+
+    registry.reserve(second)
+    registry.cleanup(second, wire.RunnerExit(0, None, "process_exit", "proven"))
+    counts(1, 1, 0)
+    registry.acknowledge(second)
+    counts(0, 0, 0)
+
+
+def test_operations_counts_keep_wrong_ack_and_unknown_cleanup_held(tmp_path):
+    registry, _, _ = _registry(tmp_path)
+    scope = _scope("workspace-a", "a")
+    registry.reserve(scope)
+    with pytest.raises(product.ProductSlotLeaseMismatch):
+        registry.acknowledge({**scope, "trace_id": "wrong-trace"})
+    with pytest.raises(product.ProductSlotUnknown):
+        registry.cleanup(scope, wire.RunnerExit(None, None, "transport_lost", "unknown"))
+    counts = registry.operations_counts()
+    assert counts["held"] == 1
+    assert counts["awaiting_backend_ack"] == 1
+    assert counts["awaiting_cleanup"] == 1
+
+
 def test_wrong_ack_and_unknown_cleanup_never_release_workspace_fence(tmp_path):
     registry, _, _ = _registry(tmp_path)
     scope = _scope("workspace-a", "a")

@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-13",
+  "source_commit": "55033eb0937665bf1d19f848de1f185353f7dbc0",
+  "result": "PASS_DESIGN_ONLY",
+  "independent_sol_reviewer": "/root/manual_result_reviewer",
+  "root_result": "PASS_DESIGN_ONLY",
+  "problem": "Health, child-process absence and closed Backend roots cannot establish whether the live Adapter still holds a Product lease.",
+  "minimal_change": "Project anonymous aggregate counts from the existing live ProductSlotRegistry into existing runtime operations, under the registry lock; no new endpoint, registry, scheduler or mutation.",
+  "fields": ["configured", "held", "awaiting_backend_ack", "awaiting_cleanup", "scope", "source"],
+  "scope": "adapter_process_lifetime",
+  "source": "live_product_slot_registry",
+  "not_configured": "omit the aggregate; observers must treat missing data as UNKNOWN, never zero",
+  "security_boundary": "Gateway operations is admin-gated. The existing raw Adapter operations route is unauthenticated on the Product network; Product DSH can read anonymous global counts, as with existing session/usage counts. No identifiers, sockets, environment names, secrets, business records, source access or new Product permissions are added.",
+  "interpretation": "held=0 proves only an instantaneous Adapter lease-free observation. It does not prove runner readiness or atomic capacity; awaiting counters overlap.",
+  "required_offline_contracts": [
+    "reserve and both ACK/cleanup orders; wrong ACK and unknown cleanup remain held",
+    "snapshot reads the actual singleton, is secret-free and cannot alter lease state",
+    "not-configured field omitted",
+    "Gateway admin response, ordinary-user 403, unauthenticated 401 and plugin projection omission"
+  ],
+  "preflight_method": [
+    "persist inventory checkpoint before checks",
+    "reuse pinned successful DB argv without new SQL guesses; save rc/stdout/stderr before assertions",
+    "record live lease projection with unchanged Adapter boot/container identity; missing projection is UNKNOWN",
+    "record Backend roots, exact Job facts, runner health/process facts, actual identity, binding and mounts separately",
+    "failure or unknown stops before model calls or resource mutations; no replay"
+  ],
+  "original_failure_preserved": "ROOT-TWO-USER-LIVE-PREFLIGHT-FAIL-STOP.json",
+  "implementation": "NOT_RUN",
+  "offline_tests": "NOT_RUN",
+  "live_tests": "STOPPED"
+}

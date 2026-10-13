@@ -1,0 +1,85 @@
+{
+  "verdict": "PASS effective config readback only",
+  "scope": "temporary native OC tool containment; does not block model requests or erase old contexts",
+  "global_permission": {
+    "*": "deny"
+  },
+  "agents": {
+    "build": {
+      "bash": "deny",
+      "read": "deny",
+      "edit": "deny",
+      "grep": "deny",
+      "glob": "deny",
+      "task": "deny",
+      "webfetch": "deny",
+      "todowrite": "deny"
+    },
+    "compaction": {
+      "bash": "deny",
+      "read": "deny",
+      "edit": "deny",
+      "grep": "deny",
+      "glob": "deny",
+      "task": "deny",
+      "webfetch": "deny",
+      "todowrite": "deny"
+    },
+    "explore": {
+      "bash": "deny",
+      "read": "deny",
+      "edit": "deny",
+      "grep": "deny",
+      "glob": "deny",
+      "task": "deny",
+      "webfetch": "deny",
+      "todowrite": "deny"
+    },
+    "general": {
+      "bash": "deny",
+      "read": "deny",
+      "edit": "deny",
+      "grep": "deny",
+      "glob": "deny",
+      "task": "deny",
+      "webfetch": "deny",
+      "todowrite": "deny"
+    },
+    "plan": {
+      "bash": "deny",
+      "read": "deny",
+      "edit": "deny",
+      "grep": "deny",
+      "glob": "deny",
+      "task": "deny",
+      "webfetch": "deny",
+      "todowrite": "deny"
+    },
+    "summary": {
+      "bash": "deny",
+      "read": "deny",
+      "edit": "deny",
+      "grep": "deny",
+      "glob": "deny",
+      "task": "deny",
+      "webfetch": "deny",
+      "todowrite": "deny"
+    },
+    "title": {
+      "bash": "deny",
+      "read": "deny",
+      "edit": "deny",
+      "grep": "deny",
+      "glob": "deny",
+      "task": "deny",
+      "webfetch": "deny",
+      "todowrite": "deny"
+    }
+  },
+  "model_tool_executions": 0,
+  "new_model_calls": 0,
+  "compromised_session_reuse": "FORBIDDEN",
+  "new_OC_tasks": "NOT_ADMITTED",
+  "native_service": "active; original serve retained",
+  "production_changes": 0
+}

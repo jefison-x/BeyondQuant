@@ -1,0 +1,15 @@
+{
+  "decision": "ROOT_PASS_LOGIN_UI_ONLY",
+  "environment": "byq-dshqual-20261011",
+  "origin": "http://127.0.0.1:32778",
+  "observed_url": "http://127.0.0.1:32778/agent",
+  "identity": "existing isolated admin",
+  "performed_by": "human entered existing credentials",
+  "verification": "CUA accessibility state: authenticated workspace and existing conversation displayed",
+  "new_agent_turns": 0,
+  "new_jobs": 0,
+  "browser_workflow_acceptance": "NOT_RUN",
+  "screenshot_file": "NOT_SAVED_READ_ONLY_CUA_FILESYSTEM",
+  "screenshot_disclosure": "BLOCKED_AUTO_REVIEW_PRIVATE_PAGE_CONTENT",
+  "credentials_recorded": false
+}

@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-13",
+  "source_commit": "55033eb0937665bf1d19f848de1f185353f7dbc0",
+  "result": "FAIL_STATIC_CONTRACT_COVERAGE",
+  "reviewer": "/root/manual_result_reviewer",
+  "source_sha256": {
+    "tests/fixtures/compose.acp-two-user-qualification.yml": "e951bc8a1f1a951c3bcdc4b88d74219c8ed20b0c3755bfc5175af55ddbf16653",
+    "tests/architecture/test_acp_two_user_qualification_compose.py": "b3b82206aebd0e2301cf0cd43b6a74e4c52e0b0016bfb7c6d9491b4ea73ab735"
+  },
+  "findings": [
+    "test bypassed actual default Compose include chain",
+    "test did not fully assert original primary bindings and resource mounts preserved"
+  ],
+  "test_execution": "NOT_RUN",
+  "new_model_requests": 0,
+  "new_jobs": 0,
+  "service_mutations": 0,
+  "next_action": "repair two owned qualification test files and independently re-review before running fixed offline tests"
+}

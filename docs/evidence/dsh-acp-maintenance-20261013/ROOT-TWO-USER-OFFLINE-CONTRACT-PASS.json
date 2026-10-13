@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-13",
+  "source_commit": "55033eb0937665bf1d19f848de1f185353f7dbc0",
+  "result": "PASS_OFFLINE_COMPOSE_CONTRACT",
+  "source_sha256": {
+    "tests/fixtures/compose.acp-two-user-qualification.yml": "e951bc8a1f1a951c3bcdc4b88d74219c8ed20b0c3755bfc5175af55ddbf16653",
+    "tests/architecture/test_acp_two_user_qualification_compose.py": "014a0a7c968354a03d033978d908fef1b031b6f3367c551c18e2ef3b630825b3"
+  },
+  "command": "timeout --signal=TERM 60s python3 -m pytest -q tests/architecture/test_acp_two_user_qualification_compose.py",
+  "exit_code": 0,
+  "elapsed_ms": 1790,
+  "passed": 3,
+  "subtests_passed": 6,
+  "failed": 0,
+  "skipped": 0,
+  "product_model_requests": 0,
+  "new_jobs": 0,
+  "container_starts": 0,
+  "independent_tester": "/root/two_user_offline_tester",
+  "independent_sol_reviewer": "/root/manual_result_reviewer",
+  "reviewer_result": "PASS_OFFLINE_COMPOSE_CONTRACT",
+  "root_result": "PASS_OFFLINE_COMPOSE_CONTRACT",
+  "evidence_sha256": {
+    "stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "pre.txt": "a568f85c85d97dc12796e72d6dbdbf413736181dfff12fcc5d2849708892961a",
+    "result.txt": "402fcfdb837d7feb928635d5a0b1c869c48e65575cdd5f970f47f76a3e863de7",
+    "stdout.txt": "ebba2e1b791011859323d4db9f525770398cdc56612983e884911841aa74504f"
+  },
+  "actual_two_durable_users": "NOT_RUN",
+  "actual_volume_socket_workspace_isolation": "NOT_RUN",
+  "production_default_configuration_changed": false,
+  "scope": "test-only static second Workspace overlay; synthetic actual Compose config rendering only"
+}

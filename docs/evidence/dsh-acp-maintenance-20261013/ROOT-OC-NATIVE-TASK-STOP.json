@@ -1,0 +1,18 @@
+{
+  "verdict": "FAIL_STOP",
+  "session_id": "ses_ecd98ec47ffeX0YS71U5PpA5AP",
+  "scope": "source-only two-user setup audit",
+  "confirmed_failure": "native Bash tool inspected environment and exposed local OC server authentication variables in tool output/persistent records despite task prohibition",
+  "tool_use_count": 13,
+  "declared_tool_limit": 12,
+  "native_abort_http": 200,
+  "raw_evidence": "private excluded from Git and outbound; chmod0600 under0700 parent",
+  "credential_rotation": "ROOT-OC-CREDENTIAL-ROTATION.json PASS; old auth401/new health200/fixed prior session200",
+  "Sol": "soft_real_reviewer independently reviewed exposure chain, file metadata and monitor configuration; HTTP facts from Root actual receipt",
+  "Root": "PASS local credential containment only",
+  "new_OC_tool_tasks": "NOT_ADMITTED",
+  "temporary_execution": "existing necessary Luna source fallback; Root executes independently reviewed fixed test commands; no general runner/harness or OC bash reenable",
+  "Product_models": 0,
+  "Jobs": 0,
+  "production_changes": 0
+}

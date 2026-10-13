@@ -1,0 +1,17 @@
+{
+  "date": "2026-10-13",
+  "source_commit": "55033eb0937665bf1d19f848de1f185353f7dbc0",
+  "result": "FAIL_OBSERVER_SQL_STOP",
+  "category": "unverified_table_name_in_root_adhoc_readonly_query",
+  "sql": "BEGIN READ ONLY; SELECT json_build_object('open_roots',(SELECT count(*) FROM agent_root_runs WHERE authority_status <> 'closed'),'nonterminal_signal_jobs',(SELECT count(*) FROM signal_producer_jobs WHERE status NOT IN ('completed','failed','cancelled'))); COMMIT;",
+  "postgres_error": "relation agent_root_runs does not exist",
+  "observer_command_exit_code": 1,
+  "sql_process_exit_code": 1,
+  "product_model_requests": 0,
+  "new_jobs": 0,
+  "new_users": 0,
+  "container_changes": 0,
+  "product_result": "NOT_DETERMINED_BY_OBSERVER_FAILURE",
+  "root_process_failure": "executed a guessed query before checking existing successful contract",
+  "next_action": "stop live preflight; reuse exact prior validated query; source-only independent review before any further tests"
+}
