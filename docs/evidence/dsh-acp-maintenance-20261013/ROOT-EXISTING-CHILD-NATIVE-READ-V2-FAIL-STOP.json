@@ -1,0 +1,59 @@
+{
+  "schema_version": "byq-root-evidence.v1",
+  "status": "FAIL_OBSERVER_STOP",
+  "repository_head": "5aff7001bc92112feed5e3b51a2a5d5bab739d07",
+  "caller_sha256": "a97beef8c228c5acad5a68bd88e3af8f4f4c4496e7eae8f623fd49d7566c8701",
+  "native_reader_sha256": "bb9de5ea6017c5c19a747c84742322a64fd7cceee734ec1b90fd8484e818775d",
+  "outer": {
+    "returncode": 2,
+    "elapsed_ms": 175,
+    "stdout_bytes": 0,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_bytes": 49,
+    "stderr_sha256": "275de587d8204e8e9deda37cfb28fb21ee6ecc369b80dc28c5b9c38989e13dfc"
+  },
+  "native_command": {
+    "returncode": 2,
+    "elapsed_ms": 93,
+    "stdout_bytes": 0,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_bytes": 39,
+    "stderr_sha256": "1668c815c7e61e1d2079f1639e20e119ac0a5c766c9a8d5bd77e792a0ab00d18"
+  },
+  "first_stop": {
+    "elapsed_ms": 145,
+    "reason": "native-child-projection_process_failed",
+    "schema_version": "byq-existing-native-read-stop.v1",
+    "status": "STOP"
+  },
+  "exact_native_stderr": "NATIVE_CHILD_STOP:native_child_invalid\n",
+  "commands_completed": [
+    "git HEAD",
+    "runner before inspect",
+    "native exec rejected"
+  ],
+  "not_run": [
+    "runner after inspect",
+    "complete projection",
+    "native/backend tool chain",
+    "budget",
+    "MAC cleanup",
+    "exact ACK",
+    "Job delta",
+    "original failed batch finish/reload"
+  ],
+  "source_before_after_equal": true,
+  "independent_sol_raw_review": "FAIL_STOP confirmed",
+  "root": "FAIL_STOP",
+  "no_retry": true,
+  "limits": {
+    "total_seconds": 20,
+    "docker_max": 3,
+    "native_exec_max": 1,
+    "model": 0,
+    "new_job": 0,
+    "api_db_login": 0
+  },
+  "interpretation": "Generic native catch hides the precise exception. No root cause is asserted from this label. Native/schema synthetic PASS does not prove normal AgentLoop tool-result formatting.",
+  "next_action": "Stop real qualification tests. Acquire pinned normal AgentLoop/tool-result serializer source first; later a separately reviewed metadata-only diagnostic may preserve phase/exception types without contents."
+}

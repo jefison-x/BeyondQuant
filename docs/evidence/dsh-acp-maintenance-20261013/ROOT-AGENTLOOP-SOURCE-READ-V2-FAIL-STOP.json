@@ -1,0 +1,67 @@
+{
+  "schema": "byq-root-agentloop-source-failure.v1",
+  "status": "FAIL_OBSERVER_STOP",
+  "root_decision": "FAIL_STOP",
+  "head": "5aff7001bc92112feed5e3b51a2a5d5bab739d07",
+  "caller_sha256": "ffe2d7a51a6d3343f52d2bd7f26783cd85f7a2a3a2cb95fe59cabf6619ea37ae",
+  "manifest_sha256": "afcd0f0fee6c13ff2771f310feff38bdf3a3df0169fa83288b32651b5dc82e5e",
+  "outer": {
+    "schema": "byq-root-sdk-source-acquisition-run.v2",
+    "returncode": 2,
+    "elapsed_ms": 122,
+    "stdout_bytes": 277,
+    "stdout_sha256": "f4bf91838d530098cc51d7c3ec4841169a16dd51c5adba299e0b4b162e3b973f",
+    "stderr_bytes": 0,
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "pins_unchanged": true,
+    "source_pins_after": {
+      ".ci-artifacts/delegated-child-20261013/agentloop-source-v2/acquire_sdk_source.py": "ffe2d7a51a6d3343f52d2bd7f26783cd85f7a2a3a2cb95fe59cabf6619ea37ae",
+      ".ci-artifacts/delegated-child-20261013/agentloop-source-v2/manifest.json": "afcd0f0fee6c13ff2771f310feff38bdf3a3df0169fa83288b32651b5dc82e5e",
+      "scripts/evidence/acp-ordinary-continuous-capture.py": "86258c4f6b83542f1f0b171b972c0449a5d70afb3f42e1be141344560e8f83d3",
+      "scripts/evidence/acp-foreground-child-capture.py": "317d31134c07a23a091e897e9a42d1f7f2ee8b1957e55b1b33ac8f8690813d69"
+    },
+    "status": "FAIL_STOP",
+    "models": 0,
+    "jobs": 0,
+    "http": 0,
+    "database": 0
+  },
+  "first_stop": {
+    "elapsed_ms": 94,
+    "head_pin": "5aff7001bc92112feed5e3b51a2a5d5bab739d07",
+    "reason": "sdk-agentloop-source-read_process_failed",
+    "runner_id": "b01cec2d1051f2fb7fd1acb91b1cb947155dd7f39024eb9c8fc3279ffbdae75e",
+    "schema": "byq-agentloop-source-acquisition.v1",
+    "status": "STOP"
+  },
+  "command_receipts": [
+    {
+      "label": "container-sdk-source-before",
+      "returncode": 0,
+      "stdout_sha256": "87131adc92d3aff1c69eae928a8eff55571718f6295ddff10d178c11bfe94f54",
+      "stderr_bytes": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "sdk-agentloop-source-read",
+      "returncode": 1,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_bytes": 668,
+      "stderr_sha256": "1bb576c419c5be9988a300aa902a013c5f16992d22504b693c48053ff1ab7fc3"
+    }
+  ],
+  "docker_operations": 2,
+  "after_inspect": "NOT_RUN",
+  "sdk_success_artifact": "NOT_RUN",
+  "confirmed": "ESM resolution of AgentLoop from the tool-subagent entrypoint failed.",
+  "not_confirmed": [
+    "Original Node resolver exception was hidden.",
+    "AgentLoop is missing or has a guessed installation path.",
+    "Persisted tool/result raw value or precise native_child_invalid event/cause."
+  ],
+  "contract_gap": "Synthetic fixture installed AgentLoop under the tool dependency graph. The actual ACP profile selects a top-level Cordis plugin, and factory documentation does not prove it is visible from the tool resolver anchor.",
+  "independent_review": "Sol RAW FAIL_STOP confirms boundary and insufficient topology evidence; Root FAIL_STOP.",
+  "operations_after_failure": "No new SDK reads, tests, model requests, Jobs, restarts or retries. Only saved-source/repository read-only audits.",
+  "next_reviewable_slice": "Use the build-contract CLI entry apps/cli/lib/bin.js to establish the real plugin loader/importer contract from public source. No alternate-anchor retries or generic acquisition framework. Fix the source contract before another admitted read.",
+  "product_status": "UNKNOWN mapping, NOT_READY for new deployment; old deployment PASS preserved."
+}

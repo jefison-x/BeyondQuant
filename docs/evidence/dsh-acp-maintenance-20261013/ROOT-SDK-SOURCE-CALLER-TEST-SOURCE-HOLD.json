@@ -1,0 +1,31 @@
+{
+  "schema": "byq-root-sdk-source-caller-test-review.v1",
+  "status": "HOLD_NOT_RUN",
+  "head": "5aff7001bc92112feed5e3b51a2a5d5bab739d07",
+  "original_test_sha256": "c228588dbcdc02898fbb8d944c14221c583192d85c3e5d462f953178e73d92d8",
+  "original_plan_sha256": "6f7c24db2aa23068f14b4cb539d135b012aa43a721e79388a9eb62bf8ca1f823",
+  "findings": [
+    "Synthetic Node root/path/tool digest differed from fixed host validator pins.",
+    "Fake transport incorrectly capped initial inspect timeout at 16 rather than shared 20 seconds.",
+    "Positive test asserted result.json although caller emits stdout result and writes sdk-source.json only.",
+    "Aggregate fixture included an index file not necessarily selected by native ESM exports; actual resolved files did not establish aggregate overflow."
+  ],
+  "review": "Independent Sol static review confirmed all four blockers; Root held execution.",
+  "executed": {
+    "test_methods": 0,
+    "docker": 0,
+    "models": 0,
+    "jobs": 0
+  },
+  "repair_scope": "Extract two fixed host pins as constants with unchanged defaults; align synthetic boundary, real ESM selected-entry limit fixture, stage timeout and actual artifact lifecycle. Freeze and review before one offline batch.",
+  "production_operations": 0,
+  "second_static_review": {
+    "test_sha256": "ec97186c84933a36f8f05552f2c6733d9861625f3ce70cfa4231cef80ab2b885",
+    "plan_sha256": "1fa68a8261aa1a3172ea95d383aecb55ef5693c461029fd3bf319d2e693c6304",
+    "status": "HOLD_NOT_RUN",
+    "original_four_findings_closed": true,
+    "finding": "Every local Node invocation attempted exclusive creation of the same batch artifact directory; second invocation would fail before Node.",
+    "repair": "Create fresh batch root once and unique case/invocation subdirectories, preserving each actual Node receipt and transformed source. Outer command receipts use a separate sibling directory.",
+    "test_methods_executed": 0
+  }
+}

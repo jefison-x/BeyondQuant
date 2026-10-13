@@ -43,6 +43,12 @@
 | 已有单子 Agent 文件独立读取 V1 | FAIL_OBSERVER_STOP | 一次171ms读取在native_tool_result_id_mismatch停止，仅HEAD/before inspect/native exec执行，after及chain NOT_RUN，模型/Job/API/DB0。官方源码已确认观察器及fixture的嵌套工具结果格式与当前SDK不符；实际错误行未观察，不重试，先统一消息合同。见ROOT-EXISTING-CHILD-NATIVE-READ-V1-FAIL-STOP.json |
 | 官方原生消息合同统一修补 V1 | FAIL_STOP 替身 | 三项pure PASS，第四fixture构造因header cwd直接用了Path而ERROR，后四项和42场景NOT_RUN；零真实IO/模型/Job。停止后完整审计JSON/路径/压缩/transport类型边界；见ROOT-NATIVE-CONTRACT-OFFLINE-V1-FAIL-STOP.json |
 | 官方原生消息合同统一修补 | PASS 离线限定 | 新V2五项WholeMain及42停止场景一次3047ms通过Sol→Root，V1前三pure PASS分开复用。统一tool结果顶层ID/error、message role/source、seq/time、opaque事件及header/developer合同；不声称SDK serializer输出、完整surface folding或实采PASS。见ROOT-NATIVE-CONTRACT-OFFLINE-PASS.json |
+| 已有单子 Agent 文件独立读取 V2入口 | PASS 离线限定 | V2固定current源码/HEAD，完整caller五项一次241ms通过Sol→Root；保持native/zstd/scope/chain真实算法，不冒充实际formatter结果。见ROOT-EXISTING-CHILD-CALLER-V2-OFFLINE-PASS.json |
+| 已有单子 Agent 文件独立读取 V2实采 | FAIL_OBSERVER_STOP | 一次175ms，native rc2/39字节native_child_invalid；仅HEAD/before inspect/native exec，after及chain NOT_RUN。异常类型被generic catch隐藏，不能定位具体阶段。已停所有真实资格测试；先补官方AgentLoop/工具结果formatter源码，不猜改、不重发模型。见ROOT-EXISTING-CHILD-NATIVE-READ-V2-FAIL-STOP.json |
+| SDK 源码采集入口合同 | PASS 离线限定 | 两轮静态 HOLD 的五处错配均在执行前拦截；修正后一次7方法335ms通过Sol→Root，真实Node解析合成SDK树，5实际Node/1传输替身日志分别保留，模型/Job/Docker0。见ROOT-SDK-SOURCE-CALLER-TEST-SOURCE-HOLD.json、ROOT-SDK-SOURCE-CALLER-OFFLINE-PASS.json |
+| 已安装 SDK 公开源码读取 | PASS 源码读取限定 | 一次224ms、3Docker、5包源码及manifest合计459750字节，Runner前后身份相同；Sol→Root PASS，模型/Job/API/DB0。ToolRuntime分开保留value/content，AgentLoop持久化映射仍UNKNOWN，仅补缺失包，不重发模型。见ROOT-PUBLIC-SDK-SOURCE-READ-PASS.json、ROOT-DELEGATE-RENDER-CONTRACT-AUDIT.json |
+| AgentLoop 补缺入口 | PASS 三项离线限定 / FAIL 实采入口 | 定向3方法232ms通过Sol→Root，其余4项NOT_RUN并分开复用V1未变守卫；一次实采122ms在tool锚点ESM解析失败，仅2Docker，after NOT_RUN，模型/Job0。替身模拟的依赖拓扑未证明真实插件加载入口；已停实采，不猜路径。见ROOT-AGENTLOOP-SOURCE-CALLER-OFFLINE-PASS.json、ROOT-AGENTLOOP-SOURCE-READ-V2-FAIL-STOP.json |
+| 委派持久化映射检查点 | UNKNOWN / HOLD | 已确认value/content分离及观察器JSON假设缺口，完整AgentLoop写入映射及实际失败行未证明。沿原会话和注册/调用链补证，保留ACK、清理、预算、Job增量及刷新缺口；不从普通文本猜runId。见ROOT-DELEGATE-PERSISTENCE-CHECKPOINT.json |
 | 两用户、自然迟到旧请求、业务结果 unknown、进程丢失 | NOT_RUN 当前补缺批次 | 保留旧限定证据，逐片补缺；不自动重放未知业务结果 |
 | 远程 CI / 推送 / 合并 / 生产部署 | NOT_RUN | 不以本地、合成或隔离更新证明生产资格 |
 

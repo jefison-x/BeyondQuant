@@ -1,0 +1,71 @@
+{
+  "schema": "byq-root-public-sdk-source-acquisition.v1",
+  "status": "PASS_SOURCE_READ_ONLY",
+  "root_decision": "PASS",
+  "head": "5aff7001bc92112feed5e3b51a2a5d5bab739d07",
+  "receipt": ".ci-artifacts/delegated-child-20261013/agentloop-source-v1/source-outer-run-v1",
+  "caller_sha256": "8212d68b3af64f396b092b59ed9d7e5dbf8ee9b34ab6b4d8e6692a8ebaa26a3e",
+  "manifest_sha256": "bd4de839faee111ba51f6d778f5b851da25b21d50b7e295554738cad3245c1e7",
+  "elapsed_ms": 224,
+  "returncode": 0,
+  "outer_stdout_sha256": "73630b913bd6370e2343e36cb2c40a5b49fda51cfb969258225b5864b2353fcb",
+  "runner_before_after": "Exact six fields equal; 3 Docker calls.",
+  "files": [
+    {
+      "path": "/opt/dsh-runtime/packages/subagent/tool-subagent/lib/index.js",
+      "sha256": "26a1e804aab4c6f9cb53a670c63b817fc8d9409569e6d68eda6fda33b966a840",
+      "bytes": 34544
+    },
+    {
+      "path": "/opt/dsh-runtime/packages/core/agent/lib/index.js",
+      "sha256": "7b9aa39474de83115cf890dd7f8904cf0d59df0811cb335ab85565a04f1aac93",
+      "bytes": 28207
+    },
+    {
+      "path": "/opt/dsh-runtime/packages/core/session/lib/index.js",
+      "sha256": "87ea85e2fb5318bf1f826db9a1c88c1b26d3ea328027a7f32b211880c4d62b9d",
+      "bytes": 90015
+    },
+    {
+      "path": "/opt/dsh-runtime/packages/subagent/subagent/lib/index.js",
+      "sha256": "75b50b1c9452a6aeb10d1c859e3f45b05e062ea1fad6ed3bcd9577f2bc912541",
+      "bytes": 135247
+    },
+    {
+      "path": "/opt/dsh-runtime/packages/core/tools/lib/index.js",
+      "sha256": "40f47709337c3c205d4e09e647f8588f4977e66f6d52f019b3cc7ef81159d84f",
+      "bytes": 157954
+    }
+  ],
+  "total_manifest_and_source_bytes": 459750,
+  "manifest_bytes": 13783,
+  "command_receipts": [
+    {
+      "label": "container-sdk-source-after",
+      "returncode": 0,
+      "stdout_sha256": "87131adc92d3aff1c69eae928a8eff55571718f6295ddff10d178c11bfe94f54",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "container-sdk-source-before",
+      "returncode": 0,
+      "stdout_sha256": "87131adc92d3aff1c69eae928a8eff55571718f6295ddff10d178c11bfe94f54",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "sdk-agentloop-source-read",
+      "returncode": 0,
+      "stdout_sha256": "4b7aa908ccf0dc8c9bc6c221edd6963d5c3e1d86d76aa87cb55ade89ddd041e3",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "independent_review": "Sol RAW/SOURCE PASS; Root PASS source-read scope only.",
+  "models": 0,
+  "jobs": 0,
+  "http": 0,
+  "database": 0,
+  "sdk_import_or_evaluation": 0,
+  "normal_persistence_mapping": "UNKNOWN: dsh-agent is factory facade; implemented by uncollected dsh-agent-loop. ToolRuntime has separate raw value and rendered content.",
+  "product_qualification": "NOT_RUN; existing native FAILs preserved.",
+  "next": "Read only missing AgentLoop package plus exact pinned resolver anchor; reuse existing five source records."
+}

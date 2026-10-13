@@ -1,0 +1,48 @@
+{
+  "schema_version": "byq-root-evidence.v1",
+  "status": "PASS_OFFLINE_ONLY",
+  "repository_head": "5aff7001bc92112feed5e3b51a2a5d5bab739d07",
+  "command": [
+    "timeout",
+    "--signal=TERM",
+    "--kill-after=2s",
+    "60s",
+    "python3",
+    "-B",
+    ".ci-artifacts/delegated-child-20261013/native-existing-read-v2/test_read_existing_native.py",
+    "-v",
+    "-f"
+  ],
+  "source_sha256_before": {
+    ".ci-artifacts/delegated-child-20261013/native-existing-read-v2/manifest.json": "738f75085239e86ccbf54ab83b6724f06c5c242cf8221414b50b729f02f7c76a",
+    ".ci-artifacts/delegated-child-20261013/native-existing-read-v2/offline-test-plan.json": "2f45df5d501eb77ae7e556f1fcf98b2f02ca4cf47f2924c4e154f88df0e9094e",
+    ".ci-artifacts/delegated-child-20261013/native-existing-read-v2/read_existing_native.py": "a97beef8c228c5acad5a68bd88e3af8f4f4c4496e7eae8f623fd49d7566c8701",
+    ".ci-artifacts/delegated-child-20261013/native-existing-read-v2/test_read_existing_native.py": "985c3c2b97bddda77f7c4e4de2d136b21c981b06d1014fb9729cd98c8a2decd6",
+    "scripts/evidence/acp-child-scope-read.py": "7a4128f441a325035b9ec6008323a165fabeaba43dd3d792ff671b26e34f3ded",
+    "scripts/evidence/acp-foreground-child-capture.py": "317d31134c07a23a091e897e9a42d1f7f2ee8b1957e55b1b33ac8f8690813d69",
+    "scripts/evidence/acp-ordinary-continuous-capture.py": "86258c4f6b83542f1f0b171b972c0449a5d70afb3f42e1be141344560e8f83d3",
+    "scripts/evidence/test_acp_child_scope_read.py": "e9b15c2ab923ba5fc68c4a94f20f2a46c433bbed717a263bd7b331354fad1b31",
+    "scripts/evidence/test_acp_foreground_child_capture.py": "7699d79939b394e71d7017a512dc8f29933ee7dc551320d762546791d356e6ae"
+  },
+  "fresh_methods_passed": 5,
+  "raw": {
+    "returncode": 0,
+    "elapsed_ms": 241,
+    "stdout_bytes": 0,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_bytes": 954,
+    "stderr_sha256": "b492ffcd6f61b8336ae097b036797686b2f6d6080546c25ea7ada5120f848cc0"
+  },
+  "source_before_after_equal": true,
+  "real_external_calls": {
+    "database": 0,
+    "docker": 0,
+    "http": 0,
+    "job": 0,
+    "model": 0
+  },
+  "independent_sol_raw_review": "PASS",
+  "root": "PASS",
+  "scope": "Complete caller with current native/zstd/scope/chain and four Stop paths.",
+  "limitation": "Manual source-conforming fixture proves the caller algorithm. Subsequent actual read FAIL; normal AgentLoop serialization remains unproven."
+}
