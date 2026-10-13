@@ -73,6 +73,9 @@
 | 完整控制入口替身V3 | PASS 离线限定 | 真实loader/helper执行，仅替身传输边界；1方法、6逻辑分支/7case一次114ms完成（1PASS/6预期STOP），冻结Controller/合同未变。Tester→Sol RAW→Root PASS；见ROOT-SOFT-CONTROL-OFFLINE-V3-PASS.json |
 | 真实软取消后同会话再输入V2 | PASS UI/API限定 | 同CID76cf，旧Root4744 started16→soft cancelled19→discard21；新Root5c8 started22→result27，4个累计user、唯一SAME_CID_OK、无旧输入重放/会话误关。2原生浏览器输入/1soft POST，118961ms<120s，Sol RAW→Root PASS；ACK/清理/授权/计数在独立补查另列。见ROOT-SOFT-DIRECT-LIVE-V2-UI-API-PASS.json |
 | 上述两Root独立补证 | PASS 只读限定 | 9Docker/499ms，两个Root状态/授权/terminal receipt/ACK/HMAC精确关联；新provider1次，旧provider UNKNOWN原样保留，无自动重放。两binding.closedfalse/native与process true、cleanup reason cancelled独立报告，11表计数相同、四容器身份不变。Sol RAW→Root PASS；见ROOT-SOFT-DIRECT-V2-SUPPLEMENT-PASS.json |
+| 官方CLI插件加载入口补缺 | PASS 公共源码读取限定 | 复用cached CLI，只补literal引用的facade及bundle，两批各3Docker/159ms与98ms；四stamp/完整bytes/hash/Runner身份稳定。实际默认installAnchor为CLI package.json，可能有resolvedProfile覆盖；app-boot与AgentLoop实现仍未证明，不重试旧tool anchor。Sol SOURCE/RAW→Root PASS；见ROOT-CLI-PROFILE-LOADER-SOURCE-READ-PASS.json |
+| 本地源码diff路径组装 | FAIL_STOP 本地预检 | Root误用上一leaf文件名，FileNotFound发生在新采集前，0Docker/模型/Job；停下后按实际inventory/CONTRACT核全argv/cwd/hash/freshout，独立Sol审查新命令后才新批只读。原失败保留，不解释为Product错误；见ROOT-LOCAL-SOURCE-DIFF-PATH-FAIL-STOP.json |
+| 普通委派必需验收合同复核 | PASS 有界BYQ业务证据 | Accepted ADR0094/0100要求可信签名父链/参数digest/ingress settlement/冻结terminal cursor及ACK/执行清理；不要求从formatter提取SDKrawRunID或必须读native父文件。既有BYQ身份/只读调用/Rootaggregate预算/ACK/清理证据可限定接受。individual native close仍UNKNOWN，0096复用/0102中断业务/两用户等须另验；原实时批次FAIL不改。Sol→Root，见ROOT-BOUNDED-DELEGATE-ACCEPTANCE-CONTRACT.json |
 | 两用户、自然迟到旧请求、业务结果 unknown、进程丢失 | NOT_RUN 当前补缺批次 | 保留旧限定证据，逐片补缺；不自动重放未知业务结果 |
 | 远程 CI / 推送 / 合并 / 生产部署 | NOT_RUN | 不以本地、合成或隔离更新证明生产资格 |
 
