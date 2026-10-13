@@ -26,5 +26,29 @@
     "max_seconds": 180
   },
   "schema": "byq-root-continuation-next-slice.v1",
+  "soft_contract_audit": {
+    "api": "POST /v1/agent/sessions/{conversation_id}/cancel with explicit JSON mode=soft; omitted mode defaults hard",
+    "references": [
+      "services/gateway/app/main.py:975",
+      "services/gateway/app/main.py:2759",
+      "services/runtime-adapter/app/runtime.py:1640",
+      "services/runtime-adapter/app/runtime.py:1504",
+      "services/runtime-adapter/tests/test_process_cleanup.py:1462",
+      "services/gateway/tests/test_product_agent.py:105"
+    ],
+    "required_gate": "Small explicit soft-cancel capture entry and full surrogate path must be independently reviewed and executed before a new live batch; use existing native/helper interfaces, no generic framework",
+    "root_target": "Route cancels current active run, has no root argument; fix unique root and identity before call, compare discarded event run_id afterward",
+    "scope": "Necessary Luna readonly source fallback; independent Sol source confirmation PASS; real admission HOLD / NOT_RUN",
+    "settlement": "CANCELLING response alone insufficient; wait for actual IDLE and same-root session.result.discarded",
+    "surrogate_evidence": "Existing test source covers soft behavior; no complete live-capture entry or passed end-to-end capture receipt located in this audit. Source presence is not a new test PASS.",
+    "surrogate_required_cases": [
+      "Unique started Root and exact identity",
+      "Root already completed before cancel or active Root drift",
+      "CANCELLING does not permit next input",
+      "Discard settlement bound to same Root",
+      "Actual IDLE permits same CID new input",
+      "First failure forbids further input"
+    ]
+  },
   "status": "PREPARATION_ONLY_REAL_TEST_NOT_RUN"
 }
