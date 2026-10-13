@@ -846,6 +846,21 @@ def _send_agent_lifecycle(context, event, *, expected_boot_id=None):
             else:
                 if acknowledged != closed:
                     raise ValueError("runtime terminal acknowledgement mismatch")
+                try:
+                    logger.info("terminal_ack_observed %s", json.dumps({
+                        "schema_version": "byq-gateway-terminal-ack-observed.v1",
+                        "event": "terminal_ack_observed",
+                        "root_run_id": event["root_run_id"],
+                        "session_id": context["session_id"],
+                        "boot_id": boot_id,
+                        "trace_id": context["trace_id"],
+                        "sequence": event["sequence"],
+                        "event_sha256": receipt["event_sha256"],
+                        "outcome": event["outcome"],
+                    }, sort_keys=True, separators=(",", ":")))
+                except Exception:
+                    # This is an observation only; logging must not change ACK delivery.
+                    pass
                 return closed
         if attempt + 1 < TRACE_LIFECYCLE_SEND_ATTEMPTS:
             time.sleep(TRACE_RETRY_DELAY_SECONDS * (attempt + 1))

@@ -11,7 +11,7 @@
 | 新 MCP 镜像源码读回 | PASS | `08dcc976...`，构建/源码资格；见 ROOT-COMBINED-MCP-IMAGE-SOURCE-PASS.json |
 | 隔离 MCP 服务更新 | PASS | 新容器健康，其余10个隔离服务及17个生产库存未变；见 ROOT-ISOLATED-MCP-UPDATE-PASS.json |
 | 浏览器采集入口 V2 替身 | FAIL_STOP | 首例将合法重复读取误判；一次执行后停测，全面重审采集合同；见 ROOT-BROWSER-V2-OFFLINE-FAIL-STOP.json |
-| 新候选真实 Product / 浏览器 | PASS 限定单轮 | 手动8次模型、零新Job；刷新后唯一回答、持久化/交付/Root结算一致；独立Sol及Root PASS；自动V3仍NOT_RUN；见 ROOT-MANUAL-BROWSER-ONE-TURN-PASS.json |
+| 此前旧隔离Runtime的真实 Product / 浏览器 | PASS 历史限定单轮 | 旧a212运行时及此前隔离MCP修补的手动8次模型、零新Job；刷新后唯一回答、持久化/交付/Root结算一致；独立Sol及Root PASS；不替代本轮fac40候选镜像资格；见 ROOT-MANUAL-BROWSER-ONE-TURN-PASS.json |
 | 两用户测试 Compose 合同 | PASS 离线限定 | 实际默认链解析，3项+6子测试，独立Tester/Sol/Root PASS；真实用户/实际挂载仍未验证；见 ROOT-TWO-USER-OFFLINE-CONTRACT-PASS.json |
 | 两用户真实预检入口 | FAIL_OBSERVER_STOP | Root猜错表名；只读查询失败，零模型/Job/用户/容器变更；停止后重审查询复用方法；见 ROOT-TWO-USER-LIVE-PREFLIGHT-FAIL-STOP.json |
 | 两用户预检完整性源码审计 | PASS 发现缺口 | Sol确认readyfile、无子进程、Backend roots闭合不能证明Adapter lease已释放；当前`slot_available=UNKNOWN`，真实批次保持停止，先完善只读采集合同 |
@@ -22,6 +22,8 @@
 | 固定完整采集入口V4 | PASS 离线限定 | 一次执行6项完整流程替身；路径、失败停步、截止时间和源码漂移门禁通过Tester→独立Sol→Root；旧失败保留；见ROOT-FIXED-ENTRY-V4-OFFLINE-PASS.json |
 | 最新Root实际只读采集V4 | PASS 已有Root限定 | 固定入口一次执行、6数据exec、模型/新Job0；14步骤及前后哈希PASS、27容器不变；实际签名cleanup与Backend闭合/持久化receipt一致。实际ACK/global lease/native close仍UNKNOWN；不替代新候选Runtime或浏览器资格；见ROOT-LATEST-ROOT-READ-V4-PASS.json |
 | 浏览器普通续聊补缺观察 | NOT_QUALIFIED | 一次实际输入，37秒内正确回复，刷新后两轮各一次；但Root取证到190秒超过整批120秒，模型计数/Job增量/新Root结算未核验，已停后续prompt，不作为候选资格PASS；见ROOT-BROWSER-CONTINUE-OBSERVATION-STOP.json |
+| 最新候选原生隔离启动 | PASS 构建/健康限定 | 原生dev-init/core；三个ACP角色同一镜像且健康，新Registry匿名计数已读回，原27容器不变。联合启动登录服务的健康等待失败保留，单独Frontend启动后完成真实网页登录；不等于模型或生产验收；见ROOT-NATIVE-ISOLATED-BOOTSTRAP.json |
+| 精确Adapter ACK成功观察日志 | PASS 源码/离线限定 | 仅Gateway成功收到相等ACK后记录脱敏Engineering日志，四定向测试通过独立Sol及Root；丢日志仍UNKNOWN，不改变权限或结算。Host两次import失败保留，新Gateway镜像与实际ACK日志未验证；见ROOT-GATEWAY-ACK-OBSERVER-OFFLINE-PASS.json |
 | 两用户、自然迟到旧请求、业务结果 unknown、进程丢失 | NOT_RUN 当前补缺批次 | 保留旧限定证据，逐片补缺；不自动重放未知业务结果 |
 | 远程 CI / 推送 / 合并 / 生产部署 | NOT_RUN | 不以本地、合成或隔离更新证明生产资格 |
 

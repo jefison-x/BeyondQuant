@@ -35,6 +35,22 @@ def use_live_adapter_boot(monkeypatch, boot_id=BOOT_ID):
     monkeypatch.setattr(main, "_adapter_authority", lambda: {"boot_id": boot_id})
 
 
+def terminal_ack_fixture(monkeypatch):
+    monkeypatch.setattr(main, "require_runtime_authority", lambda: None)
+    monkeypatch.setattr(main, "_runtime_authority_snapshot", lambda: {"ready": True, "boot_id": BOOT_ID})
+    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
+    main.product_sessions.add(product_session())
+    value = project_lifecycle_event(event(), "session-one", "trace-one")
+    receipt = lifecycle_receipt(value)
+    evidence = {"schema_version": main.RUNTIME_TERMINAL_EVIDENCE_SCHEMA,
+        "session_id": "session-one", "boot_id": BOOT_ID, "root_run_id": value["root_run_id"],
+        "sequence": value["sequence"], "outcome": value["outcome"], "receipt": receipt}
+    monkeypatch.setattr(main, "_adapter_get", lambda *a, **k: evidence)
+    monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda *a, **k: {"receipt": receipt})
+    use_live_adapter_boot(monkeypatch)
+    return value, receipt
+
+
 def test_active_root_registration_still_uses_the_existing_backend_path(monkeypatch):
     monkeypatch.setattr(main, "require_runtime_authority", lambda: None)
     monkeypatch.setattr(main, "_runtime_authority_snapshot", lambda: {"ready": True, "boot_id": BOOT_ID})
@@ -56,19 +72,14 @@ def test_active_root_registration_still_uses_the_existing_backend_path(monkeypat
     assert "boot_id" not in calls[0][1]["payload"]
 
 
-def test_terminal_close_keeps_exact_same_boot_receipt_fence(monkeypatch):
-    monkeypatch.setattr(main, "require_runtime_authority", lambda: None)
-    monkeypatch.setattr(main, "_runtime_authority_snapshot", lambda: {"ready": True, "boot_id": BOOT_ID})
-    monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
-    main.product_sessions.add(product_session())
-    value = project_lifecycle_event(event(), "session-one", "trace-one")
-    receipt = lifecycle_receipt(value)
-    evidence = {"schema_version": main.RUNTIME_TERMINAL_EVIDENCE_SCHEMA,
-        "session_id": "session-one", "boot_id": BOOT_ID, "root_run_id": value["root_run_id"],
-        "sequence": value["sequence"], "outcome": value["outcome"], "receipt": receipt}
+def test_terminal_close_keeps_exact_same_boot_receipt_fence(monkeypatch, caplog):
+    caplog.set_level("INFO", logger="uvicorn.error")
+    value, receipt = terminal_ack_fixture(monkeypatch)
     reads, closes, acknowledgements = [], [], []
-    monkeypatch.setattr(main, "_adapter_authority", lambda: {"boot_id": BOOT_ID})
-    monkeypatch.setattr(main, "_adapter_get", lambda *a, **k: reads.append((a, k)) or evidence)
+    monkeypatch.setattr(main, "_adapter_get", lambda *a, **k: reads.append((a, k)) or {
+        "schema_version": main.RUNTIME_TERMINAL_EVIDENCE_SCHEMA,
+        "session_id": "session-one", "boot_id": BOOT_ID, "root_run_id": value["root_run_id"],
+        "sequence": value["sequence"], "outcome": value["outcome"], "receipt": receipt})
     monkeypatch.setattr(main, "_backend_runtime_authority_request", lambda *a, **k:
         closes.append((a, k)) or {"receipt": receipt})
     def acknowledge(*args, **kwargs):
@@ -87,6 +98,38 @@ def test_terminal_close_keeps_exact_same_boot_receipt_fence(monkeypatch):
     assert acknowledgements[0][1]["timeout"] > 60
     assert len(reads) == len(closes) == 1 and len(acknowledgements) == 2
     assert acknowledgements[0] == acknowledgements[1]
+    records = [record for record in caplog.records if "terminal_ack_observed" in record.getMessage()]
+    assert len(records) == 1
+    observed = json.loads(records[0].getMessage().split(" ", 1)[1])
+    assert observed == {
+        "schema_version": "byq-gateway-terminal-ack-observed.v1",
+        "event": "terminal_ack_observed", "root_run_id": value["root_run_id"],
+        "session_id": "session-one", "boot_id": BOOT_ID, "trace_id": "trace-one",
+        "sequence": value["sequence"], "event_sha256": receipt["event_sha256"],
+        "outcome": value["outcome"],
+    }
+
+
+def test_mismatched_terminal_ack_emits_no_observation(monkeypatch, caplog):
+    caplog.set_level("INFO", logger="uvicorn.error")
+    value, receipt = terminal_ack_fixture(monkeypatch)
+    monkeypatch.setattr(main, "_adapter_post", lambda *a, **k: {
+        "receipt": {**receipt, "event_sha256": "f" * 64}})
+    with pytest.raises(ValueError, match="acknowledgement mismatch"):
+        main._send_agent_lifecycle(context(), value, expected_boot_id=BOOT_ID)
+    assert not any("terminal_ack_observed" in record.getMessage() for record in caplog.records)
+
+
+def test_terminal_ack_observation_logger_failure_does_not_change_return(monkeypatch):
+    value, receipt = terminal_ack_fixture(monkeypatch)
+    monkeypatch.setattr(main, "_adapter_post", lambda *a, **k: {"receipt": receipt})
+
+    class BrokenLogger:
+        def info(self, *args, **kwargs):
+            raise RuntimeError("logging unavailable")
+
+    monkeypatch.setattr(main, "logger", BrokenLogger())
+    assert main._send_agent_lifecycle(context(), value, expected_boot_id=BOOT_ID) == {"receipt": receipt}
 
 
 def test_terminal_lifecycle_rejects_a_superseded_boot_before_io(monkeypatch):
@@ -100,7 +143,8 @@ def test_terminal_lifecycle_rejects_a_superseded_boot_before_io(monkeypatch):
     assert calls == []
 
 
-def test_terminal_ack_does_not_cross_an_adapter_boot_change(monkeypatch):
+def test_terminal_ack_does_not_cross_an_adapter_boot_change(monkeypatch, caplog):
+    caplog.set_level("INFO", logger="uvicorn.error")
     monkeypatch.setattr(main, "require_runtime_authority", lambda: None)
     monkeypatch.setattr(main, "_runtime_authority_snapshot", lambda: {"ready": True, "boot_id": BOOT_ID})
     monkeypatch.setattr(main, "product_sessions", main.ProductSessionRegistry())
@@ -118,6 +162,7 @@ def test_terminal_ack_does_not_cross_an_adapter_boot_change(monkeypatch):
     with pytest.raises(RuntimeError, match="superseded Adapter boot"):
         main._send_agent_lifecycle(context(), value, expected_boot_id=BOOT_ID)
     assert acknowledgements == []
+    assert not any("terminal_ack_observed" in record.getMessage() for record in caplog.records)
 
 
 def test_translation_is_closed_and_ignores_foreign_or_unowned_events():

@@ -1,0 +1,33 @@
+{
+  "source_commit_at_core_build": "fa7b0e8a2e9a3b0786511e3712e2d976321f668a",
+  "project": "byq-dev-e8b02b5475",
+  "Root": "PASS_ISOLATED_BUILD_AND_HEALTH_ONLY",
+  "native_commands": ["make dev-init", "native acp_build.py Compose login-image build", "native Compose PostgreSQL/Backend start", "native Compose Frontend-only start", "make dev-init", "make dev-start DEV_PROFILE=core"],
+  "preserved_failure": "Joint gateway/frontend up --no-deps still waited on selected Gateway health; 60s timeout; original logs retained",
+  "frontend_only_correction": {"exit_code": 0, "elapsed_seconds": 0.618},
+  "bootstrap_identity": "Real durable admin personal owner Workspace through normal Gateway login; no service-token or database identity substitution",
+  "browser": "Real login and post-core refresh observed at localhost:32784; hostname separates host-only cookies by design; old-cookie state not inspected; no new Agent prompt",
+  "gateway_me": "PASS separate normal CookieJar authentication session; direct IAB JSON navigation was blocked by client, not a Gateway failure",
+  "core": {"exit_code": 0, "elapsed_seconds": 699.178, "limit_seconds": 1200},
+  "acp_image_id": "sha256:fac40ab1e1853fcf00cd659c620586af70d87462b2dfaa4181683c33ec1ebe97",
+  "three_acp_roles": "same image; all healthy",
+  "live_lease_counts_before_any_new_prompt": {
+    "configured": 1, "held": 0, "awaiting_backend_ack": 0, "awaiting_cleanup": 0,
+    "scope": "adapter_process_lifetime", "source": "live_product_slot_registry"
+  },
+  "original_27_containers_unchanged": true,
+  "inventory_comparison": {
+    "original": ".ci-artifacts/native-bootstrap-20261013/before/inventory.json",
+    "post_core": ".ci-artifacts/gateway-ack-observer-20261013/offline-fixed/after/inventory.json",
+    "rule": "All original ID-indexed seven-field rows equal; nine additional isolated containers"
+  },
+  "new_running_containers": 9,
+  "private_evidence": ".ci-artifacts/native-bootstrap-20261013/",
+  "new_gateway_ack_observation_code": "NOT_RUN in this image snapshot; separate rebuild required",
+  "real_root_ack": "NOT_RUN; no new prompt",
+  "original_old_adapter_lease": "UNKNOWN; new process counts do not resolve old process state",
+  "new_model_prompts_sent": 0,
+  "production_mutations": 0,
+  "model_browser_qualification": "NOT_RUN",
+  "production_deployment": "NOT_RUN"
+}
