@@ -1,0 +1,18 @@
+{
+  "schema_version": "byq-maintenance-root-gate.v1",
+  "slice": "single-foreground-child-full-capture-source-v1",
+  "status": "HOLD",
+  "source_head": "bfe83bafe5cae70d355d938603528d90a641ed46",
+  "capture_sha256": "36394251f53307d83ebe1acafb4c7a75d74e423a379f2108f21eb85cb1a1c5f7",
+  "scope_sha256": "7a4128f441a325035b9ec6008323a165fabeaba43dd3d792ff671b26e34f3ded",
+  "independent_reviewer": "Sol",
+  "findings": [
+    "The native-reader source extractor reads value from FunctionDef instead of the matched Return and would raise AttributeError.",
+    "Terminal verification expects a roots array although the validated scope leaf returns one root object.",
+    "Finish compares a runtime session ID with the public conversation ID; these are distinct identities.",
+    "Current runner server.py source SHA is not pinned; the cleanup helper runner identity format check cannot establish producer source provenance."
+  ],
+  "root_decision": "Repair and review the complete single-child capture entry before any execution; preserve the existing ordinary and scope-only PASS as their original limited evidence.",
+  "execution": {"new_offline_batch": "NOT_RUN", "model_requests": 0, "new_jobs": 0, "database_queries": 0, "docker_calls": 0, "production_operations": 0},
+  "qualification": "The delegated child journey is NOT_RUN and NOT_QUALIFIED."
+}

@@ -32,6 +32,11 @@
 | 已有原生历史真实只读解析 | PASS 既有文件限定 | 20秒/2exec上限，169ms完成，10002:10002实际读取官方源码/profile与v4历史；两个人类输入哈希按原浏览器A/B顺序一致，模型/Job0。不恢复旧失败批次、不替代新双轮整体验收；见ROOT-EXISTING-NATIVE-INPUT-READ-PASS.json |
 | 新候选普通连续双轮完整真实验收 | PASS 本切片限定 | 新CID f6d08，一次2提示词/2个已完成模型请求，finish及刷新证据240秒内；持久化2user2reply各一次、两Root closed/unknown0、精确ACK与结算一致、11表库存不变，Source→35离线→真实采集→独立Sol→Root PASS。租约只瞬时/非全局，旧FAIL不覆盖；见ROOT-ORDINARY-BROWSER-LIVE-V3-PASS.json |
 | 单子 Agent scope 采集叶节点 | PASS 离线 / 既有普通 Root 只读限定 | 15项替身合同一次通过；冻结入口一次只读SQL、前后精确PG身份一致、277ms完成，普通Root可合法无native registration。源码审查HOLD和错误actor计划保留；不等于真实委派、子模型分账或签名cleanup。见ROOT-CHILD-SCOPE-OFFLINE-PASS.json、ROOT-CHILD-SCOPE-EXISTING-READ-PASS.json |
+| 单前台子 Agent 完整采集入口 V1 | FAIL_STOP 替身 | 29项计划中22 PASS、1 FAIL、6 NOT_RUN；总时间窗负例同时违反单次时限，提前触发不同守卫。独立Sol确认fixture时间戳及负例分支核对缺口，先修整组测试再冻结；完整main正例和真实委派未执行，模型/Job0。原始回执见ROOT-FOREGROUND-CHILD-OFFLINE-V1-FAIL-STOP.json |
+| 单前台子 Agent 审计集合合同重审 | HOLD → 源码修补审查通过；测试待准入 | 发现旧观察器错误要求仅一条audit。按Backend的绑定、授权和显式completed完整记录分类，并覆盖两种关闭路径；native/Backend一致的failed或unknown仍拒绝。负例返回码、守卫顺序和回执标签错配在静态审查中被拦截，未重跑或发送真实提示词；见ROOT-FOREGROUND-CHILD-AUDIT-SOURCE-HOLD.json |
+| 单前台子 Agent 完整采集入口 V2 | FAIL_STOP 替身 | 18方法17 PASS/1 FAIL；两种完整main正例通过，但24项负例matrix仅1 PASS/1 FAIL/22 NOT_RUN。共享helper.Stop与采集Stop类不同，已知读取拒绝被误记internal_Stop；同类错误后立即停批，独立Sol审查全部共享异常路径，统一边界修补仅一行，未重跑或真实调用。见ROOT-FOREGROUND-CHILD-OFFLINE-V2-FAIL-STOP.json |
+| 单前台子 Agent 完整采集入口 V3 | FAIL_STOP 替身 | 最小5方法4 PASS/1 FAIL；24项matrix仍1 PASS/1 FAIL/22 NOT_RUN。具体Stop原因已保留，但上一轮审查错误混同native命令rc与collector rc：UID/GID前置字符串SystemExit实际rc1，try内header拒绝rc2。停批后完整审计inline reader、替身wrapper及全部24路径，生产reader未修改；见ROOT-FOREGROUND-CHILD-OFFLINE-V3-FAIL-STOP.json |
+| 单前台子 Agent 完整采集入口离线门禁 | PASS 离线限定 | V4一次新验5方法及24项停止matrix全部通过（1267ms），独立Sol原始回执及Root PASS；复用V2未影响12项预算/原生helper和1项finish正例、V1 scope16。两种完整关闭路径、raw argv/rc/bytes/SHA、首STOP与后续禁入已验证；synthetic身份/MAC不冒充实采，旧V1–V3 FAIL保留，真实委派NOT_RUN。见ROOT-FOREGROUND-CHILD-OFFLINE-PASS.json |
 | 两用户、自然迟到旧请求、业务结果 unknown、进程丢失 | NOT_RUN 当前补缺批次 | 保留旧限定证据，逐片补缺；不自动重放未知业务结果 |
 | 远程 CI / 推送 / 合并 / 生产部署 | NOT_RUN | 不以本地、合成或隔离更新证明生产资格 |
 

@@ -116,7 +116,8 @@ WITH root_candidates AS MATERIALIZED (
          ar.actor_principal AS run_actor,ar.trace_id AS run_trace,
          ar.session_id AS run_session,ar.dsh_run_id AS run_generation,
          ar.root_run_id AS run_root,ar.parent_run_id AS run_parent,
-         ar.authority_boot_id AS run_boot,ar.status AS run_status,
+         ar.authority_boot_id AS run_boot,ar.role_id AS run_role_id,
+         ar.role_version AS run_role_version,ar.status AS run_status,
          ar.authority_status AS run_authority_status
   FROM reg_scope_candidates n
   LEFT JOIN agent_runs ar ON ar.run_id=n.agent_run_id
@@ -275,7 +276,7 @@ def validate_projection(raw_scope: object, mode: str, raw_projection: object) ->
         "session_id", "trace_id", "dsh_run_id", "runtime_boot_id", "origin", "depth",
         "agent_run_id", "parent_run_id", "registration_status", "joined_run_id", "run_owner",
         "run_actor", "run_trace", "run_session", "run_generation", "run_root", "run_parent",
-        "run_boot", "run_status", "run_authority_status"}
+        "run_boot", "run_role_id", "run_role_version", "run_status", "run_authority_status"}
     for row in regs:
         if set(row) != reg_fields:
             raise ScopeReadError("registration_fields_invalid")
@@ -294,6 +295,10 @@ def validate_projection(raw_scope: object, mode: str, raw_projection: object) ->
                 or row.get("run_trace") != scope["trace_id"]
                 or row.get("run_generation") != scope["generation_id"]
                 or row.get("run_boot") != scope["runtime_boot_id"]
+                or not isinstance(row.get("run_role_id"), str)
+                or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", row["run_role_id"])
+                or not isinstance(row.get("run_role_version"), str)
+                or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", row["run_role_version"])
                 or not isinstance(row.get("run_status"), str)
                 or not isinstance(row.get("run_authority_status"), str)
                 or row.get("run_parent") != row.get("parent_run_id")):
@@ -321,6 +326,11 @@ def validate_projection(raw_scope: object, mode: str, raw_projection: object) ->
                 or child_reg.get("native_parent_session_id") != root_reg.get("native_agent_session_id")
                 or child_reg.get("parent_run_id") != root_reg.get("agent_run_id")):
             raise ScopeReadError("root_child_parent_mismatch")
+        if (root_reg.get("run_role_id") != "quant_orchestrator"
+                or child_reg.get("run_role_id") != "market_researcher"
+                or any(row.get("run_status") != "completed"
+                       or row.get("run_authority_status") != "closed" for row in regs)):
+            raise ScopeReadError("root_child_roles_or_terminal_state_invalid")
     for row in ingress:
         required = {"mcp_request_id", "root_run_id", "owner_principal", "workspace_id", "actor_principal",
             "session_id", "trace_id", "dsh_run_id", "runtime_boot_id", "native_root_session_id",
@@ -385,7 +395,7 @@ def validate_projection(raw_scope: object, mode: str, raw_projection: object) ->
         "registrations": [{key: row[key] for key in (
             "native_agent_session_id", "native_root_session_id", "native_parent_session_id",
             "origin", "depth", "agent_run_id", "parent_run_id", "registration_status", "run_status",
-            "run_authority_status")} for row in regs],
+            "run_authority_status", "run_role_id", "run_role_version")} for row in regs],
         "ingress_count": len(ingress),
         "ingress": [{key: row[key] for key in (
             "native_agent_session_id", "origin", "depth", "agent_run_id", "tool_name",

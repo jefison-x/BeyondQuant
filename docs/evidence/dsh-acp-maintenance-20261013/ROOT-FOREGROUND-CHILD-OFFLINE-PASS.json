@@ -1,0 +1,70 @@
+{
+  "schema_version": "byq-maintenance-root-gate.v1",
+  "slice": "single-foreground-child-complete-entry-offline-qualified",
+  "status": "PASS_OFFLINE_ONLY",
+  "source_head_at_execution": "bfe83bafe5cae70d355d938603528d90a641ed46",
+  "source_sha256": {
+    "capture": "0c0f33c84cd8b124aee6fff4ffe13f681afc587387075e7368738c847c0dfbfe",
+    "capture_test": "9e27663c8ad012195f471977c76e63e16e26d295d8528ee882613c307663999f",
+    "scope": "7a4128f441a325035b9ec6008323a165fabeaba43dd3d792ff671b26e34f3ded",
+    "scope_test": "e9b15c2ab923ba5fc68c4a94f20f2a46c433bbed717a263bd7b331354fad1b31"
+  },
+  "raw_evidence": ".ci-artifacts/delegated-child-20261013/foreground-full-entry-offline-v4",
+  "argv": [
+    "python3",
+    "-m",
+    "unittest",
+    "-v",
+    "-f",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildValidatorContractTests.test_frozen_capture_source_matches_reviewed_pin",
+    "scripts.evidence.test_acp_foreground_child_capture.ForegroundChildWholeMainContractTests"
+  ],
+  "returncode": 0,
+  "elapsed_ms": 1267,
+  "timed_out": false,
+  "new_v4_methods": {
+    "PASS": 5,
+    "FAIL": 0,
+    "NOT_RUN": 0
+  },
+  "matrix_subcases": {
+    "PASS": 24,
+    "FAIL": 0,
+    "NOT_RUN": 0
+  },
+  "reuse": {
+    "v2_unaffected_budget_native_helper_methods": 12,
+    "v2_unaffected_finish_positive": 1,
+    "v1_unchanged_scope_methods": 16,
+    "no_claim_of_one_fresh_18_method_run": true
+  },
+  "raw_output": {
+    "stdout_bytes": 0,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_bytes": 1212,
+    "stderr_sha256": "40bad15550fc8f3a0ff70f4c7a82127db17e51a3294b5b640a2e3c8bd7ef9a40"
+  },
+  "independent_reviewer": "Sol RAW REVIEW PASS",
+  "root_decision": "PASS for this complete-entry synthetic contract slice; freeze source before separately admitting a one-prompt real browser child batch. No additional optional test run.",
+  "synthetic_boundaries": [
+    "HTTP/Docker/psql transport",
+    "remote UID/GID and filesystem mapping",
+    "synthetic signed cleanup response; existing unchanged MAC mechanism evidence reused separately"
+  ],
+  "does_not_prove": [
+    "actual child delegation or model usage",
+    "actual UID/DAC or cleanup MAC for a new root",
+    "per-child model billing",
+    "individual original child close or resume",
+    "production qualification"
+  ],
+  "limits": {
+    "real_models": 0,
+    "real_docker": 0,
+    "real_http": 0,
+    "real_db": 0,
+    "new_jobs": 0
+  },
+  "historical_failures": "V1, V2, V3 failures and static HOLD records preserved unchanged.",
+  "live_child": "NOT_RUN"
+}

@@ -59,6 +59,7 @@ def root_row(**overrides):
 def registration(native_id, run_id, *, origin="root", depth=0,
                   native_root=None, native_parent=None, parent_run=None,
                   **overrides):
+    root_registration = origin == "root" and depth == 0
     row = {
         # These keys correspond to the actual agent_acp_native_agent_registrations
         # and agent_runs DDL, including agent_run_id NOT NULL and parent_run_id.
@@ -88,8 +89,10 @@ def registration(native_id, run_id, *, origin="root", depth=0,
         "run_root": SCOPE["root_run_id"],
         "run_parent": parent_run,
         "run_boot": SCOPE["runtime_boot_id"],
-        "run_status": "running",
-        "run_authority_status": "active",
+        "run_role_id": "quant_orchestrator" if root_registration else "market_researcher",
+        "run_role_version": "2.5.0" if root_registration else "1.4.0",
+        "run_status": "completed",
+        "run_authority_status": "closed",
     }
     row.update(overrides)
     return row
@@ -185,6 +188,25 @@ class ChildScopeReadContractTests(unittest.TestCase):
                                             projection("root_child", [root, child]))
         self.assertEqual(result["registration_count"], 2)
         self.assertEqual(result["registrations"][1]["parent_run_id"], "run-root")
+        self.assertEqual(result["registrations"][0]["run_role_id"], "quant_orchestrator")
+        self.assertEqual(result["registrations"][1]["run_role_id"], "market_researcher")
+        self.assertEqual(result["registrations"][1]["run_role_version"], "1.4.0")
+
+    def test_root_child_requires_exact_roles_and_closed_agent_runs(self):
+        root = registration("native-root", "run-root")
+        child = registration("native-child", "run-child", origin="subagent", depth=1,
+                             native_root="native-root", native_parent="native-root",
+                             parent_run="run-root")
+        for changed, expected in (
+            (dict(root, run_role_id="market_researcher"), "root_child_roles_or_terminal_state_invalid"),
+            (dict(child, run_role_version="1.4"), "registration_run_mismatch"),
+            (dict(child, run_status="running", run_authority_status="active"),
+             "root_child_roles_or_terminal_state_invalid"),
+        ):
+            rows = [root, changed] if changed is not root and changed.get("origin") == "subagent" else [changed, child]
+            with self.subTest(expected=expected):
+                with self.assertRaisesRegex(reader.ScopeReadError, expected):
+                    reader.validate_projection(SCOPE, "root_child", projection("root_child", rows))
 
     def test_foreign_scope_row_and_wrong_boot_are_rejected(self):
         foreign = registration("native-root", "run-root", workspace_id="another-workspace")
@@ -438,6 +460,11 @@ class ChildScopeReadContractTests(unittest.TestCase):
         self.assertIn("agent_acp_native_agent_registrations", sql)
         self.assertIn("agent_runtime_turns", sql)
         self.assertIn("agent_runs ar ON ar.run_id=n.agent_run_id", sql)
+        # AgentRun roles are read from the real agent_runs table and are part
+        # of the closed root/child contract; they are not inferred from native
+        # session events or supplied by the test transport.
+        self.assertIn("ar.role_id AS run_role_id", sql)
+        self.assertIn("ar.role_version AS run_role_version", sql)
         # Protect raw query output too: same-root registrations/ingress/audit
         # records from another scope must not be materialized before validation.
         for column, scope_key in (

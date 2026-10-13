@@ -1,0 +1,26 @@
+{
+  "schema_version": "byq-maintenance-root-gate.v1",
+  "slice": "single-foreground-child-audit-cardinality-source",
+  "status": "HOLD",
+  "source_head": "bfe83bafe5cae70d355d938603528d90a641ed46",
+  "capture_sha256_at_finding": "2f0c3b4b95dacfe176b26f6c65adac6c51d5a4c5e393d208566cf744116b7e15",
+  "independent_reviewer": "Sol",
+  "finding": "Collector requires exactly one audit row although scope SQL returns the complete audit set for both registered AgentRuns. Successful authorization and run binding produce additional valid audit rows. Single-row synthetic fixture masks this mismatch.",
+  "source_evidence": [
+    "services/backend/app/agent_research.py:794 startup binding audit",
+    "services/backend/app/agent_research.py:1386 lifecycle-event terminal binding audit",
+    "services/backend/app/agent_research.py:1616 successful authorization audit",
+    "services/backend/app/agent_research.py:1639 explicit business action audit",
+    "scripts/evidence/acp-child-scope-read.py:audit_candidates projects full registered-run audit set"
+  ],
+  "required_fix": "Keep full scope projection. Match explicit child completion and authorization records exactly; validate only known binding audit records and exact run/native identity. Verify applicable close paths before requiring terminal binding cardinality. Fix realistic positive and targeted negative fixtures before frozen independent review.",
+  "execution": {
+    "new_test_batch": "NOT_RUN",
+    "models": 0,
+    "jobs": 0,
+    "docker": 0,
+    "http": 0,
+    "db": 0
+  },
+  "root_decision": "No test rerun or live batch admitted until source and full fixtures are independently reviewed."
+}
