@@ -541,6 +541,38 @@ describe("AgentView", () => {
     expect(submitTurn).toHaveBeenCalledWith("session-1", "第一次提问", "");
   });
 
+  it("shows first-session maintenance rejection and preserves the draft without retry", async () => {
+    listAgentSessions.mockResolvedValueOnce({ sessions: [], total: 0 });
+    createAgentSession.mockRejectedValueOnce(new AgentRequestError("小巴正在维护，请稍后重试。", 503, "chat_maintenance"));
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const view = wrapper.vm as unknown as { prompt: string; send: () => Promise<void> };
+    view.prompt = "保留这条首次提问";
+    await view.send();
+    await flushPromises();
+    expect(view.prompt).toBe("保留这条首次提问");
+    expect(createAgentSession).toHaveBeenCalledTimes(1);
+    expect(submitTurn).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain("小巴正在维护，请稍后重试。");
+    wrapper.unmount();
+  });
+
+  it("shows an unknown first-session creation outcome without automatically creating again", async () => {
+    listAgentSessions.mockResolvedValueOnce({ sessions: [], total: 0 });
+    createAgentSession.mockRejectedValueOnce(new Error("创建会话结果未知，请核对后再操作。"));
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const view = wrapper.vm as unknown as { prompt: string; send: () => Promise<void> };
+    view.prompt = "不要丢失这条问题";
+    await view.send();
+    await flushPromises();
+    expect(view.prompt).toBe("不要丢失这条问题");
+    expect(createAgentSession).toHaveBeenCalledTimes(1);
+    expect(submitTurn).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain("创建会话结果未知，请核对后再操作。");
+    wrapper.unmount();
+  });
+
   it("permanently deletes a selected history conversation and opens a blank draft", async () => {
     vi.spyOn(ElMessageBox, "confirm").mockResolvedValue("confirm" as never);
     const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });

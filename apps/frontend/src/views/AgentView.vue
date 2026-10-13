@@ -468,7 +468,7 @@ async function send(value = prompt.value) {
         && message.createdAt === pendingMessage!.createdAt && message.text === pendingMessage!.text));
     }
     localRunStartedAt.value = "";
-    if (terminalSessionId.value !== pendingSession) {
+    if (!pendingSession || terminalSessionId.value !== pendingSession) {
       error.value = exc instanceof Error ? exc.message : "发送失败";
     }
   }
