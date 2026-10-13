@@ -27,6 +27,7 @@
 | 候选Gateway ACK镜像 | PASS 隔离镜像/健康限定 | 源码哈希读回及json-file日志驱动一致，其他35个容器库存未变；实际Root ACK仍NOT_RUN；见ROOT-GATEWAY-ACK-IMAGE-PASS.json |
 | 普通双轮采集入口原始失败 | FAIL_STOP | 原始源码门禁及两次替身失败保留；分别涉及文件重复写入、阶段依赖循环、替身SQL分派和可选参数签名；均不证明Product失败；见ROOT-ORDINARY-CAPTURE-SOURCE-FAIL.json、ROOT-ORDINARY-CAPTURE-OFFLINE-FAIL.json、ROOT-ORDINARY-CAPTURE-OFFLINE-V2-FAIL.json |
 | 普通双轮完整采集入口 | PASS 离线限定 | 25项一次性全入口/负向合同通过Tester→独立Sol→Root，真实登录逻辑与原生压缩投影算法保留，仅传输边界替身；原失败不覆盖；见ROOT-ORDINARY-CAPTURE-OFFLINE-PASS.json |
+| 新候选真实浏览器普通双轮 | FAIL_STOP | 两次真实输入/回复正确，两条模型完成记录和精确ACK已观察；原生历史采集因默认UID错误而失败，finish和完整Job增量NOT_RUN。已证明同卷同inode、Runner默认root读取0700目录被拒；改用已有child身份仅元数据定位成功，未重发模型。见ROOT-ORDINARY-BROWSER-LIVE-V2-FAIL-STOP.json |
 | 两用户、自然迟到旧请求、业务结果 unknown、进程丢失 | NOT_RUN 当前补缺批次 | 保留旧限定证据，逐片补缺；不自动重放未知业务结果 |
 | 远程 CI / 推送 / 合并 / 生产部署 | NOT_RUN | 不以本地、合成或隔离更新证明生产资格 |
 

@@ -1,0 +1,57 @@
+{
+  "source_commit": "9eed1916d79504caa2f8d767b6d28d9e4c54b106",
+  "result": "FAIL_STOP",
+  "scope": "New isolated ordinary two-turn Product browser flow and complete collector",
+  "browser_origin": "http://localhost:32784",
+  "conversation_id": "conversation_584be2ed625e4259a270e370f9b84e39",
+  "runtime_session_id": "byq-session-13e5e2bfcd6044df81bef11c6a500c2a",
+  "native_session_id": "86dce6d5-380e-4913-8d8e-dc8ef75dd790",
+  "real_prompts_sent": 2,
+  "observed_completed_provider_requests": 2,
+  "browser_two_correct_replies": "PASS_OBSERVATION_ONLY",
+  "capture_preflight": "PASS",
+  "capture_turn_1": "PASS",
+  "capture_turn_2": "FAIL_STOP:native-projection_process_failed",
+  "native_child_error": "native_header_identity_not_unique",
+  "finish": "NOT_RUN",
+  "complete_job_delta": "NOT_RUN",
+  "production_actions": 0,
+  "original_batch_not_resumed": true,
+  "independent_sol": "Partial browser/terminal/ACK/request evidence reviewed; no complete qualification PASS",
+  "private_evidence": ".ci-artifacts/ordinary-capture-20261013/live-v2",
+  "diagnosis": {
+    "result": "CONFIRMED_OBSERVER_PERMISSION_ERROR",
+    "same_workspace_cwd_dev_inode": true,
+    "cwd_owner": "10002:10002",
+    "cwd_mode": "0700",
+    "adapter_effective_uid": 10002,
+    "runner_default_effective_uid": 0,
+    "adapter_directory_read": "PASS",
+    "runner_directory_read": "PermissionError",
+    "runner_dac_override_capability": false,
+    "defect": "Collector used Runner default UID 0; recursive discovery swallowed permission errors and misreported missing native history.",
+    "evidence": [
+      {
+        "path": ".ci-artifacts/ordinary-capture-20261013/native-permission-diagnosis/adapter.stdout.raw",
+        "sha256": "fb2bfd24dae9c94859c2781fb77c4fb6d43c282e2119c64b91174f64f2c5ecc1"
+      },
+      {
+        "path": ".ci-artifacts/ordinary-capture-20261013/native-permission-diagnosis/runner.stdout.raw",
+        "sha256": "e7c34c13f790163aec1c28d51da70f9149f757ea5dea6ec0e91c335fff419844"
+      }
+    ],
+    "independent_sol": "PASS on actual permission diagnosis and bounded read-only child-identity metadata plan"
+  },
+  "subsequent_metadata_only": {
+    "result": "PASS_METADATA_ONLY",
+    "reader_uid_gid": "10002:10002",
+    "native_candidate_count": 1,
+    "native_file_bytes": 35112,
+    "history_content_read": false,
+    "real_model_calls": 0,
+    "job_calls": 0,
+    "evidence": ".ci-artifacts/ordinary-capture-20261013/native-child-metadata",
+    "raw_sha256": "693ef24e2f93fd0f0d99a7f394878bf030525ddd1ebce7b730fda9c2b0ea0361"
+  },
+  "release_readiness": "NOT_READY"
+}
