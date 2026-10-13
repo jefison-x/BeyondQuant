@@ -1,0 +1,30 @@
+{
+  "source_commit": "9cfd33cc6a5e5c57474e6ba622ddf77369f1a0af",
+  "scope": "isolated project byq-dev-e8b02b5475 Gateway only",
+  "Root": "PASS_ISOLATED_IMAGE_AND_HEALTH_ONLY",
+  "independent_sol_review": "PASS; raw build/start receipts and inventory comparison reviewed",
+  "commands": [
+    "native acp_build.py with existing three Compose files: build gateway",
+    "native acp_build.py with existing three Compose files: up -d --wait --no-deps --no-build gateway"
+  ],
+  "build": {"exit_code": 0, "elapsed_seconds": 0.668, "limit_seconds": 180},
+  "start": {"exit_code": 0, "elapsed_seconds": 7.869, "limit_seconds": 60},
+  "gateway_container_id": "45e645b8e0da711f41de1d0c0e10c03d6903b3087f7c0210ae39b16bbc1436b9",
+  "gateway_image_id": "sha256:0f462b62f41a750dff16eb021b4352c48694e7197d10d0f27460c1ac4c6233e6",
+  "started_at": "2026-10-13T03:27:00.387946879Z",
+  "health": "healthy",
+  "other_35_running_containers": "unchanged across seven-field ID-indexed inventory comparison",
+  "source_readback": {
+    "path": "/app/app/main.py",
+    "sha256": "2305731f84f166dcfad243a75eaa2db86dbad41154deb962efd3f7915dffefe3",
+    "exit_code": 0,
+    "stderr": "empty"
+  },
+  "log_driver_readback": {"type": "json-file", "config": {}, "exit_code": 0, "stderr": "empty"},
+  "private_receipts": ".ci-artifacts/gateway-ack-observer-20261013/gateway-update/",
+  "actual_root_ack_observation": "NOT_RUN; no new candidate prompt sent",
+  "new_candidate_prompts_sent": 0,
+  "job_delta": "NOT_MEASURED",
+  "production_actions_performed": 0,
+  "production_deployment": "NOT_RUN"
+}

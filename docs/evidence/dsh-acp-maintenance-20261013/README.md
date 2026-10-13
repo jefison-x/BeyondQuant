@@ -23,7 +23,10 @@
 | 最新Root实际只读采集V4 | PASS 已有Root限定 | 固定入口一次执行、6数据exec、模型/新Job0；14步骤及前后哈希PASS、27容器不变；实际签名cleanup与Backend闭合/持久化receipt一致。实际ACK/global lease/native close仍UNKNOWN；不替代新候选Runtime或浏览器资格；见ROOT-LATEST-ROOT-READ-V4-PASS.json |
 | 浏览器普通续聊补缺观察 | NOT_QUALIFIED | 一次实际输入，37秒内正确回复，刷新后两轮各一次；但Root取证到190秒超过整批120秒，模型计数/Job增量/新Root结算未核验，已停后续prompt，不作为候选资格PASS；见ROOT-BROWSER-CONTINUE-OBSERVATION-STOP.json |
 | 最新候选原生隔离启动 | PASS 构建/健康限定 | 原生dev-init/core；三个ACP角色同一镜像且健康，新Registry匿名计数已读回，原27容器不变。联合启动登录服务的健康等待失败保留，单独Frontend启动后完成真实网页登录；不等于模型或生产验收；见ROOT-NATIVE-ISOLATED-BOOTSTRAP.json |
-| 精确Adapter ACK成功观察日志 | PASS 源码/离线限定 | 仅Gateway成功收到相等ACK后记录脱敏Engineering日志，四定向测试通过独立Sol及Root；丢日志仍UNKNOWN，不改变权限或结算。Host两次import失败保留，新Gateway镜像与实际ACK日志未验证；见ROOT-GATEWAY-ACK-OBSERVER-OFFLINE-PASS.json |
+| 精确Adapter ACK成功观察日志 | PASS 源码/离线限定 | 仅Gateway成功收到相等ACK后记录脱敏Engineering日志，四定向测试通过独立Sol及Root；丢日志仍UNKNOWN，不改变权限或结算。Host两次import失败保留；见ROOT-GATEWAY-ACK-OBSERVER-OFFLINE-PASS.json |
+| 候选Gateway ACK镜像 | PASS 隔离镜像/健康限定 | 源码哈希读回及json-file日志驱动一致，其他35个容器库存未变；实际Root ACK仍NOT_RUN；见ROOT-GATEWAY-ACK-IMAGE-PASS.json |
+| 普通双轮采集入口原始失败 | FAIL_STOP | 原始源码门禁及两次替身失败保留；分别涉及文件重复写入、阶段依赖循环、替身SQL分派和可选参数签名；均不证明Product失败；见ROOT-ORDINARY-CAPTURE-SOURCE-FAIL.json、ROOT-ORDINARY-CAPTURE-OFFLINE-FAIL.json、ROOT-ORDINARY-CAPTURE-OFFLINE-V2-FAIL.json |
+| 普通双轮完整采集入口 | PASS 离线限定 | 25项一次性全入口/负向合同通过Tester→独立Sol→Root，真实登录逻辑与原生压缩投影算法保留，仅传输边界替身；原失败不覆盖；见ROOT-ORDINARY-CAPTURE-OFFLINE-PASS.json |
 | 两用户、自然迟到旧请求、业务结果 unknown、进程丢失 | NOT_RUN 当前补缺批次 | 保留旧限定证据，逐片补缺；不自动重放未知业务结果 |
 | 远程 CI / 推送 / 合并 / 生产部署 | NOT_RUN | 不以本地、合成或隔离更新证明生产资格 |
 

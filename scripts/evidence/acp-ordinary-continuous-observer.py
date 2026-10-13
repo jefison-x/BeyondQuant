@@ -22,6 +22,8 @@ _ROOT = re.compile(r"^[0-9a-f]{32}$")
 _HASH = re.compile(r"^[0-9a-f]{64}$")
 _NATIVE_SCHEMA_CONFIRMED = True
 _NATIVE_SOURCE_SHA256 = "5d665a976a9d6fdeca964ca487b6adea187962b256ef47c2fcf1fe7656222aab"
+_NATIVE_PROJECTION_SCHEMA = "byq-native-session-input-projection.v1"
+_NATIVE_PROJECTION_SOURCE_SHA256 = "6567aa65b21f4bdcf2796c5f15a911727056ba0fbe2531d0c53d9247d447fe9c"
 
 
 def _sha(data: bytes) -> str:
@@ -36,7 +38,39 @@ def _json(path: Path):
 
 
 def _native_intake(native_root: Path) -> dict:
-    """Decompress native candidates and report shape metadata without content."""
+    """Read sanitized projection, or legacy compressed input, without content."""
+    projection_path = native_root.parent / "native-projection.json"
+    if projection_path.is_file():
+        value = _json(projection_path)
+        required = {"schema_version", "producer_source_sha256", "native_session_id",
+                    "compressed_sha256", "compressed_bytes", "header_id", "header_version",
+                    "human_input_sha256_order"}
+        valid = (isinstance(value, dict) and set(value) == required
+                 and value.get("schema_version") == _NATIVE_PROJECTION_SCHEMA
+                 and value.get("producer_source_sha256") == _NATIVE_PROJECTION_SOURCE_SHA256
+                 and isinstance(value.get("native_session_id"), str) and bool(value["native_session_id"])
+                 and isinstance(value.get("compressed_sha256"), str) and _HASH.fullmatch(value["compressed_sha256"])
+                 and type(value.get("compressed_bytes")) is int and value["compressed_bytes"] > 0
+                 and value.get("header_id") == value.get("native_session_id")
+                 and type(value.get("header_version")) is int and value["header_version"] == 4
+                 and isinstance(value.get("human_input_sha256_order"), list)
+                 and len(value["human_input_sha256_order"]) == 2
+                 and all(isinstance(item, str) and _HASH.fullmatch(item)
+                         for item in value["human_input_sha256_order"]))
+        safe_value = value if isinstance(value, dict) else {}
+        return {"schema_confirmed": _NATIVE_SCHEMA_CONFIRMED, "candidate_count": 1,
+                "candidates": [{"relative_path": "native-projection.json",
+                                  "compressed_sha256": safe_value.get("compressed_sha256"),
+                                  "compressed_bytes": safe_value.get("compressed_bytes"),
+                                  "decompressed": True, "record_count": None,
+                                  "first_record_keys": [], "header_valid": bool(valid),
+                                  "header_identity_matches_binding": (safe_value.get("header_id") == safe_value.get("native_session_id")),
+                                  "native_session_id": safe_value.get("native_session_id"),
+                                  "user_message_record_count": len(safe_value.get("human_input_sha256_order", []))
+                                      if isinstance(safe_value.get("human_input_sha256_order"), list) else 0,
+                                  "native_input_hashes": safe_value.get("human_input_sha256_order", []),
+                                  "malformed_record_count": 0, "projection_valid": bool(valid)}],
+                "tool_available": None, "projection_valid": bool(valid)}
     files = sorted(native_root.rglob("session.v4.jsonl.zstd")) if native_root.is_dir() else []
     result = {"schema_confirmed": _NATIVE_SCHEMA_CONFIRMED,
               "candidate_count": len(files), "candidates": [], "tool_available": bool(shutil.which("zstd"))}
@@ -98,6 +132,41 @@ def _known_contract_checks(capture: Path, native: dict) -> list[str]:
     """Check only locally sourced contracts; never treats absence as zero."""
     failures: list[str] = []
     scope = _json(capture / "scope.json")
+    clock = _json(capture / "batch-clock.json")
+    expected_jobs = {"backtest_jobs", "data_sync_jobs", "factor_jobs", "market_session_sync_jobs",
+                     "ml_prediction_runs", "ml_training_runs", "optimization_jobs",
+                     "security_master_sync_jobs", "signal_producer_jobs", "research_tasks", "artifacts"}
+    if (not isinstance(clock, dict) or clock.get("schema_version") != "byq-ordinary-capture-clock.v1"
+            or type(clock.get("started_monotonic_ns")) is not int
+            or type(clock.get("deadline_monotonic_ns")) is not int
+            or clock.get("deadline_monotonic_ns") - clock.get("started_monotonic_ns") != 240_000_000_000
+            or not isinstance(clock.get("boot_id"), str)
+            or not isinstance(clock.get("started_utc"), str)):
+        failures.append("batch-clock.json must preserve one Linux monotonic 240-second batch deadline")
+    login_writes = _json(capture / "authorized-login-writes.json")
+    if (not isinstance(login_writes, dict)
+            or login_writes.get("schema_version") != "byq-ordinary-capture-authorized-login-writes.v1"
+            or login_writes.get("durable_login_may_write_auth_sessions") is not True
+            or login_writes.get("business_jobs_created_by_capture") is not False):
+        failures.append("authorized login writes must be disclosed separately from business job effects")
+    if (capture / "capture-stop.json").exists():
+        failures.append("capture batch has a preserved STOP receipt")
+    for action in ("preflight", "turn-1", "turn-2"):
+        checkpoint = _json(capture / f"checkpoint-{action}-pass.json")
+        if not isinstance(checkpoint, dict) or checkpoint.get("status") != "PASS":
+            failures.append(f"capture batch checkpoint missing PASS: {action}")
+    before_jobs, after_jobs = _json(capture / "jobs-before.json"), _json(capture / "jobs-after.json")
+    if (not isinstance(before_jobs, dict) or not isinstance(after_jobs, dict)
+            or set(before_jobs) != expected_jobs or set(after_jobs) != expected_jobs
+            or any(type(v) is not int or v < 0 for v in before_jobs.values())
+            or any(type(v) is not int or v < 0 for v in after_jobs.values())
+            or before_jobs != after_jobs):
+        failures.append("the fixed nine job tables plus research_tasks/artifacts must have exact unchanged counts")
+    containers_before = _json(capture / "container-facts-preflight.json")
+    containers_after = _json(capture / "container-facts-finish-final.json")
+    if (not isinstance(containers_before, dict) or not isinstance(containers_after, dict)
+            or containers_before != containers_after):
+        failures.append("project/container identity and started_at must match at batch start and finish")
     required_scope = {"conversation_id", "runtime_session_id", "trace_id",
                       "workspace_id", "owner_principal", "actor_principal"}
     if not isinstance(scope, dict) or not required_scope <= set(scope):
@@ -106,6 +175,15 @@ def _known_contract_checks(capture: Path, native: dict) -> list[str]:
         failures.append("scope.json contains missing or empty request identity")
     elif scope["owner_principal"] != scope["actor_principal"]:
         failures.append("ordinary user turn actor must match the owner principal")
+
+    for turn in (1, 2):
+        delivery = _json(capture / f"delivery-turn-{turn}.json")
+        if (not isinstance(delivery, dict)
+                or delivery.get("schema_version") != "public-answer-delivery-status.v1"
+                or delivery.get("state") != "up_to_date"
+                or any(type(delivery.get(key)) is not int or delivery[key] != 0
+                       for key in ("pending_events", "exhausted_events", "rejected_events"))):
+            failures.append(f"turn {turn} answer delivery is not up_to_date with zero pending/exhausted/rejected events")
 
     conversation = _json(capture / "conversation.json")
     if not isinstance(conversation, dict) or not isinstance(conversation.get("messages"), list):
@@ -177,7 +255,7 @@ def _known_contract_checks(capture: Path, native: dict) -> list[str]:
                         or type(receipt.get("sequence")) is not int or receipt.get("sequence", 0) <= 0
                         or not isinstance(receipt.get("event_sha256"), str)
                         or not _HASH.fullmatch(receipt["event_sha256"])):
-                    failures.append("binding lacks the exact persisted terminal ACK receipt")
+                    failures.append("binding lacks the exact persisted settlement receipt")
             for key in ("session_id", "trace_id", "owner_principal", "workspace_id"):
                 if len({b.get(key) for b in bindings}) != 1 or (isinstance(scope, dict) and bindings[0].get(key) != scope.get(key if key != "session_id" else "runtime_session_id")):
                     failures.append(f"binding identity does not match request scope: {key}")
@@ -187,31 +265,82 @@ def _known_contract_checks(capture: Path, native: dict) -> list[str]:
     if (not isinstance(terminal_response, dict)
             or terminal_response.get("schema_version") != "byq-business-root-status.v1"
             or not isinstance(terminal, list) or len(terminal) != 2):
-        failures.append("terminal.json must be the raw byq-business-root-status.v1 response with two roots")
+        failures.append("terminal.json must be the scoped read-only byq-business-root-status.v1 SQL projection with two roots")
+    ack_projection = _json(capture / "gateway-ack-observed.json")
+    ack_rows = (ack_projection.get("events") if isinstance(ack_projection, dict)
+                and ack_projection.get("schema_version") == "byq-gateway-terminal-ack-observed-set.v1"
+                else None)
+    if not isinstance(ack_rows, list):
+        failures.append("gateway-ack-observed.json must contain sanitized observed Gateway ACK log tuples")
+        ack_rows = []
+    ack_lines = _json(capture / "gateway-ack-original-matches.json")
+    line_rows = ack_lines.get("lines") if isinstance(ack_lines, dict) else None
+    if (not isinstance(ack_lines, dict)
+            or ack_lines.get("schema_version") != "byq-gateway-terminal-ack-lines.v1"
+            or not isinstance(line_rows, list) or len(line_rows) != len(ack_rows)):
+        failures.append("Gateway ACK tuple records must retain their bounded original marker lines")
+    else:
+        marker = "terminal_ack_observed "
+        for index, line in enumerate(line_rows):
+            matched = line.get("matched_line") if isinstance(line, dict) else None
+            if (not isinstance(matched, str) or not matched.startswith("terminal_ack_observed ")
+                    or type(line.get("line_bytes")) is not int
+                    or line.get("line_bytes") != len(matched.encode("utf-8"))
+                    or not isinstance(line.get("line_sha256"), str)
+                    or _sha(matched.encode("utf-8")) != line.get("line_sha256")):
+                failures.append("Gateway ACK original marker line does not match its saved hash/length")
+                break
+            try:
+                parsed = json.loads(matched[len(marker):])
+            except json.JSONDecodeError:
+                failures.append("Gateway ACK original marker line does not contain valid tuple JSON")
+                break
+            if parsed != ack_rows[index]:
+                failures.append("Gateway ACK original marker line tuple differs from the saved observation")
+                break
     if isinstance(terminal, list):
         terminal_by_root = {r.get("root_run_id"): r for r in terminal if isinstance(r, dict)}
         binding_files = sorted((capture / "binding-snapshots").glob("*.json")) if (capture / "binding-snapshots").is_dir() else []
         binding_rows = [_json(p) for p in binding_files]
-        ack_by_root = {b.get("root_run_id"): b.get("settlement_receipt")
+        persisted_by_root = {b.get("root_run_id"): b.get("settlement_receipt")
                        for b in binding_rows if isinstance(b, dict)}
-        if len(terminal_by_root) != 2 or len(ack_by_root) != 2 or set(terminal_by_root) != set(ack_by_root):
-            failures.append("Backend terminal roots and exact ACK roots must match one-to-one")
+        observed_by_root: dict[str, list[dict]] = {}
+        for row in ack_rows:
+            if isinstance(row, dict) and isinstance(row.get("root_run_id"), str):
+                observed_by_root.setdefault(row["root_run_id"], []).append(row)
+        if len(terminal_by_root) != 2 or len(persisted_by_root) != 2 or set(terminal_by_root) != set(persisted_by_root):
+            failures.append("Backend terminal roots and persisted binding receipt roots must match one-to-one")
+        if set(terminal_by_root) != set(observed_by_root):
+            failures.append("Backend terminal roots and Gateway observed ACK log roots must match one-to-one")
         for root, row in terminal_by_root.items():
-            ack = ack_by_root.get(root)
+            receipt = persisted_by_root.get(root)
             if not isinstance(root, str) or not _ROOT.fullmatch(root):
                 failures.append("Backend terminal has invalid root_run_id")
                 continue
             digest, seq = row.get("terminal_event_sha256"), row.get("terminal_sequence")
             if row.get("status") != "completed" or row.get("authority_status") != "closed":
                 failures.append(f"root {root} is not completed/closed")
+            if row.get("terminal_unknown_claim_count") != 0:
+                failures.append(f"root {root} has unknown terminal claims")
             if type(seq) is not int or seq <= 0 or not isinstance(digest, str) or not _HASH.fullmatch(digest):
                 failures.append(f"root {root} has missing/invalid Backend terminal sequence/hash")
-            if not isinstance(ack, dict) or set(ack) != {"schema_version", "root_run_id", "sequence", "event_sha256"}:
-                failures.append(f"root {root} lacks the exact ACK receipt fields")
-            elif (ack.get("schema_version") != "agent-run-lifecycle-receipt.v1"
-                  or ack.get("root_run_id") != root or type(ack.get("sequence")) is not int
-                  or ack.get("sequence") != seq or ack.get("event_sha256") != digest):
-                failures.append(f"root {root} ACK does not exactly match Backend terminal")
+            if not isinstance(receipt, dict) or set(receipt) != {"schema_version", "root_run_id", "sequence", "event_sha256"}:
+                failures.append(f"root {root} lacks the exact persisted settlement receipt fields")
+            elif (receipt.get("schema_version") != "agent-run-lifecycle-receipt.v1"
+                  or receipt.get("root_run_id") != root or type(receipt.get("sequence")) is not int
+                  or receipt.get("sequence") != seq or receipt.get("event_sha256") != digest):
+                failures.append(f"root {root} persisted settlement receipt does not match Backend terminal")
+            observed = observed_by_root.get(root, [])
+            binding = next((b for b in binding_rows if isinstance(b, dict) and b.get("root_run_id") == root), {})
+            expected_ack = {
+                "schema_version": "byq-gateway-terminal-ack-observed.v1",
+                "event": "terminal_ack_observed", "root_run_id": root,
+                "session_id": binding.get("session_id"), "boot_id": binding.get("previous_boot_id"),
+                "trace_id": binding.get("trace_id"), "sequence": seq,
+                "event_sha256": digest, "outcome": "completed",
+            }
+            if not observed or any(row != expected_ack for row in observed):
+                failures.append(f"root {root} lacks a matching observed Gateway terminal ACK tuple")
 
     # Reconstruct two completed roots and their saved public answer rows from
     # normalized trace deltas; Product messages intentionally have no root id.
@@ -311,7 +440,8 @@ def _known_contract_checks(capture: Path, native: dict) -> list[str]:
                 if {b.get("root_run_id") for b in snapshot_rows} != {r["root"] for r in roots}:
                     failures.append("terminal binding snapshots do not bind exactly the two trace roots")
                 if native["candidate_count"] == 1 and any(
-                    b.get("native_session_id") != Path(native["candidates"][0]["relative_path"]).parent.name
+                    b.get("native_session_id") != native["candidates"][0].get(
+                        "native_session_id", Path(native["candidates"][0]["relative_path"]).parent.name)
                     for b in snapshot_rows
                 ):
                     failures.append("native directory id differs from persisted binding native_session_id")
@@ -416,17 +546,19 @@ def inspect(capture: Path) -> dict:
     native = _native_intake(capture / "native")
     failures = _known_contract_checks(capture, native)
     if native["candidate_count"] != 1:
-        failures.append("ordinary two-turn capture must contain exactly one saved session.v4.jsonl.zstd")
+        failures.append("ordinary two-turn capture must contain exactly one native compressed source or validated projection")
     if native["candidate_count"] == 1:
         row = native["candidates"][0]
+        if row.get("projection_valid") is False:
+            failures.append("native session input projection does not match its pinned schema/source")
         if not row["decompressed"]:
-            failures.append("native session did not decompress with zstd")
+            failures.append("native compressed source/projection was not successfully decoded")
         if row["malformed_record_count"]:
             failures.append("native v4 session contains malformed JSONL records")
         if not row["header_valid"]:
             failures.append("native v4 session header does not match the official header schema")
-        if row["header_ids_match_directory"] is not True:
-            failures.append("native header.id does not match its session directory, or header shape is unknown")
+        if row.get("header_identity_matches_binding", row.get("header_ids_match_directory")) is not True:
+            failures.append("native header.id does not match the binding identity, or header shape is unknown")
         if row["user_message_record_count"] != 2:
             failures.append("native user/message data.source.kind=user count is not exactly two, or shape is unknown")
     return {"status": "FAIL" if failures else "PASS",
@@ -438,8 +570,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--capture", required=True, type=Path)
     args = parser.parse_args()
-    print(json.dumps(inspect(args.capture), sort_keys=True))
     result = inspect(args.capture)
+    print(json.dumps(result, sort_keys=True))
     return 1 if result["failures"] else 0
 
 

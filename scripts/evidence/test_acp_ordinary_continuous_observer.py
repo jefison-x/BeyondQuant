@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
-import shutil
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -35,6 +34,28 @@ class OrdinaryObserverContractTest(unittest.TestCase):
         return json.loads((self.root / name).read_text(encoding="utf-8"))
 
     def _capture(self):
+        self.put("batch-clock.json", {"schema_version": "byq-ordinary-capture-clock.v1",
+            "boot_id": "00000000-0000-0000-0000-000000000001", "started_monotonic_ns": 100,
+            "deadline_monotonic_ns": 240000000100, "started_utc": "2026-10-13T00:00:00+00:00",
+            "budget_seconds": 240})
+        self.put("authorized-login-writes.json", {
+            "schema_version": "byq-ordinary-capture-authorized-login-writes.v1",
+            "durable_login_may_write_auth_sessions": True, "business_jobs_created_by_capture": False})
+        for action in ("preflight", "turn-1", "turn-2", "finish"):
+            self.put(f"checkpoint-{action}-pass.json", {"action": action, "status": "PASS"})
+        jobs = {name: 0 for name in ("backtest_jobs", "data_sync_jobs", "factor_jobs",
+            "market_session_sync_jobs", "ml_prediction_runs", "ml_training_runs",
+            "optimization_jobs", "security_master_sync_jobs", "signal_producer_jobs",
+            "research_tasks", "artifacts")}
+        self.put("jobs-before.json", jobs)
+        self.put("jobs-after.json", jobs)
+        containers = {"project": "byq-dev-e8b02b5475",
+            "requested_ids": {"gateway": "1" * 12, "adapter": "2" * 12,
+                "runner": "3" * 12, "postgres": "4" * 12},
+            "containers": {"gateway": {"id": "1" * 64}, "adapter": {"id": "2" * 64},
+                "runner": {"id": "3" * 64}, "postgres": {"id": "4" * 64}}}
+        self.put("container-facts-preflight.json", containers)
+        self.put("container-facts-finish-final.json", containers)
         scope = {"conversation_id": "conv-1", "runtime_session_id": "sess-1", "trace_id": "trace-1",
                  "workspace_id": "ws-1", "owner_principal": "user-1", "actor_principal": "user-1"}
         self.put("scope.json", scope)
@@ -57,25 +78,19 @@ class OrdinaryObserverContractTest(unittest.TestCase):
         ]
         self.put("conversation.json", {"conversation": {"session_id": "conv-1", "trace_id": "trace-1"},
                                         "messages": messages})
-        native_dir = self.root / "native" / "native-1"
-        native_dir.mkdir(parents=True)
-        lines = [
-            {"type": "session", "version": 4, "id": "native-1", "createdAt": 1, "isSeeded": False, "delegationDepth": 0},
-            {"type": "user/message", "seq": 1, "time": 1,
-             "data": {"id": "native-u1", "content": [{"type": "text", "text": u1}], "source": {"kind": "user"}}, "surfaceOp": "append"},
-            {"type": "user/message", "seq": 4, "time": 2,
-             "data": {"id": "native-u2", "content": [{"type": "text", "text": u2}], "source": {"kind": "user"}}, "surfaceOp": "append"},
-        ]
-        raw = "\n".join(json.dumps(row) for row in lines) + "\n"
-        if not shutil.which("zstd"):
-            self.skipTest("zstd CLI is required to validate native compression")
-        compressed = subprocess.run(["zstd", "-q", "-c"], input=raw.encode(), check=True, capture_output=True).stdout
-        (native_dir / "session.v4.jsonl.zstd").write_bytes(compressed)
+        self.put("native-projection.json", {
+            "schema_version": "byq-native-session-input-projection.v1",
+            "producer_source_sha256": observer._NATIVE_PROJECTION_SOURCE_SHA256,
+            "native_session_id": "native-1", "compressed_sha256": "c" * 64,
+            "compressed_bytes": 1024, "header_id": "native-1", "header_version": 4,
+            "human_input_sha256_order": [observer._sha(u1.encode()), observer._sha(u2.encode())],
+        })
         for root, generation in ((r1, "gen-1"), (r2, "gen-2")):
             self.put(f"binding-snapshots/{root}.json", {
                 "schema_version": "byq-acp-root-binding.v1", "session_id": "sess-1", "trace_id": "trace-1",
                 "owner_principal": "user-1", "workspace_id": "ws-1", "root_run_id": root,
                 "native_session_id": "native-1", "runtime_generation": generation,
+                "previous_boot_id": "boot-1",
                 "settlement_receipt": {"schema_version": "agent-run-lifecycle-receipt.v1", "root_run_id": root,
                                         "sequence": 3 if root == r1 else 6,
                                         "event_sha256": "a" * 64 if root == r1 else "b" * 64},
@@ -84,7 +99,8 @@ class OrdinaryObserverContractTest(unittest.TestCase):
         terminals, acks = [], []
         for root, seq, digest in ((r1, 3, "a" * 64), (r2, 6, "b" * 64)):
             terminals.append({"root_run_id": root, "status": "completed", "authority_status": "closed",
-                              "terminal_sequence": seq, "terminal_event_sha256": digest})
+                              "terminal_sequence": seq, "terminal_event_sha256": digest,
+                              "terminal_unknown_claim_count": 0, "terminal_unknown_claims_sha256": "f" * 64})
             acks.append({"schema_version": "agent-run-lifecycle-receipt.v1", "root_run_id": root,
                          "sequence": seq, "event_sha256": digest})
             path = self.root / f"journals/product-turn-provider-request-{root}.jsonl"
@@ -106,6 +122,28 @@ class OrdinaryObserverContractTest(unittest.TestCase):
                 admitted, completed,
             )) + "\n", encoding="utf-8")
         self.put("terminal.json", {"schema_version": "byq-business-root-status.v1", "roots": terminals})
+        ack_events = [{
+                "schema_version": "byq-gateway-terminal-ack-observed.v1",
+                "event": "terminal_ack_observed", "root_run_id": root, "session_id": "sess-1",
+                "boot_id": "boot-1", "trace_id": "trace-1", "sequence": seq,
+                "event_sha256": digest, "outcome": "completed",
+            } for root, seq, digest in ((r1, 3, "a" * 64), (r2, 6, "b" * 64))]
+        self.put("gateway-ack-observed.json", {
+            "schema_version": "byq-gateway-terminal-ack-observed-set.v1", "events": ack_events,
+        })
+        lines = []
+        for row in ack_events:
+            marker = "terminal_ack_observed " + json.dumps(row, separators=(",", ":"))
+            lines.append({"line_bytes": len(marker.encode()), "line_sha256": hashlib.sha256(marker.encode()).hexdigest(),
+                          "matched_line": marker})
+        self.put("gateway-ack-original-matches.json", {
+            "schema_version": "byq-gateway-terminal-ack-lines.v1", "lines": lines,
+        })
+        for turn in (1, 2):
+            self.put(f"delivery-turn-{turn}.json", {
+                "schema_version": "public-answer-delivery-status.v1", "state": "up_to_date",
+                "pending_events": 0, "exhausted_events": 0, "rejected_events": 0,
+            })
 
     @staticmethod
     def event(sequence, kind, payload):
@@ -122,19 +160,17 @@ class OrdinaryObserverContractTest(unittest.TestCase):
         self.assertEqual("PASS", observer.inspect(self.root)["status"])
 
     def test_duplicate_native_input_is_rejected(self):
-        path = self.root / "native/native-1/session.v4.jsonl.zstd"
-        rows = subprocess.run(["zstd", "-q", "-d", "-c", str(path)], check=True, capture_output=True).stdout
-        raw = rows + rows.splitlines(keepends=True)[1]
-        path.write_bytes(subprocess.run(["zstd", "-q", "-c"], input=raw, check=True, capture_output=True).stdout)
+        value = self.get("native-projection.json")
+        value["human_input_sha256_order"] = [value["human_input_sha256_order"][0]] * 2
+        self.put("native-projection.json", value)
         self.assert_rejected("native human input hashes/order differ")
 
     def test_wrong_native_header_id_is_rejected(self):
-        path = self.root / "native/native-1/session.v4.jsonl.zstd"
-        rows = subprocess.run(["zstd", "-q", "-d", "-c", str(path)], check=True, capture_output=True).stdout.splitlines()
-        header = json.loads(rows[0]); header["id"] = "foreign-native"
-        rows[0] = json.dumps(header).encode()
-        path.write_bytes(subprocess.run(["zstd", "-q", "-c"], input=b"\n".join(rows) + b"\n", check=True, capture_output=True).stdout)
-        self.assert_rejected("native header.id does not match")
+        path = self.root / "native-projection.json"
+        projection = self.get("native-projection.json")
+        projection["header_id"] = "foreign-native"
+        self.put("native-projection.json", projection)
+        self.assert_rejected("native header.id does not match the binding identity")
 
     def test_missing_ack_and_none_none_cannot_pass(self):
         self.put("terminal.json", {"schema_version": "byq-business-root-status.v1", "roots": [
@@ -144,7 +180,19 @@ class OrdinaryObserverContractTest(unittest.TestCase):
         binding["settlement_receipt"] = {"schema_version": "agent-run-lifecycle-receipt.v1",
                                           "root_run_id": "1" * 32, "sequence": None, "event_sha256": None}
         self.put(f"binding-snapshots/{'1' * 32}.json", binding)
-        self.assert_rejected("binding lacks the exact persisted terminal ACK")
+        self.assert_rejected("persisted settlement receipt does not match Backend terminal")
+
+    def test_persisted_receipt_without_gateway_log_is_not_ack(self):
+        self.put("gateway-ack-observed.json", {
+            "schema_version": "byq-gateway-terminal-ack-observed-set.v1", "events": [],
+        })
+        self.assert_rejected("Gateway observed ACK log roots must match one-to-one")
+
+    def test_gateway_ack_wrong_boot_is_rejected(self):
+        receipt = self.get("gateway-ack-observed.json")
+        receipt["events"][0]["boot_id"] = "foreign-boot"
+        self.put("gateway-ack-observed.json", receipt)
+        self.assert_rejected("lacks a matching observed Gateway terminal ACK tuple")
 
     def test_wrong_persisted_answer_is_rejected(self):
         conv = self.get("conversation.json")
@@ -160,12 +208,10 @@ class OrdinaryObserverContractTest(unittest.TestCase):
         self.assert_rejected("Product message sequence must be user1, all root1 answers, user2, all root2 answers")
 
     def test_foreign_native_source_is_rejected(self):
-        path = self.root / "native/native-1/session.v4.jsonl.zstd"
-        rows = subprocess.run(["zstd", "-q", "-d", "-c", str(path)], check=True, capture_output=True).stdout.splitlines()
-        event = json.loads(rows[1]); event["data"]["source"] = {"kind": "agent-instructions", "form": "instructions", "changes": []}
-        rows[1] = json.dumps(event).encode()
-        path.write_bytes(subprocess.run(["zstd", "-q", "-c"], input=b"\n".join(rows) + b"\n", check=True, capture_output=True).stdout)
-        self.assert_rejected("native human input hashes/order differ")
+        projection = self.get("native-projection.json")
+        projection["producer_source_sha256"] = "0" * 64
+        self.put("native-projection.json", projection)
+        self.assert_rejected("native session input projection does not match")
 
     def test_missing_journal_completion_is_rejected(self):
         root = "1" * 32
