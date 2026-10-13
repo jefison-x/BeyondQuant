@@ -1,0 +1,38 @@
+{
+  "docker": 0,
+  "head": "342c6d1b66de6042ffcd22b8afd35e1f176f19c6",
+  "historical_full_surrogate": "2026-10-12 V17 full-positive PASS 5.252s and targeted fault PASS 4.877s reviewed separately; not current candidate real qualification",
+  "independent_review": "Sol RAW PASS; Root PASS interface mapping only",
+  "jobs": 0,
+  "models": 0,
+  "real_http": 0,
+  "schema": "byq-root-soft-direct-interface.v1",
+  "scope": "Current helper JSON/route/timeout and synthetic sequential gates, not actual browser/runtime state/root cleanup",
+  "status": "PASS_OFFLINE_INTERFACE_ONLY",
+  "v1": {
+    "cases_not_run": 6,
+    "cause": "entry fixes unittest.main(failfast=True), so its parser does not register -f; -v is legal",
+    "methods_executed": 0,
+    "pins": {
+      "executed-command.json": "a6c0e273f3223e6edd3e735081e6442302d78770a141c50567b14d72a93684df",
+      "plan.json": "3ebddd4c4f4d41ecea57e8840a05646945d64fd647118e62ba935be4a0bf3418",
+      "run-result.json": "efb84add39edaf69ef5c09d0378e35c6fba8a0f8c9fa6aa8a47bc2271e55a7c9",
+      "stderr.raw": "f5773d15678e1b26a5082328aac4ef1a28782bafd630cf6c556033c9a26899d9"
+    },
+    "retry": false,
+    "returncode": 2,
+    "status": "FAIL_STOP_COMMAND_LINE"
+  },
+  "v2": {
+    "fake_branches": 6,
+    "pins": {
+      "executed-command.json": "183cb64d2774f9761a5e75b862d34674c8baec1a99de2feb0000d6c41f5a70b7",
+      "plan.json": "cf0d8a9129e5228a3a07006860de2763b14255da97c09c05ecb342dd6a195ffa",
+      "run-result.json": "7f3c827dd68e13986980edb095f37f22138017f603f0fd9ea1b2451e5c2a752b",
+      "stderr.raw": "a6508d9fed1eb119e8067bdd70c022ee1a78f9f71f70ba104008a3134f3a9614"
+    },
+    "source_change": "none; new exact argv omits redundant flags; old v1 preserved",
+    "status": "PASS",
+    "test_methods": 1
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "actual_soft_cancel": "NOT_RUN",
+  "declared_max_seconds": 120,
+  "first_input": 1,
+  "head": "342c6d1b66de6042ffcd22b8afd35e1f176f19c6",
+  "next_fix": "Freeze existing control commands before clock; invoke one short command immediately after native browser send. No new client/harness/state API",
+  "no_replay": true,
+  "pins": {
+    "admission.json": "1224d0db194dab2d739d730fa606a151bc59b3c3d8cb121176a5cf719e4bfcba",
+    "before-cancel-product.json": "e8f50048803e1507f81d6519f92836fe1bc9c8de7da1c1d2f04d5153d3040d47",
+    "cancel-control-result.json": "d41a50d759c9622084b85062b7a7f96a46ea26a3aa2ab58b5698c76e579d4c04",
+    "clock.json": "0ed4502b663225a74226be2f809eb02d31000b850267292beaa12f42df33be9f",
+    "submission-watch-read.json": "200d2096cf08e61c5b846d0af79d3110444226073bb017de0b8991ba74f3cc0c"
+  },
+  "preflight_browser": "Reload redirected to login; existing password unchanged, durable login restored exact CID and prior answer; submission-watch Product GET200 receipts empty; no business replay",
+  "public_output_boundary": "Same Root has two different output chunks seq11 and12; not automatically duplicate execution",
+  "reason": "Cancellation precheck ran at49.146s after clock start and observed natural completion; controls were organized after first send instead of frozen before clock",
+  "receipt_directory": ".ci-artifacts/continuation-direct-20261013/soft-direct-live-v1",
+  "result": {
+    "elapsed_ms": 49146,
+    "error": "root_already_terminal",
+    "retries": 0,
+    "second_input": "NOT_RUN",
+    "status": "FAIL_STOP",
+    "type": "AssertionError"
+  },
+  "root_decision": "FAIL_ORIGINAL_CANCEL_SCENE",
+  "root_run_id": "69c6a18c465a4383a33f56ae9eb30afe",
+  "schema": "byq-root-soft-direct-live-scene.v1",
+  "second_input": "NOT_RUN",
+  "service_soft_rejection": "NOT_ESTABLISHED; no soft request sent",
+  "soft_cancel_posts": 0,
+  "status": "FAIL_STOP_ROOT_ALREADY_TERMINAL",
+  "time_limit_exceeded": false
+}

@@ -57,6 +57,9 @@
 | 硬取消后新会话浏览器 | FAIL 时限 / UI成功观察 | 同一标签新CID一次输入得到NEW_OK，选择历史后1user1reply；160600ms超120秒，保留FAIL，不称恢复旧会话。见ROOT-HARD-NEW-CONVERSATION-UI-OBSERVATION.json |
 | 新会话状态独立补查 | PASS 只读限定 | 8Docker/476ms，1请求span5900ms、usage27172/24576/126，completed/closed、ACK seq7/hash、精确签名cleanup及11表计数相同。binding.closed=false、native/process close=true分别保留；Sol→Root PASS，不覆盖UI超时。见ROOT-HARD-NEW-CONVERSATION-DIRECT-READ-PASS.json |
 | 软取消准确入口及批次计时重审 | PREPARATION / 真实NOT_RUN | 停止同类超时批次，先审查已有soft API合同/替身证据；把审查预检放在起表之前，每次UI操作前检查剩余时限。新请求span与UI总时长分别记录，不猜服务超时；背景库存空、完成续办NOT_RUN。见ROOT-CONTINUATION-NEXT-SLICE-PLAN.json |
+| 软取消原生直接接口映射 | PASS 离线限定 | 旧V17完整替身PASS单独复用；新极小接口检查V1额外-f参数被拒，0方法/6分支NOT_RUN保留。定位系统unittest具体CLI合同后，新固定argv V2一次69ms/1方法6分支PASS、Sol→Root；不证明实际取消/原生状态。见ROOT-SOFT-DIRECT-INTERFACE-OFFLINE.json |
+| 软取消原生直接真实V1 | FAIL_STOP / soft NOT_RUN | 1纯文字输入；取消前49.146s读到新Root自然completed，0取消POST、第二输入NOT_RUN，无重试。120s未超，但起表后组织控制代码错过active窗口；先冻结控制命令，不据此称服务拒绝soft。浏览器登录失效在预检中通过已有账号重登解决，密码未改。见ROOT-SOFT-DIRECT-LIVE-V1-FAIL-STOP.json |
+| 上述自然完成的独立补查 | PASS 只读诊断限定 | 8Docker/448ms，1provider/span31286ms/usage27378-24576-2457，completed/closed、ACK seq15/hash/HMAC cleanup精确关联、11表计数相同；Sol→Root。binding.closedfalse/native与process close true分别保留，不覆盖软取消NOT_RUN。见ROOT-SOFT-DIRECT-POST-STOP-READ-PASS.json |
 | 两用户、自然迟到旧请求、业务结果 unknown、进程丢失 | NOT_RUN 当前补缺批次 | 保留旧限定证据，逐片补缺；不自动重放未知业务结果 |
 | 远程 CI / 推送 / 合并 / 生产部署 | NOT_RUN | 不以本地、合成或隔离更新证明生产资格 |
 
