@@ -1,0 +1,31 @@
+{
+  "schema_version": "byq-maintenance-root-gate.v1",
+  "slice": "single-child-scope-read-offline",
+  "status": "PASS",
+  "source_head": "492b0beab4b6e35b4c19b5ee27ed4ba096ffba78",
+  "source_sha256": "31ad3c9480a68ac42f844814175dd4f254904a33eb9038002df445fb962af40a",
+  "test_sha256": "9661977282303f27e5e3cd75cf6c59071e7528ac4000c26de0524906bd12d60c",
+  "argv": ["python3", "-m", "unittest", "discover", "-s", "scripts/evidence", "-p", "test_acp_child_scope_read.py", "-v", "-f"],
+  "limits": {"executions": 1, "timeout_seconds": 30},
+  "result": {
+    "returncode": 0,
+    "tests": 15,
+    "elapsed_ms": 82,
+    "stdout_bytes": 0,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_bytes": 2870,
+    "stderr_sha256": "fdd4aeb079f0fc4860d67e98541484f7dc244d61d7d7b8e8cf7be2bf1c06d8f8",
+    "source_and_test_unchanged": true
+  },
+  "gates": {"tester": "PASS", "independent_sol_source": "PASS", "independent_sol_raw_result": "PASS", "root": "PASS"},
+  "evidence_kind": "keyless synthetic contract tests only",
+  "preserved_failures": [
+    "ROOT-CHILD-SCOPE-SOURCE-V1-HOLD.json",
+    "A later source review rejected an invented unregistered bootstrap ingress exception; it was removed before this first execution.",
+    "Root sent an intermediate test hash before the final pair froze; the reviewer rejected admission, with no test execution.",
+    "Existing-read plans v1/v2 incorrectly reused the human conversation actor as the Product Agent actor; the reviewer stopped the read before any SQL execution."
+  ],
+  "not_qualified": ["actual child startup", "child tool or model calls", "child result persistence", "terminal ACK", "signed cleanup", "production"],
+  "execution": {"database_queries": 0, "docker_calls": 0, "http_calls": 0, "model_requests": 0, "new_jobs": 0, "production_operations": 0},
+  "raw_evidence": ".ci-artifacts/delegated-child-20261013/scope-offline-v1/"
+}

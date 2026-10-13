@@ -31,6 +31,7 @@
 | 原生历史读取入口完整修补 | PASS 离线限定 | 修正UID、官方精确路径、原始命令/源码哈希关联、替身目录与各阶段路径，35项一次批次通过Tester→Sol→Root；静态与首轮替身FAIL保留；见ROOT-ORDINARY-NATIVE-READER-OFFLINE-PASS.json及ROOT-ORDINARY-NATIVE-READER-*FAIL*.json |
 | 已有原生历史真实只读解析 | PASS 既有文件限定 | 20秒/2exec上限，169ms完成，10002:10002实际读取官方源码/profile与v4历史；两个人类输入哈希按原浏览器A/B顺序一致，模型/Job0。不恢复旧失败批次、不替代新双轮整体验收；见ROOT-EXISTING-NATIVE-INPUT-READ-PASS.json |
 | 新候选普通连续双轮完整真实验收 | PASS 本切片限定 | 新CID f6d08，一次2提示词/2个已完成模型请求，finish及刷新证据240秒内；持久化2user2reply各一次、两Root closed/unknown0、精确ACK与结算一致、11表库存不变，Source→35离线→真实采集→独立Sol→Root PASS。租约只瞬时/非全局，旧FAIL不覆盖；见ROOT-ORDINARY-BROWSER-LIVE-V3-PASS.json |
+| 单子 Agent scope 采集叶节点 | PASS 离线 / 既有普通 Root 只读限定 | 15项替身合同一次通过；冻结入口一次只读SQL、前后精确PG身份一致、277ms完成，普通Root可合法无native registration。源码审查HOLD和错误actor计划保留；不等于真实委派、子模型分账或签名cleanup。见ROOT-CHILD-SCOPE-OFFLINE-PASS.json、ROOT-CHILD-SCOPE-EXISTING-READ-PASS.json |
 | 两用户、自然迟到旧请求、业务结果 unknown、进程丢失 | NOT_RUN 当前补缺批次 | 保留旧限定证据，逐片补缺；不自动重放未知业务结果 |
 | 远程 CI / 推送 / 合并 / 生产部署 | NOT_RUN | 不以本地、合成或隔离更新证明生产资格 |
 
@@ -41,3 +42,7 @@
 原生 OC 服务保留，两个旧自动派发timer可逆暂停。当前7个Agent的关键工具权限配置读回为deny，经Sol核对；实际执行拒绝NOT_RUN。权限不阻止模型请求或清除旧会话上下文，新增OC工具任务仍NOT_ADMITTED。现有必要Luna源码回退继续；固定测试命令经审查后在OC外执行。无新客户端、调度框架或Agent harness。具体范围见ROOT-OC-*回执。
 
 当前仍 NOT_READY。历史部署证据和本次新候选资格分别记录，不因当前未验收而改写旧生产部署成功记录。
+
+## 浏览器窗口纪律
+
+验证复用当前已核对的浏览器标签。另开测试窗口前先检查旧测试窗口，关闭已废弃的测试窗口并确认已关闭；保留无关用户标签。2026-10-13复核仅剩当前普通双轮会话标签，没有再次开窗或发送提示词。
