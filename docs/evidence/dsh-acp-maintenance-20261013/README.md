@@ -16,6 +16,12 @@
 | 两用户真实预检入口 | FAIL_OBSERVER_STOP | Root猜错表名；只读查询失败，零模型/Job/用户/容器变更；停止后重审查询复用方法；见 ROOT-TWO-USER-LIVE-PREFLIGHT-FAIL-STOP.json |
 | 两用户预检完整性源码审计 | PASS 发现缺口 | Sol确认readyfile、无子进程、Backend roots闭合不能证明Adapter lease已释放；当前`slot_available=UNKNOWN`，真实批次保持停止，先完善只读采集合同 |
 | 实际Adapter租约匿名只读计数 | PASS 定向离线限定 | 平级挂载修正后Runtime6/Gateway3通过，Tester→独立Sol→Root PASS；模型/Job0、原27容器未变。首个挂载FAIL保留，真实计数/旧进程租约仍未验证；见ROOT-LEASE-OBSERVER-OFFLINE-PASS.json |
+| 最新Root读取器 | PASS 离线限定 | 按BYQ session文件名、独立native UUID校验；10用例+Sol+Root通过，原身份混同源码FAIL保留；见ROOT-LATEST-ROOT-READER-OFFLINE-PASS.json |
+| 最新Root实际只读采集预检 | FAIL_OBSERVER_STOP | Docker可选Health字段导致5行渲染失败，rc1后误用部分22行；原始ps仍27 ID。6实际读取全部NOT_RUN、模型/Job0；保留日志，先完整修正入口；见ROOT-LATEST-ROOT-READ-PREFLIGHT-FAIL-STOP.json |
+| 库存入口V3与完整实采入口 | PASS 库存限定 / FAIL 实采入口 | 4替身用例通过；实际前后27容器全部ID/image/start等一致。临时wrapper解析基准相对路径错误，6数据步骤仍0执行；不重试，先固定完整执行脚本并走完整替身；见ROOT-INVENTORY-ENTRY-V3-OFFLINE-PASS.json、ROOT-LATEST-ROOT-READ-V3-FAIL-STOP.json |
+| 固定完整采集入口V4 | PASS 离线限定 | 一次执行6项完整流程替身；路径、失败停步、截止时间和源码漂移门禁通过Tester→独立Sol→Root；旧失败保留；见ROOT-FIXED-ENTRY-V4-OFFLINE-PASS.json |
+| 最新Root实际只读采集V4 | PASS 已有Root限定 | 固定入口一次执行、6数据exec、模型/新Job0；14步骤及前后哈希PASS、27容器不变；实际签名cleanup与Backend闭合/持久化receipt一致。实际ACK/global lease/native close仍UNKNOWN；不替代新候选Runtime或浏览器资格；见ROOT-LATEST-ROOT-READ-V4-PASS.json |
+| 浏览器普通续聊补缺观察 | NOT_QUALIFIED | 一次实际输入，37秒内正确回复，刷新后两轮各一次；但Root取证到190秒超过整批120秒，模型计数/Job增量/新Root结算未核验，已停后续prompt，不作为候选资格PASS；见ROOT-BROWSER-CONTINUE-OBSERVATION-STOP.json |
 | 两用户、自然迟到旧请求、业务结果 unknown、进程丢失 | NOT_RUN 当前补缺批次 | 保留旧限定证据，逐片补缺；不自动重放未知业务结果 |
 | 远程 CI / 推送 / 合并 / 生产部署 | NOT_RUN | 不以本地、合成或隔离更新证明生产资格 |
 

@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-13",
+  "source_commit": "ee6bc94e29b67b44faeeb6e14827843d74e4213f",
+  "result": "PASS_LIMITED_OFFLINE_READER",
+  "Tester": "/root/two_user_offline_tester",
+  "independent_Sol": "/root/manual_result_reviewer",
+  "Root": "PASS_LIMITED_OFFLINE_READER",
+  "command": [
+    "python3",
+    "-B",
+    ".ci-artifacts/latest-root-closure-20261013/source/test_binding_reader.py",
+    "-v"
+  ],
+  "timeout_seconds": 60,
+  "exit_code": 0,
+  "elapsed_ms": 62,
+  "methods_passed": 10,
+  "source_sha256": {
+    ".ci-artifacts/latest-root-closure-20261013/source/binding_reader.py": {
+      "expected": "c1510e704871970066f3f3208d6dc0259676f52e14c1b9e0ca8f6e4d8669c88e",
+      "actual": "c1510e704871970066f3f3208d6dc0259676f52e14c1b9e0ca8f6e4d8669c88e",
+      "match": true
+    },
+    ".ci-artifacts/latest-root-closure-20261013/source/test_binding_reader.py": {
+      "expected": "939bfbd42fb18776919c1403c88dd49150a946a1b0f73aeb52ca6eac851d62fb",
+      "actual": "939bfbd42fb18776919c1403c88dd49150a946a1b0f73aeb52ca6eac851d62fb",
+      "match": true
+    },
+    "packages/contracts/acp_product_slot.py": {
+      "expected": "65c73b22245ce174b1d350ba1b4690267e11cc3f6e0f5517a32d144935b3ff1b",
+      "actual": "65c73b22245ce174b1d350ba1b4690267e11cc3f6e0f5517a32d144935b3ff1b",
+      "match": true
+    }
+  },
+  "stderr": "Expected unittest verbose success output; stdout empty. Not the live-read stderr contract.",
+  "model_calls": 0,
+  "jobs": 0,
+  "docker_exec": 0,
+  "production_mutations": 0,
+  "entry_plan_sha256": "b17abe1442e7f184fd0f366e16eec3e7f8baaffb723065e3f3ece31edfefcf53",
+  "real_read": "NOT_RUN_PENDING_EXECUTION",
+  "preserved_failure": "ROOT-LATEST-ROOT-READER-SOURCE-FAIL.json",
+  "boundary": "Offline reader proves producer-derived BYQ session path, distinct native UUID, strict scope/receipt/cleanup inputs only. It does not prove real persisted state, live ACK, native close, or global lease-free."
+}

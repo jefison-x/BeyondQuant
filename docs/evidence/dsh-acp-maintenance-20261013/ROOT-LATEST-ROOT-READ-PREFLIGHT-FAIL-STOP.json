@@ -1,0 +1,35 @@
+{
+  "date": "2026-10-13",
+  "source_commit": "ee6bc94e29b67b44faeeb6e14827843d74e4213f",
+  "result": "FAIL_OBSERVER_STOP",
+  "Root": "FAIL_OBSERVER_STOP",
+  "failure_stage": "inventory preflight, before first of six planned reads",
+  "root_cause": "Optional .State.Health accessed as mandatory Go-template field; five containers with no Health key failed rendering. Partial successful output was incorrectly parsed as a complete 22-container inventory despite inspect exit_code=1 and nonempty stderr.",
+  "docker_ps_id_count": 27,
+  "partial_inspect_count": 22,
+  "inspect_exit_code": 1,
+  "template_error_count": 5,
+  "affected_services": [
+    "optimization-worker",
+    "backtest-worker",
+    "data-worker",
+    "signal-worker",
+    "factor-worker"
+  ],
+  "inventory_reduction_claim": "NOT_PROVEN; raw ps still lists all 27 IDs. Original report corrected.",
+  "responsibility": "Root omitted exact inventory argv/optional-field and subprocess-failure contract in admission; Tester did not reject nonzero inspect before parsing partial output.",
+  "planned_reads": {
+    "authority": "NOT_RUN",
+    "binding": "NOT_RUN",
+    "root": "NOT_RUN",
+    "facts": "NOT_RUN",
+    "jobs": "NOT_RUN",
+    "cleanup": "NOT_RUN"
+  },
+  "docker_exec_count": 0,
+  "model_calls": 0,
+  "jobs": 0,
+  "production_mutations": 0,
+  "required_correction": "Keep batch stopped. Review complete entry; guard every rc/stderr before parsing, validate exact unique ID set, represent absent health explicitly, prove optional/failing/partial cases with saved samples before one bounded retry.",
+  "evidence": "Private live-v2 raw command/result/stdout/stderr retained; no secret or business data published."
+}

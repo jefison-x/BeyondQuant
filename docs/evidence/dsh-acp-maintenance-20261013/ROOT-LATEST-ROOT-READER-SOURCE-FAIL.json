@@ -1,0 +1,15 @@
+{
+  "status": "FAIL_SOURCE_REVIEW",
+  "source_head": "ee6bc94e29b67b44faeeb6e14827843d74e4213f",
+  "batch_execution": "NOT_RUN",
+  "reason": "Reader and synthetic fixture incorrectly used ACP native_session_id as binding filename; actual Runtime persists by BYQ session_id.",
+  "root_responsibility": "Root must verify actual producer path and identity mapping before admitting collection.",
+  "reader_sha256": "4f4a4570e47448ec93b0af5c84484f51992e10e4445df1b19f4fc731445188c3",
+  "test_sha256": "6ed67c0d35cc9e668d712128dceff50d935303700eb7f622afdeafa947cedfe9",
+  "source_contract": "services/runtime-adapter/app/runtime.py _acp_binding_path / _persist_acp_binding",
+  "model_calls": 0,
+  "jobs": 0,
+  "docker_exec": 0,
+  "production_mutations": 0,
+  "action": "Stop admission; correct producer-derived path and distinct-ID synthetic fixture; independent review before execution."
+}
