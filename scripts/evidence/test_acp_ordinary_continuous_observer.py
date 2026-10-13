@@ -3,16 +3,26 @@ from __future__ import annotations
 
 import importlib.util
 import hashlib
+import ast
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("acp-ordinary-continuous-observer.py")
+CAPTURE_SCRIPT = Path(__file__).with_name("acp-ordinary-continuous-capture.py")
 SPEC = importlib.util.spec_from_file_location("ordinary_observer", SCRIPT)
 observer = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(observer)
+
+
+def capture_literal(name):
+    tree = ast.parse(CAPTURE_SCRIPT.read_text(encoding="utf-8"))
+    return next(ast.literal_eval(node.value) for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == name for target in node.targets)
+        and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str))
 
 
 class OrdinaryObserverContractTest(unittest.TestCase):
@@ -51,7 +61,7 @@ class OrdinaryObserverContractTest(unittest.TestCase):
         self.put("jobs-after.json", jobs)
         containers = {"project": "byq-dev-e8b02b5475",
             "requested_ids": {"gateway": "1" * 12, "adapter": "2" * 12,
-                "runner": "3" * 12, "postgres": "4" * 12},
+                "runner": "3" * 64, "postgres": "4" * 12},
             "containers": {"gateway": {"id": "1" * 64}, "adapter": {"id": "2" * 64},
                 "runner": {"id": "3" * 64}, "postgres": {"id": "4" * 64}}}
         self.put("container-facts-preflight.json", containers)
@@ -59,6 +69,10 @@ class OrdinaryObserverContractTest(unittest.TestCase):
         scope = {"conversation_id": "conv-1", "runtime_session_id": "sess-1", "trace_id": "trace-1",
                  "workspace_id": "ws-1", "owner_principal": "user-1", "actor_principal": "user-1"}
         self.put("scope.json", scope)
+        workspace_mount = "/var/lib/byq/dsh-sessions/dsh-v0.2.0-rc.2-acp/ws-1"
+        cwd = workspace_mount + "/session-one"
+        preflight_code = capture_literal("code")
+        projector_code = capture_literal("projector")
         r1, r2 = "1" * 32, "2" * 32
         u1, u2 = "first request", "second request"
         trace = []
@@ -81,10 +95,54 @@ class OrdinaryObserverContractTest(unittest.TestCase):
         self.put("native-projection.json", {
             "schema_version": "byq-native-session-input-projection.v1",
             "producer_source_sha256": observer._NATIVE_PROJECTION_SOURCE_SHA256,
-            "native_session_id": "native-1", "compressed_sha256": "c" * 64,
+            "native_session_id": "native-1", "binding_cwd": cwd, "workspace_id": "ws-1",
+            "relative_path": f"sessions/{observer._session_project_key(cwd)}/native-1/session.v4.jsonl.zstd",
+            "compressed_sha256": "c" * 64,
             "compressed_bytes": 1024, "header_id": "native-1", "header_version": 4,
             "human_input_sha256_order": [observer._sha(u1.encode()), observer._sha(u2.encode())],
         })
+        for turn in (1, 2):
+            self.put(f"turn-{turn}/binding.json", {"cwd": cwd, "workspace_id": "ws-1",
+                "native_session_id": "native-1"})
+        projection = self.get("native-projection.json")
+        native_stdout = json.dumps(projection, separators=(",", ":")).encode() + b"\n"
+        native_command = {"argv": ["docker", "exec", "--user", "10002:10002", "--workdir", "/app", "-i",
+            "3" * 64, "python3", "-I", "-c", projector_code, cwd, "native-1", "ws-1",
+            observer._NATIVE_PROJECTION_SOURCE_SHA256],
+            "returncode": 0, "stdout_bytes": len(native_stdout),
+            "stdout_sha256": hashlib.sha256(native_stdout).hexdigest(), "stderr_bytes": 0,
+            "stderr_sha256": hashlib.sha256(b"").hexdigest(), "elapsed_ms": 9, "timeout_seconds": 30}
+        self.put("commands/native-projection.json", native_command)
+        raw_native = self.root / "commands/native-projection.stdout.raw"
+        raw_native.parent.mkdir(parents=True, exist_ok=True)
+        raw_native.write_bytes(native_stdout)
+        preflight = {"schema_version": "byq-native-projector-preflight.v1", "workspace_mount": workspace_mount,
+            "zstd_stream_api": True, "reader_uid": 10002, "reader_gid": 10002,
+            "dsh_source_commit": observer._DSH_SOURCE_COMMIT, "store_package_version": observer._STORE_PACKAGE_VERSION,
+            "store_source_sha256": observer._NATIVE_STORE_SOURCE_SHA256,
+            "header_schema_source_sha256": observer._NATIVE_HEADER_SOURCE_SHA256,
+            "base_profile_source_sha256": observer._NATIVE_BASE_PROFILE_SOURCE_SHA256,
+            "product_profile_sha256": observer._PRODUCT_PROFILE_SHA256,
+            "product_profile_identity_sha256": observer._PRODUCT_PROFILE_IDENTITY_SHA256,
+            "product_profile": "byq-product-acp-0.2.0-rc.2",
+            "product_composition_hash": "sha256:" + observer._PRODUCT_PROFILE_SHA256,
+            "dsh_home_contract": "binding.cwd", "store_root_contract": "dshHomePath(sessions)"}
+        stdout = json.dumps(preflight, separators=(",", ":")).encode() + b"\n"
+        command = {"argv": ["docker", "exec", "--user", "10002:10002", "--workdir", "/app",
+            "3" * 64, "python3", "-I", "-c", preflight_code,
+            workspace_mount.rsplit("/", 1)[0], workspace_mount],
+            "returncode": 0, "stdout_bytes": len(stdout), "stdout_sha256": hashlib.sha256(stdout).hexdigest(),
+            "stderr_bytes": 0, "stderr_sha256": hashlib.sha256(b"").hexdigest(),
+            "elapsed_ms": 3, "timeout_seconds": 15}
+        receipt = {**preflight,
+            "source_read_command_sha256": observer._sha(json.dumps(command["argv"], separators=(",", ":")).encode()),
+            "source_read_returncode": 0, "source_read_stdout_sha256": hashlib.sha256(stdout).hexdigest(),
+            "source_read_command_receipt_sha256": observer._sha(json.dumps(command, sort_keys=True, separators=(",", ":")).encode())}
+        self.put("native-runtime-preflight.json", receipt)
+        self.put("commands/native-runtime-preflight.json", command)
+        raw_path = self.root / "commands/native-runtime-preflight.stdout.raw"
+        raw_path.parent.mkdir(parents=True, exist_ok=True)
+        raw_path.write_bytes(stdout)
         for root, generation in ((r1, "gen-1"), (r2, "gen-2")):
             self.put(f"binding-snapshots/{root}.json", {
                 "schema_version": "byq-acp-root-binding.v1", "session_id": "sess-1", "trace_id": "trace-1",
@@ -211,6 +269,53 @@ class OrdinaryObserverContractTest(unittest.TestCase):
         projection = self.get("native-projection.json")
         projection["producer_source_sha256"] = "0" * 64
         self.put("native-projection.json", projection)
+        self.assert_rejected("native session input projection does not match")
+
+    def test_native_source_receipt_must_match_pinned_profile(self):
+        receipt = self.get("native-runtime-preflight.json")
+        receipt["product_profile_sha256"] = "0" * 64
+        self.put("native-runtime-preflight.json", receipt)
+        self.assert_rejected("native session input projection does not match")
+
+    def test_native_binding_workspace_must_match_projection(self):
+        binding = self.get("turn-2/binding.json")
+        binding["workspace_id"] = "foreign-workspace"
+        self.put("turn-2/binding.json", binding)
+        self.assert_rejected("native session input projection does not match")
+
+    def test_native_projection_stdout_must_match_saved_projection(self):
+        path = self.root / "commands/native-projection.stdout.raw"
+        path.write_bytes(path.read_bytes().replace(b"native-1", b"native-X", 1))
+        self.assert_rejected("native session input projection does not match")
+
+    def test_native_projection_argv_must_pin_inline_source(self):
+        command = self.get("commands/native-projection.json")
+        command["argv"][11] = "source-reader"
+        self.put("commands/native-projection.json", command)
+        self.assert_rejected("native session input projection does not match")
+
+    def test_native_preflight_argv_must_pin_inline_source(self):
+        command = self.get("commands/native-runtime-preflight.json")
+        command["argv"][10] = "source-reader"
+        self.put("commands/native-runtime-preflight.json", command)
+        receipt = self.get("native-runtime-preflight.json")
+        receipt["source_read_command_sha256"] = observer._sha(
+            json.dumps(command["argv"], separators=(",", ":")).encode())
+        receipt["source_read_command_receipt_sha256"] = observer._sha(
+            json.dumps(command, sort_keys=True, separators=(",", ":")).encode())
+        self.put("native-runtime-preflight.json", receipt)
+        self.assert_rejected("native session input projection does not match")
+
+    def test_native_preflight_runner_must_match_container_inventory(self):
+        command = self.get("commands/native-runtime-preflight.json")
+        command["argv"][6] = "4" * 64
+        self.put("commands/native-runtime-preflight.json", command)
+        receipt = self.get("native-runtime-preflight.json")
+        receipt["source_read_command_sha256"] = observer._sha(
+            json.dumps(command["argv"], separators=(",", ":")).encode())
+        receipt["source_read_command_receipt_sha256"] = observer._sha(
+            json.dumps(command, sort_keys=True, separators=(",", ":")).encode())
+        self.put("native-runtime-preflight.json", receipt)
         self.assert_rejected("native session input projection does not match")
 
     def test_missing_journal_completion_is_rejected(self):

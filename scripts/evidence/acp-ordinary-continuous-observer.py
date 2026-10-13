@@ -20,10 +20,16 @@ from pathlib import Path
 
 _ROOT = re.compile(r"^[0-9a-f]{32}$")
 _HASH = re.compile(r"^[0-9a-f]{64}$")
-_NATIVE_SCHEMA_CONFIRMED = True
-_NATIVE_SOURCE_SHA256 = "5d665a976a9d6fdeca964ca487b6adea187962b256ef47c2fcf1fe7656222aab"
+_NATIVE_STORE_SOURCE_SHA256 = "0845707017acc2b4a8a75eab2244fa3fd88587b8094ab32014321dce7ca1e31b"
+_NATIVE_HEADER_SOURCE_SHA256 = "87ea85e2fb5318bf1f826db9a1c88c1b26d3ea328027a7f32b211880c4d62b9d"
+_NATIVE_BASE_PROFILE_SOURCE_SHA256 = "9c2be64f46a193eff3cca190c26e697e8e8eee25c9b40149dfdb56f8142c252d"
+_PRODUCT_PROFILE_SHA256 = "10396c708651b24e3012df51e13cbb0e1eaf8178cda9547c91d682c189eacd45"
+_PRODUCT_PROFILE_IDENTITY_SHA256 = "0e1f5494f99b4fba433f5f86653b6848377372c7308561bceaaddc3ea3f2f69b"
+_DSH_SOURCE_COMMIT = "639ed015397290b3745d163aafe02ffee4aa3f84"
+_STORE_PACKAGE_VERSION = "0.2.0-rc.2"
+_NATIVE_PREFLIGHT_SOURCE_SHA256 = "9edc3029d7f4b897e44e8f753b687bd0751ec432ef12b4c96fcaeb940195073f"
 _NATIVE_PROJECTION_SCHEMA = "byq-native-session-input-projection.v1"
-_NATIVE_PROJECTION_SOURCE_SHA256 = "6567aa65b21f4bdcf2796c5f15a911727056ba0fbe2531d0c53d9247d447fe9c"
+_NATIVE_PROJECTION_SOURCE_SHA256 = "88703ff77934153095606ce81d3be1befc3b8eb79528e18e9c20074e1418ae36"
 
 
 def _sha(data: bytes) -> str:
@@ -37,17 +43,165 @@ def _json(path: Path):
         return None
 
 
+def _unique_pairs(items):
+    result = {}
+    for key, value in items:
+        if key in result:
+            raise ValueError("duplicate JSON key")
+        result[key] = value
+    return result
+
+
+def _session_project_key(cwd: str) -> str:
+    readable = []
+    separator = False
+    for char in cwd:
+        if char in "/\\:":
+            if not separator:
+                readable.append("-")
+            separator = True
+        elif char != "~" and char.isascii() and (char.isalnum() or char in "._-"):
+            readable.append(char)
+            separator = False
+        else:
+            code = ord(char)
+            if code > 0xFFFF:
+                return ""
+            readable.append(f"~{code:04X}")
+            separator = False
+    return "--" + ("".join(readable).lstrip("-") or "root")[:251] + "--"
+
+
+def _native_source_receipt(capture: Path) -> bool:
+    value = _json(capture / "native-runtime-preflight.json")
+    command = _json(capture / "commands" / "native-runtime-preflight.json")
+    scope = _json(capture / "scope.json")
+    containers = _json(capture / "container-facts-preflight.json")
+    raw_path = capture / "commands" / "native-runtime-preflight.stdout.raw"
+    try:
+        raw = raw_path.read_bytes()
+        raw_hash = _sha(raw)
+        pairs = json.loads(raw.decode("utf-8"), object_pairs_hook=lambda items: _unique_pairs(items))
+    except OSError:
+        return False
+    except (UnicodeError, json.JSONDecodeError, ValueError):
+        return False
+    if (not isinstance(value, dict) or not isinstance(command, dict) or not isinstance(scope, dict)
+            or not isinstance(containers, dict)
+            or not isinstance(pairs, dict)
+            or not isinstance(value.get("workspace_mount"), str)):
+        return False
+    argv = command.get("argv")
+    requested = containers.get("requested_ids")
+    runner_id = requested.get("runner") if isinstance(requested, dict) else None
+    expected_command_hash = (_sha(json.dumps(argv, separators=(",", ":")).encode())
+                             if isinstance(argv, list) else None)
+    expected_record_hash = _sha(json.dumps(command, sort_keys=True, separators=(",", ":")).encode())
+    raw_join = ({key: item for key, item in value.items() if not key.startswith("source_read_")} == pairs
+                and set(value) == set(pairs) | {"source_read_command_sha256", "source_read_returncode",
+                                                "source_read_stdout_sha256", "source_read_command_receipt_sha256"})
+    return (value.get("schema_version") == "byq-native-projector-preflight.v1"
+            and raw_join
+            and value.get("reader_uid") == 10002 and value.get("reader_gid") == 10002
+            and value.get("dsh_source_commit") == _DSH_SOURCE_COMMIT
+            and value.get("store_package_version") == _STORE_PACKAGE_VERSION
+            and value.get("store_source_sha256") == _NATIVE_STORE_SOURCE_SHA256
+            and value.get("header_schema_source_sha256") == _NATIVE_HEADER_SOURCE_SHA256
+            and value.get("base_profile_source_sha256") == _NATIVE_BASE_PROFILE_SOURCE_SHA256
+            and value.get("product_profile_sha256") == _PRODUCT_PROFILE_SHA256
+            and value.get("product_profile_identity_sha256") == _PRODUCT_PROFILE_IDENTITY_SHA256
+            and value.get("product_profile") == "byq-product-acp-0.2.0-rc.2"
+            and value.get("product_composition_hash") == f"sha256:{_PRODUCT_PROFILE_SHA256}"
+            and value.get("dsh_home_contract") == "binding.cwd"
+            and value.get("store_root_contract") == "dshHomePath(sessions)"
+            and value.get("zstd_stream_api") is True
+            and isinstance(scope.get("workspace_id"), str)
+            and value.get("workspace_mount", "").endswith("/" + scope["workspace_id"])
+            and command.get("returncode") == 0
+            and isinstance(argv, list) and len(argv) == 13
+            and argv[:6] == ["docker", "exec", "--user", "10002:10002", "--workdir", "/app"]
+            and isinstance(runner_id, str) and argv[6] == runner_id
+            and isinstance(argv[6], str) and _HASH.fullmatch(argv[6]) is not None and argv[7] == "python3"
+            and argv[8:10] == ["-I", "-c"]
+            and isinstance(argv[10], str) and _sha(argv[10].encode()) == _NATIVE_PREFLIGHT_SOURCE_SHA256
+            and isinstance(argv[-2], str)
+            and value.get("workspace_mount") == argv[-2].rstrip("/") + "/" + scope["workspace_id"]
+            and argv[-1] == value.get("workspace_mount")
+            and command.get("stderr_bytes") == 0
+            and command.get("stderr_sha256") == _sha(b"")
+            and command.get("stdout_bytes") == len(raw)
+            and value.get("source_read_command_sha256") == expected_command_hash
+            and value.get("source_read_returncode") == command.get("returncode")
+            and value.get("source_read_stdout_sha256") == command.get("stdout_sha256") == raw_hash
+            and value.get("source_read_command_receipt_sha256") == expected_record_hash)
+
+
+def _native_projection_receipt(capture: Path, projection: dict) -> bool:
+    command = _json(capture / "commands" / "native-projection.json")
+    raw_path = capture / "commands" / "native-projection.stdout.raw"
+    containers = _json(capture / "container-facts-preflight.json")
+    try:
+        raw = raw_path.read_bytes()
+        pairs = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_pairs)
+    except OSError:
+        return False
+    except (UnicodeError, json.JSONDecodeError, ValueError):
+        return False
+    if not isinstance(command, dict) or not isinstance(containers, dict) or not isinstance(pairs, dict):
+        return False
+    argv = command.get("argv")
+    requested = containers.get("requested_ids")
+    runner_id = requested.get("runner") if isinstance(requested, dict) else None
+    if not isinstance(argv, list) or len(argv) != 16:
+        return False
+    cwd, native_id, workspace_id = (projection.get("binding_cwd"), projection.get("native_session_id"),
+                                    projection.get("workspace_id"))
+    return (pairs == projection
+            and command.get("returncode") == 0
+            and command.get("stdout_bytes") == len(raw)
+            and command.get("stdout_sha256") == _sha(raw)
+            and command.get("stderr_bytes") == 0
+            and command.get("stderr_sha256") == _sha(b"")
+            and argv[:7] == ["docker", "exec", "--user", "10002:10002", "--workdir", "/app", "-i"]
+            and argv[7] == runner_id and isinstance(runner_id, str)
+            and argv[8:11] == ["python3", "-I", "-c"]
+            and isinstance(argv[11], str) and _sha(argv[11].encode()) == _NATIVE_PROJECTION_SOURCE_SHA256
+            and argv[12:16] == [cwd, native_id, workspace_id, _NATIVE_PROJECTION_SOURCE_SHA256]
+            and projection.get("schema_version") == _NATIVE_PROJECTION_SCHEMA
+            and projection.get("producer_source_sha256") == _NATIVE_PROJECTION_SOURCE_SHA256)
+
+
 def _native_intake(native_root: Path) -> dict:
     """Read sanitized projection, or legacy compressed input, without content."""
     projection_path = native_root.parent / "native-projection.json"
     if projection_path.is_file():
         value = _json(projection_path)
+        safe_value = value if isinstance(value, dict) else {}
         required = {"schema_version", "producer_source_sha256", "native_session_id",
-                    "compressed_sha256", "compressed_bytes", "header_id", "header_version",
-                    "human_input_sha256_order"}
+                    "binding_cwd", "workspace_id", "relative_path", "compressed_sha256",
+                    "compressed_bytes", "header_id", "header_version", "human_input_sha256_order"}
+        bindings = [_json(native_root.parent / f"turn-{turn}" / "binding.json") for turn in (1, 2)]
+        scope = _json(native_root.parent / "scope.json")
+        source = _json(native_root.parent / "native-runtime-preflight.json")
+        mount = source.get("workspace_mount") if isinstance(source, dict) else None
+        binding_join = (all(isinstance(row, dict) for row in bindings)
+                        and isinstance(scope, dict) and isinstance(mount, str)
+                        and bindings[0].get("cwd") == bindings[1].get("cwd") == safe_value.get("binding_cwd")
+                        and bindings[0].get("workspace_id") == bindings[1].get("workspace_id") == safe_value.get("workspace_id")
+                        and safe_value.get("workspace_id") == scope.get("workspace_id")
+                        and isinstance(safe_value.get("binding_cwd"), str)
+                        and safe_value["binding_cwd"].startswith(mount.rstrip("/") + "/")
+                        and bindings[0].get("native_session_id") == bindings[1].get("native_session_id") == safe_value.get("native_session_id"))
+        expected_relative = (f"sessions/{_session_project_key(safe_value['binding_cwd'])}/"
+                             f"{safe_value['native_session_id']}/session.v4.jsonl.zstd"
+                             if isinstance(safe_value.get("binding_cwd"), str)
+                             and isinstance(safe_value.get("native_session_id"), str) else None)
         valid = (isinstance(value, dict) and set(value) == required
                  and value.get("schema_version") == _NATIVE_PROJECTION_SCHEMA
                  and value.get("producer_source_sha256") == _NATIVE_PROJECTION_SOURCE_SHA256
+                 and _native_source_receipt(native_root.parent)
+                 and _native_projection_receipt(native_root.parent, safe_value)
+                 and binding_join is True and value.get("relative_path") == expected_relative
                  and isinstance(value.get("native_session_id"), str) and bool(value["native_session_id"])
                  and isinstance(value.get("compressed_sha256"), str) and _HASH.fullmatch(value["compressed_sha256"])
                  and type(value.get("compressed_bytes")) is int and value["compressed_bytes"] > 0
@@ -57,8 +211,7 @@ def _native_intake(native_root: Path) -> dict:
                  and len(value["human_input_sha256_order"]) == 2
                  and all(isinstance(item, str) and _HASH.fullmatch(item)
                          for item in value["human_input_sha256_order"]))
-        safe_value = value if isinstance(value, dict) else {}
-        return {"schema_confirmed": _NATIVE_SCHEMA_CONFIRMED, "candidate_count": 1,
+        return {"schema_confirmed": bool(valid), "candidate_count": 1,
                 "candidates": [{"relative_path": "native-projection.json",
                                   "compressed_sha256": safe_value.get("compressed_sha256"),
                                   "compressed_bytes": safe_value.get("compressed_bytes"),
@@ -72,7 +225,7 @@ def _native_intake(native_root: Path) -> dict:
                                   "malformed_record_count": 0, "projection_valid": bool(valid)}],
                 "tool_available": None, "projection_valid": bool(valid)}
     files = sorted(native_root.rglob("session.v4.jsonl.zstd")) if native_root.is_dir() else []
-    result = {"schema_confirmed": _NATIVE_SCHEMA_CONFIRMED,
+    result = {"schema_confirmed": False,
               "candidate_count": len(files), "candidates": [], "tool_available": bool(shutil.which("zstd"))}
     for path in files:
         row = {"relative_path": str(path.relative_to(native_root)),
@@ -563,7 +716,10 @@ def inspect(capture: Path) -> dict:
             failures.append("native user/message data.source.kind=user count is not exactly two, or shape is unknown")
     return {"status": "FAIL" if failures else "PASS",
             "failures": failures, "native_intake": native,
-            "native_schema_source_sha256": _NATIVE_SOURCE_SHA256}
+            "native_source_identities": {"store": _NATIVE_STORE_SOURCE_SHA256,
+                "header": _NATIVE_HEADER_SOURCE_SHA256, "base_profile": _NATIVE_BASE_PROFILE_SOURCE_SHA256,
+                "product_profile": _PRODUCT_PROFILE_SHA256,
+                "product_profile_identity": _PRODUCT_PROFILE_IDENTITY_SHA256}}
 
 
 def main() -> int:

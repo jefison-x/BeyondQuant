@@ -32,7 +32,7 @@ BATCH_SECONDS = 240
 IO_TIMEOUT = 20
 ROOT_RE = re.compile(r"[0-9a-f]{32}\Z")
 HASH_RE = re.compile(r"[0-9a-f]{64}\Z")
-PROJECTOR_SHA256 = "6567aa65b21f4bdcf2796c5f15a911727056ba0fbe2531d0c53d9247d447fe9c"
+PROJECTOR_SHA256 = "88703ff77934153095606ce81d3be1befc3b8eb79528e18e9c20074e1418ae36"
 ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{7,127}\Z")
 OWNER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}$")
 TERMINALS = {"session.result", "session.failed", "session.cancelled", "session.result.discarded"}
@@ -40,6 +40,27 @@ TERMINALS = {"session.result", "session.failed", "session.cancelled", "session.r
 
 class Stop(RuntimeError):
     pass
+
+
+def _session_project_key(cwd: str) -> str:
+    """Match the pinned DSH session-store projectKey for this Linux cwd."""
+    readable: list[str] = []
+    separator = False
+    for char in cwd:
+        if char in "/\\:":
+            if not separator:
+                readable.append("-")
+            separator = True
+        elif char != "~" and char.isascii() and (char.isalnum() or char in "._-"):
+            readable.append(char)
+            separator = False
+        else:
+            code = ord(char)
+            if code > 0xFFFF:
+                raise Stop("native_cwd_non_bmp")
+            readable.append(f"~{code:04X}")
+            separator = False
+    return "--" + ("".join(readable).lstrip("-") or "root")[:251] + "--"
 
 
 def _write(path: Path, raw: bytes) -> None:
@@ -234,20 +255,60 @@ def _native_runtime_preflight(args, out: Path, *, deadline: float) -> None:
         and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)), None)
     if not isinstance(projector, str) or hashlib.sha256(projector.encode()).hexdigest() != PROJECTOR_SHA256:
         raise Stop("native_projector_source_changed")
-    code = r'''import ctypes,json,pathlib,sys
+    code = r'''import ctypes,hashlib,json,os,pathlib,sys
 root=pathlib.Path(sys.argv[1]); workspace=pathlib.Path(sys.argv[2]); expected=root/workspace.name
+if os.geteuid()!=10002 or os.getegid()!=10002: raise SystemExit("native_reader_identity_mismatch")
 if root!=pathlib.Path("/var/lib/byq/dsh-sessions/dsh-v0.2.0-rc.2-acp") or not workspace.is_dir() or workspace.resolve()!=expected.resolve(): raise SystemExit("native_mount_scope_invalid")
+runtime=pathlib.Path("/opt/dsh-runtime"); profile=pathlib.Path("/opt/byq/profiles/byq-product.patch.yml"); identity=pathlib.Path("/opt/byq/profiles/byq-product.identity.json")
+def digest(path): return hashlib.sha256(path.read_bytes()).hexdigest()
+source_commit=(runtime/".byq-source-commit").read_text().strip()
+store_manifest=json.loads((runtime/"packages/session/session-persistence-jsonl/package.json").read_text())
+store_sha=digest(runtime/"packages/session/session-persistence-jsonl/lib/index.js")
+schema_sha=digest(runtime/"packages/core/session/lib/index.js")
+base_sha=digest(runtime/"packages/bundle/base/cordis.patch.yml")
+profile_sha=digest(profile); identity_sha=digest(identity); profile_identity=json.loads(identity.read_text())
+if (source_commit!="639ed015397290b3745d163aafe02ffee4aa3f84" or store_manifest.get("version")!="0.2.0-rc.2"
+ or store_sha!="0845707017acc2b4a8a75eab2244fa3fd88587b8094ab32014321dce7ca1e31b"
+ or schema_sha!="87ea85e2fb5318bf1f826db9a1c88c1b26d3ea328027a7f32b211880c4d62b9d"
+ or base_sha!="9c2be64f46a193eff3cca190c26e697e8e8eee25c9b40149dfdb56f8142c252d"
+ or profile_sha!="10396c708651b24e3012df51e13cbb0e1eaf8178cda9547c91d682c189eacd45"
+ or identity_sha!="0e1f5494f99b4fba433f5f86653b6848377372c7308561bceaaddc3ea3f2f69b"
+ or profile_identity.get("profile")!="byq-product-acp-0.2.0-rc.2"
+ or profile_identity.get("composition_hash")!="sha256:"+profile_sha): raise SystemExit("native_source_identity_mismatch")
 lib=ctypes.CDLL("libzstd.so.1")
 if not all(hasattr(lib,n) for n in ("ZSTD_createDStream","ZSTD_initDStream","ZSTD_decompressStream","ZSTD_isError")): raise SystemExit("native_zstd_stream_unavailable")
-print(json.dumps({"schema_version":"byq-native-projector-preflight.v1","workspace_mount":str(workspace),"zstd_stream_api":True},separators=(",",":")))'''
-    raw = _command(out, "native-runtime-preflight", ["docker", "exec", "--workdir", "/app",
+print(json.dumps({"schema_version":"byq-native-projector-preflight.v1","workspace_mount":str(workspace),"zstd_stream_api":True,"reader_uid":os.geteuid(),"reader_gid":os.getegid(),"dsh_source_commit":source_commit,"store_package_version":store_manifest["version"],"store_source_sha256":store_sha,"header_schema_source_sha256":schema_sha,"base_profile_source_sha256":base_sha,"product_profile_sha256":profile_sha,"product_profile_identity_sha256":identity_sha,"product_profile":profile_identity["profile"],"product_composition_hash":profile_identity["composition_hash"],"dsh_home_contract":"binding.cwd","store_root_contract":"dshHomePath(sessions)"},separators=(",",":")))'''
+    raw = _command(out, "native-runtime-preflight", ["docker", "exec", "--user", "10002:10002", "--workdir", "/app",
         args.runner_id, "python3", "-I", "-c", code, args.session_root,
         str(Path(args.session_root) / WORKSPACE)], timeout=15, deadline=deadline)
     value = json.loads(raw)
     if (not isinstance(value, dict) or value.get("schema_version") != "byq-native-projector-preflight.v1"
             or value.get("workspace_mount") != str(Path(args.session_root) / WORKSPACE)
+            or value.get("reader_uid") != 10002 or value.get("reader_gid") != 10002
+            or value.get("dsh_source_commit") != "639ed015397290b3745d163aafe02ffee4aa3f84"
+            or value.get("store_package_version") != "0.2.0-rc.2"
+            or value.get("store_source_sha256") != "0845707017acc2b4a8a75eab2244fa3fd88587b8094ab32014321dce7ca1e31b"
+            or value.get("header_schema_source_sha256") != "87ea85e2fb5318bf1f826db9a1c88c1b26d3ea328027a7f32b211880c4d62b9d"
+            or value.get("base_profile_source_sha256") != "9c2be64f46a193eff3cca190c26e697e8e8eee25c9b40149dfdb56f8142c252d"
+            or value.get("product_profile_sha256") != "10396c708651b24e3012df51e13cbb0e1eaf8178cda9547c91d682c189eacd45"
+            or value.get("product_profile_identity_sha256") != "0e1f5494f99b4fba433f5f86653b6848377372c7308561bceaaddc3ea3f2f69b"
+            or value.get("product_profile") != "byq-product-acp-0.2.0-rc.2"
+            or value.get("product_composition_hash") != "sha256:10396c708651b24e3012df51e13cbb0e1eaf8178cda9547c91d682c189eacd45"
+            or value.get("dsh_home_contract") != "binding.cwd"
+            or value.get("store_root_contract") != "dshHomePath(sessions)"
             or value.get("zstd_stream_api") is not True):
         raise Stop("native_runtime_preflight_invalid")
+    command_record = _json_read(out / "commands" / "native-runtime-preflight.json")
+    if (not isinstance(command_record, dict) or command_record.get("returncode") != 0
+            or not isinstance(command_record.get("argv"), list)
+            or not isinstance(command_record.get("stdout_sha256"), str)):
+        raise Stop("native_runtime_preflight_command_receipt_invalid")
+    value["source_read_command_sha256"] = hashlib.sha256(json.dumps(
+        command_record["argv"], separators=(",", ":")).encode()).hexdigest()
+    value["source_read_returncode"] = command_record["returncode"]
+    value["source_read_stdout_sha256"] = command_record["stdout_sha256"]
+    value["source_read_command_receipt_sha256"] = hashlib.sha256(json.dumps(
+        command_record, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     _json_write(out / "native-runtime-preflight.json", value)
 
 
@@ -624,7 +685,21 @@ def _native_projection(args, out: Path, binding: dict, workspace: str, runtime_s
     # The runner emits only header identity, compressed digest/size and hashes of
     # exactly the two human input messages. The source is pinned by SHA below.
     projector = r'''import ctypes,hashlib,json,os,pathlib,stat,sys
-root=pathlib.Path(sys.argv[1]); expected=sys.argv[2]
+root=pathlib.Path(sys.argv[1]); expected=sys.argv[2]; workspace=sys.argv[3]; producer=sys.argv[4]
+if not root.is_absolute() or root.resolve()!=root: raise SystemExit("native_cwd_not_canonical")
+def project_key(cwd):
+ readable=[]; separator=False
+ for ch in cwd:
+  if ch in "/\\:":
+   if not separator: readable.append("-")
+   separator=True
+  elif ch != "~" and (ch.isascii() and (ch.isalnum() or ch in "._-")):
+   readable.append(ch); separator=False
+  else:
+   code=ord(ch)
+   if code>0xffff: raise SystemExit("native_cwd_non_bmp")
+   readable.append("~"+format(code,"04X")); separator=False
+ return "--"+("".join(readable).lstrip("-") or "root")[:251]+"--"
 class IB(ctypes.Structure): _fields_=[("src",ctypes.c_void_p),("size",ctypes.c_size_t),("pos",ctypes.c_size_t)]
 class OB(ctypes.Structure): _fields_=[("dst",ctypes.c_void_p),("size",ctypes.c_size_t),("pos",ctypes.c_size_t)]
 lib=ctypes.CDLL("libzstd.so.1")
@@ -632,12 +707,18 @@ lib.ZSTD_createDStream.restype=ctypes.c_void_p; lib.ZSTD_initDStream.argtypes=[c
 lib.ZSTD_decompressStream.argtypes=[ctypes.c_void_p,ctypes.POINTER(OB),ctypes.POINTER(IB)]; lib.ZSTD_decompressStream.restype=ctypes.c_size_t
 lib.ZSTD_isError.argtypes=[ctypes.c_size_t]; lib.ZSTD_isError.restype=ctypes.c_uint
 lib.ZSTD_freeDStream.argtypes=[ctypes.c_void_p];
+def stamp(st): return (st.st_dev,st.st_ino,st.st_mode,st.st_nlink,st.st_size,st.st_mtime_ns,st.st_ctime_ns)
 def decode(path, full):
+ parent=root
+ for part in ("sessions",project_key(str(root)),expected):
+  parent=parent/part
+  st=os.lstat(parent)
+  if not stat.S_ISDIR(st.st_mode) or stat.S_ISLNK(st.st_mode): raise SystemExit("native_parent_invalid")
  before=os.lstat(path)
- if not stat.S_ISREG(before.st_mode) or before.st_nlink!=1 or before.st_size<=0 or before.st_size>67108864: raise SystemExit("native_file_invalid")
+ if not stat.S_ISREG(before.st_mode) or stat.S_ISLNK(before.st_mode) or before.st_nlink!=1 or before.st_size<=0 or before.st_size>67108864: raise SystemExit("native_file_invalid")
  fd=os.open(path,os.O_RDONLY|getattr(os,"O_NOFOLLOW",0)); st=os.fstat(fd)
- if st.st_ino!=before.st_ino or st.st_dev!=before.st_dev or st.st_nlink!=1: os.close(fd); raise SystemExit("native_file_changed")
- stream=lib.ZSTD_createDStream(); digest=hashlib.sha256(); size=0; pending=bytearray(); header=None; users=[]; records=0; decompressed=0; need_init=True
+ if stamp(st)!=stamp(before): os.close(fd); raise SystemExit("native_file_changed")
+ stream=lib.ZSTD_createDStream(); digest=hashlib.sha256(); size=0; pending=bytearray(); header=None; users=[]; records=0; decompressed=0; need_init=True; opened_after=None
  try:
   while True:
    chunk=os.read(fd,65536)
@@ -673,37 +754,36 @@ def decode(path, full):
          users.append(hashlib.sha256(text.encode()).hexdigest())
     if r==0: need_init=True
   if pending or not need_init: raise SystemExit("native_truncated")
+  opened_after=os.fstat(fd)
  finally:
   lib.ZSTD_freeDStream(stream); os.close(fd)
  after=os.lstat(path)
- if (after.st_ino!=before.st_ino or after.st_dev!=before.st_dev or after.st_size!=size): raise SystemExit("native_file_changed")
+ if opened_after is None or stamp(opened_after)!=stamp(before) or stamp(after)!=stamp(before) or size!=before.st_size: raise SystemExit("native_file_changed")
  return (header,users),digest.hexdigest(),size
-files=list(root.rglob("session.v4.jsonl.zstd")); matches=[]
-for p in files:
- h,_,_=decode(p,False)
- if isinstance(h,dict) and h.get("id")==expected: matches.append(p)
-if len(matches)!=1: raise SystemExit("native_header_identity_not_unique")
-p=matches[0]; (h,users),digest,size=decode(p,True); h=h or {}
+p=root/"sessions"/project_key(str(root))/expected/"session.v4.jsonl.zstd"
+(h,users),digest,size=decode(p,True); h=h or {}
 required={"type","version","id","createdAt","isSeeded","delegationDepth"}; allowed=required|{"cwd","parentSession","origin","agentPreset"}
 if not isinstance(h,dict) or not required<=set(h) or not set(h)<=allowed or h.get("type")!="session" or type(h.get("version")) is not int or h.get("version")!=4 or type(h.get("createdAt")) is not int or type(h.get("isSeeded")) is not bool or type(h.get("delegationDepth")) is not int: raise SystemExit("native_header_invalid")
 if h.get("id")!=expected or len(users)!=2: raise SystemExit("native_scope_invalid")
-print(json.dumps({"schema_version":"byq-native-session-input-projection.v1","producer_source_sha256":sys.argv[3],"native_session_id":h["id"],"compressed_sha256":digest,"compressed_bytes":size,"header_id":h["id"],"header_version":h["version"],"human_input_sha256_order":users},separators=(",",":")))'''
+print(json.dumps({"schema_version":"byq-native-session-input-projection.v1","producer_source_sha256":producer,"native_session_id":h["id"],"binding_cwd":str(root),"workspace_id":workspace,"relative_path":str(p.relative_to(root)),"compressed_sha256":digest,"compressed_bytes":size,"header_id":h["id"],"header_version":h["version"],"human_input_sha256_order":users},separators=(",",":")))'''
     producer_hash = hashlib.sha256(projector.encode()).hexdigest()
     if producer_hash != PROJECTOR_SHA256:
         raise Stop("native_projector_source_changed")
     group_root = str(Path(args.session_root) / workspace)
     if ".." in Path(cwd).parts or not Path(cwd).is_relative_to(Path(group_root)):
         raise Stop("native_cwd_outside_workspace_volume")
-    raw = _command(out, "native-projection", ["docker", "exec", "--workdir", "/app", "-i", args.runner_id,
-        "python3", "-I", "-c", projector, cwd, native_id, producer_hash], timeout=30, deadline=deadline)
+    raw = _command(out, "native-projection", ["docker", "exec", "--user", "10002:10002", "--workdir", "/app", "-i", args.runner_id,
+        "python3", "-I", "-c", projector, cwd, native_id, workspace, producer_hash], timeout=30, deadline=deadline)
     value = json.loads(raw)
-    required = {"schema_version", "producer_source_sha256", "native_session_id", "compressed_sha256",
-                "compressed_bytes", "header_id", "header_version", "human_input_sha256_order"}
-    _json_write(out / "native-projection.json", value)
+    required = {"schema_version", "producer_source_sha256", "native_session_id", "binding_cwd", "workspace_id",
+                "relative_path", "compressed_sha256", "compressed_bytes", "header_id", "header_version",
+                "human_input_sha256_order"}
     if (not isinstance(value, dict) or set(value) != required
             or value.get("schema_version") != "byq-native-session-input-projection.v1"
             or value.get("producer_source_sha256") != PROJECTOR_SHA256
             or value.get("native_session_id") != native_id or value.get("header_id") != native_id
+            or value.get("binding_cwd") != cwd or value.get("workspace_id") != workspace
+            or value.get("relative_path") != f"sessions/{_session_project_key(cwd)}/{native_id}/session.v4.jsonl.zstd"
             or value.get("header_version") != 4
             or not isinstance(value.get("compressed_sha256"), str)
             or not HASH_RE.fullmatch(value["compressed_sha256"])
@@ -713,6 +793,7 @@ print(json.dumps({"schema_version":"byq-native-session-input-projection.v1","pro
             or any(not isinstance(item, str) or not HASH_RE.fullmatch(item)
                    for item in value["human_input_sha256_order"])):
         raise Stop("native_projection_schema_invalid")
+    _json_write(out / "native-projection.json", value)
 
 
 def _finish(args, out: Path, *, deadline: float) -> dict:

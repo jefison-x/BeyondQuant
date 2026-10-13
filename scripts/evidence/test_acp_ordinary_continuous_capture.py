@@ -33,9 +33,9 @@ CONVERSATION = "conversation_123"
 RUNTIME_SESSION = "runtime_session_123"
 TRACE = "trace-123"
 OWNER = "admin"
-NATIVE = "native-session-uuid"
+NATIVE = "86" * 16
 IDS = {"gateway": "1" * 12, "adapter": "2" * 12,
-       "runner": "3" * 12, "postgres": "4" * 12}
+       "runner": "3" * 64, "postgres": "4" * 12}
 USER_TEXT = ("first user input", "second user input")
 _REAL_RUN = subprocess.run
 CONTAINER_INSPECT_FMT = ('{{.Id}}|{{.Image}}|{{.State.StartedAt}}|{{.State.Running}}|'
@@ -80,6 +80,26 @@ def _event(sequence: int, kind: str, root: str, **payload) -> dict:
 def _sse(rows: list[dict]) -> bytes:
     return b"".join(("event: workflow-trace\ndata: " + json.dumps(row, separators=(",", ":")) + "\n\n").encode()
                    for row in rows)
+
+
+def _official_project_key(cwd: str) -> str:
+    """Independent fixture implementation of the pinned DSH v4 projectKey."""
+    readable, separator = [], False
+    for char in cwd:
+        if char in "/\\:":
+            if not separator:
+                readable.append("-")
+            separator = True
+        elif char != "~" and char.isascii() and (char.isalnum() or char in "._-"):
+            readable.append(char)
+            separator = False
+        else:
+            code = ord(char)
+            if code > 0xFFFF:
+                raise AssertionError("test cwd must use BMP characters")
+            readable.append(f"~{code:04X}")
+            separator = False
+    return "--" + ("".join(readable).lstrip("-") or "root")[:251] + "--"
 
 
 class _Opener:
@@ -166,24 +186,55 @@ class _Fixture:
         self.started_utc = None
         self.opener = _Opener(self)
         self.cookie_jar = None
+        # The fake Docker runner's mounted session root intentionally aliases
+        # this isolated temporary host directory. The producer receives the
+        # exact DSH_HOME from each binding and reads this tree directly; there
+        # is no path rewrite that could mask a wrong binding_cwd in its output.
+        # These offline tests validate the requested Docker UID in argv, while
+        # the local producer subprocess uses the test UID; they do not claim to
+        # verify container DAC behavior.
         self.native_tmp = tempfile.TemporaryDirectory()
-        self.native_dir = Path(self.native_tmp.name) / NATIVE
-        self.native_dir.mkdir()
-        self._write_native_fixture()
-        self.identity = {"subject": OWNER, "role": "admin", "workspace_id": capture.WORKSPACE}
-        self.started_at = "2026-10-13T00:00:00Z"
-        self.facts = {
-            "project": capture.PROJECT,
-            "requested_ids": dict(IDS),
-            "containers": {
-                name: {"id": cid, "image_id": "sha256:" + name * 64,
-                       "started_at": self.started_at, "running": "true",
-                       "project": capture.PROJECT,
-                       "service": {"gateway": "gateway", "adapter": "runtime-adapter",
-                                   "runner": "acp-product-runner", "postgres": "postgres"}[name]}
-                for name, cid in IDS.items()
-            },
-        }
+        try:
+            temp_root = Path(self.native_tmp.name).resolve(strict=True)
+            self.session_root = (temp_root / "session-store").resolve()
+            self.native_cwd = (self.session_root / capture.WORKSPACE / "dsh-home").resolve()
+            self.project_key = _official_project_key(str(self.native_cwd))
+            self.native_dir = (self.native_cwd / "sessions" / self.project_key / NATIVE).resolve()
+            # The synthetic mount must contain the complete official DSH_HOME
+            # path before the producer opens its v4 session file.
+            self.native_dir.mkdir(parents=True, mode=0o700)
+            for directory in (temp_root, self.session_root,
+                              self.session_root / capture.WORKSPACE, self.native_cwd,
+                              self.native_cwd / "sessions",
+                              self.native_cwd / "sessions" / self.project_key, self.native_dir):
+                os.chmod(directory, 0o700)
+            self.native_file = self.native_dir / "session.v4.jsonl.zstd"
+            self.native_failure = None
+            self.preflight_reader_uid = 10002
+            self.foreign_binding_cwd = False
+            self._write_native_fixture()
+            os.chmod(self.native_file, 0o600)
+        except BaseException:
+            self.native_tmp.cleanup()
+            raise
+        try:
+            self.identity = {"subject": OWNER, "role": "admin", "workspace_id": capture.WORKSPACE}
+            self.started_at = "2026-10-13T00:00:00Z"
+            self.facts = {
+                "project": capture.PROJECT,
+                "requested_ids": dict(IDS),
+                "containers": {
+                    name: {"id": cid, "image_id": "sha256:" + name * 64,
+                           "started_at": self.started_at, "running": "true",
+                           "project": capture.PROJECT,
+                           "service": {"gateway": "gateway", "adapter": "runtime-adapter",
+                                       "runner": "acp-product-runner", "postgres": "postgres"}[name]}
+                    for name, cid in IDS.items()
+                },
+            }
+        except BaseException:
+            self.native_tmp.cleanup()
+            raise
 
     def cookie_jar_factory(self):
         self.cookie_jar = type("FakeCookieJar", (), {"cookies": []})()
@@ -231,7 +282,8 @@ class _Fixture:
         size = lib.ZSTD_compress(compressed, capacity, source, len(raw), 1)
         if lib.ZSTD_isError(size):
             raise AssertionError("synthetic zstd fixture compression failed")
-        (self.native_dir / "session.v4.jsonl.zstd").write_bytes(compressed.raw[:size])
+        self.native_file.write_bytes(compressed.raw[:size])
+        os.chmod(self.native_file, 0o600)
 
     def conversation(self, user_count):
         # runtime_session_id is deliberately absent from the normal public API.
@@ -264,7 +316,7 @@ class _Fixture:
                 "trace_id": TRACE, "owner_principal": OWNER, "workspace_id": capture.WORKSPACE,
                 "root_run_id": root, "native_session_id": NATIVE,
                 "runtime_generation": f"generation-{turn}", "previous_boot_id": "boot-123",
-                "cwd": str(Path(capture.SESSION_ROOT) / capture.WORKSPACE / NATIVE),
+                "cwd": str(self.native_tmp.name) if self.foreign_binding_cwd else str(self.native_cwd),
                 "settlement_receipt": {"schema_version": "agent-run-lifecycle-receipt.v1",
                     "root_run_id": root, "sequence": turn * 3,
                     "event_sha256": ("c" if turn == 1 else "d") * 64}}
@@ -409,26 +461,71 @@ class _Fixture:
                 raise AssertionError("binding reader root scope mismatch")
             value = {"binding": self.binding(root), "journal": self.journal(root)}
             return subprocess.CompletedProcess(argv, 0, (json.dumps(value) + "\n").encode(), b"")
-        if (len(argv) == 11 and argv[:4] == ["docker", "exec", "--workdir", "/app"]
-                and argv[4] == IDS["runner"] and argv[5:8] == ["python3", "-I", "-c"]
-                and argv[9] == capture.SESSION_ROOT
-                and argv[10] == str(Path(capture.SESSION_ROOT) / capture.WORKSPACE)
-                and argv[8] == self.expected_runtime_preflight()):
-            value = {"schema_version": "byq-native-projector-preflight.v1",
-                     "workspace_mount": str(Path(capture.SESSION_ROOT) / capture.WORKSPACE),
-                     "zstd_stream_api": True}
+        if (len(argv) == 13 and argv[:6] == ["docker", "exec", "--user", "10002:10002", "--workdir", "/app"]
+                and argv[6] == IDS["runner"] and argv[7:10] == ["python3", "-I", "-c"]
+                and argv[10] == self.expected_runtime_preflight()
+                and argv[11] == str(capture.SESSION_ROOT)
+                and argv[12] == str(Path(capture.SESSION_ROOT) / capture.WORKSPACE)):
+            value = self.native_preflight_value()
+            value["reader_uid"] = self.preflight_reader_uid
             return subprocess.CompletedProcess(argv, 0, (json.dumps(value) + "\n").encode(), b"")
-        if (len(argv) == 13 and argv[:5] == ["docker", "exec", "--workdir", "/app", "-i"]
-                and argv[5] == IDS["runner"] and argv[6:9] == ["python3", "-I", "-c"]
-                and argv[10] == str(Path(capture.SESSION_ROOT) / capture.WORKSPACE / NATIVE)
-                and argv[11] == NATIVE and argv[12] == capture.PROJECTOR_SHA256
-                and "session.v4.jsonl.zstd" in argv[9]):
-            if argv[9] != self.expected_projector_source():
+        if (len(argv) == 16 and argv[:7] == ["docker", "exec", "--user", "10002:10002", "--workdir", "/app", "-i"]
+                and argv[7] == IDS["runner"] and argv[8:11] == ["python3", "-I", "-c"]
+                and argv[11] == self.expected_projector_source()
+                and argv[12] == str(self.native_cwd) and argv[13] == NATIVE
+                and argv[14] == capture.WORKSPACE and argv[15] == capture.PROJECTOR_SHA256):
+            if argv[12] != str(self.native_cwd):
+                raise AssertionError("native projector did not use the binding DSH_HOME")
+            if self.native_failure == "missing":
+                self.native_file.unlink(missing_ok=True)
+            elif self.native_failure == "permission":
+                # Keep all parent directories traversable so the producer reaches
+                # the actual session file and receives a real OS PermissionError.
+                current = self.native_file.parent
+                while current != Path(self.native_tmp.name).parent:
+                    os.chmod(current, 0o755)
+                    current = current.parent
+                os.chmod(self.native_file, 0)
+            elif self.native_failure == "invalid_schema":
+                return subprocess.CompletedProcess(argv, 0, b"{}\n", b"")
+            if argv[11] != self.expected_projector_source():
                 raise AssertionError("native projector differs from frozen source")
-            code = argv[argv.index("-c") + 1]
-            run_argv = [sys.executable, "-I", "-c", code, str(self.native_dir), NATIVE,
-                        capture.PROJECTOR_SHA256]
-            return _REAL_RUN(run_argv, stdout=stdout, stderr=stderr, timeout=timeout, check=check)
+            code = argv[11]
+            if self.native_failure == "changed":
+                needle = "  opened_after=os.fstat(fd)\n finally:"
+                replacement = ("  opened_after=os.fstat(fd)\n"
+                               "  os.utime(path,ns=(before.st_atime_ns,before.st_mtime_ns+5000000000))\n finally:")
+                if needle not in code:
+                    raise AssertionError("producer source lost deterministic file-change checkpoint")
+                code = code.replace(needle, replacement, 1)
+            run_argv = [sys.executable, "-I", "-c", code, str(self.native_cwd), NATIVE,
+                        capture.WORKSPACE, capture.PROJECTOR_SHA256]
+            run_options = {"stdout": stdout, "stderr": stderr, "timeout": timeout,
+                           # Avoid passing the synthetic login credentials to
+                           # the standalone native projector subprocess.
+                           "check": check, "env": {"PATH": os.defpath}}
+            if self.native_failure == "permission" and os.geteuid() == 0:
+                def drop_to_reader():
+                    os.setgroups([])
+                    os.setgid(10002)
+                    os.setuid(10002)
+                run_options["preexec_fn"] = drop_to_reader
+            completed = _REAL_RUN(run_argv, **run_options)
+            if self.native_failure is None and completed.returncode == 0:
+                # Check the real inline producer's output before the fake
+                # transport returns it to capture._command. Do not rewrite
+                # cwd/path fields to make the transport fixture appear valid.
+                projected = json.loads(completed.stdout)
+                expected_relative = (
+                    f"sessions/{_official_project_key(str(self.native_cwd))}/"
+                    f"{NATIVE}/session.v4.jsonl.zstd"
+                )
+                if (projected.get("binding_cwd") != argv[12]
+                        or projected.get("binding_cwd") != str(self.native_cwd)
+                        or projected.get("workspace_id") != argv[14]
+                        or projected.get("relative_path") != expected_relative):
+                    raise AssertionError("native producer output did not preserve the binding scope")
+            return completed
         raise AssertionError(f"unrecognized docker exec command: {argv[4:7]}")
 
     @staticmethod
@@ -464,11 +561,27 @@ class _Fixture:
             and any(isinstance(target, ast.Name) and target.id == "code" for target in node.targets)
             and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str))
 
+    def native_preflight_value(self):
+        return {"schema_version": "byq-native-projector-preflight.v1",
+                "workspace_mount": str(self.session_root / capture.WORKSPACE),
+                "zstd_stream_api": True, "reader_uid": 10002, "reader_gid": 10002,
+                "dsh_source_commit": "639ed015397290b3745d163aafe02ffee4aa3f84",
+                "store_package_version": "0.2.0-rc.2",
+                "store_source_sha256": "0845707017acc2b4a8a75eab2244fa3fd88587b8094ab32014321dce7ca1e31b",
+                "header_schema_source_sha256": "87ea85e2fb5318bf1f826db9a1c88c1b26d3ea328027a7f32b211880c4d62b9d",
+                "base_profile_source_sha256": "9c2be64f46a193eff3cca190c26e697e8e8eee25c9b40149dfdb56f8142c252d",
+                "product_profile_sha256": "10396c708651b24e3012df51e13cbb0e1eaf8178cda9547c91d682c189eacd45",
+                "product_profile_identity_sha256": "0e1f5494f99b4fba433f5f86653b6848377372c7308561bceaaddc3ea3f2f69b",
+                "product_profile": "byq-product-acp-0.2.0-rc.2",
+                "product_composition_hash": "sha256:10396c708651b24e3012df51e13cbb0e1eaf8178cda9547c91d682c189eacd45",
+                "dsh_home_contract": "binding.cwd", "store_root_contract": "dshHomePath(sessions)"}
+
 
 class OrdinaryCaptureMainContractTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.out = Path(self.temp.name) / "capture"
+        self.fixtures = []
 
     def tearDown(self):
         result = getattr(getattr(self, "_outcome", None), "result", None)
@@ -482,21 +595,30 @@ class OrdinaryCaptureMainContractTest(unittest.TestCase):
             preserved = Path(tempfile.mkdtemp(prefix="capture-", dir=evidence_root))
             source = Path(self.temp.name)
             shutil.copytree(source, preserved / "workspace")
+            native_inputs = preserved / "native-inputs"
+            for index, fixture in enumerate(self.fixtures):
+                native_inputs.mkdir(mode=0o700, exist_ok=True)
+                if fixture.native_file.exists():
+                    os.chmod(fixture.native_file, 0o600)
+                shutil.copytree(fixture.native_tmp.name, native_inputs / f"fixture-{index}")
             (preserved / "test-id.txt").write_text(self.id() + "\n", encoding="utf-8")
             for path in sorted(preserved.rglob("*"), reverse=True):
                 os.chmod(path, 0o700 if path.is_dir() else 0o600)
             print(f"PRESERVED_SYNTHETIC_CAPTURE:{preserved}", file=sys.stderr)
         self.temp.cleanup()
 
-    def args(self, action, *extra):
+    def args(self, fixture, action, *extra):
         return ["capture", action, "--out-dir", str(self.out), "--gateway-id", IDS["gateway"],
                 "--adapter-id", IDS["adapter"], "--runner-id", IDS["runner"],
-                "--postgres-id", IDS["postgres"], "--session-root", capture.SESSION_ROOT, *extra]
+                "--postgres-id", IDS["postgres"], "--session-root", str(fixture.session_root), *extra]
 
     def execute(self, fixture, actions):
+        if fixture not in self.fixtures:
+            self.fixtures.append(fixture)
         self.addCleanup(fixture.cleanup)
         def main_with(args):
             with patch.object(sys, "argv", args), \
+                 patch.object(capture, "SESSION_ROOT", str(fixture.session_root)), \
                  patch.object(capture, "CookieJar", side_effect=fixture.cookie_jar_factory), \
                  patch.object(capture, "HTTPCookieProcessor", side_effect=lambda jar: jar), \
                  patch.object(capture, "build_opener", side_effect=fixture.build_opener), \
@@ -505,13 +627,16 @@ class OrdinaryCaptureMainContractTest(unittest.TestCase):
                 return capture.main()
 
         with patch.object(capture.subprocess, "run", side_effect=fixture.run):
-            results = [main_with(self.args(*action)) for action in actions]
+            results = [main_with(self.args(fixture, *action)) for action in actions]
         return results
 
     def execute_clocked(self, fixture, actions, clock, *, expire_before=None):
+        if fixture not in self.fixtures:
+            self.fixtures.append(fixture)
         self.addCleanup(fixture.cleanup)
         def main_with(args):
             with patch.object(sys, "argv", args), \
+                 patch.object(capture, "SESSION_ROOT", str(fixture.session_root)), \
                  patch.object(capture, "CookieJar", side_effect=fixture.cookie_jar_factory), \
                  patch.object(capture, "HTTPCookieProcessor", side_effect=lambda jar: jar), \
                  patch.object(capture, "build_opener", side_effect=fixture.build_opener), \
@@ -525,7 +650,7 @@ class OrdinaryCaptureMainContractTest(unittest.TestCase):
             for index, action in enumerate(actions):
                 if index == expire_before:
                     clock.ns += (capture.BATCH_SECONDS + 10) * 1_000_000_000
-                results.append(main_with(self.args(*action)))
+                results.append(main_with(self.args(fixture, *action)))
         return results
 
     def test_real_main_chain_preflight_two_turns_finish_passes_without_runtime_id_in_public(self):
@@ -556,15 +681,163 @@ class OrdinaryCaptureMainContractTest(unittest.TestCase):
         native = json.loads((self.out / "native-projection.json").read_text())
         self.assertEqual(hashlib.sha256((fixture.native_dir / "session.v4.jsonl.zstd").read_bytes()).hexdigest(),
                          native["compressed_sha256"])
+        self.assertEqual(str(fixture.native_cwd), native["binding_cwd"])
+        self.assertEqual(capture.WORKSPACE, native["workspace_id"])
+        self.assertEqual(f"sessions/{_official_project_key(str(fixture.native_cwd))}/{NATIVE}/session.v4.jsonl.zstd",
+                         native["relative_path"])
         self.assertEqual([hashlib.sha256(x.encode()).hexdigest() for x in USER_TEXT],
                          native["human_input_sha256_order"])
         self.assertEqual(4, native["header_version"])
+        self.assertEqual(str(fixture.native_cwd), json.loads(
+            (self.out / "turn-1/binding.json").read_text())["cwd"])
+        self.assertEqual(str(fixture.native_cwd), json.loads(
+            (self.out / "turn-2/binding.json").read_text())["cwd"])
+        self.assertEqual(capture.WORKSPACE, json.loads(
+            (self.out / "turn-1/binding.json").read_text())["workspace_id"])
+        self.assertEqual(capture.WORKSPACE, json.loads(
+            (self.out / "turn-2/binding.json").read_text())["workspace_id"])
+        self.assert_native_preflight_receipt(fixture)
+        self.assert_native_projection_receipt(fixture)
         self.assertTrue((self.out / "commands/jobs-before.stdout.raw").is_file())
         self.assertTrue((self.out / "commands/jobs-after.stdout.raw").is_file())
         self.assertFalse(any("BYQ_E2E_ADMIN_PASSWORD" in p.read_text(errors="ignore")
                              for p in self.out.rglob("*") if p.is_file()))
         self.assertFalse(any("synthetic-test-only-password" in p.read_text(errors="ignore")
                              for p in self.out.rglob("*") if p.is_file()))
+
+    def assert_native_preflight_receipt(self, fixture):
+        raw_path = self.out / "commands/native-runtime-preflight.stdout.raw"
+        command_path = self.out / "commands/native-runtime-preflight.json"
+        receipt_path = self.out / "native-runtime-preflight.json"
+        raw = raw_path.read_bytes()
+        command = json.loads(command_path.read_text())
+        raw_value = json.loads(raw)
+        receipt = json.loads(receipt_path.read_text())
+        self.assertEqual(fixture.native_preflight_value(), raw_value)
+        source_read = {key: value for key, value in receipt.items() if key.startswith("source_read_")}
+        self.assertEqual({
+            "source_read_command_sha256": hashlib.sha256(json.dumps(
+                command["argv"], separators=(",", ":")).encode()).hexdigest(),
+            "source_read_returncode": 0,
+            "source_read_stdout_sha256": command["stdout_sha256"],
+            "source_read_command_receipt_sha256": hashlib.sha256(json.dumps(
+                command, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
+        }, source_read)
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), command["stdout_sha256"])
+        self.assertEqual(len(raw), command["stdout_bytes"])
+        self.assertEqual(0, command["returncode"])
+        self.assertEqual(0, command["stderr_bytes"])
+        self.assertEqual(["docker", "exec", "--user", "10002:10002", "--workdir", "/app"],
+                         command["argv"][:6])
+        self.assertEqual(IDS["runner"], command["argv"][6])
+        self.assertEqual(["python3", "-I", "-c"], command["argv"][7:10])
+        self.assertEqual("9edc3029d7f4b897e44e8f753b687bd0751ec432ef12b4c96fcaeb940195073f",
+                         hashlib.sha256(command["argv"][10].encode()).hexdigest())
+        self.assertEqual(str(fixture.session_root), command["argv"][11])
+        self.assertEqual(str(fixture.session_root / capture.WORKSPACE), command["argv"][12])
+        self.assertEqual(fixture.native_preflight_value(),
+                         {key: value for key, value in receipt.items() if not key.startswith("source_read_")})
+
+    def assert_native_projection_receipt(self, fixture):
+        raw_path = self.out / "commands/native-projection.stdout.raw"
+        command_path = self.out / "commands/native-projection.json"
+        projection_path = self.out / "native-projection.json"
+        raw = raw_path.read_bytes()
+        command = json.loads(command_path.read_text())
+        projection = json.loads(projection_path.read_text())
+        self.assertEqual(projection, json.loads(raw))
+        self.assertEqual(0, command["returncode"])
+        self.assertEqual(len(raw), command["stdout_bytes"])
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), command["stdout_sha256"])
+        self.assertEqual(0, command["stderr_bytes"])
+        self.assertEqual(["docker", "exec", "--user", "10002:10002", "--workdir", "/app", "-i"],
+                         command["argv"][:7])
+        self.assertEqual(IDS["runner"], command["argv"][7])
+        self.assertEqual(["python3", "-I", "-c"], command["argv"][8:11])
+        self.assertEqual("88703ff77934153095606ce81d3be1befc3b8eb79528e18e9c20074e1418ae36",
+                         hashlib.sha256(command["argv"][11].encode()).hexdigest())
+        self.assertEqual([str(fixture.native_cwd), NATIVE, capture.WORKSPACE,
+                          "88703ff77934153095606ce81d3be1befc3b8eb79528e18e9c20074e1418ae36"],
+                         command["argv"][12:16])
+
+    def test_native_projection_missing_permission_and_changed_files_fail_closed(self):
+        expected_stderr = {"missing": None, "permission": None,
+                           "changed": "native_file_changed"}
+        for fault, marker in expected_stderr.items():
+            with self.subTest(native_failure=fault):
+                self.out = Path(self.temp.name) / f"capture-native-{fault}"
+                fixture = _Fixture()
+                fixture.native_failure = fault
+                results = self.execute(fixture, [
+                    ("preflight",),
+                    ("capture-turn", "--conversation-id", CONVERSATION, "--turn", "1"),
+                    ("capture-turn", "--conversation-id", CONVERSATION, "--turn", "2"),
+                ])
+                self.assertEqual([0, 0, 2], results)
+                self.assertIn("native-projection_process_failed",
+                              json.loads((self.out / "capture-stop.json").read_text())["reason"])
+                meta = json.loads((self.out / "commands/native-projection.json").read_text())
+                self.assertNotEqual(0, meta["returncode"])
+                raw_stdout = (self.out / "commands/native-projection.stdout.raw").read_bytes()
+                raw_stderr = (self.out / "commands/native-projection.stderr.raw").read_bytes()
+                self.assertEqual(len(raw_stdout), meta["stdout_bytes"])
+                self.assertEqual(len(raw_stderr), meta["stderr_bytes"])
+                self.assertTrue(raw_stderr, "failed native read must preserve stderr")
+                if marker is not None:
+                    self.assertIn(marker.encode(), raw_stderr)
+                self.assertFalse((self.out / "native-projection.json").exists())
+                self.assertFalse((self.out / "observer-result.json").exists())
+
+    def test_native_projection_zero_exit_invalid_schema_preserves_raw_without_publishing(self):
+        fixture = _Fixture()
+        fixture.native_failure = "invalid_schema"
+        results = self.execute(fixture, [
+            ("preflight",),
+            ("capture-turn", "--conversation-id", CONVERSATION, "--turn", "1"),
+            ("capture-turn", "--conversation-id", CONVERSATION, "--turn", "2"),
+        ])
+        self.assertEqual([0, 0, 2], results)
+        stop = json.loads((self.out / "capture-stop.json").read_text())
+        self.assertEqual("native_projection_schema_invalid", stop["reason"])
+        command = json.loads((self.out / "commands/native-projection.json").read_text())
+        raw_stdout = (self.out / "commands/native-projection.stdout.raw").read_bytes()
+        raw_stderr = (self.out / "commands/native-projection.stderr.raw").read_bytes()
+        self.assertEqual(0, command["returncode"])
+        self.assertEqual(b"{}\n", raw_stdout)
+        self.assertEqual(hashlib.sha256(raw_stdout).hexdigest(), command["stdout_sha256"])
+        self.assertEqual(len(raw_stdout), command["stdout_bytes"])
+        self.assertEqual(b"", raw_stderr)
+        self.assertEqual(0, command["stderr_bytes"])
+        self.assertFalse((self.out / "native-projection.json").exists())
+        self.assertFalse((self.out / "observer-result.json").exists())
+
+    def test_native_preflight_wrong_reader_identity_stops_before_business_inventory(self):
+        fixture = _Fixture()
+        fixture.preflight_reader_uid = 0
+        results = self.execute(fixture, [("preflight",)])
+        self.assertEqual([2], results)
+        self.assertIn("native_runtime_preflight_invalid",
+                      json.loads((self.out / "capture-stop.json").read_text())["reason"])
+        self.assertEqual(0, json.loads(
+            (self.out / "commands/native-runtime-preflight.json").read_text())["returncode"])
+        self.assertTrue((self.out / "commands/native-runtime-preflight.stdout.raw").is_file())
+        self.assertFalse((self.out / "native-runtime-preflight.json").exists())
+        self.assertFalse((self.out / "jobs-before.json").exists())
+
+    def test_foreign_dsh_home_binding_is_rejected_before_native_projection(self):
+        fixture = _Fixture()
+        fixture.foreign_binding_cwd = True
+        results = self.execute(fixture, [
+            ("preflight",),
+            ("capture-turn", "--conversation-id", CONVERSATION, "--turn", "1"),
+            ("capture-turn", "--conversation-id", CONVERSATION, "--turn", "2"),
+        ])
+        self.assertEqual([0, 0, 2], results)
+        self.assertIn("native_cwd_outside_workspace_volume",
+                      json.loads((self.out / "capture-stop.json").read_text())["reason"])
+        self.assertFalse((self.out / "native-projection.json").exists())
+        self.assertFalse(any("native-projection" in " ".join(command)
+                             for command in fixture.commands))
 
     def test_missing_or_conflicting_ack_stops_without_overwriting_prior_snapshot(self):
         for ack in ("missing", "conflict"):
