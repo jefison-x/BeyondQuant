@@ -1,0 +1,195 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "python3",
+        "-B",
+        "-m",
+        "unittest",
+        "--failfast",
+        "tests.test_f6_background_transcript_contract"
+      ],
+      "cwd": "/home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant",
+      "elapsed_ms": 326.019,
+      "index": 1,
+      "returncode": 0,
+      "stderr": {
+        "bytes": 115,
+        "path": "command-01.stderr.raw",
+        "sha256": "59964310d411e47ee4fed83e4629de9b8067b88d20b10959d1b8176700668542"
+      },
+      "stdout": {
+        "bytes": 0,
+        "path": "command-01.stdout.raw",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "timed_out": false
+    },
+    {
+      "argv": [
+        "python3",
+        "-B",
+        "-c",
+        "import hashlib, json, runpy\nfrom pathlib import Path\nsample_path = Path(\".ci-artifacts/continuation-direct-20261013/soft-direct-live-v2/final-product.json\")\nsample_bytes = sample_path.read_bytes()\nsample = json.loads(sample_bytes)\nns = runpy.run_path(\"tests/test_f6_background_transcript_contract.py\", run_name=\"f6_observer_preflight\")\nobserver_ns, _clock, _tree = ns[\"observer\"]()\nroot = \"5c8a4011661043caab08ef59e087b6bb\"\nexpected = \"BYQ-SOFT-NEXT-20261013-V2 SAME_CID_OK\"\nanswer = observer_ns[\"_background_answer_for_root\"](sample, root)\ncount = sum(1 for row in sample.get(\"messages\", []) if isinstance(row, dict) and row.get(\"role\") == \"assistant\" and row.get(\"content\") == expected)\nassert answer == expected and count == 1\nprint(json.dumps({\"classification\":\"SAMPLE_ONLY\", \"root_run_id\":root, \"sample_sha256\":hashlib.sha256(sample_bytes).hexdigest(), \"exact_assistant_reply_count\":count, \"observer_answer_sha256\":hashlib.sha256(answer.encode()).hexdigest()}, sort_keys=True))"
+      ],
+      "cwd": "/home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant",
+      "elapsed_ms": 81.742,
+      "index": 2,
+      "returncode": 0,
+      "stderr": {
+        "bytes": 0,
+        "path": "command-02.stderr.raw",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 298,
+        "path": "command-02.stdout.raw",
+        "sha256": "246a6e45ef88a0c28350d012dafae98bc43ffa4613823efcc7fb774be4a15a6e"
+      },
+      "timed_out": false
+    },
+    {
+      "argv": [
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--label",
+        "byq.test.slice=f6-observer-preflight",
+        "--env",
+        "BYQ_WORKFLOW_TRACE_ROOT=/tmp/byq-f6-traces",
+        "--env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "--workdir",
+        "/app",
+        "--entrypoint",
+        "python",
+        "sha256:0f462b62f41a750dff16eb021b4352c48694e7197d10d0f27460c1ac4c6233e6",
+        "-B",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "-x",
+        "--basetemp=/tmp/byq-f6-pytest",
+        "tests/test_answer_delivery.py"
+      ],
+      "cwd": "/home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant",
+      "elapsed_ms": 1873.585,
+      "index": 3,
+      "returncode": 0,
+      "stderr": {
+        "bytes": 0,
+        "path": "command-03.stderr.raw",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdout": {
+        "bytes": 628,
+        "path": "command-03.stdout.raw",
+        "sha256": "6d945d714b0aac1579e013829a040930b0c09c4e56f73f13a6baa1fe5f04f413"
+      },
+      "timed_out": false
+    }
+  ],
+  "execution": {
+    "deadline_ms": 60000,
+    "elapsed_ms_total": 2313.76,
+    "path": ".ci-artifacts/background-continuation-20261014/observer-preflight-v1/execution.json",
+    "sha256": "23cc39f40f369019e784cc0c94a0104898fab71ff3dd8645ab387595ba8e936b",
+    "status": "ALL_COMMANDS_RC0"
+  },
+  "head": "f7b10c1c71b9ac139246c5621043373a57f87ae2",
+  "image": {
+    "evidence_path": "docs/evidence/dsh-acp-maintenance-20261013/ROOT-GATEWAY-ACK-IMAGE-PASS.json",
+    "evidence_sha256": "311625641e6e7704a83cb671b9700e977ccce529952885ff12a30af24c4f773a",
+    "gateway_main_sha256": "2305731f84f166dcfad243a75eaa2db86dbad41154deb962efd3f7915dffefe3",
+    "image_id": "sha256:0f462b62f41a750dff16eb021b4352c48694e7197d10d0f27460c1ac4c6233e6",
+    "prior_evidence_scope": "isolated image and health only",
+    "source_commit": "9cfd33cc6a5e5c57474e6ba622ddf77369f1a0af"
+  },
+  "pins_unchanged": {
+    "all_equal": true,
+    "head_after": "f7b10c1c71b9ac139246c5621043373a57f87ae2",
+    "head_before": "f7b10c1c71b9ac139246c5621043373a57f87ae2",
+    "sha256_after": {
+      ".ci-artifacts/continuation-direct-20261013/soft-direct-live-v2/final-product.json": "0cb331547c98b214c9c6b0d2066f856f36650ae534fc0ee60ac91faba862ce4a",
+      "docs/evidence/dsh-acp-maintenance-20261013/ROOT-GATEWAY-ACK-IMAGE-PASS.json": "311625641e6e7704a83cb671b9700e977ccce529952885ff12a30af24c4f773a",
+      "scripts/evidence/f6-chain-fixture.py": "314f04849caf0dcfad8c01fe32c3991b784578cd3096102ea6c535571173896e",
+      "scripts/evidence/f6-chain-verification.py": "62212bea9f73521fe8a879cc8c4c343e072c484c46103bf96ad122e16dbb27b0",
+      "services/gateway/Dockerfile": "79953eda56fd170d038ec08974258fbda06faa44a4623ecf2910705e7fbc3d66",
+      "services/gateway/app/agent_lifecycle_delivery.py": "6864cdf5efbfce9bc2b3031a70848cc22d9e361035e0b2c9cb8aa31d1d120e5c",
+      "services/gateway/app/main.py": "2305731f84f166dcfad243a75eaa2db86dbad41154deb962efd3f7915dffefe3",
+      "services/gateway/tests/test_answer_delivery.py": "9fcf0497cbf78ae3e9f751a6c1a0a719549698b305e31deef9609ab8cf67d99a",
+      "tests/test_f6_background_transcript_contract.py": "cd95c4809263e2cf39d8fe020bc448adf34aa59ef2246a109efb8936d64ab892",
+      "tests/test_f6_gateway_restart_observer.py": "de183ea96e1e5abf3e90bf3a8ca78add907e4cad9c35d6cc7a396cdd4ec2f998"
+    },
+    "sha256_before": {
+      ".ci-artifacts/continuation-direct-20261013/soft-direct-live-v2/final-product.json": "0cb331547c98b214c9c6b0d2066f856f36650ae534fc0ee60ac91faba862ce4a",
+      "docs/evidence/dsh-acp-maintenance-20261013/ROOT-GATEWAY-ACK-IMAGE-PASS.json": "311625641e6e7704a83cb671b9700e977ccce529952885ff12a30af24c4f773a",
+      "scripts/evidence/f6-chain-fixture.py": "314f04849caf0dcfad8c01fe32c3991b784578cd3096102ea6c535571173896e",
+      "scripts/evidence/f6-chain-verification.py": "62212bea9f73521fe8a879cc8c4c343e072c484c46103bf96ad122e16dbb27b0",
+      "services/gateway/Dockerfile": "79953eda56fd170d038ec08974258fbda06faa44a4623ecf2910705e7fbc3d66",
+      "services/gateway/app/agent_lifecycle_delivery.py": "6864cdf5efbfce9bc2b3031a70848cc22d9e361035e0b2c9cb8aa31d1d120e5c",
+      "services/gateway/app/main.py": "2305731f84f166dcfad243a75eaa2db86dbad41154deb962efd3f7915dffefe3",
+      "services/gateway/tests/test_answer_delivery.py": "9fcf0497cbf78ae3e9f751a6c1a0a719549698b305e31deef9609ab8cf67d99a",
+      "tests/test_f6_background_transcript_contract.py": "cd95c4809263e2cf39d8fe020bc448adf34aa59ef2246a109efb8936d64ab892",
+      "tests/test_f6_gateway_restart_observer.py": "de183ea96e1e5abf3e90bf3a8ca78add907e4cad9c35d6cc7a396cdd4ec2f998"
+    },
+    "tracked_status_after": "",
+    "tracked_status_before": ""
+  },
+  "plan": {
+    "path": ".ci-artifacts/background-continuation-20261014/observer-preflight-v1/plan.json",
+    "sha256": "ac1832b84c90cb6626c00b9b7b506153a59a9f947f06a5eebad00d9188be39ae"
+  },
+  "qualification_boundary": {
+    "existing_observer": "The pre-existing observer test helper correlates an assistant-only persisted answer to the exact runtime root; no application source was changed.",
+    "not_established": [
+      "real background continuation qualification",
+      "new Root ACK qualification",
+      "real browser qualification",
+      "Product release/deployment qualification"
+    ],
+    "sample": "SAMPLE_ONLY; no background continuation PASS is inferred from the cached sample."
+  },
+  "resources": {
+    "business_jobs": 0,
+    "container_inventory_independently_checked": false,
+    "database_calls": 0,
+    "docker_network": "none",
+    "docker_run": "own disposable --rm container; image-only input; no mounts, secrets, env-file, socket or published ports",
+    "docker_run_commands": 1,
+    "in_process_test_client": "Gateway tests use TestClient in process; no external API traffic",
+    "live_product_api_calls": 0,
+    "real_model_calls": 0
+  },
+  "result": "PASS_LIMITED_OFFLINE_PREFLIGHT",
+  "results": {
+    "gateway_pytest": {
+      "failed": 0,
+      "not_run": 0,
+      "tests_passed": 8,
+      "warning": "Starlette TestClient: anyio.abc.BlockingPortal alias deprecation",
+      "warnings": 1
+    },
+    "host_unittest": {
+      "failed": 0,
+      "not_run": 0,
+      "passed": 16,
+      "tests_run": 16
+    },
+    "saved_sample_observer": {
+      "classification": "SAMPLE_ONLY",
+      "exact_assistant_reply_count": 1,
+      "observer_answer_sha256": "71cea0fc96a7738e3be71ed1bec969a85ba51a661e3aa53b6d39c7c2f59413e7",
+      "sample_sha256": "0cb331547c98b214c9c6b0d2066f856f36650ae534fc0ee60ac91faba862ce4a"
+    }
+  },
+  "review": {
+    "independent_sol_raw_review": "PASS",
+    "root_decision": "PASS_LIMITED_OFFLINE_PREFLIGHT"
+  },
+  "schema_version": "byq-f6-observer-preflight-result.v1"
+}

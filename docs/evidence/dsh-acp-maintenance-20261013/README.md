@@ -77,6 +77,7 @@
 | 本地源码diff路径组装 | FAIL_STOP 本地预检 | Root误用上一leaf文件名，FileNotFound发生在新采集前，0Docker/模型/Job；停下后按实际inventory/CONTRACT核全argv/cwd/hash/freshout，独立Sol审查新命令后才新批只读。原失败保留，不解释为Product错误；见ROOT-LOCAL-SOURCE-DIFF-PATH-FAIL-STOP.json |
 | 普通委派必需验收合同复核 | PASS 有界BYQ业务证据 | Accepted ADR0094/0100要求可信签名父链/参数digest/ingress settlement/冻结terminal cursor及ACK/执行清理；不要求从formatter提取SDKrawRunID或必须读native父文件。既有BYQ身份/只读调用/Rootaggregate预算/ACK/清理证据可限定接受。individual native close仍UNKNOWN，0096复用/0102中断业务/两用户等须另验；原实时批次FAIL不改。Sol→Root，见ROOT-BOUNDED-DELEGATE-ACCEPTANCE-CONTRACT.json |
 | 两用户、自然迟到旧请求、业务结果 unknown、进程丢失 | NOT_RUN 当前补缺批次 | 保留旧限定证据，逐片补缺；不自动重放未知业务结果 |
+| F6 observer 离线预检 | PASS 离线限定 | 16项 unittest、Gateway 隔离镜像测试8项通过；一份缓存 Product 样本仅作 `SAMPLE_ONLY` 观察器匹配。总耗时2313.76ms，模型/业务Job/外部API/DB均0；不证明后台续接、Root ACK或浏览器资格。见ROOT-F6-OBSERVER-PREFLIGHT-PASS.json |
 | 远程 CI / 推送 / 合并 / 生产部署 | NOT_RUN | 不以本地、合成或隔离更新证明生产资格 |
 
 ## OC 工程执行事故
