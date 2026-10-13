@@ -1,0 +1,53 @@
+{
+  "common_deadline_seconds": 120,
+  "elapsed_ms": 118961,
+  "head": "63be22f6466879fceaa178585665185578e3d76c",
+  "history": "同CID，未错误关闭，无旧输入重放；2个baseline user+2个新user。",
+  "independent_review": "Sol RAW UI/API PASS → Root PASS limited scene",
+  "input_path": "两个输入通过原生浏览器；一次显式soft通过Gateway/Product API现有_request。UI停止按钮仍为hard。",
+  "job_limit": 0,
+  "lifecycle": {
+    "cancelled_root": "4744e562a4d644f29ab20d45bca18d77",
+    "cancelled_sequences": {
+      "cancelled_soft": 19,
+      "discarded_soft_cancelled": 21,
+      "started": 16
+    },
+    "new_root": "5c8a4011661043caab08ef59e087b6bb",
+    "new_sequences": {
+      "result": 27,
+      "started": 22
+    }
+  },
+  "pins": {
+    "admission.json": "68134244f42bc18a3ca9ae2d60617ced5396de308dcc839afce4f5edc6a05a86",
+    "browser-observation.json": "0f2a286c3c3d44a9b1100fd2f5df92ca01b56a3c04820c2411187fcdb0353d78",
+    "browser-same-cid-reply.png": "746b1f50894a2e97fbbc4de782607941b0e6ef84fe9e0b0a595ef66097930542",
+    "clock.json": "fe3cd666f56a1d4e61a1ea97f6c4ebb820e2df3d6d57d4bd6a436b8bb4966ddd",
+    "prepared-plan.json": "c45e868ef4e109f00b41b47d5c303cf5f780898a8434ccd08a0e25bb3697f799",
+    "scene-result.json": "5076415db663f94c1907031900d5c7d65468db132f31e9c45827ec3b176283e1",
+    "soft-control/result.json": "2bcbbec8f7f438de15cba2c2472c67693475fe5e394eb35e2b6f3dccc8e5a4a7"
+  },
+  "provider_call_limit_per_root": 16,
+  "receipt_directory": ".ci-artifacts/continuation-direct-20261013/soft-direct-live-v2",
+  "reply": "BYQ-SOFT-NEXT-20261013-V2 SAME_CID_OK",
+  "reply_occurrences": 1,
+  "scene_result": {
+    "cancelled_root": "4744e562a4d644f29ab20d45bca18d77",
+    "conversation_id": "conversation_76cf0ccd09814d6292760ad0a67e5f51",
+    "elapsed_ms": 118961,
+    "input_count": 2,
+    "max_seconds": 120,
+    "new_reply_occurrences": 1,
+    "new_root": "5c8a4011661043caab08ef59e087b6bb",
+    "original_cancelled_input_replayed": false,
+    "read_supplement": "NOT_RUN; needs separate admission",
+    "soft_cancel_posts": 1,
+    "status": "RAW_PASS_UI_API_PENDING_REVIEW",
+    "user_message_count": 4
+  },
+  "schema": "byq-root-soft-direct-live.v1",
+  "status": "PASS_UI_API_SCOPE_ONLY",
+  "supplement": "ACK/HMAC/provider/authorization/Job计数在独立只读补查验收；此回执不单独证明这些项。",
+  "user_message_count": 4
+}

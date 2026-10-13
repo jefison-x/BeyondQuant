@@ -2,6 +2,12 @@
 
 不推进 Product Phase。应用闭包基线为 `55033eb0937665bf1d19f848de1f185353f7dbc0`，基于同步后的 `origin/main=ad5f7df1ad18e54dd0d9860d424241297187eef8`。新增租约观察切片的五文件源码 SHA 单独记录于 ROOT-LEASE-OBSERVER-OFFLINE-FAIL-STOP.json；修正入口后的定向离线验收见ROOT-LEASE-OBSERVER-OFFLINE-PASS.json，真实状态验收仍未完成。
 
+## 最新进展（2026-10-14 北京时间）
+
+当前软取消切片在源码 `63be22f6466879fceaa178585665185578e3d76c` 执行。完整采集入口替身 V3 已通过；真实浏览器两次输入与一次 Gateway/Product soft 请求在同 CID 完成，唯一回答 `SAME_CID_OK` 已持久化，118961ms 未超过共享120秒。UI停止按钮仍是 hard；本切片显式调用 soft 接口。旧 Cookie/loader 夹具失败和错过取消窗口的真实 V1 均保留。详见下表最新 V2/V3 回执。
+
+随后独立补查9次只读调用/499ms：旧Root cancelled、新Root completed，授权均closed；两条精确ACK与各自签名进程组清理关联通过Sol→Root PASS。新请求1次、并发1、跨度2984ms，usage29613/26624/39；取消请求计费用量仍UNKNOWN。11表计数全零且四个隔离容器身份未变。两份binding.closed=false、native/process close=true，清理reason=cancelled分别呈现。原子Agent映射、两用户、后台完成续办、进程丢失等剩余项不由本切片替代；整体仍NOT_READY。
+
 | 项目 | 结果 | 范围 |
 | --- | --- | --- |
 | 完整应用闭包及定向离线回归 | PASS | 22 路径闭包、typed Artifact fixture 修补、48 MCP 合同及已记录定向检查；见 ROOT-COMBINED-OFFLINE-PASS.json |
@@ -60,6 +66,13 @@
 | 软取消原生直接接口映射 | PASS 离线限定 | 旧V17完整替身PASS单独复用；新极小接口检查V1额外-f参数被拒，0方法/6分支NOT_RUN保留。定位系统unittest具体CLI合同后，新固定argv V2一次69ms/1方法6分支PASS、Sol→Root；不证明实际取消/原生状态。见ROOT-SOFT-DIRECT-INTERFACE-OFFLINE.json |
 | 软取消原生直接真实V1 | FAIL_STOP / soft NOT_RUN | 1纯文字输入；取消前49.146s读到新Root自然completed，0取消POST、第二输入NOT_RUN，无重试。120s未超，但起表后组织控制代码错过active窗口；先冻结控制命令，不据此称服务拒绝soft。浏览器登录失效在预检中通过已有账号重登解决，密码未改。见ROOT-SOFT-DIRECT-LIVE-V1-FAIL-STOP.json |
 | 上述自然完成的独立补查 | PASS 只读诊断限定 | 8Docker/448ms，1provider/span31286ms/usage27378-24576-2457，completed/closed、ACK seq15/hash/HMAC cleanup精确关联、11表计数相同；Sol→Root。binding.closedfalse/native与process close true分别保留，不覆盖软取消NOT_RUN。见ROOT-SOFT-DIRECT-POST-STOP-READ-PASS.json |
+| 软取消提前冻结的一次控制入口 | PASS Source限定，历史检查点 | 复用现有helpers，输入由原生浏览器发送，后续一条固定命令；soft通知/事件源与序列/后续冲突、官方root与session cwd、bodyhash及历史边界错配均在Source gate拦截并修正，Sol→Root Source PASS。执行结果另列V1/V2 FAIL与V3 PASS；见ROOT-SOFT-CONTROL-SOURCE-PASS.json |
+| 当前完整入口替身V1 | FAIL_STOP 夹具初始化 | Cookie长位置参数漏secure，rest被错置为bool，真实MozillaCookieJar.save TypeError；未进入main，六逻辑全部NOT_RUN，transport/model/Job0。一次后停止，保留原件；见ROOT-SOFT-CONTROL-OFFLINE-V1-FAIL-STOP.json |
+| 上述夹具V2统一修正 | PASS Source，历史准备回执 | Cookie全显式kwargs，独立fresh路径；当时仅Source审计，随后执行结果如下，未修改历史准备结论；见ROOT-SOFT-CONTROL-OFFLINE-V2-PREPARED.json |
+| 完整控制入口替身V2 | FAIL_STOP loader协议 | FixtureLoaderProxy有exec_module缺create_module，真实stdlib拒绝；首例在传输前STOP，其余NOT_RUN，87ms、零真实IO/模型/Job。审计loader完整协议后修补，旧失败保留；见ROOT-SOFT-CONTROL-OFFLINE-V2-FAIL-STOP.json |
+| 完整控制入口替身V3 | PASS 离线限定 | 真实loader/helper执行，仅替身传输边界；1方法、6逻辑分支/7case一次114ms完成（1PASS/6预期STOP），冻结Controller/合同未变。Tester→Sol RAW→Root PASS；见ROOT-SOFT-CONTROL-OFFLINE-V3-PASS.json |
+| 真实软取消后同会话再输入V2 | PASS UI/API限定 | 同CID76cf，旧Root4744 started16→soft cancelled19→discard21；新Root5c8 started22→result27，4个累计user、唯一SAME_CID_OK、无旧输入重放/会话误关。2原生浏览器输入/1soft POST，118961ms<120s，Sol RAW→Root PASS；ACK/清理/授权/计数在独立补查另列。见ROOT-SOFT-DIRECT-LIVE-V2-UI-API-PASS.json |
+| 上述两Root独立补证 | PASS 只读限定 | 9Docker/499ms，两个Root状态/授权/terminal receipt/ACK/HMAC精确关联；新provider1次，旧provider UNKNOWN原样保留，无自动重放。两binding.closedfalse/native与process true、cleanup reason cancelled独立报告，11表计数相同、四容器身份不变。Sol RAW→Root PASS；见ROOT-SOFT-DIRECT-V2-SUPPLEMENT-PASS.json |
 | 两用户、自然迟到旧请求、业务结果 unknown、进程丢失 | NOT_RUN 当前补缺批次 | 保留旧限定证据，逐片补缺；不自动重放未知业务结果 |
 | 远程 CI / 推送 / 合并 / 生产部署 | NOT_RUN | 不以本地、合成或隔离更新证明生产资格 |
 

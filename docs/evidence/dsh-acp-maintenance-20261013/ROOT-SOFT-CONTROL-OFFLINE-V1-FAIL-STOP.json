@@ -1,0 +1,49 @@
+{
+  "cause": "Cookie positional arguments omitted secure value, shifting following fields and rest=False; real MozillaCookieJar.save raised TypeError",
+  "controller_main": "NOT_ENTERED",
+  "earlier_interface_only_pass": "Still valid in its narrower fake-opener scope; it did not serialize Mozilla cookies",
+  "head": "63be22f6466879fceaa178585665185578e3d76c",
+  "independent_review": "Sol RAW FAIL confirmed; Root FAIL original batch",
+  "logical_branches": "6 NOT_RUN; 7 case variants NOT_RUN",
+  "new_jobs": 0,
+  "new_models": 0,
+  "pins": {
+    "plan.json": "8732454743662bf7511036163edcfc81ba7783fdb8c75fb4fde889861a37ba24",
+    "run-v1/executed-command.json": "335ace88c638bf747a86a724503a979947d063c204a84eee6dd4fb22eebb51ca",
+    "run-v1/run-result.json": "a6f069d8537e7b02fdaa41c5bd18fc795587cb61b27c4d36276f6eeb9bd448c6",
+    "run-v1/stderr.raw": "53cee34384323d27a72fcfd8c683abcec9e1f308aec382c2da9098a618023bef",
+    "test_soft_direct_control.py": "bf99e92a6289f99b6c758b19cb420923156ac675b5ee4ff8ccf732a5617040f5"
+  },
+  "preserved": "V1 case-01 and source/plan/raw retained; no cleanup or overwrite",
+  "raw_result": {
+    "elapsed_ms": 70,
+    "elapsed_ns": 70814181,
+    "finished_utc": "2026-10-13T15:55:07.146284+00:00",
+    "post_source_sha256": {
+      "contract": "43b931b8b2da0bb1734a8e22d9e928de31871b87e87402f0a361804b555b245f",
+      "controller": "5e2708ea638f2bddf4d8b6bf96b80f46fda8cf5cb07a801ab3f247396b500d2e",
+      "ordinary_helper": "86258c4f6b83542f1f0b171b972c0449a5d70afb3f42e1be141344560e8f83d3",
+      "plan.json": "8732454743662bf7511036163edcfc81ba7783fdb8c75fb4fde889861a37ba24",
+      "test_soft_direct_control.py": "bf99e92a6289f99b6c758b19cb420923156ac675b5ee4ff8ccf732a5617040f5"
+    },
+    "pre_source_sha256": {
+      "contract": "43b931b8b2da0bb1734a8e22d9e928de31871b87e87402f0a361804b555b245f",
+      "controller": "5e2708ea638f2bddf4d8b6bf96b80f46fda8cf5cb07a801ab3f247396b500d2e",
+      "ordinary_helper": "86258c4f6b83542f1f0b171b972c0449a5d70afb3f42e1be141344560e8f83d3",
+      "plan.json": "8732454743662bf7511036163edcfc81ba7783fdb8c75fb4fde889861a37ba24",
+      "test_soft_direct_control.py": "bf99e92a6289f99b6c758b19cb420923156ac675b5ee4ff8ccf732a5617040f5"
+    },
+    "returncode": 1,
+    "source_unchanged": true,
+    "stderr_bytes": 1942,
+    "stderr_sha256": "53cee34384323d27a72fcfd8c683abcec9e1f308aec382c2da9098a618023bef",
+    "stdout_bytes": 0,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "timeout_exit": false
+  },
+  "receipt_directory": ".ci-artifacts/continuation-direct-20261013/soft-direct-control-offline-v1",
+  "retry": false,
+  "schema": "byq-root-soft-control-offline-stop.v1",
+  "status": "FAIL_STOP_FIXTURE_SETUP",
+  "transport_calls": 0
+}

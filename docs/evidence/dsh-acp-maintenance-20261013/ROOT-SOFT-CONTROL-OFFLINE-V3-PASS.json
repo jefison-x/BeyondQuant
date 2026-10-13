@@ -1,0 +1,52 @@
+{
+  "case_results": {
+    "PASS": 1,
+    "STOP": 6
+  },
+  "case_variants": 7,
+  "head": "63be22f6466879fceaa178585665185578e3d76c",
+  "http_docker_db_model_job_calls": 0,
+  "independent_review": "Tester actual main → Sol RAW PASS → Root PASS offline scope only",
+  "logical_branches": 6,
+  "methods": 1,
+  "minimal_fix": "LoaderProxy补create_module委托真实SourceFileLoader，精确目标路径；真实helper执行后仅替身传输边界。Controller/合同未变。",
+  "pins": {
+    "plan.json": "94016beabb4cdb740e63a62a617d83cc56cc8e9172e527d21068d4275b09c59c",
+    "run-v3/executed-command.json": "4009a1487ab405905f9c8ad660ea1b92f8600e4184c3bdca7d8a6601c5fc9858",
+    "run-v3/run-result.json": "836f8c82e9b7be869a4f742e2f6a56defda0bf4938884aeb7eb93b220169fb18",
+    "run-v3/stderr.raw": "bac55b432a9b03d84d31b8bb6865403ba356ae30da763a20d47b5aec1a6dac56",
+    "test_soft_direct_control.py": "c95890afce2e3d04771ae894bdf0311bb9d5ffcbe66dd868b96319d1ac156543"
+  },
+  "raw_result": {
+    "elapsed_ms": 114,
+    "elapsed_ns": 114528117,
+    "finished_utc": "2026-10-13T16:11:35.609700+00:00",
+    "post_source_sha256": {
+      "audit": "44259f4c20b51fcc2046dc84fa6d248123c8a26f2d4db79996e0b239252f53ee",
+      "contract": "43b931b8b2da0bb1734a8e22d9e928de31871b87e87402f0a361804b555b245f",
+      "controller": "5e2708ea638f2bddf4d8b6bf96b80f46fda8cf5cb07a801ab3f247396b500d2e",
+      "ordinary": "86258c4f6b83542f1f0b171b972c0449a5d70afb3f42e1be141344560e8f83d3",
+      "plan": "94016beabb4cdb740e63a62a617d83cc56cc8e9172e527d21068d4275b09c59c",
+      "test": "c95890afce2e3d04771ae894bdf0311bb9d5ffcbe66dd868b96319d1ac156543"
+    },
+    "pre_source_sha256": {
+      "audit": "44259f4c20b51fcc2046dc84fa6d248123c8a26f2d4db79996e0b239252f53ee",
+      "contract": "43b931b8b2da0bb1734a8e22d9e928de31871b87e87402f0a361804b555b245f",
+      "controller": "5e2708ea638f2bddf4d8b6bf96b80f46fda8cf5cb07a801ab3f247396b500d2e",
+      "ordinary": "86258c4f6b83542f1f0b171b972c0449a5d70afb3f42e1be141344560e8f83d3",
+      "plan": "94016beabb4cdb740e63a62a617d83cc56cc8e9172e527d21068d4275b09c59c",
+      "test": "c95890afce2e3d04771ae894bdf0311bb9d5ffcbe66dd868b96319d1ac156543"
+    },
+    "returncode": 0,
+    "source_unchanged": true,
+    "stderr_bytes": 223,
+    "stderr_sha256": "bac55b432a9b03d84d31b8bb6865403ba356ae30da763a20d47b5aec1a6dac56",
+    "stdout_bytes": 0,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "timeout_exit": false
+  },
+  "receipt_directory": ".ci-artifacts/continuation-direct-20261013/soft-direct-control-offline-v3",
+  "schema": "byq-root-soft-control-offline.v1",
+  "scope": "完整main替身覆盖正常、取消前已terminal、hard、unknown mode、later Root、wrong binding、expired；不替代真实浏览器/模型。",
+  "status": "PASS_OFFLINE_ONLY"
+}
