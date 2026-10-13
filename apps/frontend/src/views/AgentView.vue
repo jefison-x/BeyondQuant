@@ -49,6 +49,9 @@ let viewDisposed = false;
 let reconciliationTimer: ReturnType<typeof setTimeout> | null = null;
 let lastStreamEventAt = 0;
 const terminalSessionId = ref("");
+const softCancelPending = ref(false);
+const softCancelRunId = ref("");
+const activeRunId = ref("");
 const terminalSessionMessage = "该会话已结束。历史消息仍可查看；请新建会话继续。";
 const terminalSessionCodes = new Set(["agent_session_interrupted", "agent_session_failed"]);
 // A known, fully-settled model-budget exhaustion closes the failed root but
@@ -70,7 +73,7 @@ const activeActivity = computed(() => [...activities.value].reverse().find((item
   item.payload.state === "started" || item.payload.state === "progress" || item.payload.state === "waiting_approval",
 ));
 const runActive = computed(() => terminalSessionId.value !== agent.activeSessionId
-  && (replayRun.value.running || Boolean(localRunStartedAt.value)));
+  && (softCancelPending.value || replayRun.value.running || Boolean(localRunStartedAt.value)));
 const processingVisible = computed(() => runActive.value && !replayRun.value.answerStarted);
 const runStartedAt = computed(() => replayRun.value.startedAt || localRunStartedAt.value);
 const elapsedSeconds = computed(() => {
@@ -130,6 +133,19 @@ function handleEvent(event: WorkflowTraceEvent, generation: number) {
   if (generation !== conversationGeneration || event.session_id !== agent.activeSessionId) return;
   if (agent.events.some((current) => current.sequence === event.sequence)) return;
   agent.addEvent(event);
+  if (event.kind === "session.started" && typeof event.payload.run_id === "string") {
+    activeRunId.value = event.payload.run_id;
+  }
+  if (event.kind === "session.cancelled" && event.payload.mode === "soft") {
+    const runId = typeof event.payload.run_id === "string" ? event.payload.run_id : activeRunId.value;
+    const alreadySettled = Boolean(runId) && agent.events.some((current) =>
+      ["session.result", "session.failed", "session.result.discarded"].includes(current.kind)
+      && current.payload.run_id === runId);
+    if (!alreadySettled) {
+      softCancelPending.value = true;
+      softCancelRunId.value = runId;
+    }
+  }
   if (event.kind === "session.closed" || (event.kind === "session.cancelled" && event.payload.mode === "hard")) {
     terminalSessionId.value = event.session_id;
     error.value = terminalSessionMessage;
@@ -140,10 +156,25 @@ function handleEvent(event: WorkflowTraceEvent, generation: number) {
   if (event.kind === "agent.card.approval") {
     window.dispatchEvent(new Event("byq:approvals-changed"));
   }
-  if (["session.result", "session.failed", "session.cancelled", "session.result.discarded"].includes(event.kind)) {
+  const terminalRunEvent = ["session.result", "session.failed", "session.result.discarded"].includes(event.kind)
+    || (event.kind === "session.cancelled" && event.payload.mode !== "soft");
+  const eventRunId = typeof event.payload.run_id === "string" ? event.payload.run_id : "";
+  const matchesSoftCancelledRun = softCancelPending.value
+    && Boolean(softCancelRunId.value)
+    && eventRunId === softCancelRunId.value
+    && terminalRunEvent;
+  const matchesActiveRun = !activeRunId.value || !eventRunId || eventRunId === activeRunId.value;
+  const matchesDiscardedRun = event.kind !== "session.result.discarded"
+    || !activeRunId.value || eventRunId === activeRunId.value;
+  if (terminalRunEvent && matchesActiveRun && matchesDiscardedRun) {
     localRunStartedAt.value = "";
     stopping.value = false;
     stopReconciliation();
+    activeRunId.value = "";
+  }
+  if (matchesSoftCancelledRun) {
+    softCancelPending.value = false;
+    softCancelRunId.value = "";
   }
   if (event.kind === "agent.output.delta" && typeof event.payload.delta === "string") {
     const last = agent.messages[agent.messages.length - 1];
@@ -231,6 +262,7 @@ function scheduleRunReconciliation(sessionId: string, generation: number) {
 async function openSession(sessionId: string, updateRoute = true) {
   const generation = ++conversationGeneration;
   stopStream(); stopReconciliation(); localRunStartedAt.value = ""; stopping.value = false;
+  softCancelPending.value = false; softCancelRunId.value = ""; activeRunId.value = "";
   terminalSessionId.value = "";
   loading.value = true; error.value = "";
   try {
@@ -238,6 +270,19 @@ async function openSession(sessionId: string, updateRoute = true) {
     if (generation !== conversationGeneration) return;
     agent.replaceSession({ ...replay.conversation, session_id: sessionId });
     agent.hydrateSession(sessionId, replayMessages(replay.messages, replay.events), replay.events);
+    for (const event of [...replay.events].sort((left, right) => left.sequence - right.sequence)) {
+      if (event.kind === "session.started" && typeof event.payload.run_id === "string") activeRunId.value = event.payload.run_id;
+      if (event.kind === "session.cancelled" && event.payload.mode === "soft") {
+        softCancelPending.value = true;
+        softCancelRunId.value = typeof event.payload.run_id === "string" ? event.payload.run_id : activeRunId.value;
+      }
+      const terminal = ["session.result", "session.failed", "session.result.discarded"].includes(event.kind)
+        || (event.kind === "session.cancelled" && event.payload.mode !== "soft");
+      const runId = typeof event.payload.run_id === "string" ? event.payload.run_id : "";
+      if (terminal && softCancelPending.value && softCancelRunId.value && runId === softCancelRunId.value) {
+        softCancelPending.value = false; softCancelRunId.value = "";
+      }
+    }
     if (replay.events.some((event) => event.kind === "session.closed"
       || (event.kind === "session.cancelled" && event.payload.mode === "hard"))) {
       terminalSessionId.value = sessionId;
@@ -263,6 +308,7 @@ function startNewSession(preservePrompt = false) {
   conversationGeneration += 1;
   stopStream(); stopReconciliation();
   localRunStartedAt.value = ""; stopping.value = false; loading.value = false; error.value = "";
+  softCancelPending.value = false; softCancelRunId.value = ""; activeRunId.value = "";
   terminalSessionId.value = "";
   agent.clearActiveSession();
   if (!preservePrompt) prompt.value = "";
@@ -386,7 +432,7 @@ function navigateCard(event: WorkflowCardEvent) {
 
 async function send(value = prompt.value) {
   const content = value.trim();
-  if (!content || busy.value || runActive.value) return;
+  if (!content || busy.value || runActive.value || softCancelPending.value) return;
   if (agent.activeSessionId && terminalSessionId.value === agent.activeSessionId) {
     error.value = terminalSessionMessage;
     return;
@@ -484,18 +530,23 @@ async function retryApprovalContinuation(value: unknown) {
 async function stopCurrentRun() {
   if (!agent.activeSessionId || stopping.value || !runActive.value) return;
   stopping.value = true;
+  softCancelPending.value = true;
+  softCancelRunId.value = activeRunId.value;
   try {
-    await cancelSession(agent.activeSessionId, "hard", auth.token);
-    terminalSessionId.value = agent.activeSessionId;
-    error.value = terminalSessionMessage;
-    localRunStartedAt.value = "";
-    stopReconciliation();
-    stopStream();
-    ElMessage.success("本轮已停止，请新建会话继续");
+    await cancelSession(agent.activeSessionId, "soft", auth.token);
+    if (softCancelPending.value) {
+      error.value = "已请求停止本轮；正在等待原轮次结算，确认后可在此会话继续。不会自动重发原输入。";
+      ElMessage.success("已请求停止本轮，正在等待结算");
+    } else {
+      stopping.value = false;
+      error.value = "本轮已结算，可在此会话发送新指令。不会自动重发原输入。";
+      ElMessage.success("本轮已停止并结算");
+    }
   } catch (exc) {
     error.value = exc instanceof Error ? exc.message : "停止失败";
-  } finally {
-    stopping.value = false;
+    // The request outcome may be unknown. Keep the same session, stream and
+    // input gate until replay proves whether the original run settled.
+    scheduleRunReconciliation(agent.activeSessionId, conversationGeneration);
   }
 }
 

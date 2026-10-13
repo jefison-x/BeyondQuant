@@ -137,19 +137,134 @@ describe("AgentView", () => {
     expect(wrapper.text()).not.toContain("关键执行仍需 BYQ 审批");
   });
 
-  it("hard cancel ends the old session without a resume or another prompt", async () => {
+  it("soft cancel waits for the matching discarded result, then accepts an explicit turn on the same session", async () => {
     const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
     await flushPromises();
-    const view = wrapper.vm as unknown as { prompt: string; send: () => Promise<void>; stopCurrentRun: () => Promise<void> };
+    const view = wrapper.vm as unknown as {
+      prompt: string; send: () => Promise<void>; stopCurrentRun: () => Promise<void>;
+      handleEvent: (event: Record<string, unknown>, generation: number) => void;
+    };
     view.prompt = "第一轮";
     await view.send();
+    view.handleEvent({ session_id: "session-1", trace_id: "trace-1", sequence: 2,
+      timestamp: "2026-08-28T00:00:01Z", kind: "session.started", source: "runtime-adapter",
+      payload: { run_id: "run-old" } }, 1);
     await view.stopCurrentRun();
-    expect(cancelSession).toHaveBeenCalledWith("session-1", "hard", "");
+    expect(cancelSession).toHaveBeenCalledWith("session-1", "soft", "");
+    expect((wrapper.vm as any).terminalSessionId).toBe("");
+    expect(streamWorkflowEvents).toHaveBeenCalled();
     expect(resumeSession).not.toHaveBeenCalled();
     view.prompt = "继续";
     await view.send();
     expect(submitTurn).toHaveBeenCalledTimes(1);
-    expect(wrapper.text()).toContain("请新建会话继续");
+    view.handleEvent({ session_id: "session-1", trace_id: "trace-1", sequence: 3,
+      timestamp: "2026-08-28T00:00:02Z", kind: "session.cancelled", source: "runtime-adapter",
+      payload: { mode: "soft", run_id: "run-old" } }, 1);
+    await view.send();
+    expect(submitTurn).toHaveBeenCalledTimes(1);
+    view.handleEvent({ session_id: "session-1", trace_id: "trace-1", sequence: 4,
+      timestamp: "2026-08-28T00:00:03Z", kind: "session.result.discarded", source: "runtime-adapter",
+      payload: { reason: "soft-cancelled", run_id: "run-old" } }, 1);
+    view.prompt = "明确的新指令";
+    await view.send();
+    expect(submitTurn).toHaveBeenLastCalledWith("session-1", "明确的新指令", "");
+    expect(submitTurn).toHaveBeenCalledTimes(2);
+    expect(resumeSession).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("reports settled when matching cancellation events arrive before the cancel response", async () => {
+    let resolveCancel: (value: unknown) => void = () => undefined;
+    cancelSession.mockReturnValueOnce(new Promise(resolve => { resolveCancel = resolve; }));
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const view = wrapper.vm as unknown as {
+      prompt: string; send: () => Promise<void>; stopCurrentRun: () => Promise<void>;
+      handleEvent: (event: Record<string, unknown>, generation: number) => void;
+    };
+    view.prompt = "本轮请求";
+    await view.send();
+    view.handleEvent({ session_id: "session-1", trace_id: "trace-1", sequence: 2,
+      timestamp: "2026-08-28T00:00:01Z", kind: "session.started", source: "runtime-adapter",
+      payload: { run_id: "run-race" } }, 1);
+    const pendingCancel = view.stopCurrentRun();
+    view.handleEvent({ session_id: "session-1", trace_id: "trace-1", sequence: 3,
+      timestamp: "2026-08-28T00:00:02Z", kind: "session.cancelled", source: "runtime-adapter",
+      payload: { mode: "soft", run_id: "run-race" } }, 1);
+    view.handleEvent({ session_id: "session-1", trace_id: "trace-1", sequence: 4,
+      timestamp: "2026-08-28T00:00:03Z", kind: "session.result.discarded", source: "runtime-adapter",
+      payload: { reason: "soft-cancelled", run_id: "run-race" } }, 1);
+    resolveCancel({ status: "cancelled" });
+    await pendingCancel;
+    expect((wrapper.vm as any).softCancelPending).toBe(false);
+    expect((wrapper.vm as any).stopping).toBe(false);
+    expect((wrapper.vm as any).error).toContain("本轮已结算");
+    expect((wrapper.vm as any).terminalSessionId).toBe("");
+    wrapper.unmount();
+  });
+
+  it("replays an unsettled soft cancel as an input gate on the same conversation", async () => {
+    getAgentSession.mockResolvedValueOnce({
+      conversation: { session_id: "session-1", trace_id: "trace-1", title: "继续中的取消" },
+      messages: [],
+      events: [
+        { session_id: "session-1", trace_id: "trace-1", sequence: 2, timestamp: "2026-08-28T00:00:01Z",
+          kind: "session.started", source: "runtime-adapter", payload: { run_id: "run-replayed" } },
+        { session_id: "session-1", trace_id: "trace-1", sequence: 3, timestamp: "2026-08-28T00:00:02Z",
+          kind: "session.cancelled", source: "runtime-adapter", payload: { mode: "soft", run_id: "run-replayed" } },
+      ],
+    });
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const view = wrapper.vm as unknown as { prompt: string; send: () => Promise<void> };
+    view.prompt = "后续指令";
+    await view.send();
+    expect(submitTurn).not.toHaveBeenCalled();
+    expect(wrapper.vm).toMatchObject({ softCancelPending: true, terminalSessionId: "" });
+    expect(streamWorkflowEvents).toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("keeps a replayed newer run active when an older run's discard arrives late", async () => {
+    getAgentSession.mockResolvedValueOnce({
+      conversation: { session_id: "session-1", trace_id: "trace-1", title: "迟到的旧轮结果" },
+      messages: [],
+      events: [
+        { session_id: "session-1", trace_id: "trace-1", sequence: 2, timestamp: "2026-08-28T00:00:01Z",
+          kind: "session.started", source: "runtime-adapter", payload: { run_id: "run-old" } },
+        { session_id: "session-1", trace_id: "trace-1", sequence: 3, timestamp: "2026-08-28T00:00:02Z",
+          kind: "session.cancelled", source: "runtime-adapter", payload: { mode: "soft", run_id: "run-old" } },
+        { session_id: "session-1", trace_id: "trace-1", sequence: 4, timestamp: "2026-08-28T00:00:03Z",
+          kind: "session.started", source: "runtime-adapter", payload: { run_id: "run-current" } },
+        { session_id: "session-1", trace_id: "trace-1", sequence: 5, timestamp: "2026-08-28T00:00:04Z",
+          kind: "session.result.discarded", source: "runtime-adapter", payload: { reason: "soft-cancelled", run_id: "run-old" } },
+      ],
+    });
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const view = wrapper.vm as unknown as { prompt: string; send: () => Promise<void> };
+    view.prompt = "不能打断当前轮";
+    await view.send();
+    expect(submitTurn).not.toHaveBeenCalled();
+    expect((wrapper.vm as any).softCancelPending).toBe(false);
+    expect(wrapper.find(".composer-stop").exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it("keeps input gated when the soft-cancel request outcome is unknown", async () => {
+    cancelSession.mockRejectedValueOnce(new Error("request outcome unknown"));
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    const view = wrapper.vm as unknown as { prompt: string; send: () => Promise<void>; stopCurrentRun: () => Promise<void> };
+    view.prompt = "原始输入";
+    await view.send();
+    await view.stopCurrentRun();
+    view.prompt = "不可自动继续";
+    await view.send();
+    expect(cancelSession).toHaveBeenCalledTimes(1);
+    expect(submitTurn).toHaveBeenCalledTimes(1);
+    expect((wrapper.vm as any).terminalSessionId).toBe("");
+    expect((wrapper.vm as any).softCancelPending).toBe(true);
     wrapper.unmount();
   });
 

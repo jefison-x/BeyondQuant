@@ -41,24 +41,36 @@ export function workflowActivities(events: WorkflowTraceEvent[]): Array<{
     sequence: number;
     timestamp: string;
     payload: WorkflowActivityPayload;
+    runId: string;
   }>();
+  let activeRunId = "";
   for (const event of [...events].sort((a, b) => a.sequence - b.sequence)
     .filter(
-      (event) => event.kind === "agent.activity"
+      (event) => event.kind === "session.started" || (event.kind === "agent.activity"
         && event.payload?.schema_version === "workflow-activity.v1"
-        && typeof event.payload?.activity_id === "string",
+        && typeof event.payload?.activity_id === "string"),
     )
   ) {
+    if (event.kind === "session.started") {
+      activeRunId = typeof event.payload.run_id === "string" ? event.payload.run_id : "";
+      continue;
+    }
     latest.set(String(event.payload.activity_id), {
       sequence: event.sequence,
       timestamp: event.timestamp,
       payload: event.payload as unknown as WorkflowActivityPayload,
+      runId: activeRunId,
     });
   }
   return [...latest.values()]
     .map((activity) => {
-      const terminal = [...events].sort((a, b) => a.sequence - b.sequence).find(event =>
-        TERMINAL_RUN_EVENTS.has(event.kind) && event.sequence > activity.sequence);
+      const terminal = [...events].sort((a, b) => a.sequence - b.sequence).find(event => {
+        if (!TERMINAL_RUN_EVENTS.has(event.kind) || event.sequence <= activity.sequence) return false;
+        const terminalRunId = typeof event.payload.run_id === "string" ? event.payload.run_id : "";
+        return activity.runId && terminalRunId
+          ? activity.runId === terminalRunId
+          : !activity.runId && !terminalRunId;
+      });
       if (!terminal || !["started", "progress"].includes(activity.payload.state)) return activity;
       const state: WorkflowActivityPayload["state"] = terminal.kind === "session.cancelled" ? "cancelled"
         : terminal.kind === "session.failed" ? "failed" : "unknown";
@@ -75,16 +87,28 @@ const TERMINAL_RUN_EVENTS = new Set([
 export function workflowWaiting(events: WorkflowTraceEvent[], sessionId: string) {
   let waiting: { elapsed: number; quiet: number } | null = null;
   let active = false;
-  let runId: unknown = null;
+  let runId = "";
+  let startSequence = -1;
   for (const event of [...events].filter(item => item.session_id === sessionId)
     .sort((a, b) => a.sequence - b.sequence)) {
-    if (event.kind === "session.started" || TERMINAL_RUN_EVENTS.has(event.kind)) {
+    if (event.kind === "session.started") {
       waiting = null;
-      active = event.kind === "session.started";
-      runId = active ? event.payload.run_id : null;
+      active = true;
+      runId = typeof event.payload.run_id === "string" ? event.payload.run_id : "";
+      startSequence = event.sequence;
+    }
+    else if (active && TERMINAL_RUN_EVENTS.has(event.kind)) {
+      const terminalRunId = typeof event.payload.run_id === "string" ? event.payload.run_id : "";
+      const matchesActiveRun = runId && terminalRunId ? runId === terminalRunId
+        : !runId && !terminalRunId && event.sequence > startSequence;
+      if (matchesActiveRun) {
+        waiting = null;
+        active = false;
+        runId = "";
+      }
     }
     else if (active && event.kind === "session.waiting" && event.source === "runtime-adapter"
-      && (typeof runId !== "string" || runId === event.payload.run_id)
+      && (!runId || runId === event.payload.run_id)
       && Number.isInteger(event.payload.elapsed_seconds) && Number.isInteger(event.payload.last_activity_seconds)
       && Number(event.payload.elapsed_seconds) >= 0 && Number(event.payload.last_activity_seconds) >= 0) {
       waiting = { elapsed: Number(event.payload.elapsed_seconds), quiet: Number(event.payload.last_activity_seconds) };
@@ -141,13 +165,19 @@ export function workflowRunState(events: WorkflowTraceEvent[]): {
   failureCode?: string;
 } {
   let started: WorkflowTraceEvent | undefined;
-  let terminal: WorkflowTraceEvent | undefined;
+  let latestTerminal: WorkflowTraceEvent | undefined;
   let answerSequence = -1;
   for (const event of events) {
     if (event.kind === "session.started" && (!started || event.sequence > started.sequence)) started = event;
-    if (TERMINAL_RUN_EVENTS.has(event.kind) && (!terminal || event.sequence > terminal.sequence)) terminal = event;
+    if (TERMINAL_RUN_EVENTS.has(event.kind) && (!latestTerminal || event.sequence > latestTerminal.sequence)) latestTerminal = event;
     if (event.kind === "agent.output.delta") answerSequence = Math.max(answerSequence, event.sequence);
   }
+  const startedRunId = typeof started?.payload.run_id === "string" ? started.payload.run_id : "";
+  const terminal = startedRunId
+    ? events.filter(event => TERMINAL_RUN_EVENTS.has(event.kind) && event.payload.run_id === startedRunId)
+      .reduce<WorkflowTraceEvent | undefined>((latest, event) =>
+        !latest || event.sequence > latest.sequence ? event : latest, undefined)
+    : latestTerminal && (!started || latestTerminal.sequence > started.sequence) ? latestTerminal : undefined;
   const running = Boolean(started && started.sequence > (terminal?.sequence ?? -1));
   const answerStarted = Boolean(running && started && answerSequence > started.sequence);
   // A passive runtime recreation emits ready/resumed without retrying the
