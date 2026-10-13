@@ -1,0 +1,66 @@
+{
+  "schema_version": "byq-root-evidence.v1",
+  "status": "FAIL_OBSERVER_STOP",
+  "repository_head": "59dcee0d45589ef3fe443f8dba4d81fea3fc991d",
+  "source": "8d42cebfa71f70244aeec23fffafdffda0686bc1a93bbfa73d4d865dac856394",
+  "native_reader_source_sha256": "bdbb671b8bbae65641ab04faa9094b5bec711264b48a80b4c961c7a0f938ac8e",
+  "manifest_sha256": "4bdf895834a441a27bdbcd962982520d618056476037b87e6791ae8883e71d89",
+  "once_admission": {
+    "limit_seconds": 20,
+    "docker_max": 3,
+    "native_exec_max": 1,
+    "model": 0,
+    "new_job": 0,
+    "api_db_login": 0
+  },
+  "outer": {
+    "returncode": 2,
+    "elapsed_ms": 171,
+    "stdout_bytes": 0,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_bytes": 49,
+    "stderr_sha256": "275de587d8204e8e9deda37cfb28fb21ee6ecc369b80dc28c5b9c38989e13dfc"
+  },
+  "native_command": {
+    "returncode": 2,
+    "elapsed_ms": 84,
+    "stdout_bytes": 0,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_bytes": 49,
+    "stderr_sha256": "0b2971eb132acb9f7165a373a1f9b40b88c48f16c706eef08f7d96e97d599d63"
+  },
+  "first_stop": {
+    "elapsed_ms": 137,
+    "reason": "native-child-projection_process_failed",
+    "schema_version": "byq-existing-native-read-stop.v1",
+    "status": "STOP"
+  },
+  "exact_native_stderr": "NATIVE_CHILD_STOP:native_tool_result_id_mismatch\n",
+  "commands_completed": [
+    "git HEAD",
+    "runner before inspect",
+    "native exec rejected"
+  ],
+  "not_run": [
+    "runner after inspect",
+    "complete native projection",
+    "native/backend tool-chain join",
+    "budget",
+    "MAC cleanup",
+    "exact ACK",
+    "Job delta",
+    "failed original batch finish/reload"
+  ],
+  "source_before_after_equal": true,
+  "no_retry": true,
+  "original_live_failure_preserved": true,
+  "interpretation": "Failure in the observer tool-result association. Product failure and exact event shape remain unconfirmed. Stop real tests; audit official native serializer and fixture contract as a whole before another admission.",
+  "independent_sol_raw_review": "FAIL_STOP confirmed",
+  "exact_failure_predicate": "Result content does not have exactly one nested tool-result block OR its nested toolCallId differs from source.callId; the label alone does not distinguish these.",
+  "official_source_review": {
+    "sha256": "87ea85e2fb5318bf1f826db9a1c88c1b26d3ea328027a7f32b211880c4d62b9d",
+    "confirmed_contract_gap": "Current SDK requires toolCallId/isError on the tool-role message, with source.kind=tool and ordinary content blocks. The reader and fixture use a conflicting nested tool-result schema.",
+    "actual_failed_message_shape": "NOT_OBSERVED"
+  },
+  "root": "FAIL_STOP"
+}

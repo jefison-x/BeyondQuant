@@ -1,0 +1,55 @@
+{
+  "schema_version": "byq-root-evidence.v1",
+  "status": "PASS_OFFLINE_ONLY",
+  "repository_head": "59dcee0d45589ef3fe443f8dba4d81fea3fc991d",
+  "command": [
+    "timeout",
+    "--signal=TERM",
+    "--kill-after=2s",
+    "60s",
+    "python3",
+    "-B",
+    ".ci-artifacts/delegated-child-20261013/native-existing-read-v1/test_read_existing_native.py",
+    "-v",
+    "-f"
+  ],
+  "method_count": 5,
+  "methods_passed": 5,
+  "returncode": 0,
+  "elapsed_ms": 181,
+  "streams": {
+    "stdout_bytes": 0,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_bytes": 954,
+    "stderr_sha256": "c9942f0f380f9d15e665f20948bb91f6e01fc90752351e591fc4a33864035507"
+  },
+  "source_sha256_before": {
+    ".ci-artifacts/delegated-child-20261013/native-existing-read-v1/manifest.json": "4bdf895834a441a27bdbcd962982520d618056476037b87e6791ae8883e71d89",
+    ".ci-artifacts/delegated-child-20261013/native-existing-read-v1/offline-test-plan.json": "1e81d0c7141fcf855c0e48e54c8f7927fc8fa903879b96c38cc8f4e0bf09f005",
+    ".ci-artifacts/delegated-child-20261013/native-existing-read-v1/read_existing_native.py": "8d42cebfa71f70244aeec23fffafdffda0686bc1a93bbfa73d4d865dac856394",
+    ".ci-artifacts/delegated-child-20261013/native-existing-read-v1/test_read_existing_native.py": "b7d1eab51839757a2c5e452506ec84422b62e269855890e7bc70d1fd8ea79558",
+    "scripts/evidence/acp-child-scope-read.py": "7a4128f441a325035b9ec6008323a165fabeaba43dd3d792ff671b26e34f3ded",
+    "scripts/evidence/acp-foreground-child-capture.py": "d13a2f459ec5ec9ea38662bbe49fe154d99e8aabf8ccb64cec91c9f2bc7498d1",
+    "scripts/evidence/acp-ordinary-continuous-capture.py": "86258c4f6b83542f1f0b171b972c0449a5d70afb3f42e1be141344560e8f83d3",
+    "scripts/evidence/test_acp_child_scope_read.py": "e9b15c2ab923ba5fc68c4a94f20f2a46c433bbed717a263bd7b331354fad1b31",
+    "scripts/evidence/test_acp_foreground_child_capture.py": "aa8038a2c628ec6bfcc64abc3f256e52894a52876c53ee23548e5a965a7ba18a"
+  },
+  "source_before_after_equal": true,
+  "independent_sol_raw_review": "PASS",
+  "root": "PASS",
+  "coverage": [
+    "Full caller with frozen native/zstd/scope/chain algorithm",
+    "pin before import",
+    "old argv identity refusal",
+    "ordinary helper first STOP and no later command",
+    "Runner after-read drift refusal"
+  ],
+  "real_external_calls": {
+    "database": 0,
+    "docker": 0,
+    "http": 0,
+    "job": 0,
+    "model": 0
+  },
+  "limitation": "This verifies the caller using the then-qualified reader and synthetic fixture. Subsequent actual read failed the native tool-result format contract; this does not qualify Product or the current official native message schema."
+}

@@ -1,0 +1,48 @@
+{
+  "schema_version": "byq-root-evidence.v1",
+  "status": "HOLD_REPAIRED_SOURCE_PASS",
+  "repository_head": "59dcee0d45589ef3fe443f8dba4d81fea3fc991d",
+  "scope": "Existing stopped foreground-child files only; no failed batch reentry",
+  "holds": [
+    {
+      "source_sha256": "1539c2d518d4fccc9e5ff2c6c2170630a00636c0633e07188ee1d386af1d6832",
+      "issues": [
+        "saved argv index and old producer pin",
+        "separately imported ordinary Stop class",
+        "pins before import and one deadline",
+        "native UUID and AgentRun/terminal receipt joins"
+      ]
+    },
+    {
+      "source_sha256": "55af139fa3c04ed8d9bbb401a27e1da577e37cdd2c5ea2b08d11137c97b9f45c",
+      "issues": [
+        "Shared ordinary module does not make its Stop class equal to capture.Stop; known helper reasons were still lost."
+      ]
+    }
+  ],
+  "repair": {
+    "source_sha256": "8d42cebfa71f70244aeec23fffafdffda0686bc1a93bbfa73d4d865dac856394",
+    "manifest_sha256": "4bdf895834a441a27bdbcd962982520d618056476037b87e6791ae8883e71d89",
+    "sol_source_review": "PASS",
+    "known_exception_classes": [
+      "capture.Stop",
+      "capture.ordinary.Stop",
+      "ScopeReadError",
+      "PreparationStop"
+    ]
+  },
+  "execution": {
+    "tests": "NOT_RUN at source gate",
+    "docker": 0,
+    "model_requests": 0,
+    "new_jobs": 0
+  },
+  "remaining_gate": "Full caller substitute raw PASS, independent Sol review and Root PASS before one existing-file read; retain original real browser FAIL.",
+  "test_source_hold": {
+    "source_sha256": "21897485843379d0919240bcd8321c7af02fa03965f77c2c54a7f01472f5cca7",
+    "issue": "Fixture raw SQL roots was confused with the validator output root. Five methods could not reach target stages; blocked statically before execution.",
+    "repair_sha256": "b7d1eab51839757a2c5e452506ec84422b62e269855890e7bc70d1fd8ea79558",
+    "plan_sha256": "1e81d0c7141fcf855c0e48e54c8f7927fc8fa903879b96c38cc8f4e0bf09f005",
+    "sol_test_source_review": "PASS"
+  }
+}
