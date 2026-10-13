@@ -33,7 +33,8 @@ _DELEGATE_SOURCE_SHA256 = "26a1e804aab4c6f9cb53a670c63b817fc8d9409569e6d68eda6fd
 _PRODUCT_RUNNER_SOURCE_SHA256 = "abc8992083bca202d4e66354f254fb1ea095cd409b62fcbdc2d3b2e6b6912f31"
 _OUTCOME = "byq-acp-foreground-child-observer.v1"
 _BATCH_SECONDS = 240
-_NATIVE_READER_SHA256 = "61f1942f8e24d8e44ae30ae8d5cb480fed66401c001f83f9a3d7da8661e5ea7e"
+_NATIVE_READER_SHA256 = "bdbb671b8bbae65641ab04faa9094b5bec711264b48a80b4c961c7a0f938ac8e"
+_MAX_SAFE_SEQUENCE = (1 << 53) - 1
 _ROOT_CALLS = ("byq_agent_run_start", "byq_delegate_market_research")
 _CHILD_CALLS = (
     "byq_agent_run_start", "byq_agent_authorize", "byq_market_session_context", "byq_agent_audit",
@@ -326,7 +327,7 @@ def safe_file(native):
       if records==1: header=row; continue
       if not isinstance(row,dict): raise ValueError("native_event_invalid")
       seq=row.get("seq"); typ=row.get("type"); data=row.get("data")
-      if type(seq) is not int or seq<1 or not isinstance(typ,str) or not isinstance(data,dict): raise ValueError("native_event_invalid")
+      if type(seq) is not int or seq<0 or seq>9007199254740991 or not isinstance(typ,str) or not isinstance(data,dict): raise ValueError("native_event_invalid")
       if typ=="user/message" and isinstance(data.get("source"),dict) and data["source"].get("kind")=="user":
        content=data.get("content")
        if not isinstance(content,list): raise ValueError("native_user_content_invalid")
@@ -469,7 +470,7 @@ def _read_native(out: Path, runner_id: str, cwd: str, workspace: str, root_nativ
             raise Stop("native_child_projection_header_invalid")
         for row in inputs:
             if (not isinstance(row, dict) or set(row) != {"seq", "sha256", "marker_present"}
-                    or type(row.get("seq")) is not int or row["seq"] < 1
+                    or type(row.get("seq")) is not int or not 0 <= row["seq"] <= _MAX_SAFE_SEQUENCE
                     or not isinstance(row.get("sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", row["sha256"])
                     or type(row.get("marker_present")) is not bool):
                 raise Stop("native_child_projection_input_invalid")
@@ -479,8 +480,9 @@ def _read_native(out: Path, runner_id: str, cwd: str, workspace: str, root_nativ
                     or not isinstance(row.get("tool_name"), str) or not row["tool_name"] or len(row["tool_name"]) > 128
                     or not isinstance(row.get("arguments_sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", row["arguments_sha256"])
                     or row.get("arguments_contract_valid") is not True
-                    or type(row.get("assistant_sequence")) is not int or row["assistant_sequence"] < 1
-                    or type(row.get("call_sequence")) is not int or type(row.get("result_sequence")) is not int
+                    or type(row.get("assistant_sequence")) is not int or not 0 <= row["assistant_sequence"] <= _MAX_SAFE_SEQUENCE
+                    or type(row.get("call_sequence")) is not int or not 0 <= row["call_sequence"] <= _MAX_SAFE_SEQUENCE
+                    or type(row.get("result_sequence")) is not int or not 0 <= row["result_sequence"] <= _MAX_SAFE_SEQUENCE
                     or not isinstance(row.get("result_sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", row["result_sha256"])
                     or type(row.get("result_error")) is not bool
                     or (row.get("audit_outcome_sha256") is not None and
@@ -592,9 +594,11 @@ def _check_tool_chain(projection: dict, backend: dict, marker: str) -> dict:
             or len(matching_explicit) != 1 or len(authorized) != 1):
         raise Stop("backend_child_audit_mismatch")
     for call in root_calls + child_calls:
-        if (type(call.get("call_sequence")) is not int or type(call.get("result_sequence")) is not int
-                or call["call_sequence"] <= call["assistant_sequence"]
-                or call["result_sequence"] <= call["call_sequence"] or call.get("result_error") is not False):
+        if (type(call.get("assistant_sequence")) is not int or not 0 <= call["assistant_sequence"] <= _MAX_SAFE_SEQUENCE
+                or type(call.get("call_sequence")) is not int or not 0 <= call["call_sequence"] <= _MAX_SAFE_SEQUENCE
+                or type(call.get("result_sequence")) is not int or not 0 <= call["result_sequence"] <= _MAX_SAFE_SEQUENCE
+                or not call["assistant_sequence"] < call["call_sequence"] < call["result_sequence"]
+                or call.get("result_error") is not False):
             raise Stop("native_tool_call_result_not_complete")
     marker_seen = (any(row.get("marker_present") is True for row in projection["root"]["user_inputs"])
                    and any(row.get("marker_present") is True for row in projection["child"]["user_inputs"]))

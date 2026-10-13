@@ -56,9 +56,9 @@ _REAL_SUBPROCESS_RUN = subprocess.run
 EXPECTED_DELEGATE_PACKAGE_SHA = "6eef1eabfac0b93fc49b4f51df855cd45aa83ec29db9ea22905814b0c27ad018"
 EXPECTED_DELEGATE_SOURCE_SHA = "26a1e804aab4c6f9cb53a670c63b817fc8d9409569e6d68eda6fda33b966a840"
 EXPECTED_RUNNER_SOURCE_SHA = "abc8992083bca202d4e66354f254fb1ea095cd409b62fcbdc2d3b2e6b6912f31"
-EXPECTED_NATIVE_READER_SHA = "61f1942f8e24d8e44ae30ae8d5cb480fed66401c001f83f9a3d7da8661e5ea7e"
+EXPECTED_NATIVE_READER_SHA = "bdbb671b8bbae65641ab04faa9094b5bec711264b48a80b4c961c7a0f938ac8e"
 EXPECTED_SCOPE_SCHEMA = "byq-acp-child-scope-read.v1"
-EXPECTED_CAPTURE_SOURCE_SHA = "0c0f33c84cd8b124aee6fff4ffe13f681afc587387075e7368738c847c0dfbfe"
+EXPECTED_CAPTURE_SOURCE_SHA = "d13a2f459ec5ec9ea38662bbe49fe154d99e8aabf8ccb64cec91c9f2bc7498d1"
 
 
 class _Response:
@@ -89,7 +89,7 @@ def _canonical_sha(value):
     return hashlib.sha256(raw).hexdigest()
 
 
-def _session(native_id: str, depth: int, origin=None, parent=None):
+def _session(native_id: str, depth: int, origin=None, parent=None, *, input_seq=2, calls=None):
     return {
         "header": {"id": native_id, "version": 4, "origin": origin,
                    "parentSession": parent, "delegationDepth": depth},
@@ -97,8 +97,8 @@ def _session(native_id: str, depth: int, origin=None, parent=None):
                           f"{native_id}/session.v4.jsonl.zstd"),
         "compressed_sha256": "c" * 64,
         "compressed_bytes": 100,
-        "user_inputs": [{"seq": 2, "sha256": "d" * 64, "marker_present": True}],
-        "calls": [],
+        "user_inputs": [{"seq": input_seq, "sha256": "d" * 64, "marker_present": True}],
+        "calls": [] if calls is None else calls,
     }
 
 
@@ -148,9 +148,10 @@ def _provider_journal(rows):
 class _WholeEntryFixture:
     """Synthetic HTTP/process/filesystem transport for the real three-stage CLI."""
 
-    def __init__(self, *, failure=None, completed_binding=True):
+    def __init__(self, *, failure=None, completed_binding=True, sequence_start=1):
         self.failure = failure
         self.completed_binding = completed_binding
+        self.sequence_start = sequence_start
         self.commands = []
         self.command_results = []
         self.receipt_result_matches = set()
@@ -293,9 +294,9 @@ class _WholeEntryFixture:
                  json.dumps({"kind": "foreground", "runId": "dsh-child-session",
                              "output": {"summary": "synthetic"}}, separators=(",", ":"))),
             ]
-        rows = [header, {"type": "user/message", "seq": 1,
+        rows = [header, {"type": "user/message", "seq": self.sequence_start,
                 "data": {"source": {"kind": "user"}, "content": [{"type": "text", "text": MARKER}]}}]
-        sequence = 2
+        sequence = self.sequence_start + 1
         for index, (name, arguments, result_text) in enumerate(calls, 1):
             call_id = f"call-{native_id[:4]}-{index}"
             # The delegate is a local DSH tool exposed under its actual short
@@ -314,6 +315,15 @@ class _WholeEntryFixture:
                     {"type": "tool-result", "toolCallId": call_id, "isError": False,
                      "content": [{"type": "text", "text": result_text}]}]}}})
             sequence += 1
+        if self.failure in {"native_event_seq_negative", "native_event_seq_bool",
+                            "native_event_seq_oversafe"} and native_id == self.native_root:
+            rows[1]["seq"] = {"native_event_seq_negative": -1,
+                              "native_event_seq_bool": True,
+                              "native_event_seq_oversafe": (1 << 53)}[self.failure]
+        elif self.failure == "native_call_sequence_not_after_assistant" and native_id == self.native_root:
+            rows[3]["seq"] = rows[2]["seq"]
+        elif self.failure == "native_result_sequence_not_after_call" and native_id == self.native_root:
+            rows[4]["seq"] = rows[3]["seq"]
         raw = ("\n".join(json.dumps(row, separators=(",", ":")) for row in rows) + "\n").encode()
         lib = ctypes.CDLL("libzstd.so.1")
         lib.ZSTD_compressBound.argtypes = [ctypes.c_size_t]
@@ -722,6 +732,74 @@ class ForegroundChildValidatorContractTests(unittest.TestCase):
         self.assertEqual(result["child"]["header"]["id"], CHILD_NATIVE)
         self.assertNotEqual("public-conversation-id", "runtime-session-id")
 
+    def test_native_projection_sequence_bounds_and_zero_ordering(self):
+        reader_source = capture._native_reader_source()
+        reader_sha = hashlib.sha256(reader_source.encode()).hexdigest()
+
+        def call_row(assistant=0, call=1, result=2):
+            return {
+                "call_id": "call-1", "tool_name": "mcp__byq__byq_agent_run_start",
+                "arguments_sha256": "a" * 64, "arguments_contract_valid": True,
+                "assistant_sequence": assistant, "call_sequence": call,
+                "result_sequence": result, "result_sha256": "b" * 64,
+                "result_error": False, "audit_outcome_sha256": None,
+                "delegate_kind": None, "delegate_run_id_sha256": None,
+                "delegate_output_sha256": None, "delegate_output_type": None,
+                "delegate_output_count": None,
+            }
+
+        def read_projection(root, child):
+            raw = json.dumps({"schema_version": "byq-acp-native-foreground-child.v1",
+                "producer_source_sha256": reader_sha, "root": root, "child": child},
+                separators=(",", ":")).encode()
+            command = {"returncode": 0, "argv": None,
+                       "stdout_sha256": hashlib.sha256(raw).hexdigest()}
+            seen = []
+
+            def fake_command(_out, _label, argv, *, timeout, deadline):
+                seen.append(argv)
+                return raw
+
+            def json_read(path):
+                if Path(path).name != "native-child-projection.json":
+                    raise AssertionError(f"unexpected evidence read: {path}")
+                command["argv"] = seen[-1]
+                return command
+
+            with tempfile.TemporaryDirectory() as tmp:
+                with patch.object(capture.ordinary, "_command", side_effect=fake_command), \
+                     patch.object(capture.ordinary, "_json_read", side_effect=json_read):
+                    return capture._read_native(Path(tmp), "runner-fixed-id", CWD, WORKSPACE,
+                        ROOT_NATIVE, CHILD_NATIVE, MARKER, ROOT_RUN, CHILD_RUN, deadline=123.0)
+
+        def projection(*, input_seq=0, call=None):
+            root = _session(ROOT_NATIVE, 0, input_seq=input_seq,
+                            calls=[] if call is None else [call])
+            child = _session(CHILD_NATIVE, 1, "subagent", ROOT_NATIVE,
+                             input_seq=input_seq, calls=[] if call is None else [call])
+            return root, child
+
+        # seq=0 and assistant=0 are valid when call/result retain strict order.
+        root, child = projection(call=call_row(assistant=0, call=1, result=2))
+        accepted = read_projection(root, child)
+        self.assertEqual(accepted["root"]["user_inputs"][0]["seq"], 0)
+        self.assertEqual(accepted["root"]["calls"][0]["assistant_sequence"], 0)
+
+        max_safe = (1 << 53) - 1
+        for invalid in (-1, True, max_safe + 1):
+            with self.subTest(field="user_input.seq", invalid=invalid):
+                root, child = projection(input_seq=invalid)
+                with self.assertRaisesRegex(capture.Stop, "native_child_projection_input_invalid"):
+                    read_projection(root, child)
+        for field in ("assistant_sequence", "call_sequence", "result_sequence"):
+            for invalid in (-1, True, max_safe + 1):
+                with self.subTest(field=field, invalid=invalid):
+                    call = call_row()
+                    call[field] = invalid
+                    root, child = projection(call=call)
+                    with self.assertRaisesRegex(capture.Stop, "native_child_projection_call_invalid"):
+                        read_projection(root, child)
+
     def test_delegate_preflight_requires_current_product_runner_source_pin(self):
         args = type("Args", (), {"runner_id": "3" * 12})()
         runner_sha = "abc8992083bca202d4e66354f254fb1ea095cd409b62fcbdc2d3b2e6b6912f31"
@@ -1080,6 +1158,23 @@ class ForegroundChildWholeMainContractTests(unittest.TestCase):
         self.assertIn("--user", " ".join(" ".join(argv) for argv in fixture.commands))
         self._assert_all_success_command_receipts(out, fixture)
 
+    def test_real_main_accepts_zero_native_user_sequences(self):
+        fixture = _WholeEntryFixture(sequence_start=0)
+        self.addCleanup(fixture.cleanup)
+        out = self.root / "zero-native-sequences"
+        capture_rc = self._run_preflight_and_child(fixture, out)
+        self.assertEqual(capture_rc[0], 0, capture_rc[2])
+        finish = self._execute(fixture, out, "finish",
+                               "--conversation-id", PUBLIC_ID, "--case-marker", MARKER)
+        self.assertEqual(finish[0], 0, finish[2])
+        native = json.loads((out / "native-child-projection.json").read_text())
+        for side in ("root", "child"):
+            session = native[side]
+            self.assertEqual(session["user_inputs"][0]["seq"], 0)
+            self.assertTrue(all(call["assistant_sequence"] < call["call_sequence"]
+                                < call["result_sequence"] for call in session["calls"]))
+        self._assert_all_success_command_receipts(out, fixture)
+
     def test_real_main_accepts_close_runtime_root_without_terminal_binding_audits(self):
         fixture = _WholeEntryFixture(completed_binding=False)
         self.addCleanup(fixture.cleanup)
@@ -1100,6 +1195,16 @@ class ForegroundChildWholeMainContractTests(unittest.TestCase):
         cases = {
             "native_bad_call_parent": ("native_child_projection_call_invalid",
                                         "native-child-projection", 0),
+            "native_event_seq_negative": ("native-child-projection_process_failed",
+                                           "native-child-projection", 2),
+            "native_event_seq_bool": ("native-child-projection_process_failed",
+                                      "native-child-projection", 2),
+            "native_event_seq_oversafe": ("native-child-projection_process_failed",
+                                          "native-child-projection", 2),
+            "native_call_sequence_not_after_assistant": (
+                "native_tool_call_result_not_complete", "native-child-projection", 0),
+            "native_result_sequence_not_after_call": (
+                "native_tool_call_result_not_complete", "native-child-projection", 0),
             "reader_uid_wrong": ("native-child-projection_process_failed", "native-child-projection", 1),
             "reader_gid_wrong": ("native-child-projection_process_failed", "native-child-projection", 1),
             "native_header_extra": ("native-child-projection_process_failed", "native-child-projection", 2),
@@ -1131,6 +1236,21 @@ class ForegroundChildWholeMainContractTests(unittest.TestCase):
             "native_bad_call_parent": ("commands/product-tool-guard.json",
                                        "commands/signed-product-cleanup.json",
                                        "commands/gateway-terminal-ack-log.json"),
+            "native_event_seq_negative": ("commands/product-tool-guard.json",
+                                           "commands/signed-product-cleanup.json",
+                                           "commands/gateway-terminal-ack-log.json"),
+            "native_event_seq_bool": ("commands/product-tool-guard.json",
+                                      "commands/signed-product-cleanup.json",
+                                      "commands/gateway-terminal-ack-log.json"),
+            "native_event_seq_oversafe": ("commands/product-tool-guard.json",
+                                          "commands/signed-product-cleanup.json",
+                                          "commands/gateway-terminal-ack-log.json"),
+            "native_call_sequence_not_after_assistant": (
+                "commands/product-tool-guard.json", "commands/signed-product-cleanup.json",
+                "commands/gateway-terminal-ack-log.json"),
+            "native_result_sequence_not_after_call": (
+                "commands/product-tool-guard.json", "commands/signed-product-cleanup.json",
+                "commands/gateway-terminal-ack-log.json"),
             "reader_uid_wrong": ("commands/product-tool-guard.json",
                                  "commands/signed-product-cleanup.json",
                                  "commands/gateway-terminal-ack-log.json"),
@@ -1225,6 +1345,27 @@ class ForegroundChildWholeMainContractTests(unittest.TestCase):
                     self.assertEqual(receipt["returncode"], 2)
                     self.assertEqual(json.loads(stop_path.read_text())["reason"],
                                      "native-child-projection_process_failed")
+                elif failure in {"native_event_seq_negative", "native_event_seq_bool",
+                                 "native_event_seq_oversafe"}:
+                    raw_stdout = (out / "commands/native-child-projection.stdout.raw").read_bytes()
+                    raw_stderr = (out / "commands/native-child-projection.stderr.raw").read_bytes()
+                    self.assertEqual(raw_stdout, b"")
+                    self.assertEqual(raw_stderr, b"NATIVE_CHILD_STOP:native_event_invalid\n")
+                    self.assertEqual(receipt["returncode"], 2)
+                    self.assertEqual(json.loads(stop_path.read_text())["reason"],
+                                     "native-child-projection_process_failed")
+                elif failure in {"native_call_sequence_not_after_assistant",
+                                 "native_result_sequence_not_after_call"}:
+                    projection = json.loads(
+                        (out / "commands/native-child-projection.stdout.raw").read_bytes())
+                    first = projection["root"]["calls"][0]
+                    self.assertEqual(receipt["returncode"], 0)
+                    if failure == "native_call_sequence_not_after_assistant":
+                        self.assertEqual(first["assistant_sequence"], first["call_sequence"])
+                    else:
+                        self.assertEqual(first["call_sequence"], first["result_sequence"])
+                    self.assertEqual(json.loads(stop_path.read_text())["reason"],
+                                     "native_tool_call_result_not_complete")
                 elif failure == "cleanup_scope":
                     cleanup = json.loads((out / "commands/signed-product-cleanup.stdout.raw").read_bytes())
                     self.assertEqual(cleanup["exact_scope"]["session_id"], "wrong-session")

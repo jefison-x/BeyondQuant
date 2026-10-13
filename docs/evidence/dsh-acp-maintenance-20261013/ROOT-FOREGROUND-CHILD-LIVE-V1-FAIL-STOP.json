@@ -1,0 +1,54 @@
+{
+  "schema_version": "byq-maintenance-root-gate.v1",
+  "slice": "single-foreground-child-real-browser-live-v1",
+  "status": "FAIL_OBSERVER_STOP",
+  "source_head": "d8851314246bb5b7d0a6390f5e41767ee8119c39",
+  "source_sha256": {
+    "capture": "0c0f33c84cd8b124aee6fff4ffe13f681afc587387075e7368738c847c0dfbfe",
+    "capture_test": "9e27663c8ad012195f471977c76e63e16e26d295d8528ee882613c307663999f",
+    "scope": "7a4128f441a325035b9ec6008323a165fabeaba43dd3d792ff671b26e34f3ded",
+    "scope_test": "e9b15c2ab923ba5fc68c4a94f20f2a46c433bbed717a263bd7b331354fad1b31"
+  },
+  "conversation_id": "conversation_dae4a2d6221547888349dd3d3daaf25e",
+  "browser_prompts_sent": 1,
+  "browser_observation": "Root registration and final ROOT_OK visible in the same persisted conversation; browser success text is not full qualification.",
+  "preflight": {
+    "result": "PASS_EXACT_BASELINE",
+    "elapsed_ms": 365
+  },
+  "capture": {
+    "returncode": 2,
+    "elapsed_ms": 621,
+    "batch_elapsed_ms": 139885,
+    "reason": "native-child-projection_process_failed",
+    "native_command_returncode": 2,
+    "native_stderr_safe_label": "NATIVE_CHILD_STOP:native_event_invalid",
+    "native_stderr_sha256": "f3de1ef5ead49f2600238fd3ce3a082c924ac8c97d69c0413463929103bbce31"
+  },
+  "partial_backend_raw_observation": {
+    "root_count": 1,
+    "root_status": "completed",
+    "root_authority_status": "closed",
+    "root_unknown_claims": 0,
+    "registrations": 2,
+    "ingress_rows": 3,
+    "ingress_statuses": [
+      "settled"
+    ],
+    "audit_rows": 4
+  },
+  "not_run": [
+    "native projection final validation",
+    "native/backend tool chain observer",
+    "tool guard and provider budget validation",
+    "signed cleanup MAC read",
+    "Gateway exact ACK read",
+    "jobs-after/final inventory comparison",
+    "finish",
+    "post-finish browser reload proof"
+  ],
+  "raw_evidence": ".ci-artifacts/delegated-child-20261013/browser-one-child-live-v1",
+  "browser_evidence": ".ci-artifacts/delegated-child-20261013/browser-one-child-live-v1/browser-at-stop.jpg",
+  "root_decision": "Stop the failed batch. No second prompt, retry, resume, child or model. Audit persisted evidence and the official native event serialization contract before any new read/test admission.",
+  "qualification": "NOT_QUALIFIED; no production operation, push, merge or deployment."
+}

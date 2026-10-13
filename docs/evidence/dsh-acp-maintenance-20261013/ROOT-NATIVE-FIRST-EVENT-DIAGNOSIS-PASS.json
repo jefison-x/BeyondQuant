@@ -1,0 +1,39 @@
+{
+  "schema_version": "byq-maintenance-root-gate.v1",
+  "slice": "existing-native-first-event-shape-diagnosis",
+  "status": "PASS_DIAGNOSIS_ONLY",
+  "source_head_at_read": "d8851314246bb5b7d0a6390f5e41767ee8119c39",
+  "baseline_native_reader_sha256": "61f1942f8e24d8e44ae30ae8d5cb480fed66401c001f83f9a3d7da8661e5ea7e",
+  "instrumented_reader_sha256": "6fdc096425de30edeb8d9bc654f51e0861361eea65a93c9d3caf1355864fa712",
+  "official_session_source_sha256": "87ea85e2fb5318bf1f826db9a1c88c1b26d3ea328027a7f32b211880c4d62b9d",
+  "elapsed_ms": 102,
+  "runner_before_after_exact": true,
+  "commands": 3,
+  "native_exec": 1,
+  "models": 0,
+  "jobs": 0,
+  "http": 0,
+  "db": 0,
+  "diagnostic": {
+    "data_is_dict": true,
+    "file_side": "root",
+    "record_ordinal": 2,
+    "row_is_dict": true,
+    "seq_kind": "int",
+    "seq_nonnegative": true,
+    "seq_value": 0,
+    "type_is_str": true
+  },
+  "raw_native_stderr_bytes": 191,
+  "raw_native_stderr_sha256": "c10c10cb3f0dfbd0c68d8af590d982b6e59e2db5dfbdc7c5df3167da4fff491c",
+  "independent_reviewer": "Sol limited root-cause RAW PASS",
+  "root_decision": "Confirmed original reader wrongly rejects the first root event because seq=0 is valid in the official nonnegative SessionSeq contract. Repair the complete native/host sequence predicate family before new qualification. No model replay or failed-batch reentry.",
+  "raw_evidence": ".ci-artifacts/delegated-child-20261013/native-event-shape-read-v1",
+  "does_not_prove": [
+    "full compressed SHA or tail consistency on early error",
+    "other file shape if first file stops early",
+    "lifecycle/tool/budget/cleanup/ACK/Job-delta qualification",
+    "resumed original Agent or repaired old batch"
+  ],
+  "original_live_batch": "FAIL_STOP preserved; this audit is not a recovered original child or a live qualification PASS."
+}

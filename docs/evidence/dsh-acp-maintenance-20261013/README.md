@@ -37,6 +37,8 @@
 | 单前台子 Agent 完整采集入口 V2 | FAIL_STOP 替身 | 18方法17 PASS/1 FAIL；两种完整main正例通过，但24项负例matrix仅1 PASS/1 FAIL/22 NOT_RUN。共享helper.Stop与采集Stop类不同，已知读取拒绝被误记internal_Stop；同类错误后立即停批，独立Sol审查全部共享异常路径，统一边界修补仅一行，未重跑或真实调用。见ROOT-FOREGROUND-CHILD-OFFLINE-V2-FAIL-STOP.json |
 | 单前台子 Agent 完整采集入口 V3 | FAIL_STOP 替身 | 最小5方法4 PASS/1 FAIL；24项matrix仍1 PASS/1 FAIL/22 NOT_RUN。具体Stop原因已保留，但上一轮审查错误混同native命令rc与collector rc：UID/GID前置字符串SystemExit实际rc1，try内header拒绝rc2。停批后完整审计inline reader、替身wrapper及全部24路径，生产reader未修改；见ROOT-FOREGROUND-CHILD-OFFLINE-V3-FAIL-STOP.json |
 | 单前台子 Agent 完整采集入口离线门禁 | PASS 离线限定 | V4一次新验5方法及24项停止matrix全部通过（1267ms），独立Sol原始回执及Root PASS；复用V2未影响12项预算/原生helper和1项finish正例、V1 scope16。两种完整关闭路径、raw argv/rc/bytes/SHA、首STOP与后续禁入已验证；synthetic身份/MAC不冒充实采，旧V1–V3 FAIL保留，真实委派NOT_RUN。见ROOT-FOREGROUND-CHILD-OFFLINE-PASS.json |
+| 单前台子 Agent 真实浏览器 V1 | FAIL_OBSERVER_STOP | 一次提示词，实际Root completed/closed、unknown0、两个native注册、三条ingress settled及四条audit，页面显示ROOT_OK；139.9秒时原生读取报native_event_invalid后停批。完整native链、预算、MAC/ACK、Job增量及finish/reload均未验收。官方源码证明seq0合法，当前观察器过严，但实际失败行尚待单独只读形状诊断；未重发模型。见ROOT-FOREGROUND-CHILD-LIVE-V1-FAIL-STOP.json |
+| 原生零序号首记录定位与统一修补 | PASS 首记录诊断 / 离线限定 | 一次独立102ms只读确认Root记录2仅因合法seq0被拒（模型/Job0）；统一producer与host各序号为非负safe integer，严格工具相对顺序保留。8项定向及29项停止场景一次通过（2654ms）经Sol→Root，修正读取器实采仍NOT_RUN；旧真实FAIL不覆盖。见ROOT-NATIVE-FIRST-EVENT-DIAGNOSIS-PASS.json、ROOT-NATIVE-SEQUENCE-OFFLINE-PASS.json |
 | 两用户、自然迟到旧请求、业务结果 unknown、进程丢失 | NOT_RUN 当前补缺批次 | 保留旧限定证据，逐片补缺；不自动重放未知业务结果 |
 | 远程 CI / 推送 / 合并 / 生产部署 | NOT_RUN | 不以本地、合成或隔离更新证明生产资格 |
 
