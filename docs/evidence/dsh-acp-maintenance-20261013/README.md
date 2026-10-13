@@ -30,6 +30,7 @@
 | 新候选真实浏览器普通双轮 | FAIL_STOP | 两次真实输入/回复正确，两条模型完成记录和精确ACK已观察；原生历史采集因默认UID错误而失败，finish和完整Job增量NOT_RUN。已证明同卷同inode、Runner默认root读取0700目录被拒；改用已有child身份仅元数据定位成功，未重发模型。见ROOT-ORDINARY-BROWSER-LIVE-V2-FAIL-STOP.json |
 | 原生历史读取入口完整修补 | PASS 离线限定 | 修正UID、官方精确路径、原始命令/源码哈希关联、替身目录与各阶段路径，35项一次批次通过Tester→Sol→Root；静态与首轮替身FAIL保留；见ROOT-ORDINARY-NATIVE-READER-OFFLINE-PASS.json及ROOT-ORDINARY-NATIVE-READER-*FAIL*.json |
 | 已有原生历史真实只读解析 | PASS 既有文件限定 | 20秒/2exec上限，169ms完成，10002:10002实际读取官方源码/profile与v4历史；两个人类输入哈希按原浏览器A/B顺序一致，模型/Job0。不恢复旧失败批次、不替代新双轮整体验收；见ROOT-EXISTING-NATIVE-INPUT-READ-PASS.json |
+| 新候选普通连续双轮完整真实验收 | PASS 本切片限定 | 新CID f6d08，一次2提示词/2个已完成模型请求，finish及刷新证据240秒内；持久化2user2reply各一次、两Root closed/unknown0、精确ACK与结算一致、11表库存不变，Source→35离线→真实采集→独立Sol→Root PASS。租约只瞬时/非全局，旧FAIL不覆盖；见ROOT-ORDINARY-BROWSER-LIVE-V3-PASS.json |
 | 两用户、自然迟到旧请求、业务结果 unknown、进程丢失 | NOT_RUN 当前补缺批次 | 保留旧限定证据，逐片补缺；不自动重放未知业务结果 |
 | 远程 CI / 推送 / 合并 / 生产部署 | NOT_RUN | 不以本地、合成或隔离更新证明生产资格 |
 
