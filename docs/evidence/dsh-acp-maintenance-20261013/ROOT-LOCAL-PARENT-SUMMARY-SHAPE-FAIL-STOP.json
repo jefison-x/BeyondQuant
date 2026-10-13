@@ -1,0 +1,15 @@
+{
+  "schema": "byq-root-local-summary-shape-failure.v1",
+  "status": "FAIL_STOP_LOCAL_ONLY",
+  "head": "145412ae9680a3be53a671b13aa1ff6fe551943f",
+  "exception": "KeyError: run_parent",
+  "phase": "Post-validation local summary assertion",
+  "confirmed": "validate_projection returned normalized registrations; run_parent is intentionally omitted from normalized output, while present in raw Backend records. Root mixed raw and normalized schemas.",
+  "source_validator_sha256": "7a4128f441a325035b9ec6008323a165fabeaba43dd3d792ff671b26e34f3ded",
+  "actions_after_failure": "No summary retry or parser development. Independent Sol directly reviewed raw records; subsequent tool log read was a separately admitted existing-helper operation.",
+  "docker_in_failed_summary": 0,
+  "models": 0,
+  "jobs": 0,
+  "product_failure": "NOT_ESTABLISHED",
+  "other_evidence": "Independent ACK/cleanup/provider/inventory PASS is unaffected."
+}

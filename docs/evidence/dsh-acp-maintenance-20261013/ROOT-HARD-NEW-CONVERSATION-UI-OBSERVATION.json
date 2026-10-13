@@ -1,0 +1,33 @@
+{
+  "head": "145412ae9680a3be53a671b13aa1ff6fe551943f",
+  "later_readonly_ax": "Existing tab2 still has exact CID, 1user/1assistant NEW_OK; no further input/reload",
+  "observation": {
+    "ax_observation": "One user input and one assistant response restored by selecting saved conversation; no terminal-session notice in new conversation.",
+    "browser_path": "New conversation button → one new tool-free prompt → NEW_OK → select saved history row",
+    "elapsed_ms": 160600,
+    "full_product_qualification": "NOT_CLAIMED",
+    "input_count": 1,
+    "new_conversation_id": "conversation_76cf0ccd09814d6292760ad0a67e5f51",
+    "old_conversation_id": "conversation_dae4a2d6221547888349dd3d3daaf25e",
+    "old_request_replayed": false,
+    "old_session_resumed": false,
+    "provider_and_job_evidence": "NOT_YET_VERIFIED; independent read supplement required",
+    "reply": "BYQ-HARD-NEW-20261013-V1 NEW_OK",
+    "schema": "byq-browser-hard-new-session-observation.v1",
+    "screenshot": "browser-reply.png",
+    "screenshot_sha256": "45eeb67d7d69340cb85e87977c7c2591ae855a8e10ffcc166e01f9da2b68caa0",
+    "status": "UI_OBSERVED_TIME_LIMIT_EXCEEDED",
+    "utc": "2026-10-13T14:31:37.134129+00:00"
+  },
+  "pins": {
+    "browser-reply.png": "45eeb67d7d69340cb85e87977c7c2591ae855a8e10ffcc166e01f9da2b68caa0",
+    "observation.json": "bbc8e4424ec6f21c1a48f6fbdffc02546cf92708a777f2bf1b380410f9c4d018",
+    "plan.json": "d9739f10c94de67957a0d93ee1c8e3af9336debaecd42b80867e762bd794b6a1"
+  },
+  "production_changes": 0,
+  "read_supplement": "ROOT-HARD-NEW-CONVERSATION-DIRECT-READ-PASS.json; independently reviewed, does not recover timed-out UI batch",
+  "receipt_directory": ".ci-artifacts/continuation-direct-20261013/browser-hard-new-session-v1",
+  "root_decision": "FAIL_ORIGINAL_BOUNDED_BATCH",
+  "schema": "byq-root-hard-new-conversation-ui.v1",
+  "status": "FAIL_TIME_LIMIT_WITH_SUCCESSFUL_UI_OBSERVATION"
+}

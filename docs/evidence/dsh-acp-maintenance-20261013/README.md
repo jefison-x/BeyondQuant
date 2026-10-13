@@ -49,6 +49,14 @@
 | 已安装 SDK 公开源码读取 | PASS 源码读取限定 | 一次224ms、3Docker、5包源码及manifest合计459750字节，Runner前后身份相同；Sol→Root PASS，模型/Job/API/DB0。ToolRuntime分开保留value/content，AgentLoop持久化映射仍UNKNOWN，仅补缺失包，不重发模型。见ROOT-PUBLIC-SDK-SOURCE-READ-PASS.json、ROOT-DELEGATE-RENDER-CONTRACT-AUDIT.json |
 | AgentLoop 补缺入口 | PASS 三项离线限定 / FAIL 实采入口 | 定向3方法232ms通过Sol→Root，其余4项NOT_RUN并分开复用V1未变守卫；一次实采122ms在tool锚点ESM解析失败，仅2Docker，after NOT_RUN，模型/Job0。替身模拟的依赖拓扑未证明真实插件加载入口；已停实采，不猜路径。见ROOT-AGENTLOOP-SOURCE-CALLER-OFFLINE-PASS.json、ROOT-AGENTLOOP-SOURCE-READ-V2-FAIL-STOP.json |
 | 委派持久化映射检查点 | UNKNOWN / HOLD | 已确认value/content分离及观察器JSON假设缺口，完整AgentLoop写入映射及实际失败行未证明。沿原会话和注册/调用链补证，保留ACK、清理、预算、Job增量及刷新缺口；不从普通文本猜runId。见ROOT-DELEGATE-PERSISTENCE-CHECKPOINT.json |
+| 原委派会话直接只读补证 | PASS 独立限定 | 复用已验helper一次235ms/6Docker，精确ACK seq12/hash、签名Root进程组清理、8提供者请求结算与并发峰值1、11表计数相同，Sol→Root PASS。清理receipt reason=cancelled与Backend completed分别保留，不等于用户取消或individual child close；不恢复旧240秒批次。见ROOT-EXISTING-CHILD-DIRECT-READ-PASS.json |
+| 原会话刷新观察 | WAIT-FAIL_STOP / RECOVERED_OBSERVATION | 一次reload后文本定位器no_matches；立即停操作，随后fresh AX只读诊断显示1user1assistant原回答恢复。失败不覆盖，截图viewport仅含用户输入，不能单独证明回复；零新模型/Job。见ROOT-EXISTING-CHILD-BROWSER-REFRESH-OBSERVATION.json |
+| BYQ 父子关系与工具计数直接核实 | PASS 业务注册/工具日志限定 | 原Backend raw两注册父链/共同身份一致、三settled ingress及四审计经Sol直接复核；已有工具日志一次167ms/3Docker读回六次名称/数量/顺序与计划一致，Sol→Root PASS。SDK raw ID、原生文件映射和individual child close仍UNKNOWN；本地raw/normalized字段混用KeyError单独保留，不再调模型或重跑汇总。见ROOT-EXISTING-BYQ-PARENT-CHILD-EVIDENCE-PASS.json、ROOT-LOCAL-PARENT-SUMMARY-SHAPE-FAIL-STOP.json |
+| 本次停止后原会话再输入 | FAIL_STOP 模式选错及超时 | 页面按钮是hard取消，原会话已终止；按soft接续预期测试的入口选错，第二次输入NOT_RUN。184424ms超180秒，原FAIL保留，实际wire参数未捕获、不据此声称应用缺陷；见ROOT-HARD-CANCEL-UI-SCENE-FAIL-STOP.json |
+| 硬取消既有状态独立补查 | PASS 只读限定 | 8Docker/440ms，cancelled/authorityclosed、ACK seq16/hash及签名进程组清理一致、11表计数相同；provider status0/outcome unknown、计费UNKNOWN、native close未确认。Sol→Root PASS，不恢复原失败批次；见ROOT-POST-HARD-CANCEL-DIRECT-READ-PASS.json |
+| 硬取消后新会话浏览器 | FAIL 时限 / UI成功观察 | 同一标签新CID一次输入得到NEW_OK，选择历史后1user1reply；160600ms超120秒，保留FAIL，不称恢复旧会话。见ROOT-HARD-NEW-CONVERSATION-UI-OBSERVATION.json |
+| 新会话状态独立补查 | PASS 只读限定 | 8Docker/476ms，1请求span5900ms、usage27172/24576/126，completed/closed、ACK seq7/hash、精确签名cleanup及11表计数相同。binding.closed=false、native/process close=true分别保留；Sol→Root PASS，不覆盖UI超时。见ROOT-HARD-NEW-CONVERSATION-DIRECT-READ-PASS.json |
+| 软取消准确入口及批次计时重审 | PREPARATION / 真实NOT_RUN | 停止同类超时批次，先审查已有soft API合同/替身证据；把审查预检放在起表之前，每次UI操作前检查剩余时限。新请求span与UI总时长分别记录，不猜服务超时；背景库存空、完成续办NOT_RUN。见ROOT-CONTINUATION-NEXT-SLICE-PLAN.json |
 | 两用户、自然迟到旧请求、业务结果 unknown、进程丢失 | NOT_RUN 当前补缺批次 | 保留旧限定证据，逐片补缺；不自动重放未知业务结果 |
 | 远程 CI / 推送 / 合并 / 生产部署 | NOT_RUN | 不以本地、合成或隔离更新证明生产资格 |
 

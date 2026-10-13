@@ -1,0 +1,49 @@
+{
+  "actual_wire_cancel_mode": "NOT_CAPTURED; observed state compatible with hard",
+  "application_bug": "NOT_ESTABLISHED by this batch",
+  "contract_audit": "Independent Luna source audit and Sol review: current AgentView.stopCurrentRun passes mode=hard; same-conversation soft reinput was the wrong expectation for this UI action",
+  "current_sources": [
+    "apps/frontend/src/views/AgentView.vue:484",
+    "apps/frontend/src/views/AgentView.spec.ts:140",
+    "docs/architecture/adr/ADR-0093-product-dsh-acp-root-identity.md",
+    "docs/architecture/adr/ADR-0096-product-acp-completed-root-session-reuse.md",
+    "docs/clean-break/runtime-stop-session-issue.md:40"
+  ],
+  "head": "145412ae9680a3be53a671b13aa1ff6fe551943f",
+  "original": {
+    "batch_after_stop": "No new input or model request; read-only diagnosis only.",
+    "conversation_id": "conversation_dae4a2d6221547888349dd3d3daaf25e",
+    "elapsed_ms": 184424,
+    "head": "145412ae9680a3be53a671b13aa1ff6fe551943f",
+    "input_count": 1,
+    "observed_after_cancel": [
+      "该会话已结束。历史消息仍可查看；请新建会话继续。",
+      "本轮已取消。已提交的业务任务请先核对实际状态，取消对话不代表撤销业务操作。接续子助手工作时会新建子助手，不会恢复原实例，也不会自动重做原任务。",
+      "发送 button disabled"
+    ],
+    "observed_before_cancel": "Thinking/understanding request; stop-current-turn button visible; timer showed 00:22. No text marker observed before user stop.",
+    "operation": "Clicked visible 停止本轮 exactly once.",
+    "provider_attempts_and_new_business_jobs": "NOT_YET_VERIFIED",
+    "retries": 0,
+    "root_cause": "UNKNOWN pending current contract/source/deployment review",
+    "schema": "byq-browser-cancel-reinput-stop.v1",
+    "screenshot": "browser-at-stop.png",
+    "screenshot_sha256": "ae15a3de1c76b3bc05659df2981e9fcaa8e926448115d81ce3be73a9824762d8",
+    "second_input": "NOT_RUN: composer disabled after stop",
+    "status": "FAIL_STOP_ORIGINAL_CONVERSATION_REINPUT_DISABLED",
+    "utc": "2026-10-13T14:08:35.339824+00:00"
+  },
+  "pins": {
+    "browser-at-stop.png": "ae15a3de1c76b3bc05659df2981e9fcaa8e926448115d81ce3be73a9824762d8",
+    "plan.json": "47f453adaec527d3409262d30d00cf0e68b746b58078012a36846e5d9510bf92",
+    "stop.json": "218ae8ea2b1dc79d5c8d2b31491adaa99fce57870281fbc8f7bb55fe92570755"
+  },
+  "post_stop": "Read-only independent diagnosis; no retry/resend/model replay",
+  "receipt_directory": ".ci-artifacts/continuation-direct-20261013/browser-cancel-reinput-v1",
+  "root_decision": "FAIL_ORIGINAL_SCENE",
+  "schema": "byq-root-hard-cancel-ui-scene.v1",
+  "second_input": "NOT_RUN",
+  "soft_cancel": "NOT_RUN this batch",
+  "source_runtime_correspondence": "Full frontend/Gateway source-to-running-image correspondence NOT_VERIFIED",
+  "status": "FAIL_STOP_WRONG_MODE_EXPECTATION_AND_TIME_LIMIT"
+}
