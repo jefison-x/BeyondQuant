@@ -6,16 +6,19 @@ const props = defineProps<{ conversationId: string }>();
 const receipts = ref<ResearchReceipt[]>([]);
 const unavailable = ref(false);
 const loading = ref(false);
+const refreshFeedback = ref('');
+const lastSuccessfulRefreshAt = ref('');
 let generation = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
 const names = { research_task: '研究任务', experiment: '实验', artifact: '研究成果' };
 const states = { awaiting_receipt: '正在核对创建结果', confirmed: '已确认创建',
   conflict: '请求身份冲突，需核查', needs_attention: '核对已停止，结果仍未确认' };
 
-async function refresh(version = generation) {
+async function refresh(version = generation, manual = true) {
   if (!props.conversationId || loading.value) return;
   const conversation = props.conversationId;
   loading.value = true;
+  refreshFeedback.value = '';
   try {
     const value = await getResearchReceipts(conversation);
     if (version !== generation) return;
@@ -24,13 +27,15 @@ async function refresh(version = generation) {
     }
     receipts.value = value.receipts;
     unavailable.value = false;
+    lastSuccessfulRefreshAt.value = new Date().toISOString();
+    if (manual) refreshFeedback.value = '核对记录已刷新';
   } catch {
     if (version === generation) unavailable.value = true;
   } finally {
     if (version === generation) {
       loading.value = false;
       clearTimeout(timer);
-      timer = setTimeout(() => { void refresh(version); }, 10000);
+      timer = setTimeout(() => { void refresh(version, false); }, 10000);
     }
   }
 }
@@ -41,14 +46,19 @@ watch(() => props.conversationId, () => {
   loading.value = false;
   receipts.value = [];
   unavailable.value = false;
-  void refresh(generation);
+  refreshFeedback.value = '';
+  lastSuccessfulRefreshAt.value = '';
+  void refresh(generation, false);
 }, { immediate: true });
 onBeforeUnmount(() => { generation += 1; clearTimeout(timer); });
 </script>
 
 <template>
   <section v-if="receipts.length || unavailable" class="receipt-panel" aria-label="研究提交核对">
-    <header><strong>研究提交核对</strong><button type="button" :disabled="loading" @click="refresh()">刷新状态</button></header>
+    <header><strong>研究提交核对</strong><button type="button" :disabled="loading" @click="refresh()">刷新核对记录</button></header>
+    <p v-if="loading" role="status">正在刷新核对记录…</p>
+    <p v-else-if="refreshFeedback" role="status">{{ refreshFeedback }}</p>
+    <p v-if="lastSuccessfulRefreshAt" class="refresh-time">最近成功刷新：<time data-test="last-successful-refresh" :datetime="lastSuccessfulRefreshAt">{{ new Date(lastSuccessfulRefreshAt).toLocaleString() }}</time></p>
     <p v-if="unavailable" role="status">暂时无法读取核对状态，已有结果保持不变。请勿重复提交。</p>
     <ul v-if="receipts.length">
       <li v-for="receipt in receipts" :key="receipt.watch_id">
