@@ -53,6 +53,7 @@ const softCancelPending = ref(false);
 const softCancelRunId = ref("");
 const activeRunId = ref("");
 const terminalSessionMessage = "该会话已结束。历史消息仍可查看；请新建会话继续。";
+const softCancelWaitingMessage = "已请求停止本轮；正在等待原轮次结算，确认后可在此会话继续。不会自动重发原输入。";
 const terminalSessionCodes = new Set(["agent_session_interrupted", "agent_session_failed"]);
 // A known, fully-settled model-budget exhaustion closes the failed root but
 // leaves the live conversation promptable. The browser must not treat it as a
@@ -175,6 +176,7 @@ function handleEvent(event: WorkflowTraceEvent, generation: number) {
   if (matchesSoftCancelledRun) {
     softCancelPending.value = false;
     softCancelRunId.value = "";
+    if (error.value === softCancelWaitingMessage) error.value = "";
   }
   if (event.kind === "agent.output.delta" && typeof event.payload.delta === "string") {
     const last = agent.messages[agent.messages.length - 1];
@@ -282,6 +284,7 @@ async function openSession(sessionId: string, updateRoute = true) {
       if (terminal && softCancelPending.value && softCancelRunId.value && runId === softCancelRunId.value) {
         softCancelPending.value = false; softCancelRunId.value = "";
       }
+      if (terminal && activeRunId.value && runId === activeRunId.value) activeRunId.value = "";
     }
     if (replay.events.some((event) => event.kind === "session.closed"
       || (event.kind === "session.cancelled" && event.payload.mode === "hard"))) {
@@ -535,7 +538,7 @@ async function stopCurrentRun() {
   try {
     await cancelSession(agent.activeSessionId, "soft", auth.token);
     if (softCancelPending.value) {
-      error.value = "已请求停止本轮；正在等待原轮次结算，确认后可在此会话继续。不会自动重发原输入。";
+      error.value = softCancelWaitingMessage;
       ElMessage.success("已请求停止本轮，正在等待结算");
     } else {
       stopping.value = false;

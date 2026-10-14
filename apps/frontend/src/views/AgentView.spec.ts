@@ -165,6 +165,7 @@ describe("AgentView", () => {
     view.handleEvent({ session_id: "session-1", trace_id: "trace-1", sequence: 4,
       timestamp: "2026-08-28T00:00:03Z", kind: "session.result.discarded", source: "runtime-adapter",
       payload: { reason: "soft-cancelled", run_id: "run-old" } }, 1);
+    expect((wrapper.vm as any).error).toBe("");
     view.prompt = "明确的新指令";
     await view.send();
     expect(submitTurn).toHaveBeenLastCalledWith("session-1", "明确的新指令", "");
@@ -222,6 +223,32 @@ describe("AgentView", () => {
     expect(submitTurn).not.toHaveBeenCalled();
     expect(wrapper.vm).toMatchObject({ softCancelPending: true, terminalSessionId: "" });
     expect(streamWorkflowEvents).toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("replays a settled soft cancel as ready for an explicit turn on the same conversation", async () => {
+    getAgentSession.mockResolvedValueOnce({
+      conversation: { session_id: "session-1", trace_id: "trace-1", title: "已结算的取消" },
+      messages: [],
+      events: [
+        { session_id: "session-1", trace_id: "trace-1", sequence: 2, timestamp: "2026-08-28T00:00:01Z",
+          kind: "session.started", source: "runtime-adapter", payload: { run_id: "run-settled" } },
+        { session_id: "session-1", trace_id: "trace-1", sequence: 3, timestamp: "2026-08-28T00:00:02Z",
+          kind: "session.cancelled", source: "runtime-adapter", payload: { mode: "soft", run_id: "run-settled" } },
+        { session_id: "session-1", trace_id: "trace-1", sequence: 4, timestamp: "2026-08-28T00:00:03Z",
+          kind: "session.result.discarded", source: "runtime-adapter", payload: { reason: "soft-cancelled", run_id: "run-settled" } },
+      ],
+    });
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+    expect((wrapper.vm as any).softCancelPending).toBe(false);
+    expect((wrapper.vm as any).error).toBe("");
+    expect(wrapper.find(".composer-stop").exists()).toBe(false);
+    const view = wrapper.vm as unknown as { prompt: string; send: () => Promise<void> };
+    view.prompt = "同一会话的新指令";
+    await view.send();
+    expect(submitTurn).toHaveBeenCalledWith("session-1", "同一会话的新指令", "");
+    expect(resumeSession).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 
