@@ -4,7 +4,9 @@
 
 ## 最新进展（2026-10-14 北京时间）
 
-**后台续办准备：股票池 UI 限定 PASS，原始 Product 读回尚未运行。** 当前登录及原会话页面已恢复并保持打开。一次页面提交创建自建池，恰有两只夹具股票和一个无权重 v1 快照；该记录仅证明页面，不证明后台任务或全局 Job 状态，见 [ROOT-POOL-PREPARATION-UI-PASS.json](ROOT-POOL-PREPARATION-UI-PASS.json)。采集入口 V3 源合同错误及 V4 替身错误分别保留；V4 后续离线 rc0 未获新的 Root 准入，不作为 PASS，见 [V3 SOURCE HOLD](ROOT-PRODUCT-PREPARATION-V3-SOURCE-HOLD.json) 和 [V4 FAIL_STOP](ROOT-PRODUCT-PREPARATION-V4-FAIL-STOP.json)。本批停止后，下一片计划仅进行正常登录，并执行七个精确只读 GET；授权提交不包含在此片，完整替身尚未验收。本次后续审批提交、后台授权、Job、Worker 和自动续办尚未运行；整体 NOT_READY。
+**后台续办准备：限定 Product 读回 PASS，后台执行仍 NOT_RUN。** V6 完整入口的 12 项独立替身通过；一次正常登录和七个精确 Product GET 确认 Task、不可变 Version 及股票池两成员/v1 快照投影。策略批准 UI V1 意外结果保留 FAIL_STOP；V2 一次确认后进入回测页，精确读回 validated approval、execution_outcome=not_started，未提交计算。续接许可自动 checkbox 操作及时间门禁 FAIL_STOP 保留；用户明确报告自己提交，独立只读核对既有许可的身份、版本、profile、预算和 waiting_for_event，不算自动 UI PASS。每次读回均固定 8 HTTP、无重试；Sol→Root 限定验收见 [ROOT-BUSINESS-PREPARATION-READBACK-PASS.json](ROOT-BUSINESS-PREPARATION-READBACK-PASS.json)。采集入口 [V3 SOURCE HOLD](ROOT-PRODUCT-PREPARATION-V3-SOURCE-HOLD.json)、[V4 FAIL_STOP](ROOT-PRODUCT-PREPARATION-V4-FAIL-STOP.json) 均保留。Job、Worker、自动续办与生产资格仍 NOT_RUN，整体 NOT_READY。
+
+**当前优先修复：统一右上角审批铃铛。** 用户指出研究页应只读审批历史。审计确认铃铛仅接 AgentApproval，续接许可、策略与 ML 版本批准仍分散。当前切片将待办统一到 Bell，保留各领域权威授权事实；批准本身不启动计算。已有用户提交的许可与策略批准不重建、不撤销。FG2/后台 Job 验证暂停至该维护切片完成，测试环境和页面继续保留。
 
 **预算停止后同一会话新输入：V4 真实浏览器限定 PASS。** 登录过期后用现有测试身份重新登录，未重置密码；准确原 CID 新增一次明确纯文字输入和唯一回答，消息数 2→4。一个新 Root/native/generation 正常 completed/closed，旧失败 Root 不变；1 次模型请求、峰值 1，已知 Task/两 Artifact 整行及时间版本不变，Job 前后采样 0。精确 ACK 与真实签名清理一致，8 条原生 Docker 回执均 rc0，整批至最终身份检查 163.83 秒 < 180 秒。批后单独刷新仍只有一份回答；guard 未读、任意工具覆盖 UNKNOWN，不等于后台业务或子 Agent 恢复。Sol → Root 限定 PASS，见 [ROOT-BUDGET-NEXT-TURN-BROWSER-V4-PASS.json](ROOT-BUDGET-NEXT-TURN-BROWSER-V4-PASS.json)。后台 Job 接续及生产仍 NOT_RUN，整体 NOT_READY。
 
