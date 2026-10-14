@@ -1,0 +1,55 @@
+{
+  "schema": "byq-prior-root-cleanup-read-result.v1",
+  "source_commit": "b3f1f86c",
+  "application_source": "7d4d575771271b16f51128edd61ad5922b95e8b8",
+  "scope": "One read of the existing failed F6 foreground Root's binding, Gateway terminal ACK and ProductRunner signed cleanup receipt",
+  "root_run_id": "6190fcb66b65427cb49e9176be4af6e2",
+  "collector_sha256": "5d7f99f80e96000f4aed7207710689d68009aab311f3a8f287994de34ed07f6b",
+  "offline": {
+    "status": "PASS",
+    "complete_main_cases": 5,
+    "boundary": "Only Docker subprocess boundaries replaced; actual module loading, ACK parser and result validation ran",
+    "original_v1": "STATIC_SOURCE_FAIL_NOT_EXECUTED, preserved; undefined loader call and inaccurate ACK scope descriptions corrected in separate v2"
+  },
+  "native_read": {
+    "status": "PASS",
+    "docker_commands": 4,
+    "return_codes": [0, 0, 0, 0],
+    "shared_deadline_seconds": 30,
+    "tool_wall_time_seconds": 0.363948896,
+    "native_session_close_confirmed": true,
+    "process_exit_confirmed": true,
+    "cleanup_unconfirmed": false,
+    "public_conversation_ended": false,
+    "domain_call_sequence": 0,
+    "domain_call_drained_sequence": 0,
+    "gateway_ack": {
+      "outcome": "failed",
+      "sequence": 14,
+      "event_sha256": "c59986454dad44aea3f221de197857f3419dc6138980d37312a8f5784e194904",
+      "matching_count": 1,
+      "identical_retransmissions": "allowed by the exact-receipt idempotency contract; conflicting target receipts rejected"
+    },
+    "signed_cleanup": {
+      "exact_scope_fields": 8,
+      "verifiers_all_true": 10,
+      "cleanup": "proven",
+      "receipt_sha256": "25295997ac81e85d61f57b7bd20b3bc00700e7d9b59a79b9958cd7cb31038318",
+      "exit_code": 0,
+      "exit_reason": "cancelled",
+      "interpretation": "Runner process exit reason only; the Backend Root remains failed"
+    }
+  },
+  "independent_sol": "PASS scoped source, offline and native-read raw evidence",
+  "root": "PASS for this existing Root's cleanup evidence only",
+  "private_evidence": ".ci-artifacts/background-continuation-20261014/prior-root-cleanup-prepared-v2/",
+  "limitations": {
+    "new_model_turn": "NOT_RUN; separately admitted only after observer preparation",
+    "background_job_continuation": "NOT_RUN",
+    "prior_f6_functional_flow": "FAIL_STOP remains unchanged",
+    "production": "NOT_RUN",
+    "overall": "NOT_READY"
+  },
+  "operation_scope": "Read only: no model, Job, sync, close or production operation issued by this capture. This is not a measurement of global environment activity.",
+  "retention": "Keep the test environment and browser page open."
+}
