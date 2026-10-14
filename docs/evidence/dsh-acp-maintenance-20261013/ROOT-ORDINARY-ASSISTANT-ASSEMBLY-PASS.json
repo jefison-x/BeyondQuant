@@ -1,0 +1,100 @@
+{
+  "status": "ROOT_PASS_SCOPED_ORDINARY_ASSISTANT_ASSEMBLY",
+  "maintenance_only": true,
+  "source_base": "7cc7e35297af4d8e4e7c1c85680e1b4fafe7a3f0",
+  "tested_working_source_sha256": {
+    "services/runtime-adapter/app/compat/dsh_acp.py": "1250ad4987e3f5b192a0af278da80bdf97cab6df994c90991a5479363da64ad9",
+    "services/runtime-adapter/tests/test_research_judgment_acp_assembly.py": "7142976ef34e6578bf6b134d329c17615880f14534641f60a1acc06bb492c18c"
+  },
+  "change": "Remove default 8MiB cumulative assistant-message cancellation and unused byte counter. Keep message assembly/delivery, consumer-failure cancellation, protocol-frame validation and explicit execution gates.",
+  "not_original_root_cause": "No evidence attributes the historical user session failure to this 8MiB bound.",
+  "entry": {
+    "image": "sha256:fac40ab1e1853fcf00cd659c620586af70d87462b2dfaa4181683c33ec1ebe97",
+    "interpreter": "/opt/byq-venv/bin/python3;actual3.11.2,euid10002",
+    "context_files": 69,
+    "source_manifest_sha256": "1f5dbdfc2b8dab563364d04e8673c29866ff8b3c356eab0dd6f31992af110176",
+    "context_manifest_sha256": "4383c90dc4ab05e9ec6698cd74101efd39ad0bd071d8a9bd6aa49d2284dc7578",
+    "dependency_authority": "services/acp_unified/Dockerfile final install and requirements.acp-candidate.lock; old SDK pyproject declarations are not this image install inputs",
+    "all_nine_pins_and_eight_current_module_paths": "PASS_ACTUAL_PREFLIGHT",
+    "network": "none;readonly sibling source mounts; no business DB/volume or private environment"
+  },
+  "execution": {
+    "cwd": "/home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant",
+    "preflight_command": "env -i PATH=/usr/bin:/bin /home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant/.ci-artifacts/execution-options-20261014/ordinary-payload-limit-20261015/prepared-v2/capture-stage-a.sh",
+    "test_command": "env -i PATH=/usr/bin:/bin /home/jefison/.codex/worktrees/dsh-acp-maintenance-candidate/BeyondQuant/.ci-artifacts/execution-options-20261014/ordinary-payload-limit-20261015/prepared-v2/capture-stage-b.sh",
+    "plan_sha256": {
+      "A": "0e0cd713767161e230bd371878493c564a3003dfdbe6ece50f2a36546e41273b",
+      "B": "a1a3dc93594868b1dce6fd7e4f9eccec43397602a52920a3f354d053a6206e78"
+    },
+    "capture_sha256": {
+      "A": "3edf7d42b9b59db270bf64ed4c585c10db8d8809127f27145e406f1c9e2d9a48",
+      "B": "5ac044093d5e516cb0fb4d13839ec10bc1dc9e8fae90c80b16e62ef50f230dc3"
+    },
+    "actual_chunks": {
+      "A": "41ba32",
+      "B_initial": "efe975",
+      "B_final": "1d8afa",
+      "A_readback": "744eb4",
+      "B_readback": "e6c3ca",
+      "source_postrun": "0e11c4"
+    },
+    "actual_rc": {
+      "A": 0,
+      "B": 0
+    },
+    "test_summary": "4 passed in0.40s;stderr empty;no skips",
+    "start_utc": "2026-10-14T19:29:41.973730440Z",
+    "finish_utc": "2026-10-14T19:29:54.860203139Z",
+    "batch_budget_seconds": 120,
+    "models": 0,
+    "jobs": 0,
+    "native_dsh": 0
+  },
+  "qualified_tests": [
+    "Real multi-chunk UTF8 assembly 8MiB+2bytes preserves full message, following usage notification, end_turn and no cancel",
+    "Soft cancel remains scoped to current run and returns to idle",
+    "Explicit task-ready runtime/input/tool-payload limits remain effective",
+    "Explicit task-ready output-token limits remain effective"
+  ],
+  "gates": {
+    "tester_sha256": "597961a4e64a769cefd9a56df38bd8324a34d17854c55264ec14850f7beb7a79",
+    "independent_sol_sha256": "9dbe7b69478730d75d5167f85306b04c5e82dbce5fbf1680e15e57b7985deb26",
+    "dev_check": {
+      "tool_chunk": "427cc1",
+      "rc": 0,
+      "syntax": "PASS_files2",
+      "component_suite": "NOT_RUN_by_dev_check",
+      "remote_ci": "REQUIRED"
+    },
+    "root": "PASS_SCOPED_LOCAL_SYNTHETIC_ONLY"
+  },
+  "historical_failures_preserved": [
+    {
+      "status": "FAIL_STOP",
+      "chunk": "aa48d4",
+      "rc": 4,
+      "stage": "host pytest collection",
+      "test_bodies": 0,
+      "cause": "HostPython3.14 lackedhttpx; incorrect Engineering entry. Original result lacked command/cwd, separate input evidence retained."
+    },
+    {
+      "status": "FAIL_STOP",
+      "chunk": "502022",
+      "rc": 1,
+      "stage": "first image dependency preflight",
+      "test_bodies": 0,
+      "cause": "Incorrect expected legacy Python SDK metadata in current ACP image; no selected imports or B1 ran."
+    }
+  ],
+  "systemic_correction": "Use actual immutable ACP build profile, complete selected current-module import provenance, effective UID/full readonly mount modes and exact input plus separated raw results. Do not repair missing packages one by one or replay successful prior gates.",
+  "remaining_limits": "16MiB single JSON-RPC frame validation and 1MiB single-tool-result projection remain. This slice does not qualify an unlimited entire call chain.",
+  "NOT_RUN": [
+    "current-source baked image admission",
+    "real Product model and browser flows",
+    "background no-grant producer/dispatch",
+    "broader delegation/recovery/two-user qualification",
+    "remote CI/push/merge/deployment",
+    "production changes"
+  ],
+  "next": "Audit retained environment source currency and close ordinary conversation Product API/browser gate before broadening real tests. Keep retained environment/page/identity/volumes."
+}

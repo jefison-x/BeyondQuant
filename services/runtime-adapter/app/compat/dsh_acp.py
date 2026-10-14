@@ -41,7 +41,6 @@ from ..research_judgment_acp_provider_routes import valid_local_provider_token
 _ACP_PROTOCOL_VERSION = 1
 _MAX_FRAME_BYTES = 16 * 1024 * 1024
 _MAX_TOOL_RESULT_BYTES = 1024 * 1024
-_MAX_TEXT_BYTES = 8 * 1024 * 1024
 _REQUEST_TIMEOUT_SECONDS = 60.0
 _MODEL_CONFIG_ID = "model"
 _ROOT_BINDING_MARKER = ".byq-acp-root-binding.json"
@@ -1148,7 +1147,6 @@ class AcpPreparedPrompt:
 class _MessageAssembly:
     message_id: str
     text: list[str] = field(default_factory=list)
-    size: int = 0
     sequence: int = 0
 
 
@@ -1538,12 +1536,7 @@ class DshAcpCompatibility:
                     block = update.get("content")
                     text = block.get("text") if isinstance(block, dict) and block.get("type") == "text" else None
                     if isinstance(text, str) and text:
-                        encoded_size = len(text.encode("utf-8"))
-                        if assembly.size + encoded_size > _MAX_TEXT_BYTES:
-                            self.cancel_session(session.harness, session_id)
-                            raise AcpTransportError("official DSH ACP assistant output exceeded the Adapter bound")
                         assembly.text.append(text)
-                        assembly.size += encoded_size
                     continue
                 if assembly is not None:
                     flush_message(assembly)
