@@ -1,0 +1,72 @@
+{
+  "status": "PASS_SOFTWARE_SCOPED_CONTRACT_ONLY",
+  "slice": "2A — optional automatic-continuation contracts; no live activation",
+  "adr": "ADR-0111 Accepted",
+  "source_base": "dc95a704dfeb10cb9c33fabdc74921d11212c7e2",
+  "source_manifest_sha256": "9446ef6b9ce965fb1ff8120864922552c39ac8a226d38ea7945779528f1b7e3d",
+  "source_files": [
+    {
+      "path": "packages/contracts/continuation_request.py",
+      "sha256": "dc14162ab7ddeeb47de2c30d13313a0317df9b0824837baedc267412eba14f4d"
+    },
+    {
+      "path": "packages/contracts/agent_execution_options.py",
+      "sha256": "7ad3e4b89ff29e5da7059f653e2b9be37001f52489402f539634945dfb635ad8"
+    },
+    {
+      "path": "packages/contracts/product_turn_request.py",
+      "sha256": "6fd967369993146957317785cbfd8c13702bc9407cbdedef9e6133efd042e38e"
+    },
+    {
+      "path": "services/backend/tests/test_continuation_execution_contract.py",
+      "sha256": "ad0480dda8474fa2b54cd41a3c640e89cc72417d65dfbe7827fb9605eab0460e"
+    }
+  ],
+  "plan_sha256": "3b7c1cc654990ef9e492371548d0049cb645e43bc60657960b67e5bf050f9ebd",
+  "qualified_changes": [
+    "Separate task-ready-read.v2 binds trusted normalized options/revision and qualified route/domain-read/harness tool scope; numeric limits default null",
+    "Pure task-continuation-reservation.v3 records exact signal Job/Artifact scope and stable per-Job idempotency across options or mutable-result changes; no grant or execution expiry",
+    "Separate usage.v2 records null unknown versus proven zero, factual explicit-limit overruns and declared-output violations; historical v1/v2 contracts unchanged"
+  ],
+  "tests": {
+    "scope": "8 pure offline contract cases; not Backend SQL or live consumers",
+    "collected": 8,
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0,
+    "product_models": 0,
+    "jobs": 0,
+    "database": "none",
+    "network": "none",
+    "image": "sha256:fac40ab1e1853fcf00cd659c620586af70d87462b2dfaa4181683c33ec1ebe97",
+    "observation_limit_seconds": 210,
+    "actual_batch_seconds": 49.858763974,
+    "capture": "Separate raw stdout/stderr, UTC start/finish, inner and outer rc, exact command/cwd/plan/script hashes",
+    "stdout_sha256": "1698cf53738fece3fc128f68a2005bf90098cb09ffc528d80a18fe683159d622"
+  },
+  "review": {
+    "independent_tester": "PASS_SOFTWARE_SCOPED",
+    "independent_sol": "PASS_SOFTWARE_SCOPED_CONTRACT_ONLY",
+    "root": "PASS_SOFTWARE_SCOPED_CONTRACT_ONLY"
+  },
+  "private_evidence": ".ci-artifacts/execution-options-20261014/background-contract-2a/frozen-v2",
+  "historical_capture_hold": {
+    "original_batch": "frozen-v1: 8 observed PASS; evidence HOLD_CAPTURE_CONTRACT preserved",
+    "cause": "Root did not enforce separate streams and UTC metadata required by approved review; first final Sol missed the same mismatch",
+    "correction": "Stopped batch; native distinct-stream exit7 substitute verified before unchanged 8-case corrected batch; no retrospective metadata fabrication"
+  },
+  "not_run": [
+    "Backend v3 persistence/business SQL authority/continuation eligibility",
+    "Gateway/Adapter/MCP typed v3 consumer and dispatch/terminal settlement",
+    "No-grant automatic Product execution and all Job classes",
+    "Real Product model/Job and browser qualification",
+    "Hosted CI/image admission/production deployment"
+  ],
+  "limits": [
+    "Fact hash and structural validity are not SQL authority or dispatch permission",
+    "Only completed signal Job plus validated signal_snapshot defined; not all-Jobs support",
+    "Current retained environment still runs older source"
+  ],
+  "overall": "NOT_READY",
+  "environment_and_page": "KEEP_OPEN"
+}
