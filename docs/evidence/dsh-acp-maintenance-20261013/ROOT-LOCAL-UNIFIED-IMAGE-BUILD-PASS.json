@@ -1,0 +1,58 @@
+{
+  "schema_version": "byq-root-local-unified-image-build.v1",
+  "status": "PASS_SCOPED_LOCAL_IMAGE_BUILD",
+  "source_commit": "b551116201f8f45df8b19ead8b19798f9601c22a",
+  "scope": "DSH/ACP maintenance; no Product Phase advancement",
+  "image_id": "sha256:886155b42a866307a34e903eb01dd822bff5ac0f5939427d44427caca626b640",
+  "image_tag": "byq-background-native-startup-2b2c:b551116201f8f45d-20261015",
+  "evidence_directory": ".ci-artifacts/execution-options-20261014/background-native-startup-2b2c/build-prep-b551116201f8f45d-v2",
+  "plan_sha256": "12359d5c5fc353b0dce60a0060080aab57b55fff4429166622d51f3dc16c9821",
+  "source_check": {
+    "status": "PASS",
+    "entries": 3398,
+    "files": 3037,
+    "symlinks": 0,
+    "exit_code": 0,
+    "source_check_tool_raw_sha256": "2aaefb1ca44944ab02d9ba9097d607169b733f168c83afa5133ed134a7614627"
+  },
+  "build": {
+    "status": "PASS",
+    "count": 1,
+    "exit_code": 0,
+    "inspect_exit_code": 0,
+    "outer_exit_code": 0,
+    "elapsed_seconds": 219.861553328,
+    "source_start_to_build_finish_seconds": 238.689949843,
+    "total_limit_seconds": 660,
+    "stdout_sha256": "f020104a4e6eaedb4f967eda356e529b98602350f3585f9ba4e83d5baef30234",
+    "stderr_sha256": "ec34a09e033b515c85951f12dbaa17dc3090601dd78ed912c6b4548ce882034a",
+    "tool_raw_sha256": "6376370a33f082fe953c051f3df41d2c6ac4cab6bde0bd2cc0d4b0d9f98cb15f",
+    "reviewed_deviations": [
+      "Actual legacy-builder warning differs from prelisted wording; full nonfatal deprecation/BuildKit-disabled notice preserved.",
+      "Canonical image IDs match; iidfile has no trailing LF and inspect has one.",
+      "Configured system UID 10002 produces useradd warning; accepted UID/GID retained."
+    ],
+    "limits": "Existing local base and cached dependency layers; env -i, network none, pull false; no fetch fallback or retry.",
+    "intermediate_containers": "Docker build created and removed its normal intermediate containers; no business service lifecycle operation."
+  },
+  "gates": {
+    "independent_tester": {
+      "status": "PASS_SCOPED_OFFLINE_IMAGE_BUILD_WITH_REVIEWED_STDERR_DEVIATION",
+      "sha256": "fab27042b443d8fc1116cf1707e45414fe611ba1cc01f82287c37f1f984b467b"
+    },
+    "independent_sol": {
+      "status": "PASS_SCOPED_OFFLINE_IMAGE_BUILD_WITH_REVIEWED_STDERR_DEVIATION",
+      "sha256": "a702335c006a10083a3934fe0dedd89dabca93b70b8fd723efca13045793d097"
+    },
+    "root": "PASS"
+  },
+  "not_run": [
+    "installed file bytes and import in built image",
+    "native DSH startup",
+    "new model calls, Jobs or database actions",
+    "affected current-source Product/browser acceptance",
+    "push, hosted CI, merge, deployment, production qualification"
+  ],
+  "retention": "Existing test environment, browser page, identity and data volumes retained.",
+  "next_slice": "Read installed image hashes/import, then a separate keyless native ACP initialize/new/route-selection/close probe; preserve exact cleanup separately from Backend ACK."
+}
