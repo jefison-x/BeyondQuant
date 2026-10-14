@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { readFileSync, unlinkSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   ALLOWED_TOOL_NAMES,
   PROFILE_LIMITS,
@@ -348,5 +351,205 @@ test('count-only requires an explicit product-turn.v1 identity and never downgra
     { ...countOnlyConfig, executionProfile: { ...countOnlyConfig.executionProfile, profile_sha256: 'bad' } },
   ]) {
     assert.throws(() => createToolGuard(invalid, () => {}), /PRODUCT_TURN_GUARD_INVALID/);
+  }
+});
+
+const taskReadyDomainTools = ['byq_backtest_task_get', 'byq_research_get'];
+const taskReadyHarnessTools = ['byq_agent_audit', 'byq_agent_authorize', 'byq_agent_run_start'];
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key =>
+      `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function taskReadyProfile(options = executionOptions, revision = 7) {
+  const binding = {
+    profile_id: 'task-ready-read.v2',
+    profile_version: 2,
+    options_schema_version: 'agent-execution-options.v1',
+    options_revision: revision,
+    options: { ...options },
+    provider: 'opencode-go-chat',
+    model: 'deepseek-v4.1-flash',
+    upstream_base_url: 'https://opencode.ai/zen/go/v1',
+    upstream_request_target: '/chat/completions',
+    allowed_domain_tools: [...taskReadyDomainTools],
+    allowed_harness_tools: [...taskReadyHarnessTools],
+  };
+  const profile_sha256 = createHash('sha256').update(canonicalJson(binding), 'utf8').digest('hex');
+  return { ...binding, profile_sha256 };
+}
+
+function taskReadyLimits(options = executionOptions) {
+  return {
+    max_provider_calls: options.max_provider_calls,
+    max_attempts: options.max_provider_attempts,
+    max_concurrent: options.max_concurrent_provider_calls,
+    max_input_bytes: options.max_input_bytes_per_call,
+    max_total_input_bytes: options.max_input_bytes_total,
+    max_output_tokens: options.max_output_tokens_per_call,
+    max_total_output_tokens: options.max_output_tokens_total,
+    max_tool_payload_bytes: options.max_tool_payload_bytes_per_call,
+    max_total_tool_payload_bytes: options.max_tool_payload_bytes_total,
+    max_tool_calls: options.max_tool_calls,
+    max_runtime_seconds: options.max_runtime_seconds,
+  };
+}
+
+function taskReadyConfig(options = executionOptions, journalPath = '/private/request/task-ready-tool-guard.jsonl') {
+  return {
+    guardMode: 'task-ready-options',
+    journalPath,
+    executionProfile: taskReadyProfile(options),
+    requestLimits: taskReadyLimits(options),
+    rootRunId: 'd'.repeat(32),
+    idempotencyKey: `task-ready-event:${'e'.repeat(64)}`,
+    sourceFactSha256: 'f'.repeat(64),
+  };
+}
+
+function rehashTaskReadyProfile(profile) {
+  const binding = { ...profile };
+  delete binding.profile_sha256;
+  return { ...binding, profile_sha256: createHash('sha256')
+    .update(canonicalJson(binding), 'utf8').digest('hex') };
+}
+
+test('task-ready-options v2 keeps the restricted F6 tools and leaves null limits unbounded', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'byq-task-ready-'));
+  const journalPath = join(directory, 'guard.jsonl');
+  const effects = [];
+  try {
+    const runtimeConfig = taskReadyConfig(executionOptions, journalPath);
+    const hooks = new Map();
+    const ctx = {
+      effect: effect => effects.push(effect),
+      on: (event, hook) => hooks.set(event, hook),
+    };
+    apply(ctx, runtimeConfig);
+    assert.deepEqual([...hooks.keys()], ['agent/created', 'agent/disposed', 'tools/pre-execute']);
+    const makeAgent = name => {
+      const filters = [];
+      const agent = { name, cancel() {} };
+      agent.ctx = { tools: { restrict: filter => {
+        filters.push(filter);
+        return () => {};
+      } } };
+      hooks.get('agent/created')({ agent });
+      assert.deepEqual(filters, [{ allow: [...ALLOWED_TOOL_NAMES] }]);
+      return agent;
+    };
+    const root = makeAgent('root');
+    const child = makeAgent('child');
+    const preExecute = hooks.get('tools/pre-execute');
+    for (let index = 0; index < 20; index += 1) {
+      const agent = index % 2 === 0 ? root : child;
+      const toolName = ALLOWED_TOOL_NAMES[index % ALLOWED_TOOL_NAMES.length];
+      const result = await preExecute({ name: toolName, agent }, async () => ({ kind: 'dispatched' }));
+      assert.deepEqual(result, { kind: 'dispatched' });
+    }
+    const rows = readFileSync(journalPath, 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(rows[0], {
+      schema_version: 'task-ready-tool-guard.v2',
+      root_run_id: runtimeConfig.rootRunId,
+      idempotency_key: runtimeConfig.idempotencyKey,
+      source_fact_sha256: runtimeConfig.sourceFactSha256,
+      execution_profile: runtimeConfig.executionProfile,
+      request_limits: runtimeConfig.requestLimits,
+      ready: true,
+    });
+    assert.equal(rows.filter(row => row.phase === 'tool').length, 20);
+    assert.deepEqual(rows[1], {
+      phase: 'tool', root_run_id: runtimeConfig.rootRunId,
+      idempotency_key: runtimeConfig.idempotencyKey,
+      source_fact_sha256: runtimeConfig.sourceFactSha256,
+      profile_sha256: runtimeConfig.executionProfile.profile_sha256,
+      options_revision: runtimeConfig.executionProfile.options_revision,
+      call: 1, tool_name: ALLOWED_TOOL_NAMES[0],
+    });
+    const forbidden = createToolGuard(runtimeConfig, () => {}, undefined,
+      () => { throw new Error('task-ready guard must not synthesize a runtime deadline'); });
+    assert.deepEqual(forbidden.beforeExecute({ name: 'mcp__byq__byq_artifact_create' }), {
+      kind: 'deny', reason: 'BYQ_CONTINUATION_TOOL_UNQUALIFIED',
+    });
+  } finally {
+    for (const effect of effects) {
+      try { effect()(); } catch { /* cleanup after an assertion failure */ }
+    }
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('task-ready-options v2 enforces explicit tool count and fails closed on cancel or storage errors', () => {
+  const options = { ...executionOptions, max_tool_calls: 2 };
+  const config = taskReadyConfig(options);
+  const rows = [];
+  const guard = createToolGuard(config, row => rows.push(row));
+  assert.equal(guard.beforeExecute({ name: ALLOWED_TOOL_NAMES[0] }).kind, 'allow');
+  assert.equal(guard.beforeExecute({ name: ALLOWED_TOOL_NAMES[1] }).kind, 'allow');
+  assert.deepEqual(guard.beforeExecute({ name: ALLOWED_TOOL_NAMES[2] }), {
+    kind: 'deny', reason: 'BYQ_CONTINUATION_TOOL_LIMIT',
+  });
+  assert.equal(rows.filter(row => row.phase === 'tool').length, 2);
+  assert.equal(rows.at(-1).root_run_id, config.rootRunId);
+  assert.equal(rows.at(-1).blocked_reason, 'BYQ_CONTINUATION_TOOL_LIMIT');
+
+  const cancelledRows = [];
+  const cancelled = createToolGuard(taskReadyConfig(), row => cancelledRows.push(row));
+  assert.deepEqual(cancelled.beforeExecute({ name: ALLOWED_TOOL_NAMES[0], signal: { aborted: true } }), {
+    kind: 'deny', reason: 'BYQ_CONTINUATION_CANCELLED',
+  });
+  assert.equal(cancelledRows.at(-1).idempotency_key, taskReadyConfig().idempotencyKey);
+
+  const failed = createToolGuard(taskReadyConfig(), () => { throw new Error('journal unavailable'); });
+  assert.deepEqual(failed.beforeExecute({ name: ALLOWED_TOOL_NAMES[0] }), {
+    kind: 'deny', reason: 'BYQ_CONTINUATION_TOOL_STORAGE_FAILED',
+  });
+});
+
+test('task-ready-options v2 rejects profile, route, tool, option, limit, and identity tampering', () => {
+  const base = taskReadyConfig();
+  const wrongRoute = structuredClone(base);
+  wrongRoute.executionProfile.upstream_base_url = 'https://api.deepseek.com';
+  wrongRoute.executionProfile = rehashTaskReadyProfile(wrongRoute.executionProfile);
+  const wrongTools = structuredClone(base);
+  wrongTools.executionProfile.allowed_domain_tools = ['byq_artifact_create', 'byq_research_get'];
+  wrongTools.executionProfile = rehashTaskReadyProfile(wrongTools.executionProfile);
+  const hiddenOption = structuredClone(base);
+  hiddenOption.executionProfile.options.hidden_max = 1;
+  hiddenOption.executionProfile = rehashTaskReadyProfile(hiddenOption.executionProfile);
+  const boolRevision = structuredClone(base);
+  boolRevision.executionProfile.options_revision = true;
+  boolRevision.executionProfile = rehashTaskReadyProfile(boolRevision.executionProfile);
+  const boolOption = structuredClone(base);
+  boolOption.executionProfile.options.max_tool_calls = true;
+  boolOption.executionProfile = rehashTaskReadyProfile(boolOption.executionProfile);
+  const nonBoolAutoContinue = structuredClone(base);
+  nonBoolAutoContinue.executionProfile.options.auto_continue = 1;
+  nonBoolAutoContinue.executionProfile = rehashTaskReadyProfile(nonBoolAutoContinue.executionProfile);
+  const tamperedDigest = structuredClone(base);
+  tamperedDigest.executionProfile.profile_sha256 = '0'.repeat(64);
+  for (const invalid of [
+    wrongRoute,
+    wrongTools,
+    hiddenOption,
+    boolRevision,
+    boolOption,
+    nonBoolAutoContinue,
+    tamperedDigest,
+    { ...base, requestLimits: { ...base.requestLimits, max_tool_calls: 1 } },
+    { ...base, rootRunId: 'not-a-root-run' },
+    { ...base, rootRunId: `${base.rootRunId}\n` },
+    { ...base, idempotencyKey: `other-event:${'0'.repeat(64)}` },
+    { ...base, idempotencyKey: `${base.idempotencyKey}\n` },
+    { ...base, sourceFactSha256: 'not-a-digest' },
+    { ...base, sourceFactSha256: `${base.sourceFactSha256}\n` },
+    { ...base, reservationId: `continuation_${'a'.repeat(32)}` },
+  ]) {
+    assert.throws(() => createToolGuard(invalid, () => {}), /TASK_READY_GUARD_INVALID/);
   }
 });

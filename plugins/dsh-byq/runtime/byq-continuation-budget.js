@@ -3,6 +3,7 @@
 // dispatch only. Provider HTTP requests are bounded by Runtime Adapter's
 // request-scoped proxy, not by a persisted token balance.
 import { closeSync, fsyncSync, mkdirSync, openSync, writeSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { dirname } from 'node:path';
 
 export const PROFILE_LIMITS = Object.freeze({
@@ -61,6 +62,29 @@ const PRODUCT_EXECUTION_COMPOSITION_SHA256 =
   '10396c708651b24e3012df51e13cbb0e1eaf8178cda9547c91d682c189eacd45';
 const PRODUCT_EXECUTION_GUARD_SCHEMA = 'product-turn-tool-guard.v2';
 const PRODUCT_EXECUTION_GUARD = 'ordinary-options';
+const TASK_READY_EXECUTION_PROFILE_ID = 'task-ready-read.v2';
+const TASK_READY_EXECUTION_PROFILE_VERSION = 2;
+const TASK_READY_OPTIONS_SCHEMA = 'agent-execution-options.v1';
+const TASK_READY_UPSTREAM_BASE_URL = 'https://opencode.ai/zen/go/v1';
+const TASK_READY_UPSTREAM_REQUEST_TARGET = '/chat/completions';
+// Domain tools are read-only; the three harness lifecycle tools preserve the
+// existing F6 flow and do not grant additional domain actions.
+const TASK_READY_DOMAIN_TOOLS = Object.freeze([
+  'byq_backtest_task_get', 'byq_research_get',
+]);
+const TASK_READY_HARNESS_TOOLS = Object.freeze([
+  'byq_agent_audit', 'byq_agent_authorize', 'byq_agent_run_start',
+]);
+const TASK_READY_GUARD = 'task-ready-options';
+const TASK_READY_GUARD_SCHEMA = 'task-ready-tool-guard.v2';
+const TASK_READY_OPTION_NUMERIC_FIELDS = Object.freeze([
+  'max_provider_calls', 'max_provider_attempts', 'max_tool_calls',
+  'max_concurrent_provider_calls', 'max_input_bytes_per_call', 'max_input_bytes_total',
+  'max_output_tokens_per_call', 'max_output_tokens_total',
+  'max_tool_payload_bytes_per_call', 'max_tool_payload_bytes_total',
+  'max_continuations', 'max_runtime_seconds', 'max_no_progress_seconds',
+  'max_child_runtime_seconds', 'max_child_no_progress_seconds',
+]);
 const PRODUCT_OPTION_NUMERIC_FIELDS = Object.freeze([
   'max_provider_calls', 'max_provider_attempts', 'max_tool_calls',
   'max_concurrent_provider_calls', 'max_input_bytes_per_call', 'max_input_bytes_total',
@@ -85,6 +109,78 @@ const PRODUCT_EXECUTION_LIMIT_MAP = Object.freeze({
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (isRecord(value)) {
+    return `{${Object.keys(value).sort().map(key =>
+      `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function canonicalSha256(value) {
+  return createHash('sha256').update(canonicalJson(value), 'utf8').digest('hex');
+}
+
+function validTaskReadyProfile(profile) {
+  const profileFields = [
+    'allowed_domain_tools', 'allowed_harness_tools', 'model', 'options',
+    'options_revision', 'options_schema_version', 'profile_id', 'profile_sha256',
+    'profile_version', 'provider', 'upstream_base_url', 'upstream_request_target',
+  ].sort().join(',');
+  if (!isRecord(profile) || Object.keys(profile).sort().join(',') !== profileFields
+      || profile.profile_id !== TASK_READY_EXECUTION_PROFILE_ID
+      || profile.profile_version !== TASK_READY_EXECUTION_PROFILE_VERSION
+      || profile.options_schema_version !== TASK_READY_OPTIONS_SCHEMA
+      || !Number.isSafeInteger(profile.options_revision) || profile.options_revision < 0
+      || profile.provider !== 'opencode-go-chat'
+      || profile.model !== 'deepseek-v4.1-flash'
+      || profile.upstream_base_url !== TASK_READY_UPSTREAM_BASE_URL
+      || profile.upstream_request_target !== TASK_READY_UPSTREAM_REQUEST_TARGET
+      || !Array.isArray(profile.allowed_domain_tools)
+      || JSON.stringify(profile.allowed_domain_tools) !== JSON.stringify(TASK_READY_DOMAIN_TOOLS)
+      || !Array.isArray(profile.allowed_harness_tools)
+      || JSON.stringify(profile.allowed_harness_tools) !== JSON.stringify(TASK_READY_HARNESS_TOOLS)
+      || typeof profile.profile_sha256 !== 'string'
+      || !/^[a-f0-9]{64}$/.test(profile.profile_sha256)
+      || !isRecord(profile.options)) return false;
+  const expectedOptions = [...TASK_READY_OPTION_NUMERIC_FIELDS, 'auto_continue'].sort().join(',');
+  if (Object.keys(profile.options).sort().join(',') !== expectedOptions
+      || typeof profile.options.auto_continue !== 'boolean'
+      || TASK_READY_OPTION_NUMERIC_FIELDS.some(name => {
+        const value = profile.options[name];
+        return value !== null && (!Number.isSafeInteger(value) || value < 1);
+      })) return false;
+  const binding = { ...profile };
+  delete binding.profile_sha256;
+  return profile.profile_sha256 === canonicalSha256(binding);
+}
+
+function validTaskReadyLimits(value, options) {
+  const expected = productOptionsLimits(options);
+  return isRecord(value)
+    && Object.keys(value).sort().join(',') === Object.keys(expected).sort().join(',')
+    && Object.entries(expected).every(([name, limit]) => value[name] === limit
+      && (limit === null || (Number.isSafeInteger(value[name]) && value[name] > 0)));
+}
+
+function validTaskReadyConfig(config) {
+  return Object.keys(config).sort().join(',')
+      === 'executionProfile,guardMode,idempotencyKey,journalPath,requestLimits,rootRunId,sourceFactSha256'
+    && config.guardMode === TASK_READY_GUARD
+    && typeof config.journalPath === 'string' && config.journalPath.startsWith('/')
+    && typeof config.rootRunId === 'string' && config.rootRunId.length === 32
+    && /^[a-f0-9]{32}$/.test(config.rootRunId)
+    && typeof config.idempotencyKey === 'string'
+    && config.idempotencyKey.length === 'task-ready-event:'.length + 64
+    && /^task-ready-event:[a-f0-9]{64}$/.test(config.idempotencyKey)
+    && typeof config.sourceFactSha256 === 'string'
+    && config.sourceFactSha256.length === 64
+    && /^[a-f0-9]{64}$/.test(config.sourceFactSha256)
+    && validTaskReadyProfile(config.executionProfile)
+    && validTaskReadyLimits(config.requestLimits, config.executionProfile.options);
 }
 
 function sameClosedLimits(value, expected = PROFILE_LIMITS) {
@@ -144,6 +240,10 @@ function validProductExecutionLimits(value, options) {
 
 function validateConfig(config) {
   if (!isRecord(config)) throw new Error('BYQ_CONTINUATION_GUARD_INVALID');
+  if (config.guardMode === TASK_READY_GUARD) {
+    if (!validTaskReadyConfig(config)) throw new Error('BYQ_TASK_READY_GUARD_INVALID');
+    return;
+  }
   if (config.guardMode === PRODUCT_EXECUTION_GUARD) {
     if (Object.keys(config).sort().join(',') !== 'executionProfile,guardMode,journalPath,requestLimits'
         || typeof config.journalPath !== 'string' || !config.journalPath.startsWith('/')
@@ -197,6 +297,10 @@ function isProductExecution(config) {
   return config.guardMode === PRODUCT_EXECUTION_GUARD;
 }
 
+function isTaskReadyOptions(config) {
+  return config.guardMode === TASK_READY_GUARD;
+}
+
 /** Pure pre-dispatch guard shared with focused offline tests. */
 export function createToolGuard(config, append, cancelAgents = () => {}, now = () => Date.now()) {
   validateConfig(config);
@@ -209,11 +313,18 @@ export function createToolGuard(config, append, cancelAgents = () => {}, now = (
   const agents = new Set();
   const countOnly = isCountOnly(config);
   const productExecution = isProductExecution(config);
-  const identity = () => (productExecution
+  const taskReadyOptions = isTaskReadyOptions(config);
+  const identity = () => (taskReadyOptions
+    ? { root_run_id: config.rootRunId, idempotency_key: config.idempotencyKey,
+      source_fact_sha256: config.sourceFactSha256,
+      profile_sha256: config.executionProfile.profile_sha256,
+      options_revision: config.executionProfile.options_revision }
+    : productExecution
     ? { options_revision: config.executionProfile.options_revision,
       profile_sha256: config.executionProfile.profile_sha256 }
     : countOnly ? {} : { reservation_id: config.reservationId });
-  const toolLimit = productExecution ? config.executionProfile.options.max_tool_calls
+  const toolLimit = taskReadyOptions ? config.requestLimits.max_tool_calls
+    : productExecution ? config.executionProfile.options.max_tool_calls
     : countOnly ? config.requestLimits.max_tool_calls : TOOL_LIMIT;
 
   const cancel = () => {
@@ -241,7 +352,9 @@ export function createToolGuard(config, append, cancelAgents = () => {}, now = (
       if (exec?.agent && typeof exec.agent.cancel === 'function') agents.add(exec.agent);
       if (stopped) return { kind: 'deny', reason: blockedReason };
       if (exec?.signal?.aborted) return block('BYQ_CONTINUATION_CANCELLED', toolName);
-      if (!productExecution && now() >= config.deadlineEpochMs) {
+      // task-ready-options binds a nullable runtime option but does not create
+      // a plugin deadline; Runtime/Runner enforcement is outside this slice.
+      if (!productExecution && !taskReadyOptions && now() >= config.deadlineEpochMs) {
         return block('BYQ_CONTINUATION_DEADLINE_EXCEEDED', toolName);
       }
       if (!countOnly && !productExecution && !ALLOWED.has(toolName)) {
@@ -308,7 +421,15 @@ export function apply(ctx, config) {
   };
   try {
     const append = row => appendJsonl(fd, row);
-    const header = isCountOnly(config)
+    const header = isTaskReadyOptions(config) ? {
+      schema_version: TASK_READY_GUARD_SCHEMA,
+      root_run_id: config.rootRunId,
+      idempotency_key: config.idempotencyKey,
+      source_fact_sha256: config.sourceFactSha256,
+      execution_profile: config.executionProfile,
+      request_limits: config.requestLimits,
+      ready: true,
+    } : isCountOnly(config)
       ? {
           schema_version: COUNT_ONLY_SCHEMA,
           execution_profile: config.executionProfile,

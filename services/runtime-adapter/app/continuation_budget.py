@@ -22,6 +22,7 @@ from packages.contracts.continuation_request import (
     request_limits,
     validate_limits,
     validate_profile_binding,
+    validate_reservation_v3,
 )
 
 # Historical v1 receipt parser compatibility only. Current request bounds are
@@ -39,6 +40,16 @@ _ALLOWED_TOOL_NAMES = frozenset(
     _TOOL_PREFIX + name for name in (ALLOWED_DOMAIN_TOOLS | ALLOWED_HARNESS_TOOLS)
 )
 _GUARD_SCHEMA = 'continuation-tool-guard.v1'
+_TASK_READY_GUARD_SCHEMA = 'task-ready-tool-guard.v2'
+_TASK_READY_ROW_BYTES = 128 * 1024
+_TASK_READY_ROOT_RUN_ID_RE = re.compile(r'[0-9a-f]{32}')
+_TASK_READY_IDEMPOTENCY_KEY_RE = re.compile(r'task-ready-event:[0-9a-f]{64}')
+_TASK_READY_BLOCKED_REASONS = frozenset({
+    'BYQ_CONTINUATION_TOOL_UNQUALIFIED',
+    'BYQ_CONTINUATION_TOOL_LIMIT',
+    'BYQ_CONTINUATION_TOOL_STORAGE_FAILED',
+    'BYQ_CONTINUATION_CANCELLED',
+})
 
 
 def validate_reservation(value: object, *, owner: str, workspace: str) -> dict:
@@ -421,6 +432,139 @@ def read_request_guard(journal: Path, reservation: dict, *, terminal: bool = Fal
         'tool_calls': calls,
         'blocked_reason': blocked_reason,
         'status': 'settled' if terminal else 'accepted',
+    }
+
+
+def _load_task_ready_guard_row(line: bytes) -> dict:
+    def object_without_duplicates(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate key in task-ready tool journal')
+            result[key] = value
+        return result
+
+    def reject_non_finite(value):
+        raise ValueError('non-finite value in task-ready tool journal')
+
+    try:
+        value = json.loads(
+            line.decode('utf-8'), object_pairs_hook=object_without_duplicates,
+            parse_constant=reject_non_finite,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
+        raise ValueError('invalid task-ready tool journal JSON') from exc
+    if not isinstance(value, dict):
+        raise ValueError('invalid task-ready tool journal row')
+    return value
+
+
+def _same_json_value(left: object, right: object) -> bool:
+    """Compare JSON types as well as values (so True never equals 1)."""
+    return json.dumps(left, sort_keys=True, separators=(',', ':'), ensure_ascii=True) == json.dumps(
+        right, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
+
+
+def read_task_ready_v2_guard(
+    journal: Path, reservation_v3: dict, root_run_id: str, *, terminal: bool = False,
+) -> dict:
+    """Stream the v2 DSH guard journal as payload-bound execution evidence.
+
+    This checks the v3 carrier's structure/self-digests and its binding to the
+    separately supplied trusted root run ID. It does not prove SQL facts,
+    eligibility, authorization, completion, or business settlement. The 128 KiB
+    bound applies to each JSONL row only; cumulative file size and row count are
+    intentionally unbounded when the profile leaves tool calls unbounded.
+    """
+    reservation = validate_reservation_v3(reservation_v3)
+    if (not isinstance(root_run_id, str)
+            or _TASK_READY_ROOT_RUN_ID_RE.fullmatch(root_run_id) is None
+            or type(terminal) is not bool):
+        raise ValueError('invalid task-ready guard identity or classification')
+    idempotency_key = reservation['idempotency_key']
+    if _TASK_READY_IDEMPOTENCY_KEY_RE.fullmatch(idempotency_key) is None:
+        raise ValueError('invalid task-ready event idempotency identity')
+    profile = reservation['execution_profile']
+    profile_sha256 = profile['profile_sha256']
+    options_revision = profile['options_revision']
+    expected_header = {
+        'schema_version': _TASK_READY_GUARD_SCHEMA,
+        'root_run_id': root_run_id,
+        'idempotency_key': idempotency_key,
+        'source_fact_sha256': reservation['source_fact_sha256'],
+        'execution_profile': profile,
+        'request_limits': reservation['request_limits'],
+        'ready': True,
+    }
+    tool_fields = {
+        'phase', 'root_run_id', 'idempotency_key', 'source_fact_sha256',
+        'profile_sha256', 'options_revision', 'call', 'tool_name',
+    }
+    blocked_fields = {
+        'phase', 'root_run_id', 'idempotency_key', 'source_fact_sha256',
+        'profile_sha256', 'options_revision', 'blocked_reason', 'tool_name',
+    }
+    identity = {
+        'root_run_id': root_run_id,
+        'idempotency_key': idempotency_key,
+        'source_fact_sha256': reservation['source_fact_sha256'],
+        'profile_sha256': profile_sha256,
+        'options_revision': options_revision,
+    }
+    calls = 0
+    blocked_reason = None
+    header_seen = False
+    with journal.open('rb') as stream:
+        while True:
+            line = stream.readline(_TASK_READY_ROW_BYTES + 1)
+            if not line:
+                break
+            if len(line) > _TASK_READY_ROW_BYTES or not line.endswith(b'\n'):
+                raise ValueError('task-ready tool journal row is oversized or incomplete')
+            row = _load_task_ready_guard_row(line[:-1])
+            if not header_seen:
+                if (set(row) != set(expected_header)
+                        or type(row.get('ready')) is not bool
+                        or not _same_json_value(row, expected_header)):
+                    raise ValueError('task-ready DSH tool guard is not ready or bound')
+                header_seen = True
+                continue
+            if blocked_reason is not None:
+                raise ValueError('task-ready tool journal has rows after a terminal block')
+            if set(row) == tool_fields:
+                calls += 1
+                if (row.get('phase') != 'tool'
+                        or any(not _same_json_value(row.get(key), value)
+                               for key, value in identity.items())
+                        or type(row.get('call')) is not int or row['call'] != calls
+                        or not isinstance(row.get('tool_name'), str)
+                        or row['tool_name'] not in _ALLOWED_TOOL_NAMES
+                        or (reservation['request_limits']['max_tool_calls'] is not None
+                            and calls > reservation['request_limits']['max_tool_calls'])):
+                    raise ValueError('invalid admitted task-ready tool dispatch')
+            elif set(row) == blocked_fields:
+                if (row.get('phase') != 'blocked'
+                        or any(not _same_json_value(row.get(key), value)
+                               for key, value in identity.items())
+                        or not isinstance(row.get('blocked_reason'), str)
+                        or row['blocked_reason'] not in _TASK_READY_BLOCKED_REASONS
+                        or not isinstance(row.get('tool_name'), str)
+                        or len(row['tool_name']) > 192):
+                    raise ValueError('invalid blocked task-ready tool dispatch')
+                blocked_reason = row['blocked_reason']
+            else:
+                raise ValueError('invalid task-ready tool journal row')
+    if not header_seen:
+        raise ValueError('task-ready DSH tool guard is not ready')
+    return {
+        'root_run_id': root_run_id,
+        'idempotency_key': idempotency_key,
+        'source_fact_sha256': reservation['source_fact_sha256'],
+        'profile_sha256': profile_sha256,
+        'options_revision': options_revision,
+        'tool_calls': calls,
+        'blocked_reason': blocked_reason,
+        'observed_status': 'terminal_observed' if terminal else 'nonterminal_observed',
     }
 
 
