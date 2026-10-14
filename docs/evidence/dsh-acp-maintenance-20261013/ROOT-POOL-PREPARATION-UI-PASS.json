@@ -1,0 +1,35 @@
+{
+  "status": "PASS_UI_SCOPED",
+  "source_head_at_execution": "68ffc3f9",
+  "frontend_source": "7d4d575771271b16f51128edd61ad5922b95e8b8",
+  "environment": "isolated localhost:32790",
+  "evidence_directory": ".ci-artifacts/background-continuation-20261014/business-ui-inspection-v1",
+  "pool_id": "stock_pool_495b6d57f99f4427a36ae6aebf758129",
+  "browser_observed": {
+    "pool_count_before": 0,
+    "pool_count_after": 1,
+    "active": true,
+    "pool_type": "custom",
+    "members": ["000001.SZ", "600000.SH"],
+    "snapshot_count": 1,
+    "snapshot_version": 1,
+    "weights_mode": "unweighted",
+    "membership_sha256": "78d0c1f7c25883b57771a3dd4fbe95adc7c0e6412f4bbf6fa2205c15e495a36e",
+    "description_disclaims_real_market_quality": true
+  },
+  "operator_record": {
+    "submit_clicks": 1,
+    "deadline_ms": 120000,
+    "elapsed_ms": 50275.41960300505,
+    "model_triggers": 0,
+    "job_triggers": 0,
+    "note": "Operator activity summary, not raw HTTP or global usage evidence."
+  },
+  "independent_sol_review": "PASS_UI_SCOPED",
+  "root_acceptance": "PASS_UI_SCOPED",
+  "product_raw_readback": "NOT_RUN",
+  "database_closure": "NOT_RUN",
+  "background_continuation": "NOT_RUN",
+  "production_qualification": "NOT_RUN",
+  "environment_and_page": "KEEP_OPEN"
+}
