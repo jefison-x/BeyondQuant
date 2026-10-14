@@ -173,6 +173,28 @@ def test_ordinary_slot_transport_preserves_unset_runtime_deadline(
     registry.acknowledge(SCOPE)
 
 
+def test_task_ready_slot_transport_preserves_null_and_explicit_runtime_deadlines(
+    tmp_path, monkeypatch,
+):
+    cwd = tmp_path / SCOPE["cwd_leaf"]
+    cwd.mkdir(mode=0o700)
+    for deadline in (None, 1_700_000_037_000):
+        registry = _Registry()
+        session = _FakeSession("valid")
+        _fake_client(monkeypatch, registry, session,
+                     allow_unbounded_deadline=deadline is None)
+        transport = slot_transport.SlotAcpProcess(
+            ("dsh",), cwd, _environment(), registry=registry,
+            guard_b64="synthetic-task-ready-profile", deadline_at_ms=deadline,
+            task_ready_execution=True,
+        )
+        transport.start()
+        assert transport.process is not None
+        transport.close()
+        assert registry.cleanup_calls == 1
+        registry.acknowledge(SCOPE)
+
+
 def _compat(registry) -> DshAcpCompatibility:
     compat = DshAcpCompatibility.__new__(DshAcpCompatibility)
     compat.product_slots = registry

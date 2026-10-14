@@ -48,6 +48,86 @@ def _body(**changes):
     return json.dumps(value, separators=(",", ":")).encode()
 
 
+def _task_ready_carrier(options=None, *, revision=7):
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+    from packages.contracts.continuation_request import continuation_reservation_v3
+
+    values = default_agent_execution_options() if options is None else options
+    return continuation_reservation_v3(
+        owner_principal="owner-a", workspace_id="workspace-a",
+        conversation_id="conversation-a", task_id="task_" + "1" * 32,
+        event_key="ready-v1:" + "2" * 64,
+        signal_job_id="signaljob_" + "3" * 32,
+        result_artifact_id="artifact_" + "4" * 32,
+        result_artifact_content_sha256="5" * 64,
+        options=values, options_revision=revision,
+    )
+
+
+def test_task_ready_overlay_preserves_nulls_and_uses_tightest_output_cap():
+    from app.continuation_budget import create_acp_task_ready_execution_overlay
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+
+    options = default_agent_execution_options()
+    options["max_output_tokens_per_call"] = 240
+    options["max_output_tokens_total"] = 96
+    overlay = json.loads(create_acp_task_ready_execution_overlay(
+        proxy_base_url="http://172.31.7.9:41337",
+        provider_session_id="11111111-2222-4333-8444-555555555555",
+        reservation_v3=_task_ready_carrier(options), root_run_id="a" * 32,
+    ).decode())
+    assert overlay[:3] == [
+        {"id": "web-search-deepseek", "disabled": True},
+        {"id": "tool-web", "disabled": True},
+        {"id": "llm-deepseek", "config": {"maxTokens": 96}},
+    ]
+    chat = overlay[3]["config"]["providers"]["opencode-go-chat"]
+    assert chat["retryPolicy"] == {"mode": "normal", "maxRetries": 0}
+    assert chat["headers"] == {"x-opencode-session": "11111111-2222-4333-8444-555555555555"}
+    assert chat["models"] == [{"id": "deepseek-v4.1-flash", "maxTokens": 96}]
+    config = overlay[4]["insert"][0]["config"]
+    assert config["guardMode"] == "task-ready-options"
+    assert config["rootRunId"] == "a" * 32
+    assert config["idempotencyKey"].startswith("task-ready-event:")
+    assert config["sourceFactSha256"] == _task_ready_carrier(options)["source_fact_sha256"]
+    assert "journalPath" not in config
+    assert "deadlineEpochMs" not in config
+
+    no_cap = json.loads(create_acp_task_ready_execution_overlay(
+        proxy_base_url="http://172.31.7.9:41337",
+        provider_session_id="11111111-2222-4333-8444-555555555555",
+        reservation_v3=_task_ready_carrier(), root_run_id="b" * 32,
+    ).decode())
+    assert no_cap[2] == {"id": "llm-deepseek", "config": {}}
+    assert no_cap[3]["config"]["providers"]["opencode-go-chat"]["models"] == [
+        {"id": "deepseek-v4.1-flash"}
+    ]
+    assert no_cap[4]["insert"][0]["config"]["requestLimits"]["max_runtime_seconds"] is None
+
+
+def test_task_ready_overlay_rejects_javascript_unsafe_profile_values():
+    from app.continuation_budget import create_acp_task_ready_execution_overlay
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+
+    def encode(reservation):
+        return create_acp_task_ready_execution_overlay(
+            proxy_base_url="http://172.31.7.9:41337",
+            provider_session_id="11111111-2222-4333-8444-555555555555",
+            reservation_v3=reservation, root_run_id="a" * 32,
+        )
+
+    options = default_agent_execution_options()
+    options["max_tool_calls"] = 9007199254740992
+    with pytest.raises(ValueError, match="JavaScript integer precision"):
+        encode(_task_ready_carrier(options))
+    options = default_agent_execution_options()
+    options["max_output_tokens_total"] = 9007199254740992
+    with pytest.raises(ValueError, match="JavaScript integer precision"):
+        encode(_task_ready_carrier(options))
+    with pytest.raises(ValueError, match="JavaScript integer precision"):
+        encode(_task_ready_carrier(revision=9007199254740992))
+
+
 def test_ordinary_v2_defaults_allow_more_than_legacy_calls_and_runtime():
     clock = [0.0]
     gate = _ordinary_options_gate(monotonic=lambda: clock[0])

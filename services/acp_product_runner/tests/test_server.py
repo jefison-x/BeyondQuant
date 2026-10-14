@@ -68,6 +68,13 @@ def _environment(scope: dict[str, str]) -> dict[str, str]:
     return env
 
 
+def _task_ready_environment(scope: dict[str, str]) -> dict[str, str]:
+    env = _environment(scope)
+    env.pop("DEEPSEEK_API_KEY")
+    env["OPENCODE_API_KEY"] = "opencode-key-qualification-only"
+    return env
+
+
 def _fake_popen_for_current_uid(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
     real_popen = subprocess.Popen
     calls: list[dict[str, object]] = []
@@ -708,7 +715,61 @@ def _ordinary_options_overlay(options=None, *, revision=4):
         overlay, sort_keys=True, separators=(",", ":")).encode()).decode(), overlay
 
 
-def _signed_start(*, deadline_at_ms, guard_b64):
+def _task_ready_options_overlay(options=None, *, revision=4, root="a" * 32):
+    import base64
+
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+    from packages.contracts.continuation_request import continuation_reservation_v3
+    from packages.contracts.product_turn_request import product_turn_execution_limits
+
+    values = default_agent_execution_options() if options is None else options
+    carrier = continuation_reservation_v3(
+        owner_principal="owner-a", workspace_id="workspace-a",
+        conversation_id="conversation-a", task_id="task_" + "1" * 32,
+        event_key="ready-v1:" + "2" * 64,
+        signal_job_id="signaljob_" + "3" * 32,
+        result_artifact_id="artifact_" + "4" * 32,
+        result_artifact_content_sha256="5" * 64,
+        options=values, options_revision=revision,
+    )
+    profile = carrier["execution_profile"]
+    limits = product_turn_execution_limits(values)
+    output_values = [values[field] for field in (
+        "max_output_tokens_per_call", "max_output_tokens_total",
+    ) if values[field] is not None]
+    output_cap = min(output_values) if output_values else None
+    default_config = {} if output_cap is None else {"maxTokens": output_cap}
+    model = {"id": "deepseek-v4.1-flash"}
+    if output_cap is not None:
+        model["maxTokens"] = output_cap
+    overlay = [
+        {"id": "web-search-deepseek", "disabled": True},
+        {"id": "tool-web", "disabled": True},
+        {"id": "llm-deepseek", "config": default_config},
+        {"id": "llm-pi-ai", "config": {"providers": {"opencode-go-chat": {
+            "api": "openai-completions",
+            "apiKeyEnv": "OPENCODE_API_KEY",
+            "baseURL": "http://172.31.7.9:41337",
+            "retryPolicy": {"mode": "normal", "maxRetries": 0},
+            "headers": {"x-opencode-session": "123e4567-e89b-42d3-a456-426614174000"},
+            "models": [model],
+        }}}},
+        {"insert": [{"id": "byq-continuation-budget",
+                     "name": "file:///opt/byq/runtime/byq-continuation-budget.js",
+                     "config": {
+                         "guardMode": "task-ready-options",
+                         "rootRunId": root,
+                         "idempotencyKey": carrier["idempotency_key"],
+                         "sourceFactSha256": carrier["source_fact_sha256"],
+                         "executionProfile": profile,
+                         "requestLimits": limits,
+                     }}]},
+    ]
+    return base64.b64encode(json.dumps(
+        overlay, sort_keys=True, separators=(",", ":")).encode()).decode(), overlay
+
+
+def _signed_start(*, deadline_at_ms, guard_b64, env=None):
     scope = _scope()
     challenge = "a" * 64
     request = {
@@ -716,7 +777,7 @@ def _signed_start(*, deadline_at_ms, guard_b64):
         "challenge": challenge,
         "nonce": "b" * 64,
         "scope": scope,
-        "env": _environment(scope),
+        "env": _environment(scope) if env is None else env,
         "deadline_at_ms": deadline_at_ms,
         "guard_b64": guard_b64,
     }
@@ -751,7 +812,7 @@ def test_ordinary_v2_profile_omits_implicit_output_cap_and_keeps_total_only_decl
         slot._validate_guard(bad_b64)
 
 
-def test_ordinary_runner_start_has_no_default_deadline_and_honors_only_user_runtime():
+def test_ordinary_runner_start_has_no_default_deadline_and_honors_only_user_runtime(monkeypatch):
     ordinary_b64, _ = _ordinary_options_overlay()
     request, challenge = _signed_start(deadline_at_ms=None, guard_b64=ordinary_b64)
     _scope_result, _env, deadline, _nonce, _guard = slot._ProductRequestHandler._validate_start(
@@ -759,19 +820,28 @@ def test_ordinary_runner_start_has_no_default_deadline_and_honors_only_user_runt
     assert deadline is None
 
     from packages.contracts.agent_execution_options import default_agent_execution_options
+    from types import SimpleNamespace
+
     options = default_agent_execution_options()
     options["max_runtime_seconds"] = 7200
     finite_b64, _ = _ordinary_options_overlay(options)
-    requested_deadline = int(time.time() * 1000) + 7200_000
+    fixed_epoch = 1_700_000_000.0
+    fixed_monotonic = 25_000.0
+    requested_deadline = int(fixed_epoch * 1000) + 7200_000
     finite_request, finite_challenge = _signed_start(
         deadline_at_ms=requested_deadline, guard_b64=finite_b64)
-    before = time.monotonic()
-    _scope_result, _env, finite_deadline, _nonce, _guard = (
-        slot._ProductRequestHandler._validate_start(
-            finite_request, finite_challenge, SECRET))
+    fixed_clock = SimpleNamespace(
+        time=lambda: fixed_epoch,
+        monotonic=lambda: fixed_monotonic,
+    )
+    with monkeypatch.context() as clock_patch:
+        clock_patch.setattr(slot, "time", fixed_clock)
+        _scope_result, _env, finite_deadline, _nonce, _guard = (
+            slot._ProductRequestHandler._validate_start(
+                finite_request, finite_challenge, SECRET))
     assert finite_deadline is not None
-    assert finite_deadline - before > 3600
-    assert finite_deadline - before <= 7200
+    assert finite_deadline == fixed_monotonic + 7200.0
+    assert finite_deadline > fixed_monotonic + 3600.0
 
     with pytest.raises(slot.ProductSlotError, match="no user limit"):
         wrong_request, wrong_challenge = _signed_start(
@@ -779,3 +849,105 @@ def test_ordinary_runner_start_has_no_default_deadline_and_honors_only_user_runt
             guard_b64=ordinary_b64)
         slot._ProductRequestHandler._validate_start(
             wrong_request, wrong_challenge, SECRET)
+
+
+def test_task_ready_guard_binds_exact_profile_limits_and_signed_root():
+    import base64
+
+    guard_b64, overlay = _task_ready_options_overlay()
+    validated = slot._validate_guard(guard_b64)
+    assert validated[2] == {"id": "llm-deepseek", "config": {}}
+    config = validated[4]["insert"][0]["config"]
+    assert config["guardMode"] == "task-ready-options"
+    assert "journalPath" not in config
+    task_ready_env = _task_ready_environment(_scope())
+    request, challenge = _signed_start(
+        deadline_at_ms=None, guard_b64=guard_b64, env=task_ready_env)
+    _scope_result, _env, deadline, _nonce, _guard = (
+        slot._ProductRequestHandler._validate_start(request, challenge, SECRET))
+    assert deadline is None
+
+    unexpected_provider_env = _environment(_scope())
+    credential_request, credential_challenge = _signed_start(
+        deadline_at_ms=None, guard_b64=guard_b64, env=unexpected_provider_env)
+    with pytest.raises(slot.ProductSlotError, match="unselected provider credential"):
+        slot._ProductRequestHandler._validate_start(
+            credential_request, credential_challenge, SECRET)
+
+    extra_route_config = json.loads(json.dumps(overlay))
+    extra_route_config[3]["config"]["globalConfig"] = {"provider": "synthetic"}
+    extra_route_b64 = base64.b64encode(json.dumps(
+        extra_route_config, sort_keys=True, separators=(",", ":")).encode()).decode()
+    with pytest.raises(slot.ProductSlotError, match="route overlay is invalid"):
+        slot._validate_guard(extra_route_b64)
+
+    bool_retry = json.loads(json.dumps(overlay))
+    bool_retry[3]["config"]["providers"]["opencode-go-chat"][
+        "retryPolicy"]["maxRetries"] = False
+    bool_retry_b64 = base64.b64encode(json.dumps(
+        bool_retry, sort_keys=True, separators=(",", ":")).encode()).decode()
+    with pytest.raises(slot.ProductSlotError, match="route overlay is invalid"):
+        slot._validate_guard(bool_retry_b64)
+
+    wrong_root = json.loads(json.dumps(overlay))
+    wrong_root[4]["insert"][0]["config"]["rootRunId"] = "b" * 32
+    wrong_root_b64 = base64.b64encode(json.dumps(
+        wrong_root, sort_keys=True, separators=(",", ":")).encode()).decode()
+    wrong_request, wrong_challenge = _signed_start(
+        deadline_at_ms=None, guard_b64=wrong_root_b64, env=task_ready_env)
+    with pytest.raises(slot.ProductSlotError, match="root differs"):
+        slot._ProductRequestHandler._validate_start(
+            wrong_request, wrong_challenge, SECRET)
+
+    bad_cap = json.loads(json.dumps(overlay))
+    bad_cap[2]["config"]["maxTokens"] = 8192
+    bad_cap_b64 = base64.b64encode(json.dumps(
+        bad_cap, sort_keys=True, separators=(",", ":")).encode()).decode()
+    with pytest.raises(slot.ProductSlotError, match="registered provider output cap"):
+        slot._validate_guard(bad_cap_b64)
+
+
+def test_task_ready_start_honors_only_explicit_user_runtime(monkeypatch):
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+    import base64
+    from types import SimpleNamespace
+
+    guard_b64, _ = _task_ready_options_overlay()
+    task_ready_env = _task_ready_environment(_scope())
+    request, challenge = _signed_start(
+        deadline_at_ms=None, guard_b64=guard_b64, env=task_ready_env)
+    _scope_result, _env, deadline, _nonce, _guard = (
+        slot._ProductRequestHandler._validate_start(request, challenge, SECRET))
+    assert deadline is None
+    unexpected_deadline, unexpected_challenge = _signed_start(
+        deadline_at_ms=int(time.time() * 1000) + 60_000,
+        guard_b64=guard_b64, env=task_ready_env)
+    with pytest.raises(slot.ProductSlotError, match="no user limit"):
+        slot._ProductRequestHandler._validate_start(
+            unexpected_deadline, unexpected_challenge, SECRET)
+
+    options = default_agent_execution_options()
+    options["max_runtime_seconds"] = 37
+    finite_b64, _ = _task_ready_options_overlay(options)
+    fixed_epoch = 1_700_000_000.0
+    fixed_monotonic = 25_000.0
+    requested_deadline = int(fixed_epoch * 1000) + 7200_000
+    finite_request, finite_challenge = _signed_start(
+        deadline_at_ms=requested_deadline, guard_b64=finite_b64, env=task_ready_env)
+    fixed_clock = SimpleNamespace(
+        time=lambda: fixed_epoch,
+        monotonic=lambda: fixed_monotonic,
+    )
+    with monkeypatch.context() as clock_patch:
+        clock_patch.setattr(slot, "time", fixed_clock)
+        _scope_result, _env, finite_deadline, _nonce, _guard = (
+            slot._ProductRequestHandler._validate_start(
+                finite_request, finite_challenge, SECRET))
+    assert finite_deadline is not None
+    assert finite_deadline == fixed_monotonic + 37.0
+
+    missing_deadline, missing_challenge = _signed_start(
+        deadline_at_ms=None, guard_b64=finite_b64, env=task_ready_env)
+    with pytest.raises(slot.ProductSlotError, match="deadline is missing"):
+        slot._ProductRequestHandler._validate_start(
+            missing_deadline, missing_challenge, SECRET)

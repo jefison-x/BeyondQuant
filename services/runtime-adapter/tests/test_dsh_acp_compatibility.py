@@ -902,6 +902,91 @@ def test_ordinary_product_guard_uses_tightest_output_limit_and_remains_exclusive
     assert fixed_patch.read_bytes() == next_patch
 
 
+def test_task_ready_guard_binds_trusted_root_and_canonical_journal(tmp_path: Path) -> None:
+    import base64
+    import uuid
+
+    from app.compat.dsh_acp import (
+        _prepare_private_product_home, _task_ready_profile_from_guard_b64,
+        _write_continuation_guard,
+    )
+    from app.continuation_budget import create_acp_task_ready_execution_overlay
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+    from packages.contracts.continuation_request import continuation_reservation_v3
+
+    carrier = continuation_reservation_v3(
+        owner_principal="owner-a", workspace_id="workspace-a",
+        conversation_id="conversation-a", task_id="task_" + "1" * 32,
+        event_key="ready-v1:" + "2" * 64,
+        signal_job_id="signaljob_" + "3" * 32,
+        result_artifact_id="artifact_" + "4" * 32,
+        result_artifact_content_sha256="5" * 64,
+        options=default_agent_execution_options(), options_revision=7,
+    )
+    overlay = create_acp_task_ready_execution_overlay(
+        proxy_base_url="http://127.0.0.1:41337",
+        provider_session_id=str(uuid.uuid5(uuid.NAMESPACE_URL, "task-ready-root")),
+        reservation_v3=carrier, root_run_id="a" * 32,
+    )
+    for malformed in (
+        b'{"guardMode":"task-ready-options","guardMode":"other"}',
+        b"NaN",
+        b"1e9999",
+        b" " * (16 * 1024 + 1),
+    ):
+        with pytest.raises(AcpTransportError, match="continuation guard is invalid"):
+            _task_ready_profile_from_guard_b64(
+                base64.b64encode(malformed).decode("ascii"), root_run_id="a" * 32)
+
+    wrong_home = tmp_path / "wrong-root"
+    wrong_home.mkdir(mode=0o700)
+    _prepare_private_product_home(wrong_home)
+    with pytest.raises(AcpTransportError, match="task-ready guard is invalid"):
+        _write_continuation_guard(
+            wrong_home, base64.b64encode(overlay).decode("ascii"), root_run_id="b" * 32)
+    assert not (wrong_home / "continuation-guard.patch.json").exists()
+
+    extra_route_home = tmp_path / "extra-route-config"
+    extra_route_home.mkdir(mode=0o700)
+    _prepare_private_product_home(extra_route_home)
+    extra_route = json.loads(overlay.decode("utf-8"))
+    extra_route[3]["config"]["globalConfig"] = {"provider": "synthetic"}
+    with pytest.raises(AcpTransportError, match="task-ready route is invalid"):
+        _write_continuation_guard(
+            extra_route_home,
+            base64.b64encode(json.dumps(
+                extra_route, sort_keys=True, separators=(",", ":")).encode("utf-8")).decode("ascii"),
+            root_run_id="a" * 32,
+        )
+    assert not (extra_route_home / "continuation-guard.patch.json").exists()
+
+    bool_retry = json.loads(overlay.decode("utf-8"))
+    bool_retry[3]["config"]["providers"]["opencode-go-chat"][
+        "retryPolicy"]["maxRetries"] = False
+    with pytest.raises(AcpTransportError, match="task-ready route is invalid"):
+        _write_continuation_guard(
+            extra_route_home,
+            base64.b64encode(json.dumps(
+                bool_retry, sort_keys=True, separators=(",", ":")).encode("utf-8")).decode("ascii"),
+            root_run_id="a" * 32,
+        )
+    assert not (extra_route_home / "continuation-guard.patch.json").exists()
+
+    home = tmp_path / "right-root"
+    home.mkdir(mode=0o700)
+    _prepare_private_product_home(home)
+    _write_continuation_guard(
+        home, base64.b64encode(overlay).decode("ascii"), root_run_id="a" * 32)
+    patch = json.loads((home / "continuation-guard.patch.json").read_text(encoding="utf-8"))
+    config = patch[4]["insert"][0]["config"]
+    assert config["rootRunId"] == "a" * 32
+    assert config["journalPath"] == str(home / f"continuation-tool-guard-{'a' * 32}.jsonl")
+    assert config["idempotencyKey"] == carrier["idempotency_key"]
+    assert config["sourceFactSha256"] == carrier["source_fact_sha256"]
+    assert "reservationId" not in config
+    assert "deadlineEpochMs" not in config
+
+
 @pytest.mark.parametrize(
     ("runtime_seconds", "expected_deadline_at_ms"),
     [(None, None), (37, 1_700_000_037_000)],
@@ -921,7 +1006,8 @@ def test_ordinary_product_slot_start_wires_optional_runtime_deadline(
 
     class CapturingSlotAcpProcess:
         def __init__(self, command, cwd, environment, *, registry, guard_b64=None,
-                     deadline_at_ms=None, ordinary_execution=False):
+                     deadline_at_ms=None, ordinary_execution=False,
+                     task_ready_execution=False):
             self.scope = {"root_run_id": environment["BYQ_ROOT_RUN_ID"]}
             self.process = None
             captured.append({
@@ -932,6 +1018,7 @@ def test_ordinary_product_slot_start_wires_optional_runtime_deadline(
                 "guard_b64": guard_b64,
                 "deadline_at_ms": deadline_at_ms,
                 "ordinary_execution": ordinary_execution,
+                "task_ready_execution": task_ready_execution,
             })
 
         def start(self):
@@ -967,5 +1054,6 @@ def test_ordinary_product_slot_start_wires_optional_runtime_deadline(
     assert started == [harness.process]
     assert captured[0]["deadline_at_ms"] == expected_deadline_at_ms
     assert captured[0]["ordinary_execution"] is True
+    assert captured[0]["task_ready_execution"] is False
     assert captured[0]["registry"] is compatibility.product_slots
     assert harness.slot_scope == {"root_run_id": environment["BYQ_ROOT_RUN_ID"]}

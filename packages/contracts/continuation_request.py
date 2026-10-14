@@ -9,6 +9,7 @@ import json
 import re
 
 from packages.contracts.agent_execution_options import (
+    NUMERIC_OPTION_FIELDS,
     SCHEMA_VERSION as AGENT_EXECUTION_OPTIONS_SCHEMA_VERSION,
     validate_agent_execution_options,
 )
@@ -210,6 +211,35 @@ def validate_request_limits_v2(value: object, profile: object) -> dict:
     if value != expected:
         raise ValueError('continuation request limits v2 do not match the profile')
     return dict(expected)
+
+
+def validate_task_ready_javascript_values_v2(
+    execution_profile: object, request_limits: object,
+) -> tuple[dict, dict]:
+    """Validate the exact profile numbers that cross into the JavaScript guard.
+
+    This is a transport representation check only. It does not grant dispatch
+    authority or validate the source facts against Backend state. The signed
+    Python START deadline is deliberately outside this JavaScript boundary.
+    """
+    profile = validate_execution_profile_v2(execution_profile)
+    limits = validate_request_limits_v2(request_limits, profile)
+    javascript_max_safe_integer = 9007199254740991
+    numbers = [profile['options_revision']]
+    numbers.extend(
+        profile['options'][field]
+        for field in NUMERIC_OPTION_FIELDS
+        if profile['options'][field] is not None
+    )
+    numbers.extend(value for value in limits.values() if value is not None)
+    if any(value > javascript_max_safe_integer for value in numbers):
+        raise ValueError('task-ready execution values exceed JavaScript integer precision')
+    output_values = [profile['options'][field] for field in (
+        'max_output_tokens_per_call', 'max_output_tokens_total',
+    ) if profile['options'][field] is not None]
+    if output_values and min(output_values) > javascript_max_safe_integer:
+        raise ValueError('task-ready output cap exceeds JavaScript integer precision')
+    return profile, limits
 
 
 _V3_RESERVATION_FIELDS = frozenset({

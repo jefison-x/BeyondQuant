@@ -17,12 +17,17 @@ from pathlib import Path
 from packages.contracts.continuation_request import (
     ALLOWED_DOMAIN_TOOLS,
     ALLOWED_HARNESS_TOOLS,
+    ALLOWED_MODEL as TASK_READY_MODEL,
+    ALLOWED_PROVIDER as TASK_READY_PROVIDER,
     PROFILE_ID,
     RESERVATION_SCHEMA_VERSION,
+    UPSTREAM_BASE_URL as TASK_READY_UPSTREAM_BASE_URL,
+    UPSTREAM_REQUEST_TARGET as TASK_READY_UPSTREAM_REQUEST_TARGET,
     request_limits,
     validate_limits,
     validate_profile_binding,
     validate_reservation_v3,
+    validate_task_ready_javascript_values_v2,
 )
 
 # Historical v1 receipt parser compatibility only. Current request bounds are
@@ -331,6 +336,72 @@ def create_acp_product_execution_overlay(*, proxy_base_url: str, provider_sessio
                 'requestLimits': product_turn_execution_limits(options),
             },
         }]},
+    ]
+    return json.dumps(overlay, sort_keys=True, separators=(',', ':'),
+                      ensure_ascii=True).encode('utf-8')
+
+
+def create_acp_task_ready_execution_overlay(
+    *, proxy_base_url: str, provider_session_id: str,
+    reservation_v3: dict, root_run_id: str,
+) -> bytes:
+    """Encode one task-ready carrier as a closed, root-bound ACP overlay.
+
+    The two DSH model rows carry only the user-derived optional output cap.
+    An unset cap remains unset, and this encoder creates no runtime deadline.
+    The carrier is structural input; Backend must separately recheck its facts
+    and business authority before dispatch.
+    """
+    reservation = validate_reservation_v3(reservation_v3)
+    profile, limits = validate_task_ready_javascript_values_v2(
+        reservation['execution_profile'], reservation['request_limits'])
+    if (profile['provider'] != TASK_READY_PROVIDER
+            or profile['model'] != TASK_READY_MODEL
+            or profile['upstream_base_url'] != TASK_READY_UPSTREAM_BASE_URL
+            or profile['upstream_request_target'] != TASK_READY_UPSTREAM_REQUEST_TARGET
+            or not isinstance(root_run_id, str)
+            or re.fullmatch(r'[0-9a-f]{32}', root_run_id) is None):
+        raise ValueError('task-ready execution identity is invalid')
+    if not isinstance(proxy_base_url, str):
+        raise ValueError('exact local task-ready execution proxy address is required')
+    matched = re.fullmatch(r"http://([0-9.]+):([1-9][0-9]{0,4})", proxy_base_url)
+    if matched is None or not _valid_local_proxy_host(matched[1]) or int(matched[2]) > 65535:
+        raise ValueError('exact local task-ready execution proxy address is required')
+    if (not isinstance(provider_session_id, str)
+            or re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                            provider_session_id) is None):
+        raise ValueError('exact provider session identity is required')
+    output_values = [profile['options'][field] for field in (
+        'max_output_tokens_per_call', 'max_output_tokens_total',
+    ) if profile['options'][field] is not None]
+    output_cap = min(output_values) if output_values else None
+    default_adapter_config = {} if output_cap is None else {'maxTokens': output_cap}
+    model_config: dict[str, object] = {'id': TASK_READY_MODEL}
+    if output_cap is not None:
+        model_config['maxTokens'] = output_cap
+    overlay = [
+        {'id': 'web-search-deepseek', 'disabled': True},
+        {'id': 'tool-web', 'disabled': True},
+        {'id': 'llm-deepseek', 'config': default_adapter_config},
+        {'id': 'llm-pi-ai', 'config': {'providers': {
+            TASK_READY_PROVIDER: {
+                'api': 'openai-completions', 'apiKeyEnv': 'OPENCODE_API_KEY',
+                'baseURL': proxy_base_url,
+                'retryPolicy': {'mode': 'normal', 'maxRetries': 0},
+                'headers': {'x-opencode-session': provider_session_id},
+                'models': [model_config],
+            },
+        }}},
+        {'insert': [{'id': 'byq-continuation-budget',
+                     'name': 'file:///opt/byq/runtime/byq-continuation-budget.js',
+                     'config': {
+                         'guardMode': 'task-ready-options',
+                         'rootRunId': root_run_id,
+                         'idempotencyKey': reservation['idempotency_key'],
+                         'sourceFactSha256': reservation['source_fact_sha256'],
+                         'executionProfile': profile,
+                         'requestLimits': limits,
+                     }}]},
     ]
     return json.dumps(overlay, sort_keys=True, separators=(',', ':'),
                       ensure_ascii=True).encode('utf-8')

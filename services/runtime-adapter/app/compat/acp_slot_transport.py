@@ -91,14 +91,17 @@ class _SlotHandle:
 class SlotAcpProcess(_AcpProcess):
     def __init__(self, command, cwd, environment, *, registry, guard_b64=None,
                  deadline_at_ms: int | None = None,
-                 ordinary_execution: bool = False) -> None:
+                 ordinary_execution: bool = False,
+                 task_ready_execution: bool = False) -> None:
         super().__init__(command, cwd, environment)
-        if (type(ordinary_execution) is not bool
+        if (type(ordinary_execution) is not bool or type(task_ready_execution) is not bool
+                or (ordinary_execution and task_ready_execution)
                 or (deadline_at_ms is not None
                     and (type(deadline_at_ms) is not int or deadline_at_ms <= 0))):
             raise ValueError("ACP slot start deadline is invalid")
         self.deadline_at_ms = deadline_at_ms
         self.ordinary_execution = ordinary_execution
+        self.task_ready_execution = task_ready_execution
         self.registry = registry
         self.guard_b64 = guard_b64
         self.scope: dict[str, str] = {
@@ -126,7 +129,8 @@ class SlotAcpProcess(_AcpProcess):
         env = self.environment
         child_env = {key: value for key, value in env.items() if key in PRODUCT_ENV_ALLOWLIST}
         deadline_at_ms = self.deadline_at_ms
-        if deadline_at_ms is None and not self.ordinary_execution:
+        if (deadline_at_ms is None and not self.ordinary_execution
+                and not self.task_ready_execution):
             # Keep the existing finite legacy/F6 runner window. Ordinary v2
             # roots pass None only when their trusted user setting is unset.
             deadline_at_ms = int(time.time() * 1000) + 3_600_000
