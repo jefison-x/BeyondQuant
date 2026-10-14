@@ -332,7 +332,7 @@ onUnmounted(() => {
             </el-select>
             <el-button :loading="historyBusy" @click="loadProductHistory">刷新</el-button>
           </div>
-          <p>只显示已批准或已拒绝的 typed request。待审批及结果未决记录可在审批中心核对。</p>
+          <p>只显示已批准或已拒绝的业务审批记录。待审批及待核对事项请在右上角铃铛处理。</p>
           <el-table :data="productRequests" v-loading="historyBusy" empty-text="暂无此类终态申请">
             <el-table-column prop="request_id" label="Request ID" min-width="230" show-overflow-tooltip />
             <el-table-column prop="request_type" label="申请类型" min-width="180" />
