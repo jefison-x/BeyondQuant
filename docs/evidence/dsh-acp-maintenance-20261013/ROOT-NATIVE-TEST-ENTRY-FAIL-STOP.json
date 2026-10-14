@@ -1,0 +1,44 @@
+{
+  "schema_version": "byq-root-native-test-entry-fail-stop.v1",
+  "status": "FAIL_TEST_ENTRY_NATIVE_NOT_RUN",
+  "source_commit": "b551116201f8f45df8b19ead8b19798f9601c22a",
+  "maintenance_head": "6528c3adb8281f5fe45fc4941adccb97599547df",
+  "image_id": "sha256:886155b42a866307a34e903eb01dd822bff5ac0f5939427d44427caca626b640",
+  "plan_sha256": "15bd913007b1c2422062938f04640d17219f3df91f012a95f7287ef2a3add9da",
+  "evidence_directory": ".ci-artifacts/execution-options-20261014/background-native-startup-2b2c/native-probe-20261015",
+  "attempt": "native-attempt-20261015-6528c3ad",
+  "actual": {
+    "outer_rc": 1,
+    "steps": 10,
+    "first_nine": "rc0",
+    "failed_step": "010-native-client-probe",
+    "failed_rc": 2,
+    "stderr": "/opt/byq-venv/bin/python: can't open file '/tmp/client_probe.py': [Errno 13] Permission denied",
+    "start_utc": "2026-10-14T18:33:53.705908577Z",
+    "finish_utc": "2026-10-14T18:33:55.117435354Z",
+    "tool_raw_sha256": "b3bf152d91577231461366a77ae590000d813b16931ea7286c97a13bfdf460bb"
+  },
+  "cause": "Private script bind source is mode0700 uid1000/gid1000. Adapter uid10002/gid10002+supplementary10006 cannot read it. Python fails before imports or any client statement. Source and destination permissions were not joined during admission.",
+  "coverage_gap": "Local substitute tests proved same-user subprocess stdout/stderr/rc/timeout only. They did not prove the cross-user Docker/Python entry. Worker, independent Reviewer and Root missed this dependency.",
+  "gates": {
+    "independent_tester_sha256": "cb3fb8f4c71a6a7d335056e88abcf0a89da5b1e42550ee07adc7910310c74cea",
+    "independent_sol_sha256": "2bb92c803eab2f0cfc192393c9c6701b0888924fc065b55171a406dd604842d9",
+    "root": "FAIL_STOP_CONFIRMED; readonly containment PASS only"
+  },
+  "retained_failure_scope": {
+    "runner_id": "55d3fdf041b9c6ba00a96a72f659dd3ee040862f838b93a1311e30c08d4dddfa",
+    "adapter_id": "4016666c8052ef1084bc7acdf253674182c62444d38c2c2a8e5d04d2f4da5857",
+    "network_id": "b31ba8c6e89f3d9804c9ac0200f9b72478b19a82e11a38e27641750cbad78d4b",
+    "scratch": "/tmp/byq-2b2c-task-ready-native-20261015-6528c3ad",
+    "mutation_after_failure": "none; no chmod/retry/cleanup"
+  },
+  "qualification": {
+    "native_start_or_session": "NOT_RUN_BEFORE_CLIENT_ENTRY",
+    "provider_usage": "NOT_OBSERVED; original collector value retained",
+    "signed_exit_backend_ack": "NOT_RUN",
+    "product_failure": "NOT_ESTABLISHED",
+    "overall": "NOT_READY"
+  },
+  "next": "Stopped affected tests. Audit the full host-bytes→container identity→interpreter/import→control/workspace→proof capture chain. Prepare a minimal stdin delivery repair with exact source hash and local input-capture proof, preserving original scripts/state and private permissions; no direct retry or broader tests.",
+  "retention": "Original retained BYQ test environment, browser page, production containers and data volumes untouched; no Product Phase advancement."
+}
