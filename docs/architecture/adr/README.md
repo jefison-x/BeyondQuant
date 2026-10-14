@@ -34,6 +34,14 @@ single-image topology (source adoption, 2026-10-11); the registry-digest,
 live-boot, BuildKit, F6, Full CI, publication and deployment gates remain open,
 and acceptance does not authorize publication or deployment.
 
+[ADR-0111](ADR-0111-automatic-continuation-execution-parameters.md) is **Accepted**
+by the maintainer on 2026-10-14: Product conversations support automatic
+continuation by default; optional user execution parameters replace separate
+continuation permits and forced BYQ quotas. Omitted/null limits are disabled.
+Its named amendments preserve business authorization, cancellation, identity,
+idempotency, unknown-result reconciliation and terminal receipts. Implementation,
+per-path real qualification and deployment remain separate gates.
+
 ## Historical ADR index (non-normative)
 
 Architecture Decision Record（ADR）记录改变或澄清持久系统边界的决策。以下边界的
