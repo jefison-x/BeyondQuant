@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
-  approveMLStrategy, createMLPrediction, createMLStrategy, createMLTraining,
+  createMLPrediction, createMLStrategy, createMLTraining,
   deleteMLStudy, setMLStudyLifecycle,
   getMLCapabilities, getMLOptions, getMLPrediction, getMLPredictionRows,
   getMLStudies, getMLStudy, getMLTraining, getMLTrainingSubmission, type MLReceiptWatch,
@@ -11,6 +11,8 @@ import {
   type MLOptions, type MLStudyDetail, type MLStudySummary,
 } from "@/api/mlResearch";
 import { createTask } from "@/api/research";
+import { submitProductApprovalRequestOnce, type ApprovalRequestOutcome } from "@/api/approvalRequestSubmissions";
+import { useAuthStore } from "@/stores/auth";
 import { getBacktest, runBacktest, submitBacktest } from "@/api/quant";
 import ManagementWorkspace from "@/components/layout/ManagementWorkspace.vue";
 import ManagementActionBar from "@/components/layout/ManagementActionBar.vue";
@@ -23,6 +25,8 @@ type StudyMode = "compatible" | "walk_forward" | "regime";
 type ExpertDraft = { key: "risk_on" | "neutral" | "risk_off"; label: string; learner: string };
 
 const router = useRouter();
+const auth = useAuthStore();
+const authScope = computed(() => `${auth.user?.subject ?? ""}\u0000${auth.user?.workspace?.workspace_id ?? ""}`);
 const loading = ref(true), catalogLoading = ref(false), detailLoading = ref(false), busy = ref(false), deleting = ref(false), lifecycleBusy = ref(false);
 const error = ref(""), showCreate = ref(false), activeTab = ref("overview");
 const capabilities = ref<MLCapabilities | null>(null);
@@ -33,8 +37,10 @@ const detail = ref<MLStudyDetail | null>(null);
 const pageSize = 12;
 let timer: number | undefined, catalogTimer: number | undefined;
 let catalogRequest = 0, detailRequest = 0, predictionRowsRequest = 0;
+let scopeGeneration = 0, receiptRequest = 0;
+let trainingPollGeneration = 0, predictionPollGeneration = 0;
 
-const form = reactive({
+const formDefaults = {
   mode: "compatible" as StudyMode, capability_id: "", task_id: "", pool_id: "",
   name: "LightGBM 收益排序",
   train_start: "2026-01-01", train_end: "2026-02-19",
@@ -46,7 +52,8 @@ const form = reactive({
   horizon: 5, top_n: 1, rebalance: "weekly", validation_mode: "expanding",
   train_sessions: 60, validation_sessions: 10, step_sessions: 10, folds: 2,
   purge_sessions: 5, embargo_sessions: 0, capital: 1_000_000, lot_size: 100,
-});
+};
+const form = reactive({ ...formDefaults });
 const experts = reactive<ExpertDraft[]>([
   { key: "risk_on", label: "进取状态", learner: "" },
   { key: "neutral", label: "中性状态", learner: "" },
@@ -92,8 +99,11 @@ const receiptWatchLabel = computed(() => ({ awaiting_receipt: "原提交仍在�
 }[receiptWatch.value?.state ?? "awaiting_receipt"]));
 
 function trainingSubmissionStorageKey() {
+  const owner = auth.user?.subject ?? "";
+  const workspaceId = auth.user?.workspace?.workspace_id ?? "";
   return selected.value && chosenPool.value
-    ? `byq:ml-training:${selected.value.task_id}:${selected.value.artifact_id}:${chosenPool.value.current_snapshot_id}`
+    && owner && workspaceId
+    ? `byq:ml-training:${encodeURIComponent(owner)}:${encodeURIComponent(workspaceId)}:${selected.value.task_id}:${selected.value.artifact_id}:${chosenPool.value.current_snapshot_id}`
     : "";
 }
 function existingTrainingSubmissionId() {
@@ -123,13 +133,20 @@ function clearTrainingSubmissionId(storageKey = trainingSubmissionStorageKey()) 
 
 async function checkTrainingSubmission(key = existingTrainingSubmissionId()) {
   if (!key) return;
+  const request = ++receiptRequest;
+  const scopeVersion = scopeGeneration;
+  const scope = authScope.value;
+  const storageKey = trainingSubmissionStorageKey();
+  const isCurrent = () => request === receiptRequest && scopeVersion === scopeGeneration
+    && scope === authScope.value && storageKey !== "" && storageKey === trainingSubmissionStorageKey()
+    && existingTrainingSubmissionId() === key;
   const watched = (await getMLTrainingSubmission(key)).receipt_watch;
-  if (existingTrainingSubmissionId() !== key) return;
+  if (!isCurrent()) return;
   receiptWatch.value = watched;
-  receiptWatchScope.value = trainingSubmissionStorageKey();
+  receiptWatchScope.value = storageKey;
   if (watched.state === "confirmed" && watched.training_run_id) {
     const actual = (await getMLTraining(watched.training_run_id)).training_run;
-    if (existingTrainingSubmissionId() !== key) return;
+    if (!isCurrent()) return;
     training.value = actual;
     clearTrainingSubmissionId();
     pollTraining();
@@ -138,6 +155,8 @@ async function checkTrainingSubmission(key = existingTrainingSubmissionId()) {
 
 async function reconcileOriginalSubmission() {
   if (busy.value) return;
+  const scope = authScope.value, scopeVersion = scopeGeneration, request = detailRequest;
+  const storageKey = trainingSubmissionStorageKey();
   busy.value = true;
   try {
     const key = existingTrainingSubmissionId();
@@ -146,8 +165,11 @@ async function reconcileOriginalSubmission() {
     }
     await checkTrainingSubmission(key);
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "原提交暂时无法核对；不会发起训练。");
-  } finally { busy.value = false; }
+    if (scopeVersion === scopeGeneration && scope === authScope.value && request === detailRequest
+        && storageKey === trainingSubmissionStorageKey()) {
+      ElMessage.error(error instanceof Error ? error.message : "原提交暂时无法核对；不会发起训练。");
+    }
+  } finally { if (scopeVersion === scopeGeneration && scope === authScope.value) busy.value = false; }
 }
 
 function componentLabel(item: MLCapabilityComponent) { return item.display_name || item.id; }
@@ -174,47 +196,79 @@ function applyDetail(value: MLStudyDetail) {
 }
 
 async function loadCatalog() {
-  const requestId = ++catalogRequest; catalogLoading.value = true;
+  const requestId = ++catalogRequest;
+  const scopeVersion = scopeGeneration;
+  const scope = authScope.value;
+  const query = catalogQuery.value, status = statusFilter.value, requestedPage = catalogPage.value;
+  catalogLoading.value = true;
   try {
-    const page = await getMLStudies(catalogQuery.value, statusFilter.value, pageSize, (catalogPage.value - 1) * pageSize);
-    if (requestId !== catalogRequest) return;
+    const page = await getMLStudies(query, status, pageSize, (requestedPage - 1) * pageSize);
+    if (requestId !== catalogRequest || scopeVersion !== scopeGeneration || scope !== authScope.value
+        || query !== catalogQuery.value || status !== statusFilter.value || requestedPage !== catalogPage.value) return;
     studies.value = page.studies; studiesTotal.value = page.total;
     if (selectedStrategy.value && !page.studies.some(item => item.artifact_id === selectedStrategy.value)) {
-      selectedStrategy.value = ""; detail.value = null;
+      selectedStrategy.value = "";
+      detailRequest += 1;
+      receiptRequest += 1;
+      trainingPollGeneration += 1;
+      predictionPollGeneration += 1;
+      detail.value = null;
+      training.value = null;
+      prediction.value = null;
+      backtest.value = null;
+      selectedApproval.value = "";
+      receiptWatch.value = null;
+      receiptWatchScope.value = "";
     }
   } catch (e) {
-    if (requestId === catalogRequest) error.value = e instanceof Error ? e.message : "模型研究目录加载失败";
-  } finally { if (requestId === catalogRequest) catalogLoading.value = false; }
+    if (requestId === catalogRequest && scopeVersion === scopeGeneration && scope === authScope.value) error.value = e instanceof Error ? e.message : "模型研究目录加载失败";
+  } finally { if (requestId === catalogRequest && scopeVersion === scopeGeneration && scope === authScope.value) catalogLoading.value = false; }
 }
 
 async function selectStudy(id: string) {
+  const scopeVersion = scopeGeneration;
+  const scope = authScope.value;
   receiptWatch.value = null;
   receiptWatchScope.value = "";
   selectedStrategy.value = id; activeTab.value = "overview";
+  receiptRequest += 1;
+  trainingPollGeneration += 1;
+  predictionPollGeneration += 1;
+  if (timer) clearTimeout(timer);
+  detail.value = null;
+  training.value = null;
+  prediction.value = null;
+  backtest.value = null;
+  selectedApproval.value = "";
   predictionRows.value = []; predictionRowsTotal.value = 0; predictionRowsPage.value = 1;
   const requestId = ++detailRequest; detailLoading.value = true; error.value = "";
   try {
     const value = await getMLStudy(id);
-    if (requestId === detailRequest && selectedStrategy.value === id) {
+    if (requestId === detailRequest && selectedStrategy.value === id
+        && scopeVersion === scopeGeneration && scope === authScope.value) {
+      if (value.study.artifact_id !== id) throw new Error("模型研究详情返回了不同的 Artifact ID。");
       applyDetail(value);
       try { await checkTrainingSubmission(); } catch { /* Keep original identity; missing watch is not absence. */ }
     }
   } catch (e) {
-    if (requestId === detailRequest) error.value = e instanceof Error ? e.message : "模型研究详情加载失败";
-  } finally { if (requestId === detailRequest) detailLoading.value = false; }
+    if (requestId === detailRequest && scopeVersion === scopeGeneration && scope === authScope.value) error.value = e instanceof Error ? e.message : "模型研究详情加载失败";
+  } finally { if (requestId === detailRequest && scopeVersion === scopeGeneration && scope === authScope.value) detailLoading.value = false; }
 }
 
 async function refreshDetail() { if (selectedStrategy.value) await selectStudy(selectedStrategy.value); }
 async function bootstrap() {
+  const scopeVersion = scopeGeneration;
+  const scope = authScope.value;
   loading.value = true; error.value = "";
   try {
     const [catalogue, choices] = await Promise.all([getMLCapabilities(), getMLOptions()]);
+    if (scopeVersion !== scopeGeneration || scope !== authScope.value) return;
     capabilities.value = catalogue; options.value = choices; initializeCapabilityDefaults();
     form.task_id ||= String(choices.tasks[0]?.task_id ?? "");
     form.pool_id ||= String(activePools.value[0]?.pool_id ?? "");
     await loadCatalog();
-  } catch (e) { error.value = e instanceof Error ? e.message : "模型研究加载失败"; }
-  finally { loading.value = false; }
+  } catch (e) { if (scopeVersion === scopeGeneration && scope === authScope.value) error.value = e instanceof Error ? e.message : "模型研究加载失败"; }
+  finally { if (scopeVersion === scopeGeneration && scope === authScope.value) loading.value = false; }
 }
 
 watch(catalogQuery, () => {
@@ -232,15 +286,20 @@ watch(() => form.mode, mode => {
 
 async function loadPredictionRows() {
   const runId = predictionRunId.value, requestId = ++predictionRowsRequest;
+  const scopeVersion = scopeGeneration, scope = authScope.value;
+  const query = predictionRowsQuery.value, requestedPage = predictionRowsPage.value;
   if (activeTab.value !== "prediction") return;
   if (!runId) { predictionRows.value = []; predictionRowsTotal.value = 0; return; }
   predictionRowsLoading.value = true;
   try {
-    const result = await getMLPredictionRows(runId, predictionRowsQuery.value, predictionRowsPageSize, (predictionRowsPage.value - 1) * predictionRowsPageSize);
-    if (requestId === predictionRowsRequest) { predictionRows.value = result.rows; predictionRowsTotal.value = result.total; }
+    const result = await getMLPredictionRows(runId, query, predictionRowsPageSize, (requestedPage - 1) * predictionRowsPageSize);
+    if (requestId === predictionRowsRequest && scopeVersion === scopeGeneration && scope === authScope.value
+        && runId === predictionRunId.value && query === predictionRowsQuery.value && requestedPage === predictionRowsPage.value) {
+      predictionRows.value = result.rows; predictionRowsTotal.value = result.total;
+    }
   } catch (e) {
-    if (requestId === predictionRowsRequest) error.value = e instanceof Error ? e.message : "预测结果加载失败";
-  } finally { if (requestId === predictionRowsRequest) predictionRowsLoading.value = false; }
+    if (requestId === predictionRowsRequest && scopeVersion === scopeGeneration && scope === authScope.value) error.value = e instanceof Error ? e.message : "预测结果加载失败";
+  } finally { if (requestId === predictionRowsRequest && scopeVersion === scopeGeneration && scope === authScope.value) predictionRowsLoading.value = false; }
 }
 watch([predictionRowsQuery, predictionRowsPage], () => {
   if (activeTab.value !== "prediction") return;
@@ -318,6 +377,9 @@ const isArchived = computed(() => detail.value?.management?.lifecycle_status ===
 async function removeStudy() {
   if (!selected.value || !canDeleteStudy.value || deleting.value) return;
   const artifactId = selected.value.artifact_id;
+  const scope = authScope.value, scopeVersion = scopeGeneration, request = detailRequest;
+  const isCurrentScope = () => scopeVersion === scopeGeneration && scope === authScope.value;
+  const isCurrentStudy = () => isCurrentScope() && request === detailRequest && selected.value?.artifact_id === artifactId;
   const name = String(content.value.name || "未命名模型研究");
   deleting.value = true;
   try {
@@ -326,7 +388,9 @@ async function removeStudy() {
       "删除未执行的模型研究",
       { type: "warning", confirmButtonText: "删除研究", cancelButtonText: "取消" },
     );
+    if (!isCurrentStudy()) return;
     await deleteMLStudy(artifactId);
+    if (!isCurrentStudy()) return;
     selectedStrategy.value = "";
     detail.value = null;
     training.value = null;
@@ -336,11 +400,11 @@ async function removeStudy() {
     await loadCatalog();
     ElMessage.success("模型研究已删除；审计记录已保留");
   } catch (e) {
-    if (e !== "cancel" && e !== "close") {
+    if (isCurrentStudy() && e !== "cancel" && e !== "close") {
       ElMessage.error(e instanceof Error ? e.message : "模型研究删除失败");
     }
   } finally {
-    deleting.value = false;
+    if (isCurrentScope()) deleting.value = false;
   }
 }
 async function changeStudyLifecycle(status: "active" | "archived") {
@@ -348,6 +412,9 @@ async function changeStudyLifecycle(status: "active" | "archived") {
   if (status === "archived" && !canArchiveStudy.value) return;
   if (status === "active" && !canRestoreStudy.value) return;
   const artifactId = selected.value.artifact_id;
+  const scope = authScope.value, scopeVersion = scopeGeneration, request = detailRequest;
+  const isCurrentScope = () => scopeVersion === scopeGeneration && scope === authScope.value;
+  const isCurrentStudy = () => isCurrentScope() && request === detailRequest && selected.value?.artifact_id === artifactId;
   const name = String(content.value.name || "未命名模型研究");
   lifecycleBusy.value = true;
   try {
@@ -358,7 +425,9 @@ async function changeStudyLifecycle(status: "active" | "archived") {
         { type: "warning", confirmButtonText: "归档研究", cancelButtonText: "取消" },
       );
     }
+    if (!isCurrentStudy()) return;
     await setMLStudyLifecycle(artifactId, status);
+    if (!isCurrentStudy()) return;
     selectedStrategy.value = "";
     detail.value = null;
     training.value = null;
@@ -368,11 +437,11 @@ async function changeStudyLifecycle(status: "active" | "archived") {
     await loadCatalog();
     ElMessage.success(status === "archived" ? "模型研究已归档，运行证据已保留" : "模型研究已恢复到当前目录");
   } catch (e) {
-    if (e !== "cancel" && e !== "close") {
+    if (isCurrentStudy() && e !== "cancel" && e !== "close") {
       ElMessage.error(e instanceof Error ? e.message : status === "archived" ? "模型研究归档失败" : "模型研究恢复失败");
     }
   } finally {
-    lifecycleBusy.value = false;
+    if (isCurrentScope()) lifecycleBusy.value = false;
   }
 }
 async function startTraining() {
@@ -380,9 +449,16 @@ async function startTraining() {
   // rapid double click must never create two independent confirmation flows.
   if (busy.value || deleting.value || !selected.value || !chosenPool.value) return;
   const scope = trainingSubmissionStorageKey();
+  const ownerScope = authScope.value;
+  const scopeVersion = scopeGeneration;
+  const selectionRequest = detailRequest;
   const original = { task_id: selected.value.task_id, ml_strategy_artifact_id: selected.value.artifact_id,
     stock_pool_snapshot_id: chosenPool.value.current_snapshot_id };
   const poolName = chosenPool.value.name;
+  const isCurrentStudy = () => scopeVersion === scopeGeneration && ownerScope === authScope.value
+    && selectionRequest === detailRequest && selected.value?.artifact_id === original.ml_strategy_artifact_id
+    && String(selected.value?.task_id ?? "") === original.task_id
+    && trainingSubmissionStorageKey() === scope;
   busy.value = true;
   try {
     const originalKey = existingTrainingSubmissionId();
@@ -394,11 +470,38 @@ async function startTraining() {
       throw new Error("原提交身份缺失，请先人工核查；不会发起训练。");
     }
     await ElMessageBox.confirm(`将使用“${poolName}”的当前冻结快照开始训练。`, "确认训练范围", { type: "warning", confirmButtonText: "开始训练", cancelButtonText: "返回检查" });
-    if (trainingSubmissionStorageKey() !== scope) throw new Error("研究对象已变化，本次未提交训练，请重新确认。");
+    if (!isCurrentStudy()) return;
     if (!selectedApproval.value) {
-      const approved = await approveMLStrategy({ task_id: original.task_id, ml_strategy_artifact_id: original.ml_strategy_artifact_id, decision: "approved", rationale: "用户在模型研究工作台主动确认训练范围" });
-      if (trainingSubmissionStorageKey() !== scope) throw new Error("研究对象已变化，本次未提交训练，请重新确认。");
-      selectedApproval.value = approved.artifact.artifact_id;
+      const approvalScope = {
+        ownerPrincipal: auth.user?.subject ?? "",
+        workspaceId: auth.user?.workspace?.workspace_id ?? "",
+      };
+      let outcome: ApprovalRequestOutcome;
+      try {
+        outcome = await submitProductApprovalRequestOnce(approvalScope, {
+          schema_version: "byq-product-approval-request.v1",
+          request_type: "ml_strategy_version",
+          task_id: original.task_id,
+          ml_strategy_artifact_id: original.ml_strategy_artifact_id,
+        });
+      } finally {
+        if (isCurrentStudy()) window.dispatchEvent(new CustomEvent("byq:approval-center-open", { detail: { tab: "business" } }));
+      }
+      if (!isCurrentStudy()) return;
+      if (outcome.request.request_type !== "ml_strategy_version"
+          || outcome.request.task_id !== original.task_id
+          || outcome.request.ml_strategy_artifact_id !== original.ml_strategy_artifact_id
+          || outcome.request.owner_principal !== approvalScope.ownerPrincipal
+          || outcome.request.workspace_id !== approvalScope.workspaceId) {
+        throw new Error("审批申请回包与当前模型策略或登录范围不一致；请人工核对。");
+      }
+      window.dispatchEvent(new Event("byq:approvals-changed"));
+      if (outcome.request.status === "pending") {
+        ElMessage.success("模型策略审批申请已提交；当前没有启动训练。审批通过后请再次点击开始训练。");
+      } else {
+        ElMessage.warning("模型策略审批结果需要在审批中心核对；当前没有启动训练。");
+      }
+      return;
     }
     const submissionId = trainingSubmissionId();
     const created = (await createMLTraining(
@@ -407,62 +510,122 @@ async function startTraining() {
     )).training_run;
     if (!created?.training_run_id) throw new Error("训练回执尚未确认，请核对原提交。");
     clearTrainingSubmissionId(scope);
-    if (trainingSubmissionStorageKey() === scope) {
+    if (isCurrentStudy()) {
       training.value = created; receiptWatch.value = null; pollTraining();
     }
-    ElMessage.success("训练已提交；页面与小巴下次会话会读取同一持久状态");
+    if (isCurrentStudy()) ElMessage.success("训练已提交；页面与小巴下次会话会读取同一持久状态");
   } catch (e) {
+    if (!isCurrentStudy()) return;
     try { await checkTrainingSubmission(); } catch { /* Never replace an unknown submission key. */ }
-    if (e !== "cancel" && e !== "close") ElMessage.error(e instanceof Error ? e.message : "训练提交失败；再次提交会自动对账，不会重复创建");
+    if (isCurrentStudy() && e !== "cancel" && e !== "close") ElMessage.error(e instanceof Error ? e.message : "训练提交失败；再次提交会自动对账，不会重复创建");
   }
-  finally { busy.value = false; }
+  finally { if (scopeVersion === scopeGeneration && ownerScope === authScope.value) busy.value = false; }
 }
 async function acknowledgeRejectedSubmission() {
   if (busy.value || receiptWatch.value?.state !== "rejected") return;
   const scope = receiptWatchScope.value;
+  const ownerScope = authScope.value, scopeVersion = scopeGeneration;
+  const isCurrentScope = () => scopeVersion === scopeGeneration && ownerScope === authScope.value
+    && receiptWatchScope.value === scope;
   busy.value = true;
   try {
     await ElMessageBox.confirm("原提交已被明确拒绝。清除本地提交身份后，请检查输入与权限，再单独确认新的训练。", "检查原提交", { type: "warning" });
-    if (receiptWatch.value?.state !== "rejected" || receiptWatchScope.value !== scope) return;
+    if (!isCurrentScope() || receiptWatch.value?.state !== "rejected") return;
     clearTrainingSubmissionId(scope); receiptWatch.value = null; receiptWatchScope.value = "";
   } catch (error) {
-    if (error !== "cancel" && error !== "close") ElMessage.error("无法更新本地提交记录，请先人工核查。");
-  } finally { busy.value = false; }
+    if (isCurrentScope() && error !== "cancel" && error !== "close") ElMessage.error("无法更新本地提交记录，请先人工核查。");
+  } finally { if (scopeVersion === scopeGeneration && ownerScope === authScope.value) busy.value = false; }
 }
 function pollTraining() {
-  if (!training.value?.training_run_id || ["completed", "failed", "cancelled"].includes(training.value.status)) { void refreshDetail().then(loadCatalog); return; }
+  const runId = training.value?.training_run_id;
+  const target = selectedStrategy.value, scope = authScope.value, scopeVersion = scopeGeneration;
+  const poll = ++trainingPollGeneration;
+  if (!runId || ["completed", "failed", "cancelled"].includes(training.value?.status ?? "")) {
+    if (scopeVersion === scopeGeneration && scope === authScope.value && target === selectedStrategy.value) void refreshDetail().then(loadCatalog);
+    return;
+  }
   timer = window.setTimeout(async () => {
-    try { training.value = (await getMLTraining(training.value!.training_run_id!)).training_run; pollTraining(); }
-    catch { void refreshDetail(); }
+    try {
+      const result = (await getMLTraining(runId)).training_run;
+      if (poll !== trainingPollGeneration || scopeVersion !== scopeGeneration || scope !== authScope.value
+          || target !== selectedStrategy.value || training.value?.training_run_id !== runId) return;
+      training.value = result; pollTraining();
+    } catch {
+      if (poll === trainingPollGeneration && scopeVersion === scopeGeneration && scope === authScope.value
+          && target === selectedStrategy.value) void refreshDetail();
+    }
   }, 1200);
 }
 async function predict() {
   if (!training.value?.model_artifact_id || !selectedApproval.value || !selected.value) return;
+  const scope = authScope.value, scopeVersion = scopeGeneration, target = selected.value.artifact_id;
+  const selectedApprovalId = selectedApproval.value, request = detailRequest;
   busy.value = true;
   try {
-    prediction.value = (await createMLPrediction({ task_id: selected.value.task_id, model_artifact_id: training.value.model_artifact_id, approval_artifact_id: selectedApproval.value, execution: { initial_capital: form.capital, lot_size: form.lot_size } })).prediction_run;
+    const modelArtifactId = training.value.model_artifact_id;
+    const result = (await createMLPrediction({ task_id: selected.value.task_id, model_artifact_id: modelArtifactId, approval_artifact_id: selectedApprovalId, execution: { initial_capital: form.capital, lot_size: form.lot_size } })).prediction_run;
+    if (scopeVersion !== scopeGeneration || scope !== authScope.value || request !== detailRequest
+        || selected.value?.artifact_id !== target || selectedApproval.value !== selectedApprovalId) return;
+    prediction.value = result;
     ElMessage.success("样本外预测已提交"); pollPrediction();
-  } catch (e) { ElMessage.error(e instanceof Error ? e.message : "预测失败"); }
-  finally { busy.value = false; }
+  } catch (e) {
+    if (scopeVersion === scopeGeneration && scope === authScope.value && request === detailRequest && selected.value?.artifact_id === target) {
+      ElMessage.error(e instanceof Error ? e.message : "预测失败");
+    }
+  } finally { if (scopeVersion === scopeGeneration && scope === authScope.value) busy.value = false; }
 }
 function pollPrediction() {
-  if (!prediction.value?.prediction_run_id || ["completed", "failed", "cancelled"].includes(prediction.value.status)) { void refreshDetail().then(loadCatalog); return; }
+  const runId = prediction.value?.prediction_run_id;
+  const target = selectedStrategy.value, scope = authScope.value, scopeVersion = scopeGeneration;
+  const poll = ++predictionPollGeneration;
+  if (!runId || ["completed", "failed", "cancelled"].includes(prediction.value?.status ?? "")) {
+    if (scopeVersion === scopeGeneration && scope === authScope.value && target === selectedStrategy.value) void refreshDetail().then(loadCatalog);
+    return;
+  }
   timer = window.setTimeout(async () => {
-    try { prediction.value = (await getMLPrediction(prediction.value!.prediction_run_id!)).prediction_run; pollPrediction(); }
-    catch { void refreshDetail(); }
+    try {
+      const result = (await getMLPrediction(runId)).prediction_run;
+      if (poll !== predictionPollGeneration || scopeVersion !== scopeGeneration || scope !== authScope.value
+          || target !== selectedStrategy.value || prediction.value?.prediction_run_id !== runId) return;
+      prediction.value = result; pollPrediction();
+    } catch {
+      if (poll === predictionPollGeneration && scopeVersion === scopeGeneration && scope === authScope.value
+          && target === selectedStrategy.value) void refreshDetail();
+    }
   }, 1200);
 }
 async function backtestSignal() {
   if (!prediction.value?.signal_artifact_id || !selected.value || !selectedApproval.value) return;
+  const scope = authScope.value, scopeVersion = scopeGeneration, target = selected.value.artifact_id;
+  const selectedApprovalId = selectedApproval.value, signalId = prediction.value.signal_artifact_id;
+  const taskId = selected.value.task_id, request = detailRequest;
   busy.value = true;
   try {
     const nonce = `ml-ui-${Date.now()}`;
-    const made: any = await submitBacktest({ task_id: selected.value.task_id, strategy_version_artifact_id: selected.value.artifact_id, approval_artifact_id: selectedApproval.value, signal_snapshot_artifact_id: prediction.value.signal_artifact_id, trace_id: nonce, idempotency_key: nonce }, "");
-    const id = made.job.job_id; backtest.value = await runBacktest(id, ""); ElMessage.success("回测已提交");
-    const watchJob = async () => { const job: any = await getBacktest(id, ""); backtest.value = job; if (!["completed", "failed", "cancelled"].includes(job.status)) timer = window.setTimeout(watchJob, 1200); else { await refreshDetail(); await loadCatalog(); } };
+    const made: any = await submitBacktest({ task_id: taskId, strategy_version_artifact_id: target, approval_artifact_id: selectedApprovalId, signal_snapshot_artifact_id: signalId, trace_id: nonce, idempotency_key: nonce }, "");
+    if (scopeVersion !== scopeGeneration || scope !== authScope.value || request !== detailRequest
+        || selected.value?.artifact_id !== target || selectedApproval.value !== selectedApprovalId) return;
+    const id = made.job.job_id;
+    const result = await runBacktest(id, "");
+    if (scopeVersion !== scopeGeneration || scope !== authScope.value || request !== detailRequest
+        || selected.value?.artifact_id !== target || selectedApproval.value !== selectedApprovalId) return;
+    backtest.value = result; ElMessage.success("回测已提交");
+    const isCurrentStudy = () => scopeVersion === scopeGeneration && scope === authScope.value
+      && request === detailRequest && selected.value?.artifact_id === target;
+    const watchJob = async () => {
+      const job: any = await getBacktest(id, "");
+      if (!isCurrentStudy()) return;
+      backtest.value = job;
+      if (!["completed", "failed", "cancelled"].includes(job.status)) timer = window.setTimeout(watchJob, 1200);
+      else { await refreshDetail(); if (isCurrentStudy()) await loadCatalog(); }
+    };
     void watchJob();
-  } catch (e) { ElMessage.error(e instanceof Error ? e.message : "回测失败"); }
-  finally { busy.value = false; }
+  } catch (e) {
+    if (scopeVersion === scopeGeneration && scope === authScope.value && request === detailRequest && selected.value?.artifact_id === target) {
+      ElMessage.error(e instanceof Error ? e.message : "回测失败");
+    }
+  }
+  finally { if (scopeVersion === scopeGeneration && scope === authScope.value) busy.value = false; }
 }
 
 function stepState(value: Record<string, any> | MLRun | null) { return !value ? "pending" : value.status === "completed" ? "completed" : ["failed", "cancelled"].includes(value.status) ? "failed" : "active"; }
@@ -509,8 +672,65 @@ const portfolio = computed(() => isV2.value ? content.value.portfolio_policy?.pa
 const targetHorizon = computed(() => isV2.value ? content.value.target?.parameters?.horizon_sessions : content.value.target?.horizon_sessions);
 const foldMetrics = computed(() => model.value?.content.metrics ?? expertModels.value[0]?.content.metrics ?? {});
 
-onMounted(bootstrap);
-onBeforeUnmount(() => { if (timer) clearTimeout(timer); if (catalogTimer) clearTimeout(catalogTimer); });
+function refreshAfterApproval() {
+  if (selectedStrategy.value) void refreshDetail();
+}
+
+watch(authScope, () => {
+  scopeGeneration += 1;
+  catalogRequest += 1;
+  detailRequest += 1;
+  predictionRowsRequest += 1;
+  receiptRequest += 1;
+  trainingPollGeneration += 1;
+  predictionPollGeneration += 1;
+  if (timer) clearTimeout(timer);
+  if (catalogTimer) clearTimeout(catalogTimer);
+  studies.value = [];
+  studiesTotal.value = 0;
+  catalogPage.value = 1;
+  selectedStrategy.value = "";
+  detail.value = null;
+  capabilities.value = null;
+  options.value = { schema_version: "ml-options.v1", tasks: [], pools: [] };
+  Object.assign(form, formDefaults);
+  experts[0].learner = ""; experts[1].learner = ""; experts[2].learner = "";
+  showCreate.value = false;
+  activeTab.value = "overview";
+  training.value = null;
+  prediction.value = null;
+  backtest.value = null;
+  selectedApproval.value = "";
+  predictionRows.value = [];
+  predictionRowsTotal.value = 0;
+  receiptWatch.value = null;
+  receiptWatchScope.value = "";
+  loading.value = false;
+  catalogLoading.value = false;
+  detailLoading.value = false;
+  busy.value = false;
+  deleting.value = false;
+  lifecycleBusy.value = false;
+  error.value = "";
+  if (auth.user?.subject && auth.user.workspace?.workspace_id) void bootstrap();
+}, { flush: "sync" });
+
+onMounted(() => {
+  void bootstrap();
+  window.addEventListener("byq:approvals-changed", refreshAfterApproval);
+});
+onBeforeUnmount(() => {
+  scopeGeneration += 1;
+  catalogRequest += 1;
+  detailRequest += 1;
+  predictionRowsRequest += 1;
+  receiptRequest += 1;
+  trainingPollGeneration += 1;
+  predictionPollGeneration += 1;
+  if (timer) clearTimeout(timer);
+  if (catalogTimer) clearTimeout(catalogTimer);
+  window.removeEventListener("byq:approvals-changed", refreshAfterApproval);
+});
 </script>
 
 <template>

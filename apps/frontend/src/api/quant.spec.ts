@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  approveStrategyVersion,
   cancelBacktest,
   createSignalProducerJob,
   createStrategyVersion,
@@ -115,21 +114,6 @@ describe("quant api client", () => {
     expect((body.artifact as { artifact_id: string }).artifact_id).toBe("artifact_version_1");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/product/strategies/versions",
-      expect.objectContaining({ method: "POST", credentials: "include" }),
-    );
-  });
-
-  it("records a human strategy approval through the product path", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ artifact: { artifact_id: "artifact_approval_1" } }), { status: 201 }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    await approveStrategyVersion(
-      { task_id: "task_1", strategy_version_artifact_id: "artifact_version_1", decision: "approved" },
-      "test-token",
-    );
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/product/strategies/approvals",
       expect.objectContaining({ method: "POST", credentials: "include" }),
     );
   });

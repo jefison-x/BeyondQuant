@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
-  approveStrategyVersion,
   createStrategyVersion,
   deleteStrategyDraft,
   exportStrategyVersion,
@@ -16,6 +15,7 @@ import {
   validateStrategy,
 } from "@/api/quant";
 import { listTaskOptions } from "@/api/research";
+import { submitProductApprovalRequestOnce, type ApprovalRequestOutcome } from "@/api/approvalRequestSubmissions";
 import { useAuthStore } from "@/stores/auth";
 import { formatChinaTime } from "@/time";
 import { shortReference, statusLabel } from "@/display";
@@ -27,6 +27,7 @@ import { useUnsavedChanges } from "@/composables/useUnsavedChanges";
 import { createRequestId } from "@/utils/requestId";
 
 const auth = useAuthStore();
+const authScope = computed(() => `${auth.user?.subject ?? ""}\u0000${auth.user?.workspace?.workspace_id ?? ""}`);
 const route = useRoute();
 const router = useRouter();
 const loading = ref(true);
@@ -35,6 +36,7 @@ const busy = ref("");
 const artifacts = ref<Array<Record<string, unknown>>>([]);
 const tasks = ref<Array<Record<string, unknown>>>([]);
 const approval = ref<Record<string, unknown> | null>(null);
+const approvalArtifactId = ref("");
 const selected = ref<Record<string, unknown> | null>(null);
 const detail = ref<Record<string, unknown> | null>(null);
 const taskId = ref("");
@@ -60,6 +62,11 @@ const historyPage = ref(1);
 const historyTotal = ref(0);
 const historyLoading = ref(false);
 let metadataRequest = 0;
+let scopeGeneration = 0;
+let listGeneration = 0;
+let selectionGeneration = 0;
+let approvalReadGeneration = 0;
+let backtestActionGeneration = 0;
 const backtestCount = ref(0);
 const versionCount = ref(0);
 const editorBaseline = ref("");
@@ -184,40 +191,84 @@ function rowDescription(row: Record<string, unknown>) {
 async function openBacktest() {
   const artifact = String(selected.value?.artifact_id ?? "");
   if (!artifact || selected.value?.kind !== "strategy_version" || busy.value) return;
+  const taskId = String(selected.value.task_id ?? "");
+  const expectedScope = authScope.value;
+  const scopeVersion = scopeGeneration;
+  const selectionVersion = selectionGeneration;
+  const authorizedAtStart = approvalArtifactId.value === artifact && approval.value?.execution_authorized === true;
+  const action = ++backtestActionGeneration;
   busy.value = "backtest";
   error.value = "";
   try {
     await ElMessageBox.confirm(
-      "将以当前不可变策略版本进入回测，后续计算不会修改该版本。",
+      authorizedAtStart
+        ? "将以当前不可变策略版本进入回测，后续计算不会修改该版本。"
+        : "当前版本尚未获批。本次只提交审批申请，不会启动回测；批准后需再次点击开始回测。",
       "开始回测",
       { type: "warning", confirmButtonText: "继续", cancelButtonText: "取消" },
     );
-    if (!approval.value?.execution_authorized) {
-      await approveStrategyVersion(
-        {
-          task_id: selected.value.task_id,
+    if (action !== backtestActionGeneration || scopeVersion !== scopeGeneration || expectedScope !== authScope.value
+        || selectionVersion !== selectionGeneration || selected.value?.artifact_id !== artifact
+        || String(selected.value?.task_id ?? "") !== taskId) return;
+    const authorizedNow = approvalArtifactId.value === artifact && approval.value?.execution_authorized === true;
+    if (!authorizedNow) {
+      const approvalScope = {
+        ownerPrincipal: auth.user?.subject ?? "",
+        workspaceId: auth.user?.workspace?.workspace_id ?? "",
+      };
+      let outcome: ApprovalRequestOutcome;
+      try {
+        outcome = await submitProductApprovalRequestOnce(approvalScope, {
+          schema_version: "byq-product-approval-request.v1",
+          request_type: "strategy_version",
+          task_id: String(selected.value.task_id ?? ""),
           strategy_version_artifact_id: artifact,
-          decision: "approved",
-          rationale: "策略所有者主动开始此不可变版本的回测流程。",
-          trace_id: `strategy-run-${createRequestId()}`,
-          idempotency_key: createRequestId(),
-        },
-        auth.token,
-      );
+        });
+      } finally {
+        if (action === backtestActionGeneration && scopeVersion === scopeGeneration && expectedScope === authScope.value
+            && selectionVersion === selectionGeneration && selected.value?.artifact_id === artifact) {
+          window.dispatchEvent(new CustomEvent("byq:approval-center-open", { detail: { tab: "business" } }));
+        }
+      }
+      if (action !== backtestActionGeneration || scopeVersion !== scopeGeneration
+          || selectionVersion !== selectionGeneration || selected.value?.artifact_id !== artifact) return;
+      if (outcome.request.request_type !== "strategy_version" || outcome.request.task_id !== taskId
+          || outcome.request.strategy_version_artifact_id !== artifact
+          || outcome.request.owner_principal !== approvalScope.ownerPrincipal
+          || outcome.request.workspace_id !== approvalScope.workspaceId) {
+        throw new Error("审批申请回包与当前策略版本或登录范围不一致；请人工核对。");
+      }
+      window.dispatchEvent(new Event("byq:approvals-changed"));
+      if (outcome.request.status === "pending") {
+        ElMessage.success("策略审批申请已提交；当前没有启动回测。批准后请再次点击开始回测。");
+      } else {
+        ElMessage.warning("策略审批结果需要在审批中心核对；当前没有启动回测。");
+      }
+      return;
     }
-    await router.push({ path: "/backtest", query: { strategy: artifact } });
+    if (action === backtestActionGeneration && scopeVersion === scopeGeneration
+        && expectedScope === authScope.value && selectionVersion === selectionGeneration
+        && selected.value?.artifact_id === artifact) {
+      await router.push({ path: "/backtest", query: { strategy: artifact } });
+    }
   } catch (exc) {
-    if (exc !== "cancel" && exc !== "close") {
+    if (action === backtestActionGeneration && scopeVersion === scopeGeneration && expectedScope === authScope.value
+        && selectionVersion === selectionGeneration && exc !== "cancel" && exc !== "close") {
       error.value = exc instanceof Error ? exc.message : "进入回测失败";
       ElMessage.error(error.value);
     }
   } finally {
-    busy.value = "";
+    if (action === backtestActionGeneration) busy.value = "";
   }
 }
 
 async function newDraft() {
   if (!confirmDiscard()) return;
+  selectionGeneration += 1;
+  approvalReadGeneration += 1;
+  backtestActionGeneration += 1;
+  if (busy.value === "backtest") busy.value = "";
+  approvalArtifactId.value = "";
   metadataRequest += 1;
   historyLoading.value = false;
   historyPage.value = 1;
@@ -258,17 +309,25 @@ const selectedStrategyId = computed(() => {
 });
 
 async function loadList() {
+  const request = ++listGeneration;
+  const scopeVersion = scopeGeneration;
+  const scope = authScope.value;
+  const requestedPage = page.value;
+  const requestedLifecycle = lifecycle.value;
+  const token = auth.token;
   loading.value = true;
   error.value = "";
   try {
     const [strategyBody, taskBody] = await Promise.all([
-      listStrategies(auth.token, {
-        lifecycle: lifecycle.value,
+      listStrategies(token, {
+        lifecycle: requestedLifecycle,
         limit: PAGE_SIZE,
-        offset: (page.value - 1) * PAGE_SIZE,
+        offset: (requestedPage - 1) * PAGE_SIZE,
       }),
       listTaskOptions(PAGE_SIZE),
     ]);
+    if (request !== listGeneration || scopeVersion !== scopeGeneration || scope !== authScope.value
+        || requestedPage !== page.value || requestedLifecycle !== lifecycle.value) return;
     artifacts.value = strategyBody.strategies;
     total.value = strategyBody.total ?? artifacts.value.length;
     tasks.value = taskBody.tasks ?? [];
@@ -284,34 +343,58 @@ async function loadList() {
     if (target) await select(target, false);
     else if (requested) await viewHistoryVersion({ artifact_id: requested });
   } catch (exc) {
-    error.value = exc instanceof Error ? exc.message : "加载失败";
+    if (request === listGeneration && scopeVersion === scopeGeneration && scope === authScope.value) {
+      error.value = exc instanceof Error ? exc.message : "加载失败";
+    }
   } finally {
-    loading.value = false;
+    if (request === listGeneration && scopeVersion === scopeGeneration && scope === authScope.value) loading.value = false;
   }
 }
 
 async function changeLifecycle(value: "active" | "superseded") {
   if (!confirmDiscard()) return;
+  selectionGeneration += 1;
+  approvalReadGeneration += 1;
+  backtestActionGeneration += 1;
+  if (busy.value === "backtest") busy.value = "";
   lifecycle.value = value;
   page.value = 1;
   selected.value = null;
   detail.value = null;
+  approval.value = null;
+  approvalArtifactId.value = "";
   await loadList();
 }
 
 async function changePage(value: number) {
   if (!confirmDiscard()) return;
+  selectionGeneration += 1;
+  approvalReadGeneration += 1;
+  backtestActionGeneration += 1;
+  if (busy.value === "backtest") busy.value = "";
   page.value = value;
   selected.value = null;
   detail.value = null;
+  approval.value = null;
+  approvalArtifactId.value = "";
   await loadList();
 }
 
 async function select(row: Record<string, unknown>, updateRoute = true) {
   if (updateRoute && !confirmDiscard()) return;
+  const selection = ++selectionGeneration;
+  approvalReadGeneration += 1;
+  backtestActionGeneration += 1;
+  if (busy.value === "backtest") busy.value = "";
+  const scopeVersion = scopeGeneration;
+  const scope = authScope.value;
+  const token = auth.token;
+  const targetId = String(row.artifact_id ?? "");
+  if (!targetId) return;
   selected.value = row;
   detail.value = null;
   approval.value = null;
+  approvalArtifactId.value = "";
   error.value = "";
   const content = row.content as Record<string, unknown> | undefined;
   const snapshot = content?.snapshot as Record<string, unknown> | undefined;
@@ -322,30 +405,41 @@ async function select(row: Record<string, unknown>, updateRoute = true) {
     script.value = String(snapshot?.script ?? "");
   }
   try {
-    const id = String(row.artifact_id);
+    const id = targetId;
     const [entity, approvalBody] = await Promise.all([
-      getResearchEntity("artifacts", id, auth.token),
+      getResearchEntity("artifacts", id, token),
       row.kind === "strategy_version"
-        ? getStrategyVersionApproval(id, auth.token)
+        ? getStrategyVersionApproval(id, token)
         : Promise.resolve({ approval: null }),
       refreshStrategyMeta(),
     ]);
+    if (selection !== selectionGeneration || scopeVersion !== scopeGeneration || scope !== authScope.value
+        || selected.value?.artifact_id !== id) return;
+    if (entity.artifact_id !== id) throw new Error("精确版本回包的 Artifact ID 不一致。");
     detail.value = entity;
+    approvalArtifactId.value = id;
     approval.value = approvalBody.approval
       ? ((approvalBody.approval.content as Record<string, unknown> | undefined) ?? null)
       : null;
     syncEditorBaseline();
-    if (updateRoute && route.query.artifact !== id) {
+    if (selection === selectionGeneration && scopeVersion === scopeGeneration && scope === authScope.value
+        && updateRoute && route.query.artifact !== id) {
       await router.replace({ path: route.path, query: { ...route.query, artifact: id } });
     }
   } catch (exc) {
-    error.value = exc instanceof Error ? exc.message : "读取失败";
+    if (selection === selectionGeneration && scopeVersion === scopeGeneration && scope === authScope.value) {
+      error.value = exc instanceof Error ? exc.message : "读取失败";
+    }
   }
 }
 
 async function refreshStrategyMeta(targetPage = 1) {
   const sid = selectedStrategyId.value;
   const requestId = ++metadataRequest;
+  const scopeVersion = scopeGeneration;
+  const scope = authScope.value;
+  const token = auth.token;
+  const selectedArtifact = String(selected.value?.artifact_id ?? "");
   historyLoading.value = false;
   if (!sid) {
     versionHistory.value = [];
@@ -357,21 +451,23 @@ async function refreshStrategyMeta(targetPage = 1) {
   historyLoading.value = true;
   try {
     const [history, counts] = await Promise.all([
-      getStrategyVersions(sid, auth.token, { limit: PAGE_SIZE, offset: (targetPage - 1) * PAGE_SIZE }),
-      getStrategyBacktestCount(sid, auth.token),
+      getStrategyVersions(sid, token, { limit: PAGE_SIZE, offset: (targetPage - 1) * PAGE_SIZE }),
+      getStrategyBacktestCount(sid, token),
     ]);
-    if (requestId !== metadataRequest || sid !== selectedStrategyId.value) return;
+    if (requestId !== metadataRequest || sid !== selectedStrategyId.value || scopeVersion !== scopeGeneration
+        || scope !== authScope.value || selectedArtifact !== String(selected.value?.artifact_id ?? "")) return;
     versionHistory.value = (history.versions ?? []) as Array<Record<string, unknown>>;
     historyTotal.value = Number(history.total ?? versionHistory.value.length);
     historyPage.value = targetPage;
     backtestCount.value = Number(counts.backtest_count ?? 0);
     versionCount.value = Number(counts.version_count ?? 0);
   } catch (exc) {
-    if (requestId === metadataRequest && sid === selectedStrategyId.value) {
+    if (requestId === metadataRequest && sid === selectedStrategyId.value && scopeVersion === scopeGeneration
+        && scope === authScope.value && selectedArtifact === String(selected.value?.artifact_id ?? "")) {
       error.value = exc instanceof Error ? exc.message : "加载策略统计失败";
     }
   } finally {
-    if (requestId === metadataRequest) historyLoading.value = false;
+    if (requestId === metadataRequest && scopeVersion === scopeGeneration && scope === authScope.value) historyLoading.value = false;
   }
 }
 
@@ -382,25 +478,46 @@ async function viewHistoryVersion(row: Record<string, unknown>) {
     return;
   }
   if (!confirmDiscard()) return;
+  const selection = ++selectionGeneration;
+  approvalReadGeneration += 1;
+  backtestActionGeneration += 1;
+  if (busy.value === "backtest") busy.value = "";
+  const scopeVersion = scopeGeneration;
+  const scope = authScope.value;
+  const token = auth.token;
+  const id = String(row.artifact_id ?? "");
+  if (!id) return;
+  selected.value = null;
+  detail.value = null;
+  approval.value = null;
+  approvalArtifactId.value = "";
+  error.value = "";
   try {
-    const id = String(row.artifact_id);
-    const entity = await getResearchEntity("artifacts", id, auth.token);
+    const entity = await getResearchEntity("artifacts", id, token);
+    if (selection !== selectionGeneration || scopeVersion !== scopeGeneration || scope !== authScope.value) return;
+    if (entity.artifact_id !== id) throw new Error("精确版本回包的 Artifact ID 不一致。");
     selected.value = entity;
     detail.value = entity;
     const approvalBody = entity.kind === "strategy_version"
-      ? await getStrategyVersionApproval(id, auth.token)
+      ? await getStrategyVersionApproval(id, token)
       : { approval: null };
+    if (selection !== selectionGeneration || scopeVersion !== scopeGeneration || scope !== authScope.value
+        || selected.value?.artifact_id !== id) return;
     approval.value = approvalBody.approval
       ? ((approvalBody.approval.content as Record<string, unknown> | undefined) ?? null)
       : null;
+    approvalArtifactId.value = id;
     const content = entity.content as Record<string, unknown> | undefined;
     const snapshot = content?.snapshot as Record<string, unknown> | undefined;
     script.value = String(snapshot?.script ?? "");
     lastDraftId.value = "";
     await refreshStrategyMeta();
+    if (selection !== selectionGeneration || scopeVersion !== scopeGeneration || scope !== authScope.value) return;
     syncEditorBaseline();
   } catch (exc) {
-    error.value = exc instanceof Error ? exc.message : "读取版本失败";
+    if (selection === selectionGeneration && scopeVersion === scopeGeneration && scope === authScope.value) {
+      error.value = exc instanceof Error ? exc.message : "读取版本失败";
+    }
   }
 }
 
@@ -562,7 +679,89 @@ async function refreshList() {
   if (confirmDiscard()) await loadList();
 }
 
-onMounted(loadList);
+async function refreshSelectedApproval() {
+  if (selected.value?.kind !== "strategy_version") return;
+  const artifactId = String(selected.value.artifact_id ?? "");
+  if (!artifactId) return;
+  const request = ++approvalReadGeneration;
+  const selection = selectionGeneration;
+  const scopeVersion = scopeGeneration;
+  const scope = authScope.value;
+  const token = auth.token;
+  try {
+    const response = await getStrategyVersionApproval(artifactId, token);
+    if (request === approvalReadGeneration && selection === selectionGeneration
+        && scopeVersion === scopeGeneration && scope === authScope.value
+        && selected.value?.artifact_id === artifactId) {
+      approval.value = response.approval
+        ? ((response.approval.content as Record<string, unknown> | undefined) ?? null)
+        : null;
+      approvalArtifactId.value = artifactId;
+    }
+  } catch (exc) {
+    if (request === approvalReadGeneration && selection === selectionGeneration
+        && scopeVersion === scopeGeneration && scope === authScope.value
+        && selected.value?.artifact_id === artifactId) {
+      error.value = exc instanceof Error ? exc.message : "刷新审批事实失败";
+    }
+  }
+}
+
+watch(authScope, () => {
+  scopeGeneration += 1;
+  listGeneration += 1;
+  selectionGeneration += 1;
+  approvalReadGeneration += 1;
+  metadataRequest += 1;
+  backtestActionGeneration += 1;
+  artifacts.value = [];
+  tasks.value = [];
+  lifecycle.value = "active";
+  filter.value = "all";
+  page.value = 1;
+  total.value = 0;
+  search.value = "";
+  selected.value = null;
+  detail.value = null;
+  approval.value = null;
+  approvalArtifactId.value = "";
+  taskId.value = "";
+  strategyId.value = "CustomStrategy";
+  strategyName.value = "自定义策略";
+  description.value = "用户自定义策略";
+  parametersJson.value = "{}";
+  parameterSchemaJson.value = "{}";
+  dataRequirementsJson.value = DEFAULT_BENCHMARK_REQUIREMENTS;
+  script.value = "";
+  templateId.value = "";
+  lastDraftId.value = "";
+  saving.value = false;
+  syncEditorBaseline();
+  versionHistory.value = [];
+  historyTotal.value = 0;
+  historyPage.value = 1;
+  backtestCount.value = 0;
+  versionCount.value = 0;
+  loading.value = false;
+  historyLoading.value = false;
+  busy.value = "";
+  error.value = "";
+  if (auth.user?.subject && auth.user.workspace?.workspace_id) void loadList();
+}, { flush: "sync" });
+
+onMounted(() => {
+  void loadList();
+  window.addEventListener("byq:approvals-changed", refreshSelectedApproval);
+});
+onUnmounted(() => {
+  scopeGeneration += 1;
+  listGeneration += 1;
+  selectionGeneration += 1;
+  approvalReadGeneration += 1;
+  metadataRequest += 1;
+  backtestActionGeneration += 1;
+  window.removeEventListener("byq:approvals-changed", refreshSelectedApproval);
+});
 </script>
 
 <template>

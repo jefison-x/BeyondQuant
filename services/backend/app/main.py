@@ -199,6 +199,11 @@ from .research import (
     ResearchPersistenceError,
     ResearchStore,
 )
+from .product_approval_requests import ProductApprovalConflict, ProductApprovalNotFound
+from packages.contracts.product_approval_requests import (
+    validate_decision_shape as validate_product_approval_decision,
+    validate_request_shape as validate_product_approval_request,
+)
 from .research_judgment import StageModelCallLimitExceeded
 from .strategy_artifact import (
     content_sha256,
@@ -2265,6 +2270,10 @@ def list_security_master(
 def _research_call(operation: Callable[[], dict[str, object]]) -> dict[str, object]:
     try:
         return operation()
+    except ProductApprovalConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except ProductApprovalNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
     except (MLValidationError, FactorValidationError, OptimizationValidationError) as error:
         raise HTTPException(status_code=422, detail=error.public_problem()) from error
     except ValueError as error:
@@ -2737,6 +2746,214 @@ def revoke_research_continuation_permission(task_id: str, payload: dict[str, Any
             raise ValueError("exact continuation grant version required")
         return research_store.revoke_continuation_permission(task_id, grant_version=payload["grant_version"], trusted_context=context)
     return _research_call(operation)
+
+
+def _product_approval_context(request: Request) -> dict[str, str]:
+    context = _required_agent_context(request, include_workspace=True)
+    if context["actor_principal"] != context["owner_principal"] or context["actor_principal"].startswith("byq-product-agent-"):
+        raise HTTPException(status_code=403, detail="human Product owner approval is required")
+    return context
+
+
+def _product_approval_record(envelope: dict[str, object]) -> dict[str, object]:
+    if (envelope.get("schema_version") != "byq-product-approval-request.v1"
+            or not isinstance(envelope.get("request"), dict)):
+        raise RuntimeError("Product approval store returned an invalid request envelope")
+    return envelope["request"]
+
+
+def _observe_product_approval_fact(record: dict[str, object], context: dict[str, str]) -> tuple[str, str | None, dict[str, object] | None, str | None]:
+    """Read the exact domain fact without changing either domain or request state."""
+    if record.get("request_type") == "continuation_consent":
+        snapshot = research_store.get_continuation_permission_snapshot_readonly(
+            str(record["task_id"]), trusted_context=context)
+        ledger = snapshot["ledger"]
+        permission = snapshot["view"]
+        if not isinstance(ledger, dict):
+            return "missing", "domain_fact_missing", None, None
+        matches = (ledger.get("idempotency_key") == f"product-approval-{record['request_id']}"
+            and ledger.get("execution_profile") == record.get("execution_profile")
+            and ledger.get("request_limits") == record.get("request_limits")
+            and ledger.get("confirmed_artifact_ids") == record.get("confirmed_artifact_ids")
+            and ledger.get("confirmed_artifacts") == record.get("confirmed_artifacts")
+            and ledger.get("max_turns") == record.get("max_turns")
+            and ledger.get("valid_seconds") == record.get("valid_seconds")
+            and ledger.get("turn_timeout_seconds") == record.get("turn_timeout_seconds")
+            and ledger.get("conversation_id") == record.get("conversation_id")
+            and ledger.get("owner_principal") == context["owner_principal"]
+            and ledger.get("workspace_id") == context["workspace_id"])
+        return ("confirmed", None, permission, None) if matches else ("mismatch", "domain_fact_mismatch", None, None)
+
+    artifact = research_store.get_product_approval_domain_artifact(str(record["request_id"]),
+        owner=context["owner_principal"], workspace=context["workspace_id"])
+    if artifact is None:
+        return "missing", "domain_fact_missing", None, None
+    if artifact.get("status") != "validated":
+        return "draft", "domain_fact_draft", None, None
+    kind = "strategy_approval" if record["request_type"] == "strategy_version" else "ml_strategy_approval"
+    target_field = "strategy_version_artifact_id" if kind == "strategy_approval" else "ml_strategy_artifact_id"
+    content = artifact.get("content")
+    source_version = research_store.get_artifact(str(record.get("resource_artifact_id")))
+    expected_decision = record.get("decision")
+    matches = (artifact.get("kind") == kind and isinstance(content, dict)
+        and content.get("decision") == expected_decision
+        and content.get("execution_authorized") is (expected_decision == "approved")
+        and content.get(target_field) == record.get("resource_artifact_id")
+        and content.get("reviewer_principal") == record.get("decision_by")
+        and content.get("rationale") == record.get("rationale")
+        and artifact.get("lineage") == [
+            {"kind": "research_task", "id": record.get("task_id")},
+            {"kind": "artifact", "id": record.get("resource_artifact_id")},
+        ]
+        and source_version is not None and source_version.get("status") == "validated"
+        and source_version.get("owner_principal") == context["owner_principal"]
+        and source_version.get("workspace_id") == context["workspace_id"]
+        and source_version.get("content_sha256") == record.get("content_sha256"))
+    return ("confirmed", None, None, str(artifact["artifact_id"])) if matches else ("mismatch", "domain_fact_mismatch", None, None)
+
+
+def _observe_product_approval_response(envelope: dict[str, object], context: dict[str, str]) -> dict[str, object]:
+    record = _product_approval_record(envelope)
+    if (record.get("status") not in {"decision_recorded", "outcome_unknown", "needs_attention"}
+            or (record.get("decision") == "rejected" and record.get("request_type") == "continuation_consent")):
+        return envelope
+    try:
+        state, _code, _permission, _artifact = _observe_product_approval_fact(record, context)
+    except (ValueError, ResearchNotFound):
+        state = "unavailable"
+    return {**envelope, "request": {**record, "observed_state": state}}
+
+
+def _settle_product_approval_reconciliation(envelope: dict[str, object], context: dict[str, str]) -> dict[str, object]:
+    record = _product_approval_record(envelope)
+    if record.get("status") not in {"decision_recorded", "outcome_unknown", "needs_attention"}:
+        return envelope
+    if record.get("decision") == "rejected" and record.get("request_type") == "continuation_consent":
+        return research_store.finish_product_approval_decision(str(record["request_id"]), owner=context["owner_principal"],
+            workspace=context["workspace_id"], status="rejected")
+    if record.get("decision") not in {"approved", "rejected"}:
+        return envelope
+    try:
+        state, code, permission, artifact_id = _observe_product_approval_fact(record, context)
+    except (ValueError, ResearchNotFound):
+        state, code, permission, artifact_id = "unavailable", "domain_scope_unavailable", None, None
+    if state == "confirmed":
+        result = research_store.finish_product_approval_decision(str(record["request_id"]), owner=context["owner_principal"],
+            workspace=context["workspace_id"], status=str(record["decision"]), domain_artifact_id=artifact_id,
+            permission=permission)
+    else:
+        result = research_store.finish_product_approval_decision(str(record["request_id"]), owner=context["owner_principal"],
+            workspace=context["workspace_id"], status="needs_attention", materialization_error_code=code or "domain_fact_mismatch")
+    return {**result, "request": {**_product_approval_record(result), "observed_state": state}}
+
+
+@app.post("/v1/product/research/approval-requests", status_code=201)
+def create_product_approval_request(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _product_approval_context(request)
+    return _research_call(lambda: research_store.create_product_approval_request(
+        validate_product_approval_request(payload), owner=context["owner_principal"], workspace=context["workspace_id"]))
+
+
+@app.get("/v1/product/research/approval-requests")
+def list_product_approval_requests(request: Request, status: str = "pending", limit: int = 50, offset: int = 0) -> dict[str, object]:
+    context = _product_approval_context(request)
+    return _research_call(lambda: research_store.list_product_approval_requests(
+        owner=context["owner_principal"], workspace=context["workspace_id"], status=status, limit=limit, offset=offset))
+
+
+@app.get("/v1/product/research/approval-requests/by-key/{request_key}")
+def get_product_approval_request_by_key(request_key: str, request: Request) -> dict[str, object]:
+    context = _product_approval_context(request)
+    envelope = _research_call(lambda: research_store.get_product_approval_request_by_key(
+        request_key, owner=context["owner_principal"], workspace=context["workspace_id"]))
+    return _observe_product_approval_response(envelope, context)
+
+
+@app.get("/v1/product/research/approval-requests/{request_id}")
+def get_product_approval_request(request_id: str, request: Request) -> dict[str, object]:
+    context = _product_approval_context(request)
+    envelope = _research_call(lambda: research_store.get_product_approval_request(
+        request_id, owner=context["owner_principal"], workspace=context["workspace_id"]))
+    return _observe_product_approval_response(envelope, context)
+
+
+@app.post("/v1/product/research/approval-requests/{request_id}/reconcile")
+def reconcile_product_approval_request(request_id: str, request: Request) -> dict[str, object]:
+    context = _product_approval_context(request)
+    envelope = _research_call(lambda: research_store.get_product_approval_request(
+        request_id, owner=context["owner_principal"], workspace=context["workspace_id"]))
+    return _settle_product_approval_reconciliation(envelope, context)
+
+
+@app.post("/v1/product/research/approval-requests/{request_id}/decision")
+def decide_product_approval_request(request_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
+    context = _product_approval_context(request)
+    try:
+        decision = validate_product_approval_decision(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        envelope, claimed = research_store.claim_product_approval_decision(request_id,
+            owner=context["owner_principal"], workspace=context["workspace_id"], decision=decision["decision"],
+            decision_key=decision["decision_key"], rationale=decision["rationale"], actor=context["actor_principal"])
+    except ProductApprovalConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ProductApprovalNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    record = _product_approval_record(envelope)
+    if decision["decision"] == "rejected" and record["request_type"] == "continuation_consent":
+        return research_store.finish_product_approval_decision(request_id, owner=context["owner_principal"],
+            workspace=context["workspace_id"], status="rejected")
+    if not claimed:
+        return envelope
+    body = record
+    domain_key = f"product-approval-{request_id}"
+    try:
+        if record["request_type"] == "continuation_consent":
+            research_store.create_continuation_permission(record["task_id"], {
+                "idempotency_key": domain_key,
+                "execution_profile_id": body["execution_profile_id"],
+                "confirmed_artifact_ids": body["confirmed_artifact_ids"],
+            }, trusted_context=context, expected_frozen_request={
+                "idempotency_key": domain_key, "task_id": record["task_id"],
+                "owner_principal": record["owner_principal"], "workspace_id": record["workspace_id"],
+                "conversation_id": record["conversation_id"],
+                "execution_profile": body["execution_profile"], "request_limits": body["request_limits"],
+                "confirmed_artifact_ids": body["confirmed_artifact_ids"],
+                "confirmed_artifacts": body["confirmed_artifacts"], "max_turns": body["max_turns"],
+                "valid_seconds": body["valid_seconds"], "turn_timeout_seconds": body["turn_timeout_seconds"],
+            })
+        elif record["request_type"] == "strategy_version":
+            create_strategy_approval({"task_id": record["task_id"], "strategy_version_artifact_id": record["resource_artifact_id"],
+                "decision": decision["decision"], "reviewer_principal": context["actor_principal"],
+                "rationale": decision["rationale"], "trace_id": context["trace_id"],
+                "idempotency_key": domain_key}, request)
+        else:
+            create_ml_strategy_approval({"task_id": record["task_id"], "ml_strategy_artifact_id": record["resource_artifact_id"],
+                "decision": decision["decision"], "rationale": decision["rationale"], "trace_id": context["trace_id"],
+                "idempotency_key": domain_key}, request)
+    except HTTPException as exc:
+        if 400 <= exc.status_code < 500:
+            code = {409: "domain_conflict", 422: "domain_validation_failed"}.get(
+                exc.status_code, "domain_request_rejected")
+            return research_store.finish_product_approval_decision(request_id, owner=context["owner_principal"],
+                workspace=context["workspace_id"], status="needs_attention", materialization_error_code=code)
+        return research_store.finish_product_approval_decision(request_id, owner=context["owner_principal"],
+            workspace=context["workspace_id"], status="outcome_unknown")
+    except ValueError:
+        return research_store.finish_product_approval_decision(request_id, owner=context["owner_principal"],
+            workspace=context["workspace_id"], status="needs_attention",
+            materialization_error_code="domain_validation_failed")
+    except ResearchNotFound:
+        return research_store.finish_product_approval_decision(request_id, owner=context["owner_principal"],
+            workspace=context["workspace_id"], status="needs_attention",
+            materialization_error_code="domain_scope_unavailable")
+    except (ResearchPersistenceError, SQLAlchemyError):
+        return research_store.finish_product_approval_decision(request_id, owner=context["owner_principal"],
+            workspace=context["workspace_id"], status="outcome_unknown")
+    return _settle_product_approval_reconciliation(envelope, context)
 
 
 @app.get("/v1/research/tasks/{task_id}/execution-plan")
@@ -4136,17 +4353,19 @@ def list_strategy_artifacts(
 
 @app.get("/v1/research/strategies/versions/{artifact_id}/approval")
 def get_strategy_version_approval(artifact_id: str, request: Request) -> dict[str, object]:
-    context = _required_agent_context(request)
+    context = _required_agent_context(request, include_workspace=True)
 
     def operation() -> dict[str, object]:
         version = research_store.get_artifact(artifact_id)
         if (
             version.get("owner_principal") != context["owner_principal"]
+            or version.get("workspace_id") != context["workspace_id"]
             or version.get("kind") != "strategy_version"
         ):
             raise ResearchNotFound("strategy version not found")
         approval = research_store.get_strategy_approval(
-            owner_principal=context["owner_principal"], strategy_version_artifact_id=artifact_id
+            owner_principal=context["owner_principal"], workspace_id=context["workspace_id"],
+            strategy_version_artifact_id=artifact_id
         )
         return {"approval": approval}
 

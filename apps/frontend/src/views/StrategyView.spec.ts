@@ -32,10 +32,9 @@ const getStrategyBacktestCount = vi.fn();
 const getStrategyVersions = vi.fn();
 const saveStrategyDraft = vi.fn();
 const deleteStrategyDraft = vi.fn();
-const approveStrategyVersion = vi.fn();
+const submitProductApprovalRequestOnce = vi.fn();
 
 vi.mock("@/api/quant", () => ({
-  approveStrategyVersion: (...args: unknown[]) => approveStrategyVersion(...args),
   listStrategies: (...args: unknown[]) => listStrategies(...args),
   createStrategyVersion: vi.fn(),
   deleteStrategyDraft: (...args: unknown[]) => deleteStrategyDraft(...args),
@@ -52,10 +51,15 @@ vi.mock("@/api/research", () => ({
   listTaskOptions: (...args: unknown[]) => listTaskOptions(...args),
 }));
 
+vi.mock("@/api/approvalRequestSubmissions", () => ({
+  submitProductApprovalRequestOnce: (...args: unknown[]) => submitProductApprovalRequestOnce(...args),
+}));
+
 describe("StrategyView", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     useAuthStore().token = "strategy-test";
+    useAuthStore().setUser({ subject: "alice", workspace: { workspace_id: "workspace-alice" } } as any);
     listStrategies.mockReset();
     listStrategies.mockImplementation((_token: string, options: { lifecycle: string }) =>
       Promise.resolve({
@@ -78,7 +82,7 @@ describe("StrategyView", () => {
     getStrategyVersions.mockResolvedValue({ versions: [] });
     saveStrategyDraft.mockReset();
     deleteStrategyDraft.mockReset();
-    approveStrategyVersion.mockReset();
+    submitProductApprovalRequestOnce.mockReset();
     replaceRoute.mockReset();
     pushRoute.mockReset();
     vi.spyOn(ElMessageBox, "confirm").mockResolvedValue("confirm" as never);
@@ -204,26 +208,115 @@ describe("StrategyView", () => {
     expect(deleteStrategyDraft).toHaveBeenCalledWith("artifact_draft", "strategy-test");
   });
 
-  it("starts backtesting directly and records the required domain approval internally", async () => {
+  it("submits a typed approval request and does not start a backtest when approval is missing", async () => {
+    const taskId = `task_${"1".repeat(32)}`;
+    const artifactId = `artifact_${"a".repeat(32)}`;
+    const version = {
+      artifact_id: artifactId, task_id: taskId, kind: "strategy_version", status: "validated",
+      content: { snapshot: { strategy_id: "MomentumStrategy", script: "class CustomStrategy: pass" } },
+    };
+    listStrategies.mockResolvedValue({ strategies: [version], total: 1, limit: 50, offset: 0 });
+    getResearchEntity.mockResolvedValue(version);
+    submitProductApprovalRequestOnce.mockResolvedValue({
+      reconciled: false,
+      request: {
+        request_id: `approval_request_${"1".repeat(32)}`, request_type: "strategy_version", status: "pending",
+        owner_principal: "alice", workspace_id: "workspace-alice", task_id: taskId,
+        resource_artifact_id: artifactId, content_sha256: "b".repeat(64), request_key: "00000000-0000-4000-8000-000000000008",
+        created_at: "2026-10-14T00:00:00Z", updated_at: "2026-10-14T00:00:00Z",
+        strategy_version_artifact_id: artifactId,
+      },
+    });
+    const wrapper = mountView();
+    await flushPromises();
+
+    await (wrapper.vm as unknown as { openBacktest: () => Promise<void> }).openBacktest();
+
+    expect(submitProductApprovalRequestOnce).toHaveBeenCalledWith(
+      { ownerPrincipal: "alice", workspaceId: "workspace-alice" },
+      {
+        schema_version: "byq-product-approval-request.v1",
+        request_type: "strategy_version",
+        task_id: taskId,
+        strategy_version_artifact_id: artifactId,
+      },
+    );
+    expect(pushRoute).not.toHaveBeenCalled();
+  });
+
+  it("starts a backtest only after a separately read approval authorizes execution", async () => {
     const version = {
       artifact_id: "artifact_version", task_id: "task_1", kind: "strategy_version", status: "validated",
       content: { snapshot: { strategy_id: "MomentumStrategy", script: "class CustomStrategy: pass" } },
     };
     listStrategies.mockResolvedValue({ strategies: [version], total: 1, limit: 50, offset: 0 });
     getResearchEntity.mockResolvedValue(version);
-    approveStrategyVersion.mockResolvedValue({ approval: { execution_authorized: true } });
+    getStrategyVersionApproval.mockResolvedValue({ approval: { content: { execution_authorized: true, decision: "approved" } } });
     const wrapper = mountView();
     await flushPromises();
 
     await (wrapper.vm as unknown as { openBacktest: () => Promise<void> }).openBacktest();
 
-    expect(approveStrategyVersion).toHaveBeenCalledWith(
-      expect.objectContaining({
-        task_id: "task_1", strategy_version_artifact_id: "artifact_version", decision: "approved",
-      }),
-      "strategy-test",
-    );
+    expect(submitProductApprovalRequestOnce).not.toHaveBeenCalled();
     expect(pushRoute).toHaveBeenCalledWith({ path: "/backtest", query: { strategy: "artifact_version" } });
-    expect(wrapper.text()).not.toContain("批准此版本");
+  });
+
+  it("does not let a late approval read for one immutable version overwrite another selection", async () => {
+    const artifactA = `artifact_${"a".repeat(32)}`;
+    const artifactB = `artifact_${"b".repeat(32)}`;
+    const versionA = { artifact_id: artifactA, task_id: `task_${"1".repeat(32)}`, kind: "strategy_version", status: "validated",
+      content: { snapshot: { strategy_id: "VersionA", script: "class CustomStrategy: pass" } } };
+    const versionB = { artifact_id: artifactB, task_id: `task_${"2".repeat(32)}`, kind: "strategy_version", status: "validated",
+      content: { snapshot: { strategy_id: "VersionB", script: "class CustomStrategy: pass" } } };
+    getResearchEntity.mockImplementation((_type: string, id: string) => Promise.resolve(id === artifactA ? versionA : versionB));
+    let resolveApprovalA: (value: unknown) => void = () => {};
+    getStrategyVersionApproval.mockImplementation((id: string) => id === artifactA
+      ? new Promise(resolve => { resolveApprovalA = resolve; })
+      : Promise.resolve({ approval: { content: { execution_authorized: true, source: "version-b" } } }));
+    const wrapper = mountView();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as {
+      select: (row: Record<string, unknown>, updateRoute?: boolean) => Promise<void>;
+      approvalArtifactId: string;
+      approval: Record<string, unknown> | null;
+    };
+    const oldSelection = vm.select(versionA, false);
+    await flushPromises();
+    await vm.select(versionB, false);
+    resolveApprovalA({ approval: { content: { execution_authorized: false, source: "version-a" } } });
+    await oldSelection;
+
+    expect(vm.approvalArtifactId).toBe(artifactB);
+    expect(vm.approval).toEqual({ execution_authorized: true, source: "version-b" });
+    wrapper.unmount();
+  });
+
+  it("does not submit a backtest request when selection changes during confirmation", async () => {
+    const artifactA = `artifact_${"c".repeat(32)}`;
+    const artifactB = `artifact_${"d".repeat(32)}`;
+    const versionA = { artifact_id: artifactA, task_id: `task_${"3".repeat(32)}`, kind: "strategy_version", status: "validated",
+      content: { snapshot: { strategy_id: "VersionA", script: "class CustomStrategy: pass" } } };
+    const versionB = { artifact_id: artifactB, task_id: `task_${"4".repeat(32)}`, kind: "strategy_version", status: "validated",
+      content: { snapshot: { strategy_id: "VersionB", script: "class CustomStrategy: pass" } } };
+    getResearchEntity.mockImplementation((_type: string, id: string) => Promise.resolve(id === artifactA ? versionA : versionB));
+    let resolveConfirmation: (value: string) => void = () => undefined;
+    vi.mocked(ElMessageBox.confirm).mockImplementationOnce(() =>
+      new Promise<string>(resolve => { resolveConfirmation = resolve; }) as never);
+    const wrapper = mountView();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as {
+      select: (row: Record<string, unknown>, updateRoute?: boolean) => Promise<void>;
+      openBacktest: () => Promise<void>;
+    };
+    await vm.select(versionA, false);
+    const start = vm.openBacktest();
+    await flushPromises();
+    await vm.select(versionB, false);
+    resolveConfirmation("confirm");
+    await start;
+
+    expect(submitProductApprovalRequestOnce).not.toHaveBeenCalled();
+    expect(pushRoute).not.toHaveBeenCalled();
+    wrapper.unmount();
   });
 });

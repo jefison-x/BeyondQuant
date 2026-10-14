@@ -180,6 +180,8 @@ class WorkspaceResetStore(PgStoreMixin):
             ('evaluation_signals','task_id','research_tasks','task_id'),
             ('evaluation_signals','source_artifact_id','artifacts','artifact_id'),
             ('lessons','task_id','research_tasks','task_id'),
+            ('product_approval_requests','task_id','research_tasks','task_id'),
+            ('product_approval_requests','resource_artifact_id','artifacts','artifact_id'),
         ):
             left=SCOPE_BY_TABLE[child].replace('r.','c.')
             right=SCOPE_BY_TABLE[parent].replace('r.','target.')
@@ -348,6 +350,15 @@ class WorkspaceResetStore(PgStoreMixin):
         """, params)
         if unknown_approval is not None:
             raise WorkspaceResetBlocked("unknown approval continuation outcome prevents workspace reset")
+
+        unresolved_product_approval = WorkspaceResetStore._first_row(connection, """
+            SELECT request_id FROM product_approval_requests
+             WHERE owner_principal=:owner AND workspace_id=:workspace
+               AND status IN ('pending','decision_recorded','outcome_unknown','needs_attention')
+             ORDER BY request_id LIMIT 1
+        """, params)
+        if unresolved_product_approval is not None:
+            raise WorkspaceResetBlocked("unresolved Product approval request prevents workspace reset")
 
         for table, (identity_column, terminal) in _JOB_TERMINAL_STATES.items():
             placeholders = ", ".join(f":terminal_{index}" for index in range(len(terminal)))

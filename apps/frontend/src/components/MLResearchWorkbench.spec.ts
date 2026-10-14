@@ -1,6 +1,8 @@
 import { flushPromises, shallowMount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createPinia, setActivePinia } from "pinia";
 import MLResearchWorkbench from "./MLResearchWorkbench.vue";
+import { useAuthStore } from "@/stores/auth";
 
 const getMLCapabilities = vi.fn();
 const getMLOptions = vi.fn();
@@ -12,6 +14,7 @@ const getMLTrainingSubmission = vi.fn();
 const deleteMLStudy = vi.fn();
 const setMLStudyLifecycle = vi.fn();
 const confirmTraining = vi.fn();
+const submitProductApprovalRequestOnce = vi.fn();
 
 vi.mock("element-plus", () => ({
   ElMessage: { success: vi.fn(), error: vi.fn() },
@@ -20,7 +23,6 @@ vi.mock("element-plus", () => ({
 
 vi.mock("vue-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/api/mlResearch", () => ({
-  approveMLStrategy: vi.fn(),
   createMLPrediction: vi.fn(),
   createMLStrategy: vi.fn(),
   createMLTraining: (...args: unknown[]) => createMLTraining(...args),
@@ -36,12 +38,18 @@ vi.mock("@/api/mlResearch", () => ({
   getMLStudy: (...args: unknown[]) => getMLStudy(...args),
 }));
 vi.mock("@/api/research", () => ({ createTask: vi.fn() }));
+vi.mock("@/api/approvalRequestSubmissions", () => ({
+  submitProductApprovalRequestOnce: (...args: unknown[]) => submitProductApprovalRequestOnce(...args),
+}));
 vi.mock("@/api/quant", () => ({
   getBacktest: vi.fn(), runBacktest: vi.fn(), submitBacktest: vi.fn(),
 }));
 
 describe("MLResearchWorkbench", () => {
   beforeEach(() => {
+    setActivePinia(createPinia());
+    useAuthStore().setUser({ subject: "alice", workspace: { workspace_id: "workspace-alice" } } as any);
+    submitProductApprovalRequestOnce.mockReset();
     localStorage.clear(); sessionStorage.clear();
     getMLTrainingSubmission.mockReset();
     getMLTrainingSubmission.mockResolvedValue({ receipt_watch: {
@@ -163,6 +171,54 @@ describe("MLResearchWorkbench", () => {
     expect(createMLTraining.mock.calls[0][1]).toMatch(/^[0-9a-f-]{36}$/);
   });
 
+  it("creates only a typed approval request when the ML version has no approval", async () => {
+    const taskId = `task_${"2".repeat(32)}`;
+    const artifactId = `artifact_${"b".repeat(32)}`;
+    getMLOptions.mockResolvedValueOnce({ schema_version: "ml-options.v1", tasks: [], pools: [
+      { pool_id: "pool_1", name: "沪深300", status: "active", current_snapshot_id: "snapshot_1", member_count: 300 },
+    ] });
+    getMLStudy.mockResolvedValueOnce({
+      schema_version: "ml-product-study-detail.v1",
+      study: {
+        artifact_id: artifactId, task_id: taskId, kind: "ml_strategy_version",
+        status: "validated", content: { name: "测试模型", schema_version: "ml-strategy-version.v1" },
+      },
+      approval_artifact_id: null,
+      management: { lifecycle_status: "active", can_delete: false, can_archive: true,
+        can_restore: false, history_count: 2, active_run_count: 0, reason: "已产生运行证据，只能归档" },
+      tasks: [{ task_id: taskId, title: "模型研究" }], artifacts: [],
+      training_runs: { total: 0, runs: [] }, prediction_runs: { total: 0, runs: [] }, backtests: { total: 0, backtests: [] },
+    });
+    submitProductApprovalRequestOnce.mockResolvedValue({
+      reconciled: false,
+      request: {
+        request_id: `approval_request_${"2".repeat(32)}`, request_type: "ml_strategy_version", status: "pending",
+        owner_principal: "alice", workspace_id: "workspace-alice", task_id: taskId,
+        resource_artifact_id: artifactId, content_sha256: "c".repeat(64), request_key: "00000000-0000-4000-8000-000000000005",
+        created_at: "2026-10-14T00:00:00Z", updated_at: "2026-10-14T00:00:00Z",
+        ml_strategy_artifact_id: artifactId,
+      },
+    });
+    const wrapper = shallowMount(MLResearchWorkbench);
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    await vm.selectStudy(artifactId);
+    vm.form.pool_id = "pool_1";
+    await vm.startTraining();
+
+    expect(submitProductApprovalRequestOnce).toHaveBeenCalledWith(
+      { ownerPrincipal: "alice", workspaceId: "workspace-alice" },
+      {
+        schema_version: "byq-product-approval-request.v1",
+        request_type: "ml_strategy_version",
+        task_id: taskId,
+        ml_strategy_artifact_id: artifactId,
+      },
+    );
+    expect(createMLTraining).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
   it("deletes a never-executed study after confirmation and refreshes the catalog", async () => {
     getMLStudy.mockResolvedValueOnce({
       schema_version: "ml-product-study-detail.v1",
@@ -199,7 +255,7 @@ describe("MLResearchWorkbench", () => {
     getMLOptions.mockResolvedValue({ schema_version: "ml-options.v1", tasks: [], pools: [
       { pool_id: "pool_1", name: "Synthetic", status: "active", current_snapshot_id: "snapshot_1", member_count: 1 },
     ] });
-    localStorage.setItem("byq:ml-training:task_1:artifact_strategy:snapshot_1", "original-training-key");
+    localStorage.setItem("byq:ml-training:alice:workspace-alice:task_1:artifact_strategy:snapshot_1", "original-training-key");
     const wrapper = shallowMount(MLResearchWorkbench);
     await flushPromises();
     const vm = wrapper.vm as any;
@@ -237,6 +293,36 @@ describe("MLResearchWorkbench", () => {
     resolveConfirmation("confirm");
     await started;
     expect(createMLTraining).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("does not let a late detail response replace the newly selected model study", async () => {
+    const artifactA = `artifact_${"a".repeat(32)}`;
+    const artifactB = `artifact_${"b".repeat(32)}`;
+    const detailFor = (artifactId: string) => ({
+      schema_version: "ml-product-study-detail.v1",
+      study: { artifact_id: artifactId, task_id: `task_${"1".repeat(32)}`, kind: "ml_strategy_version",
+        status: "validated", content: { name: artifactId, schema_version: "ml-strategy-version.v1" } },
+      approval_artifact_id: null,
+      management: { lifecycle_status: "active", can_delete: false, can_archive: true,
+        can_restore: false, history_count: 0, active_run_count: 0, reason: "只读检查" },
+      tasks: [], artifacts: [], training_runs: { total: 0, runs: [] },
+      prediction_runs: { total: 0, runs: [] }, backtests: { total: 0, backtests: [] },
+    });
+    let resolveOld: (value: unknown) => void = () => undefined;
+    getMLStudy.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }))
+      .mockResolvedValueOnce(detailFor(artifactB));
+    const wrapper = shallowMount(MLResearchWorkbench);
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    const oldSelection = vm.selectStudy(artifactA);
+    const currentSelection = vm.selectStudy(artifactB);
+    await currentSelection;
+    resolveOld(detailFor(artifactA));
+    await oldSelection;
+
+    expect(vm.selectedStrategy).toBe(artifactB);
+    expect(vm.detail.study.artifact_id).toBe(artifactB);
     wrapper.unmount();
   });
 

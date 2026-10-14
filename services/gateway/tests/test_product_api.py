@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from threading import Barrier
+from types import SimpleNamespace
 
 import pytest
 import httpx
@@ -102,6 +103,51 @@ def test_product_api_uses_error_envelope_and_auth_boundary(monkeypatch) -> None:
     )
     assert healthy.status_code == 200
     assert healthy.json()["status"] == "ok"
+
+
+def test_typed_approval_writes_require_browser_confirmation_and_reject_cross_site(monkeypatch):
+    monkeypatch.setattr(product_api, "_trusted_agent_headers", lambda request: {"x-byq-owner-principal": "human"})
+    missing_cookie = SimpleNamespace(cookies={}, headers={"x-byq-product-approval-confirmation": "v1"})
+    with pytest.raises(product_api.ProductError) as caught:
+        product_api._product_approval_request_headers(missing_cookie)
+    assert caught.value.status_code == 401
+
+    cookie = {user_session.SESSION_COOKIE: "session"}
+    missing_confirmation = SimpleNamespace(cookies=cookie, headers={})
+    with pytest.raises(product_api.ProductError) as caught:
+        product_api._product_approval_request_headers(missing_confirmation)
+    assert caught.value.status_code == 403
+
+    cross_site = SimpleNamespace(cookies=cookie, headers={
+        "x-byq-product-approval-confirmation": "v1", "sec-fetch-site": "Cross-Site"})
+    with pytest.raises(product_api.ProductError) as caught:
+        product_api._product_approval_request_headers(cross_site)
+    assert caught.value.status_code == 403
+
+    accepted = SimpleNamespace(cookies=cookie, headers={"x-byq-product-approval-confirmation": "v1"})
+    assert product_api._product_approval_request_headers(accepted) == {"x-byq-owner-principal": "human"}
+
+
+def test_product_approval_reconcile_is_explicit_post_and_forwards_confirmation(monkeypatch):
+    request_id = "approval_request_" + "a" * 32
+    request = SimpleNamespace(
+        cookies={user_session.SESSION_COOKIE: "browser-session"},
+        headers={"x-byq-product-approval-confirmation": "v1"},
+    )
+    monkeypatch.setattr(product_api, "_trusted_agent_headers", lambda request: {
+        "x-byq-owner-principal": "human", "x-byq-workspace-id": "workspace-exact"})
+    calls = []
+
+    def backend(method, path, payload=None, *, headers=None, params=None):
+        calls.append((method, path, payload, headers))
+        return {"schema_version": "byq-product-approval-request.v1", "request": {
+            "request_id": request_id, "status": "needs_attention"}}
+
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    response = product_api.product_approval_request_reconcile(request_id, request)
+    assert response["request"]["status"] == "needs_attention"
+    assert calls == [("POST", f"/v1/product/research/approval-requests/{request_id}/reconcile", None,
+                     {"x-byq-owner-principal": "human", "x-byq-workspace-id": "workspace-exact"})]
 
 
 def test_product_artifact_reference_passes_the_bounded_backend_projection(monkeypatch) -> None:

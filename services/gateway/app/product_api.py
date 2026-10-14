@@ -640,6 +640,63 @@ def _continuation_permission_headers(request: Request) -> dict[str, str]:
     return _trusted_agent_headers(request)
 
 
+def _product_approval_request_headers(request: Request) -> dict[str, str]:
+    if SESSION_COOKIE not in request.cookies:
+        raise ProductError(401, "product_authentication_required", "请先登录个人账号。")
+    if request.headers.get("x-byq-product-approval-confirmation") != "v1":
+        raise ProductError(403, "product_confirmation_required", "请明确确认审批申请或决定。")
+    if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+        raise ProductError(403, "product_forbidden", "不允许跨站审批操作。")
+    return _trusted_agent_headers(request)
+
+
+@router.post("/research/approval-requests", status_code=201)
+def product_approval_request_create(request: Request, payload: dict[str, object]) -> dict[str, object]:
+    headers = _product_approval_request_headers(request)
+    return _backend_request("POST", "/v1/product/research/approval-requests", payload, headers=headers)
+
+
+@router.get("/research/approval-requests")
+def product_approval_request_list(request: Request, status: str = "pending", limit: int = 50,
+                                  offset: int = 0) -> dict[str, object]:
+    _product_principal(request)
+    if status not in {"pending", "unresolved", "approved", "rejected", "all"}:
+        raise ProductError(422, "product_request_invalid", "审批记录筛选条件无效。")
+    if not 1 <= limit <= 100 or offset < 0:
+        raise ProductError(422, "product_request_invalid", "审批记录分页参数无效。")
+    return _backend_request("GET", "/v1/product/research/approval-requests",
+        headers=_trusted_agent_headers(request), params={"status": status, "limit": str(limit), "offset": str(offset)})
+
+
+@router.get("/research/approval-requests/by-key/{request_key}")
+def product_approval_request_by_key(request_key: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/product/research/approval-requests/by-key/{quote(request_key, safe='')}",
+                            headers=_trusted_agent_headers(request))
+
+
+@router.get("/research/approval-requests/{request_id}")
+def product_approval_request_get(request_id: str, request: Request) -> dict[str, object]:
+    _product_principal(request)
+    return _backend_request("GET", f"/v1/product/research/approval-requests/{quote(request_id, safe='')}",
+                            headers=_trusted_agent_headers(request))
+
+
+@router.post("/research/approval-requests/{request_id}/reconcile")
+def product_approval_request_reconcile(request_id: str, request: Request) -> dict[str, object]:
+    headers = _product_approval_request_headers(request)
+    return _backend_request("POST", f"/v1/product/research/approval-requests/{quote(request_id, safe='')}/reconcile",
+                            headers=headers)
+
+
+@router.post("/research/approval-requests/{request_id}/decision")
+def product_approval_request_decide(request_id: str, request: Request,
+                                    payload: dict[str, object]) -> dict[str, object]:
+    headers = _product_approval_request_headers(request)
+    return _backend_request("POST", f"/v1/product/research/approval-requests/{quote(request_id, safe='')}/decision",
+                            payload, headers=headers)
+
+
 def _judgment_cancel_user_headers(request: Request) -> dict[str, str]:
     """Keep the internal cancellation intent bound to a real browser user."""
     if SESSION_COOKIE not in request.cookies:

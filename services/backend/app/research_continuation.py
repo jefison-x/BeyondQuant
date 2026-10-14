@@ -435,7 +435,8 @@ class ResearchContinuationMixin:
                 "blocked_event_key": task.get("continuation_blocked_event_key"),
                 "blocked_reason_detail": task.get("continuation_blocked_reason")}
 
-    def create_continuation_permission(self, task_id: str, payload: object, *, trusted_context: dict) -> dict:
+    def create_continuation_permission(self, task_id: str, payload: object, *, trusted_context: dict,
+                                       expected_frozen_request: dict | None = None) -> dict:
         from .research import IdempotencyConflict
 
         request = _request_v2(payload)
@@ -466,6 +467,27 @@ class ResearchContinuationMixin:
                     if artifact['kind'] not in {'strategy_version', 'ml_strategy_version'}:
                         raise ValueError("continuation grant must bind a validated strategy version")
                     confirmed_artifacts.append(artifact)
+                if expected_frozen_request is not None:
+                    expected_fields = {
+                        "idempotency_key", "task_id", "owner_principal", "workspace_id", "conversation_id",
+                        "execution_profile", "request_limits", "confirmed_artifact_ids", "confirmed_artifacts",
+                        "max_turns", "valid_seconds", "turn_timeout_seconds",
+                    }
+                    if not isinstance(expected_frozen_request, dict) or set(expected_frozen_request) != expected_fields:
+                        raise ValueError("frozen continuation request fields are invalid")
+                    actual_frozen_request = {
+                        "idempotency_key": request["idempotency_key"], "task_id": task_id,
+                        "owner_principal": task["owner_principal"], "workspace_id": task["workspace_id"],
+                        "conversation_id": task["conversation_id"],
+                        "execution_profile": request["execution_profile"],
+                        "request_limits": request["request_limits"],
+                        "confirmed_artifact_ids": request["confirmed_artifact_ids"],
+                        "confirmed_artifacts": confirmed_artifacts,
+                        "max_turns": request["max_turns"], "valid_seconds": request["valid_seconds"],
+                        "turn_timeout_seconds": request["turn_timeout_seconds"],
+                    }
+                    if actual_frozen_request != expected_frozen_request:
+                        raise ValueError("continuation grant no longer matches its frozen approval request")
                 now = datetime.now(timezone.utc)
                 ledger = {**request, "schema_version": PERMISSION_SCHEMA_VERSION,
                           "request_sha256": digest, "grant_version": 1,
@@ -484,6 +506,26 @@ class ResearchContinuationMixin:
         with self._transaction() as connection:
             task, conversation = self._continuation_task(connection, task_id, trusted_context, human=True)
             return self._continuation_view(task, conversation)
+
+    def get_continuation_permission_snapshot_readonly(self, task_id: str, *, trusted_context: dict) -> dict:
+        """Read exact continuation fact without taking task/conversation row locks."""
+        owner, workspace = trusted_context.get("owner_principal"), trusted_context.get("workspace_id")
+        if not owner or not workspace or trusted_context.get("actor_principal") != owner:
+            raise ValueError("continuation requires its authenticated human owner")
+        with self._transaction() as connection:
+            task = fetch_one(connection, """SELECT * FROM research_tasks WHERE task_id=:task
+                AND owner_principal=:owner AND workspace_id=:workspace""",
+                {"task": task_id, "owner": owner, "workspace": workspace})
+            if task is None or not task.get("conversation_id"):
+                raise ValueError("continuation task binding not found")
+            conversation = fetch_one(connection, """SELECT * FROM product_conversations
+                WHERE conversation_id=:conversation AND owner_principal=:owner AND workspace_id=:workspace""",
+                {"conversation": task["conversation_id"], "owner": owner, "workspace": workspace})
+            if conversation is None:
+                raise ValueError("continuation conversation binding not found")
+            ledger = task.get("continuation_permission")
+            return {"ledger": dict(ledger) if isinstance(ledger, dict) else None,
+                    "view": self._continuation_view(task, conversation)}
 
     def revoke_continuation_permission(self, task_id: str, *, grant_version: int, trusted_context: dict) -> dict:
         _positive(grant_version, "grant version", 2**53 - 1)
