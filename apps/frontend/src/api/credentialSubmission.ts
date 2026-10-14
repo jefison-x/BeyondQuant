@@ -1,8 +1,12 @@
 import {readPendingText,writePendingText} from './pendingStorage';
 import {createRequestId} from '@/utils/requestId';
+import type {CredentialPurpose} from './types';
 export type CredentialWrite = {operation:'create'|'update'|'revoke';key:string;credential_id?:string;metadata:Record<string,string|number|boolean>};
 const storageKey=(scope:string)=>'byq.credential-write.v1:'+scope;
 const metadataFields=['provider','label','status','expected_version','has_secret'];
+export function credentialWriteScope(scope:string,purpose:CredentialPurpose):string {
+  return purpose==='model_api_key'?scope:`${scope}:purpose:${purpose}`;
+}
 export function readCredentialWrite(scope:string):CredentialWrite|null {
   const raw=readPendingText(storageKey(scope),4096,'凭据原请求标识超出范围');if(raw===null)return null;
 

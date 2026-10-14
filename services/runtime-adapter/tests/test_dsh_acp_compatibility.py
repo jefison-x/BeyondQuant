@@ -585,15 +585,17 @@ def test_close_retains_transport_handle_until_process_exit_is_confirmed(tmp_path
 
 
 @pytest.mark.parametrize(
-    ("provider", "selected_key", "expected_deepseek", "expected_opencode"),
+    ("provider", "selected_key", "expected_deepseek", "expected_opencode", "explicit_search_key"),
     [
-        ("deepseek-official", "DEEPSEEK_API_KEY", "selected-deepseek", None),
-        ("opencode-zen", "OPENCODE_API_KEY", None, "selected-opencode"),
+        ("deepseek-official", "DEEPSEEK_API_KEY", "selected-deepseek", None, None),
+        ("opencode-zen", "OPENCODE_API_KEY", None, "selected-opencode", None),
+        ("opencode-go-chat", "OPENCODE_API_KEY", None, "selected-opencode", "explicit-search-key"),
     ],
 )
 def test_acp_child_receives_only_selected_provider_credential(
     tmp_path: Path, monkeypatch, provider: str, selected_key: str,
     expected_deepseek: str | None, expected_opencode: str | None,
+    explicit_search_key: str | None,
 ) -> None:
     # The Adapter service may have both provider credentials for unrelated
     # sessions. The ACP child must receive only the key for this route.
@@ -613,6 +615,8 @@ def test_acp_child_receives_only_selected_provider_credential(
     environment[selected_key] = (
         "selected-deepseek" if selected_key == "DEEPSEEK_API_KEY" else "selected-opencode"
     )
+    if explicit_search_key is not None:
+        environment["DEEPSEEK_SEARCH_API_KEY"] = explicit_search_key
     composition = tmp_path / f"{provider}.yml"
     composition.write_text("[]\n", encoding="utf-8")
     compatibility = DshAcpCompatibility()
@@ -629,7 +633,7 @@ def test_acp_child_receives_only_selected_provider_credential(
     child_environment = json.loads(capture.with_name(capture.name + ".env").read_text())
     assert child_environment["deepseek_key"] == expected_deepseek
     assert child_environment["opencode_key"] == expected_opencode
-    assert child_environment["search_key"] is None
+    assert child_environment["search_key"] == explicit_search_key
     assert child_environment["credential_resolver_token"] is None
     assert child_environment["runner_control_secret"] is None
     assert child_environment["gateway_service_token"] is None

@@ -883,10 +883,21 @@ def test_product_model_settings_are_secret_free(monkeypatch) -> None:
             return FakeResponse({
                 "credentials": [{
                     "credential_id": "cred_0123456789abcdef0123456789abcdef",
+                    "purpose": "model_api_key",
                     "provider": "deepseek",
+                    "scope": "user",
                     "status": "active",
                     "configured": True,
                     "masked": "sk-…abcd",
+                }, {
+                    "credential_id": "cred_1123456789abcdef0123456789abcdef",
+                    "purpose": "web_search_api_key",
+                    "provider": "deepseek",
+                    "scope": "user",
+                    "status": "active",
+                    "configured": True,
+                    "masked": "sk-…wxyz",
+                    "version": 1,
                 }],
                 "encryption": {"configured": True, "status": "ready"},
             })
@@ -909,8 +920,102 @@ def test_product_model_settings_are_secret_free(monkeypatch) -> None:
     assert response.json()["providers"][1]["provider"] == "opencode-go"
     assert response.json()["agents"][0]["name"] == "小巴 Product Agent"
     assert response.json()["credential_items"][0]["masked"] == "sk-…abcd"
+    assert len(response.json()["credential_items"]) == 1
+    assert response.json()["credential_items"][0]["purpose"] == "model_api_key"
+    assert response.json()["configured"] is True
+    assert response.json()["search_credential"] == {
+        "configured": True,
+        "status": "active",
+        "masked": "sk-…wxyz",
+        "version": 1,
+        "credential_id": "cred_1123456789abcdef0123456789abcdef",
+        "provider": "deepseek",
+    }
     assert "token" not in response.text.lower()
     assert "secret" not in response.text.lower()
+
+
+def test_product_search_credential_does_not_configure_models(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+
+    def backend(method: str, path: str, *args, **kwargs):
+        if path == "/v1/users/model-catalog":
+            return {"providers": [], "models": [], "agents": []}
+        if path == "/v1/users/model-credentials":
+            return {"credentials": [{
+                "credential_id": "cred_1123456789abcdef0123456789abcdef",
+                "purpose": "web_search_api_key", "provider": "deepseek", "scope": "user",
+                "status": "active", "configured": True, "masked": "sk-…wxyz", "version": 1,
+            }], "encryption": {}}
+        if path == "/v1/users/model-profiles":
+            return {"profiles": []}
+        if path == "/v1/users/model-bindings":
+            return {"bindings": []}
+        if path.startswith("/v1/users/model-credential-audit"):
+            return {"events": []}
+        raise AssertionError(path)
+
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    response = TestClient(main.app).get(
+        "/api/product/settings/models",
+        headers={"Authorization": "Bearer product-test-token"},
+    )
+    assert response.status_code == 200
+    assert response.json()["configured"] is False
+    assert response.json()["credential_items"] == []
+    assert response.json()["search_credential"]["configured"] is True
+
+
+def test_product_credential_receipt_forwards_purpose(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    seen = []
+
+    def backend(method: str, path: str, *args, **kwargs):
+        seen.append((method, path))
+        return {"state": "not_found"}
+
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    response = TestClient(main.app).get(
+        "/api/product/settings/models/credentials/receipts",
+        params={"operation": "create", "request_id": "search-create-1",
+                "purpose": "web_search_api_key"},
+        headers={"Authorization": "Bearer product-test-token"},
+    )
+    assert response.status_code == 200
+    assert seen == [(
+        "GET",
+        "/v1/users/model-credentials/receipts?operation=create&request_id=search-create-1&purpose=web_search_api_key",
+    )]
+
+
+def test_search_credential_unknown_create_is_not_retried(monkeypatch) -> None:
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "product-user")
+    calls = []
+
+    def timeout(method: str, url: str, **kwargs):
+        calls.append((method, str(url), kwargs.get("json")))
+        raise httpx.ReadTimeout("private search key must stay redacted")
+
+    monkeypatch.setattr(product_api.httpx, "request", timeout)
+    secret = "private-search-key-not-in-response"
+    response = TestClient(main.app).post(
+        "/api/product/settings/models/credentials",
+        headers={"Authorization": "Bearer product-test-token"},
+        json={"purpose": "web_search_api_key", "provider": "deepseek",
+              "label": "search", "secret": secret,
+              "idempotency_key": "search-unknown-create-1"},
+    )
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "operation_outcome_unknown"
+    assert len(calls) == 1
+    assert calls[0][0] == "POST"
+    assert str(calls[0][1]).endswith("/v1/users/model-credentials")
+    assert calls[0][2]["purpose"] == "web_search_api_key"
+    assert secret not in response.text
+    assert "private search key" not in response.text
 
 
 def test_product_model_credential_models_forward_owner_context(monkeypatch) -> None:

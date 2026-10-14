@@ -2,56 +2,73 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
-  createModelCredential, createModelProfile, deleteModelProfile, disableModelProfile, enableModelProfile, getModelSettings,
+  assertSearchCredentialMutation, assertSearchCredentialReceipt, createModelCredential, createModelProfile, deleteModelProfile, disableModelProfile, enableModelProfile, getModelSettings,
   revokeModelCredential, updateModelBinding, updateModelCredential, reconcileModelCredential, SettingsRequestError, getModelProfileReceipt, getModelCommandReceipt, discoverModelCredentialModels,
 } from "@/api/settings";
-import type { ModelCredential, ModelProfile, ModelSettings } from "@/api/types";
+import type { CredentialPurpose, ModelCredential, ModelProfile, ModelSettings, SearchCredentialSettings } from "@/api/types";
 import ListFilterPagination from "@/components/ui/ListFilterPagination.vue";
 import { useFilteredPagination } from "@/composables/useFilteredPagination";
 
 import {useAuthStore} from '@/stores/auth';
-import {beginCredentialWrite,readCredentialWrite,finishCredentialWrite,type CredentialWrite} from '@/api/credentialSubmission';
+import {beginCredentialWrite,credentialWriteScope,readCredentialWrite,finishCredentialWrite,type CredentialWrite} from '@/api/credentialSubmission';
 import {beginProfileSubmission,readProfileSubmission,finishProfileSubmission,confirmProfileReceipt,type ProfileInput} from '@/api/profileSubmission';
 import {beginModelCommand,readModelCommand,finishModelCommand,confirmModelCommand,type ModelCommand} from '@/api/modelCommand';
 const pendingModelCommand=ref<ModelCommand|null>(null);
 const pendingProfile=ref<ProfileInput|null>(null);
 const auth=useAuthStore();
 const pendingCredential=ref<CredentialWrite|null>(null);
+const pendingSearchCredential=ref<CredentialWrite|null>(null);
+const searchForm=reactive({secret:''});
 function credentialScope(){if(!auth.user)throw Error('请先登录');return JSON.stringify([auth.user.subject,auth.user.workspace.workspace_id]);}
-async function executeCredential(operation:CredentialWrite['operation'],payload:Record<string,unknown>,credentialId?:string){
-  const scope=credentialScope(),previous=readCredentialWrite(scope),command=beginCredentialWrite(scope,operation,payload,credentialId);pendingCredential.value=command;
+function pendingCredentialFor(purpose:CredentialPurpose){return purpose==='web_search_api_key'?pendingSearchCredential:pendingCredential;}
+function credentialOperationScope(purpose:CredentialPurpose){return credentialWriteScope(credentialScope(),purpose);}
+async function executeCredential(operation:CredentialWrite['operation'],payload:Record<string,unknown>,credentialId?:string,purpose:CredentialPurpose='model_api_key'){
+  const scope=credentialOperationScope(purpose),pending=pendingCredentialFor(purpose),previous=readCredentialWrite(scope),command=beginCredentialWrite(scope,operation,payload,credentialId);pending.value=command;
   try {
-    const value=operation==='create'?await createModelCredential({...payload,idempotency_key:command.key})
+    const requestPayload=operation==='create'&&purpose==='web_search_api_key'?{...payload,purpose}:payload;
+    const value=operation==='create'?await createModelCredential({...requestPayload,idempotency_key:command.key})
       : operation==='update'?await updateModelCredential(credentialId!,{...payload,request_id:command.key})
       : await revokeModelCredential(credentialId!,{...payload,request_id:command.key});
-    if(scope!==credentialScope())throw Error('工作区已切换，请在原工作区核对');
-    if(!/^cred_[0-9a-f]{32}$/.test(String(value.credential?.credential_id ?? '')) || (credentialId && value.credential.credential_id!==credentialId))throw Error('凭据提交回执不完整，请核对原操作');
-    finishCredentialWrite(scope,command.key);pendingCredential.value=null;return value;
+    if(scope!==credentialOperationScope(purpose))throw Error('工作区已切换，请在原工作区核对');
+    const credential=value.credential;
+    if(!/^cred_[0-9a-f]{32}$/.test(String(credential?.credential_id ?? '')) || (credentialId && credential.credential_id!==credentialId))throw Error('凭据提交回执不完整，请核对原操作');
+    if(purpose==='web_search_api_key'){
+      const expectedStatus=operation==='create'?'active':operation==='update'?payload.status as 'active'|'disabled'|undefined:undefined;
+      assertSearchCredentialMutation(credential,operation,payload.expected_version,expectedStatus);
+    }
+    if(purpose==='model_api_key'&&credential.purpose!==undefined&&credential.purpose!=='model_api_key')throw Error('模型凭据回执用途不匹配，请核对原操作');
+    if(purpose==='model_api_key'&&operation==='update'&&Number.isSafeInteger(payload.expected_version)&&credential.version!==Number(payload.expected_version)+1)throw Error('凭据版本回执不匹配，请核对原操作');
+    finishCredentialWrite(scope,command.key);pending.value=null;return value;
   } catch(cause){
-    if(!previous && cause instanceof SettingsRequestError && [400,401,403,404,422].includes(cause.status)){finishCredentialWrite(scope,command.key);pendingCredential.value=null;}
+    if(!previous && cause instanceof SettingsRequestError && [400,401,403,404,422].includes(cause.status)){finishCredentialWrite(scope,command.key);pending.value=null;}
     throw cause;
   }
 }
-async function recoverCredential(){
-  if(!pendingCredential.value)return;busy.value=true;
+async function recoverCredential(purpose:CredentialPurpose='model_api_key'){
+  const pending=pendingCredentialFor(purpose);if(!pending.value)return;busy.value=true;
   try {
-    const scope=credentialScope(),command=pendingCredential.value,value=await reconcileModelCredential(command);
-    if(scope!==credentialScope())throw Error('工作区已切换，请在原工作区核对');
+    const scope=credentialOperationScope(purpose),command=pending.value,value=await reconcileModelCredential(command,purpose==='model_api_key'?undefined:purpose);
+    if(scope!==credentialOperationScope(purpose))throw Error('工作区已切换，请在原工作区核对');
     if(value.state==='not_found'){ElMessage.warning('尚未找到原回执。请稍后核对，或重新填写同一操作；密钥需要重新输入。');return;}
-    finishCredentialWrite(scope,command.key);pendingCredential.value=null;credentialDialog.value=false;credentialForm.secret='';await load();ElMessage.success('原凭据操作已确认');
+    if(purpose==='web_search_api_key')assertSearchCredentialReceipt(value,command.operation,command.metadata.expected_version);
+    finishCredentialWrite(scope,command.key);pending.value=null;
+    if(purpose==='web_search_api_key')searchForm.secret='';else{credentialDialog.value=false;credentialForm.secret='';}
+    await load();ElMessage.success(purpose==='web_search_api_key'?'原搜索服务凭据操作已确认':'原凭据操作已确认');
   }catch(cause){ElMessage.error(cause instanceof Error?cause.message:'凭据核对失败');}finally{busy.value=false;}
 }
 const loading = ref(true);
 const busy = ref(false);
 const error = ref("");
 const settings = ref<ModelSettings | null>(null);
+const searchCredential = computed<SearchCredentialSettings|null>(()=>settings.value?.search_credential ?? null);
 const credentialDialog = ref(false);
 const profileDialog = ref(false);
 const editingCredential = ref<ModelCredential | null>(null);
 const credentialForm = reactive({ provider: "deepseek", label: "", secret: "" });
 const profileForm = reactive({ credential_id: "", key_name: "", display_name: "", provider: "deepseek", model: "deepseek-v4-flash", temperature: 0.2, reasoning_enabled: false });
 
-const activeCredentials = computed(() => (settings.value?.credential_items ?? []).filter((item) => item.status === "active"));
+const modelCredentialItems = computed(() => (settings.value?.credential_items ?? []).filter((item) => item.purpose === "model_api_key"));
+const activeCredentials = computed(() => modelCredentialItems.value.filter((item) => item.status === "active"));
 const modelsForProvider = computed(() => (settings.value?.models ?? []).filter((item) => item.provider === profileForm.provider));
 const discoveredModels = ref<Array<{ model: string; display_name: string; reasoning_supported: boolean; runtime_provider: string | null; supported: boolean }>>([]);
 const discovering = ref(false);
@@ -63,9 +80,11 @@ const profileModelOptions = computed(() => {
 const selectedProfileModel = computed(() => profileModelOptions.value.find((item) => item.model === profileForm.model));
 const availableProfiles = computed(() => (settings.value?.profiles ?? []).filter((item) => item.available));
 const selectedProvider = computed(() => settings.value?.providers.find((item) => item.provider === credentialForm.provider));
-const credentialPages = useFilteredPagination(computed(() => settings.value?.credential_items ?? []), (item) => `${item.label} ${item.provider} ${item.status}`, 15);
+const credentialPages = useFilteredPagination(modelCredentialItems, (item) => `${item.label} ${item.provider} ${item.status}`, 15);
 const profilePages = useFilteredPagination(computed(() => settings.value?.profiles ?? []), (item) => `${item.display_name} ${item.provider} ${item.model} ${item.status}`, 15);
-const auditPages = useFilteredPagination(computed(() => settings.value?.audit ?? []), (item) => `${item.action ?? ""} ${item.credential_id ?? ""} ${item.created_at ?? ""}`, 15);
+const auditPages = useFilteredPagination(computed(() => settings.value?.audit ?? []), (item) => `${item.action ?? ""} ${item.purpose ?? ""} ${item.credential_id ?? ""} ${item.created_at ?? ""}`, 15);
+
+const searchCredentialEffectiveNotice="当前执行中的这一轮仍可能使用原 Key；结束后新开始的轮次会读取最新配置。若需立即使原 Key 失效，请到服务商处撤销。";
 
 function providerName(provider: string) {
   return settings.value?.providers.find((item) => item.provider === provider)?.display_name ?? provider;
@@ -102,7 +121,7 @@ async function refreshModels(notify = true) {
   } finally { discovering.value = false; }
 }
 
-onMounted(async()=>{try{pendingCredential.value=readCredentialWrite(credentialScope());pendingProfile.value=readProfileSubmission(credentialScope());pendingModelCommand.value=readModelCommand(credentialScope());}catch(cause){error.value=cause instanceof Error?cause.message:'原凭据操作无法读取';return;}await load();});
+onMounted(async()=>{try{const scope=credentialScope();pendingCredential.value=readCredentialWrite(credentialWriteScope(scope,'model_api_key'));pendingSearchCredential.value=readCredentialWrite(credentialWriteScope(scope,'web_search_api_key'));pendingProfile.value=readProfileSubmission(scope);pendingModelCommand.value=readModelCommand(scope);}catch(cause){error.value=cause instanceof Error?cause.message:'原凭据操作无法读取';return;}await load();});
 
 function openCredential(item: ModelCredential | null = null) {
   editingCredential.value = item;
@@ -140,6 +159,55 @@ async function setCredentialStatus(item: ModelCredential, status: "active" | "di
     await load();
   } catch (exc) { ElMessage.error(exc instanceof Error ? exc.message : "更新凭据失败"); }
   finally { busy.value = false; }
+}
+
+function searchStatusLabel(status:SearchCredentialSettings['status']|undefined){
+  return status==='active'?'已启用':status==='disabled'?'已停用':'未配置';
+}
+
+async function saveSearchCredential(){
+  const current=searchCredential.value,secret=searchForm.secret;
+  if(!secret.trim())return ElMessage.warning('请输入 DeepSeek 搜索服务 API Key');
+  if(!settings.value?.encryption.configured)return ElMessage.error('凭据加密当前不可用');
+  if(current&&current.status!=='missing'&&(!current.credential_id||!Number.isSafeInteger(current.version)))return ElMessage.error('搜索服务凭据状态不完整，请刷新后重试');
+  busy.value=true;
+  try{
+    if(!current||current.status==='missing'){
+      await executeCredential('create',{provider:'deepseek',label:'DeepSeek 搜索服务',secret},undefined,'web_search_api_key');
+      ElMessage.success('搜索服务 Key 已安全保存');
+    }else{
+      await executeCredential('update',{secret,status:current.status,expected_version:current.version},current.credential_id!,'web_search_api_key');
+      ElMessage.success('搜索服务 Key 已安全替换');
+    }
+    await load();
+  }catch(cause){ElMessage.error(cause instanceof Error?cause.message:'搜索服务 Key 保存失败');}
+  finally{busy.value=false;searchForm.secret='';}
+}
+
+async function setSearchCredentialStatus(status:'active'|'disabled'){
+  const current=searchCredential.value;
+  if(!current||current.status==='missing'||!current.credential_id||!Number.isSafeInteger(current.version))return ElMessage.error('搜索服务凭据状态不完整，请刷新后重试');
+  busy.value=true;
+  try{
+    await executeCredential('update',{status,expected_version:current.version},current.credential_id,'web_search_api_key');
+    await load();ElMessage.success(status==='active'?'搜索服务已启用':'搜索服务已停用');
+  }catch(cause){ElMessage.error(cause instanceof Error?cause.message:'搜索服务状态更新失败');}
+  finally{busy.value=false;}
+}
+
+async function revokeSearchCredential(){
+  const current=searchCredential.value;
+  if(!current||current.status==='missing'||!current.credential_id||!Number.isSafeInteger(current.version))return ElMessage.error('搜索服务凭据状态不完整，请刷新后重试');
+  try{
+    await ElMessageBox.confirm(
+      '这会在 BYQ 中撤销并清除已保存的 Key。当前执行中的这一轮仍可能使用原 Key；结束后新开始的轮次会读取最新配置。若需立即使原 Key 失效，请到服务商处撤销。',
+      '撤销搜索服务 Key',{type:'warning',confirmButtonText:'确认撤销'},
+    );
+    busy.value=true;
+    await executeCredential('revoke',{expected_version:current.version},current.credential_id,'web_search_api_key');
+    await load();ElMessage.success('搜索服务 Key 已撤销');
+  }catch(cause){if(cause!=='cancel'&&cause!=='close')ElMessage.error(cause instanceof Error?cause.message:'搜索服务 Key 撤销失败');}
+  finally{busy.value=false;}
 }
 
 async function revoke(item: ModelCredential) {
@@ -275,6 +343,9 @@ async function bind(agentId: string, profileId: string | null, version: number) 
 function actionLabel(value: unknown) {
   return ({ created: "创建", secret_replaced: "替换密钥", enabled: "启用", disabled: "停用", revoked: "撤销", revoked_noop: "确认已撤销", disable_profile: "停用档案", enable_profile: "启用档案" } as Record<string, string>)[String(value)] ?? String(value ?? "-");
 }
+function credentialPurposeLabel(value:unknown){
+  return ({model_api_key:'模型 API',web_search_api_key:'搜索服务',tushare_token:'Tushare'} as Record<string,string>)[String(value)]??'-';
+}
 </script>
 
 <template>
@@ -290,10 +361,30 @@ function actionLabel(value: unknown) {
       <p>已保存原请求标识，未保存密钥。请先核对；再次提交同一操作时需重新输入密钥。</p>
       <el-button :loading="busy" @click="recoverCredential">核对原凭据操作</el-button>
     </el-alert>
+    <el-alert v-if="pendingSearchCredential" title="有一笔搜索服务凭据操作尚未确认" type="warning" :closable="false" show-icon>
+      <p>已保存原请求标识和无密钥元数据，未保存 Key。请先核对；如需重试创建或替换，请重新输入原 Key。</p>
+      <el-button :loading="busy" @click="recoverCredential('web_search_api_key')">核对原搜索服务操作</el-button>
+    </el-alert>
     <el-alert title="密钥仅可写入，不会返回浏览器、日志或 WorkflowTrace；运行时通过 Backend 私有边界按当前用户解析。" type="info" show-icon :closable="false" />
     <div v-if="loading" class="base-loading" role="status" aria-live="polite">加载中...</div>
     <div v-else-if="error" class="base-error" role="alert">{{ error }}</div>
     <template v-else>
+      <el-card shadow="never">
+        <template #header><div class="card-header"><div><strong>搜索服务</strong><p class="muted">DeepSeek 搜索 API Key · 与聊天模型凭据分开管理 · {{ settings?.encryption.configured ? "安全存储可用" : "安全存储暂不可用" }}</p></div><el-tag :type="searchCredential?.status === 'active' ? 'success' : searchCredential?.status === 'disabled' ? 'info' : 'warning'">{{ searchStatusLabel(searchCredential?.status) }}</el-tag></div></template>
+        <p v-if="searchCredential?.masked" class="muted">当前 Key：{{ searchCredential.masked }}</p>
+        <el-alert :title="searchCredentialEffectiveNotice" type="info" show-icon :closable="false" />
+        <el-form label-position="top" class="search-key-form">
+          <el-form-item label="DeepSeek 搜索服务 API Key"><el-input v-model="searchForm.secret" type="password" show-password autocomplete="new-password" placeholder="输入或替换 Key；保存后仅显示掩码" /></el-form-item>
+        </el-form>
+        <div class="search-key-actions">
+          <el-button type="primary" :loading="busy" :disabled="!settings?.encryption.configured" @click="saveSearchCredential">{{ !searchCredential || searchCredential.status === 'missing' ? '安全保存' : '安全替换' }}</el-button>
+          <template v-if="searchCredential && searchCredential.status !== 'missing'">
+            <el-button :loading="busy" @click="setSearchCredentialStatus(searchCredential.status === 'active' ? 'disabled' : 'active')">{{ searchCredential.status === 'active' ? '停用' : '启用' }}</el-button>
+            <el-button type="danger" plain :loading="busy" @click="revokeSearchCredential">撤销</el-button>
+          </template>
+        </div>
+      </el-card>
+
       <el-card shadow="never">
         <template #header><div class="card-header"><div><strong>模型凭据</strong><p class="muted">AES-256-GCM 信封加密 · {{ settings?.encryption.configured ? "密钥环就绪" : "加密不可用" }}</p></div><el-button type="primary" :disabled="!settings?.encryption.configured" @click="openCredential()">添加凭据</el-button></div></template>
         <ListFilterPagination v-model:query="credentialPages.query.value" v-model:page="credentialPages.page.value" :page-size="credentialPages.pageSize.value" :total="credentialPages.total.value" placeholder="筛选凭据名称、厂商或状态" label="模型凭据分页">
@@ -332,7 +423,7 @@ function actionLabel(value: unknown) {
 
       <el-card shadow="never">
         <template #header><div><strong>凭据审计</strong><p class="muted">仅记录元数据，不记录密钥明文或密文。</p></div></template>
-        <ListFilterPagination v-model:query="auditPages.query.value" v-model:page="auditPages.page.value" :page-size="auditPages.pageSize.value" :total="auditPages.total.value" placeholder="筛选动作、凭据或时间" label="凭据审计分页"><el-table :data="auditPages.pageItems.value" size="small" empty-text="暂无审计记录"><el-table-column label="动作" width="120"><template #default="scope">{{ actionLabel(scope.row.action) }}</template></el-table-column><el-table-column prop="credential_id" label="凭据" min-width="230" show-overflow-tooltip /><el-table-column prop="created_at" label="时间" min-width="180" /></el-table></ListFilterPagination>
+        <ListFilterPagination v-model:query="auditPages.query.value" v-model:page="auditPages.page.value" :page-size="auditPages.pageSize.value" :total="auditPages.total.value" placeholder="筛选动作、用途、凭据或时间" label="凭据审计分页"><el-table :data="auditPages.pageItems.value" size="small" empty-text="暂无审计记录"><el-table-column label="动作" width="120"><template #default="scope">{{ actionLabel(scope.row.action) }}</template></el-table-column><el-table-column label="用途" width="120"><template #default="scope">{{ credentialPurposeLabel(scope.row.purpose) }}</template></el-table-column><el-table-column prop="credential_id" label="凭据" min-width="230" show-overflow-tooltip /><el-table-column prop="created_at" label="时间" min-width="180" /></el-table></ListFilterPagination>
       </el-card>
     </template>
 
@@ -356,6 +447,8 @@ function actionLabel(value: unknown) {
 .binding-row .el-select { min-width: 280px; }
 .muted { color: var(--byq-text-muted); font-size: 12px; margin: .3rem 0 0; }
 .full { width: 100%; }
+.search-key-form { margin-top: .75rem; max-width: 560px; }
+.search-key-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .model-row { align-items: center; display: flex; gap: .5rem; width: 100%; }
 @media (max-width: 640px) { .card-header, .binding-row { align-items: flex-start; flex-direction: column; } .binding-row .el-select { min-width: 0; width: 100%; } }
 </style>

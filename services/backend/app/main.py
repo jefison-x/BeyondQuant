@@ -6592,18 +6592,26 @@ def discover_model_credential_models(credential_id: str, request: Request) -> di
 
 
 @app.get("/v1/users/model-credentials/receipts")
-def reconcile_model_credential(request: Request, operation: str, request_id: str, credential_id: str | None = None) -> dict[str, object]:
+def reconcile_model_credential(
+    request: Request,
+    operation: str,
+    request_id: str,
+    credential_id: str | None = None,
+    purpose: str = "model_api_key",
+) -> dict[str, object]:
     context = _required_agent_context(request, include_workspace=True)
     return _credential_call(lambda: credential_store.reconcile_model_write(
-        operation,request_id,owner=context["owner_principal"],credential_id=credential_id))
+        operation, request_id, owner=context["owner_principal"],
+        credential_id=credential_id, purpose=purpose))
 
 
 @app.post("/v1/users/model-credentials", status_code=201)
 def create_model_credential(payload: dict[str, Any], request: Request) -> dict[str, object]:
     context = _required_agent_context(request)
+    purpose = payload.get("purpose", "model_api_key")
     return _credential_call(lambda: {"credential": credential_store.create_credential(
         context["owner_principal"],
-        {**payload, "purpose": "model_api_key", "scope": "user"},
+        {**payload, "purpose": purpose, "scope": "user"},
         actor=context["actor_principal"],
     )})
 
@@ -6775,6 +6783,44 @@ def resolve_model_credential(payload: dict[str, Any], request: Request) -> dict[
         raise HTTPException(status_code=403, detail="credential resolver denied") from error
     except CredentialUnavailable as error:
         raise HTTPException(status_code=409, detail="selected model binding is unavailable") from error
+    except CredentialPersistenceError as error:
+        raise HTTPException(status_code=503, detail="credential storage is unavailable") from error
+
+
+@app.post("/internal/credentials/search-resolution")
+def resolve_search_credential(payload: dict[str, Any], request: Request) -> dict[str, object]:
+    try:
+        authorize_resolver(
+            request.headers.get("x-byq-credential-resolver-token"),
+            CREDENTIAL_RESOLVER_TOKEN,
+        )
+        if set(payload) != {"owner_principal", "session_id", "trace_id"}:
+            raise ValueError("search credential resolver request fields are invalid")
+        owner = payload.get("owner_principal")
+        session_id = payload.get("session_id")
+        trace_id = payload.get("trace_id")
+        for field, value in (("session_id", session_id), ("trace_id", trace_id)):
+            if not isinstance(value, str) or not value or len(value) > 128:
+                raise ValueError(f"{field} is not valid")
+        resolution = credential_store.resolve_search(owner)
+        if resolution is None:
+            raise CredentialNotFound("search credential not found")
+        # Echo validated runtime identity so the Adapter can reject a stale or
+        # misrouted private resolution before placing its key in a child env.
+        resolution["session_id"] = session_id
+        resolution["trace_id"] = trace_id
+        return {"resolution": resolution}
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except CredentialNotFound as error:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "search_credential_not_configured"},
+        ) from error
+    except CredentialForbidden as error:
+        raise HTTPException(status_code=403, detail="credential resolver denied") from error
+    except CredentialUnavailable as error:
+        raise HTTPException(status_code=409, detail="search credential is unavailable") from error
     except CredentialPersistenceError as error:
         raise HTTPException(status_code=503, detail="credential storage is unavailable") from error
 

@@ -62,6 +62,26 @@ class AcpAuthoritativeVersionTests(unittest.TestCase):
             "sha256:" + self.manifest["profiles"]["product"]["sha256"],
         )
 
+    def test_search_credential_is_separate_and_resolved_per_product_root(self) -> None:
+        compose = yaml.safe_load((ROOT / "compose.yml").read_text(encoding="utf-8"))
+        services = compose["services"]
+        for name, service in services.items():
+            self.assertNotIn("DEEPSEEK_SEARCH_API_KEY", service.get("environment", {}), name)
+
+        runtime = (ROOT / "services/runtime-adapter/app/runtime.py").read_text(encoding="utf-8")
+        self.assertIn("/internal/credentials/search-resolution", runtime)
+        self.assertIn("first_search_key = self._resolve_search_credential(", runtime)
+        self.assertIn("search_api_key=first_search_key", runtime)
+        self.assertIn("search_api_key = self._resolve_search_credential(", runtime)
+        self.assertNotIn("os.environ.get(\"DEEPSEEK_SEARCH_API_KEY\")", runtime)
+
+        profile = PRODUCT_PATCH.read_text(encoding="utf-8")
+        search = profile.split("- id: web-search-deepseek", 1)[1].split("\n- id: ", 1)[0]
+        self.assertIn("apiKeyEnv: DEEPSEEK_SEARCH_API_KEY", search)
+        self.assertNotIn("maxTokens:", search)
+        self.assertNotIn("maxUses:", search)
+        self.assertIn("apiKeyEnv: OPENCODE_API_KEY", profile)
+
     def test_candidate_dockerfiles_are_resolver_fed_not_literal_pinned(self) -> None:
         # ADR-0110 / resolver-fed builds: the pinned source commit is supplied
         # as a build arg and verified against the clone; no candidate Dockerfile

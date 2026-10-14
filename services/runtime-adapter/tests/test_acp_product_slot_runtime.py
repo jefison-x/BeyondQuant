@@ -187,6 +187,7 @@ def slot_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setenv("BYQ_MCP_ACP_SIGNING_KEY", "test-signing-key-0123456789abcdef")  # gitleaks:allow — fixed synthetic test key
     monkeypatch.setenv("BYQ_F6_EXECUTOR_ENABLED", "1")
     monkeypatch.setenv("BYQ_BACKEND_URL", "http://backend.test")
+    monkeypatch.setenv("BYQ_CREDENTIAL_RESOLVER_TOKEN", "synthetic-search-resolver-token")
     monkeypatch.setenv("BYQ_RUNTIME_AUTHORITY_TOKEN", "synthetic-runtime-authority-token")
     (tmp_path / "composition.yml").write_text("[]\n", encoding="utf-8")
     runtime = RuntimeAdapter(compatibility)
@@ -195,6 +196,7 @@ def slot_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     runtime._test_execution_revision_by_session = {}
     runtime._test_execution_projection_overrides = {}
     runtime._test_backend_reads = []
+    runtime._test_search_resolution_reads = []
 
     conversation_scopes = {}
 
@@ -250,6 +252,18 @@ def slot_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
             200, json=projection, request=httpx.Request("GET", url))
 
     monkeypatch.setattr(httpx, "get", backend_get)
+
+    def backend_post(url, *, headers, json, timeout):
+        runtime._test_search_resolution_reads.append((url, dict(headers), dict(json), timeout))
+        assert url == "http://backend.test/internal/credentials/search-resolution"
+        assert headers == {"x-byq-credential-resolver-token": runtime._resolver_token}
+        assert timeout == 3.0
+        return httpx.Response(
+            404, json={"detail": {"code": "search_credential_not_configured"}},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx, "post", backend_post)
     runtime._resolve_model = lambda **_kwargs: {
         # ADR-0106: the ACP product candidate only qualifies the OpenCode Go /
         # deepseek-v4.1-flash route, so the synthetic slot fixture uses that exact
@@ -293,6 +307,130 @@ def test_operations_snapshot_uses_live_registry_and_omits_unconfigured_registry(
         assert "product_slot_leases" not in unconfigured_snapshot
     finally:
         unconfigured.close()
+
+
+def test_runtime_does_not_load_search_key_from_adapter_environment(monkeypatch):
+    monkeypatch.setenv("BYQ_DSH_PROVIDER", "opencode-go-chat")
+    monkeypatch.setenv("OPENCODE_API_KEY", "synthetic-model-key")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "other-model-key-must-not-be-selected")
+    monkeypatch.setenv("DEEPSEEK_SEARCH_API_KEY", "synthetic-search-key")
+    runtime = RuntimeAdapter(FakeAcpCompatibility())
+    try:
+        assert runtime._model_api_key == "synthetic-model-key"
+        assert not hasattr(runtime, "_search_api_key")
+    finally:
+        runtime.close()
+
+
+def test_ordinary_product_root_uses_only_owner_resolved_search_key(slot_runtime, monkeypatch):
+    import httpx
+
+    runtime, compatibility, _registry = slot_runtime
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "ambient-deepseek-must-not-leak")
+    monkeypatch.setenv("OPENCODE_API_KEY", "ambient-opencode-must-not-leak")
+    monkeypatch.setenv("DEEPSEEK_SEARCH_API_KEY", "ambient-search-must-not-leak")
+    resolutions = [None, "owner-search-secret-5678"]
+    seen = []
+
+    def resolve(url, *, headers, json, timeout):
+        seen.append((url, dict(headers), dict(json), timeout))
+        assert url == "http://backend.test/internal/credentials/search-resolution"
+        if resolutions[0] is None:
+            resolutions.pop(0)
+            return httpx.Response(
+                404, json={"detail": {"code": "search_credential_not_configured"}},
+                request=httpx.Request("POST", url),
+            )
+        secret = resolutions.pop(0)
+        return httpx.Response(200, json={"resolution": {
+            "source": "credential_store",
+            "purpose": "web_search_api_key",
+            "provider": "deepseek",
+            "scope": "user",
+            "owner_principal": json["owner_principal"],
+            "session_id": json["session_id"],
+            "trace_id": json["trace_id"],
+            "credential_id": "cred_" + "a" * 32,
+            "credential_version": 2,
+            "api_key": secret,
+        }}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", resolve)
+    _create(runtime, "slot-search-absent", "workspace_slot_a")
+    _root, receipt = _run_to_idle(runtime, "slot-search-absent", "ordinary without explicit search")
+    child_env = compatibility.successful_starts[-1].environment
+    assert child_env["OPENCODE_API_KEY"] == "synthetic-provider-key"
+    assert "DEEPSEEK_API_KEY" not in child_env
+    assert "DEEPSEEK_SEARCH_API_KEY" not in child_env
+    runtime.acknowledge_terminal("slot-search-absent", receipt)
+
+    _create(runtime, "slot-search-explicit", "workspace_slot_a")
+    _root, receipt = _run_to_idle(runtime, "slot-search-explicit", "ordinary with explicit search")
+    child_env = compatibility.successful_starts[-1].environment
+    assert child_env["OPENCODE_API_KEY"] == "synthetic-provider-key"
+    assert child_env["DEEPSEEK_SEARCH_API_KEY"] == "owner-search-secret-5678"
+    assert "DEEPSEEK_API_KEY" not in child_env
+    assert len(seen) == 2
+    assert all(item[1] == {"x-byq-credential-resolver-token": runtime._resolver_token} for item in seen)
+    assert seen[0][2] == {
+        "owner_principal": "slot-owner",
+        "session_id": "slot-search-absent",
+        "trace_id": "trace-slot-search-absent",
+    }
+    assert seen[1][2] == {
+        "owner_principal": "slot-owner",
+        "session_id": "slot-search-explicit",
+        "trace_id": "trace-slot-search-explicit",
+    }
+    assert "owner-search-secret-5678" not in json.dumps(seen)
+    runtime.acknowledge_terminal("slot-search-explicit", receipt)
+
+
+def test_search_resolver_rejects_cross_identity_response_without_exposing_key(slot_runtime, monkeypatch):
+    import httpx
+
+    runtime, _compatibility, _registry = slot_runtime
+    synthetic_key = "must-not-escape-search-secret"
+
+    def wrong_owner(url, *, headers, json, timeout):
+        return httpx.Response(200, json={"resolution": {
+            "purpose": "web_search_api_key", "provider": "deepseek", "scope": "user",
+            "owner_principal": "another-owner", "session_id": json["session_id"],
+            "trace_id": json["trace_id"], "credential_id": "cred_" + "b" * 32,
+            "credential_version": 1, "api_key": synthetic_key,
+        }}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", wrong_owner)
+    with pytest.raises(RuntimeAuthorityUnavailable) as caught:
+        runtime._resolve_search_credential(
+            owner_principal="slot-owner", session_id="slot-search-owner-check",
+            trace_id="trace-search-owner-check",
+        )
+    assert synthetic_key not in str(caught.value)
+
+
+@pytest.mark.parametrize("json_response", [True, False])
+def test_search_resolver_fails_closed_for_untyped_404(slot_runtime, monkeypatch, json_response):
+    import httpx
+
+    runtime, _compatibility, _registry = slot_runtime
+
+    def unrelated_404(url, **_kwargs):
+        if json_response:
+            return httpx.Response(
+                404, json={"detail": "Not Found"}, request=httpx.Request("POST", url),
+            )
+        return httpx.Response(
+            404, content=b"Not Found", headers={"content-type": "text/plain"},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(httpx, "post", unrelated_404)
+    with pytest.raises(RuntimeAuthorityUnavailable, match="resolution is unavailable"):
+        runtime._resolve_search_credential(
+            owner_principal="slot-owner", session_id="slot-search-404",
+            trace_id="trace-slot-search-404",
+        )
 
 
 def _create(runtime: RuntimeAdapter, session_id: str, workspace: str) -> None:
@@ -412,8 +550,17 @@ def test_busy_replacement_preserves_acked_native_reuse_for_retry(slot_runtime):
     runtime.acknowledge_terminal("slot-reuse", second_receipt)
 
 
-def test_normal_f6_normal_f6_reuses_native_only_after_exact_ack_with_fresh_root_guards(slot_runtime):
+def test_normal_f6_normal_f6_reuses_native_only_after_exact_ack_with_fresh_root_guards(
+    slot_runtime, monkeypatch,
+):
     runtime, compatibility, _registry_value = slot_runtime
+    search_resolutions = []
+
+    def resolve_search(**identity):
+        search_resolutions.append(identity)
+        return f"synthetic-search-key-{len(search_resolutions)}"
+
+    monkeypatch.setattr(runtime, "_resolve_search_credential", resolve_search)
     workspace = "workspace_slot_a"
     _create(runtime, "f6-reuse", workspace)
 
@@ -422,6 +569,8 @@ def test_normal_f6_normal_f6_reuses_native_only_after_exact_ack_with_fresh_root_
     native_id = record.runtime_session_id
     home = Path(record.recovery_cwd)
     first_harness = compatibility.successful_starts[-1]
+    assert first_harness.environment["DEEPSEEK_SEARCH_API_KEY"] == "synthetic-search-key-1"
+    assert len(search_resolutions) == 1
     first_patch = home / "continuation-guard.patch.json"
     first_patch_bytes = first_patch.read_bytes()
     first_journal = _guard_journal_path(home)
@@ -451,6 +600,8 @@ def test_normal_f6_normal_f6_reuses_native_only_after_exact_ack_with_fresh_root_
     _wait_status(runtime, "f6-reuse", SessionStatus.IDLE)
     second_receipt = record.terminal_receipts[second_root]
     second_harness = compatibility.successful_starts[-1]
+    assert second_harness.environment["DEEPSEEK_SEARCH_API_KEY"] == ""
+    assert len(search_resolutions) == 1
     assert compatibility.resumed[-1] == (second_harness, native_id, home)
     assert second_harness.environment["BYQ_ROOT_RUN_ID"] == second_root
     assert second_harness.environment["BYQ_ROOT_RUN_ID"] != first_root
@@ -480,6 +631,8 @@ def test_normal_f6_normal_f6_reuses_native_only_after_exact_ack_with_fresh_root_
     _wait_status(runtime, "f6-reuse", SessionStatus.IDLE)
     third_receipt = record.terminal_receipts[third_root]
     third_harness = compatibility.successful_starts[-1]
+    assert third_harness.environment["DEEPSEEK_SEARCH_API_KEY"] == "synthetic-search-key-2"
+    assert len(search_resolutions) == 2
     assert compatibility.resumed[-1] == (third_harness, native_id, home)
     assert third_harness.environment["BYQ_ROOT_RUN_ID"] == third_root
     assert third_harness.environment["BYQ_DSH_RUN_ID"] != second_harness.environment["BYQ_DSH_RUN_ID"]
@@ -723,6 +876,9 @@ def test_recovered_interrupted_root_keeps_slot_until_exact_terminal_ack(slot_run
     new_compatibility = SlotFakeCompatibility(_registry((workspace,)))
     restarted = RuntimeAdapter(new_compatibility)
     restarted.require_current_backend_authority = lambda: 8
+    restarted._resolve_search_credential = lambda **_identity: pytest.fail(
+        "repairing the same transferred root must not resolve a new search credential"
+    )
     restarted._resolve_model = lambda **_kwargs: {
         "source": "synthetic-test", "provider": "opencode-go-chat",
         "model": "deepseek-v4.1-flash", "api_key": "synthetic-provider-key",

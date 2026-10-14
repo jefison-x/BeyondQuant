@@ -657,6 +657,7 @@ test("my space pages render profile, models, assets, and agent policy", async ({
           { provider: "opencode-zen", model: "gpt-5.6-sol", display_name: "GPT 5.6 Sol", reasoning_supported: true },
         ],
         agents: [], credential_items: [], profiles: [], bindings: [], audit: [],
+        search_credential: { configured: false, status: "missing", masked: null, version: null, credential_id: null, provider: "deepseek" },
         encryption: { configured: true, status: "ready" }, credentials: { masked: true, write_only: true },
       }),
     }),
@@ -696,6 +697,8 @@ test("my space pages render profile, models, assets, and agent policy", async ({
 
   await openNav(page, "模型配置");
   await expect(page.getByRole("heading", { name: "模型配置" })).toBeVisible();
+  await expect(page.getByText("DeepSeek 搜索服务 API Key", { exact: true })).toBeVisible();
+  await expect(page.getByText("当前执行中的这一轮仍可能使用原 Key；结束后新开始的轮次会读取最新配置。若需立即使原 Key 失效，请到服务商处撤销。", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "添加凭据" })).toBeVisible();
   await page.getByRole("button", { name: "添加凭据" }).click();
   await page.getByRole("dialog").locator(".el-select").first().click();

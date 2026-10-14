@@ -41,6 +41,7 @@ PRODUCT_ENV_REQUIRED = frozenset({
 })
 PRODUCT_ENV_OPTIONAL = frozenset({
     "BYQ_NATIVE_ROOT_SESSION_ID", "DEEPSEEK_API_KEY", "OPENCODE_API_KEY",
+    "DEEPSEEK_SEARCH_API_KEY",
     # Non-secret reservation carrier for a background continuation root. It is
     # the trusted task-bound identity the MCP server uses to advertise only the
     # tools that exact reservation may call; never a caller-selected value.
@@ -136,6 +137,8 @@ def validate_product_environment(
         raise ProductSlotContractError("Product ACP signing credential is invalid")
     secrets = [env["BYQ_MCP_ACP_DISCOVERY_TOKEN"], env["BYQ_MCP_ACP_SIGNING_KEY"]]
     secrets.extend(env[key] for key in provider_keys)
+    if "DEEPSEEK_SEARCH_API_KEY" in env:
+        secrets.append(env["DEEPSEEK_SEARCH_API_KEY"])
     if len(set(secrets)) != len(secrets):
         raise ProductSlotContractError("Product ACP credentials must be distinct")
 

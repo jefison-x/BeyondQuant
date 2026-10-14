@@ -1061,6 +1061,11 @@ class RuntimeAdapter:
                             "beyondquant:provider-session:" + record.session_id)),
                         provider=first_provider, model=first_model,
                         execution_profile=first_profile)).decode('ascii')
+                    first_search_key = self._resolve_search_credential(
+                        owner_principal=record.owner_principal,
+                        session_id=record.session_id,
+                        trace_id=record.trace_id,
+                    )
                     record.harness = self._build_harness(
                         record.session_id, Path(record.recovery_cwd), trace_id=record.trace_id,
                         owner_principal=record.owner_principal, workspace_id=record.workspace_id,
@@ -1069,7 +1074,8 @@ class RuntimeAdapter:
                         root_run_id=record.process_root_id,
                         continuation_proxy_url=first_proxy.base_url,
                         product_turn_overlay_b64=first_overlay,
-                        product_execution_profile=first_profile)
+                        product_execution_profile=first_profile,
+                        search_api_key=first_search_key)
                     record.continuation_request_gate = first_gate
                     record.continuation_request_proxy = first_proxy
                     if record.current_generation is None:
@@ -1308,6 +1314,14 @@ class RuntimeAdapter:
                                 provider_session_id=product_provider_session_id,
                                 provider=runtime_provider, model=runtime_model,
                                 execution_profile=product_execution_profile)).decode('ascii')
+                    search_api_key = None
+                    if (self._acp_product_slots and budget is None
+                            and product_turn_overlay_b64 is not None):
+                        search_api_key = self._resolve_search_credential(
+                            owner_principal=record.owner_principal,
+                            session_id=record.session_id,
+                            trace_id=record.trace_id,
+                        )
                     harness = self._build_harness(record.session_id, session_root,
                         trace_id=record.trace_id, owner_principal=record.owner_principal,
                         workspace_id=record.workspace_id, model_resolution=record.model_resolution,
@@ -1321,6 +1335,7 @@ class RuntimeAdapter:
                         ),
                         product_turn_overlay_b64=product_turn_overlay_b64,
                         product_execution_profile=product_execution_profile,
+                        search_api_key=search_api_key,
                         native_root_session_id=(previous_native_session if reuse_native else None))
                 except BaseException:
                     if request_proxy is not None:
@@ -2918,6 +2933,7 @@ class RuntimeAdapter:
         continuation_deadline_epoch_ms: int | None = None,
         product_turn_overlay_b64: str | None = None,
         product_execution_profile: dict[str, object] | None = None,
+        search_api_key: str | None = None,
     ) -> Any:
         if self._root_scoped and re.fullmatch(r"[0-9a-f]{32}", root_run_id) is None:
             raise ValueError("root-scoped process requires a reserved root identity")
@@ -2975,6 +2991,8 @@ class RuntimeAdapter:
         max_tokens = None
         guard_b64 = None
         if continuation_budget is not None:
+            if search_api_key is not None:
+                raise ValueError('search credentials cannot enter a continuation process')
             if continuation_proxy_url is None or continuation_deadline_epoch_ms is None:
                 raise ValueError('continuation provider gate is required')
             if self._acp:
@@ -3030,8 +3048,20 @@ class RuntimeAdapter:
             if product_execution_profile is None:
                 raise ValueError('ordinary product execution profile is required')
             profile = validate_product_turn_execution_profile(product_execution_profile)
+            # The official web-search plugin has a separate credential
+            # reference. Do not enable it from the model provider key, and do
+            # not pass it to the distinct F6 continuation path above.
+            if search_api_key is not None:
+                if (not self._acp or str(model_resolution.get("provider") or self._provider)
+                        != "opencode-go-chat" or not isinstance(search_api_key, str)
+                        or not search_api_key or len(search_api_key.encode("utf-8")) > 16_384
+                        or "\0" in search_api_key):
+                    raise ValueError('ordinary search credential is invalid')
+                environment["DEEPSEEK_SEARCH_API_KEY"] = search_api_key
             guard_b64 = product_turn_overlay_b64
             max_tokens = product_turn_execution_output_cap(profile['options'])
+        elif search_api_key is not None:
+            raise ValueError('search credentials require an ordinary Product root')
         return self._compatibility.build_harness(
             provider=str(model_resolution.get("provider") or self._provider),
             model=str(model_resolution.get("model") or self._model),
@@ -3122,6 +3152,70 @@ class RuntimeAdapter:
         except (httpx.HTTPError, ValueError, TypeError, KeyError):
             raise RuntimeAuthorityUnavailable(
                 "ordinary execution options are unavailable or unproven"
+            ) from None
+
+    def _resolve_search_credential(
+        self,
+        *,
+        owner_principal: str | None,
+        session_id: str,
+        trace_id: str,
+    ) -> str | None:
+        if not owner_principal or not self._resolver_token:
+            raise RuntimeAuthorityUnavailable("search credential resolver is unavailable")
+        try:
+            response = httpx.post(
+                f"{self._backend_url}/internal/credentials/search-resolution",
+                headers={"x-byq-credential-resolver-token": self._resolver_token},
+                json={
+                    "owner_principal": owner_principal,
+                    "session_id": session_id,
+                    "trace_id": trace_id,
+                },
+                timeout=3.0,
+            )
+            if response.status_code == 404:
+                try:
+                    missing_body = response.json()
+                except (ValueError, TypeError):
+                    raise RuntimeAuthorityUnavailable(
+                        "search credential resolution is unavailable"
+                    ) from None
+                if missing_body == {
+                    "detail": {"code": "search_credential_not_configured"}
+                }:
+                    return None
+                raise RuntimeAuthorityUnavailable(
+                    "search credential resolution is unavailable"
+                )
+            response.raise_for_status()
+            body = response.json()
+            resolution = body.get("resolution") if isinstance(body, dict) else None
+            if not isinstance(resolution, dict):
+                raise RuntimeAuthorityUnavailable("search credential resolution is invalid")
+            credential_id = resolution.get("credential_id")
+            credential_version = resolution.get("credential_version")
+            api_key = resolution.get("api_key")
+            if (
+                resolution.get("purpose") != "web_search_api_key"
+                or resolution.get("provider") != "deepseek"
+                or resolution.get("scope") != "user"
+                or resolution.get("owner_principal") != owner_principal
+                or resolution.get("session_id") != session_id
+                or resolution.get("trace_id") != trace_id
+                or not isinstance(credential_id, str)
+                or re.fullmatch(r"cred_[0-9a-f]{32}", credential_id) is None
+                or type(credential_version) is not int or credential_version < 1
+                or not isinstance(api_key, str) or not api_key or "\0" in api_key
+                or len(api_key.encode("utf-8")) > 16_384
+            ):
+                raise RuntimeAuthorityUnavailable("search credential resolution is invalid")
+            return api_key
+        except RuntimeAuthorityUnavailable:
+            raise
+        except (httpx.HTTPError, ValueError, TypeError, UnicodeError):
+            raise RuntimeAuthorityUnavailable(
+                "search credential resolution is unavailable"
             ) from None
 
     def _resolve_model(

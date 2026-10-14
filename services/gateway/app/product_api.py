@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -1849,16 +1850,53 @@ def product_model_settings(request: Request) -> dict[str, object]:
     binding_body = _backend_request("GET", "/v1/users/model-bindings", headers=headers)
     audit_body = _backend_request("GET", "/v1/users/model-credential-audit?limit=50", headers=headers)
     credentials = credential_body.get("credentials", [])
+    if not isinstance(credentials, list) or any(not isinstance(item, dict) for item in credentials):
+        raise ProductError(502, "backend_invalid_response", "backend returned invalid credentials")
+    model_credentials = [item for item in credentials if item.get("purpose") == "model_api_key"]
+    search_records = [
+        item for item in credentials
+        if item.get("purpose") == "web_search_api_key" and item.get("status") != "revoked"
+    ]
+    if len(search_records) > 1:
+        raise ProductError(502, "backend_invalid_response", "backend returned ambiguous search credentials")
+    if search_records:
+        search_row = search_records[0]
+        if (search_row.get("scope") != "user" or search_row.get("provider") != "deepseek"
+                or search_row.get("status") not in {"active", "disabled"}
+                or type(search_row.get("version")) is not int or search_row["version"] < 1
+                or not isinstance(search_row.get("credential_id"), str)
+                or not re.fullmatch(r"cred_[0-9a-f]{32}", search_row["credential_id"])
+                or (search_row.get("masked") is not None
+                    and not isinstance(search_row.get("masked"), str))):
+            raise ProductError(502, "backend_invalid_response", "backend returned invalid search credentials")
+        search_credential = {
+            "configured": search_row["status"] == "active",
+            "status": search_row["status"],
+            "masked": search_row.get("masked"),
+            "version": search_row["version"],
+            "credential_id": search_row["credential_id"],
+            "provider": "deepseek",
+        }
+    else:
+        search_credential = {
+            "configured": False,
+            "status": "missing",
+            "masked": None,
+            "version": None,
+            "credential_id": None,
+            "provider": "deepseek",
+        }
     return {
         "provider": "deepseek",
         "providers": catalog.get("providers", []),
         "configured": any(
             isinstance(item, dict) and item.get("status") == "active"
-            for item in credentials if isinstance(credentials, list)
+            for item in model_credentials
         ),
+        "search_credential": search_credential,
         "models": catalog.get("models", []),
         "agents": catalog.get("agents", []),
-        "credential_items": credentials,
+        "credential_items": model_credentials,
         "profiles": profile_body.get("profiles", []),
         "bindings": binding_body.get("bindings", []),
         "audit": audit_body.get("events", []),
@@ -1868,11 +1906,19 @@ def product_model_settings(request: Request) -> dict[str, object]:
 
 
 @router.get("/settings/models/credentials/receipts")
-def product_model_credential_receipt(request: Request, operation: str, request_id: str, credential_id: str | None = None) -> dict[str, object]:
+def product_model_credential_receipt(
+    request: Request,
+    operation: str,
+    request_id: str,
+    credential_id: str | None = None,
+    purpose: str = "model_api_key",
+) -> dict[str, object]:
     from urllib.parse import urlencode
     params = {"operation":operation,"request_id":request_id}
     if credential_id is not None:
         params["credential_id"] = credential_id
+    if purpose != "model_api_key":
+        params["purpose"] = purpose
     return _backend_request("GET","/v1/users/model-credentials/receipts?"+urlencode(params),headers=_trusted_agent_headers(request))
 
 

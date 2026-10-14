@@ -2,7 +2,7 @@ import json
 import pytest
 from app import main
 from fastapi.testclient import TestClient
-from tests.test_credentials import _store,_credential_payload,pytestmark
+from tests.test_credentials import _store,_credential_payload,_search_credential_payload,pytestmark
 from tests.workspace_helpers import trusted_agent_context
 
 
@@ -32,6 +32,36 @@ def test_original_credential_receipts_are_private_metadata_only_after_rotation_a
     finally:store.close()
 
 
+def test_search_credential_receipts_are_purpose_scoped_and_metadata_only(monkeypatch):
+    headers=trusted_agent_context('receipt-search-owner')
+    store=_store();monkeypatch.setattr(main,'credential_store',store)
+    try:
+        payload=_search_credential_payload(
+            'synthetic-search-secret-1234', idempotency_key='search-create-receipt-1',
+        )
+        credential=store.create_credential('receipt-search-owner',payload,actor='receipt-search-owner')
+        identity=credential['credential_id']
+        client=TestClient(main.app)
+        params={'operation':'create','request_id':'search-create-receipt-1',
+                'purpose':'web_search_api_key'}
+        response=client.get('/v1/users/model-credentials/receipts',params=params,headers=headers)
+        assert response.status_code==200
+        assert response.json()=={
+            'state':'confirmed','operation':'create','credential_id':identity,
+            'committed_version':1,
+        }
+        model_receipt=client.get(
+            '/v1/users/model-credentials/receipts',
+            params={'operation':'create','request_id':'search-create-receipt-1'},
+            headers=headers,
+        )
+        assert model_receipt.status_code==200
+        assert model_receipt.json()=={'state':'not_found'}
+        assert 'synthetic-search-secret' not in response.text
+        assert 'purpose' not in response.text
+    finally:store.close()
+
+
 @pytest.mark.parametrize('system',[False,True])
 def test_concurrent_credential_creation_has_one_original_identity(system):
     from concurrent.futures import ThreadPoolExecutor
@@ -48,6 +78,36 @@ def test_concurrent_credential_creation_has_one_original_identity(system):
         assert len({row['credential_id'] for row in results})==1
         assert stores[0]._fetch_one('SELECT count(*) AS n FROM credentials')['n']==1
         assert stores[0]._fetch_one('SELECT count(*) AS n FROM credential_audit')['n']==1
+    finally:
+        for store in stores:store.close()
+
+
+def test_concurrent_search_credential_create_enforces_one_nonrevoked_owner_row():
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from app.credentials import CredentialConflict
+
+    stores=[_store() for _ in range(8)]
+    barrier=Barrier(8)
+    try:
+        def create(index):
+            payload=_search_credential_payload(
+                f'synthetic-search-{index}-secret',
+                idempotency_key=f'search-concurrent-{index}',
+            )
+            barrier.wait(timeout=5)
+            try:
+                return stores[index].create_credential('alice',payload,actor='alice')
+            except CredentialConflict:
+                return None
+        with ThreadPoolExecutor(8) as executor:
+            results=list(executor.map(create,range(8)))
+        created=[result for result in results if result is not None]
+        assert len(created)==1
+        assert stores[0]._fetch_one(
+            "SELECT count(*) AS n FROM credentials WHERE owner_principal='alice' "
+            "AND purpose='web_search_api_key' AND status <> 'revoked'"
+        )['n']==1
     finally:
         for store in stores:store.close()
 

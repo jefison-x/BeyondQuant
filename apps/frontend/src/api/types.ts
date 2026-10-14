@@ -245,12 +245,24 @@ export interface ModelSettings {
   models: Array<{ provider: string; model: string; display_name: string; reasoning_supported: boolean }>;
   agents: Array<{ agent_id: string; name: string }>;
   credential_items: ModelCredential[];
+  search_credential: SearchCredentialSettings;
   profiles: ModelProfile[];
   bindings: ModelBinding[];
   audit: Array<Record<string, unknown>>;
   encryption: { configured: boolean; status: string; envelope_version?: string };
   credentials: { masked: boolean; write_only: boolean };
 }
+
+export interface SearchCredentialSettings {
+  configured: boolean;
+  status: "active" | "disabled" | "missing";
+  masked: string | null;
+  version: number | null;
+  credential_id: string | null;
+  provider: "deepseek";
+}
+
+export type CredentialPurpose = "model_api_key" | "web_search_api_key" | "tushare_token";
 
 export interface ModelProvider {
   provider: string;
@@ -260,6 +272,7 @@ export interface ModelProvider {
 
 export interface ModelCredential {
   credential_id: string;
+  purpose: CredentialPurpose;
   provider: string;
   label: string;
   status: "active" | "disabled" | "revoked";

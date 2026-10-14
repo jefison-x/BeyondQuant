@@ -518,6 +518,8 @@ def _minimal_child_environment(env: dict[str, str], home: Path,
         "DSH_PERMISSION_MODE": "read-only",
         "DSH_MAX_TOKENS_AS_SUCCESS": "false",
     }
+    # The input is already validated against the closed Product slot contract;
+    # only that explicit field can carry the dedicated search credential.
     result.update(env)
     for forbidden in (
         "BYQ_ACP_PRODUCT_RUNNER_CONTROL_SECRET",
@@ -529,7 +531,7 @@ def _minimal_child_environment(env: dict[str, str], home: Path,
         "BYQ_CREDENTIAL_RESOLVER_TOKEN", "BYQ_MCP_READ_ONLY_TOKEN",
         "BYQ_MCP_ACP_JUDGMENT_SIGNING_KEY", "BYQ_MCP_ACP_JUDGMENT_PROOF_TOKEN",
         "DEEPSEEK_API_KEY_UPSTREAM", "OPENCODE_API_KEY_UPSTREAM",
-        "DEEPSEEK_SEARCH_API_KEY", "DEEPSEEK_BASE_URL", "DEEPSEEK_SEARCH_BASE_URL",
+        "DEEPSEEK_BASE_URL", "DEEPSEEK_SEARCH_BASE_URL",
         "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy",
         "all_proxy", "NO_PROXY", "no_proxy", "NODE_OPTIONS", "NODE_PATH",
         "PYTHONPATH", "PYTHONHOME", "LD_PRELOAD", "LD_LIBRARY_PATH",

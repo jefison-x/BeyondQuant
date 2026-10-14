@@ -260,6 +260,30 @@ def test_scope_and_environment_contract_are_closed() -> None:
         )
 
 
+def test_search_credential_is_optional_distinct_and_errors_are_redacted() -> None:
+    scope = _scope()
+    env = _environment(scope)
+    search_key = "synthetic-search-secret"
+    env["DEEPSEEK_SEARCH_API_KEY"] = search_key
+    assert slot.validate_product_environment(env, scope)["DEEPSEEK_SEARCH_API_KEY"] == search_key
+
+    for bad_value in ("", "provider-key-qualification-only", object()):
+        invalid = {**env, "DEEPSEEK_SEARCH_API_KEY": bad_value}
+        with pytest.raises(slot.ProductSlotContractError) as error:
+            slot.validate_product_environment(invalid, scope)
+        assert search_key not in str(error.value)
+        assert "provider-key-qualification-only" not in str(error.value)
+
+    without_search = {key: value for key, value in env.items()
+                      if key != "DEEPSEEK_SEARCH_API_KEY"}
+    assert slot.validate_product_environment(without_search, scope) == without_search
+
+    two_model_keys = {**without_search, "OPENCODE_API_KEY": "another-model-key"}
+    with pytest.raises(slot.ProductSlotContractError, match="exactly one") as error:
+        slot.validate_product_environment(two_model_keys, scope)
+    assert "another-model-key" not in str(error.value)
+
+
 def test_workspace_mismatch_is_signed_and_never_creates_a_cwd(tmp_path: Path,
                                                               monkeypatch: pytest.MonkeyPatch) -> None:
     _fake_popen_for_current_uid(monkeypatch)
@@ -565,7 +589,10 @@ def test_unproven_startup_cleanup_retires_the_only_workspace_slot(
         _close_server(server, thread)
 
 
-def test_child_environment_forces_runner_runtime_root_and_drops_authority(tmp_path: Path) -> None:
+def test_child_environment_forces_runner_runtime_root_and_drops_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEEPSEEK_SEARCH_API_KEY", "ambient-runner-search-must-not-leak")
     home = tmp_path / "home"
     home.mkdir()
     env = {
@@ -579,7 +606,13 @@ def test_child_environment_forces_runner_runtime_root_and_drops_authority(tmp_pa
     assert child["BYQ_DSH_RUNTIME_ROOT"] == "/opt/dsh-runtime"
     assert "BYQ_RUNTIME_AUTHORITY_TOKEN" not in child
     assert "DEEPSEEK_API_KEY_UPSTREAM" not in child
+    assert "DEEPSEEK_SEARCH_API_KEY" not in child
     assert child["BYQ_WORKSPACE_ID"] == "workspace-team-a"
+
+    validated = {**env, "DEEPSEEK_SEARCH_API_KEY": "validated-search-secret"}
+    child = slot._minimal_child_environment(
+        validated, home, tmp_path / "sessions", Path("/opt/dsh-runtime"))
+    assert child["DEEPSEEK_SEARCH_API_KEY"] == "validated-search-secret"
 
 
 def _guard_overlay_b64(*, headers):
