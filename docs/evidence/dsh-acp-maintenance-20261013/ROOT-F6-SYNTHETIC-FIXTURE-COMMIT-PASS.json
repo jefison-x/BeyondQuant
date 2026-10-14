@@ -1,0 +1,50 @@
+{
+  "schema": "byq-maintenance-root-gate.v1",
+  "status": "PASS_ISOLATED_SYNTHETIC_FIXTURE_COMMIT_ONLY",
+  "source_commit_at_generation": "0f7d3b020390466dddbeb3b5383aaec94b1714c1",
+  "purpose": "Minimum isolated market fixture for background SignalJob lifecycle qualification",
+  "sql_sha256": "977c04518a553cdeda4f070494f832624302d929dcfa138badae2c76536b7e5b",
+  "manifest_sha256": "6f798ef779382dbdfeadb2dc634c3c96441dc72e56cea5202acb312e423c917a",
+  "raw_bundle_sha256": "e318e6ff4c18c84c01ec8b921a4a75ee26cce9a8ea4e1aff318f7ccf300c489f",
+  "target": {
+    "project": "byq-dev-e8b02b5475",
+    "postgres_id": "3fd37a6325d915ea95fe8d7b3f9f86d16ce8424297c143d59a6107d19e769533",
+    "image_id": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+    "identity_before_after": "equal including StartedAt"
+  },
+  "verification": {
+    "offline_generator": "one network-none read-only disposable container, rc0, 2177877056ns",
+    "independent_sol_source_and_raw": "PASS",
+    "database_calls": 3,
+    "database_command_rc_each": [0, 0, 0],
+    "database_elapsed_ms": 1241,
+    "database_limit_ms": 30000,
+    "psql_on_error_stop": true,
+    "final_stdout_line": "COMMIT",
+    "stderr_bytes": 0,
+    "direct_rows": 193,
+    "direct_tables": 8,
+    "scoped_completeness_rows": 38,
+    "global_completeness_rows": 0,
+    "enabled_trigger_projection_postconditions": "PASS inside transaction",
+    "root": "PASS limited fixture gate"
+  },
+  "preserved_failure": {
+    "sql_sha256": "e4d6174ae3f1507a992c2400b17561ad9ff7cbd732a3f995c32c7794575d45f4",
+    "status": "FAIL_STOP: factor verifier depended on a purpose field stripped by canonical normalization; rc3, no COMMIT; scoped rollback read proved zero",
+    "repair": "Only factor postcondition changed to 38 exact symbol/date/canonical-content-hash tuples and data_source match; old failed SQL not replayed"
+  },
+  "private_raw_evidence": [
+    ".ci-artifacts/background-continuation-20261014/fixture-prepared-v2/factor-verification-repair-v1/",
+    ".ci-artifacts/background-continuation-20261014/native-fixture-write-v2/"
+  ],
+  "limits": {
+    "data": "synthetic dates include weekends and fixture provider labels; not genuine Tushare provenance, real calendar or data-quality qualification",
+    "model_calls": 0,
+    "jobs_created": 0,
+    "worker_started": false,
+    "background_continuation": "NOT_RUN",
+    "production": "NOT_RUN",
+    "overall": "NOT_READY"
+  }
+}
