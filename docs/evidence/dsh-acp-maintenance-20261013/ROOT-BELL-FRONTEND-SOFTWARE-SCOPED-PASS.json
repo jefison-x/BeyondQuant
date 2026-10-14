@@ -1,0 +1,38 @@
+{
+  "status": "PASS_SOFTWARE_SCOPED",
+  "source_commit": "65424c40d1c4bfe6345b9b326a6299ede747c16b",
+  "unit": {
+    "directory": ".ci-artifacts/bell-approval-maintenance-20261014/frontend-tests-v2",
+    "exit_code": 0,
+    "cases": 63,
+    "files": 10,
+    "elapsed_seconds": 12.8,
+    "stdout_sha256": "06bfae2e4f50ba3532a001408d179f2f4b30ce751fab368d05b8edbe84d40925"
+  },
+  "retained_failure": {
+    "directory": ".ci-artifacts/bell-approval-maintenance-20261014/frontend-build-v2",
+    "exit_code": 2,
+    "errors": 5,
+    "reason": "TypeScript tab handler and exact DTO/ref type mismatch; stopped before image and browser updates"
+  },
+  "build": {
+    "directory": ".ci-artifacts/bell-approval-maintenance-20261014/frontend-build-v3",
+    "exit_code": 0,
+    "source_manifest_sha256": "5f7e05ba37dc1be899d1adde0b734cf8d1abea8867c031c29d2e4d3d3dd31531",
+    "stdout_sha256": "b07b4a88aed79f89fbc4307d9db515521ebcaeddc52e230c83a81f9ce24c3217",
+    "unit_reuse": "63 earlier cases reused after independent review of strict typed handlers/refs and later EOF whitespace only"
+  },
+  "independent_sol_review": "PASS_SOFTWARE_SCOPED",
+  "root_acceptance": "PASS_SOFTWARE_SCOPED",
+  "models": 0,
+  "jobs": 0,
+  "browser": {
+    "status": "FAIL_REQUIREMENT",
+    "directory": ".ci-artifacts/bell-approval-maintenance-20261014/browser-history-v1",
+    "reason": "Research page still had task, asset, entity and inbox tabs; user requires approval history only",
+    "next": "Narrow history-only correction, focused tests, independent review, rebuild frontend only, browser acceptance"
+  },
+  "production": "NOT_RUN",
+  "overall": "NOT_READY",
+  "environment_and_page": "KEEP_OPEN"
+}

@@ -1,0 +1,74 @@
+{
+  "source_commit": "1e15b9bfcf9d8e42e3363c0293643a29efd31a0d",
+  "copy_commit": "f2eddea7c642db9b51b9da1524e66159f3b7c0a4",
+  "scope": "History-only /user/research; decisions, new requests and permission revocation use the header Bell",
+  "retained_failures": [
+    {
+      "status": "FAIL_REQUIREMENT",
+      "source": "65424c40",
+      "reason": "Old task/asset/entity/inbox tabs remained",
+      "evidence": ".ci-artifacts/bell-approval-maintenance-20261014/browser-history-v1/requirement-fail.txt"
+    },
+    {
+      "status": "FAIL_OBSERVER_STOP",
+      "reason": "Root selected another detail source, then filled the old conditional textbox label without a fresh DOM snapshot; no query submitted",
+      "evidence": ".ci-artifacts/bell-approval-maintenance-20261014/browser-history-v1/observer-stop.txt",
+      "resolution": "After any source/tab change inspect a fresh DOM; exact textbox count 1; fill, inspect value/source/ID; one GET, no replay"
+    }
+  ],
+  "software": {
+    "status": "PASS_SOFTWARE_SCOPED",
+    "source_manifest_sha256": "ab33c0ca1aa23f8f1492124fa01f5ac7a78fd7fbea18a0d2f1b8e8174ffee856",
+    "collection_cases": 4,
+    "passed": 4,
+    "unit_exit_code": 0,
+    "build_exit_code": 0,
+    "unit_stdout_sha256": "3f05f365df3629929d0681f2bb1ad56e20cd6c344640735fed9a50813965b7c4",
+    "build_stdout_sha256": "da62f2244462b8ca635bf937d50da67db8888a4fb50facfce6af362ee00356fe",
+    "review": "Independent Sol PASS; Root PASS",
+    "copy_delta": "One static sentence only; independent Sol accepted test/build reuse"
+  },
+  "isolated_update_v1": {
+    "status": "PASS_LIMITED",
+    "image_id": "sha256:4409756f245dc817526b0651c9c91bca10ff0e3cbf02af4c660a428220dd99bb",
+    "port": 32790,
+    "containers": 14,
+    "other_13_id_image_started_at_unchanged": true,
+    "review": "Independent Sol RAW PASS; Root PASS"
+  },
+  "browser": {
+    "status": "PASS_BROWSER_READONLY_SCOPED",
+    "directory": ".ci-artifacts/bell-approval-maintenance-20261014/browser-history-v1",
+    "checks": [
+      "Three history tabs only; no Task/Asset/Entity management or approval writes on the history page",
+      "Bell Agent/business/continuation entries visible; pending/unresolved lists empty",
+      "One strategy approval detail GET200 and one old permission detail GET200; one additional Bell permission GET200",
+      "Exact original approval/grant/owner/workspace/CID/profile and immutable version preserved",
+      "Captured Gateway access window POST0; browser error log observed empty"
+    ],
+    "strategy_approval_id": "artifact_0c5fb7dea05b416d84045791d0224a57",
+    "confirmation_id": "f9594cb1-79e4-47ee-8238-fb3ca15a838a",
+    "result_sha256": "bfbf279483d76900188a3861c3ee95a1c1d7dbaec2959aae1b95e4c7c9e413d6",
+    "limitation": "Empty lists and read-only flows do not prove live new approval decisions or unknown-result reconciliation",
+    "independent_sol_review": "PASS_SCOPED",
+    "root_acceptance": "PASS_SCOPED"
+  },
+  "typed_request_decision_live": "NOT_RUN in this slice",
+  "model_and_job_tests": "NOT_RUN in this slice",
+  "production": "NOT_RUN",
+  "overall": "NOT_READY",
+  "environment_and_page": "KEEP_OPEN",
+  "status": "PASS_HISTORY_READONLY_SCOPED",
+  "final_isolated_update": {
+    "status": "PASS_LIMITED",
+    "directory": ".ci-artifacts/bell-approval-maintenance-20261014/history-copy-v2",
+    "source": "f2eddea7c642db9b51b9da1524e66159f3b7c0a4",
+    "image_id": "sha256:585da435161fe3bdac1d0299140ac1a32b12dadb7c37d6fdb1746c2506317988",
+    "build_exit_code": 0,
+    "update_exit_code": 0,
+    "other_13_id_image_started_at_unchanged": true,
+    "frontend_health": "healthy",
+    "port": 32790,
+    "scope": "Local image ID only; no registry image admission or production deployment"
+  }
+}
