@@ -1,0 +1,19 @@
+{
+  "status": "PASS",
+  "scope": "One direct browser input and rendered answer in the existing conversation; this is a current UI check, not a repeated full qualification",
+  "source_head": "f581ac88579d3f133beaba781f9315d9344c6e9b",
+  "marker": "BYQ-BROWSER-NOW-20261014-V1",
+  "expected_reply": "BYQ-BROWSER-NOW-20261014-V1 CONTINUE_OK",
+  "inputs": 1,
+  "elapsed_ms_from_pre_input_plan": 27708,
+  "time_cap_ms": 120000,
+  "independent_sol_review": "PASS_UI_ONLY: prompt, thinking state, same conversation, exact rendered answer and screenshot",
+  "root": "PASS_UI_ONLY; reload also redisplays the exact answer in the same conversation",
+  "provider_attempt_count": "NOT_MEASURED",
+  "billing": "UNKNOWN",
+  "job_count": "NOT_MEASURED_THIS_BATCH",
+  "budget_settlement": "NOT_RUN_THIS_BATCH",
+  "background_qualification": "NOT_RUN",
+  "private_evidence": ".ci-artifacts/continuation-direct-20261014/browser-now-v1/",
+  "note": "Screenshot bytes are JPEG; corrected filename to browser-result.jpg without rerunning the model. Existing ordinary and soft-cancel full receipts remain separate."
+}

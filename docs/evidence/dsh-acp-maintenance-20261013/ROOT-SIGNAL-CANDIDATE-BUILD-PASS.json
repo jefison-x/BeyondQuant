@@ -1,0 +1,68 @@
+{
+  "schema_version": "byq-maintenance-root-receipt.v1",
+  "head": "f581ac88579d3f133beaba781f9315d9344c6e9b",
+  "status": "PASS_LIMITED_LOCAL_IMAGE_CONSTRUCTION",
+  "source_manifest_sha256": "5f0a13865dc747b2b542ba71d782a10691d3e4938a3ccd3bb3dfd3a131e669bd",
+  "script_sha256": "f45b66bcd8eb429abffd89ff4ca102c93dcd9c94dd40692ea58860765bf63e60",
+  "plan_sha256": "cbde94ceebfe316ee65e088d573de853dedd0322856190831c5de1ba115bbc32",
+  "private_evidence": {
+    "inner": ".ci-artifacts/signal-candidate-build-20261014/build-prepared-v3/build-v3-execution/",
+    "outer": ".ci-artifacts/signal-candidate-build-20261014/build-prepared-v3/build-outer-v3-execution/",
+    "outer_execution_sha256": "43a65549b32d11d803344d6906ecaa42dd57e024cf06c1a9b85628c34c726159",
+    "final_status_sha256": "79b83f3e97ab62241c192dded57092819fa445e9a07dd3c18201973fa9d91c07",
+    "argv_sha256": "cd594a00d42de01d9de8d56eebbdb54d89d49a42c2bdb810fc5b42d1cd9c01fa",
+    "output_hash_inventory_sha256": "f3cbf63e91efca2cea2d5bf3e143ee387121fd9c0c6bc315c711a1c32ebbb734",
+    "verified_raw_inventory_entries": 20
+  },
+  "execution": {
+    "exact_outer_argv": ["timeout", "--signal=TERM", "--kill-after=5s", "600s", "bash", ".ci-artifacts/signal-candidate-build-20261014/build-prepared-v3/build-candidates.sh"],
+    "start_utc": "2026-10-13T20:45:07.561082753Z",
+    "end_utc": "2026-10-13T20:46:26.556248065Z",
+    "outer_elapsed_ns": 78970863713,
+    "return_code": 0,
+    "docker_calls": 7,
+    "git_archive_calls": 2,
+    "head_and_pins_unchanged": true,
+    "build_order": "worker then sandbox",
+    "automatic_retries": 0,
+    "models": 0,
+    "jobs": 0
+  },
+  "images": [
+    {
+      "service": "signal-worker",
+      "tag": "byq-signal-worker:candidate-f581ac88",
+      "local_image_id": "sha256:a9422c3b7daf6cb6899eb1a32e6f41bc30c3e57656686c9ec38a7e6173beffc3",
+      "archive_paths": 96,
+      "build_elapsed_ms": 35447,
+      "git_archive_rc": 0,
+      "docker_build_rc": 0,
+      "revision_label": "f581ac88579d3f133beaba781f9315d9344c6e9b",
+      "source_label": "BeyondQuant",
+      "title_label": "signal-worker-candidate"
+    },
+    {
+      "service": "signal-sandbox",
+      "tag": "byq-signal-sandbox:candidate-f581ac88",
+      "local_image_id": "sha256:3ac08997dd802af6d8109c22c9ef5f241d83ff8c7bdf5ee68c6ca6f206d18617",
+      "archive_paths": 6,
+      "build_elapsed_ms": 42849,
+      "git_archive_rc": 0,
+      "docker_build_rc": 0,
+      "revision_label": "f581ac88579d3f133beaba781f9315d9344c6e9b",
+      "source_label": "BeyondQuant",
+      "title_label": "signal-sandbox-candidate"
+    }
+  ],
+  "acceptance": {
+    "independent_sol": "/root/preflight_v4_review: limited RAW PASS",
+    "root": "PASS_LIMITED_LOCAL_CONSTRUCTION",
+    "warning": "Both preserved build stderr streams contain the legacy Docker builder deprecation warning.",
+    "digest_semantics": "These are local Image.Id values; no registry RepoDigest qualification is claimed.",
+    "runtime": "NOT_RUN",
+    "image_admission": "NOT_RUN",
+    "real_background_continuation": "NOT_RUN",
+    "production_operations": "NOT_RUN",
+    "overall": "NOT_READY"
+  }
+}

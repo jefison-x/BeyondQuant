@@ -1,0 +1,58 @@
+{
+  "schema_version": "byq-maintenance-root-receipt.v1",
+  "head": "f581ac88579d3f133beaba781f9315d9344c6e9b",
+  "status": "PASS_LIMITED_OFFLINE_BYTEGUARD",
+  "private_evidence_root": ".ci-artifacts/signal-candidate-build-20261014/",
+  "preserved_history": {
+    "build_prepared_v2": "SOURCE HOLD; NUL loss in Bash substitution and mixed elapsed-time clock domains. No build executed.",
+    "build_prepared_v3": "SOURCE PASS; raw-byte guard and monotonic duration calculation corrected.",
+    "build_offline_v3": {
+      "status": "FAIL_STOP",
+      "first_failure": "ASCII-whitespace fixture returned 1; expected 0.",
+      "actual_fixture_hex": "205c745c725c6e",
+      "actual_fixture_sha256": "c6e003cadc5b49bad9f24d35a8112b525dfb744ce5c5758769156ac149bdb2b8",
+      "confirmed_boundary": "The fixture contained SP and literal backslash-t/r/n characters, which the guard correctly rejected. It was not the intended whitespace fixture.",
+      "inline_driver_source_sha256": null,
+      "limitation": "The inline generator source was not saved. Attribution is limited to the observed fixture and expected-result mismatch.",
+      "not_run": "NUL and remaining negative cases; original batch HEAD-after."
+    }
+  },
+  "v4_solution": [
+    "Save and freeze the complete driver and command before execution.",
+    "Define all seven fixtures using fixed hex, retaining the old failure bytes as a negative example.",
+    "Read back and validate all fixture lengths, hex, hashes and expected byte contracts before invoking any guard."
+  ],
+  "v4_inputs": {
+    "driver_sha256": "e9cb250b19b9f39dca8ba514f2143dbbca29b148dd962b3d01ccbb3e262e1783",
+    "manifest_sha256": "bdafbe95622b626be4f51e0f7bb26e2fa1ac6077e9cfa0cf8515d051c178b591",
+    "plan_sha256": "9e6cefc5cd13ec4d418ccac585365935babc834487d0c7198e6280bf63f72592",
+    "native_build_script_sha256": "f45b66bcd8eb429abffd89ff4ca102c93dcd9c94dd40692ea58860765bf63e60"
+  },
+  "v4_execution": {
+    "evidence": "build-offline-v4-execution/",
+    "return_code": 0,
+    "outer_elapsed_ns": 213542081,
+    "inner_elapsed_ns": 160320752,
+    "outer_timeout_seconds": 55,
+    "kill_grace_seconds": 5,
+    "commands": 10,
+    "head_reads": 2,
+    "bash_syntax_checks": 1,
+    "actual_extracted_guard_calls": 7,
+    "allowed_cases": 2,
+    "rejected_cases": 5,
+    "all_results_match_expected": true,
+    "head_and_pins_unchanged": true,
+    "execution_sha256": "e1aa8d19a133068950a5713b5d9f682bdd7fe4cd941f15198ff06d0775c00b01",
+    "outer_execution_sha256": "bf5177ed2f6c3cc6cd44cbcf02dfd7a4595b91d312f6c9fec5be0bf36b86b215",
+    "docker_calls": 0,
+    "models": 0,
+    "jobs": 0
+  },
+  "acceptance": {
+    "independent_sol": "/root/preflight_v4_review: SOURCE and RAW limited PASS",
+    "root": "PASS_LIMITED_OFFLINE",
+    "limitations": "This verifies syntax and the actual extracted byte guard. It does not execute either build pipeline or establish image/runtime/deployment qualification.",
+    "overall": "NOT_READY"
+  }
+}

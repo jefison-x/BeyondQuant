@@ -1,0 +1,75 @@
+{
+  "schema_version": "byq-maintenance-root-receipt.v1",
+  "head": "f581ac88579d3f133beaba781f9315d9344c6e9b",
+  "status": "PASS_LIMITED_READONLY_PREFLIGHT",
+  "private_evidence_root": ".ci-artifacts/signal-candidate-build-20261014/",
+  "preserved_failures": [
+    {
+      "batch": "preflight-v1",
+      "status": "FAIL_STOP_LOCAL_OBSERVER",
+      "cause": "Successful ID|RepoDigests output was incorrectly parsed as a bare Image.Id.",
+      "source_sha256": null,
+      "note": "Original inline collector source was not saved. The raw command output is preserved."
+    },
+    {
+      "batch": "preflight-v2-execution",
+      "status": "FAIL_STOP_LOCAL_OBSERVER",
+      "cause": "Absent-image inspect returned rc=1, the exact no-such-image diagnostic and one LF on stdout. The collector incorrectly required zero stdout bytes."
+    }
+  ],
+  "v3_static_review": {
+    "status": "HOLD_NOT_EXECUTED",
+    "findings": [
+      "Test used incorrect memory result field names.",
+      "Test asserted contradictory meminfo read counts for resource-stop scenarios.",
+      "Collector did not handle actual helper timeout and OSError receipt shapes."
+    ]
+  },
+  "v4_inputs": {
+    "source_sha256": "89be672f1f206948732b5a4edbdb48e0d640271a4318c319a26e6c106cc7b646",
+    "test_sha256": "94b6d7138ab1339ef0881c7171928cc02f2d1920eb6ccc2cd7b05bef3c47a2e9",
+    "plan_sha256": "1500174007eabe213f8a50086a239a21f0888b4ef92f983351df78120ea3a0cb"
+  },
+  "offline": {
+    "status": "PASS",
+    "evidence": "offline-v4/",
+    "return_code": 0,
+    "elapsed_ms": 151,
+    "test_methods": 1,
+    "scenarios": 24,
+    "positive_scenarios": 4,
+    "expected_stop_scenarios": 20,
+    "stderr_bytes": 98,
+    "stderr_sha256": "459da0a026a55fed23299b4a2592012b03540ebbe8683119ba796989daef65fd",
+    "real_external_calls": 0
+  },
+  "real_readonly": {
+    "status": "PASS",
+    "evidence": "preflight-v4-execution/ and prepared-v4/live-preflight-v4/",
+    "return_code": 0,
+    "outer_elapsed_ms": 285,
+    "inner_elapsed_ms": 239.026,
+    "shared_limit_seconds": 60,
+    "git_calls": 2,
+    "docker_calls": 4,
+    "per_command_limit_seconds": 12,
+    "stdout_bytes": 2119,
+    "stdout_sha256": "54288c86f81cb5b70f330ffca2b5ca9264d4706928eb6cb116c81c56d217660d",
+    "head_and_pins_unchanged": true,
+    "base_image_id": "sha256:5024f48ba9441d4b13a95d3945abc6365538e3a31109833367a1923523c6efed",
+    "candidate_tags": "Both exact candidate-f581ac88 worker and sandbox tags were absent.",
+    "disk_available_bytes": 119369347072,
+    "memory_available_bytes": 6630522880,
+    "swap_free_bytes": 4936761344
+  },
+  "acceptance": {
+    "reviewer": "/root/preflight_v4_review",
+    "independent_sol": "PASS_STATIC_AND_RAW_LIMITED",
+    "root": "PASS_LIMITED",
+    "resource_sufficiency_guarantee": false,
+    "image_build": "NOT_RUN",
+    "image_runtime_qualification": "NOT_RUN",
+    "real_background_continuation": "NOT_RUN",
+    "overall": "NOT_READY"
+  }
+}

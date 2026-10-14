@@ -4,9 +4,29 @@
 
 ## 最新进展（2026-10-14 北京时间）
 
-当前软取消切片在源码 `63be22f6466879fceaa178585665185578e3d76c` 执行。完整采集入口替身 V3 已通过；真实浏览器两次输入与一次 Gateway/Product soft 请求在同 CID 完成，唯一回答 `SAME_CID_OK` 已持久化，118961ms 未超过共享120秒。UI停止按钮仍是 hard；本切片显式调用 soft 接口。旧 Cookie/loader 夹具失败和错过取消窗口的真实 V1 均保留。详见下表最新 V2/V3 回执。
+**预算停止后同一会话新输入：V4 真实浏览器限定 PASS。** 登录过期后用现有测试身份重新登录，未重置密码；准确原 CID 新增一次明确纯文字输入和唯一回答，消息数 2→4。一个新 Root/native/generation 正常 completed/closed，旧失败 Root 不变；1 次模型请求、峰值 1，已知 Task/两 Artifact 整行及时间版本不变，Job 前后采样 0。精确 ACK 与真实签名清理一致，8 条原生 Docker 回执均 rc0，整批至最终身份检查 163.83 秒 < 180 秒。批后单独刷新仍只有一份回答；guard 未读、任意工具覆盖 UNKNOWN，不等于后台业务或子 Agent 恢复。Sol → Root 限定 PASS，见 [ROOT-BUDGET-NEXT-TURN-BROWSER-V4-PASS.json](ROOT-BUDGET-NEXT-TURN-BROWSER-V4-PASS.json)。后台 Job 接续及生产仍 NOT_RUN，整体 NOT_READY。
 
-随后独立补查9次只读调用/499ms：旧Root cancelled、新Root completed，授权均closed；两条精确ACK与各自签名进程组清理关联通过Sol→Root PASS。新请求1次、并发1、跨度2984ms，usage29613/26624/39；取消请求计费用量仍UNKNOWN。11表计数全零且四个隔离容器身份未变。两份binding.closed=false、native/process close=true，清理reason=cancelled分别呈现。原子Agent映射、两用户、后台完成续办、进程丢失等剩余项不由本切片替代；整体仍NOT_READY。
+**最新用户界面切片：** 研究提交核对的手动 GET 原已返回 200，但没有完成反馈。`d0c3bcb8` 补上“刷新核对记录”、进行中/完成状态与最近成功读取时间，5 项测试和构建及独立审查 PASS。`7d4d5757` 修正新会话 URL 保留 `?new` 的缺口，27 项定向测试及源码审查 PASS；正常首次发送的自动 CID 路由仍待真实浏览器验证。隔离前端已更新为 `35c2a90f...` 并健康，原 CID 实际手动刷新显示“核对记录已刷新”和时间；真实页面验收另记，未创建新模型/Job。
+
+**F6 浏览器 V1：FAIL_STOP。** 第一轮实际9次模型请求均200完成，下一个候选因累计工具载荷 `959204 + 118477 > 1048576` 在发出前被拒绝；不能归因为16次调用、并发或OC配额。既有 Accepted ADR 明确重复计算目录及工具历史，未调整限额或去重。准确原键对账确认同 CID 的 Task、validated Draft/Version 均已保存，Root failed/closed、unknown claims0、Job表采样0；回答缺失，FG2/Worker/BG NOT_RUN。原 summary 定位错误已保留并更正归因。下一批将复用已核对的对象，先审查单目标流程，不能重放旧创建请求。见 ROOT-F6-BROWSER-V1-FAIL-STOP.json。
+
+**交互验收保留：** 用户明确要求测试后保留运行环境和测试页面，邀请用户一起操作并当场修问题。当前隔离服务和浏览器保持打开；此前自动 teardown 计划不再执行。
+
+**刷新按钮交互验收：PASS。** 用户在当前隔离页面反馈“能看到，正常”；浏览器 AX 和截图另记录成功反馈及最近成功刷新时间。独立 Sol 审查及 Root 的限定验收已完成，见 [ROOT-RECEIPT-REFRESH-INTERACTIVE-PASS.json](ROOT-RECEIPT-REFRESH-INTERACTIVE-PASS.json)。首次发送自动 CID 路由、后台 Job 接续和生产仍不由此证明。
+
+**F6 旧轮次清理证据：只读 PASS。** 修正版采集入口完整主流程替身 5/5 后，经独立审查执行一次四调用/30 秒上限读取，实际约 0.364 秒。真实字段确认旧进程退出且清理已确认，Gateway 的 failed/seq14/hash 与签名回执精确对应；公开会话未结束。Runner 的退出 reason=cancelled 不改变 Backend Root=failed。原采集器静态失败及原 F6 FAIL_STOP 保留，下一轮尚未运行，见 [ROOT-F6-PRIOR-ROOT-CLEANUP-READ-PASS.json](ROOT-F6-PRIOR-ROOT-CLEANUP-READ-PASS.json)。
+
+**页面停止后同一会话再次输入：V3 真实浏览器限定 PASS，Sol → Root PASS。** 原因已确认：页面“停止本轮”原来发送 hard cancel，并设置会话终态、关闭事件流；此前 API soft PASS 未覆盖页面缺陷。旧失败会话的 hard 历史保留。修补后页面使用已有 soft cancel，等待匹配轮次终止，保留 CID 和事件流，再由用户明确输入新指令。
+
+在源码 `a0818970855cebab428e8f467cc1400272efc351`、隔离前端镜像 `378852e7...` 上，实际页面两次输入、一次停止点击，同 CID 收到唯一 `SAME_CID_OK`，刷新后仍只有一份，102036ms < 180000ms。只读补查确认对话 active、旧 Root cancelled/closed、新 Root completed/closed、各 unknown claims=0、两条精确 ACK；指定 11 表采样时全零。Provider 次数未测，计费 UNKNOWN。真实 V1 的创建 503、V2 错过停止窗口均保留 FAIL_STOP，不算成功取消。见 ROOT-UI-SOFT-CANCEL-BROWSER-V3-PASS.json。
+
+V3 发现结算后等待文案残留，非阻断。最小修补已在 `8eb3ad3841a6c5430512e3f51ec65a9d6015e94d` 完成，40 项定向测试、构建、独立 Sol 与 Root 离线 PASS；该版本没有另作真实模型取消验收，见 ROOT-UI-SOFT-CANCEL-WAIT-TEXT-V4-PASS.json。整体仍 NOT_READY，未推送、合并或生产部署。
+
+**F6 浏览器 V1 之前的环境与数据准备证据：** 已启动五个新增隔离应用服务且健康，端口 `32790`，三项 F6 flag 为 1；这只证明隔离启动。数据准备首次 `factor count mismatch`、rc3/无 COMMIT、8 项范围回滚全零的失败保留。随后最小修正因子哈希后置条件，离线一次生成及 Sol 审查通过；隔离 PG 原生单事务写入 193 条合成记录、三个调用均 rc0/最终 COMMIT、容器身份前后相同，1241ms < 30s，Sol → Root 限定 PASS。见 ROOT-F6-SYNTHETIC-FIXTURE-COMMIT-PASS.json；合成周末和 provider 标签不表示真实 Tushare 或数据质量。当时尚未运行 F6 模型或 Job；后续浏览器 V1 的 FAIL_STOP 及未运行范围以上面的最新记录为准。临时采集入口的解释器、回执覆盖和语法失败保留；改用原生 CLI、分开保留 stdout/stderr 与工具退出码后，替身入口和实际五服务启动均通过独立 Sol 限定审查。
+
+**此前 API 直接 soft 的历史限定证据（63be22f6）：** 完整采集入口替身 V3 已通过；真实浏览器两次输入与一次 Gateway/Product soft 请求在同 CID 完成，唯一回答 `SAME_CID_OK` 已持久化，118961ms 未超过共享120秒。当时 UI 停止按钮仍是 hard，该历史切片显式调用 soft 接口，不能替代上面的新版页面验收。旧 Cookie/loader 夹具失败和错过取消窗口的真实 V1 均保留。
+
+该历史 API 切片随后独立补查9次只读调用/499ms：旧Root cancelled、新Root completed，授权均closed；两条精确ACK与各自签名进程组清理关联通过Sol→Root PASS。新请求1次、并发1、跨度2984ms，usage29613/26624/39；取消请求计费用量仍UNKNOWN。11表计数全零且四个隔离容器身份未变。两份binding.closed=false、native/process close=true，清理reason=cancelled分别呈现。原子Agent映射、两用户、后台完成续办、进程丢失等剩余项不由该历史切片替代；整体仍NOT_READY。
 
 | 项目 | 结果 | 范围 |
 | --- | --- | --- |
@@ -79,9 +99,16 @@
 | 两用户、自然迟到旧请求、业务结果 unknown、进程丢失 | NOT_RUN 当前补缺批次 | 保留旧限定证据，逐片补缺；不自动重放未知业务结果 |
 | F6 observer 离线预检 | PASS 离线限定 | 16项 unittest、Gateway 隔离镜像测试8项通过；一份缓存 Product 样本仅作 `SAMPLE_ONLY` 观察器匹配。总耗时2313.76ms，模型/业务Job/外部API/DB均0；不证明后台续接、Root ACK或浏览器资格。见ROOT-F6-OBSERVER-PREFLIGHT-PASS.json |
 | 市场数据元数据预检 | PASS 限定 / ENV_NOT_READY | V3全入口替身9项通过；一次只读检查六次Docker调用、44/44 schema列匹配、五容器前后相同；指定日期/标的范围返回0匹配行。Worker/Sandbox Image.Id与留存收据不匹配，Backend镜像对应未证明；模型/业务Job/HTTP/DB写入0，不代表数据、镜像或后台资格。见ROOT-F6-METADATA-PREFLIGHT-PASS-ENV-NOT-READY.json |
-| 远程 CI / 推送 / 合并 / 生产部署 | NOT_RUN | 不以本地、合成或隔离更新证明生产资格 |
+| Backend 源码字节观察 | PASS | PASS 固定93路径限定；4项离线 host/helper join 通过，1次只读采集680.066ms，容器身份前后相同；inline文件读取算法未由离线测试执行。此记录不证明额外文件缺失、loaded代码/依赖/配置或完整镜像资格。见 [ROOT-BACKEND-SOURCE-BYTES-PASS.json](ROOT-BACKEND-SOURCE-BYTES-PASS.json)。 |
+| 候选镜像只读预检 V4 | PASS 限定 | 前两次真实预检均为本地观察器解析错误并保留 FAIL；V3 静态 HOLD 未执行。V4 全入口替身24场景通过，真实一次285ms、2 Git/4 Docker，两个候选标签空闲、基础镜像已存在、资源观察完成。Sol→Root PASS，仅证明预检；该预检当时未构建，后续本地构建见下行；真实后台续接仍 NOT_RUN。见 [ROOT-CANDIDATE-PREFLIGHT-V4-PASS.json](ROOT-CANDIDATE-PREFLIGHT-V4-PASS.json)。 |
+| 构建脚本字节合同 V4 | PASS 离线限定 | V2静态HOLD及V3夹具错误FAIL_STOP均保留。保存驱动、固定hex、调用前全量读回确认后，实际抽取guard七例符合预期，整轮214ms、0Docker/模型/Job，Sol→Root PASS；只证明syntax/byteguard，不证明构建流水线或镜像运行。见 [ROOT-BUILD-OBSERVER-OFFLINE-V4-PASS.json](ROOT-BUILD-OBSERVER-OFFLINE-V4-PASS.json)。 |
+| Signal 两候选镜像构建 | PASS 本地构建限定 | 固定f581提交的96/6路径，7次Docker/2次archive，一批78.97秒；两流水线均双rc0、两个Image.Id及source labels匹配。Sol→Root PASS；尚未启动服务，不证明runtime、image admission、后台续接或生产部署。此前观察器失败仍保留。见 [ROOT-SIGNAL-CANDIDATE-BUILD-PASS.json](ROOT-SIGNAL-CANDIDATE-BUILD-PASS.json)。 |
+| Signal 候选镜像运行 Smoke | PASS 导入及纯合同限定 | 2个精确Image.Id临时容器、2.23秒，默认UID10003/10002及依赖版本符合；Worker本地URL/错误字段及Sandbox纯AST校验通过。零网络/业务DB/模型/Job，不运行策略，不证明持久服务健康或真实后台续接。Sol→Root PASS；见 [ROOT-SIGNAL-RUNTIME-SMOKE-PASS.json](ROOT-SIGNAL-RUNTIME-SMOKE-PASS.json)。 |
+| 本次候选远程 CI / 推送 / 合并 / 生产部署 | NOT_RUN | 本地及浏览器片段验收不替代候选发布资格，当前仍 NOT_READY；历史生产部署成功证据单独保留。 |
 
 ## OC 工程执行事故
+
+2026-10-14 历史补充：原会话直接浏览器输入得到 `CONTINUE_OK`，刷新后仍可见；Sol→Root 仅接受该 UI 检查，不重复完整普通续聊验收，见 [ROOT-BROWSER-NOW-UI-PASS.json](ROOT-BROWSER-NOW-UI-PASS.json)。写入之前的 F6 scoped 元数据一次只读采集33列/6 PK匹配、目标行0，启用的bar触发器及三投影副作用已记录，见 [ROOT-F6-SCOPED-METADATA-READ-PASS.json](ROOT-F6-SCOPED-METADATA-READ-PASS.json)。随后合成数据提交限定 PASS，当前状态见首节；真实后台正例仍 `NOT_RUN`。
 
 只读源码审计 `ses_ecd98ec47ffeX0YS71U5PpA5AP` 超过工具次数且擅自检查环境，将服务认证变量带入工具输出。该批次 FAIL_STOP；含密原日志只留私有目录，不进入Git、不出站、不得续用该 session。已完成准确abort、私有日志0600、原生服务密码轮换（旧认证401、新认证200）、原固定Tester session可读。
 

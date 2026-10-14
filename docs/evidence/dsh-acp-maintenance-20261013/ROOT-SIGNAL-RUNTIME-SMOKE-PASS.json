@@ -1,0 +1,75 @@
+{
+  "schema_version": "byq-maintenance-root-receipt.v1",
+  "head": "f581ac88579d3f133beaba781f9315d9344c6e9b",
+  "status": "PASS_RUNTIME_IMPORT_PURE_CHECK_ONLY",
+  "prepared_plan_sha256": "99b22555c1dc1d08a31dbca30aca34b1da769de0e2ccec81ac2eee8fd1477221",
+  "shell_sha256": "c9d0215974cbc998397cd2d3cfe8370b822d27c8afc02e8cd29deb00a0b6dbf4",
+  "worker_stdin_sha256": "dfd1d94e51c74ffb59cd6592bb1caa2dd264c8ac17be671c4b1adc3d20ea2250",
+  "sandbox_stdin_sha256": "b808a5f1027cb7b7774d7b6988e811d53980e9bb2055f86ce6c323c594c6c50a",
+  "private_evidence": {
+    "outer": ".ci-artifacts/signal-candidate-build-20261014/runtime-smoke-outer-v1-execution/",
+    "inner": ".ci-artifacts/signal-candidate-build-20261014/runtime-smoke-v1-execution/",
+    "saved_caller_sha256": "127fdf08ed5427c5de67d35d1b3363b5499c23ac01e3ef65acc330c6b0e58193",
+    "outer_receipt_sha256": "44e4de4e6fca3572df54cbf5c680237e0abeafb605af8492bd1a991c771a6235",
+    "inner_receipt_sha256": "d43d126060aa8cb2c147022b42129615c6e557736069a114154bac6145b60fc4"
+  },
+  "execution": {
+    "return_code": 0,
+    "outer_elapsed_ns": 2234348137,
+    "inner_elapsed_ns": 2180938797,
+    "outer_timeout_seconds": 55,
+    "kill_grace_seconds": 5,
+    "per_container_timeout_seconds": 20,
+    "docker_run_calls": 2,
+    "head_and_pins_unchanged": true,
+    "network": "none",
+    "read_only": true,
+    "capabilities": "ALL dropped",
+    "security_opt": "no-new-privileges",
+    "pids_limit": 32,
+    "memory_bytes": 1073741824,
+    "cpus": 1,
+    "host_environment_forwarded": false,
+    "mounts": 0,
+    "models": 0,
+    "jobs": 0,
+    "database_operations": 0
+  },
+  "facts": [
+    {
+      "component": "signal-worker",
+      "local_image_id": "sha256:a9422c3b7daf6cb6899eb1a32e6f41bc30c3e57656686c9ec38a7e6173beffc3",
+      "uid": 10003,
+      "cwd": "/app",
+      "python": "3.13.16",
+      "sqlalchemy": "2.0.40",
+      "psycopg": "3.2.6",
+      "checks": "module import, local URL normalization and SandboxFailure fields",
+      "stdout_sha256": "b945d7958129226001b63fa052b2a55def24fa2790045fdf956d1b240dcac66c",
+      "stderr_bytes": 0
+    },
+    {
+      "component": "signal-sandbox",
+      "local_image_id": "sha256:3ac08997dd802af6d8109c22c9ef5f241d83ff8c7bdf5ee68c6ca6f206d18617",
+      "uid": 10002,
+      "cwd": "/opt/byq-signal-sandbox",
+      "python": "3.13.16",
+      "fastapi": "0.116.1",
+      "numpy": "2.3.3",
+      "pandas": "2.3.3",
+      "checks": "module import, FastAPI object facts and pure strategy AST validation",
+      "strategy_execution": false,
+      "stdout_sha256": "bce2d008cc1059531a2db2317c931a711e3352fc27f2f781672ff23025a05c94",
+      "stderr_bytes": 0
+    }
+  ],
+  "acceptance": {
+    "independent_sol": "/root/preflight_v4_review: limited SOURCE and RAW PASS",
+    "root": "PASS_LIMITED_IMPORT_PURE_CONTRACTS",
+    "persistent_service_health": "NOT_RUN",
+    "full_runtime_or_image_admission": "NOT_RUN",
+    "real_background_continuation": "NOT_RUN",
+    "production": "NOT_RUN",
+    "overall": "NOT_READY"
+  }
+}
