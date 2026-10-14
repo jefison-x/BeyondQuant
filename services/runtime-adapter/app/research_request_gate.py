@@ -1,10 +1,11 @@
 """Request-scoped provider boundary gates for current Clean Break paths.
 
 The ADR-0090 task-ready profile reuses this measured HTTP boundary for one fresh
-background request. Its closed profile retains fixed request bounds. The
-ordinary Product v2 profile instead binds trusted conversation options and
-applies only configured limits; unset v2 limits do not inherit the legacy
-180-second deadline or fixed call/byte caps. Both modes count provider HTTP
+background request. Its legacy closed profile retains fixed request bounds;
+the separately typed task-ready-read.v2 profile binds trusted conversation
+options and applies only configured limits. The ordinary Product v2 profile
+also applies only configured limits. Unset v2 limits do not inherit the legacy
+180-second deadline or fixed call/byte caps. Both v2 modes count provider HTTP
 attempts, including retries and compaction, and record provider-reported usage
 or explicit unknown/partial facts. The named Judgment gate keeps its existing
 stage-specific behavior.
@@ -32,14 +33,20 @@ from packages.contracts.research_request_budget import (
 from packages.contracts.continuation_request import (
     ALLOWED_MODEL as CONTINUATION_MODEL,
     USAGE_SCHEMA_VERSION as CONTINUATION_USAGE_SCHEMA,
+    PROFILE_ID_V2 as TASK_READY_PROFILE_ID_V2,
+    continuation_request_usage_v2,
     request_limits as continuation_request_limits,
+    request_limits_v2 as task_ready_request_limits_v2,
     validate_limits as validate_continuation_limits,
+    validate_execution_profile_v2 as validate_task_ready_execution_profile_v2,
     validate_profile_binding,
+    validate_request_limits_v2 as validate_task_ready_request_limits_v2,
     validate_request_usage,
 )
 from packages.contracts.product_turn_request import (
     validate_product_turn_limits,
     validate_product_turn_profile,
+    product_turn_execution_limits,
     validate_product_turn_execution_limits,
     validate_product_turn_execution_profile,
 )
@@ -251,12 +258,12 @@ def _unknown_usage() -> dict:
 
 
 class ResearchRequestGate:
-    """Request-scoped provider gate for judgment, continuation, and Product v2.
+    """Request-scoped provider gate for judgment and typed execution profiles.
 
-    Judgment and task-ready continuation retain their closed limit contracts.
-    Ordinary Product v2 uses the exact trusted option snapshot and revision.
-    Every gate measures serialized provider HTTP attempts, including DSH retry
-    and compaction requests.
+    Judgment and legacy task-ready continuation retain their closed limit
+    contracts. The task-ready and ordinary Product v2 profiles use separate
+    identities over the shared nullable-limit arithmetic and transport. Every
+    gate measures provider HTTP attempts, including DSH retry and compaction.
     """
 
     def __init__(self, limits: dict, *, journal: Path | None = None,
@@ -267,31 +274,47 @@ class ResearchRequestGate:
         # The archived `product-turn.v1` profile remains readable for receipts.
         # Active ordinary roots use ADR-0111 `product-turn.v2`; both share this
         # request boundary but validate separate profile and limit contracts.
+        # The task-ready F6 v2 profile is independently identified and must not
+        # fall through to either Product profile when its binding is invalid.
         self.product_turn = False
         self.product_turn_v2 = False
+        self.task_ready_v2 = False
         self.execution_profile = None
         if execution_profile is not None:
-            try:
-                self.execution_profile = validate_profile_binding(execution_profile)
-            except ValueError:
+            if (isinstance(execution_profile, dict)
+                    and execution_profile.get("profile_id") == TASK_READY_PROFILE_ID_V2):
+                self.execution_profile = validate_task_ready_execution_profile_v2(execution_profile)
+                self.task_ready_v2 = True
+            else:
                 try:
-                    self.execution_profile = validate_product_turn_execution_profile(execution_profile)
-                    self.product_turn_v2 = True
+                    self.execution_profile = validate_profile_binding(execution_profile)
                 except ValueError:
-                    self.execution_profile = validate_product_turn_profile(execution_profile)
-                    self.product_turn = True
+                    try:
+                        self.execution_profile = validate_product_turn_execution_profile(execution_profile)
+                        self.product_turn_v2 = True
+                    except ValueError:
+                        self.execution_profile = validate_product_turn_profile(execution_profile)
+                        self.product_turn = True
         self.continuation_mode = self.execution_profile is not None
-        self.limits = (validate_product_turn_execution_limits(limits, self.execution_profile)
-                       if self.product_turn_v2 else validate_product_turn_limits(limits) if self.product_turn
-                       else validate_continuation_limits(limits) if self.continuation_mode else limits)
+        self._optional_execution = self.product_turn_v2 or self.task_ready_v2
+        if self.task_ready_v2:
+            self.limits = validate_task_ready_request_limits_v2(limits, self.execution_profile)
+        elif self.product_turn_v2:
+            self.limits = validate_product_turn_execution_limits(limits, self.execution_profile)
+        elif self.product_turn:
+            self.limits = validate_product_turn_limits(limits)
+        elif self.continuation_mode:
+            self.limits = validate_continuation_limits(limits)
+        else:
+            self.limits = limits
         self.request_id = request_id
         self._journal = journal
         self._lock = threading.Lock()
-        # One condition guards the single shared upstream slot. Parent and child
-        # Agents in this owned process reach the same per-root proxy, so an
-        # overlapping request serializes here instead of being refused. Close
-        # and cancel wake a waiting request so it fails closed, never dispatching
-        # late or replaying an unprovable upstream result.
+        # One condition guards in-flight accounting and the legacy F6 one-slot
+        # wait queue. Optional v2 profiles instead enforce their configured
+        # concurrency cap and permit overlap when it is unset. Close and cancel
+        # wake any legacy waiter so it fails closed, never dispatching late or
+        # replaying an unprovable upstream result.
         self._cond = threading.Condition(self._lock)
         self._gate_closed = False
         self._journal_failed = False
@@ -376,7 +399,7 @@ class ResearchRequestGate:
     def deadline_monotonic(self) -> float | None:
         if not self.continuation_mode:
             return None
-        if self.product_turn_v2:
+        if self._optional_execution:
             seconds = self.limits["max_runtime_seconds"]
             return None if seconds is None else self._continuation_started + seconds
         return self._continuation_started + self.limits["deadline_ms"] / 1000.0
@@ -607,7 +630,7 @@ class ResearchRequestGate:
 
     def remaining_seconds(self) -> float | None:
         if self.continuation_mode:
-            if self.product_turn_v2:
+            if self._optional_execution:
                 seconds = self.limits["max_runtime_seconds"]
                 if seconds is None:
                     return None
@@ -765,7 +788,7 @@ class ResearchRequestGate:
     def _continuation_decision(self, *, body_bytes: int, declared: int | None,
                                tool_bytes: int, elapsed_ms: int,
                                concurrent: int) -> str | None:
-        if self.product_turn_v2:
+        if self._optional_execution:
             limits = self.limits
             if self._cancelled:
                 return "cancelled"
@@ -830,7 +853,7 @@ class ResearchRequestGate:
         if parsed.get("model") != CONTINUATION_MODEL:
             self._reject_continuation_request("model_route_unqualified", input_bytes=len(body))
         declared, declared_reason = resolve_declared_output_tokens(parsed)
-        if self.product_turn_v2:
+        if self._optional_execution:
             output_limits_enabled = any(self.limits[name] is not None for name in (
                 "max_output_tokens", "max_total_output_tokens"))
             if output_limits_enabled and declared_reason is not None:
@@ -852,22 +875,22 @@ class ResearchRequestGate:
                     # Fail closed: a cancelled or closed request scope never
                     # dispatches, and never replays an unprovable result.
                     reason = "cancelled"
-                elif (self.product_turn_v2
+                elif (self._optional_execution
                       and self.limits["max_runtime_seconds"] is not None
                       and elapsed_ms >= self.limits["max_runtime_seconds"] * 1000):
                     reason = "product_runtime_limit"
-                elif not self.product_turn_v2 and elapsed_ms >= self.limits["deadline_ms"]:
+                elif not self._optional_execution and elapsed_ms >= self.limits["deadline_ms"]:
                     reason = "deadline_exceeded"
                 elif abort_if is not None and not abort_if():
                     # The caller's HTTP client is already gone. Refuse this
                     # request only: never dispatch a late provider call, and
                     # never poison the shared scope for the other request.
                     reason = "client_disconnected"
-                elif (self.product_turn_v2
+                elif (self._optional_execution
                       and self.limits["max_concurrent"] is not None
                       and self._inflight >= self.limits["max_concurrent"]):
                     reason = "product_concurrency_limit"
-                elif (not self.product_turn_v2
+                elif (not self._optional_execution
                       and self._inflight >= self.limits["max_concurrent"]):
                     # The single upstream slot is held by another admitted
                     # request (parent/child share one per-root proxy). Serialize
@@ -947,10 +970,12 @@ class ResearchRequestGate:
                     if type(declared) is int:
                         if self._declared_output_tokens_total is not None:
                             self._declared_output_tokens_total += declared
-                        self._max_declared_output_tokens = max(
-                            self._max_declared_output_tokens, declared)
+                        if self._max_declared_output_tokens is not None:
+                            self._max_declared_output_tokens = max(
+                                self._max_declared_output_tokens, declared)
                     else:
                         self._declared_output_tokens_total = None
+                        self._max_declared_output_tokens = None
                     self._tool_payload_bytes_total += tool_bytes
                     self._max_input_bytes = max(self._max_input_bytes, len(body))
                     self._max_tool_payload_bytes = max(self._max_tool_payload_bytes, tool_bytes)
@@ -975,11 +1000,11 @@ class ResearchRequestGate:
         actual = parse_response_usage(body)
         declared = receipt.get("declared_max_output_tokens")
         total_elapsed_ms = max(0, int((self._monotonic() - self._continuation_started) * 1000))
-        if (self.product_turn_v2
+        if (self._optional_execution
                 and self.limits["max_runtime_seconds"] is not None
                 and total_elapsed_ms >= self.limits["max_runtime_seconds"] * 1000):
             reason = "product_runtime_limit"
-        elif not self.product_turn_v2 and total_elapsed_ms >= self.limits["deadline_ms"]:
+        elif not self._optional_execution and total_elapsed_ms >= self.limits["deadline_ms"]:
             reason = "deadline_exceeded"
         elif outcome_unknown:
             # The provider connection ended without a complete response. Its
@@ -1026,8 +1051,8 @@ class ResearchRequestGate:
                 self._outcome_unknown = True
                 raise
             finally:
-                # A freed upstream slot must wake a serialized waiter even if
-                # journaling fails, so the slot is never stranded.
+                # A freed upstream slot must wake any legacy serialized waiter
+                # even if journaling fails, so the slot is never stranded.
                 self._cond.notify_all()
         return {"forward": reason is None, "reason": reason, "elapsed_ms": elapsed_ms, **actual}
 
@@ -1108,6 +1133,23 @@ class ResearchRequestGate:
                 "actual_usage": actual_usage,
                 "limit_violations": sorted(self._limit_violations),
             }
+        if self.task_ready_v2:
+            # The gate keeps its internal historical sentinel for journal and
+            # settlement compatibility. Only the v2 public DTO translates an
+            # unknown count to null; it never turns unknown into proven zero.
+            actual_count_fields = {
+                "input_tokens", "cache_read_tokens", "output_tokens", "provider_attempts",
+            }
+            actual_usage_v2 = {
+                key: (None if key in actual_count_fields and value == UNKNOWN else value)
+                for key, value in receipt["actual_usage"].items()
+            }
+            return continuation_request_usage_v2(
+                execution_profile=self.execution_profile,
+                admission_usage=receipt["admission_usage"],
+                actual_usage=actual_usage_v2,
+                limit_violations=receipt["limit_violations"],
+            )
         return validate_request_usage(receipt)
 
     # ------------------------------------------------------------------ #
@@ -1335,7 +1377,16 @@ class _GateProxyHandler(BaseHTTPRequestHandler):
     def _handle_post(self, proxy: "RequestGateProxy") -> None:
         gate: ResearchRequestGate = self.server.gate  # type: ignore[attr-defined]
         upstream: str = self.server.upstream  # type: ignore[attr-defined]
-        if gate.continuation_mode and self.path not in {"/chat/completions", "/v1/chat/completions"}:
+        if (gate.task_ready_v2
+                and self.path != gate.execution_profile["upstream_request_target"]):
+            try:
+                gate.reject_provider_path()
+            except RequestGateBlocked as error:
+                self.close_connection = True
+                self._failure(error.reason)
+            return
+        if (gate.continuation_mode and not gate.task_ready_v2
+                and self.path not in {"/chat/completions", "/v1/chat/completions"}):
             try:
                 gate.reject_provider_path()
             except RequestGateBlocked as error:
@@ -1395,12 +1446,12 @@ class _GateProxyHandler(BaseHTTPRequestHandler):
         upstream_connections = []
         try:
             if gate.continuation_mode:
-                if gate.product_turn_v2:
+                if gate._optional_execution:
                     opener, upstream_connections = _registered_upstream_opener(proxy)
                 else:
                     # Preserve the legacy F6 opener/deadline path. The
-                    # pre-response connection registry is scoped to ordinary
-                    # Product v2 only.
+                    # pre-response connection registry is scoped to optional
+                    # execution profiles.
                     opener = urllib.request.build_opener(_NoProviderRedirects())
                 with opener.open(request, timeout=remaining) as response:
                     proxy._register_upstream(response)
@@ -1421,7 +1472,7 @@ class _GateProxyHandler(BaseHTTPRequestHandler):
         except urllib.error.HTTPError as error:
             registered_error = False
             try:
-                if not gate.product_turn_v2:
+                if not gate._optional_execution:
                     proxy._register_upstream(error)
                     registered_error = True
                 status = error.code
@@ -1452,7 +1503,7 @@ class _GateProxyHandler(BaseHTTPRequestHandler):
                 if registered_error:
                     proxy._unregister_upstream(error)
         except (socket.timeout, TimeoutError):
-            if gate.product_turn_v2:
+            if gate._optional_execution:
                 if any(
                     getattr(connection, "_byq_dispatch_started", False)
                     for connection in upstream_connections
@@ -1471,7 +1522,7 @@ class _GateProxyHandler(BaseHTTPRequestHandler):
             # unknown. Stop this request scope so the DSH retry policy cannot
             # replay it; legacy judgment transport retains its old behavior.
             transport_outcome_unknown = gate.continuation_mode and (
-                not gate.product_turn_v2 or any(
+                not gate._optional_execution or any(
                     getattr(connection, "_byq_dispatch_started", False)
                     for connection in upstream_connections))
             data = b""
@@ -1514,7 +1565,11 @@ class RequestGateProxy:
 
     def __init__(self, gate: ResearchRequestGate, upstream: str, *,
                  bind_host: str = "127.0.0.1", advertise_host: str | None = None) -> None:
-        if gate.continuation_mode:
+        if gate.task_ready_v2:
+            qualified_upstream = gate.execution_profile["upstream_base_url"].rstrip("/")
+            if upstream.rstrip("/") != qualified_upstream:
+                raise ValueError("continuation provider is not a qualified endpoint")
+        elif gate.continuation_mode:
             from packages.contracts.continuation_request import UPSTREAM_BASE_URL
             allowed_upstreams = {"https://api.deepseek.com", UPSTREAM_BASE_URL.rstrip("/")}
             if upstream.rstrip("/") not in allowed_upstreams:
@@ -1557,7 +1612,7 @@ class RequestGateProxy:
             if not closed:
                 if connection not in self._client_sockets:
                     self._client_sockets.add(connection)
-                    if self._gate.product_turn_v2:
+                    if self._gate._optional_execution:
                         self._active_requests += 1
         if closed:
             try:
@@ -1574,7 +1629,7 @@ class RequestGateProxy:
         with self._active_condition:
             if connection in self._client_sockets:
                 self._client_sockets.remove(connection)
-                if self._gate.product_turn_v2:
+                if self._gate._optional_execution:
                     self._active_requests = max(0, self._active_requests - 1)
                     self._active_condition.notify_all()
 
@@ -1612,9 +1667,9 @@ class RequestGateProxy:
             with self._active_lock:
                 responses = list(self._upstream_responses)
                 clients = list(self._client_sockets)
-                if not self._gate.product_turn_v2:
-                    # Preserve legacy F6/Judgment registry lifetime; only V2
-                    # retains registrations until handler drainage completes.
+                if not self._gate._optional_execution:
+                    # Preserve legacy F6/Judgment registry lifetime; optional
+                    # profiles retain registrations until handler drainage.
                     self._upstream_responses.clear()
                     self._client_sockets.clear()
             for response in responses:
@@ -1644,7 +1699,7 @@ class RequestGateProxy:
             # If an OS resolver remains blocked without a socket to shutdown,
             # leave the admitted request unpaired; its root stays fenced and
             # cannot be resumed or replayed.
-            if self._gate.product_turn_v2:
+            if self._gate._optional_execution:
                 drain_until = time.monotonic() + PROXY_CLOSE_DRAIN_SECONDS
                 with self._active_condition:
                     while self._active_requests:
@@ -1668,11 +1723,24 @@ def build_continuation_request_gate(*, request_id: str, execution_profile: dict,
     )
 
 
+def build_task_ready_v2_request_gate(*, request_id: str, execution_profile: dict,
+                                     journal: Path | None = None) -> ResearchRequestGate:
+    """Build an unactivated F6 v2 gate from its exact trusted profile."""
+
+    profile = validate_task_ready_execution_profile_v2(execution_profile)
+    limits = task_ready_request_limits_v2(profile["options"])
+    return ResearchRequestGate(
+        limits,
+        execution_profile=profile,
+        request_id=request_id,
+        journal=journal,
+    )
+
+
 def build_product_turn_request_gate(*, request_id: str, execution_profile: dict,
                                     journal: Path | None = None) -> ResearchRequestGate:
     """Build the ordinary Product gate from its exact trusted option snapshot."""
     profile = validate_product_turn_execution_profile(execution_profile)
-    from packages.contracts.product_turn_request import product_turn_execution_limits
     return ResearchRequestGate(
         product_turn_execution_limits(profile['options']),
         execution_profile=profile,
