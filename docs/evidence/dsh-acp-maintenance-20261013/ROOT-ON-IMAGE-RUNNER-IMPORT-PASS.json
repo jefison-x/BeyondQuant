@@ -1,0 +1,42 @@
+{
+  "schema_version": "byq-root-on-image-runner-import.v1",
+  "status": "PASS_SCOPED_IMAGE_IMPORT_READBACK",
+  "source_commit": "b551116201f8f45df8b19ead8b19798f9601c22a",
+  "maintenance_head_at_execution": "d38cd4b41c82f1cd284572528f3ef4200d43c8de",
+  "image_id": "sha256:886155b42a866307a34e903eb01dd822bff5ac0f5939427d44427caca626b640",
+  "scope": "21 selected installed file hashes and non-main ProductRunner import; DSH/ACP maintenance, no Product Phase advancement",
+  "plan_sha256": "984a8890b23dfa09187826fdc37a39f70ed29ee02ab975a79238f9fc15623f54",
+  "wrapper_sha256": "94fc192a8791a9adffc25f449d1d84df0f476611de1b7943acbd4bd2c1a1e991",
+  "tool_raw_sha256": "d778788dff2c299ef53a50927c087bab8378b844ecb5f03dc65075153d6a486b",
+  "evidence_directory": ".ci-artifacts/execution-options-20261014/background-native-startup-2b2c/on-image-import-20261015-v2",
+  "execution": {
+    "count": 1,
+    "tool_chunk": "991473",
+    "exit_code": 0,
+    "status": "IMPORT_OK",
+    "hashes_matched": 21,
+    "stderr_bytes": 0,
+    "stdout_sha256": "d7b65772b1a97187c6021a6bb71caa8f8611c04ac8cdead8ad64c138a175aa3a",
+    "start_utc": "2026-10-14T17:57:45.567185710Z",
+    "finish_utc": "2026-10-14T17:57:45.871456232Z",
+    "elapsed_seconds": 0.304270522,
+    "timeout_seconds": 30,
+    "container": "byq-2b2c-image-readback-20261015-v2-886155b4",
+    "exact_container_absent_before_after": true,
+    "boundary": "Network none, readonly, cap drop all, nnp, uid/gid65534, no mounts, no secrets, entrypoint system Python -B -E -s -S, runpy non-main."
+  },
+  "gates": {
+    "tester_sha256": "d5aaa629624405244aec73b4e56212bd621667bd4fad54328d3645dec19c0cc3",
+    "independent_sol_sha256": "ee4d1e47ce2a5cd3001c5b08d3366dd2a565a312884c1847bbc833fd1b7424dd",
+    "root": "PASS"
+  },
+  "prior_v1": "HOLD_PRE_EXECUTION: six builder-only paths wrongly included; original plan and script retained and never run. Corrected by full source-to-final-COPY audit of all 21 retained paths before execution. Receipt location claim corrected with exact committed file read.",
+  "not_run": [
+    "native DSH startup/session",
+    "provider/model/runtime behavior",
+    "Jobs or database actions",
+    "affected current-source Product/browser acceptance",
+    "push, hosted CI, merge, deployment or production qualification"
+  ],
+  "retention": "Existing test environment, current browser page, identity and volumes kept; no service restart or volume cleanup."
+}
