@@ -354,7 +354,7 @@ def _runtime_scope_sql(conversation_id: str, owner: str, workspace: str,
         raise Stop("conversation_turn_count_invalid")
     return f"""BEGIN READ ONLY; SELECT json_build_object(
 'conversation_id',c.conversation_id,'runtime_session_id',c.runtime_session_id,
-'trace_id',c.trace_id,'owner_principal',c.owner_principal,'workspace_id',c.workspace_id,
+'trace_id',c.trace_id,'owner_principal',c.owner_principal,'workspace_id',w.workspace_id,
 'created_at',c.created_at,'status',c.status,
 'user_message_count',(SELECT count(*) FROM product_conversation_messages pm
  WHERE pm.conversation_id=c.conversation_id AND pm.owner_principal=c.owner_principal AND pm.role='user'))::text
@@ -362,7 +362,7 @@ FROM product_conversations c JOIN users u ON u.username=c.owner_principal
 JOIN workspaces w ON w.owner_user_id=u.user_id
 JOIN workspace_memberships m ON m.workspace_id=w.workspace_id AND m.user_id=u.user_id
 WHERE c.conversation_id={quote(conversation_id)} AND c.owner_principal={quote(owner)}
-AND c.workspace_id={quote(workspace)} AND c.created_at >= {quote(created_after)}::timestamptz
+AND c.created_at >= {quote(created_after)}::timestamptz
 AND c.status='active' AND u.status='active' AND w.kind='personal' AND w.status='active'
 AND w.workspace_id={quote(workspace)} AND m.role='owner' AND m.status='active'
 AND (SELECT count(*) FROM product_conversation_messages pm

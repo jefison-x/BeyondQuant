@@ -414,7 +414,8 @@ class _Fixture:
                     raise AssertionError("job/artifact count result schema mismatch")
             elif "FROM product_conversations c" in sql:
                 if ("c.owner_principal='admin'" not in sql
-                        or f"c.workspace_id='{capture.WORKSPACE}'" not in sql
+                        or f"w.workspace_id='{capture.WORKSPACE}'" not in sql
+                        or "c.workspace_id" in sql
                         or "c.created_at >= '" not in sql or "c.status='active'" not in sql
                         or "u.status='active'" not in sql or "m.status='active'" not in sql):
                     raise AssertionError("runtime-scope SQL omitted required identity/time/status scope")
@@ -575,6 +576,37 @@ class _Fixture:
                 "product_profile": "byq-product-acp-0.2.0-rc.2",
                 "product_composition_hash": "sha256:10396c708651b24e3012df51e13cbb0e1eaf8178cda9547c91d682c189eacd45",
                 "dsh_home_contract": "binding.cwd", "store_root_contract": "dshHomePath(sessions)"}
+
+
+class RuntimeScopeSqlSchemaContractTest(unittest.TestCase):
+    def test_conversation_column_references_match_product_schema(self):
+        repo = SCRIPT.resolve().parents[2]
+        schema_source = (repo / "services/backend/app/conversation_catalog.py").read_text(encoding="utf-8")
+        ddl = re.search(
+            r"CREATE TABLE IF NOT EXISTS product_conversations\s*\((.*?)\n\s*\)",
+            schema_source, re.DOTALL,
+        )
+        self.assertIsNotNone(ddl, "product_conversations DDL must remain discoverable")
+        declared_columns = set(re.findall(
+            r"^\s+([a-z_]+)\s+(?:TEXT|INTEGER|BOOLEAN|TIMESTAMPTZ)\b",
+            ddl.group(1), re.MULTILINE,
+        ))
+
+        sql = capture._runtime_scope_sql(
+            CONVERSATION, OWNER, capture.WORKSPACE, "2026-10-14T00:00:00Z", 1,
+        )
+        referenced_columns = set(re.findall(r"\bc\.([a-z_]+)\b", sql))
+        self.assertTrue(referenced_columns)
+        self.assertLessEqual(referenced_columns, declared_columns)
+        self.assertIn("'workspace_id',w.workspace_id", sql)
+        self.assertIn(f"w.workspace_id='{capture.WORKSPACE}'", sql)
+        self.assertNotIn("c.workspace_id", sql)
+        for required_gate in (
+            "c.owner_principal=", "c.created_at >=", "c.status='active'",
+            "u.status='active'", "w.kind='personal'", "w.status='active'",
+            "m.role='owner'", "m.status='active'", "role='user')=1",
+        ):
+            self.assertIn(required_gate, sql)
 
 
 class OrdinaryCaptureMainContractTest(unittest.TestCase):
