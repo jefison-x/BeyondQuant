@@ -27,7 +27,7 @@ _RESET_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}$")
 # schema creation through the domain stores.
 _REQUIRED_TABLES = (
     "users", "workspaces", "workspace_memberships",
-    "product_conversations", "product_conversation_messages",
+    "product_conversations", "product_conversation_messages", "product_conversation_execution_options",
     "research_tasks", "experiments", "artifacts", "artifact_submission_receipts",
     "research_transitions", "research_execution_plans", "research_execution_plan_receipts",
     "research_task_actions", "research_judgment_acp_roots",

@@ -629,6 +629,35 @@ def product_research_submission_watches(conversation_id: str, request: Request):
     return _backend_request('GET', f"/v1/product/research/submission-watches/{quote(conversation_id,safe='')}", headers=headers)
 
 
+def _human_execution_options_headers(request: Request) -> dict[str, str]:
+    """Execution options are ordinary user settings, never model-writable."""
+    if SESSION_COOKIE not in request.cookies:
+        raise ProductError(401, "product_human_identity_required", "durable user login required")
+    if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+        raise ProductError(403, "product_cross_site_write_rejected", "cross-site configuration writes are rejected")
+    headers = _trusted_agent_headers(request)
+    headers["x-byq-product-human-actor"] = "true"
+    return headers
+
+
+@router.get("/agent/conversations/{conversation_id}/execution-options")
+def agent_conversation_execution_options(conversation_id: str, request: Request) -> dict[str, object]:
+    return _backend_request(
+        "GET", f"/v1/product/conversations/{quote(conversation_id, safe='')}/execution-options",
+        headers=_trusted_agent_headers(request),
+    )
+
+
+@router.put("/agent/conversations/{conversation_id}/execution-options")
+def update_agent_conversation_execution_options(
+    conversation_id: str, payload: dict, request: Request,
+) -> dict[str, object]:
+    return _backend_request(
+        "PUT", f"/v1/product/conversations/{quote(conversation_id, safe='')}/execution-options",
+        payload=payload, headers=_human_execution_options_headers(request),
+    )
+
+
 def _continuation_permission_headers(request: Request) -> dict[str, str]:
     # A deployment token or model-provided owner is never human consent.
     if SESSION_COOKIE not in request.cookies:

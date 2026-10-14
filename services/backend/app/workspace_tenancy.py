@@ -69,7 +69,7 @@ IDENTITY_SCHEMA_DDL = [
 # User credentials/preferences/policy, platform data/operations, and Engineering
 # Plane resources remain outside Workspace tenancy.
 WORKSPACE_TABLES = (
-    "product_conversations", "product_conversation_messages",
+    "product_conversations", "product_conversation_messages", "product_conversation_execution_options",
     "research_tasks", "experiments", "artifacts", "product_approval_requests", "research_transitions",
     "research_execution_plans", "research_execution_plan_receipts",
     "research_task_actions", "research_judgment_acp_roots",
@@ -93,6 +93,7 @@ WORKSPACE_TABLES = (
 DIRECT_OWNER_TABLES: dict[str, tuple[str, ...]] = {
     "product_conversations": ("conversation_id",),
     "product_conversation_messages": ("message_id",),
+    "product_conversation_execution_options": ("conversation_id",),
     "research_tasks": ("task_id",), "experiments": ("experiment_id",),
     "artifacts": ("artifact_id",), "product_approval_requests": ("request_id",), "agent_runs": ("run_id",),
     "agent_audit": ("audit_id",), "agent_approvals": ("approval_id",),

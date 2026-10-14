@@ -594,6 +594,40 @@ def get_conversation(conversation_id: str, request: Request) -> dict[str, object
     })
 
 
+def _execution_options_context(request: Request) -> tuple[str, str]:
+    owner = _conversation_owner(request)
+    workspace_id = request.headers.get("x-byq-workspace-id")
+    if not workspace_id:
+        raise HTTPException(status_code=401, detail="trusted workspace context required")
+    return owner, workspace_id
+
+
+def _human_execution_options_context(request: Request) -> tuple[str, str]:
+    owner, workspace_id = _execution_options_context(request)
+    if (request.headers.get("x-byq-product-human-actor") != "true"
+            or request.headers.get("x-byq-actor-principal") != owner):
+        raise HTTPException(status_code=403, detail="trusted human conversation actor required")
+    return owner, workspace_id
+
+
+@app.get("/v1/product/conversations/{conversation_id}/execution-options")
+def get_conversation_execution_options(conversation_id: str, request: Request) -> dict[str, object]:
+    owner, workspace_id = _execution_options_context(request)
+    return _conversation_call(lambda: conversation_store.get_execution_options(
+        owner, workspace_id, conversation_id
+    ))
+
+
+@app.put("/v1/product/conversations/{conversation_id}/execution-options")
+def put_conversation_execution_options(
+    conversation_id: str, payload: dict[str, Any], request: Request,
+) -> dict[str, object]:
+    owner, workspace_id = _human_execution_options_context(request)
+    return _conversation_call(lambda: conversation_store.update_execution_options(
+        owner, workspace_id, conversation_id, payload
+    ))
+
+
 @app.post("/v1/product/conversations/{conversation_id}/messages", status_code=201)
 def append_conversation_message(conversation_id: str, payload: dict[str, Any], request: Request) -> dict[str, object]:
     owner = _conversation_owner(request)

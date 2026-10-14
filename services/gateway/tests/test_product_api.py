@@ -105,6 +105,60 @@ def test_product_api_uses_error_envelope_and_auth_boundary(monkeypatch) -> None:
     assert healthy.json()["status"] == "ok"
 
 
+def test_execution_options_get_uses_exact_backend_scope_without_human_only_gate(monkeypatch):
+    calls = []
+    monkeypatch.setattr(product_api, "PRODUCT_TOKEN", "product-test-token")
+    monkeypatch.setattr(product_api, "PRODUCT_PRINCIPAL", "alice")
+    monkeypatch.setattr(product_api, "_trusted_agent_headers", lambda request: {
+        "x-byq-owner-principal": "alice", "x-byq-workspace-id": "workspace_exact",
+    })
+
+    def backend(method, path, payload=None, *, headers=None, params=None):
+        calls.append((method, path, payload, headers))
+        return {"schema_version": "agent-execution-options.v1", "revision": 0, "options": {}}
+
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    client = TestClient(main.app)
+    response = client.get("/api/product/agent/conversations/conversation_exact/execution-options",
+                          headers={"Authorization": "Bearer product-test-token"})
+    assert response.status_code == 200
+    assert response.json()["revision"] == 0
+    assert calls == [("GET", "/v1/product/conversations/conversation_exact/execution-options", None,
+                      {"x-byq-owner-principal": "alice", "x-byq-workspace-id": "workspace_exact"})]
+
+
+def test_execution_options_put_requires_durable_human_cookie_and_same_site(monkeypatch):
+    calls = []
+    monkeypatch.setattr(product_api, "_trusted_agent_headers", lambda request: {
+        "x-byq-owner-principal": "alice", "x-byq-workspace-id": "workspace_exact",
+        "x-byq-actor-principal": "alice",
+    })
+
+    def backend(method, path, payload=None, *, headers=None, params=None):
+        calls.append((method, path, payload, headers))
+        return {"schema_version": "agent-execution-options.v1", "revision": 1, "options": {}}
+
+    monkeypatch.setattr(product_api, "_backend_request", backend)
+    client = TestClient(main.app)
+    path = "/api/product/agent/conversations/conversation_exact/execution-options"
+    payload = {"schema_version": "agent-execution-options.v1", "expected_revision": 0,
+               "options": {"auto_continue": False}}
+    denied = client.put(path, json=payload)
+    assert denied.status_code == 401
+    assert calls == []
+
+    client.cookies.set(product_api.SESSION_COOKIE, "opaque-test-session")
+    cross_site = client.put(path, json=payload, headers={"sec-fetch-site": "cross-site"})
+    assert cross_site.status_code == 403
+    assert calls == []
+
+    changed = client.put(path, json=payload, headers={"sec-fetch-site": "same-origin"})
+    assert changed.status_code == 200
+    assert calls == [("PUT", "/v1/product/conversations/conversation_exact/execution-options", payload,
+                      {"x-byq-owner-principal": "alice", "x-byq-workspace-id": "workspace_exact",
+                       "x-byq-actor-principal": "alice", "x-byq-product-human-actor": "true"})]
+
+
 def test_typed_approval_writes_require_browser_confirmation_and_reject_cross_site(monkeypatch):
     monkeypatch.setattr(product_api, "_trusted_agent_headers", lambda request: {"x-byq-owner-principal": "human"})
     missing_cookie = SimpleNamespace(cookies={}, headers={"x-byq-product-approval-confirmation": "v1"})

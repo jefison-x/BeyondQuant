@@ -33,6 +33,7 @@ RESET_SCOPE = (
     ("agent_runs", OWNED),
     ("agent_runtime_turns", OWNED),
     ("product_conversation_messages", OWNED),
+    ("product_conversation_execution_options", OWNED),
     ("research_receipt_watches", OWNED),
     ("ml_training_submission_keys", OWNED),
     ("ml_training_receipt_watches", OWNED),
