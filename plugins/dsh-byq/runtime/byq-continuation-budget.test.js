@@ -221,6 +221,104 @@ const countOnlyConfig = {
   requestLimits: { ...PRODUCT_TURN_LIMITS },
 };
 
+const executionOptions = {
+  auto_continue: true,
+  max_provider_calls: null,
+  max_provider_attempts: null,
+  max_tool_calls: null,
+  max_concurrent_provider_calls: null,
+  max_input_bytes_per_call: null,
+  max_input_bytes_total: null,
+  max_output_tokens_per_call: null,
+  max_output_tokens_total: null,
+  max_tool_payload_bytes_per_call: null,
+  max_tool_payload_bytes_total: null,
+  max_continuations: null,
+  max_runtime_seconds: null,
+  max_no_progress_seconds: null,
+  max_child_runtime_seconds: null,
+  max_child_no_progress_seconds: null,
+};
+const productExecutionConfig = {
+  guardMode: 'ordinary-options',
+  journalPath: '/private/request/product-turn-v2-tool-guard.jsonl',
+  executionProfile: {
+    profile_id: 'product-turn.v2',
+    profile_version: 2,
+    composition_source_sha256: '10396c708651b24e3012df51e13cbb0e1eaf8178cda9547c91d682c189eacd45',
+    options_schema_version: 'agent-execution-options.v1',
+    options_revision: 7,
+    options: { ...executionOptions },
+    provider: 'opencode-go-chat',
+    model: 'deepseek-v4.1-flash',
+    upstream_base_url: 'https://opencode.ai/zen/go/v1',
+    upstream_request_target: '/chat/completions',
+    profile_sha256: 'c'.repeat(64),
+  },
+  requestLimits: {
+    max_provider_calls: null,
+    max_attempts: null,
+    max_concurrent: null,
+    max_input_bytes: null,
+    max_total_input_bytes: null,
+    max_output_tokens: null,
+    max_total_output_tokens: null,
+    max_tool_payload_bytes: null,
+    max_total_tool_payload_bytes: null,
+    max_tool_calls: null,
+    max_runtime_seconds: null,
+  },
+};
+
+test('ordinary product options v2 leaves tool count and time unbounded when unset', () => {
+  const rows = [];
+  let elapsed = 0;
+  const guard = createToolGuard(productExecutionConfig, row => rows.push(row), undefined,
+    () => elapsed);
+  for (let index = 0; index < 24; index += 1) {
+    elapsed += 200;
+    assert.equal(guard.beforeExecute({ name: 'generic_tool' }).kind, 'allow');
+  }
+  assert.ok(elapsed > 3600, 'synthetic execution exceeded the legacy one-hour cap');
+  assert.equal(guard.calls, 24);
+  assert.equal(rows[0].options_revision, 7);
+  assert.equal(rows[0].profile_sha256, 'c'.repeat(64));
+  assert.equal(rows.some(row => row.phase === 'blocked'), false);
+});
+
+test('ordinary product options v2 enforces only an explicit tool-call limit', () => {
+  const rows = [];
+  const bounded = {
+    ...productExecutionConfig,
+    executionProfile: {
+      ...productExecutionConfig.executionProfile,
+      options: { ...executionOptions, max_tool_calls: 2 },
+    },
+    requestLimits: { ...productExecutionConfig.requestLimits, max_tool_calls: 2 },
+  };
+  const guard = createToolGuard(bounded, row => rows.push(row), undefined,
+    () => Number.MAX_SAFE_INTEGER);
+  assert.equal(guard.beforeExecute({ name: 'generic_tool' }).kind, 'allow');
+  assert.equal(guard.beforeExecute({ name: 'generic_tool' }).kind, 'allow');
+  assert.deepEqual(guard.beforeExecute({ name: 'generic_tool' }), {
+    kind: 'deny', reason: 'BYQ_PRODUCT_TOOL_LIMIT',
+  });
+  assert.equal(rows.filter(row => row.phase === 'tool').length, 2);
+  assert.equal(rows.at(-1).options_revision, 7);
+});
+
+test('ordinary product options v2 rejects unknown or mismatched parameter bindings', () => {
+  assert.throws(() => createToolGuard({
+    ...productExecutionConfig,
+    executionProfile: { ...productExecutionConfig.executionProfile,
+      options: { ...executionOptions, hidden_max: 8 } },
+  }, () => {}), /PRODUCT_EXECUTION_GUARD_INVALID/);
+  assert.throws(() => createToolGuard({
+    ...productExecutionConfig,
+    requestLimits: { ...productExecutionConfig.requestLimits, max_tool_calls: 1 },
+  }, () => {}), /PRODUCT_EXECUTION_GUARD_INVALID/);
+});
+
 test('ADR-0106 count-only counts every tool (generic included) and blocks the seventeenth', () => {
   const rows = [];
   const guard = createToolGuard(countOnlyConfig, row => rows.push(row));

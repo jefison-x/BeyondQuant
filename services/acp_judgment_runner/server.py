@@ -1042,7 +1042,7 @@ class _RunnerRequestHandler(socketserver.BaseRequestHandler):
             self.server.control_gid)
 
     def _relay(self, connection: socket.socket, process: subprocess.Popen[bytes],
-               deadline: float, challenge: str, nonce: str, digest: str,
+               deadline: float | None, challenge: str, nonce: str, digest: str,
                scope: dict[str, Any]) -> None:
         assert process.stdin is not None and process.stdout is not None
         stop = threading.Event()
@@ -1104,7 +1104,7 @@ class _RunnerRequestHandler(socketserver.BaseRequestHandler):
             if requested_reason is not None:
                 reason = requested_reason
                 break
-            if time.monotonic() >= deadline:
+            if deadline is not None and time.monotonic() >= deadline:
                 reason = "deadline"
                 break
             if process.poll() is not None:

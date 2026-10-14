@@ -26,10 +26,16 @@ from packages.contracts.acp_product_slot import (
     validate_product_environment,
     validate_product_scope,
 )
+from packages.contracts.product_turn_request import (
+    PRODUCT_TURN_LIMITS,
+    product_turn_execution_output_cap,
+    product_turn_execution_limits,
+    validate_product_turn_execution_profile,
+)
 
 
 PROTOCOL_VERSION = 1
-MAX_RUN_SECONDS = 3600
+LEGACY_MAX_RUN_SECONDS = 3600
 AUTH_TIMEOUT_SECONDS = 5.0
 MAX_FRAME_BYTES = 1_048_576
 
@@ -125,9 +131,9 @@ def _validate_guard(encoded: object) -> dict:
         raise ProductSlotError("continuation guard is invalid") from exc
     if isinstance(value, list) and len(value) == 2 and isinstance(value[0], dict) \
             and value[0].get("id") == "llm-pi-ai":
-        # ADR-0106 ordinary Product overlay: exactly one closed Go chat route
-        # pinned to the local budget proxy plus the count-only tool guard. Other
-        # provider routes are not registered and no web tool is changed.
+        # Ordinary Product overlays have an explicit mode. v1 is retained for
+        # already-qualified receipts; newly generated ordinary roots must use
+        # v2 with the exact trusted options revision and no legacy defaults.
         route = value[0]
         route_config = route.get("config") if set(route) == {"id", "config"} else None
         providers = route_config.get("providers") if isinstance(route_config, dict) else None
@@ -145,9 +151,9 @@ def _validate_guard(encoded: object) -> dict:
                 or re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
                                 chat["headers"]["x-opencode-session"]) is None
                 or not isinstance(chat.get("models"), list) or len(chat["models"]) != 1
+                or not isinstance(chat["models"][0], dict)
                 or chat["models"][0].get("id") != "deepseek-v4.1-flash"):
             raise ProductSlotError("product-turn route overlay is invalid")
-        from packages.contracts.product_turn_request import PRODUCT_TURN_LIMITS
         insert = value[1]
         entry = (insert.get("insert") if isinstance(insert, dict) and set(insert) == {"insert"}
                  else None)
@@ -162,25 +168,42 @@ def _validate_guard(encoded: object) -> dict:
         if (not isinstance(entry, list) or len(entry) != 1
                 or entry[0].get("id") != "byq-continuation-budget"
                 or entry[0].get("name") != "file:///opt/byq/runtime/byq-continuation-budget.js"
-                or not isinstance(guard_config, dict)
-                # The Adapter sends the PRE-injection overlay: exactly the closed
-                # identity + limits, and NEVER a journalPath. The trusted Adapter
-                # injects journalPath into the on-disk patch from the
-                # workspace-bound session home; a frame-supplied path is refused
-                # (set equality), so no caller can choose where the guard writes.
-                or set(guard_config) != {"guardMode", "deadlineEpochMs", "executionProfile",
-                                         "requestLimits"}
-                or guard_config.get("guardMode") != "count-only"
-                or type(guard_config.get("deadlineEpochMs")) is not int
-                or guard_config["deadlineEpochMs"] <= 0
-                or not isinstance(profile, dict)
-                or set(profile) != {"profile_id", "profile_version", "profile_sha256"}
-                or profile.get("profile_id") != "product-turn.v1"
-                or profile.get("profile_version") != 1
-                or not isinstance(profile.get("profile_sha256"), str)
-                or re.fullmatch(r"[a-f0-9]{64}", profile["profile_sha256"]) is None
-                or not isinstance(limits, dict) or limits != PRODUCT_TURN_LIMITS):
+                or not isinstance(guard_config, dict)):
             raise ProductSlotError("product-turn tool guard is invalid")
+        guard_mode = guard_config.get("guardMode")
+        if guard_mode == "count-only":
+            # The Adapter sends the PRE-injection overlay: exactly the closed
+            # identity + limits, and NEVER a journalPath. Keep legacy F6/v1
+            # validation unchanged; the trusted Adapter owns the on-disk path.
+            if (set(guard_config) != {"guardMode", "deadlineEpochMs", "executionProfile",
+                                     "requestLimits"}
+                    or type(guard_config.get("deadlineEpochMs")) is not int
+                    or guard_config["deadlineEpochMs"] <= 0
+                    or not isinstance(profile, dict)
+                    or set(profile) != {"profile_id", "profile_version", "profile_sha256"}
+                    or profile.get("profile_id") != "product-turn.v1"
+                    or profile.get("profile_version") != 1
+                    or not isinstance(profile.get("profile_sha256"), str)
+                    or re.fullmatch(r"[a-f0-9]{64}", profile["profile_sha256"]) is None
+                    or not isinstance(limits, dict) or limits != PRODUCT_TURN_LIMITS):
+                raise ProductSlotError("product-turn tool guard is invalid")
+            return value
+        if guard_mode != "ordinary-options":
+            raise ProductSlotError("product-turn tool guard mode is invalid")
+        try:
+            execution_profile = validate_product_turn_execution_profile(profile)
+            expected_limits = product_turn_execution_limits(execution_profile["options"])
+        except (TypeError, ValueError):
+            raise ProductSlotError("ordinary execution profile is invalid") from None
+        if (set(guard_config) != {"guardMode", "executionProfile", "requestLimits"}
+                or not isinstance(limits, dict) or limits != expected_limits):
+            raise ProductSlotError("ordinary execution limits are invalid")
+        output_limit = product_turn_execution_output_cap(execution_profile["options"])
+        expected_model = {"id": "deepseek-v4.1-flash"}
+        if output_limit is not None:
+            expected_model["maxTokens"] = output_limit
+        if chat["models"] != [expected_model]:
+            raise ProductSlotError("ordinary output parameter does not match options")
         return value
     if not isinstance(value, list) or len(value) != 5:
         raise ProductSlotError("continuation guard is invalid")
@@ -606,7 +629,7 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
                          product_scope_digest(scope))
             return
 
-        if time.monotonic() >= deadline:
+        if deadline is not None and time.monotonic() >= deadline:
             # The durable one-shot tombstone has already been written. Report
             # that this exact scope is consumed so the client does not treat
             # the reject as a retryable prelaunch failure.
@@ -697,7 +720,7 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
 
     @staticmethod
     def _validate_start(value: dict[str, Any], challenge: str, secret: bytes) -> tuple[
-            dict[str, str], object, float, str, dict | None]:
+            dict[str, str], object, float | None, str, dict | None]:
         if set(value) not in {_START_KEYS, _START_KEYS | _START_OPTIONAL_KEYS} \
                 or type(value.get("v")) is not int \
                 or value["v"] != PROTOCOL_VERSION:
@@ -709,11 +732,6 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
             raise ProductSlotError("START nonce is invalid")
         scope = validate_product_scope(value.get("scope"))
         deadline_at_ms = value.get("deadline_at_ms")
-        if type(deadline_at_ms) is not int or deadline_at_ms <= 0:
-            raise ProductSlotError("START deadline is invalid")
-        remaining_ms = deadline_at_ms - int(time.time() * 1000)
-        if remaining_ms <= 0:
-            raise ProductSlotError("START deadline expired")
         mac = value.get("mac")
         if not isinstance(mac, str) or _HEX64.fullmatch(mac) is None:
             raise ProductSlotError("START MAC is invalid")
@@ -722,9 +740,39 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
         if not hmac.compare_digest(expected, mac):
             raise ProductSlotError("START authentication failed")
         guard = _validate_guard(value["guard_b64"]) if "guard_b64" in value else None
-        return (scope, value.get("env"),
-                time.monotonic() + min(remaining_ms, MAX_RUN_SECONDS * 1000) / 1000.0,
-                nonce, guard)
+        ordinary_config = None
+        if guard is not None:
+            try:
+                ordinary_config = guard[1]["insert"][0]["config"]
+                if ordinary_config.get("guardMode") != "ordinary-options":
+                    ordinary_config = None
+            except (IndexError, KeyError, TypeError, AttributeError):
+                ordinary_config = None
+        if ordinary_config is not None:
+            max_runtime = ordinary_config["executionProfile"]["options"]["max_runtime_seconds"]
+            if max_runtime is None:
+                if deadline_at_ms is not None:
+                    raise ProductSlotError("ordinary START deadline has no user limit")
+                deadline = None
+            else:
+                if type(deadline_at_ms) is not int or deadline_at_ms <= 0:
+                    raise ProductSlotError("ordinary START deadline is missing")
+                remaining_ms = deadline_at_ms - int(time.time() * 1000)
+                if remaining_ms <= 0:
+                    raise ProductSlotError("ordinary START deadline expired")
+                # Never extend the trusted user setting, and do not impose the
+                # legacy one-hour process-runner cap on a v2 ordinary execution.
+                deadline = time.monotonic() + min(remaining_ms, max_runtime * 1000) / 1000.0
+        else:
+            if type(deadline_at_ms) is not int or deadline_at_ms <= 0:
+                raise ProductSlotError("START deadline is invalid")
+            remaining_ms = deadline_at_ms - int(time.time() * 1000)
+            if remaining_ms <= 0:
+                raise ProductSlotError("START deadline expired")
+            # Archived/F6 profiles keep their existing finite runner boundary.
+            deadline = time.monotonic() + min(
+                remaining_ms, LEGACY_MAX_RUN_SECONDS * 1000) / 1000.0
+        return (scope, value.get("env"), deadline, nonce, guard)
 
     def _reject(self, connection: socket.socket, code: str, challenge: str,
                 nonce: str, digest: str) -> None:
@@ -758,7 +806,7 @@ class _ProductRequestHandler(_helpers._RunnerRequestHandler):
             raise OSError("Product ACP cwd is not canonical")
 
     def _run_relay(self, connection: socket.socket, process: subprocess.Popen[bytes],
-                   deadline: float, challenge: str, nonce: str, digest: str,
+                   deadline: float | None, challenge: str, nonce: str, digest: str,
                    state: dict[str, Any], scope: dict[str, str]) -> None:
         """Reuse the reviewed relay while observing whether cleanup and EXIT were proven."""
         original_cleanup = _helpers._terminate_and_reap

@@ -1,0 +1,70 @@
+{
+  "status": "PASS_SOFTWARE_SCOPED",
+  "adr": "ADR-0111 Accepted 2026-10-14",
+  "slice": "1B — ordinary Product execution options and root lifecycle integration",
+  "source_base": "dfc41d093c7b5f74c89da75a51c5fb9eb17833ba",
+  "source_manifest_sha256": "09118b7cb27ce2d25c1013de85dc81439470e2821c449a800cc8c41d11e4e882",
+  "source_files": 563,
+  "overlay_files": 21,
+  "private_evidence": ".ci-artifacts/execution-options-20261014/ordinary-v11",
+  "qualified_changes": [
+    "Trusted owner/workspace/conversation option snapshot and revision bound to product-turn.v2; no fallback to unlimited on failed scope/config reads",
+    "Unspecified ordinary BYQ provider/tool/runtime/output limits remain null; explicit limits enforced without huge sentinel values",
+    "Known runtime/budget stops accept only a fresh root after exact ACK and cleanup, never reopen/replay a failed native root",
+    "Canonical private guard filename preserves write/read/retire/archive/rotation safety; root/schema/profile distinguish version",
+    "Registered connected upstream cancellation and pre-send fence preserve unknown outcomes and late-request isolation"
+  ],
+  "tests": {
+    "adapter": {
+      "total_scoped_pass": 31,
+      "fresh_final_v11": 5,
+      "reused_scoped": 26,
+      "reuse_groups": {
+        "v4": 2,
+        "v5": 3,
+        "v8": 7,
+        "v9": 12,
+        "v10": 2
+      },
+      "fresh_stdout_sha256": "bb0e8ca37d9f7078dc7abf603fdee6ef16920a1fcce69f9cbd8619744be0fac7"
+    },
+    "runner": {
+      "total_scoped_pass": 4,
+      "reused_first_v11": 2,
+      "fresh_v11_run2": 2,
+      "fresh_stdout_sha256": "7c3178f0eacce0030ee95f7f98a44083255d44c3206e826585cc9bcd4b8c4092",
+      "limits": "Real NoNewPrivs/subreaper/stdio/cleanup with synthetic same-UID child; not production cross-UID/root-mode proof"
+    },
+    "node": {
+      "fresh_pass": 5,
+      "failed": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "stdout_sha256": "91661f43ffa3e90c3d35af7969166e8f110ced0716f1a5b0a5168f76820678ee"
+    },
+    "environment": "Pinned sha256:fac40ab1e1853fcf00cd659c620586af70d87462b2dfaa4181683c33ec1ebe97; frozen readonly source; network none; no application DB",
+    "product_model_calls": 0,
+    "jobs": 0
+  },
+  "historical_failures": "All original source/observer/plan/fixture failures and v11 Runner NoNewPrivs failure remain immutable; corrected batches do not relabel prior FAIL",
+  "review": {
+    "independent_tester": "PASS_SOFTWARE_SCOPED",
+    "independent_sol": "PASS_SOFTWARE_SCOPED",
+    "root": "PASS_SOFTWARE_SCOPED"
+  },
+  "count_clarification": "Inherited new_adapter_case_count_expected=3 is only v6-added compat group; post-run clarification retains actual executed plan hashes and raw counts",
+  "known_gaps": {
+    "native_web_search": "Pinned plugin has 4096 output tokens and 5 uses per provider request; removing config restores defaults. Unlimited is NOT_SUPPORTED",
+    "dns_cancellation": "OS getaddrinfo has no hard bounded cancellation guarantee; pending unpaired old root remains fenced and is not replayed"
+  },
+  "not_run": [
+    "Automatic background defaults / no-grant execution",
+    "F6/Judgment quota conversion",
+    "Delegation and broader lifecycle qualification",
+    "New settings browser / genuine Product model flows",
+    "Hosted CI / image admission / production deployment"
+  ],
+  "historical_production_stop_root_cause": "Not inferred from candidate-only guard filename integration defect",
+  "overall": "NOT_READY",
+  "environment_and_page": "KEEP_OPEN"
+}

@@ -370,7 +370,7 @@ class ProductRunnerClient:
         self,
         scope: Mapping[str, object],
         env: Mapping[str, str],
-        deadline_at_ms: int,
+        deadline_at_ms: int | None,
         expected_cwd: str,
         guard_b64: str | None = None,
     ) -> wire.RunnerSession:
@@ -380,23 +380,27 @@ class ProductRunnerClient:
         binding = self.registry._resolved(workspace_id)
         checked_env = _checked_environment(env, checked_scope, binding.public.control_secret_env)
         cwd_leaf = checked_scope["cwd_leaf"]
-        if (
-            type(deadline_at_ms) is not int or deadline_at_ms <= int(time.time() * 1000)
-            or not isinstance(expected_cwd, str) or not expected_cwd.startswith("/")
-            or "\0" in expected_cwd or Path(expected_cwd).name != cwd_leaf
-        ):
+        if (deadline_at_ms is not None
+                and (type(deadline_at_ms) is not int
+                     or deadline_at_ms <= int(time.time() * 1000))):
+            raise ValueError("Product ACP start boundary is invalid")
+        if (deadline_at_ms is None and guard_b64 is None
+                or not isinstance(expected_cwd, str) or not expected_cwd.startswith("/")
+                or "\0" in expected_cwd or Path(expected_cwd).name != cwd_leaf):
             raise ValueError("Product ACP start boundary is invalid")
 
         self.registry.reserve(checked_scope)
         dispatched = False
         sock: socket.socket | None = None
         try:
-            remaining_s = (deadline_at_ms - int(time.time() * 1000)) / 1000.0
-            if remaining_s <= 0:
+            remaining_s = (None if deadline_at_ms is None else
+                           (deadline_at_ms - int(time.time() * 1000)) / 1000.0)
+            if remaining_s is not None and remaining_s <= 0:
                 self.registry._abandon_before_dispatch(checked_scope)
                 raise ProductSlotUnavailable("Product ACP start deadline expired")
             sock = self._socket_factory(socket.AF_UNIX, socket.SOCK_STREAM)
-            sock.settimeout(min(self._connect_timeout_s, remaining_s))
+            sock.settimeout(self._connect_timeout_s if remaining_s is None else
+                             min(self._connect_timeout_s, remaining_s))
             sock.connect(binding.public.socket_path)
 
             challenge_value = wire._read_json_frame(sock, wire.CHALLENGE)
@@ -410,11 +414,13 @@ class ProductRunnerClient:
             ):
                 raise wire.RunnerCleanupUnknown("Product ACP challenge is invalid")
 
-            remaining_s = (deadline_at_ms - int(time.time() * 1000)) / 1000.0
-            if remaining_s <= 0:
+            remaining_s = (None if deadline_at_ms is None else
+                           (deadline_at_ms - int(time.time() * 1000)) / 1000.0)
+            if remaining_s is not None and remaining_s <= 0:
                 self.registry._abandon_before_dispatch(checked_scope)
                 raise ProductSlotUnavailable("Product ACP start deadline expired")
-            sock.settimeout(min(self._connect_timeout_s, remaining_s))
+            sock.settimeout(self._connect_timeout_s if remaining_s is None else
+                             min(self._connect_timeout_s, remaining_s))
 
             nonce = os.urandom(32).hex()
             unsigned_start: dict[str, object] = {

@@ -110,6 +110,8 @@ COPY packages/contracts/acp_product_slot.py \
 # product-turn.v1 limits, so the closed contract module must ship with it.
 COPY packages/contracts/product_turn_request.py \
     /opt/byq/acp_product_runner/packages/contracts/product_turn_request.py
+COPY packages/contracts/agent_execution_options.py \
+    /opt/byq/acp_product_runner/packages/contracts/agent_execution_options.py
 
 RUN test -x /usr/local/bin/node \
     && test -f /opt/dsh-runtime/apps/cli/lib/bin.js \

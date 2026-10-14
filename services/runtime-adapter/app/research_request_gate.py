@@ -1,17 +1,13 @@
 """Request-scoped provider boundary gates for current Clean Break paths.
 
 The ADR-0090 task-ready profile reuses this measured HTTP boundary for one fresh
-background request. It is enforced from the current shared continuation
-contract, not by restoring an old cross-process budget. The existing named
-research-judgment gate and its tests retain their established stage-specific
-behavior; that archived ADR is not a general authority for continuation.
-
-The continuation gate counts each request admitted to the upstream provider,
-including retries and compaction, measures exact serialized request bytes,
-per-call declared output and tool payloads, and records provider-reported
-actual usage or explicit unknown/partial facts. Its 180 second deadline starts
-at request admission and is also enforced by Runtime Adapter's owned-process
-watchdog, including tool idle time.
+background request. Its closed profile retains fixed request bounds. The
+ordinary Product v2 profile instead binds trusted conversation options and
+applies only configured limits; unset v2 limits do not inherit the legacy
+180-second deadline or fixed call/byte caps. Both modes count provider HTTP
+attempts, including retries and compaction, and record provider-reported usage
+or explicit unknown/partial facts. The named Judgment gate keeps its existing
+stage-specific behavior.
 """
 
 from __future__ import annotations
@@ -44,6 +40,8 @@ from packages.contracts.continuation_request import (
 from packages.contracts.product_turn_request import (
     validate_product_turn_limits,
     validate_product_turn_profile,
+    validate_product_turn_execution_limits,
+    validate_product_turn_execution_profile,
 )
 
 PERSONA_TOOL = "byq_research_judgment_turn"
@@ -55,14 +53,17 @@ UNKNOWN = "unknown"
 SETTLED_OK = "settled_ok"
 KNOWN_BLOCKED = "known_blocked"
 UNKNOWN_OR_UNPAIRED = "unknown_or_unpaired"
+UPSTREAM_CONNECT_TIMEOUT_SECONDS = 10.0
+PROXY_CLOSE_DRAIN_SECONDS = 5.0
 
-# The ADR-0106 PRE-DISPATCH request-budget limit guards. A sealed scope whose
+# The ordinary PRE-DISPATCH request-budget limit guards. A sealed scope whose
 # ONLY refusals are these reasons is a *known* budget exhaustion: every
 # dispatched request has a matching known completion and the block was decided
-# BEFORE dispatch (a rejected/aborted row with admitted False). `deadline_exceeded`
-# is deliberately NOT here: it can also arrive post-dispatch as a
-# completed-but-unforwarded response in `_complete_continuation_request`, which is
-# a different (broader) case. Reasons outside this set (storage_failed, cancelled,
+# BEFORE dispatch (a rejected/aborted row with admitted False). `product_runtime_limit`
+# can also arrive post-dispatch; that completed-but-unforwarded case is kept out
+# of `known_budget_block_reason` below. `deadline_exceeded` is deliberately NOT
+# here: it can also arrive post-dispatch as a completed-but-unforwarded response
+# in `_complete_continuation_request`. Reasons outside this set (storage_failed, cancelled,
 # budget_invalid, model_route_unqualified, provider_path_unqualified,
 # declared_output_limit_*, client_disconnected, provider_outcome_unknown,
 # provider_redirect_blocked, output_tokens_exceeded, concurrency_limit,
@@ -73,6 +74,11 @@ BUDGET_LIMIT_REASONS = frozenset({
     "input_bytes_limit", "total_input_bytes_limit",
     "output_tokens_limit", "total_output_tokens_limit",
     "tool_payload_limit", "total_tool_payload_limit",
+    "product_provider_call_limit", "product_attempt_limit",
+    "product_input_bytes_limit", "product_total_input_bytes_limit",
+    "product_output_tokens_limit", "product_total_output_tokens_limit",
+    "product_tool_payload_limit", "product_total_tool_payload_limit",
+    "product_tool_call_limit", "product_concurrency_limit", "product_runtime_limit",
 })
 
 # Closed completion reasons for the retained named judgment request path. The
@@ -245,11 +251,12 @@ def _unknown_usage() -> dict:
 
 
 class ResearchRequestGate:
-    """Request-scoped provider gate for judgment and continuation profiles.
+    """Request-scoped provider gate for judgment, continuation, and Product v2.
 
-    Judgment limits keep their ADR-0086 contract. A continuation gate opens only
-    from the closed ADR-0090 profile and measures serialized provider HTTP attempts,
-    including DSH retry and compaction requests.
+    Judgment and task-ready continuation retain their closed limit contracts.
+    Ordinary Product v2 uses the exact trusted option snapshot and revision.
+    Every gate measures serialized provider HTTP attempts, including DSH retry
+    and compaction requests.
     """
 
     def __init__(self, limits: dict, *, journal: Path | None = None,
@@ -257,19 +264,25 @@ class ResearchRequestGate:
                  monotonic=time.monotonic, wall=time.time) -> None:
         self._monotonic = monotonic
         self._wall = wall
-        # ADR-0106: the gate also serves the ordinary Product path under the
-        # independent `product-turn.v1` profile. Both modes use the same
-        # request-scoped cap decision; only the accepted profile/limits differ.
+        # The archived `product-turn.v1` profile remains readable for receipts.
+        # Active ordinary roots use ADR-0111 `product-turn.v2`; both share this
+        # request boundary but validate separate profile and limit contracts.
         self.product_turn = False
+        self.product_turn_v2 = False
         self.execution_profile = None
         if execution_profile is not None:
             try:
                 self.execution_profile = validate_profile_binding(execution_profile)
             except ValueError:
-                self.execution_profile = validate_product_turn_profile(execution_profile)
-                self.product_turn = True
+                try:
+                    self.execution_profile = validate_product_turn_execution_profile(execution_profile)
+                    self.product_turn_v2 = True
+                except ValueError:
+                    self.execution_profile = validate_product_turn_profile(execution_profile)
+                    self.product_turn = True
         self.continuation_mode = self.execution_profile is not None
-        self.limits = (validate_product_turn_limits(limits) if self.product_turn
+        self.limits = (validate_product_turn_execution_limits(limits, self.execution_profile)
+                       if self.product_turn_v2 else validate_product_turn_limits(limits) if self.product_turn
                        else validate_continuation_limits(limits) if self.continuation_mode else limits)
         self.request_id = request_id
         self._journal = journal
@@ -363,6 +376,9 @@ class ResearchRequestGate:
     def deadline_monotonic(self) -> float | None:
         if not self.continuation_mode:
             return None
+        if self.product_turn_v2:
+            seconds = self.limits["max_runtime_seconds"]
+            return None if seconds is None else self._continuation_started + seconds
         return self._continuation_started + self.limits["deadline_ms"] / 1000.0
 
     def has_blocked_request(self) -> bool:
@@ -542,13 +558,60 @@ class ResearchRequestGate:
                     or (row.get("phase") == "completed"
                         and row.get("forwarded") is False))
             ]
+            # A v2 runtime cap can be observed after provider dispatch too. It
+            # terminates this root, but its response was withheld; do not label
+            # that completion as a pre-dispatch budget refusal. The runtime has
+            # a separate exact classifier for allowing a fresh root after this
+            # known, paired result and the normal terminal ACK/cleanup fence.
+            if any(
+                isinstance(row, dict)
+                and row.get("phase") == "completed"
+                and row.get("forwarded") is False
+                and row.get("reason") == "product_runtime_limit"
+                for row in self._receipts
+            ):
+                return None
             if not reasons or any(reason not in BUDGET_LIMIT_REASONS for reason in reasons):
                 return None
             distinct = {reason for reason in reasons}
             return distinct.pop() if len(distinct) == 1 else None
 
-    def remaining_seconds(self) -> float:
+    def known_postdispatch_product_runtime_limit(self) -> bool:
+        """Recognize a paired v2 runtime stop without treating it as replayable.
+
+        This only lets the public conversation accept a *new* root after its
+        exact terminal acknowledgement and cleanup fences pass. The old root
+        remains failed and is never resumed. Mixed refusals, unknown outcomes,
+        legacy profiles, and unsealed scopes do not qualify.
+        """
+
+        with self._lock:
+            if (not self.product_turn_v2 or self._journal_failed
+                    or self._settlement_state_locked() != KNOWN_BLOCKED):
+                return False
+            blocked_rows = [
+                row for row in self._receipts if isinstance(row, dict) and (
+                    (row.get("phase") in {"rejected", "aborted"}
+                     and row.get("admitted") is False)
+                    or (row.get("phase") == "completed"
+                        and row.get("forwarded") is False))
+            ]
+            return bool(blocked_rows) and all(
+                row.get("reason") == "product_runtime_limit"
+                for row in blocked_rows
+            ) and any(
+                row.get("phase") == "completed"
+                and row.get("forwarded") is False
+                for row in blocked_rows
+            )
+
+    def remaining_seconds(self) -> float | None:
         if self.continuation_mode:
+            if self.product_turn_v2:
+                seconds = self.limits["max_runtime_seconds"]
+                if seconds is None:
+                    return None
+                return max(0.0, seconds - (self._monotonic() - self._continuation_started))
             elapsed = self._monotonic() - self._continuation_started
             return max(0.0, self.limits["deadline_ms"] / 1000.0 - elapsed)
         return (self.limits["deadline_at_ms"] - self._wall() * 1000) / 1000.0
@@ -699,9 +762,39 @@ class ResearchRequestGate:
 
         self._reject_continuation_request("provider_path_unqualified")
 
-    def _continuation_decision(self, *, body_bytes: int, declared: int,
+    def _continuation_decision(self, *, body_bytes: int, declared: int | None,
                                tool_bytes: int, elapsed_ms: int,
                                concurrent: int) -> str | None:
+        if self.product_turn_v2:
+            limits = self.limits
+            if self._cancelled:
+                return "cancelled"
+            runtime_limit = limits["max_runtime_seconds"]
+            if runtime_limit is not None and elapsed_ms >= runtime_limit * 1000:
+                return "product_runtime_limit"
+            concurrency_limit = limits["max_concurrent"]
+            if concurrency_limit is not None and concurrent > concurrency_limit:
+                return "product_concurrency_limit"
+            declared_total = None
+            if (type(self._declared_output_tokens_total) is int
+                    and type(declared) is int):
+                declared_total = self._declared_output_tokens_total + declared
+            for count, limit, reason in (
+                (self._provider_calls + 1, limits["max_provider_calls"], "product_provider_call_limit"),
+                (self._attempts + 1, limits["max_attempts"], "product_attempt_limit"),
+                (body_bytes, limits["max_input_bytes"], "product_input_bytes_limit"),
+                (self._input_bytes_total + body_bytes, limits["max_total_input_bytes"],
+                 "product_total_input_bytes_limit"),
+                (declared, limits["max_output_tokens"], "product_output_tokens_limit"),
+                (declared_total, limits["max_total_output_tokens"],
+                 "product_total_output_tokens_limit"),
+                (tool_bytes, limits["max_tool_payload_bytes"], "product_tool_payload_limit"),
+                (self._tool_payload_bytes_total + tool_bytes, limits["max_total_tool_payload_bytes"],
+                 "product_total_tool_payload_limit"),
+            ):
+                if limit is not None and (count is None or count > limit):
+                    return reason
+            return None
         if self._cancelled:
             return "cancelled"
         if elapsed_ms >= self.limits["deadline_ms"]:
@@ -737,7 +830,14 @@ class ResearchRequestGate:
         if parsed.get("model") != CONTINUATION_MODEL:
             self._reject_continuation_request("model_route_unqualified", input_bytes=len(body))
         declared, declared_reason = resolve_declared_output_tokens(parsed)
-        if declared_reason is not None:
+        if self.product_turn_v2:
+            output_limits_enabled = any(self.limits[name] is not None for name in (
+                "max_output_tokens", "max_total_output_tokens"))
+            if output_limits_enabled and declared_reason is not None:
+                self._reject_continuation_request(declared_reason, input_bytes=len(body))
+            if not output_limits_enabled and declared_reason is not None:
+                declared = None
+        elif declared_reason is not None:
             self._reject_continuation_request(declared_reason, input_bytes=len(body))
         tool_bytes = _tool_payload_bytes(parsed)
         with self._cond:
@@ -752,14 +852,23 @@ class ResearchRequestGate:
                     # Fail closed: a cancelled or closed request scope never
                     # dispatches, and never replays an unprovable result.
                     reason = "cancelled"
-                elif elapsed_ms >= self.limits["deadline_ms"]:
+                elif (self.product_turn_v2
+                      and self.limits["max_runtime_seconds"] is not None
+                      and elapsed_ms >= self.limits["max_runtime_seconds"] * 1000):
+                    reason = "product_runtime_limit"
+                elif not self.product_turn_v2 and elapsed_ms >= self.limits["deadline_ms"]:
                     reason = "deadline_exceeded"
                 elif abort_if is not None and not abort_if():
                     # The caller's HTTP client is already gone. Refuse this
                     # request only: never dispatch a late provider call, and
                     # never poison the shared scope for the other request.
                     reason = "client_disconnected"
-                elif self._inflight >= self.limits["max_concurrent"]:
+                elif (self.product_turn_v2
+                      and self.limits["max_concurrent"] is not None
+                      and self._inflight >= self.limits["max_concurrent"]):
+                    reason = "product_concurrency_limit"
+                elif (not self.product_turn_v2
+                      and self._inflight >= self.limits["max_concurrent"]):
                     # The single upstream slot is held by another admitted
                     # request (parent/child share one per-root proxy). Serialize
                     # instead of refusing: wait, bounded by the request deadline,
@@ -835,10 +944,15 @@ class ResearchRequestGate:
                     self._attempts += 1
                     self._inflight += 1
                     self._input_bytes_total += len(body)
-                    self._declared_output_tokens_total += declared
+                    if type(declared) is int:
+                        if self._declared_output_tokens_total is not None:
+                            self._declared_output_tokens_total += declared
+                        self._max_declared_output_tokens = max(
+                            self._max_declared_output_tokens, declared)
+                    else:
+                        self._declared_output_tokens_total = None
                     self._tool_payload_bytes_total += tool_bytes
                     self._max_input_bytes = max(self._max_input_bytes, len(body))
-                    self._max_declared_output_tokens = max(self._max_declared_output_tokens, declared)
                     self._max_tool_payload_bytes = max(self._max_tool_payload_bytes, tool_bytes)
                     self._max_concurrent = max(self._max_concurrent, concurrent)
                 elif reason not in ("concurrency_limit", "client_disconnected", "queue_limit"):
@@ -859,9 +973,13 @@ class ResearchRequestGate:
         elapsed_ms = max(0, int((self._monotonic()
             - receipt.get("_started", self._monotonic())) * 1000))
         actual = parse_response_usage(body)
-        declared = int(receipt.get("declared_max_output_tokens") or 0)
+        declared = receipt.get("declared_max_output_tokens")
         total_elapsed_ms = max(0, int((self._monotonic() - self._continuation_started) * 1000))
-        if total_elapsed_ms >= self.limits["deadline_ms"]:
+        if (self.product_turn_v2
+                and self.limits["max_runtime_seconds"] is not None
+                and total_elapsed_ms >= self.limits["max_runtime_seconds"] * 1000):
+            reason = "product_runtime_limit"
+        elif not self.product_turn_v2 and total_elapsed_ms >= self.limits["deadline_ms"]:
             reason = "deadline_exceeded"
         elif outcome_unknown:
             # The provider connection ended without a complete response. Its
@@ -872,7 +990,8 @@ class ResearchRequestGate:
             # Never forward a redirect to the DSH HTTP client: it could follow
             # Location outside the counted official-provider proxy boundary.
             reason = "provider_redirect_blocked"
-        elif (isinstance(actual["actual_output_tokens"], int)
+        elif (type(declared) is int
+                and isinstance(actual["actual_output_tokens"], int)
                 and actual["actual_output_tokens"] > declared):
             reason = "output_tokens_exceeded"
         else:
@@ -1016,6 +1135,82 @@ class _NoProviderRedirects(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def _registered_upstream_opener(proxy: "RequestGateProxy"):
+    """Build a stdlib urllib opener whose live connection can be cancelled.
+
+    HTTPConnection.connect() registers itself before connection setup and
+    rechecks the closed fence after setup but before request bytes are sent.
+    This covers the interval where ``opener.open()`` is waiting for response
+    headers and has not returned an HTTPResponse for the caller to register.
+    Registration and proxy close are fenced by RequestGateProxy's active lock.
+    """
+    connections: list[http.client.HTTPConnection] = []
+
+    def connection_type(base):
+        class RegisteredConnection(base):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self._byq_dispatch_started = False
+
+            def connect(self):
+                connections.append(self)
+                # Register before DNS/TCP/TLS so close() can fence an
+                # in-progress connection. Register again after connect: if
+                # close raced while no socket existed yet, this second check
+                # closes the newly-created socket before HTTPConnection.request
+                # is allowed to send provider bytes.
+                proxy._register_upstream(self)
+                read_timeout = self.timeout
+                self.timeout = (UPSTREAM_CONNECT_TIMEOUT_SECONDS if read_timeout is None
+                                else min(read_timeout, UPSTREAM_CONNECT_TIMEOUT_SECONDS))
+                try:
+                    super().connect()
+                finally:
+                    # Bound TCP/TLS establishment after stdlib name resolution.
+                    # getaddrinfo itself has no cancellation hook; if the OS
+                    # resolver stalls, close leaves this request unpaired and
+                    # its root fenced rather than claiming a proven outcome.
+                    # A configured runtime deadline remains the read timeout;
+                    # otherwise a healthy provider response has no hidden one.
+                    self.timeout = read_timeout
+                    if self.sock is not None:
+                        self.sock.settimeout(read_timeout)
+                proxy._register_upstream(self)
+
+            def send(self, data):
+                # HTTPConnection.send() normally calls connect() itself when
+                # sock is None. Connect explicitly here so DNS/TCP/TLS failures
+                # remain known pre-dispatch; then recheck the closed fence before
+                # marking the first socket-write attempt.
+                if self.sock is None:
+                    self.connect()
+                proxy._register_upstream(self)
+                if data:
+                    self._byq_dispatch_started = True
+                return super().send(data)
+
+        return RegisteredConnection
+
+    http_connection = connection_type(http.client.HTTPConnection)
+    https_connection = connection_type(http.client.HTTPSConnection)
+
+    class RegisteredHTTPHandler(urllib.request.HTTPHandler):
+        def http_open(self, req):
+            return self.do_open(http_connection, req)
+
+    class RegisteredHTTPSHandler(urllib.request.HTTPSHandler):
+        def https_open(self, req):
+            return self.do_open(
+                https_connection, req, context=self._context,
+                check_hostname=self._check_hostname,
+            )
+
+    opener = urllib.request.build_opener(
+        _NoProviderRedirects(), RegisteredHTTPHandler(), RegisteredHTTPSHandler(),
+    )
+    return opener, connections
+
+
 def _response_socket(response):
     # A normal HTTPResponse exposes response.fp.raw._sock. urllib wraps
     # non-2xx responses in HTTPError, adding an extra .fp layer around that
@@ -1029,10 +1224,12 @@ def _response_socket(response):
             if item is None or id(item) in visited:
                 continue
             visited.add(id(item))
+            if isinstance(item, socket.socket):
+                return item
             sock = getattr(item, "_sock", None)
             if isinstance(sock, socket.socket):
                 return sock
-            for attribute in ("fp", "raw"):
+            for attribute in ("fp", "raw", "sock"):
                 nested = getattr(item, attribute, None)
                 if nested is not None and id(nested) not in visited:
                     following.append(nested)
@@ -1074,7 +1271,7 @@ def _read_response(response, gate: ResearchRequestGate) -> bytes:
     chunks: list[bytes] = []
     while True:
         remaining = gate.remaining_seconds()
-        if remaining <= 0:
+        if remaining is not None and remaining <= 0:
             raise TimeoutError("continuation provider response exceeded request deadline")
         # HTTPResponse closes its socket and clears fp as soon as a declared
         # Content-Length is consumed. Return here instead of setting a timeout
@@ -1093,13 +1290,14 @@ def _read_response(response, gate: ResearchRequestGate) -> bytes:
             socket_is_live = sock.fileno() >= 0
         except OSError:
             socket_is_live = False
-        if socket_is_live:
+        if socket_is_live and remaining is not None:
             sock.settimeout(remaining)
         chunk = response.read1(64 * 1024)
         if not chunk:
             return b"".join(chunks)
         chunks.append(chunk)
-        if gate.remaining_seconds() <= 0:
+        remaining = gate.remaining_seconds()
+        if remaining is not None and remaining <= 0:
             raise TimeoutError("continuation provider response exceeded request deadline")
         if getattr(response, "fp", object()) is None or getattr(response, "length", None) == 0:
             return b"".join(chunks)
@@ -1126,7 +1324,9 @@ class _GateProxyHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         proxy: RequestGateProxy = self.server.proxy  # type: ignore[attr-defined]
-        proxy._register_client(self.connection)
+        if not proxy._register_client(self.connection):
+            self.close_connection = True
+            return
         try:
             self._handle_post(proxy)
         finally:
@@ -1152,7 +1352,8 @@ class _GateProxyHandler(BaseHTTPRequestHandler):
             self.close_connection = True
             self._failure("budget_invalid")
             return
-        if gate.continuation_mode and length > gate.limits["max_input_bytes"]:
+        if (gate.continuation_mode and gate.limits["max_input_bytes"] is not None
+                and length > gate.limits["max_input_bytes"]):
             try:
                 gate.reject_oversized_body(length)
             except RequestGateBlocked as error:
@@ -1179,7 +1380,7 @@ class _GateProxyHandler(BaseHTTPRequestHandler):
                 self.close_connection = True
             return
         remaining = gate.remaining_seconds()
-        if remaining <= 0:
+        if remaining is not None and remaining <= 0:
             gate.complete(receipt, status=0, body=b"")
             self._failure("deadline_exceeded")
             return
@@ -1191,9 +1392,16 @@ class _GateProxyHandler(BaseHTTPRequestHandler):
         content_type = "application/json"
         timed_out = False
         transport_outcome_unknown = False
+        upstream_connections = []
         try:
             if gate.continuation_mode:
-                opener = urllib.request.build_opener(_NoProviderRedirects())
+                if gate.product_turn_v2:
+                    opener, upstream_connections = _registered_upstream_opener(proxy)
+                else:
+                    # Preserve the legacy F6 opener/deadline path. The
+                    # pre-response connection registry is scoped to ordinary
+                    # Product v2 only.
+                    opener = urllib.request.build_opener(_NoProviderRedirects())
                 with opener.open(request, timeout=remaining) as response:
                     proxy._register_upstream(response)
                     try:
@@ -1211,8 +1419,11 @@ class _GateProxyHandler(BaseHTTPRequestHandler):
                     content_type = response.headers.get("content-type", "application/json")
                     data = response.read()
         except urllib.error.HTTPError as error:
-            proxy._register_upstream(error)
+            registered_error = False
             try:
+                if not gate.product_turn_v2:
+                    proxy._register_upstream(error)
+                    registered_error = True
                 status = error.code
                 content_type = error.headers.get("content-type", "application/json")
                 if gate.continuation_mode and 300 <= status < 400:
@@ -1238,9 +1449,20 @@ class _GateProxyHandler(BaseHTTPRequestHandler):
                     error.close()
                 except OSError:
                     pass
-                proxy._unregister_upstream(error)
+                if registered_error:
+                    proxy._unregister_upstream(error)
         except (socket.timeout, TimeoutError):
-            if gate.continuation_mode:
+            if gate.product_turn_v2:
+                if any(
+                    getattr(connection, "_byq_dispatch_started", False)
+                    for connection in upstream_connections
+                ):
+                    transport_outcome_unknown = True
+                else:
+                    # The bounded connection/TLS setup expired before the
+                    # first socket write, so no provider request was sent.
+                    status = 502
+            elif gate.continuation_mode:
                 transport_outcome_unknown = True
             else:
                 timed_out = True
@@ -1248,10 +1470,16 @@ class _GateProxyHandler(BaseHTTPRequestHandler):
             # No complete provider response leaves the external outcome
             # unknown. Stop this request scope so the DSH retry policy cannot
             # replay it; legacy judgment transport retains its old behavior.
-            transport_outcome_unknown = gate.continuation_mode
+            transport_outcome_unknown = gate.continuation_mode and (
+                not gate.product_turn_v2 or any(
+                    getattr(connection, "_byq_dispatch_started", False)
+                    for connection in upstream_connections))
             data = b""
-            if not gate.continuation_mode:
+            if not transport_outcome_unknown:
                 status = 502
+        finally:
+            for connection in upstream_connections:
+                proxy._unregister_upstream(connection)
         try:
             completion = gate.complete(
                 receipt,
@@ -1299,7 +1527,12 @@ class RequestGateProxy:
         self._gate = gate
         self._upstream = upstream.rstrip("/")
         self._server = ThreadingHTTPServer((bind_host, 0), _GateProxyHandler)
+        # Do not let server_close() join daemon handlers: stdlib name lookup
+        # has no cancellation hook. V2 close() interrupts registered sockets
+        # and performs a bounded teardown drain; any still-unpaired request
+        # remains fenced. Legacy F6 retains its old nonblocking close behavior.
         self._server.daemon_threads = True
+        self._server.block_on_close = False
         self._server.gate = gate  # type: ignore[attr-defined]
         self._server.upstream = self._upstream  # type: ignore[attr-defined]
         self._server.proxy = self  # type: ignore[attr-defined]
@@ -1308,6 +1541,8 @@ class RequestGateProxy:
         self._closed = False
         self._close_lock = threading.Lock()
         self._active_lock = threading.Lock()
+        self._active_condition = threading.Condition(self._active_lock)
+        self._active_requests = 0
         self._client_sockets: set[socket.socket] = set()
         self._upstream_responses: set[object] = set()
 
@@ -1316,11 +1551,14 @@ class RequestGateProxy:
         _host, port = self._server.server_address[:2]
         return f"http://{self._advertise_host}:{port}"
 
-    def _register_client(self, connection: socket.socket) -> None:
+    def _register_client(self, connection: socket.socket) -> bool:
         with self._active_lock:
             closed = self._closed
             if not closed:
-                self._client_sockets.add(connection)
+                if connection not in self._client_sockets:
+                    self._client_sockets.add(connection)
+                    if self._gate.product_turn_v2:
+                        self._active_requests += 1
         if closed:
             try:
                 connection.shutdown(socket.SHUT_RDWR)
@@ -1330,10 +1568,15 @@ class RequestGateProxy:
                 connection.close()
             except OSError:
                 pass
+        return not closed
 
     def _unregister_client(self, connection: socket.socket) -> None:
-        with self._active_lock:
-            self._client_sockets.discard(connection)
+        with self._active_condition:
+            if connection in self._client_sockets:
+                self._client_sockets.remove(connection)
+                if self._gate.product_turn_v2:
+                    self._active_requests = max(0, self._active_requests - 1)
+                    self._active_condition.notify_all()
 
     def _register_upstream(self, response: object) -> None:
         with self._active_lock:
@@ -1369,8 +1612,11 @@ class RequestGateProxy:
             with self._active_lock:
                 responses = list(self._upstream_responses)
                 clients = list(self._client_sockets)
-                self._upstream_responses.clear()
-                self._client_sockets.clear()
+                if not self._gate.product_turn_v2:
+                    # Preserve legacy F6/Judgment registry lifetime; only V2
+                    # retains registrations until handler drainage completes.
+                    self._upstream_responses.clear()
+                    self._client_sockets.clear()
             for response in responses:
                 # The handler owns HTTPResponse.close(). Closing its fp here
                 # races read1() and can erase the unknown-result receipt with
@@ -1394,6 +1640,18 @@ class RequestGateProxy:
             self._server.server_close()
             if self._started:
                 self._thread.join(timeout=2)
+            # This is teardown drainage only, never a healthy model deadline.
+            # If an OS resolver remains blocked without a socket to shutdown,
+            # leave the admitted request unpaired; its root stays fenced and
+            # cannot be resumed or replayed.
+            if self._gate.product_turn_v2:
+                drain_until = time.monotonic() + PROXY_CLOSE_DRAIN_SECONDS
+                with self._active_condition:
+                    while self._active_requests:
+                        remaining = drain_until - time.monotonic()
+                        if remaining <= 0:
+                            break
+                        self._active_condition.wait(timeout=remaining)
 
     def __exit__(self, *exc: object) -> None:
         self.close()
@@ -1407,6 +1665,19 @@ def build_continuation_request_gate(*, request_id: str, execution_profile: dict,
     return ResearchRequestGate(
         continuation_request_limits() if limits is None else limits,
         execution_profile=execution_profile, request_id=request_id, journal=journal,
+    )
+
+
+def build_product_turn_request_gate(*, request_id: str, execution_profile: dict,
+                                    journal: Path | None = None) -> ResearchRequestGate:
+    """Build the ordinary Product gate from its exact trusted option snapshot."""
+    profile = validate_product_turn_execution_profile(execution_profile)
+    from packages.contracts.product_turn_request import product_turn_execution_limits
+    return ResearchRequestGate(
+        product_turn_execution_limits(profile['options']),
+        execution_profile=profile,
+        request_id=request_id,
+        journal=journal,
     )
 
 

@@ -18,12 +18,17 @@ import signal
 import stat
 import subprocess
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
 from packages.contracts.domain_call_admission import ACTIONS, parse_observed_arguments
+from packages.contracts.product_turn_request import (
+    product_turn_execution_output_cap,
+    validate_product_turn_execution_profile,
+)
 
 from .types import RuntimeObservation, RuntimeToolResult
 from ..research_judgment_acp_provider_overlay import private_provider_overlay
@@ -191,9 +196,35 @@ def _write_continuation_guard(home: Path, guard_b64: str, *, root_run_id: str) -
                 or entry[0].get("id") != "byq-continuation-budget"
                 or entry[0].get("name") != "file:///opt/byq/runtime/byq-continuation-budget.js"
                 or not isinstance(guard_config, dict)
+                or not isinstance(guard_config.get("requestLimits"), dict)):
+            raise AcpTransportError("ACP product-turn guard is invalid")
+        if guard_config.get("guardMode") == "ordinary-options":
+            from packages.contracts.product_turn_request import product_turn_execution_limits
+            try:
+                execution_profile = validate_product_turn_execution_profile(profile)
+                expected_limits = product_turn_execution_limits(execution_profile["options"])
+            except (TypeError, ValueError):
+                raise AcpTransportError("ACP ordinary execution profile is invalid") from None
+            if (set(guard_config) != {"guardMode", "executionProfile", "requestLimits"}
+                    or guard_config["requestLimits"] != expected_limits):
+                raise AcpTransportError("ACP ordinary execution limits are invalid")
+            output_limit = product_turn_execution_output_cap(execution_profile["options"])
+            expected_model = {"id": "deepseek-v4.1-flash"}
+            if output_limit is not None:
+                expected_model["maxTokens"] = output_limit
+            if models != [expected_model]:
+                raise AcpTransportError("ACP ordinary output parameter does not match options")
+            entry[0]["config"] = {
+                **guard_config,
+                "journalPath": str(home / f"product-turn-tool-guard-{root_run_id}.jsonl"),
+            }
+            payload = json.dumps(value, sort_keys=True, separators=(",", ":"),
+                                 ensure_ascii=True).encode("utf-8")
+            _create_guard_patch_exclusive(home, payload)
+            return hashlib.sha256(payload).hexdigest()
+        if (guard_config.get("guardMode") != "count-only"
                 or set(guard_config) != {"guardMode", "deadlineEpochMs",
                                          "executionProfile", "requestLimits"}
-                or guard_config.get("guardMode") != "count-only"
                 or type(guard_config.get("deadlineEpochMs")) is not int
                 or guard_config["deadlineEpochMs"] <= 0
                 or not isinstance(profile, dict)
@@ -201,8 +232,7 @@ def _write_continuation_guard(home: Path, guard_b64: str, *, root_run_id: str) -
                 or profile.get("profile_id") != "product-turn.v1"
                 or profile.get("profile_version") != 1
                 or not isinstance(profile.get("profile_sha256"), str)
-                or re.fullmatch(r"[a-f0-9]{64}", profile["profile_sha256"]) is None
-                or not isinstance(guard_config.get("requestLimits"), dict)):
+                or re.fullmatch(r"[a-f0-9]{64}", profile["profile_sha256"]) is None):
             raise AcpTransportError("ACP product-turn guard is invalid")
         entry[0]["config"] = {**guard_config,
                               "journalPath": str(
@@ -931,6 +961,7 @@ class AcpHarness:
     # Restricted continuation guard overlay (base64) applied by the trusted
     # Product runner as an additional patch; never a model/browser value.
     continuation_guard_b64: str | None = field(default=None, repr=False)
+    product_execution_profile: dict[str, object] | None = field(default=None, repr=False)
     prepared_guard_sha256: str | None = field(default=None, repr=False)
     process: _AcpProcess | None = field(default=None, repr=False)
     slot_scope: dict[str, str] | None = field(default=None, repr=False)
@@ -1007,6 +1038,7 @@ class DshAcpCompatibility:
         provider_proxy_base_url: str | None = None,
         provider_local_token: str | None = None,
         continuation_guard_b64: str | None = None,
+        product_execution_profile: dict[str, object] | None = None,
     ) -> AcpHarness:
         patch = composition.expanduser().resolve()
         requested_home = session_root.expanduser()
@@ -1026,6 +1058,12 @@ class DshAcpCompatibility:
             raise FileNotFoundError("candidate DSH ACP launcher is unavailable")
         if max_tokens is not None and (type(max_tokens) is not int or max_tokens <= 0):
             raise ValueError("candidate DSH ACP output limit is invalid")
+        if product_execution_profile is not None:
+            try:
+                product_execution_profile = validate_product_turn_execution_profile(
+                    product_execution_profile)
+            except (TypeError, ValueError):
+                raise ValueError("ordinary Product execution profile is invalid") from None
         if not isinstance(environment, dict) or any(
             not isinstance(key, str) or not isinstance(value, str)
             for key, value in environment.items()
@@ -1069,6 +1107,7 @@ class DshAcpCompatibility:
             provider_proxy_base_url=provider_proxy_base_url,
             provider_local_token=provider_local_token,
             continuation_guard_b64=continuation_guard_b64,
+            product_execution_profile=product_execution_profile,
             prepared_guard_sha256=(prepared_guard_sha256
                                    if self.product_slots is not None else None),
         )
@@ -1145,9 +1184,21 @@ class DshAcpCompatibility:
                 if harness.composition != Path("/opt/byq/profiles/byq-product.patch.yml"):
                     raise AcpTransportError("ACP slot requires its fixed Product composition")
                 from .acp_slot_transport import SlotAcpProcess
+                ordinary_execution = harness.product_execution_profile is not None
+                start_deadline_at_ms: int | None = int(time.time() * 1000) + 3_600_000
+                if ordinary_execution:
+                    profile = validate_product_turn_execution_profile(
+                        harness.product_execution_profile)
+                    runtime_seconds = profile["options"]["max_runtime_seconds"]
+                    start_deadline_at_ms = (
+                        None if runtime_seconds is None
+                        else int(time.time() * 1000) + runtime_seconds * 1000
+                    )
                 transport = SlotAcpProcess(tuple(command), harness.session_root,
                     environment, registry=self.product_slots,
-                    guard_b64=harness.continuation_guard_b64)
+                    guard_b64=harness.continuation_guard_b64,
+                    deadline_at_ms=start_deadline_at_ms,
+                    ordinary_execution=ordinary_execution)
                 # Keep the root identity available if START succeeds but ACP
                 # initialization later fails and requires cleanup/ACK recovery.
                 harness.slot_scope = dict(transport.scope)

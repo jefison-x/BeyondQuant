@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, ClassVar
+from urllib.parse import quote
 
 import httpx
 from packages.contracts.conversation_rehydration import (
@@ -36,6 +37,7 @@ from packages.contracts.domain_call_admission import (
 )
 from packages.contracts import runtime_continuity as continuity
 from packages.contracts import session_failure_containment as containment_contract
+from packages.contracts.agent_execution_options import validate_agent_execution_options
 from packages.contracts.continuation_request import (
     ALLOWED_MODEL as CONTINUATION_MODEL,
     ALLOWED_PROVIDER as CONTINUATION_PROVIDER,
@@ -57,14 +59,18 @@ from .continuation_budget import (
     create_guard_patch,
     create_acp_guard_patch,
     create_acp_guard_overlay,
-    create_acp_product_budget_overlay,
+    create_acp_product_execution_overlay,
     read_request_guard,
 )
-from packages.contracts.product_turn_request import product_turn_limits, product_turn_profile
+from packages.contracts.product_turn_request import (
+    product_turn_execution_output_cap,
+    product_turn_execution_profile,
+    validate_product_turn_execution_profile,
+)
 from .continuation_budget import PRODUCT_TURN_PROVIDER, PRODUCT_TURN_MODEL
 from .research_request_gate import (
     KNOWN_BLOCKED, SETTLED_OK, UNKNOWN_OR_UNPAIRED,
-    RequestGateProxy, build_continuation_request_gate,
+    RequestGateProxy, build_continuation_request_gate, build_product_turn_request_gate,
 )
 from .normalization import NormalizationState, normalize_runtime_observation
 
@@ -173,6 +179,7 @@ class ActiveRun:
     started_at: float
     last_runtime_activity_at: float
     continuation_deadline: float | None = None
+    ordinary_execution_options: dict[str, object] | None = field(default=None, repr=False)
     soft_cancel_requested: bool = False
     hard_cancelled: bool = False
     active_subagent_calls: dict[str, float] = field(default_factory=dict)
@@ -227,6 +234,7 @@ class RuntimeGeneration:
     continuation_request_gate: Any = field(default=None, repr=False)
     continuation_request_proxy: Any = field(default=None, repr=False)
     continuation_proxy_closed: bool = True
+    ordinary_execution_profile: dict[str, object] | None = field(default=None, repr=False)
     active_run: ActiveRun | None = None
     normalization: NormalizationState = field(default_factory=NormalizationState)
     usage_message_ids: set[str] = field(default_factory=set)
@@ -793,7 +801,7 @@ class RuntimeAdapter:
         True only for the ordinary ACP Product path (no F6 continuation budget)
         when the exact current generation's provider proxy is provably closed, no
         domain stop occurred, and the sealed request gate's ONLY refusals are
-        ADR-0106 pre-dispatch budget limits. It never bypasses the
+        pre-dispatch configured limits. It never bypasses the
         storage/unknown/unpaired/process fence and never inspects ``_cancelled``
         (a budget rejection itself sets it). Callers must hold ``record.lock``.
         """
@@ -811,6 +819,31 @@ class RuntimeAdapter:
             return False
         try:
             return gate.known_budget_block_reason() is not None
+        except Exception:  # noqa: BLE001 — damaged receipts fail closed
+            return False
+
+    def _known_ordinary_postdispatch_runtime_limit(
+        self, record: RuntimeSession, generation_id: str, run: ActiveRun,
+    ) -> bool:
+        """Allow a fresh root after a paired, explicitly bounded v2 runtime stop.
+
+        This does not reopen or replay the stopped root. The normal terminal
+        receipt, process cleanup, and exact Backend acknowledgement still gate a
+        later prompt, which is admitted as a new root with a fresh options read.
+        """
+
+        if (not self._acp_product_slots or record.continuation_budget is not None
+                or run.domain_stop_code):
+            return False
+        generation = record.current_generation
+        if (generation is None or generation.generation_id != generation_id
+                or generation.continuation_proxy_closed is not True):
+            return False
+        gate = record.continuation_request_gate
+        if gate is None:
+            return False
+        try:
+            return gate.known_postdispatch_product_runtime_limit()
         except Exception:  # noqa: BLE001 — damaged receipts fail closed
             return False
 
@@ -992,7 +1025,7 @@ class RuntimeAdapter:
                     f"session {session_id} cannot accept a prompt in state {record.status}"
                 )
             if self._acp_product_slots and not record.process_used and budget is None:
-                # ADR-0106: the first ordinary submit starts the ACP product slot.
+                # ADR-0111: the first ordinary submit starts the ACP product slot.
                 # The create_session harness carries no provider budget. This ACP
                 # candidate qualifies ONLY the OpenCode Go / `deepseek-v4.1-flash`
                 # route; any other resolved model is rejected BEFORE any proxy or
@@ -1010,10 +1043,10 @@ class RuntimeAdapter:
                             or first_model != PRODUCT_TURN_MODEL):
                         raise ModelCredentialUnavailable(
                             "ordinary ACP Product model is not qualified (NOT_QUALIFIED)")
-                    first_gate = build_continuation_request_gate(
+                    first_profile = self._load_product_execution_profile(record, record.process_root_id)
+                    first_gate = build_product_turn_request_gate(
                         request_id='product-turn-' + record.runtime_generation,
-                        execution_profile=product_turn_profile(),
-                        limits=product_turn_limits(),
+                        execution_profile=first_profile,
                         journal=_root_journal_path(
                             Path(record.recovery_cwd), 'product-turn-provider-request',
                             record.process_root_id),
@@ -1022,11 +1055,12 @@ class RuntimeAdapter:
                         first_gate, CONTINUATION_UPSTREAM, bind_host="0.0.0.0",
                         advertise_host=_continuation_proxy_advertise_host())
                     first_proxy.__enter__()
-                    first_overlay = base64.b64encode(create_acp_product_budget_overlay(
+                    first_overlay = base64.b64encode(create_acp_product_execution_overlay(
                         proxy_base_url=first_proxy.base_url,
                         provider_session_id=str(uuid.uuid5(uuid.NAMESPACE_URL,
                             "beyondquant:provider-session:" + record.session_id)),
-                        provider=first_provider, model=first_model)).decode('ascii')
+                        provider=first_provider, model=first_model,
+                        execution_profile=first_profile)).decode('ascii')
                     record.harness = self._build_harness(
                         record.session_id, Path(record.recovery_cwd), trace_id=record.trace_id,
                         owner_principal=record.owner_principal, workspace_id=record.workspace_id,
@@ -1034,11 +1068,13 @@ class RuntimeAdapter:
                         runtime_generation=record.runtime_generation,
                         root_run_id=record.process_root_id,
                         continuation_proxy_url=first_proxy.base_url,
-                        continuation_deadline_epoch_ms=int(
-                            time.time() * 1000 + first_gate.remaining_seconds() * 1000),
-                        product_turn_overlay_b64=first_overlay)
+                        product_turn_overlay_b64=first_overlay,
+                        product_execution_profile=first_profile)
                     record.continuation_request_gate = first_gate
                     record.continuation_request_proxy = first_proxy
+                    if record.current_generation is None:
+                        raise RuntimeAuthorityUnavailable("ordinary execution generation is unavailable")
+                    record.current_generation.ordinary_execution_profile = first_profile
                     # Bind the first lazy Product root to the current Backend
                     # authority before START. Unknown start outcomes must be
                     # recoverable from this exact durable root binding.
@@ -1209,6 +1245,7 @@ class RuntimeAdapter:
                 request_proxy = None
                 tool_journal = None
                 product_turn_overlay_b64 = None
+                product_execution_profile = None
                 self._require_group_admission(record, root_id)
                 try:
                     if budget is not None:
@@ -1233,7 +1270,12 @@ class RuntimeAdapter:
                             if self._acp else
                             session_root / 'continuation-tool-guard.jsonl')
                     elif self._acp and self._acp_product_slots:
-                        # ADR-0106: this ACP candidate qualifies ONLY the OpenCode Go
+                        # ADR-0111: the ordinary ACP root uses this conversation's
+                        # exact trusted option revision. Missing or cross-scope
+                        # options stop before the provider proxy or slot START.
+                        # F6 continuation requests stay on their separate closed
+                        # legacy profile branch above.
+                        # This ACP candidate qualifies ONLY the OpenCode Go
                         # / `deepseek-v4.1-flash` route; any other resolved model is
                         # rejected before any proxy is created (no unbudgeted egress,
                         # no silent switch). All construction stays inside this try so
@@ -1246,10 +1288,11 @@ class RuntimeAdapter:
                                 "ordinary ACP Product model is not qualified (NOT_QUALIFIED)")
                         product_provider_session_id = str(uuid.uuid5(uuid.NAMESPACE_URL,
                             "beyondquant:provider-session:" + record.session_id))
-                        request_gate = build_continuation_request_gate(
+                        product_execution_profile = self._load_product_execution_profile(
+                            record, root_id)
+                        request_gate = build_product_turn_request_gate(
                             request_id='product-turn-' + generation,
-                            execution_profile=product_turn_profile(),
-                            limits=product_turn_limits(),
+                            execution_profile=product_execution_profile,
                             journal=_root_journal_path(
                                 session_root, 'product-turn-provider-request', root_id),
                         )
@@ -1260,20 +1303,24 @@ class RuntimeAdapter:
                         )
                         request_proxy.__enter__()
                         product_turn_overlay_b64 = base64.b64encode(
-                            create_acp_product_budget_overlay(
+                            create_acp_product_execution_overlay(
                                 proxy_base_url=request_proxy.base_url,
                                 provider_session_id=product_provider_session_id,
-                                provider=runtime_provider, model=runtime_model)).decode('ascii')
+                                provider=runtime_provider, model=runtime_model,
+                                execution_profile=product_execution_profile)).decode('ascii')
                     harness = self._build_harness(record.session_id, session_root,
                         trace_id=record.trace_id, owner_principal=record.owner_principal,
                         workspace_id=record.workspace_id, model_resolution=record.model_resolution,
                         runtime_generation=generation, root_run_id=root_id, continuation_budget=budget,
                         continuation_proxy_url=request_proxy.base_url if request_proxy is not None else None,
                         continuation_deadline_epoch_ms=(
-                            int(time.time() * 1000 + request_gate.remaining_seconds() * 1000)
-                            if request_gate is not None else None
+                            int(time.time() * 1000 + remaining_seconds * 1000)
+                            if request_gate is not None
+                            and (remaining_seconds := request_gate.remaining_seconds()) is not None
+                            else None
                         ),
                         product_turn_overlay_b64=product_turn_overlay_b64,
+                        product_execution_profile=product_execution_profile,
                         native_root_session_id=(previous_native_session if reuse_native else None))
                 except BaseException:
                     if request_proxy is not None:
@@ -1347,11 +1394,17 @@ class RuntimeAdapter:
                 installed.continuation_request_gate = request_gate
                 installed.continuation_request_proxy = request_proxy
                 installed.continuation_proxy_closed = request_proxy is None
+                installed.ordinary_execution_profile = product_execution_profile
             if record.harness is None:
                 raise SessionConflict("runtime process is unavailable for this Agent session")
             now = time.monotonic()
             run = ActiveRun(run_id=record.process_root_id if self._root_scoped else uuid.uuid4().hex,
                             started_at=now, last_runtime_activity_at=now)
+            if (record.current_generation is not None
+                    and record.current_generation.ordinary_execution_profile is not None):
+                execution_profile = validate_product_turn_execution_profile(
+                    record.current_generation.ordinary_execution_profile)
+                run.ordinary_execution_options = dict(execution_profile['options'])
             if budget:
                 # The monotonic one-request deadline includes prompt construction,
                 # provider retries/compaction, tool work and idle gaps. The
@@ -1520,6 +1573,21 @@ class RuntimeAdapter:
                         "retryable": False, "run_id": run.run_id})
                     self._close_generation(record, generation_id, "budget_exhausted")
                     return
+                if self._known_ordinary_postdispatch_runtime_limit(
+                    record, generation_id, run,
+                ):
+                    # The provider result is paired and the exact proxy cleanup
+                    # is proven, but DSH may surface its withheld response as an
+                    # ACP prompt exception. Keep the root failed and fenced;
+                    # after terminal ACK only a distinct user instruction may
+                    # create a fresh root. Unknown, mixed, cancelled, and
+                    # unconfirmed-cleanup outcomes never reach this branch.
+                    record.status = SessionStatus.IDLE
+                    self._emit(record, "session.failed", "runtime-adapter", {
+                        "error": type(exc).__name__, "code": "model-run-failed",
+                        "retryable": False, "run_id": run.run_id})
+                    self._close_generation(record, generation_id, "runtime_limited")
+                    return
                 record.status = SessionStatus.FAILED
                 self._emit(record, "session.failed", "runtime-adapter", {"error": type(exc).__name__, "run_id": run.run_id})
                 self._close_generation(record, generation_id, "failed")
@@ -1593,20 +1661,22 @@ class RuntimeAdapter:
                     settlement_failed = True
                     run.model_failure_code = 'model-run-failed'
                     run.model_failure_retryable = False
-            # A known sealed ordinary Product budget exhaustion keeps the root
-            # truthfully failed but leaves the live conversation promptable for an
-            # explicit new instruction (Clean Break ADR-002: a failed turn may be
-            # followed by an explicit new user instruction; the failed turn is
-            # never replayed). The single strict predicate also governs the
-            # exception terminal below. Unknown/unpaired, storage/journal failure,
-            # cancellation, invalid-route/auth, client disconnect, post-dispatch
-            # provider anomalies and unconfirmed proxy close never qualify.
+            # A pre-dispatch ordinary budget refusal, or a fully paired v2
+            # post-dispatch runtime stop, may leave the public conversation ready
+            # for a *new* instruction after the exact terminal ACK and cleanup.
+            # Neither path reopens the old root. A post-dispatch stop is not
+            # mislabeled as a budget exhaustion; the fresh root reads a new
+            # trusted options revision. Unknown/unpaired results and every other
+            # refusal remain failed and fenced.
             known_budget_block = self._known_ordinary_budget_block(record, generation_id, run)
+            known_runtime_stop = self._known_ordinary_postdispatch_runtime_limit(
+                record, generation_id, run)
             if (finish_reason != "completed" or run.domain_stop_code
                     or budget_blocked or settlement_failed):
-                reopen_for_new_instruction = known_budget_block and not budget_blocked
-                if reopen_for_new_instruction:
-                    run.model_failure_code = 'budget-exhausted'
+                allow_new_root = (known_budget_block or known_runtime_stop) and not budget_blocked
+                if allow_new_root:
+                    if known_budget_block:
+                        run.model_failure_code = 'budget-exhausted'
                     record.status = SessionStatus.IDLE
                 else:
                     record.status = SessionStatus.FAILED
@@ -2847,6 +2917,7 @@ class RuntimeAdapter:
         continuation_proxy_url: str | None = None,
         continuation_deadline_epoch_ms: int | None = None,
         product_turn_overlay_b64: str | None = None,
+        product_execution_profile: dict[str, object] | None = None,
     ) -> Any:
         if self._root_scoped and re.fullmatch(r"[0-9a-f]{32}", root_run_id) is None:
             raise ValueError("root-scoped process requires a reserved root identity")
@@ -2952,11 +3023,15 @@ class RuntimeAdapter:
             environment['DEEPSEEK_SEARCH_BASE_URL'] = ''
             environment['DEEPSEEK_SEARCH_API_KEY'] = ''
         elif product_turn_overlay_b64 is not None:
-            # ADR-0106: ordinary Product route-only overlay. No continuation
-            # reservation and no tool allowlist; the ordinary MCP tool authority
-            # is unchanged.
+            # ADR-0111 ordinary options are trusted BYQ parameters, not a grant.
+            # The strict v2 binding carries the options revision into the
+            # request proxy and tool guard; an old v1 overlay cannot be selected
+            # by silently omitting this profile.
+            if product_execution_profile is None:
+                raise ValueError('ordinary product execution profile is required')
+            profile = validate_product_turn_execution_profile(product_execution_profile)
             guard_b64 = product_turn_overlay_b64
-            max_tokens = product_turn_limits()['max_output_tokens']
+            max_tokens = product_turn_execution_output_cap(profile['options'])
         return self._compatibility.build_harness(
             provider=str(model_resolution.get("provider") or self._provider),
             model=str(model_resolution.get("model") or self._model),
@@ -2966,7 +3041,88 @@ class RuntimeAdapter:
             environment=environment,
             max_tokens=max_tokens,
             continuation_guard_b64=guard_b64,
+            product_execution_profile=product_execution_profile,
         )
+
+    def _load_product_execution_profile(
+        self, record: RuntimeSession, root_run_id: str,
+    ) -> dict[str, object]:
+        """Load the exact trusted conversation settings for one ordinary root.
+
+        Both reads are owner/workspace scoped and fenced to this Adapter boot.
+        Any missing identity, transport error, malformed projection or scope
+        mismatch stops before a provider proxy or DSH root is started; no error
+        path falls back to unbounded defaults.
+        """
+        owner = record.owner_principal
+        workspace = record.workspace_id
+        if (not isinstance(owner, str) or not owner
+                or not isinstance(workspace, str) or not workspace
+                or not re.fullmatch(r"[0-9a-f]{32}", root_run_id)):
+            raise RuntimeAuthorityUnavailable("ordinary execution options scope is unavailable")
+        token = os.environ.get("BYQ_RUNTIME_AUTHORITY_TOKEN", "")
+        if not token:
+            raise RuntimeAuthorityUnavailable("ordinary execution options service is unavailable")
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "X-BYQ-Owner-Principal": owner,
+            "X-BYQ-Workspace-ID": workspace,
+            "X-BYQ-Actor-Principal": f"byq-product-agent-{record.session_id}",
+            "X-BYQ-Trace-ID": record.trace_id,
+            "X-BYQ-Session-ID": record.session_id,
+            "X-BYQ-DSH-Run-ID": record.runtime_generation,
+            "X-BYQ-Runtime-Boot-ID": self.boot_id,
+            "X-BYQ-Root-Run-ID": root_run_id,
+        }
+        base = self._backend_url.rstrip("/")
+        try:
+            conversation_response = httpx.get(
+                f"{base}/v1/product/conversations/by-runtime/"
+                f"{quote(record.session_id, safe='')}",
+                headers=headers, timeout=2.0,
+            )
+            conversation_response.raise_for_status()
+            conversation_body = conversation_response.json()
+            conversation = (conversation_body.get("conversation")
+                            if isinstance(conversation_body, dict) else None)
+            if (not isinstance(conversation, dict)
+                    or conversation.get("runtime_session_id") != record.session_id
+                    or conversation.get("owner_principal") != owner
+                    or conversation.get("workspace_id") != workspace
+                    or conversation.get("trace_id") != record.trace_id
+                    or conversation.get("status") != "active"):
+                raise ValueError("conversation scope does not match")
+            conversation_id = conversation.get("conversation_id")
+            validate_identifier(conversation_id, field="conversation_id")
+            options_response = httpx.get(
+                f"{base}/v1/product/conversations/"
+                f"{quote(conversation_id, safe='')}/execution-options",
+                headers=headers, timeout=2.0,
+            )
+            options_response.raise_for_status()
+            projection = options_response.json()
+            if (not isinstance(projection, dict)
+                    or set(projection) != {
+                        "schema_version", "conversation_id", "owner_principal",
+                        "workspace_id", "revision", "options", "updated_at",
+                    }
+                    or projection.get("schema_version") != "agent-execution-options.v1"
+                    or projection.get("conversation_id") != conversation_id
+                    or projection.get("owner_principal") != owner
+                    or projection.get("workspace_id") != workspace
+                    or type(projection.get("revision")) is not int
+                    or projection["revision"] < 0
+                    or (projection.get("updated_at") is not None
+                        and not isinstance(projection.get("updated_at"), str))):
+                raise ValueError("execution options projection does not match")
+            options = validate_agent_execution_options(projection.get("options"))
+            return product_turn_execution_profile(options, revision=projection["revision"])
+        except RuntimeAuthorityUnavailable:
+            raise
+        except (httpx.HTTPError, ValueError, TypeError, KeyError):
+            raise RuntimeAuthorityUnavailable(
+                "ordinary execution options are unavailable or unproven"
+            ) from None
 
     def _resolve_model(
         self,
@@ -3160,6 +3316,16 @@ class RuntimeAdapter:
         return value
 
     def _watch_run(self, record: RuntimeSession, run: ActiveRun) -> None:
+        options = run.ordinary_execution_options
+        if options is not None and not any(options.get(name) is not None for name in (
+            "max_runtime_seconds", "max_no_progress_seconds",
+            "max_child_runtime_seconds", "max_child_no_progress_seconds",
+        )) and run.continuation_deadline is None:
+            # Counts and byte/token settings are enforced at their own request
+            # boundaries. With no user-supplied time settings, do not run an
+            # Adapter execution/no-progress watchdog for an ordinary root.
+            run.watchdog_stop.wait()
+            return
         while True:
             timeout = self._watchdog_wait_timeout(run.continuation_deadline, time.monotonic())
             if run.watchdog_stop.wait(timeout=timeout):
@@ -3195,27 +3361,45 @@ class RuntimeAdapter:
                 run.watchdog_stop.set()
                 return False
             oldest_subagent = min(run.active_subagent_calls.values(), default=None)
+            options = run.ordinary_execution_options
+            if options is None:
+                root_timeout = self._run_timeout_seconds or None
+                root_no_progress = self._no_progress_timeout_seconds
+                child_runtime = self._subagent_hard_cap_seconds or None
+                child_no_progress = self._subagent_timeout_seconds
+            else:
+                root_timeout = options["max_runtime_seconds"]
+                root_no_progress = options["max_no_progress_seconds"]
+                child_runtime = options["max_child_runtime_seconds"]
+                child_no_progress = options["max_child_no_progress_seconds"]
             # A periodic observation, never a new model call or lease renewal.
             if now - max(run.started_at, run.last_progress_check_at) >= self._progress_check_interval_seconds:
                 run.last_progress_check_at = now
                 self._emit_wait_notice(record, run, now=now)
             if run.domain_stop_code:
                 code = run.domain_stop_code
-            elif ((self._run_timeout_seconds > 0 and now - run.started_at > self._run_timeout_seconds)
+            elif ((root_timeout is not None and now - run.started_at > root_timeout)
                     or (run.continuation_deadline is not None and now >= run.continuation_deadline)):
                 code = "runtime-run-timeout"
             elif (
-                (oldest_subagent is not None and now - oldest_subagent > self._subagent_timeout_seconds)
-                or any(child.expired(now, self._subagent_timeout_seconds, self._subagent_hard_cap_seconds)
-                       for child in run.child_leases.values())
+                (oldest_subagent is not None and (
+                    (child_no_progress is not None and now - oldest_subagent > child_no_progress)
+                    or (child_runtime is not None and now - oldest_subagent > child_runtime)))
+                or any(
+                    ((child_no_progress is not None
+                      and now - child.last_activity_at > child_no_progress)
+                     or (child_runtime is not None
+                         and now - child.started_at > child_runtime))
+                    for child in run.child_leases.values())
             ):
                 code = "runtime-subagent-timeout"
-            elif oldest_subagent is not None or run.child_leases:
+            elif (options is None and (oldest_subagent is not None or run.child_leases)):
                 # A delegated child owns a separate, longer bound. Do not let
                 # the parent's quiet interval mislabel active child work as a
                 # no-progress failure before that dedicated deadline.
                 return False
-            elif now - run.last_runtime_activity_at > self._no_progress_timeout_seconds:
+            elif (root_no_progress is not None
+                    and now - run.last_runtime_activity_at > root_no_progress):
                 code = "runtime-no-progress-timeout"
             else:
                 return False

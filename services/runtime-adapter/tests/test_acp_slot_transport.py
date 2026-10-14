@@ -128,14 +128,18 @@ class _FakeSession:
         raise AssertionError("wait_exit should not race the ACP reader")
 
 
-def _fake_client(monkeypatch, registry, session=None, *, failure=None):
+def _fake_client(monkeypatch, registry, session=None, *, failure=None,
+                 allow_unbounded_deadline=False):
     class FakeClient:
         def __init__(self, actual_registry):
             assert actual_registry is registry
 
         def start(self, *, scope, env, deadline_at_ms, expected_cwd, guard_b64=None):
             assert env["BYQ_WORKSPACE_ID"] == SCOPE["workspace_id"]
-            assert deadline_at_ms > 0
+            if allow_unbounded_deadline:
+                assert deadline_at_ms is None
+            else:
+                assert deadline_at_ms > 0
             assert Path(expected_cwd).name == SCOPE["cwd_leaf"]
             if failure is not None:
                 raise failure
@@ -144,6 +148,29 @@ def _fake_client(monkeypatch, registry, session=None, *, failure=None):
             return session
 
     monkeypatch.setattr(slot_transport, "ProductRunnerClient", FakeClient)
+
+
+def test_ordinary_slot_transport_preserves_unset_runtime_deadline(
+    tmp_path, monkeypatch,
+):
+    cwd = tmp_path / SCOPE["cwd_leaf"]
+    cwd.mkdir(mode=0o700)
+    registry = _Registry()
+    session = _FakeSession("valid")
+    _fake_client(monkeypatch, registry, session, allow_unbounded_deadline=True)
+    transport = slot_transport.SlotAcpProcess(
+        ("dsh",), cwd, _environment(), registry=registry,
+        guard_b64="synthetic-ordinary-profile", deadline_at_ms=None,
+        ordinary_execution=True,
+    )
+
+    transport.start()
+    assert transport.process is not None
+    transport.close()
+    transport.close()
+    assert registry.cleanup_calls == 1
+    assert registry.ack_calls == 0
+    registry.acknowledge(SCOPE)
 
 
 def _compat(registry) -> DshAcpCompatibility:

@@ -710,6 +710,23 @@ def test_no_progress_watchdog_fails_and_closes_only_the_stuck_runtime(adapter: R
     assert len(record.history) == history_length
 
 
+def test_ordinary_options_without_time_limits_do_not_expire_on_adapter_watchdog(
+    adapter: RuntimeAdapter,
+) -> None:
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+
+    adapter.create_session("s-ordinary-unbounded", "t-ordinary-unbounded")
+    adapter.submit_prompt("s-ordinary-unbounded", "running")
+    assert FakeHarness.run_started.wait(timeout=1.0)
+    record = adapter._get("s-ordinary-unbounded")
+    run = record.active_run
+    assert run is not None
+    run.ordinary_execution_options = default_agent_execution_options()
+
+    assert adapter._enforce_run_guards(record, run, now=run.started_at + 7200) is False
+    adapter.cancel_session("s-ordinary-unbounded", "hard")
+
+
 def test_answer_text_chunks_refresh_liveness_without_crossing_public_boundary(
     adapter: RuntimeAdapter, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

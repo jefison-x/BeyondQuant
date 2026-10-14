@@ -19,6 +19,7 @@ from app.research_request_gate import (
     BUDGET_LIMIT_REASONS,
     KNOWN_BLOCKED,
     SETTLED_OK,
+    UNKNOWN_OR_UNPAIRED,
     ResearchRequestGate,
 )
 from packages.contracts.product_turn_request import product_turn_limits, product_turn_profile
@@ -51,6 +52,34 @@ def _gate(
     gate._outcome_unknown = outcome_unknown
     gate._inflight = inflight
     gate._waiting = waiting
+    return gate
+
+
+def _ordinary_runtime_gate(
+    blocked_rows: list[dict], *, sealed: bool = True,
+) -> ResearchRequestGate:
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+    from packages.contracts.product_turn_request import (
+        product_turn_execution_limits, product_turn_execution_profile,
+    )
+
+    options = default_agent_execution_options()
+    options["max_runtime_seconds"] = 60
+    request_id = "product-turn-v2-runtime-test"
+    gate = ResearchRequestGate(
+        product_turn_execution_limits(options),
+        execution_profile=product_turn_execution_profile(options, revision=4),
+        request_id=request_id,
+    )
+    gate._receipts = [
+        {"schema_version": "continuation-request-gate.v1",
+         "request_id": request_id, "phase": "admitted", "admitted": True,
+         "call": 1, "attempt": 1},
+        *blocked_rows,
+    ]
+    gate._provider_calls = gate._attempts = 1
+    if sealed:
+        gate.release_waiters()
     return gate
 
 
@@ -108,6 +137,61 @@ def test_completed_not_forwarded_deadline_is_not_a_known_budget_block():
     gate = _gate([_admitted(1), _completed_not_forwarded("deadline_exceeded")], provider_calls=1)
     assert gate.settlement_state() == KNOWN_BLOCKED
     assert gate.known_budget_block_reason() is None
+
+
+def test_v2_postdispatch_runtime_limit_is_known_but_not_a_budget_block():
+    gate = _ordinary_runtime_gate([{
+        "schema_version": "continuation-request-gate.v1",
+        "request_id": "product-turn-v2-runtime-test",
+        "phase": "completed", "admitted": True, "call": 1, "attempt": 1,
+        "forwarded": False, "reason": "product_runtime_limit", "status": 200,
+    }])
+    assert gate.settlement_state() == KNOWN_BLOCKED
+    assert gate.known_budget_block_reason() is None
+    assert gate.known_postdispatch_product_runtime_limit() is True
+
+
+def test_v2_postdispatch_runtime_limit_unsealed_scope_stays_unknown():
+    gate = _ordinary_runtime_gate([{
+        "schema_version": "continuation-request-gate.v1",
+        "request_id": "product-turn-v2-runtime-test",
+        "phase": "completed", "admitted": True, "call": 1, "attempt": 1,
+        "forwarded": False, "reason": "product_runtime_limit", "status": 200,
+    }], sealed=False)
+    assert gate.settlement_state() == UNKNOWN_OR_UNPAIRED
+    assert gate.known_postdispatch_product_runtime_limit() is False
+
+
+def test_v2_predispatch_runtime_limit_remains_a_known_budget_block():
+    gate = _ordinary_runtime_gate([])
+    gate._provider_calls = gate._attempts = 0
+    gate._receipts = [{
+        "schema_version": "continuation-request-gate.v1",
+        "request_id": "product-turn-v2-runtime-test",
+        "phase": "rejected", "admitted": False, "reason": "product_runtime_limit",
+        "input_bytes": 0, "at_ms": 1,
+    }]
+    assert gate.settlement_state() == KNOWN_BLOCKED
+    assert gate.known_budget_block_reason() == "product_runtime_limit"
+    assert gate.known_postdispatch_product_runtime_limit() is False
+
+
+def test_mixed_v2_runtime_stop_and_other_refusal_is_not_reopenable():
+    gate = _ordinary_runtime_gate([{
+        "schema_version": "continuation-request-gate.v1",
+        "request_id": "product-turn-v2-runtime-test",
+        "phase": "completed", "admitted": True, "call": 1, "attempt": 1,
+        "forwarded": False, "reason": "product_runtime_limit", "status": 200,
+    }])
+    gate._receipts.insert(0, {
+        "schema_version": "continuation-request-gate.v1",
+        "request_id": "product-turn-v2-runtime-test",
+        "phase": "rejected", "admitted": False,
+        "reason": "product_total_tool_payload_limit", "input_bytes": 1, "at_ms": 1,
+    })
+    assert gate.settlement_state() == KNOWN_BLOCKED
+    assert gate.known_budget_block_reason() is None
+    assert gate.known_postdispatch_product_runtime_limit() is False
 
 
 def test_mixed_budget_and_postdispatch_deadline_is_not_a_budget_block():

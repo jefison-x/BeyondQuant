@@ -210,13 +210,9 @@ def create_acp_guard_overlay(
                                 proxy_base_url, provider_session_id)
 
 
-# ADR-0106: ordinary Product ACP provider egress pin. Closed single-route overlay:
-# it binds ONLY the authorized OpenCode Go chat route / `deepseek-v4.1-flash` to
-# the local budget proxy and installs NO continuation reservation and NO tool
-# allowlist. Other provider routes are NOT registered here (explicitly
-# unqualified; no silent provider/model switch). Web tools are left unchanged
-# (ordinary Product behavior); disabling them is an isolated-acceptance-only
-# choice, never a default Product change.
+# Archived ADR-0106 ordinary profile encoder. Active ordinary Product roots use
+# `create_acp_product_execution_overlay` below; this v1 encoder remains only to
+# interpret old profile receipts and is not a current runtime path.
 from packages.contracts.product_turn_request import (
     PRODUCT_TURN_LIMITS,
     PRODUCT_TURN_MODEL,
@@ -225,18 +221,18 @@ from packages.contracts.product_turn_request import (
     PRODUCT_TURN_PROFILE_VERSION,
     PRODUCT_TURN_PROVIDER,
     PRODUCT_TURN_UPSTREAM_BASE_URL,
+    product_turn_execution_output_cap,
+    product_turn_execution_limits,
+    validate_product_turn_execution_profile,
 )
 
 
 def create_acp_product_budget_overlay(*, proxy_base_url: str, provider_session_id: str,
                                       provider: str, model: str) -> bytes:
-    """ADR-0106 closed route-only overlay for one ordinary Product ACP root.
+    """Encode the archived ADR-0106 v1 route-only Product overlay.
 
-    Binds exactly the resolved provider/model (`opencode-go-chat` /
-    `deepseek-v4.1-flash`) to the local budget proxy. Any other provider/model is
-    refused (no silent switch); other routes are not registered. No continuation
-    reservation and no tool allowlist; the ordinary MCP tool authority is
-    unchanged and the web tools are untouched.
+    Current ordinary roots must use the v2 execution-options overlay below.
+    This fixed-limit encoder exists only for historical profile compatibility.
     """
     if provider != PRODUCT_TURN_PROVIDER or model != PRODUCT_TURN_MODEL:
         raise ValueError('ordinary product-turn provider/model is not qualified')
@@ -278,6 +274,55 @@ def create_acp_product_budget_overlay(*, proxy_base_url: str, provider_session_i
         }]},
     ]
     return json.dumps(overlay, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode('utf-8')
+
+
+def create_acp_product_execution_overlay(*, proxy_base_url: str, provider_session_id: str,
+                                         provider: str, model: str,
+                                         execution_profile: dict) -> bytes:
+    """Pin one ordinary root to its trusted ADR-0111 option revision.
+
+    Numeric `None` values remain absent from the DSH model config. An explicit
+    per-call output ceiling is passed as maxTokens; a total-only output ceiling
+    is also declared per call, and the provider gate sums those declarations.
+    No deadline or request count is synthesized when the user left it unset.
+    """
+    if provider != PRODUCT_TURN_PROVIDER or model != PRODUCT_TURN_MODEL:
+        raise ValueError('ordinary product execution provider/model is not qualified')
+    matched = re.fullmatch(r"http://([0-9.]+):([1-9][0-9]{0,4})", proxy_base_url or "")
+    if matched is None or not _valid_local_proxy_host(matched[1]) or int(matched[2]) > 65535:
+        raise ValueError('exact local product execution proxy address is required')
+    if re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    provider_session_id or "") is None:
+        raise ValueError('exact provider session identity is required')
+    profile = validate_product_turn_execution_profile(execution_profile)
+    options = profile['options']
+    output_cap = product_turn_execution_output_cap(options)
+    model_config: dict[str, object] = {'id': PRODUCT_TURN_MODEL}
+    if output_cap is not None:
+        model_config['maxTokens'] = output_cap
+    providers = {
+        PRODUCT_TURN_PROVIDER: {
+            'api': 'openai-completions', 'apiKeyEnv': 'OPENCODE_API_KEY',
+            'baseURL': proxy_base_url,
+            'retryPolicy': {'mode': 'normal', 'maxRetries': 0},
+            'headers': {'x-opencode-session': provider_session_id},
+            'models': [model_config],
+        },
+    }
+    overlay = [
+        {'id': 'llm-pi-ai', 'config': {'providers': providers}},
+        {'insert': [{
+            'id': 'byq-continuation-budget',
+            'name': 'file:///opt/byq/runtime/byq-continuation-budget.js',
+            'config': {
+                'guardMode': 'ordinary-options',
+                'executionProfile': profile,
+                'requestLimits': product_turn_execution_limits(options),
+            },
+        }]},
+    ]
+    return json.dumps(overlay, sort_keys=True, separators=(',', ':'),
+                      ensure_ascii=True).encode('utf-8')
 
 
 def create_acp_guard_patch(

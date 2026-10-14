@@ -151,7 +151,8 @@ def _connect(path: Path) -> tuple[socket.socket, str]:
 
 
 def _start(connection: socket.socket, challenge: str, scope: dict[str, str],
-           env: dict[str, str] | None = None) -> tuple[str, str]:
+           env: dict[str, str] | None = None, *, no_deadline: bool = False,
+           guard_b64: str | None = None) -> tuple[str, str]:
     nonce = os.urandom(32).hex()
     request = {
         "v": slot.PROTOCOL_VERSION,
@@ -159,8 +160,11 @@ def _start(connection: socket.socket, challenge: str, scope: dict[str, str],
         "nonce": nonce,
         "scope": scope,
         "env": _environment(scope) if env is None else env,
-        "deadline_at_ms": int(time.time() * 1000) + 15_000,
+        "deadline_at_ms": (None if no_deadline
+                            else int(time.time() * 1000) + 15_000),
     }
+    if guard_b64 is not None:
+        request["guard_b64"] = guard_b64
     request["mac"] = slot._helpers.sign_start_message(request, SECRET)
     slot._helpers._send_json(connection, slot.START, request)
     return nonce, product_scope_digest(scope)
@@ -418,6 +422,58 @@ def test_product_scope_cleanup_receipt_is_persisted_atomically_and_signed(
         _close_server(server, thread)
 
 
+def test_ordinary_v2_no_deadline_start_relays_normal_exit_and_persists_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_popen_for_current_uid(monkeypatch)
+    server, thread = _server(tmp_path, "import sys; print('normal-exit', flush=True)")
+    connection = None
+    try:
+        scope = _scope()
+        cwd = server.session_root / scope["cwd_leaf"]
+        _adapter_prepare_cwd(cwd)
+        ordinary_b64, _overlay = _ordinary_options_overlay()
+        connection, challenge = _connect(tmp_path / "control" / "control.sock")
+        nonce, digest = _start(
+            connection, challenge, scope, no_deadline=True, guard_b64=ordinary_b64)
+
+        ready = _verified_reply(
+            connection, slot.READY,
+            {"v", "challenge", "nonce", "scope_digest", "cwd", "mac"},
+        )
+        assert ready["challenge"] == challenge
+        assert ready["nonce"] == nonce
+        assert ready["scope_digest"] == digest
+        assert ready["cwd"] == str(cwd)
+        frames = bytearray()
+        while b"normal-exit\n" not in frames:
+            frame_type, payload = slot._helpers.read_frame(connection)
+            assert frame_type == slot.STDOUT
+            frames.extend(payload)
+        exit_reply = _verified_reply(
+            connection, slot.EXIT,
+            {"v", "challenge", "nonce", "scope_digest", "code", "signal",
+             "reason", "cleanup", "mac"},
+        )
+        assert exit_reply["challenge"] == challenge
+        assert exit_reply["nonce"] == nonce
+        assert exit_reply["scope_digest"] == digest
+        assert exit_reply["reason"] == "process_exit"
+        assert exit_reply["cleanup"] == "proven"
+
+        receipt_path = (tmp_path / "control" / "cleanup-receipts"
+                        / f"{digest}.json")
+        raw = json.loads(receipt_path.read_text(encoding="utf-8"))
+        mac = raw.pop("mac")
+        assert slot._helpers.sign_runner_reply(raw, SECRET) == mac
+        assert raw["reason"] == "process_exit"
+        assert raw["cleanup"] == "proven"
+    finally:
+        if connection is not None:
+            connection.close()
+        _close_server(server, thread)
+
+
 def test_cleanup_receipt_write_failure_keeps_cleanup_unknown(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -616,3 +672,110 @@ def test_validate_guard_accepts_the_ordinary_count_only_product_turn_overlay():
         mutate(bad)
         with pytest.raises(slot.ProductSlotError):
             slot._validate_guard(encode(bad))
+
+
+def _ordinary_options_overlay(options=None, *, revision=4):
+    import base64
+
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+    from packages.contracts.product_turn_request import (
+        product_turn_execution_limits, product_turn_execution_output_cap,
+        product_turn_execution_profile,
+    )
+
+    values = default_agent_execution_options() if options is None else options
+    profile = product_turn_execution_profile(values, revision=revision)
+    output_limit = product_turn_execution_output_cap(values)
+    model = {"id": "deepseek-v4.1-flash"}
+    if output_limit is not None:
+        model["maxTokens"] = output_limit
+    overlay = [
+        {"id": "llm-pi-ai", "config": {"providers": {"opencode-go-chat": {
+            "api": "openai-completions",
+            "apiKeyEnv": "OPENCODE_API_KEY",
+            "baseURL": "http://172.31.7.9:41337",
+            "retryPolicy": {"mode": "normal", "maxRetries": 0},
+            "headers": {"x-opencode-session": "123e4567-e89b-42d3-a456-426614174000"},
+            "models": [model],
+        }}}},
+        {"insert": [{"id": "byq-continuation-budget",
+                     "name": "file:///opt/byq/runtime/byq-continuation-budget.js",
+                     "config": {"guardMode": "ordinary-options",
+                                "executionProfile": profile,
+                                "requestLimits": product_turn_execution_limits(values)}}]},
+    ]
+    return base64.b64encode(json.dumps(
+        overlay, sort_keys=True, separators=(",", ":")).encode()).decode(), overlay
+
+
+def _signed_start(*, deadline_at_ms, guard_b64):
+    scope = _scope()
+    challenge = "a" * 64
+    request = {
+        "v": slot.PROTOCOL_VERSION,
+        "challenge": challenge,
+        "nonce": "b" * 64,
+        "scope": scope,
+        "env": _environment(scope),
+        "deadline_at_ms": deadline_at_ms,
+        "guard_b64": guard_b64,
+    }
+    request["mac"] = slot._helpers.sign_start_message(request, SECRET)
+    return request, challenge
+
+
+def test_ordinary_v2_profile_omits_implicit_output_cap_and_keeps_total_only_declaration():
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+
+    ordinary_b64, ordinary_overlay = _ordinary_options_overlay()
+    validated = slot._validate_guard(ordinary_b64)
+    chat = validated[0]["config"]["providers"]["opencode-go-chat"]
+    assert chat["models"] == [{"id": "deepseek-v4.1-flash"}]
+    assert "maxTokens" not in chat["models"][0]
+
+    total_only = default_agent_execution_options()
+    total_only["max_output_tokens_per_call"] = 200
+    total_only["max_output_tokens_total"] = 96
+    total_b64, total_overlay = _ordinary_options_overlay(total_only)
+    validated_total = slot._validate_guard(total_b64)
+    total_chat = validated_total[0]["config"]["providers"]["opencode-go-chat"]
+    assert total_chat["models"] == [{"id": "deepseek-v4.1-flash", "maxTokens": 96}]
+    assert total_overlay[1]["insert"][0]["config"]["executionProfile"]["options_revision"] == 4
+
+    bad = json.loads(json.dumps(ordinary_overlay))
+    bad[0]["config"]["providers"]["opencode-go-chat"]["models"][0]["maxTokens"] = 4096
+    import base64
+    bad_b64 = base64.b64encode(json.dumps(
+        bad, sort_keys=True, separators=(",", ":")).encode()).decode()
+    with pytest.raises(slot.ProductSlotError, match="ordinary output parameter"):
+        slot._validate_guard(bad_b64)
+
+
+def test_ordinary_runner_start_has_no_default_deadline_and_honors_only_user_runtime():
+    ordinary_b64, _ = _ordinary_options_overlay()
+    request, challenge = _signed_start(deadline_at_ms=None, guard_b64=ordinary_b64)
+    _scope_result, _env, deadline, _nonce, _guard = slot._ProductRequestHandler._validate_start(
+        request, challenge, SECRET)
+    assert deadline is None
+
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+    options = default_agent_execution_options()
+    options["max_runtime_seconds"] = 7200
+    finite_b64, _ = _ordinary_options_overlay(options)
+    requested_deadline = int(time.time() * 1000) + 7200_000
+    finite_request, finite_challenge = _signed_start(
+        deadline_at_ms=requested_deadline, guard_b64=finite_b64)
+    before = time.monotonic()
+    _scope_result, _env, finite_deadline, _nonce, _guard = (
+        slot._ProductRequestHandler._validate_start(
+            finite_request, finite_challenge, SECRET))
+    assert finite_deadline is not None
+    assert finite_deadline - before > 3600
+    assert finite_deadline - before <= 7200
+
+    with pytest.raises(slot.ProductSlotError, match="no user limit"):
+        wrong_request, wrong_challenge = _signed_start(
+            deadline_at_ms=int(time.time() * 1000) + 60_000,
+            guard_b64=ordinary_b64)
+        slot._ProductRequestHandler._validate_start(
+            wrong_request, wrong_challenge, SECRET)

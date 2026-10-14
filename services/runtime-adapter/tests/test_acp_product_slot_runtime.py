@@ -171,6 +171,11 @@ class SlotFakeCompatibility(FakeAcpCompatibility):
 
 @pytest.fixture
 def slot_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    import httpx
+    from urllib.parse import unquote, urlsplit
+
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+
     workspaces = ("workspace_slot_a", "workspace_slot_b")
     registry = _registry(workspaces)
     compatibility = SlotFakeCompatibility(registry)
@@ -181,9 +186,70 @@ def slot_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setenv("BYQ_MCP_ACP_DISCOVERY_TOKEN", "test-discovery-token")
     monkeypatch.setenv("BYQ_MCP_ACP_SIGNING_KEY", "test-signing-key-0123456789abcdef")  # gitleaks:allow — fixed synthetic test key
     monkeypatch.setenv("BYQ_F6_EXECUTOR_ENABLED", "1")
+    monkeypatch.setenv("BYQ_BACKEND_URL", "http://backend.test")
+    monkeypatch.setenv("BYQ_RUNTIME_AUTHORITY_TOKEN", "synthetic-runtime-authority-token")
     (tmp_path / "composition.yml").write_text("[]\n", encoding="utf-8")
     runtime = RuntimeAdapter(compatibility)
     runtime.require_current_backend_authority = lambda: 7
+    runtime._test_execution_options_by_session = {}
+    runtime._test_execution_revision_by_session = {}
+    runtime._test_execution_projection_overrides = {}
+    runtime._test_backend_reads = []
+
+    conversation_scopes = {}
+
+    def backend_get(url, *, headers, timeout):
+        runtime._test_backend_reads.append((url, dict(headers), timeout))
+        assert url.startswith("http://backend.test/")
+        assert timeout == 2.0
+        assert headers["Authorization"] == "Bearer synthetic-runtime-authority-token"
+        session_id = headers["X-BYQ-Session-ID"]
+        owner = headers["X-BYQ-Owner-Principal"]
+        workspace_id = headers["X-BYQ-Workspace-ID"]
+        assert headers["X-BYQ-Actor-Principal"] == f"byq-product-agent-{session_id}"
+        assert headers["X-BYQ-Trace-ID"]
+        assert headers["X-BYQ-DSH-Run-ID"]
+        assert headers["X-BYQ-Runtime-Boot-ID"]
+        assert headers["X-BYQ-Root-Run-ID"]
+        path = urlsplit(url).path
+        if path.startswith("/v1/product/conversations/by-runtime/"):
+            path_session = unquote(path.rsplit("/", 1)[-1])
+            assert path_session == session_id
+            conversation_id = ("conversation-" + session_id)[:64]
+            scope = {
+                "conversation_id": conversation_id,
+                "runtime_session_id": session_id,
+                "owner_principal": owner,
+                "workspace_id": workspace_id,
+                "trace_id": headers["X-BYQ-Trace-ID"],
+                "status": "active",
+            }
+            conversation_scopes[conversation_id] = (session_id, scope)
+            return httpx.Response(
+                200, json={"conversation": scope}, request=httpx.Request("GET", url))
+        prefix = "/v1/product/conversations/"
+        suffix = "/execution-options"
+        assert path.startswith(prefix) and path.endswith(suffix)
+        conversation_id = unquote(path[len(prefix):-len(suffix)])
+        assert conversation_id in conversation_scopes
+        path_session, scope = conversation_scopes[conversation_id]
+        assert path_session == session_id
+        options = runtime._test_execution_options_by_session.get(
+            session_id, default_agent_execution_options())
+        projection = {
+            "schema_version": "agent-execution-options.v1",
+            "conversation_id": conversation_id,
+            "owner_principal": owner,
+            "workspace_id": workspace_id,
+            "revision": runtime._test_execution_revision_by_session.get(session_id, 4),
+            "options": options,
+            "updated_at": None,
+        }
+        projection.update(runtime._test_execution_projection_overrides.get(session_id, {}))
+        return httpx.Response(
+            200, json=projection, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", backend_get)
     runtime._resolve_model = lambda **_kwargs: {
         # ADR-0106: the ACP product candidate only qualifies the OpenCode Go /
         # deepseek-v4.1-flash route, so the synthetic slot fixture uses that exact
@@ -775,8 +841,8 @@ def test_ordinary_path_unsupported_model_is_rejected_before_any_proxy(slot_runti
 
 
 def test_ordinary_path_authorized_model_first_submit_opens_product_turn_gate(slot_runtime, monkeypatch):
-    # ADR-0106: the first ordinary submit rebuilds the harness with the
-    # product-turn gate/proxy before the process starts.
+    # ADR-0111: the first ordinary submit reads the exact trusted Backend
+    # options projection, then builds the v2 gate/proxy before process start.
     runtime, compatibility, registry = slot_runtime
     from app import runtime as runtime_module
     captured = {}
@@ -796,10 +862,44 @@ def test_ordinary_path_authorized_model_first_submit_opens_product_turn_gate(slo
     _create(runtime, "ord-authorized", "workspace_slot_a")
     _run_to_idle(runtime, "ord-authorized", "hello")
     gate = captured["gate"]
-    assert gate.product_turn is True
-    assert gate.execution_profile["profile_id"] == "product-turn.v1"
+    assert gate.product_turn_v2 is True
+    assert gate.execution_profile["profile_id"] == "product-turn.v2"
+    assert gate.execution_profile["options_revision"] == 4
+    assert gate.limits["max_provider_calls"] is None
+    assert gate.limits["max_runtime_seconds"] is None
     assert gate.execution_profile["provider"] == "opencode-go-chat"
     assert gate.execution_profile["model"] == "deepseek-v4.1-flash"
+    reads = runtime._test_backend_reads
+    assert [url.rsplit("/", 1)[-1] for url, _headers, _timeout in reads] == [
+        "ord-authorized", "execution-options",
+    ]
+    assert len({headers["X-BYQ-Root-Run-ID"] for _url, headers, _timeout in reads}) == 1
+    assert all(headers["X-BYQ-Owner-Principal"] == "slot-owner"
+               and headers["X-BYQ-Workspace-ID"] == "workspace_slot_a"
+               for _url, headers, _timeout in reads)
+
+
+def test_ordinary_options_scope_mismatch_fails_before_proxy_or_runner_start(slot_runtime, monkeypatch):
+    runtime, compatibility, _registry_value = slot_runtime
+    runtime._test_execution_projection_overrides["ord-options-scope"] = {
+        "workspace_id": "workspace_slot_b",
+    }
+    from app import runtime as runtime_module
+    opened = []
+    original = runtime_module.RequestGateProxy
+
+    class Spy(original):
+        def __init__(self, *args, **kwargs):
+            opened.append(True)
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(runtime_module, "RequestGateProxy", Spy)
+    _create(runtime, "ord-options-scope", "workspace_slot_a")
+    with pytest.raises(RuntimeAuthorityUnavailable, match="options are unavailable or unproven"):
+        runtime.submit_prompt("ord-options-scope", "hello", conversation_context=[])
+    assert opened == []
+    assert compatibility.start_attempts == []
+    assert len(runtime._test_backend_reads) == 2
 
 
 def _tools_with_payload_bytes(target: int):
@@ -952,15 +1052,19 @@ def test_fixed_guard_patch_rotation_is_private_root_scoped_and_no_replace(tmp_pa
 
 def test_ordinary_submit_loopback_gate_cap_posts0_and_root_journal(slot_runtime, monkeypatch):
     # SYNTHETIC ENGINEERING proof (NOT Product E2E): the actual
-    # RuntimeAdapter.submit_prompt builds the real gate/proxy/overlay; a controlled
-    # HTTP request to the real advertised proxy is sent while it is open (from the
-    # start hook) and counted by a real loopback upstream. No provider egress.
+    # RuntimeAdapter.submit_prompt reads an explicit per-call payload option and
+    # builds the real v2 gate/proxy/overlay; a controlled HTTP request to the real
+    # advertised proxy is sent while it is open and counted by a loopback upstream.
     import http.server
     import threading
 
     import httpx
 
     runtime, compatibility, registry = slot_runtime
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+    options = default_agent_execution_options()
+    options["max_tool_payload_bytes_per_call"] = 131072
+    runtime._test_execution_options_by_session["ord-loopback"] = options
     from app import runtime as runtime_module
     captured = {}
     original_proxy = runtime_module.RequestGateProxy
@@ -1030,12 +1134,13 @@ def test_ordinary_submit_loopback_gate_cap_posts0_and_root_journal(slot_runtime,
         f"product-turn-provider-request-{record.process_root_id}.jsonl")
     assert journal.is_file()
     rows = [json.loads(line) for line in journal.read_text().splitlines() if line.strip()]
-    assert any(row.get("phase") == "rejected" and row.get("reason") == "tool_payload_limit"
+    assert any(row.get("phase") == "rejected"
+               and row.get("reason") == "product_tool_payload_limit"
                for row in rows)
     gate = record.continuation_request_gate
     assert gate is not None
     assert gate.settlement_state() == "known_blocked"
-    assert gate.known_budget_block_reason() == "tool_payload_limit"
+    assert gate.known_budget_block_reason() == "product_tool_payload_limit"
     terminal = [event for event in record.history
                 if event["kind"] in {"session.result", "session.failed"}]
     assert [event["kind"] for event in terminal] == ["session.failed"]
@@ -1204,14 +1309,14 @@ def test_known_budget_block_keeps_conversation_promptable_and_never_reuses_faile
     assert gate is not None
     first_harness = compatibility.harnesses[-1]
     first_native = record.runtime_session_id
-    _inject_gate_rejection(gate, "total_tool_payload_limit")
+    _inject_gate_rejection(gate, "product_total_tool_payload_limit")
     compatibility.allow_prompt_return.set()
     _wait_status(runtime, "ord-budget", SessionStatus.IDLE)
 
     # Root outcome is truthfully failed; the conversation stays promptable.
     assert record.status == SessionStatus.IDLE
     assert gate.settlement_state() == "known_blocked"
-    assert gate.known_budget_block_reason() == "total_tool_payload_limit"
+    assert gate.known_budget_block_reason() == "product_total_tool_payload_limit"
     terminal = [event for event in record.history
                 if event["kind"] in {"session.result", "session.failed"}]
     assert [event["kind"] for event in terminal] == ["session.failed"]
@@ -1303,7 +1408,7 @@ def test_known_budget_block_requires_a_closed_proxy(slot_runtime, monkeypatch):
     with record.lock:
         gate = record.current_generation.continuation_request_gate
     assert gate is not None
-    _inject_gate_rejection(gate, "total_tool_payload_limit")
+    _inject_gate_rejection(gate, "product_total_tool_payload_limit")
     proxy = captured["proxy"]
     original_close = proxy.close
 
@@ -1329,19 +1434,25 @@ def test_known_budget_block_requires_a_closed_proxy(slot_runtime, monkeypatch):
     assert record.process_root_id == root
 
 
-def test_postdispatch_unforwarded_deadline_stays_failed(slot_runtime):
-    # A dispatched request whose completion was not forwarded (deadline_exceeded
-    # can arise post-dispatch) is a broader case than this slice's pre-dispatch
-    # refusal and must never reopen the conversation.
+def test_postdispatch_product_runtime_limit_starts_only_a_fresh_root_after_ack(slot_runtime):
+    # A dispatched request stopped by the user's v2 runtime cap is not a
+    # pre-dispatch budget block, but a paired result may admit a fresh root after
+    # exact ACK/cleanup. The old root is never resumed or replayed.
     runtime, compatibility, _registry_value = slot_runtime
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+    options = default_agent_execution_options()
+    options["max_runtime_seconds"] = 60
+    runtime._test_execution_options_by_session["ord-post-runtime"] = options
+    runtime._test_execution_revision_by_session["ord-post-runtime"] = 11
     compatibility.block_prompt = True
-    _create(runtime, "ord-post-deadline", "workspace_slot_a")
-    root = runtime.submit_prompt("ord-post-deadline", "first", conversation_context=[])
+    _create(runtime, "ord-post-runtime", "workspace_slot_a")
+    root = runtime.submit_prompt("ord-post-runtime", "first", conversation_context=[])
     assert compatibility.prompt_started.wait(timeout=1.0)
-    record = runtime._get("ord-post-deadline")
+    record = runtime._get("ord-post-runtime")
     with record.lock:
         gate = record.current_generation.continuation_request_gate
     assert gate is not None
+    assert gate.execution_profile["options_revision"] == 11
     with gate._lock:
         gate._receipts.extend([
             {"schema_version": "continuation-request-gate.v1",
@@ -1350,20 +1461,102 @@ def test_postdispatch_unforwarded_deadline_stays_failed(slot_runtime):
             {"schema_version": "continuation-request-gate.v1",
              "request_id": gate.request_id,
              "phase": "completed", "admitted": True, "call": 1, "attempt": 1,
-             "forwarded": False, "reason": "deadline_exceeded", "status": 200},
+             "forwarded": False, "reason": "product_runtime_limit", "status": 200},
         ])
         gate._provider_calls = 1
         gate._attempts = 1
     compatibility.allow_prompt_return.set()
-    _wait_status(runtime, "ord-post-deadline", SessionStatus.FAILED)
-    assert record.status == SessionStatus.FAILED
+    _wait_status(runtime, "ord-post-runtime", SessionStatus.IDLE)
+    assert record.status == SessionStatus.IDLE
     assert gate.known_budget_block_reason() is None
+    assert gate.known_postdispatch_product_runtime_limit() is True
     terminal = [event for event in record.history
                 if event["kind"] in {"session.result", "session.failed"}]
     assert [event["kind"] for event in terminal] == ["session.failed"]
     assert terminal[0]["payload"]["code"] == "model-run-failed"
     assert terminal[0]["payload"]["retryable"] is False
     assert record.process_root_id == root
+
+    # The explicit next instruction starts a distinct root with a new trusted
+    # revision. It cannot inherit the stopped native transcript or request gate.
+    runtime.acknowledge_terminal("ord-post-runtime", record.terminal_receipts[root])
+    runtime._test_execution_options_by_session["ord-post-runtime"] = default_agent_execution_options()
+    runtime._test_execution_revision_by_session["ord-post-runtime"] = 12
+    compatibility.block_prompt = False
+    compatibility.prompt_started.clear()
+    second_root = runtime.submit_prompt(
+        "ord-post-runtime", "second explicit instruction", conversation_context=[])
+    _wait_status(runtime, "ord-post-runtime", SessionStatus.IDLE)
+    second_gate = record.continuation_request_gate
+    assert second_root != root
+    assert second_gate is not None and second_gate is not gate
+    assert second_gate.execution_profile["options_revision"] == 12
+    assert compatibility.resumed == []
+    assert compatibility.successful_starts[-1].prompts == ["second explicit instruction"]
+    runtime.acknowledge_terminal("ord-post-runtime", record.terminal_receipts[second_root])
+
+
+def test_postdispatch_runtime_limit_exception_starts_only_a_fresh_root_after_ack(
+    slot_runtime, monkeypatch,
+):
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+
+    runtime, compatibility, _registry_value = slot_runtime
+    original_run = compatibility.run_prepared_prompt
+    options = default_agent_execution_options()
+    options["max_runtime_seconds"] = 60
+    runtime._test_execution_options_by_session["ord-exc-runtime"] = options
+    runtime._test_execution_revision_by_session["ord-exc-runtime"] = 21
+
+    def arm_runtime_stop(gate):
+        with gate._lock:
+            gate._receipts = [
+                {"schema_version": "continuation-request-gate.v1",
+                 "request_id": gate.request_id, "phase": "admitted",
+                 "admitted": True, "call": 1, "attempt": 1},
+                {"schema_version": "continuation-request-gate.v1",
+                 "request_id": gate.request_id, "phase": "completed",
+                 "admitted": True, "call": 1, "attempt": 1,
+                 "forwarded": False, "reason": "product_runtime_limit", "status": 429},
+            ]
+            gate._provider_calls = 1
+            gate._attempts = 1
+
+    _submit_raising_acp_error(
+        runtime, compatibility, monkeypatch, "ord-exc-runtime",
+        arm_gate=arm_runtime_stop,
+    )
+    _wait_status(runtime, "ord-exc-runtime", SessionStatus.IDLE)
+    record = runtime._get("ord-exc-runtime")
+    first_root = record.process_root_id
+    first_gate = record.continuation_request_gate
+    assert first_gate is not None
+    assert first_gate.execution_profile["options_revision"] == 21
+    assert first_gate.known_budget_block_reason() is None
+    assert first_gate.known_postdispatch_product_runtime_limit() is True
+    assert record.current_generation.continuation_proxy_closed is True
+    payloads = _terminal_payloads(record)
+    assert len(payloads) == 1
+    assert payloads[0]["code"] == "model-run-failed"
+    assert payloads[0]["retryable"] is False
+    assert payloads[0]["error"] == "AcpRpcError"
+    with pytest.raises(SessionConflict, match="not yet acknowledged"):
+        runtime.submit_prompt("ord-exc-runtime", "second", conversation_context=[])
+
+    runtime.acknowledge_terminal("ord-exc-runtime", record.terminal_receipts[first_root])
+    runtime._test_execution_revision_by_session["ord-exc-runtime"] = 22
+    monkeypatch.setattr(compatibility, "run_prepared_prompt", original_run)
+    compatibility.prompt_started.clear()
+    second_root = runtime.submit_prompt(
+        "ord-exc-runtime", "second explicit instruction", conversation_context=[])
+    _wait_status(runtime, "ord-exc-runtime", SessionStatus.IDLE)
+    second_gate = record.continuation_request_gate
+    assert second_root != first_root
+    assert second_gate is not None and second_gate is not first_gate
+    assert second_gate.execution_profile["options_revision"] == 22
+    assert compatibility.resumed == []
+    assert compatibility.successful_starts[-1].prompts == ["second explicit instruction"]
+    runtime.acknowledge_terminal("ord-exc-runtime", record.terminal_receipts[second_root])
 
 
 # --------------------------------------------------------------------------- #
@@ -1544,16 +1737,23 @@ def test_private_predicate_rejects_non_ordinary_and_fenced_scopes(slot_runtime):
     from types import SimpleNamespace
 
     from app.research_request_gate import ResearchRequestGate
-    from packages.contracts.product_turn_request import product_turn_limits, product_turn_profile
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+    from packages.contracts.product_turn_request import (
+        product_turn_execution_limits, product_turn_execution_profile,
+    )
 
     runtime, _compatibility, _registry_value = slot_runtime
-    gate = ResearchRequestGate(product_turn_limits(), execution_profile=product_turn_profile(),
-                               request_id="product-turn-predicate")
+    options = default_agent_execution_options()
+    gate = ResearchRequestGate(
+        product_turn_execution_limits(options),
+        execution_profile=product_turn_execution_profile(options, revision=4),
+        request_id="product-turn-predicate",
+    )
     with gate._lock:
         gate._receipts = [{
             "schema_version": "continuation-request-gate.v1",
             "request_id": "product-turn-predicate", "phase": "rejected",
-            "admitted": False, "reason": "total_tool_payload_limit",
+            "admitted": False, "reason": "product_total_tool_payload_limit",
         }]
         gate._gate_closed = True
     generation = SimpleNamespace(generation_id="gen-a", continuation_proxy_closed=True)

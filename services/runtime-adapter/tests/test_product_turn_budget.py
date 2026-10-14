@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import json
 import socket
 import threading
@@ -10,7 +11,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import httpx
 import pytest
 
-from app.research_request_gate import RequestGateBlocked, RequestGateProxy, ResearchRequestGate
+from app.research_request_gate import (
+    SETTLED_OK,
+    UNKNOWN_OR_UNPAIRED,
+    RequestGateBlocked,
+    RequestGateProxy,
+    ResearchRequestGate,
+)
 from packages.contracts.product_turn_request import product_turn_limits, product_turn_profile
 
 
@@ -19,11 +26,282 @@ def _gate():
         request_id="product-turn-test")
 
 
+def _ordinary_options_gate(options=None, *, monotonic=time.monotonic, journal=None,
+                           request_id="product-turn-v2-test"):
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+    from packages.contracts.product_turn_request import (
+        product_turn_execution_limits, product_turn_execution_profile,
+    )
+
+    values = default_agent_execution_options() if options is None else options
+    profile = product_turn_execution_profile(values, revision=12)
+    return ResearchRequestGate(
+        product_turn_execution_limits(values), execution_profile=profile,
+        request_id=request_id, monotonic=monotonic, journal=journal,
+    )
+
+
 def _body(**changes):
     value = {"model": "deepseek-v4.1-flash", "max_tokens": 8,
              "messages": [{"role": "user", "content": "synthetic only"}]}
     value.update(changes)
     return json.dumps(value, separators=(",", ":")).encode()
+
+
+def test_ordinary_v2_defaults_allow_more_than_legacy_calls_and_runtime():
+    clock = [0.0]
+    gate = _ordinary_options_gate(monotonic=lambda: clock[0])
+    response_body = b'{"usage":{"prompt_tokens":2,"completion_tokens":3}}'
+
+    # Hold two independently admitted requests open at once to prove the
+    # default provider-concurrency option is unset. Both are paired below.
+    parallel = [gate.before_request(_body(max_tokens=10000)) for _ in range(2)]
+    assert gate._max_concurrent == 2
+    for receipt in parallel:
+        clock[0] += 220
+        assert gate.complete(receipt, status=200, body=response_body)["forward"] is True
+
+    for _ in range(18):
+        receipt = gate.before_request(_body(max_tokens=10000))
+        assert receipt["declared_max_output_tokens"] == 10000
+        clock[0] += 220
+        result = gate.complete(receipt, status=200, body=response_body)
+        assert result["forward"] is True
+
+    assert clock[0] > 3600
+    assert gate.product_turn_v2 is True
+    assert gate.limits["max_provider_calls"] is None
+    assert gate.limits["max_runtime_seconds"] is None
+    assert gate.limits["max_concurrent"] is None
+    assert gate._max_declared_output_tokens == 10000 > 8192
+    assert gate._declared_output_tokens_total == 200000 > 131072
+    assert sum(row["phase"] == "admitted" for row in gate.receipts()) == 20
+    assert sum(row.get("phase") == "completed" and row["forwarded"]
+               for row in gate.receipts()) == 20
+
+
+def test_ordinary_v2_unset_output_declaration_and_missing_usage_stay_unknown():
+    gate = _ordinary_options_gate()
+    for max_tokens in (None, 64, None):
+        admitted = gate.before_request(_body(max_tokens=max_tokens))
+        assert admitted["declared_max_output_tokens"] == max_tokens
+        result = gate.complete(admitted, status=200, body=b"{}")
+        assert result["forward"] is True
+        assert result["actual_output_tokens"] == "unknown"
+        assert gate._declared_output_tokens_total is None
+        completed = gate.receipts()[-1]
+        assert completed["declared_max_output_tokens"] == max_tokens
+        assert completed["actual_output_tokens"] == "unknown"
+        assert completed["usage_source"] == "unknown"
+
+
+def test_ordinary_v2_total_output_ceiling_requires_and_sums_each_declared_call():
+    from packages.contracts.agent_execution_options import default_agent_execution_options
+    from app.continuation_budget import create_acp_product_execution_overlay
+
+    options = default_agent_execution_options()
+    options["max_output_tokens_per_call"] = 200
+    options["max_output_tokens_total"] = 100
+    missing_gate = _ordinary_options_gate(
+        options, request_id="product-turn-v2-output-missing")
+    overlay = json.loads(create_acp_product_execution_overlay(
+        proxy_base_url="http://172.31.7.9:41337",
+        provider_session_id="11111111-2222-4333-8444-555555555555",
+        provider="opencode-go-chat", model="deepseek-v4.1-flash",
+        execution_profile=missing_gate.execution_profile,
+    ).decode())
+    model = overlay[0]["config"]["providers"]["opencode-go-chat"]["models"][0]
+    assert model == {"id": "deepseek-v4.1-flash", "maxTokens": 100}
+    assert missing_gate.limits["max_output_tokens"] == 200
+    assert missing_gate.limits["max_total_output_tokens"] == 100
+
+    with pytest.raises(RequestGateBlocked, match="declared_output_limit_missing"):
+        missing_gate.before_request(_body(max_tokens=None))
+    with pytest.raises(RequestGateBlocked, match="cancelled"):
+        missing_gate.before_request(_body(max_tokens=70))
+
+    per_call_gate = _ordinary_options_gate(
+        options, request_id="product-turn-v2-output-per-call")
+    with pytest.raises(RequestGateBlocked, match="product_output_tokens_limit"):
+        per_call_gate.before_request(_body(max_tokens=201))
+
+    total_gate = _ordinary_options_gate(
+        options, request_id="product-turn-v2-output-total")
+    first = total_gate.before_request(_body(max_tokens=70))
+    assert total_gate.complete(first, status=200,
+                               body=b'{"usage":{"prompt_tokens":1,"completion_tokens":65}}')["forward"]
+    with pytest.raises(RequestGateBlocked, match="product_total_output_tokens_limit"):
+        total_gate.before_request(_body(max_tokens=31))
+
+
+def test_cancel_closes_registered_upstream_before_response_headers_and_seals_unknown(tmp_path):
+    received = threading.Event()
+    peer_closed = threading.Event()
+    post_count = {"value": 0}
+
+    class NoHeaders(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get("content-length", "0")))
+            post_count["value"] += 1
+            received.set()
+            try:
+                while self.connection.recv(4096):
+                    pass
+            finally:
+                peer_closed.set()
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), NoHeaders)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    journal = tmp_path / "cancelled-upstream.jsonl"
+    gate = _ordinary_options_gate(journal=journal)
+    proxy = RequestGateProxy(gate, "https://opencode.ai/zen/go/v1")
+    proxy._server.upstream = f"http://127.0.0.1:{server.server_address[1]}"
+    proxy.__enter__()
+    outcome = {}
+
+    def call_provider():
+        try:
+            outcome["response"] = httpx.post(
+                proxy.base_url + "/chat/completions", content=_body(), timeout=None)
+        except httpx.HTTPError as error:
+            outcome["error"] = type(error).__name__
+
+    caller = threading.Thread(target=call_provider, daemon=True)
+    caller.start()
+    try:
+        assert received.wait(3)
+        assert gate._inflight == 1
+        # The provider has received the request but withholds response headers.
+        # User cancellation closes the registered live connection; it does not
+        # assign an artificial deadline to this healthy execution.
+        gate.cancel()
+        proxy.close()
+        caller.join(3)
+        assert not caller.is_alive()
+        assert peer_closed.wait(2)
+        assert "error" in outcome or outcome.get("response", None) is not None
+        assert post_count["value"] == 1
+        assert gate._inflight == 0
+        assert gate.has_unknown_outcome() is True
+        assert gate.settlement_state() == "unknown_or_unpaired"
+        completed = [row for row in gate.receipts() if row.get("phase") == "completed"]
+        assert len(completed) == 1
+        assert completed[0]["forwarded"] is False
+        assert completed[0]["reason"] == "provider_outcome_unknown"
+        durable_rows = [json.loads(line) for line in journal.read_text().splitlines()]
+        assert durable_rows[-1]["phase"] == "completed"
+        assert durable_rows[-1]["reason"] == "provider_outcome_unknown"
+        assert durable_rows[-1]["forwarded"] is False
+        with pytest.raises(RequestGateBlocked, match="cancelled"):
+            gate.before_request(_body())
+        assert post_count["value"] == 1
+    finally:
+        proxy.close()
+        server.shutdown()
+        server.server_close()
+
+
+def test_v2_connection_failure_before_first_send_is_known_predispatch(monkeypatch):
+    def fail_connect(_connection):
+        raise socket.timeout("synthetic connect timeout")
+
+    monkeypatch.setattr(http.client.HTTPConnection, "connect", fail_connect)
+    gate = _ordinary_options_gate()
+    proxy = RequestGateProxy(gate, "https://opencode.ai/zen/go/v1")
+    proxy.__enter__()
+    try:
+        response = httpx.post(
+            proxy.base_url + "/chat/completions", content=_body(), timeout=None)
+        assert response.status_code == 502
+        assert gate._inflight == 0
+        assert gate.has_unknown_outcome() is False
+        assert gate.settlement_state() == UNKNOWN_OR_UNPAIRED
+        proxy.close()
+        assert gate.settlement_state() == SETTLED_OK
+        completed = [row for row in gate.receipts() if row.get("phase") == "completed"]
+        assert len(completed) == 1
+        assert completed[0]["status"] == 502
+        assert completed[0]["reason"] != "provider_outcome_unknown"
+    finally:
+        proxy.close()
+
+
+def test_proxy_close_racing_upstream_registration_fences_provider_dispatch():
+    post_count = {"value": 0}
+    request_entered = threading.Event()
+    release_registration = threading.Event()
+
+    class ImmediateResponse(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get("content-length", "0")))
+            post_count["value"] += 1
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", "2")
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), ImmediateResponse)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    gate = _ordinary_options_gate()
+    proxy = RequestGateProxy(gate, "https://opencode.ai/zen/go/v1")
+    proxy._server.upstream = f"http://127.0.0.1:{server.server_address[1]}"
+    original_register = proxy._register_upstream
+
+    def pause_before_registration(upstream):
+        if isinstance(upstream, http.client.HTTPConnection):
+            request_entered.set()
+            assert release_registration.wait(3)
+        return original_register(upstream)
+
+    proxy._register_upstream = pause_before_registration
+    proxy.__enter__()
+    result = {}
+
+    def call_provider():
+        try:
+            result["response"] = httpx.post(
+                proxy.base_url + "/chat/completions", content=_body(), timeout=None)
+        except httpx.HTTPError as error:
+            result["error"] = type(error).__name__
+
+    caller = threading.Thread(target=call_provider, daemon=True)
+    caller.start()
+    closer = None
+    try:
+        assert request_entered.wait(3)
+        closer = threading.Thread(target=proxy.close, daemon=True)
+        closer.start()
+        deadline = time.monotonic() + 3
+        while not proxy._closed and time.monotonic() < deadline:
+            time.sleep(0.005)
+        assert proxy._closed is True
+        release_registration.set()
+        caller.join(3)
+        closer.join(3)
+        assert not caller.is_alive()
+        assert not closer.is_alive()
+        assert post_count["value"] == 0
+        assert gate._inflight == 0
+        assert gate.settlement_state() == SETTLED_OK
+        assert gate.has_unknown_outcome() is False
+    finally:
+        release_registration.set()
+        proxy.close()
+        if closer is not None:
+            closer.join(3)
+        server.shutdown()
+        server.server_close()
 
 
 def _tools_with_payload_bytes(target: int):
