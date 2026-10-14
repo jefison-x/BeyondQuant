@@ -17,13 +17,32 @@ const listAgentSessions = vi.fn();
 const updateAgentSession = vi.fn();
 const continueApproval = vi.fn();
 const streamWorkflowEvents = vi.fn();
+const routerHarness = vi.hoisted(() => ({
+  route: { path: "/agent", query: {} as Record<string, unknown> },
+  proxy: null as any,
+  replace: vi.fn(),
+  push: vi.fn(),
+}));
 
 vi.mock("@/api/research", () => ({ continueApproval: (...args: unknown[]) => continueApproval(...args) }));
 
-vi.mock("vue-router", () => ({
-  useRoute: () => ({ path: "/agent", query: {} }),
-  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
-}));
+vi.mock("vue-router", async () => {
+  const { reactive } = await import("vue");
+  routerHarness.replace.mockImplementation((location: { path: string; query?: Record<string, unknown> }) => {
+    routerHarness.route.path = location.path;
+    routerHarness.route.query = location.query ?? {};
+    routerHarness.proxy.path = location.path;
+    routerHarness.proxy.query = { ...routerHarness.route.query };
+    return Promise.resolve();
+  });
+  return {
+    useRoute: () => {
+      routerHarness.proxy = reactive({ path: routerHarness.route.path, query: { ...routerHarness.route.query } });
+      return routerHarness.proxy;
+    },
+    useRouter: () => ({ replace: routerHarness.replace, push: routerHarness.push }),
+  };
+});
 
 vi.mock("@/api/agent", () => ({
   AgentRequestError: class AgentRequestError extends Error {
@@ -42,6 +61,11 @@ vi.mock("@/api/agent", () => ({
 
 describe("AgentView", () => {
   beforeEach(() => {
+    routerHarness.route.path = "/agent";
+    routerHarness.route.query = {};
+    routerHarness.proxy = null;
+    routerHarness.replace.mockClear();
+    routerHarness.push.mockClear();
     continueApproval.mockReset();
     streamWorkflowEvents.mockReset();
     streamWorkflowEvents.mockImplementation(() => new Promise<void>(() => undefined));
@@ -553,6 +577,7 @@ describe("AgentView", () => {
 
   it("keeps a new empty conversation local until the first message is sent", async () => {
     listAgentSessions.mockResolvedValueOnce({ sessions: [], total: 0 });
+    routerHarness.route.query = { new: "true" };
     const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
     await flushPromises();
 
@@ -563,9 +588,28 @@ describe("AgentView", () => {
     const view = wrapper.vm as unknown as { prompt: string; send: () => Promise<void> };
     view.prompt = "第一次提问";
     await view.send();
+    await flushPromises();
 
     expect(createAgentSession).toHaveBeenCalledTimes(1);
     expect(submitTurn).toHaveBeenCalledWith("session-1", "第一次提问", "");
+    expect(getAgentSession).toHaveBeenCalledTimes(1);
+    expect(routerHarness.replace).toHaveBeenCalledWith({ path: "/agent", query: { session: "session-1" } });
+    expect(routerHarness.route.query).toEqual({ session: "session-1" });
+    expect(submitTurn).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
+
+  it("reloads an existing conversation from its exact CID without creating or sending", async () => {
+    routerHarness.route.query = { session: "session-1" };
+    const wrapper = shallowMount(AgentView, { global: { plugins: [ElementPlus] } });
+    await flushPromises();
+
+    expect(useAgentStore().activeSessionId).toBe("session-1");
+    expect(getAgentSession).toHaveBeenCalledTimes(1);
+    expect(createAgentSession).not.toHaveBeenCalled();
+    expect(submitTurn).not.toHaveBeenCalled();
+    expect(routerHarness.replace).not.toHaveBeenCalled();
+    wrapper.unmount();
   });
 
   it("shows first-session maintenance rejection and preserves the draft without retry", async () => {

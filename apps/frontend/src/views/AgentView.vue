@@ -305,6 +305,9 @@ async function persistNewSession() {
   const session = await createAgentSession(auth.token);
   agent.addSession(session);
   await openSession(session.session_id, false);
+  if (agent.activeSessionId === session.session_id) {
+    await router.replace({ path: "/agent", query: { session: session.session_id } });
+  }
 }
 
 function startNewSession(preservePrompt = false) {
@@ -569,7 +572,10 @@ onMounted(async () => {
   finally { initialized.value = true; }
 });
 watch(() => route.query.new, (value, previous) => { if (initialized.value && typeof value === "string" && value !== previous) startNewSession(typeof route.query.draft === "string"); });
-watch(() => route.query.session, async (value, previous) => { if (initialized.value && typeof value === "string" && value !== previous) await openSession(value, false); });
+watch(() => route.query.session, async (value, previous) => {
+  if (initialized.value && typeof value === "string" && value !== previous
+      && value !== agent.activeSessionId) await openSession(value, false);
+});
 watch(() => route.query.history, async (value) => { if (initialized.value && value) await showHistory(); });
 watch(() => route.query.draft, applyRouteDraft);
 watch(() => route.query.approval, retryApprovalContinuation);
