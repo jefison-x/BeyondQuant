@@ -153,7 +153,22 @@ except Exception: raise SystemExit("tool_guard_read_invalid")'''
     return value
 
 
-def _validate_provider_journal(raw: bytes, root: str, generation: str) -> dict:
+def _validate_provider_journal(raw: bytes, root: str, generation: str, *,
+                               continuation_reservation_id: str | None = None) -> dict:
+    """Validate a settled provider journal against its original request identity.
+
+    The optional continuation identity selects the background continuation
+    request namespace; it does not establish that the reservation belongs to
+    this profile, root, or binding. The caller must prove those through the
+    authoritative ledger and binding before calling this validator.
+    """
+    if continuation_reservation_id is None:
+        expected_request = "product-turn-" + generation
+    else:
+        if (not isinstance(continuation_reservation_id, str)
+                or re.fullmatch(r"continuation_[0-9a-f]{32}", continuation_reservation_id) is None):
+            raise Stop("provider_journal_continuation_reservation_invalid")
+        expected_request = continuation_reservation_id
     try:
         rows = [json.loads(line) for line in raw.decode("utf-8").splitlines() if line]
     except (UnicodeError, ValueError) as exc:
@@ -165,7 +180,6 @@ def _validate_provider_journal(raw: bytes, root: str, generation: str) -> dict:
     admitted = completed = peak = inflight = 0
     total_input = total_declared_output = total_tool_payload = 0
     first_admitted_ms = last_completed_ms = previous_admission_ms = None
-    expected_request = "product-turn-" + generation
     base = {"schema_version", "request_id", "phase", "role", "call", "attempt", "input_bytes",
             "declared_max_output_tokens", "tool_payload_bytes", "admitted", "reason", "at_ms"}
     completion = {"status", "forwarded", "elapsed_ms", "completed_at_ms", "actual_input_tokens",
@@ -244,7 +258,7 @@ def _validate_provider_journal(raw: bytes, root: str, generation: str) -> dict:
     def usage_total(field: str):
         values = [row[field] for row in completed_rows]
         return sum(values) if all(type(value) is int for value in values) else "unknown"
-    return {"schema_version": "byq-provider-aggregate.v1", "root_run_id": root,
+    aggregate = {"schema_version": "byq-provider-aggregate.v1", "root_run_id": root,
             "provider_calls": admitted, "provider_attempts": admitted, "max_concurrent": peak,
             "input_bytes": total_input, "declared_output_tokens": total_declared_output,
             "tool_payload_bytes": total_tool_payload,
@@ -253,6 +267,9 @@ def _validate_provider_journal(raw: bytes, root: str, generation: str) -> dict:
             "actual_cache_read_tokens": usage_total("actual_cache_read_tokens"),
             "actual_output_tokens": usage_total("actual_output_tokens"),
             "attribution": "root_aggregate_only_child_unknown"}
+    if continuation_reservation_id is not None:
+        aggregate["continuation_reservation_id"] = continuation_reservation_id
+    return aggregate
 
 
 def _native_reader_source() -> str:

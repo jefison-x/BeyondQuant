@@ -58,7 +58,7 @@ EXPECTED_DELEGATE_SOURCE_SHA = "26a1e804aab4c6f9cb53a670c63b817fc8d9409569e6d68e
 EXPECTED_RUNNER_SOURCE_SHA = "abc8992083bca202d4e66354f254fb1ea095cd409b62fcbdc2d3b2e6b6912f31"
 EXPECTED_NATIVE_READER_SHA = "bb9de5ea6017c5c19a747c84742322a64fd7cceee734ec1b90fd8484e818775d"
 EXPECTED_SCOPE_SCHEMA = "byq-acp-child-scope-read.v1"
-EXPECTED_CAPTURE_SOURCE_SHA = "317d31134c07a23a091e897e9a42d1f7f2ee8b1957e55b1b33ac8f8690813d69"
+EXPECTED_CAPTURE_SOURCE_SHA = "7b5169edac70f991c7470b1604697ed623969b4ef8ec386304cb5c691c0a6d6f"
 
 
 class _Response:
@@ -996,6 +996,77 @@ class ForegroundChildValidatorContractTests(unittest.TestCase):
         self.assertEqual(aggregate["actual_cache_read_tokens"], "unknown")
         self.assertEqual(aggregate["actual_output_tokens"], "unknown")
         self.assertEqual(aggregate["attribution"], "root_aggregate_only_child_unknown")
+        self.assertNotIn("continuation_reservation_id", aggregate)
+
+    def test_ordinary_and_continuation_contracts_share_exact_provider_limits(self):
+        repo = CAPTURE_PATH.resolve().parents[2]
+        modules = {}
+        for name, relative_path in (
+            ("ordinary", "packages/contracts/product_turn_request.py"),
+            ("continuation", "packages/contracts/continuation_request.py"),
+        ):
+            spec = importlib.util.spec_from_file_location(
+                f"{name}_request_contract", repo / relative_path)
+            self.assertIsNotNone(spec)
+            self.assertIsNotNone(spec.loader)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            modules[name] = module
+        self.assertEqual(capture._LIMITS, modules["ordinary"].PRODUCT_TURN_LIMITS)
+        self.assertEqual(capture._LIMITS, modules["continuation"]._LIMITS)
+
+    def test_continuation_journal_requires_exact_reservation_request_id(self):
+        reservation_id = "continuation_" + "c" * 32
+        rows = [json.loads(line) for line in _provider_rows().decode().splitlines()]
+        for row in rows:
+            row["request_id"] = reservation_id
+        aggregate = capture._validate_provider_journal(
+            _provider_journal(rows), ROOT_RUN, "generation-test",
+            continuation_reservation_id=reservation_id)
+        self.assertEqual(aggregate["continuation_reservation_id"], reservation_id)
+
+        with self.assertRaisesRegex(capture.Stop, "provider_journal_schema_invalid"):
+            capture._validate_provider_journal(_provider_journal(rows), ROOT_RUN, "generation-test")
+        with self.assertRaisesRegex(capture.Stop, "provider_journal_schema_invalid"):
+            capture._validate_provider_journal(
+                _provider_rows(), ROOT_RUN, "generation-test",
+                continuation_reservation_id=reservation_id)
+
+    def test_continuation_journal_rejects_invalid_reservation_id_shapes(self):
+        for reservation_id in (
+            "", "continuation_", "continuation_" + "C" * 32,
+            "product-turn-generation-test", "continuation_" + "a" * 31,
+            "continuation_" + "a" * 33, 42,
+        ):
+            with self.subTest(reservation_id=reservation_id):
+                with self.assertRaisesRegex(capture.Stop, "provider_journal_continuation_reservation_invalid"):
+                    capture._validate_provider_journal(
+                        _provider_rows(), ROOT_RUN, "generation-test",
+                        continuation_reservation_id=reservation_id)
+
+    def test_continuation_journal_still_requires_full_serial_settlement(self):
+        reservation_id = "continuation_" + "d" * 32
+        rows = [json.loads(line) for line in _provider_rows().decode().splitlines()]
+        for row in rows:
+            row["request_id"] = reservation_id
+        with self.assertRaisesRegex(capture.Stop, "provider_journal_limits_or_settlement_invalid"):
+            capture._validate_provider_journal(
+                _provider_journal(rows[:1]), ROOT_RUN, "generation-test",
+                continuation_reservation_id=reservation_id)
+
+        start_ms = 1_780_000_000_000
+        first = _provider_call_pair(1, start_ms, input_bytes=0, declared_output=1, tool_payload_bytes=0)
+        second = _provider_call_pair(2, start_ms + 1, input_bytes=0, declared_output=1, tool_payload_bytes=0)
+        concurrent_rows = []
+        for pair in (first, second):
+            for row in pair:
+                row["request_id"] = reservation_id
+            concurrent_rows.extend((pair[0],))
+        concurrent_rows.extend((first[1], second[1]))
+        with self.assertRaisesRegex(capture.Stop, "provider_journal_limits_or_settlement_invalid"):
+            capture._validate_provider_journal(
+                _provider_journal(concurrent_rows), ROOT_RUN, "generation-test",
+                continuation_reservation_id=reservation_id)
 
     def test_provider_journal_uses_epoch_timestamps_and_checks_elapsed_difference(self):
         start_ms = 1_780_000_000_000
