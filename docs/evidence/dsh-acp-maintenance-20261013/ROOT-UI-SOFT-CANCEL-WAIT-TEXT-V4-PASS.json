@@ -1,0 +1,21 @@
+{
+  "schema": "byq-maintenance-root-gate.v1",
+  "status": "PASS_SOURCE_AND_FOCUSED_OFFLINE_ONLY",
+  "source_commit": "8eb3ad3841a6c5430512e3f51ec65a9d6015e94d",
+  "scope": "Clear only exact soft-cancel waiting message on matching terminal event; replay clears only matching active run ID.",
+  "files": {
+    "apps/frontend/src/views/AgentView.vue": "bbc119c2f0c529b01ab062867d1c54fed0f7ab6ac3b7a580d47ae0cb62313bc3",
+    "apps/frontend/src/views/AgentView.spec.ts": "52b2f2b4c3f5835cc9d5acc4be906f9e74ba93c8f46952beeb1f15a7fce1237a"
+  },
+  "verification": {
+    "focused_tests": "PASS: two specs / 40 tests",
+    "frontend_build": "PASS",
+    "diff_check": "PASS",
+    "independent_sol_functional": "PASS",
+    "independent_sol_tests": "PASS",
+    "independent_sol_clean_break_architecture": "PASS",
+    "root": "PASS scoped offline gate"
+  },
+  "private_raw_evidence": ".ci-artifacts/ui-soft-cancel-20261014/final-run-v4/",
+  "limits": {"v4_live_cancel": "NOT_RUN; V3 real-model UI evidence remains source a0818970", "model": "NOT_RUN", "production": "NOT_RUN"}
+}
