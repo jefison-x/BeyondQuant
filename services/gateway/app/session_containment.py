@@ -57,7 +57,7 @@ def _owned(events: object, session_id: str, trace_id: str) -> list[dict]:
     )
 
 
-def _terminal_run(event: dict) -> str | None:
+def _event_run(event: dict) -> str | None:
     payload = event.get("payload")
     run = payload.get("run_id") if isinstance(payload, dict) else None
     return run if isinstance(run, str) and _RUN.fullmatch(run) else None
@@ -109,12 +109,54 @@ def loss_from_evidence(
 
     owned = _owned(events, session_id, trace_id)
     terminals = [event for event in owned if event.get("kind") in TERMINAL_KINDS]
-    last = terminals[-1] if terminals else None
     match = containment_match(adapter_containment, session_id, trace_id)
     base = {
         "status": "active", "interrupted": False, "cancelled": False,
         "interrupted_run_id": None, "loss_cause": None, "last_terminal_sequence": None,
     }
+    starts = [event for event in owned
+              if event.get("kind") == "session.started"
+              and type(event.get("sequence")) is int and event["sequence"] > 0
+              and _event_run(event) is not None]
+    latest_start = starts[-1] if starts else None
+    if latest_start is not None:
+        # A terminal belongs to the current run only if it follows that run's
+        # latest owned start. Late settlements from earlier runs stay historical.
+        current_run = _event_run(latest_start)
+        start_sequence = latest_start["sequence"]
+        current_terminals = [event for event in terminals
+                             if _event_run(event) == current_run
+                             and type(event.get("sequence")) is int
+                             and event["sequence"] > start_sequence]
+        last = current_terminals[-1] if current_terminals else None
+        ambiguous_unbound_after_start = any(
+            _event_run(event) is None
+            and type(event.get("sequence")) is int
+            and event["sequence"] > start_sequence
+            for event in terminals
+        )
+        if last is None:
+            # Preserve the pre-existing ordinary classification for the
+            # unambiguous single-run case. Once another start or terminal exists,
+            # a terminal without a run id could be late and cannot cover the
+            # latest run.
+            if (len(starts) == 1 and len(terminals) == 1
+                    and _event_run(terminals[0]) is None
+                    and type(terminals[0].get("sequence")) is int
+                    and terminals[0]["sequence"] > start_sequence):
+                last = terminals[0]
+        if last is None:
+            # A prior run's terminal or containment cannot close or interrupt this
+            # run. Only an exact containment record for the current run can, and
+            # an ambiguous unbound terminal blocks that promotion.
+            if (not ambiguous_unbound_after_start and match is not None
+                    and match["interrupted_run_id"] == current_run):
+                return {**base, "status": INTERRUPTED, "interrupted": True,
+                        "interrupted_run_id": current_run, "loss_cause": match["loss_cause"]}
+            return base
+    else:
+        # Preserve the historical contract when no valid owned start/run exists.
+        last = terminals[-1] if terminals else None
     if last is None:
         # No terminal at all: the fenced containment is the authoritative loss
         # terminal (explicit contract rule).
@@ -124,7 +166,7 @@ def loss_from_evidence(
                     "loss_cause": match["loss_cause"]}
         return base
     kind = last.get("kind")
-    run = _terminal_run(last)
+    run = _event_run(last)
     sequence = last.get("sequence")
     if kind == COMPLETED:
         return {**base, "status": "completed", "last_terminal_sequence": sequence}
