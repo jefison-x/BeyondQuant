@@ -172,7 +172,7 @@ export async function fetchByqAgentApprovalRequest(
   } as Record<string, string>)[String(request.action)];
   if (expected && (request.resource_type !== expected || typeof request.resource_id !== 'string' || !request.resource_id.trim())) {
     return result({ service: 'beyondquant-mcp', status: 'error', backend: {
-      status: 'agent_request_invalid', validation: { field: 'resource_type', repair_limit: 1,
+      status: 'agent_request_invalid', validation: { field: 'resource_type',
         message: `This action requires resource_type=${expected} and the exact resource_id. Do not use artifact or reuse a mismatched approval.` },
     } }, true);
   }

@@ -58,7 +58,7 @@ class FactorValidationError(ValueError):
 
     def public_problem(self):
         result = {"schema_version": "factor-validation-problem.v1", "field": self.field,
-                  "code": self.code, "repair_limit": 1, "next_action": "correct_once"}
+                  "code": self.code}
         if self.field == "factor.name" and self.code == "unsupported_value":
             result["allowed_values"] = ["daily_return", "momentum"]
         return result

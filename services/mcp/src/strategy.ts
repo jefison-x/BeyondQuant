@@ -84,8 +84,8 @@ function safeStructuredValidation(payload: Record<string, unknown>) {
     "invalid_json", "unsupported_value", "invalid_format", "credential_fields_forbidden", "static_validation_failed"]);
   if (value.schema_version !== "strategy-validation-problem.v1" || typeof value.field !== "string"
     || !fields.has(value.field) || typeof value.code !== "string" || !codes.has(value.code)) return undefined;
-  return { schema_version: value.schema_version, field: value.field, code: value.code, repair_limit: 1,
-    next_action: envelope.reason === "correction_failed" ? "stop_correction_failed" : "read_strategy_contract_then_correct_once" };
+  return { schema_version: value.schema_version, field: value.field, code: value.code,
+    ...(envelope.reason === "correction_failed" ? { next_action: "stop_correction_failed" } : {}) };
 }
 
 async function requestStrategy(
@@ -125,7 +125,7 @@ async function requestStrategy(
             http_status: response.status,
             ...(admission ? { admission } : {}),
             ...(validation ? { validation } : validationMessage
-              ? { validation: { message: validationMessage, repair_limit: 1 } }
+              ? { validation: { message: validationMessage } }
               : {}),
           },
         },

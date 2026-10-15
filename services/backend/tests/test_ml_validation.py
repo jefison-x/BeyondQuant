@@ -26,8 +26,7 @@ def test_ml_field_problem_is_value_free(factory, path, value):
             route(lambda: normalize_ml_strategy(strategy))
         assert caught.value.status_code == 422
         assert caught.value.detail["field"] == ".".join(path)
-        assert caught.value.detail["repair_limit"] == 1
-        assert set(caught.value.detail) == {"schema_version", "field", "code", "repair_limit", "next_action"}
+        assert set(caught.value.detail) == {"schema_version", "field", "code"}
 
 
 def test_unknown_input_fields_and_exception_text_are_not_public():

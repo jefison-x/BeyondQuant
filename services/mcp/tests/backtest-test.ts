@@ -313,22 +313,37 @@ for (const [detail, expected] of [
   assert.match(JSON.parse(invalid.content[0].text).backend.validation.message, expected);
 }
 const { safeRequestValidation } = await import('../src/request-validation.js');
+const repairLimitOf = (hint: ReturnType<typeof safeRequestValidation>) =>
+  hint && 'repair_limit' in hint ? hint.repair_limit : undefined;
 assert.equal(safeRequestValidation({detail: 'password=secret-fixture /home/private'}), undefined);
 assert.equal(safeRequestValidation({detail: 'constructor'}), undefined);
 assert.match(safeRequestValidation({detail: 'input_snapshot.sources must be a non-empty list'})!.message, /request_fingerprint/);
+const supportedFieldHint = safeRequestValidation({detail: 'task_id must be a valid exact task ID'});
+assert.match(supportedFieldHint!.message, /do not resubmit the same failed input/);
+assert.match(supportedFieldHint!.message, /Reconcile unknown outcomes/);
+assert.doesNotMatch(supportedFieldHint!.message, /if still rejected/i);
 
 const scaleBlocker = safeRequestValidation({detail: 'market data requirement exceeds 50000 symbol-session cells'});
-assert.equal(scaleBlocker?.repair_limit, 0);
+assert.equal(repairLimitOf(scaleBlocker), 0);
 assert.match(scaleBlocker!.message, /50000 symbol-session cells/);
 assert.match(scaleBlocker!.message, /bounded readiness partition/);
 assert.match(scaleBlocker!.message, /report/i);
 assert.match(scaleBlocker!.message, /do not resubmit/i);
 
+const zeroRepairBlockers = new Set([
+  'market data requirement exceeds 50000 symbol-session cells',
+  'stock pool snapshot has no members',
+  'stock-pool snapshot has no members',
+  'stock pool contains symbols absent from the frozen security master',
+  'execution_profile_unsupported: generate_target_weights is not supported',
+]);
 for (const [detail, expected] of [
+  ['security master must be synchronized before backtest data preparation', /data blocker/],
   ['start_date must not be after end_date', /start_date.*end_date/],
   ['order_quantity must be aligned to execution.lot_size', /lot_size/],
   ['stock pool must be active for signal production', /active/],
   ['stock pool snapshot has no members', /no members/],
+  ['stock-pool snapshot has no members', /no members/],
   ['stock pool contains symbols absent from the frozen security master', /security master/],
   ['execution_profile_unsupported: generate_target_weights is not supported', /target weights/],
 ] as const) {
@@ -336,6 +351,7 @@ for (const [detail, expected] of [
   assert.ok(hint, `expected a closed hint for: ${detail}`);
   assert.equal(typeof hint!.message, 'string');
   assert.ok(hint!.message.length > 0);
+  assert.equal(repairLimitOf(hint), zeroRepairBlockers.has(detail) ? 0 : undefined);
   assert.match(hint!.message, expected);
 }
 assert.equal(safeRequestValidation({detail: 'market data requirement exceeds 50000 symbol-session cells token=secret-fixture'}), undefined);

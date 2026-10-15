@@ -102,12 +102,15 @@ do not add fields:
 Never invent or send a `source_id`; BYQ generates stable internal source
 identifiers from validated URLs. Never invent or send a search plugin ID or
 version; the trusted MCP deployment attaches the actual producer provenance.
-On a normalized validation failure, repair the
-specific field once and retry once; if it still fails, stop instead of looping.
+On a normalized validation failure, use the safe summary and authoritative
+constraints to correct supported fields. Do not resubmit the same failed
+input. If no evidence-based correction exists or a business blocker applies,
+stop and report it.
 For `SUPPORTED_SOURCE`, recheck all SUPPORTED claims against the rules above,
 including both time eligibility and the primary-source requirement for causation.
 Do not repeat a Web query to repair a known save validation rejection. An unknown
-save outcome requires reconciliation before any retry.
+save outcome requires reconciliation against the exact original request before
+any retry; never blindly resubmit it.
 
 Describe persistence in user language only. On success say that the research
 record was saved and report the source count. On failure say: “搜索结果已展示，但

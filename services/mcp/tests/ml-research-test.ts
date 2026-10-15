@@ -19,6 +19,13 @@ for (const reason of ["domain_validation_failed", "correction_failed"]) {
   assert.equal(value.validation.field, "target.horizon_sessions");
   assert.equal(value.admission.stop, reason === "correction_failed");
   assert.equal(value.admission.validation, undefined);
+  assert.equal(value.validation.repair_limit, undefined);
+  if (reason === "correction_failed") assert.match(value.validation.next_action, /Stop: the correction failed/);
+  if (reason === "domain_validation_failed") {
+    assert.match(value.validation.next_action, /Do not resubmit the same failed input/);
+    assert.match(value.validation.next_action, /Reconcile unknown outcomes/);
+    assert.doesNotMatch(value.validation.next_action, /same error recurs without progress/);
+  }
   assert.doesNotMatch(response.content[0].text, /private-value/);
 }
 
@@ -29,7 +36,8 @@ for (const field of ["validation_plan.parameters.folds", "learner.parameters.alp
   } }), { status: 422 }));
   const payload = JSON.parse(value.content[0].text);
   assert.equal(payload.backend.validation.field, field);
-  assert.equal(payload.backend.validation.repair_limit, 1);
+  assert.equal(payload.backend.validation.repair_limit, undefined,
+    "untrusted Backend repair_limit must not be copied or replaced with a default");
   assert.doesNotMatch(value.content[0].text, /secret|private-input|999/);
 }
 for (const detail of ["token=secret", { schema_version: "ml-validation-problem.v1", field: "secret", code: "out_of_range" }]) {

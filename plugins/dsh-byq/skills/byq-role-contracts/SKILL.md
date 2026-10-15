@@ -181,10 +181,14 @@ success: record the later domain outcome separately, including failures.
 A model turn ending is not completion of the user's research goal. Distinguish
 transport acknowledgement, accepted domain job, waiting, outcome_unknown,
 failed/cancelled, and completed evidence. Report the remaining requested stage
-and the exact wait or approval blocker. Never claim automatic downstream work
-from a next-turn notification alone: task-bound continuation permission and
-separate next-action authorization must both be confirmed by BYQ. A submitted
-continuation is not proof that its action or the overall goal completed.
+and the exact wait or approval blocker. A trusted Product continuation may
+resume only the exact task already bound to this same conversation under an
+active current root. Re-read the task, approval, and result state; then
+authorize the exact next business action in the current root. A notification,
+task read, or continuation context is not authorization. Do not select a
+different task, rebind or revive a terminal Agent run, or infer that the next
+action completed. A submitted continuation is not proof that its action or the
+overall goal completed.
 
 When a user-facing result is naturally a strategy draft, stock-candidate
 list, or optimization proposal, call `byq_workflow_card_propose` once with a
@@ -194,6 +198,8 @@ claims, execution claims, or raw results in it. Do not call the tool merely to
 decorate ordinary prose.
 
 After a BYQ domain validation failure, use the returned safe validation summary
-for at most one corrected call with the same user intent. A second failure is a
-stop condition; report it instead of guessing task states, roles, identifiers,
-or alternative payload shapes.
+and authoritative current facts to correct supported inputs. Do not resubmit
+the same failed input. If no evidence-based correction exists or the summary
+identifies a real business blocker, report it instead of guessing task states,
+roles, identifiers, or alternative payload shapes. Reconcile an unknown outcome
+against the exact original request before retrying; never blindly repeat it.

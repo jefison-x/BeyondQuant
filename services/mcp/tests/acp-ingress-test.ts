@@ -311,7 +311,7 @@ const backend = createServer(async (req, res) => {
     if (domainMode === "reject422") {
       send(422, { detail: { schema_version: "domain-call-admission.v1", state: "correctable_failure",
         reason: "domain_validation_failed", validation: { schema_version: "strategy-validation-problem.v1",
-          field: "strategy.script", code: "invalid_strategy", repair_limit: 1 } } });
+          field: "strategy.script", code: "invalid_strategy", repair_limit: 999 } } });
       return;
     }
     if (domainMode === "conflict409") {
@@ -417,6 +417,10 @@ try {
   await acp.connect();
   const acpTools = await acp.value.listTools();
   assert.ok(acpTools.tools.some(tool => tool.name === "byq_agent_run_start"));
+  const strategyValidationTool = acpTools.tools.find(tool => tool.name === "byq_strategy_validate");
+  assert.ok(strategyValidationTool);
+  assert.match(strategyValidationTool.description ?? "", /authoritative strategy contract/);
+  assert.doesNotMatch(strategyValidationTool.description ?? "", /at most one repair|correct_once|repair_limit/i);
   const beforeBootstrap = requests.length;
   const bootstrap = await acp.value.callTool({ name: "byq_agent_context", arguments: {} });
   assert.equal(bootstrap.isError, false);
@@ -626,6 +630,12 @@ try {
     ...actionArgs, idempotency_key: "definite-validation-rejection",
   } });
   assert.equal(rejectedValidation.isError, true);
+  const validationErrorContent = rejectedValidation.content[0];
+  assert.ok(validationErrorContent);
+  if (validationErrorContent.type !== "text") {
+    assert.fail("expected a text validation error response");
+  }
+  assert.doesNotMatch(validationErrorContent.text, /repair_limit|correct_once|at most one repair/i);
   const validationClaim = requests.slice().reverse().find(request => request.path === "/v1/research/strategies/validate");
   assert.ok(validationClaim);
   assert.equal(requests.filter(request => request.path === "/v1/research/strategies/validate").length,

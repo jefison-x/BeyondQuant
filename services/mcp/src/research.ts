@@ -569,7 +569,7 @@ export function fetchByqResearchTransition(
   if (!statuses.includes(request.target_status)) {
     return Promise.resolve(result({ service: 'beyondquant-mcp', status: 'error', backend: {
       status: 'research_request_invalid', validation: { field: 'target_status', allowed_values: statuses,
-        repair_limit: 1, message: 'Use a listed target_status. blocked is a task progress.stage, not a status; active and in_progress are invalid. Read the entity before choosing a legal transition.' },
+        message: 'Use a listed target_status. blocked is a task progress.stage, not a status; active and in_progress are invalid. Read the entity before choosing a legal transition.' },
     } }, true));
   }
   const collection = request.entity_type === "research_task" ? "tasks" : `${request.entity_type}s`;
@@ -695,7 +695,7 @@ export async function fetchByqResearchLookup(
       || (hasKey && (!request.idempotency_key?.trim() || request.idempotency_key.length > 128
         || (request.entity_type === "research_task" ? request.task_id !== undefined : !request.task_id?.trim())))) {
     return result({ service: "beyondquant-mcp", status: "error",
-      backend: { status: "research_request_invalid", validation: { repair_limit: 1,
+      backend: { status: "research_request_invalid", validation: {
         message: 'For entity_id lookup omit task_id and idempotency_key. For idempotency_key lookup omit entity_id; task_id is required only for artifact or experiment. Preserve the original request identity.' } } }, true);
   }
   if (hasId) return fetchByqResearchGet(backendUrl, request.entity_type, request.entity_id!, fetcher);

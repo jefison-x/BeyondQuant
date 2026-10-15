@@ -1,7 +1,7 @@
 {
   "schema_version": "byq-dsh-composition-identity.v1",
   "profile": "byq-product-acp-0.2.0-rc.2",
-  "composition_hash": "sha256:c111afa30333fb73fea223c01366825545140a15deb455d72a75958dba65eb36",
+  "composition_hash": "sha256:73e8487460ff9190b1f8da5557e55b79270bd4112431091d64841633fc47d8f0",
   "enabled_plugin_ids": [
     "acp",
     "mcp-byq-discovery",

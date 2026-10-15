@@ -51,10 +51,12 @@ State this default in the user-facing strategy summary. A user-selected
 canonical index takes precedence; never silently replace it.
 
 Call `byq_strategy_validate`, then create a version only from its returned
-validated draft Artifact. On a 422, apply the safe validation message once and
-retry once. If validation still fails, stop and report the remaining contract
-error; never change roles, fabricate Artifact IDs, or try alternate payload
-shapes blindly.
+validated draft Artifact. On a 422, use the safe validation details and current
+authoritative constraints to correct supported fields. Do not resubmit the same
+failed input. If no evidence-based correction exists or a business blocker
+applies, stop and report the remaining contract error; never change roles,
+fabricate Artifact IDs, or try alternate payload shapes blindly. Reconcile an
+unknown outcome against the exact original request before retrying.
 
 Authorize with each exact tool name. After validation, audit the real
 `byq_strategy_validate` outcome before version creation; after version creation,
@@ -68,7 +70,10 @@ different prerequisite:
 
 1. If no research task exists, authorize `byq_research_task_create`, create the
    task, and audit that exact action and result.
-2. Authorize `byq_strategy_validate`, validate once (plus at most one informed
-   repair), and audit that exact action and final result.
+2. Authorize `byq_strategy_validate`, validate the supported input, and audit
+   that exact action and final result. If rejected, correct only fields supported
+   by safe details and authoritative constraints, then authorize the corrected
+   action separately; never repeat the same failed input. Report the blocker if
+   no evidence-based correction exists.
 3. Authorize `byq_strategy_version_create`, create the version from the returned
    validated draft, and audit that exact action and result.

@@ -201,6 +201,52 @@ class AcpAuthoritativeVersionTests(unittest.TestCase):
         # Identity contract: the pinned composition hash equals the patch bytes.
         identity = json.loads(PRODUCT_IDENTITY.read_text(encoding="utf-8"))
         self.assertEqual(identity["composition_hash"], "sha256:" + _sha256(PRODUCT_PATCH))
+        for tool_id in ("delegate-market-research", "delegate-strategy-research"):
+            block = text.split(f"- id: {tool_id}", 1)[1].split("    - id: ", 1)[0]
+            self.assertNotRegex(block, r"at most one repair|repair once|correct once|correct_once")
+
+    def test_mounted_research_skills_have_no_fixed_repair_or_continuation_permit(self) -> None:
+        text = PRODUCT_PATCH.read_text(encoding="utf-8")
+        filesystem = text.split("- id: skill-filesystem", 1)[1].split("- id:", 1)[0]
+        self.assertIn("includeDefaultRoots: false", filesystem)
+        self.assertIn("- /opt/dsh/bundles/dsh-byq/skills", filesystem)
+
+        skill_root = ROOT / "plugins/dsh-byq/skills"
+        mounted_skills = sorted(skill_root.glob("*/SKILL.md"))
+        self.assertEqual(len(mounted_skills), 8)
+        required = {
+            "byq-role-contracts": (
+                "task already bound to this same conversation",
+                "authorize the exact next business action",
+                "terminal Agent run",
+            ),
+            "byq-market-researcher": (
+                "Do not resubmit the same failed",
+                "Do not repeat a Web query",
+                "unknown",
+            ),
+            "byq-strategy-researcher": (
+                "Do not resubmit the same",
+                "authorize the corrected",
+                "unknown outcome",
+            ),
+        }
+        forbidden = (
+            r"at most one corrected call",
+            r"at most one informed repair",
+            r"repair once",
+            r"retry once",
+            r"task-bound continuation permission",
+            r"separate next-action authorization",
+        )
+        for skill_name, required_phrases in required.items():
+            path = skill_root / skill_name / "SKILL.md"
+            self.assertIn(path, mounted_skills)
+            body = path.read_text(encoding="utf-8")
+            for phrase in required_phrases:
+                self.assertIn(phrase, body, f"{skill_name}: {phrase}")
+            for pattern in forbidden:
+                self.assertNotRegex(body, pattern, f"{skill_name}: {pattern}")
 
     def test_ordinary_business_delegates_are_foreground_one_shot(self) -> None:
         # ADR-0082/0094 child-lifecycle fallback: every ordinary Product business

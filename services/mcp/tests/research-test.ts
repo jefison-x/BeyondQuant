@@ -319,12 +319,15 @@ for (const target_status of ['in_progress', 'active', 'blocked']) {
   assert.equal(body.backend.status, 'research_request_invalid');
   assert.ok(body.backend.validation.allowed_values.includes('running'));
   assert.match(body.backend.validation.message, /progress.stage/);
+  assert.equal(body.backend.validation.repair_limit, undefined);
 }
 const redundantLookup = await fetchByqResearchLookup('http://backend', {
   entity_type: 'artifact', entity_id: 'artifact_a', task_id: 'task_a',
 }, async () => { throw new Error('invalid lookup must not reach Backend'); });
 assert.equal(redundantLookup.isError, true);
-assert.match(JSON.parse(redundantLookup.content[0].text).backend.validation.message, /entity_id.*task_id/);
+const redundantLookupBody = JSON.parse(redundantLookup.content[0].text);
+assert.match(redundantLookupBody.backend.validation.message, /entity_id.*task_id/);
+assert.equal(redundantLookupBody.backend.validation.repair_limit, undefined);
 
 for (const entity_type of ["experiment", "artifact"] as const) {
   for (const task_id of [undefined, "task_other", null, 42]) {

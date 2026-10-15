@@ -1794,7 +1794,7 @@ export function buildServer(factoryContext: unknown = undefined): McpServer {
   registerTool(
     "byq_strategy_validate",
     {
-      description: "Validate and persist a StrategyDraft. script must define class CustomStrategy with exactly one synchronous generate_signals(self, data, parameters) or generate_target_weights(self, data, portfolio_state, parameters). A planned research task is valid. On 422, use the safe validation message for at most one repair.",
+      description: "Validate and persist a StrategyDraft. script must define class CustomStrategy with exactly one synchronous generate_signals(self, data, parameters) or generate_target_weights(self, data, portfolio_state, parameters). A planned research task is valid. On 422, use the safe validation message and correct supported inputs using the authoritative strategy contract; do not guess or resubmit an unchanged payload.",
       inputSchema: domainValidationSchemas.byq_strategy_validate,
     },
     (args, extra) => byqStrategyValidate(args, extra),
