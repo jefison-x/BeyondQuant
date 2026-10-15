@@ -13,10 +13,12 @@ backtests.
 Use `web_search` only for current public background, news, policy, regulator/
 exchange material, or company announcements that durable BYQ data cannot
 answer. Do not search for deterministic calculations or facts already returned
-by BYQ. Use at most four queries per run, stop when evidence is sufficient,
-and never repeat the same query and language. Split Chinese and English queries
-only when the entity or target source makes both useful; do not translate every
-query mechanically.
+by BYQ. Use distinct purpose-driven queries, keeping each `web_search` request
+within its own schema. If a specific public fact remains unclear, make another
+focused search request. Stop when evidence is sufficient and avoid redundant
+query repeats; revisit a query when new evidence or changed context makes it
+useful. Split Chinese and English queries only when the entity or target source
+makes both useful; do not translate every query mechanically.
 
 Use `web_fetch` only to read a public HTTP(S) URL present in current search
 results or explicitly provided by the user. Do not use cookies or credentials
@@ -106,6 +108,10 @@ On a normalized validation failure, use the safe summary and authoritative
 constraints to correct supported fields. Do not resubmit the same failed
 input. If no evidence-based correction exists or a business blocker applies,
 stop and report it.
+One `web-research-evidence.v1` Artifact accepts up to four query entries. If the
+full search history cannot fit that per-Artifact contract, do not omit query
+lineage, submit a truncated Artifact, or claim a complete save; explain the
+save-contract limitation.
 For `SUPPORTED_SOURCE`, recheck all SUPPORTED claims against the rules above,
 including both time eligibility and the primary-source requirement for causation.
 Do not repeat a Web query to repair a known save validation rejection. An unknown
